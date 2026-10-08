@@ -3,7 +3,7 @@ import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
 import type { WriterReuseStats } from "../writer-reuse-stats";
 import { t } from "../../i18n";
-import { Button } from "../../components/ui/button";
+import { Button } from "@lane-pilot/ui-kit";
 
 const show = (value:number | null, suffix = "") => value === null ? "—" : `${value}${suffix}`;
 

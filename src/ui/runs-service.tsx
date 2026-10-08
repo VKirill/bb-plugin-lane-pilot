@@ -10,15 +10,15 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "../../components/ui/alert-dialog";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
-import { Input } from "../../components/ui/input";
-import { Label } from "../../components/ui/label";
+} from "@lane-pilot/ui-kit";
+import { Badge } from "@lane-pilot/ui-kit";
+import { Button } from "@lane-pilot/ui-kit";
+import { Card, CardContent, CardHeader, CardTitle } from "@lane-pilot/ui-kit";
+import { Input } from "@lane-pilot/ui-kit";
+import { Label } from "@lane-pilot/ui-kit";
 import { EXTERNAL_OPS_BY_ACTION } from "../constants";
-import { Disclosure } from "./disclosure";
-import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
+import { Disclosure } from "@lane-pilot/ui-kit";
+import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { CARD_BODY, CARD_HEAD, COEXISTENCE_MANAGER_KEYS, COEXISTENCE_VALUE_KEYS, compatibilityAliasRows, reasonKey, sectionKey } from "./page-model";
 import { FieldControl, StatusBadge, StatusRow } from "./setting-controls";
 import type { LpPage } from "./use-lp-page";

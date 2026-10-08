@@ -2,7 +2,7 @@ import { useState } from "react";
 import { experimental_SourceCode as SourceCode, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
 import { t } from "../../i18n";
-import { Disclosure } from "./disclosure";
+import { Disclosure } from "@lane-pilot/ui-kit";
 
 /** One stage's result body: the screen lists stages without it, so it is fetched when the owner opens this. */
 export function StageResult({ runId, taskId, stageId }: { runId: string; taskId: string; stageId: string }) {

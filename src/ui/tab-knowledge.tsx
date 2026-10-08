@@ -6,7 +6,7 @@ import { RuleProposals } from "./rule-proposals";
 import { asBoolean } from "./page-model";
 import { CatalogField, CatalogFields } from "./catalog-field";
 import { AdvancedRows, SettingsGroup } from "./setting-controls";
-import { HelpSup } from "./help-sup";
+import { HelpSup } from "@lane-pilot/ui-kit";
 import { Pill } from "./pill";
 import { Segments } from "./segments";
 import { SEGMENT_LABELS, segmentsFor } from "./tabs-model";

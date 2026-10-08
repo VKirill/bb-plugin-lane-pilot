@@ -1,5 +1,5 @@
 import { HARNESS_VERSION } from "../database";
-import { LP_ALL_PROJECTS } from "../realtime-channel";
+import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
 import { LP_TASK_PIPELINE, builtinWorkflow } from "../workflow/builtin";
 import { createWorkflowCatalog } from "../workflow/catalog";
 import { ENGINE_COMPAT_VERSION, WorkflowEngine } from "../workflow/engine";

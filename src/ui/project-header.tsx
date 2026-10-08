@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { t } from "../../i18n";
-import { Button } from "../../components/ui/button";
-import { Icon } from "../../components/ui/icon";
-import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
-import { Skeleton } from "../../components/ui/skeleton";
+import { Button } from "@lane-pilot/ui-kit";
+import { Icon } from "@lane-pilot/ui-kit";
+import { Popover, PopoverContent, PopoverTrigger } from "@lane-pilot/ui-kit";
+import { Skeleton } from "@lane-pilot/ui-kit";
 import { Pill } from "./pill";
 import { DEPTH_TABS } from "./tabs-model";
 import type { LpPage } from "./use-lp-page";

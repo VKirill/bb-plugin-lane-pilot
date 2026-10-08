@@ -1,14 +1,14 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { t, type I18nKey, type Locale } from "../../i18n";
-import { Button } from "../../components/ui/button";
-import { LP_ALL_PROJECTS } from "../realtime-channel";
+import { Button } from "@lane-pilot/ui-kit";
+import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
 import { draftChanges, draftView } from "../workflow/draft-view";
 import type { ViewNode, WorkflowView } from "../workflow/view-core";
 import { HELPER_PANEL_ACTION } from "./helper-threads";
-import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
+import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { useLpRealtime } from "./use-lp-realtime";
-import { useObservedWidth } from "./panel-layout";
+import { useObservedWidth } from "@lane-pilot/ui-kit";
 import { getDraft, type DraftDoc } from "./workflow-drafts";
 import { NodePanel, WorkflowGraph, type NodePanelContext, type NodePanelRenderer } from "./workflow-detail";
 import { nodeTitle } from "./workflow-titles";

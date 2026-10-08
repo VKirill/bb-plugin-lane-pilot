@@ -3,9 +3,9 @@ import { useRpc, type ExperimentalProviderModelPickerValue } from "@get-bb/plugi
 import { toast } from "sonner";
 import type { rpcContract } from "../contracts";
 import { detectLocale, t, type I18nKey } from "../../i18n";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
-import { Disclosure } from "./disclosure";
+import { Badge } from "@lane-pilot/ui-kit";
+import { Button } from "@lane-pilot/ui-kit";
+import { Disclosure } from "@lane-pilot/ui-kit";
 import { useLpRealtime } from "./use-lp-realtime";
 
 type Proposal = {

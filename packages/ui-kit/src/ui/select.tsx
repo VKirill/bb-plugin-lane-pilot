@@ -1,10 +1,10 @@
 import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 
-import { cn } from "../../lib/utils";
-import { usePortalScopeProps } from "../../lib/portal-scope";
-import { CONTROL_HOVER_TRANSITION } from "./motion.js";
-import { Icon } from "../../components/ui/icon.js";
+import { cn } from "../lib/utils";
+import { usePortalScopeProps } from "../lib/portal-scope";
+import { CONTROL_HOVER_TRANSITION } from "./motion";
+import { Icon } from "./icon";
 
 const Select = SelectPrimitive.Root;
 

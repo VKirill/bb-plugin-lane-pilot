@@ -38,11 +38,11 @@ describe("layout geometry harness", () => {
   });
 
   it("rotates only the summary chevron and keeps BB AlertTitle defaults", () => {
-    const disclosure = readFileSync(join(import.meta.dirname, "../src/ui/disclosure.tsx"), "utf8");
+    const disclosure = readFileSync(join(import.meta.dirname, "../packages/ui-kit/src/ui/disclosure.tsx"), "utf8");
     expect(disclosure).toContain("data-disclosure-chevron");
     expect(disclosure).toContain("[&[open]>summary_[data-disclosure-chevron]]:rotate-90");
     expect(disclosure).not.toContain("[&[open]_svg]:rotate-90");
-    const alert = readFileSync(join(import.meta.dirname, "../components/ui/alert.tsx"), "utf8");
+    const alert = readFileSync(join(import.meta.dirname, "../packages/ui-kit/src/ui/alert.tsx"), "utf8");
     expect(alert).toContain("mb-1 font-medium leading-none");
   });
 

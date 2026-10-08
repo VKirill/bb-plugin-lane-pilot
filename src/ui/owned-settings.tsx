@@ -7,19 +7,19 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
 import { mergeInventoryItems, RESOURCE_KEYS, resourceModeOf, type InventoryGroup, type ResourceKey, type ResourceMode } from "../agent-inventory";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Label } from "../../components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import { Button } from "@lane-pilot/ui-kit";
+import { Input } from "@lane-pilot/ui-kit";
+import { Label } from "@lane-pilot/ui-kit";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
 import type { Locale } from "../../i18n";
 import { t } from "../../i18n";
 import { agentPickerLabel } from "../agent-display";
 import type { LanePilotDefaults } from "../lp-defaults";
-import { CONTROL_H } from "./control-row";
-import { Disclosure } from "./disclosure";
-import { HelpSup } from "./help-sup";
-import { usePanelLayout } from "./panel-layout";
-import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
+import { CONTROL_H } from "@lane-pilot/ui-kit";
+import { Disclosure } from "@lane-pilot/ui-kit";
+import { HelpSup } from "@lane-pilot/ui-kit";
+import { usePanelLayout } from "@lane-pilot/ui-kit";
+import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 
 const FIELD = "min-w-0 w-full max-w-full";
 const CONTROL = `${FIELD} box-border`;

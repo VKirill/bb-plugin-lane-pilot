@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 
 /**
  * The «?» after a title: a small circle raised to the top of the text line,

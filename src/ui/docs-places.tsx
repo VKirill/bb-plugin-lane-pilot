@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
 import { t, type I18nKey } from "../../i18n";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
-import { Disclosure } from "./disclosure";
+import { Badge } from "@lane-pilot/ui-kit";
+import { Button } from "@lane-pilot/ui-kit";
+import { Disclosure } from "@lane-pilot/ui-kit";
 
 type Place = {
   hostId: string; path: string; name: string; scopes: string[]; mode: "auto" | "on" | "off";

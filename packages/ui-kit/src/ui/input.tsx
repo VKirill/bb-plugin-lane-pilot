@@ -3,9 +3,9 @@ import * as React from "react";
 import {
   COARSE_POINTER_INPUT_HEIGHT_CLASS,
   COARSE_POINTER_TEXT_BASE_CLASS,
-} from "./coarse-pointer-sizing.js";
-import { cn } from "../../lib/utils";
-import { CONTROL_HOVER_TRANSITION } from "./motion.js";
+} from "./coarse-pointer-sizing";
+import { cn } from "../lib/utils";
+import { CONTROL_HOVER_TRANSITION } from "./motion";
 
 const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
   ({ className, type, ...props }, ref) => {

@@ -3,7 +3,7 @@ import { ThreadChat, useBbContext, useBbNavigate, useRpc } from "@get-bb/plugin-
 import { useLpRealtime } from "./use-lp-realtime";
 import type { rpcContract } from "../contracts";
 import { t, type I18nKey } from "../../i18n";
-import { Icon, type IconName } from "../../components/ui/icon";
+import { Icon, type IconName } from "@lane-pilot/ui-kit";
 
 export const HELPER_PANEL_ACTION = "lane-helper-thread";
 

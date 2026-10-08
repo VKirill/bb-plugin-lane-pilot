@@ -1,10 +1,10 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { t, type I18nKey } from "../../i18n";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { Switch } from "../../components/ui/switch";
-import { cn } from "../../lib/utils";
+import { Button } from "@lane-pilot/ui-kit";
+import { Input } from "@lane-pilot/ui-kit";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
+import { Switch } from "@lane-pilot/ui-kit";
+import { cn } from "@lane-pilot/ui-kit";
 import { FIELD_TYPES, type FieldRow, type ModelError } from "./workflow-edit-model";
 
 /**

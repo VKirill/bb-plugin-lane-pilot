@@ -1,8 +1,8 @@
 import type { ReactElement } from "react";
 import { t } from "../../i18n";
-import { Button } from "../../components/ui/button";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { CONTROL_H } from "./control-row";
+import { Button } from "@lane-pilot/ui-kit";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
+import { CONTROL_H } from "@lane-pilot/ui-kit";
 import type { LpPage } from "./use-lp-page";
 
 type Scope = "projects" | "globals" | "agents" | "tokens" | "workflows" | "schedule";

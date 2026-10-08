@@ -2,17 +2,17 @@ import { createContext, useContext, type ReactNode } from "react";
 import { type CatalogRow } from "../ui-catalog";
 import { t, type Locale, type LocalePreference } from "../../i18n";
 import { settingHelp, settingLabel, settingUsesNumericControl } from "../setting-copy";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Label } from "../../components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { Switch } from "../../components/ui/switch";
-import { Skeleton } from "../../components/ui/skeleton";
-import { HelpSup } from "./help-sup";
+import { Badge } from "@lane-pilot/ui-kit";
+import { Button } from "@lane-pilot/ui-kit";
+import { Input } from "@lane-pilot/ui-kit";
+import { Label } from "@lane-pilot/ui-kit";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
+import { Switch } from "@lane-pilot/ui-kit";
+import { Skeleton } from "@lane-pilot/ui-kit";
+import { HelpSup } from "@lane-pilot/ui-kit";
 import { presentEnumLabel } from "../enum-labels";
-import { usePanelLayout } from "./panel-layout";
-import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
+import { usePanelLayout } from "@lane-pilot/ui-kit";
+import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { HELP_BY_KEY, JEV_KEYS, ScreenPayload, asBoolean, numericUnit, reasonKey } from "./page-model";
 
 export function SettingsGroup({ title, testId, help, children }: { title?: string; testId: string; help?: ReactNode; children: ReactNode }) {

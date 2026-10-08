@@ -1,4 +1,4 @@
-import { useMediaQuery } from "./use-media-query.js";
+import { useMediaQuery } from "./use-media-query";
 
 export const POINTER_COARSE_QUERY = "(pointer: coarse)";
 

@@ -12,13 +12,13 @@ import {
   type AccessSwitch,
   type RoleAccess,
 } from "../helper-context";
-import { Button } from "../../components/ui/button";
-import { Icon } from "../../components/ui/icon";
-import { Input } from "../../components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { CONTROL_H } from "./control-row";
-import { usePanelLayout } from "./panel-layout";
-import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
+import { Button } from "@lane-pilot/ui-kit";
+import { Icon } from "@lane-pilot/ui-kit";
+import { Input } from "@lane-pilot/ui-kit";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
+import { CONTROL_H } from "@lane-pilot/ui-kit";
+import { usePanelLayout } from "@lane-pilot/ui-kit";
+import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 
 export type Source = "role" | "owner";
 /** The layer a value comes from: the role profile in code, or the scope that holds the row. */

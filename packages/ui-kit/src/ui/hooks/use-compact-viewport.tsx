@@ -5,7 +5,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { useMediaQuery } from "./use-media-query.js";
+import { useMediaQuery } from "./use-media-query";
 
 export const COMPACT_VIEWPORT_QUERY = "(max-width: 767px)";
 

@@ -2,9 +2,9 @@ import { useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
 import { t, stateLabel } from "../../i18n";
-import { Badge } from "../../components/ui/badge";
+import { Badge } from "@lane-pilot/ui-kit";
 import { StageResult } from "./stage-result";
-import { Disclosure } from "./disclosure";
+import { Disclosure } from "@lane-pilot/ui-kit";
 import { StageSummary, runTone, stageTitle } from "./page-model";
 
 /** The stage receipts of a run: the screen carries only their count, the rows load when the list is opened. */

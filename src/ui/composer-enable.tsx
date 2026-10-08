@@ -3,11 +3,11 @@ import { useComposer, useComposerView, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
 import { t, detectLocale, setLocaleOverride } from "../../i18n";
 import { agentPickerLabel } from "../agent-display";
-import { Button } from "../../components/ui/button";
-import { Label } from "../../components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "../../components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { CONTROL_H } from "./control-row";
+import { Button } from "@lane-pilot/ui-kit";
+import { Label } from "@lane-pilot/ui-kit";
+import { Popover, PopoverContent, PopoverTrigger } from "@lane-pilot/ui-kit";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
+import { CONTROL_H } from "@lane-pilot/ui-kit";
 import {
   activationDisabledPredicate,
   composerButtonDisabled,

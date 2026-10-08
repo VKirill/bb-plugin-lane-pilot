@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chromeIsCompact, contentStacksControls, CONTENT_STACK_MAX, SHELL_COMPACT_MAX } from "../src/ui/panel-layout";
+import { chromeIsCompact, contentStacksControls, CONTENT_STACK_MAX, SHELL_COMPACT_MAX } from "@lane-pilot/ui-kit";
 
 describe("panel-width chrome", () => {
   it("uses the mobile Select at 448px plugin area (viewport 768 minus BB sidebar 320)", () => {

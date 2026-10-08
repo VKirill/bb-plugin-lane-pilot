@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { parseLpSignal } from "../src/realtime-channel";
+import { parseLpSignal } from "@lane-pilot/ui-kit/realtime-channel";
 
 afterEach(() => cleanup());
 

@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { t, type I18nKey, type Locale } from "../../i18n";
-import { Button } from "../../components/ui/button";
-import { Icon, type IconName } from "../../components/ui/icon";
-import { Input } from "../../components/ui/input";
+import { Button } from "@lane-pilot/ui-kit";
+import { Icon, type IconName } from "@lane-pilot/ui-kit";
+import { Input } from "@lane-pilot/ui-kit";
 import { cronProblem, timezoneProblem } from "../workflow/cron";
 import { conditionText } from "../workflow/view-core";
-import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
+import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { ChipsField, Field, FieldListEditor, NumberField, Section, SelectField, SwitchField, TextArea, TextField, say, typeLabel } from "./workflow-edit-fields";
 import {
   CONDITION_OPS, NODE_TYPES, PASS_MODES, actionParams, clauseValueText, fieldsOps, fieldsOfKey, forEachOf, forEachOps, guardOps, guardValue, isRaw, nodeById, nodesOf, outFields, paramsOps, parseClauseValue,

@@ -2,11 +2,11 @@ import type { ExperimentalProviderModelPickerValue } from "@get-bb/plugin-sdk/ap
 import { t, validationMessage, type I18nKey } from "../../i18n";
 import { WRITER_FALLBACK_DEFAULTS, WRITER_FALLBACK_SLOTS, writerFallbackKeys } from "../writer-fallbacks";
 import { QA_HOST_KEY, QA_WORKSPACE_KEY } from "../qa-host";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Label } from "../../components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { Switch } from "../../components/ui/switch";
+import { Button } from "@lane-pilot/ui-kit";
+import { Input } from "@lane-pilot/ui-kit";
+import { Label } from "@lane-pilot/ui-kit";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
+import { Switch } from "@lane-pilot/ui-kit";
 import { AdvancedRows } from "./setting-controls";
 import { CatalogField } from "./catalog-field";
 import { asBoolean, COUNCIL_SEATS } from "./page-model";

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { Icon } from "../../components/ui/icon";
-import { cn } from "../../lib/utils";
+import { Icon } from "./icon";
+import { cn } from "../lib/utils";
 
 export function Disclosure({
   summary,

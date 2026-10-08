@@ -1,11 +1,11 @@
 import { useState, type ReactNode } from "react";
 import { t, type I18nKey } from "../../i18n";
 import { agentPickerLabel } from "../agent-display";
-import { Badge } from "../../components/ui/badge";
-import { Icon } from "../../components/ui/icon";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { Switch } from "../../components/ui/switch";
-import { CONTROL_H } from "./control-row";
+import { Badge } from "@lane-pilot/ui-kit";
+import { Icon } from "@lane-pilot/ui-kit";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
+import { Switch } from "@lane-pilot/ui-kit";
+import { CONTROL_H } from "@lane-pilot/ui-kit";
 import { AccessModePanel, isChanged, ORIGIN_LABEL, PmAccessNote, RoleAccessBody, roleSummary, useAccessView, type AccessApi, type RoleView } from "./agent-access";
 import { useRulesAnalyzer } from "./rule-proposals";
 import { asBoolean } from "./page-model";
@@ -13,7 +13,7 @@ import { SettingField } from "./setting-controls";
 import { BrowserDetail, CouncilDetail, WriterDetail } from "./team-details";
 import { originOfKeys, roleKey, roleName, rolePurpose, ROLE_GROUPS, type RoleOrigin, type RoleSpec } from "./team-model";
 import { Pill, type PillTone } from "./pill";
-import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
+import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import type { LpPage } from "./use-lp-page";
 
 const ORIGIN_TONE: Record<RoleOrigin, PillTone> = { here: "info", inherited: "neutral", default: "muted" };

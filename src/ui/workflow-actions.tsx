@@ -3,11 +3,11 @@ import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { z } from "zod";
 import type { rpcContract } from "../contracts";
 import { t, type I18nKey } from "../../i18n";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { Switch } from "../../components/ui/switch";
-import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
+import { Button } from "@lane-pilot/ui-kit";
+import { Input } from "@lane-pilot/ui-kit";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
+import { Switch } from "@lane-pilot/ui-kit";
+import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 
 type Output<K extends keyof typeof rpcContract> = z.infer<(typeof rpcContract)[K]["output"]>;
 type Detail = NonNullable<Output<"workflow_get">["workflow"]>;

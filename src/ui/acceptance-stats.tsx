@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
-import { Button } from "../../components/ui/button";
+import { Button } from "@lane-pilot/ui-kit";
 
 type Totals = {
   dispatched:number; firstTryAccepted:number; eventuallyAccepted:number;

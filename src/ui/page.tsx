@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
 import { t, validationMessage } from "../../i18n";
-import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";
-import { Button } from "../../components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
-import { CONTROL_H } from "./control-row";
+import { Alert, AlertDescription, AlertTitle } from "@lane-pilot/ui-kit";
+import { Button } from "@lane-pilot/ui-kit";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@lane-pilot/ui-kit";
+import { CONTROL_H } from "@lane-pilot/ui-kit";
 import { OwnedSettings } from "./owned-settings";
-import { PanelLayoutContext } from "./panel-layout";
+import { PanelLayoutContext } from "@lane-pilot/ui-kit";
 import { InheritanceContext } from "./setting-controls";
 import { TokenUsage } from "./token-usage";
 import { WorkflowsScreen } from "./workflows";

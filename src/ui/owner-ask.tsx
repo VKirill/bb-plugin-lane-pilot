@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import type { PluginPendingInteractionProps } from "@get-bb/plugin-sdk/app";
 import { t } from "../../i18n";
-import { Button } from "../../components/ui/button";
-import { Icon } from "../../components/ui/icon";
+import { Button } from "@lane-pilot/ui-kit";
+import { Icon } from "@lane-pilot/ui-kit";
 import { readOwnerAskPayload, type OwnerAskResponse } from "../owner-ask-shared";
-import { Disclosure } from "./disclosure";
+import { Disclosure } from "@lane-pilot/ui-kit";
 
 /**
  * A question Lane Pilot (the PM, the integration gate, a repair thread, a council) puts to the owner: what the owner is

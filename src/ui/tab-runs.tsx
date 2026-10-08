@@ -1,18 +1,18 @@
 import { stateLabel, t, type I18nKey } from "../../i18n";
 import { ATTEMPT_STATES, RUN_STATES } from "../state-machine";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
+import { Badge } from "@lane-pilot/ui-kit";
+import { Button } from "@lane-pilot/ui-kit";
 import { AcceptanceStats } from "./acceptance-stats";
 import { CriticValue } from "./critic-value";
 import { WriterReuse } from "./writer-reuse";
-import { Disclosure } from "./disclosure";
+import { Disclosure } from "@lane-pilot/ui-kit";
 import { Pill } from "./pill";
 import { OPEN_ATTEMPT_STATES, RUNS_PAGE, canCancelAttempt, canRetryAttempt, runTone, type MonitorRun } from "./page-model";
 import { RunStages } from "./run-parts";
 import { ServiceSegment } from "./runs-service";
 import { Segments } from "./segments";
 import { SEGMENT_LABELS, segmentsFor } from "./tabs-model";
-import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
+import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import type { LpPage } from "./use-lp-page";
 
 /** A run with more attempts than this folds its finished ones. */

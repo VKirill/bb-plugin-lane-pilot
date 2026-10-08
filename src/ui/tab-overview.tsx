@@ -1,10 +1,10 @@
 import { stateLabel, t } from "../../i18n";
-import { Button } from "../../components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import { Button } from "@lane-pilot/ui-kit";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
 import { HowItWorks } from "./how-it-works";
 import { LocaleControls, OverviewLoading, StatusRow } from "./setting-controls";
 import { runTone } from "./page-model";
-import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
+import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { Pill } from "./pill";
 import type { LpPage } from "./use-lp-page";
 

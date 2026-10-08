@@ -1,7 +1,7 @@
 import { VISIBLE_CATALOG, type CatalogRow } from "../ui-catalog";
 import { t, type I18nKey } from "../../i18n";
 import { settingUnitKey } from "../setting-copy";
-import { Tabs } from "../../components/ui/tabs";
+import { Tabs } from "@lane-pilot/ui-kit";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../state-machine";
 import type { StageReceipt } from "../stages/contract";
 

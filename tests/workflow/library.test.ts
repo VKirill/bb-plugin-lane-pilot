@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { parseLpSignal } from "../../src/realtime-channel";
+import { parseLpSignal } from "@lane-pilot/ui-kit/realtime-channel";
 import { createWorkflowLibrary, clipJson } from "../../src/server/workflow-library";
 import type { ServerCore } from "../../src/server/core";
 import type { Services } from "../../src/server/services";

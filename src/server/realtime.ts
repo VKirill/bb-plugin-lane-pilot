@@ -1,5 +1,5 @@
 import { onAttemptChanged } from "../database";
-import { lpChannel, type LpRealtimeKind } from "../realtime-channel";
+import { lpChannel, type LpRealtimeKind } from "@lane-pilot/ui-kit/realtime-channel";
 import type { LanePilotDatabase } from "../database";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 

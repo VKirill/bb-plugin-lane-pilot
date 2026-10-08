@@ -1,6 +1,6 @@
 import * as React from "react";
-import { cn } from "../../lib/utils";
-import { CONTROL_HOVER_TRANSITION } from "./motion.js";
+import { cn } from "../lib/utils";
+import { CONTROL_HOVER_TRANSITION } from "./motion";
 
 type SwitchProps = Omit<
   React.ComponentPropsWithoutRef<"button">,

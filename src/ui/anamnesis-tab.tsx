@@ -7,12 +7,12 @@ import type { AnamnesisRecord, AnamnesisRecordFull, HistoryEntry, Kind, Sensitiv
 import type { AnamnesisRequest, OpName, ResponseOf } from "../anamnesis/ops";
 import { LEVELS, stepsOf, type SkillStep } from "../anamnesis/skills";
 import { t, type I18nKey } from "../../i18n";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import { Switch } from "../../components/ui/switch";
-import { Disclosure } from "./disclosure";
-import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
+import { Badge } from "@lane-pilot/ui-kit";
+import { Button } from "@lane-pilot/ui-kit";
+import { Input } from "@lane-pilot/ui-kit";
+import { Switch } from "@lane-pilot/ui-kit";
+import { Disclosure } from "@lane-pilot/ui-kit";
+import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 
 /**
  * The Anamnesis tab (A6): what Lane Pilot knows about its owner, on the owner's machine. Everything here is the one RPC `anamnesis`

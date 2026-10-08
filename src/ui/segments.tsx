@@ -1,6 +1,6 @@
-import { Button } from "../../components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { CONTROL_H } from "./control-row";
+import { Button } from "@lane-pilot/ui-kit";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
+import { CONTROL_H } from "@lane-pilot/ui-kit";
 
 /**
  * 2 to 5 slices of one set (DESIGN.md): a segment control on a wide column, one select on a phone.

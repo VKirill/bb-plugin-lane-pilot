@@ -1,12 +1,12 @@
 import type { ReactNode } from "react";
 import { t } from "../../i18n";
-import { Label } from "../../components/ui/label";
-import { Switch } from "../../components/ui/switch";
+import { Label } from "@lane-pilot/ui-kit";
+import { Switch } from "@lane-pilot/ui-kit";
 import { asBoolean, sectionKey } from "./page-model";
 import { extraSettingTab } from "./placement";
 import { CatalogField, CatalogFields } from "./catalog-field";
 import { AdvancedRows, SettingsGroup } from "./setting-controls";
-import { HelpSup } from "./help-sup";
+import { HelpSup } from "@lane-pilot/ui-kit";
 import { Pill } from "./pill";
 import type { LpPage } from "./use-lp-page";
 

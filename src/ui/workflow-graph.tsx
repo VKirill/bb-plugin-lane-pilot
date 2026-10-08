@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MiniMap, Panel, ReactFlow, ReactFlowProvider, useReactFlow, type NodeChange } from "@xyflow/react";
 import { t, type Locale } from "../../i18n";
-import { Button } from "../../components/ui/button";
-import { Icon } from "../../components/ui/icon";
+import { Button } from "@lane-pilot/ui-kit";
+import { Icon } from "@lane-pilot/ui-kit";
 import { edgeCaption } from "../workflow/edge-label";
 import type { ViewNode, WorkflowView } from "../workflow/view";
 import { isBranching, layoutGraph, type Direction, type Expansions, type Layout } from "./workflow-layout";

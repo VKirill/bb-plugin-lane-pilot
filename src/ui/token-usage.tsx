@@ -3,9 +3,9 @@ import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
 import { t } from "../../i18n";
 import { PRICES_CHECKED_AT } from "../model-prices";
-import { Button } from "../../components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
+import { Button } from "@lane-pilot/ui-kit";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
+import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 
 type Range = "7d" | "14d" | "30d" | "month";
 type ModelRow = { providerId: string; model: string; input: number; output: number; cached: number; total: number; costUsd: number | null };

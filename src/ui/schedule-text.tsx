@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { ThreadChat, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
 import { t } from "../../i18n";
-import { Button } from "../../components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
-import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
+import { Button } from "@lane-pilot/ui-kit";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
+import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 
 /**
  * «Create by text»: the owner says what to schedule in the project manager's own chat, which already has the `lane_pilot_schedule`

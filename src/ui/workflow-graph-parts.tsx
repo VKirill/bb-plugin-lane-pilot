@@ -1,7 +1,7 @@
 import { memo, type CSSProperties } from "react";
 import { BaseEdge, EdgeLabelRenderer, Handle, Position, getBezierPath, useStore, type Edge, type EdgeProps, type Node, type NodeProps } from "@xyflow/react";
 import { t, type I18nKey, type Locale } from "../../i18n";
-import { Icon, type IconName } from "../../components/ui/icon";
+import { Icon, type IconName } from "@lane-pilot/ui-kit";
 import type { NodeTone, ViewEdge, ViewNode } from "../workflow/view";
 import { PORT_STEP, type Direction } from "./workflow-layout";
 import { nodeTitle } from "./workflow-titles";

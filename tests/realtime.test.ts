@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import { createAttempt, createRun, openDatabase, transitionAttempt } from "../src/database";
 import { createRealtime, mountHelperSignals, REALTIME_WINDOW_MS } from "../src/server/realtime";
-import { lpChannel, parseLpSignal } from "../src/realtime-channel";
+import { lpChannel, parseLpSignal } from "@lane-pilot/ui-kit/realtime-channel";
 
 beforeEach(() => { vi.useFakeTimers(); });
 afterEach(() => { vi.useRealTimers(); });

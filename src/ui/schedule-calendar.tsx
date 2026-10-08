@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
 import { t, type I18nKey } from "../../i18n";
-import { Button } from "../../components/ui/button";
+import { Button } from "@lane-pilot/ui-kit";
 import type { RunView, ScheduleView } from "../schedule/views";
-import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
+import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { RunPill, errorText, fill, fmtClock } from "./schedule-parts";
 import { addDays, addMonths, conflictKeys, eventsByDay, rangeOf, startOfDay, viewDays, CONFLICT_WINDOW_MS, type CalendarEvent, type CalendarView } from "./schedule-model";
 

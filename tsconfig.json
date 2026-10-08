@@ -15,5 +15,5 @@
     "resolveJsonModule": true,
     "skipLibCheck": false
   },
-  "include": ["server.ts", "host.ts", "app.tsx", "i18n.ts", "src", "tests", "components", "lib", "packages"]
+  "include": ["server.ts", "host.ts", "app.tsx", "i18n.ts", "src", "tests", "packages"]
 }

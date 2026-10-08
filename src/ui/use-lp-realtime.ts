@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useRealtime, useRealtimeConnectionState } from "@get-bb/plugin-sdk/app";
-import { LIVE_FALLBACK_MS, OFFLINE_POLL_MS, lpChannel, parseLpSignal, type LpRealtimeKind, type LpRealtimeSignal } from "../realtime-channel";
+import { LIVE_FALLBACK_MS, OFFLINE_POLL_MS, lpChannel, parseLpSignal, type LpRealtimeKind, type LpRealtimeSignal } from "@lane-pilot/ui-kit/realtime-channel";
 
 /**
  * Calls `onChange` when the server says one of `kinds` changed in the project, and once more when the live connection

@@ -2,9 +2,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
 import { t, type I18nKey } from "../../i18n";
-import { Button } from "../../components/ui/button";
+import { Button } from "@lane-pilot/ui-kit";
 import type { ViewEdge, ViewNode } from "../workflow/view";
-import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
+import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { pickRun, runView, stepStatus, type NodeRun, type RunSnapshot, type RunStep } from "./workflow-run";
 
 /**

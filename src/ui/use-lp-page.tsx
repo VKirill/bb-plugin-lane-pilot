@@ -22,10 +22,10 @@ import {
   type Locale,
   type LocalePreference,
 } from "../../i18n";
-import { Button } from "../../components/ui/button";
+import { Button } from "@lane-pilot/ui-kit";
 import { useLpRealtime } from "./use-lp-realtime";
 import { readRunsWindow } from "./runs-window";
-import { chromeIsCompact, contentStacksControls, useObservedWidth } from "./panel-layout";
+import { chromeIsCompact, contentStacksControls, useObservedWidth } from "@lane-pilot/ui-kit";
 import { userVisibleProjects } from "../project-scope";
 import { DOCS_DEFAULT_SELECTION } from "../stages/docs-defaults";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "../lp-defaults";

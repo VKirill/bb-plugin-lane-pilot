@@ -1,9 +1,9 @@
 import * as React from "react";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 
-import { cn } from "../../lib/utils";
-import { usePortalScopeProps } from "../../lib/portal-scope";
-import { isLastInputKeyboard } from "./overlay-trigger.js";
+import { cn } from "../lib/utils";
+import { usePortalScopeProps } from "../lib/portal-scope";
+import { isLastInputKeyboard } from "./overlay-trigger";
 
 const TooltipProvider = TooltipPrimitive.Provider;
 

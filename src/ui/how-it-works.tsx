@@ -1,5 +1,5 @@
 import { t, type I18nKey } from "../../i18n";
-import { Disclosure } from "./disclosure";
+import { Disclosure } from "@lane-pilot/ui-kit";
 import { Pill } from "./pill";
 
 const STEPS = ["order", "pm", "workflow", "writer", "checks", "accept", "learn"] as const;

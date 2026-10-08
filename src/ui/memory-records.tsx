@@ -3,9 +3,9 @@ import { useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { rpcContract } from "../contracts";
 import { t } from "../../i18n";
-import { Badge } from "../../components/ui/badge";
-import { Button } from "../../components/ui/button";
-import { Disclosure } from "./disclosure";
+import { Badge } from "@lane-pilot/ui-kit";
+import { Button } from "@lane-pilot/ui-kit";
+import { Disclosure } from "@lane-pilot/ui-kit";
 
 type MemoryRecord = { id: string; kind: "core" | "note"; audience: string; content: string; concepts: string[]; createdAt: number; rule: boolean };
 

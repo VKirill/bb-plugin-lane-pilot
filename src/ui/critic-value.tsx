@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
 import { t } from "../../i18n";
-import { Button } from "../../components/ui/button";
-import { Disclosure } from "./disclosure";
+import { Button } from "@lane-pilot/ui-kit";
+import { Disclosure } from "@lane-pilot/ui-kit";
 
 type Stats = { days:number; stats:Array<{
   stage:string; runs:number; approved:number; blocked:number; skipped:number; blockShare:number | null;

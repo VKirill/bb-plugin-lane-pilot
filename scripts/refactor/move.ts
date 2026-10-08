@@ -30,7 +30,10 @@ function walkAll(dir: string): string[] {
 }
 
 const moves = new Map<string, { to: string; entry?: string }>();
-for (const m of map.moves ?? []) if (existsSync(join(ROOT, m.from))) moves.set(m.from, { to: m.to, entry: m.entry });
+for (const m of map.moves ?? []) {
+  if (existsSync(join(ROOT, m.from))) moves.set(m.from, { to: m.to, entry: m.entry });
+  else if (!existsSync(join(ROOT, m.to))) throw new Error(`neither ${m.from} nor ${m.to} exists`);
+}
 for (const d of map.dirs ?? []) {
   const from = d.from.replace(/\/?$/, "/");
   if (!existsSync(join(ROOT, from))) continue;
@@ -136,6 +139,7 @@ for (const [pkg, list] of byPkg) {
     const target = item.entry ?? "index";
     if (item.entry) subpaths.add(item.entry);
     const indexFile = join(dir, "src", `${target}.ts`);
+    if (indexFile === join(ROOT, item.file)) continue; // the moved file is the entry itself (subpath export)
     const line = `export * from "./${stripExt(posix.relative(`packages/${pkg}/src`, item.file)).replace(/^(\.\/)?/, "")}";\n`;
     const current = existsSync(indexFile) ? readFileSync(indexFile, "utf8") : "";
     if (!current.includes(line.trim())) writeFileSync(indexFile, current + line);
