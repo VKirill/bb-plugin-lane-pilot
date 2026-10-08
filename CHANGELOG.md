@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **The goal reaches every agent step, also inside a subworkflow (live run on 0.1.195, P1).** `lp.analyze`'s `gather`, `assess` and `second_opinion` (and the agent nodes of `lp.plan`, `lp.review`, `lp.brainstorm`, `lp.close`) have no `with`, so their brief had no `<inputs>` and the analyst reported `"goal": null`; a child run also had no goals, so no `<goals-of-this-run>` block appeared and the parent's goal audit then blocked the run (`goal_audit: not met: request`). Now an agent step is always given the workflow's `$inputs` (its own `with` wins over an input of the same name; a step that continues a thread was given them earlier in it), and `subworkflow` starts the child run with the parent's goals so its helpers are reminded of them. Only the parent run is audited against the goals. Tests: `tests/workflow/goal-reaches-agents.test.ts` (every `lp.*` agent node on stubs, direct and through `analyze-code`), `tests/workflow/goals.test.ts`.
+
 ## 0.1.195
 
 - **OpenCode helpers start again.** The host contract of `prepareOpencodeMinimal` refused the `requestedHostId` every host call carries, so on the live hub (0.1.194) each OpenCode helper's minimal-config preparation failed and the helper was refused (fail-closed). A new test checks every server `host.call` against its host contract.

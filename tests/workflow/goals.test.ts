@@ -108,6 +108,19 @@ describe("the goals of a run", () => {
     expect(engine.lastAudit(started.runId)).toMatchObject({ verdict: "unavailable", error: "no PM chat to audit in" });
   });
 
+  it("pass to a child run for its helpers, but only the parent run is audited against them", async () => {
+    const { engine, seen } = setup(async ({ goals }) => all(goals.map((goal) => goal.id)));
+    const inner = wf({ id: "inner" });
+    const outer = wf({ id: "outer", nodes: [{ id: "call", type: "subworkflow", workflow: "inner", inputs: { query: "$inputs.query" } }, { id: "done", type: "action", action: "emit", map: { result: "call.result" } }],
+      outputs: [{ name: "result", type: "string", required: false }], edges: [{ from: "start", to: "call" }, { from: "call", to: "done" }] });
+    (engine as unknown as { options: { resolveWorkflow?: unknown } }).options.resolveWorkflow = (id: string) => (id === "inner" ? inner : null);
+    const started = engine.start({ workflow: outer, inputs: INPUTS, goals: GOALS });
+    expect((await started.done).status).toBe("succeeded");
+    const child = rows<{ id: string; goals_json: string }>(engine.journal.db, "SELECT id, goals_json FROM lane_pilot_wf_run WHERE parent_run_id=?", started.runId)[0]!;
+    expect(parseGoals(child.goals_json)).toEqual(GOALS);
+    expect(seen).toHaveLength(1);
+  });
+
   it("cost nothing for a run without goals, and a run with goals but no auditor closes as before", async () => {
     const plain = setup(async () => { throw new Error("must not be called"); });
     expect(await plain.engine.start({ workflow: wf(), inputs: INPUTS }).done).toMatchObject({ status: "succeeded" });

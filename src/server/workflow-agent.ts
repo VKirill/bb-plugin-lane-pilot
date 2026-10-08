@@ -200,7 +200,9 @@ export function agentRequest(ctx: StepContext<ChainRuntime>, node: Extract<Graph
   const method = roleMethod(spec.helper.startsWith("specialist:") ? "" : node.role);
   const title = node.title?.en ?? node.label ?? node.id;
   const intoThread = via.mode === "same-session" && node.session !== "new" ? via.fromThreadId ?? null : null;
-  const inputs = { ...ctx.input.with };
+  // The step's own `with` over the workflow's `$inputs`: a fragment's goal reaches its helper even where no edge or node maps it. A step that
+  // continues a thread was given the workflow's inputs earlier in it.
+  const inputs = { ...(intoThread ? {} : ctx.inputs), ...ctx.input.with };
   // K7: the first step and every third remind the helper what the whole run is for.
   const goals = ctx.reground ? goalsBlock(ctx.goals) : undefined;
   const body = intoThread

@@ -41,6 +41,8 @@ export interface StepContext<R = unknown> {
   mode: QualityMode;
   /** K7: the goals of the run, and whether this step's brief should repeat them (the first step, then every third). */
   goals: RunGoal[]; reground: boolean;
+  /** The inputs the run was started with (`$inputs`): an agent step is given them whole, so a fragment's goal reaches its helper without a `with` on every node. */
+  inputs: Record<string, unknown>;
   /** sha256(run | step | attempt): put it in the metadata of a spawned thread to find a lost spawn again (with the vote number, when votes > 1). */
   spawnKey: string; signal: AbortSignal;
   /** Set when the node has `votes` > 1: this is one of `of` independent runs of the same step. */
@@ -340,8 +342,9 @@ export class WorkflowEngine {
   private async closeAfterAudit(run: RunRow): Promise<"closed" | "blocked" | "stop"> {
     const j = this.journal;
     const close = (reason: string | null) => { j.setRunStatus(run.id, ["running", "waiting"], "succeeded", reason); return "closed" as const; };
+    // A child run carries the goals so its helpers are reminded of them; it is the parent run, which owns the whole outcome, that is audited.
     const goals = parseGoals(run.goals_json), audit = this.options.auditGoals;
-    if (!goals.length || !audit) return close(null);
+    if (!goals.length || !audit || run.parent_run_id) return close(null);
     const sha = goalsSha(goals);
     const last = this.lastAudit(run.id);
     if (last?.sha === sha && last.verdict === "pass") return close(null);
@@ -615,7 +618,7 @@ export class WorkflowEngine {
     return {
       runId: run.id, stepKey: step.step_key, nodeId: node.id, node, workflow: c.wf, attempt, input, runtime: this.runtimeOf(run), signal, mode: run.mode as QualityMode,
       // `run` was read before this step was counted: the step is number steps_used + 1 of the run.
-      goals, reground: goals.length > 0 && regroundDue(run.steps_used + 1),
+      goals, reground: goals.length > 0 && regroundDue(run.steps_used + 1), inputs: asObject(run.inputs_json),
       spawnKey: this.spawnKeyOf(run.id, step, attempt),
       resolve,
       render: (template) => String(renderValue(template, (ref, text) => { const found = env.read(ref); if (!found.ran) throw new MissingValueError("reference_missing", `"${text}" has no value yet`); return found.value; }, run.mode) ?? ""),
@@ -1127,7 +1130,7 @@ export class WorkflowEngine {
         const mapped = Object.fromEntries(Object.entries(node.inputs).map(([name, ref]) => [name, ctx.resolve(ref)]).filter(([, value]) => value !== undefined));
         const inputs = { ...mapped, ...ctx.input.with };
         const known = new Set(child.inputs.map((field) => field.name));
-        const started = this.start({ workflow: child, inputs: Object.fromEntries(Object.entries(inputs).filter(([name]) => known.has(name))), key: `child:${ctx.runId}:${ctx.stepKey}`, mode: ctx.mode,
+        const started = this.start({ workflow: child, inputs: Object.fromEntries(Object.entries(inputs).filter(([name]) => known.has(name))), key: `child:${ctx.runId}:${ctx.stepKey}`, mode: ctx.mode, goals: ctx.goals,
           parent: { runId: ctx.runId, stepKey: ctx.stepKey }, depth, link: { projectId: run.project_id ?? undefined, runId: run.link_run_id ?? undefined, taskId: run.link_task_id ?? undefined } });
         return this.childOutcome(await started.done, node);
       },
