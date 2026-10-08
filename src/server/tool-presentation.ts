@@ -67,6 +67,7 @@ export const TOOL_PRESENTATION: Record<string, Entry> = {
   lane_pilot_workflow_capabilities: row("Checking what a chain can use", "Checked what a chain can use", "Смотрю, что доступно цепочке", "Доступное цепочке проверено", true),
   lane_pilot_workflow_draft_test: row("Testing the workflow on stubs", "Tested the workflow on stubs", "Проверяю цепочку на заглушках", "Цепочка проверена на заглушках"),
   lane_pilot_workflow_draft_publish: row("Publishing the workflow", "Published the workflow", "Публикую цепочку", "Цепочка опубликована"),
+  lane_pilot_schedule: row("Working with the schedule", "Worked with the schedule", "Работаю с расписанием", "С расписанием поработал"),
   lane_pilot_wait_specialist: row("Waiting for a specialist", "Waited for a specialist", "Жду специалиста", "Дождался специалиста", true),
 };
 

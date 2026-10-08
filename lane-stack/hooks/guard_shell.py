@@ -1112,9 +1112,13 @@ _ENV_CATALOG_WRITES = {"set", "delete", "export", "import-machine-env"}
 _LANE_PILOT_PLUGIN_IDS = {"lane-pilot", "bb-plugin-lane-pilot"}
 _LANE_PILOT_RPC_WRITES = re.compile(
     r"^(?:(?:save|reset|set)_.*|stack_install|stack_connect|stack_rollback|native_install_start|decide_rule_proposal"
-    r"|rule_set_audience|memory_record_delete|prepare_native_session)$"
+    r"|rule_set_audience|memory_record_delete|prepare_native_session"
+    # The schedule board: what the hub runs on its own, with the owner's accounts and machines. An agent asks through lane_pilot_schedule.
+    r"|schedule_(?:upsert|delete|pause|resume|run_now|cancel_run))$"
 )
 _LANE_PILOT_CLI_WRITES = {"configure", "budget", "host-run-cli", "host-install", "host-rollback", "host-connect-opencode", "host-import-config"}
+# `bb lane-pilot schedule <sub>`: listing, showing and the history are reads; the rest changes or starts scheduled work.
+_LANE_PILOT_SCHEDULE_WRITES = {"create", "update", "delete", "pause", "resume", "run-now", "cancel-run"}
 _SECRET_CLI_WRAPPERS = {
     "sudo", "doas", "nohup", "env", "command", "exec", "time", "nice", "ionice", "stdbuf", "timeout", "xargs", "builtin", "setsid", "unbuffer",
 }
@@ -1133,7 +1137,8 @@ _BASE64_TO_SHELL = re.compile(
 )
 _SECRET_CLI_TEXT = re.compile(
     r"\benv-catalog\b[^;&|\n]*?\b(?:set|delete|export|import-machine-env)\b"
-    r"|\bplugin\s+rpc\s+call\s+(?:env-catalog\b|(?:bb-plugin-)?lane-pilot\s+(?:save_|reset_|set_))"
+    r"|\bplugin\s+rpc\s+call\s+(?:env-catalog\b|(?:bb-plugin-)?lane-pilot\s+(?:save_|reset_|set_|schedule_(?:upsert|delete|pause|resume|run_now|cancel_run)))"
+    r"|\blane-pilot\s+schedule\s+(?:create|update|delete|pause|resume|run-now|cancel-run)\b"
 )
 
 
@@ -1170,8 +1175,12 @@ def _bb_args_error(args: list[str], strict: bool = False) -> str | None:
                 return f"bb plugin rpc call {plugin_id} {method}"
     if words and words[0] in _LANE_PILOT_PLUGIN_IDS | {"lane-pilot"} and len(words) > 1 and words[1] in _LANE_PILOT_CLI_WRITES:
         return f"bb {words[0]} {words[1]}"
+    if words and words[0] in _LANE_PILOT_PLUGIN_IDS | {"lane-pilot"} and len(words) > 2 and words[1] == "schedule" and (words[2] in _LANE_PILOT_SCHEDULE_WRITES or any(ch in words[2] for ch in "$`")):
+        return f"bb {words[0]} schedule {words[2]}"
     if len(words) > 3 and words[:3] == ["plugin", "run", "lane-pilot"] and words[3] in _LANE_PILOT_CLI_WRITES:
         return f"bb plugin run lane-pilot {words[3]}"
+    if len(words) > 4 and words[:3] == ["plugin", "run", "lane-pilot"] and words[3] == "schedule" and (words[4] in _LANE_PILOT_SCHEDULE_WRITES or any(ch in words[4] for ch in "$`")):
+        return f"bb plugin run lane-pilot schedule {words[4]}"
     return None
 
 
@@ -1312,9 +1321,9 @@ def main() -> None:
         pm_session = key in LANE_PILOT_PM_AGENT_TYPES or bool(key in PM_AGENTS and os.environ.get("LANE_PILOT_AGENT_TYPE"))
         secret_cli = _secret_cli_error(shell_command(p), strict=not pm_session)
         if secret_cli:
-            emit_deny(client, f"[env-guard] {secret_cli} is not available to Lane Pilot agents: the owner changes Env Catalog entries and Lane Pilot's "
-                      "settings (the Env Catalog tab, Lane Pilot settings), not an agent's shell. For a missing key use env_request or "
-                      "`bb env-catalog request <NAME>`; the owner gets a form.")
+            emit_deny(client, f"[env-guard] {secret_cli} is not available to Lane Pilot agents: the owner changes Env Catalog entries, Lane Pilot's "
+                      "settings and schedules (the Env Catalog tab, Lane Pilot settings, the schedule board), not an agent's shell. For a missing key use "
+                      "env_request or `bb env-catalog request <NAME>`; the owner gets a form. For a schedule use the PM tool lane_pilot_schedule: it asks the owner.")
     if is_helper_role(key):
         if is_edit_tool(name):
             path = file_path(p)

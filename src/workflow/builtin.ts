@@ -12,6 +12,7 @@ import grillPlan from "../../workflows/grill-plan.json";
 import impeccableBuild from "../../workflows/impeccable-build.json";
 import insPost from "../../workflows/ins.post.json";
 import insightsPost from "../../workflows/insights-post.json";
+import invoiceSend from "../../workflows/invoice-send.json";
 import issueDiscover from "../../workflows/issue-discover.json";
 import issueFull from "../../workflows/issue-full.json";
 import issueQuick from "../../workflows/issue-quick.json";
@@ -55,6 +56,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "impeccable-build.json", value: impeccableBuild },
   { name: "ins.post.json", value: insPost },
   { name: "insights-post.json", value: insightsPost },
+  { name: "invoice-send.json", value: invoiceSend },
   { name: "issue-discover.json", value: issueDiscover },
   { name: "issue-full.json", value: issueFull },
   { name: "issue-quick.json", value: issueQuick },

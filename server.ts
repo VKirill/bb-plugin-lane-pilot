@@ -38,6 +38,7 @@ import { createWriterStart } from "./src/server/writer/start";
 import { createWriterDispatch } from "./src/server/writer/dispatch";
 import { createWorkflowEngine } from "./src/server/workflow";
 import { createWorkflowTriggersService } from "./src/server/workflow-triggers-live";
+import { createScheduleService } from "./src/server/schedule-service";
 import { relayFor } from "./src/server/relay";
 import { installThreadSignals } from "@lane-pilot/thread-observe";
 import { mountLifecycleEvents } from "./src/server/lifecycle-events";
@@ -81,6 +82,7 @@ export default async function plugin(bb: BbPluginApi) {
     { canary: createCanary(ctx) },
     { ruleScan: createRuleScan(ctx, services) },
     createStability(ctx, services),
+    createScheduleService(ctx, services),
   );
   mountLifecycleEvents(ctx, { onQueued: (name, entry) => {
     const id = entry && typeof entry === "object" ? Reflect.get(entry, "id") : undefined;
@@ -193,5 +195,9 @@ export default async function plugin(bb: BbPluginApi) {
   // Schedules of workflows follow their files: a workflow unpublished or edited outside the tab loses or changes its automation within the hour.
   scheduleIsolated(bb, "workflow-schedules", "23 * * * *", () => { for (const projectId of services.workflowTriggers.scheduledProjects()) services.workflowTriggers.syncSoon(projectId); }, { timeoutMs: 60_000 });
   scheduleIsolated(bb, "runs-sweep", "2,17,32,47 * * * *", sweepRuns, { timeoutMs: 10 * 60_000 });
+  // The schedule board (src/schedule): every minute the due fire times become runs (keyed by schedule and time, so a repeated tick adds
+  // nothing) and the runs are started and watched for up to 50 s. Runs live in the database: a reload loses no tick and no run.
+  scheduleIsolated(bb, "schedule-board-tick", "* * * * *", (signal) => services.schedules.tick(signal).then(() => undefined,
+    (cause) => pluginStopped(cause) ? undefined : bb.log.warn(`Lane Pilot schedule tick skipped: ${cause instanceof Error ? cause.message : String(cause)}`)), { timeoutMs: 2 * 60_000 });
   bb.log.info("Lane Pilot PM-to-writer pipeline loaded");
 }

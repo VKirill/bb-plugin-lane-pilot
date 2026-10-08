@@ -1,4 +1,6 @@
 import type { CouncilApi } from "./council";
+import type { ErrandsApi } from "./errands";
+import type { ScheduleService } from "./schedule-service";
 import type { RuleScanApi } from "./rule-scan";
 import type { Canary } from "./canary";
 import type { createActivation } from "./activation";
@@ -136,4 +138,8 @@ export interface Services {
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
   workflowAgents: WorkflowEngineApi["workflowAgents"];
   workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
+  /** The errand starter of the PM tools (also used by scheduled errands); set when the tools are mounted. */
+  errands: ErrandsApi;
+  /** The schedule board: scheduler, definitions, previews (src/server/schedule-service.ts). */
+  schedules: ScheduleService;
 }

@@ -23,6 +23,7 @@ import { scanCritiqueCoverage } from "./stages/critique-coverage";
 import { prepareSandboxedCommandLine, releaseSandboxedCommandLine, runSandboxedCommandOnHost } from "./verification/sandbox";
 import { gitOwnershipChangedPaths, resolveGitOwnershipBase } from "./verification/git-ownership";
 import { runCliOnHost, runCommandOnHost, writePmSettingsOnHost } from "./cli-run";
+import { runScriptOnHost } from "./script-run";
 import { execFile } from "node:child_process";
 import { discoverClaudeAgents, prepareNativeClaude } from "./native-claude-host";
 import { prepareOpencodeMinimal } from "./opencode-min-config";
@@ -112,7 +113,7 @@ export const gateBisect: ExperimentalHostRpcHandlers<typeof hostContract>["gateB
 /** Background jobs (B4): ordinary short calls; the long work runs in a process of its own, see src/jobs.ts. */
 export const jobStart: ExperimentalHostRpcHandlers<typeof hostContract>["jobStart"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
-  jobId:await startHostJob({kind:input.kind,input:input.input,timeoutSec:input.timeoutSec}),
+  jobId:await startHostJob({kind:input.kind,input:input.input,timeoutSec:input.timeoutSec,...(input.key?{key:input.key}:{})}),
 });
 
 export const jobStatus: ExperimentalHostRpcHandlers<typeof hostContract>["jobStatus"] = async (input) => ({
@@ -475,6 +476,10 @@ export const connectOpencode: ExperimentalHostRpcHandlers<typeof hostContract>["
 
 export const runCli: ExperimentalHostRpcHandlers<typeof hostContract>["runCli"] = async (input) => (
   runCliOnHost(input)
+);
+
+export const runScript: ExperimentalHostRpcHandlers<typeof hostContract>["runScript"] = async (input) => (
+  runScriptOnHost(input)
 );
 
 export const runCommand: ExperimentalHostRpcHandlers<typeof hostContract>["runCommand"] = async (input) => (

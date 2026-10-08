@@ -17,6 +17,7 @@ import { mountWorkflowTools } from "./workflow-tools";
 import { mountSelfRepair } from "./self-repair";
 import { mountHookTimeoutWatch } from "./hook-timeouts";
 import { mountWorkflowArchitect } from "./workflow-architect";
+import { mountScheduleTools } from "./schedule-tools";
 import { registerObservedTool, ToolError } from "./tool-result";
 import { compactDispatchReply, compactReceipt, stageDetail } from "./stage-brief";
 import { createWriterAnswer } from "./writer/answer";
@@ -351,12 +352,13 @@ export function registerTools(ctx: ServerCore, services: Services) {
   mountMemorySync(ctx);
   mountCouncilTools(ctx, services.council);
   mountSpecialists(ctx);
-  mountErrands(ctx);
+  services.errands = mountErrands(ctx);
   mountRelay(ctx);
   mountWorkflowTools(ctx, services);
   mountSelfRepair(ctx);
   mountHookTimeoutWatch(ctx);
   mountWorkflowArchitect(ctx, services);
+  mountScheduleTools(ctx, services);
 
   bb.agents.configure((context) => {
     const role = context.pluginMetadata.role;

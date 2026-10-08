@@ -12,6 +12,7 @@ import { workspaceProviderRpc } from "./rpc/workspace-provider";
 import { tokenUsageRpc } from "./rpc/token-usage";
 import { workflowsRpc } from "./rpc/workflows";
 import { workflowOpsRpc } from "./rpc/workflow-ops";
+import { schedulesRpc } from "./rpc/schedules";
 import { councilRpc } from "./council";
 import { selfRepairRpc } from "./self-repair";
 import { deployIncidentRpc } from "./deploy-incident";
@@ -38,6 +39,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...workspaceProviderRpc(ctx),
     ...workflowsRpc(ctx, services),
     ...workflowOpsRpc(ctx, services),
+    ...schedulesRpc(ctx, services),
     ...councilRpc(ctx.db, services.council),
     ...selfRepairRpc(ctx),
     ...deployIncidentRpc(ctx),

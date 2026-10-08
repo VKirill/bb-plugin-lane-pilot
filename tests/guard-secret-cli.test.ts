@@ -90,6 +90,19 @@ const FORMS: Array<[string, string]> = [
   ["rpc after flags", "bb --json plugin rpc call lane-pilot save_setting --input-file x.json"],
   ["lane-pilot configure", "bb lane-pilot configure '{}'"],
   ["lane-pilot budget", "bb lane-pilot budget proj run.max_attempts=99"],
+  ["schedule create", "bb lane-pilot schedule create '{\"name\":\"x\"}'"],
+  ["schedule update", "bb lane-pilot schedule update sch_1 '{}'"],
+  ["schedule delete", "bb lane-pilot schedule delete sch_1"],
+  ["schedule pause", "bb lane-pilot schedule pause sch_1"],
+  ["schedule resume", "bb --json lane-pilot schedule resume sch_1"],
+  ["schedule run-now", "bb lane-pilot schedule run-now sch_1"],
+  ["schedule dynamic", "bb lane-pilot schedule $SUB sch_1"],
+  ["schedule plugin run", "bb plugin run lane-pilot schedule create '{}'"],
+  ["schedule in sh -c", "sh -c 'bb lane-pilot schedule create {}'"],
+  ["rpc schedule_upsert", "bb plugin rpc call lane-pilot schedule_upsert --input-file x.json"],
+  ["rpc schedule_run_now", "bb plugin rpc call lane-pilot schedule_run_now --input '{\"id\":\"sch_1\"}'"],
+  ["rpc schedule_delete plugin id", "bb plugin rpc call bb-plugin-lane-pilot schedule_delete --input '{}'"],
+  ["rpc schedule_pause piped", "echo x | xargs bb plugin rpc call lane-pilot schedule_pause"],
   ["dynamic subcommand", "bb env-catalog $SUB A B"],
   ["dynamic executable", "$(which bb) env-catalog set A B"],
   ["variable executable", "$MYBB env-catalog set A B"],
@@ -114,7 +127,7 @@ describe("Lane Pilot agents cannot change the Env Catalog or Lane Pilot's settin
       const verdicts = await runMany(FORMS.map(([, command]) => ({ command, agentType, env })));
       const missed = FORMS.filter((_, index) => !isDenied(verdicts[index]!)).map(([name]) => name);
       expect(missed).toEqual([]);
-    });
+    }, 60_000);
   }
 
   it("leaves reading, requesting and ordinary commands alone", async () => {
@@ -127,6 +140,12 @@ describe("Lane Pilot agents cannot change the Env Catalog or Lane Pilot's settin
       "bb plugin rpc call lane-pilot get_screen --input-file /tmp/q.json",
       "bb lane-pilot workflow-trigger proj wf '{}'",
       "bb lane-pilot health",
+      "bb lane-pilot schedule list --json",
+      "bb lane-pilot schedule show sch_1",
+      "bb lane-pilot schedule history sch_1",
+      "bb plugin rpc call lane-pilot schedule_list --input '{}'",
+      "bb plugin rpc call lane-pilot schedule_runs --input '{\"id\":\"sch_1\"}'",
+      "bb plugin rpc call lane-pilot schedule_preview --input-file /tmp/d.json",
       "git commit -m 'docs: bb env-catalog set is for the owner'",
       "grep -rn 'env-catalog set' docs",
       "echo 'bb env-catalog set A B' > /tmp/note.txt",

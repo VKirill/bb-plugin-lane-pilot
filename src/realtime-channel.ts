@@ -1,5 +1,5 @@
 /** What the server and the screens agree on for live updates: one channel per project, a small «what changed» payload. */
-export const LP_REALTIME_KINDS = ["helpers", "council", "rules", "workflow", "workflow-draft"] as const;
+export const LP_REALTIME_KINDS = ["helpers", "council", "rules", "workflow", "workflow-draft", "schedule"] as const;
 export type LpRealtimeKind = (typeof LP_REALTIME_KINDS)[number];
 /** `runId` rides on a `workflow` signal (the run whose steps changed), `draftId` on a `workflow-draft` one (the draft that was patched). */
 export type LpRealtimeSignal = { kind: LpRealtimeKind; threadId?: string; runId?: string; draftId?: string };

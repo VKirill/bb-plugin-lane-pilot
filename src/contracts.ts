@@ -1,6 +1,7 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { stageReceiptSchema } from "./stages/contract";
+import { scheduleRpcContract } from "./schedule/contract";
 
 /** A stage row as the screen lists it: no result body (`get_stage_result` loads it), only whether there is one. */
 const stageSummarySchema = stageReceiptSchema.omit({ result: true }).extend({ hasResult: z.boolean() }).strict();
@@ -110,7 +111,7 @@ export type TaskV2 = z.infer<typeof taskV2Schema>;
  * Host calls that run as background jobs: a separate process the host daemon's deadline cannot cut off (B4). A kind is
  * the name of the ordinary host method whose handler the job runs; its input is that method's own input.
  */
-export const HOST_JOB_KINDS = ["detect", "install", "rollback", "snapshot", "importConfig", "connectOpencode", "coexistenceOperation", "coexistenceInventory", "gitIntegrate", "gitPrepareWorktree", "runSandboxedCommand", "runBrowserQa", "gateRun", "gateBisect"] as const;
+export const HOST_JOB_KINDS = ["detect", "install", "rollback", "snapshot", "importConfig", "connectOpencode", "coexistenceOperation", "coexistenceInventory", "gitIntegrate", "gitPrepareWorktree", "runSandboxedCommand", "runBrowserQa", "gateRun", "gateBisect", "runScript"] as const;
 export type HostJobKind = (typeof HOST_JOB_KINDS)[number];
 const hostJobId = z.string().regex(/^job_[a-z0-9]{10,40}$/);
 const hostJobRef = z.object({ requestedHostId:z.string().min(1), jobId:hostJobId }).strict();
@@ -315,7 +316,8 @@ export const hostContract = defineRpcContract({
     output: z.object({ hostId:z.string(), status:z.enum(["synced","up-to-date","dirty","conflict","failed"]), head:z.string().nullable(), reason:z.string().nullable(), conflicts:z.array(z.string()).optional() }).strict(),
   },
   jobStart: {
-    input: z.object({ requestedHostId:z.string().min(1), kind:z.enum(HOST_JOB_KINDS), input:z.record(z.string(), z.unknown()), timeoutSec:z.number().int().min(10).max(10_800) }).strict(),
+    // `key`: one logical job; a second start with the same key returns the first job (additive; an older host ignores it).
+    input: z.object({ requestedHostId:z.string().min(1), kind:z.enum(HOST_JOB_KINDS), input:z.record(z.string(), z.unknown()), timeoutSec:z.number().int().min(10).max(10_800), key:z.string().min(1).max(200).optional() }).strict(),
     output: z.object({ hostId:z.string(), jobId:hostJobId }).strict(),
   },
   jobStatus: {
@@ -568,6 +570,22 @@ export const hostContract = defineRpcContract({
       goodSha:z.string().regex(/^[a-f0-9]{7,64}$/), badSha:z.string().regex(/^[a-f0-9]{7,64}$/), timeoutSec:z.number().int().min(1).max(7200) }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["found", "none", "failed"]), commit:z.string().nullable(), reason:z.string().nullable() }).strict(),
   },
+  // A scheduled script (schedule board): runs as a host job so a reload of the hub loses the poll, not the script.
+  runScript: {
+    input: z.object({
+      requestedHostId: z.string().min(1),
+      command: z.string().min(1).max(32_000),
+      cwd: z.string().startsWith("/"),
+      timeoutSec: z.number().int().min(1).max(10_800),
+      /** Env Catalog values for this run (by variable name): in its environment only, masked in the output. */
+      env: z.record(secretNameSchema, z.string().max(65_536)).optional(),
+      maxOutputBytes: z.number().int().min(1024).max(512 * 1024).optional(),
+    }).strict(),
+    output: z.object({
+      hostId: z.string(), exitCode: z.number().int(), stdout: z.string(), stderr: z.string(),
+      truncated: z.boolean(), timedOut: z.boolean(), durationMs: z.number().int().nonnegative(),
+    }).strict(),
+  },
   runCommand: {
     input: z.object({
       requestedHostId: z.string().min(1),
@@ -816,6 +834,7 @@ const runViewSchema = z.object({
 }).strict();
 
 export const rpcContract = defineRpcContract({
+  ...scheduleRpcContract,
   get_preferences: {
     input: z.object({ suggestedLocale: z.enum(["en", "ru"]) }).strict(),
     output: z.object({ locale: z.enum(["en", "ru"]), preference: z.enum(["auto", "en", "ru"]), lastProjectId: z.string().nullable() }).strict(),

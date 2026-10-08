@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { closeSync, openSync } from "node:fs";
 import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -31,7 +31,9 @@ export type JobStatus = {
   error: string | null;
 };
 
-type JobMeta = { jobId: string; kind: HostJobKind; startedAt: number; timeoutSec: number; pid: number | null };
+type JobMeta = { jobId: string; kind: HostJobKind; startedAt: number; timeoutSec: number; pid: number | null; key?: string; scrubInput?: boolean };
+/** Kinds whose input carries secret values: the runner deletes input.json once it has read it. */
+const SCRUB_INPUT: readonly HostJobKind[] = ["runScript"];
 type JobResult = { ok: true; value: unknown } | { ok: false; error: string };
 
 const JOB_ID = /^job_[a-z0-9]{10,40}$/;
@@ -52,10 +54,11 @@ function jobDir(jobId: string, options: JobOptions): string {
  * writes result.json last. Plain JavaScript on purpose: it is handed to `node -e`, so it imports only node modules.
  */
 const RUNNER = `
-import { readFileSync, writeFileSync, renameSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
 const [moduleUrl, dir] = process.argv.slice(1);
 const job = JSON.parse(readFileSync(dir + "/job.json", "utf8"));
 const input = JSON.parse(readFileSync(dir + "/input.json", "utf8"));
+if (job.scrubInput) { try { unlinkSync(dir + "/input.json"); } catch {} }
 const beat = () => { try { writeFileSync(dir + "/heartbeat", String(Date.now())); } catch {} };
 beat();
 setInterval(beat, ${HEARTBEAT_MS}).unref();
@@ -119,18 +122,58 @@ async function pruneJobs(options: JobOptions): Promise<void> {
 
 /** Starts the job and returns its id at once; the work runs in a detached process of its own. */
 export async function startHostJob(
-  request: { kind: HostJobKind; input: Record<string, unknown>; timeoutSec: number },
+  request: { kind: HostJobKind; input: Record<string, unknown>; timeoutSec: number; key?: string },
   options: JobOptions = {},
 ): Promise<string> {
   if (!HOST_JOB_KINDS.includes(request.kind)) throw new Error(`host job kind not supported: ${request.kind}`);
+  if (!request.key) return await launchJob(request, options);
+  const taken = await claimJobKey(request.key, options);
+  return taken.existing ?? await launchJob(request, options, taken.claim);
+}
+
+const keyFile = (key: string, options: JobOptions) => join(jobsRoot(options), "keys", `${createHash("sha256").update(key).digest("hex").slice(0, 32)}.id`);
+
+/**
+ * One logical job per key: the first start writes the key file (exclusively) and launches; a second start with the same key, also
+ * after a crash between the launch and the caller recording the id, gets the first job's id. A key whose job folder was pruned is free again.
+ */
+async function claimJobKey(key: string, options: JobOptions): Promise<{ existing: string; claim?: undefined } | { existing?: undefined; claim: (jobId: string) => Promise<void> }> {
+  const file = keyFile(key, options);
+  await mkdir(join(jobsRoot(options), "keys"), { recursive: true });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const handle = await open(file, "wx");
+      return { claim: async (jobId: string) => { await handle.writeFile(jobId); await handle.close(); } };
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause;
+    }
+    // The other start may not have written the id yet: wait for it briefly.
+    let jobId = "";
+    for (let wait = 0; wait < 20 && !jobId; wait += 1) {
+      jobId = (await readFile(file, "utf8").catch(() => "")).trim();
+      if (!jobId) await new Promise((wake) => setTimeout(wake, 100));
+    }
+    if (jobId && JOB_ID.test(jobId) && await stat(jobDir(jobId, options)).then(() => true, () => false)) return { existing: jobId };
+    await rm(file, { force: true });
+  }
+  throw new Error(`could not claim job key ${key}`);
+}
+
+async function launchJob(
+  request: { kind: HostJobKind; input: Record<string, unknown>; timeoutSec: number; key?: string },
+  options: JobOptions,
+  claim?: (jobId: string) => Promise<void>,
+): Promise<string> {
   // The same validation the daemon applies to a direct call: a malformed input fails here, not inside the process.
   const input = hostContract[request.kind].input.parse(request.input);
   await pruneJobs(options).catch(() => undefined);
   const jobId = `job_${Date.now().toString(36)}${randomBytes(5).toString("hex")}`;
   const dir = jobDir(jobId, options);
   await mkdir(dir, { recursive: true });
-  const meta: JobMeta = { jobId, kind: request.kind, startedAt: Date.now(), timeoutSec: request.timeoutSec, pid: null };
+  const meta: JobMeta = { jobId, kind: request.kind, startedAt: Date.now(), timeoutSec: request.timeoutSec, pid: null,
+    ...(request.key ? { key: request.key } : {}), ...(SCRUB_INPUT.includes(request.kind) ? { scrubInput: true } : {}) };
   await writeJson(join(dir, "job.json"), meta);
+  await claim?.(jobId);
   await writeJson(join(dir, "input.json"), input);
   const log = openSync(join(dir, "log.txt"), "a");
   try {

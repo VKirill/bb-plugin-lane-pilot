@@ -17,6 +17,7 @@ import { workflowMigrations } from "./workflow/journal";
 import { workflowOpsMigrations } from "./workflow/ops-store";
 import { draftMigrations } from "./workflow/draft-store";
 import { jevMigrations } from "./jev/receipts";
+import { scheduleMigrations } from "./schedule/store";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
 export type LanePilotDatabase = Database.Database;
@@ -309,6 +310,8 @@ export const migrations = [
     network TEXT
   )`,
   `CREATE INDEX lane_pilot_secret_issuance_project ON lane_pilot_secret_issuance(project_id, at)`,
+  // Schedule board: scheduled tasks and their runs (src/schedule). Always last.
+  ...scheduleMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
@@ -1334,7 +1337,7 @@ export type SecretIssuance = {
  * browser check or an errand was cleared to read (`qa`, `errand`). The name only, never the value.
  */
 export function recordSecretIssuance(db: LanePilotDatabase, input: {
-  projectId: string; runId?: string; taskId?: string; consumer: "check" | "qa" | "errand"; threadId?: string; checkCommand?: string;
+  projectId: string; runId?: string; taskId?: string; consumer: "check" | "qa" | "errand" | "schedule"; threadId?: string; checkCommand?: string;
   secretName: string; hostId?: string; network?: readonly string[]; now?: number;
 }): void {
   db.prepare(`INSERT INTO lane_pilot_secret_issuance(at,project_id,run_id,task_id,consumer,thread_id,check_command,secret_name,host_id,network)

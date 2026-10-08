@@ -10,6 +10,7 @@ import { createWorkflowAgents } from "./workflow-agent";
 import { createGoalAuditor } from "./workflow-goal-audit";
 import { chainRuntimeFor, registerChainExecutors } from "./workflow-executors";
 import { registerDispatchExecutors } from "./writer/dispatch-workflow";
+import { registerInvoiceActions } from "./workflow-invoice";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
 
@@ -51,6 +52,8 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
   registerPureActions(engine);
   registerReducers(engine);
   registerChainExecutors(engine, ctx, services, workflowAgents);
+  // The invoice check of `invoice-send` (a Jev judgment behind a chain action).
+  registerInvoiceActions(engine, ctx);
   bb.onDispose(() => engine.dispose());
   return { workflowEngine: engine, workflowCatalog, workflowAgents };
 }
