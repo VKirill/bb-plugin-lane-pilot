@@ -35,10 +35,10 @@ describe("scripts/lp-drill.sh (E3)", () => {
     for (const tasks of byScenario.values()) for (const task of tasks) expect(task.expected_outputs.every((path) => task.owns_paths.includes(path))).toBe(true);
   });
 
-  it("--quick is the three-task scenario alone, and an unknown scenario is refused", () => {
+  it("--quick is the guard hash check and the three-task scenario, and an unknown scenario is refused", () => {
     const quick = spawnSync("bash", [script, "--quick", "--dry-run"], { encoding: "utf8", timeout: 30_000, env: { ...process.env, BB_CLI: "/nonexistent/bb" } });
     expect(quick.status).toBe(0);
-    expect(quick.stdout).toContain("scenarios: parallel3");
+    expect(quick.stdout).toContain("scenarios: guard_hash, parallel3");
     expect(quick.stdout).not.toContain("scenario conflict");
     const unknown = spawnSync("bash", [script, "--scenario", "nope", "--dry-run"], { encoding: "utf8", timeout: 30_000 });
     expect(unknown.status).toBe(2);
