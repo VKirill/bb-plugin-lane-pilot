@@ -125,11 +125,14 @@ export function threadSignalHub(bb: unknown): ThreadSignalHub | null {
 /**
  * One step of a watcher's loop: sleeps `pollMs` as before, or, when the plugin has the hub, until BB reports a change in
  * the thread (or the fallback poll). `mark` comes from `threadWatchMark` taken before the thread was read.
+ * `deadlineAt` is the waiter's own deadline (epoch ms): the sleep never runs past it, so a short probe is not stretched to the
+ * 20 s fallback. `maxMs` caps one sleep for a waiter that has to look again sooner (a stop check that BB's events do not carry).
  */
-export async function sleepUntilThreadSignal(bb: unknown, threadId: string, mark: number | null, pollMs: number, signal?: AbortSignal): Promise<void> {
+export async function sleepUntilThreadSignal(bb: unknown, threadId: string, mark: number | null, pollMs: number, signal?: AbortSignal, limits: { deadlineAt?: number; maxMs?: number } = {}): Promise<void> {
   const hub = threadSignalHub(bb);
-  if (!hub || mark === null) { await new Promise((resolve) => setTimeout(resolve, pollMs)); return; }
-  await hub.wait(threadId, mark, hub.fallbackMs, signal);
+  const remaining = limits.deadlineAt === undefined || !Number.isFinite(limits.deadlineAt) ? Infinity : Math.max(0, limits.deadlineAt - Date.now());
+  if (!hub || mark === null) { await new Promise((resolve) => setTimeout(resolve, Math.min(pollMs, remaining))); return; }
+  await hub.wait(threadId, mark, Math.min(hub.fallbackMs, remaining, limits.maxMs ?? Infinity), signal);
 }
 
 /** Take this before reading the thread; null when the plugin has no hub (the sleep then polls). */

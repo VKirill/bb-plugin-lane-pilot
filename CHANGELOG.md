@@ -7,6 +7,9 @@ From a self-repair of «Lane Pilot nightly docs failed for <path> docs» (treba 
 - **A page over 40000 bytes still exists for the link check.** Oversized pages are left out of the pages the lint reads, so every link to one was reported as a link to a missing page: 16 of SelfyStudio's 17 findings on 2026-10-08 pointed at `docs/capabilities.md`, the one real finding being its size. `lintDocsPages` takes the oversized paths as present.
 - **The repair round is reminded of the page size limit.** That SelfyStudio round grew the 35 KB catalogue past 40000 bytes while fixing coverage findings and had no round left to split it; the repair prompt now says to keep pages under 30000 bytes and put new content on a linked page.
 
+Audit 2026-10-08 items 12–18 and Jev J-4/J-10/J-11:
+- **A wait ends at its own deadline, not at the 20 s fallback (item 12, H1).** With the signal hub `sleepUntilThreadSignal` always slept `hub.fallbackMs`, ignoring the waiter's deadline: `awaitQaVerdict`'s «instant» `observeStageChild(…, 1)` after the deadline blocked up to 20 s on a running thread, 5 s waits of errands and specialists became 20 s, and a stop check (`shouldStop`: workflow cancel, deleted follow-up) fired after up to 20 s instead of 1 s. The sleep now takes `{ deadlineAt, maxMs }` (`min(fallback, time left, maxMs)`), `observeStageChild` and `waitThreadIdle` pass their deadline (`waitThreadIdle` with a `shouldStop` also `maxMs: 1000`), the sticky compaction wait passes its own. Three tests in `tests/thread-signals.test.ts` fail on the old code.
+
 ## 0.1.193
 
 Audit 2026-10-08 urgent items 1–7 (0.1.192 was never deployed; its changes ship here).
