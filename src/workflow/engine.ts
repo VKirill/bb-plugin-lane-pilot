@@ -28,7 +28,7 @@ export type StepInput = {
 /** Without usage events a run under a token or money budget stops at this many steps / seconds, unless the budget names its own. */
 const UNKNOWN_USAGE_MAX_STEPS = 40;
 const UNKNOWN_USAGE_MAX_WALL_SECONDS = 2 * 3600;
-/** What a step spent. `unknown`: the provider reported no usage, so these numbers are a floor and a token or money budget cannot see the rest. */
+/** What a step spent. `unknown`: the provider reports no usage, so the numbers are a floor, not zero; the run records it per step and holds a token or money budget to a time and step limit. */
 export type Usage = { tokens?: number; costUsd?: number; unknown?: boolean };
 export type StepDone = { output: Record<string, unknown>; usage?: Usage; threadId?: string | null; detail?: unknown };
 export type StepWait = { wait: { kind: string; detail?: unknown; deadline?: number }; partial?: Record<string, unknown>; usage?: Usage; threadId?: string | null };
@@ -45,6 +45,8 @@ export interface StepContext<R = unknown> {
   mode: QualityMode;
   /** K7: the goals of the run, and whether this step's brief should repeat them (the first step, then every third). */
   goals: RunGoal[]; reground: boolean;
+  /** The inputs the run was started with (`$inputs`): an agent step is given them whole, so a fragment's goal reaches its helper without a `with` on every node. */
+  inputs: Record<string, unknown>;
   /** sha256(run | step | attempt): put it in the metadata of a spawned thread to find a lost spawn again (with the vote number, when votes > 1). */
   spawnKey: string; signal: AbortSignal;
   /** Set when the node has `votes` > 1: this is one of `of` independent runs of the same step. */
@@ -346,8 +348,9 @@ export class WorkflowEngine {
   private async closeAfterAudit(run: RunRow): Promise<"closed" | "blocked" | "stop"> {
     const j = this.journal;
     const close = (reason: string | null) => { j.setRunStatus(run.id, ["running", "waiting"], "succeeded", reason); return "closed" as const; };
+    // A child run carries the goals so its helpers are reminded of them; it is the parent run, which owns the whole outcome, that is audited.
     const goals = parseGoals(run.goals_json), audit = this.options.auditGoals;
-    if (!goals.length || !audit) return close(null);
+    if (!goals.length || !audit || run.parent_run_id) return close(null);
     const sha = goalsSha(goals);
     const last = this.lastAudit(run.id);
     if (last?.sha === sha && last.verdict === "pass") return close(null);
@@ -370,6 +373,11 @@ export class WorkflowEngine {
     if (!unmet.length) return close(null);
     j.setRunStatus(run.id, ["running", "waiting"], "blocked", `goal_audit: not met: ${unmet.map((entry) => entry.id).join(", ")}`);
     return "blocked";
+  }
+
+  /** The steps of a run whose spending is not known (the provider reports no usage): its token and cost totals leave them out, and a budget cannot see them. */
+  unknownUsageSteps(runId: string): string[] {
+    return (this.journal.db.prepare("SELECT step_key FROM lane_pilot_wf_event WHERE run_id=? AND kind='usage' AND to_state='unknown' ORDER BY seq").all(runId) as Array<{ step_key: string }>).map((row) => row.step_key);
   }
 
   /** The last goal audit of a run, as the journal has it. */
@@ -634,7 +642,7 @@ export class WorkflowEngine {
     return {
       runId: run.id, stepKey: step.step_key, nodeId: node.id, node, workflow: c.wf, attempt, input, runtime: this.runtimeOf(run), signal, mode: run.mode as QualityMode,
       // `run` was read before this step was counted: the step is number steps_used + 1 of the run.
-      goals, reground: goals.length > 0 && regroundDue(run.steps_used + 1),
+      goals, reground: goals.length > 0 && regroundDue(run.steps_used + 1), inputs: asObject(run.inputs_json),
       spawnKey: this.spawnKeyOf(run.id, step, attempt),
       resolve,
       render: (template) => String(renderValue(template, (ref, text) => { const found = env.read(ref); if (!found.ran) throw new MissingValueError("reference_missing", `"${text}" has no value yet`); return found.value; }, run.mode) ?? ""),
@@ -811,7 +819,12 @@ export class WorkflowEngine {
       return "done";
     }
     const usage = outcome.usage;
-    const addUsage = () => { if (usage) { j.db.prepare("UPDATE lane_pilot_wf_run SET tokens_used=tokens_used+?, cost_micro_usd=cost_micro_usd+? WHERE id=?").run(Math.round(usage.tokens ?? 0), Math.round((usage.costUsd ?? 0) * 1_000_000), runId); this.noteUnknownUsage(runId, stepKey, usage); } };
+    const addUsage = () => {
+      if (!usage) return;
+      j.db.prepare("UPDATE lane_pilot_wf_run SET tokens_used=tokens_used+?, cost_micro_usd=cost_micro_usd+? WHERE id=?").run(Math.round(usage.tokens ?? 0), Math.round((usage.costUsd ?? 0) * 1_000_000), runId);
+      if (usage.unknown) j.event(runId, stepKey, "usage", null, "unknown", node.id);
+      this.noteUnknownUsage(runId, stepKey, usage);
+    };
     if ("wait" in outcome) {
       if (j.moveStep(runId, stepKey, "running", "waiting", { await_json: JSON.stringify({ ...outcome.wait, partial: outcome.partial ?? null }), receipt_json: receipt({ threadId: outcome.threadId ?? null, usage: usage ?? null }) })) addUsage();
       return "done";
@@ -1146,7 +1159,7 @@ export class WorkflowEngine {
         const mapped = Object.fromEntries(Object.entries(node.inputs).map(([name, ref]) => [name, ctx.resolve(ref)]).filter(([, value]) => value !== undefined));
         const inputs = { ...mapped, ...ctx.input.with };
         const known = new Set(child.inputs.map((field) => field.name));
-        const started = this.start({ workflow: child, inputs: Object.fromEntries(Object.entries(inputs).filter(([name]) => known.has(name))), key: `child:${ctx.runId}:${ctx.stepKey}`, mode: ctx.mode,
+        const started = this.start({ workflow: child, inputs: Object.fromEntries(Object.entries(inputs).filter(([name]) => known.has(name))), key: `child:${ctx.runId}:${ctx.stepKey}`, mode: ctx.mode, goals: ctx.goals,
           parent: { runId: ctx.runId, stepKey: ctx.stepKey }, depth, link: { projectId: run.project_id ?? undefined, runId: run.link_run_id ?? undefined, taskId: run.link_task_id ?? undefined } });
         return this.childOutcome(await started.done, node);
       },
@@ -1163,7 +1176,7 @@ export class WorkflowEngine {
   private childOutcome(child: RunSummary, node: Extract<WorkflowNode, { type: "subworkflow" }>): StepOutcome {
     // The child's spending is the parent's: a budget on the outer chain counts the whole tree.
     const spent = this.journal.db.prepare("SELECT tokens_used, cost_micro_usd FROM lane_pilot_wf_run WHERE id=?").get(child.runId) as { tokens_used: number; cost_micro_usd: number } | undefined;
-    const blind = Boolean(this.journal.db.prepare("SELECT 1 FROM lane_pilot_wf_event WHERE run_id=? AND kind='usage_unknown' LIMIT 1").get(child.runId));
+    const blind = this.unknownUsageSteps(child.runId).length > 0 || Boolean(this.journal.db.prepare("SELECT 1 FROM lane_pilot_wf_event WHERE run_id=? AND kind='usage_unknown' LIMIT 1").get(child.runId));
     const usage = spent && (spent.tokens_used || spent.cost_micro_usd || blind) ? { tokens: spent.tokens_used, costUsd: spent.cost_micro_usd / 1_000_000, ...(blind ? { unknown: true as const } : {}) } : undefined;
     if (child.status === "succeeded") return { output: child.output ?? {}, ...(usage ? { usage } : {}) };
     if (child.status === "waiting" || child.status === "running") return { wait: { kind: "subworkflow", detail: { childRunId: child.runId } } };
@@ -1277,7 +1290,11 @@ export class WorkflowEngine {
       const outputJson = JSON.stringify(output);
       if (!j.moveStep(runId, stepKey, "waiting", "succeeded", { output_json: outputJson, ended: true,
         receipt_json: JSON.stringify({ ...prior, outputSha256: sha256(outputJson), threadId: result.threadId ?? prior.threadId ?? null, settledBy: "outside" }) })) return false;
-      if (result.usage) { j.db.prepare("UPDATE lane_pilot_wf_run SET tokens_used=tokens_used+?, cost_micro_usd=cost_micro_usd+? WHERE id=?").run(Math.round(result.usage.tokens ?? 0), Math.round((result.usage.costUsd ?? 0) * 1_000_000), runId); this.noteUnknownUsage(runId, stepKey, result.usage); }
+      if (result.usage) {
+        j.db.prepare("UPDATE lane_pilot_wf_run SET tokens_used=tokens_used+?, cost_micro_usd=cost_micro_usd+? WHERE id=?").run(Math.round(result.usage.tokens ?? 0), Math.round((result.usage.costUsd ?? 0) * 1_000_000), runId);
+        if (result.usage.unknown) j.event(runId, stepKey, "usage", null, "unknown", null);
+        this.noteUnknownUsage(runId, stepKey, result.usage);
+      }
       if (run.status === "waiting") j.db.prepare("UPDATE lane_pilot_wf_run SET wait_ms=wait_ms+? WHERE id=?").run(Math.max(0, this.now() - run.updated_at), runId);
       j.setRunStatus(runId, ["waiting"], "running", null);
       return true;

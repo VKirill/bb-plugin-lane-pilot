@@ -393,12 +393,32 @@ describe("token usage schedule", () => {
 describe("threadUsage for a workflow budget", () => {
   const fakeBb = (list: () => Promise<unknown>) => ({ sdk: { threads: { events: { list } } } }) as never;
   it("says a thread without usage events or one that cannot be read is not measured, not that it spent nothing", async () => {
-    expect(await threadUsage(fakeBb(async () => []), "thr_x")).toEqual({ tokens: 0, costUsd: 0, known: false });
-    expect(await threadUsage(fakeBb(async () => { throw new Error("down"); }), "thr_x")).toEqual({ tokens: 0, costUsd: 0, known: false });
+    expect(await threadUsage(fakeBb(async () => []), "thr_x")).toEqual({ tokens: 0, costUsd: 0, known: false, unknown: true });
+    expect(await threadUsage(fakeBb(async () => { throw new Error("down"); }), "thr_x")).toEqual({ tokens: 0, costUsd: 0, known: false, unknown: true });
   });
   it("is known once the thread has a usage event", async () => {
     const event = usage(2, { last, total: last });
     const spent = await threadUsage(fakeBb(async () => [event]), "thr_x", { fallbackModel: "gpt-5.5" });
     expect(spent.known).toBe(true);
+  });
+});
+
+describe("threadUsage", () => {
+  it("reads the tokens and the price of a thread that reports usage events", async () => {
+    const { bb } = host({ thr_a: [usage(1, { last, total: last })] });
+    expect(await threadUsage(bb, "thr_a", { fallbackModel: "claude-opus-5-5" })).toMatchObject({ tokens: 14, costUsd: expect.any(Number) });
+    expect(await threadUsage(bb, "thr_a")).not.toHaveProperty("unknown");
+  });
+
+  it("says `unknown`, not 0, when the thread has no usage events at all (an ACP provider) or its events cannot be read", async () => {
+    const acp = host({ thr_acp: [{ seq: 1, createdAt: Date.now(), type: "client/thread/start", data: {} }] }, [{ id: "thr_acp", projectId: "proj_a", providerId: "acp-opencode" }]);
+    expect(await threadUsage(acp.bb, "thr_acp")).toEqual({ tokens: 0, costUsd: 0, known: false, unknown: true });
+    const broken = host({}, [{ id: "thr_x", projectId: "proj_a", providerId: "codex" }], { failThread: "thr_x" });
+    expect(await threadUsage(broken.bb, "thr_x")).toEqual({ tokens: 0, costUsd: 0, known: false, unknown: true });
+  });
+
+  it("a thread with usage events but none in the window since the step began spent 0 (known)", async () => {
+    const { bb } = host({ thr_a: [{ ...usage(1, { last, total: last }), createdAt: 1000 }] });
+    expect(await threadUsage(bb, "thr_a", { since: 5000 })).toEqual({ tokens: 0, costUsd: 0, known: true });
   });
 });

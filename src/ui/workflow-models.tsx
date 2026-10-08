@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { z } from "zod";
 import type { rpcContract, stepExecutorSchema } from "../contracts";
@@ -49,7 +49,8 @@ export function useStepExecutors(target: { workflowId?: string; draftId?: string
     );
     return () => { live = false; };
   }, [rpc, workflowId, draftId, projectId, revision, again]);
-  const byNode = useMemo(() => new Map(state.list.map((row) => [row.nodeId, row])), [state.list]);
+  // The cards of the graph are the nodes of this workflow; the steps of the workflows it calls are in the table only.
+  const byNode = useMemo(() => new Map(state.list.filter((row) => !row.fragment).map((row) => [row.nodeId, row])), [state.list]);
   const reload = useCallback(() => setAgain((n) => n + 1), []);
   return { loaded: state.loaded, list: state.list, byNode, reload };
 }
@@ -73,7 +74,7 @@ export type OverrideScope = "project" | "global";
  * The owner's model override of the steps of one workflow: `apply` sets (or, with `null`, drops) it for the project or for all projects and
  * answers with the reason it refused, or null. The workflow itself is not touched; the choice is a settings row the executor reads first.
  */
-export type OverrideApi = { workflowId: string; projectId: string | null; apply: (nodeId: string, choice: ModelChoice | null, scope: OverrideScope) => Promise<string | null> };
+export type OverrideApi = { workflowId: string; projectId: string | null; apply: (nodeId: string, choice: ModelChoice | null, scope: OverrideScope, workflowId?: string) => Promise<string | null> };
 
 const GLOBAL_PROJECT = "*";
 export function useOverrideApi(target: { workflowId: string | null; projectId: string | null }, reload: () => void): OverrideApi | null {
@@ -83,9 +84,10 @@ export function useOverrideApi(target: { workflowId: string | null; projectId: s
     if (!workflowId) return null;
     return {
       workflowId, projectId,
-      apply: async (nodeId, choice, scope) => {
+      apply: async (nodeId, choice, scope, calledWorkflowId) => {
         try {
-          const result = await rpc.call("workflow_model_override", { projectId: projectId ?? GLOBAL_PROJECT, scope: projectId ? scope : "global", workflowId, nodeId, choice: choice ? { providerId: choice.providerId, model: choice.model, effort: choice.effort ?? null, serviceTier: choice.serviceTier ?? null } : null }) as { ok: boolean; reason?: string };
+          // A step of a called workflow is overridden under that workflow's id: the key the executor reads.
+          const result = await rpc.call("workflow_model_override", { projectId: projectId ?? GLOBAL_PROJECT, scope: projectId ? scope : "global", workflowId: calledWorkflowId ?? workflowId, nodeId, choice: choice ? { providerId: choice.providerId, model: choice.model, effort: choice.effort ?? null, serviceTier: choice.serviceTier ?? null } : null }) as { ok: boolean; reason?: string };
           if (!result.ok) return result.reason ?? "failed";
           reload();
           return null;
@@ -97,7 +99,10 @@ export function useOverrideApi(target: { workflowId: string | null; projectId: s
 
 /** Whether a step can be moved to another model by an override: it runs a model through the generic agent machinery and the page knows its workflow. */
 export const overridable = (executor: StepExecutor, models: Pick<GraphModels, "override" | "catalog" | "access">): boolean =>
-  executor.canOverride && Boolean(models.override) && Boolean(models.catalog?.providers.length) && (models.access === "builtin" || models.access === "readonly");
+  executor.canOverride && Boolean(models.override) && Boolean(models.catalog?.providers.length) && (Boolean(executor.fragment) || models.access === "builtin" || models.access === "readonly");
+
+/** The id of a row of the table: a step of a called workflow is `<workflow>/<node>`, as its override is keyed. */
+export const rowId = (executor: Pick<StepExecutor, "nodeId" | "fragment">): string => (executor.fragment ? `${executor.fragment.workflowId}/${executor.nodeId}` : executor.nodeId);
 
 /**
  * The model of a step as a setting: the window of BB's model picker (a click opens it), «Only this project / All projects» when the page
@@ -116,7 +121,7 @@ export function OverridePicker({ executor, catalog, override, id, label, form = 
     if (refused) { setError(issueText(refused.code)); return; }
     setBusy(true); setError(null);
     // Dropping an override drops the one in force, whichever level the radio is on.
-    void override.apply(executor.nodeId, choice, choice ? scope : executor.overrideScope ?? scope).then((reason) => { setError(reason ? t("wfModelOverrideFailed").replace("{reason}", reason) : null); setBusy(false); });
+    void override.apply(executor.nodeId, choice, choice ? scope : executor.overrideScope ?? scope, executor.fragment?.workflowId).then((reason) => { setError(reason ? t("wfModelOverrideFailed").replace("{reason}", reason) : null); setBusy(false); });
   };
   return (
     <div className="lp-wf-override min-w-0 space-y-1" data-testid={`wf-override-${id}`} data-scope={scope} data-active={executor.overrideScope ?? ""}>
@@ -182,6 +187,7 @@ export function sourceText(executor: Pick<StepExecutor, "source" | "sourceKey" |
     case "role-default": return t("wfModelSrc_role_default");
     case "writer": return `${t("wfModelSrc_writer")}${executor.sourceKey ? ` (${executor.sourceKey})` : ""}`;
     case "helper": return t("wfModelSrc_helper");
+    case "session": return t("wfModelSrc_session").replace("{step}", executor.sourceKey ?? "");
     case "node": return t("wfModelSrc_node");
     default: return t("wfModelSrc_none");
   }
@@ -290,7 +296,7 @@ export const offeredOn = (ids: readonly string[], hosts: Hosts): string => {
 };
 
 function ReadOnlyCells({ executor }: { executor: StepExecutor }) {
-  return <div className="min-w-0 truncate text-xs" title={executor.model ?? ""} data-label={t("wfModelsColModel")} data-testid={`wf-model-line-${executor.nodeId}`}>{executorLine(executor)}</div>;
+  return <div className="min-w-0 truncate text-xs" title={executor.model ?? ""} data-label={t("wfModelsColModel")} data-testid={`wf-model-line-${rowId(executor)}`}>{executorLine(executor)}</div>;
 }
 
 function ModelsRow({ executor, view, locale, catalog, access, wide, busy, onChoose, override }: {
@@ -299,7 +305,8 @@ function ModelsRow({ executor, view, locale, catalog, access, wide, busy, onChoo
 }) {
   const [error, setError] = useState<string | null>(null);
   const title = view ? nodeTitle(view, locale) : executor.nodeId;
-  const editable = executor.overridable && access !== "builtin" && access !== "readonly" && catalog !== null && catalog.providers.length > 0;
+  const rid = rowId(executor);
+  const editable = executor.overridable && !executor.fragment && access !== "builtin" && access !== "readonly" && catalog !== null && catalog.providers.length > 0;
   const choose = (choice: ModelChoice | null) => {
     setError(null);
     void onChoose(executor.nodeId, choice).then((refused) => setError(refused));
@@ -308,29 +315,29 @@ function ModelsRow({ executor, view, locale, catalog, access, wide, busy, onChoo
   const problems = realIssues(executor);
   const notes = executor.issues.filter((code) => ISSUE_INFO.has(code));
   return (
-    <li className="lp-model-row" data-testid={`wf-model-row-${executor.nodeId}`} data-wide={wide ? "1" : "0"} data-inherited={executor.inherited ? "1" : "0"} data-issue={problems.length ? "1" : "0"}>
+    <li className="lp-model-row" data-testid={`wf-model-row-${rid}`} data-wide={wide ? "1" : "0"} data-inherited={executor.inherited ? "1" : "0"} data-issue={problems.length ? "1" : "0"}>
       <div className="min-w-0" data-label={t("wfModelsColStep")}>
         <div className="truncate text-sm font-medium" title={title}>{title}</div>
-        <div className="truncate font-mono text-[11px] text-muted-foreground">{executor.nodeId}</div>
+        <div className="truncate font-mono text-[11px] text-muted-foreground">{rid}</div>
       </div>
-      <div className="min-w-0 truncate text-xs" title={executor.agent.helper ?? ""} data-label={t("wfModelsColAgent")} data-testid={`wf-model-agent-${executor.nodeId}`}>{executor.agent.label}</div>
+      <div className="min-w-0 truncate text-xs" title={executor.agent.helper ?? ""} data-label={t("wfModelsColAgent")} data-testid={`wf-model-agent-${rid}`}>{executor.agent.label}</div>
       {editable && catalog ? (
         <div className={`min-w-0 ${executor.inherited ? "opacity-80" : ""}`} data-label={t("wfModelsColModel")}>
-          <NativeModelPicker catalog={catalog} testId={`wf-model-picker-${executor.nodeId}`} disabled={busy} label={t("wfModelModelLabel").replace("{step}", title)}
+          <NativeModelPicker catalog={catalog} testId={`wf-model-picker-${rid}`} disabled={busy} label={t("wfModelModelLabel").replace("{step}", title)}
             seed={{ providerId: executor.providerId, model: executor.model, effort: executor.reasoningEffort, serviceTier: executor.serviceTier }} onChoose={choose} />
         </div>
       ) : byOverride && catalog && override ? (
         <div className={`min-w-0 ${executor.inherited ? "opacity-80" : ""}`} data-label={t("wfModelsColModel")}>
-          <OverridePicker executor={executor} catalog={catalog} override={override} id={`row-${executor.nodeId}`} label={t("wfModelModelLabel").replace("{step}", title)} disabled={busy} form="row" />
+          <OverridePicker executor={executor} catalog={catalog} override={override} id={`row-${rid}`} label={t("wfModelModelLabel").replace("{step}", title)} disabled={busy} form="row" />
         </div>
       ) : <ReadOnlyCells executor={executor} />}
-      <div className="min-w-0 text-xs text-muted-foreground" data-label={t("wfModelsColSource")} data-testid={`wf-model-source-${executor.nodeId}`} data-source={executor.source}>
+      <div className="min-w-0 text-xs text-muted-foreground" data-label={t("wfModelsColSource")} data-testid={`wf-model-source-${rid}`} data-source={executor.source}>
         <span className={executor.inherited ? "italic" : "text-foreground"}>{sourceText(executor)}</span>
-        {editable && !executor.inherited ? <Button type="button" size="sm" variant="ghost" className="ml-1 h-6 px-1.5 text-xs" disabled={busy} data-testid={`wf-model-reset-${executor.nodeId}`} onClick={() => choose(null)}>{t("wfModelDefault")}</Button> : null}
+        {editable && !executor.inherited ? <Button type="button" size="sm" variant="ghost" className="ml-1 h-6 px-1.5 text-xs" disabled={busy} data-testid={`wf-model-reset-${rid}`} onClick={() => choose(null)}>{t("wfModelDefault")}</Button> : null}
       </div>
-      <div className="min-w-0" data-label={t("wfModelsColCost")}><span className={`${COST_PILL[executor.costTier]} rounded-full px-2 py-0.5 text-[11px] font-medium`} data-testid={`wf-model-cost-${executor.nodeId}`}>{t(`wfModelCost_${executor.costTier}` as I18nKey)}</span></div>
+      <div className="min-w-0" data-label={t("wfModelsColCost")}><span className={`${COST_PILL[executor.costTier]} rounded-full px-2 py-0.5 text-[11px] font-medium`} data-testid={`wf-model-cost-${rid}`}>{t(`wfModelCost_${executor.costTier}` as I18nKey)}</span></div>
       {executor.mode === "chain" ? (
-        <div className="lp-model-extra" data-testid={`wf-model-chain-${executor.nodeId}`}>
+        <div className="lp-model-extra" data-testid={`wf-model-chain-${rid}`}>
           <span className="font-medium">{t("wfModelChain")}:</span>{" "}
           {executor.fallbacks.map((row, index) => <span key={index}>→ {row.pm ? (row.model ? `${t("wfModelChainPm")} (${modelShort(row.model)})` : t("wfModelChainPm")) : `${providerShort(row.providerId)} · ${modelShort(row.model)}${row.reasoningEffort ? ` · ${row.reasoningEffort}` : ""}`} </span>)}
           {executor.parts.map((part) => <span key={part.stage} className="block">{t("wfModelCritic")}: {[providerShort(part.providerId), modelShort(part.model), part.reasoningEffort].filter(Boolean).join(" · ")}</span>)}
@@ -339,8 +346,8 @@ function ModelsRow({ executor, view, locale, catalog, access, wide, busy, onChoo
       {!executor.overridable && executor.settingsKey ? <div className="lp-model-extra text-muted-foreground">{t("wfModelSetIn").replace("{key}", executor.settingsKey)}</div> : null}
       {problems.length || notes.length || error ? (
         <div className="lp-model-extra" role={error ? "alert" : undefined}>
-          {error ? <p className="break-words text-destructive-text" data-testid={`wf-model-error-${executor.nodeId}`}>{t("wfModelRejected").replace("{reason}", error)}</p> : null}
-          {problems.map((code) => <p key={code} className="break-words lp-text-warning" data-testid={`wf-model-issue-${executor.nodeId}-${code}`}>{issueText(code)}</p>)}
+          {error ? <p className="break-words text-destructive-text" data-testid={`wf-model-error-${rid}`}>{t("wfModelRejected").replace("{reason}", error)}</p> : null}
+          {problems.map((code) => <p key={code} className="break-words lp-text-warning" data-testid={`wf-model-issue-${rid}-${code}`}>{issueText(code)}</p>)}
           {notes.map((code) => <p key={code} className="break-words text-muted-foreground">{issueText(code)}</p>)}
         </div>
       ) : null}
@@ -360,7 +367,7 @@ export function ModelsPanel({ graph, locale, executors, loaded, catalog, access,
 }): ReactNode {
   const views = useMemo(() => new Map(graph.nodes.map((node) => [node.id, node])), [graph]);
   const withModel = executors.filter((row) => row.mode !== "none");
-  const without = executors.filter((row) => row.mode === "none");
+  const without = executors.filter((row) => row.mode === "none" && !row.fragment);
   const summary = useMemo(() => {
     const counts = new Map<string, number>();
     for (const row of withModel) counts.set(providerShort(row.providerId) || "?", (counts.get(providerShort(row.providerId) || "?") ?? 0) + 1);
@@ -394,7 +401,16 @@ export function ModelsPanel({ graph, locale, executors, loaded, catalog, access,
               </div>
             ) : null}
             <ul className="lp-model-list" data-testid="wf-models-list">
-              {withModel.map((row) => <ModelsRow key={row.nodeId} executor={row} view={views.get(row.nodeId) ?? views.get(row.nodeId.replace(/:child$/, ""))} locale={locale} catalog={catalog} access={access} wide={wide} busy={busy} onChoose={onChoose} override={override} />)}
+              {withModel.map((row, index) => (
+                <Fragment key={rowId(row)}>
+                  {row.fragment && withModel[index - 1]?.fragment?.workflowId !== row.fragment.workflowId ? (
+                    <li className="lp-model-group" data-testid={`wf-model-group-${row.fragment.workflowId}`} role="presentation">
+                      {t("wfModelsFragment").replace("{workflow}", row.fragment.workflowId).replace("{step}", row.fragment.nodeId)}
+                    </li>
+                  ) : null}
+                  <ModelsRow executor={row} view={row.fragment ? undefined : views.get(row.nodeId) ?? views.get(row.nodeId.replace(/:child$/, ""))} locale={locale} catalog={catalog} access={access} wide={wide} busy={busy} onChoose={onChoose} override={override} />
+                </Fragment>
+              ))}
             </ul>
           </>
         ) : null}

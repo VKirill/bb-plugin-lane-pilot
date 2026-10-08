@@ -116,7 +116,7 @@ export function humanOutput(node: Extract<GraphNode, { type: "human" }>, answer:
 const TERMINAL_ATTEMPT = ["accepted", "blocked", "canceled"];
 const safeId = (text: string) => text.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "task";
 
-type HelperUsage = { tokens: number; costUsd: number };
+type HelperUsage = { tokens: number; costUsd: number; unknown?: true };
 type LpTaskNode = Extract<GraphNode, { type: "lp-task" }>;
 
 export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, services: Services, agents: WorkflowAgents = createWorkflowAgents()): void {
@@ -229,8 +229,8 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       // What the writer attempts of this task spent: the threads of every attempt, read once, when the task is over.
       const threads = [...new Set(listed.map((row) => getAttempt(db, row.id)?.thread_id).filter((id): id is string => Boolean(id)))];
       const spent = await Promise.all(threads.map((threadId) => threadUsage(bb, threadId)));
-      const usage = { tokens: spent.reduce((sum, row) => sum + row.tokens, 0), costUsd: spent.reduce((sum, row) => sum + row.costUsd, 0),
-        ...(spent.some((row) => !row.known) ? { unknown: true as const } : {}) };
+      const usage: HelperUsage = { tokens: spent.reduce((sum, row) => sum + row.tokens, 0), costUsd: spent.reduce((sum, row) => sum + row.costUsd, 0),
+        ...(spent.some((row) => !row.known || row.unknown) ? { unknown: true as const } : {}) };
       return { output: { state, attempts: listed.length, merge_commit: merge.commit, files: merge.files,
         verdict: { status: state === "accepted" ? "pass" : "rework", summary: reason, findings: [], evidence: reason || state } }, usage };
     },

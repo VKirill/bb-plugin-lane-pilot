@@ -533,6 +533,7 @@
 
   /* The Models table: a grid row on a wide panel, a stacked card with labelled cells on a narrow one. */
   .lp-model-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+  .lp-model-group { padding: 6px 2px 0; color: var(--muted-foreground); font-size: 11px; font-weight: 600; line-height: 16px; }
   .lp-model-head { display: grid; grid-template-columns: var(--lp-model-cols); gap: 8px; padding: 0 10px; color: var(--muted-foreground); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }
   .lp-model-row { --lp-model-cols: minmax(0, 1.4fr) minmax(0, 0.8fr) minmax(0, 2.2fr) minmax(0, 1.2fr) minmax(0, 0.6fr); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--lp-hairline); border-radius: 10px; background-color: var(--lp-card); }
   .lp-model-row[data-issue="1"] { border-color: var(--lp-warning); }

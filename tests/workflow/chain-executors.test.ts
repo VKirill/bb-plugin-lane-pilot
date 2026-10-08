@@ -172,6 +172,30 @@ describe("what a step spends counts against the run's budget", () => {
     expect(snapshot.run).toMatchObject({ tokens_used: 1500 });
     expect(JSON.parse(snapshot.steps.find((step) => step.node_id === "call")!.receipt_json!).usage.tokens).toBe(1500);
   });
+
+  it("a thread that reports no usage events (an ACP provider) is `usage: unknown` in the receipt and the journal, not 0, and the parent step of a child run says so too", async () => {
+    // `second` has no usage events at all; `first` has them and stays known.
+    const t = await setup({ ...answers, lone: [reply({ n: 3, handoff: "c" })] }, { spent: { first: { input: 1000, output: 500 } } });
+    dispose = t.dispose;
+    const summary = await t.start(twoSteps({})).done;
+    expect(summary.status).toBe("succeeded");
+    const snapshot = t.engine.snapshot(summary.runId)!;
+    const receipt = (node: string) => JSON.parse(snapshot.steps.find((step) => step.node_id === node)!.receipt_json!);
+    expect(receipt("first").usage).toEqual({ tokens: 1500, costUsd: expect.closeTo(0.014, 6) });
+    expect(receipt("second").usage).toEqual({ tokens: 0, costUsd: 0, unknown: true });
+    expect(snapshot.run.tokens_used).toBe(1500);
+    expect(t.engine.unknownUsageSteps(summary.runId)).toEqual(["second#1"]);
+
+    const inner = chain({ id: "inner", nodes: [agent("lone"), { id: "done", type: "action", action: "emit", map: { n: "lone.n" } }], outputs: [{ name: "n", type: "number", required: false }], edges: [{ from: "start", to: "lone" }, { from: "lone", to: "done" }] });
+    const outer = chain({
+      id: "outer", nodes: [{ id: "call", type: "subworkflow", workflow: "inner" }, { id: "done", type: "action", action: "emit", map: { n: "call.n" } }],
+      outputs: [{ name: "n", type: "number", required: false }], edges: [{ from: "start", to: "call" }, { from: "call", to: "done" }],
+    });
+    (t.engine as unknown as { options: { resolveWorkflow?: unknown } }).options.resolveWorkflow = (id: string) => (id === "inner" ? inner : null);
+    const nested = await t.start(outer, {}).done;
+    expect(nested.status).toBe("succeeded");
+    expect(t.engine.unknownUsageSteps(nested.runId)).toEqual(["call#1"]);
+  });
 });
 
 describe("the agent step", () => {

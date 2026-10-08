@@ -1,6 +1,7 @@
 import { PURE_ACTION_KEYS, pureActionExecutor } from "../../src/workflow/actions";
 import { writeFileSync } from "node:fs";
 import { BUILTIN_SOURCES } from "../../src/workflow/builtin";
+import type { RunGoal } from "../../src/workflow/goals";
 import type { NodeExecutor, RunSummary, StepContext } from "../../src/workflow/engine";
 import { executorKey, lowerWorkflow, outputFields } from "../../src/workflow/lower";
 import { registerReducers } from "../../src/workflow/reducers";
@@ -26,6 +27,8 @@ export type Sim = {
   humans?: Record<string, Row | Row[]>;
   /** What the run must end as; `succeeded` by default. */
   status?: RunSummary["status"];
+  /** K7: the goals the run starts with (a subworkflow passes them on to its child run). */
+  goals?: RunGoal[];
 };
 
 let storePromise: Promise<WorkflowStore> | null = null;
@@ -111,7 +114,7 @@ export async function runSim(workflowId: string, sim: Sim) {
     return real.run(ctx);
   } });
 
-  const started = engine.start({ workflow, inputs: sim.input, mode: sim.mode });
+  const started = engine.start({ workflow, inputs: sim.input, mode: sim.mode, ...(sim.goals ? { goals: sim.goals } : {}) });
   const summary = await started.done;
   const steps = rows<{ node_id: string; state: string; step_key: string }>(db, "SELECT node_id, state, step_key FROM lane_pilot_wf_step WHERE run_id=? ORDER BY rowid", summary.runId);
   const path = steps.filter((step) => step.state === "succeeded" || step.state === "skipped").map((step) => step.node_id).filter((id) => !id.endsWith(":fan") && !id.endsWith(":child"));
