@@ -235,7 +235,7 @@ describe("workflow architect tools", () => {
     // The efforts are the ones a node may name; a model only the Mac mini has says so.
     expect(claude.models).toEqual([{ id: "claude-haiku-5-5", efforts: ["low"], only: ["Mac mini"], notOnThisMachine: true }, { id: "claude-opus-5-5", efforts: ["high"], default: true }].sort((a, b) => claude.models.findIndex((m: { id: string }) => m.id === a.id) - claude.models.findIndex((m: { id: string }) => m.id === b.id)));
     expect(result.models.providers.find((row: { provider: string }) => row.provider === "codex")).toMatchObject({ machines: ["Mac mini"] });
-    expect(result.models.presets["cheap-fast"]).toMatchObject({ provider: "claude-code", model: "claude-haiku-5-5", reasoning: "low", offered: true, machines: ["Mac mini"] });
+    expect(result.models.presets["cheap-fast"]).toMatchObject({ provider: "claude-code", model: "claude-haiku-5-5", reasoning: "low", offered: false, machines: ["Mac mini"] }); // judged on the machine the step runs on (the fixture project runs on the MacBook)
     expect(result.models.presets["ins-check"]).toMatchObject({ provider: "acp-cursor", offered: false });
     const narrowed = await call("lane_pilot_workflow_capabilities", { sections: ["models"], query: "luna" });
     expect(narrowed.models.providers.map((row: { provider: string }) => row.provider)).toEqual(["codex"]);
