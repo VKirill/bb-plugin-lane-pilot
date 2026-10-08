@@ -79,10 +79,25 @@ function counts(finding: VerdictFinding, kind: VerdictKind): boolean {
  * (audit 2026-10-08, B6: every unmet requirement was a `block` with no repair round).
  */
 const HARD_CRITICAL = /\b(secrets?|credentials?|passwords?|api[ _-]?keys?|injection|xss|csrf|sqli|sql injection|(?:auth|access|api|bearer|session|owner'?s?|user'?s?) tokens?|privilege|authori[sz]ation bypass|auth bypass|exfiltrat\w*|data[ -]loss|lose[sd]? data|drop table|rm -rf|destroys?|destructive|irreversib\w*|never_touch|forbid\w*)\b/i;
+/**
+ * The finding's own words, without what it quotes: fenced and inline code, and quoted strings. A critic quotes code to show
+ * where a problem is, and the quote is full of words the detector looks for (`password`, `forbidden`, `destroy`, `token`)
+ * that are names in that code, not what the critic says is wrong (audit 2026-10-08 round 3, item 16).
+ */
+export function proseOnly(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`[^`\n]*`/g, " ")
+    .replace(/"[^"\n]*"|“[^”\n]*”|«[^»\n]*»/g, " ")
+    .replace(/(^|[\s(\[{,:;=])'[^'\n]*'(?=$|[\s)\]},:;.!?])/g, "$1 ");
+}
+/** A value in the quoted evidence that is a credential in itself: a key of a known shape, a private key, or a literal assigned to a credential name. */
+const CREDENTIAL_IN_CODE = /\b(?:sk|pk|rk)[-_](?:live|test|proj|ant)[-_][A-Za-z0-9]{6,}|\bgh[pousr]_[A-Za-z0-9]{20,}|\bAKIA[0-9A-Z]{16}\b|\bxox[abpr]-[A-Za-z0-9-]{10,}|BEGIN [A-Z ]*PRIVATE KEY|\b\w*(?:api[_-]?key|secret|token|passw(?:or)?d|credential)\w*\s*[:=]\s*["'`][^"'`\s]{8,}["'`]/i;
 export function isHardCritical(finding: Pick<VerdictFinding, "severity" | "evidence" | "finding" | "criterion" | "dimension" | "impact">): boolean {
   if (finding.severity !== "critical") return false;
   if (/^security$/i.test(finding.dimension?.trim() ?? "")) return true;
-  return HARD_CRITICAL.test([finding.finding, finding.criterion, finding.impact, finding.evidence].filter(Boolean).join("\n"));
+  if (HARD_CRITICAL.test(proseOnly([finding.finding, finding.criterion, finding.impact].filter(Boolean).join("\n")))) return true;
+  return Boolean(finding.evidence) && CREDENTIAL_IN_CODE.test(finding.evidence);
 }
 
 export type SettledVerdict = { verdict: Verdict; demoted: number };

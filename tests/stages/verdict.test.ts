@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { VERDICT_BLOCK_PREFIX, blockReason, isHardCritical, isVerdictBlockReason, legacyDecisionToStatus, legacySeverityToVerdict, settleVerdict, verdictSchema, verdictSeverityToLegacy } from "../../src/stages/verdict";
+import { VERDICT_BLOCK_PREFIX, blockReason, isHardCritical, isVerdictBlockReason, legacyDecisionToStatus, legacySeverityToVerdict, proseOnly, settleVerdict, verdictSchema, verdictSeverityToLegacy } from "../../src/stages/verdict";
 import type { Verdict } from "../../src/stages/verdict";
 
 const finding = (over: Record<string, unknown> = {}): never => ({ file: "src/a.ts", line: 12, severity: "high", evidence: "return null; // TODO: implement", ...over }) as never;
@@ -75,6 +75,30 @@ describe("the host's reading of a verdict", () => {
     expect(isHardCritical(stub)).toBe(false);
     expect(isHardCritical(finding({ severity: "high", dimension: "security" }))).toBe(false);
     expect(isHardCritical(finding({ severity: "critical", finding: "edits a file the task forbids (never_touch)" }))).toBe(true);
+  });
+
+  // Audit 2026-10-08 round 3, item 16: words inside quoted code are names in that code, not what the critic says is wrong.
+  it("a critical finding that only quotes code with security words is repaired first, not a hard stop", () => {
+    const quoting = [
+      finding({ severity: "critical", finding: "getUser never checks for a missing row; acceptance line 2 is unmet", evidence: "const password = await hash(input.password); // the user's password is hashed here" }),
+      finding({ severity: "critical", finding: "the export handler is a stub that returns an empty list", evidence: "if (!allowed) throw new Error(\"forbidden\"); return [];" }),
+      finding({ severity: "critical", finding: "the `destroy` button handler is a stub and the `secret` route is missing", evidence: "onClick={() => {}} // destroys nothing yet" }),
+      finding({ severity: "critical", finding: "the settings form does not save: the handler body is\n```ts\nasync function save() { /* authorization bypass in the old flow */ }\n```\nacceptance line 3 is unmet", evidence: "async function save() {}" }),
+      finding({ severity: "critical", finding: "acceptance line 1 is unmet: the 'session token' branch is empty", evidence: "else { /* TODO */ }" }),
+      finding({ severity: "critical", criterion: "reads the \"credentials\" file only", finding: "the loader returns a constant instead of reading the file", evidence: "return { ok: true };" }),
+    ];
+    for (const sample of quoting) {
+      expect(isHardCritical(sample)).toBe(false);
+      expect(settleVerdict(verdict("block", [sample]), "code").verdict.status).toBe("rework");
+    }
+  });
+
+  it("a critical finding that says in its own words that it is a security hole or data loss, or quotes a real credential, still stops the task", () => {
+    expect(isHardCritical(finding({ severity: "critical", finding: "the handler logs the user's password in plain text", evidence: "log.info(body)" }))).toBe(true);
+    expect(isHardCritical(finding({ severity: "critical", finding: "the migration drops the table and loses data", evidence: "run(sql)" }))).toBe(true);
+    expect(isHardCritical(finding({ severity: "critical", finding: "a key is committed", evidence: "const client = new Stripe(\"sk-live-4eC39HqLyjWDarjtT1zdp7dc\");" }))).toBe(true);
+    expect(isHardCritical(finding({ severity: "critical", finding: "a key is committed", evidence: "DB_PASSWORD = 'hunter2hunter2'" }))).toBe(true);
+    expect(proseOnly("keep `a password` and \"a secret\" out, but not the owner's token")).toBe("keep   and   out, but not the owner's token");
   });
 
   it("plan and specialist keep the critic's own block", () => {
