@@ -49,6 +49,7 @@ export const TOOL_PRESENTATION: Record<string, Entry> = {
   lane_pilot_lessons_sweep: row("Sweeping lessons", "Swept lessons", "Собираю уроки", "Уроки собраны"),
   lane_pilot_rule_propose: row("Proposing a rule", "Proposed a rule", "Предлагаю правило", "Правило предложено"),
   lane_pilot_lesson: row("Saving a lesson", "Saved a lesson", "Сохраняю урок", "Урок сохранён"),
+  lane_pilot_learned: row("Reading what was learned from the owner", "Read what was learned from the owner", "Смотрю, чему научился на сообщениях владельца", "Посмотрел, чему научился"),
   lane_pilot_memory_golden: row("Checking golden memory", "Checked golden memory", "Проверяю эталонную память", "Эталонная память проверена"),
   lane_pilot_memory_import: row("Importing memory", "Imported memory", "Импортирую память", "Память импортирована"),
   lane_pilot_memory_export: row("Exporting memory", "Exported memory", "Экспортирую память", "Память экспортирована"),

@@ -3,13 +3,14 @@ import { z } from "zod";
 import { dropMemoryIndexes, memoryRecordId, parseMemorySettings, searchMemoryRecords, storeMemoryRecords, type MemoryCandidate, type MemorySettings } from "@lane-pilot/memory-core";
 import {
   collectLessonSources, decideRuleProposal, getRuleProposal, lessonCandidates, listRuleProposals, logRuleEvent, parseGoldenCases, repeatedLessons,
-  reviseAdoptedRule, reviseRuleProposal, routingHint, RULE_TRIAL, runGoldenEval, setRuleTrial, upsertRuleProposals, writerAcceptanceStats, type RuleProposal,
+  reviseAdoptedRule, reviseRuleProposal, routingHint, runGoldenEval, setRuleTrial, upsertRuleProposals, writerAcceptanceStats, type RuleProposal,
   upsertLessonProposal, ruleTrialStats,
 } from "@lane-pilot/run-insights";
 import { loadProjectSettings, type LanePilotDatabase } from "../database";
 import { configuredSetting, requirePmRun, type ServerContext } from "./context";
 import { registerObservedTool } from "./tool-result";
 import { scheduleIsolated } from "./schedules";
+import { poolHasRoom, poolTokens, ruleBudget } from "../learning/rule-budget";
 
 export const INSIGHTS_TOOLS = ["lane_pilot_routing_stats", "lane_pilot_lessons_sweep", "lane_pilot_rule_propose", "lane_pilot_lesson", "lane_pilot_memory_golden"] as const;
 
@@ -94,16 +95,31 @@ function weakestTrialRule(db: LanePilotDatabase, projectId: string, pool: RulePr
 export function adoptRuleProposal(db: LanePilotDatabase, projectId: string, id: string, now = Date.now()): RuleProposal | null {
   const proposal = getRuleProposal(db, projectId, id);
   if (!proposal || proposal.state !== "proposed") return null;
-  const pool = listRuleProposals(db, projectId, { state: "accepted", limit: 500 }).filter((rule) => rulePool(rule) === rulePool(proposal));
-  if (pool.length >= RULE_TRIAL.maxActive) {
-    const weakest = weakestTrialRule(db, projectId, pool, now);
+  const which = rulePool(proposal);
+  const pool = listRuleProposals(db, projectId, { state: "accepted", limit: 500 }).filter((rule) => rulePool(rule) === which);
+  // The pool has a budget in tokens (src/learning/rule-budget.ts), not a count of twelve. A rule that does not fit takes the places of
+  // the weakest rules on trial, as many as it needs; if the confirmed, the owner's and the too young cannot make room, nothing is touched.
+  const victims: RuleProposal[] = [];
+  let left = pool;
+  while (!poolHasRoom(left, proposal.rule, which)) {
+    const weakest = weakestTrialRule(db, projectId, left, now);
     if (!weakest) {
-      logRuleEvent(db, projectId, id, "cap_reached", `${pool.length} ${rulePool(proposal)} rules in force, none on trial old enough to replace`, now);
+      logRuleEvent(db, projectId, id, "cap_reached", `${pool.length} ${which} rules (${poolTokens(pool)}/${ruleBudget(which)} tokens) in force, none on trial old enough to replace`, now);
       return null;
     }
-    retireAdoptedRule(db, projectId, weakest.id, `displaced by a newer rule (${id})`, now);
+    victims.push(weakest);
+    left = left.filter((rule) => rule.id !== weakest.id);
   }
-  return acceptRuleProposal(db, projectId, id, proposal.rule, "auto", now);
+  for (const weakest of victims) retireAdoptedRule(db, projectId, weakest.id, `displaced by a newer rule (${id})`, now);
+  try {
+    return acceptRuleProposal(db, projectId, id, proposal.rule, "auto", now);
+  } catch (cause) {
+    // The project's core memory budget holds the rules with its other conventions; a store that refuses is a full pool all the same.
+    const message = cause instanceof Error ? cause.message : String(cause);
+    if (!/core budget exceeded/.test(message)) throw cause;
+    logRuleEvent(db, projectId, id, "cap_reached", `the project's core memory budget has no room for this rule (${message})`, now);
+    return null;
+  }
 }
 
 /** Every waiting rule of every project tries to go on trial again. */
