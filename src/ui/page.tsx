@@ -50,6 +50,7 @@ import { ATTEMPT_STATES, MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, RUN_STATES } from "
 import type { StageReceipt } from "../stages/contract";
 import { StageResult } from "./stage-result";
 import { useLpRealtime } from "./use-lp-realtime";
+import { readRunsWindow } from "./runs-window";
 import { QA_HOST_KEY, QA_WORKSPACE_KEY } from "../qa-host";
 import { presentEnumLabel } from "../enum-labels";
 import { OwnedSettings } from "./owned-settings";
@@ -863,7 +864,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     if (!projectId || isGlobal || !dataRef.current || dataRef.current.projectId !== projectId) return;
     const generation = loadGeneration.current;
     try {
-      const page = await rpc.call("list_runs", { ...(selectedSectionId ? { sectionId: selectedSectionId } : {}), projectId, offset: 0, limit: Math.max(runsWindow.current, 1), pinOpen: true });
+      // In pages of at most 200 (the contract's limit): one call of the whole window was refused from the 211th run on.
+      const page = await readRunsWindow(rpc as unknown as Parameters<typeof readRunsWindow>[0], { ...(selectedSectionId ? { sectionId: selectedSectionId } : {}), projectId }, runsWindow.current);
       if (generation === loadGeneration.current) mergeRuns(page.runs as ScreenPayload["runs"], page.total, true);
     } catch { /* the next signal or poll retries */ }
   }, [projectId, isGlobal, selectedSectionId, rpc]);
