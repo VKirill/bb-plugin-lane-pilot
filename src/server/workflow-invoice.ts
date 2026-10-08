@@ -1,13 +1,16 @@
-import { invoiceCheck, type InvoiceCheckDecision, type InvoiceCheckInput } from "../jev/judgments/invoice-check";
+import { hardProblems, invoiceCheck, type InvoiceCheckDecision, type InvoiceCheckInput } from "../jev/judgments/invoice-check";
 import { jev } from "../jev/runtime";
 import type { NodeExecutor, WorkflowEngine } from "../workflow/engine";
 import type { ServerCore } from "./core";
+import { checkInvoicePdf } from "./invoice-pdf";
 import type { ChainRuntime } from "./workflow-runtime";
 
 /**
  * The action `invoice.check` of the chain `invoice-send`: the invoice that was made is compared with the request. The amount, the INN
  * and the bank details are checked by code; whether the client and the service line are the ones asked for is a Jev judgment
  * (`invoice.check`, src/jev/judgments/invoice-check.ts), answered by the deterministic rule when Jev is off or cannot be asked.
+ * When the node names the PDF (`pdf_path`, on the machine `pdf_host`), code opens it first (src/server/invoice-pdf.ts): a missing, empty,
+ * cut or not-a-PDF file is a failed check, and so is a machine that cannot be asked.
  * It decides only where the chain goes next: a match goes to the owner's approval, anything else to a review first.
  */
 type Row = Record<string, unknown>;
@@ -30,7 +33,16 @@ export function registerInvoiceActions(engine: WorkflowEngine, ctx: ServerCore):
     reentrant: true,
     run: async (c) => {
       const node = c.node as Extract<typeof c.node, { type: "action" }>;
-      const input = invoiceInput(c.template(node.params) as Row);
+      const params = c.template(node.params) as Row;
+      const input = invoiceInput(params);
+      if ("pdf_path" in params) {
+        const pdf = await checkInvoicePdf(ctx.host, text(params.pdf_host), text(params.pdf_path));
+        if (!pdf.ok) {
+          const hard = hardProblems(input);
+          // A file that is wrong is a mismatch; a machine that could not be asked leaves it to the owner's review (unsure) unless the numbers already differ.
+          return { output: { verdict: pdf.unreachable && !hard.length ? "unsure" : "mismatch", reasons: [...pdf.problems, ...hard], by: "rules" } };
+        }
+      }
       const instance = jev();
       const project = c.runtime?.projectId;
       const settings = project ? (await ctx.effectiveProjectSettings(project).catch(() => null))?.values : undefined;
