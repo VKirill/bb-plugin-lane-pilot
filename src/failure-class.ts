@@ -69,24 +69,38 @@ export const isWriterSilent = (reason:string | null | undefined):boolean => SILE
 // An empty_output is a provider fault only when the writer gave no answer; an answer with no files is the task's.
 const PROVIDER_STATES = new Set(["provider_error", "timeout"]);
 
-export function failureClass(state:string, reason:string | null | undefined):FailureClass {
+// Reasons Lane Pilot writes itself for work that is the task's: ownership, empty answers, the critic, the session caps.
+const TASK_REASON = /owns_paths|outside|ownership|changed no files|no files|code_critique|critique|acceptance|repeated_failure|no progress|wall limit|turn cap|follow_up|fixture|writer_output_not_accepted|stopped by/i;
+
+/**
+ * The class and whether a rule decided it. `confident: false` is the default `task` that nothing matched: the reasons Lane
+ * Pilot writes itself are all rules, so this is a reason from a tool, a provider or a check the rules have not seen, and the
+ * one the Jev judgment `failure.class` (J-4, src/jev/judgments/failure-class.ts) may be asked about.
+ */
+export function classifyFailure(state:string, reason:string | null | undefined):{ cls:FailureClass; confident:boolean } {
   const text = (reason ?? "").replace(RETRY_LIMIT_WRAPPER, "");
-  if (VERDICT_BLOCK.test(text)) return "contract";
-  if (JUDGMENT.test(text)) return "judgment";
-  if (BUDGET.test(text) || RETRY_BUDGET.test(text)) return "budget";
-  if (LIMIT.test(text)) return "limit";
-  if (SILENT.test(text)) return "provider";
-  if (NO_GIT.test(text) || WAITING_SECRET.test(text)) return "contract";
-  if (MERGE.test(text)) return "merge";
-  if (DIRTY_BASE.test(text) && !/^merge_blocked:/.test(text)) return "dirty_base";
-  if (UNSAFE_CONTRACT.test(text)) return "contract";
-  if (INFRA.test(text) || isEnvironmentReason(text)) return "infra";
+  const sure = (cls:FailureClass) => ({ cls, confident:true });
+  if (VERDICT_BLOCK.test(text)) return sure("contract");
+  if (JUDGMENT.test(text)) return sure("judgment");
+  if (BUDGET.test(text) || RETRY_BUDGET.test(text)) return sure("budget");
+  if (LIMIT.test(text)) return sure("limit");
+  if (SILENT.test(text)) return sure("provider");
+  if (NO_GIT.test(text) || WAITING_SECRET.test(text)) return sure("contract");
+  if (MERGE.test(text)) return sure("merge");
+  if (DIRTY_BASE.test(text) && !/^merge_blocked:/.test(text)) return sure("dirty_base");
+  if (UNSAFE_CONTRACT.test(text)) return sure("contract");
+  if (INFRA.test(text) || isEnvironmentReason(text)) return sure("infra");
   // The words of HARNESS (EROFS, spawn failed, …) in a check's output belong to the check (hub: a red vitest printing EROFS counted as a fault).
-  if (!CHECK_FAILED.test(text) && HARNESS.test(text)) return "harness";
-  if (CONTRACT.test(text)) return "contract";
-  if (PROVIDER_STATES.has(state) || /^(writer_provider_unavailable|writer_model_unavailable|writer_service_tier_unavailable)/.test(text)) return "provider";
-  if (state === "empty_output") return text.includes(NO_ANSWER_REASON) ? "provider" : "task";
-  return "task";
+  if (!CHECK_FAILED.test(text) && HARNESS.test(text)) return sure("harness");
+  if (CONTRACT.test(text)) return sure("contract");
+  if (PROVIDER_STATES.has(state) || /^(writer_provider_unavailable|writer_model_unavailable|writer_service_tier_unavailable)/.test(text)) return sure("provider");
+  if (state === "empty_output") return sure(text.includes(NO_ANSWER_REASON) ? "provider" : "task");
+  // A red check is the task's by rule; any other reason nothing matched is not known to be.
+  return { cls:"task", confident:CHECK_FAILED.test(text) || TASK_REASON.test(text) || !text.trim() };
+}
+
+export function failureClass(state:string, reason:string | null | undefined):FailureClass {
+  return classifyFailure(state, reason).cls;
 }
 
 /**

@@ -18,6 +18,8 @@ import { isMainfixTask } from "../../validate-output";
 import { openDatabase } from "../../database";
 import { createWriterSticky } from "./sticky";
 import { failureClass } from "../../failure-class";
+import { jev } from "../../jev/runtime";
+import { judgedFailureClass } from "../../jev/failure-class-model";
 import { isRunHalted } from "../runs-halt";
 import { allowedSecretNames, declaredAccess, secretProblem, waitingSecretNote, waitingSecretReason } from "../secrets";
 
@@ -593,7 +595,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         }
         // A fault of Lane Pilot or the machine is not redone here: another writer meets the same fault. The task is
         // parked and restarts once a fix ships or the machine recovers.
-        const failedClass = failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null);
+        // A reason the rules have no confident match for goes to Jev (J-4, shadow by default: recorded, the rules' class used).
+        const failedClass = await judgedFailureClass({ jev, settings:async () => runSettings, projectId:input.projectId, runId:input.runId },
+          String(last.status), typeof last.reason === "string" ? last.reason : null, input.taskId);
         // A provider that takes no work fails every retry the same way: the writer chain below takes the task now.
         // The attempt ends blocked with its limit reason (uncharged); primaryFailure keeps the state the chain reads.
         // A writer that stayed silent through its nudges is handed on the same way: its session hung, not the task.
