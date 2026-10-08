@@ -128,14 +128,15 @@ function placementTrace(ctx: {
 }
 
 export function traceNativeDispatch(
-  log: { warn: (message: string) => void },
+  log: { debug: (message: string) => void },
   stage: string,
   fields: Record<string, string | number | boolean | null | undefined>,
 ): void {
   const parts = Object.entries(fields)
     .filter(([, value]) => value !== undefined)
     .map(([key, value]) => `${key}=${value === null ? "null" : String(value)}`);
-  log.warn(`native-trace ${stage} ${parts.join(" ")}`);
+  // A debug line: at warn level these were 2661 of the hub log's 2663 warnings (audit 2026-10-08) and hid the real ones.
+  log.debug(`native-trace ${stage} ${parts.join(" ")}`);
 }
 
 /**

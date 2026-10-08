@@ -16,11 +16,11 @@ export function mountNativeWiring(ctx: ServerCore) {
     resolve: async (token) => {
       const selected = await bb.storage.kv.get(`native-selection:${token}`);
       if (!selected) {
-        bb.log.warn(`native-trace mention.resolve token=${token} reason=selection_missing`);
+        bb.log.debug(`native-trace mention.resolve token=${token} reason=selection_missing`);
         throw new Error("Lane Pilot selection is missing. Choose the profile again.");
       }
       const parsed = nativeSelectionSchema.parse(selected);
-      bb.log.warn(`native-trace mention.resolve token=${parsed.token} project=${parsed.projectId} reason=ok`);
+      bb.log.debug(`native-trace mention.resolve token=${parsed.token} project=${parsed.projectId} reason=ok`);
       return { context: mentionContext(parsed) };
     },
   });
