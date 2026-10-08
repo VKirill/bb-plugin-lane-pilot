@@ -68,6 +68,13 @@ export const TOOL_PRESENTATION: Record<string, Entry> = {
   lane_pilot_workflow_draft_test: row("Testing the workflow on stubs", "Tested the workflow on stubs", "Проверяю цепочку на заглушках", "Цепочка проверена на заглушках"),
   lane_pilot_workflow_draft_publish: row("Publishing the workflow", "Published the workflow", "Публикую цепочку", "Цепочка опубликована"),
   lane_pilot_schedule: row("Working with the schedule", "Worked with the schedule", "Работаю с расписанием", "С расписанием поработал"),
+  // The PM's folded tools (src/pm-tool-families.ts): one row per family, BB cannot label by action.
+  lane_pilot_helpers: row("Calling a helper", "Called a helper", "Зову помощника", "Помощник отработал"),
+  lane_pilot_council: row("Working with the council", "Worked with the council", "Работаю с советом", "С советом поработал"),
+  lane_pilot_relay: row("Writing to another chat or setting a reminder", "Wrote to another chat or set a reminder", "Пишу в другой чат или ставлю напоминание", "Другой чат или напоминание готово"),
+  lane_pilot_memory: row("Working with project memory and lessons", "Worked with project memory and lessons", "Работаю с памятью и уроками", "С памятью и уроками поработал"),
+  lane_pilot_workflow_draft: row("Working on a workflow draft", "Worked on a workflow draft", "Работаю над черновиком цепочки", "Над черновиком цепочки поработал"),
+  lane_pilot_tool_search: row("Looking for a Lane Pilot tool", "Looked for a Lane Pilot tool", "Ищу инструмент Lane Pilot", "Инструмент Lane Pilot найден", true),
   lane_pilot_wait_specialist: row("Waiting for a specialist", "Waited for a specialist", "Жду специалиста", "Дождался специалиста", true),
 };
 

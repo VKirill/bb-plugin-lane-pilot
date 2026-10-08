@@ -7,6 +7,7 @@ import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../s
 import { BB_AGENT_SUMMARIES, LANE_PILOT_PM_SESSION, laneSessionOverlayPrompt, overlaySessionTools } from "../src/native-agent-overlay";
 import { finalizeNativeLaneBinding } from "../src/native-run";
 import { NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_TOOLS } from "../src/native-session-hooks";
+import { foldedToolHome } from "../src/pm-tool-families";
 import { ARCHITECT_LAUNCH, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_SESSION } from "../src/workflow-architect";
 import { setLocaleOverride, t } from "../i18n";
 
@@ -52,9 +53,11 @@ describe("Workflow architect profile", () => {
   it("every tool it has is registered by the plugin and bound to a native chat; the PM has the same chain tools", () => {
     for (const tool of NATIVE_LP_BRIDGE_ARCHITECT_TOOLS) {
       expect(NATIVE_LP_BRIDGE_TOOLS, tool).toContain(tool);
-      expect(NATIVE_LP_BRIDGE_PM_TOOLS, tool).toContain(tool);
+      // The PM reaches the same handlers as actions of the folded family tool.
+      expect(NATIVE_LP_BRIDGE_PM_TOOLS, tool).toContain(foldedToolHome(tool)?.tool ?? tool);
     }
-    for (const tool of ["lane_pilot_workflow_draft_get", "lane_pilot_workflow_draft_patch", "lane_pilot_workflow_draft_test", "lane_pilot_workflow_draft_publish"]) expect(LANE_PILOT_PM_SESSION).toContain(tool);
+    expect(LANE_PILOT_PM_SESSION).toContain("lane_pilot_workflow_draft");
+    for (const action of ["get", "patch", "test", "publish"]) expect(LANE_PILOT_PM_SESSION).toContain(`"${action}"`);
     expect(LANE_PILOT_PM_SESSION).toContain("Workflow architect");
   });
 
@@ -88,6 +91,6 @@ describe("Workflow architect profile", () => {
       origin: { kind: null, pluginId: "user" }, pluginMetadata: { role: "pm", lanePilotRunId: "lprun_arch" }, environment: { id: "environment-test", path: "/checkout" },
     }));
     const names = configured.tools.map((tool) => tool.name);
-    for (const tool of NATIVE_LP_BRIDGE_ARCHITECT_TOOLS) expect(names, tool).toContain(tool);
+    for (const tool of NATIVE_LP_BRIDGE_ARCHITECT_TOOLS) expect(names, tool).toContain(foldedToolHome(tool)?.tool ?? tool);
   });
 });

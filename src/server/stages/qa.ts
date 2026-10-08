@@ -61,7 +61,7 @@ export function createQaStages(ctx: ServerCore) {
       if (gate.denied.length) await ctx.secretApproval.request({ projectId:args.projectId, pmThreadId:args.threadId, entries:gate.denied, use:"the browser check" });
       if (problem.length || gate.unavailable) {
         return { runId:args.runId,taskId:args.taskId,state:"blocked",reason:waitingSecretReason(problem.length ? problem : logins),
-          next:"Nothing was started. Fix the access below, then call lane_pilot_browser_qa again with the same arguments:",fix:secretFixLines(gate) };
+          next:"Nothing was started. Fix the access below, then call lane_pilot_helpers {action:\"browser_qa\"} again with the same arguments:",fix:secretFixLines(gate) };
       }
       // The values are fetched only to be masked: whatever the check thread prints of them never reaches the verdict or the PM.
       for (const name of logins) {

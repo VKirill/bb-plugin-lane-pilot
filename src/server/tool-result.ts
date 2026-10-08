@@ -75,16 +75,29 @@ export function fenceOutside(source: string, text: string): string {
 
 type Agents = BbPluginApi["agents"];
 
+export type ObservedToolContext = { threadId: string; projectId: string; signal: AbortSignal };
+export type ObservedTool<S extends z.ZodType = z.ZodType> = {
+  name: string;
+  description: string;
+  instructions?: string;
+  parameters: S;
+  execute: (params: z.output<S>, context: ObservedToolContext) => unknown;
+};
+
+/** Every tool registered on one plugin API, unwrapped, so the PM's multiplexed family tools can reuse the handlers (tool-families.ts). */
+const registered = new WeakMap<object, Map<string, ObservedTool>>();
+
+export function registeredTools(agents: object): ReadonlyMap<string, ObservedTool> {
+  return registered.get(agents) ?? new Map();
+}
+
 export function registerObservedTool<S extends z.ZodType>(
   agents: Pick<Agents, "registerTool">,
-  tool: {
-    name: string;
-    description: string;
-    instructions?: string;
-    parameters: S;
-    execute: (params: z.output<S>, context: { threadId: string; projectId: string; signal: AbortSignal }) => unknown;
-  },
+  tool: ObservedTool<S>,
 ): void {
+  const book = registered.get(agents) ?? new Map<string, ObservedTool>();
+  book.set(tool.name, tool as unknown as ObservedTool);
+  registered.set(agents, book);
   const execute = tool.execute;
   const presentation = boundPresentation(agents, tool.name);
   agents.registerTool({

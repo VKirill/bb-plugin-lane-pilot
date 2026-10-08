@@ -18,6 +18,7 @@ import { mountSelfRepair } from "./self-repair";
 import { mountHookTimeoutWatch } from "./hook-timeouts";
 import { mountWorkflowArchitect } from "./workflow-architect";
 import { mountScheduleTools } from "./schedule-tools";
+import { mountToolFamilies } from "./tool-families";
 import { registerObservedTool, ToolError } from "./tool-result";
 import { compactDispatchReply, compactReceipt, stageDetail } from "./stage-brief";
 import { createWriterAnswer } from "./writer/answer";
@@ -72,7 +73,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   registerObservedTool(bb.agents, {
     name:"lane_pilot_dispatch_writer",
     description:"Start a task-v2 contract with the configured native BB writer and return run/attempt identity immediately.",
-    instructions:"Use only from a Lane Pilot PM thread. One call per task (one page or feature, with its area field); send every task of the plan now. Tasks whose owns_paths do not overlap run in parallel; one whose owns_paths or area overlap an open task waits for it (the area's writer then continues it in its own thread); one with depends_on (task ids that must be accepted first) starts by itself once they are. Returns before the writer finishes: poll lane_pilot_wait_writer with the runId, or end your turn with lane_pilot_remind on the task ids. A task's own failure goes back to its writer as feedback turns in the same thread (up to 5 turns or 120 minutes); sending a task again while one of its family runs or is parked returns task_in_progress. A provider, limit or catalog failure moves it down the writer chain without a redispatch. quality_mode (quick, standard, full) wins over the project's setting: leave it out unless the owner asked; qa_cases are the browser checks a task owes in full mode (lane_pilot_browser_qa). A reason that starts verdict_block is a critic's block: do not send the task again unchanged.",
+    instructions:"Use only from a Lane Pilot PM thread. One call per task (one page or feature, with its area field); send every task of the plan now. Tasks whose owns_paths do not overlap run in parallel; one whose owns_paths or area overlap an open task waits for it (the area's writer then continues it in its own thread); one with depends_on (task ids that must be accepted first) starts by itself once they are. Returns before the writer finishes: poll lane_pilot_wait_writer with the runId, or end your turn with lane_pilot_relay {action:\"remind\"} on the task ids. A task's own failure goes back to its writer as feedback turns in the same thread (up to 5 turns or 120 minutes); sending a task again while one of its family runs or is parked returns task_in_progress. A provider, limit or catalog failure moves it down the writer chain without a redispatch. quality_mode (quick, standard, full) wins over the project's setting: leave it out unless the owner asked; qa_cases are the browser checks a task owes in full mode (lane_pilot_helpers {action:\"browser_qa\"}). A reason that starts verdict_block is a critic's block: do not send the task again unchanged.",
     parameters:z.object({ confirm:z.literal(true), plan:z.string().min(1), task:taskV2Schema.optional(), baseRef:z.string().trim().min(1).max(240).optional(),
       objective:z.string().trim().min(1).max(2000).describe("What this whole run is for, in one or two sentences; send it with the first dispatch. Lane Pilot keeps the first one in the run's record.").optional() }).strict(),
     execute: async (params, context) => JSON.stringify(
@@ -359,6 +360,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   mountHookTimeoutWatch(ctx);
   mountWorkflowArchitect(ctx, services);
   mountScheduleTools(ctx, services);
+  mountToolFamilies(ctx);
 
   bb.agents.configure((context) => {
     const role = context.pluginMetadata.role;

@@ -185,6 +185,8 @@ Lane Pilot works with none of these. Each integration below feature-tests its pl
 
 ## PM tools
 
+A Claude Code agent profile holds at most 64 tools, so the PM gets 22 Lane Pilot tools, not the 39 named below: 15 core tools by name (`lane_pilot_read`, `_dispatch_writer`, `_wait_writer`, `_answer_writer`, `_cancel_task`, `_update_task`, `_workspace_status`, `_run_health`, `_ask_owner`, `_errand`, `_wait_errand`, `_route`, `_run_workflow`, `_workflow_status`, `_workflow_amend`), five family tools that take an `action` (`lane_pilot_helpers`: specialist, wait_specialist, browser, browser_qa; `lane_pilot_council`: start, status, say, stop; `lane_pilot_relay`: ask, reply, remind, list; `lane_pilot_memory`: context, routing_stats, lessons_sweep, rule_propose, lesson; `lane_pilot_workflow_draft`: capabilities, create, patch, get, test, publish), `lane_pilot_schedule` and `lane_pilot_tool_search` (finds a capability by words or by an old tool name and returns its tool, action and argument schema). A family action runs the old handler unchanged; the old names stay registered for the Workflow architect and tests. The map is `src/pm-tool-families.ts`. Below, a row naming an old tool is reached as an action of its family.
+
 | Tool | Purpose |
 |---|---|
 | `lane_pilot_dispatch_writer` / `lane_pilot_wait_writer` | dispatch a task-v2 contract with its plan; wait for the receipt (≤ 240 s per call) |

@@ -2449,7 +2449,7 @@ describe("stage → native writer → receipt", () => {
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write a verified fixture",task:{...task,qa_cases:["note.txt page opens at 375"]}},{threadId:pmThreadId,projectId});
     const waited=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:8},{threadId:pmThreadId,projectId})));
     expect(waited.state).toBe("accepted");
-    expect(waited.next).toEqual([{taskId:task.id,state:"accepted",next:expect.stringMatching(/quality_mode=full.*lane_pilot_browser_qa.*note\.txt page opens at 375/)}]);
+    expect(waited.next).toEqual([{taskId:task.id,state:"accepted",next:expect.stringMatching(/quality_mode=full.*lane_pilot_helpers.*browser_qa.*note\.txt page opens at 375/)}]);
     await harness.lifecycle.dispose();
   },20_000);
 

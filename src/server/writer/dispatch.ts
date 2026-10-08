@@ -87,7 +87,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       : db.prepare("SELECT 1 FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND state IN ('blocked','failed') LIMIT 1").get(runId, requestedId)) return null;
     return { runId, taskId:requestedId, attemptId:latest?.id ?? null, writerThreadId:latest?.thread_id ?? null, state:latest?.state ?? "queued", deduplicated:true,
       stages:listStageReceipts(db, runId, requestedId),
-      note:"This task id with the same contract and plan was already dispatched in the last 30 minutes; this is that task, nothing new was created. Poll lane_pilot_wait_writer or end your turn with lane_pilot_remind on the task id." };
+      note:"This task id with the same contract and plan was already dispatched in the last 30 minutes; this is that task, nothing new was created. Poll lane_pilot_wait_writer or end your turn with lane_pilot_relay {action:\"remind\"} on the task id." };
   }
 
   /** A member of the task's family («P1», «P1.2») with an open attempt or parked for a restart, in this project; mainfixes are their own work. */
@@ -270,7 +270,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
           pmReadNote:"The writer does not see these questions. If one changes what the writer should do, wait for this attempt's receipt and, if it is not accepted, dispatch again with the answer in the plan; otherwise the writer decides from the code." } : {}) };
     };
     const pendingReply = (): Record<string,unknown> => ({ runId, taskId, attemptId, writerThreadId:null, state:"queued", stagesPending:true, stages:listStageReceipts(db, runId, taskId),
-      note:"pm-read and plan critique are still running; the writer starts by itself once they pass. Poll lane_pilot_wait_writer or end your turn with lane_pilot_remind on the task id. Do not send the task again: the same id and contract returns this task." });
+      note:"pm-read and plan critique are still running; the writer starts by itself once they pass. Poll lane_pilot_wait_writer or end your turn with lane_pilot_relay {action:\"remind\"} on the task id. Do not send the task again: the same id and contract returns this task." });
     // The same pipeline as a workflow run (workflows/lp-task-pipeline.json, executors in dispatch-workflow.ts). The direct
     // `runStages` above stays as the path for LANE_PILOT_WORKFLOW_ENGINE=0 and for an engine that cannot start the run.
     const runViaEngine = async (): Promise<Record<string,unknown>> => {
@@ -421,7 +421,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
           const contract = taskV2Schema.safeParse(getTask(db, attempt.task_id)?.contract);
           if (!contract.success || !browserQaRequired(resolveQualityMode(contract.data, settings[QUALITY_MODE_SETTING]), contract.data)) continue;
           if (listStageReceipts(db, args.runId, attempt.task_id).some((row) => row.stageId === "browser-qa" && row.state === "passed")) continue;
-          next.push({ taskId:attempt.task_id, state:"accepted", next:`quality_mode=full: run lane_pilot_browser_qa for this task with its qa_cases (${contract.data.qa_cases!.join("; ").slice(0, 600)}); the task is not done until the check passes` });
+          next.push({ taskId:attempt.task_id, state:"accepted", next:`quality_mode=full: run lane_pilot_helpers {action:"browser_qa"} for this task with its qa_cases (${contract.data.qa_cases!.join("; ").slice(0, 600)}); the task is not done until the check passes` });
         }
         return { runId:args.runId, state, receipt, stages:listStageReceipts(db, args.runId), nudged, ...(reasons.length ? { reason:reasons.join("; ") } : {}),
           ...(next.length ? { next } : {}),

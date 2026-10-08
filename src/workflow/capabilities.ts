@@ -156,7 +156,7 @@ export async function collectCapabilities(ports: CapabilityPorts, query: Capabil
       browserMachine: ports.browserHostId?.() ?? null,
       howToUse: [
         "an agent node with skills browser-automation (persistent pages, snapshots, forms) or computer-use (one goal in the owner's signed-in Chrome through jev) and role errand-style prompt",
-        "a PM chat reaches the same browser through lane_pilot_browser (one step) and lane_pilot_errand (long jobs); a chain agent node uses the skills instead",
+        "a PM chat reaches the same browser through lane_pilot_helpers {action:\"browser\"} (one step) and lane_pilot_errand (long jobs); a chain agent node uses the skills instead",
         "set requires.browserSession: true so the library shows that the chain needs the signed-in browser",
       ],
       browserAutomationPlugin: plugins ? plugins.includes("browser-automation") : null,

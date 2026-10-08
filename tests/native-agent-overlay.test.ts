@@ -60,8 +60,8 @@ it("overlays plugin stock from the installed file without activating ignored or 
     "mcp__bb-bridge__lane_pilot_dispatch_writer",
     "mcp__bb-bridge__lane_pilot_cancel_task",
     "mcp__bb-bridge__lane_pilot_wait_writer",
-    "mcp__bb-bridge__lane_pilot_browser_qa",
-    "mcp__bb-bridge__lane_pilot_memory_context",
+    "mcp__bb-bridge__lane_pilot_helpers",
+    "mcp__bb-bridge__lane_pilot_memory",
     "mcp__bb-bridge__lane_pilot_workspace_status",
   ]));
   expect(body.tools).not.toContain("mcp__bb-bridge__lane_pilot_dispatch_cli");
@@ -102,49 +102,32 @@ it("unions LP tools onto an edited --agents JSON without replacing a custom prom
   expect(body.tools).not.toContain("*");
 });
 
-it("gives specialists no bb-bridge tools and keeps the PM core plus browser QA", () => {
+it("gives specialists no bb-bridge tools and keeps the folded PM list (core tools, family tools, search)", () => {
   expect(overlaySessionTools("copy-lead", ["Read", "mcp__bb-bridge__lane_pilot_read"])).toEqual(["Read"]);
   expect(overlaySessionTools("dev-orchestrator", ["Read", "mcp__bb-bridge__lane_pilot_night_review"])).toEqual([
     "Read",
     "mcp__bb-bridge__lane_pilot_read",
     "mcp__bb-bridge__lane_pilot_dispatch_writer",
-    "mcp__bb-bridge__lane_pilot_cancel_task",
-    "mcp__bb-bridge__lane_pilot_update_task",
     "mcp__bb-bridge__lane_pilot_wait_writer",
     "mcp__bb-bridge__lane_pilot_answer_writer",
-    "mcp__bb-bridge__lane_pilot_ask_owner",
-    "mcp__bb-bridge__lane_pilot_browser_qa",
-    "mcp__bb-bridge__lane_pilot_memory_context",
+    "mcp__bb-bridge__lane_pilot_cancel_task",
+    "mcp__bb-bridge__lane_pilot_update_task",
     "mcp__bb-bridge__lane_pilot_workspace_status",
-    "mcp__bb-bridge__lane_pilot_routing_stats",
-    "mcp__bb-bridge__lane_pilot_lessons_sweep",
-    "mcp__bb-bridge__lane_pilot_rule_propose",
-    "mcp__bb-bridge__lane_pilot_lesson",
     "mcp__bb-bridge__lane_pilot_run_health",
-    "mcp__bb-bridge__lane_pilot_council_start",
-    "mcp__bb-bridge__lane_pilot_council_status",
-    "mcp__bb-bridge__lane_pilot_council_say",
-    "mcp__bb-bridge__lane_pilot_council_stop",
-    "mcp__bb-bridge__lane_pilot_specialist",
-    "mcp__bb-bridge__lane_pilot_wait_specialist",
-    "mcp__bb-bridge__lane_pilot_browser",
+    "mcp__bb-bridge__lane_pilot_ask_owner",
     "mcp__bb-bridge__lane_pilot_errand",
     "mcp__bb-bridge__lane_pilot_wait_errand",
-    "mcp__bb-bridge__lane_pilot_ask",
-    "mcp__bb-bridge__lane_pilot_reply",
-    "mcp__bb-bridge__lane_pilot_remind",
-    "mcp__bb-bridge__lane_pilot_relay_list",
-    "mcp__bb-bridge__lane_pilot_workflow_draft_create",
-    "mcp__bb-bridge__lane_pilot_workflow_draft_patch",
-    "mcp__bb-bridge__lane_pilot_workflow_draft_get",
-    "mcp__bb-bridge__lane_pilot_workflow_capabilities",
-    "mcp__bb-bridge__lane_pilot_workflow_draft_test",
-    "mcp__bb-bridge__lane_pilot_workflow_draft_publish",
     "mcp__bb-bridge__lane_pilot_route",
     "mcp__bb-bridge__lane_pilot_run_workflow",
     "mcp__bb-bridge__lane_pilot_workflow_status",
     "mcp__bb-bridge__lane_pilot_workflow_amend",
+    "mcp__bb-bridge__lane_pilot_helpers",
+    "mcp__bb-bridge__lane_pilot_council",
+    "mcp__bb-bridge__lane_pilot_relay",
+    "mcp__bb-bridge__lane_pilot_memory",
+    "mcp__bb-bridge__lane_pilot_workflow_draft",
     "mcp__bb-bridge__lane_pilot_schedule",
+    "mcp__bb-bridge__lane_pilot_tool_search",
     // Without ToolSearch Claude Code sends every MCP schema at the start; with it the schemas load when the PM asks.
     "ToolSearch",
   ]);
@@ -200,10 +183,10 @@ it("is a unified BB PM instruction, not a CLI orchestrator patch", () => {
   expect(LANE_PILOT_PM_SESSION).toContain("design-lead");
   expect(LANE_PILOT_PM_SESSION).toContain("copy-lead");
   expect(LANE_PILOT_PM_SESSION).toContain("seo-specialist");
-  expect(LANE_PILOT_PM_SESSION).toContain("lane_pilot_browser_qa");
+  expect(LANE_PILOT_PM_SESSION).toContain("action: \"browser_qa\"");
   expect(LANE_PILOT_PM_SESSION).toContain("Mac mini");
   expect(LANE_PILOT_PM_SESSION).toContain("Checking a task of ours after acceptance");
-  expect(LANE_PILOT_PM_SESSION).toContain("lane_pilot_browser_qa");
+  expect(LANE_PILOT_PM_SESSION).toContain("action: \"browser_qa\"");
   expect(LANE_PILOT_PM_SESSION).toContain("PROJECT.md");
   expect(LANE_PILOT_PM_SESSION).toContain("docs/audiences/");
   expect(LANE_PILOT_PM_SESSION).toContain("specialized agents");
