@@ -21,21 +21,41 @@ export type CatalogProvider = {
   hostIds: string[];
   models: CatalogModel[];
 };
-export type ModelCatalog = { hosts: CatalogHost[]; providers: CatalogProvider[] };
+export type ModelCatalog = {
+  hosts: CatalogHost[]; providers: CatalogProvider[];
+  /**
+   * The machine a project's workflow helpers run on (the PM chat's environment): the model of a step must be offered THERE, not by some other
+   * machine. Set by the server when it knows the project; absent otherwise, and then any machine will do.
+   */
+  runHostId?: string | null;
+};
 
 /** The reasoning levels a workflow node can name (the node schema's own list). */
 export const NODE_EFFORTS = ["low", "medium", "high", "xhigh", "ultracode", "max"] as const;
 
 export type Choice = { providerId: string; model: string; effort?: string | null; serviceTier?: string | null };
-export type ChoiceError = "provider_unknown" | "provider_unavailable" | "model_unknown" | "model_unavailable" | "effort_unsupported" | "tier_unsupported";
+export type ChoiceError = "provider_unknown" | "provider_unavailable" | "model_unknown" | "model_unavailable" | "model_unavailable_here" | "effort_unsupported" | "tier_unsupported";
 export type ChoiceVerdict = { ok: true } | { ok: false; code: ChoiceError; detail: string };
 
 export const findProvider = (catalog: ModelCatalog, providerId: string): CatalogProvider | undefined => catalog.providers.find((row) => row.id === providerId);
 export const findModel = (provider: CatalogProvider | undefined, model: string): CatalogModel | undefined => provider?.models.find((row) => row.id === model || row.model === model);
 
 /**
+ * Whether the machine the helpers run on offers the model: true or false when the catalog can say, null when it cannot (no such machine in the
+ * catalog, the machine did not answer, the provider or the model is not listed at all): unknown is never a reason to stop a step.
+ */
+export function offeredOnHost(catalog: ModelCatalog, providerId: string, model: string, hostId: string | null | undefined): boolean | null {
+  if (!hostId) return null;
+  const host = catalog.hosts.find((row) => row.id === hostId);
+  const provider = findProvider(catalog, providerId);
+  const found = findModel(provider, model);
+  if (!host?.connected || !provider || !found) return null;
+  return found.hostIds.includes(hostId);
+}
+
+/**
  * Whether a provider/model/effort/tier combination is something the catalog supports. A provider with no machine is «unavailable»,
- * a model no machine lists is «unavailable» too; an id the catalog has never seen is «unknown». An effort or tier is checked only when given.
+ * a model no machine lists is «unavailable» too, one only other machines list than the project's (`runHostId`) is «unavailable_here»; an id the catalog has never seen is «unknown». An effort or tier is checked only when given.
  */
 export function validateChoice(catalog: ModelCatalog, choice: Choice): ChoiceVerdict {
   const provider = findProvider(catalog, choice.providerId);
@@ -44,6 +64,11 @@ export function validateChoice(catalog: ModelCatalog, choice: Choice): ChoiceVer
   const model = findModel(provider, choice.model);
   if (!model) return { ok: false, code: "model_unknown", detail: `${choice.providerId}/${choice.model}` };
   if (!model.hostIds.length) return { ok: false, code: "model_unavailable", detail: `${choice.providerId}/${choice.model}` };
+  // Some machine has it; the helpers run on one machine, and it must be that one.
+  if (offeredOnHost(catalog, choice.providerId, choice.model, catalog.runHostId) === false) {
+    const names = model.hostIds.map((id) => catalog.hosts.find((host) => host.id === id)?.name ?? id).join(", ");
+    return { ok: false, code: "model_unavailable_here", detail: `${choice.providerId}/${choice.model} (only on ${names})` };
+  }
   if (choice.effort && !model.efforts.includes(choice.effort)) return { ok: false, code: "effort_unsupported", detail: `${choice.model}: ${choice.effort}` };
   if (choice.serviceTier && choice.serviceTier !== "default" && choice.serviceTier !== "standard" && !(provider.supportsServiceTier && provider.serviceTiers.includes(choice.serviceTier))) {
     return { ok: false, code: "tier_unsupported", detail: `${choice.providerId}: ${choice.serviceTier}` };

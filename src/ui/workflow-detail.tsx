@@ -120,7 +120,7 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
   const [loading, setLoading] = useState<ReadonlySet<string>>(new Set());
   const generation = useRef(0);
   const scope = projectId ?? undefined;
-  const modelCatalog = useModelCatalog();
+  const modelCatalog = useModelCatalog(projectId);
   const stepModels = useStepExecutors({ workflowId: id, projectId, revision: detail && detail !== "missing" ? `${detail.version}:${detail.sha256}` : null });
 
   const loadDetail = useCallback(async () => {

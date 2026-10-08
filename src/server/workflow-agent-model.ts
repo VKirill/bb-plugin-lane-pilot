@@ -41,6 +41,12 @@ export type AgentModelInput = {
   pm: { providerId: string; model: string } | null;
   /** The workflow and node the step belongs to: the key of an override. Without them no override applies. */
   at?: { workflowId: string; nodeId: string };
+  /**
+   * Whether the machine the step will run on offers a provider/model: true, false, or null/undefined when that is not known (then it is available).
+   * A preset, a stage or the generic selection whose model it does not offer is passed over for the next level (`preset_unavailable` /
+   * `selection_unavailable`); a model the step itself names (its fields, an override) is kept and flagged `model_unavailable_here`.
+   */
+  offered?: (providerId: string, model: string) => boolean | null | undefined;
 };
 
 export const MODEL_OVERRIDE_PREFIX = "workflow.model_override.";
@@ -84,19 +90,23 @@ export function resolveAgentModel(input: AgentModelInput): AgentModel {
   const presetName = text(node.model_preset);
   let level: Level | null = null;
 
+  const here = (providerId: string, model: string) => input.offered?.(providerId, model) !== false;
   if (presetName) {
     const slug = presetSlug(presetName);
     const preset = slug ? presetSelection(slug, settings) : null;
-    if (preset) level = { providerId: preset.providerId, model: preset.model, effort: preset.reasoning, source: "preset", sourceKey: presetName };
+    if (preset && !here(preset.providerId, preset.model)) issues.push("preset_unavailable");
+    else if (preset) level = { providerId: preset.providerId, model: preset.model, effort: preset.reasoning, source: "preset", sourceKey: presetName };
     else issues.push("unknown_preset");
   }
   for (const stage of level ? [] : roleStages(input.role)) {
     const found = pairAt(settings, stage, issues);
+    if (found && !here(found.providerId, found.model)) { issues.push("selection_unavailable"); continue; }
     if (found) { level = { ...found, effort: found.effort ?? STAGE_EFFORT[stage] ?? null, source: "stage", sourceKey: `${stage}.model` }; break; }
   }
   if (!level) {
     const found = pairAt(settings, "workflow.agent", issues);
-    if (found) level = { ...found, source: "agent", sourceKey: "workflow.agent.model" };
+    if (found && !here(found.providerId, found.model)) issues.push("selection_unavailable");
+    else if (found) level = { ...found, source: "agent", sourceKey: "workflow.agent.model" };
   }
   if (!level && input.pm) level = { providerId: input.pm.providerId, model: input.pm.model, effort: null, source: "pm", sourceKey: null };
   level ??= { providerId: DEFAULT_PROVIDER, model: DEFAULT_MODEL, effort: null, source: "role-default", sourceKey: null };
@@ -106,12 +116,15 @@ export function resolveAgentModel(input: AgentModelInput): AgentModel {
   if (override) {
     return {
       providerId: override.provider, model: override.model, reasoningEffort: override.reasoning_effort ?? own.reasoning ?? level.effort ?? DEFAULT_REASONING,
-      serviceTier: override.service_tier ?? null, source: "override", sourceKey: key, inherited: false, issues,
+      serviceTier: override.service_tier ?? null, source: "override", sourceKey: key, inherited: false,
+      issues: here(override.provider, override.model) ? issues : [...issues, "model_unavailable_here"],
     };
   }
   if (own.provider && !own.model) issues.push("provider_without_model");
   const tier = text(node.service_tier);
   const set = Boolean(own.provider || own.model || own.reasoning || tier);
+  // The step's own pair is its choice: it is kept, and said not to run here.
+  if (set && (own.provider || own.model) && !here(own.provider ?? level.providerId, own.model ?? level.model)) issues.push("model_unavailable_here");
   return {
     providerId: own.provider ?? level.providerId, model: own.model ?? level.model, reasoningEffort: own.reasoning ?? level.effort ?? DEFAULT_REASONING,
     serviceTier: tier === "fast" || tier === "default" ? tier : null,

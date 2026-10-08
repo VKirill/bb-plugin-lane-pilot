@@ -16,6 +16,8 @@ import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from ".
 import { detectRepoEdits, gitRepoStatus } from "./repo-edits";
 import { SPECIALIST_ROLES } from "./specialists";
 import { findThreadsByMetadata, keyedSpawnSupported } from "./thread-keys";
+import { modelCatalogOf, pmHostOf } from "./model-catalog-reader";
+import { offeredOnHost } from "../workflow/model-catalog";
 import { threadUsage } from "./token-usage";
 import { stringAt } from "./values";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_REASONING, resolveAgentModel } from "./workflow-agent-model";
@@ -231,7 +233,16 @@ export async function withResolvedModel(request: HelperRequest): Promise<HelperR
   const { rt } = request;
   const settings = (await rt.ctx.effectiveProjectSettings(rt.projectId, getRunSettingsScopes(rt.ctx.db, rt.runId)).catch(() => ({ values: {} }))).values;
   const pm = await pmPairOfThread(rt.ctx.bb, rt.pmThreadId);
-  const chosen = resolveAgentModel({ role: request.role, node: { provider: request.provider, model: request.model, reasoning: request.reasoning, service_tier: request.serviceTier, model_preset: request.preset }, settings, pm, ...(request.workflowId ? { at: { workflowId: request.workflowId, nodeId: request.nodeId } } : {}) });
+  // The helper starts in the PM chat's environment, on one machine: a model that machine does not offer is passed over (a preset, a Settings
+  // selection) or, when the step names it itself, refused here with the machines that do have it, instead of failing inside the spawn.
+  const hostId = await pmHostOf(rt.ctx.bb, rt.pmThreadId).catch(() => null);
+  const read = hostId ? modelCatalogOf(rt.ctx).peek() : null;
+  const offered = read && hostId ? (providerId: string, model: string) => offeredOnHost(read, providerId, model, hostId) : undefined;
+  const chosen = resolveAgentModel({ role: request.role, node: { provider: request.provider, model: request.model, reasoning: request.reasoning, service_tier: request.serviceTier, model_preset: request.preset }, settings, pm, ...(offered ? { offered } : {}), ...(request.workflowId ? { at: { workflowId: request.workflowId, nodeId: request.nodeId } } : {}) });
+  if (chosen.issues.includes("model_unavailable_here") && read) {
+    const where = read.providers.find((row) => row.id === chosen.providerId)?.models.find((row) => row.id === chosen.model || row.model === chosen.model)?.hostIds.map((id) => read.hosts.find((row) => row.id === id)?.name ?? id).join(", ") ?? "";
+    throw new HelperFailure("model_unavailable", `${chosen.providerId}/${chosen.model} is not offered by the machine this workflow's helpers run on (${read.hosts.find((row) => row.id === hostId)?.name ?? hostId})${where ? `; it is on ${where}` : ""}. Pick another model for the step.`);
+  }
   return { ...request, provider: chosen.providerId, model: chosen.model, reasoning: chosen.reasoningEffort, ...(chosen.serviceTier ? { serviceTier: chosen.serviceTier } : {}) };
 }
 

@@ -29,6 +29,8 @@ export function pickerValue(catalog: ModelCatalog, seed: PickerSeed): Experiment
 
 /** The machine the window asks for the live list: one that has the provider, else any connected one, else the first; none leaves it to BB's primary machine. */
 export function pickerRouting(catalog: ModelCatalog, providerId: string): ExperimentalProviderModelPickerProps["routing"] {
+  // The helpers of the project's workflows run on one machine: the window lists that machine's models, so the owner cannot pick one it lacks.
+  if (catalog.runHostId && catalog.hosts.some((host) => host.id === catalog.runHostId && host.connected)) return { kind: "host", hostId: catalog.runHostId };
   const provider = findProvider(catalog, providerId);
   const connected = catalog.hosts.filter((host) => host.connected);
   const host = connected.find((item) => provider?.hostIds.includes(item.id)) ?? connected[0] ?? catalog.hosts[0];

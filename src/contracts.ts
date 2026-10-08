@@ -223,6 +223,8 @@ export const stepExecutorSchema = z.object({
   issues: z.array(z.string()),
 }).strict();
 export const modelCatalogSchema = z.object({
+  /** With a `projectId`: the machine the project's workflow helpers run on (its PM chat's environment); a model must be offered there. */
+  runHostId: z.string().nullable().optional(),
   hosts: z.array(z.object({ id: z.string(), name: z.string(), connected: z.boolean() }).strict()),
   providers: z.array(z.object({
     id: z.string(), displayName: z.string(), logoUrl: z.string().nullable(), family: z.string().nullable(), supportsServiceTier: z.boolean(), serviceTiers: z.array(z.string()), hostIds: z.array(z.string()),
@@ -1739,7 +1741,7 @@ export const rpcContract = defineRpcContract({
   },
   /** Every provider and model the hub's machines offer, with the machines each is available on; the pickers of the Workflows tab list this. */
   workflow_model_catalog: {
-    input: z.object({ refresh: z.boolean().optional() }).strict(),
+    input: z.object({ refresh: z.boolean().optional(), projectId: z.string().min(1).optional() }).strict(),
     output: modelCatalogSchema,
   },
   /** What a node may use: skills, plugins, MCP servers, Env Catalog names (never values), machines, specialist roles. */

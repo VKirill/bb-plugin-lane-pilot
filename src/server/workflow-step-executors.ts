@@ -3,7 +3,7 @@ import type { stepExecutorSchema } from "../contracts";
 import { automaticEffortRoutingEnabled, writerServiceTier } from "../jev-reasoning";
 import { resolveStageWriterSelection } from "../stage-writer-selection";
 import { writerFallbackChain, writerFallbacks } from "../writer-fallbacks";
-import { costTier, validateChoice, type ModelCatalog } from "../workflow/model-catalog";
+import { costTier, offeredOnHost, validateChoice, type ModelCatalog } from "../workflow/model-catalog";
 import { roleSpec } from "./workflow-agent";
 import { modelOverrideAt, modelOverrideKey, resolveAgentModel } from "./workflow-agent-model";
 
@@ -76,11 +76,13 @@ const none = (node: Raw, id: string, kind: string, label: string, extra: Partial
   overridable: false, canOverride: false, overrideScope: null, settingsKey: null, costTier: "none", issues: [], ...extra,
 });
 
-function agentNode(node: Raw, id: string, settings: Settings, pm: PmPair | null, at: At): StepExecutor {
+type Offered = ((providerId: string, model: string) => boolean | null) | undefined;
+
+function agentNode(node: Raw, id: string, settings: Settings, pm: PmPair | null, at: At, offered?: Offered): StepExecutor {
   const role = text(node.role) ?? "worker";
   const helper = roleSpec(role).helper;
   // The same function the executor calls (withResolvedModel, workflow-agent.ts): the card says what will be spawned.
-  const chosen = resolveAgentModel({ role, node: { provider: text(node.provider), model: text(node.model), reasoning: text(node.reasoning), service_tier: text(node.service_tier), model_preset: text(node.model_preset) }, settings, pm, ...(at ? { at: { workflowId: at.workflowId, nodeId: id } } : {}) });
+  const chosen = resolveAgentModel({ role, node: { provider: text(node.provider), model: text(node.model), reasoning: text(node.reasoning), service_tier: text(node.service_tier), model_preset: text(node.model_preset) }, settings, pm, ...(offered ? { offered } : {}), ...(at ? { at: { workflowId: at.workflowId, nodeId: id } } : {}) });
   return {
     nodeId: id, kind: "agent", uses: text(node.uses), mode: "model", agent: { role, helper, label: role },
     providerId: chosen.providerId, model: chosen.model, reasoningEffort: chosen.reasoningEffort, serviceTier: chosen.serviceTier,
@@ -123,20 +125,20 @@ function codeTask(node: Raw, id: string, settings: Settings, pm: PmPair | null):
   };
 }
 
-function stepOf(node: Raw, id: string, settings: Settings, pm: PmPair | null, at: At): StepExecutor | null {
+function stepOf(node: Raw, id: string, settings: Settings, pm: PmPair | null, at: At, offered?: Offered): StepExecutor | null {
   const kind = text(node.type) ?? "agent";
   const uses = text(node.uses);
   switch (kind) {
     case "note": case "join": case "parallel": return null;
     case "agent": {
       const stage = uses ? STAGE_NODES[uses] : undefined;
-      return stage ? stageNode(node, id, stage, settings) : agentNode(node, id, settings, pm, at);
+      return stage ? stageNode(node, id, stage, settings) : agentNode(node, id, settings, pm, at, offered);
     }
     case "lp-task": return codeTask(node, id, settings, pm);
     case "action": {
       const key = uses ?? text(node.action);
       if (key && (DELEGATED_ACTIONS as readonly string[]).includes(key)) {
-        return { ...agentNode({ role: "errand", model_preset: node.model_preset }, id, settings, pm, at), kind: "action", uses, mode: "helper", agent: { role: "errand", helper: "errand", label: key }, ...(overridden(settings, id, at) ? {} : { source: "helper" as const, sourceKey: "errand", inherited: true }), overridable: false };
+        return { ...agentNode({ role: "errand", model_preset: node.model_preset }, id, settings, pm, at, offered), kind: "action", uses, mode: "helper", agent: { role: "errand", helper: "errand", label: key }, ...(overridden(settings, id, at) ? {} : { source: "helper" as const, sourceKey: "errand", inherited: true }), overridable: false };
       }
       return none(node, id, kind, text(node.action) ?? "action");
     }
@@ -169,21 +171,23 @@ function withCatalogIssues(step: StepExecutor, catalog: ModelCatalog): StepExecu
   const verdict = validateChoice(catalog, { providerId: step.providerId, model: step.model, effort: step.reasoningEffort });
   if (verdict.ok) return step;
   // An effort the model lacks is the model's smaller problem; the provider and the model being absent come first.
-  return { ...step, issues: [...step.issues, verdict.code] };
+  return step.issues.includes(verdict.code) ? step : { ...step, issues: [...step.issues, verdict.code] };
 }
 
 /** One entry per step that runs (not notes, joins or the container of a parallel), in graph order; the body of a parallel is `<id>:child`. */
 export function resolveStepExecutors(input: ResolveInput): StepExecutor[] {
   const out: StepExecutor[] = [];
+  // The machine the helpers run on decides what is offered: a model another machine has is not one this step can start on.
+  const offered: Offered = input.catalog?.runHostId ? (providerId, model) => offeredOnHost(input.catalog!, providerId, model, input.catalog!.runHostId) : undefined;
   const at: At = input.workflowId ? { workflowId: input.workflowId, ownKeys: input.ownKeys ?? new Set() } : undefined;
   for (const raw of input.nodes) {
     if (!isRaw(raw)) continue;
     const id = text(raw.id);
     if (!id) continue;
-    const found = stepOf(raw, id, input.settings, input.pm, at);
+    const found = stepOf(raw, id, input.settings, input.pm, at, offered);
     if (found) out.push(found);
     if (text(raw.type) === "parallel" && isRaw(raw.child)) {
-      const body = stepOf(raw.child, `${id}:child`, input.settings, input.pm, at);
+      const body = stepOf(raw.child, `${id}:child`, input.settings, input.pm, at, offered);
       if (body) out.push(body);
     }
   }

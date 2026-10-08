@@ -21,7 +21,7 @@ import { loadWorkflow } from "../workflow/validate";
 import { findModel, findProvider } from "../workflow/model-catalog";
 import { configuredSetting } from "./context";
 import { SPECIALIST_ROLES } from "./specialists";
-import { createModelCatalog } from "./workflow-models";
+import { modelCatalogOf } from "./model-catalog-reader";
 import { registerObservedTool, ToolError } from "./tool-result";
 import { stringAt } from "./values";
 import type { ServerCore } from "./core";
@@ -57,7 +57,7 @@ export function realDeps(ctx: ServerCore, services: Services): ArchitectDeps {
     const path = stringAt(environment, "path"), hostId = stringAt(environment, "hostId");
     return path?.startsWith("/") && hostId ? { hostId, path } : null;
   };
-  const catalog = createModelCatalog(ctx);
+  const catalog = modelCatalogOf(ctx);
   return {
     globalDir: () => globalWorkflowDir(),
     modelOffered: (providerId, model) => {
@@ -103,7 +103,9 @@ export function realDeps(ctx: ServerCore, services: Services): ArchitectDeps {
         const read = await Promise.race([catalog.get(), new Promise<null>((resolveTimeout) => setTimeout(() => resolveTimeout(null), 6_000))]);
         if (!read) return null;
         const settings = await ctx.effectiveProjectSettings(projectId).then((row) => row.values, () => ({}));
-        return { catalog: read, settings };
+        // The helpers of a chain run on the machine of this project's chat: the pairs are judged against that machine.
+        const runHostId = (await place(threadId))?.hostId ?? null;
+        return { catalog: { ...read, runHostId }, settings };
       },
     }),
   };

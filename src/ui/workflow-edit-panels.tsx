@@ -113,7 +113,7 @@ function RefMap({ label, rows, suggestions, onChange, hint, testId, check }: { l
 
 function ModelFields({ node, edit, definition, executor }: { node: Raw; edit: DraftEditing; definition: Raw; executor: StepExecutor | null }) {
   const id = text(node.id);
-  const models = useModelCatalog();
+  const models = useModelCatalog(edit.projectId);
   const [refused, setRefused] = useState<string | null>(null);
   const reasoning = ["low", "medium", "high", "xhigh", "ultracode", "max"] as const;
   // BB's own provider and model window over the hub's catalog (the same one the Models table and the card use); without a catalog the names are typed.

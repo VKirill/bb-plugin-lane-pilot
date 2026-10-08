@@ -21,14 +21,15 @@ type Call = (method: string, input: unknown) => Promise<unknown>;
 // ------------------------------------------------------------------ data
 
 /** The hub's providers and models; null while it is read, or when no machine answered. */
-export function useModelCatalog(): ModelCatalog | null {
+export function useModelCatalog(projectId?: string | null): ModelCatalog | null {
   const rpc = useRpc<typeof rpcContract>() as unknown as { call: Call };
   const [catalog, setCatalog] = useState<ModelCatalog | null>(null);
   useEffect(() => {
     let live = true;
-    void Promise.resolve(rpc.call("workflow_model_catalog", {})).then((value) => { if (live && value) setCatalog(value as ModelCatalog); }, () => undefined);
+    // With the project the answer says which machine its helpers run on: the pickers list and check that machine's models.
+    void Promise.resolve(rpc.call("workflow_model_catalog", projectId ? { projectId } : {})).then((value) => { if (live && value) setCatalog(value as ModelCatalog); }, () => undefined);
     return () => { live = false; };
-  }, [rpc]);
+  }, [rpc, projectId]);
   return catalog;
 }
 
