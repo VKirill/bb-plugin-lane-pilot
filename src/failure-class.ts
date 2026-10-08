@@ -46,6 +46,10 @@ const HARNESS = /internal_error|merge_failed|merge_queue_timeout|ownership run s
 const NO_GIT = /not a git repository|no-git mode/i;
 const CONTRACT = /^merge_blocked:|^missing expected_outputs|output_unowned|depends_on .*(ended|no such task)|plan critique|critique_blocked/i;
 const BUDGET = /^run_budget_exceeded:/;
+/** git refused a merge over someone's uncommitted edits in the base checkout: a dirty base, the merge waits for a commit — not a fault of Lane Pilot. */
+const DIRTY_BASE = /would be overwritten by merge|base checkout has uncommitted changes/i;
+/** A run task whose contract names an unsafe path (`../other-repo/`): the PM's contract to fix, not Lane Pilot's fault. */
+const UNSAFE_CONTRACT = /ownership run scope invalid: run task [^:]+: unsafe/i;
 /** A critic's block verdict (verdict.ts): the task is stopped, not redone, until the PM or the owner changes the approach. */
 const VERDICT_BLOCK = /^verdict_block:/;
 /** A task waits for an Env Catalog secret its checks declare (J6): the PM's to ask the owner for, never the writer's fault. */
@@ -69,7 +73,8 @@ export function failureClass(state:string, reason:string | null | undefined):Fai
   if (LIMIT.test(text)) return "limit";
   if (SILENT.test(text)) return "provider";
   if (NO_GIT.test(text) || WAITING_SECRET.test(text)) return "contract";
-  if (MERGE.test(text)) return "merge";
+  if (MERGE.test(text) || DIRTY_BASE.test(text)) return "merge";
+  if (UNSAFE_CONTRACT.test(text)) return "contract";
   if (INFRA.test(text) || isEnvironmentReason(text)) return "infra";
   // The words of HARNESS (EROFS, spawn failed, …) in a check's output belong to the check (hub: a red vitest printing EROFS counted as a fault).
   if (!CHECK_FAILED.test(text) && HARNESS.test(text)) return "harness";
