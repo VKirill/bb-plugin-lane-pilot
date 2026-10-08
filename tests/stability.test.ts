@@ -15,7 +15,7 @@ describe("failure class of real reasons", () => {
     ["validation_failed", "missing expected_outputs: Manrope-ExtraBold.woff2", "contract"],
     ["blocked", "depends_on gc-section-shell-native: that task ended blocked", "contract"],
     ["blocked", "needs_human: which price applies?", "judgment"],
-    ["blocked", "retry limit 2 exhausted: merge_conflict: main changed since this attempt started: ", "harness"],
+    ["blocked", "retry limit 2 exhausted: merge_conflict: main changed since this attempt started: ", "merge"],
     ["blocked", "merge_failed: git merge failed: fatal: Unable to create '/repo/.git/index.lock': File exists.", "infra"],
     ["empty_output", "writer returned no output", "provider"],
     ["validation_failed", "verification failed: npx vitest run greeting-card exited 1", "task"],

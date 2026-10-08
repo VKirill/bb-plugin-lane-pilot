@@ -7,6 +7,7 @@ import { settingsRpc } from "./rpc/settings";
 import { selectionsRpc } from "./rpc/selections";
 import { stackRpc } from "./rpc/stack";
 import { insightsRpc } from "./rpc/insights";
+import { secretsRpc } from "./rpc/secrets";
 import { tokenUsageRpc } from "./rpc/token-usage";
 import { workflowsRpc } from "./rpc/workflows";
 import { workflowOpsRpc } from "./rpc/workflow-ops";
@@ -27,6 +28,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...stackRpc(ctx),
     ...insightsRpc(ctx, services),
     ...tokenUsageRpc(ctx),
+    ...secretsRpc(ctx),
     ...workflowsRpc(ctx, services),
     ...workflowOpsRpc(ctx, services),
     ...councilRpc(ctx.db, services.council),

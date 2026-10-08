@@ -28,10 +28,21 @@ describe("verification secrets in the contract", () => {
     expect(lint(found())).toEqual({ errors:[], warnings:[] });
   });
 
-  it("a name the owner has not allowed goes back to the PM, who cannot allow it", () => {
-    const { errors } = lint(found({ denied:["STRIPE_TEST_KEY"] }));
-    expect(codes(errors)).toEqual(["secret_not_allowed"]);
-    expect(errors[0]!.message).toContain("only the owner");
+  it("a name the owner has not allowed yet is a warning: the owner is asked when the task starts, the PM cannot allow it", () => {
+    const { errors, warnings } = lint(found({ denied:["STRIPE_TEST_KEY"] }));
+    expect(errors).toEqual([]);
+    expect(codes(warnings)).toEqual(["secret_needs_approval"]);
+    expect(warnings[0]!.message).toContain("you cannot allow it");
+  });
+
+  it("hosts of a check: refused names fail the schema, hosts without secrets and the Linux limit are said", () => {
+    expect(taskV2Schema.safeParse({ ...base, verification:[{ command:"x", cwd:root, secrets:["A"], network:["api.stripe.com", "*.stripe.com"] }] }).success).toBe(true);
+    expect(taskV2Schema.safeParse({ ...base, verification:[{ command:"x", cwd:root, secrets:["A"], network:["http://evil.com"] }] }).success).toBe(false);
+    expect(taskV2Schema.safeParse({ ...base, verification:[{ command:"x", cwd:root, secrets:["A"], network:["a.com:8080"] }] }).success).toBe(false);
+    expect(codes(lint(found(), { verification:[{ command:"x", cwd:root, network:["api.stripe.com"] }] }).warnings)).toEqual(["network_without_secrets"]);
+    const limits = lint(found(), { verification:[{ command:"x", cwd:root, secrets:["STRIPE_TEST_KEY"], network:["api.stripe.com"] }] }).warnings;
+    expect(codes(limits)).toEqual(["network_hosts_limits"]);
+    expect(limits[0]!.message).toContain("Linux");
   });
 
   it("a name not saved yet is a warning: the task will wait for it", () => {

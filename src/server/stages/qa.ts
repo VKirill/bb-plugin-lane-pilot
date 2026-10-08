@@ -1,5 +1,5 @@
 import { taskV2Schema } from "../../contracts";
-import { claimStageSpawn, countAttempts, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings } from "../../database";
+import { claimStageSpawn, countAttempts, recordSecretIssuance, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings } from "../../database";
 import { QA_HOST_KEY, QA_WORKSPACE_KEY, qaCodexPreflight, qaHostUnreachableReason, resolveBrowserQaTarget, resolveStaleBrowserQaReceipt } from "../../qa-host";
 import { sha256 } from "../../stages/contract";
 import { parseOpenCodeToolTelemetry } from "../../stages/opencode-telemetry";
@@ -58,12 +58,16 @@ export function createQaStages(ctx: ServerCore) {
       if (!threadQa) return { runId:args.runId,taskId:args.taskId,state:"blocked",reason:"login_cases_need_the_bb_browser_backend: only the browser-check thread can read a login from Env Catalog; set the browser backend to bb-browser or drop the login: prefix" };
       const gate = await ctx.secrets.check({ declared:logins, allowed:allowedSecretNames(loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId))), kinds:["login"] }, { fresh:true });
       const problem = secretProblem(gate);
+      if (gate.denied.length) await ctx.secretApproval.request({ projectId:args.projectId, pmThreadId:args.threadId, entries:gate.denied, use:"the browser check" });
       if (problem.length || gate.unavailable) {
         return { runId:args.runId,taskId:args.taskId,state:"blocked",reason:waitingSecretReason(problem.length ? problem : logins),
           next:"Nothing was started. Fix the access below, then call lane_pilot_browser_qa again with the same arguments:",fix:secretFixLines(gate) };
       }
       // The values are fetched only to be masked: whatever the check thread prints of them never reaches the verdict or the PM.
-      for (const name of logins) await ctx.secrets.record(name);
+      for (const name of logins) {
+        await ctx.secrets.record(name);
+        try { recordSecretIssuance(db,{projectId:args.projectId,runId:args.runId,taskId:args.taskId,consumer:"qa",threadId:args.threadId,secretName:name}); } catch { /* the journal is a record, not a gate */ }
+      }
     }
     const base = { runId:args.runId, taskId:args.taskId, stageId:"browser-qa" as const,
       input:JSON.stringify(requestInput),

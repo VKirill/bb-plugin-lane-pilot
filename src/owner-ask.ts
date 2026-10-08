@@ -6,7 +6,7 @@ import { z } from "zod";
  * agent. BB's push-notifications plugin sends the interaction's title to the owner's phone, so the title is the question.
  */
 export const OWNER_ASK_RENDERER_ID = "lane-pilot-ask";
-export const OWNER_ASK_SOURCES = ["pm", "gate", "repair", "council"] as const;
+export const OWNER_ASK_SOURCES = ["pm", "gate", "repair", "council", "secret"] as const;
 export type OwnerAskSource = (typeof OWNER_ASK_SOURCES)[number];
 
 export const OWNER_ASK_MAX_OPTIONS = 6;

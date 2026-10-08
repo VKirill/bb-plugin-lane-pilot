@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TaskV2 } from "../../src/contracts";
 import { hostContract } from "../../src/contracts";
-import { openDatabase, saveProjectSetting } from "../../src/database";
+import { listSecretIssuance, openDatabase, saveProjectSetting } from "../../src/database";
 import { forgetSecrets } from "../../src/redact";
 import { createSecrets, envForRecord, SecretsNotReadyError, secretProblem } from "../../src/server/secrets";
 import { createWriterVerify } from "../../src/server/writer/verify";
@@ -82,7 +82,7 @@ function verifier(options:{ allow?:string; rows?:Row[]; printed?:string } = {}) 
   }) };
   const ctx = { bb, db, host, runPolicyFor: () => ({ pools:{ verification:2 } }), secrets:createSecrets({ bb }) };
   const services = { runWriterPool:{ acquire: async () => () => undefined } };
-  return { calls, verify:createWriterVerify(ctx as never, services as never) };
+  return { calls, db, verify:createWriterVerify(ctx as never, services as never) };
 }
 const config = { hostId:"h", projectId:"P" } as never;
 
@@ -118,13 +118,40 @@ describe("secrets in a check", () => {
     expect(calls).toEqual([]);
   });
 
-  it("an empty secrets.allow lets the catalog entry the task names reach its check", async () => {
+  // Audit 2026-10-08 S1: an empty list allows nothing; a name is allowed once the owner approved it (or `*`).
+  it("an empty secrets.allow hands out nothing: the check does not run and nothing is fetched", async () => {
     const { verify, calls } = verifier();
+    await expect(verify.runVerification(config, task([{ command:"x", cwd:root, secrets:["STRIPE_TEST_KEY"] }]))).rejects.toThrow("waiting_secret:STRIPE_TEST_KEY");
+    expect(calls).toEqual([]);
+  });
+
+  it("`*` is the owner's explicit allow-all", async () => {
+    const { verify, calls } = verifier({ allow:"*" });
     await expect(verify.runVerification(config, task([{ command:"x", cwd:root, secrets:["STRIPE_TEST_KEY"] }]))).resolves.toBeDefined();
     expect(calls.some((call) => call.method === "runSandboxedCommand")).toBe(true);
   });
 
-  // Empty secrets.allow means any catalog entry the task names (owner: no switches); a list restricts it.
+  it("a host a check declares is approved like a name (net:host) and reaches the host call", async () => {
+    const denied = verifier({ allow:"STRIPE_TEST_KEY" });
+    await expect(denied.verify.runVerification(config, task([{ command:"x", cwd:root, secrets:["STRIPE_TEST_KEY"], network:["api.stripe.com"] }]))).rejects.toThrow("waiting_secret:net:api.stripe.com");
+    expect(denied.calls).toEqual([]);
+    const allowed = verifier({ allow:"STRIPE_TEST_KEY, net:api.stripe.com" });
+    await allowed.verify.runVerification(config, task([{ command:"x", cwd:root, secrets:["STRIPE_TEST_KEY"], network:["api.stripe.com"] }]));
+    const call = allowed.calls.find((row) => row.method === "runSandboxedCommand")!;
+    expect(call.input.networkHosts).toEqual(["api.stripe.com"]);
+    expect(hostContract.runSandboxedCommand.input.safeParse(call.input).success).toBe(true);
+  });
+
+  it("journals who was given which name, never the value", async () => {
+    const { verify, db } = verifier({ allow:"STRIPE_TEST_KEY" });
+    await verify.runVerification(config, task([{ command:"node e2e.js", cwd:root, secrets:["STRIPE_TEST_KEY"] }]), "run-1", "thr-writer");
+    const rows = listSecretIssuance(db, "P");
+    // The fake host fails the check, so the flaky rerun hands the name out a second time: each run is one entry.
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    expect(rows[0]).toMatchObject({ consumer:"check", runId:"run-1", taskId:"t", threadId:"thr-writer", checkCommand:"node e2e.js", secretName:"STRIPE_TEST_KEY", hostId:"h", network:"localhost" });
+    expect(JSON.stringify(rows)).not.toContain(STRIPE);
+  });
+
   it("a name outside a restricting secrets.allow waits", async () => {
     const { verify } = verifier({ allow:"OTHER_KEY" });
     await expect(verify.runVerification(config, task([{ command:"x", cwd:root, secrets:["STRIPE_TEST_KEY"] }]))).rejects.toThrow("waiting_secret:STRIPE_TEST_KEY");

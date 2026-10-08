@@ -31,6 +31,19 @@ function setup() {
 
 const own = "internal_error: Cannot read properties of undefined";
 
+describe("canaryReport on reasons from the hub", () => {
+  it("a merge conflict with no file listed and a red check that printed EROFS are not faults of Lane Pilot", () => {
+    const { db, attempt } = setup();
+    for (let i = 0; i < 12; i += 1) attempt("accepted");
+    for (let i = 0; i < 3; i += 1) attempt("validation_failed", "merge_conflict: main changed since this attempt started: ");
+    for (let i = 0; i < 3; i += 1) attempt("blocked", "retry limit 2 exhausted: merge_conflict: main changed since this attempt started: ");
+    attempt("blocked", "retry limit 2 exhausted: verification failed (npm -w @selfystudio/marketing run test -- ArticleBody): Error: EROFS: read-only file system, open '/x/node_modules/.vite-temp/v.mjs'");
+    attempt("blocked", "attempt_worktree_holder_ambiguous:page_cap");
+    const report = canaryReport(db, { version: VERSION, since: Date.now() - 3600_000, now: Date.now() });
+    expect(report.budget).toMatchObject({ attempts: 20, faults: 1, exhausted: false });
+  });
+});
+
 describe("canaryReport", () => {
   it("counts the own faults of the version's first attempts and trips on three above the budget", () => {
     const { db, attempt } = setup();

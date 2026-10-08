@@ -294,6 +294,21 @@ export const migrations = [
   ...workflowOpsMigrations,
   // Jev judgments: one receipt per judgment asked (src/jev).
   ...jevMigrations,
+  // Audit 2026-10-08 S1: who was given which Env Catalog name, for which task and check, when and where. Never the value.
+  `CREATE TABLE lane_pilot_secret_issuance (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    project_id TEXT NOT NULL,
+    run_id TEXT,
+    task_id TEXT,
+    consumer TEXT NOT NULL,
+    thread_id TEXT,
+    check_command TEXT,
+    secret_name TEXT NOT NULL,
+    host_id TEXT,
+    network TEXT
+  )`,
+  `CREATE INDEX lane_pilot_secret_issuance_project ON lane_pilot_secret_issuance(project_id, at)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
@@ -1266,6 +1281,33 @@ export function casResetSettings(
 }
 
 const CHECK_DURATION_KEPT = 100;
+
+export type SecretIssuance = {
+  id: number; at: number; projectId: string; runId: string | null; taskId: string | null; consumer: string; threadId: string | null;
+  checkCommand: string | null; secretName: string; hostId: string | null; network: string | null;
+};
+
+/**
+ * One Env Catalog name handed to a consumer: a check of a task (`check`, the value goes into its sandbox), or access a
+ * browser check or an errand was cleared to read (`qa`, `errand`). The name only, never the value.
+ */
+export function recordSecretIssuance(db: LanePilotDatabase, input: {
+  projectId: string; runId?: string; taskId?: string; consumer: "check" | "qa" | "errand"; threadId?: string; checkCommand?: string;
+  secretName: string; hostId?: string; network?: readonly string[]; now?: number;
+}): void {
+  db.prepare(`INSERT INTO lane_pilot_secret_issuance(at,project_id,run_id,task_id,consumer,thread_id,check_command,secret_name,host_id,network)
+    VALUES (?,?,?,?,?,?,?,?,?,?)`).run(input.now ?? Date.now(), input.projectId, input.runId ?? null, input.taskId ?? null, input.consumer,
+    input.threadId ?? null, input.checkCommand ? input.checkCommand.slice(0, 300) : null, input.secretName, input.hostId ?? null,
+    input.network ? (input.network.length ? input.network.join(",") : "localhost") : null);
+}
+
+/** The issuance journal of a project, newest first. */
+export function listSecretIssuance(db: LanePilotDatabase, projectId: string, limit = 100): SecretIssuance[] {
+  return (db.prepare("SELECT * FROM lane_pilot_secret_issuance WHERE project_id=? ORDER BY at DESC, id DESC LIMIT ?").all(projectId, Math.min(500, Math.max(1, limit))) as Array<Record<string, unknown>>)
+    .map((row) => ({ id: row.id as number, at: row.at as number, projectId: row.project_id as string, runId: (row.run_id as string | null) ?? null, taskId: (row.task_id as string | null) ?? null,
+      consumer: row.consumer as string, threadId: (row.thread_id as string | null) ?? null, checkCommand: (row.check_command as string | null) ?? null,
+      secretName: row.secret_name as string, hostId: (row.host_id as string | null) ?? null, network: (row.network as string | null) ?? null }));
+}
 
 /** One finished verification command run. The command is keyed by its hash: it can be long and may carry a secret name. */
 export function recordCheckDuration(db: LanePilotDatabase, input: { projectId: string; command: string; durationMs: number; exitCode: number; now?: number }): void {
