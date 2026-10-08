@@ -59,7 +59,7 @@ describe("parked for a secret", () => {
     expect((await stability.loadParked())[0]).toMatchObject({ klass:"contract", reason:"waiting_secret:LATE_KEY" });
     expect(await stability.sweep(2000)).toEqual([]);
     saved = [{ name:"LATE_KEY", kind:"secret" }];
-    expect(await stability.sweep(3000)).toEqual([]); // saved, but the owner has not allowed it
+    expect(await stability.sweep(3000)).toEqual([]); // saved, but the project list leaves it out
     saveProjectSetting(db, "proj", "secrets.allow", "OTHER_KEY, LATE_KEY");
     expect(await stability.sweep(4000)).toEqual(["T"]);
     expect(resumed).toEqual(["T"]);
@@ -70,28 +70,6 @@ describe("parked for a secret", () => {
     await stability.onTaskFailed({ ...fail, taskId:"U" }, 1000);
     expect(await stability.sweep(1000 + 25 * 3600_000)).toEqual([]);
     expect(await stability.loadParked()).toEqual([]);
-  });
-});
-
-describe("parked for a secret and a host", () => {
-  it("waits until the name and the host are both on the list, and reads a reason with a host", async () => {
-    const sent:string[] = [];
-    const { bb } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{
-      threads:{ send:async (args:{ input:Array<{ text:string }> }) => { sent.push(args.input[0]!.text); return {}; } },
-      plugins:{ callRpc:async () => ({ variables:[{ name:"LATE_KEY", kind:"secret" }] }) },
-    } as never });
-    const db = openDatabase(bb);
-    createRun(db, "run", "proj", "cli", "/repo");
-    db.prepare("UPDATE lane_pilot_run SET pm_thread_id='pm', writer_workspace_path='/repo' WHERE id='run'").run();
-    db.prepare("INSERT INTO lane_pilot_task(id,run_id,kind,contract_json,created_at) VALUES('T','run','bb','{}',1)").run();
-    const resumed:string[] = [];
-    const services = { activeWriterTasks:new Set<string>(), enqueueResumedWriter:async (_p:string, attempt:{ task_id:string }) => { resumed.push(attempt.task_id); return true; } };
-    const { stability } = createStability({ bb, db, log:() => undefined, secrets:createSecrets({ bb }) } as never, services as never);
-    await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T", pmThreadId:"pm", state:"validation_failed", reason:"waiting_secret:LATE_KEY,net:api.x.com" }, 1000);
-    saveProjectSetting(db, "proj", "secrets.allow", "LATE_KEY");
-    expect(await stability.sweep(2000)).toEqual([]);
-    saveProjectSetting(db, "proj", "secrets.allow", "LATE_KEY, net:api.x.com");
-    expect(await stability.sweep(3000)).toEqual(["T"]);
   });
 });
 
@@ -115,14 +93,9 @@ describe("dispatch of a task whose check needs a secret", () => {
     await scenario({ allow:"WAIT_KEY" });
   }, 30_000);
 
-  // Audit 2026-10-08 S1: nothing is allowed by default; the owner is asked once and a yes lets the waiting task run.
-  it("with an empty secrets.allow the owner is asked, a yes is saved, the check runs, and the journal names the check", async () => {
-    const asked:Array<{ title:string; threadId:string }> = [];
-    await scenario({ allow:null, saved:true, requestInput:async (request:{ title:string; threadId:string }) => { asked.push(request); return { outcome:"submitted", value:{ choice:"1" } }; },
+  it("with an empty secrets.allow the check runs at once, and the journal names the check", async () => {
+    await scenario({ allow:null, saved:true,
       inspect:(db) => {
-        expect(asked).toHaveLength(1);
-        expect(asked[0]).toMatchObject({ threadId:pmThreadId, title:"Allow the check `node e2e.js` of task needs-secret to use the secret WAIT_KEY?" });
-        expect(JSON.stringify(db.prepare("SELECT value FROM lane_pilot_project_settings WHERE key='secrets.allow'").all())).toContain("WAIT_KEY");
         // One entry each time a check ran with it (the attempt's verification and the acceptance run).
         const issued = db.prepare("SELECT consumer, secret_name, task_id FROM lane_pilot_secret_issuance GROUP BY 1,2,3").all();
         expect(issued).toEqual([{ consumer:"check", secret_name:"WAIT_KEY", task_id:"needs-secret" }]);
@@ -130,13 +103,7 @@ describe("dispatch of a task whose check needs a secret", () => {
       } });
   }, 30_000);
 
-  it("with an empty secrets.allow and a no, the task keeps waiting and nothing runs", async () => {
-    let spawnedAfterNo = -1;
-    await scenario({ allow:null, saved:true, requestInput:async () => ({ outcome:"submitted", value:{ choice:"2" } }), afterDispatch:(spawned) => { spawnedAfterNo = spawned; } });
-    expect(spawnedAfterNo).toBe(0);
-  }, 30_000);
-
-  async function scenario(options:{ allow:string | null; saved?:boolean; requestInput?:(request:{ title:string; threadId:string }) => Promise<unknown>; afterDispatch?:(spawned:number) => void; inspect?:(db:ReturnType<typeof openDatabase>) => void }) {
+  async function scenario(options:{ allow:string | null; saved?:boolean; inspect?:(db:ReturnType<typeof openDatabase>) => void }) {
     let catalog:Array<{ name:string; kind:"secret"; value?:string }> = options.saved ? [{ name:"WAIT_KEY", kind:"secret", value:KEY }] : [];
     let spawned = 0;
     let snapshots = 0;
@@ -186,7 +153,6 @@ describe("dispatch of a task whose check needs a secret", () => {
     saveProjectSetting(db, projectId, "memory.enabled", false);
     saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
     if (options.allow !== null) saveProjectSetting(db, projectId, "secrets.allow", options.allow);
-    if (options.requestInput) Object.assign(bb.ui as object, { requestInput:options.requestInput });
     createRun(db, "run-s", projectId, "bb", config.writerWorkspacePath);
     setRunThread(db, "run-s", pmThreadId);
     await plugin(bb);
@@ -196,8 +162,6 @@ describe("dispatch of a task whose check needs a secret", () => {
     expect(dispatched.state).toBe("queued");
     if (options.saved) {
       await new Promise((wake) => setTimeout(wake, 400));
-      options.afterDispatch?.(spawned);
-      if (options.afterDispatch) { await harness.lifecycle.dispose(); return { db }; }
       const accepted = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId:"run-s", timeoutSec:5 }, { threadId:pmThreadId, projectId })));
       expect(accepted.state).toBe("accepted");
       expect(sandboxCalls[0]!.env).toEqual({ WAIT_KEY:KEY });

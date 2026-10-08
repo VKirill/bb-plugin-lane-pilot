@@ -5,7 +5,7 @@ import { createRun, openDatabase, saveProjectSetting, setRunThread } from "../..
 
 /**
  * The schedule board through the whole plugin: the RPCs the board uses, the tick of the isolated schedule, a script that runs as a
- * host job with an Env Catalog secret, the PM tool with the owner's yes, the origin rule and the CLI.
+ * host job with an Env Catalog secret, the PM tool (no owner form), the origin rule and the CLI.
  */
 const projectId = "proj_board";
 const SECRET = "s3cr3t-value-xyz";
@@ -14,7 +14,7 @@ afterEach(async () => { await dispose?.(); dispose = null; });
 
 type HostCall = { method: string; input: Record<string, any> };
 
-async function setup(options: { answer?: "1" | "2"; metadata?: Record<string, Record<string, unknown>>; failJob?: boolean } = {}) {
+async function setup(options: { metadata?: Record<string, Record<string, unknown>>; failJob?: boolean } = {}) {
   const hostCalls: HostCall[] = [];
   const sent: Array<{ threadId: string; text: string }> = [];
   const registered = new Map<string, (context: { signal: AbortSignal }) => unknown>();
@@ -50,7 +50,6 @@ async function setup(options: { answer?: "1" | "2"; metadata?: Record<string, Re
     },
   });
   (bb.background as unknown as Record<string, unknown>).experimental_vkSchedule = (name: string, _cron: string, fn: (context: { signal: AbortSignal }) => unknown) => { registered.set(name, fn); };
-  Object.assign(bb.ui, { requestInput: async () => ({ outcome: "submitted", value: { choice: options.answer ?? "1" } }) });
   await plugin(bb);
   dispose = () => harness.lifecycle.dispose();
   const db = openDatabase(bb);
@@ -174,9 +173,9 @@ describe("a script on a machine", () => {
     expect(hostCalls.filter((call) => call.method === "jobStart").length).toBe(runs.filter((run: { status: string }) => run.status !== "skipped").length);
   });
 
-  it("fails the run with the reason when the secret was not allowed for the project", async () => {
+  it("fails the run with the reason when the project list leaves the secret out", async () => {
     const { rpc, tick, db } = await setup();
-    saveProjectSetting(db, projectId, "secrets.allow", "");
+    saveProjectSetting(db, projectId, "secrets.allow", "OTHER_TOKEN");
     const made = (await rpc("schedule_upsert", { definition: script() })).schedule;
     await rpc("schedule_run_now", { id: made.id });
     await tick();
@@ -187,41 +186,27 @@ describe("a script on a machine", () => {
 });
 
 describe("agents and the schedule", () => {
-  it("creating asks the owner first and goes through on the second call after their yes", async () => {
+  it("creating, updating and deleting go straight through, with no owner form", async () => {
     const { tool, rpc } = await setup();
     const definition = { name: "Morning check", task: { kind: "script", hostId: "h2", command: "uptime", cwd: "/tmp" }, when: { type: "cron", cron: "0 9 * * 1-5", timezone: "Europe/Madrid" } };
-    const first = await tool({ action: "create", definition });
-    expect(first.state).toBe("waiting_owner");
-    expect((await rpc("schedule_list", { projectId })).schedules).toHaveLength(0);
-    await new Promise((wake) => setTimeout(wake, 30));
-    const second = await tool({ action: "create", definition });
-    expect(second.state).toBe("created");
-    expect(second.schedule).toMatchObject({ name: "Morning check", kind: "script" });
+    const created = await tool({ action: "create", definition });
+    expect(created.state).toBe("created");
+    expect(created.schedule).toMatchObject({ name: "Morning check", kind: "script" });
     const saved = (await rpc("schedule_list", { projectId })).schedules[0];
     expect(saved.createdBy).toBe("agent:thr_pm");
-    // The yes was for that one change: the same call again is a new question.
-    expect((await tool({ action: "create", definition })).state).toBe("waiting_owner");
-  });
-
-  it("an owner's no leaves nothing behind, and the agent is told not to work around it", async () => {
-    const { tool, rpc } = await setup({ answer: "2" });
-    const definition = { name: "Nope", task: { kind: "script", hostId: "h2", command: "uptime", cwd: "/tmp" }, when: { type: "once", delay: "2h" } };
-    await tool({ action: "create", definition });
-    await new Promise((wake) => setTimeout(wake, 30));
-    const again = await tool({ action: "create", definition });
-    expect(again.state).toBe("waiting_owner");
-    expect(again.message).toMatch(/declined/);
+    expect((await tool({ action: "update", id: created.schedule.id, changes: { name: "Renamed" } })).state).toBe("changed");
+    expect((await tool({ action: "delete", id: created.schedule.id })).state).toBe("deleted");
     expect((await rpc("schedule_list", { projectId })).schedules).toHaveLength(0);
   });
 
-  it("an invalid definition is refused before the owner is asked", async () => {
+  it("an invalid definition is refused with its problems", async () => {
     const { tool } = await setup();
     const result = await tool({ action: "create", definition: { name: "Bad", task: { kind: "script", hostId: "h1", command: "x", cwd: "/tmp" }, when: { type: "cron", cron: "61 * * * *", timezone: "UTC" } } });
     expect(result.state).toBe("invalid");
     expect(result.problems.join(" ")).toMatch(/minute/);
   });
 
-  it("pause, resume and run now need no form; show gives the runs; update and delete ask", async () => {
+  it("list, pause, resume, run now, show, update and delete work for the PM", async () => {
     const { tool, rpc } = await setup();
     const made = (await rpc("schedule_upsert", { definition: script() })).schedule;
     expect((await tool({ action: "list" })).schedules.map((row: { id: string }) => row.id)).toEqual([made.id]);
@@ -229,9 +214,9 @@ describe("agents and the schedule", () => {
     expect((await tool({ action: "resume", id: made.id })).schedule).toMatchObject({ state: "active" });
     expect((await tool({ action: "run_now", id: made.id })).status).toBe("queued");
     expect((await tool({ action: "show", id: made.id, runs: 3 })).runs).toHaveLength(1);
-    expect((await tool({ action: "update", id: made.id, changes: { name: "Renamed" } })).state).toBe("waiting_owner");
-    expect((await tool({ action: "delete", id: made.id })).state).toBe("waiting_owner");
-    expect((await rpc("schedule_get", { id: made.id })).schedule.name).toBe("Sync keys");
+    expect((await tool({ action: "update", id: made.id, changes: { name: "Renamed" } })).state).toBe("changed");
+    expect((await rpc("schedule_get", { id: made.id })).schedule.name).toBe("Renamed");
+    expect((await tool({ action: "delete", id: made.id })).state).toBe("deleted");
   });
 
   it("a thread that a schedule started cannot create, change, pause, resume or run schedules, but may read", async () => {

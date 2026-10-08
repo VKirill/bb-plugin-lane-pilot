@@ -3,25 +3,24 @@ import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 
 /**
- * The shell guard of Codex, OpenCode and Cursor helpers and writers (audit 2026-10-08 round 3, P0-2).
+ * The shell guard of Codex, OpenCode and Cursor helpers and writers (audit 2026-10-08 round 3, P0-2), cut down to protection from
+ * mistakes (owner decision 2026-10-08: no gates against agents).
  *
  * The guard hook (lane-stack/hooks/guard_shell.py) runs inside Claude Code only: Codex has no pre-tool hook installed and the
- * OpenCode guard does not know `bb`, so `bb env-catalog set` went through for a writer on those providers. Until BB's server checks
- * the caller, every Lane Pilot thread on those providers gets a directory of wrappers at the front of its PATH: `bb`, `ssh`, `scp`
- * and `sftp`. A wrapper refuses what guard_shell.py refuses for a writer or helper and runs the real program for everything else
- * (the first one further down PATH, never itself). `rsync -e ssh` and `git` over ssh reach `ssh` through PATH, so they meet the
- * wrapper too.
+ * OpenCode guard does not know `bb`. Every Lane Pilot thread on those providers gets a directory of wrappers at the front of its
+ * PATH: `bb`, `ssh`, `scp` and `sftp`. A wrapper refuses what guard_shell.py refuses for a writer or helper (`bb plugin config|token|
+ * disable|enable|reload|remove|safe-mode` and ssh/scp/sftp to the hub: both can break the hub by mistake) and runs the real program
+ * for everything else (the first one further down PATH, never itself). `rsync -e ssh` and `git` over ssh reach `ssh` through PATH,
+ * so they meet the wrapper too. Env Catalog, Lane Pilot settings, schedules and anamnesis are not fenced: those are the owner's
+ * agents on the owner's machines.
  *
- * What it does not stop: an absolute path to bb, `command -p bb`, `node <bb>`, `curl` to the BB server, a script that calls bb by
- * another name, a hub name that only DNS resolves (the Python guard looks those up, this wrapper does not). That is for the server
- * to close (audit 2026-10-08 round 4: the wrapper and the guard are the second line, the caller check on the server is the first);
- * this is the cheap cut for the plain `bb ...` an agent types.
+ * It is a net for a plain `bb ...` typed by mistake, not a wall: an absolute path to bb, `command -p bb`, `node <bb>` or a hub name
+ * that only DNS resolves (the Python guard looks those up, this wrapper does not) get past it.
  *
  * The hub address is read in every notation `ssh` reads (10.8.0.1, 10.8.1, 0x0a080001, 168296449, 012.010.0.1, ::ffff:10.8.0.1,
  * ::ffff:a08:1): the wrapper turns the word into a number with the shell's own arithmetic.
  *
- * Keep the deny list equal to `_bb_args_error` (strict) and `_hub_target` in lane-stack/hooks/guard_shell.py (tests/bb-shim.test.ts
- * checks that the schedule and anamnesis entries are in all three lists).
+ * Keep the deny list equal to `_bb_args_error` (strict) and `_hub_target` in lane-stack/hooks/guard_shell.py.
  */
 export const BB_SHIM_NAMES = ["bb", "ssh", "scp", "sftp"] as const;
 
@@ -31,7 +30,7 @@ export const BB_SHIM_SCRIPT = String.raw`#!/bin/sh
 self=@{0##*/}
 case "$0" in */*) here=$(cd "@{0%/*}" 2>/dev/null && pwd -P) ;; *) here="" ;; esac
 deny() {
-  echo "[env-guard] $1 is not available to Lane Pilot agents: the owner changes Env Catalog entries and Lane Pilot's settings (the Env Catalog tab, Lane Pilot settings), not an agent's shell. For a missing key use env_request or bb env-catalog request NAME; the owner gets a form." >&2
+  echo "[hub-guard] $1 is not available to Lane Pilot agents: it can break the hub or BB's plugin runtime by mistake. Ask the owner to run it in their own terminal." >&2
   exit 126
 }
 # 32-bit number of an IPv4 address in any inet_aton notation (a.b.c.d, a.b.c, a.b, a; decimal, 0x hex or 0 octal) in IPNUM; fails for anything else.
@@ -106,30 +105,15 @@ set -f
 case "$self" in
   bb)
     words=" "
-    raw=0
     for a in "$@"; do
       case "$a" in
-        --raw|--raw=*) raw=1 ;;
         -*) ;;
         *[!A-Za-z0-9_.@:/=,+-]*) words="$words"_" " ;;
         *) words="$words$a " ;;
       esac
     done
     case "$words" in
-      *" env-catalog set "*|*" env-catalog delete "*|*" env-catalog export "*|*" env-catalog import-machine-env "*) deny "bb env-catalog" ;;
-      *" env-catalog "*) [ "$raw" = 1 ] && deny "bb env-catalog --raw" ;;
-    esac
-    case "$words" in
-      *" plugin rpc call env-catalog "*) deny "bb plugin rpc call env-catalog" ;;
-      *" plugin rpc call lane-pilot "*|*" plugin rpc call bb-plugin-lane-pilot "*)
-        case "$words" in
-          *" schedule_upsert "*|*" schedule_delete "*|*" schedule_pause "*|*" schedule_resume "*|*" schedule_run_now "*|*" schedule_cancel_run "*|*" anamnesis "*|*" save_"*|*" reset_"*|*" set_"*|*" stack_install "*|*" stack_connect "*|*" stack_rollback "*|*" native_install_start "*|*" decide_rule_proposal "*|*" rule_set_audience "*|*" memory_record_delete "*|*" prepare_native_session "*)
-            deny "bb plugin rpc call lane-pilot" ;;
-        esac ;;
       *" plugin config "*|*" plugin token "*|*" plugin disable "*|*" plugin enable "*|*" plugin reload "*|*" plugin remove "*|*" plugin safe-mode "*) deny "bb plugin" ;;
-      *" lane-pilot configure "*|*" lane-pilot budget "*|*" lane-pilot host-run-cli "*|*" lane-pilot host-install "*|*" lane-pilot host-rollback "*|*" lane-pilot host-connect-opencode "*|*" lane-pilot host-import-config "*) deny "bb lane-pilot" ;;
-      *"lane-pilot schedule create "*|*"lane-pilot schedule update "*|*"lane-pilot schedule delete "*|*"lane-pilot schedule pause "*|*"lane-pilot schedule resume "*|*"lane-pilot schedule run-now "*|*"lane-pilot schedule cancel-run "*) deny "bb lane-pilot schedule" ;;
-      *"lane-pilot anamnesis "*) deny "bb lane-pilot anamnesis" ;;
     esac ;;
   ssh|scp|sftp)
     for a in "$@"; do

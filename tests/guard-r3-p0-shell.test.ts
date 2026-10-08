@@ -12,10 +12,11 @@ function run(command: string, agentType: string | null, env: Record<string, stri
 }
 const denied = (command: string, agentType: string | null, env: Record<string, string> = {}, cwd = "/tmp") => {
   const res = run(command, agentType, env, cwd);
-  return res.status === 2 && /\[env-guard\]/.test(res.stdout);
+  return res.status === 2 && /\[hub-guard\]/.test(res.stdout);
 };
 
-// Audit 2026-10-08 round 3, P0-2: the strict list for writers and helpers (the PM keeps reload/install/update from a plugin checkout).
+// Audit 2026-10-08 round 3, P0-2, cut down by the owner decision of 2026-10-08 to what breaks the hub by mistake: bb plugin admin commands and ssh to the
+// hub, for writers and helpers (the PM keeps reload/install/update from a plugin checkout). Env Catalog and Lane Pilot's CLI are open to everyone.
 const STRICT_ONLY: Array<[string, string]> = [
   ["plugin config", "bb plugin config lane-pilot set secrets.allow '*'"],
   ["plugin token", "bb plugin token lane-pilot"],
@@ -34,27 +35,11 @@ const STRICT_ONLY: Array<[string, string]> = [
   ["rsync from the hub", "rsync -a ubuntu@10.8.0.1:/home/ubuntu/.bb /tmp/bb"],
   ["ssh inside sh -c", "bash -c 'ssh vechkasov-ovh id'"],
 ];
-const EVERYONE: Array<[string, string]> = [
-  ["env-catalog get --raw", "bb env-catalog get OPENAI_API_KEY --raw"],
-  ["env-catalog get --raw first", "bb env-catalog get --raw OPENAI_API_KEY"],
-  ["env-catalog get --raw=true", "bb env-catalog get OPENAI_API_KEY --raw=true"],
-  ["base64 into sh", "echo YmIgZW52LWNhdGFsb2cgc2V0IEEgQg== | base64 -d | sh"],
-  ["base64 into bash", "base64 -d <<< 'YmI=' | bash"],
-  ["base64 into /bin/sh", "echo x | base64 --decode | /bin/sh"],
-  ["base64 into sudo bash", "base64 -d s.b64 | sudo bash"],
-  ["sh over a decoded substitution", "sh -c \"$(echo YmI= | base64 -d)\""],
-  ["eval of a decoded substitution", "eval \"$(echo YmI= | base64 -d)\""],
-];
-
 describe("shell guard, audit round 3 P0-2 deny list", () => {
   for (const role of ["writer", "pm-reader", "plan-critic", "code-critic"]) {
-    for (const [name, command] of [...STRICT_ONLY, ...EVERYONE]) {
+    for (const [name, command] of STRICT_ONLY) {
       it(`${role}: ${name}`, () => { expect(denied(command, role)).toBe(true); });
     }
-  }
-
-  for (const [name, command] of EVERYONE) {
-    it(`PM: ${name}`, () => { expect(denied(command, "lane-pilot-pm")).toBe(true); });
   }
 
   it("the PM still ships its own plugin and reaches the hub", () => {
@@ -64,9 +49,12 @@ describe("shell guard, audit round 3 P0-2 deny list", () => {
     expect(denied("ssh ovh-main uptime", "lane-pilot-pm")).toBe(false);
   });
 
-  it("everyday commands stay open for a writer", () => {
+  it("everyday commands stay open for a writer, Env Catalog and Lane Pilot's CLI included", () => {
     for (const command of [
-      "bb plugin list", "bb plugin logs lane-pilot", "bb env-catalog list", "bb env-catalog get OPENAI_API_KEY",
+      "bb plugin list", "bb plugin logs lane-pilot", "bb env-catalog list", "bb env-catalog get OPENAI_API_KEY", "bb env-catalog get OPENAI_API_KEY --raw",
+      "bb env-catalog set A secret", "bb env-catalog delete A", "bb env-catalog export --format json",
+      "bb plugin rpc call lane-pilot save_setting --input {}", "bb plugin rpc call env-catalog env_delete --input {}",
+      "bb lane-pilot schedule create '{}'", "bb lane-pilot anamnesis confirm x", "bb lane-pilot configure '{}'",
       "bb threads list", "ssh vast nvidia-smi", "echo aGk= | base64 -d", "base64 -d f.b64 > out.txt", "echo hi | sha256sum", "git status",
     ]) expect(denied(command, "writer"), command).toBe(false);
   });

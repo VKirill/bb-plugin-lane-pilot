@@ -6,7 +6,6 @@ import { hostContract, rpcContract } from "../../src/contracts";
 import { runAnamnesisCli } from "../../src/anamnesis/cli";
 import { createHub, type HostInfo } from "../../src/anamnesis/hub";
 import { anamnesisHandler } from "../../src/anamnesis/host";
-import { isAgentChild } from "../../src/anamnesis/wiring";
 import type { AnamnesisRequest } from "../../src/anamnesis/ops";
 
 const T0 = Date.UTC(2026, 2, 1);
@@ -36,8 +35,8 @@ beforeEach(() => {
 });
 afterEach(() => { if (previousDir === undefined) delete process.env.LANE_PILOT_ANAMNESIS_DIR; else process.env.LANE_PILOT_ANAMNESIS_DIR = previousDir; });
 
-const cli = (hub: ReturnType<typeof makeHub>, argv: string[], deny: (id: string | undefined) => Promise<string | null> = async () => null, threadId?: string) =>
-  runAnamnesisCli(argv, { hub, deny, threadId });
+const cli = (hub: ReturnType<typeof makeHub>, argv: string[]) =>
+  runAnamnesisCli(argv, { hub });
 
 describe("anamnesis contracts", () => {
   it("declares the host method and the RPC, and no more than that", () => {
@@ -137,21 +136,5 @@ describe("bb lane-pilot anamnesis", () => {
     expect((await cli(hub, ["sources", "--set", "git=off"])).stdout).toContain("git: off");
     expect((await cli(hub, ["sources", "--set", "telegram=on"])).stdout).toContain("telegram: on");
     expect((await cli(hub, ["sources", "--set", "git=maybe"])).stderr).toMatch(/on\|off/);
-  });
-
-  it("refuses a caller the policy denies, before it touches the store", async () => {
-    const hub = await seeded();
-    hostCalls.length = 0;
-    const result = await cli(hub, ["list"], async (id) => (id === "thr_writer" ? "not for writers" : null), "thr_writer");
-    expect(result).toEqual({ exitCode: 1, stderr: "not for writers" });
-    expect(hostCalls).toEqual([]);
-    expect((await cli(hub, ["list"], async () => null, undefined)).exitCode).toBe(0);
-  });
-
-  it("treats a child thread, a thread made by this plugin and an unknown thread as agents' threads", () => {
-    expect(isAgentChild({ parentThreadId: "thr_pm" })).toBe(true);
-    expect(isAgentChild({ originPluginId: "lane-pilot" })).toBe(true);
-    expect(isAgentChild(null)).toBe(true);
-    expect(isAgentChild({ parentThreadId: null, originPluginId: null })).toBe(false);
   });
 });

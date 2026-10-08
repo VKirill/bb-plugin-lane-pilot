@@ -486,10 +486,7 @@ def setting_rpc(method: str, payload: dict) -> dict:
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
         json.dump(payload, handle)
     try:
-        # The drill writes the sandbox project's writer.model on the owner's command (bb-plugin-push runs it): the call goes
-        # out as the owner's CLI, not as the agent session that started the push, so the owner is not asked for each of them.
-        owner_env = {k: v for k, v in os.environ.items() if k not in ("BB_VK_THREAD_TOKEN", "BB_THREAD_ID")}
-        rc, out, err = run([BB, "plugin", "rpc", "call", "lane-pilot", method, "--input-file", handle.name, "--json"], timeout=60, env=owner_env)
+        rc, out, err = run([BB, "plugin", "rpc", "call", "lane-pilot", method, "--input-file", handle.name, "--json"], timeout=60)
     finally:
         os.unlink(handle.name)
     if rc != 0:

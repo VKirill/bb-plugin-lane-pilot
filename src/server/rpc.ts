@@ -19,15 +19,13 @@ import { canaryRpc } from "./canary";
 import { sessionMemoryRpc } from "./session-memory";
 import { createWorkflowArchitect } from "./workflow-architect";
 import { architectStartRpc } from "./architect-start";
-import { guardRpc, ownerGateFor } from "./owner-gate";
 import { timeRpcHandlers } from "./rpc-timing";
 import { anamnesisFor } from "../anamnesis/wiring";
 
 /** One handler object from the five groups; each group carries the exact contract keys it implements. */
 export function registerRpc(ctx: ServerCore, services: Services) {
-  // Every method that is not a plain read answers to the owner (owner-gate.ts, RPC_CLASS names each); every call is timed (rpc-timing.ts).
-  const gate = ownerGateFor(ctx);
-  ctx.bb.rpc.register(rpcContract, timeRpcHandlers(guardRpc({
+  // Every call is timed (rpc-timing.ts). No caller check: every machine and every caller is the owner's (owner decision 2026-10-08).
+  ctx.bb.rpc.register(rpcContract, timeRpcHandlers({
     ...preferencesRpc(ctx, services),
     ...runsRpc(ctx, services),
     ...settingsRpc(ctx, services),
@@ -47,5 +45,5 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...createWorkflowArchitect(ctx, services).rpc,
     ...architectStartRpc(ctx, services),
     ...anamnesisFor(ctx).rpc,
-  }, gate), (message) => ctx.bb.log.debug(message)));
+  }, (message) => ctx.bb.log.debug(message)));
 }

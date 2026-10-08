@@ -8,11 +8,9 @@ import type { ServerCore } from "./core";
 import { RUN_BUDGET_SETTINGS, runHealth } from "./health";
 import { configuredSetting } from "./context";
 import { getCouncilSession } from "@lane-pilot/council";
-import { SCHEDULE_USAGE, runScheduleCli, scheduleCliMethod } from "./schedule-cli";
-import { ownerGateFor } from "./owner-gate";
+import { SCHEDULE_USAGE, runScheduleCli } from "./schedule-cli";
 import type { Services } from "./services";
 import { ANAMNESIS_USAGE } from "../anamnesis/cli";
-import { anamnesisAccessOfCli } from "../anamnesis/access";
 import { anamnesisFor } from "../anamnesis/wiring";
 
 export function registerCli(ctx: ServerCore, services: Services) {
@@ -87,14 +85,11 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"workflow-trigger", summary:"Start a workflow in a project as its schedule trigger does (the automation of a schedule calls this); exit 1 with the reason when it cannot start", usage:"bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]" },
       { name:"schedule", summary:"The schedule board: scheduled workflows, errands and scripts (list, show, history, preview, create, update, pause, resume, run-now, delete)", usage:SCHEDULE_USAGE },
     ],
-    async run(argv, cliContext) {
+    async run(argv) {
       try {
         const [command, ...args] = argv;
         if (command === "anamnesis") {
-          // Reading the owner's records, changing them and the few changes only the owner makes are three different things (anamnesis/access.ts).
-          const verdict = await ownerGateFor(ctx).checkAnamnesisCli(anamnesisAccessOfCli(args), args, cliContext);
-          if (!verdict.ok) return { exitCode:1, stderr:verdict.message };
-          return await anamnesisFor(ctx).cli(args, cliContext);
+          return await anamnesisFor(ctx).cli(args);
         }
         if (command === "workflow-trigger" && args.length >= 2 && args.length <= 4) {
           const parsed: unknown = args[2] ? JSON.parse(args[2]) : {};
@@ -104,10 +99,6 @@ export function registerCli(ctx: ServerCore, services: Services) {
           return { exitCode:result.ok ? 0 : 1, stdout:JSON.stringify(result, null, 2) };
         }
         if (command === "schedule") {
-          // A script on a machine with secrets: the same caller rules as the schedule RPCs (owner-gate.ts).
-          const method = scheduleCliMethod(args[0]);
-          const verdict = method ? await ownerGateFor(ctx).checkCli(method, args, cliContext) : { ok:true as const };
-          if (!verdict.ok) return { exitCode:1, stdout:JSON.stringify({ ok:false, error:verdict.message }) };
           return await runScheduleCli(services, args);
         }
         if (command === "configure" && args.length === 1) {

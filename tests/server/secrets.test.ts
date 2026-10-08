@@ -110,7 +110,7 @@ describe("secrets in a check", () => {
     expect(hostContract.runSandboxedCommand.input.safeParse(calls[0]!.input).success).toBe(true);
   });
 
-  it("a secret the owner has not allowed is not fetched, and the check does not run", async () => {
+  it("a secret the project list leaves out is not fetched, and the check does not run", async () => {
     const { calls, verify } = verifier({ allow:"OTHER_KEY" });
     const failure = await verify.runVerification(config, task([{ command:"node e2e.js", cwd:root, secrets:["STRIPE_TEST_KEY"] }])).catch((cause:unknown) => cause);
     expect(failure).toBeInstanceOf(SecretsNotReadyError);
@@ -118,28 +118,17 @@ describe("secrets in a check", () => {
     expect(calls).toEqual([]);
   });
 
-  // Audit 2026-10-08 S1: an empty list allows nothing; a name is allowed once the owner approved it (or `*`).
-  it("an empty secrets.allow hands out nothing: the check does not run and nothing is fetched", async () => {
+  // Owner decision 2026-10-08: an empty list allows every name the task contract declares; a list only narrows.
+  it("an empty secrets.allow lets the catalog entry the task names reach its check", async () => {
     const { verify, calls } = verifier();
-    await expect(verify.runVerification(config, task([{ command:"x", cwd:root, secrets:["STRIPE_TEST_KEY"] }]))).rejects.toThrow("waiting_secret:STRIPE_TEST_KEY");
-    expect(calls).toEqual([]);
-  });
-
-  it("`*` is the owner's explicit allow-all", async () => {
-    const { verify, calls } = verifier({ allow:"*" });
     await expect(verify.runVerification(config, task([{ command:"x", cwd:root, secrets:["STRIPE_TEST_KEY"] }]))).resolves.toBeDefined();
     expect(calls.some((call) => call.method === "runSandboxedCommand")).toBe(true);
   });
 
-  it("a host a check declares is approved like a name (net:host) and reaches the host call", async () => {
-    const denied = verifier({ allow:"STRIPE_TEST_KEY" });
-    await expect(denied.verify.runVerification(config, task([{ command:"x", cwd:root, secrets:["STRIPE_TEST_KEY"], network:["api.stripe.com"] }]))).rejects.toThrow("waiting_secret:net:api.stripe.com");
-    expect(denied.calls).toEqual([]);
-    const allowed = verifier({ allow:"STRIPE_TEST_KEY, net:api.stripe.com" });
-    await allowed.verify.runVerification(config, task([{ command:"x", cwd:root, secrets:["STRIPE_TEST_KEY"], network:["api.stripe.com"] }]));
-    const call = allowed.calls.find((row) => row.method === "runSandboxedCommand")!;
-    expect(call.input.networkHosts).toEqual(["api.stripe.com"]);
-    expect(hostContract.runSandboxedCommand.input.safeParse(call.input).success).toBe(true);
+  it("`*` allows any name", async () => {
+    const { verify, calls } = verifier({ allow:"*" });
+    await expect(verify.runVerification(config, task([{ command:"x", cwd:root, secrets:["STRIPE_TEST_KEY"] }]))).resolves.toBeDefined();
+    expect(calls.some((call) => call.method === "runSandboxedCommand")).toBe(true);
   });
 
   it("journals who was given which name, never the value", async () => {
@@ -148,7 +137,7 @@ describe("secrets in a check", () => {
     const rows = listSecretIssuance(db, "P");
     // The fake host fails the check, so the flaky rerun hands the name out a second time: each run is one entry.
     expect(rows.length).toBeGreaterThanOrEqual(1);
-    expect(rows[0]).toMatchObject({ consumer:"check", runId:"run-1", taskId:"t", threadId:"thr-writer", checkCommand:"node e2e.js", secretName:"STRIPE_TEST_KEY", hostId:"h", network:"localhost" });
+    expect(rows[0]).toMatchObject({ consumer:"check", runId:"run-1", taskId:"t", threadId:"thr-writer", checkCommand:"node e2e.js", secretName:"STRIPE_TEST_KEY", hostId:"h" });
     expect(JSON.stringify(rows)).not.toContain(STRIPE);
   });
 

@@ -7,7 +7,7 @@ import { DEFAULT_LOOKBACK_DAYS, formatReport, type LoadOptions, type LoadReport 
 /**
  * `bb lane-pilot anamnesis …` — how the owner, and a PM that the owner asked, reach the records. There is no agent tool for it
  * (the PM's tool list is full); a PM runs this command in its shell when the owner asks who they are in its eyes.
- * Sensitive records appear only with --include-sensitive, which the owner passes (an agent is refused; src/anamnesis/access.ts).
+ * Sensitive records appear only with --include-sensitive, which is passed on purpose (privacy default, not a caller check).
  */
 export const ANAMNESIS_USAGE = [
   "bb lane-pilot anamnesis status [--json]",
@@ -32,9 +32,6 @@ export type CliDeps = {
   hub: Hub;
   /** The first load; absent where Lane Pilot is not mounted (tests of the plain commands). */
   load?: (options: LoadOptions) => Promise<LoadReport>;
-  /** Null when the caller may read the records; otherwise why not. Lane Pilot's writers and helpers never may. */
-  deny(threadId: string | undefined): Promise<string | null>;
-  threadId?: string | undefined;
   now?: () => number;
 };
 
@@ -62,8 +59,6 @@ export async function runAnamnesisCli(argv: string[], deps: CliDeps, extra: Reco
     const parsed = parse(argv);
     const command = parsed.positionals[0];
     if (parsed.values.help || !command || command === "help") return { exitCode: 0, stdout: ANAMNESIS_USAGE };
-    const denied = await deps.deny(deps.threadId);
-    if (denied) return { exitCode: 1, stderr: denied };
     const handler = extra[command];
     if (handler) return await handler(parsed);
     return await core(command, parsed, deps);

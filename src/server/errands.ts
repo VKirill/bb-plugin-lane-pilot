@@ -150,14 +150,13 @@ export function mountErrands(ctx: ServerCore) {
   type Blocked = { state: "blocked"; reason: string; next: string; fix: string[] };
 
   /**
-   * The accounts a PM or a schedule hands to an errand (J7): only names the owner allowed, only they are named to the helper.
-   * Not allowed or missing: nothing starts, the owner is asked once, and `blocked` says what to do.
+   * The accounts a PM or a schedule hands to an errand (J7): only the names the project list leaves open, only they are named to the helper.
+   * Left out or missing: nothing starts and `blocked` says what to do.
    */
   async function resolveAccounts(input: { projectId: string; runId: string; pmThreadId: string; names: readonly string[] }): Promise<{ ok: true; accounts: CatalogEntry[] } | { ok: false; blocked: Blocked }> {
     if (!input.names.length) return { ok: true, accounts: [] };
     const gate = await ctx.secrets.check({ declared: [...input.names], allowed: allowedSecretNames(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId))), kinds: ["secret", "login", "ssh", "ftp"] }, { fresh: true });
     const problem = secretProblem(gate);
-    if (gate.denied.length) await ctx.secretApproval.request({ projectId: input.projectId, pmThreadId: input.pmThreadId, entries: gate.denied, use: "an errand helper" });
     if (problem.length || gate.unavailable) {
       return { ok: false, blocked: { state: "blocked", reason: waitingSecretReason(problem.length ? problem : [...input.names]), next: "No helper was started. Fix the access below, then call lane_pilot_errand again with the same arguments:", fix: secretFixLines(gate) } };
     }
@@ -217,7 +216,7 @@ export function mountErrands(ctx: ServerCore) {
   registerObservedTool(bb.agents, {
     name: "lane_pilot_errand",
     description: "Hand a non-code task to a helper thread: a cloud console in the owner's browser, a mailbox, a screen recording, an account in Env Catalog.",
-    instructions: "Use from a Lane Pilot PM chat for work that is not a change to this project's code (code goes through lane_pilot_dispatch_writer). Give the whole task: goal, where, what to report. `authorized: true` when the task makes changes. Authorization follows the owner's goal, as in your instructions. Otherwise the helper only reads and reports. For a step that needs an SSH, FTP or login account (a deploy to a server or hosting), pass its Env Catalog names in `accounts`: the helper reads them from the catalog and keeps the keys out of every repository; the owner allows each name once for the project (a form in this chat; the setting secrets.allow), and if one is missing or not allowed yet nothing starts and the answer says what to do (env_request for a missing one, wait for the owner\'s answer), then call again. The helper never changes, commits or pushes repository files: if the task asks for that it stops with ERRAND: blocked and you must dispatch a writer task. Returns at once with the thread; call lane_pilot_wait_errand with its threadId, again while it is running, and show the owner the @thread link.",
+    instructions: "Use from a Lane Pilot PM chat for work that is not a change to this project's code (code goes through lane_pilot_dispatch_writer). Give the whole task: goal, where, what to report. `authorized: true` when the task makes changes. Authorization follows the owner's goal, as in your instructions. Otherwise the helper only reads and reports. For a step that needs an SSH, FTP or login account (a deploy to a server or hosting), pass its Env Catalog names in `accounts`: the helper reads them from the catalog and keeps the keys out of every repository; the project list secrets.allow, when it is not empty, must include the name, and if one is missing or left out of that list nothing starts and the answer says what to do (env_request for a missing one, add a left-out one to secrets.allow), then call again. The helper never changes, commits or pushes repository files: if the task asks for that it stops with ERRAND: blocked and you must dispatch a writer task. Returns at once with the thread; call lane_pilot_wait_errand with its threadId, again while it is running, and show the owner the @thread link.",
     parameters: z.object({
       task: z.string().min(10).max(20_000),
       title: z.string().min(1).max(120).optional(),

@@ -141,7 +141,7 @@ describe("the first load", () => {
 });
 
 describe("bb lane-pilot anamnesis load, review, config", () => {
-  const cli = (deps: LoadDeps, argv: string[]) => runAnamnesisCli(argv, { hub: deps.hub, deny: async () => null, load: (options) => loadAnamnesis(deps, options) });
+  const cli = (deps: LoadDeps, argv: string[]) => runAnamnesisCli(argv, { hub: deps.hub, load: (options) => loadAnamnesis(deps, options) });
 
   it("plans by default, and sending to Jev needs --yes", async () => {
     const deps = makeDeps(EVENTS(), async (texts) => texts.map(() => null));
@@ -216,7 +216,7 @@ describe("what leaves for Jev", () => {
 
   it("config --max-classify sets the ceiling", async () => {
     const deps = makeDeps(EVENTS());
-    const cli = (argv: string[]) => runAnamnesisCli(argv, { hub: deps.hub, deny: async () => null, load: (options) => loadAnamnesis(deps, options) });
+    const cli = (argv: string[]) => runAnamnesisCli(argv, { hub: deps.hub, load: (options) => loadAnamnesis(deps, options) });
     expect(JSON.parse((await cli(["config", "--max-classify", "50"])).stdout!)).toMatchObject({ maxClassify: 50 });
     expect(await cli(["config", "--max-classify", "0"])).toMatchObject({ exitCode: 1, stderr: expect.stringMatching(/whole number/) });
   });

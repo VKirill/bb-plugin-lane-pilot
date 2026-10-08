@@ -7,14 +7,15 @@ import { BB_SHIM_NAMES, prepareBbShim } from "../src/bb-shim";
 import { OPENCODE_BASH_DENY } from "../src/opencode-min-config";
 import { hookEnv } from "./hook-env";
 
-// Audit 2026-10-08 round 4, P0-7: the ways past the shell guard (hub address in other notations, wrapper options that take a value,
-// schedule and anamnesis writes missing from the shim and OpenCode lists). The guard is the second line; the server check is the first.
+// Audit 2026-10-08 round 4, P0-7: the ways past the shell guard (hub address in other notations, wrapper options that take a value). Since the
+// owner decision of 2026-10-08 the guard stops only what breaks the hub by mistake (plugin admin commands, ssh to the hub): schedule, anamnesis and
+// Env Catalog commands are open to every agent.
 const guard = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
 const temp = () => mkdtempSync(join(tmpdir(), "guard-r4-"));
 
 type Verdict = { status: number | null; stdout: string };
 const payloadOf = (command: string, agentType: string | null) => JSON.stringify({ tool_name: "Bash", tool_input: { command }, cwd: "/tmp", ...(agentType ? { agent_type: agentType } : {}) });
-const isDenied = (verdict: Verdict) => verdict.status === 2 && /\[env-guard\]/.test(verdict.stdout);
+const isDenied = (verdict: Verdict) => verdict.status === 2 && /\[hub-guard\]/.test(verdict.stdout);
 
 const POOL = 8;
 async function runMany(cases: Array<{ command: string; agentType: string | null; env?: Record<string, string> }>): Promise<Verdict[]> {
@@ -35,25 +36,25 @@ async function runMany(cases: Array<{ command: string; agentType: string | null;
 // A command a Lane Pilot writer or helper (strict) must not run, in a form that got past the first version of the guard.
 const STRICT_DENIED: Array<[string, string]> = [
   // the bb binary by path or through a wrapper whose option takes a value
-  ["absolute path to bb", "/opt/homebrew/bin/bb env-catalog set A B"],
-  ["home path to bb", "~/.local/bin/bb env-catalog delete A"],
-  ["quoted path to bb", "\"/usr/local/bin/bb\" env-catalog export"],
-  ["BB_CLI binary path", "/Users/x/.bb-machines/m/npm/lib/node_modules/bb-app/host-daemon/dist/bb env-catalog set A B"],
-  ["node path to bb", "node /opt/bb-app/dist/bb env-catalog set A B"],
-  ["command -p", "command -p bb env-catalog set A B"],
-  ["command -p absolute", "command -p /usr/local/bin/bb env-catalog set A B"],
-  ["env bb", "env bb env-catalog set A B"],
-  ["/usr/bin/env bb", "/usr/bin/env bb env-catalog set A B"],
-  ["env -u NAME", "env -u HTTP_PROXY bb env-catalog set A B"],
-  ["env -C dir", "env -C /tmp bb env-catalog set A B"],
-  ["env -S string", "env -S 'bb env-catalog set A B'"],
-  ["env --split-string", "env --split-string='bb env-catalog set A B'"],
-  ["sudo -u user", "sudo -u root bb env-catalog set A B"],
-  ["timeout -s SIGNAL", "timeout -s KILL 5 bb env-catalog set A B"],
-  ["exec -a name", "exec -a x bb env-catalog set A B"],
-  ["nice -n N", "nice -n 5 bb env-catalog export"],
-  ["xargs -I", "echo A | xargs -I{} bb env-catalog delete {}"],
-  ["nested wrappers", "sudo -u root env -u X timeout -s KILL 5 /usr/bin/bb env-catalog set A B"],
+  ["absolute path to bb", "/opt/homebrew/bin/bb plugin remove A"],
+  ["home path to bb", "~/.local/bin/bb plugin remove A"],
+  ["quoted path to bb", "\"/usr/local/bin/bb\" plugin remove A"],
+  ["BB_CLI binary path", "/Users/x/.bb-machines/m/npm/lib/node_modules/bb-app/host-daemon/dist/bb plugin remove A"],
+  ["node path to bb", "node /opt/bb-app/dist/bb plugin remove A"],
+  ["command -p", "command -p bb plugin remove A"],
+  ["command -p absolute", "command -p /usr/local/bin/bb plugin remove A"],
+  ["env bb", "env bb plugin remove A"],
+  ["/usr/bin/env bb", "/usr/bin/env bb plugin remove A"],
+  ["env -u NAME", "env -u HTTP_PROXY bb plugin remove A"],
+  ["env -C dir", "env -C /tmp bb plugin remove A"],
+  ["env -S string", "env -S 'bb plugin remove A'"],
+  ["env --split-string", "env --split-string='bb plugin remove A'"],
+  ["sudo -u user", "sudo -u root bb plugin remove A"],
+  ["timeout -s SIGNAL", "timeout -s KILL 5 bb plugin remove A"],
+  ["exec -a name", "exec -a x bb plugin remove A"],
+  ["nice -n N", "nice -n 5 bb plugin remove A"],
+  ["xargs -I", "echo A | xargs -I{} bb plugin remove {}"],
+  ["nested wrappers", "sudo -u root env -u X timeout -s KILL 5 /usr/bin/bb plugin remove A"],
   // the hub in other notations
   ["ssh 10.8.1", "ssh ubuntu@10.8.1"],
   ["ssh 10.524289", "ssh ubuntu@10.524289"],
@@ -81,52 +82,23 @@ const STRICT_DENIED: Array<[string, string]> = [
   ["hop inside a quoted remote command", "ssh vast 'ssh ubuntu@10.8.1 id'"],
   ["rescue-vps", "ssh rescue-vps"],
   ["sudo -u ssh", "sudo -u root ssh ubuntu@10.8.1"],
-  // schedules and anamnesis
-  ["schedule create by absolute bb", "/opt/homebrew/bin/bb lane-pilot schedule create '{}'"],
-  ["schedule run-now by BB_CLI", "$BB_CLI lane-pilot schedule run-now sch_1"],
-  ["schedule resume through env", "env -u X bb lane-pilot schedule resume sch_1"],
-  ["schedule cancel-run", "bb lane-pilot schedule cancel-run run_1"],
-  ["schedule_cancel_run rpc", "bb plugin rpc call lane-pilot schedule_cancel_run --input '{}'"],
-  ["schedule rpc by absolute path", "/usr/local/bin/bb plugin rpc call lane-pilot schedule_upsert --input-file x.json"],
-  ["anamnesis rpc", "bb plugin rpc call lane-pilot anamnesis --input '{\"request\":{\"op\":\"list\",\"includeSensitive\":true}}'"],
-  ["anamnesis rpc by plugin id", "bb plugin rpc call bb-plugin-lane-pilot anamnesis --input-file x.json"],
-  ["anamnesis forget all", "bb lane-pilot anamnesis forget --all --yes"],
-  ["anamnesis add", "bb lane-pilot anamnesis add --kind fact --key k --title t --reason r"],
-  ["anamnesis edit", "bb lane-pilot anamnesis edit rec_1 --sensitivity public --reason r"],
-  ["anamnesis confirm", "bb --json lane-pilot anamnesis confirm rec_1"],
-  ["anamnesis via plugin run", "bb plugin run lane-pilot anamnesis forget rec_1"],
-  ["anamnesis read by a writer", "bb lane-pilot anamnesis list --include-sensitive"],
-  ["anamnesis whoami by a writer", "bb lane-pilot anamnesis whoami"],
-  ["anamnesis in sh -c", "sh -c 'bb lane-pilot anamnesis forget --all --yes'"],
 ];
 
-// The PM reads the anamnesis but does not change it; the PM reaches the hub.
-const PM_DENIED: Array<[string, string]> = [
-  ["anamnesis rpc", "bb plugin rpc call lane-pilot anamnesis --input-file x.json"],
-  ["anamnesis add", "bb lane-pilot anamnesis add --kind fact --key k --title t --reason r"],
-  ["anamnesis edit", "bb lane-pilot anamnesis edit rec_1 --status confirmed --reason r"],
-  ["anamnesis confirm", "bb lane-pilot anamnesis confirm rec_1"],
-  ["anamnesis reject", "bb lane-pilot anamnesis reject rec_1"],
-  ["anamnesis forget", "bb lane-pilot anamnesis forget rec_1"],
-  ["anamnesis forget all", "$BB_CLI lane-pilot anamnesis forget --all --yes"],
-  ["anamnesis sources --set", "bb lane-pilot anamnesis sources --set git=on"],
-  ["anamnesis config", "bb lane-pilot anamnesis config --roots /Users/x/code"],
-  ["anamnesis load --run", "bb lane-pilot anamnesis load --run --classify --yes"],
-  ["anamnesis dynamic subcommand", "bb lane-pilot anamnesis $SUB rec_1"],
-  ["anamnesis through wrappers", "sudo -u root env -u X bb lane-pilot anamnesis forget --all --yes"],
-  ["schedule create through wrappers", "timeout -s KILL 5 bb lane-pilot schedule create '{}'"],
-];
+// The PM reads and changes the anamnesis, the schedule board and Env Catalog through the bb CLI, and reaches the hub.
 const PM_ALLOWED = [
   "bb lane-pilot anamnesis status",
   "bb lane-pilot anamnesis list --kind fact --json",
-  "bb lane-pilot anamnesis show rec_1",
-  "bb lane-pilot anamnesis whoami --sections identity",
-  "bb lane-pilot anamnesis card",
-  "bb lane-pilot anamnesis review",
-  "bb lane-pilot anamnesis sources",
-  "bb lane-pilot anamnesis config",
-  "bb lane-pilot anamnesis load",
-  "bb lane-pilot anamnesis load --since 2026-09-01",
+  "bb lane-pilot anamnesis confirm rec_1",
+  "bb lane-pilot anamnesis forget rec_1",
+  "bb lane-pilot anamnesis sources --set git=on",
+  "bb lane-pilot anamnesis load --run --classify --yes",
+  "bb lane-pilot schedule create '{}'",
+  "bb lane-pilot schedule run-now sch_1",
+  "bb plugin rpc call lane-pilot schedule_upsert --input-file x.json",
+  "bb plugin rpc call lane-pilot save_setting --input-file x.json",
+  "bb env-catalog get MY_KEY",
+  "bb env-catalog set MY_KEY value",
+  "bb env-catalog delete MY_KEY",
   "ssh ovh-main uptime",
   "ssh ubuntu@10.8.1 uptime",
 ];
@@ -149,12 +121,13 @@ const STRICT_ALLOWED = [
   "bb plugin rpc call lane-pilot schedule_list --input '{}'",
   "bb plugin rpc call lane-pilot schedule_runs --input '{\"id\":\"sch_1\"}'",
   "bb env-catalog request MY_KEY --purpose 'set up the deploy'",
+  "bb env-catalog set MY_KEY value", "bb env-catalog delete MY_KEY", "bb env-catalog get MY_KEY --raw",
+  "bb lane-pilot schedule create '{}'", "bb lane-pilot anamnesis forget --all --yes", "bb plugin rpc call lane-pilot save_setting --input-file x.json",
   "sudo -u root ls /tmp",
   "env -u FOO printenv BAR",
   "timeout -s KILL 5 sleep 1",
   "echo 'ssh ubuntu@10.8.1' > /tmp/note.txt",
   "grep -rn 'lane-pilot anamnesis' docs",
-  "git commit -m 'guard: bb lane-pilot anamnesis forget is the owner'",
 ];
 
 const STRICT_ROLES: Array<[string, string | null, Record<string, string>]> = [
@@ -177,12 +150,9 @@ describe("the shell guard against the round 4 bypasses", () => {
   }
 
   for (const [role, agentType, env] of PM_ROLES) {
-    it(`denies the writes of the owner's records and the wrapped schedule calls for ${role}, and lets the reads and the hub through`, async () => {
-      const verdicts = await runMany([...PM_DENIED, ...PM_ALLOWED.map((command) => [command, command] as [string, string])].map(([, command]) => ({ command, agentType, env })));
-      const denied = verdicts.slice(0, PM_DENIED.length);
-      expect(PM_DENIED.filter((_, index) => !isDenied(denied[index]!)).map(([name]) => name)).toEqual([]);
-      const allowed = verdicts.slice(PM_DENIED.length);
-      expect(PM_ALLOWED.filter((_, index) => isDenied(allowed[index]!))).toEqual([]);
+    it(`lets the reads, the writes of the owner's records, the schedule calls and the hub through for ${role}`, async () => {
+      const verdicts = await runMany(PM_ALLOWED.map((command) => ({ command, agentType, env })));
+      expect(PM_ALLOWED.filter((_, index) => verdicts[index]!.status === 2)).toEqual([]);
     }, 60_000);
   }
 
@@ -195,15 +165,15 @@ describe("the shell guard against the round 4 bypasses", () => {
   });
 
   it("does not touch a session that is not a Lane Pilot agent", async () => {
-    const verdicts = await runMany(["ssh ubuntu@10.8.1", "bb lane-pilot anamnesis forget --all --yes", "env -u X bb env-catalog set A B"].map((command) => ({ command, agentType: "Explore" })));
+    const verdicts = await runMany(["ssh ubuntu@10.8.1", "bb plugin remove lane-pilot", "env -u X bb plugin remove A"].map((command) => ({ command, agentType: "Explore" })));
     expect(verdicts.map(isDenied)).toEqual([false, false, false]);
   });
 
   it("reads the file BB_CLI points at as bb, whatever it is called", async () => {
     const odd = "/opt/tools/bbctl";
     const [named, other] = await runMany([
-      { command: `${odd} env-catalog set A B`, agentType: "errand", env: { BB_CLI: odd } },
-      { command: `${odd} env-catalog set A B`, agentType: "errand" },
+      { command: `${odd} plugin remove A`, agentType: "errand", env: { BB_CLI: odd } },
+      { command: `${odd} plugin remove A`, agentType: "errand" },
     ]);
     expect(isDenied(named!)).toBe(true);
     expect(isDenied(other!)).toBe(false);
@@ -310,21 +280,8 @@ const SHIM_DENIED: Array<[string, string[]]> = [
   ["scp", ["ubuntu@10.8.1:/etc/passwd", "/tmp/x"]],
   ["scp", ["ubuntu@[::ffff:10.8.0.1]:/etc/passwd", "/tmp/x"]],
   ["sftp", ["ubuntu@0x0a080001"]],
-  ["bb", ["lane-pilot", "schedule", "create", "{}"]],
-  ["bb", ["lane-pilot", "schedule", "update", "sch_1", "{}"]],
-  ["bb", ["lane-pilot", "schedule", "delete", "sch_1"]],
-  ["bb", ["--json", "lane-pilot", "schedule", "pause", "sch_1"]],
-  ["bb", ["lane-pilot", "schedule", "resume", "sch_1"]],
-  ["bb", ["lane-pilot", "schedule", "run-now", "sch_1"]],
-  ["bb", ["lane-pilot", "schedule", "cancel-run", "run_1"]],
-  ["bb", ["bb-plugin-lane-pilot", "schedule", "create", "{}"]],
-  ["bb", ["plugin", "run", "lane-pilot", "schedule", "create", "{}"]],
-  ...["schedule_upsert", "schedule_delete", "schedule_pause", "schedule_resume", "schedule_run_now", "schedule_cancel_run"].map((method): [string, string[]] => ["bb", ["plugin", "rpc", "call", "lane-pilot", method, "--input", "{}"]]),
-  ["bb", ["plugin", "rpc", "call", "bb-plugin-lane-pilot", "schedule_upsert", "--input-file", "x.json"]],
-  ["bb", ["plugin", "rpc", "call", "lane-pilot", "anamnesis", "--input", "{\"request\":{\"op\":\"list\"}}"]],
-  ["bb", ["lane-pilot", "anamnesis", "forget", "--all", "--yes"]],
-  ["bb", ["lane-pilot", "anamnesis", "list", "--include-sensitive"]],
-  ["bb", ["bb-plugin-lane-pilot", "anamnesis", "add", "--kind", "fact"]],
+  ["bb", ["plugin", "remove", "lane-pilot"]],
+  ["bb", ["--json", "plugin", "safe-mode", "on"]],
 ];
 const SHIM_ALLOWED: Array<[string, string[]]> = [
   ["ssh", ["vast", "nvidia-smi"]],
@@ -346,6 +303,10 @@ const SHIM_ALLOWED: Array<[string, string[]]> = [
   ["bb", ["plugin", "rpc", "call", "lane-pilot", "schedule_runs", "--input", "{}"]],
   ["bb", ["plugin", "rpc", "call", "lane-pilot", "get_run", "--input", "{}"]],
   ["bb", ["env-catalog", "request", "NEW_KEY"]],
+  ["bb", ["env-catalog", "set", "A", "value"]],
+  ["bb", ["lane-pilot", "schedule", "create", "{}"]],
+  ["bb", ["lane-pilot", "anamnesis", "forget", "--all", "--yes"]],
+  ["bb", ["plugin", "rpc", "call", "lane-pilot", "schedule_upsert", "--input", "{}"]],
 ];
 
 describe("the PATH wrappers against the round 4 bypasses", () => {
@@ -354,7 +315,7 @@ describe("the PATH wrappers against the round 4 bypasses", () => {
       it(`${shell}: refuses ${program} ${args.join(" ")}`, async () => {
         const res = (await shimSetup())(shell, program, ...args);
         expect(res.status).toBe(126);
-        expect(res.stderr).toContain("[env-guard]");
+        expect(res.stderr).toContain("[hub-guard]");
         expect(res.stdout).not.toContain("REAL");
       });
     }
@@ -375,16 +336,8 @@ const openCodeDenies = (command: string) => OPENCODE_BASH_DENY.some((pattern) =>
 
 describe("the OpenCode bash deny list against the round 4 bypasses", () => {
   const DENIED = [
-    "$BB_CLI env-catalog set A B",
-    "/opt/homebrew/bin/bb env-catalog delete A",
-    "$BB_CLI plugin rpc call lane-pilot save_setting --input-file x.json",
     "$BB_CLI plugin config lane-pilot",
-    "bb plugin rpc call lane-pilot schedule_upsert --input-file x.json",
-    "/usr/local/bin/bb plugin rpc call bb-plugin-lane-pilot schedule_run_now --input '{}'",
-    ...["schedule_upsert", "schedule_delete", "schedule_pause", "schedule_resume", "schedule_run_now", "schedule_cancel_run", "anamnesis"].map((method) => `$BB_CLI plugin rpc call lane-pilot ${method} --input '{}'`),
-    ...["create", "update", "delete", "pause", "resume", "run-now", "cancel-run"].map((sub) => `$BB_CLI lane-pilot schedule ${sub} sch_1`),
-    "bb lane-pilot anamnesis forget --all --yes",
-    "bb --json lane-pilot anamnesis list --include-sensitive",
+    "/opt/homebrew/bin/bb plugin remove lane-pilot",
     "ssh ubuntu@10.8.1",
     "ssh ubuntu@0x0a080001 id",
     "ssh 168296449",
@@ -400,9 +353,12 @@ describe("the OpenCode bash deny list against the round 4 bypasses", () => {
 
   for (const command of [
     "bb lane-pilot schedule list --json",
-    "bb lane-pilot schedule show sch_1",
-    "bb plugin rpc call lane-pilot schedule_list --input '{}'",
-    "bb env-catalog request MY_KEY --purpose 'set up the deploy'",
+    "bb lane-pilot schedule create '{}'",
+    "bb lane-pilot anamnesis forget --all --yes",
+    "bb plugin rpc call lane-pilot schedule_upsert --input '{}'",
+    "bb plugin rpc call lane-pilot save_setting --input '{}'",
+    "bb env-catalog set A B",
+    "bb env-catalog get MY_KEY --raw",
     "bb env-catalog list",
     "ssh vast nvidia-smi",
     "ssh 10.9.0.1",
@@ -410,18 +366,10 @@ describe("the OpenCode bash deny list against the round 4 bypasses", () => {
   ]) it(`lets through ${command}`, () => expect(openCodeDenies(command)).toBe(false));
 });
 
-describe("the three lists carry the same schedule and anamnesis entries", () => {
-  const SCHEDULE_RPC = ["schedule_upsert", "schedule_delete", "schedule_pause", "schedule_resume", "schedule_run_now", "schedule_cancel_run"];
-  const SCHEDULE_CLI = ["create", "update", "delete", "pause", "resume", "run-now", "cancel-run"];
-
-  it("guard, wrapper and OpenCode all refuse every schedule write and every anamnesis form", async () => {
+describe("the three lists carry the same plugin admin entries", () => {
+  it("guard, wrapper and OpenCode all refuse every plugin admin command", async () => {
     const run = await shimSetup();
-    const commands: Array<{ line: string; program: string; args: string[] }> = [
-      ...SCHEDULE_RPC.map((method) => ["bb", "plugin", "rpc", "call", "lane-pilot", method, "--input", "{}"]),
-      ...SCHEDULE_CLI.map((sub) => ["bb", "lane-pilot", "schedule", sub, "x"]),
-      ["bb", "plugin", "rpc", "call", "lane-pilot", "anamnesis", "--input", "{}"],
-      ["bb", "lane-pilot", "anamnesis", "forget", "--all", "--yes"],
-    ].map((words) => ({ line: words.join(" "), program: words[0]!, args: words.slice(1) }));
+    const commands = ["config", "token", "disable", "enable", "reload", "remove", "safe-mode"].map((sub) => ({ line: `bb plugin ${sub} x`, program: "bb", args: ["plugin", sub, "x"] }));
     const verdicts = await runMany(commands.map(({ line }) => ({ command: line, agentType: "writer" })));
     commands.forEach(({ line, program, args }, index) => {
       expect(isDenied(verdicts[index]!), `guard: ${line}`).toBe(true);
