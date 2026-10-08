@@ -42,6 +42,7 @@ import {
   SelectValue,
 } from "../../components/ui/select";
 import { Switch } from "../../components/ui/switch";
+import { Skeleton } from "../../components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { HelpSup } from "./help-sup";
 import { EXTERNAL_OPS_BY_ACTION } from "../constants";
@@ -628,6 +629,15 @@ function runTone(state: string): "default" | "secondary" | "destructive" | "outl
   return "outline";
 }
 
+function OverviewLoading() {
+  return <div data-testid="overview-loading" aria-busy="true" className="space-y-3">
+    <p className="text-sm text-muted-foreground">{t("overviewLoading")}</p>
+    <Skeleton className="h-28 w-full" />
+    <Skeleton className="h-16 w-full" />
+    <Skeleton className="h-16 w-full" />
+  </div>;
+}
+
 /** The stage receipts of a run: the screen carries only their count, the rows load when the list is opened. */
 function RunStages({ runId, count }: { runId: string; count: number }) {
   const rpc = useRpc<typeof rpcContract>();
@@ -702,6 +712,9 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
   const [finishing, setFinishing] = useState(false);
   const providers = useProviders();
   const [tab, setTab] = useState("overview");
+  // A tab mounts when it is first opened and stays mounted after that: ten tabs at once cost 25 000 DOM nodes on a big project.
+  const visited = useRef(new Set<string>());
+  visited.current.add(tab);
   const [runsShown, setRunsShown] = useState(20);
   // How many of the newest runs the screen has fetched; the rest of the history comes by `list_runs` pages.
   const runsWindow = useRef(0);
@@ -1425,6 +1438,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     return () => { alive = false; if (timer) clearTimeout(timer); };
   }, [tab, nativeHostId, nativeState?.status === "installing", rpc]);
   const writerChosen = Boolean(data?.values[WRITER_PROVIDER] && data?.values[WRITER_MODEL]);
+  // The overview waits for the screen instead of showing the defaults («no model», «no runs») that the data then replaces.
+  const screenLoading = !data && !error && Boolean(projectId);
   const activeRuns = (data?.runs ?? []).filter((run) => run.state === "pending" || run.state === "running").length;
   const trackLines = (() => {
     if (!routingStats) return [];
@@ -1587,6 +1602,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             </div>
           {tabs.includes("overview") ? <>
           <TabsContent value="overview" forceMount={true} className="space-y-6" hidden={tab !== "overview"} data-testid="overview-panel">
+            {visited.current.has("overview") ? <>
+            {screenLoading ? <OverviewLoading /> : <>
             <Surface testId="setup-status">
               <SurfaceHeader><h2 className="text-sm font-medium">{t("overviewSetup")}</h2></SurfaceHeader>
               <SurfaceBody className="space-y-3">
@@ -1673,9 +1690,12 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
           </Select>
         </div>
         </Surface>
+            </>}
+            </> : null}
           </TabsContent>
           </> : null}
           <TabsContent value="settings" forceMount={true} className="space-y-6" hidden={tab !== "settings"} data-testid="settings-panel">
+            {visited.current.has("settings") ? <>
             <SettingsGroup testId="settings-execution">
               <section className="space-y-2" data-testid="writer-picker">
                 <div className="flex items-center justify-between gap-2">
@@ -1794,9 +1814,11 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 </div>
               </section>
             ))}
+            </> : null}
           </TabsContent>
 
           <TabsContent value="memory" forceMount={true} className="space-y-6" hidden={tab !== "memory"} data-testid="memory-panel">
+            {visited.current.has("memory") ? <>
             <SettingsGroup testId="settings-memory-docs">
               <section className="space-y-2" data-testid="memory-picker">
                 <div className="flex items-center justify-between gap-2">
@@ -1887,8 +1909,10 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               </section>
             </SettingsGroup>
 
+            </> : null}
           </TabsContent>
           <TabsContent value="access" forceMount={true} className="space-y-6" hidden={tab !== "access"} data-testid="access-panel">
+            {visited.current.has("access") ? <>
             {projectId ? <AgentAccess projectId={projectId} sectionId={selectedSectionId} parentSectionId={sections.find((item) => item.id === selectedSectionId)?.parentId ?? null} refreshKey={data?.versions["helper.context_mode"] ?? 0}
               modeControl={<div className="space-y-2" data-testid="access-mode-fields">
                 {(["helper.context_mode", ...(displayedValue("helper.context_mode") === "selected" ? ["helper.skills", "helper.mcp_servers", "helper.bb_plugins", "helper.native_plugins"] : [])] as const).map((key) => {
@@ -1897,19 +1921,25 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                     onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft(key, next)} /> : null;
                 })}
               </div>} /> : null}
+            </> : null}
           </TabsContent>
 
           {tabs.includes("rules") ? <>
           <TabsContent value="rules" forceMount={true} className="space-y-6" hidden={tab !== "rules"} data-testid="rules-panel">
+            {visited.current.has("rules") ? <>
             {!isGlobal && projectId ? <RuleProposals projectId={projectId} picker={modelPicker} /> : null}
+            </> : null}
           </TabsContent>
           </> : null}
           {tabs.includes("workflows") ? <>
           <TabsContent value="workflows" forceMount={true} className="space-y-6" hidden={tab !== "workflows"} data-testid="workflows-panel">
+            {visited.current.has("workflows") ? <>
             {tab === "workflows" && !isGlobal && projectId ? <WorkflowsScreen locale={locale} projectId={projectId} /> : null}
+            </> : null}
           </TabsContent>
           </> : null}
           <TabsContent value="checks" forceMount={true} className="space-y-6" hidden={tab !== "checks"} data-testid="checks-panel">
+            {visited.current.has("checks") ? <>
             {!isGlobal && projectId ? <WriterReuse projectId={projectId} /> : null}
             {!isGlobal && projectId ? <CriticValue projectId={projectId} /> : null}
             {!isGlobal && projectId ? <AcceptanceStats projectId={projectId} /> : null}
@@ -1999,9 +2029,11 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 ))}
               </AdvancedRows>
             </CheckGroup>
+            </> : null}
           </TabsContent>
 
           <TabsContent value="council" forceMount={true} className="space-y-6" hidden={tab !== "council"} data-testid="council-panel">
+            {visited.current.has("council") ? <>
             <CheckGroup testId="council-settings" title={t("councilSettingsTitle")} help={t("councilSettingsHelp")} toggle={(() => { const row = catalogRow("council.judge"); return row ? <Switch checked={asBoolean(displayedValue("council.judge"), true)} aria-label={t("settingCouncilJudge")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
               {COUNCIL_SEATS.map((seat) => {
                 const fallback = councilDefaults.find((row) => row.id === seat);
@@ -2067,9 +2099,11 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 </div>
               ) : null}
             </section>}
+            </> : null}
           </TabsContent>
           {tabs.includes("monitor") ? <>
           <TabsContent value="monitor" forceMount={true} className="space-y-4" data-testid="run-monitor" hidden={tab !== "monitor"}>
+            {visited.current.has("monitor") ? <>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <Button size="sm" variant="outline" onClick={() => projectId && void rpc.call("resume_runs", { projectId }).then(load)}>
                 {t("resume")}
@@ -2119,11 +2153,13 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               </>;
             })()}
             <p className="sr-only">{[...RUN_STATES, ...ATTEMPT_STATES].join(" ")}</p>
+            </> : null}
           </TabsContent>
           </> : null}
 
           {tabs.includes("service") ? <>
           <TabsContent value="service" forceMount={true} className="space-y-5" hidden={tab !== "service"} data-testid="service-panel">
+            {visited.current.has("service") ? <>
             <section className="space-y-4" data-testid="install-panel">
             <Surface testId="native-install">
               <SurfaceHeader><h2 className="text-sm font-medium">{t("nativeTitle").replace("{host}", hostLabel(nativeHostId))}</h2></SurfaceHeader>
@@ -2328,6 +2364,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             </Surface> : null}
               </div>
             </Disclosure>
+            </> : null}
           </TabsContent>
           </> : null}
 

@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it } from "vitest";
+import { openTab } from "./ui-tabs";
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { VISIBLE_CATALOG } from "../src/ui-catalog";
@@ -67,7 +68,7 @@ describe("acceptance stats card", { timeout: 20_000 }, () => {
         }],
       }),
     });
-    fireEvent.click(slot.getByTestId("tab-checks"));
+    openTab(slot, "checks");
     await waitFor(() => expect(slot.getByTestId("acceptance-stats")).toBeTruthy());
     expect(slot.getByTestId("acceptance-stats").textContent).toContain("Принятие с первой попытки");
     const row = slot.getByTestId(`acceptance-stats-week-${week}`);
