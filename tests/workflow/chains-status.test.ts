@@ -11,7 +11,7 @@ import { chainStore } from "./chain-harness";
 const dir = __dirname;
 const sources = readdirSync(dir).filter((name) => /^chains-.*\.test\.ts$/.test(name) && name !== "chains-status.test.ts").map((name) => readFileSync(join(dir, name), "utf8")).join("\n");
 const withCase = new Set([...sources.matchAll(/runSim\("([a-z][a-z0-9.-]*)"/g)].map((match) => match[1]!));
-const OWN = ["deploy", "insights-post", "reels", "seo-cocoon", "web-research", "x-to-telegram-digest"];
+const OWN = ["deploy", "insights-post", "invoice-send", "reels", "seo-cocoon", "web-research", "x-to-telegram-digest"];
 
 describe("status of the built-in chains", () => {
   it("every chain of the catalog has a test case, and published means its case is there", async () => {
@@ -36,13 +36,13 @@ describe("status of the built-in chains", () => {
     }
   });
 
-  it("the catalog has the 15 chains, 9 single-step chains, 6 own chains and 7 fragments of the spec", async () => {
+  it("the catalog has the 15 chains, 9 single-step chains, 7 own chains and 7 fragments of the spec", async () => {
     const store = await chainStore();
     const ids = store.list().map((item) => item.workflow.id);
     expect(ids).toEqual(expect.arrayContaining(["analyze-plan-execute", "full-lifecycle", "refactor", "review-fix", "quality-loop", "issue-full", "issue-quick", "grill-driven", "brainstorm-driven", "roadmap-driven", "blueprint-driven", "impeccable-build", "debug", "companion", "milestone-close"]));
     expect(ids).toEqual(expect.arrayContaining(["analyze-code", "plan-only", "code-review", "grill-plan", "test-gen", "security-audit", "issue-discover", "retrospective", "ui-audit"]));
     expect(ids).toEqual(expect.arrayContaining(OWN));
     expect(ids.filter((id) => store.get(id)!.workflow.internal).sort()).toEqual(["ins.post", "lp.analyze", "lp.brainstorm", "lp.build", "lp.close", "lp.plan", "lp.review"]);
-    expect(ids).toHaveLength(38);
+    expect(ids).toHaveLength(39);
   });
 });
