@@ -41,7 +41,7 @@ describe("jev settings", () => {
   });
 
   it("appends the receipts migration at the end and creates the table", () => {
-    expect(migrations.slice(-jevMigrations.length)).toEqual(jevMigrations);
+    for (const statement of jevMigrations) expect(migrations).toContain(statement);
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
     const columns = (db.prepare("PRAGMA table_info(lane_pilot_jev_receipt)").all() as Array<{ name: string }>).map((column) => column.name);

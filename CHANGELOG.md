@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.193
+
+Audit 2026-10-08 urgent items 1–7 (0.1.192 was never deployed; its changes ship here).
 
 - **A stop requested while the writer's thread errors ends the attempt `canceled`, not as an LP fault (audit 2026-10-08, item 1).** `cancel_requested → provider_error` is not in the transition table (and stays out: the owner asked for the stop), but five places of `finishWriterAttempt` (follow-up wait failure, silence sweep ended, thread error, provider limit notice, error in the finish path) asked for it and got `IllegalTransitionError`, so the attempt went `blocked`/`internal_error` and the task parked as a harness fault (3 times in the hub log). They now go through one `providerFailed` that moves a `cancel_requested` attempt to `canceled` and any other to `provider_error`. Test: `tests/writer-cancel-provider-error.test.ts`.
 - **A merge intent is settled as landed only on proof that the attempt's own commit is in main (audit 2026-10-08, item 2).** `mergeLanded` took the attempt's HEAD at intent time, or a clean worktree's tip, as landed when it was an ancestor of main and not main's head. A worktree is forked from the main of that day, so with parallel tasks the fork point (an attempt with only loose edits, or an untouched one) is an ancestor of a main that moved on even when the merge never ran: recovery accepted the attempt and the work was silently lost. Now both witnesses need a commit that is in main and was not in main's history when the intent was written (`merge-base --is-ancestor` against the recorded `baseHead`; no head recorded, no such witness); the third witness matches the `Lane-Pilot-Attempt` trailer line by line, so `a10` is not `a1`. Tests: four cases on real repositories in `tests/server/merge-intent.test.ts`; the simulation's git model answers the new questions.

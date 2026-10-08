@@ -73,7 +73,7 @@ export function failureClass(state:string, reason:string | null | undefined):Fai
   if (LIMIT.test(text)) return "limit";
   if (SILENT.test(text)) return "provider";
   if (NO_GIT.test(text) || WAITING_SECRET.test(text)) return "contract";
-  if (MERGE.test(text) || DIRTY_BASE.test(text)) return "merge";
+  if (MERGE.test(text) || (DIRTY_BASE.test(text) && !/^merge_blocked:/.test(text))) return "merge";
   if (UNSAFE_CONTRACT.test(text)) return "contract";
   if (INFRA.test(text) || isEnvironmentReason(text)) return "infra";
   // The words of HARNESS (EROFS, spawn failed, …) in a check's output belong to the check (hub: a red vitest printing EROFS counted as a fault).
