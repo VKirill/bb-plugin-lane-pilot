@@ -123,6 +123,7 @@ export interface Services {
   startAmbiguousProbe: ProbesApi["startAmbiguousProbe"];
   startCancelProbe: ProbesApi["startCancelProbe"];
   startProviderErrorProbe: ProbesApi["startProviderErrorProbe"];
+  startHelperProbe: ProbesApi["startHelperProbe"];
   startWriterTask: WriterStartApi["startWriterTask"];
   stability: ReturnType<typeof createStability>["stability"];
   threadReconcilePort: ReconcileApi["threadReconcilePort"];

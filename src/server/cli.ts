@@ -24,6 +24,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
     "bb lane-pilot start-cancel-probe <project-id> <pm-thread-id>",
     "bb lane-pilot start-provider-error-probe <project-id> <pm-thread-id>",
     "bb lane-pilot start-ambiguous-probe <project-id> <pm-thread-id>",
+    "bb lane-pilot helper-probe <project-id> <run-id> <provider-id> <model>",
     "bb lane-pilot host-detect <host-id> <workspace-path>",
     "bb lane-pilot host-snapshot <host-id> <absolute-path>...",
     "bb lane-pilot host-snapshot-manifest <host-id> [thread-storage]",
@@ -60,6 +61,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"recover", summary:"Reconcile a known writer identity and emit its validated receipt", usage:"bb lane-pilot recover <attempt-id>" },
       { name:"start-cancel-probe", summary:"Spawn a long-running writer for a live stop observation", usage:"bb lane-pilot start-cancel-probe <project-id> <pm-thread-id>" },
       { name:"start-provider-error-probe", summary:"Observe a live provider error and persist provider_error", usage:"bb lane-pilot start-provider-error-probe <project-id> <pm-thread-id>" },
+      { name:"helper-probe", summary:"Start one cheap helper (pm-read path) on a provider and check it answered", usage:"bb lane-pilot helper-probe <project-id> <run-id> <provider-id> <model>" },
       { name:"start-ambiguous-probe", summary:"Create duplicate metadata and prove reconcile blocks", usage:"bb lane-pilot start-ambiguous-probe <project-id> <pm-thread-id>" },
       { name:"host-detect", summary:"Call the host worker detect method", usage:"bb lane-pilot host-detect <host-id> <workspace-path>" },
       { name:"host-snapshot", summary:"Call read-only snapshotDryRun", usage:"bb lane-pilot host-snapshot <host-id> <absolute-path>..." },
@@ -226,6 +228,10 @@ export function registerCli(ctx: ServerCore, services: Services) {
         }
         if (command === "start-provider-error-probe" && args.length === 2) {
           return { exitCode:0, stdout:JSON.stringify(await services.startProviderErrorProbe(args[0]!, args[1]!), null, 2) };
+        }
+        if (command === "helper-probe" && args.length === 4) {
+          const probe = await services.startHelperProbe(args[0]!, args[1]!, args[2]!, args[3]!);
+          return { exitCode:probe.ok ? 0 : 1, stdout:JSON.stringify(probe, null, 2) };
         }
         if (command === "start-ambiguous-probe" && args.length === 2) {
           return { exitCode:0, stdout:JSON.stringify(await services.startAmbiguousProbe(args[0]!, args[1]!), null, 2) };

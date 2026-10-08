@@ -6,6 +6,10 @@ Scenarios (each writes its verdict into the receipt, .agents/runs/drills/<date>.
                  is byte for byte the repository's copy (lane-stack/hooks). A drifted or missing copy fails the drill and the
                  receipt lists the install command per machine; --repair-guard (or LP_DRILL_REPAIR_GUARD=1) installs the
                  repository copy and checks it again. A machine that cannot be reached is noted, not failed          [--quick]
+  helper_providers one helper per provider in use (claude-code, codex, acp-opencode, and acp-cursor when a setting names it), each
+                 started the way the pm-read stage starts its helper (`bb lane-pilot helper-probe`) with a prompt that asks for
+                 one word: each must start and answer. A provider that refuses its helpers fails the drill (0.1.194 refused
+                 every OpenCode helper for six minutes and the writer-only drill stayed green)                       [--quick]
   parallel3      3 parallel, non-overlapping tasks (risk high): each accepted, each in a worktree of its own        [--quick]
   conflict       two tasks own the same file and rewrite the same line: both end, both accepted, no conflict markers left
   main_moved     main gets a commit while a writer works: the merge is rebased and keeps both
@@ -22,7 +26,7 @@ Usage: scripts/lp-drill.sh [--quick] [--scenario a,b] [--dry-run] [--repair-guar
   --dry-run    print the tasks, change nothing
 Exit: 0 pass, 1 a scenario failed (the receipt says why), 2 could not start. The last stdout line is `RECEIPT=<path>`.
 Settings (env): LP_DRILL_TIMEOUT_MIN (20, per scenario), LP_DRILL_PROJECT, LP_DRILL_ENVIRONMENT, LP_DRILL_CWD,
-LP_DRILL_GUARD_HOSTS (JSON list of machines for guard_hash), LP_DRILL_RECEIPT_DIR, LP_DRILL_NOGIT_PROJECT, LP_DRILL_NOGIT_ENVIRONMENT, LP_DRILL_NOGIT_CWD, LP_DRILL_BAD_MODEL, BB_CLI, BB_HUB_HOST, BB_HUB_KEY.
+LP_DRILL_PROVIDERS (`provider=model,...` instead of the providers read from the sandbox project's settings), LP_DRILL_GUARD_HOSTS (JSON list of machines for guard_hash), LP_DRILL_RECEIPT_DIR, LP_DRILL_NOGIT_PROJECT, LP_DRILL_NOGIT_ENVIRONMENT, LP_DRILL_NOGIT_CWD, LP_DRILL_BAD_MODEL, BB_CLI, BB_HUB_HOST, BB_HUB_KEY.
 """
 from __future__ import annotations
 
@@ -56,8 +60,10 @@ OPEN_STATES = ("queued", "spawn_requested", "spawn_unknown", "running")
 TERMINAL = ("accepted", "blocked", "canceled")
 STAMP = time.strftime("%Y%m%d-%H%M%S")
 DATE = time.strftime("%Y-%m-%d")
-ALL = ["guard_hash", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit"]
-QUICK = ["guard_hash", "parallel3"]
+ALL = ["guard_hash", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit"]
+QUICK = ["guard_hash", "helper_providers", "parallel3"]
+# What a provider runs when no setting of the sandbox project names a model for it.
+PROVIDER_FALLBACK_MODEL = {"claude-code": "claude-sonnet-5-5", "codex": "gpt-6-luna", "acp-opencode": "zai-coding-plan/glm-5.3-flash"}
 # Scenarios that need no PM and no run of their own: they run before the PM starts (guard_hash) or on a project of their own (nogit).
 STANDALONE = ("guard_hash", "nogit")
 
@@ -352,6 +358,61 @@ def scenario_parallel3(ctx: Context) -> dict:
     problems += provider_problems(tasks)
     return verdict("parallel3", problems, tasks=tasks, checks={"allAccepted": accepted, "eachInOwnWorktree": own, "filesInSandbox": merged},
                    dispatch={s["id"]: ctx.dispatches.get(s["id"]) for s in specs})
+
+
+def providers_in_use(project: str) -> dict[str, str]:
+    """provider id -> a model it runs in this project: the pairs of the project's settings (`<stage>.provider` with `<stage>.model`,
+    the PM model, the writer), then a fallback model for the three providers every install has. acp-cursor only when a setting names it."""
+    override = os.environ.get("LP_DRILL_PROVIDERS", "").strip()
+    if override:
+        return dict(pair.split("=", 1) for pair in override.split(",") if "=" in pair)
+    rows = hubsql(f"select key, value from lane_pilot_project_settings where project_id='{project}' and binding_id='' and (key like '%.provider' or key like '%.model' or key in ('pmModel', 'writerProviderId', 'writerModel', 'pmProviderId'));")
+    values = {}
+    for row in rows:
+        try:
+            values[row["key"]] = json.loads(row["value"])
+        except ValueError:
+            continue
+    found: dict[str, str] = {}
+
+    def add(provider: object, model: object) -> None:
+        if isinstance(provider, str) and provider and isinstance(model, str) and model:
+            found.setdefault(provider, model)
+
+    for key, value in values.items():
+        if key.endswith(".provider"):
+            add(value, values.get(key[: -len(".provider")] + ".model"))
+    add(values.get("pmProviderId", "claude-code"), values.get("pmModel"))
+    add(values.get("writerProviderId"), values.get("writerModel"))
+    for provider, model in PROVIDER_FALLBACK_MODEL.items():
+        found.setdefault(provider, model)
+    return found
+
+
+def scenario_helper_providers(ctx: Context) -> dict:
+    """A helper on each provider in use starts and answers (audit 2026-10-08 round 3, P0-7)."""
+    pairs = providers_in_use(ctx.project)
+
+    def probe(item: tuple[str, str]) -> dict:
+        provider, model = item
+        rc, out, err = bb("lane-pilot", "helper-probe", ctx.project, ctx.run_id, provider, model, timeout=240)
+        try:
+            answer = json.loads(out)
+        except ValueError:
+            answer = {}
+        if not isinstance(answer, dict) or "ok" not in answer:
+            answer = {"ok": False, "started": False, "answered": False, "reason": (err or out).strip()[:300] or f"exit {rc}"}
+        return {"provider": provider, "model": model, **{k: answer.get(k) for k in ("ok", "started", "answered", "threadId", "output", "reason", "ms")}}
+
+    with ThreadPoolExecutor(max(1, len(pairs))) as pool:
+        results = list(pool.map(probe, pairs.items()))
+    problems = []
+    for item in results:
+        log(f"helper on {item['provider']} ({item['model']}): started={item['started']} answered={item['answered']} {item['reason'] or ''}")
+        if not item["ok"]:
+            what = "did not start" if not item["started"] else "started but did not answer"
+            problems.append(f"{item['provider']} ({item['model']}): a helper {what}: {item['reason'] or 'no reason given'}")
+    return verdict("helper_providers", problems, providers=results)
 
 
 def task_provider(cwd: str) -> dict:
