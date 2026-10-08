@@ -63,8 +63,9 @@ describe("settings that code reads and the catalog now lists", () => {
       expect(rejected.validation, `${key}=${bad}`).toMatchObject({ code: "invalid_choice", key });
     }
 
+    // The protected keys (secrets, sandbox, the gate command) save only with the owner's yes: tests/protected-settings.test.ts.
     const versions: Record<string, number> = {};
-    for (const [key, good] of [["writer.silence_nudge_min", 30], ["bookkeeping.paths", "docs/generated/**, notes/*.tmp"], ["integration.gate_command", "npm test"], ["integration.gate_when", "every_n"], ["integration.gate_every", 3], ["verification.sandbox_unsafe", "tests/pipeline.test.ts, tests/verification/**"], ["workspace.provider", "off"], ["usage.skip_percent", 85], ["tasks.mirror", true]] as const) {
+    for (const [key, good] of [["writer.silence_nudge_min", 30], ["bookkeeping.paths", "docs/generated/**, notes/*.tmp"], ["integration.gate_when", "every_n"], ["integration.gate_every", 3], ["workspace.provider", "off"], ["usage.skip_percent", 85], ["tasks.mirror", true]] as const) {
       const saved = await save(key, good);
       expect(saved.ok, key).toBe(true);
       versions[key] = saved.version!;
