@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.194
+
+Audit 2026-10-08 round 2 (P0, P1, P2) and audit 1 items 8–18 with Jev J-4/J-10/J-11 in shadow mode.
 
 Audit round 2, item 18 (skill `lane-pilot-workflows`, lives in the canon `~/.agents/skills`, repository VKirill/agent-skills, not in this repository):
 - **The skill says what the code does about models.** It now lists the `models` section of `lane_pilot_workflow_capabilities` (the pairs the machines offer, efforts, presets with `offered`), says that `ultracode` is an effort the format accepts and `service_tier` (`default|fast`) a node field, that a known preset is used as it is while an unknown one falls through, and that the validator checks neither the effort nor the tier. It no longer says one cannot list what the machines offer. The per-step override `workflow.model_override` is marked «coming» (no code reads it on main). Because the skill is not mirrored here, no test pins it; keep it in sync with `src/workflow/schema.ts` (`NODE_EFFORTS`, `service_tier`, node fields), `src/workflow/capabilities.ts` (`CAPABILITY_SECTIONS`, `modelsSection`, `WORKFLOW_REFERENCE`), `src/server/workflow-agent-model.ts` (the order of levels) and `src/workflow/validate.ts` (`unknown_model`).
