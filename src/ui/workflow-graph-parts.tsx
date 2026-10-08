@@ -91,7 +91,12 @@ function subtitleOf(view: ViewNode, run: NodeRun | null): string {
 /** The tooltip of a card: the title, what the step says it does, and what it calls. */
 const cardTitle = (view: ViewNode, title: string): string => [title, view.excerpt && view.kind !== "action" ? view.excerpt : null, view.calls ? t("wfNodeCalls").replace("{id}", view.calls.id) : null].filter(Boolean).join("\n");
 
+/** How many times a card and an edge were drawn: a test and the live harness read it to see that a hover redraws only what it changes. */
+export const renderStats = { cards: 0, edges: 0 };
+(globalThis as { __lpRenderStats?: typeof renderStats }).__lpRenderStats = renderStats;
+
 export const NodeCard = memo(function NodeCard({ data, id }: NodeProps<FlowNode>) {
+  renderStats.cards += 1;
   const { view, locale, direction, run, selected, changed, expanded, loading, dim, onToggle, onOpen, onAddAfter, onPick, problems, level, editing, executor, models, ports: named } = data;
   const side = ports(direction);
   const title = nodeTitle(view, locale);
@@ -171,6 +176,7 @@ export const NodeGroup = memo(function NodeGroup({ data, id }: NodeProps<FlowNod
 });
 
 export const FlowEdgeView = memo(function FlowEdgeView({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data }: EdgeProps<FlowEdge>) {
+  renderStats.edges += 1;
   const edge = data!.edge;
   const right = data!.direction === "RIGHT";
   // The chip stays readable when the graph is zoomed out: it grows against the zoom, up to a fifth (more would run over the cards at either end).

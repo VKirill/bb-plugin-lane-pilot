@@ -15,7 +15,7 @@ import { dataTabs, SidePanel, useLatestRun } from "./workflow-node-data";
 import { useDrill } from "./workflow-drill";
 import { nodeTitle } from "./workflow-titles";
 import { pickRun, runView, type NodeRun, type RunSnapshot } from "./workflow-run";
-import { ModelsPanel, providerMap, type ModelsAccess, useModelCatalog, useStepExecutors, issueText } from "./workflow-models";
+import { ModelsPanel, StepModelBlock, executorFor, providerMap, type GraphModels, type ModelsAccess, useModelCatalog, useOverrideApi, useStepExecutors, issueText } from "./workflow-models";
 import { choiceRefusal, clearModelOps, choiceOps, type ModelChoice } from "./workflow-model-ops";
 import { getDraft } from "./workflow-drafts";
 import type { Expansions } from "./workflow-layout";
@@ -67,10 +67,12 @@ export type NodePanelContext = { node: ViewNode; nodeKey: string; locale: Locale
   /** Re-running this node of a finished run: absent when the run on screen cannot be re-run from here. */
   rerun?: { busy: boolean; error: string | null; onRerun: () => void };
   /** The connections into this step (what they carry is what it is given), the run the data comes from when it is the latest one and not the one on screen, and whether the panel is a bottom sheet. */
-  incoming?: readonly ViewEdge[]; from?: { runId: string; at: number } | null; narrow?: boolean };
+  incoming?: readonly ViewEdge[]; from?: { runId: string; at: number } | null; narrow?: boolean;
+  /** The model block of the «Parameters» tab: who works on the step and the way to move it to another model. */
+  modelBlock?: ReactNode };
 export type NodePanelRenderer = (context: NodePanelContext) => ReactNode;
 
-export function NodePanel({ node, nodeKey, locale, run, definitionOnly, onOpenThread, onClose, draft = false, rerun, incoming = [], from = null, narrow = false }: Pick<NodePanelContext, "node" | "locale" | "run" | "definitionOnly" | "onOpenThread" | "onClose" | "rerun" | "incoming" | "from" | "narrow"> & { nodeKey?: string; draft?: boolean }) {
+export function NodePanel({ node, nodeKey, locale, run, definitionOnly, onOpenThread, onClose, draft = false, rerun, incoming = [], from = null, narrow = false, modelBlock = null }: Pick<NodePanelContext, "node" | "locale" | "run" | "definitionOnly" | "onOpenThread" | "onClose" | "rerun" | "incoming" | "from" | "narrow" | "modelBlock"> & { nodeKey?: string; draft?: boolean }) {
   const [visit, setVisit] = useState<number | null>(null);
   useEffect(() => setVisit(null), [nodeKey ?? node.id]);
   const params = (
@@ -80,6 +82,7 @@ export function NodePanel({ node, nodeKey, locale, run, definitionOnly, onOpenTh
       {node.calls ? <p className="font-mono text-xs text-muted-foreground">{t("wfNodeCalls").replace("{id}", node.calls.id)}</p> : null}
       {node.out.length ? <p className="text-xs"><span className="text-muted-foreground">{t("wfOutputs")}: </span><span className="font-mono">{node.out.join(", ")}</span></p> : null}
       {node.stages.length ? <p className="text-xs"><span className="text-muted-foreground">{t("wfNodeStages")}: </span><span className="font-mono">{node.stages.join(", ")}</span></p> : null}
+      {modelBlock}
     </div>
   );
   const data = { node, incoming, run, from, definitionOnly: definitionOnly && !draft, onOpenThread, ...(rerun && run && run.steps.length ? { rerun } : {}) };
@@ -117,7 +120,7 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
   const [loading, setLoading] = useState<ReadonlySet<string>>(new Set());
   const generation = useRef(0);
   const scope = projectId ?? undefined;
-  const modelCatalog = useModelCatalog();
+  const modelCatalog = useModelCatalog(projectId);
   const stepModels = useStepExecutors({ workflowId: id, projectId, revision: detail && detail !== "missing" ? `${detail.version}:${detail.sha256}` : null });
 
   const loadDetail = useCallback(async () => {
@@ -208,6 +211,10 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
   const drilled = drill.trail.length ? drill.trail[drill.trail.length - 1]! : null;
   const drilledView = useMemo(() => (drilled?.snapshot ? runView(drilled.snapshot) : null), [drilled]);
   const drilledModels = useStepExecutors({ ...(drilled ? { workflowId: drilled.workflowId } : {}), projectId, revision: drilled ? drilled.workflowId : null });
+  // A step of any workflow, a built-in one included, can be moved to another model as a setting; a drilled subworkflow has its own workflow id.
+  const reloadModels = useCallback(() => { stepModels.reload(); drilledModels.reload(); }, [stepModels.reload, drilledModels.reload]);  // eslint-disable-line react-hooks/exhaustive-deps
+  const topOverride = useOverrideApi({ workflowId: id, projectId }, reloadModels);
+  const drilledOverride = useOverrideApi({ workflowId: drilled ? drilled.workflowId : null, projectId }, reloadModels);
   const viewRunMode = drilled ? drilled.snapshot !== null : runMode;
   useEffect(() => { drill.reset(); }, [id, runId]);  // eslint-disable-line react-hooks/exhaustive-deps
   const drillRefresh = useRef(drill.refresh);
@@ -411,8 +418,8 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
                 onSelect={onSelect} {...(drilled ? {} : { onToggleExpand: toggle })} direction={direction} height={direction === "DOWN" ? 440 : 560}
                 onOpen={(key, node) => { setSelected(null); void drill.open(key, node, locale); }} trail={[{ label: detail.name[locale] }, ...drill.trail.map((step) => ({ label: step.label }))]} onTrail={(index) => { setSelected(null); drill.goTo(index); }}
                 {...(viewRunMode ? {} : drilled
-                  ? { models: { executors: drilledModels.byNode, providers: providerMap(modelCatalog), catalog: modelCatalog, access: "readonly" as const } }
-                  : { models: { executors: stepModels.byNode, providers: providerMap(modelCatalog), catalog: modelCatalog, access: modelsAccess,
+                  ? { models: { executors: drilledModels.byNode, providers: providerMap(modelCatalog), catalog: modelCatalog, access: "readonly" as const, override: drilledOverride } }
+                  : { models: { executors: stepModels.byNode, providers: providerMap(modelCatalog), catalog: modelCatalog, access: modelsAccess, override: topOverride,
                     onChoose: (nodeId: string, choice: ModelChoice | null) => chooseModel(detail, nodeId, choice), onDuplicate: editProjectId && onEditDraft ? () => void startEdit(detail) : null } })} />
             </Suspense>
           ) : null}
@@ -426,7 +433,12 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
           if (drilled || !localKey.includes("/")) return shownGraph;
           return expanded.get(localKey.slice(0, localKey.lastIndexOf("/")))?.graph ?? null;
         })();
-        const context: NodePanelContext = { node: selectedNode, nodeKey: selected!, locale, run: states?.get(localKey) ?? null, definitionOnly: !viewRunMode, readOnly: true,
+        const panelModels: GraphModels = drilled
+          ? { executors: drilledModels.byNode, providers: providerMap(modelCatalog), catalog: modelCatalog, access: "readonly", override: drilledOverride }
+          : { executors: stepModels.byNode, providers: providerMap(modelCatalog), catalog: modelCatalog, access: modelsAccess, override: topOverride };
+        const stepExecutor = !viewRunMode && !(!drilled && localKey.includes("/")) ? executorFor(panelModels.executors, selectedNode) : undefined;
+        const context: NodePanelContext = { node: selectedNode, nodeKey: selected!,
+          ...(stepExecutor ? { modelBlock: <StepModelBlock executor={stepExecutor} models={panelModels} title={nodeTitle(selectedNode, locale)} /> } : {}), locale, run: states?.get(localKey) ?? null, definitionOnly: !viewRunMode, readOnly: true,
           incoming: inner?.edges.filter((edge) => edge.to === selectedNode.id) ?? [], from: !runStates && latest && !localKey.includes("/") ? { runId: latest.runId, at: latest.at } : null, narrow: width > 0 && width < NARROW_SHEET,
           onOpenThread: (threadId) => openThread(threadId, nodeTitle(selectedNode, locale)), onClose: () => setSelected(null),
           // A finished top-level run can start again from one of its own nodes; a child run is re-run from its parent.
@@ -445,7 +457,7 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
         onPick={(id) => { setRunId(id); setFollow(false); setSelected(null); }} />
       <ModelsPanel graph={detail.graph} locale={locale} executors={stepModels.list} loaded={stepModels.loaded} catalog={modelCatalog} wide={width >= 720} busy={starting.busy}
         access={modelsAccess} onChoose={(nodeId, choice) => chooseModel(detail, nodeId, choice)}
-        onDuplicate={editProjectId && onEditDraft ? () => void startEdit(detail) : null} />
+        onDuplicate={editProjectId && onEditDraft ? () => void startEdit(detail) : null} override={topOverride} />
 
       <Surface testId="wf-info">
         <SurfaceHeader><h3 className="text-sm font-medium">{t("wfDefinition")}</h3></SurfaceHeader>

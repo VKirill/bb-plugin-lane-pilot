@@ -1,5 +1,5 @@
 import { BUILTIN_PRESETS, PRESET_SLUGS, presetSelection } from "./model-presets";
-import { NODE_EFFORTS, findModel, findProvider, type ModelCatalog } from "./model-catalog";
+import { NODE_EFFORTS, findModel, findProvider, offeredOnHost, type ModelCatalog } from "./model-catalog";
 import { CONDITION_OPS, FIELD_TYPES, PASS_MODES, QUALITY_MODES } from "./schema";
 
 /**
@@ -47,6 +47,7 @@ export function modelsSection(catalog: ModelCatalog, settings: Record<string, un
       models: shown.slice(0, MODELS_PER_PROVIDER).map((model) => ({
         id: model.id, efforts: model.efforts.filter((effort) => (NODE_EFFORTS as readonly string[]).includes(effort)),
         ...(model.isDefault ? { default: true } : {}), ...(model.hostIds.length < provider.hostIds.length ? { only: names(model.hostIds) } : {}),
+        ...(offeredOnHost(catalog, provider.id, model.id, catalog.runHostId) === false ? { notOnThisMachine: true } : {}),
       })),
       ...(shown.length > MODELS_PER_PROVIDER ? { moreModels: shown.length - MODELS_PER_PROVIDER } : {}),
     }];
@@ -54,13 +55,13 @@ export function modelsSection(catalog: ModelCatalog, settings: Record<string, un
   const presets = Object.fromEntries(PRESET_SLUGS.filter((slug) => !wanted || slug.includes(wanted)).map((slug) => {
     const chosen = presetSelection(slug, settings)!;
     const model = findModel(findProvider(catalog, chosen.providerId), chosen.model);
-    return [slug, { provider: chosen.providerId, model: chosen.model, reasoning: chosen.reasoning ?? BUILTIN_PRESETS[slug]!.reasoning, offered: Boolean(model?.hostIds.length), ...(model?.hostIds.length ? { machines: names(model.hostIds) } : {}) }];
+    return [slug, { provider: chosen.providerId, model: chosen.model, reasoning: chosen.reasoning ?? BUILTIN_PRESETS[slug]!.reasoning, offered: Boolean(model?.hostIds.length) && offeredOnHost(catalog, chosen.providerId, chosen.model, catalog.runHostId) !== false, ...(model?.hostIds.length ? { machines: names(model.hostIds) } : {}) }];
   }));
   return {
     status: "ready" as const,
     machines: catalog.hosts.map((host) => ({ name: host.name, connected: host.connected })),
     providers, presets,
-    note: "a node names `provider` and `model` (the id column) together, with `reasoning` from that model's efforts; pick only pairs listed here: a pair no machine offers is a validator warning and the step fails to start. Prefer a preset (`model_preset`) to a pair; `only` means the model exists on those machines alone; a preset with offered: false is still used as it is and the step fails to start, so do not name it",
+    note: "a node names `provider` and `model` (the id column) together, with `reasoning` from that model's efforts; pick only pairs listed here: a pair no machine offers is a validator warning and the step fails to start. Prefer a preset (`model_preset`) to a pair; `only` means the model exists on those machines alone; `notOnThisMachine` means the machine this project's helpers run on does not have it (a step that names it fails to start there: pick another); a preset with offered: false (not offered by the machine the helpers run on) is passed over for the role's Settings, then the generic workflow model, then the PM chat's model",
   };
 }
 
@@ -79,7 +80,7 @@ async function section<T>(read: (() => Promise<T[] | null>) | undefined, filter:
 /** The vocabulary of the chain format, so the architect writes only what the validator accepts. */
 export const WORKFLOW_REFERENCE = {
   nodeTypes: {
-    agent: "a model thread does one job: `role` (it sets what the thread can read and use), `prompt`, `skills`, `plugins` (BB plugin ids) and `mcp` (MCP server names) on top of its role's, `model_preset` or `provider`/`model`/`reasoning`/`service_tier` (see models), `session: new` (do not continue the earlier thread on a same-session edge), `votes` (1-9 independent runs decided by code), `out` = the fields it must return, each `{name, type, values (enum), required, default}` (types in fieldTypes); every agent also returns a non-empty `handoff`. `environment` and `authorized` change nothing: the thread runs in the PM chat's environment and is read-only",
+    agent: "a model thread does one job: `role` (see roles: it sets what the thread can read and use), `prompt`, `skills`, `plugins` (BB plugin ids) and `mcp` (MCP server names) on top of its role's, `model_preset` or `provider`/`model`/`reasoning`/`service_tier` (see models), `session: new` (do not continue the earlier thread on a same-session edge), `votes` (1-9 independent runs decided by code), `out` = the fields it must return; every agent also returns a non-empty `handoff`. `authorized` (true: the helper may make the reversible changes the approved outcome needs outside the repository; false: read and report only; absent: the brief says nothing) is told to the helper in its brief. `environment` is accepted so older files load but changes nothing (the thread always runs in the PM chat's environment) and the validator warns; do not set it",
     "lp-task": "a code change through Lane Pilot's writer, critics, checks and merge (owns_paths, contract); use it for anything that edits a repository",
     action: "a deterministic step run by code: `action` names it (telegram.send_rich, fs.write, items.dedupe ...), `params` feed it; `action: emit` ends the workflow with `map` (status and the workflow outputs)",
     decision: "branches on fields already produced (reads_node) without a model call",

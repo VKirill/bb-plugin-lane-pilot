@@ -20,6 +20,7 @@ import { jev } from "../jev/runtime";
 import { createJevRouterModel } from "../jev/route-model";
 import { createRouterModel } from "./workflow-router-model";
 import { realDeps } from "./workflow-architect";
+import { createWorkflowLibrary } from "./workflow-library";
 import { createWorkflowPreflight } from "./workflow-preflight";
 import type { ChainRuntime } from "./workflow-runtime";
 
@@ -29,7 +30,8 @@ import type { ChainRuntime } from "./workflow-runtime";
  */
 export type WorkflowToolDeps = {
   db: LanePilotDatabase;
-  store(): Promise<WorkflowStore>;
+  /** The library the PM sees: the built-in and global workflows, and with `projectId` the project's own files (`.lane-pilot/workflows`) too. */
+  store(projectId?: string): Promise<WorkflowStore>;
   engine(): Pick<WorkflowEngine, "start" | "get" | "snapshot"> & Partial<Pick<WorkflowEngine, "lastAudit" | "goalJournal" | "amendGoals">>;
   runtime(input: { pmThreadId: string; projectId: string; runId: string }): ChainRuntime;
   /** What the router may know about the environment; undefined facts count as available. */
@@ -66,11 +68,12 @@ function pmRunId(db: LanePilotDatabase, projectId: string, pmThreadId: string): 
 const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max)}… [${text.length - max} more chars]` : text);
 
 const ROUTE_NEXT_CLARIFY = "Ask the owner these questions (in the chat, or with lane_pilot_ask_owner when the answer blocks you), then call lane_pilot_route again with the answers in `context`. Start no workflow now.";
+const ROUTE_NEXT_LIVE_TRIAL = "This workflow is flagged `notYetRunLive`: it passed its tests on stubs and has never run for real, so its first run really sends, posts and spends. Show the owner the workflow, the contract and the goals, say plainly that it has not run live yet, and ask for their explicit OK. Only after that call lane_pilot_run_workflow with `liveTrial: true`; one successful run makes it published.";
 const ROUTE_NEXT_ROUTE = "Show the owner the workflow, the boundary contract (guesses are marked) and the goals. Ask for every entry of `missingInputs`, and check the `guessedInputs` (filled from the request, not read from it). When the owner agrees, call lane_pilot_run_workflow with `workflowId` and `inputs`.";
 
 export async function routeTool(deps: WorkflowToolDeps, params: { intent: string; context?: string | undefined }, context: ToolContext): Promise<string> {
   if (!context.threadId || !context.projectId) throw new Error("route_needs_pm_thread: call this from a Lane Pilot PM chat");
-  const store = await deps.store();
+  const store = await deps.store(context.projectId);
   const runId = pmRunId(deps.db, context.projectId, context.threadId);
   const state = deps.state?.({ projectId: context.projectId, runId });
   const model = deps.model?.({ pmThreadId: context.threadId, projectId: context.projectId, runId });
@@ -79,14 +82,15 @@ export async function routeTool(deps: WorkflowToolDeps, params: { intent: string
   return JSON.stringify({
     decision: decision.decision, workflowId: decision.workflowId, confidence: decision.confidence,
     ...(decision.suggested ? { suggested: decision.suggested } : {}),
+    ...(decision.liveTrial ? { notYetRunLive: true } : {}),
     evidence: decision.evidence,
     ...(decision.boundary_contract ? { boundary_contract: decision.boundary_contract, goals: decision.goals, inputs: decision.inputs, missingInputs: decision.missingInputs, guessedInputs: decision.guessedInputs } : {}),
     ...(decision.questions.length ? { questions: decision.questions } : {}),
     ...(decision.warnings.length ? { warnings: decision.warnings } : {}),
-    candidates: decision.candidates.map((candidate) => ({ id: candidate.id, name: candidate.name, score: candidate.score, rules: candidate.rules, ...(candidate.stat !== undefined ? { runRecord: candidate.stat } : {}) })),
+    candidates: decision.candidates.map((candidate) => ({ id: candidate.id, name: candidate.name, score: candidate.score, rules: candidate.rules, ...(candidate.liveTrial ? { notYetRunLive: true } : {}), ...(candidate.stat !== undefined ? { runRecord: candidate.stat } : {}) })),
     next: noWorkflow ? "No published workflow fits or exists here: work the usual way (lane_pilot_dispatch_writer, specialists, errands)."
       : decision.stateContinue ? "«Continue» is no workflow: read the run state (lane_pilot_run_health) and propose the next step from it; never guess."
-      : decision.decision === "route" ? ROUTE_NEXT_ROUTE : ROUTE_NEXT_CLARIFY,
+      : decision.decision === "route" ? (decision.liveTrial ? ROUTE_NEXT_LIVE_TRIAL : ROUTE_NEXT_ROUTE) : ROUTE_NEXT_CLARIFY,
   }, null, 2);
 }
 
@@ -94,16 +98,17 @@ export async function runWorkflowTool(deps: WorkflowToolDeps, params: { workflow
   if (!context.threadId || !context.projectId) throw new Error("workflow_needs_pm_thread: call this from a Lane Pilot PM chat");
   const runId = pmRunId(deps.db, context.projectId, context.threadId);
   if (!runId) throw new Error("workflow_needs_pm_chat: call this from a Lane Pilot PM chat");
-  const store = await deps.store();
+  const store = await deps.store(context.projectId);
   const stored = store.get(params.workflowId);
   const runnable = store.list().filter((item) => isOffered(item.workflow)).map((item) => item.workflow.id);
+  const published = store.list().filter((item) => isOffered(item.workflow) && item.workflow.status === "published").map((item) => item.workflow.id);
   if (!stored) return refused(`unknown_workflow: there is no workflow "${params.workflowId}". Call lane_pilot_route, or choose one of: ${runnable.join(", ") || "(none published)"}`, { workflow: params.workflowId });
   const { workflow } = stored;
   if (isPipeline(workflow)) return refused(`not_runnable: "${workflow.id}" is how Lane Pilot runs every writer task; it starts with lane_pilot_dispatch_writer`, { workflow: workflow.id });
   if (workflow.internal) return refused(`not_runnable: "${workflow.id}" is a fragment of other workflows, not a workflow to start`, { workflow: workflow.id });
   // A tested workflow has passed its stub tests but never run for real: it starts only on the owner's word (liveTrial), and its first successful run makes it published.
   if (workflow.status !== "published" && !(workflow.status === "tested" && params.liveTrial === true)) {
-    return refused(`not_runnable: "${workflow.id}" is ${workflow.status}, only published workflows start.${workflow.status === "tested" ? " It has passed its tests on stubs but has never run for real: when the owner agrees to a first real run (it will really send, post and spend), call again with liveTrial: true; one successful run makes it published." : ""} Published: ${runnable.join(", ") || "(none)"}`, { workflow: workflow.id });
+    return refused(`not_runnable: "${workflow.id}" is ${workflow.status}, only published workflows start.${workflow.status === "tested" ? " It has passed its tests on stubs but has never run for real: when the owner agrees to a first real run (it will really send, post and spend), call again with liveTrial: true; one successful run makes it published." : ""} Published: ${published.join(", ") || "(none)"}`, { workflow: workflow.id });
   }
   const inputs = params.inputs;
   const missing = workflow.inputs.filter((field) => field.required && field.default === undefined && (inputs[field.name] === undefined || inputs[field.name] === null || inputs[field.name] === ""));
@@ -197,9 +202,14 @@ export async function amendGoalsTool(deps: WorkflowToolDeps, params: { runId: st
 export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
   const { bb, db } = ctx;
   const preflight = createWorkflowPreflight(ctx, realDeps(ctx, services));
+  const library = createWorkflowLibrary(ctx, services);
   const deps: WorkflowToolDeps = {
     db,
-    store: () => services.workflowCatalog.store(),
+    // A project's own chains are read on its machine; when they cannot be, the PM still has the built-in and global ones.
+    store: async (projectId) => {
+      if (projectId) { try { return (await library.loadStore(projectId)).store; } catch (cause) { bb.log.warn(`Lane Pilot: project workflows not read for the PM tools (${cause instanceof Error ? cause.message : String(cause)})`); } }
+      return services.workflowCatalog.store();
+    },
     engine: () => services.workflowEngine,
     runtime: ({ pmThreadId, projectId, runId }) => ({ ctx, services, pmThreadId, projectId, runId }),
     state: ({ runId }) => ({
@@ -219,7 +229,7 @@ export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
   registerObservedTool(bb.agents, {
     name: "lane_pilot_route",
     description: "Match a request to a ready Lane Pilot workflow: the workflow, how sure the match is, a boundary contract and goals, or up to three questions.",
-    instructions: "Use from a Lane Pilot PM chat when the owner asks for multi-step work (a feature end to end, a review and fix, a release, research, a post) before you plan it yourself. Pass `intent` (the owner's request, in their words) and `context` (what you know that the request does not say: the project, files, the state of the run). Returns `decision`: `route` with `workflowId`, `confidence` (0-100), `evidence` (pattern, rejected workflows and why, rules that fired), `boundary_contract` (in scope, out of scope, constraints; `guesses` lists what is inferred), `goals`, `inputs` and `missingInputs`; or `clarify` with at most three `questions` and no workflow. Only published workflows are offered; of candidates that match alike the one that has run well and lately comes first (`runRecord` 0 to 1 shows it). Nothing is started by this call. Show the owner the choice and the contract before lane_pilot_run_workflow. When no workflow fits, work the usual way.",
+    instructions: "Use from a Lane Pilot PM chat when the owner asks for multi-step work (a feature end to end, a review and fix, a release, research, a post) before you plan it yourself. Pass `intent` (the owner's request, in their words) and `context` (what you know that the request does not say: the project, files, the state of the run). Returns `decision`: `route` with `workflowId`, `confidence` (0-100), `evidence` (pattern, rejected workflows and why, rules that fired), `boundary_contract` (in scope, out of scope, constraints; `guesses` lists what is inferred), `goals`, `inputs` and `missingInputs`; or `clarify` with at most three `questions` and no workflow. Published workflows are offered, and so are tested ones (they passed their stub tests but never ran for real: `notYetRunLive`; ask the owner before a first real run, which needs `liveTrial: true`); of candidates that match alike the one that has run well and lately comes first (`runRecord` 0 to 1 shows it). Nothing is started by this call. Show the owner the choice and the contract before lane_pilot_run_workflow. When no workflow fits, work the usual way.",
     parameters: z.object({ intent: z.string().min(3).max(4000), context: z.string().max(8000).optional() }).strict(),
     execute: async (params, context) => routeTool(deps, params, context),
   });

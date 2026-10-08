@@ -46,6 +46,10 @@ export function secretName(entry: string): { name: string; optional: boolean } |
 /** A tool entry: `ffmpeg`, or any of `whisper|whisper-cpp|faster-whisper`, or a path like `~/toolkit/telegram/tg`. */
 export const toolGroup = (entry: string): string[] => entry.split("|").map((part) => part.trim()).filter((part) => /^[A-Za-z0-9._+/~-]{1,100}$/.test(part));
 
+/** Ids older files and authors use for a plugin whose real id is another (`bb plugin list` knows `tasks`, not `bb-tasks`). */
+export const PLUGIN_ALIASES: Readonly<Record<string, string>> = { "bb-tasks": "tasks" };
+export const pluginId = (name: string): string => PLUGIN_ALIASES[name] ?? name;
+
 const within = async <T>(read: (() => Promise<T>) | undefined): Promise<{ ok: true; value: T } | { ok: false }> => {
   if (!read) return { ok: false };
   try { return { ok: true, value: await read() }; } catch { return { ok: false }; }
@@ -72,17 +76,17 @@ export async function checkRequires(requires: Workflow["requires"], ports: Requi
   const envRequests: PreflightResult["envRequests"] = [];
   const note = (kind: RequireKind, name: string, level: RequireIssue["level"], message: string) => issues.push({ kind, name, level, message });
 
-  const named = async (kind: RequireKind, names: string[], read: (() => Promise<string[]>) | undefined, noun: string, fix: string) => {
+  const named = async (kind: RequireKind, names: string[], read: (() => Promise<string[]>) | undefined, noun: string, fix: string, resolve: (name: string) => string = (name) => name) => {
     if (!names.length) return;
     const have = await within(read);
     for (const name of names) {
       checked.push({ kind, name });
       if (!have.ok) { note(kind, name, "unverified", `${noun} "${name}" could not be checked here.`); continue; }
-      if (!have.value.includes(name)) note(kind, name, "missing", `${noun} "${name}" is not available. ${fix}`);
+      if (!have.value.includes(resolve(name))) note(kind, name, "missing", `${noun} "${name}" is not available. ${fix}`);
     }
   };
   await named("skill", requires.skills, ports.skills, "Skill", "Install it, or enable it for this project.");
-  await named("plugin", requires.plugins, ports.plugins, "BB plugin", "Install and enable it.");
+  await named("plugin", requires.plugins, ports.plugins, "BB plugin", "Install and enable it.", pluginId);
   await named("mcp", requires.mcp, ports.mcpServers, "MCP server", "Connect it on the machine the run works on.");
 
   const wanted = requires.secrets.map(secretName).filter((entry): entry is NonNullable<typeof entry> => entry !== null);

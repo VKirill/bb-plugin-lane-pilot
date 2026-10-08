@@ -61,7 +61,7 @@
   "requires": {
     "plugins": [
       "lane-pilot",
-      "bb-tasks"
+      "tasks"
     ],
     "machines": [
       "project writer host"

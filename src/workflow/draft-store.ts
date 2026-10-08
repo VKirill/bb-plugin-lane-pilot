@@ -125,9 +125,17 @@ export function createDraftStore(db: LanePilotDatabase, now: () => number = Date
         const applied = applyDraftOps(draft.definition, ops);
         if (!applied.ok) return { ok: false, reason: "refused", refused: applied.refused };
         const definitionId = typeof applied.definition.id === "string" ? applied.definition.id : draft.workflowId;
-        const version = draft.version + 1, at = now();
         const json = JSON.stringify(applied.definition);
-        // Any change takes the draft back to «draft»: the tests and the publication were for another version.
+        // Where the steps lie on the canvas (`ui`) is not what the workflow does: dragging a card or arranging the graph changes that place in
+        // the current version. It is no new version (no row in the history, no conflict with the architect's edits) and it does not take
+        // the tests or the publication back, which were for the same content.
+        if (JSON.stringify(withoutUi(draft.definition)) === JSON.stringify(withoutUi(applied.definition))) {
+          db.prepare("UPDATE lane_pilot_wf_draft SET definition_json=? WHERE id=? AND version=?").run(json, draftId, draft.version);
+          db.prepare("UPDATE lane_pilot_wf_draft_version SET definition_json=? WHERE draft_id=? AND version=?").run(json, draftId, draft.version);
+          return { ok: true, draft: get(draftId)!, check: checkDraft(applied.definition, options.validate), changes: applied.changes };
+        }
+        const version = draft.version + 1, at = now();
+        // Any other change takes the draft back to «draft»: the tests and the publication were for another version.
         db.prepare("UPDATE lane_pilot_wf_draft SET definition_json=?, workflow_id=?, version=?, status='draft', updated_at=? WHERE id=? AND version=?")
           .run(json, definitionId, version, at, draftId, draft.version);
         db.prepare("INSERT INTO lane_pilot_wf_draft_version(draft_id,version,definition_json,summary,ops_json,at) VALUES (?,?,?,?,?,?)")
@@ -182,3 +190,5 @@ export function createDraftStore(db: LanePilotDatabase, now: () => number = Date
 }
 
 export type DraftStore = ReturnType<typeof createDraftStore>;
+
+const withoutUi = (definition: RawDefinition): Record<string, unknown> => { const { ui: _ui, ...rest } = definition as Record<string, unknown>; return rest; };

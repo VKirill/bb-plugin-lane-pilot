@@ -98,7 +98,7 @@ function Visits({ run, visit, onVisit }: { run: NodeRun; visit: number | null; o
   if (visits.length < 2) return null;
   const shown = visit ?? visits[visits.length - 1];
   return (
-    <div className="lp-seg" role="group" aria-label={t("wfDataVisit").replace("{n}", "")} data-testid="wf-data-visits">
+    <div className="lp-seg" role="group" aria-label={t("wfDataVisits")} data-testid="wf-data-visits">
       {visits.map((number) => <button key={number} type="button" className="lp-seg-item px-2 py-0.5 text-xs" aria-pressed={shown === number} data-testid={`wf-data-visit-${number}`} onClick={() => onVisit(number)}>{t("wfDataVisit").replace("{n}", String(number))}</button>)}
     </div>
   );
@@ -111,7 +111,7 @@ function InputsTab({ incoming, run, from, definitionOnly, visit, onVisit }: Node
   const input = step && isRecord(step.input) ? step.input : null;
   const given = input && isRecord(input.with) ? Object.entries(input.with) : [];
   const via = input && isRecord(input.via) && typeof input.via.mode === "string" ? input.via.mode : null;
-  const declared = incoming.flatMap((edge) => edge.carries.map((name) => [name, `← ${edge.from === "$start" ? "start" : edge.from}`] as const));
+  const declared = incoming.flatMap((edge) => edge.carries.map((name) => [name, t("wfDataFromNode").replace("{from}", edge.from === "$start" ? t("wfDataStartName") : edge.from)] as const));
   return (
     <div className="space-y-2" data-testid="wf-node-inputs">
       {run ? <Visits run={run} visit={visit} onVisit={onVisit} /> : null}
@@ -119,7 +119,7 @@ function InputsTab({ incoming, run, from, definitionOnly, visit, onVisit }: Node
       {step ? (
         <>
           {given.length ? <div><Heading>{t("wfDataGiven")}</Heading><Rows rows={given} testId="wf-input-rows" /></div> : null}
-          {input && "item" in input && input.item !== undefined ? <div><Heading>{t("wfDataItem")}</Heading><Rows rows={[["item", input.item]]} testId="wf-input-item" /></div> : null}
+          {input && "item" in input && input.item !== undefined ? <div><Heading>{t("wfDataItem")}</Heading><Rows rows={[[t("wfDataItemRow"), input.item]]} testId="wf-input-item" /></div> : null}
           {via && via !== "artifact" ? <Note>{t("wfDataCameBy").replace("{mode}", via)}</Note> : null}
           {!given.length && !(input && input.item !== undefined) ? <Note testId="wf-data-empty">{t("wfDataNothing")}</Note> : null}
         </>
@@ -172,7 +172,7 @@ function LastRunTab({ run, from, definitionOnly, visit, onVisit, onOpenThread, r
             <span className="font-medium">{t("wfNodeStep").replace("{n}", String(run.steps.indexOf(step) + 1))}</span>
             <span className={`${STEP_PILL[status]} rounded-full px-2 py-0.5 text-[11px] font-medium`}>{t(NODE_KEY[status]!)}</span>
             {step.attempt > 1 ? <span className="text-muted-foreground">{t("wfNodeAttempt").replace("{n}", String(step.attempt))}</span> : null}
-            <span className="ml-auto text-muted-foreground">{when(step.startedAt ?? null)}{took !== null ? ` · ${took} s` : ""}</span>
+            <span className="ml-auto text-muted-foreground">{when(step.startedAt ?? null)}{took !== null ? ` · ${t("wfSecondsShort").replace("{n}", String(took))}` : ""}</span>
           </div>
           {step.awaiting ? <p className="text-muted-foreground">{t("wfNodeAwaiting").replace("{what}", step.awaiting)}</p> : null}
           {step.error ? <p className="break-words text-destructive-text" role="alert"><span className="font-medium">{t("wfNodeError")}: </span>{step.error}</p> : null}

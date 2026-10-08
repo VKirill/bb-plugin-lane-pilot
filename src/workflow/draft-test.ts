@@ -1,7 +1,9 @@
 import type { LanePilotDatabase } from "../database";
 import { WorkflowEngine } from "./engine";
 import type { NodeExecutor, StepContext } from "./engine";
+import { PURE_ACTION_KEYS, pureActionExecutor } from "./actions";
 import { executorKey, lowerWorkflow, outputFields } from "./lower";
+import { registerReducers } from "./reducers";
 import type { Field, GraphNode, Workflow } from "./schema";
 
 /**
@@ -13,8 +15,11 @@ import type { Field, GraphNode, Workflow } from "./schema";
 export type DraftTestCase = {
   id: string;
   input: Record<string, unknown>;
-  /** Node id (or the id of a lowered node such as `score:child`) to the output the stub gives. */
-  stubs: Record<string, Record<string, unknown>>;
+  /**
+   * What a stub gives, by node id (or the id of a lowered node such as `score:child`), by the id of the workflow a subworkflow node calls, by the
+   * action key (`bb.tasks.get`) or by node type (`lp-task`). A list is one answer per visit, the last one repeats.
+   */
+  stubs: Record<string, Record<string, unknown> | Array<Record<string, unknown>>>;
   /** Human node id to its answer: an object (the node's output) or the text of `answer_kind`. */
   humanAnswers: Record<string, unknown>;
   expectStatus: string;
@@ -42,13 +47,16 @@ export type DraftTestResult = {
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 
+/** A boolean that names a bad outcome is false, any other true: a stub answers «all went well» unless the case says otherwise. */
+const FALSE_BY_NAME = /(^|_)(stalled|warn|has_ui|blocked|failed|thin|timeout|drift|error|errors|missing|dirty|unmet|needs|skipped|breaking|regression|rejected|duplicate|no)(_|$)/;
+
 /** A value of the declared type, the same every time. */
 export function sampleValue(field: Field, owner: string): unknown {
   if (field.default !== undefined) return field.default;
   switch (field.type) {
     case "string": return field.name === "handoff" ? `stub handoff of ${owner}` : `stub ${owner}.${field.name}`;
-    case "number": return 1;
-    case "boolean": return false;
+    case "number": return /confidence|score|percent|coverage/.test(field.name) ? 90 : 1;
+    case "boolean": return !FALSE_BY_NAME.test(field.name);
     case "enum": return field.values![0];
     case "array": return [`stub ${field.name} 1`, `stub ${field.name} 2`];
     case "object": return {};
@@ -70,7 +78,7 @@ export function testCasesOf(workflow: Workflow): DraftTestCase[] {
     return {
       id,
       input: { ...(base?.input ?? sampleOutput(workflow.inputs, "input")), ...pick("input") },
-      stubs: { ...(base?.stubs ?? {}), ...Object.fromEntries(Object.entries(pick("stubs")).filter((entry): entry is [string, Record<string, unknown>] => isRecord(entry[1]))) },
+      stubs: { ...(base?.stubs ?? {}), ...Object.fromEntries(Object.entries(pick("stubs")).filter((entry): entry is [string, Record<string, unknown> | Array<Record<string, unknown>>] => isRecord(entry[1]) || (Array.isArray(entry[1]) && entry[1].every(isRecord)))) },
       humanAnswers: { ...(base?.humanAnswers ?? {}), ...pick("human_answers") },
       expectStatus: typeof layer.expect_status === "string" ? layer.expect_status : base?.expectStatus ?? "succeeded",
       ...(Array.isArray(layer.expect_path) ? { expectPath: strings(layer.expect_path) } : {}),
@@ -110,18 +118,53 @@ export async function runDraftTest(ports: DraftTestPorts, workflow: Workflow, te
   const lowered = lowerWorkflow(workflow, ports.resolveWorkflow);
   const nodesById = new Map(lowered.nodes.filter((node): node is GraphNode => node.type !== "note").map((node) => [node.id, node]));
   const engine = new WorkflowEngine({ db: ports.db, harnessVersion: ports.harnessVersion, resolveWorkflow: ports.resolveWorkflow, now: ports.now, leaseMs: 120_000 });
-  const stubFor = (key: string): NodeExecutor => ({
-    reentrant: true,
-    run: async (ctx: StepContext) => {
-      const fields = outputFields(ctx.workflow, ctx.node) as Field[] | "unknown";
-      const given = testCase.stubs[ctx.nodeId] ?? testCase.stubs[ctx.nodeId.replace(/:(child|fan)$/, "")];
-      stubbed.set(ctx.nodeId, { node: ctx.nodeId, type: ctx.node.type, executor: key });
-      return { output: { ...(fields === "unknown" ? {} : sampleOutput(fields, ctx.nodeId)), ...(given ?? {}) } };
-    },
-  });
+  const visits = new Map<string, number>();
+  /** The case's stub for a node: its own id, the workflow a subworkflow node calls, the parent of a fan-out's body, the action key, then the node type. */
+  const stubOf = (ctx: StepContext): Record<string, unknown> | undefined => {
+    const node = ctx.node;
+    const visit = (visits.get(ctx.nodeId) ?? 0) + 1;
+    // `key#2` is the answer of the second visit of that node; a plain key answers every visit.
+    const keys = [ctx.nodeId, ...(node.type === "subworkflow" ? [node.workflow] : []), ...(ctx.nodeId.endsWith(":child") ? [ctx.nodeId.slice(0, -":child".length)] : []),
+      ctx.nodeId.replace(/:(child|fan)$/, ""), ...(node.type === "action" && node.action ? [node.action] : []), node.type];
+    const entry = keys.map((key) => testCase.stubs[`${key}#${visit}`] ?? testCase.stubs[key]).find((value) => value !== undefined);
+    return Array.isArray(entry) ? entry[Math.min(visit - 1, entry.length - 1)] : entry;
+  };
+  const answer = (ctx: StepContext, key: string): Record<string, unknown> => {
+    const given = stubOf(ctx);
+    visits.set(ctx.nodeId, (visits.get(ctx.nodeId) ?? 0) + 1);
+    stubbed.set(ctx.nodeId, { node: ctx.nodeId, type: ctx.node.type, executor: key });
+    // A person answers at once from the case (`human_answers`): the first answer kind when it says nothing.
+    if (ctx.node.type === "human") return answerFor(ctx.node, testCase.humanAnswers[ctx.nodeId], ctx.node.options);
+    const fields = outputFields(ctx.workflow, ctx.node) as Field[] | "unknown";
+    return { ...(fields === "unknown" ? {} : sampleOutput(fields, ctx.nodeId)), ...(given ?? {}) };
+  };
+  const stubFor = (key: string): NodeExecutor => ({ reentrant: true, run: async (ctx: StepContext) => ({ output: answer(ctx, key) }) });
+  // The executors of the workflow and of every workflow it calls, however deep: a child run needs its own agents, tasks and actions answered too.
   const keys = new Set<string>();
-  for (const node of nodesById.values()) { const key = executorKey(node); if (key && !engine.hasExecutor(key)) keys.add(key); }
-  for (const key of keys) engine.register(key, stubFor(key));
+  const seen = new Set<string>();
+  const collect = (flow: Workflow) => {
+    if (seen.has(flow.id)) return;
+    seen.add(flow.id);
+    for (const node of flow.nodes) {
+      if (node.type === "note") continue;
+      const key = executorKey(node);
+      if (key && !engine.hasExecutor(key)) keys.add(key);
+      if (node.type === "subworkflow") { const child = ports.resolveWorkflow?.(node.workflow, node.version); if (child) collect(lowerWorkflow(child, ports.resolveWorkflow)); }
+    }
+  };
+  collect(lowered);
+  // The code-only actions and the reducers are code: they run for real, unless the case stubs that node; everything else that reaches outside answers from a stub.
+  registerReducers(engine);
+  for (const key of PURE_ACTION_KEYS) {
+    const real = pureActionExecutor(key);
+    engine.register(key, { reentrant: true, run: async (ctx) => { if (stubOf(ctx) !== undefined) return { output: answer(ctx, key) }; visits.set(ctx.nodeId, (visits.get(ctx.nodeId) ?? 0) + 1); return real.run(ctx); } });
+  }
+  for (const key of keys) if (!engine.hasExecutor(key)) engine.register(key, stubFor(key));
+  // A person answers at once, at any depth (a waiting question of a called workflow would hold the whole run): the case's human_answers, else the first option.
+  engine.register("builtin:human", stubFor("builtin:human"));
+  // A subworkflow the case stubs (by node id or by the id of the workflow it calls) answers from the stub; any other runs for real, its own steps on stubs too.
+  const realSub = (engine as unknown as { executors: Map<string, NodeExecutor> }).executors.get("builtin:subworkflow")!;
+  engine.register("builtin:subworkflow", { ...realSub, run: async (ctx: StepContext) => (stubOf(ctx) !== undefined ? { output: answer(ctx, "builtin:subworkflow") } : realSub.run(ctx)) });
 
   const failures: string[] = [];
   const base: DraftTestResult = { caseId: testCase.id, green: false, status: "not_started", reason: null, error: null, failedNode: null, path: [], output: null, runId: null, failures, stubbed: [], notChecked: testCase.notChecked };

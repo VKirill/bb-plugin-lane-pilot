@@ -67,7 +67,7 @@
   "requires": {
     "plugins": [
       "lane-pilot",
-      "bb-tasks"
+      "tasks"
     ],
     "project": {
       "git": true
@@ -166,9 +166,25 @@
         "dry_run": true
       },
       "stubs": {
-        "scan": {
-          "count": 11,
-          "findings": "fixtures/discover-11.json"
+        "scan:child": {
+          "perspective": "security",
+          "findings": [
+            {
+              "file": "a.ts",
+              "line": 1,
+              "severity": "high",
+              "description": "problem in a.ts"
+            },
+            {
+              "file": "b.ts",
+              "line": 2,
+              "severity": "low",
+              "description": "problem in b.ts"
+            }
+          ]
+        },
+        "create": {
+          "created_ids": []
         }
       },
       "expect_path": [

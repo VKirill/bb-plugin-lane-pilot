@@ -68,6 +68,8 @@ export function dataBlock(label: string, value: unknown, max = 24_000): string {
 }
 
 export type AgentPromptInput = {
+  /** The node's `authorized`: true lets the helper make the reversible changes the approved outcome needs outside the repository; false is read and report only; absent says nothing. */
+  authorized?: boolean;
   workflow: string; node: string; title?: string; role: string; mode: string;
   /** The role's method text (role-method.ts), when the role has one. */
   method?: string;
@@ -108,6 +110,9 @@ export function agentPrompt(input: AgentPromptInput): string {
     input.readOnly
       ? "Do not change, commit or push any file of the repository: reading is allowed, reports and scratch files go under .bb/chats/ or /tmp. If the step seems to need a repository change, say so in your answer."
       : "Write only what the task names.",
+    ...(input.authorized === undefined ? [] : [input.authorized
+      ? "Authorization follows the owner's goal: every reversible step needed for the approved outcome inside the owner's accounts and machines is authorized. Make those changes without asking step by step; stop and report instead of doing a destructive, paid, outgoing, permission or irreversible step."
+      : "This step reads and reports only: do not change, submit, send, pay, delete or publish anything outside your own notes. If the step needs a change, say which one in your answer."]),
     "", input.contract);
   return lines.join("\n");
 }

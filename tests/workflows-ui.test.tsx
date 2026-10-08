@@ -222,11 +222,40 @@ describe("Workflow canvas, n8n style", () => {
     fireEvent.click(await slot.findByTestId("wf-row-review-fix"));
     await slot.findByTestId("wf-node-ship");
     const card = slot.getByTestId("wf-node-build").closest(".react-flow__node")!;
+    const lit = (id: string) => slot.getByTestId(`wf-node-${id}`).closest(".react-flow__node")!.classList.contains("lp-wf-lit");
+    const canvas = slot.getByTestId("workflow-graph");
     fireEvent.mouseEnter(card);
-    await waitFor(() => expect(slot.getByTestId("wf-node-ship").getAttribute("data-dim")).toBe("1"));
-    expect(slot.getByTestId("wf-node-review").getAttribute("data-dim")).toBe("0");
+    // The recession itself is CSS (`data-hovering` on the canvas, `lp-wf-lit` on what stays), so the cards are not redrawn for it.
+    await waitFor(() => expect(canvas.getAttribute("data-hovering")).toBe("1"));
+    expect(lit("build")).toBe(true);
+    expect(lit("review")).toBe(true);
+    expect(lit("ship")).toBe(false);
     fireEvent.mouseLeave(card);
-    await waitFor(() => expect(slot.getByTestId("wf-node-ship").getAttribute("data-dim")).toBe("0"));
+    await waitFor(() => expect(canvas.getAttribute("data-hovering")).toBe("0"));
+    expect(lit("build")).toBe(false);
+  });
+
+  it("a hover redraws none of the cards and few connections (a 60-step chain redrew ~60 cards and ~60 connections on every mouse move, ~100 ms a frame)", async () => {
+    const steps = Array.from({ length: 40 }, (_unused, at) => ({ id: `s${at}`, type: "agent", role: "analyst", prompt: "x", output: [{ name: "o", type: "string" }] }));
+    const big = workflow({
+      id: "big-chain", name: { en: "Big", ru: "Большая" }, status: "published", nodes: steps,
+      edges: [{ from: "start", to: "s0" }, ...steps.slice(1).map((step, at) => ({ from: `s${at}`, to: step.id })), { from: "s39", to: "end", with: { result: "s39.handoff" } }],
+    });
+    const { rpc } = await world({ files: { "big-chain.json": big } });
+    const slot = await mount(rpc);
+    fireEvent.click(await slot.findByTestId("wf-row-big-chain"));
+    await slot.findByTestId("wf-node-s20");
+    await waitFor(() => expect(slot.getByTestId("workflow-graph").getAttribute("data-layout")).toBe("ready"));
+    const { renderStats } = await import("../src/ui/workflow-graph-parts");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const card = slot.getByTestId("wf-node-s20").closest(".react-flow__node")!;
+    const before = { ...renderStats };
+    fireEvent.mouseEnter(card);
+    await waitFor(() => expect(slot.getByTestId("workflow-graph").getAttribute("data-hovering")).toBe("1"));
+    fireEvent.mouseLeave(card);
+    await waitFor(() => expect(slot.getByTestId("workflow-graph").getAttribute("data-hovering")).toBe("0"));
+    expect(renderStats.cards - before.cards).toBeLessThanOrEqual(2);
+    expect(renderStats.edges - before.edges).toBeLessThanOrEqual(12);
   });
 
   it("shows the data a step was given and gave in the latest run, in tabs, before any run is picked", async () => {

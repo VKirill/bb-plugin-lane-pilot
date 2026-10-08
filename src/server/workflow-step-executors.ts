@@ -3,9 +3,11 @@ import type { stepExecutorSchema } from "../contracts";
 import { automaticEffortRoutingEnabled, writerServiceTier } from "../jev-reasoning";
 import { resolveStageWriterSelection } from "../stage-writer-selection";
 import { writerFallbackChain, writerFallbacks } from "../writer-fallbacks";
-import { costTier, validateChoice, type ModelCatalog } from "../workflow/model-catalog";
+import { costTier, offeredOnHost, validateChoice, type ModelCatalog } from "../workflow/model-catalog";
 import { roleSpec } from "./workflow-agent";
-import { resolveAgentModel } from "./workflow-agent-model";
+import { modelOverrideAt, modelOverrideKey, resolveAgentModel } from "./workflow-agent-model";
+
+type At = { workflowId: string; ownKeys: ReadonlySet<string> } | undefined;
 
 /**
  * Who works on a step, and with which model. One place answers it for every node type, from the same rules the executors
@@ -49,6 +51,9 @@ const STAGE_NODES: Record<string, StageDef> = {
 };
 const CODE_CRITIQUE: StageDef = { stage: "code_critique", label: "Code critique", helper: "code-critic", effort: { writer: true, fallback: "medium" }, tier: "writer" };
 
+/** Whether the owner's override applies to the step (an errand action takes the override's model too, but keeps saying it is the helper's otherwise). */
+const overridden = (settings: Settings, id: string, at: At): boolean => Boolean(at && modelOverrideAt(settings, modelOverrideKey(at.workflowId, id)));
+
 const tierWord = (value: unknown): "fast" | "standard" | null => (value === "fast" || value === "standard" ? value : null);
 
 function stageSelection(settings: Settings, def: StageDef) {
@@ -68,19 +73,22 @@ function stageSelection(settings: Settings, def: StageDef) {
 const none = (node: Raw, id: string, kind: string, label: string, extra: Partial<StepExecutor> = {}): StepExecutor => ({
   nodeId: id, kind, uses: text(node.uses), mode: "none", agent: { role: text(node.role), helper: null, label },
   providerId: null, model: null, reasoningEffort: null, serviceTier: null, source: "none", sourceKey: null, inherited: false, fallbacks: [], parts: [],
-  overridable: false, settingsKey: null, costTier: "none", issues: [], ...extra,
+  overridable: false, canOverride: false, overrideScope: null, settingsKey: null, costTier: "none", issues: [], ...extra,
 });
 
-function agentNode(node: Raw, id: string, settings: Settings, pm: PmPair | null): StepExecutor {
+type Offered = ((providerId: string, model: string) => boolean | null) | undefined;
+
+function agentNode(node: Raw, id: string, settings: Settings, pm: PmPair | null, at: At, offered?: Offered): StepExecutor {
   const role = text(node.role) ?? "worker";
   const helper = roleSpec(role).helper;
   // The same function the executor calls (withResolvedModel, workflow-agent.ts): the card says what will be spawned.
-  const chosen = resolveAgentModel({ role, node: { provider: text(node.provider), model: text(node.model), reasoning: text(node.reasoning), service_tier: text(node.service_tier), model_preset: text(node.model_preset) }, settings, pm });
+  const chosen = resolveAgentModel({ role, node: { provider: text(node.provider), model: text(node.model), reasoning: text(node.reasoning), service_tier: text(node.service_tier), model_preset: text(node.model_preset) }, settings, pm, ...(offered ? { offered } : {}), ...(at ? { at: { workflowId: at.workflowId, nodeId: id } } : {}) });
   return {
     nodeId: id, kind: "agent", uses: text(node.uses), mode: "model", agent: { role, helper, label: role },
     providerId: chosen.providerId, model: chosen.model, reasoningEffort: chosen.reasoningEffort, serviceTier: chosen.serviceTier,
     source: chosen.source, sourceKey: chosen.sourceKey, inherited: chosen.inherited,
-    fallbacks: [], parts: [], overridable: true, settingsKey: null, costTier: costTier(chosen.model), issues: chosen.issues,
+    fallbacks: [], parts: [], overridable: true, canOverride: Boolean(at), overrideScope: chosen.source === "override" && at ? (chosen.sourceKey && at.ownKeys.has(chosen.sourceKey) ? "project" : "global") : null,
+    settingsKey: null, costTier: costTier(chosen.model), issues: chosen.issues,
   };
 }
 
@@ -89,7 +97,7 @@ function stageNode(node: Raw, id: string, def: StageDef, settings: Settings): St
   return {
     nodeId: id, kind: "agent", uses: text(node.uses), mode: "model", agent: { role: text(node.role) ?? def.helper, helper: def.helper, label: def.label },
     providerId: picked.providerId, model: picked.model, reasoningEffort: picked.reasoningEffort, serviceTier: picked.serviceTier, source: picked.source, sourceKey: picked.sourceKey,
-    inherited: picked.source !== "stage", fallbacks: [], parts: [], overridable: false, settingsKey: def.stage, costTier: costTier(picked.model),
+    inherited: picked.source !== "stage", fallbacks: [], parts: [], overridable: false, canOverride: false, overrideScope: null, settingsKey: def.stage, costTier: costTier(picked.model),
     issues: picked.providerId && picked.model ? [] : ["no_selection"],
   };
 }
@@ -113,24 +121,24 @@ function codeTask(node: Raw, id: string, settings: Settings, pm: PmPair | null):
   return {
     nodeId: id, kind: "lp-task", uses: text(node.uses), mode: "chain", agent: { role: "writer", helper: "writer", label: "writer" },
     providerId, model, reasoningEffort: effort, serviceTier: tier, source: providerId || model ? "writer" : "none", sourceKey: "writer.model", inherited: true,
-    fallbacks, parts, overridable: false, settingsKey: "writer", costTier: costTier(model), issues,
+    fallbacks, parts, overridable: false, canOverride: false, overrideScope: null, settingsKey: "writer", costTier: costTier(model), issues,
   };
 }
 
-function stepOf(node: Raw, id: string, settings: Settings, pm: PmPair | null): StepExecutor | null {
+function stepOf(node: Raw, id: string, settings: Settings, pm: PmPair | null, at: At, offered?: Offered): StepExecutor | null {
   const kind = text(node.type) ?? "agent";
   const uses = text(node.uses);
   switch (kind) {
     case "note": case "join": case "parallel": return null;
     case "agent": {
       const stage = uses ? STAGE_NODES[uses] : undefined;
-      return stage ? stageNode(node, id, stage, settings) : agentNode(node, id, settings, pm);
+      return stage ? stageNode(node, id, stage, settings) : agentNode(node, id, settings, pm, at, offered);
     }
     case "lp-task": return codeTask(node, id, settings, pm);
     case "action": {
       const key = uses ?? text(node.action);
       if (key && (DELEGATED_ACTIONS as readonly string[]).includes(key)) {
-        return { ...agentNode({ role: "errand", model_preset: node.model_preset }, id, settings, pm), kind: "action", uses, mode: "helper", agent: { role: "errand", helper: "errand", label: key }, source: "helper", sourceKey: "errand", inherited: true, overridable: false };
+        return { ...agentNode({ role: "errand", model_preset: node.model_preset }, id, settings, pm, at, offered), kind: "action", uses, mode: "helper", agent: { role: "errand", helper: "errand", label: key }, ...(overridden(settings, id, at) ? {} : { source: "helper" as const, sourceKey: "errand", inherited: true }), overridable: false };
       }
       return none(node, id, kind, text(node.action) ?? "action");
     }
@@ -149,6 +157,12 @@ export type ResolveInput = {
   /** The model the PM chat runs on, when known: the last model of the writer chain. */
   pm: PmPair | null;
   catalog?: ModelCatalog | null;
+  /**
+   * The workflow the nodes belong to and the keys of the settings the project holds itself (the rest is the global level): with them
+   * the owner's per-step overrides (`workflow.model_override.<workflowId>/<nodeId>`) apply and say which level they come from.
+   * Without a workflow id (a draft of a new workflow) none applies.
+   */
+  workflowId?: string; ownKeys?: ReadonlySet<string>;
 };
 
 /** Marks a step whose provider, model or effort the hub's machines do not offer. */
@@ -157,20 +171,23 @@ function withCatalogIssues(step: StepExecutor, catalog: ModelCatalog): StepExecu
   const verdict = validateChoice(catalog, { providerId: step.providerId, model: step.model, effort: step.reasoningEffort });
   if (verdict.ok) return step;
   // An effort the model lacks is the model's smaller problem; the provider and the model being absent come first.
-  return { ...step, issues: [...step.issues, verdict.code] };
+  return step.issues.includes(verdict.code) ? step : { ...step, issues: [...step.issues, verdict.code] };
 }
 
 /** One entry per step that runs (not notes, joins or the container of a parallel), in graph order; the body of a parallel is `<id>:child`. */
 export function resolveStepExecutors(input: ResolveInput): StepExecutor[] {
   const out: StepExecutor[] = [];
+  // The machine the helpers run on decides what is offered: a model another machine has is not one this step can start on.
+  const offered: Offered = input.catalog?.runHostId ? (providerId, model) => offeredOnHost(input.catalog!, providerId, model, input.catalog!.runHostId) : undefined;
+  const at: At = input.workflowId ? { workflowId: input.workflowId, ownKeys: input.ownKeys ?? new Set() } : undefined;
   for (const raw of input.nodes) {
     if (!isRaw(raw)) continue;
     const id = text(raw.id);
     if (!id) continue;
-    const found = stepOf(raw, id, input.settings, input.pm);
+    const found = stepOf(raw, id, input.settings, input.pm, at, offered);
     if (found) out.push(found);
     if (text(raw.type) === "parallel" && isRaw(raw.child)) {
-      const body = stepOf(raw.child, `${id}:child`, input.settings, input.pm);
+      const body = stepOf(raw.child, `${id}:child`, input.settings, input.pm, at, offered);
       if (body) out.push(body);
     }
   }

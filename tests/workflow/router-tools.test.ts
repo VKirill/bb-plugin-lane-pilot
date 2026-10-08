@@ -214,6 +214,30 @@ describe("lane_pilot_route", () => {
     expect(answer.candidates.length).toBeLessThanOrEqual(5);
   });
 
+  it("offers a tested chain on the shipped statuses with the «not yet run live» flag, and tells the PM to ask the owner for liveTrial", async () => {
+    const { db } = setup();
+    const shipped = await loadWorkflowStore({ builtin: BUILTIN_SOURCES });
+    const answer = parse(await routeTool(depsOf(db, shipped, fakeEngine().engine), { intent: "Нужен кокон страниц для интернет-магазина чая, с исследованием аудитории" }, ctx));
+    expect(answer).toMatchObject({ decision: "route", workflowId: "seo-cocoon", notYetRunLive: true });
+    expect(answer.candidates[0]).toMatchObject({ id: "seo-cocoon", notYetRunLive: true });
+    expect(answer.next).toContain("liveTrial: true");
+    expect(answer.warnings.join(" ")).toContain("has not run for real yet");
+  });
+
+  it("reads the library of the PM's project: a project's own chain is routed and started like a global one (audit item 11)", async () => {
+    const { db } = setup();
+    const seen: Array<string | undefined> = [];
+    const mine = wf({ id: "mine-only", status: "published", description: { en: "Rotate the staging certificates of the Orbit cluster", ru: "Перевыпусти сертификаты стенда Orbit" }, tags: ["certificates", "orbit"], examples: { en: ["Rotate the Orbit staging certificates"], ru: [] } });
+    const projectStore = { list: () => [{ workflow: mine }], get: (id: string) => (id === mine.id ? { workflow: mine } : null), resolve: () => null, problems: [] } as unknown as WorkflowStore;
+    const deps = { ...depsOf(db, publishedStore, fakeEngine().engine), store: async (projectId?: string) => { seen.push(projectId); return projectId === PROJECT ? projectStore : publishedStore; } };
+    const answer = parse(await routeTool(deps, { intent: "Rotate the Orbit staging certificates" }, ctx));
+    expect(seen).toEqual([PROJECT]);
+    expect(answer.candidates.map((candidate: { id: string }) => candidate.id)).toContain("mine-only");
+    const refusal = parse(await runWorkflowTool(deps, { workflowId: "mine-only", inputs: {} }, ctx));
+    expect(seen).toEqual([PROJECT, PROJECT]);
+    expect(refusal.reason ?? "").not.toContain("unknown_workflow");
+  });
+
   it("asks at most three questions for a broad request and offers no workflow", async () => {
     const { db } = setup();
     const answer = parse(await routeTool(depsOf(db, publishedStore, fakeEngine().engine), { intent: "Help me with the project" }, ctx));

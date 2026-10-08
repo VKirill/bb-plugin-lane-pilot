@@ -206,7 +206,7 @@ export const stepExecutorSchema = z.object({
   mode: z.enum(["model", "chain", "helper", "none"]),
   agent: z.object({ role: z.string().nullable(), helper: z.string().nullable(), label: z.string() }).strict(),
   providerId: z.string().nullable(), model: z.string().nullable(), reasoningEffort: z.string().nullable(), serviceTier: z.string().nullable(),
-  source: z.enum(["node", "preset", "stage", "agent", "pm", "role-default", "writer", "helper", "none"]),
+  source: z.enum(["override", "node", "preset", "stage", "agent", "pm", "role-default", "writer", "helper", "none"]),
   /** The setting key, the preset name or the helper the value comes from. */
   sourceKey: z.string().nullable(),
   inherited: z.boolean(),
@@ -216,11 +216,15 @@ export const stepExecutorSchema = z.object({
   parts: z.array(executorPairSchema.extend({ stage: z.string(), source: z.string(), sourceKey: z.string().nullable() }).strict()),
   /** Whether a patch of the node changes it; otherwise the Settings of `settingsKey` do. */
   overridable: z.boolean(), settingsKey: z.string().nullable(),
+  /** Whether the owner can move the step to another model without editing the workflow (a per-step override in settings), and the level of the override in force. */
+  canOverride: z.boolean(), overrideScope: z.enum(["project", "global"]).nullable(),
   costTier: z.enum(["none", "low", "medium", "high", "unknown"]),
   /** Problems found: `unknown_preset`, `provider_without_model`, `provider_unavailable`, `model_unavailable` ... */
   issues: z.array(z.string()),
 }).strict();
 export const modelCatalogSchema = z.object({
+  /** With a `projectId`: the machine the project's workflow helpers run on (its PM chat's environment); a model must be offered there. */
+  runHostId: z.string().nullable().optional(),
   hosts: z.array(z.object({ id: z.string(), name: z.string(), connected: z.boolean() }).strict()),
   providers: z.array(z.object({
     id: z.string(), displayName: z.string(), logoUrl: z.string().nullable(), family: z.string().nullable(), supportsServiceTier: z.boolean(), serviceTiers: z.array(z.string()), hostIds: z.array(z.string()),
@@ -1733,9 +1737,20 @@ export const rpcContract = defineRpcContract({
     input: z.object({ workflowId: z.string().min(1).optional(), draftId: z.string().min(1).optional(), projectId: z.string().min(1).optional() }).strict(),
     output: z.object({ found: z.boolean(), executors: z.array(stepExecutorSchema), pm: z.object({ providerId: z.string(), model: z.string() }).strict().nullable() }).strict(),
   },
+  /**
+   * Sets (`choice`) or drops (`null`) the owner's model override of one step, for all projects (`scope: "global"`) or for `projectId` only.
+   * Built-in workflows stay untouched: the override is a settings row `workflow.model_override.<workflowId>/<nodeId>`.
+   */
+  workflow_model_override: {
+    input: z.object({
+      projectId: z.string().min(1), scope: z.enum(["project", "global"]), workflowId: z.string().min(1), nodeId: z.string().min(1),
+      choice: z.object({ providerId: z.string().min(1), model: z.string().min(1), effort: z.string().nullable().optional(), serviceTier: z.string().nullable().optional() }).strict().nullable(),
+    }).strict(),
+    output: z.object({ ok: z.boolean(), reason: z.string().optional() }).strict(),
+  },
   /** Every provider and model the hub's machines offer, with the machines each is available on; the pickers of the Workflows tab list this. */
   workflow_model_catalog: {
-    input: z.object({ refresh: z.boolean().optional() }).strict(),
+    input: z.object({ refresh: z.boolean().optional(), projectId: z.string().min(1).optional() }).strict(),
     output: modelCatalogSchema,
   },
   /** What a node may use: skills, plugins, MCP servers, Env Catalog names (never values), machines, specialist roles. */

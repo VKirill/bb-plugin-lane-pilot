@@ -14,6 +14,7 @@ import type { WorkflowAgents } from "./workflow-agent";
 import { lpTaskPipelineExecutor } from "./writer/dispatch-workflow";
 import type { DispatchRuntime } from "./writer/dispatch-workflow";
 import { keyedSpawnSupported } from "./thread-keys";
+import { threadUsage } from "./token-usage";
 import { stringAt } from "./values";
 import type { ChainRuntime } from "./workflow-runtime";
 import type { ServerCore } from "./core";
@@ -115,6 +116,7 @@ export function humanOutput(node: Extract<GraphNode, { type: "human" }>, answer:
 const TERMINAL_ATTEMPT = ["accepted", "blocked", "canceled"];
 const safeId = (text: string) => text.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "task";
 
+type HelperUsage = { tokens: number; costUsd: number };
 type LpTaskNode = Extract<GraphNode, { type: "lp-task" }>;
 
 export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, services: Services, agents: WorkflowAgents = createWorkflowAgents()): void {
@@ -134,7 +136,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     run: async (c) => {
       need(c);
       const result = await agents.run(await withResolvedModel(agentRequest(c, c.node as Extract<GraphNode, { type: "agent" }>)));
-      return { output: result.output, threadId: result.threadId };
+      return { output: result.output, threadId: result.threadId, ...(result.usage ? { usage: result.usage } : {}) };
     },
   } as NodeExecutor<ChainRuntime>);
 
@@ -199,7 +201,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     run: async (c) => {
       const rt = need(c);
       const node = c.node as LpTaskNode;
-      const contract = await contractOf(c, rt, node);
+      const { contract, usage: planned } = await contractOf(c, rt, node);
       const run = getRun(db, rt.runId);
       if (!run?.writer_workspace_path) throw new Error("the run has no workspace to build in");
       const stem = createHash("sha256").update(`${c.runId}|${c.stepKey}`).digest("hex").slice(0, 8);
@@ -212,7 +214,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const reply = await services.dispatchWriter({ threadId: rt.pmThreadId, projectId: rt.projectId, task: valid.task, plan: valid.task.objective });
       if (reply.state === "rejected") return { output: failedTask("blocked", String(reply.reason ?? "the dispatch was rejected")) };
       const taskId = str(reply.taskId) || valid.task.id;
-      return { wait: { kind: "attempt", detail: { runId: str(reply.runId) || rt.runId, taskId, files: valid.task.owns_paths } } };
+      return { wait: { kind: "attempt", detail: { runId: str(reply.runId) || rt.runId, taskId, files: valid.task.owns_paths } }, ...(planned ? { usage: planned } : {}) };
     },
     poll: async (step): Promise<PollResult> => {
       const detail = step.await.detail as { runId: string; taskId: string } | undefined;
@@ -224,18 +226,22 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const state = latest.state === "accepted" ? "accepted" : latest.state === "canceled" ? "cancelled" : /needs[_ -]?human/i.test(reason) ? "needs_human" : "blocked";
       const rt = runtimeOf({ runtime: undefined }, step.runId);
       const merge = state === "accepted" && rt ? await mergeFacts(rt, latest.id) : { commit: "", files: [] as string[] };
+      // What the writer attempts of this task spent: the threads of every attempt, read once, when the task is over.
+      const threads = [...new Set(listed.map((row) => getAttempt(db, row.id)?.thread_id).filter((id): id is string => Boolean(id)))];
+      const spent = await Promise.all(threads.map((threadId) => threadUsage(bb, threadId)));
+      const usage = { tokens: spent.reduce((sum, row) => sum + row.tokens, 0), costUsd: spent.reduce((sum, row) => sum + row.costUsd, 0) };
       return { output: { state, attempts: listed.length, merge_commit: merge.commit, files: merge.files,
-        verdict: { status: state === "accepted" ? "pass" : "rework", summary: reason, findings: [], evidence: reason || state } } };
+        verdict: { status: state === "accepted" ? "pass" : "rework", summary: reason, findings: [], evidence: reason || state } }, usage };
     },
   };
   const failedTask = (state: string, reason: string): Row => ({ state, attempts: 0, merge_commit: "", files: [], verdict: { status: "rework", summary: reason, findings: [], evidence: reason } });
 
   /** The task contract of an lp-task node: the `contract` as rendered, or one written from `contract_template` and the step's data by a planner helper. */
-  async function contractOf(c: StepContext<ChainRuntime>, rt: ChainRuntime, node: LpTaskNode): Promise<Row> {
+  async function contractOf(c: StepContext<ChainRuntime>, rt: ChainRuntime, node: LpTaskNode): Promise<{ contract: Row; usage?: HelperUsage }> {
     if (node.contract !== undefined) {
       const rendered = c.template(node.contract);
       const value = typeof rendered === "string" ? (() => { try { return JSON.parse(rendered) as unknown; } catch { return rendered; } })() : rendered;
-      if (typeof value === "object" && value !== null && !Array.isArray(value)) return value as Row;
+      if (typeof value === "object" && value !== null && !Array.isArray(value)) return { contract: value as Row };
       throw new Error(`the contract of ${node.id} is not an object (got ${typeof value})`);
     }
     const template = typeof node.contract_template === "string" ? node.contract_template : JSON.stringify(node.contract_template ?? {});
@@ -244,7 +250,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       rt, workflowRunId: c.runId, stepKey: c.stepKey, nodeId: node.id, spawnKey: c.spawnKey, role: "planner", title: `contract for ${node.id}`, fields, signal: c.signal,
       prompt: agentPrompt({ workflow: c.workflow.id, node: node.id, title: `contract for ${node.id}`, role: "planner", mode: c.mode, task: `Write ONE task-v2 contract for a writer from this template and the run's artifacts. Template: ${template}\nThe repository paths come from the artifacts in the run's folder; use only real paths. Put the whole contract object in the field \`contract\`.`, inputs: c.input.with, contract: outputContract(fields), readOnly: true }),
     });
-    return rec(result.output.contract);
+    return { contract: rec(result.output.contract), ...(result.usage ? { usage: result.usage } : {}) };
   }
 
   /** The merge commit of an accepted attempt (found by the trailer every merge commit carries) and the files it changed. */
@@ -409,8 +415,8 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
         const prompt = agentPrompt({ workflow: c.workflow.id, node: node.id, title, role: "errand", mode: c.mode, readOnly: key === "lp.preflight" || key === "bb.tasks.get",
           task: `${spec.how}\n\nAction: ${key}\nParameters: ${redactKnown(JSON.stringify(params))}`, inputs: { ...c.input.with, ...reads }, contract: outputContract(fields),
           skills: [...spec.skills, ...stringList(params.skill)] });
-        const result = await agents.run(await withResolvedModel({ rt, workflowRunId: c.runId, stepKey: c.stepKey, nodeId: node.id, spawnKey: c.spawnKey, role: spec.role, title, prompt, fields, ...(node.model_preset ? { preset: node.model_preset } : {}), skills: [...spec.skills, ...stringList(params.skill)], signal: c.signal }));
-        return { output: result.output, threadId: result.threadId };
+        const result = await agents.run(await withResolvedModel({ rt, workflowRunId: c.runId, workflowId: c.workflow.id, stepKey: c.stepKey, nodeId: node.id, spawnKey: c.spawnKey, role: spec.role, title, prompt, fields, ...(node.model_preset ? { preset: node.model_preset } : {}), skills: [...spec.skills, ...stringList(params.skill)], signal: c.signal }));
+        return { output: result.output, threadId: result.threadId, ...(result.usage ? { usage: result.usage } : {}) };
       },
     } as NodeExecutor<ChainRuntime>);
   }

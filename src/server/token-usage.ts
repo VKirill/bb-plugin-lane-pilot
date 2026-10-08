@@ -2,7 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { LanePilotDatabase } from "../database";
 import { pluginStopped } from "./run-finish";
 import { stringAt, valueAt } from "./values";
-import { costUsd } from "../model-prices";
+import { MODEL_PRICES, costUsd } from "../model-prices";
 import type { ServerCore } from "./core";
 import { scheduleIsolated } from "./schedules";
 
@@ -538,6 +538,38 @@ export async function queryTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatab
   const priced = byModel.map((row) => row.costUsd).filter((value): value is number => value !== null);
   const totalCost = priced.length > 0 ? priced.reduce((sum, value) => sum + value, 0) : null;
   return { byModel, series, byProject, months: months.map((row) => row.month), lastSyncAt, noDataProviders, diagnostics, costUsd: totalCost };
+}
+
+/**
+ * What one thread spent from `since` (ms; 0 = from its start): total tokens and the price of them. The same events and the same per-turn
+ * deltas as the daily sync (`thread/tokenUsage/updated` with the model of the turn that asked), read for this thread alone, so a workflow's
+ * budget (`maxTokens`, `maxCostUsd`) counts what the Usage tab counts. A model the price table does not know is priced at the dearest
+ * known rate: a budget that cannot see a cost must err on the cautious side. Never throws: a thread that cannot be read spent nothing.
+ */
+export async function threadUsage(bb: BbPluginApi, threadId: string, options: { since?: number; fallbackModel?: string } = {}): Promise<{ tokens: number; costUsd: number }> {
+  const since = options.since ?? 0;
+  let events: unknown[];
+  try { events = await listThreadEvents(bb, threadId, 0); } catch { return { tokens: 0, costUsd: 0 }; }
+  const dearest = Object.keys(MODEL_PRICES).reduce((top, key) => (MODEL_PRICES[key]!.output > MODEL_PRICES[top]!.output ? key : top));
+  let model = options.fallbackModel ?? "";
+  let prev = { last: { ...ZERO }, total: { ...ZERO }, turnId: "" };
+  let tokens = 0, cost = 0;
+  for (const event of events) {
+    const type = eventType(event);
+    if (type === "client/turn/requested" || type === "client/thread/start" || type === "provider/modelFallback" || type === "client/turn/start") { model = turnModel(event) ?? model; continue; }
+    if (type !== "thread/tokenUsage/updated") continue;
+    const usage = usageFromEvent(event);
+    if (!usage) continue;
+    const turnId = usageTurnId(event);
+    const delta = tokenDelta(usage, prev, turnId);
+    prev = { last: usage.last, total: usage.total, turnId };
+    const at = eventCreatedAt(event);
+    if (at !== null && at < since) continue;
+    const billed = billedFrom(delta);
+    tokens += billed.total;
+    cost += (model ? costUsd(model, billed) : null) ?? costUsd(dearest, billed) ?? 0;
+  }
+  return { tokens, costUsd: cost };
 }
 
 export function attachTokenUsage(ctx: ServerCore): { start: (sinceDays?: number) => boolean } {

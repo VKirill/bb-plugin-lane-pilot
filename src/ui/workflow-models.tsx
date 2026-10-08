@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRpc } from "@get-bb/plugin-sdk/app";
 import type { z } from "zod";
 import type { rpcContract, stepExecutorSchema } from "../contracts";
@@ -7,7 +7,7 @@ import { Button } from "../../components/ui/button";
 import type { CatalogProvider, ModelCatalog } from "../workflow/model-catalog";
 import type { ViewNode, WorkflowView } from "../workflow/view-core";
 import { Surface, SurfaceBody, SurfaceHeader } from "./surface";
-import type { ModelChoice } from "./workflow-model-ops";
+import { choiceRefusal, type ModelChoice } from "./workflow-model-ops";
 import { NativeModelPicker } from "./workflow-native-picker";
 import { nodeTitle } from "./workflow-titles";
 
@@ -21,21 +21,23 @@ type Call = (method: string, input: unknown) => Promise<unknown>;
 // ------------------------------------------------------------------ data
 
 /** The hub's providers and models; null while it is read, or when no machine answered. */
-export function useModelCatalog(): ModelCatalog | null {
+export function useModelCatalog(projectId?: string | null): ModelCatalog | null {
   const rpc = useRpc<typeof rpcContract>() as unknown as { call: Call };
   const [catalog, setCatalog] = useState<ModelCatalog | null>(null);
   useEffect(() => {
     let live = true;
-    void Promise.resolve(rpc.call("workflow_model_catalog", {})).then((value) => { if (live && value) setCatalog(value as ModelCatalog); }, () => undefined);
+    // With the project the answer says which machine its helpers run on: the pickers list and check that machine's models.
+    void Promise.resolve(rpc.call("workflow_model_catalog", projectId ? { projectId } : {})).then((value) => { if (live && value) setCatalog(value as ModelCatalog); }, () => undefined);
     return () => { live = false; };
-  }, [rpc]);
+  }, [rpc, projectId]);
   return catalog;
 }
 
 /** Who works on each step of a workflow or a draft; read again when `revision` changes (a draft's version) or the settings it reads change. */
-export function useStepExecutors(target: { workflowId?: string; draftId?: string; projectId: string | null; revision?: string | number | null }): { loaded: boolean; list: StepExecutor[]; byNode: ReadonlyMap<string, StepExecutor> } {
+export function useStepExecutors(target: { workflowId?: string; draftId?: string; projectId: string | null; revision?: string | number | null }): { loaded: boolean; list: StepExecutor[]; byNode: ReadonlyMap<string, StepExecutor>; reload: () => void } {
   const rpc = useRpc<typeof rpcContract>() as unknown as { call: Call };
   const [state, setState] = useState<{ loaded: boolean; list: StepExecutor[] }>({ loaded: false, list: [] });
+  const [again, setAgain] = useState(0);
   const { workflowId, draftId, projectId, revision } = target;
   useEffect(() => {
     if (!workflowId && !draftId) return;
@@ -46,13 +48,16 @@ export function useStepExecutors(target: { workflowId?: string; draftId?: string
       () => { if (live) setState({ loaded: true, list: [] }); },
     );
     return () => { live = false; };
-  }, [rpc, workflowId, draftId, projectId, revision]);
+  }, [rpc, workflowId, draftId, projectId, revision, again]);
   const byNode = useMemo(() => new Map(state.list.map((row) => [row.nodeId, row])), [state.list]);
-  return { loaded: state.loaded, list: state.list, byNode };
+  const reload = useCallback(() => setAgain((n) => n + 1), []);
+  return { loaded: state.loaded, list: state.list, byNode, reload };
 }
 
 /** What a card needs: the executor of each node and the catalog's names and logos of the providers. */
 export type GraphModels = {
+  /** Moving a step to another model as a setting, without editing the workflow (built-in ones included). */
+  override?: OverrideApi | null;
   executors: ReadonlyMap<string, StepExecutor>; providers: ReadonlyMap<string, Pick<CatalogProvider, "displayName" | "logoUrl">>;
   /** Choosing on the card: the hub's catalog and what a choice does (patch the draft, open a draft of an own workflow). A built-in offers «Duplicate to edit» instead. */
   catalog?: ModelCatalog | null; access?: ModelsAccess;
@@ -60,6 +65,100 @@ export type GraphModels = {
   onDuplicate?: (() => void) | null;
 };
 export const providerMap = (catalog: ModelCatalog | null): GraphModels["providers"] => new Map((catalog?.providers ?? []).map((row) => [row.id, { displayName: row.displayName, logoUrl: row.logoUrl }]));
+
+// ------------------------------------------------------------------ per-step overrides
+
+export type OverrideScope = "project" | "global";
+/**
+ * The owner's model override of the steps of one workflow: `apply` sets (or, with `null`, drops) it for the project or for all projects and
+ * answers with the reason it refused, or null. The workflow itself is not touched; the choice is a settings row the executor reads first.
+ */
+export type OverrideApi = { workflowId: string; projectId: string | null; apply: (nodeId: string, choice: ModelChoice | null, scope: OverrideScope) => Promise<string | null> };
+
+const GLOBAL_PROJECT = "*";
+export function useOverrideApi(target: { workflowId: string | null; projectId: string | null }, reload: () => void): OverrideApi | null {
+  const rpc = useRpc<typeof rpcContract>() as unknown as { call: Call };
+  const { workflowId, projectId } = target;
+  return useMemo(() => {
+    if (!workflowId) return null;
+    return {
+      workflowId, projectId,
+      apply: async (nodeId, choice, scope) => {
+        try {
+          const result = await rpc.call("workflow_model_override", { projectId: projectId ?? GLOBAL_PROJECT, scope: projectId ? scope : "global", workflowId, nodeId, choice: choice ? { providerId: choice.providerId, model: choice.model, effort: choice.effort ?? null, serviceTier: choice.serviceTier ?? null } : null }) as { ok: boolean; reason?: string };
+          if (!result.ok) return result.reason ?? "failed";
+          reload();
+          return null;
+        } catch (cause) { return cause instanceof Error ? cause.message : String(cause); }
+      },
+    };
+  }, [rpc, workflowId, projectId, reload]);
+}
+
+/** Whether a step can be moved to another model by an override: it runs a model through the generic agent machinery and the page knows its workflow. */
+export const overridable = (executor: StepExecutor, models: Pick<GraphModels, "override" | "catalog" | "access">): boolean =>
+  executor.canOverride && Boolean(models.override) && Boolean(models.catalog?.providers.length) && (models.access === "builtin" || models.access === "readonly");
+
+/**
+ * The model of a step as a setting: the window of BB's model picker (a click opens it), «Only this project / All projects» when the page
+ * is a project's, and «Reset» when an override is in force. `form`: the panel has the scope and Reset, a table row Reset, a card only the picker (in the project when there is one).
+ */
+export function OverridePicker({ executor, catalog, override, id, label, form = "panel", disabled = false }: {
+  executor: StepExecutor; catalog: ModelCatalog; override: OverrideApi; id: string; label: string; form?: "panel" | "row" | "card"; disabled?: boolean;
+}) {
+  const fallbackScope: OverrideScope = override.projectId ? "project" : "global";
+  const [scope, setScope] = useState<OverrideScope>(executor.overrideScope ?? fallbackScope);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { if (executor.overrideScope) setScope(executor.overrideScope); }, [executor.overrideScope]);
+  const run = (choice: ModelChoice | null) => {
+    const refused = choice ? choiceRefusal(catalog, choice) : null;
+    if (refused) { setError(issueText(refused.code)); return; }
+    setBusy(true); setError(null);
+    // Dropping an override drops the one in force, whichever level the radio is on.
+    void override.apply(executor.nodeId, choice, choice ? scope : executor.overrideScope ?? scope).then((reason) => { setError(reason ? t("wfModelOverrideFailed").replace("{reason}", reason) : null); setBusy(false); });
+  };
+  return (
+    <div className="lp-wf-override min-w-0 space-y-1" data-testid={`wf-override-${id}`} data-scope={scope} data-active={executor.overrideScope ?? ""}>
+      {form === "panel" && override.projectId ? (
+        <div className="lp-seg" role="radiogroup" aria-label={t("wfModelOverrideScope")} data-testid={`wf-override-scope-${id}`}>
+          {(["project", "global"] as const).map((item) => (
+            <button key={item} type="button" role="radio" aria-checked={scope === item} className="lp-seg-item text-xs" aria-pressed={scope === item} data-testid={`wf-override-scope-${item}-${id}`} disabled={busy || disabled} onClick={() => setScope(item)}>{t(`wfModelOverrideScope_${item}` as I18nKey)}</button>
+          ))}
+        </div>
+      ) : null}
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <NativeModelPicker catalog={catalog} testId={`wf-override-picker-${id}`} label={label} disabled={busy || disabled} className="min-w-0"
+          seed={{ providerId: executor.providerId, model: executor.model, effort: executor.reasoningEffort, serviceTier: executor.serviceTier }} onChoose={run} />
+        {executor.overrideScope && form !== "card" ? <Button type="button" size="sm" variant="ghost" className="h-6 px-1.5 text-xs" disabled={busy || disabled} data-testid={`wf-override-reset-${id}`} onClick={() => run(null)}>{t("wfModelOverrideReset")}</Button> : null}
+      </div>
+      {error ? <p className="break-words text-[11px] text-destructive-text" role="alert" data-testid={`wf-override-error-${id}`}>{error}</p> : null}
+    </div>
+  );
+}
+
+/** The model block of the step panel (the «Parameters» tab): the line the step runs on, where it comes from, and the way to change it. */
+export function StepModelBlock({ executor, models, title }: { executor: StepExecutor; models: GraphModels; title: string }) {
+  if (executor.mode === "none") return null;
+  const can = overridable(executor, models);
+  return (
+    <div className="space-y-1.5 rounded-lg border border-[var(--lp-hairline)] p-2.5" data-testid="wf-panel-model" data-source={executor.source} data-scope={executor.overrideScope ?? ""}>
+      <p className="text-[11px] font-medium text-muted-foreground">{t("wfModelsColModel")}</p>
+      <div className="flex min-w-0 items-center gap-1.5 text-xs" data-testid="wf-panel-model-line">
+        <ProviderMark id={executor.providerId} logoUrl={executor.providerId ? models.providers.get(executor.providerId)?.logoUrl : null} />
+        <span className="min-w-0 truncate" title={executor.model ?? ""}>{executorLine(executor)}</span>
+      </div>
+      <p className="text-[11px] text-muted-foreground" data-testid="wf-panel-model-source">{t("wfModelFrom").replace("{source}", sourceText(executor))}</p>
+      {can && models.catalog && models.override ? (
+        <>
+          <p className="text-[11px] font-medium">{t("wfModelChange")}</p>
+          <OverridePicker executor={executor} catalog={models.catalog} override={models.override} id={`panel-${executor.nodeId}`} label={t("wfModelModelLabel").replace("{step}", title)} />
+          <p className="text-[11px] text-muted-foreground">{t("wfModelOverrideHint")}</p>
+        </>
+      ) : null}
+    </div>
+  );
+}
 
 /** The executor of a graph card. A draft draws a parallel as one card, so its body's model is shown on it; a lowered graph has the body as a card of its own. */
 export function executorFor(executors: ReadonlyMap<string, StepExecutor>, view: ViewNode): StepExecutor | undefined {
@@ -73,8 +172,9 @@ export const providerShort = (id: string | null): string => (id ? id.replace(/^a
 /** `router9/ag/gemini-3.8-flash-high` is shown as `gemini-3.8-flash-high`. */
 export const modelShort = (model: string | null): string => (model ? model.slice(model.lastIndexOf("/") + 1) : "");
 
-export function sourceText(executor: Pick<StepExecutor, "source" | "sourceKey" | "settingsKey">): string {
+export function sourceText(executor: Pick<StepExecutor, "source" | "sourceKey" | "settingsKey"> & { overrideScope?: StepExecutor["overrideScope"] }): string {
   switch (executor.source) {
+    case "override": return t(executor.overrideScope === "global" ? "wfModelSrc_override_global" : "wfModelSrc_override_project");
     case "preset": return t("wfModelSrc_preset").replace("{key}", executor.sourceKey ?? "");
     case "stage": return t("wfModelSrc_stage").replace("{key}", executor.sourceKey ?? executor.settingsKey ?? "");
     case "agent": return t("wfModelSrc_agent").replace("{key}", executor.sourceKey ?? "");
@@ -150,6 +250,13 @@ export function CardModel({ executor, models, id }: { executor: StepExecutor; mo
       </div>
     );
   }
+  if (overridable(executor, models) && catalog && models.override) {
+    return (
+      <div className="lp-wf-card-model min-w-0">
+        <OverridePicker executor={executor} catalog={catalog} override={models.override} id={`card-${id}`} label={t("wfModelModelLabel").replace("{step}", id)} form="card" />
+      </div>
+    );
+  }
   if (access === "builtin" && onDuplicate && executor.overridable) {
     return (
       <div className="lp-wf-card-model min-w-0 nodrag nopan" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
@@ -186,8 +293,8 @@ function ReadOnlyCells({ executor }: { executor: StepExecutor }) {
   return <div className="min-w-0 truncate text-xs" title={executor.model ?? ""} data-label={t("wfModelsColModel")} data-testid={`wf-model-line-${executor.nodeId}`}>{executorLine(executor)}</div>;
 }
 
-function ModelsRow({ executor, view, locale, catalog, access, wide, busy, onChoose }: {
-  executor: StepExecutor; view: ViewNode | undefined; locale: Locale; catalog: ModelCatalog | null; access: ModelsAccess; wide: boolean; busy: boolean;
+function ModelsRow({ executor, view, locale, catalog, access, wide, busy, onChoose, override }: {
+  executor: StepExecutor; view: ViewNode | undefined; locale: Locale; catalog: ModelCatalog | null; access: ModelsAccess; wide: boolean; busy: boolean; override?: OverrideApi | null;
   onChoose: (nodeId: string, choice: ModelChoice | null) => Promise<string | null>;
 }) {
   const [error, setError] = useState<string | null>(null);
@@ -197,6 +304,7 @@ function ModelsRow({ executor, view, locale, catalog, access, wide, busy, onChoo
     setError(null);
     void onChoose(executor.nodeId, choice).then((refused) => setError(refused));
   };
+  const byOverride = overridable(executor, { override, catalog, access });
   const problems = realIssues(executor);
   const notes = executor.issues.filter((code) => ISSUE_INFO.has(code));
   return (
@@ -210,6 +318,10 @@ function ModelsRow({ executor, view, locale, catalog, access, wide, busy, onChoo
         <div className={`min-w-0 ${executor.inherited ? "opacity-80" : ""}`} data-label={t("wfModelsColModel")}>
           <NativeModelPicker catalog={catalog} testId={`wf-model-picker-${executor.nodeId}`} disabled={busy} label={t("wfModelModelLabel").replace("{step}", title)}
             seed={{ providerId: executor.providerId, model: executor.model, effort: executor.reasoningEffort, serviceTier: executor.serviceTier }} onChoose={choose} />
+        </div>
+      ) : byOverride && catalog && override ? (
+        <div className={`min-w-0 ${executor.inherited ? "opacity-80" : ""}`} data-label={t("wfModelsColModel")}>
+          <OverridePicker executor={executor} catalog={catalog} override={override} id={`row-${executor.nodeId}`} label={t("wfModelModelLabel").replace("{step}", title)} disabled={busy} form="row" />
         </div>
       ) : <ReadOnlyCells executor={executor} />}
       <div className="min-w-0 text-xs text-muted-foreground" data-label={t("wfModelsColSource")} data-testid={`wf-model-source-${executor.nodeId}`} data-source={executor.source}>
@@ -241,8 +353,8 @@ function ModelsRow({ executor, view, locale, catalog, access, wide, busy, onChoo
  * where the value comes from, and a price class. A step whose model Settings decide shows it read-only with the setting named.
  * A change goes to `onChoose`, which patches the draft and answers with the reason it refused, or null.
  */
-export function ModelsPanel({ graph, locale, executors, loaded, catalog, access, wide, busy = false, onChoose, onDuplicate }: {
-  graph: WorkflowView; locale: Locale; executors: readonly StepExecutor[]; loaded: boolean; catalog: ModelCatalog | null; access: ModelsAccess; wide: boolean; busy?: boolean;
+export function ModelsPanel({ graph, locale, executors, loaded, catalog, access, wide, busy = false, onChoose, onDuplicate, override = null }: {
+  graph: WorkflowView; locale: Locale; executors: readonly StepExecutor[]; loaded: boolean; catalog: ModelCatalog | null; access: ModelsAccess; wide: boolean; busy?: boolean; override?: OverrideApi | null;
   onChoose: (nodeId: string, choice: ModelChoice | null) => Promise<string | null>;
   onDuplicate?: (() => void) | null;
 }): ReactNode {
@@ -282,7 +394,7 @@ export function ModelsPanel({ graph, locale, executors, loaded, catalog, access,
               </div>
             ) : null}
             <ul className="lp-model-list" data-testid="wf-models-list">
-              {withModel.map((row) => <ModelsRow key={row.nodeId} executor={row} view={views.get(row.nodeId) ?? views.get(row.nodeId.replace(/:child$/, ""))} locale={locale} catalog={catalog} access={access} wide={wide} busy={busy} onChoose={onChoose} />)}
+              {withModel.map((row) => <ModelsRow key={row.nodeId} executor={row} view={views.get(row.nodeId) ?? views.get(row.nodeId.replace(/:child$/, ""))} locale={locale} catalog={catalog} access={access} wide={wide} busy={busy} onChoose={onChoose} override={override} />)}
             </ul>
           </>
         ) : null}

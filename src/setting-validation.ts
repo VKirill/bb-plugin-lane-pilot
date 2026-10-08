@@ -45,6 +45,14 @@ export function validateSettingValue(key: string, value: unknown): SettingValida
   if (/^workflow\.(agent|debugger|preset\.[a-z-]+)\.reasoning_effort$/.test(key) && value !== undefined && value !== null && value !== "") {
     return typeof value === "string" && WORKFLOW_EFFORTS.includes(value) ? null : { code: "invalid_choice", key, params: [key, WORKFLOW_EFFORTS.join(", ")] };
   }
+  // The owner's model override of one workflow step (`workflow.model_override.<workflowId>/<nodeId>`): a complete provider + model pair.
+  if (key.startsWith("workflow.model_override.") && value !== undefined && value !== null) {
+    const row = typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+    const effort = row?.reasoning_effort, tier = row?.service_tier;
+    const ok = row && typeof row.provider === "string" && row.provider && typeof row.model === "string" && row.model
+      && (effort === undefined || (typeof effort === "string" && WORKFLOW_EFFORTS.includes(effort))) && (tier === undefined || tier === "fast" || tier === "default");
+    return ok ? null : { code: "invalid_choice", key, params: [key, "{provider, model, reasoning_effort?, service_tier?}"] };
+  }
   if (key === PROVIDER_POOL_KEY) {
     const problem = providerPoolProblem(value);
     return problem ? { code:"invalid_choice", key, params:[key, problem] } : null;

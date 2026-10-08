@@ -8,7 +8,7 @@ import React from "react";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { installTestPluginRuntime, loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "../i18n";
-import { migrations } from "../src/database";
+import { loadProjectSettings, migrations } from "../src/database";
 import { createWorkflowArchitect } from "../src/server/workflow-architect";
 import type { ArchitectDeps } from "../src/server/workflow-architect";
 import { createWorkflowLibrary } from "../src/server/workflow-library";
@@ -62,7 +62,7 @@ async function world() {
     edges: [{ from: "start", to: "search" }, { from: "search", to: "end", with: { result: "search.handoff" } }],
   })));
   const emit: { current: ((payload: unknown) => Promise<unknown>) | null } = { current: null };
-  const ctx = { bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: settings }),
+  const ctx = { bb, db, log: () => undefined, effectiveProjectSettings: async (scope: string) => ({ values: { ...settings, ...loadProjectSettings(db, scope) } }),
     realtime: { notify: (_project: string, kind: string, threadId?: string, draftId?: string) => { void emit.current?.({ kind, ...(draftId ? { draftId } : {}), ...(threadId ? { threadId } : {}) }); } },
     host: { call: async () => ({ hostId: "h", files: [] }) } } as unknown as ServerCore;
   const deps: ArchitectDeps = {
@@ -93,6 +93,7 @@ async function world() {
     workflow_capabilities: architect.rpc.workflow_capabilities,
     workflow_step_executors: track("workflow_step_executors", (input: never) => models.stepExecutors(input)),
     workflow_model_catalog: track("workflow_model_catalog", (input: never) => models.modelCatalog(input)),
+    workflow_model_override: track("workflow_model_override", (input: never) => models.setOverride(input)),
   };
   return { architect, draftId: draft.id, rpc, calls, emit };
 }
@@ -303,15 +304,39 @@ describe("the Models table of a library workflow", () => {
     expect(calls.some((call) => call.method === "workflow_step_executors" && (call.input as { workflowId?: string }).workflowId === "lp-task-pipeline")).toBe(true);
   });
 
-  it("a built-in's badge offers «Duplicate to edit» instead of a picker", async () => {
-    const { slot, opened, calls } = await openLibrary("debug", "builtin");
-    const badge = await slot.findByTestId("wf-card-model-investigate");
-    expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).toBeNull();
-    fireEvent.click(badge);
-    const ask = await slot.findByTestId("wf-card-duplicate-investigate");
-    fireEvent.click(within(ask).getByRole("button", { name: /duplicate/i }));
-    await waitFor(() => expect(opened).toHaveLength(1));
-    expect(calls.filter((call) => call.method === "workflow_draft_create")).toHaveLength(1);
+  it("a built-in's step takes another model without a copy: the card's picker writes a project override, the badge follows, Reset drops it", async () => {
+    const { slot, calls } = await openLibrary("debug", "builtin");
+    const card = await slot.findByTestId("wf-override-card-investigate");
+    // The window is on the card at once; no «Duplicate to edit» stands between the owner and the choice.
+    expect(slot.queryByTestId("wf-card-model-investigate")).toBeNull();
+    const before = card.querySelector("[data-testid='bb-provider-model-picker']") as PickerNode;
+    expect(before.getAttribute("data-model")).toBe("claude-opus-5-5");
+    before.__onChange!({ ...before.__value!, providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoningLevel: "high" });
+    await waitFor(() => expect(calls.filter((call) => call.method === "workflow_model_override")).toHaveLength(1));
+    expect(calls.find((call) => call.method === "workflow_model_override")!.input).toMatchObject({ projectId, scope: "project", workflowId: "debug", nodeId: "investigate", choice: { providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", effort: "high" } });
+    await waitFor(() => expect(slot.getByTestId("wf-override-card-investigate").getAttribute("data-active")).toBe("project"));
+    expect(slot.getByTestId("wf-override-card-investigate").querySelector("[data-testid='bb-provider-model-picker']")!.getAttribute("data-model")).toBe("router9/ag/gemini-3.8-flash-high");
+    expect(slot.getByTestId("wf-model-source-investigate").textContent).toContain("overridden for this project");
+    expect(calls.filter((call) => call.method === "workflow_draft_create")).toHaveLength(0);
+    fireEvent.click(slot.getByTestId("wf-override-reset-row-investigate"));
+    await waitFor(() => expect(slot.getByTestId("wf-override-card-investigate").getAttribute("data-active")).toBe(""));
+    expect(slot.getByTestId("wf-model-source-investigate").textContent).not.toContain("overridden");
+  });
+
+  it("the step panel shows the model line, where it comes from and a picker with the scope «Only this project / All projects»", async () => {
+    const { slot, calls } = await openLibrary("debug", "builtin");
+    fireEvent.click(await slot.findByTestId("wf-node-investigate"));
+    const block = await slot.findByTestId("wf-panel-model");
+    expect(within(block).getByTestId("wf-panel-model-line").textContent).toContain("claude-opus-5-5");
+    expect(within(block).getByTestId("wf-panel-model-source").textContent).toContain("from:");
+    fireEvent.click(within(block).getByTestId("wf-override-scope-global-panel-investigate"));
+    const picker = within(block).getByTestId("wf-override-picker-panel-investigate").querySelector("[data-testid='bb-provider-model-picker']") as PickerNode;
+    picker.__onChange!({ ...picker.__value!, providerId: "codex", model: "gpt-6-luna", reasoningLevel: "low" });
+    await waitFor(() => expect(calls.filter((call) => call.method === "workflow_model_override")).toHaveLength(1));
+    expect(calls.find((call) => call.method === "workflow_model_override")!.input).toMatchObject({ scope: "global", projectId, nodeId: "investigate" });
+    await waitFor(() => expect(slot.getByTestId("wf-panel-model").getAttribute("data-scope")).toBe("global"));
+    expect(slot.getByTestId("wf-panel-model-source").textContent).toContain("overridden for all projects");
+    expect(slot.getByTestId("wf-panel-model-line").textContent).toContain("gpt-6-luna");
   });
 
   it("choosing a model for an own workflow opens a draft with the change; a model no machine has opens nothing", async () => {

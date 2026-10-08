@@ -357,7 +357,14 @@
       "stubs": {
         "lp.plan": {
           "status": "ok",
-          "task_count": 1
+          "task_count": 1,
+          "tasks": [
+            {
+              "id": "f1",
+              "objective": "f1",
+              "depends_on": []
+            }
+          ]
         },
         "lp.build": {
           "status": "done",
@@ -365,7 +372,7 @@
             "f1"
           ]
         },
-        "lp.review#re": {
+        "lp.review": {
           "status": "pass",
           "remaining_actionable": 0
         }

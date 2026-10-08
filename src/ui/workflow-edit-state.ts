@@ -118,7 +118,7 @@ export function useDraftEditing(doc: DraftDoc, read: () => Promise<unknown>) {
     finally { setPublishing(false); }
   }, [draftId, rpc]);
 
-  return { apply, undo, redo, restore, test, publish, busy: pending > 0, failure, setFailure, canUndo: counts.undo > 0, canRedo: counts.redo > 0, testRun, testing, published, publishing, version: doc.version ?? 1 };
+  return { apply, undo, redo, restore, test, publish, busy: pending > 0, failure, setFailure, canUndo: counts.undo > 0, canRedo: counts.redo > 0, testRun, testing, published, publishing, version: doc.version ?? 1, projectId: doc.projectId };
 }
 
 export type DraftEditing = ReturnType<typeof useDraftEditing>;

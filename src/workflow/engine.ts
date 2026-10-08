@@ -249,7 +249,8 @@ export class WorkflowEngine {
       const run = j.getRun(runId)!;
       this.deliver(run, c, null, entry.edge, entry.index, { scope: "", fromScope: "", suffix: "" });
     })();
-    this.runtimes.set(runId, input.runtime);
+    // A child run is started without a runtime: it is built from the run row (`runtimeFor`), as after a reload, not recorded as «none».
+    if (input.runtime !== undefined) this.runtimes.set(runId, input.runtime);
     return { runId, created: true, done: this.drive(runId) };
   }
 
@@ -1141,7 +1142,10 @@ export class WorkflowEngine {
   }
 
   private childOutcome(child: RunSummary, node: Extract<WorkflowNode, { type: "subworkflow" }>): StepOutcome {
-    if (child.status === "succeeded") return { output: child.output ?? {} };
+    // The child's spending is the parent's: a budget on the outer chain counts the whole tree.
+    const spent = this.journal.db.prepare("SELECT tokens_used, cost_micro_usd FROM lane_pilot_wf_run WHERE id=?").get(child.runId) as { tokens_used: number; cost_micro_usd: number } | undefined;
+    const usage = spent && (spent.tokens_used || spent.cost_micro_usd) ? { tokens: spent.tokens_used, costUsd: spent.cost_micro_usd / 1_000_000 } : undefined;
+    if (child.status === "succeeded") return { output: child.output ?? {}, ...(usage ? { usage } : {}) };
     if (child.status === "waiting" || child.status === "running") return { wait: { kind: "subworkflow", detail: { childRunId: child.runId } } };
     throw new Error(`subworkflow ${node.workflow} ${child.status}: ${child.error ?? child.reason ?? ""}`);
   }

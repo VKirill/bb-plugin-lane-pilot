@@ -16,6 +16,9 @@ import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from ".
 import { detectRepoEdits, gitRepoStatus } from "./repo-edits";
 import { SPECIALIST_ROLES } from "./specialists";
 import { findThreadsByMetadata, keyedSpawnSupported } from "./thread-keys";
+import { modelCatalogOf, pmHostOf } from "./model-catalog-reader";
+import { offeredOnHost } from "../workflow/model-catalog";
+import { threadUsage } from "./token-usage";
 import { stringAt } from "./values";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_REASONING, resolveAgentModel } from "./workflow-agent-model";
 import { outputText } from "./writer-task";
@@ -51,6 +54,8 @@ export function roleSpec(role: string): RoleSpec {
 export type HelperRequest = {
   rt: ChainRuntime;
   workflowRunId: string; stepKey: string; nodeId: string; spawnKey: string;
+  /** The workflow the node belongs to: with `nodeId` it is the key of the owner's model override of the step. */
+  workflowId?: string;
   role: string; title: string;
   /** The whole first message (or, into a running thread, the follow-up). */
   prompt: string;
@@ -63,7 +68,8 @@ export type HelperRequest = {
   intoThread?: string | null;
   signal?: AbortSignal;
 };
-export type HelperResult = { threadId: string; output: Record<string, unknown>; text: string };
+/** What the step spent: tokens and the price of them, from the thread's own usage events (the budget of the run counts these). */
+export type HelperResult = { threadId: string; output: Record<string, unknown>; text: string; usage?: { tokens: number; costUsd: number } };
 
 export class HelperFailure extends Error {
   /** The code leads the message: it is what a run's step error shows. */
@@ -172,7 +178,9 @@ export function createWorkflowAgents() {
       if (edited.length) throw new HelperFailure("repo_edited", `the ${request.role} helper edited repository files it may not touch: ${edited.slice(0, 8).join(", ")}`);
     }
     if (!output) throw new HelperFailure("output_invalid", `the ${request.role} helper's final message could not be read: ${problem}`);
-    return { threadId: threadId!, output, text };
+    // Read last, so the repair turn counts too; a thread whose usage cannot be read reports none, and the budget goes on what it has.
+    const usage = await threadUsage(bb, threadId!, { ...(sentAt !== undefined ? { since: sentAt } : {}), ...(request.model ? { fallbackModel: request.model } : {}) }).catch(() => undefined);
+    return { threadId: threadId!, output, text, ...(usage ? { usage } : {}) };
   }
 
   return { run };
@@ -199,9 +207,9 @@ export function agentRequest(ctx: StepContext<ChainRuntime>, node: Extract<Graph
     ? `Continue the workflow step "${node.id}". New material for you:\n\n${JSON.stringify(inputs, null, 1).slice(0, 20_000)}\n\n${task}${goals ? `\n\n${goals}` : ""}\n\n${outputContract(fields)}`
     : agentPrompt({ workflow: ctx.workflow.id, node: node.id, title, role: node.role, mode: ctx.mode, ...(method.length ? { method: method.join("\n") } : {}), task, inputs,
       ...(ctx.input.item !== undefined ? { item: ctx.input.item } : {}), handoff: via.handoff ?? null, ...(prior ? { prior } : {}), contract: outputContract(fields),
-      readOnly: spec.readOnly, skills: [...(node.skills ?? []), ...(node.profile?.skills ?? [])], ...(goals ? { goals } : {}) });
+      readOnly: spec.readOnly, skills: [...(node.skills ?? []), ...(node.profile?.skills ?? [])], ...(goals ? { goals } : {}), ...(node.authorized !== undefined ? { authorized: node.authorized } : {}) });
   return {
-    rt, workflowRunId: ctx.runId, stepKey: ctx.stepKey, nodeId: node.id, spawnKey: ctx.spawnKey, role: node.role, title, prompt: body, fields,
+    rt, workflowRunId: ctx.runId, workflowId: ctx.workflow.id, stepKey: ctx.stepKey, nodeId: node.id, spawnKey: ctx.spawnKey, role: node.role, title, prompt: body, fields,
     ...(node.provider ? { provider: node.provider } : {}), ...(node.model ? { model: node.model } : {}), ...(node.reasoning ? { reasoning: node.reasoning } : {}), ...(node.service_tier ? { serviceTier: node.service_tier } : {}), ...(node.model_preset ? { preset: node.model_preset } : {}),
     skills: [...new Set([...(node.skills ?? []), ...(node.profile?.skills ?? [])])], plugins: [...new Set(node.plugins ?? [])], mcp: [...new Set(node.mcp ?? [])], intoThread, signal: ctx.signal,
   };
@@ -225,7 +233,16 @@ export async function withResolvedModel(request: HelperRequest): Promise<HelperR
   const { rt } = request;
   const settings = (await rt.ctx.effectiveProjectSettings(rt.projectId, getRunSettingsScopes(rt.ctx.db, rt.runId)).catch(() => ({ values: {} }))).values;
   const pm = await pmPairOfThread(rt.ctx.bb, rt.pmThreadId);
-  const chosen = resolveAgentModel({ role: request.role, node: { provider: request.provider, model: request.model, reasoning: request.reasoning, service_tier: request.serviceTier, model_preset: request.preset }, settings, pm });
+  // The helper starts in the PM chat's environment, on one machine: a model that machine does not offer is passed over (a preset, a Settings
+  // selection) or, when the step names it itself, refused here with the machines that do have it, instead of failing inside the spawn.
+  const hostId = await pmHostOf(rt.ctx.bb, rt.pmThreadId).catch(() => null);
+  const read = hostId ? modelCatalogOf(rt.ctx).peek() : null;
+  const offered = read && hostId ? (providerId: string, model: string) => offeredOnHost(read, providerId, model, hostId) : undefined;
+  const chosen = resolveAgentModel({ role: request.role, node: { provider: request.provider, model: request.model, reasoning: request.reasoning, service_tier: request.serviceTier, model_preset: request.preset }, settings, pm, ...(offered ? { offered } : {}), ...(request.workflowId ? { at: { workflowId: request.workflowId, nodeId: request.nodeId } } : {}) });
+  if (chosen.issues.includes("model_unavailable_here") && read) {
+    const where = read.providers.find((row) => row.id === chosen.providerId)?.models.find((row) => row.id === chosen.model || row.model === chosen.model)?.hostIds.map((id) => read.hosts.find((row) => row.id === id)?.name ?? id).join(", ") ?? "";
+    throw new HelperFailure("model_unavailable", `${chosen.providerId}/${chosen.model} is not offered by the machine this workflow's helpers run on (${read.hosts.find((row) => row.id === hostId)?.name ?? hostId})${where ? `; it is on ${where}` : ""}. Pick another model for the step.`);
+  }
   return { ...request, provider: chosen.providerId, model: chosen.model, reasoning: chosen.reasoningEffort, ...(chosen.serviceTier ? { serviceTier: chosen.serviceTier } : {}) };
 }
 

@@ -181,3 +181,127 @@ describe("draft tests on stubs", () => {
     expect(red).toMatchObject({ status: "draft", tests: { green: false } });
   });
 });
+
+describe("Run tests on a chain with subworkflows (audit 2026-10-08, item 11)", () => {
+  const child = parseWorkflow({
+    id: "kid", name: "Kid", description: { en: "d", ru: "д" }, inputs: [], outputs: [{ name: "ok", type: "boolean", required: false }],
+    nodes: [
+      { id: "look", type: "agent", role: "analyst", prompt: "x", out: [{ name: "ok", type: "boolean" }] },
+      { id: "ask", type: "human", question: "go on?", options: ["yes", "no"], out: [{ name: "answer_kind", type: "enum", values: ["yes", "no"] }] },
+      { id: "fin", type: "action", action: "emit", map: { ok: "look.ok" } },
+    ],
+    edges: [{ from: "start", to: "look" }, { from: "look", to: "ask" }, { from: "ask", to: "fin" }],
+  });
+  const resolveWorkflow = (id: string) => (id === "kid" ? child : null);
+  const parent = parseWorkflow({
+    id: "mom", name: "Mom", description: { en: "d", ru: "д" }, inputs: [], outputs: [{ name: "ok", type: "boolean", required: false }],
+    nodes: [
+      { id: "first", type: "subworkflow", workflow: "kid" },
+      { id: "second", type: "subworkflow", workflow: "kid" },
+      { id: "done", type: "action", action: "emit", map: { ok: "second.ok" } },
+    ],
+    edges: [{ from: "start", to: "first" }, { from: "first", to: "second" }, { from: "second", to: "done" }],
+  }, { resolve: resolveWorkflow });
+  const caseOf = (extra: Record<string, unknown> = {}) => ({ id: "c", input: {}, stubs: {}, humanAnswers: {}, expectStatus: "succeeded", notChecked: [], ...extra }) as Parameters<typeof runDraftTest>[2];
+
+  it("answers the agents, tasks and actions of the called workflow from stubs too, instead of failing «executor is not registered»", async () => {
+    const { db } = store();
+    const result = await runDraftTest({ db, harnessVersion: "t", resolveWorkflow }, parent, caseOf());
+    expect(result).toMatchObject({ green: true, status: "succeeded", path: ["first", "second", "done"] });
+  });
+
+  it("a stub by the called workflow's id or by the node id answers for the whole subworkflow; key#N is the Nth visit and a list is one answer per visit", async () => {
+    const { db } = store();
+    const byId = await runDraftTest({ db, harnessVersion: "t", resolveWorkflow }, parent, caseOf({ stubs: { kid: { ok: false } }, expectOutput: { ok: false } }));
+    expect(byId).toMatchObject({ green: true });
+    expect(byId.stubbed.map((item) => item.node)).toEqual(["first", "second"]);
+    const byNode = await runDraftTest({ db, harnessVersion: "t", resolveWorkflow }, parent, caseOf({ stubs: { first: { ok: false }, second: { ok: true } }, expectOutput: { ok: true } }));
+    expect(byNode.green).toBe(true);
+    const list = await runDraftTest({ db, harnessVersion: "t", resolveWorkflow }, parent, caseOf({ stubs: { look: [{ ok: false }, { ok: true }] }, expectOutput: { ok: true } }));
+    expect(list.green).toBe(true);
+    const byVisit = await runDraftTest({ db, harnessVersion: "t", resolveWorkflow }, parent, caseOf({ stubs: { "look#1": { ok: false }, "look#2": { ok: true } }, expectOutput: { ok: true } }));
+    expect(byVisit.green).toBe(true);
+  });
+
+  it("a person's answer in a called workflow comes from the case's human_answers", async () => {
+    const { db } = store();
+    const result = await runDraftTest({ db, harnessVersion: "t", resolveWorkflow }, child, caseOf({ humanAnswers: { ask: "no" } }));
+    expect(result.green).toBe(true);
+    expect(result.stubbed.map((item) => item.node)).toContain("ask");
+  });
+
+  it("every shipped chain's own test cases are green, the ones that call subworkflows included (it was 7 of 31)", async () => {
+    const { chainStore } = await import("./chain-harness");
+    const shipped = await chainStore();
+    const { db } = store();
+    const red: string[] = [];
+    let total = 0;
+    for (const item of shipped.list()) {
+      if (item.workflow.internal) continue;
+      for (const testCase of testCasesOf(item.workflow)) {
+        total += 1;
+        const result = await runDraftTest({ db, harnessVersion: "t", resolveWorkflow: shipped.resolve, timeoutMs: 8000 }, item.workflow, testCase);
+        if (!result.green) red.push(`${item.workflow.id}/${result.caseId}: ${result.failures.join(" | ").slice(0, 200)}`);
+      }
+    }
+    expect(total).toBeGreaterThanOrEqual(34);
+    expect(red).toEqual([]);
+  }, 60_000);
+});
+
+describe("where the steps lie is not what the workflow does (audit r2, B10)", () => {
+  const finishedAndTested = async () => {
+    const { db, drafts } = store();
+    const draft = newDraft(drafts);
+    for (const ops of BROWSER_DIGEST_STEPS) { const result = drafts.patch(draft.id, ops); if (!result.ok) throw new Error("refused"); }
+    const ready = drafts.get(draft.id)!;
+    const workflow = parseWorkflow(ready.definition);
+    const results = [];
+    for (const testCase of testCasesOf(workflow)) results.push(await runDraftTest({ db, harnessVersion: "t" }, workflow, testCase));
+    drafts.recordTests(draft.id, ready.version, results);
+    return { drafts, id: draft.id, version: ready.version };
+  };
+
+  it("dragging a card or arranging the graph is no new version and keeps the tests and the status", async () => {
+    const { drafts, id, version } = await finishedAndTested();
+    expect(drafts.get(id)).toMatchObject({ status: "tested", testedVersion: version });
+    const rows = drafts.history(id).length;
+    const moved = drafts.patch(id, [{ op: "set_meta", set: { ui: { positions: { search: { x: 10, y: 20 } } } } }], { expectedVersion: version });
+    expect(moved.ok).toBe(true);
+    expect(drafts.get(id)).toMatchObject({ version, status: "tested", testedVersion: version });
+    expect((drafts.get(id)!.definition as { ui?: unknown }).ui).toEqual({ positions: { search: { x: 10, y: 20 } } });
+    expect(drafts.history(id)).toHaveLength(rows);
+    // The saved version carries the places too, so a restore does not lose them.
+    expect((drafts.definitionAt(id, version) as { ui?: unknown }).ui).toEqual({ positions: { search: { x: 10, y: 20 } } });
+    // Another drag on the same version is not a conflict with itself or with anyone else who edits it.
+    expect(drafts.patch(id, [{ op: "set_meta", set: { ui: null } }], { expectedVersion: version }).ok).toBe(true);
+    expect((drafts.get(id)!.definition as { ui?: unknown }).ui).toBeUndefined();
+    expect(drafts.get(id)).toMatchObject({ version, status: "tested" });
+  });
+
+  it("a change of content still makes a new version and takes the tests back, even together with positions", async () => {
+    const { drafts, id, version } = await finishedAndTested();
+    const changed = drafts.patch(id, [{ op: "set_meta", set: { description: { en: "changed", ru: "изменено" }, ui: { positions: { search: { x: 1, y: 2 } } } } }]);
+    expect(changed.ok).toBe(true);
+    expect(drafts.get(id)).toMatchObject({ version: version + 1, status: "draft" });
+  });
+
+  it("the hash of a definition ignores `ui`, and a receipt written with the old hash still counts", async () => {
+    const { definitionSha256, legacyDefinitionSha256 } = await import("../../src/workflow/store");
+    const { createStatusResolver } = await import("../../src/workflow/ops-store");
+    const { db } = store();
+    const plain = parseWorkflow({ id: "pos", name: "Pos", description: { en: "d", ru: "д" }, inputs: [], outputs: [], status: "published", nodes: [{ id: "a", type: "action", action: "emit", map: {} }], edges: [{ from: "start", to: "a" }] });
+    const placed = parseWorkflow({ ...plain, ui: { positions: { a: { x: 5, y: 6 } } } } as never);
+    expect(definitionSha256(placed)).toBe(definitionSha256(plain));
+    expect(legacyDefinitionSha256(placed)).not.toBe(legacyDefinitionSha256(plain));
+    const statuses = createStatusResolver(db);
+    const item = (workflow: typeof plain) => ({ workflow, origin: "global" as const, source: "/x/pos.json", sha256: definitionSha256(workflow), warnings: [] });
+    expect(statuses.resolve(item(placed)).status).toBe("draft");
+    statuses.recordTest("pos", definitionSha256(plain), true, []);
+    // Moved cards: the same receipt holds. A receipt from before the change (hash with `ui`) holds for the file it was written for.
+    expect(statuses.resolve(item(placed)).status).toBe("published");
+    const old = parseWorkflow({ ...plain, id: "old", ui: { positions: { a: { x: 1, y: 1 } } } } as never);
+    statuses.recordTest("old", legacyDefinitionSha256(old), true, []);
+    expect(statuses.resolve(item(old)).status).toBe("published");
+  });
+});

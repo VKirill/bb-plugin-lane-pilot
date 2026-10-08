@@ -211,6 +211,11 @@ describe("the graph view", () => {
     const tall = readableViewport({ width: 700, height: 3000 }, { x: 300, y: 16, width: 76, height: 34 }, { width: 360, height: 420 }, "DOWN");
     expect(tall.zoom).toBe(READABLE_ZOOM);
     expect(tall.y).toBe(20 - 16 * READABLE_ZOOM);
+    // The first view is never smaller than 0.85: a chain that would fit whole at 0.7 stays at 0.85 on its start (the owner saw cards too small to read).
+    expect(READABLE_ZOOM).toBeGreaterThanOrEqual(0.85);
+    const medium = readableViewport({ width: 1000, height: 400 }, { x: 16, y: 150, width: 180, height: 80 }, { width: 760, height: 560 }, "RIGHT");
+    expect(medium.zoom).toBe(READABLE_ZOOM);
+    expect(medium.x).toBe(20 - 16 * READABLE_ZOOM);
     const short = readableViewport({ width: 400, height: 200 }, anchor, { width: 680, height: 460 }, "RIGHT");
     expect(short.zoom).toBe(1);
     expect(short.x).toBeCloseTo((680 - 400) / 2);
