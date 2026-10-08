@@ -24,10 +24,10 @@ export { TONE_ICON };
  *
  * The editor drives the same canvas: `onAddAfter` puts a «+» on each card, `onConnect` makes the ports draggable, `onMove` lets the owner drag a step to
  * where it belongs (the page saves the places in the file), `onArrange` lays everything out again, `selectedEdge`/`onSelectEdge` pick a connection, and
- * `problems` marks the nodes and edges the validator named. The view opens at a readable zoom (never below 0.7 on its own) on the start of the chain.
+ * `problems` marks the nodes and edges the validator named. The view opens at a readable zoom (never below 0.85 on its own) on the start of the chain.
  */
 /** The smallest zoom «Fit» and the first view use: below it a card's text is no longer readable. */
-export const READABLE_ZOOM = 0.7;
+export const READABLE_ZOOM = 0.85;
 /**
  * The first view of a graph in a box: all of it when it fits at READABLE_ZOOM or more, centred; otherwise READABLE_ZOOM on the
  * anchor (the start of the chain), so the cards stay legible and the owner pans along the chain.
