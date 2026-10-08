@@ -105,6 +105,7 @@
     },
     {
       "id": "write",
+      "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
       "profile": {
