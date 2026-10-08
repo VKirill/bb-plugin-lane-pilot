@@ -2,8 +2,8 @@ import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { browserGoal } from "../../src/host-handlers";
-import { errandPrompt, errandVerdict } from "../../src/server/errands";
+import { browserGoal } from "../../src/rooms/host-worker/host-handlers";
+import { errandPrompt, errandVerdict } from "../../src/rooms/qa/server/errands";
 
 describe("errands", () => {
   it("lets a helper change things only when the owner asked for the change", () => {

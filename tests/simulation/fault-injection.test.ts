@@ -1,15 +1,15 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { noOptionalPlugins } from "../optional-plugin-stubs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PrototypeConfig, TaskV2 } from "../../src/contracts";
-import { createAttempt, createRun, createTask, getAttempt, listOpenAttempts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../../src/database";
-import { createCore } from "../../src/server/core";
-import { attemptMergeMessage, clearMergeIntent, recordMergeIntent, type RunOnHost } from "../../src/server/merge-intent";
-import type { Services } from "../../src/server/services";
-import { createStability } from "../../src/server/stability";
-import { recordStage } from "../../src/server/stage-records";
-import { createTaskReconcile } from "../../src/server/task-reconcile";
-import { createWriterStart } from "../../src/server/writer/start";
+import type { PrototypeConfig, TaskV2 } from "../../src/rooms/contracts";
+import { createAttempt, createRun, createTask, getAttempt, listOpenAttempts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptWorkspace, setRunThread, transitionAttempt } from "../../src/rooms/storage/database";
+import { createCore } from "../../src/rooms/core/server/core";
+import { attemptMergeMessage, clearMergeIntent, recordMergeIntent, type RunOnHost } from "../../src/rooms/verification/server/merge-intent";
+import type { Services } from "../../src/rooms/core/server/services";
+import { createStability } from "../../src/rooms/stability/server/stability";
+import { recordStage } from "../../src/rooms/runs/server/stage-records";
+import { createTaskReconcile } from "../../src/rooms/runs/server/task-reconcile";
+import { createWriterStart } from "../../src/rooms/writer/server/start";
 import regressionSeeds from "./regression-seeds.json";
 
 /**

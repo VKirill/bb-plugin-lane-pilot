@@ -2,24 +2,24 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { agendaPrompt, chairPrompt, seatPrompt } from "../../packages/council/src/prompts";
 import { memoryMaintenancePrompt, parseMemoryCandidates, parseMemorySettings } from "../../packages/memory-core/src/index";
-import { errandPrompt, errandVerdict } from "../../src/server/errands";
-import { analyzerPrompt } from "../../src/server/rule-scan";
-import { repairPrompt } from "../../src/server/self-repair";
-import { specialistPrompt } from "../../src/server/specialists";
-import { qaThreadPrompt } from "../../src/server/stages/qa-thread";
-import { WRITER_SETUP_LINES, buildTask, writerContextBlocks, writerPrompt } from "../../src/server/writer-task";
-import { actionableFindings, buildCandidateEvidence, codeCritiquePrompt, codeRepairPrompt, parseCodeCritique, parseWriterRepairReply, sameUnresolvedFindings, shouldRequestRepair, parseCodeCritiqueSettings } from "../../src/stages/code-critique";
-import { critiquePrompt, parseCritique } from "../../src/stages/critique";
-import { STAGE_IDS } from "../../src/stages/contract";
-import { docsMaintenancePrompt, nightlyDocsPrompt } from "../../src/stages/docs";
-import { gateTriagePrompt, parseGateTriageResult } from "../../src/stages/gate-triage";
-import { extractModelJson } from "../../src/stages/model-json";
-import { nightFixBlockedReason, nightFixPrompt } from "../../src/stages/night-fix";
-import { nightReviewPrompt, parseNightReviewResult } from "../../src/stages/night";
-import { onboardingPrompt, parseOnboardingPreview } from "../../src/stages/onboarding";
-import { parsePmReadResult, pmReadPrompt } from "../../src/stages/pm-read";
-import { projectLifePrompt } from "../../src/stages/project-life";
-import { parseSpecialistResult, specialistPrompt as reviewerPrompt } from "../../src/stages/specialist";
+import { errandPrompt, errandVerdict } from "../../src/rooms/qa/server/errands";
+import { analyzerPrompt } from "../../src/rooms/self-repair/server/rule-scan";
+import { repairPrompt } from "../../src/rooms/self-repair/server/self-repair";
+import { specialistPrompt } from "../../src/rooms/critique/server/specialists";
+import { qaThreadPrompt } from "../../src/rooms/qa/server/qa-thread";
+import { WRITER_SETUP_LINES, buildTask, writerContextBlocks, writerPrompt } from "../../src/rooms/writer/server/writer-task";
+import { actionableFindings, buildCandidateEvidence, codeCritiquePrompt, codeRepairPrompt, parseCodeCritique, parseWriterRepairReply, sameUnresolvedFindings, shouldRequestRepair, parseCodeCritiqueSettings } from "../../src/rooms/critique/code-critique";
+import { critiquePrompt, parseCritique } from "../../src/rooms/critique/critique";
+import { STAGE_IDS } from "@lane-pilot/contracts";
+import { docsMaintenancePrompt, nightlyDocsPrompt } from "../../src/rooms/docs/docs";
+import { gateTriagePrompt, parseGateTriageResult } from "../../src/rooms/verification/gate-triage";
+import { extractModelJson } from "@lane-pilot/workflow-engine";
+import { nightFixBlockedReason, nightFixPrompt } from "../../src/rooms/night/night-fix";
+import { nightReviewPrompt, parseNightReviewResult } from "../../src/rooms/night/night";
+import { onboardingPrompt, parseOnboardingPreview } from "../../src/rooms/project-life/onboarding";
+import { parsePmReadResult, pmReadPrompt } from "../../src/rooms/critique/pm-read";
+import { projectLifePrompt } from "../../src/rooms/project-life/project-life";
+import { parseSpecialistResult, specialistPrompt as reviewerPrompt } from "../../src/rooms/critique/specialist";
 
 const NO_TOOLS = "open no files, run no commands and call no tools";
 const fenced = (json: string) => `Here is my review:\n\`\`\`json\n${json}\n\`\`\`\nHope this helps.`;
@@ -351,7 +351,7 @@ describe("other helper prompts", () => {
 
 describe("retry brief", () => {
   it("tells the next writer why the last attempt failed, as data", async () => {
-    const { previousAttemptBrief, writerPrompt } = await import("../../src/server/writer-task");
+    const { previousAttemptBrief, writerPrompt } = await import("../../src/rooms/writer/server/writer-task");
     const task = buildTask({ writerWorkspacePath: "/tmp/w" } as never, "T-1");
     const brief = previousAttemptBrief({ status:"validation_failed", reason:"verification failed", produced:["src/a.ts"],
       verification:[{ command:"npm test", exitCode:0 }, { command:"npx vitest run a", exitCode:1, stderr:"Expected 3, got 4" }] });

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { taskV2Schema } from "../src/contracts";
-import { compactContract, pathAnchors, pmReadBrief, writerMemory } from "../src/writer-brief";
-import { needsHumanQuestion, stickyTurnPrompt, writerPrompt, previousAttemptBrief } from "../src/server/writer-task";
+import { taskV2Schema } from "../src/rooms/contracts";
+import { compactContract, pathAnchors, pmReadBrief, writerMemory } from "../src/rooms/writer/writer-brief";
+import { needsHumanQuestion, stickyTurnPrompt, writerPrompt, previousAttemptBrief } from "../src/rooms/writer/server/writer-task";
 
 // The real brief SelfyStudio's writer got for gc-pages-polish-2 on 2026-10-02 (4130 tokens, 64% memory).
 const original = readFileSync(join(__dirname, "fixtures/writer-brief-gc-pages-polish-2.md"), "utf8");
@@ -165,7 +165,7 @@ describe("writer brief", () => {
     const vitestBrief = previousAttemptBrief({
       status:"validation_failed", reason:"verification failed (npx vitest run tests/server): exit 1",
       verification:[{ command:"npx vitest run tests/server", exitCode:1, stdout:vitest, stderr:"" }],
-    }, { owns_paths:["src/server/errands.ts", "tests/server/"] });
+    }, { owns_paths:["src/rooms/qa/server/errands.ts", "tests/server/"] });
     expect(vitestBrief.split("\n").find((line) => line.includes("outside owns_paths →")))
       .toContain("the failure points at tests/server-reconcile.test.ts, outside owns_paths → do not edit it.");
     // A failure inside owns_paths keeps the plain advice.
@@ -196,7 +196,7 @@ describe("writer brief", () => {
   it("a run-scope ownership rejection names files outside owns_paths as such and asks to undo only the writer's own edits", () => {
     // Lane Pilot update-queued-task.2 (2026-10-06): told «never_touch files (src/ui-catalog.ts) → drop it», the writer
     // reset the file to git HEAD, wiping another session's uncommitted edit, and lost its last retry on the same file.
-    const contract = { owns_paths:["src/server/writer/dispatch.ts", "src/ui/"], never_touch:["docs", "package.json"] };
+    const contract = { owns_paths:["src/rooms/writer/server/dispatch.ts", "src/ui/"], never_touch:["docs", "package.json"] };
     const brief = previousAttemptBrief({
       status:"validation_failed", reason:"writer changed paths outside owns_paths or inside never_touch: package.json, src/ui-catalog.ts", verification:[],
     }, contract);
@@ -232,7 +232,7 @@ describe("writer brief", () => {
 
   it("no write path stores a credential or an instruction override", async () => {
     const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
-    const { openDatabase } = await import("../src/database");
+    const { openDatabase } = await import("../src/rooms/storage/database");
     const { storeMemoryRecords } = await import("../packages/memory-core/src/store");
     const db = openDatabase(createFakePluginHost({ pluginId:"lane-pilot" }).bb);
     const store = (content:string) => storeMemoryRecords(db, { projectId:"P", audience:"subagent", sourceSha256:"a".repeat(64), coreBudget:9_999, noteBudget:9_999, indexBudget:99_999,

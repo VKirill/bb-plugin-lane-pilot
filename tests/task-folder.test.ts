@@ -5,10 +5,10 @@ import { expect, it, vi } from "vitest";
 // The real-checkout test below spawns git and sh; inside the sandboxed check the suite runs ~2.5x slower and
 // vitest's 5 s default would cut it off (2026-10-06 check log, sibling git-integrate/git-lock timeouts).
 vi.setConfig({ testTimeout: 120_000 });
-import { stickyTurnPrompt, writerPrompt } from "../src/server/writer-task";
-import { classifyWriterOutput, parseGitChangedPaths } from "../src/validate-output";
-import { appendExcludeCommand, persistTaskFolder, TASK_FOLDER_EXCLUDE } from "../src/verification/git-integrate";
-import type { TaskV2 } from "../src/contracts";
+import { stickyTurnPrompt, writerPrompt } from "../src/rooms/writer/server/writer-task";
+import { classifyWriterOutput, parseGitChangedPaths } from "../src/rooms/tasks/validate-output";
+import { appendExcludeCommand, persistTaskFolder, TASK_FOLDER_EXCLUDE } from "../src/rooms/verification/git-integrate";
+import type { TaskV2 } from "../src/rooms/contracts";
 
 const task = {
   id: "t1",

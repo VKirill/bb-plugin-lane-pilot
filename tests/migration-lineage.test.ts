@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { migrations, openDatabase } from "../src/database";
+import { migrations, openDatabase } from "../src/rooms/storage/database";
 
 const installed011MigrationHashes = [
   "ee647cc1d58d276e464d6d6a6fb2ce5926998c0d6f28bdb8bae9608fdb65bc02",

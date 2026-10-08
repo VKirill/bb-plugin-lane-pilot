@@ -5,11 +5,11 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { BOOKKEEPING_EXCLUDE_LINES, isBookkeepingPath } from "../src/bookkeeping-paths";
-import { TARGET_SHA } from "../src/constants";
-import { openDatabase, saveProjectSetting, savePrototypeConfig } from "../src/database";
-import { excludeBookkeeping } from "../src/server/bookkeeping-exclude";
-import { ensureExcludeLinesCommand } from "../src/verification/git-integrate";
+import { BOOKKEEPING_EXCLUDE_LINES, isBookkeepingPath } from "@lane-pilot/settings-catalog";
+import { TARGET_SHA } from "../src/rooms/runs/constants";
+import { openDatabase, saveProjectSetting, savePrototypeConfig } from "../src/rooms/storage/database";
+import { excludeBookkeeping } from "../src/rooms/verification/server/bookkeeping-exclude";
+import { ensureExcludeLinesCommand } from "../src/rooms/verification/git-integrate";
 
 const sh = (cwd:string, command:string) => execFileSync("sh", ["-c", command], { cwd, encoding: "utf8" });
 const git = (cwd:string, ...args:string[]) => execFileSync("git", args, { cwd, encoding: "utf8" });

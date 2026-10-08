@@ -12,8 +12,8 @@ import {
   savePrototypeConfig,
   setRunThread,
   transitionAttempt,
-} from "../src/database";
-import { TARGET_SHA } from "../src/constants";
+} from "../src/rooms/storage/database";
+import { TARGET_SHA } from "../src/rooms/runs/constants";
 
 const projectId = "project-test";
 const pmThreadId = "pm-thread";
@@ -384,8 +384,8 @@ describe("production spawn_unknown reconciliation", () => {
 
 describe("lost worktree holder scan", () => {
   it("runs only for an attempt whose holder spawn had begun", async () => {
-    const { createReconcile } = await import("../src/server/reconcile");
-    const { openDatabase, createRun, getAttempt } = await import("../src/database");
+    const { createReconcile } = await import("../src/rooms/stability/server/reconcile");
+    const { openDatabase, createRun, getAttempt } = await import("../src/rooms/storage/database");
     let listed = 0;
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot", sdk: { threads: {
       list: async () => { listed += 1; return [{ id: "holder" }]; },

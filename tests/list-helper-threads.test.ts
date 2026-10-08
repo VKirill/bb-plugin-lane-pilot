@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { createCore } from "../src/server/core";
-import { createAttempt, createRun, createTask, openDatabase, saveStageReceipt, setRunThread, transitionAttempt } from "../src/database";
-import { runsRpc } from "../src/server/rpc/runs";
-import type { Services } from "../src/server/services";
+import { createCore } from "../src/rooms/core/server/core";
+import { createAttempt, createRun, createTask, openDatabase, saveStageReceipt, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
+import { runsRpc } from "../src/rooms/runs/server/rpc/runs";
+import type { Services } from "../src/rooms/core/server/services";
 
 function setupHost() {
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });

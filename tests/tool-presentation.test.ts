@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { LANE_PILOT_READ_NAME } from "../src/bounded-read";
-import { TOOL_PRESENTATION, presentationFor } from "../src/server/tool-presentation";
+import { LANE_PILOT_READ_NAME } from "@lane-pilot/kit";
+import { TOOL_PRESENTATION, presentationFor } from "../src/rooms/tools/server/tool-presentation";
 
 const QUIET = ["lane_pilot_tool_search", "lane_pilot_wait_writer", "lane_pilot_wait_specialist", "lane_pilot_wait_errand", "lane_pilot_relay_list", "lane_pilot_read", "lane_pilot_remind", "lane_pilot_workflow_draft_get", "lane_pilot_workflow_capabilities", "lane_pilot_workflow_status"];
 

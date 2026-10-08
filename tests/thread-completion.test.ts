@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideThreadCompletion } from "../src/thread-completion";
+import { decideThreadCompletion } from "../src/rooms/native-agent/thread-completion";
 
 const threadId = "night-thread";
 

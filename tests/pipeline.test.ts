@@ -3,12 +3,12 @@ import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { NO_UPSTREAM, upstreamPath } from "./upstream-fixture";
-import { aggregateRun } from "../src/aggregation";
+import { aggregateRun } from "../src/rooms/runs/aggregation";
 import { spawnSync } from "node:child_process";
-import { buildCliInvocation } from "../src/argv-builder";
-import { requiredCliFlags } from "../src/cli-flags";
-import { attemptProduced, classifyCliOutcome } from "../src/cli-outcome";
-import { classifyWriterOutput, parseGitChangedPaths } from "../src/validate-output";
+import { buildCliInvocation } from "../src/rooms/writer/argv-builder";
+import { requiredCliFlags } from "../src/rooms/writer/cli-flags";
+import { attemptProduced, classifyCliOutcome } from "../src/rooms/writer/cli-outcome";
+import { classifyWriterOutput, parseGitChangedPaths } from "../src/rooms/tasks/validate-output";
 import {
   claimActivation,
   countAttempts,
@@ -23,17 +23,17 @@ import {
   saveStageReceipt,
   setRunThread,
   transitionAttempt,
-} from "../src/database";
-import { fileAllowedByOwns, fnmatch, matchOwnsPath } from "../src/owns-paths";
-import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../src/native-session-hooks";
+} from "../src/rooms/storage/database";
+import { fileAllowedByOwns, fnmatch, matchOwnsPath } from "@lane-pilot/kit";
+import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../src/rooms/native-agent/native-session-hooks";
 import plugin from "../server";
 import {
   MAIN_ATTEMPT_LIMIT,
   nextAttemptState,
   retryAction,
   TRANSITION_TABLE,
-} from "../src/state-machine";
-import { loadTaskV2Schema, TASK_V2_REQUIRED, validateTaskV2 } from "../src/task-v2";
+} from "../src/rooms/runs/state-machine";
+import { loadTaskV2Schema, TASK_V2_REQUIRED, validateTaskV2 } from "../src/rooms/tasks/task-v2";
 
 const config = {
   projectId:"project-test",
@@ -550,7 +550,7 @@ describe("PM tool gating", () => {
       origin:{ pluginId:"other" },
       pluginMetadata:{ role:"pm", lanePilotRunId:"run-x" },
     } as never);
-    // The PM's list is folded (src/pm-tool-families.ts): the core tools plus the family tools and the search, not one tool per capability.
+    // The PM's list is folded (src/rooms/tools/pm-tool-families.ts): the core tools plus the family tools and the search, not one tool per capability.
     expect(pm.tools.map((tool) => tool.name).sort()).toEqual([...NATIVE_LP_BRIDGE_PM_TOOLS].sort());
     expect(pm.tools.length).toBeLessThanOrEqual(30);
     expect(writer.tools).toEqual([]);
@@ -569,7 +569,7 @@ describe("PM tool gating", () => {
 
 describe("prose expected outputs", () => {
   it("checks only path-like outputs and needs some change when none are paths", async () => {
-    const { classifyWriterOutput, isOutputPath } = await import("../src/validate-output");
+    const { classifyWriterOutput, isOutputPath } = await import("../src/rooms/tasks/validate-output");
     expect(isOutputPath("lib/monitor-store.ts")).toBe(true);
     expect(isOutputPath("checkHttp enforces the keyword when one is set")).toBe(false);
     const task = { expected_outputs:["checkHttp enforces the keyword"], owns_paths:["lib/**"], never_touch:[], verify:"none", verification:[] } as never;

@@ -1,8 +1,8 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { failureClass, failureFingerprint } from "../src/failure-class";
-import { countAttempts, countChargedAttempts, createAttempt, createRun, openDatabase, transitionAttempt } from "../src/database";
-import { createStability } from "../src/server/stability";
+import { failureClass, failureFingerprint } from "../src/rooms/runs/failure-class";
+import { countAttempts, countChargedAttempts, createAttempt, createRun, openDatabase, transitionAttempt } from "../src/rooms/storage/database";
+import { createStability } from "../src/rooms/stability/server/stability";
 
 // Reasons copied from SelfyStudio attempts of 2026-10-03/04: each must land on the side that caused it.
 describe("failure class of real reasons", () => {
@@ -176,8 +176,8 @@ describe("adoption at start-up", () => {
 describe("restart reopens the writer stages", () => {
   // Live 2026-10-04: three restarted SelfyStudio tasks died on «illegal stage transition writer-agent: failed -> running».
   it("sets failed writer stages back to pending so the writer can run again", async () => {
-    const { recordStage } = await import("../src/server/stage-records");
-    const { listStageReceipts } = await import("../src/database");
+    const { recordStage } = await import("../src/rooms/runs/server/stage-records");
+    const { listStageReceipts } = await import("../src/rooms/storage/database");
     const { bb, db, stability } = setup();
     for (const state of ["pending", "running", "failed"] as const) recordStage(db, { runId:"run", taskId:"T1", stageId:"writer-agent", state, input:"plan" });
     await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T1", pmThreadId:"pm", state:"blocked", reason:"internal_error: x" }, 1000);
@@ -204,14 +204,14 @@ describe("superseded work is never restarted", () => {
     attempt("o3", "G1", "blocked", "internal_error: y", now - 3600_000);
     attempt("o4", "G1.2", "accepted", "", now - 7200_000); // accepted sibling, even earlier
     expect(await stability.adoptBlockedByFaults(now)).toEqual([]);
-    const { taskStem } = await import("../src/server/stability");
+    const { taskStem } = await import("../src/rooms/stability/server/stability");
     expect([taskStem("fix-r4"), taskStem("G1.12"), taskStem("plain")]).toEqual(["fix", "G1", "plain"]);
   });
 });
 
 describe("an owner's stop of a run", () => {
   it("keeps a halted run out of parking and restarts", async () => {
-    const { setRunHalted } = await import("../src/server/runs-halt");
+    const { setRunHalted } = await import("../src/rooms/runs/server/runs-halt");
     const { bb, stability, resumed } = setup();
     await setRunHalted(bb.storage.kv as never, "run", true);
     expect(await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T1", pmThreadId:"pm", state:"blocked", reason:"internal_error: x" }, 1000)).toBe(false);
@@ -226,7 +226,7 @@ describe("an owner's stop of a run", () => {
 });
 
 it("never redoes a task whose finished work only waits for uncommitted edits in main", async () => {
-  const { failureClass } = await import("../src/failure-class");
+  const { failureClass } = await import("../src/rooms/runs/failure-class");
   expect(failureClass("blocked", "merge_blocked: base checkout has uncommitted changes in files this task changes: host/rpc.ts")).toBe("contract");
 });
 
@@ -262,7 +262,7 @@ describe("the breaker survives a reload", () => {
 describe("harness_version on the attempt", () => {
   it("is set when the attempt is created, from the running build", async () => {
     const { db } = setup();
-    const { HARNESS_VERSION, getAttempt } = await import("../src/database");
+    const { HARNESS_VERSION, getAttempt } = await import("../src/rooms/storage/database");
     createAttempt(db, { id:"v1", runId:"run", taskId:"T1" });
     expect(getAttempt(db, "v1")?.harness_version).toBe(HARNESS_VERSION);
     expect((await import("../package.json")).default.version).toBe(HARNESS_VERSION);
@@ -277,7 +277,7 @@ describe("harness_version on the attempt", () => {
       transitionAttempt(db, id, "blocked", { reason });
       db.prepare("UPDATE lane_pilot_attempt SET created_at=?, updated_at=?, harness_version=? WHERE id=?").run(now - 60_000, now - 60_000, version, id);
     };
-    const { HARNESS_VERSION } = await import("../src/database");
+    const { HARNESS_VERSION } = await import("../src/rooms/storage/database");
     block("h1", "T1", "internal_error: boom", HARNESS_VERSION); // failed under this very build
     block("h2", "T2", "internal_error: boom", "0.0.1"); // failed under an older one
     block("h3", "T3", "internal_error: boom", null); // before the column

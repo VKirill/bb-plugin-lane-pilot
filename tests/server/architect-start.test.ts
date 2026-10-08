@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../../server";
-import { rpcContract } from "../../src/contracts";
-import { SELF_REPAIR_DEFAULTS } from "../../src/server/self-repair";
-import { tokensFrom } from "../../src/native-session";
+import { rpcContract } from "../../src/rooms/contracts";
+import { SELF_REPAIR_DEFAULTS } from "../../src/rooms/self-repair/server/self-repair";
+import { tokensFrom } from "../../src/rooms/native-agent/native-session";
 
 const projectId = "proj_arch";
 let dispose: (() => Promise<void> | void) | null = null;

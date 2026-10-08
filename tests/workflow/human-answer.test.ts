@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { humanOutput } from "../../src/server/workflow-executors";
-import { BUILTIN_SOURCES } from "../../src/workflow/builtin";
-import { loadWorkflowStore } from "../../src/workflow/store";
+import { humanOutput } from "../../src/rooms/workflow/server/workflow-executors";
+import { BUILTIN_SOURCES } from "../../src/rooms/workflow/builtin";
+import { loadWorkflowStore } from "@lane-pilot/workflow-engine";
 
 /** Audit 2026-10-08, item 4: words typed without picking an option never become the first option (`deploy.approve` -> `deploy`). */
 const APPROVALS: Array<[string, string]> = [["deploy", "approve"], ["x-to-telegram-digest", "approve_send"], ["reels", "approve_clips"], ["roadmap-driven", "approve"]];

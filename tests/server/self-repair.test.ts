@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase } from "../../src/database";
-import { createSelfRepair, firstSeenOnRunningVersion, isDue, logIncidents, parseVerdict, reasonSignature, repairPriority, repairPrompt, repairStatus, VERSION } from "../../src/server/self-repair";
-import { createJev } from "../../src/jev/run";
-import { setJevForTests } from "../../src/jev/runtime";
-import type { JevClient } from "../../src/jev/client";
-import type { ServerCore } from "../../src/server/core";
+import { openDatabase } from "../../src/rooms/storage/database";
+import { createSelfRepair, firstSeenOnRunningVersion, isDue, logIncidents, parseVerdict, reasonSignature, repairPriority, repairPrompt, repairStatus, VERSION } from "../../src/rooms/self-repair/server/self-repair";
+import { createJev } from "@lane-pilot/jev";
+import { setJevForTests } from "@lane-pilot/jev";
+import type { JevClient } from "@lane-pilot/jev";
+import type { ServerCore } from "../../src/rooms/core/server/core";
 
 type HostCall = { method: string; input: Record<string, unknown> };
 
@@ -218,7 +218,7 @@ describe("self-repair", () => {
     const env = setup({}, { thr_repair1: "Нужен выбор: чинить в Lane Stack или в ядре?\nSELF-REPAIR-VERDICT: needs-owner" });
     const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
     const form = createFakePluginHost({ pluginId: "lane-pilot" });
-    const { createOwnerAsk } = await import("../../src/server/owner-ask");
+    const { createOwnerAsk } = await import("../../src/rooms/relay/server/owner-ask");
     const real = createOwnerAsk(form.bb, () => undefined);
     const sent: Array<[string, string]> = [];
     Object.assign(env.ctx, { ownerAsk: { ...real, sendToThread: async (threadId: string, text: string) => { sent.push([threadId, text]); } } });

@@ -1,13 +1,13 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { openDatabase } from "../../src/database";
-import { NONE, cardText, closedInputs, routeWorkflow } from "../../src/jev/judgments/route-workflow";
-import { createJevRouterModel } from "../../src/jev/route-model";
-import { choiceOf, type Answers } from "../../src/jev/registry";
-import { createJev } from "../../src/jev/run";
-import type { JevClient } from "../../src/jev/client";
-import type { JevAnswer, JevChoiceQuestion, JevQuestion } from "../../src/jev/types";
-import { MIN_CONFIDENCE, routeIntent, type RouterCard, type RouterModel } from "../../src/workflow/router";
+import { openDatabase } from "../../src/rooms/storage/database";
+import { NONE, cardText, closedInputs, routeWorkflow } from "../../src/rooms/workflow/route-workflow";
+import { createJevRouterModel } from "../../src/rooms/workflow/route-model";
+import { choiceOf, type Answers } from "@lane-pilot/jev";
+import { createJev } from "@lane-pilot/jev";
+import type { JevClient } from "@lane-pilot/jev";
+import type { JevAnswer, JevChoiceQuestion, JevQuestion } from "@lane-pilot/jev";
+import { MIN_CONFIDENCE, routeIntent, type RouterCard, type RouterModel } from "@lane-pilot/workflow-engine";
 import { EVAL_SET } from "../workflow/router-eval-set";
 import { publishedCatalog } from "../workflow/router-catalog";
 

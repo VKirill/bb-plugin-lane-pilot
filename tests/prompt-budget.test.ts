@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { BB_AGENT_SESSIONS, LANE_PILOT_PM_SESSION } from "../src/native-agent-overlay";
+import { BB_AGENT_SESSIONS, LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/native-agent-overlay";
 
 /**
  * Standing instructions are paid for in every turn of every thread, and a long prompt confuses a model more than it helps (Synapse AI

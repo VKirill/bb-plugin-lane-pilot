@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activationDisabledPredicate, classifyComposerSession, composerButtonDisabled } from "../src/activation";
+import { activationDisabledPredicate, classifyComposerSession, composerButtonDisabled } from "../src/rooms/native-agent/activation";
 
 describe("composer activation", () => {
   it.each(["setup_required", "ambiguous", "offline", "catalog_unavailable"])("defers %s project binding to native dispatch only in mention mode", (bindingStatus) => {

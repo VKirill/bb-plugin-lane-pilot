@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { repairPrompt } from "../../src/server/self-repair";
-import { qaThreadPrompt } from "../../src/server/stages/qa-thread";
-import { buildCandidateEvidence, codeCritiquePrompt } from "../../src/stages/code-critique";
-import { critiquePrompt } from "../../src/stages/critique";
-import { CODE_CRITIC_METHOD, FAILURE_TRIAGE_METHOD, FRONTEND_VERIFY_METHOD, PLAN_CRITIC_METHOD, SCIENTIFIC_DEBUG_METHOD } from "../../src/stages/role-method";
+import { repairPrompt } from "../../src/rooms/self-repair/server/self-repair";
+import { qaThreadPrompt } from "../../src/rooms/qa/server/qa-thread";
+import { buildCandidateEvidence, codeCritiquePrompt } from "../../src/rooms/critique/code-critique";
+import { critiquePrompt } from "../../src/rooms/critique/critique";
+import { CODE_CRITIC_METHOD, FAILURE_TRIAGE_METHOD, FRONTEND_VERIFY_METHOD, PLAN_CRITIC_METHOD, SCIENTIFIC_DEBUG_METHOD } from "../../src/rooms/critique/role-method";
 
 const evidence = buildCandidateEvidence({ produced: [], hashes: {}, verification: [], output: "", ownsPaths: [], neverTouch: [], dirtOk: true });
 const workspace = { path: "/wt/r/lane-pilot", branch: "lane/r", basePath: "/repo/lane-pilot" };
@@ -70,6 +70,6 @@ describe("K1: role texts adapted from Maestro-Flow", () => {
     const notices = readFileSync(new URL("../../THIRD_PARTY_NOTICES.md", import.meta.url), "utf8");
     expect(notices).toContain("catlog22/maestro-flow");
     expect(notices).toContain("Permission is hereby granted, free of charge");
-    for (const file of ["src/stages/role-method.ts", "src/stages/critique.ts", "src/stages/code-critique.ts", "src/server/self-repair.ts", "src/server/stages/qa-thread.ts"]) expect(notices).toContain(file);
+    for (const file of ["src/rooms/critique/role-method.ts", "src/rooms/critique/critique.ts", "src/rooms/critique/code-critique.ts", "src/rooms/self-repair/server/self-repair.ts", "src/rooms/qa/server/qa-thread.ts"]) expect(notices).toContain(file);
   });
 });

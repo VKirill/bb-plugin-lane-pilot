@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { ROLE_PROFILES, HelperRole, requiredSessionPolicySpawnBinding, coreRequiredSessionAdvertisement } from "../src/helper-context";
-import { WRITER_SETUP_LINES } from "../src/server/writer-task";
-import { critiquePrompt } from "../src/stages/critique";
-import { codeCritiquePrompt, buildCandidateEvidence } from "../src/stages/code-critique";
-import { pmReadPrompt } from "../src/stages/pm-read";
+import { ROLE_PROFILES, HelperRole, requiredSessionPolicySpawnBinding, coreRequiredSessionAdvertisement } from "../src/rooms/native-agent/helper-context";
+import { WRITER_SETUP_LINES } from "../src/rooms/writer/server/writer-task";
+import { critiquePrompt } from "../src/rooms/critique/critique";
+import { codeCritiquePrompt, buildCandidateEvidence } from "../src/rooms/critique/code-critique";
+import { pmReadPrompt } from "../src/rooms/critique/pm-read";
 
 describe("role MCP server configurations", () => {
   it("assigns expected MCP servers across all helper roles", () => {

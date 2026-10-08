@@ -1,8 +1,8 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
-import { costUsd } from "../../src/model-prices";
+import { costUsd } from "@lane-pilot/models";
 import { createDb } from "./harness";
-import { averageCost, priceView, scheduleCost, threadUsage, usageOfCursor } from "../../src/server/schedule-usage";
+import { averageCost, priceView, scheduleCost, threadUsage, usageOfCursor } from "../../src/rooms/schedule/server/schedule-usage";
 
 const total = (input: number, output: number, cacheRead = 0, cacheWrite = 0) => JSON.stringify({ input: input + cacheRead + cacheWrite, output, cached: cacheRead + cacheWrite, total: input + cacheRead + cacheWrite + output, cacheRead, cacheWrite });
 const cursor = (extra: Partial<{ total_json: string; last_model: string; last_provider: string; provider_id: string }> = {}) => ({ total_json: total(1_000_000, 100_000), last_model: "claude-opus-5-5", last_provider: "claude-code", provider_id: "claude-code", ...extra });

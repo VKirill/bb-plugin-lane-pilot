@@ -4,12 +4,12 @@ import { dirname, join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../server";
-import { runCommandOnHost } from "../src/cli-run";
-import { snapshotDryRun } from "../src/host-handlers";
-import type { TaskV2 } from "../src/contracts";
+import { runCommandOnHost } from "../src/rooms/writer/cli-run";
+import { snapshotDryRun } from "../src/rooms/host-worker/host-handlers";
+import type { TaskV2 } from "../src/rooms/contracts";
 import {
   createRun, getAttempt, listAttemptsForTask, listStageReceipts, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread,
-} from "../src/database";
+} from "../src/rooms/storage/database";
 
 const projectId = "project-live";
 const pmThreadId = "pm-live";

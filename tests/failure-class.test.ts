@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { FREE_CLASSES, PARKED_CLASSES, failureClass, isEnvironmentCheckFailure, nextStep, repeatedFailureReason, taskFamily } from "../src/failure-class";
-import { classifyWriterOutput } from "../src/validate-output";
-import type { TaskV2 } from "../src/contracts";
-import { providerLimitNotice } from "../src/server/writer-task";
+import { FREE_CLASSES, PARKED_CLASSES, failureClass, isEnvironmentCheckFailure, nextStep, repeatedFailureReason, taskFamily } from "../src/rooms/runs/failure-class";
+import { classifyWriterOutput } from "../src/rooms/tasks/validate-output";
+import type { TaskV2 } from "../src/rooms/contracts";
+import { providerLimitNotice } from "../src/rooms/writer/server/writer-task";
 
 describe("failure classes", () => {
   it("keeps provider, limit and catalog faults on the provider path for the writer chain", () => {

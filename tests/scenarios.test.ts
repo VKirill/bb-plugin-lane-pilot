@@ -4,14 +4,14 @@ import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterAll, describe, expect, it } from "vitest";
 import { NO_UPSTREAM, upstreamPath, offlineUpstream } from "./upstream-fixture";
-import { importSettingsOnce, openDatabase } from "../src/database";
-import { sha256FileOrNull } from "../src/hash";
+import { importSettingsOnce, openDatabase } from "../src/rooms/storage/database";
+import { sha256FileOrNull } from "@lane-pilot/kit";
 import {
   connectOpencodeStack,
   detectStack,
   importConfigStack,
   installStack,
-} from "../src/stack-ops";
+} from "../src/rooms/native-install/stack-ops";
 import { isolatedTestPath, linkSafeTools, snapshotGlobalOpenCursor } from "./npm-isolation";
 
 const FALLBACK = upstreamPath();

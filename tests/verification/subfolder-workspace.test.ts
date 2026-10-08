@@ -9,13 +9,13 @@ import { expect, it, vi } from "vitest";
 // Real repositories and shells: inside Lane Pilot's sandboxed check the whole suite runs ~2.5x slower, and
 // vitest's 5 s default would cut these off (2026-10-06 check log, sibling git-integrate/git-lock timeouts).
 vi.setConfig({ testTimeout: 120_000 });
-import type { DirtSnapshot } from "../../src/cli-outcome";
-import type { PrototypeConfig, TaskV2 } from "../../src/contracts";
-import { createAttempt, createRun, createTask, openDatabase, setAttemptWorkspace } from "../../src/database";
-import { createWriterVerify } from "../../src/server/writer/verify";
-import { buildRunPolicy } from "../../src/stages/run-policy";
-import { appendExcludeCommand, persistTaskFolder, TASK_FOLDER_EXCLUDE } from "../../src/verification/git-integrate";
-import { WORKSPACE_DIRT_SCRIPT } from "../../src/workspace-dirt";
+import type { DirtSnapshot } from "../../src/rooms/writer/cli-outcome";
+import type { PrototypeConfig, TaskV2 } from "../../src/rooms/contracts";
+import { createAttempt, createRun, createTask, openDatabase, setAttemptWorkspace } from "../../src/rooms/storage/database";
+import { createWriterVerify } from "../../src/rooms/writer/server/verify";
+import { buildRunPolicy } from "../../src/rooms/tasks/run-policy";
+import { appendExcludeCommand, persistTaskFolder, TASK_FOLDER_EXCLUDE } from "../../src/rooms/verification/git-integrate";
+import { WORKSPACE_DIRT_SCRIPT } from "../../src/rooms/verification/workspace-dirt";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
 

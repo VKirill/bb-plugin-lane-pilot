@@ -4,16 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runCommandOnHost } from "../src/cli-run";
-import { attemptProduced } from "../src/cli-outcome";
-import { createRun, openDatabase } from "../src/database";
+import { runCommandOnHost } from "../src/rooms/writer/cli-run";
+import { attemptProduced } from "../src/rooms/writer/cli-outcome";
+import { createRun, openDatabase } from "../src/rooms/storage/database";
 import {
   chunkPaths, classifyFolderProbe, liveOwnedFiles, LIVE_BACKUP_SCRIPT, LIVE_FOLDER_BIG_BYTES, LIVE_FOLDER_FILE_CAP, LIVE_SNAPSHOT_SCRIPT, LIVE_SNAPSHOT_SKIP_DIRS,
   LIVE_SNAPSHOT_SKIP_PATHS, liveSnapshotCommand, parseLiveSnapshot, pythonCommand,
-} from "../src/live-folder";
-import { LANE_PILOT_PM_SESSION } from "../src/native-agent-overlay";
-import { createLiveFolder } from "../src/server/writer/live-folder";
-import { previousAttemptBrief, writerPrompt, writerSetupLines, WRITER_SETUP_LINES } from "../src/server/writer-task";
+} from "../src/rooms/writer/live-folder";
+import { LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/native-agent-overlay";
+import { createLiveFolder } from "../src/rooms/writer/server/live-folder";
+import { previousAttemptBrief, writerPrompt, writerSetupLines, WRITER_SETUP_LINES } from "../src/rooms/writer/server/writer-task";
 
 const roots: string[] = [];
 const realHome = process.env.HOME;

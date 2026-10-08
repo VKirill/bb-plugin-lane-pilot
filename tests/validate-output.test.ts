@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { classifyWriterOutput } from "../src/validate-output";
-import type { TaskV2 } from "../src/contracts";
+import { classifyWriterOutput } from "../src/rooms/tasks/validate-output";
+import type { TaskV2 } from "../src/rooms/contracts";
 
 const task = (expected: string[]) => ({
   expected_outputs: expected, owns_paths: ["apps/marketing/app/components/greeting-cards/", "apps/marketing/i18n/locales/"],
@@ -26,8 +26,8 @@ it("still reports a bare name the writer did not make, and a full path elsewhere
 
 it("keeps a stage receipt of the 3rd and 4th writer of the chain instead of failing the task", async () => {
   const { createFakePluginHost } = await import("@get-bb/plugin-sdk/testing");
-  const { openDatabase, createRun, listStageReceipts } = await import("../src/database");
-  const { recordStage } = await import("../src/server/stage-records");
+  const { openDatabase, createRun, listStageReceipts } = await import("../src/rooms/storage/database");
+  const { recordStage } = await import("../src/rooms/runs/server/stage-records");
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
   const db = openDatabase(bb);
   createRun(db, "run", "proj", "cli", "/repo");

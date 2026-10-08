@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { createRun, createTask, listStageReceipts, openDatabase } from "../../src/database";
-import { recordStage } from "../../src/server/stage-records";
-import { createQaStages } from "../../src/server/stages/qa";
-import type { ServerCore } from "../../src/server/core";
+import { createRun, createTask, listStageReceipts, openDatabase } from "../../src/rooms/storage/database";
+import { recordStage } from "../../src/rooms/runs/server/stage-records";
+import { createQaStages } from "../../src/rooms/qa/server/qa";
+import type { ServerCore } from "../../src/rooms/core/server/core";
 
 const verdict = "Итог: провалено.\n```json\n{\"verdict\":\"failed\",\"summary\":\"«Выбрать» does nothing\",\"cases\":[{\"case\":\"3\",\"viewport\":\"375\",\"result\":\"failed\"}]}\n```";
 

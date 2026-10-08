@@ -1,19 +1,16 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { rpcContract } from "../src/contracts";
+import { rpcContract } from "../src/rooms/contracts";
+import { roomFaceFiles } from "./support/room-files";
 
 /**
  * 0.1.188 shipped a button that called `workflow_architect_start`, which no server registered: «plugin "lane-pilot" has no rpc
  * method». Every RPC a screen calls by name must be in the contract and registered on the server.
  */
 const ROOT = join(__dirname, "..");
-const files = (dir: string): string[] => readdirSync(dir).flatMap((name) => {
-  const path = join(dir, name);
-  return statSync(path).isDirectory() ? files(path) : /\.(ts|tsx)$/.test(name) ? [path] : [];
-});
 
 /** `rpc.call("name"`, `host.call<T>("name"` and the helper form `call(rpc, "name"`. */
 export function calledRpcNames(source: string): string[] {
@@ -32,8 +29,8 @@ describe("every RPC the screens call is registered", () => {
     expect(calledRpcNames("Object.prototype.hasOwnProperty.call(drafts, key)")).toEqual([]);
   });
 
-  it("src/ui and app.tsx call only methods of the contract, and the server registers the whole contract", async () => {
-    const sources = [...files(join(ROOT, "src", "ui")), join(ROOT, "app.tsx")];
+  it("the UI of every room and app.tsx call only methods of the contract, and the server registers the whole contract", async () => {
+    const sources = [...roomFaceFiles("ui"), join(ROOT, "app.tsx")];
     const called = new Map<string, string[]>();
     for (const file of sources) for (const name of calledRpcNames(readFileSync(file, "utf8"))) called.set(name, [...(called.get(name) ?? []), file.slice(ROOT.length + 1)]);
     expect(called.size).toBeGreaterThan(30);

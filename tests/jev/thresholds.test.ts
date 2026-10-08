@@ -1,11 +1,11 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { migrations, openDatabase } from "../../src/database";
-import { routeWorkflow } from "../../src/jev/judgments/route-workflow";
-import { listJudgments } from "../../src/jev/registry";
-import { jevMigrations } from "../../src/jev/receipts";
-import { jevEnabled, jevSettingProblem, resolveMode, resolveThresholds } from "../../src/jev/thresholds";
-import { validateSettingValue } from "../../src/setting-validation";
+import { migrations, openDatabase } from "../../src/rooms/storage/database";
+import { routeWorkflow } from "../../src/rooms/workflow/route-workflow";
+import { listJudgments } from "@lane-pilot/jev";
+import { jevMigrations } from "@lane-pilot/jev";
+import { jevEnabled, jevSettingProblem, resolveMode, resolveThresholds } from "@lane-pilot/jev";
+import { validateSettingValue } from "../../src/rooms/settings/setting-validation";
 
 describe("jev settings", () => {
   it("starts from the registry defaults and clamps a project's values to the allowed range", () => {

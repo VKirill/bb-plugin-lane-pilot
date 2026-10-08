@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { globalWorkflowDir, loadWorkflowStore, projectWorkflowDir } from "../../src/workflow/store";
+import { globalWorkflowDir, loadWorkflowStore, projectWorkflowDir } from "@lane-pilot/workflow-engine";
 import { workflow } from "./fixtures";
 
 const dirs: string[] = [];

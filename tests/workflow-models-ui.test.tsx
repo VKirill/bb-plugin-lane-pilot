@@ -7,14 +7,14 @@ import { cleanup, configure, fireEvent, waitFor, within } from "@testing-library
 import React from "react";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { installTestPluginRuntime, loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { setLocaleOverride } from "../i18n";
-import { loadProjectSettings, migrations } from "../src/database";
-import { createWorkflowArchitect } from "../src/server/workflow-architect";
-import type { ArchitectDeps } from "../src/server/workflow-architect";
-import { createWorkflowLibrary } from "../src/server/workflow-library";
-import { createWorkflowModels } from "../src/server/workflow-models";
-import type { ServerCore } from "../src/server/core";
-import type { Services } from "../src/server/services";
+import { setLocaleOverride } from "@lane-pilot/i18n";
+import { loadProjectSettings, migrations } from "../src/rooms/storage/database";
+import { createWorkflowArchitect } from "../src/rooms/workflow/server/workflow-architect";
+import type { ArchitectDeps } from "../src/rooms/workflow/server/workflow-architect";
+import { createWorkflowLibrary } from "../src/rooms/workflow/server/workflow-library";
+import { createWorkflowModels } from "../src/rooms/workflow/server/workflow-models";
+import type { ServerCore } from "../src/rooms/core/server/core";
+import type { Services } from "../src/rooms/core/server/services";
 import { BROWSER_DIGEST_STEPS } from "./workflow/architect-fixture";
 import { engineOn } from "./workflow/engine-helpers";
 import { workflow } from "./workflow/fixtures";
@@ -131,7 +131,7 @@ async function choose(slot: Awaited<ReturnType<typeof renderSlot>>, testId: stri
 async function openDraft(options: { locale?: "en" | "ru"; width?: number } = {}) {
   const w = await world();
   await loadAppWithPicker();
-  const { WorkflowDraftDetail } = await import("../src/ui/workflow-draft-detail");
+  const { WorkflowDraftDetail } = await import("../src/rooms/workflow/ui/workflow-draft-detail");
   const locale = options.locale ?? "en";
   const slot = await renderSlot({ component: () => <div style={{ width: options.width ?? 1100 }}><WorkflowDraftDetail draftId={w.draftId} projectId={projectId} locale={locale} onBack={() => undefined} /></div> }, {},
     { context: { projectId, threadId: null }, rpc: w.rpc as never });
@@ -280,7 +280,7 @@ describe("the Models table of a library workflow", () => {
   async function openLibrary(id: string, scope: "builtin" | "global") {
     const w = await world();
     await loadAppWithPicker();
-    const { WorkflowDetail } = await import("../src/ui/workflow-detail");
+    const { WorkflowDetail } = await import("../src/rooms/workflow/ui/workflow-detail");
     const opened: string[] = [];
     const slot = await renderSlot({ component: () => <div style={{ width: 1100 }}><WorkflowDetail id={id} projectId={projectId} locale="en" onBack={() => undefined} editProjectId={projectId} onEditDraft={(draftId) => opened.push(draftId)} /></div> }, {},
       { context: { projectId, threadId: null }, rpc: w.rpc as never });

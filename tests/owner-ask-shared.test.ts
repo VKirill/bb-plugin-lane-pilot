@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ownerAskPayloadSchema } from "../src/owner-ask";
-import { readOwnerAskPayload } from "../src/owner-ask-shared";
+import { ownerAskPayloadSchema } from "../src/rooms/relay/owner-ask";
+import { readOwnerAskPayload } from "../src/rooms/relay/owner-ask-shared";
 
 // The screen reads a question with a zod-free parser (zod stays out of the browser bundle); it must agree with the schema.
 describe("readOwnerAskPayload agrees with ownerAskPayloadSchema", () => {

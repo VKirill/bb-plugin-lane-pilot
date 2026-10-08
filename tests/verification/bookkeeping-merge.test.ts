@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { BOOKKEEPING_PATHS } from "../../src/bookkeeping-paths";
-import { integrateWorktree } from "../../src/verification/git-integrate";
+import { BOOKKEEPING_PATHS } from "@lane-pilot/settings-catalog";
+import { integrateWorktree } from "../../src/rooms/verification/git-integrate";
 
 describe("bookkeeping merge collision", () => {
   let base: string;
@@ -154,7 +154,7 @@ describe("bookkeeping merge collision", () => {
 
   it("project-life/memory commits never happen inside an attempt or area worktree (test)", async () => {
     // Project-life maintenance stage factory builds the stage API
-    const { createProjectLifeStage } = await import("../../src/server/stages/project-life");
+    const { createProjectLifeStage } = await import("../../src/rooms/project-life/server/project-life");
     expect(typeof createProjectLifeStage).toBe("function");
   });
 

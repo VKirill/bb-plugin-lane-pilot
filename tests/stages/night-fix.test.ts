@@ -1,5 +1,5 @@
 import { describe,expect,it } from "vitest";
-import { buildNightFixPlan,decideNightMerge } from "../../src/stages/night-fix";
+import { buildNightFixPlan,decideNightMerge } from "../../src/rooms/night/night-fix";
 
 const task={project_cwd:"/repo",owns_paths:["src/**"],never_touch:["src/vendor/**"],verification:[]};
 const review={decision:"findings" as const,summary:"needs repair",findings:[{severity:"blocking" as const,path:"src/main.ts",finding:"broken interface",suggestedFix:"restore export"}]};

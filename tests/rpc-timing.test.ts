@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { timeRpcHandlers } from "../src/server/rpc-timing";
-import { logIncidents } from "../src/server/self-repair";
-import type { LanePilotDatabase } from "../src/database";
+import { timeRpcHandlers } from "../src/rooms/core/server/rpc-timing";
+import { logIncidents } from "../src/rooms/self-repair/server/self-repair";
+import type { LanePilotDatabase } from "../src/rooms/storage/database";
 
 describe("RPC duration logging", () => {
   it("logs every call with its duration, adds the answer size to a slow one and leaves answers and errors alone", async () => {

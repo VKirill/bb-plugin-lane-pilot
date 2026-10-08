@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { en, ru } from "../i18n";
-import { SETTING_META, settingLabelIsRaw } from "../src/setting-copy";
-import { VISIBLE_CATALOG } from "../src/ui-catalog";
-import { estimateTokens } from "../src/stages/memory";
+import { en, ru } from "@lane-pilot/i18n";
+import { SETTING_META, settingLabelIsRaw } from "../src/rooms/settings/setting-copy";
+import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
+import { estimateTokens } from "../src/rooms/memory/memory";
 
 const PICKER_PREFIXES = [
   "writer.provider", "writer.model", "writer.reasoning_effort", "writer.service_tier",

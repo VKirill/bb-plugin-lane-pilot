@@ -2,11 +2,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { listRuleProposals, upsertLessonProposal } from "@lane-pilot/run-insights";
 import plugin from "../../server";
-import { TARGET_SHA } from "../../src/constants";
-import { openDatabase, savePrototypeConfig } from "../../src/database";
-import { DEFAULT_RULE_TOKENS, RULE_COUNT_CEILING, poolHasRoom, poolTokens, ruleBudget, ruleTokens, setRuleBudgets } from "../../src/learning/rule-budget";
-import { pmRulesBlock, pmRulesOf, pmRulesPromptBlock, relevantPmRules } from "../../src/learning/pm-rules";
-import { adoptRuleProposal } from "../../src/server/insights";
+import { TARGET_SHA } from "../../src/rooms/runs/constants";
+import { openDatabase, savePrototypeConfig } from "../../src/rooms/storage/database";
+import { DEFAULT_RULE_TOKENS, RULE_COUNT_CEILING, poolHasRoom, poolTokens, ruleBudget, ruleTokens, setRuleBudgets } from "../../src/rooms/learning/rule-budget";
+import { pmRulesBlock, pmRulesOf, pmRulesPromptBlock, relevantPmRules } from "../../src/rooms/learning/pm-rules";
+import { adoptRuleProposal } from "../../src/rooms/self-repair/server/insights";
 import { NOW, database, jevWith } from "./helpers";
 
 const DAY = 86_400_000;

@@ -4,12 +4,12 @@ import { THREAD_WATCH_EVENT_TYPES } from "@lane-pilot/thread-observe";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
-import { runBrowserQaOnHost, type BrowserQaInput } from "../../src/stages/browser-qa";
-import { claimActivation, countChargedAttempts, createAttempt, createRun, createTask, getAttempt, getRun, listGateEvents, listStageReceipts, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, saveTaskPlan, setAttemptHolderThread, setRunThread, setRunWorkspace, storeMemoryRecords, transitionAttempt } from "../../src/database";
-import { memoryRecordId } from "../../src/stages/memory";
-import type { TaskV2 } from "../../src/contracts";
-import { buildRunPolicy } from "../../src/stages/run-policy";
-import { docsInputHash } from "../../src/stages/docs";
+import { runBrowserQaOnHost, type BrowserQaInput } from "../../src/rooms/qa/browser-qa";
+import { claimActivation, countChargedAttempts, createAttempt, createRun, createTask, getAttempt, getRun, listGateEvents, listStageReceipts, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, saveTaskPlan, setAttemptHolderThread, setRunThread, setRunWorkspace, storeMemoryRecords, transitionAttempt } from "../../src/rooms/storage/database";
+import { memoryRecordId } from "../../src/rooms/memory/memory";
+import type { TaskV2 } from "../../src/rooms/contracts";
+import { buildRunPolicy } from "../../src/rooms/tasks/run-policy";
+import { docsInputHash } from "../../src/rooms/docs/docs";
 
 const projectId = "stage-project";
 const pmThreadId = "stage-pm";
@@ -597,9 +597,9 @@ describe("stage → native writer → receipt", () => {
     expect(dispatched.state).toBe("queued");
     const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId})));
     expect(result.state).toBe("accepted");
-    expect(JSON.parse((await import("../../src/database")).getRun(db,"stage-run")!.run_policy_json))
+    expect(JSON.parse((await import("../../src/rooms/storage/database")).getRun(db,"stage-run")!.run_policy_json))
       .toEqual({schemaVersion:1,pools:{provider:15,verification:2}});
-    const receipt=(await import("../../src/database")).listStageReceipts(db,"stage-run",task.id)
+    const receipt=(await import("../../src/rooms/storage/database")).listStageReceipts(db,"stage-run",task.id)
       .find((row)=>row.stageId==="writer-agent")?.result as {runV2?:unknown};
     expect(receipt.runV2).toMatchObject({schemaVersion:1,pools:{provider:15,verification:2},score:2,risk:"low",sourceRisk:"low"});
     expect((listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="writer-agent")?.result as {produced?:string[]})?.produced)

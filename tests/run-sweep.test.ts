@@ -1,8 +1,8 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { createAttempt, createRun, createTask, getRun, openDatabase, setRunThread, transitionAttempt } from "../src/database";
-import { cleanupRunEnvironments, closeAbandonedRuns } from "../src/server/run-finish";
-import { isProjectRootCheckout } from "../src/server/writer/spawn";
+import { createAttempt, createRun, createTask, getRun, openDatabase, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
+import { cleanupRunEnvironments, closeAbandonedRuns } from "../src/rooms/runs/server/run-finish";
+import { isProjectRootCheckout } from "../src/rooms/writer/server/spawn";
 
 describe("abandoned run sweep", () => {
   it("closes runs whose PM chat is deleted or archived and day-old runs without a chat, and nothing else", async () => {

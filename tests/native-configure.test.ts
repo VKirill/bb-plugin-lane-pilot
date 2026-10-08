@@ -1,8 +1,8 @@
 import { afterEach, expect, it } from "vitest";
 import { createFakePluginHost, makePluginAgentConfigurationContext } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../src/database";
-import { finalizeNativeLaneBinding } from "../src/native-run";
+import { createRun, openDatabase, savePrototypeConfig, setRunThread } from "../src/rooms/storage/database";
+import { finalizeNativeLaneBinding } from "../src/rooms/native-agent/native-run";
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {

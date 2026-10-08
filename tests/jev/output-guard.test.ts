@@ -1,11 +1,11 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { openDatabase } from "../../src/database";
-import { forgetSecrets, registerSecrets } from "../../src/redact";
-import { GUARD_BLOCKED_KEY, GUARD_STATS_KEY, SHADOW_CHARS, SHADOW_SAMPLE, createOutputGuard, looksSensitive, withheldText } from "../../src/jev/output-guard";
-import { outputGuard } from "../../src/jev/judgments/output-guard";
-import { createJev } from "../../src/jev/run";
-import type { JevClient } from "../../src/jev/client";
+import { openDatabase } from "../../src/rooms/storage/database";
+import { forgetSecrets, registerSecrets } from "@lane-pilot/kit";
+import { GUARD_BLOCKED_KEY, GUARD_STATS_KEY, SHADOW_CHARS, SHADOW_SAMPLE, createOutputGuard, looksSensitive, withheldText } from "@lane-pilot/jev";
+import { outputGuard } from "@lane-pilot/jev/judgments/output-guard";
+import { createJev } from "@lane-pilot/jev";
+import type { JevClient } from "@lane-pilot/jev";
 
 // J-11: the redaction that always ran, then Jev asks «a secret value? instructions for the reader?» over the redacted text.
 afterEach(() => forgetSecrets());

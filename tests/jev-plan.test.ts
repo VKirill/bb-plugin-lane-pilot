@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { classifyPlan } from "../src/host-handlers";
-import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier } from "../src/jev-reasoning";
+import { classifyPlan } from "../src/rooms/host-worker/host-handlers";
+import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier } from "@lane-pilot/models";
 
 const { missingCredentialFile } = vi.hoisted(() => ({ missingCredentialFile:{ value:false } }));
 vi.mock("node:fs/promises", async (importOriginal) => {

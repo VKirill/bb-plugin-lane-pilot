@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase, saveProjectSetting } from "../../src/database";
+import { openDatabase, saveProjectSetting } from "../../src/rooms/storage/database";
 import { searchMemoryRecords, storeMemoryRecords } from "../../packages/memory-core/src/store";
 import { OBSERVED_QUARANTINE_MS } from "../../packages/memory-core/src/lifecycle";
-import { importFileMemory } from "../../src/server/memory-sync";
-import { sessionMemoryRpc } from "../../src/server/session-memory";
-import type { ServerCore } from "../../src/server/core";
-import type { Services } from "../../src/server/services";
+import { importFileMemory } from "../../src/rooms/memory/server/memory-sync";
+import { sessionMemoryRpc } from "../../src/rooms/memory/server/session-memory";
+import type { ServerCore } from "../../src/rooms/core/server/core";
+import type { Services } from "../../src/rooms/core/server/services";
 
 type Db = ReturnType<typeof openDatabase>;
 const newDb = (): Db => openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);

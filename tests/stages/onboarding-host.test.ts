@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { applyOnboardingPages } from "../../src/host-handlers";
+import { applyOnboardingPages } from "../../src/rooms/host-worker/host-handlers";
 
 const hash=(value:string)=>createHash("sha256").update(value,"utf8").digest("hex");
 const call=(input:Parameters<typeof applyOnboardingPages>[0])=>applyOnboardingPages(input,undefined as never);

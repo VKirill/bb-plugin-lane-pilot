@@ -1,0 +1,316 @@
+{
+ "moves": [
+  {
+   "from": "src/database.ts",
+   "to": "src/rooms/storage/database.ts"
+  },
+  {
+   "from": "src/jev/judgments/route-workflow.ts",
+   "to": "src/rooms/workflow/route-workflow.ts"
+  },
+  {
+   "from": "src/jev/route-model.ts",
+   "to": "src/rooms/workflow/route-model.ts"
+  },
+  {
+   "from": "src/server/architect-start.ts",
+   "to": "src/rooms/workflow/server/architect-start.ts"
+  },
+  {
+   "from": "src/server/invoice-pdf.ts",
+   "to": "src/rooms/workflow/server/invoice-pdf.ts"
+  },
+  {
+   "from": "src/server/rpc/workflow-ops.ts",
+   "to": "src/rooms/workflow/server/rpc/workflow-ops.ts"
+  },
+  {
+   "from": "src/server/rpc/workflows.ts",
+   "to": "src/rooms/workflow/server/rpc/workflows.ts"
+  },
+  {
+   "from": "src/server/workflow-agent-model.ts",
+   "to": "src/rooms/workflow/server/workflow-agent-model.ts"
+  },
+  {
+   "from": "src/server/workflow-agent.ts",
+   "to": "src/rooms/workflow/server/workflow-agent.ts"
+  },
+  {
+   "from": "src/server/workflow-architect.ts",
+   "to": "src/rooms/workflow/server/workflow-architect.ts"
+  },
+  {
+   "from": "src/server/workflow-executors.ts",
+   "to": "src/rooms/workflow/server/workflow-executors.ts"
+  },
+  {
+   "from": "src/server/workflow-goal-audit.ts",
+   "to": "src/rooms/workflow/server/workflow-goal-audit.ts"
+  },
+  {
+   "from": "src/server/workflow-invoice.ts",
+   "to": "src/rooms/workflow/server/workflow-invoice.ts"
+  },
+  {
+   "from": "src/server/workflow-library.ts",
+   "to": "src/rooms/workflow/server/workflow-library.ts"
+  },
+  {
+   "from": "src/server/workflow-models.ts",
+   "to": "src/rooms/workflow/server/workflow-models.ts"
+  },
+  {
+   "from": "src/server/workflow-ops.ts",
+   "to": "src/rooms/workflow/server/workflow-ops.ts"
+  },
+  {
+   "from": "src/server/workflow-preflight.ts",
+   "to": "src/rooms/workflow/server/workflow-preflight.ts"
+  },
+  {
+   "from": "src/server/workflow-router-model.ts",
+   "to": "src/rooms/workflow/server/workflow-router-model.ts"
+  },
+  {
+   "from": "src/server/workflow-runtime.ts",
+   "to": "src/rooms/workflow/server/workflow-runtime.ts"
+  },
+  {
+   "from": "src/server/workflow-step-executors.ts",
+   "to": "src/rooms/workflow/server/workflow-step-executors.ts"
+  },
+  {
+   "from": "src/server/workflow-tools.ts",
+   "to": "src/rooms/workflow/server/workflow-tools.ts"
+  },
+  {
+   "from": "src/server/workflow-triggers-live.ts",
+   "to": "src/rooms/workflow/server/workflow-triggers-live.ts"
+  },
+  {
+   "from": "src/server/workflow-triggers.ts",
+   "to": "src/rooms/workflow/server/workflow-triggers.ts"
+  },
+  {
+   "from": "src/server/workflow.ts",
+   "to": "src/rooms/workflow/server/workflow.ts"
+  },
+  {
+   "from": "src/ui/architect-launch.ts",
+   "to": "src/rooms/workflow/ui/architect-launch.ts"
+  },
+  {
+   "from": "src/ui/elk-shim.d.ts",
+   "to": "src/rooms/workflow/ui/elk-shim.d.ts"
+  },
+  {
+   "from": "src/ui/workflow-actions.tsx",
+   "to": "src/rooms/workflow/ui/workflow-actions.tsx"
+  },
+  {
+   "from": "src/ui/workflow-detail.tsx",
+   "to": "src/rooms/workflow/ui/workflow-detail.tsx"
+  },
+  {
+   "from": "src/ui/workflow-draft-detail.tsx",
+   "to": "src/rooms/workflow/ui/workflow-draft-detail.tsx"
+  },
+  {
+   "from": "src/ui/workflow-draft.ts",
+   "to": "src/rooms/workflow/ui/workflow-draft.ts"
+  },
+  {
+   "from": "src/ui/workflow-drafts.ts",
+   "to": "src/rooms/workflow/ui/workflow-drafts.ts"
+  },
+  {
+   "from": "src/ui/workflow-drill.ts",
+   "to": "src/rooms/workflow/ui/workflow-drill.ts"
+  },
+  {
+   "from": "src/ui/workflow-edit-fields.tsx",
+   "to": "src/rooms/workflow/ui/workflow-edit-fields.tsx"
+  },
+  {
+   "from": "src/ui/workflow-edit-model.ts",
+   "to": "src/rooms/workflow/ui/workflow-edit-model.ts"
+  },
+  {
+   "from": "src/ui/workflow-edit-panels.tsx",
+   "to": "src/rooms/workflow/ui/workflow-edit-panels.tsx"
+  },
+  {
+   "from": "src/ui/workflow-edit-state.ts",
+   "to": "src/rooms/workflow/ui/workflow-edit-state.ts"
+  },
+  {
+   "from": "src/ui/workflow-graph-parts.tsx",
+   "to": "src/rooms/workflow/ui/workflow-graph-parts.tsx"
+  },
+  {
+   "from": "src/ui/workflow-graph.tsx",
+   "to": "src/rooms/workflow/ui/workflow-graph.tsx"
+  },
+  {
+   "from": "src/ui/workflow-layout.ts",
+   "to": "src/rooms/workflow/ui/workflow-layout.ts"
+  },
+  {
+   "from": "src/ui/workflow-model-ops.ts",
+   "to": "src/rooms/workflow/ui/workflow-model-ops.ts"
+  },
+  {
+   "from": "src/ui/workflow-models.tsx",
+   "to": "src/rooms/workflow/ui/workflow-models.tsx"
+  },
+  {
+   "from": "src/ui/workflow-native-picker.tsx",
+   "to": "src/rooms/workflow/ui/workflow-native-picker.tsx"
+  },
+  {
+   "from": "src/ui/workflow-node-data.tsx",
+   "to": "src/rooms/workflow/ui/workflow-node-data.tsx"
+  },
+  {
+   "from": "src/ui/workflow-run.ts",
+   "to": "src/rooms/workflow/ui/workflow-run.ts"
+  },
+  {
+   "from": "src/ui/workflow-titles.ts",
+   "to": "src/rooms/workflow/ui/workflow-titles.ts"
+  },
+  {
+   "from": "src/ui/workflows.tsx",
+   "to": "src/rooms/workflow/ui/workflows.tsx"
+  },
+  {
+   "from": "src/workflow/actions.ts",
+   "to": "src/rooms/workflow/actions.ts"
+  },
+  {
+   "from": "src/workflow/agent-output.ts",
+   "to": "src/rooms/workflow/agent-output.ts"
+  },
+  {
+   "from": "src/workflow/artifacts.ts",
+   "to": "src/rooms/workflow/artifacts.ts"
+  },
+  {
+   "from": "src/workflow/builtin.ts",
+   "to": "src/rooms/workflow/builtin.ts"
+  },
+  {
+   "from": "src/workflow/capabilities.ts",
+   "to": "src/rooms/workflow/capabilities.ts"
+  },
+  {
+   "from": "src/workflow/catalog.ts",
+   "to": "src/rooms/workflow/catalog.ts"
+  },
+  {
+   "from": "src/workflow/contract.ts",
+   "to": "src/rooms/workflow/contract.ts"
+  },
+  {
+   "from": "src/workflow/cron.ts",
+   "to": "src/rooms/workflow/cron.ts"
+  },
+  {
+   "from": "src/workflow/draft-store.ts",
+   "to": "src/rooms/storage/draft-store.ts"
+  },
+  {
+   "from": "src/workflow/draft-test.ts",
+   "to": "src/rooms/workflow/draft-test.ts"
+  },
+  {
+   "from": "src/workflow/draft-view.ts",
+   "to": "src/rooms/workflow/draft-view.ts"
+  },
+  {
+   "from": "src/workflow/draft.ts",
+   "to": "src/rooms/workflow/draft.ts"
+  },
+  {
+   "from": "src/workflow/edge-label.ts",
+   "to": "src/rooms/workflow/edge-label.ts"
+  },
+  {
+   "from": "src/workflow/engine.ts",
+   "to": "src/rooms/workflow/engine.ts"
+  },
+  {
+   "from": "src/workflow/expr.ts",
+   "to": "src/rooms/workflow/expr.ts"
+  },
+  {
+   "from": "src/workflow/files.ts",
+   "to": "src/rooms/storage/files.ts"
+  },
+  {
+   "from": "src/workflow/goals.ts",
+   "to": "src/rooms/workflow/goals.ts"
+  },
+  {
+   "from": "src/workflow/handoff.ts",
+   "to": "src/rooms/workflow/handoff.ts"
+  },
+  {
+   "from": "src/workflow/journal.ts",
+   "to": "src/rooms/storage/journal.ts"
+  },
+  {
+   "from": "src/workflow/lower.ts",
+   "to": "src/rooms/workflow/lower.ts"
+  },
+  {
+   "from": "src/workflow/ops-store.ts",
+   "to": "src/rooms/storage/ops-store.ts"
+  },
+  {
+   "from": "src/workflow/preflight.ts",
+   "to": "src/rooms/workflow/preflight.ts"
+  },
+  {
+   "from": "src/workflow/reducers.ts",
+   "to": "src/rooms/workflow/reducers.ts"
+  },
+  {
+   "from": "src/workflow/router.ts",
+   "to": "src/rooms/workflow/router.ts"
+  },
+  {
+   "from": "src/workflow/run-stats.ts",
+   "to": "src/rooms/workflow/run-stats.ts"
+  },
+  {
+   "from": "src/workflow/schema.ts",
+   "to": "src/rooms/workflow/schema.ts"
+  },
+  {
+   "from": "src/workflow/store.ts",
+   "to": "src/rooms/storage/store.ts"
+  },
+  {
+   "from": "src/workflow/validate.ts",
+   "to": "src/rooms/workflow/validate.ts"
+  },
+  {
+   "from": "src/workflow/values.ts",
+   "to": "src/rooms/workflow/values.ts"
+  },
+  {
+   "from": "src/workflow/view-core.ts",
+   "to": "src/rooms/workflow/view-core.ts"
+  },
+  {
+   "from": "src/workflow/view.ts",
+   "to": "src/rooms/workflow/view.ts"
+  },
+  {
+   "from": "src/workflow-architect.ts",
+   "to": "src/rooms/workflow/workflow-architect.ts"
+  }
+ ]
+}

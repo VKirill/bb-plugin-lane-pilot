@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { modelCatalogOf } from "../../src/server/model-catalog-reader";
-import { withResolvedModel, type HelperRequest } from "../../src/server/workflow-agent";
-import { resolveAgentModel } from "../../src/server/workflow-agent-model";
-import { createWorkflowModels } from "../../src/server/workflow-models";
-import { resolveStepExecutors } from "../../src/server/workflow-step-executors";
-import { offeredOnHost, validateChoice, type ModelCatalog } from "../../src/workflow/model-catalog";
-import { modelsSection } from "../../src/workflow/capabilities";
-import { presetKey } from "../../src/workflow/model-presets";
-import type { ServerCore } from "../../src/server/core";
+import { modelCatalogOf } from "../../src/rooms/core/server/model-catalog-reader";
+import { withResolvedModel, type HelperRequest } from "../../src/rooms/workflow/server/workflow-agent";
+import { resolveAgentModel } from "../../src/rooms/workflow/server/workflow-agent-model";
+import { createWorkflowModels } from "../../src/rooms/workflow/server/workflow-models";
+import { resolveStepExecutors } from "../../src/rooms/workflow/server/workflow-step-executors";
+import { offeredOnHost, validateChoice, type ModelCatalog } from "@lane-pilot/models";
+import { modelsSection } from "@lane-pilot/workflow-engine";
+import { presetKey } from "@lane-pilot/models";
+import type { ServerCore } from "../../src/rooms/core/server/core";
 import { journalDb } from "./engine-helpers";
 
 /** Two machines: the Mac mini (where the project's PM chat lives) has Claude and Codex; the MacBook has Gemini through OpenCode as well. */

@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { edgeCaption, humanCondition } from "../../src/workflow/edge-label";
+import { edgeCaption, humanCondition } from "@lane-pilot/workflow-engine/ui";
 
 describe("the words on a connection", () => {
   it("says the owner's examples in plain Russian and English", () => {

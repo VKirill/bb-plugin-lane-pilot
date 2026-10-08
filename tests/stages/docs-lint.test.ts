@@ -3,8 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { BACKLINKS_MARK, blockingDocsFindings, buildBacklinks, expandCitationLists, pageCitations, unlinkedPages, buildDocsIndex, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "../../src/stages/docs-lint";
-import { commitDocs } from "../../src/verification/git-docs";
+import { BACKLINKS_MARK, blockingDocsFindings, buildBacklinks, expandCitationLists, pageCitations, unlinkedPages, buildDocsIndex, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "../../src/rooms/docs/docs-lint";
+import { commitDocs } from "../../src/rooms/verification/git-docs";
 
 const page = (fields: Record<string, string>, body: string) => [
   "---",

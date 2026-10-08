@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { MissingValueError, evalCondition, evalExpr, evalSpec, parseExpr, refOf, renderValue, valueSpecOf, ExprSyntaxError } from "../../src/workflow/expr";
-import type { EvalEnv } from "../../src/workflow/expr";
-import { normalizeWorkflow, parseTypeHint } from "../../src/workflow/schema";
+import { MissingValueError, evalCondition, evalExpr, evalSpec, parseExpr, refOf, renderValue, valueSpecOf, ExprSyntaxError } from "@lane-pilot/workflow-engine";
+import type { EvalEnv } from "@lane-pilot/workflow-engine";
+import { normalizeWorkflow, parseTypeHint } from "@lane-pilot/workflow-engine";
 
 /** A world of nodes that ran: `nodes[id]` is the latest output, absent means it has not run. */
 const world = (nodes: Record<string, Record<string, unknown>>, extra: { inputs?: Record<string, unknown>; mode?: string; visits?: Record<string, number>; item?: unknown } = {}): EvalEnv => ({

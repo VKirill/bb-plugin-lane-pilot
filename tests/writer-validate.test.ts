@@ -1,4 +1,4 @@
-import { countAttempts } from "../src/database";
+import { countAttempts } from "../src/rooms/storage/database";
 import { createHash } from "node:crypto";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it, vi } from "vitest";
@@ -19,10 +19,10 @@ import {
   setAttemptDirtBefore,
   setRunThread,
   transitionAttempt,
-} from "../src/database";
-import type { TaskV2 } from "../src/contracts";
-import { validateAcceptanceV2 } from "../src/acceptance-v2";
-import { familyDirtBaseline } from "../src/server/writer/verify";
+} from "../src/rooms/storage/database";
+import type { TaskV2 } from "../src/rooms/contracts";
+import { validateAcceptanceV2 } from "../src/rooms/tasks/acceptance-v2";
+import { familyDirtBaseline } from "../src/rooms/writer/server/verify";
 import { createFakeWorktreeHost } from "./own-worktree-host";
 
 // An in-place redispatch counts only the edits an earlier attempt of the same task family produced; owner or

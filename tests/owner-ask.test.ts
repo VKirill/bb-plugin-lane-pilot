@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { createOwnerAsk, OWNER_ASK_OPEN_GRACE_MS } from "../src/server/owner-ask";
-import { buildOwnerAskPayload, ownerAnswerText, ownerAskPayloadSchema, ownerAskTitle, resolveOwnerResponse } from "../src/owner-ask";
-import { IntegrationGateRunner } from "../src/server/integration-gate";
-import { askOwnerToJoin } from "../src/server/council";
+import { createOwnerAsk, OWNER_ASK_OPEN_GRACE_MS } from "../src/rooms/relay/server/owner-ask";
+import { buildOwnerAskPayload, ownerAnswerText, ownerAskPayloadSchema, ownerAskTitle, resolveOwnerResponse } from "../src/rooms/relay/owner-ask";
+import { IntegrationGateRunner } from "../src/rooms/verification/server/integration-gate";
+import { askOwnerToJoin } from "../src/rooms/council/server/council";
 
 afterEach(() => { vi.useRealTimers(); });
 

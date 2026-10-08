@@ -4,7 +4,7 @@ import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import plugin from "../server";
-import { setLocaleOverride } from "../i18n";
+import { setLocaleOverride } from "@lane-pilot/i18n";
 
 async function mount(locale: "en" | "ru") {
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });

@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { runSandboxedCommandOnHost } from "../../src/verification/sandbox";
+import { runSandboxedCommandOnHost } from "../../src/rooms/verification/sandbox";
 
 it.skipIf(process.platform !== "darwin" || !existsSync("/usr/bin/sandbox-exec"))(
   "lets a sandboxed check write its own HOME, as vitest does for its token",
@@ -47,7 +47,7 @@ it.skipIf(process.platform !== "darwin" || !existsSync("/usr/bin/sandbox-exec"))
 );
 
 it("finds the bb CLI folder from BB_CLI or PATH so sandboxed checks can run bb plugin build", async () => {
-  const { bbCliDir } = await import("../../src/verification/sandbox");
+  const { bbCliDir } = await import("../../src/rooms/verification/sandbox");
   expect(bbCliDir({ BB_CLI: "/opt/bb/dist/bb" })).toBe("/opt/bb/dist");
   expect(bbCliDir({ PATH: "relative:/nonexistent-dir" })).toBeNull();
 });

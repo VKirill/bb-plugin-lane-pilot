@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { assessEngineCapabilities, inspectEngineCapabilitiesDetailed } from "../../src/upstream-adapter/capabilities";
+import { assessEngineCapabilities, inspectEngineCapabilitiesDetailed } from "../../src/rooms/native-install/capabilities";
 
 const roots: string[] = [];
 

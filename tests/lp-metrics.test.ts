@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
-import { failureClass } from "../src/failure-class";
+import { failureClass } from "../src/rooms/runs/failure-class";
 
 // Audit round 2, item 19: the metrics count real projects only. The views of scripts/lp-metrics-views.sql classify an attempt the way
 // failureClass() does and tell a sandbox or drill attempt from a real one; these tests keep both equal to the code.

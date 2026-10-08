@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { complexityReport, noteOwnerQuestion, scanComplexity, scanPromises, spearman } from "../../src/learning/signals";
-import { listSignals } from "../../src/learning/store";
+import { complexityReport, noteOwnerQuestion, scanComplexity, scanPromises, spearman } from "../../src/rooms/learning/signals";
+import { listSignals } from "../../src/rooms/learning/store";
 import { NOW, database, jevWith } from "./helpers";
 
 describe("other signals, as observations (T8)", () => {

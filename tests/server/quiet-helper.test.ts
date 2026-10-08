@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { quietHelper } from "../../src/server/pm-spawn";
+import { quietHelper } from "../../src/rooms/core/server/pm-spawn";
 
 describe("quietHelper", () => {
   it("marks helpers Lane Pilot watches, not the PM, errands, specialists or root threads", () => {

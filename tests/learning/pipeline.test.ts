@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { createOwnerMessageHub, TURN_REQUESTED, type EventLike, type ThreadLike } from "../../src/anamnesis/owner-messages";
-import { createDigest } from "../../src/learning/digest";
-import { createDecisions } from "../../src/learning/decide";
-import { createExtractor } from "../../src/learning/extract";
-import { createLiveFeed } from "../../src/learning/live";
-import { createObserver } from "../../src/learning/observe";
-import { pmRulesBlock, pmRulesOf } from "../../src/learning/pm-rules";
-import { lpNotesPort, lpRulesPort } from "../../src/learning/rules-port";
-import { routeOf } from "../../src/learning/judgment";
-import { DAY_MS, getObservation, listItems } from "../../src/learning/store";
+import { createOwnerMessageHub, TURN_REQUESTED, type EventLike, type ThreadLike } from "../../src/rooms/anamnesis/owner-messages";
+import { createDigest } from "../../src/rooms/learning/digest";
+import { createDecisions } from "../../src/rooms/learning/decide";
+import { createExtractor } from "../../src/rooms/learning/extract";
+import { createLiveFeed } from "../../src/rooms/learning/live";
+import { createObserver } from "../../src/rooms/learning/observe";
+import { pmRulesBlock, pmRulesOf } from "../../src/rooms/learning/pm-rules";
+import { lpNotesPort, lpRulesPort } from "../../src/rooms/learning/rules-port";
+import { routeOf } from "../../src/rooms/learning/judgment";
+import { DAY_MS, getObservation, listItems } from "../../src/rooms/learning/store";
 import { NOW, config, database, jevWith } from "./helpers";
 
 // The whole path on fixtures, as a dry run: an owner's correction in a PM chat -> the hub -> Jev and the second opinion -> the extractor ->

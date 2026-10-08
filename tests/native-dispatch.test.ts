@@ -1,11 +1,11 @@
 import { afterEach, expect, it } from "vitest";
 import { createFakePluginHost, makeMessageDispatchHookContext } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { compileMainAgentProfile } from "../src/agent-profile";
-import { findOpenNativeRun, getActivation, getRun, openDatabase, savePrototypeConfig } from "../src/database";
-import { sessionOverrideAgentsJson } from "../src/native-agent-definition";
-import { nativeSelectionMarker } from "../src/native-session";
-import { prepareNativeSessionRecord, traceNativeDispatch } from "../src/native-dispatch";
+import { compileMainAgentProfile } from "../src/rooms/native-agent/agent-profile";
+import { findOpenNativeRun, getActivation, getRun, openDatabase, savePrototypeConfig } from "../src/rooms/storage/database";
+import { sessionOverrideAgentsJson } from "../src/rooms/native-agent/native-agent-definition";
+import { nativeSelectionMarker } from "../src/rooms/native-agent/native-session";
+import { prepareNativeSessionRecord, traceNativeDispatch } from "../src/rooms/native-agent/native-dispatch";
 
 const stockNativeAgentsJson = () => sessionOverrideAgentsJson({
   agentId: "dev-orchestrator",

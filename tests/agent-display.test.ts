@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { compileMainAgentProfile, MAIN_AGENT_PROFILE_IDS } from "../src/agent-profile";
-import { agentBadgeChart, agentPickerLabel, STOCK_AGENT_SEED_DESCRIPTIONS } from "../src/agent-display";
-import { t, setLocaleOverride } from "../i18n";
+import { compileMainAgentProfile, MAIN_AGENT_PROFILE_IDS } from "../src/rooms/native-agent/agent-profile";
+import { agentBadgeChart, agentPickerLabel, STOCK_AGENT_SEED_DESCRIPTIONS } from "../src/rooms/native-agent/agent-display";
+import { t, setLocaleOverride } from "@lane-pilot/i18n";
 
 describe("agent picker display labels", () => {
   it("maps stock seed and bundled names and keeps custom names", () => {

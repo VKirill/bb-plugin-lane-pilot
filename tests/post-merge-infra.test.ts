@@ -1,8 +1,8 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it, vi } from "vitest";
-import { taskV2Schema } from "../src/contracts";
-import { isEnvironmentCheckFailure } from "../src/failure-class";
-import { createWriterFinish } from "../src/server/writer/finish";
+import { taskV2Schema } from "../src/rooms/contracts";
+import { isEnvironmentCheckFailure } from "../src/rooms/runs/failure-class";
+import { createWriterFinish } from "../src/rooms/writer/server/finish";
 
 const task = taskV2Schema.parse({
   schema_version: 2, id: "site-fix", title: "Fix the site", risk: "medium", lane: "writer", project_cwd: "/work/wt",

@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
-import { openDatabase, saveProjectSetting, savePrototypeConfig } from "../../src/database";
+import { openDatabase, saveProjectSetting, savePrototypeConfig } from "../../src/rooms/storage/database";
 
 const projectId = "docs-auto-project";
 const factsFor = (path: string) => path.includes("ads")

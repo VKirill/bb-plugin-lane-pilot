@@ -1,5 +1,5 @@
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
-import { hostContract } from "./src/contracts";
+import { hostContract } from "./src/rooms/contracts";
 import {
   connectOpencode,
   classifyPlan,
@@ -60,11 +60,11 @@ import {
   prepareNativeClaudeHost,
   prepareOpencodeMinimalHost,
   prepareBbShimHost,
-} from "./src/host-handlers";
-import { sessionInventory } from "./src/session-inventory";
-import { nativeInstallHost } from "./src/native-install-host";
-import { provideJevKey } from "./src/verification/docs-jev";
-import { anamnesisHandler } from "./src/anamnesis/host";
+} from "./src/rooms/host-worker";
+import { sessionInventory } from "./src/rooms/native-agent";
+import { nativeInstallHost } from "./src/rooms/native-install/native-install-host";
+import { provideJevKey } from "./src/rooms/verification";
+import { anamnesisHandler } from "./src/rooms/anamnesis";
 
 /** Takes the Env Catalog key the server attached to a Jev call before the handler runs. */
 const withJevKey = <I extends { jevApiKey?: string }, C, O>(handler: (input: I, context: C) => O | Promise<O>) => async (input: I, context: C) => {

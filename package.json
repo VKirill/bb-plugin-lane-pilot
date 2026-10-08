@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-lane-pilot",
-  "version": "0.1.200",
+  "version": "0.1.199",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || ^24.0.0 || ^26.0.0",
@@ -86,6 +86,7 @@
     "typecheck": "tsc --noEmit",
     "build": "bb plugin build",
     "check:composer-hook": "node scripts/check-composer-hook.mjs",
+    "check:deps": "npx --yes dependency-cruiser@16 --config .dependency-cruiser.cjs --output-type err server.ts host.ts app.tsx src packages",
     "test:layout": "node tests/layout/run.mjs",
     "check": "npm test && npm run typecheck && npm run build && npm run test:layout"
   },

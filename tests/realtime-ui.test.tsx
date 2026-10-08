@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { LIVE_FALLBACK_MS, OFFLINE_POLL_MS } from "../src/realtime-channel";
+import { LIVE_FALLBACK_MS, OFFLINE_POLL_MS } from "@lane-pilot/ui-kit/realtime-channel";
 
 afterEach(() => cleanup());
 

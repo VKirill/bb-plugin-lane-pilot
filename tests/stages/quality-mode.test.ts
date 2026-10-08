@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { taskV2Schema } from "../../src/contracts";
-import { shouldRunPlanCritique } from "../../src/stages/critique";
-import { parseCodeCritiqueSettings } from "../../src/stages/code-critique";
-import { applyQualityMode, browserQaRequired, resolveQualityMode } from "../../src/stages/quality-mode";
-import { validateTaskV2 } from "../../src/task-v2";
+import { taskV2Schema } from "../../src/rooms/contracts";
+import { shouldRunPlanCritique } from "../../src/rooms/critique/critique";
+import { parseCodeCritiqueSettings } from "../../src/rooms/critique/code-critique";
+import { applyQualityMode, browserQaRequired, resolveQualityMode } from "../../src/rooms/critique/quality-mode";
+import { validateTaskV2 } from "../../src/rooms/tasks/task-v2";
 
 const base = {
   schema_version: 2, id: "t", title: "T", risk: "low", lane: "writer", project_cwd: "/w", read_first: [], interfaces: [], invariants: [], out_of_scope: [],

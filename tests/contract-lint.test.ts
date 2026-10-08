@@ -1,11 +1,11 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../server";
-import type { TaskV2 } from "../src/contracts";
+import type { TaskV2 } from "../src/rooms/contracts";
 import {
   createAttempt, createRun, createTask, listAttemptsForTask, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread, transitionAttempt,
-} from "../src/database";
-import { lintContract, lintProbePaths, lintReply, runnerFilterArgs, type LintInput, type PathKind } from "../src/server/contract-lint";
+} from "../src/rooms/storage/database";
+import { lintContract, lintProbePaths, lintReply, runnerFilterArgs, type LintInput, type PathKind } from "../src/rooms/tasks/server/contract-lint";
 
 const root = "/tmp/writer";
 const baseTask: TaskV2 = {
@@ -70,9 +70,9 @@ describe("contract lint rules", () => {
 
   describe("expected_outputs", () => {
     it("rejects a file outside owns_paths with the fix", () => {
-      const { errors } = lint({ owns_paths:["src/a.ts"], expected_outputs:["src/a.ts", "src/stages/contract.ts"] }, {}, { "src/a.ts":"file" });
+      const { errors } = lint({ owns_paths:["src/a.ts"], expected_outputs:["src/a.ts", "packages/contracts/src/stage-contract.ts"] }, {}, { "src/a.ts":"file" });
       expect(codes({ errors, warnings:[] })).toEqual(["output_unowned"]);
-      expect(errors[0]!.message).toContain("src/stages/contract.ts");
+      expect(errors[0]!.message).toContain("packages/contracts/src/stage-contract.ts");
       expect(errors[0]!.message).toContain("add it (or its folder) to owns_paths");
     });
     it("leaves bare names, prose and a folder under owns_paths alone", () => {

@@ -5,12 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
-import { openDatabase } from "../src/database";
-import { createSelfRepair } from "../src/server/self-repair";
-import type { ServerCore } from "../src/server/core";
-import { worktreeCreateError } from "../src/server/writer/spawn";
-import { createWorktree, integrateWorktree, workspaceGitLayout } from "../src/verification/git-integrate";
-import { gitOwnershipChangedPaths, resolveGitOwnershipBase } from "../src/verification/git-ownership";
+import { openDatabase } from "../src/rooms/storage/database";
+import { createSelfRepair } from "../src/rooms/self-repair/server/self-repair";
+import type { ServerCore } from "../src/rooms/core/server/core";
+import { worktreeCreateError } from "../src/rooms/writer/server/spawn";
+import { createWorktree, integrateWorktree, workspaceGitLayout } from "../src/rooms/verification/git-integrate";
+import { gitOwnershipChangedPaths, resolveGitOwnershipBase } from "../src/rooms/verification/git-ownership";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
 

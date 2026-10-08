@@ -1,13 +1,13 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { NodeExecutor, StepContext } from "../../src/workflow/engine";
-import { lowerWorkflow } from "../../src/workflow/lower";
-import type { Workflow } from "../../src/workflow/schema";
-import { loadWorkflowStore } from "../../src/workflow/store";
-import type { WorkflowStore } from "../../src/workflow/store";
-import { loadWorkflow, validateWorkflow } from "../../src/workflow/validate";
-import { BUILTIN_SOURCES } from "../../src/workflow/builtin";
+import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
+import { lowerWorkflow } from "@lane-pilot/workflow-engine";
+import type { Workflow } from "@lane-pilot/workflow-engine";
+import { loadWorkflowStore } from "@lane-pilot/workflow-engine";
+import type { WorkflowStore } from "@lane-pilot/workflow-engine";
+import { loadWorkflow, validateWorkflow } from "@lane-pilot/workflow-engine";
+import { BUILTIN_SOURCES } from "../../src/rooms/workflow/builtin";
 import { engineOn, journalDb, ok, rows, stepStates, wf } from "./engine-helpers";
 
 /**

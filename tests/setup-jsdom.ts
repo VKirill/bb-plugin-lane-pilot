@@ -27,7 +27,7 @@ if (typeof window !== "undefined") {
   }
 }
 
-// Tests script the host call by call; the one that checks the job path switches it on (tests/server/host-jobs.test.ts).
+// Tests script the host call by call; the one that checks the job path switches it on (packages/host-calls/tests/host-jobs.test.ts).
 process.env.LANE_PILOT_HOST_JOBS ??= "0";
 // Fake threads change state without BB's events, so tests watch them by polling; tests/thread-signals.test.ts switches the events on.
 process.env.LANE_PILOT_THREAD_SIGNALS ??= "0";

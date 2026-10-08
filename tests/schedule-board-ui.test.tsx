@@ -2,9 +2,9 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { setLocaleOverride } from "../i18n";
-import { COLUMNS, conflictKeys, cronWords, groupByColumn, viewDays } from "../src/ui/schedule-model";
-import type { RunView, ScheduleView } from "../src/schedule/views";
+import { setLocaleOverride } from "@lane-pilot/i18n";
+import { COLUMNS, conflictKeys, cronWords, groupByColumn, viewDays } from "../src/rooms/schedule/ui/schedule-model";
+import type { RunView, ScheduleView } from "../src/rooms/schedule/views";
 
 configure({ asyncUtilTimeout: 5_000 });
 vi.setConfig({ testTimeout: 20_000 });
@@ -44,7 +44,7 @@ type Handlers = Record<string, (input: any) => unknown>;
 async function mount(handlers: Handlers = {}, props: { projectId?: string | null; schedules?: ScheduleView[] } = {}) {
   const app = await loadPluginApp(() => import("../app"));
   void app;
-  const { ScheduleBoard } = await import("../src/ui/schedule-board");
+  const { ScheduleBoard } = await import("../src/rooms/schedule/ui/schedule-board");
   const projectId = props.projectId === undefined ? "proj_a" : props.projectId;
   const list = props.schedules ?? fixtures();
   return renderSlot({ component: () => <ScheduleBoard projectId={projectId} projects={[{ id: "proj_a", name: "Alpha" }, { id: "proj_b", name: "Beta" }]} locale="en" /> }, {}, {

@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { migrations, openDatabase, searchMemoryRecords, storeMemoryRecords } from "../../src/database";
-import { memoryContext, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../../src/stages/memory";
+import { migrations, openDatabase, searchMemoryRecords, storeMemoryRecords } from "../../src/rooms/storage/database";
+import { memoryContext, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../../src/rooms/memory/memory";
 
 describe("project memory stage", () => {
   it("validates JSON output, rejects secret-like content, and enforces per-output budgets", () => {
