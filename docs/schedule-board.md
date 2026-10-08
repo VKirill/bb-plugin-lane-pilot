@@ -99,7 +99,11 @@ re-read `schedule_list`. The usual slow poll covers a missed signal.
 
 ## Who may change a schedule
 
-- The owner's screen (the board) and their terminal (`bb lane-pilot schedule ...`) change schedules directly.
+- The owner's screen (the board) and their terminal (`bb lane-pilot schedule ...`) change schedules directly, once the core can tell the owner from an
+  agent (owner login). Until then the core only passes on what the client says about itself, which an agent can say too: such a call is an
+  `unverified-owner`, and `schedule_upsert`, `schedule_resume` and `schedule_run_now` (and the CLI `create|update|resume|run-now`) meet the owner's
+  form in the PM chat (the whole command is shown); `pause`, `delete` and `cancel-run` only stop things and pass. An agent's call (the per-thread
+  token, or a CLI call that names a thread) always meets the form; a call with no marks (`curl`) is refused (`src/server/owner-gate.ts`, `RPC_CLASS`).
 - An agent never does: `schedule_upsert`, `schedule_delete`, `schedule_pause`, `schedule_resume`, `schedule_run_now`, `schedule_cancel_run` over
   `bb plugin rpc call`, and `bb lane-pilot schedule create|update|delete|pause|resume|run-now|cancel-run`, are refused by the shell guard for
   every Lane Pilot agent (`lane-stack/hooks/guard_shell.py`; the guard is installed from `~/.agents/hooks` on each machine, reinstall it after this lands).

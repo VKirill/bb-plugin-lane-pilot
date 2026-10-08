@@ -2,7 +2,7 @@ import type { Services } from "./services";
 
 /**
  * `bb lane-pilot schedule <list|show|create|update|pause|resume|run-now|delete|history|preview>`: the schedule board from a terminal.
- * The commands that change anything are kept from an agent's shell by the guard; here they act for whoever types them.
+ * The commands that change anything are kept from an agent's shell by the guard and by the caller check in cli.ts (owner-gate.ts).
  */
 export const SCHEDULE_USAGE = [
   "bb lane-pilot schedule list [--project <id>] [--json]",
@@ -18,6 +18,18 @@ export const SCHEDULE_USAGE = [
 ].join("\n");
 
 type Result = { exitCode: number; stdout: string };
+
+/** The schedule RPC a subcommand is the twin of, for the caller check; the reading subcommands have none. */
+export function scheduleCliMethod(sub: string | undefined): "schedule_upsert" | "schedule_pause" | "schedule_resume" | "schedule_run_now" | "schedule_delete" | undefined {
+  switch (sub) {
+    case "create": case "update": return "schedule_upsert";
+    case "pause": return "schedule_pause";
+    case "resume": return "schedule_resume";
+    case "run-now": return "schedule_run_now";
+    case "delete": return "schedule_delete";
+    default: return undefined;
+  }
+}
 const FLAGS_WITH_VALUE = new Set(["--project", "--runs", "--limit", "--file"]);
 
 function parse(args: string[]): { positional: string[]; flags: Map<string, string>; json: boolean } {

@@ -20,15 +20,15 @@ import { canaryRpc } from "./canary";
 import { sessionMemoryRpc } from "./session-memory";
 import { createWorkflowArchitect } from "./workflow-architect";
 import { architectStartRpc } from "./architect-start";
-import { createOwnerGate, guardOwnerOnlyRpc } from "./owner-gate";
+import { guardRpc, ownerGateFor } from "./owner-gate";
 import { timeRpcHandlers } from "./rpc-timing";
 import { anamnesisFor } from "../anamnesis/wiring";
 
 /** One handler object from the five groups; each group carries the exact contract keys it implements. */
 export function registerRpc(ctx: ServerCore, services: Services) {
-  // The methods that change configuration or runs answer to the owner only (owner-gate.ts); every call is timed (rpc-timing.ts).
-  const gate = createOwnerGate({ db: ctx.db, ownerAsk: ctx.ownerAsk, log: ctx.log });
-  ctx.bb.rpc.register(rpcContract, timeRpcHandlers(guardOwnerOnlyRpc({
+  // Every method that is not a plain read answers to the owner (owner-gate.ts, RPC_CLASS names each); every call is timed (rpc-timing.ts).
+  const gate = ownerGateFor(ctx);
+  ctx.bb.rpc.register(rpcContract, timeRpcHandlers(guardRpc({
     ...preferencesRpc(ctx, services),
     ...runsRpc(ctx, services),
     ...settingsRpc(ctx, services),
