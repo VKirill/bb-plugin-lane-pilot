@@ -658,7 +658,12 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       if(!resume) {
         if(!docsScheduleDue(now,docsSettings.hour,null)||!claimDailySchedule(db,projectId,"docs-maintenance",today)) continue;
       }
-      await services.runDocsMaintenance({threadId:activation.pm_thread_id,projectId,runId:run.id,taskId});
+      // One project's failure must not leave the projects after it unprocessed.
+      try{ await services.runDocsMaintenance({threadId:activation.pm_thread_id,projectId,runId:run.id,taskId}); }
+      catch(cause){
+        if(signal?.aborted||pluginStopped(cause)) throw cause;
+        bb.log.warn(`Lane Pilot docs maintenance failed for project ${projectId}: ${cause instanceof Error?cause.message:String(cause)}`);
+      }
     }
   }
 

@@ -946,6 +946,39 @@ describe("stage → native writer → receipt", () => {
     expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="docs-maintenance")).toHaveLength(1);
     await harness.lifecycle.dispose();
   });
+  // 2026-10-08: docs-maintenance-hourly threw "running -> skipped" every hour on the hub: the stage was opened before the skip was decided.
+  it("docs turned off skip the stage from pending and close a receipt left running without a child as canceled",async()=>{
+    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"docs.enabled":false});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write and verify the fixture",task},{threadId:pmThreadId,projectId});
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
+    const skipped=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id},{threadId:pmThreadId,projectId})));
+    expect(skipped).toMatchObject({state:"skipped",reason:"disabled_by_project_setting"});
+    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="docs-maintenance")).toMatchObject({state:"skipped",reason:"disabled_by_project_setting"});
+    db.prepare("UPDATE lane_pilot_stage_receipt SET state='running' WHERE run_id=? AND task_id=? AND stage_id='docs-maintenance'").run("stage-run",task.id);
+    const closed=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id},{threadId:pmThreadId,projectId})));
+    expect(closed).toMatchObject({state:"canceled",reason:"disabled_by_project_setting"});
+    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="docs-maintenance")).toMatchObject({state:"canceled",reason:"disabled_by_project_setting"});
+    expect(spawned.some((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="docs-maintenance")).toBe(false);
+    await harness.lifecycle.dispose();
+  });
+  it("hourly docs schedule logs a project that fails and does not throw",async()=>{
+    const {db,harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
+      "docs.enabled":true,"docs.maintain":true,"docs.since":"7 days ago","docs.page_cap":3,"docs.hour":(new Date().getHours()+1)%24,
+      "docs.provider":"critic","docs.model":"critic-model",
+    });
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write and verify the fixture",task},{threadId:pmThreadId,projectId});
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
+    claimActivation(db,{projectId,pmThreadId,runId:"stage-run"});
+    saveStageReceipt(db,{
+      runId:"stage-run",taskId:task.id,stageId:"docs-maintenance",contractVersion:1,state:"running",
+      inputSha256:"a".repeat(64),outputSha256:null,attempt:0,providerId:"critic",model:"critic-model",
+      threadId:null,reason:"docs_spawn_requested",updatedAt:Date.now(),result:null,
+    });
+    db.prepare("UPDATE lane_pilot_task SET kind='cli' WHERE id=?").run(task.id);
+    await harness.runSchedule("docs-maintenance-hourly");
+    expect(harness.logEntries.some((entry)=>entry.level==="warn"&&entry.message.includes(`Lane Pilot docs maintenance failed for project ${projectId}`))).toBe(true);
+    await harness.lifecycle.dispose();
+  });
   it("returns a read-only onboarding preview, then applies only the exact reviewed hash with a receipt",async()=>{
     const output=JSON.stringify({summary:"Add a concise onboarding guide",edits:[{path:"docs/fixture.md",expectedSha256:createHash("sha256").update("# Documentation fixture\n\nDocs are maintained with a bounded, reviewed stage.\n").digest("hex"),content:"# Onboarding guide\n"}]});
     const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{

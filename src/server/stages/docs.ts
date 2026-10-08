@@ -42,26 +42,28 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
     if (existing && !["pending","running"].includes(existing.state)) {
       return {runId:args.runId,taskId:args.taskId,state:existing.state,reason:"docs maintenance already has a receipt; create a new task for another run",stage:existing};
     }
+    // A pass that is not needed ends before the stage opens: running -> skipped is not a legal move. A receipt a crashed pass left
+    // running with no child ends canceled for the same reason (the hourly schedule tripped on it for every project after the first).
+    if (!(existing?.threadId || docsChildSnapshot(existing?.result))) {
+      let skipReason:string|null = null;
+      // Auto mode: a folder that is not a working codebase on this machine gets no docs after its tasks either.
+      if (docsSettings.mode === "auto" && docsSettings.enabled && docsSettings.maintain) {
+        const verdict = await services.docsVerdict(args.projectId, { hostId:config.hostId, path:run.writer_workspace_path! }).catch(() => null);
+        if (verdict && !verdict.need) skipReason = `docs_not_needed:${verdict.reason}`;
+      }
+      if (!skipReason && (!docsSettings.enabled || !docsSettings.maintain)) skipReason = !docsSettings.enabled?"disabled_by_project_setting":"docs_maintain_disabled";
+      if (skipReason) {
+        const state = existing?.state === "running" ? "canceled" as const : "skipped" as const;
+        recordStage(db,{...base,state,reason:skipReason});
+        return {runId:args.runId,taskId:args.taskId,state,reason:skipReason};
+      }
+    }
     if (!existing) recordStage(db,{...base,state:"pending",providerId:docsProviderId,model:docsModelId});
     const claimed = listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
     if (claimed?.state === "pending") {
       recordStage(db,{...base,state:"running",providerId:docsProviderId,model:docsModelId,threadId:claimed.threadId,result:claimed.result,reason:"docs_spawn_requested"});
     }
     let receipt = listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");
-    const liveChild = Boolean(receipt?.threadId || docsChildSnapshot(receipt?.result));
-    // Auto mode: a folder that is not a working codebase on this machine gets no docs after its tasks either.
-    if (docsSettings.mode === "auto" && docsSettings.enabled && docsSettings.maintain && !liveChild) {
-      const verdict = await services.docsVerdict(args.projectId, { hostId:config.hostId, path:run.writer_workspace_path! }).catch(() => null);
-      if (verdict && !verdict.need) {
-        const reason = `docs_not_needed:${verdict.reason}`;
-        recordStage(db,{...base,state:"skipped",reason});
-        return {runId:args.runId,taskId:args.taskId,state:"skipped",reason};
-      }
-    }
-    if ((!docsSettings.enabled || !docsSettings.maintain) && !liveChild) {
-      recordStage(db,{...base,state:"skipped",reason:!docsSettings.enabled?"disabled_by_project_setting":"docs_maintain_disabled"});
-      return {runId:args.runId,taskId:args.taskId,state:"skipped",reason:!docsSettings.enabled?"disabled_by_project_setting":"docs_maintain_disabled"};
-    }
     let threadId:string|null=receipt?.threadId??null;
     const changed:Array<{path:string;sha256:string}> = [];
     const observeMs=Math.min(240, Math.max(1, args.timeoutSec ?? 60)) * 1000;

@@ -7,6 +7,10 @@ From a self-repair of «Lane Pilot nightly docs failed for <path> docs» (treba 
 - **A page over 40000 bytes still exists for the link check.** Oversized pages are left out of the pages the lint reads, so every link to one was reported as a link to a missing page: 16 of SelfyStudio's 17 findings on 2026-10-08 pointed at `docs/capabilities.md`, the one real finding being its size. `lintDocsPages` takes the oversized paths as present.
 - **The repair round is reminded of the page size limit.** That SelfyStudio round grew the 35 KB catalogue past 40000 bytes while fixing coverage findings and had no round left to split it; the repair prompt now says to keep pages under 30000 bytes and put new content on a linked page.
 
+## Audit 2026-10-08 round 2 — P0 items 1–6
+
+- **`docs-maintenance-hourly` no longer fails every hour with `running -> skipped` (item 5).** `runDocsMaintenance` opened the stage (`pending → running`) before it decided the pass was not needed (docs off, or the folder is not worth docs), and `running → skipped` is not a legal stage move: the hourly schedule threw on that project, and since the per-project loop had no `try`, every project after it was skipped; the stage stayed `running` for good (hub: layout-A3 since 05:00). The skip is now decided before the stage opens (`pending → skipped`); a receipt a crashed pass left `running` with no child ends `canceled` with the same reason. `runScheduledDocsMaintenance` wraps each project, logs a failure as a warning and goes on (a stop of the plugin still aborts).
+
 ## 0.1.193
 
 Audit 2026-10-08 urgent items 1–7 (0.1.192 was never deployed; its changes ship here).
