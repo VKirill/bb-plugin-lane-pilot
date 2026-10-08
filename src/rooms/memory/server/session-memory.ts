@@ -3,9 +3,9 @@ import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, upsertLessonProposal } from "@lane-pilot/run-insights";
 import { parseMemoryCandidates, searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 import type { rpcContract } from "../../contracts";
-import { adoptRuleProposal, memorySettingsFor } from "../../self-repair/server/insights";
-import type { ServerCore } from "../../core/server/core";
-import type { Services } from "../../core/server/services";
+import { adoptRuleProposal, memorySettingsFor } from "../../self-repair/server";
+import type { ServerCore } from "../../core/server";
+import type { Services } from "../../core/server";
 import { sha256Hex } from "@lane-pilot/kit";
 
 /**

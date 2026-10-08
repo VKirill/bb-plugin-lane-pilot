@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { EXTERNAL_OPS } from "../runs/constants";
+import { EXTERNAL_OPS } from "../runs";
 
 export const INSTALL_PHASES = ["npm", "mkdir", "rsync", "settings", "install_json"] as const;
 export type InstallPhase = (typeof INSTALL_PHASES)[number];

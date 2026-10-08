@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { EXTERNAL_OPS } from "../runs/constants";
+import { EXTERNAL_OPS } from "../runs";
 
 const execFileAsync = promisify(execFile);
 

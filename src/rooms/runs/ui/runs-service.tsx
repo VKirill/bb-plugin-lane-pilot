@@ -19,9 +19,9 @@ import { Label } from "@lane-pilot/ui-kit";
 import { EXTERNAL_OPS_BY_ACTION } from "../constants";
 import { Disclosure } from "@lane-pilot/ui-kit";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
-import { CARD_BODY, CARD_HEAD, COEXISTENCE_MANAGER_KEYS, COEXISTENCE_VALUE_KEYS, compatibilityAliasRows, reasonKey, sectionKey } from "../../ui-shell/ui/page-model";
-import { FieldControl, StatusBadge, StatusRow } from "../../settings/ui/setting-controls";
-import type { LpPage } from "../../ui-shell/ui/use-lp-page";
+import { CARD_BODY, CARD_HEAD, COEXISTENCE_MANAGER_KEYS, COEXISTENCE_VALUE_KEYS, compatibilityAliasRows, reasonKey, sectionKey } from "../../ui-shell/ui";
+import { FieldControl, StatusBadge, StatusRow } from "../../settings/ui";
+import type { LpPage } from "../../ui-shell/ui";
 
 /** The machine and the install of Lane Pilot on it, and the technical details behind the settings. */
 export function ServiceSegment({ page }: { page: LpPage }) {

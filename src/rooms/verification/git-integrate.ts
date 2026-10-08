@@ -6,8 +6,8 @@ import { dirname, isAbsolute, join, relative } from "node:path";
 import { spawnAsync } from "@lane-pilot/kit";
 import { isBookkeepingPath } from "@lane-pilot/settings-catalog";
 import { matchOwnsPath } from "@lane-pilot/kit";
-import { REPLAY_CHECK_FAILED } from "../runs/failure-class";
-import { isAllowedProjectLifePath } from "../project-life/project-life";
+import { REPLAY_CHECK_FAILED } from "../runs";
+import { isAllowedProjectLifePath } from "../project-life";
 
 export type GitIntegration = {
   status:"merged"|"up-to-date"|"conflict"|"failed"|"busy";

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { ThreadChat, useBbContext, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
-import { useLpRealtime } from "../../ui-shell/ui/use-lp-realtime";
+import { useLpRealtime } from "../../ui-shell/ui";
 import type { rpcContract } from "../../contracts";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Icon, type IconName } from "@lane-pilot/ui-kit";

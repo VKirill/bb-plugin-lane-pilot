@@ -2,7 +2,7 @@ import { MAIN_AGENT_PROFILE_IDS, compileEffectiveMainAgent, compileMainAgentProf
 import { sessionOverrideAgentsJson } from "../native-agent-definition";
 import { prepareNativeSessionRecord } from "../native-dispatch";
 import { nativeAgentCliId, type NativeSelection } from "../native-session";
-import type { ServerCore } from "../../core/server/core";
+import type { ServerCore } from "../../core/server";
 
 /**
  * A stored profile selection that turns the next Claude Code send of a thread into the given Lane Pilot agent:

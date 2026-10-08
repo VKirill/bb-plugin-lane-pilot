@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
 import { CONTROL_H } from "@lane-pilot/ui-kit";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
-import { useLpRealtime } from "../../ui-shell/ui/use-lp-realtime";
+import { useLpRealtime } from "../../ui-shell/ui";
 import { WorkflowDetail, type NodePanelRenderer } from "./workflow-detail";
 import { WorkflowDraftDetail } from "./workflow-draft-detail";
 import { listDrafts, startArchitect, type DraftRow } from "./workflow-drafts";

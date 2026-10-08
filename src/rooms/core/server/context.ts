@@ -1,5 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { LanePilotDatabase } from "../../storage/database";
+import type { LanePilotDatabase } from "../../storage";
 import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import type { Realtime } from "./realtime";
 

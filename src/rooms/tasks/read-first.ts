@@ -1,4 +1,4 @@
-import { parseExecutionLineWindows, type PathWindows } from "../native-install/capabilities";
+import { parseExecutionLineWindows, type PathWindows } from "../native-install";
 
 export type ReadFirstHint = PathWindows;
 

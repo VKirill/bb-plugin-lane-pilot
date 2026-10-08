@@ -1,9 +1,9 @@
 import { resolve } from "node:path";
 import type { ScheduleTask } from "../model";
 import type { WhereView } from "../views";
-import type { ServerCore } from "../../core/server/core";
-import type { Services } from "../../core/server/services";
-import { stringAt } from "../../core/server/values";
+import type { ServerCore } from "../../core/server";
+import type { Services } from "../../core/server";
+import { stringAt } from "../../core/server";
 
 /**
  * Where scheduled work runs, read from BB: the project's name, the Project Folders section the project's PM chat is filed in (the thread's

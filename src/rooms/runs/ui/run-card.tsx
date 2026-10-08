@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useBbNavigate, useRpc, type PluginMessageDirectiveProps } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../contracts";
 import { t, type I18nKey } from "@lane-pilot/i18n";
-import { HELPER_PANEL_ACTION } from "../../native-agent/ui/helper-threads";
+import { HELPER_PANEL_ACTION } from "../../native-agent/ui";
 
 /** The directive a PM message uses for its run: `::lane-run{id="lprun_…"}` (the PM's per-run instructions name it). */
 export const RUN_CARD_DIRECTIVE = "lane-run";

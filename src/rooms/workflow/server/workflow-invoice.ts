@@ -1,7 +1,7 @@
 import { hardProblems, invoiceCheck, type InvoiceCheckDecision, type InvoiceCheckInput } from "@lane-pilot/jev/judgments/invoice-check";
 import { jev } from "@lane-pilot/jev";
 import type { NodeExecutor, WorkflowEngine } from "../engine";
-import type { ServerCore } from "../../core/server/core";
+import type { ServerCore } from "../../core/server";
 import { checkInvoicePdf } from "./invoice-pdf";
 import type { ChainRuntime } from "./workflow-runtime";
 

@@ -1,21 +1,21 @@
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { z } from "zod";
-import { findOpenNativeRun, recordSecretIssuance, getRun, getRunSettingsScopes, loadProjectSettings } from "../../storage/database";
+import { findOpenNativeRun, recordSecretIssuance, getRun, getRunSettingsScopes, loadProjectSettings } from "../../storage";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { QA_HOST_KEY } from "../qa-host";
-import { ERRAND_BUILTIN } from "../../schedule/errand-model";
-import { configuredSetting } from "../../core/server/context";
-import { fullAccessSpawn } from "../../core/server/pm-spawn";
-import { spawnTextId } from "../../core/server/thread-keys";
-import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server/run-routing";
-import { stringAt } from "../../core/server/values";
-import { outputText } from "../../writer/server/writer-task";
-import { fenceOutside, registerObservedTool } from "../../core/server/tool-result";
+import { ERRAND_BUILTIN } from "../../schedule";
+import { configuredSetting } from "../../core/server";
+import { fullAccessSpawn } from "../../core/server";
+import { spawnTextId } from "../../core/server";
+import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
+import { stringAt } from "../../core/server";
+import { outputText } from "../../writer/server";
+import { fenceOutside, registerObservedTool } from "../../core/server";
 import { redactKnown } from "@lane-pilot/kit";
-import { allowedSecretNames, secretFixLines, secretProblem, waitingSecretReason } from "../../secrets/server/secrets";
-import type { CatalogEntry } from "../../secrets/server/secrets";
-import { detectRepoEdits, gitRepoStatus } from "../../verification/server/repo-edits";
-import type { ServerCore } from "../../core/server/core";
+import { allowedSecretNames, secretFixLines, secretProblem, waitingSecretReason } from "../../secrets/server";
+import type { CatalogEntry } from "../../secrets/server";
+import { detectRepoEdits, gitRepoStatus } from "../../verification/server";
+import type { ServerCore } from "../../core/server";
 
 const WAIT_STEP_MS = 5_000;
 

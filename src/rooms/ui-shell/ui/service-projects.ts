@@ -1,4 +1,4 @@
-import type { ListedProject } from "../../native-agent/project-scope";
+import type { ListedProject } from "../../native-agent";
 
 /** Test and sandbox projects of Lane Pilot's own checks: kept out of the way in the project list. */
 const SANDBOX_PROJECT_IDS = new Set(["proj_3tb652jpsi"]);

@@ -1,4 +1,4 @@
-import { TURN_REQUESTED, ownerMessagesOf, isOwnerThread, type EventLike, type OwnerMessage, type OwnerMessageHub, type ThreadLike } from "../anamnesis/owner-messages";
+import { TURN_REQUESTED, ownerMessagesOf, isOwnerThread, type EventLike, type OwnerMessage, type OwnerMessageHub, type ThreadLike } from "../anamnesis";
 
 /**
  * The live feed of the owner's messages into the shared hub (T1). BB announces `thread.active` when a thread starts a turn (which is

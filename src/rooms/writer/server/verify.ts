@@ -1,29 +1,29 @@
 import { resolve } from "node:path";
-import { acceptanceArtifactDir, bbWriterReportMarkdown, buildAcceptanceV2, validateAcceptanceV2 } from "../../tasks/acceptance-v2";
+import { acceptanceArtifactDir, bbWriterReportMarkdown, buildAcceptanceV2, validateAcceptanceV2 } from "../../tasks";
 import { attemptProduced } from "../cli-outcome";
 import { taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { recordCheckDuration, recordSecretIssuance, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskGitBase, listTasksForRun, loadProjectSettings, saveProjectSetting } from "../../storage/database";
+import { recordCheckDuration, recordSecretIssuance, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskGitBase, listTasksForRun, loadProjectSettings, saveProjectSetting } from "../../storage";
 import { checkTimeoutSec } from "../check-timing";
-import { sha256 } from "../../tasks/contract";
+import { sha256 } from "../../tasks";
 import { parseReadFirstHints } from "../../tasks/read-first";
-import { buildRunExecutionProfile, buildRunPolicy, mapBounded } from "../../tasks/run-policy";
-import { classifyWriterOutput, isOutputPath } from "../../tasks/validate-output";
+import { buildRunExecutionProfile, buildRunPolicy, mapBounded } from "../../tasks";
+import { classifyWriterOutput, isOutputPath } from "../../tasks";
 import { cleanCheckOutput } from "@lane-pilot/kit";
 import { redactKnown, redactSecrets } from "@lane-pilot/kit";
-import { SecretsNotReadyError, allowedSecretNames, secretProblem } from "../../secrets/server/secrets";
-import type { VerifyResult } from "../../tasks/validate-output";
+import { SecretsNotReadyError, allowedSecretNames, secretProblem } from "../../secrets/server";
+import type { VerifyResult } from "../../tasks";
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
 import { isLiveDecision, LIVE_FOLDER_RECEIPT } from "../live-folder";
-import { taskFamily } from "../../runs/failure-class";
+import { taskFamily } from "../../runs";
 import { bookkeepingSetting, filterOwnershipNoise } from "@lane-pilot/settings-catalog";
-import { findUnownedChanges, findUnownedRunChanges, resolveRunOwnershipScope } from "../../verification/ownership";
-import { recordGateEvaluation } from "../../runs/server/stage-records";
+import { findUnownedChanges, findUnownedRunChanges, resolveRunOwnershipScope } from "../../verification";
+import { recordGateEvaluation } from "../../runs/server";
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
-import { stringAt } from "../../core/server/values";
+import { stringAt } from "../../core/server";
 import { outputText, writerPatchFromOutput } from "./writer-task";
-import type { ServerCore } from "../../core/server/core";
-import type { Services } from "../../core/server/services";
+import type { ServerCore } from "../../core/server";
+import type { Services } from "../../core/server";
 
 /**
  * A verification command that fails is run once more: a check that fails once and passes on a re-run (a cold cache, a

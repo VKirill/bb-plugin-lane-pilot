@@ -5,7 +5,7 @@ import {
   type CliBinary,
   type SettingSpec,
 } from "@lane-pilot/settings-catalog";
-import { validateSettingsObject, validationErrorText } from "../settings/setting-validation";
+import { validateSettingsObject, validationErrorText } from "../settings";
 
 export type UnappliedSetting = {
   key: string;

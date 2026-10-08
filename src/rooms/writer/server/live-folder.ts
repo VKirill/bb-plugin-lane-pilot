@@ -1,11 +1,11 @@
 import type { DirtSnapshot } from "../cli-outcome";
-import { getRun } from "../../storage/database";
+import { getRun } from "../../storage";
 import {
   chunkPaths, classifyFolderProbe, liveBackupCommand, liveOwnedFiles, liveRestoreCommand, liveSnapshotCommand, liveTrashCommand,
   LIVE_FOLDER_PROBE_COMMAND, parseBackupFailure, parseLiveSnapshot,
 } from "../live-folder";
 import { resolve } from "node:path";
-import type { ServerCore } from "../../core/server/core";
+import type { ServerCore } from "../../core/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 
 type Ran = { exitCode: number; stdout: string; stderr: string };

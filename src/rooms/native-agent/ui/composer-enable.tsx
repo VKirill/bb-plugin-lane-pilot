@@ -18,7 +18,7 @@ import { DEFAULT_NATIVE_AGENT } from "../native-agent-id";
 import { selectionHostId } from "../composer-selection";
 import { setPendingNativeAgent } from "./pending-native-agent";
 import { useNativeComposerSelection } from "./composer-selection-hook";
-import { takeArchitectLaunch } from "../../workflow/ui/architect-launch";
+import { takeArchitectLaunch } from "../../workflow/ui";
 
 type ContextPayload = {
   projectId: string | null;

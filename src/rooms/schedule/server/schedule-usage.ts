@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import { costUsd, priceFor } from "@lane-pilot/models";
 import type { CostView } from "../views";
-import { billedFrom, parseBreakdown } from "../../usage/server/token-usage";
+import { billedFrom, parseBreakdown } from "../../usage/server";
 
 /**
  * What a scheduled run cost, from the token usage Lane Pilot syncs per thread (`lane_pilot_token_cursor`, cumulative per thread).

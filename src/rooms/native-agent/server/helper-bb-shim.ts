@@ -1,6 +1,6 @@
 import type { ExperimentalPluginProviderEnvEntry } from "@get-bb/plugin-sdk";
-import { stringAt } from "../../core/server/values";
-import type { ServerCore } from "../../core/server/core";
+import { stringAt } from "../../core/server";
+import type { ServerCore } from "../../core/server";
 
 /**
  * Codex, OpenCode and Cursor threads Lane Pilot starts get the guard wrappers (src/bb-shim.ts) at the front of their PATH, so a

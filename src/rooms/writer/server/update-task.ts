@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { DISPATCH_STAGES_PENDING } from "../../runs/constants";
+import { DISPATCH_STAGES_PENDING } from "../../runs";
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
 import {
@@ -13,16 +13,16 @@ import {
   loadPrototypeConfig,
   saveTaskPlan,
   updateTaskContract,
-} from "../../storage/database";
-import { lintReply } from "../../tasks/server/contract-lint";
-import { createTaskLinter } from "../../tasks/server/lint-task";
-import { runPlanCritique, runPmRead } from "../../critique/server/critique-runs";
-import { recordStage } from "../../runs/server/stage-records";
-import { markTaskSatisfied } from "../../runs/server/blocked-by";
-import type { ServerCore } from "../../core/server/core";
-import type { Services } from "../../core/server/services";
+} from "../../storage";
+import { lintReply } from "../../tasks/server";
+import { createTaskLinter } from "../../tasks/server";
+import { runPlanCritique, runPmRead } from "../../critique/server";
+import { recordStage } from "../../runs/server";
+import { markTaskSatisfied } from "../../runs/server";
+import type { ServerCore } from "../../core/server";
+import type { Services } from "../../core/server";
 import { validateTaskV2 } from "../../tasks/task-v2";
-import { appendExcludeCommand, persistTaskFolder } from "../../verification/git-integrate";
+import { appendExcludeCommand, persistTaskFolder } from "../../verification";
 import { runOnHost } from "@lane-pilot/host-calls";
 
 export function createWriterUpdateTask(ctx: ServerCore, services: Services) {

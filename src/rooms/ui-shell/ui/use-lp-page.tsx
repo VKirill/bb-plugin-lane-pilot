@@ -1,6 +1,6 @@
 import { readHiddenProjects, splitProjects, writeHiddenProjects } from "./service-projects";
 import { resolveTab, SEGMENTS, type SegmentedTab, type TabId } from "./tabs-model";
-import { selectionKeys, selectionValue, SELECTION_SPECS, type SelectionId } from "../../settings/ui/picker-selections";
+import { selectionKeys, selectionValue, SELECTION_SPECS, type SelectionId } from "../../settings/ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   experimental_ProviderModelPicker as ProviderModelPicker,
@@ -24,7 +24,7 @@ import {
 } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { useLpRealtime } from "./use-lp-realtime";
-import { readRunsWindow } from "../../runs/ui/runs-window";
+import { readRunsWindow } from "../../runs/ui";
 import { chromeIsCompact, contentStacksControls, useObservedWidth } from "@lane-pilot/ui-kit";
 import { userVisibleProjects } from "../../native-agent/project-scope";
 import { DOCS_DEFAULT_SELECTION } from "../../docs/docs-defaults";

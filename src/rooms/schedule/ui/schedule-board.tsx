@@ -6,7 +6,7 @@ import { Button } from "@lane-pilot/ui-kit";
 import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
 import type { BoardColumn, ErrandDefaultView, RunView, ScheduleView } from "../views";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
-import { useLpRealtime } from "../../ui-shell/ui/use-lp-realtime";
+import { useLpRealtime } from "../../ui-shell/ui";
 import { ScheduleCalendar } from "./schedule-calendar";
 import { ScheduleDefaultBlock } from "./schedule-default";
 import { ScheduleDetail } from "./schedule-detail";

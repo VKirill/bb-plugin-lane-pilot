@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { extractRoutes, type RouteRef } from "./docs-routes";
 import { parsePrisma, prismaAccess, renderDataMap } from "./docs-data";
-import { expandCitationLists } from "../docs/docs-lint";
+import { expandCitationLists } from "../docs";
 import { promisify } from "node:util";
 
 /**

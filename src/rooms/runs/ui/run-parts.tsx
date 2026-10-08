@@ -5,7 +5,7 @@ import { t, stateLabel } from "@lane-pilot/i18n";
 import { Badge } from "@lane-pilot/ui-kit";
 import { StageResult } from "./stage-result";
 import { Disclosure } from "@lane-pilot/ui-kit";
-import { StageSummary, runTone, stageTitle } from "../../ui-shell/ui/page-model";
+import { StageSummary, runTone, stageTitle } from "../../ui-shell/ui";
 
 /** The stage receipts of a run: the screen carries only their count, the rows load when the list is opened. */
 export function RunStages({ runId, count }: { runId: string; count: number }) {

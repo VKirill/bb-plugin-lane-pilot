@@ -1,15 +1,15 @@
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { writerExecutionSelection } from "@lane-pilot/models";
-import { fullAccessSpawn } from "../../core/server/pm-spawn";
-import { spawnTextId } from "../../core/server/thread-keys";
-import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server/run-routing";
+import { fullAccessSpawn } from "../../core/server";
+import { spawnTextId } from "../../core/server";
+import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { redactKnownDeep } from "@lane-pilot/kit";
-import { stringAt } from "../../core/server/values";
-import { outputText } from "../../writer/server/writer-task";
-import { FRONTEND_VERIFY_METHOD } from "../../critique/role-method";
-import { qaStateToStatus, settleVerdict, verdictSchema, verdictSummary } from "../../critique/verdict";
-import type { VerdictFinding, VerdictStatus } from "../../critique/verdict";
-import type { ServerCore } from "../../core/server/core";
+import { stringAt } from "../../core/server";
+import { outputText } from "../../writer/server";
+import { FRONTEND_VERIFY_METHOD } from "../../critique";
+import { qaStateToStatus, settleVerdict, verdictSchema, verdictSummary } from "../../critique";
+import type { VerdictFinding, VerdictStatus } from "../../critique";
+import type { ServerCore } from "../../core/server";
 
 export type QaVerdict = {
   verdict: "passed" | "failed" | "blocked";

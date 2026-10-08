@@ -1,10 +1,10 @@
 import { networkInterfaces } from "node:os";
-import { createWorktree, integrateWorktree, prepareWorktree, removeLaneWorktree, syncWorktree, snapshotWorktree, type ReplayCheckOutcome } from "../verification/git-integrate";
-import { bisectGateOnHost, runGateOnHost } from "../verification/integration-gate-host";
-import { buildDocsAnchors, docsDepth as readDocsDepth, docsStaleness, jevApiKey, provideJevKey, verifyDocsCitations } from "../verification/docs-jev";
-import { buildDocsFlows } from "../verification/docs-flows";
-import { runStabilityDrill } from "../verification/stability-drill";
-import { commitDocs, docsLineCounts as readDocsLineCounts, docsWorthinessFacts as readDocsWorthinessFacts, gitDocsScope as readGitDocsScope, revertPaths } from "../verification/git-docs";
+import { createWorktree, integrateWorktree, prepareWorktree, removeLaneWorktree, syncWorktree, snapshotWorktree, type ReplayCheckOutcome } from "../verification";
+import { bisectGateOnHost, runGateOnHost } from "../verification";
+import { buildDocsAnchors, docsDepth as readDocsDepth, docsStaleness, jevApiKey, provideJevKey, verifyDocsCitations } from "../verification";
+import { buildDocsFlows } from "../verification";
+import { runStabilityDrill } from "../verification";
+import { commitDocs, docsLineCounts as readDocsLineCounts, docsWorthinessFacts as readDocsWorthinessFacts, gitDocsScope as readGitDocsScope, revertPaths } from "../verification";
 import { randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
@@ -13,21 +13,21 @@ import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { homedir } from "node:os";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { hostContract } from "../contracts";
-import { isEnvironmentCheckFailure } from "../runs/failure-class";
+import { isEnvironmentCheckFailure } from "../runs";
 import { readBoundedWorkspaceFile, sha256Hex } from "@lane-pilot/kit";
-import { casWriteWorkflowFile } from "../storage/files";
-import { inventoryCoexistence, runCoexistenceOperation } from "../native-install/coexistence";
-import { runBrowserQaOnHost } from "../qa/browser-qa";
+import { casWriteWorkflowFile } from "../storage";
+import { inventoryCoexistence, runCoexistenceOperation } from "../native-install";
+import { runBrowserQaOnHost } from "../qa";
 import { cancelHostJob, hostJobStatus, startHostJob } from "./jobs";
-import { scanCritiqueCoverage } from "../critique/critique-coverage";
-import { prepareSandboxedCommandLine, releaseSandboxedCommandLine, runSandboxedCommandOnHost } from "../verification/sandbox";
-import { gitOwnershipChangedPaths, resolveGitOwnershipBase } from "../verification/git-ownership";
-import { runCliOnHost, runCommandOnHost, writePmSettingsOnHost } from "../writer/cli-run";
+import { scanCritiqueCoverage } from "../critique";
+import { prepareSandboxedCommandLine, releaseSandboxedCommandLine, runSandboxedCommandOnHost } from "../verification";
+import { gitOwnershipChangedPaths, resolveGitOwnershipBase } from "../verification";
+import { runCliOnHost, runCommandOnHost, writePmSettingsOnHost } from "../writer";
 import { runScriptOnHost } from "./script-run";
 import { execFile } from "node:child_process";
-import { discoverClaudeAgents, prepareNativeClaude } from "../native-agent/native-claude-host";
-import { prepareOpencodeMinimal } from "../native-install/opencode-min-config";
-import { prepareBbShim } from "../native-agent/bb-shim";
+import { discoverClaudeAgents, prepareNativeClaude } from "../native-agent";
+import { prepareOpencodeMinimal } from "../native-install";
+import { prepareBbShim } from "../native-agent";
 import {
   connectOpencodeStack,
   detectStack,
@@ -36,7 +36,7 @@ import {
   rollbackStack,
   snapshotStack,
   type HostContext,
-} from "../native-install/stack-ops";
+} from "../native-install";
 
 async function hashFile(path: string): Promise<string> {
   return sha256Hex(await readFile(path));

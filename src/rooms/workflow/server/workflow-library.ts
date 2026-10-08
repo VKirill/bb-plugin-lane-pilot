@@ -3,13 +3,13 @@ import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
 import { BUILTIN_SOURCES } from "../builtin";
 import type { Field, Workflow } from "../schema";
-import { sha256Text } from "../../storage/files";
+import { sha256Text } from "../../storage";
 import { parseGoals } from "../goals";
-import { createStatusResolver } from "../../storage/ops-store";
-import { globalWorkflowDir, loadWorkflowStore, nodeFileSource, projectWorkflowDir, type StoredWorkflow, type WorkflowFileSource, type WorkflowStore } from "../../storage/store";
+import { createStatusResolver } from "../../storage";
+import { globalWorkflowDir, loadWorkflowStore, nodeFileSource, projectWorkflowDir, type StoredWorkflow, type WorkflowFileSource, type WorkflowStore } from "../../storage";
 import { workflowView, type WorkflowView } from "../view";
-import type { ServerCore } from "../../core/server/core";
-import type { Services } from "../../core/server/services";
+import type { ServerCore } from "../../core/server";
+import type { Services } from "../../core/server";
 
 type Output<K extends keyof typeof rpcContract> = z.infer<(typeof rpcContract)[K]["output"]>;
 export type WorkflowSummary = Output<"workflow_list">["workflows"][number];

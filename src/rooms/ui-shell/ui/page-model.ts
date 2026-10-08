@@ -3,7 +3,7 @@ import { t, type I18nKey } from "@lane-pilot/i18n";
 import { settingUnitKey } from "../../settings/setting-copy";
 import { Tabs } from "@lane-pilot/ui-kit";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../runs/state-machine";
-import type { StageReceipt } from "../../tasks/contract";
+import type { StageReceipt } from "../../tasks";
 
 /** History comes this many runs at a time. */
 export const RUNS_PAGE = 20;

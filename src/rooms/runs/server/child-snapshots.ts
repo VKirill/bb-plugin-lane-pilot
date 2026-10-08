@@ -1,8 +1,8 @@
-import type { DocsPage } from "../../docs/docs";
-import type { MemorySettings } from "../../memory/memory";
-import { acceptedOnboardingEvidence } from "../../project-life/onboarding";
-import type { OnboardingAcceptedEvidence, OnboardingInputPage } from "../../project-life/onboarding";
-import type { ProjectLifeTaskSummary } from "../../project-life/project-life";
+import type { DocsPage } from "../../docs";
+import type { MemorySettings } from "../../memory";
+import { acceptedOnboardingEvidence } from "../../project-life";
+import type { OnboardingAcceptedEvidence, OnboardingInputPage } from "../../project-life";
+import type { ProjectLifeTaskSummary } from "../../project-life";
 export type DocsChildSnapshot = { pages:DocsPage[]; since:string; truncated:boolean; inputSha256:string; pageCap?:number; dispatchInput?:unknown };
 
 export function docsResultObject(result:unknown): Record<string, unknown> {

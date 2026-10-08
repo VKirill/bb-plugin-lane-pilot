@@ -2,7 +2,7 @@ import type { ExperimentalPluginProviderEnvEntry } from "@get-bb/plugin-sdk";
 import { stringAt } from "./values";
 import type { ServerCore } from "./core";
 import { scheduleIsolated } from "./schedules";
-import { createBbShimEnv } from "../../native-agent/server/helper-bb-shim";
+import { createBbShimEnv } from "../../native-agent/server";
 
 /**
  * Lane Pilot's OpenCode helpers run with a minimal config (see src/opencode-min-config.ts for why and how). The OpenCode provider

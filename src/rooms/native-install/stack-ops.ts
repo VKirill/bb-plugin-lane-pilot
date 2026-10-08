@@ -1,9 +1,9 @@
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { EXTERNAL_OPS, TARGET_SHA } from "../runs/constants";
+import { EXTERNAL_OPS, TARGET_SHA } from "../runs";
 import { observeExternalOps, type ExternalOpsSnapshot } from "./external-ops";
 import { applyInstalledGuard, isOwnedPmGuardApplied, ownedPmGuardPath } from "./guard-apply";
-import { readImportConfig } from "../settings/import-config";
+import { readImportConfig } from "../settings";
 import type { InstallPhase } from "./install-runner";
 import { connectOpencode } from "./opencode-connect";
 import { inventoryCoexistenceAtHome, runCoexistenceOperationAtHome } from "./coexistence";

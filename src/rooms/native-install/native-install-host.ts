@@ -5,7 +5,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { z } from "zod";
 import type { hostContract } from "../contracts";
 import { claudeLaneEnv, detectClaudeLane, installClaudeLane, upgradeClaudeLane } from "./native-install-bootstrap";
-import { reconcileClaudeLane } from "../native-agent/native-lane-reconcile";
+import { reconcileClaudeLane } from "../native-agent";
 import { transitionOwned } from "./native-install-owned";
 
 const manifestSchema = z.object({

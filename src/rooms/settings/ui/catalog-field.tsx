@@ -1,5 +1,5 @@
 import { SettingField } from "./setting-controls";
-import type { LpPage } from "../../ui-shell/ui/use-lp-page";
+import type { LpPage } from "../../ui-shell/ui";
 
 /** A catalog row as an editable field, or nothing when the catalog does not have it. */
 export function CatalogField({ page, keyName }: { page: LpPage; keyName: string }) {

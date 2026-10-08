@@ -1,4 +1,4 @@
-import { maskPii } from "../anamnesis/pii";
+import { maskPii } from "../anamnesis";
 import { defineJudgment, noul, noulOf, score } from "@lane-pilot/jev";
 import type { Jev } from "@lane-pilot/jev";
 import { DAY_MS, insertSignal, listSignals, type Db } from "./store";

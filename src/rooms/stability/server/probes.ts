@@ -1,9 +1,9 @@
-import { createAttempt, createRun, getAttempt, loadPrototypeConfig, setRunThread, transitionAttempt } from "../../storage/database";
-import { fullAccessSpawn } from "../../core/server/pm-spawn";
-import { id, stringAt, valueAt } from "../../core/server/values";
+import { createAttempt, createRun, getAttempt, loadPrototypeConfig, setRunThread, transitionAttempt } from "../../storage";
+import { fullAccessSpawn } from "../../core/server";
+import { id, stringAt, valueAt } from "../../core/server";
 import { createHelperProbe } from "../../native-agent/server/helper-probe";
-import type { ServerCore } from "../../core/server/core";
-import type { Services } from "../../core/server/services";
+import type { ServerCore } from "../../core/server";
+import type { Services } from "../../core/server";
 
 export function createProbes(ctx: ServerCore, services: Services) {
   const { bb, db } = ctx;

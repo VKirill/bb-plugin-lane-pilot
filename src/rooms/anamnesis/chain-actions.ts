@@ -1,6 +1,6 @@
-import type { NodeExecutor, WorkflowEngine } from "../workflow/engine";
-import type { ServerCore } from "../core/server/core";
-import type { ChainRuntime } from "../workflow/server/workflow-runtime";
+import type { NodeExecutor, WorkflowEngine } from "../workflow";
+import type { ServerCore } from "../core/server";
+import type { ChainRuntime } from "../workflow/server";
 import type { Hub } from "./hub";
 import type { Section } from "./whoami";
 

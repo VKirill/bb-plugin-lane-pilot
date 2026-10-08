@@ -6,7 +6,7 @@ import { detectLocale, t, type I18nKey } from "@lane-pilot/i18n";
 import { Badge } from "@lane-pilot/ui-kit";
 import { Button } from "@lane-pilot/ui-kit";
 import { Disclosure } from "@lane-pilot/ui-kit";
-import { useLpRealtime } from "../../ui-shell/ui/use-lp-realtime";
+import { useLpRealtime } from "../../ui-shell/ui";
 
 type Proposal = {
   id: string; rule: string; author: "sweep" | "pm" | "owner" | "model"; state: "proposed" | "accepted" | "rejected" | "revoked";

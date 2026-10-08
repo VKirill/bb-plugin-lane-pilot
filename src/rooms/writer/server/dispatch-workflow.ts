@@ -1,14 +1,14 @@
-import { getAttempt, getRunSettingsScopes, listAttemptsForTask, listStageReceipts, loadProjectSettings, saveTaskGitBase, setRunState, transitionAttempt } from "../../storage/database";
+import { getAttempt, getRunSettingsScopes, listAttemptsForTask, listStageReceipts, loadProjectSettings, saveTaskGitBase, setRunState, transitionAttempt } from "../../storage";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../critique/quality-mode";
-import { appendExcludeCommand, persistTaskFolder } from "../../verification/git-integrate";
+import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../critique";
+import { appendExcludeCommand, persistTaskFolder } from "../../verification";
 import { pmReadBrief } from "../writer-brief";
-import { LP_TASK_PIPELINE, builtinWorkflow } from "../../workflow/builtin";
-import type { NodeExecutor, RunSummary, StepContext, WorkflowEngine } from "../../workflow/engine";
-import { runPlanCritique, runPmRead, runSpecialistReview } from "../../critique/server/critique-runs";
-import { recordStage } from "../../runs/server/stage-records";
-import type { ServerCore } from "../../core/server/core";
-import type { Services } from "../../core/server/services";
+import { LP_TASK_PIPELINE, builtinWorkflow } from "../../workflow";
+import type { NodeExecutor, RunSummary, StepContext, WorkflowEngine } from "../../workflow";
+import { runPlanCritique, runPmRead, runSpecialistReview } from "../../critique/server";
+import { recordStage } from "../../runs/server";
+import type { ServerCore } from "../../core/server";
+import type { Services } from "../../core/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 
 /**

@@ -1,5 +1,5 @@
 import { PROVIDER_POOL_KEY, providerPoolProblem } from "@lane-pilot/settings-catalog";
-import { SCHEDULE_ERRAND_DEFAULT_KEY, errandDefaultProblem } from "../schedule/errand-model";
+import { SCHEDULE_ERRAND_DEFAULT_KEY, errandDefaultProblem } from "../schedule";
 import "../workflow/route-workflow";
 import "@lane-pilot/jev/judgments/repair-group";
 import "../runs/failure-class-judgment";

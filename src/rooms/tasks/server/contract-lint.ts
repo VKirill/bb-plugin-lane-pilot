@@ -1,13 +1,13 @@
 import { resolve } from "node:path";
 import type { TaskV2 } from "../../contracts";
 import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOverlap } from "@lane-pilot/kit";
-import { findSandboxUnsafeMissingExcludes, runnerFilterArgs, runsWholeSuite } from "../../critique/critique-coverage";
+import { findSandboxUnsafeMissingExcludes, runnerFilterArgs, runsWholeSuite } from "../../critique";
 import { parseReadFirstHints } from "../read-first";
-import { SUBJECTIVE_WORDS } from "../../critique/role-method";
+import { SUBJECTIVE_WORDS } from "../../critique";
 import { isOutputPath, unownedExpectedOutputs } from "../validate-output";
-import { SANDBOX_OWN_ENV } from "../../verification/sandbox";
-import type { CatalogEntry, SecretCheck } from "../../secrets/server/secrets";
-import { safeRelative, validateOwnershipContract } from "../../verification/ownership";
+import { SANDBOX_OWN_ENV } from "../../verification";
+import type { CatalogEntry, SecretCheck } from "../../secrets/server";
+import { safeRelative, validateOwnershipContract } from "../../verification";
 
 /** One problem in a task contract, with the concrete fix; `data` rides along in the answer to the PM. */
 export type LintFinding = { code:string; message:string; data?:Record<string, unknown> };

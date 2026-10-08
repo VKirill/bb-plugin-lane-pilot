@@ -1,13 +1,13 @@
 import type { TaskV2, PrototypeConfig } from "../../contracts";
-import type { LanePilotDatabase, StageReceiptRow } from "../../storage/database";
-import { getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../storage/database";
+import type { LanePilotDatabase, StageReceiptRow } from "../../storage";
+import { getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../storage";
 import { recordStage } from "../../runs/server/stage-records";
-import { stringAt } from "../../core/server/values";
-import type { ServerCore } from "../../core/server/core";
-import type { Services } from "../../core/server/services";
+import { stringAt } from "../../core/server";
+import type { ServerCore } from "../../core/server";
+import type { Services } from "../../core/server";
 import { saveFollowUp } from "../../writer/server/sticky";
-import { sendServiceMessage } from "../../relay/server/service-message";
-import { isEnvironmentCheckFailure } from "../../runs/failure-class";
+import { sendServiceMessage } from "../../relay/server";
+import { isEnvironmentCheckFailure } from "../../runs";
 import { gateLabel, gateResolverFor, type ResolvedGate } from "./gate-detect";
 import { join } from "node:path";
 

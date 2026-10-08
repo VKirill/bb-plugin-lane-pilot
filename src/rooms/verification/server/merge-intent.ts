@@ -1,8 +1,8 @@
-import { countAttempts, getAttempt, getRun, getTask, getTaskPlan, transitionAttempt } from "../../storage/database";
+import { countAttempts, getAttempt, getRun, getTask, getTaskPlan, transitionAttempt } from "../../storage";
 import { closeWriterStages, recordGateEvaluation } from "../../runs/server/stage-records";
-import type { ServerCore } from "../../core/server/core";
-import type { Services } from "../../core/server/services";
-import { sendServiceMessage } from "../../relay/server/service-message";
+import type { ServerCore } from "../../core/server";
+import type { Services } from "../../core/server";
+import { sendServiceMessage } from "../../relay/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 
 /**

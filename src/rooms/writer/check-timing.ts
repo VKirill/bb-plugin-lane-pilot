@@ -1,4 +1,4 @@
-import { listCheckDurations, type LanePilotDatabase } from "../storage/database";
+import { listCheckDurations, type LanePilotDatabase } from "../storage";
 
 /** The ceiling of a timeout that history alone raises; a configured timeout above it is kept as it is. */
 export const CHECK_TIMEOUT_CAP_SEC = 1800;

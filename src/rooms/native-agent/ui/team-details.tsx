@@ -7,10 +7,10 @@ import { Input } from "@lane-pilot/ui-kit";
 import { Label } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
 import { Switch } from "@lane-pilot/ui-kit";
-import { AdvancedRows } from "../../settings/ui/setting-controls";
-import { CatalogField } from "../../settings/ui/catalog-field";
-import { asBoolean, COUNCIL_SEATS } from "../../ui-shell/ui/page-model";
-import type { LpPage } from "../../ui-shell/ui/use-lp-page";
+import { AdvancedRows } from "../../settings/ui";
+import { CatalogField } from "../../settings/ui";
+import { asBoolean, COUNCIL_SEATS } from "../../ui-shell/ui";
+import type { LpPage } from "../../ui-shell/ui";
 
 /** The writer's own settings: the two fallbacks, how the reasoning effort is picked, the agent profile and what the runs say about the pair. */
 export function WriterDetail({ page }: { page: LpPage }) {

@@ -1,5 +1,5 @@
-import { failureClass } from "../runs/failure-class";
-import { taskStem } from "../tasks/task-stem";
+import { failureClass } from "../runs";
+import { taskStem } from "../tasks";
 
 type Db = { prepare(sql:string):{ all(...args:unknown[]):unknown[] } };
 

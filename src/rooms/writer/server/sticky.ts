@@ -1,13 +1,13 @@
 import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { getAttempt, getReasoningTrace, getRun, saveReasoningTrace, setAttemptDirtBefore, setAttemptWorkspace, transitionAttempt } from "../../storage/database";
-import { SESSION_MAX_TURNS, failureClass } from "../../runs/failure-class";
-import { stringAt } from "../../core/server/values";
+import { getAttempt, getReasoningTrace, getRun, saveReasoningTrace, setAttemptDirtBefore, setAttemptWorkspace, transitionAttempt } from "../../storage";
+import { SESSION_MAX_TURNS, failureClass } from "../../runs";
+import { stringAt } from "../../core/server";
 import { sleepUntilThreadSignal, threadWatchMark } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";
-import type { ServerCore } from "../../core/server/core";
-import type { Services } from "../../core/server/services";
-import { sendServiceMessage } from "../../relay/server/service-message";
+import type { ServerCore } from "../../core/server";
+import type { Services } from "../../core/server";
+import { sendServiceMessage } from "../../relay/server";
 
 /**
  * Sticky writers: an area's writer thread takes the area's next task, and a task-side failure is redone in the thread

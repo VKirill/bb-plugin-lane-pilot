@@ -1,12 +1,12 @@
 import packageJson from "../../../../package.json";
-import { PARKED_CLASSES, failureClass, failureFingerprint, isWaitingSecret, type FailureClass } from "../../runs/failure-class";
-import { allowedSecretNames, secretProblem, waitingSecretNote, WAITING_SECRET_PREFIX } from "../../secrets/server/secrets";
-import { createAttempt, getAttempt, getRun, getRunSettingsScopes, loadProjectSettings } from "../../storage/database";
-import { id } from "../../core/server/values";
+import { PARKED_CLASSES, failureClass, failureFingerprint, isWaitingSecret, type FailureClass } from "../../runs";
+import { allowedSecretNames, secretProblem, waitingSecretNote, WAITING_SECRET_PREFIX } from "../../secrets/server";
+import { createAttempt, getAttempt, getRun, getRunSettingsScopes, loadProjectSettings } from "../../storage";
+import { id } from "../../core/server";
 import { reopenWriterStages } from "../../runs/server/stage-records";
 import { isRunHalted } from "../../runs/server/runs-halt";
-import type { ServerCore } from "../../core/server/core";
-import type { Services } from "../../core/server/services";
+import type { ServerCore } from "../../core/server";
+import type { Services } from "../../core/server";
 
 const VERSION: string = packageJson.version;
 export const PARKED_KEY = "stability:parked";
@@ -42,8 +42,8 @@ export type ParkedTask = {
   since?:number;
 };
 
-export { taskStem } from "../../tasks/task-stem";
-import { taskStem } from "../../tasks/task-stem";
+export { taskStem } from "../../tasks";
+import { taskStem } from "../../tasks";
 
 type Breaker = { fingerprint:string; openedAt:number; version:string; probing:boolean };
 

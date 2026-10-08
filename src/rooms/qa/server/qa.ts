@@ -1,17 +1,17 @@
 import { taskV2Schema } from "../../contracts";
-import { claimStageSpawn, countAttempts, recordSecretIssuance, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings } from "../../storage/database";
+import { claimStageSpawn, countAttempts, recordSecretIssuance, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings } from "../../storage";
 import { QA_HOST_KEY, QA_WORKSPACE_KEY, qaCodexPreflight, qaHostUnreachableReason, resolveBrowserQaTarget, resolveStaleBrowserQaReceipt } from "../qa-host";
-import { sha256 } from "../../tasks/contract";
-import { parseOpenCodeToolTelemetry } from "../../stability/opencode-telemetry";
-import { MAIN_ATTEMPT_LIMIT } from "../../runs/state-machine";
-import { configuredSetting } from "../../core/server/context";
-import { freezeRunRouting, inheritedProjectSettings } from "../../runs/server/run-routing";
-import { recordStage } from "../../runs/server/stage-records";
-import { qaStateToStatus } from "../../critique/verdict";
-import { allowedSecretNames, secretFixLines, secretProblem, waitingSecretReason } from "../../secrets/server/secrets";
+import { sha256 } from "../../tasks";
+import { parseOpenCodeToolTelemetry } from "../../stability";
+import { MAIN_ATTEMPT_LIMIT } from "../../runs";
+import { configuredSetting } from "../../core/server";
+import { freezeRunRouting, inheritedProjectSettings } from "../../runs/server";
+import { recordStage } from "../../runs/server";
+import { qaStateToStatus } from "../../critique";
+import { allowedSecretNames, secretFixLines, secretProblem, waitingSecretReason } from "../../secrets/server";
 import { awaitQaVerdict, parseQaCases, runQaThread } from "./qa-thread";
-import { stringAt, valueAt } from "../../core/server/values";
-import type { ServerCore } from "../../core/server/core";
+import { stringAt, valueAt } from "../../core/server";
+import type { ServerCore } from "../../core/server";
 
 export function createQaStages(ctx: ServerCore) {
   const { acceptedTaskWorkspace, bb, configForRun, db, host } = ctx;

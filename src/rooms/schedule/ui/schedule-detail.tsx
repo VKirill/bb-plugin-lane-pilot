@@ -6,7 +6,7 @@ import { Button } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
 import type { ErrandDefaultView, ScheduleView } from "../views";
-import { Pill } from "../../ui-shell/ui/pill";
+import { Pill } from "../../ui-shell/ui";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { definitionWithTask, machineName, modelFieldsOf, withModelFields, type ModelFields } from "./schedule-model";
 import { errorText, fill, whenText } from "./schedule-parts";

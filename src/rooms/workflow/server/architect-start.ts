@@ -2,15 +2,15 @@ import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import type { rpcContract } from "../../contracts";
 import { writerExecutionSelection } from "@lane-pilot/models";
-import { mentionContext } from "../../native-agent/native-dispatch";
+import { mentionContext } from "../../native-agent";
 import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME } from "../workflow-architect";
-import { createDraftStore } from "../../storage/draft-store";
-import type { ServerCore } from "../../core/server/core";
-import { storeNativeSelection } from "../../native-agent/server/native-profile";
-import { fullAccessSpawn } from "../../core/server/pm-spawn";
-import { CONFIG_KEY, SELF_REPAIR_DEFAULTS } from "../../self-repair/server/self-repair";
-import type { Services } from "../../core/server/services";
-import { stringAt } from "../../core/server/values";
+import { createDraftStore } from "../../storage";
+import type { ServerCore } from "../../core/server";
+import { storeNativeSelection } from "../../native-agent/server";
+import { fullAccessSpawn } from "../../core/server";
+import { CONFIG_KEY, SELF_REPAIR_DEFAULTS } from "../../self-repair/server";
+import type { Services } from "../../core/server";
+import { stringAt } from "../../core/server";
 
 /** The architect always runs on these, whatever the project or the owner's remembered choice says. */
 export const ARCHITECT_EXECUTION = { providerId: "claude-code", model: "claude-opus-5-5", reasoningLevel: "high" } as const;

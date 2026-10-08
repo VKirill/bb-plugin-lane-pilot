@@ -7,8 +7,8 @@ import {
   setRunState,
   setRunThread,
   type LanePilotDatabase,
-} from "../storage/database";
-import { buildRunPolicy } from "../tasks/run-policy";
+} from "../storage";
+import { buildRunPolicy } from "../tasks";
 
 export type NativeDispatchWorkspace =
   | { phase: "ready"; hostId: string; workspacePath: string; environmentId: string | null }

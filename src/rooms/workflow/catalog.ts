@@ -1,6 +1,6 @@
 import { BUILTIN_SOURCES } from "./builtin";
-import { globalWorkflowDir, loadWorkflowStore } from "../storage/store";
-import type { WorkflowFileSource, WorkflowStore } from "../storage/store";
+import { globalWorkflowDir, loadWorkflowStore } from "../storage";
+import type { WorkflowFileSource, WorkflowStore } from "../storage";
 
 /**
  * The workflows an instance can offer and run: the built-in ones plus the global files of the hub (`~/.lane-pilot/workflows`),

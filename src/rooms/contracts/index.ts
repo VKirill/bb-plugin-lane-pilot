@@ -1,11 +1,11 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { stageReceiptSchema } from "../tasks/contract";
-import { scheduleRpcContract } from "../schedule/contract";
+import { stageReceiptSchema } from "../tasks";
+import { scheduleRpcContract } from "../schedule";
 
 /** A stage row as the screen lists it: no result body (`get_stage_result` loads it), only whether there is one. */
 const stageSummarySchema = stageReceiptSchema.omit({ result: true }).extend({ hasResult: z.boolean() }).strict();
-import { anamnesisHostMethods, anamnesisRpcMethods } from "../anamnesis/contract";
+import { anamnesisHostMethods, anamnesisRpcMethods } from "../anamnesis";
 
 export const prototypeConfigSchema = z.object({
   projectId: z.string().min(1),

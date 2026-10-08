@@ -1,7 +1,7 @@
 import { copyFile, cp, link, lstat, mkdir, readFile, readdir, readlink, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, join, relative, resolve } from "node:path";
-import { EXTERNAL_OPS, EXTERNAL_OPS_WARNING } from "../runs/constants";
+import { EXTERNAL_OPS, EXTERNAL_OPS_WARNING } from "../runs";
 import { hashPath } from "@lane-pilot/kit";
 import { MANIFEST_ROWS, type ManifestRow } from "./manifest";
 import { expandHomePath, lanePilotRoot, resolveHome } from "@lane-pilot/kit";

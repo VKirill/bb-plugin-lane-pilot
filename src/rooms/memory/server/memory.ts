@@ -1,20 +1,20 @@
 import { taskV2Schema } from "../../contracts";
-import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings, searchMemoryRecords, storeMemoryRecords } from "../../storage/database";
+import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings, searchMemoryRecords, storeMemoryRecords } from "../../storage";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
-import { resolveStageWriterSelection } from "../../writer/stage-writer-selection";
-import { sha256 } from "../../tasks/contract";
+import { resolveStageWriterSelection } from "../../writer";
+import { sha256 } from "../../tasks";
 import { memoryContext, memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../memory";
-import { boundedAgentName } from "../../critique/role";
-import { MemoryChildSnapshot, childResultObject, memoryChildSnapshot, spawnRefused } from "../../runs/server/child-snapshots";
-import { compactAcceptedResult } from "../../tasks/server/accepted-compact";
-import { configuredSetting } from "../../core/server/context";
-import { fullAccessSpawn } from "../../core/server/pm-spawn";
-import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server/run-routing";
-import { recordStage } from "../../runs/server/stage-records";
-import { stringAt, valueAt } from "../../core/server/values";
+import { boundedAgentName } from "../../critique";
+import { MemoryChildSnapshot, childResultObject, memoryChildSnapshot, spawnRefused } from "../../runs/server";
+import { compactAcceptedResult } from "../../tasks/server";
+import { configuredSetting } from "../../core/server";
+import { fullAccessSpawn } from "../../core/server";
+import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
+import { recordStage } from "../../runs/server";
+import { stringAt, valueAt } from "../../core/server";
 import { observeStageChild } from "@lane-pilot/thread-observe";
-import type { ServerCore } from "../../core/server/core";
-import type { Services } from "../../core/server/services";
+import type { ServerCore } from "../../core/server";
+import type { Services } from "../../core/server";
 
 export function createMemoryStage(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, workspaceExecutionEnvironment } = ctx;

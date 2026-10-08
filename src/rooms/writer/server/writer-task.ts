@@ -1,6 +1,6 @@
 import { taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { valueAt } from "../../core/server/values";
+import { valueAt } from "../../core/server";
 import { compactContract, pmReadBrief } from "../writer-brief";
 import { cleanCheckOutput, failureExcerpt, sha256Hex } from "@lane-pilot/kit";
 import { fileAllowedByOwns, matchOwnsPath } from "@lane-pilot/kit";

@@ -1,14 +1,14 @@
 import { taskV2Schema } from "../../contracts";
-import { countAttempts, getAttempt, getRun, getTask, getTaskPlan, listAttemptsForTask, transitionAttempt } from "../../storage/database";
-import { taskFolderRel } from "../../verification/git-integrate";
-import { closeWriterStages, reopenWriterStages } from "../../runs/server/stage-records";
-import { stringAt } from "../../core/server/values";
+import { countAttempts, getAttempt, getRun, getTask, getTaskPlan, listAttemptsForTask, transitionAttempt } from "../../storage";
+import { taskFolderRel } from "../../verification";
+import { closeWriterStages, reopenWriterStages } from "../../runs/server";
+import { stringAt } from "../../core/server";
 import { answerTurnPrompt } from "./writer-task";
 import { resolve } from "node:path";
-import type { ServerCore } from "../../core/server/core";
-import type { Services } from "../../core/server/services";
+import type { ServerCore } from "../../core/server";
+import type { Services } from "../../core/server";
 import { saveFollowUp } from "./sticky";
-import { sendServiceMessage } from "../../relay/server/service-message";
+import { sendServiceMessage } from "../../relay/server";
 
 /** A blocked attempt whose reason is the writer's own question, not a fault. */
 const NEEDS_HUMAN_REASON = /^needs_human:/i;

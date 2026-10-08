@@ -1,13 +1,13 @@
-import { applyResourceMode, collectAgentInventory } from "../../../native-agent/agent-inventory";
-import { compileEffectiveMainAgent, compileMainAgentProfile } from "../../../native-agent/agent-profile";
-import { detectRequiredSessionPolicyCapability } from "../../../native-agent/helper-context";
+import { applyResourceMode, collectAgentInventory } from "../../../native-agent";
+import { compileEffectiveMainAgent, compileMainAgentProfile } from "../../../native-agent";
+import { detectRequiredSessionPolicyCapability } from "../../../native-agent";
 import { LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, packStoredDefaults, parseDefaultsRevision, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
-import { userVisibleProjects } from "../../../native-agent/project-scope";
-import { mapListedQaHosts } from "../../../qa/qa-host";
+import { userVisibleProjects } from "../../../native-agent";
+import { mapListedQaHosts } from "../../../qa";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
-import type { ServerCore } from "../../../core/server/core";
-import type { Services } from "../../../core/server/services";
+import type { ServerCore } from "../../../core/server";
+import type { Services } from "../../../core/server";
 
 export function preferencesRpc(ctx: ServerCore, services: Services) {
   const { bb, host, listProjectSections, ownedAgents, serializedKv } = ctx;

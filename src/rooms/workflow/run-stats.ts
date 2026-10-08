@@ -1,4 +1,4 @@
-import type { LanePilotDatabase } from "../storage/database";
+import type { LanePilotDatabase } from "../storage";
 import type { RunRecord } from "./router";
 
 /** How each workflow has run: finished top-level runs by outcome and when the last one started. The router's tiebreaker reads it. */

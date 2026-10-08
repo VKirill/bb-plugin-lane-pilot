@@ -1,19 +1,19 @@
 import { prototypeConfigSchema, taskV2Schema } from "../../contracts";
-import { getActivation, getAttempt, getRun, getTask, importSettingsOnce, inspectState, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, savePrototypeConfig, saveProjectSetting, transitionAttempt } from "../../storage/database";
-import { cancelRejection, finishRunSafely } from "../../runs/server/run-finish";
-import { stringAt, valueAt } from "../../core/server/values";
-import { outputText } from "../../writer/server/writer-task";
+import { getActivation, getAttempt, getRun, getTask, importSettingsOnce, inspectState, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, savePrototypeConfig, saveProjectSetting, transitionAttempt } from "../../storage";
+import { cancelRejection, finishRunSafely } from "../../runs/server";
+import { stringAt, valueAt } from "../../core/server";
+import { outputText } from "../../writer/server";
 import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
-import type { ServerCore } from "../../core/server/core";
-import { RUN_BUDGET_SETTINGS, runHealth } from "../../stability/server/health";
-import { configuredSetting } from "../../core/server/context";
+import type { ServerCore } from "../../core/server";
+import { RUN_BUDGET_SETTINGS, runHealth } from "../../stability/server";
+import { configuredSetting } from "../../core/server";
 import { getCouncilSession } from "@lane-pilot/council";
-import { SCHEDULE_USAGE, runScheduleCli } from "../../schedule/server/schedule-cli";
-import type { Services } from "../../core/server/services";
-import { ANAMNESIS_USAGE } from "../../anamnesis/cli";
-import { anamnesisFor } from "../../anamnesis/wiring";
-import { LEARNING_USAGE, runLearningCli } from "../../learning/cli";
-import { learningFor } from "../../learning/service";
+import { SCHEDULE_USAGE, runScheduleCli } from "../../schedule/server";
+import type { Services } from "../../core/server";
+import { ANAMNESIS_USAGE } from "../../anamnesis";
+import { anamnesisFor } from "../../anamnesis";
+import { LEARNING_USAGE, runLearningCli } from "../../learning";
+import { learningFor } from "../../learning";
 
 export function registerCli(ctx: ServerCore, services: Services) {
   const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, host } = ctx;

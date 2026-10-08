@@ -4,11 +4,11 @@ import type { rpcContract } from "../../contracts";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import type { RunView, ScheduleView } from "../views";
-import { HELPER_PANEL_ACTION } from "../../native-agent/ui/helper-threads";
+import { HELPER_PANEL_ACTION } from "../../native-agent/ui";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import { RunPill, errorText, fill, fmtTime } from "./schedule-parts";
 import { usdText } from "./schedule-who";
-import { modelShort, providerShort } from "../../workflow/ui/workflow-models";
+import { modelShort, providerShort } from "../../workflow/ui";
 
 const PAGE = 20;
 const LIVE = new Set<RunView["status"]>(["queued", "running", "waiting"]);

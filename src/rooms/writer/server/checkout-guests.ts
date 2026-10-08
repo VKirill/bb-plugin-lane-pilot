@@ -1,7 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { LanePilotDatabase } from "../../storage/database";
+import type { LanePilotDatabase } from "../../storage";
 import { resolve } from "node:path";
-import { sendServiceMessage } from "../../relay/server/service-message";
+import { sendServiceMessage } from "../../relay/server";
 
 /**
  * Threads that are not Lane Pilot's but work in a folder where a Lane Pilot run merges writers' work. Agents on the

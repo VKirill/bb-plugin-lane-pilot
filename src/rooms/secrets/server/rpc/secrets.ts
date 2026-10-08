@@ -1,7 +1,7 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
-import { listSecretIssuance } from "../../../storage/database";
-import type { ServerCore } from "../../../core/server/core";
+import { listSecretIssuance } from "../../../storage";
+import type { ServerCore } from "../../../core/server";
 
 export function secretsRpc(ctx: ServerCore) {
   return {

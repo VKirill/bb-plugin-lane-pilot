@@ -60,11 +60,11 @@ import {
   prepareNativeClaudeHost,
   prepareOpencodeMinimalHost,
   prepareBbShimHost,
-} from "./src/rooms/host-worker/host-handlers";
-import { sessionInventory } from "./src/rooms/native-agent/session-inventory";
+} from "./src/rooms/host-worker";
+import { sessionInventory } from "./src/rooms/native-agent";
 import { nativeInstallHost } from "./src/rooms/native-install/native-install-host";
-import { provideJevKey } from "./src/rooms/verification/docs-jev";
-import { anamnesisHandler } from "./src/rooms/anamnesis/host";
+import { provideJevKey } from "./src/rooms/verification";
+import { anamnesisHandler } from "./src/rooms/anamnesis";
 
 /** Takes the Env Catalog key the server attached to a Jev call before the handler runs. */
 const withJevKey = <I extends { jevApiKey?: string }, C, O>(handler: (input: I, context: C) => O | Promise<O>) => async (input: I, context: C) => {

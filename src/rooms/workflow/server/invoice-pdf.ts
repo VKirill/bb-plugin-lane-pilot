@@ -1,4 +1,4 @@
-import type { ServerCore } from "../../core/server/core";
+import type { ServerCore } from "../../core/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 
 /**

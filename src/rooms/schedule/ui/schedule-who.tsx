@@ -7,11 +7,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ERRAND_BUILTIN } from "../errand-model";
 import type { CostView, ErrandDefaultView, ModelView } from "../views";
 import { PRESET_SLUGS, presetSelection } from "@lane-pilot/models";
-import { Pill } from "../../ui-shell/ui/pill";
+import { Pill } from "../../ui-shell/ui";
 import { fill } from "./schedule-parts";
 import type { ModelFields } from "./schedule-model";
-import { executorLine, modelShort, providerShort, sourceText, useModelCatalog, type StepExecutor } from "../../workflow/ui/workflow-models";
-import { NativeModelPicker, type PickerSeed } from "../../workflow/ui/workflow-native-picker";
+import { executorLine, modelShort, providerShort, sourceText, useModelCatalog, type StepExecutor } from "../../workflow/ui";
+import { NativeModelPicker, type PickerSeed } from "../../workflow/ui";
 
 /** «Who runs it» of the schedule screens: the resolved model with where it comes from, the cost, the native model picker, the steps of a chain. */
 

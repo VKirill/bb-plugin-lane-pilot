@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { access, lstat, mkdir, readFile, readdir, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { parse, type ParseError } from "jsonc-parser/lib/esm/main.js";
-import { TARGET_SHA } from "../runs/constants";
+import { TARGET_SHA } from "../runs";
 import { hashPath } from "@lane-pilot/kit";
 import { agentsDir, resolveHome } from "@lane-pilot/kit";
 import { assessEngineCapabilities, IMPACTED_FUNCTIONS, inspectEngineCapabilities, inspectEngineCapabilitiesDetailed } from "./capabilities";

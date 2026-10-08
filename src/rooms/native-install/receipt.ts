@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { EXTERNAL_OPS_WARNING } from "../runs/constants";
+import { EXTERNAL_OPS_WARNING } from "../runs";
 
 export type FileChange = {
   path: string;

@@ -1,4 +1,4 @@
-import type { ServerCore } from "../../core/server/core";
+import type { ServerCore } from "../../core/server";
 
 /**
  * VK core hook policy (`vk.hookPolicy` in package.json, `bb.vk.experimental_vkOnHookTimeout`). BB drops the env of a

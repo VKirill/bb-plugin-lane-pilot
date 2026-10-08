@@ -12,11 +12,11 @@ import {
   type MemoryRecord,
   type MemorySettings,
 } from "@lane-pilot/memory-core";
-import { getRun, type LanePilotDatabase } from "../../storage/database";
-import { requirePmRun } from "../../core/server/context";
-import { registerObservedTool } from "../../core/server/tool-result";
-import type { ServerCore } from "../../core/server/core";
-import { memorySettingsFor } from "../../self-repair/server/insights";
+import { getRun, type LanePilotDatabase } from "../../storage";
+import { requirePmRun } from "../../core/server";
+import { registerObservedTool } from "../../core/server";
+import type { ServerCore } from "../../core/server";
+import { memorySettingsFor } from "../../self-repair/server";
 import { sha256Hex } from "@lane-pilot/kit";
 
 export const MEMORY_SYNC_TOOLS = ["lane_pilot_memory_import", "lane_pilot_memory_export"] as const;

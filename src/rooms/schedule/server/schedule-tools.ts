@@ -2,9 +2,9 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { normalizeSchedule, scheduleInputSchema } from "../model";
 import type { ScheduleView } from "../views";
-import type { ServerCore } from "../../core/server/core";
-import type { Services } from "../../core/server/services";
-import { registerObservedTool, ToolError } from "../../core/server/tool-result";
+import type { ServerCore } from "../../core/server";
+import type { Services } from "../../core/server";
+import { registerObservedTool, ToolError } from "../../core/server";
 
 /**
  * The PM's door to the schedule board: every action goes straight through, no owner form (owner decision 2026-10-08). The one

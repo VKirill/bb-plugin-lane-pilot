@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { clipped, extractModelJson, NO_TOOLS_LINE } from "../critique/model-json";
-import { STAGE_IDS } from "../tasks/contract";
-import type { GateReport } from "../tasks/gate-report";
+import { clipped, extractModelJson, NO_TOOLS_LINE } from "../critique";
+import { STAGE_IDS } from "../tasks";
+import type { GateReport } from "../tasks";
 
 export const gateTriageResultSchema=z.object({
   decision:z.enum(["clear","recommendations"]),

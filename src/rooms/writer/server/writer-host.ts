@@ -1,11 +1,11 @@
-import { MAIN_AGENT_PROFILE_IDS, compileEffectiveMainAgent, compileMainAgentProfile } from "../../native-agent/agent-profile";
-import { loadPrototypeConfig } from "../../storage/database";
+import { MAIN_AGENT_PROFILE_IDS, compileEffectiveMainAgent, compileMainAgentProfile } from "../../native-agent";
+import { loadPrototypeConfig } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID, LP_DEFAULTS_KEY, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
-import { resolveWriterBinding } from "../../native-agent/project-binding";
-import type { ProjectSourceBinding } from "../../native-agent/project-binding";
-import { mapListedQaHosts } from "../../qa/qa-host";
-import { stringAt } from "../../core/server/values";
-import type { ServerCore } from "../../core/server/core";
+import { resolveWriterBinding } from "../../native-agent";
+import type { ProjectSourceBinding } from "../../native-agent";
+import { mapListedQaHosts } from "../../qa";
+import { stringAt } from "../../core/server";
+import type { ServerCore } from "../../core/server";
 
 export function createWriterHost(ctx: ServerCore) {
   const { bb, db, host, ownedAgents, writerBindingKey } = ctx;

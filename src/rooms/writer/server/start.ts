@@ -3,41 +3,41 @@ import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop,
 import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { providerPoolCap } from "@lane-pilot/settings-catalog";
-import { countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, transitionAttempt } from "../../storage/database";
+import { countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, transitionAttempt } from "../../storage";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap } from "@lane-pilot/kit";
-import { reconcile } from "../../stability/reconcile";
-import { emergencyFallbackDecision } from "../../night/emergency-writer";
+import { reconcile } from "../../stability";
+import { emergencyFallbackDecision } from "../../night";
 import { writerFallbackChain, writerFallbacks } from "../writer-fallbacks";
-import { usageHoldReason, usageSkipPercent } from "../../usage/server/provider-usage";
-import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../runs/state-machine";
-import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, isWaitingSecret, isWriterSilent, repeatedFailureReason, taskFamily, turnFailureKey } from "../../runs/failure-class";
-import { isTaskSatisfied } from "../../runs/server/blocked-by";
+import { usageHoldReason, usageSkipPercent } from "../../usage/server";
+import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../runs";
+import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, isWaitingSecret, isWriterSilent, repeatedFailureReason, taskFamily, turnFailureKey } from "../../runs";
+import { isTaskSatisfied } from "../../runs/server";
 import { previousAttemptBrief, stickyTurnPrompt } from "./writer-task";
-import { isMainfixTask } from "../../tasks/validate-output";
-import { openDatabase } from "../../storage/database";
+import { isMainfixTask } from "../../tasks";
+import { openDatabase } from "../../storage";
 import { createWriterSticky } from "./sticky";
-import { failureClass, type FailureClass } from "../../runs/failure-class";
+import { failureClass, type FailureClass } from "../../runs";
 import { jev } from "@lane-pilot/jev";
-import { judgedFailureClass } from "../../runs/failure-class-model";
-import { isRunHalted } from "../../runs/server/runs-halt";
-import { allowedSecretNames, secretProblem, waitingSecretNote, waitingSecretReason } from "../../secrets/server/secrets";
+import { judgedFailureClass } from "../../runs";
+import { isRunHalted } from "../../runs/server";
+import { allowedSecretNames, secretProblem, waitingSecretNote, waitingSecretReason } from "../../secrets/server";
 
 /** How long a task waits for a blocked dependency to be sent again and accepted. */
 const DEPENDENCY_REDO_WAIT_MS = 6 * 3600_000;
 /** How long a task waits for an Env Catalog secret, and how often it asks the catalog (BB sends no server-side event when it changes). */
 const SECRET_WAIT_MS = 12 * 3600_000;
 const secretPollMs = () => Number(process.env.LANE_PILOT_SECRET_POLL_MS) || 20_000;
-import type { AttemptState } from "../../runs/state-machine";
-import { closeWriterStages, recordStage } from "../../runs/server/stage-records";
-import { id, stringAt } from "../../core/server/values";
+import type { AttemptState } from "../../runs";
+import { closeWriterStages, recordStage } from "../../runs/server";
+import { id, stringAt } from "../../core/server";
 import { shouldMergeAttemptWorktree } from "./spawn";
 import { isLiveDecision, LIVE_FOLDER_RECEIPT } from "../live-folder";
 import { resolve } from "node:path";
-import { findThreadsByMetadata } from "../../core/server/thread-keys";
-import type { ServerCore } from "../../core/server/core";
-import type { Services } from "../../core/server/services";
-import { sendServiceMessage } from "../../relay/server/service-message";
+import { findThreadsByMetadata } from "../../core/server";
+import type { ServerCore } from "../../core/server";
+import type { Services } from "../../core/server";
+import { sendServiceMessage } from "../../relay/server";
 
 /** Where a new attempt of the task starts: the run's workspace, whatever worktree a resumed attempt was bound to. */
 export function freshAttemptStart(task:TaskV2, config:PrototypeConfig, runWorkspace:string|null):{task:TaskV2;config:PrototypeConfig} {

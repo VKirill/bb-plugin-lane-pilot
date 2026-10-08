@@ -1,10 +1,10 @@
 import { t } from "@lane-pilot/i18n";
-import { CatalogField } from "../../settings/ui/catalog-field";
+import { CatalogField } from "../../settings/ui";
 import { extraSettingTab } from "./placement";
-import { ScheduleBoard } from "../../schedule/ui/schedule-board";
+import { ScheduleBoard } from "../../schedule/ui";
 import { Segments } from "./segments";
 import { SEGMENT_LABELS, segmentsFor } from "./tabs-model";
-import { SettingsGroup } from "../../settings/ui/setting-controls";
+import { SettingsGroup } from "../../settings/ui";
 import { WorkflowsScreen } from "../../workflow/ui/workflows";
 import type { LpPage } from "./use-lp-page";
 

@@ -1,20 +1,20 @@
-import { HARNESS_VERSION } from "../../storage/database";
+import { HARNESS_VERSION } from "../../storage";
 import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
 import { LP_TASK_PIPELINE, builtinWorkflow } from "../builtin";
 import { createWorkflowCatalog } from "../catalog";
 import { ENGINE_COMPAT_VERSION, WorkflowEngine } from "../engine";
-import { createStatusResolver } from "../../storage/ops-store";
+import { createStatusResolver } from "../../storage";
 import { registerPureActions } from "../actions";
 import { registerReducers } from "../reducers";
 import { createWorkflowAgents } from "./workflow-agent";
 import { createGoalAuditor } from "./workflow-goal-audit";
 import { chainRuntimeFor, registerChainExecutors } from "./workflow-executors";
-import { registerDispatchExecutors } from "../../writer/server/dispatch-workflow";
+import { registerDispatchExecutors } from "../../writer/server";
 import { registerInvoiceActions } from "./workflow-invoice";
-import { registerAnamnesisActions } from "../../anamnesis/chain-actions";
-import { anamnesisFor } from "../../anamnesis/wiring";
-import type { ServerCore } from "../../core/server/core";
-import type { Services } from "../../core/server/services";
+import { registerAnamnesisActions } from "../../anamnesis";
+import { anamnesisFor } from "../../anamnesis";
+import type { ServerCore } from "../../core/server";
+import type { Services } from "../../core/server";
 
 /**
  * The one workflow engine of this plugin instance, with the executors of the built-in workflows. It stops at a step

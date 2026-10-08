@@ -1,5 +1,5 @@
 import type { ModelCatalog, CatalogProvider } from "@lane-pilot/models";
-import { mapListedQaHosts } from "../../qa/qa-host";
+import { mapListedQaHosts } from "../../qa";
 import type { ServerCore } from "./core";
 import { stringAt } from "./values";
 

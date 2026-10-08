@@ -1,11 +1,11 @@
 import { t } from "@lane-pilot/i18n";
-import { AnamnesisTab } from "../../anamnesis/ui/anamnesis-tab";
-import { DocsPlaces } from "../../docs/ui/docs-places";
-import { MemoryRecords } from "../../memory/ui/memory-records";
-import { RuleProposals } from "../../self-repair/ui/rule-proposals";
+import { AnamnesisTab } from "../../anamnesis/ui";
+import { DocsPlaces } from "../../docs/ui";
+import { MemoryRecords } from "../../memory/ui";
+import { RuleProposals } from "../../self-repair/ui";
 import { asBoolean } from "./page-model";
-import { CatalogField, CatalogFields } from "../../settings/ui/catalog-field";
-import { AdvancedRows, SettingsGroup } from "../../settings/ui/setting-controls";
+import { CatalogField, CatalogFields } from "../../settings/ui";
+import { AdvancedRows, SettingsGroup } from "../../settings/ui";
 import { HelpSup } from "@lane-pilot/ui-kit";
 import { Pill } from "./pill";
 import { Segments } from "./segments";

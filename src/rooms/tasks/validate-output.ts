@@ -1,5 +1,5 @@
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
-import { ENVIRONMENT_REASON, NO_ANSWER_REASON, isEnvironmentCheckFailure } from "../runs/failure-class";
+import { ENVIRONMENT_REASON, NO_ANSWER_REASON, isEnvironmentCheckFailure } from "../runs";
 import { cleanCheckOutput } from "@lane-pilot/kit";
 import type { TaskV2 } from "../contracts";
 

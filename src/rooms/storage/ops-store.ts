@@ -1,7 +1,7 @@
 import type { LanePilotDatabase } from "./database";
 import { legacyDefinitionSha256, type StoredWorkflow } from "./store";
-import type { Workflow } from "../workflow/schema";
-import type { WorkflowProblem } from "../workflow/validate";
+import type { Workflow } from "../workflow";
+import type { WorkflowProblem } from "../workflow";
 
 /**
  * What the owner's side of the workflow library keeps beside the journal: the receipts of green test runs of a workflow file

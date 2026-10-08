@@ -2,21 +2,21 @@ import { compiledMainAgentSpawnBinding, detectCompiledMainAgentCapability, resol
 import type { CompiledMainAgent } from "../agent-profile";
 import { readyComposerSnapshot, spawnEnvironmentFromSelection } from "../composer-selection";
 import type { ComposerSelectionSnapshot } from "../composer-selection";
-import { TARGET_SHA } from "../../runs/constants";
-import { claimActivation, createRun, freezeRunBinding, getActivation, getRunSettingsScopes, importSettingsOnce, loadPrototypeConfig, releaseActivation, setRunState, setRunThread, setRunWorkspace } from "../../storage/database";
-import { ownerCardBlock } from "../../anamnesis/card";
-import { anamnesisFor } from "../../anamnesis/wiring";
+import { TARGET_SHA } from "../../runs";
+import { claimActivation, createRun, freezeRunBinding, getActivation, getRunSettingsScopes, importSettingsOnce, loadPrototypeConfig, releaseActivation, setRunState, setRunThread, setRunWorkspace } from "../../storage";
+import { ownerCardBlock } from "../../anamnesis";
+import { anamnesisFor } from "../../anamnesis";
 import { pmRulesPromptBlock } from "../../learning/pm-rules";
-import { ruleBudget } from "../../learning/rule-budget";
+import { ruleBudget } from "../../learning";
 import { writerExecutionSelection } from "@lane-pilot/models";
-import { buildRunPolicy } from "../../tasks/run-policy";
-import { parseWorkspaceMode, resolveManagedWorkspace, usesManagedWorktree } from "../../verification/routing";
-import { excludeBookkeeping } from "../../verification/server/bookkeeping-exclude";
-import { fullAccessSpawn, pmHasGuard, pmPrompt } from "../../core/server/pm-spawn";
-import { requireHelperSpawn, requiredPolicyField } from "../../runs/server/run-routing";
-import { id, stringAt, valueAt } from "../../core/server/values";
-import type { ServerCore } from "../../core/server/core";
-import type { Services } from "../../core/server/services";
+import { buildRunPolicy } from "../../tasks";
+import { parseWorkspaceMode, resolveManagedWorkspace, usesManagedWorktree } from "../../verification";
+import { excludeBookkeeping } from "../../verification/server";
+import { fullAccessSpawn, pmHasGuard, pmPrompt } from "../../core/server";
+import { requireHelperSpawn, requiredPolicyField } from "../../runs/server";
+import { id, stringAt, valueAt } from "../../core/server";
+import type { ServerCore } from "../../core/server";
+import type { Services } from "../../core/server";
 
 export function createActivation(ctx: ServerCore, services: Services) {
   const { bb, db, effectiveProjectSettings, host, ownedAgents, refreshRun } = ctx;

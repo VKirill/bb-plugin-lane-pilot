@@ -1,8 +1,8 @@
-import { appendGateEvaluation, getTaskPlan, listStageReceipts, openDatabase, saveStageReceipt, transitionAttempt } from "../../storage/database";
+import { appendGateEvaluation, getTaskPlan, listStageReceipts, openDatabase, saveStageReceipt, transitionAttempt } from "../../storage";
 import { RETRY_ELIGIBLE } from "../state-machine";
 import type { AttemptState } from "../state-machine";
-import { sha256, stageTransition, validateStageReceipt } from "../../tasks/contract";
-import type { StageId, StageState } from "../../tasks/contract";
+import { sha256, stageTransition, validateStageReceipt } from "../../tasks";
+import type { StageId, StageState } from "../../tasks";
 export function recordStage(db:ReturnType<typeof openDatabase>, input:{runId:string;taskId:string;stageId:StageId;state:StageState;input:string;attempt?:number;
   providerId?:string|null;model?:string|null;threadId?:string|null;result?:unknown|null;reason?:string|null;replaceOnNewInput?:boolean;
   /** Starts a stage over from blocked or skipped; only for a stage whose work never ran, so no verdict is lost. */

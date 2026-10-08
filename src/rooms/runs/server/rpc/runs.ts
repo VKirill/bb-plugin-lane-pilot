@@ -1,22 +1,22 @@
 import { t } from "@lane-pilot/i18n";
 import { setRunHalted } from "../runs-halt";
-import { PARKED_KEY } from "../../../stability/server/stability";
-import { agentPickerLabel } from "../../../native-agent/agent-display";
-import { compileEffectiveMainAgent, detectCompiledMainAgentCapability } from "../../../native-agent/agent-profile";
-import { countAttempts, createAttempt, getActivation, getAttempt, transitionAttempt } from "../../../storage/database";
-import { detectRequiredSessionPolicyCapability } from "../../../native-agent/helper-context";
+import { PARKED_KEY } from "../../../stability/server";
+import { agentPickerLabel } from "../../../native-agent";
+import { compileEffectiveMainAgent, detectCompiledMainAgentCapability } from "../../../native-agent";
+import { countAttempts, createAttempt, getActivation, getAttempt, transitionAttempt } from "../../../storage";
+import { detectRequiredSessionPolicyCapability } from "../../../native-agent";
 import { storeNativeSelection } from "../../../native-agent/server/native-profile";
-import { DEFAULT_NATIVE_AGENT, nativeAgentCliId, nativeSelectionSchema } from "../../../native-agent/native-session";
-import { userVisibleProjects } from "../../../native-agent/project-scope";
+import { DEFAULT_NATIVE_AGENT, nativeAgentCliId, nativeSelectionSchema } from "../../../native-agent";
+import { userVisibleProjects } from "../../../native-agent";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../state-machine";
 import type { AttemptState } from "../../state-machine";
 import { finishRunSafely } from "../run-finish";
 import { cancelAttemptById } from "../cancel";
-import { id, stringAt, valueAt } from "../../../core/server/values";
+import { id, stringAt, valueAt } from "../../../core/server";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
-import type { ServerCore } from "../../../core/server/core";
-import type { Services } from "../../../core/server/services";
+import type { ServerCore } from "../../../core/server";
+import type { Services } from "../../../core/server";
 
 export function runsRpc(ctx: ServerCore, services: Services) {
   const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, nativeInstaller, ownedAgents } = ctx;

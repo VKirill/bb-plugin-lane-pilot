@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ServerCore } from "../../core/server/core";
+import type { ServerCore } from "../../core/server";
 
 /** The environment provider Lane Pilot registers for writer attempts (H9); BB's provider ids are global. */
 export const LANE_WORKTREE_PROVIDER_ID = "lane-pilot-worktree";
