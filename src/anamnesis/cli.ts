@@ -20,7 +20,7 @@ export const ANAMNESIS_USAGE = [
   "bb lane-pilot anamnesis confirm|reject <id> [--reason TEXT]",
   "bb lane-pilot anamnesis forget <id> | --all --yes | --source SOURCE --yes",
   "bb lane-pilot anamnesis sources [--set SOURCE=on|off]",
-  "bb lane-pilot anamnesis config [--authors EMAIL,NAME] [--roots /path,/path] [--max-classify N] [--extract on|off]",
+  "bb lane-pilot anamnesis config [--authors EMAIL,NAME] [--roots /path,/path] [--max-classify N] [--extract on|off] [--telegram-channels @name,@name]",
   "bb lane-pilot anamnesis load [--run] [--since YYYY-MM-DD] [--sources a,b] [--classify --yes [--max-classify N] [--allow-sensitive-to-jev]] [--json]",
   "bb lane-pilot anamnesis review [--limit N]",
   "bb lane-pilot anamnesis whoami [--sections identity,skills,projects,timeline,people,interests,preferences,tools] [--detail brief|normal|full] [--confirmed-only] [--include-sensitive] [--public-only] [--year YYYY]",
@@ -44,7 +44,7 @@ const OPTIONS = {
   sensitivity: { type: "string" }, reason: { type: "string" }, confidence: { type: "string" }, all: { type: "boolean" }, yes: { type: "boolean" },
   source: { type: "string" }, set: { type: "string" }, help: { type: "boolean" },
   run: { type: "boolean" }, classify: { type: "boolean" }, since: { type: "string" }, sources: { type: "string" }, "max-classify": { type: "string" },
-  "allow-sensitive-to-jev": { type: "boolean" }, sections: { type: "string" }, detail: { type: "string" }, "confirmed-only": { type: "boolean" }, "public-only": { type: "boolean" }, year: { type: "string" }, "max-chars": { type: "string" }, authors: { type: "string" }, roots: { type: "string" }, extract: { type: "string" },
+  "allow-sensitive-to-jev": { type: "boolean" }, sections: { type: "string" }, detail: { type: "string" }, "confirmed-only": { type: "boolean" }, "public-only": { type: "boolean" }, year: { type: "string" }, "max-chars": { type: "string" }, authors: { type: "string" }, roots: { type: "string" }, extract: { type: "string" }, "telegram-channels": { type: "string" },
 } as const;
 
 const day = (at: number | null): string => (at ? new Date(at).toISOString().slice(0, 10) : "—");
@@ -157,13 +157,13 @@ async function core(command: string, { values, positionals }: Parsed, deps: CliD
     }
     case "config": {
       const csv = (text: string | undefined) => text?.split(",").map((part) => part.trim()).filter(Boolean);
-      const authors = csv(values.authors), roots = csv(values.roots);
+      const authors = csv(values.authors), roots = csv(values.roots), telegramChannels = csv(values["telegram-channels"]);
       const maxClassify = values["max-classify"] ? Number(values["max-classify"]) : undefined;
       if (maxClassify !== undefined && !(Number.isInteger(maxClassify) && maxClassify >= 1)) throw new Error("--max-classify must be a whole number of at least 1");
       if (values.extract !== undefined && values.extract !== "on" && values.extract !== "off") throw new Error("--extract on|off: automatic learning sends masked fragments of your messages to Jev every day and as they come");
       const extract = values.extract === undefined ? undefined : values.extract === "on";
-      const next = authors || roots || maxClassify !== undefined || extract !== undefined
-        ? await hub.setConfig({ ...(authors ? { authors } : {}), ...(roots ? { roots } : {}), ...(maxClassify !== undefined ? { maxClassify } : {}), ...(extract !== undefined ? { extract } : {}) }) : await hub.config();
+      const next = authors || roots || telegramChannels || maxClassify !== undefined || extract !== undefined
+        ? await hub.setConfig({ ...(authors ? { authors } : {}), ...(roots ? { roots } : {}), ...(telegramChannels ? { telegramChannels } : {}), ...(maxClassify !== undefined ? { maxClassify } : {}), ...(extract !== undefined ? { extract } : {}) }) : await hub.config();
       return out(next, true, () => "");
     }
     case "load": {

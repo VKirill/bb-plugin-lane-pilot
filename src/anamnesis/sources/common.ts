@@ -11,7 +11,7 @@ export type SourceRecord = {
 };
 export type SourceScan = { source: Source; items: number; records: SourceRecord[]; note?: string };
 
-const SKIP_DIRS = new Set(["node_modules", ".git", ".claude", ".bb", ".cache", "dist", "build", ".venv", "venv", "__pycache__", ".next", ".turbo", "Library", ".Trash", "coverage", ".gitnexus", ".agents"]);
+export const SKIP_DIRS = new Set(["node_modules", ".git", ".claude", ".bb", ".cache", "dist", "build", ".venv", "venv", "__pycache__", ".next", ".turbo", "Library", ".Trash", "coverage", ".gitnexus", ".agents"]);
 
 export async function isDir(path: string): Promise<boolean> {
   try { return (await stat(path)).isDirectory(); } catch { return false; }

@@ -50,7 +50,7 @@ export async function dailyPass(deps: DailyDeps, options: { signal?: AbortSignal
   /* ---- the machine's sources, whole window: their records carry counts that a part-window would overwrite ---- */
   const hostWanted = HOST_SOURCES.filter((source): source is HostSource => enabled.get(source) !== false);
   if (hostWanted.length) {
-    report.hostSources = (await deps.hub.ask({ op: "collect", mode: "run", sources: hostWanted, ...(config.roots ? { roots: config.roots } : {}), ...(config.authors ? { authors: config.authors } : {}), since: at - DEFAULT_LOOKBACK_DAYS * DAY, until: at }, 600_000)).sources;
+    report.hostSources = (await deps.hub.ask({ op: "collect", mode: "run", sources: hostWanted, ...(config.roots ? { roots: config.roots } : {}), ...(config.authors ? { authors: config.authors } : {}), ...(config.telegramChannels ? { telegramChannels: config.telegramChannels } : {}), since: at - DEFAULT_LOOKBACK_DAYS * DAY, until: at }, 600_000)).sources;
   }
   options.signal?.throwIfAborted();
 

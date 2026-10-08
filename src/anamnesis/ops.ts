@@ -17,7 +17,7 @@ export const editPatchSchema = z.object({
 export const checkpointSchema = z.object({ source, at: z.number().int().nonnegative(), detail: z.record(z.string(), z.unknown()).optional() }).strict();
 
 /** Sources read on the owner's machine (their content never goes through the hub). */
-export const HOST_SOURCES = ["git", "journal", "registry", "claude-memory", "bb-memory"] as const;
+export const HOST_SOURCES = ["git", "journal", "registry", "claude-memory", "bb-memory", "telegram", "elba"] as const;
 export type HostSource = (typeof HOST_SOURCES)[number];
 
 export const hostOps = {
@@ -42,6 +42,8 @@ export const hostOps = {
   collect: z.object({
     op: z.literal("collect"), mode: z.enum(["plan", "run"]), sources: z.array(z.enum(HOST_SOURCES)).min(1).max(HOST_SOURCES.length),
     roots: z.array(z.string().startsWith("/")).max(20).optional(), authors: z.array(z.string().min(1).max(200)).max(20).optional(),
+    /** The owner's own channels for the Telegram source (A10). */
+    telegramChannels: z.array(z.string().min(2).max(200)).max(10).optional(),
     since: z.number().int().nonnegative(), until: z.number().int().positive(),
   }).strict(),
   /** «Who am I in your eyes», composed on the owner's machine from the records; only the text travels. Read-only. */

@@ -68,7 +68,7 @@ export async function loadAnamnesis(deps: LoadDeps, options: LoadOptions): Promi
 
   const hostWanted = HOST_SOURCES.filter((source): source is HostSource => wanted(source));
   const hostSources = hostWanted.length
-    ? (await deps.hub.ask({ op: "collect", mode: options.mode, sources: hostWanted, ...(config.roots ? { roots: config.roots } : {}), ...(config.authors ? { authors: config.authors } : {}), since: from, until }, 600_000)).sources
+    ? (await deps.hub.ask({ op: "collect", mode: options.mode, sources: hostWanted, ...(config.roots ? { roots: config.roots } : {}), ...(config.authors ? { authors: config.authors } : {}), ...(config.telegramChannels ? { telegramChannels: config.telegramChannels } : {}), since: from, until }, 600_000)).sources
     : [];
 
   const report: LoadReport = { mode: options.mode, window: { from, to: until }, hostSources, messages: null, lpRuns: null, hubRecords: null, classify: null,
