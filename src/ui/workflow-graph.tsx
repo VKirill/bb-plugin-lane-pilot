@@ -308,7 +308,7 @@ function Canvas({ graph, locale, expansions, runs, takenEdges, changedNodes, cha
             <Button type="button" size="sm" variant="outline" className="lp-raised h-7 px-2 text-xs" aria-pressed={orientation === "DOWN"} aria-label={t("wfFlipDirection")} data-testid="wf-direction"
               onClick={() => setOrientation((current) => (current === "RIGHT" ? "DOWN" : "RIGHT"))}>{orientation === "RIGHT" ? "→" : "↓"}</Button>
           </Panel>
-          {!empty ? <MiniMap className="lp-wf-minimap" aria-label={t("wfMinimap")} pannable zoomable position="bottom-right" nodeBorderRadius={4} nodeStrokeWidth={orientation === "RIGHT" ? 9 : 14}
+          {!empty && orientation === "RIGHT" ? <MiniMap className="lp-wf-minimap" aria-label={t("wfMinimap")} pannable zoomable position="bottom-right" nodeBorderRadius={4} nodeStrokeWidth={orientation === "RIGHT" ? 9 : 14}
             style={orientation === "RIGHT" ? { width: 176, height: 64 } : { width: 72, height: 104 }}
             nodeColor={(node) => TONE_COLOR[(node.data as FlowNode["data"]).view.tone] ?? "var(--muted-foreground)"} nodeStrokeColor={(node) => TONE_COLOR[(node.data as FlowNode["data"]).view.tone] ?? "var(--muted-foreground)"} /> : null}
           <Panel position="bottom-left" className="lp-wf-hint" data-testid="wf-pan-hint">{draggable ? t("wfDragHint") : t("wfPanHint")}</Panel>
