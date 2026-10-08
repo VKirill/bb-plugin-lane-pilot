@@ -40,7 +40,9 @@ select a.id, a.run_id, a.task_id, a.state, a.reason, a.created_at, a.harness_ver
 from lane_pilot_attempt a
 join lane_pilot_run r on r.id = a.run_id
 left join lp_vnum vn on vn.v = a.harness_version
-left join core.projects p on p.id = r.project_id;
+left join core.projects p on p.id = r.project_id
+-- An attempt still in flight has not succeeded or failed yet; counted, it read as a failure of an unknown class.
+where a.state not in ('queued', 'spawn_requested', 'spawn_unknown', 'running', 'cancel_requested');
 
 create temp view lp_attempt_class as
 select *, case when state in ('accepted', 'canceled') then null

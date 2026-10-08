@@ -114,6 +114,17 @@ describe("lp-metrics views", () => {
       expect(db_v(world("", [null]))).toBe("0.1.193");
     });
 
+    // Audit 2026-10-08 round 3, item 17: an attempt still running was a failure of an unknown class in every share.
+    it("leaves attempts that have not finished out of every count: they are neither accepted nor failed yet", () => {
+      const db = world("0.1.193", ["0.1.194", "0.1.194"]);
+      for (const [index, state] of ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"].entries()) {
+        db.prepare("insert into lane_pilot_attempt values (?, 'run1', 'task', ?, null, ?, '0.1.194')").run(`open${index}`, state, 2_000 + index);
+      }
+      db.prepare("insert into lane_pilot_attempt values ('failed1', 'run1', 'task', 'blocked', 'internal_error: x', 3000, '0.1.194')").run();
+      expect(db.prepare("select count(*) n from lp_attempt").get()).toEqual({ n: 3 });
+      expect(db.prepare("select count(*) n, sum(cls is not null) failed from lp_attempt_class").get()).toEqual({ n: 3, failed: 1 });
+    });
+
     it("an explicit since-version below the floor is respected", () => {
       expect(split(world("0.1.177", [null, "0.1.176", "0.1.177", "0.1.180"]))).toEqual([0, 0, 1, 1]);
     });
