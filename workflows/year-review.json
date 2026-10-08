@@ -1,0 +1,280 @@
+{
+  "id": "year-review",
+  "name": {
+    "en": "The year in review from the public anamnesis",
+    "ru": "Итоги года из публичного анамнеза"
+  },
+  "description": {
+    "en": "Writes the owner's year in review (Markdown) from the public, confirmed records of the anamnesis: skills that grew, projects started or worked on, the activity and the milestones of the year. Nothing private or sensitive is read. Saves a file in the project; nothing is sent.",
+    "ru": "Пишет итоги года владельца (Markdown) из публичных подтверждённых записей анамнеза: какие навыки выросли, какие проекты начаты или шли, активность и вехи года. Приватное и чувствительное не читается. Сохраняет файл в проекте, ничего не отправляет."
+  },
+  "examples": {
+    "ru": [
+      "Сделай итоги года по моему публичному анамнезу",
+      "Что я сделал за год: навыки, проекты, вехи, по публичным записям анамнеза",
+      "Годовой обзор из анамнеза, только публичное",
+      "Подведи итоги 2026 года из моего анамнеза"
+    ],
+    "en": [
+      "Write my year in review from the public records of my anamnesis",
+      "What did I do this year, from my public anamnesis"
+    ]
+  },
+  "not_for": [
+    "about-site",
+    "resume",
+    "retrospective of a Lane Pilot run (use retrospective)"
+  ],
+  "status": "tested",
+  "live_success": {
+    "output": "status",
+    "in": [
+      "done"
+    ]
+  },
+  "tags": [
+    "anamnesis",
+    "year",
+    "public"
+  ],
+  "triggers": [
+    "chat",
+    "manual"
+  ],
+  "inputs": {
+    "year": {
+      "type": "number",
+      "default": 0,
+      "note": "the calendar year; 0 or empty is the current one"
+    },
+    "language": {
+      "type": "string",
+      "default": "ru",
+      "note": "ru or en"
+    },
+    "notes": {
+      "type": "string",
+      "default": "",
+      "note": "what to stress; never a source of facts"
+    }
+  },
+  "outputs": {
+    "status": "done|nothing_public|blocked",
+    "review_path": "string",
+    "records": "int",
+    "reason": "string"
+  },
+  "quality_mode": {
+    "default": "standard",
+    "effect": "not used: there are no code tasks"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "skills": [
+      "ru-text"
+    ],
+    "secrets": [],
+    "machines": [
+      "the owner's Mac mini: the anamnesis store (~/.lane-pilot/anamnesis) is read through the host"
+    ]
+  },
+  "budget": {
+    "max_steps": 10,
+    "max_minutes": 30,
+    "max_usd": 1
+  },
+  "nodes": [
+    {
+      "id": "facts",
+      "type": "action",
+      "action": "anamnesis.public",
+      "title": {
+        "en": "Read the public facts",
+        "ru": "Прочитать публичные факты"
+      },
+      "rule": "code: the owner's records that are confirmed AND marked public, nothing else; drafts, candidates, private and sensitive records never leave the Mac mini",
+      "view": "year",
+      "year": "{{$inputs.year}}",
+      "out": {
+        "text": "string",
+        "records": "int",
+        "empty": "bool"
+      }
+    },
+    {
+      "id": "write",
+      "type": "agent",
+      "role": "analyst",
+      "profile": {
+        "skills": [
+          "ru-text"
+        ]
+      },
+      "title": {
+        "en": "Write the review",
+        "ru": "Написать итоги"
+      },
+      "prompt": "Write the owner's year in review as ONE Markdown document: a two-sentence opening, then what grew (skills: from which level to which), what was made (projects), the rhythm of the year (activity) and the milestones in date order. Use the numbers and levels exactly as the facts give them. Sources: ONLY `facts_text`: records the owner confirmed and marked public. Nothing else is a source: not your memory of the owner, not this chat, not `notes` (`notes` only says what to stress). Do not invent employers, dates, numbers, places, links or e-mail addresses; every link or address you write must stand in the facts. A part with no facts is left out, not filled. Language: `language` (ru or en). If `fix` is given, a check of your earlier text failed: correct exactly those violations. Put the whole text in `artifact`.",
+      "out": {
+        "artifact": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "check",
+      "type": "action",
+      "action": "anamnesis.check",
+      "title": {
+        "en": "Check what was written against the facts",
+        "ru": "Сверить написанное с фактами"
+      },
+      "rule": "code: not empty, within the size limit, no link or e-mail address that the facts do not contain, no draft mark",
+      "artifact": "{{write.artifact}}",
+      "facts": "{{facts.text}}",
+      "out": {
+        "ok": "bool",
+        "violations": "string[]"
+      }
+    },
+    {
+      "id": "deliver",
+      "type": "action",
+      "action": "fs.write",
+      "title": {
+        "en": "Save the file",
+        "ru": "Сохранить файл"
+      },
+      "path": ".lane-pilot/anamnesis/year-review-{{date}}/",
+      "files": [
+        "year-review.md"
+      ],
+      "contents": {
+        "year-review.md": "{{write.artifact}}"
+      },
+      "out": {
+        "review_path": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "review_path": "deliver.review_path",
+        "records": "facts.records",
+        "reason": "''"
+      }
+    },
+    {
+      "id": "nothing_public",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "nothing_public",
+        "review_path": "''",
+        "records": "facts.records",
+        "reason": "'no record is both confirmed and marked public: open the Anamnesis tab, confirm what is right and mark what may be shown as public'"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "review_path": "''",
+        "records": "facts.records",
+        "reason": "'the text did not pass the check against the public facts twice (a link, address or mark that is not in the facts)'"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "facts"
+    },
+    {
+      "from": "facts",
+      "to": "nothing_public",
+      "when": "facts.empty"
+    },
+    {
+      "from": "facts",
+      "to": "write",
+      "with": {
+        "facts_text": "facts.text",
+        "language": "input.language",
+        "notes": "input.notes"
+      }
+    },
+    {
+      "from": "write",
+      "to": "check"
+    },
+    {
+      "from": "check",
+      "to": "write",
+      "when": "!check.ok && visits('write') < 2",
+      "label": "fix",
+      "with": {
+        "facts_text": "facts.text",
+        "language": "input.language",
+        "notes": "input.notes",
+        "fix": "check.violations"
+      }
+    },
+    {
+      "from": "check",
+      "to": "deliver",
+      "when": "check.ok"
+    },
+    {
+      "from": "check",
+      "to": "blocked"
+    },
+    {
+      "from": "deliver",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "year-review-1",
+    "sim": {
+      "input": {
+        "year": 2026,
+        "language": "ru"
+      },
+      "stubs": {
+        "facts": {
+          "text": "What I know about you\n\n## Projects (1)\n- Lane Pilot",
+          "records": 1,
+          "empty": false
+        },
+        "write": {
+          "artifact": "# 2026\n\n## Skills\n- TypeScript: applies -> confident\n"
+        },
+        "deliver": {
+          "review_path": ".lane-pilot/anamnesis/year-review-2026-10-08/"
+        }
+      },
+      "expect_path": [
+        "facts",
+        "write",
+        "check",
+        "deliver",
+        "done"
+      ],
+      "expect_output": {
+        "status": "done"
+      }
+    },
+    "live": "on the owner's real records: run it for the current year; compare every skill change, count and date in the text with `bb lane-pilot anamnesis whoami --year <year> --public-only`.",
+    "note": "Tested on stubs: the facts, the writing agent and the file save answer from stubs; the check and the routing are real. Not live yet: the first run on the owner's real public records in the Mac mini store. See `live` for the acceptance run."
+  }
+}

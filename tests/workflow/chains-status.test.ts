@@ -11,7 +11,7 @@ import { chainStore } from "./chain-harness";
 const dir = __dirname;
 const sources = readdirSync(dir).filter((name) => /^chains-.*\.test\.ts$/.test(name) && name !== "chains-status.test.ts").map((name) => readFileSync(join(dir, name), "utf8")).join("\n");
 const withCase = new Set([...sources.matchAll(/runSim\("([a-z][a-z0-9.-]*)"/g)].map((match) => match[1]!));
-const OWN = ["deploy", "insights-post", "invoice-send", "reels", "seo-cocoon", "web-research", "x-to-telegram-digest"];
+const OWN = ["about-site", "deploy", "insights-post", "invoice-send", "reels", "resume", "seo-cocoon", "web-research", "x-to-telegram-digest", "year-review"];
 
 describe("status of the built-in chains", () => {
   it("every chain of the catalog has a test case, and published means its case is there", async () => {
@@ -43,6 +43,6 @@ describe("status of the built-in chains", () => {
     expect(ids).toEqual(expect.arrayContaining(["analyze-code", "plan-only", "code-review", "grill-plan", "test-gen", "security-audit", "issue-discover", "retrospective", "ui-audit"]));
     expect(ids).toEqual(expect.arrayContaining(OWN));
     expect(ids.filter((id) => store.get(id)!.workflow.internal).sort()).toEqual(["ins.post", "lp.analyze", "lp.brainstorm", "lp.build", "lp.close", "lp.plan", "lp.review"]);
-    expect(ids).toHaveLength(39);
+    expect(ids).toHaveLength(42);
   });
 });
