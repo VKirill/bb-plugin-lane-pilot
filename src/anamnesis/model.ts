@@ -89,7 +89,7 @@ const UNSAFE: Array<[RegExp, string]> = [
   [/\b(ignore|disregard|override)\b.{0,50}\b(previous|prior|system|developer)\b/isu, "instructions to the reader"],
   [/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/u, "a private key"],
   [/\b(?:sk-[a-z0-9_-]{20,}|gh[pousr]_[a-z0-9]{20,})\b/iu, "an API key"],
-  [/\b[A-Z0-9_]*(?:PASSWORD|SECRET|TOKEN|API_KEY)\s*=\s*\S+/iu, "a credential assignment"],
+  [/\b[A-Z0-9_]*(?:PASSWORD|SECRET|TOKEN|API_KEY)\s*=\s*(?!\*\*\*)\S+/iu, "a credential assignment"],
 ];
 /** The reason a text may not be stored as a statement, or null. The record is skipped, never half-written. */
 export function unsafeReason(text: string): string | null {
@@ -101,7 +101,7 @@ export function unsafeReason(text: string): string | null {
  * A quote the owner can read in review, short and with credentials masked. A quote is a pointer aid, so masking
  * (instead of refusing) loses nothing the evidence ref does not still point to.
  */
-export function scrubQuote(text: string): string {
+export function scrubQuote(text: string, max: number = MAX_QUOTE): string {
   const masked = text
     .replace(/[\u0000-\u0008\u000b-\u001f\u007f​-‏‪-‮⁠﻿]/gu, " ")
     .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, "***")
@@ -109,7 +109,7 @@ export function scrubQuote(text: string): string {
     .replace(/\b(Bearer\s+)[A-Za-z0-9._~+/=-]{16,}/g, "$1***")
     .replace(/\b([A-Z0-9_]*(?:PASSWORD|SECRET|TOKEN|API_KEY)\s*[=:]\s*)\S+/gi, "$1***")
     .replace(/\s+/g, " ").trim();
-  return masked.length > MAX_QUOTE ? `${masked.slice(0, MAX_QUOTE - 1)}…` : masked;
+  return masked.length > max ? `${masked.slice(0, max - 1)}…` : masked;
 }
 
 /* ---- sensitivity floor ---- */

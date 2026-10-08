@@ -1,6 +1,7 @@
 import { parseArgs } from "node:util";
 import { KINDS, SENSITIVITIES, SOURCES, STATUSES, type AnamnesisRecord, type Kind, type Source, type Status } from "./model";
 import type { Hub } from "./hub";
+import { DEFAULT_LOOKBACK_DAYS, formatReport, type LoadOptions, type LoadReport } from "./load";
 
 /**
  * `bb lane-pilot anamnesis …` — how the owner, and a PM that the owner asked, reach the records. There is no agent tool for it
@@ -18,11 +19,16 @@ export const ANAMNESIS_USAGE = [
   "bb lane-pilot anamnesis confirm|reject <id> [--reason TEXT]",
   "bb lane-pilot anamnesis forget <id> | --all --yes | --source SOURCE --yes",
   "bb lane-pilot anamnesis sources [--set SOURCE=on|off]",
+  "bb lane-pilot anamnesis config [--authors EMAIL,NAME] [--roots /path,/path]",
+  "bb lane-pilot anamnesis load [--run] [--since YYYY-MM-DD] [--sources a,b] [--classify --yes [--max-classify N] [--allow-sensitive-to-jev]] [--json]",
+  "bb lane-pilot anamnesis review [--limit N]",
 ].join("\n");
 
 export type CliResult = { exitCode: number; stdout?: string; stderr?: string };
 export type CliDeps = {
   hub: Hub;
+  /** The first load; absent where Lane Pilot is not mounted (tests of the plain commands). */
+  load?: (options: LoadOptions) => Promise<LoadReport>;
   /** Null when the caller may read the records; otherwise why not. Lane Pilot's writers and helpers never may. */
   deny(threadId: string | undefined): Promise<string | null>;
   threadId?: string | undefined;
@@ -34,6 +40,8 @@ const OPTIONS = {
   "include-sensitive": { type: "boolean" }, key: { type: "string" }, title: { type: "string" }, statement: { type: "string" },
   sensitivity: { type: "string" }, reason: { type: "string" }, confidence: { type: "string" }, all: { type: "boolean" }, yes: { type: "boolean" },
   source: { type: "string" }, set: { type: "string" }, help: { type: "boolean" },
+  run: { type: "boolean" }, classify: { type: "boolean" }, since: { type: "string" }, sources: { type: "string" }, "max-classify": { type: "string" },
+  "allow-sensitive-to-jev": { type: "boolean" }, authors: { type: "string" }, roots: { type: "string" },
 } as const;
 
 const day = (at: number | null): string => (at ? new Date(at).toISOString().slice(0, 10) : "—");
@@ -143,6 +151,34 @@ async function core(command: string, { values, positionals }: Parsed, deps: CliD
       }
       const result = await hub.ask({ op: "sources", ...(set ? { set } : {}) });
       return out(result, values.json, () => result.sources.map((s) => `${s.source}: ${s.enabled ? "on" : "off"}${s.checkpoint ? ` (read up to ${day(s.checkpoint)})` : ""}`).join("\n"));
+    }
+    case "config": {
+      const csv = (text: string | undefined) => text?.split(",").map((part) => part.trim()).filter(Boolean);
+      const authors = csv(values.authors), roots = csv(values.roots);
+      const next = authors || roots ? await hub.setConfig({ ...(authors ? { authors } : {}), ...(roots ? { roots } : {}) }) : await hub.config();
+      return out(next, true, () => "");
+    }
+    case "load": {
+      if (!deps.load) throw new Error("load is not available here");
+      const mode = values.run ? "run" : "plan";
+      if (values.classify && mode === "run" && !values.yes) throw new Error("--classify sends masked message fragments to Jev (TypeSafe), the only outside service used; add --yes to allow it. Plan first: without --run it prices the pass and sends nothing.");
+      if (values["allow-sensitive-to-jev"] && !values.classify) throw new Error("--allow-sensitive-to-jev only means something with --classify");
+      let since: number | undefined;
+      if (values.since) { since = Date.parse(`${values.since}T00:00:00Z`); if (!Number.isFinite(since)) throw new Error("--since must be YYYY-MM-DD"); }
+      const sources = values.sources ? values.sources.split(",").map((name) => oneOf(name.trim(), SOURCES.filter((source) => source !== "manual"), "source") as Source) : undefined;
+      const report = await deps.load({ mode, ...(since !== undefined ? { since } : {}), ...(sources ? { sources } : {}), classify: values.classify === true,
+        ...(values["max-classify"] ? { maxClassify: Number(values["max-classify"]) } : {}), allowSensitiveToJev: values["allow-sensitive-to-jev"] === true });
+      return out(report, values.json, () => `${formatReport(report)}
+(default window: the last ${DEFAULT_LOOKBACK_DAYS} days)`);
+    }
+    case "review": {
+      const perKind = values.limit ? Number(values.limit) : 8;
+      const { records } = await hub.ask({ op: "list", statuses: ["draft", "candidate"], limit: 2000 });
+      const groups = new Map<string, AnamnesisRecord[]>();
+      for (const record of records) groups.set(record.kind, [...(groups.get(record.kind) ?? []), record]);
+      const sensitive = (await hub.ask({ op: "status" })).counts.bySensitivity.sensitive ?? 0;
+      const text = [...groups].map(([kind, list]) => `## ${kind} (${list.length} to review)\n${list.slice(0, perKind).map(recordLine).join("\n")}`).join("\n\n");
+      return { exitCode: 0, stdout: `${text || "nothing to review"}\n\n${sensitive} sensitive records are hidden; ask for them by name with --include-sensitive.\nConfirm with: confirm <id>; reject with: reject <id>.` };
     }
     default:
       throw new Error(`unknown command "${command}"\n${ANAMNESIS_USAGE}`);

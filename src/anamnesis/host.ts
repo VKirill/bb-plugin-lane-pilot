@@ -1,6 +1,8 @@
 import type { AnamnesisRequest, ResponseOf, UpsertSummary } from "./ops";
 import { anamnesisRequestSchema } from "./ops";
-import { openStore, type Store, type UpsertResult } from "./store";
+import { existsSync } from "node:fs";
+import { collectSources } from "./collect";
+import { anamnesisDbPath, openStore, type Store, type UpsertResult } from "./store";
 
 /**
  * The host side of anamnesis: runs on the owner's machine and is the only code that opens the store. The hub sends a request,
@@ -49,6 +51,8 @@ export async function executeRequest(request: AnamnesisRequest, store: Store, co
       const dropped = store.forgetSource(request.source, now);
       return { removed: dropped.records, evidence: dropped.evidence } satisfies ResponseOf<"forget">;
     }
+    case "collect": return await collectSources(request, store) satisfies ResponseOf<"collect">;
+    case "load_report": return { id: store.saveLoad(request.mode, request.report, now) } satisfies ResponseOf<"load_report">;
     case "sources": {
       if (request.set) store.setSource(request.set.source, request.set.enabled, now);
       return { sources: store.sources() } satisfies ResponseOf<"sources">;
@@ -59,7 +63,10 @@ export async function executeRequest(request: AnamnesisRequest, store: Store, co
 /** The handler of the host method `anamnesis`. The file is opened for the call and closed after it. */
 export async function anamnesisHandler(input: { requestedHostId: string; request: unknown }): Promise<{ hostId: string; response: unknown }> {
   const request = anamnesisRequestSchema.parse(input.request);
-  const store = openStore();
+  // Reading, or planning a load, on a machine that has no store yet answers from an empty one in memory and leaves no file behind.
+  const readOnly = request.op === "status" || request.op === "list" || request.op === "get" || request.op === "history"
+    || (request.op === "collect" && request.mode === "plan") || (request.op === "sources" && !request.set);
+  const store = readOnly && !existsSync(anamnesisDbPath()) ? openStore(":memory:") : openStore();
   try {
     return { hostId: process.env.BB_HOST_ID ?? input.requestedHostId, response: await executeRequest(request, store) };
   } finally {

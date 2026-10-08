@@ -5,6 +5,9 @@ import type { ServerCore } from "../server/core";
 import type { AnamnesisRpcRequest } from "./contract";
 import { runAnamnesisCli, type CliResult } from "./cli";
 import { createHub, type Hub } from "./hub";
+import { jev } from "../jev/runtime";
+import { fragmentJudgment } from "./judgment";
+import { loadAnamnesis, type LoadDeps, type LoadOptions } from "./load";
 import { createOwnerMessageHub, sdkThreadsPort } from "./owner-messages";
 
 /** What Lane Pilot's own helper, writer and stage threads are: they never read the owner's records. */
@@ -34,14 +37,29 @@ function build(ctx: ServerCore) {
     return isAgentChild(thread) ? "The owner's anamnesis is not available to writers, helpers or stage threads." : null;
   }
 
+  const ownerMessages = createOwnerMessageHub(), threads = sdkThreadsPort(bb as never);
+  const loadDeps = (): LoadDeps => {
+    const instance = jev();
+    return {
+      hub, threads, now: Date.now,
+      projectNames: async () => new Map(((await bb.sdk.projects.list({ includePersonal: true } as never)) as unknown as Array<{ id: string; name?: string }>).map((project) => [project.id, project.name ?? project.id])),
+      lpRuns: () => (db.prepare("SELECT id, project_id, created_at FROM lane_pilot_run").all() as Array<{ id: string; project_id: string; created_at: number }>)
+        .map((row) => ({ id: row.id, projectId: row.project_id, createdAt: row.created_at })),
+      ...(instance && instance.enabled() ? { judge: async (texts: string[], signal?: AbortSignal) => {
+        const verdicts = await instance.judgeMany(fragmentJudgment, texts.map((text) => ({ text })), { subject: "anamnesis", signal });
+        return verdicts.map((verdict) => (verdict.by === "jev" ? verdict.decision : null));
+      } } : {}),
+    };
+  };
+
   return {
     hub,
     deny,
     /** The one collector of the owner's messages: layers subscribe to `ownerMessages`; T1 and the daily pass (A4) are the next subscribers. */
-    ownerMessages: createOwnerMessageHub(),
-    threads: sdkThreadsPort(bb as never),
+    ownerMessages,
+    threads,
     rpc: { anamnesis: async ({ request }: { request: AnamnesisRpcRequest }) => ({ result: await hub.dispatch(request) }) } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "anamnesis">,
-    cli: (argv: string[], cliCtx?: { threadId?: string }): Promise<CliResult> => runAnamnesisCli(argv, { hub, deny, threadId: cliCtx?.threadId }),
+    cli: (argv: string[], cliCtx?: { threadId?: string }): Promise<CliResult> => runAnamnesisCli(argv, { hub, deny, threadId: cliCtx?.threadId, load: (options: LoadOptions) => loadAnamnesis(loadDeps(), options) }),
   };
 }
 

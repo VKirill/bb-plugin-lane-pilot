@@ -196,6 +196,13 @@ export function openStore(path: string = anamnesisDbPath()) {
     path,
     close: () => db.close(),
     transaction: tx,
+    /** Runs `work` and rolls everything back: the plan of a load, counted by the same rules as the real write, changing nothing. */
+    dryRun<T>(work: () => T): T {
+      if (depth > 0) throw new Error("dryRun cannot join a transaction");
+      db.exec("BEGIN IMMEDIATE");
+      depth = 1;
+      try { return work(); } finally { depth = 0; db.exec("ROLLBACK"); }
+    },
 
     /** One record; a bad record is a result, never an exception, so one fragment cannot stop a batch. */
     upsert(raw: unknown, ctx: UpsertContext): UpsertResult {
