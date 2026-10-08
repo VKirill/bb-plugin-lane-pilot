@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+Audit 2026-10-08 round 4, P1 (items 11, 14-17, 19, 20, 22, 23).
+
+- **A stop that lands while the writer starts ends `canceled`, never as `cancel_requested -> spawn_rejected` (item 11).** Live 0.1.196: the PM's stop came while the worktree was bound (`attempt_workspace_cas_conflict`), the spawn failed, and `transitionAttempt` refused the move, so the attempt became `internal_error`/`blocked` and counted as Lane Pilot's own failure. New `endSpawnFailure` (database) does what `endedByStop` does at the finish: an attempt in `cancel_requested` goes to `canceled`, any other to `spawn_rejected`. Used by the spawn (breaker, writer selection, any other thrown error), the reconcile that finds no thread, and the half-bound sticky turn.
+
 ## 0.1.196
 
 Audit 2026-10-08 round 3.
