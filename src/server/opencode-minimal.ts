@@ -1,6 +1,7 @@
 import type { ExperimentalPluginProviderEnvEntry } from "@get-bb/plugin-sdk";
 import { stringAt } from "./values";
 import type { ServerCore } from "./core";
+import { createBbShimEnv } from "./helper-bb-shim";
 
 /**
  * Lane Pilot's OpenCode helpers run with a minimal config (see src/opencode-min-config.ts for why and how). The OpenCode provider
@@ -93,5 +94,8 @@ export function createOpencodeMinimalEnv(ctx: Pick<ServerCore, "bb" | "host">, n
 }
 
 export function mountOpencodeMinimal(ctx: ServerCore) {
-  ctx.bb.providers.experimental_contributeEnv(OPENCODE_PROVIDER_ID, createOpencodeMinimalEnv(ctx));
+  // One resolver per provider: the minimal config's variable and the guard wrappers' PATH (src/bb-shim.ts) go out together.
+  const minimal = createOpencodeMinimalEnv(ctx);
+  const shim = createBbShimEnv(ctx);
+  ctx.bb.providers.experimental_contributeEnv(OPENCODE_PROVIDER_ID, async (context) => (await Promise.all([minimal(context), shim(context)])).flat());
 }

@@ -718,6 +718,11 @@ export const hostContract = defineRpcContract({
       result: z.object({ configHome: z.string(), kept: z.array(z.string()), left: z.array(z.string()) }).strict().nullable(),
     }).strict(),
   },
+  /** The directory of guard wrappers (bb, ssh, scp, sftp) for Codex, OpenCode and Cursor helpers (see src/bb-shim.ts) and the PATH that puts it first. */
+  prepareBbShim: {
+    input: z.object({ requestedHostId: z.string().min(1) }).strict(),
+    output: z.object({ dir: z.string(), path: z.string() }).strict(),
+  },
   prepareNativeClaude: {
     input: z.object({
       cwd: z.string().startsWith("/").optional(),
