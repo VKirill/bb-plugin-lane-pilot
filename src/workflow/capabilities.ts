@@ -1,3 +1,5 @@
+import { BUILTIN_PRESETS, PRESET_SLUGS, presetSelection } from "./model-presets";
+import { NODE_EFFORTS, findModel, findProvider, type ModelCatalog } from "./model-catalog";
 import { CONDITION_OPS, FIELD_TYPES, PASS_MODES, QUALITY_MODES } from "./schema";
 
 /**
@@ -14,6 +16,8 @@ export type CapabilityPorts = {
   /** Env Catalog entries by name and kind; null when Env Catalog cannot be asked. */
   secrets?: () => Promise<Array<{ name: string; kind: string }> | null>;
   hosts?: () => Promise<Array<{ id: string; name: string; connected: boolean }>>;
+  /** The providers and models the machines offer (the catalog of the Models view) and the settings the presets are read from; null when it cannot be asked. */
+  models?: () => Promise<{ catalog: ModelCatalog; settings: Record<string, unknown> } | null>;
   /** The Browser QA machine of the project (setting browser_qa.host_id). */
   browserHostId?: () => string | null;
   specialists?: readonly string[];
@@ -21,8 +25,44 @@ export type CapabilityPorts = {
 
 export type CapabilityQuery = { sections?: string[]; query?: string };
 
-export const CAPABILITY_SECTIONS = ["skills", "plugins", "mcpServers", "secrets", "hosts", "browser", "specialists", "reference"] as const;
+export const CAPABILITY_SECTIONS = ["skills", "plugins", "mcpServers", "secrets", "hosts", "browser", "specialists", "models", "reference"] as const;
 const LIMIT = 120;
+const MODELS_PER_PROVIDER = 40;
+
+/**
+ * The model pairs a node may name, compact: for each provider the machines it runs on, its service tiers and the models some
+ * machine lists (id as a node writes it, efforts, `default`, and `only` when fewer machines have it than the provider); the presets
+ * resolved to the pair they run on now and whether a machine offers it. Names only, no prices. Pure: the server passes the catalog.
+ */
+export function modelsSection(catalog: ModelCatalog, settings: Record<string, unknown>, needle?: string) {
+  const hostName = new Map(catalog.hosts.map((host) => [host.id, host.name]));
+  const names = (ids: string[]) => ids.map((id) => hostName.get(id) ?? id);
+  const wanted = needle?.trim().toLowerCase();
+  const providers = catalog.providers.filter((provider) => provider.hostIds.length).flatMap((provider) => {
+    const all = provider.models.filter((model) => model.hostIds.length);
+    const shown = wanted && !provider.id.toLowerCase().includes(wanted) ? all.filter((model) => `${model.id} ${model.displayName}`.toLowerCase().includes(wanted)) : all;
+    if (wanted && !shown.length) return [];
+    return [{
+      provider: provider.id, machines: names(provider.hostIds), ...(provider.supportsServiceTier && provider.serviceTiers.length ? { serviceTiers: provider.serviceTiers } : {}),
+      models: shown.slice(0, MODELS_PER_PROVIDER).map((model) => ({
+        id: model.id, efforts: model.efforts.filter((effort) => (NODE_EFFORTS as readonly string[]).includes(effort)),
+        ...(model.isDefault ? { default: true } : {}), ...(model.hostIds.length < provider.hostIds.length ? { only: names(model.hostIds) } : {}),
+      })),
+      ...(shown.length > MODELS_PER_PROVIDER ? { moreModels: shown.length - MODELS_PER_PROVIDER } : {}),
+    }];
+  });
+  const presets = Object.fromEntries(PRESET_SLUGS.filter((slug) => !wanted || slug.includes(wanted)).map((slug) => {
+    const chosen = presetSelection(slug, settings)!;
+    const model = findModel(findProvider(catalog, chosen.providerId), chosen.model);
+    return [slug, { provider: chosen.providerId, model: chosen.model, reasoning: chosen.reasoning ?? BUILTIN_PRESETS[slug]!.reasoning, offered: Boolean(model?.hostIds.length), ...(model?.hostIds.length ? { machines: names(model.hostIds) } : {}) }];
+  }));
+  return {
+    status: "ready" as const,
+    machines: catalog.hosts.map((host) => ({ name: host.name, connected: host.connected })),
+    providers, presets,
+    note: "a node names `provider` and `model` (the id column) together, with `reasoning` from that model's efforts; pick only pairs listed here: a pair no machine offers is a validator warning and the step fails to start. Prefer a preset (`model_preset`) to a pair; `only` means the model exists on those machines alone; a preset with offered: false falls through to Settings",
+  };
+}
 
 async function section<T>(read: (() => Promise<T[] | null>) | undefined, filter: (item: T) => boolean): Promise<Section<T>> {
   if (!read) return { status: "unavailable", items: [] };
@@ -80,7 +120,7 @@ export const WORKFLOW_REFERENCE = {
   models: {
     precedence: "the model of an agent step (and of an action that runs in a helper): the node's own `provider`/`model`/`reasoning` override, field by field, what the first of these gives: 1. the node's `model_preset`; 2. the role's stage selection in Settings (analyst and pm-reader: pm_read; planner and plan-critic: plan_critique; code-critic: code_critique; auditor: code_critique, then night_review; debugger: workflow.debugger, then specialist; specialist:x: specialist); 3. `workflow.agent.*` in Settings; 4. the model of the project's PM chat. An lp-task node runs on the writer chain (writer.* in Settings); decision, human and code actions use no model",
     presets: "named settings `workflow.preset.<name>.{provider,model,reasoning_effort}`: the owner changes a model in Settings without editing the chain. `cheap-fast` (claude-haiku-5-5, low: collecting, extracting, sending), `strong` (claude-opus-5-5, high: judgment, planning), and the Insights ones `ins-analysis`, `ins-psychology`, `ins-check`, `ins-digest`. An unknown preset is a warning and the step falls through to Settings",
-    advice: "leave the model unset unless the step differs from the others in difficulty; name a preset, not a model; set `provider` and `model` together and only on the owner's word (you cannot list the models the machines offer: the owner picks in the Models view of the Workflows tab); `reasoning` is low, medium, high, xhigh or max",
+    advice: "leave the model unset unless the step differs from the others in difficulty; name a preset, not a model; set `provider` and `model` together, only on the owner's word and only a pair listed in the `models` section of the capabilities (a pair no machine offers is a validator warning); `reasoning` is one of that model's efforts",
   },
   requires: "`skills` (a hint on a step; only the ones listed here are checked before a run), `plugins` and `mcp` (those named on agent steps are added to the check by themselves), `secrets` (Env Catalog names, `NAME?` when optional), `tools` (commands: `ffmpeg`, `a|b`), `platforms` (signed-in networks: threads, instagram, facebook, vk are checked, x is not), `machines`, `browserSession`. A step that needs an account or a key runs as role `errand`: it reads the value by name with env_get and never prints it",
   actions: {
@@ -121,6 +161,14 @@ export async function collectCapabilities(ports: CapabilityPorts, query: Capabil
       browserAutomationPlugin: plugins ? plugins.includes("browser-automation") : null,
       skills: skills ? Object.fromEntries(["browser-automation", "computer-use", "browser-qa", "social-browser"].map((name) => [name, skills.includes(name)])) : null,
     };
+  }
+  if (wanted("models")) {
+    try {
+      const read = ports.models ? await ports.models() : null;
+      result.models = read && read.catalog.providers.length ? modelsSection(read.catalog, read.settings, needle) : { status: "unavailable", note: "no machine answered the model catalog: the pairs cannot be verified, say so and name no provider/model (use a preset)" };
+    } catch (cause) {
+      result.models = { status: "error", error: cause instanceof Error ? cause.message : String(cause) };
+    }
   }
   if (wanted("specialists")) result.specialists = { roles: [...(ports.specialists ?? [])], note: "specialist profiles that exist in Lane Pilot; name one as the role of an agent node whose job matches it. Code changes go through an lp-task node, never an agent" };
   if (wanted("reference")) result.reference = WORKFLOW_REFERENCE;

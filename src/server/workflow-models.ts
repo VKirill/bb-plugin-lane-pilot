@@ -67,7 +67,13 @@ export function createModelCatalog(ctx: Pick<ServerCore, "bb" | "log">, now: () 
     return inflight;
   }
 
-  return { get };
+  /** The catalog as last read, without waiting (null before the first read); a stale or missing one is refreshed in the background. */
+  function peek(): ModelCatalog | null {
+    if (!cached || now() - cached.at >= CATALOG_TTL_MS) void get().catch(() => undefined);
+    return cached?.value ?? null;
+  }
+
+  return { get, peek };
 }
 export type ModelCatalogReader = ReturnType<typeof createModelCatalog>;
 

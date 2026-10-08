@@ -18,8 +18,10 @@ import { createStatusResolver } from "../workflow/ops-store";
 import { checkRequires, effectiveRequires } from "../workflow/preflight";
 import { definitionSha256, globalWorkflowDir } from "../workflow/store";
 import { loadWorkflow } from "../workflow/validate";
+import { findModel, findProvider } from "../workflow/model-catalog";
 import { configuredSetting } from "./context";
 import { SPECIALIST_ROLES } from "./specialists";
+import { createModelCatalog } from "./workflow-models";
 import { registerObservedTool, ToolError } from "./tool-result";
 import { stringAt } from "./values";
 import type { ServerCore } from "./core";
@@ -41,6 +43,8 @@ export type ArchitectDeps = {
   /** A skill, plugin, MCP, secret and machine lister for the project; see collectCapabilities. */
   capabilityPorts: (input: { projectId: string; threadId: string }) => Parameters<typeof collectCapabilities>[0];
   hasExecutor: (key: string) => boolean;
+  /** Whether a machine offers a provider/model pair, from the catalog as last read; null when it is unknown (the validator then says nothing). */
+  modelOffered?: (providerId: string, model: string) => boolean | null;
 };
 
 export function realDeps(ctx: ServerCore, services: Services): ArchitectDeps {
@@ -53,8 +57,14 @@ export function realDeps(ctx: ServerCore, services: Services): ArchitectDeps {
     const path = stringAt(environment, "path"), hostId = stringAt(environment, "hostId");
     return path?.startsWith("/") && hostId ? { hostId, path } : null;
   };
+  const catalog = createModelCatalog(ctx);
   return {
     globalDir: () => globalWorkflowDir(),
+    modelOffered: (providerId, model) => {
+      const read = catalog.peek();
+      if (!read?.providers.length) return null;
+      return Boolean(findModel(findProvider(read, providerId), model)?.hostIds.length);
+    },
     projectPlace: place,
     projectPlaceOf: async (projectId) => {
       const places = await services.docsPlaces(projectId).catch(() => []);
@@ -89,6 +99,12 @@ export function realDeps(ctx: ServerCore, services: Services): ArchitectDeps {
         return typeof value === "string" && value.trim() ? value.trim() : null;
       },
       specialists: SPECIALIST_ROLES,
+      models: async () => {
+        const read = await Promise.race([catalog.get(), new Promise<null>((resolveTimeout) => setTimeout(() => resolveTimeout(null), 6_000))]);
+        if (!read) return null;
+        const settings = await ctx.effectiveProjectSettings(projectId).then((row) => row.values, () => ({}));
+        return { catalog: read, settings };
+      },
     }),
   };
 }
@@ -106,8 +122,9 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
   const resolve = (id: string, version?: number) => builtinWorkflow(id, version);
   const changed = (draft: DraftRow, threadId?: string) => ctx.realtime.notify(draft.projectId, "workflow-draft", threadId ?? draft.threadId ?? undefined, draft.id);
 
-  const checkOf = (draft: DraftRow): DraftCheck => checkDraft(draft.definition, { resolve });
-  const loaded = (draft: DraftRow) => loadWorkflow(draft.definition, { resolve });
+  const validation = { resolve, ...(deps.modelOffered ? { modelOffered: deps.modelOffered } : {}) };
+  const checkOf = (draft: DraftRow): DraftCheck => checkDraft(draft.definition, validation);
+  const loaded = (draft: DraftRow) => loadWorkflow(draft.definition, validation);
 
   function testedState(draft: DraftRow): "none" | "red" | "green" {
     if (!draft.tests || draft.tests.version !== draft.version) return "none";
@@ -150,7 +167,7 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
 
   function patch(input: { projectId: string; threadId?: string; draftId: string; ops: z.input<typeof draftOpSchema>[]; expectedVersion?: number }) {
     own(input.draftId, input.projectId);
-    const result = drafts.patch(input.draftId, input.ops, { expectedVersion: input.expectedVersion, validate: { resolve } });
+    const result = drafts.patch(input.draftId, input.ops, { expectedVersion: input.expectedVersion, validate: validation });
     if (!result.ok) {
       if (result.reason === "refused") return { ok: false, applied: false, refused: result.refused, note: "nothing was changed: fix the refused operations and send the patch again" };
       if (result.reason === "version_conflict") return { ok: false, applied: false, reason: "version_conflict", currentVersion: result.currentVersion, note: "the draft changed since you read it (the owner or another chat): lane_pilot_workflow_draft_get, then patch again" };
@@ -361,9 +378,9 @@ export function mountWorkflowArchitect(ctx: ServerCore, services: Services, arch
 
   registerObservedTool(bb.agents, {
     name: "lane_pilot_workflow_capabilities",
-    description: "List what a chain can use on the owner's machines: skills, BB plugins, MCP servers, Env Catalog secret names, machines, the browser, specialists, and the chain format reference.",
-    instructions: "Call before you propose nodes, so every node uses something that exists. `sections` limits the answer (skills, plugins, mcpServers, secrets, hosts, browser, specialists, reference); `query` keeps only entries whose name contains it (for example telegram). Secrets are names and kinds only, never values: a node that needs one lists it in requires.secrets, and a missing one is asked from the owner with env_request. A section with status unavailable or error could not be read: say so instead of assuming it is empty.",
-    parameters: z.object({ sections: z.array(z.enum(CAPABILITY_SECTIONS)).max(8).optional(), query: z.string().trim().min(1).max(80).optional() }).strict(),
+    description: "List what a chain can use on the owner's machines: skills, BB plugins, MCP servers, Env Catalog secret names, machines, the browser, specialists, the provider/model pairs the machines offer, and the chain format reference.",
+    instructions: "Call before you propose nodes, so every node uses something that exists. `sections` limits the answer (skills, plugins, mcpServers, secrets, hosts, browser, specialists, models, reference); `query` keeps only entries whose name contains it (for example telegram). Secrets are names and kinds only, never values: a node that needs one lists it in requires.secrets, and a missing one is asked from the owner with env_request. A section with status unavailable or error could not be read: say so instead of assuming it is empty.",
+    parameters: z.object({ sections: z.array(z.enum(CAPABILITY_SECTIONS)).max(9).optional(), query: z.string().trim().min(1).max(80).optional() }).strict(),
     execute: async (params, context) => { const c = needChat(context); return json(await architect.capabilities({ projectId: c.projectId, threadId: c.threadId, ...params })); },
   });
 

@@ -14,6 +14,8 @@ export type WorkflowProblem = { level: "error" | "warning"; code: string; messag
 export type ValidateOptions = {
   resolve?: (id: string, version?: number) => Workflow | null;
   hasExecutor?: (key: string) => boolean;
+  /** Whether a machine offers a provider/model pair; null when the catalog could not be read (then nothing is said). A pair it does not offer is a warning. */
+  modelOffered?: (providerId: string, model: string) => boolean | null;
 };
 
 export class WorkflowError extends Error {
@@ -302,6 +304,9 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
     }
     if (node.model_preset && !presetSlug(node.model_preset)) warn("unknown_preset", `${node.id}: model preset "${node.model_preset}" is not known (${PRESET_SLUGS.join(", ")}); the step falls through to Settings and the PM chat's model`, extra);
     if (node.type === "agent") {
+      if (options.modelOffered && node.provider && node.model && options.modelOffered(node.provider, node.model) === false) {
+        warn("unknown_model", `${node.id}: ${node.provider}/${node.model} is not offered by any machine (see the models section of lane_pilot_workflow_capabilities); the step would fail to start`, extra);
+      }
       const handoff = node.out.find((field) => field.name === "handoff");
       if (handoff && handoff.type !== "string") error("handoff_type", `${node.id}: handoff must be a string`, extra);
       if (!node.prompt.trim() && !node.uses) warn("empty_prompt", `agent "${node.id}" has an empty prompt`, extra);
