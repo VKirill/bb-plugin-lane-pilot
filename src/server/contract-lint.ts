@@ -1,8 +1,9 @@
 import { resolve } from "node:path";
 import type { TaskV2 } from "../contracts";
-import { fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOverlap } from "../owns-paths";
+import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOverlap } from "../owns-paths";
 import { findSandboxUnsafeMissingExcludes, runnerFilterArgs, runsWholeSuite } from "../stages/critique-coverage";
 import { parseReadFirstHints } from "../stages/read-first";
+import { SUBJECTIVE_WORDS } from "../stages/role-method";
 import { isOutputPath, unownedExpectedOutputs } from "../validate-output";
 import { SANDBOX_OWN_ENV } from "../verification/sandbox";
 import type { CatalogEntry, SecretCheck } from "./secrets";
@@ -55,6 +56,12 @@ export function nearSecretName(name:string, catalog:readonly CatalogEntry[]):str
 }
 const MAX_PROBES = 128;
 
+/** The first subjective word (stages/role-method.ts) a criterion rests on, matched as a whole word in any letter case; null when there is none. */
+export function subjectiveWordIn(text:string):string | null {
+  const lower = text.toLowerCase();
+  return SUBJECTIVE_WORDS.find((word) => new RegExp(`(^|[^\\p{L}])${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\p{L}])`, "u").test(lower)) ?? null;
+}
+
 const folderFilters = (task:TaskV2) => task.verification.flatMap((check, index) =>
   runnerFilterArgs(check.command).filter((arg) => !arg.endsWith("/")).map((arg) => ({ index, command:check.command, arg, path:resolve(check.cwd, arg) })));
 
@@ -106,6 +113,19 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
   }
   for (const entry of task.expected_outputs.filter((item) => item.includes("/") && isOutputPath(item) && fileBlockedByNeverTouch(item.replace(/^\.\//, ""), task.never_touch)).slice(0, 5)) {
     errors.push({ code:"output_never_touch", message:`expected_outputs ${entry} is inside never_touch, so the writer may not create it; drop it from expected_outputs or narrow never_touch` });
+  }
+
+  // convergence.criteria must be decidable by a command, a grep or a file read: no subjective words.
+  for (const [index, criterion] of (task.convergence?.criteria ?? []).entries()) {
+    const word = subjectiveWordIn(criterion);
+    if (word) errors.push({ code:"criteria_subjective", message:`convergence.criteria[${index}] rests on the subjective words «${word}», which no command can decide; name the exact string, value or exit code a command, a grep or a file read checks («src/a.ts contains 'LIMIT = 10'», «the command exits 0»)` });
+  }
+  // files[] is a hint for the writer: the files it names are the task's own.
+  for (const [index, file] of (task.files ?? []).entries()) {
+    const path = file.path.replace(/^\.\//, "");
+    if (!safeRelative(path)) errors.push({ code:"files_unsafe", message:`files[${index}] path ${file.path} must be relative to the project root, without "..", a leading "/" or backslashes` });
+    else if (!fileAllowedByOwns(path, task.owns_paths)) errors.push({ code:"files_unowned", message:`files[${index}] ${path} is outside owns_paths, so the writer may not change it; add it (or its folder) to owns_paths, or drop it from files` });
+    else if (fileBlockedByNeverTouch(path, task.never_touch)) errors.push({ code:"files_never_touch", message:`files[${index}] ${path} is inside never_touch, so the writer may not change it; drop it from files or narrow never_touch` });
   }
 
   // Checks: a folder filter ends in «/», and a whole-suite vitest run excludes what the sandbox cannot run.
