@@ -25,6 +25,7 @@ import { gitOwnershipChangedPaths, resolveGitOwnershipBase } from "./verificatio
 import { runCliOnHost, runCommandOnHost, writePmSettingsOnHost } from "./cli-run";
 import { execFile } from "node:child_process";
 import { discoverClaudeAgents, prepareNativeClaude } from "./native-claude-host";
+import { prepareOpencodeMinimal } from "./opencode-min-config";
 import {
   connectOpencodeStack,
   detectStack,
@@ -660,6 +661,10 @@ export const prepareNativeClaudeHost: ExperimentalHostRpcHandlers<typeof hostCon
     signal: context.signal,
   })
 );
+
+export const prepareOpencodeMinimalHost: ExperimentalHostRpcHandlers<typeof hostContract>["prepareOpencodeMinimal"] = async (input, context) => ({
+  result: await prepareOpencodeMinimal({ dataDir: context.experimental_paths.dataDir, model: input.model }),
+});
 
 export const snapshotDryRun: ExperimentalHostRpcHandlers<typeof hostContract>["snapshotDryRun"] = async (input) => ({
   hostId: process.env.BB_HOST_ID ?? input.requestedHostId,

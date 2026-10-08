@@ -698,6 +698,13 @@ export const hostContract = defineRpcContract({
       supported: z.boolean(),
     }).strict(),
   },
+  /** A minimal OpenCode config home for a helper thread (see src/opencode-min-config.ts); a null result means: run with the machine's own config. */
+  prepareOpencodeMinimal: {
+    input: z.object({ model: z.string().max(300).nullable() }).strict(),
+    output: z.object({
+      result: z.object({ configHome: z.string(), kept: z.array(z.string()), left: z.array(z.string()) }).strict().nullable(),
+    }).strict(),
+  },
   prepareNativeClaude: {
     input: z.object({
       cwd: z.string().startsWith("/").optional(),
