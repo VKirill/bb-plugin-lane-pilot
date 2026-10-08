@@ -4,7 +4,7 @@ import { useComposerView, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../contracts";
 import { detectLocale, setLocaleOverride, t } from "../../i18n";
 import { agentPickerLabel } from "../agent-display";
-import { nativeAgentCliId } from "../native-session";
+import { nativeAgentCliId } from "../native-agent-id";
 import { findComposerPromptBox, promptBoxFrameStyle, PROMPT_BOX_AGENT_LABEL_LEFT } from "./composer-prompt-box";
 import { getPendingNativeAgent, subscribePendingNativeAgent } from "./pending-native-agent";
 import { HelperChips, useHelperThreads, type HelperThread } from "./helper-threads";

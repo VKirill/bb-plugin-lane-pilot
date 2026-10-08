@@ -3,7 +3,7 @@ import type { PluginPendingInteractionProps } from "@get-bb/plugin-sdk/app";
 import { t } from "../../i18n";
 import { Button } from "../../components/ui/button";
 import { Icon } from "../../components/ui/icon";
-import { ownerAskPayloadSchema, type OwnerAskResponse } from "../owner-ask";
+import { readOwnerAskPayload, type OwnerAskResponse } from "../owner-ask-shared";
 import { Disclosure } from "./disclosure";
 
 /**
@@ -12,7 +12,7 @@ import { Disclosure } from "./disclosure";
  * interaction; the same question reaches the phone as a push. Touch-sized rows, the Pokecut card and accent from app.css.
  */
 export function OwnerAsk({ interaction, submit, cancel }: PluginPendingInteractionProps) {
-  const parsed = useMemo(() => ownerAskPayloadSchema.safeParse(interaction.payload), [interaction.payload]);
+  const payload = useMemo(() => readOwnerAskPayload(interaction.payload), [interaction.payload]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const send = (response: OwnerAskResponse) => {
@@ -21,7 +21,7 @@ export function OwnerAsk({ interaction, submit, cancel }: PluginPendingInteracti
   };
   const dismiss = () => { void cancel().catch(() => undefined); };
 
-  if (!parsed.success) {
+  if (!payload) {
     return (
       <div className="lp-card flex flex-col gap-3 p-3" data-bb-plugin="lane-pilot" data-testid="owner-ask-broken">
         <p className="text-sm text-muted-foreground">{t("ownerAskBroken")}</p>
@@ -29,10 +29,10 @@ export function OwnerAsk({ interaction, submit, cancel }: PluginPendingInteracti
       </div>
     );
   }
-  const { question, detail, options, allowText } = parsed.data;
+  const { question, detail, options, allowText } = payload;
   const words = text.trim();
   return (
-    <div className="lp-card flex min-w-0 flex-col gap-3 p-3" data-bb-plugin="lane-pilot" data-bb-ru-skip data-testid="owner-ask" data-source={parsed.data.source}>
+    <div className="lp-card flex min-w-0 flex-col gap-3 p-3" data-bb-plugin="lane-pilot" data-bb-ru-skip data-testid="owner-ask" data-source={payload.source}>
       <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
         <Icon name="MessageQuestion" className="size-3.5 shrink-0" />
         <span className="min-w-0 truncate">{t("ownerAskHeading")}</span>

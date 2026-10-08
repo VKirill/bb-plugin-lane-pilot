@@ -7,7 +7,7 @@ import { ComposerAgentBadge } from "./src/ui/composer-agent-badge";
 import { EnableLanePilotAction } from "./src/ui/composer-enable";
 import { HELPER_PANEL_ACTION, HelperThreadPanel } from "./src/ui/helper-threads";
 import { RUN_CARD_DIRECTIVE, RunCardDirective } from "./src/ui/run-card";
-import { OWNER_ASK_RENDERER_ID } from "./src/owner-ask";
+import { OWNER_ASK_RENDERER_ID } from "./src/owner-ask-shared";
 import { OwnerAsk } from "./src/ui/owner-ask";
 
 export default definePluginApp((app) => {
