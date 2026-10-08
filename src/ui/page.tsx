@@ -55,6 +55,7 @@ import { useLanePilotPage } from "./use-lp-page";
 
 export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: string; scope?: "projects" | "globals" | "agents" | "tokens" | "workflows" | "schedule" }) {
   const {
+    pickers,
     activeScope, setActiveScope, rpc, routeProjectId, selectedProjectId, projectId,
     isGlobal, selectedSectionId, setSelectedSectionId, councilDefaults, councilSeatsTouched, fallbackTouched,
     councilsAll, setCouncilsAll, councils, council, openCouncil, sections,
@@ -66,11 +67,8 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
     setSettingsDepth, shellRef, contentRef, compactChrome, stackControls, dataRef,
     setSelectedBinding, writerRejected, setWriterRejected, chooseLocale, load, loadMoreRuns,
     tabs, diagnosticsGrouped, extrasGrouped, chooseProject, writeDraft, save,
-    saveKey, applySetting, resetInherited, displayedValue, saveWriterSelection, saveMemorySelection,
-    saveNightReviewSelection, saveDocsSelection, saveProjectLifeSelection, savePmReadSelection, saveOnboardingSelection, savePlanCritiqueSelection,
-    saveCodeCritiqueSelection, saveCouncilSeatSelection, saveWriterFallback, councilSeatPickerValue, saveSpecialistSelection, pickerValue,
-    memoryPickerValue, nightPickerValue, docsPickerValue, projectLifePickerValue, onboardingPickerValue, pmReadPickerValue,
-    planCritiquePickerValue, codeCritiquePickerValue, specialistPickerValue, catalogRow, hostId, routing,
+    saveKey, applySetting, resetInherited, displayedValue, saveWriterSelection, saveCouncilSeatSelection, saveWriterFallback, councilSeatPickerValue, pickerValue,
+    catalogRow, hostId, routing,
     modelPicker, inheritReset, runStack, finishRuns, jevRows, selectedProjectName,
     selectedSectionName, mobileNavValue, flatSections, tabSelect, advanced, hostLabel,
     nativeHostId, installNative, writerChosen, screenLoading, activeRuns, trackLines,
@@ -453,7 +451,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                   </div>
                 </div>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("memoryPickerHelp")}</p>
-                <div className="max-w-xl">{modelPicker(memoryPickerValue, (next) => { void saveMemorySelection(next); })}</div>
+                <div className="max-w-xl">{modelPicker(pickers.memory.value, (next) => { void pickers.memory.save(next); })}</div>
                 {activeScope !== "globals" && projectId ? <MemoryRecords projectId={projectId} /> : null}
                 <AdvancedRows show={advanced} testId="memory-advanced">
                   {(["memory.maintain","memory.inject","memory.audience","memory.search_engine","memory.personal_bot","memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget"] as const).map((key) => {
@@ -485,7 +483,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 </div>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("docsPickerHelp")}</p>
                 {activeScope !== "globals" && projectId ? <DocsPlaces projectId={projectId} /> : null}
-                <div className="max-w-xl">{modelPicker(docsPickerValue, (next) => { void saveDocsSelection(next); })}</div>
+                <div className="max-w-xl">{modelPicker(pickers.docs.value, (next) => { void pickers.docs.save(next); })}</div>
                 <AdvancedRows show={advanced}>
                   {(["docs.maintain","docs.page_cap","docs.since","docs.hour"] as const).map((key) => {
                     const row = catalogRow(key);
@@ -502,7 +500,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                   {(() => { const row = catalogRow("project_life.enabled"); return row ? <Switch checked={asBoolean(displayedValue("project_life.enabled"), true)} aria-label={t("groupProjectLife")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}
                 </div>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("projectLifePickerHelp")}</p>
-                <div className="max-w-xl">{modelPicker(projectLifePickerValue, (next) => { void saveProjectLifeSelection(next); })}</div>
+                <div className="max-w-xl">{modelPicker(pickers.projectLife.value, (next) => { void pickers.projectLife.save(next); })}</div>
               </section>
               <section className="space-y-2" data-testid="onboarding-picker">
                 <div className="flex min-w-0 items-center gap-1">
@@ -510,7 +508,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 </div>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("onboardingPickerHelp")}</p>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("onboardingConstraint")}</p>
-                <div className="max-w-xl">{modelPicker(onboardingPickerValue, (next) => { void saveOnboardingSelection(next); })}</div>
+                <div className="max-w-xl">{modelPicker(pickers.onboarding.value, (next) => { void pickers.onboarding.save(next); })}</div>
                 <AdvancedRows show={advanced}>
                   {(() => { const row = catalogRow("onboarding.depth"); return row ? <SettingField row={row} value={displayedValue("onboarding.depth")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("onboarding.depth", next)} /> : null; })()}
                 </AdvancedRows>
@@ -524,7 +522,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
                 </div>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("largeFileReadHelp")}</p>
                 <p className="max-w-xl text-xs text-muted-foreground">{t("largeFileReadConstraint")}</p>
-                <div className="max-w-xl">{modelPicker(pmReadPickerValue, (next) => { void savePmReadSelection(next); })}</div>
+                <div className="max-w-xl">{modelPicker(pickers.pmRead.value, (next) => { void pickers.pmRead.save(next); })}</div>
                 <AdvancedRows show={advanced}>
                   {(() => { const row = catalogRow("pm_read.min_lines"); return row ? <SettingField row={row} value={displayedValue("pm_read.min_lines")} disabled={false} onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("pm_read.min_lines", next)} /> : null; })()}
                 </AdvancedRows>
@@ -578,7 +576,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
             {(() => { const row = catalogRow("quality_mode"); return row ? <SettingField row={row} value={displayedValue("quality_mode")} disabled={false}
               onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("quality_mode", next)} /> : null; })()}
             <CheckGroup testId="plan-critique-settings" title={t("stagePlanCritique")} help={t("planCritiqueHelp")} toggle={(() => { const row = catalogRow("plan_critique.enabled"); return row ? <Switch checked={asBoolean(displayedValue("plan_critique.enabled"), true)} aria-label={t("stagePlanCritique")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
-              <div className="max-w-xl">{modelPicker(planCritiquePickerValue, (next) => { void savePlanCritiqueSelection(next); })}</div>
+              <div className="max-w-xl">{modelPicker(pickers.planCritique.value, (next) => { void pickers.planCritique.save(next); })}</div>
               <AdvancedRows show={advanced}>
                 {(["plan_critique.mode","plan_critique.min_score","plan_critique.min_write_tasks","plan_critique.on_high_risk"] as const).map((key) => {
                   const row = catalogRow(key);
@@ -588,7 +586,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               </AdvancedRows>
             </CheckGroup>
             <CheckGroup testId="code-critique-settings" title={t("stageCodeCritique")} help={t("codeCritiqueHelp")} toggle={(() => { const row = catalogRow("code_critique.enabled"); return row ? <Switch checked={asBoolean(displayedValue("code_critique.enabled"), false)} aria-label={t("stageCodeCritique")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
-              <div className="max-w-xl">{modelPicker(codeCritiquePickerValue, (next) => { void saveCodeCritiqueSelection(next); })}</div>
+              <div className="max-w-xl">{modelPicker(pickers.codeCritique.value, (next) => { void pickers.codeCritique.save(next); })}</div>
               <AdvancedRows show={advanced}>
                 {(["code_critique.mode","code_critique.auto_fix","code_critique.max_rounds"] as const).map((key) => {
                   const row = catalogRow(key);
@@ -598,7 +596,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               </AdvancedRows>
             </CheckGroup>
             <CheckGroup testId="specialist-settings" title={t("specialistReview")} help={t("settingSpecialistEnabledHelp")} toggle={(() => { const row = catalogRow("specialist.enabled"); return row ? <Switch checked={asBoolean(displayedValue("specialist.enabled"), false)} aria-label={t("specialistReview")} onCheckedChange={(next) => void applySetting(row, next)} /> : null; })()}>
-              <div className="max-w-xl">{modelPicker(specialistPickerValue, (next) => { void saveSpecialistSelection(next); })}</div>
+              <div className="max-w-xl">{modelPicker(pickers.specialist.value, (next) => { void pickers.specialist.save(next); })}</div>
               <AdvancedRows show={advanced}>
                 {(() => { const row = catalogRow("specialist.when"); return row ? <SettingField row={row} value={displayedValue("specialist.when")} disabled={false}
                   onChange={(next) => void applySetting(row, next)} onDraft={(next) => writeDraft("specialist.when", next)} /> : null; })()}
@@ -608,7 +606,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               <Switch id="night-review-enabled" checked={asBoolean(displayedValue("night_review.enabled"),false)} aria-label={t("nightReviewEnabled")}
                 onCheckedChange={(next)=>{const row=VISIBLE_CATALOG.find((item)=>item.storageKey==="night_review.enabled");if(row)void applySetting(row,next);}} />
             }>
-              <div className="max-w-xl">{modelPicker(nightPickerValue, (next) => { void saveNightReviewSelection(next); })}</div>
+              <div className="max-w-xl">{modelPicker(pickers.night.value, (next) => { void pickers.night.save(next); })}</div>
               <AdvancedRows show={advanced}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex min-w-0 items-center gap-1">

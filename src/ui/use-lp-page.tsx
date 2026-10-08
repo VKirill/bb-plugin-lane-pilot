@@ -1,3 +1,4 @@
+import { selectionKeys, selectionValue, SELECTION_SPECS, type SelectionId } from "./picker-selections";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   experimental_ProviderModelPicker as ProviderModelPicker,
@@ -477,123 +478,34 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
       .then(() => undefined, () => undefined);
   };
 
-  const saveMemorySelection = async (selection: ExperimentalProviderModelPickerValue) => {
+  /** One picker-saved role (memory, night review, docs, project log, PM reads, passport, critics, specialist): the same CAS tuple through its own RPC. */
+  const saveSelection = async (id: SelectionId, selection: ExperimentalProviderModelPickerValue) => {
     if (!projectId || !data) return false;
-    const result = await rpc.call("save_memory_selection", { ...scoped,
-      projectId, providerId:selection.providerId, model:selection.model,
-      reasoningLevel:selection.reasoningLevel, serviceTier:selection.serviceTier ?? null,
-      expectedVersions:{
-        "memory.provider":data.versions[MEMORY_PROVIDER] ?? 0,
-        "memory.model":data.versions[MEMORY_MODEL] ?? 0,
-        "memory.reasoning_effort":data.versions[MEMORY_EFFORT] ?? 0,
-        "memory.service_tier":data.versions[MEMORY_SERVICE_TIER] ?? 0,
-      },
+    const spec = SELECTION_SPECS[id];
+    const keys = Object.values(selectionKeys(id));
+    const result = await (rpc.call as unknown as (name: string, input: unknown) => Promise<{
+      ok: boolean; conflict: boolean; values: Record<string, unknown>; versions: Record<string, number>;
+      validation?: { code: Extract<NonNullable<typeof saveError>, { kind: "validation" }>["code"]; params: string[] };
+    }>)(spec.rpc, { ...scoped,
+      projectId, providerId: selection.providerId, model: selection.model, reasoningLevel: selection.reasoningLevel, serviceTier: selection.serviceTier ?? null,
+      expectedVersions: Object.fromEntries(keys.map((key) => [key, data.versions[key] ?? 0])),
     });
-    if (result.conflict) { setSaveError({kind:"cas"}); await load(); return false; }
+    const merge = () => setData((current) => current ? { ...current, values: { ...current.values, ...result.values }, versions: { ...current.versions, ...result.versions } } : current);
+    if (result.conflict) {
+      setSaveError({ kind: "cas" });
+      if (spec.conflict === "merge") merge(); else await load();
+      return false;
+    }
     if (!result.ok) {
-      if (result.validation) setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});
-      else setSaveError({kind:"cas"});
+      if (result.validation) setSaveError({ kind: "validation", code: result.validation.code, params: result.validation.params });
+      else setSaveError({ kind: "cas" });
       return false;
     }
     setSaveError(null);
-    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
+    merge();
     return true;
   };
 
-  const saveNightReviewSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
-    if(!projectId||!data)return false;
-    const result=await rpc.call("save_night_review_selection", { ...scoped,
-      projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
-      expectedVersions:{[NIGHT_PROVIDER]:data.versions[NIGHT_PROVIDER]??0,[NIGHT_MODEL]:data.versions[NIGHT_MODEL]??0,[NIGHT_EFFORT]:data.versions[NIGHT_EFFORT]??0,[NIGHT_SERVICE_TIER]:data.versions[NIGHT_SERVICE_TIER]??0},
-    });
-    if(result.conflict){setSaveError({kind:"cas"});await load();return false;}
-    if(!result.ok){if(result.validation)setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});else setSaveError({kind:"cas"});return false;}
-    setSaveError(null);
-    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
-    return true;
-  };
-
-  const saveDocsSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
-    if(!projectId||!data)return false;
-    const result=await rpc.call("save_docs_selection", { ...scoped,
-      projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
-      expectedVersions:{[DOCS_PROVIDER]:data.versions[DOCS_PROVIDER]??0,[DOCS_MODEL]:data.versions[DOCS_MODEL]??0,[DOCS_EFFORT]:data.versions[DOCS_EFFORT]??0,[DOCS_SERVICE_TIER]:data.versions[DOCS_SERVICE_TIER]??0},
-    });
-    if(result.conflict){setSaveError({kind:"cas"});await load();return false;}
-    if(!result.ok){if(result.validation)setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});else setSaveError({kind:"cas"});return false;}
-    setSaveError(null);
-    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
-    return true;
-  };
-
-  const saveProjectLifeSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
-    if(!projectId||!data)return false;
-    const result=await rpc.call("save_project_life_selection", { ...scoped,
-      projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
-      expectedVersions:{[PROJECT_LIFE_PROVIDER]:data.versions[PROJECT_LIFE_PROVIDER]??0,[PROJECT_LIFE_MODEL]:data.versions[PROJECT_LIFE_MODEL]??0,[PROJECT_LIFE_EFFORT]:data.versions[PROJECT_LIFE_EFFORT]??0,[PROJECT_LIFE_SERVICE_TIER]:data.versions[PROJECT_LIFE_SERVICE_TIER]??0},
-    });
-    if(result.conflict){setSaveError({kind:"cas"});await load();return false;}
-    if(!result.ok){if(result.validation)setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});else setSaveError({kind:"cas"});return false;}
-    setSaveError(null);
-    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
-    return true;
-  };
-
-  const savePmReadSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
-    if(!projectId||!data)return false;
-    const result=await rpc.call("save_pm_read_selection", { ...scoped,
-      projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
-      expectedVersions:{[PM_READ_PROVIDER]:data.versions[PM_READ_PROVIDER]??0,[PM_READ_MODEL]:data.versions[PM_READ_MODEL]??0,[PM_READ_EFFORT]:data.versions[PM_READ_EFFORT]??0,[PM_READ_SERVICE_TIER]:data.versions[PM_READ_SERVICE_TIER]??0},
-    });
-    if(result.conflict){
-      setSaveError({kind:"cas"});
-      setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
-      return false;
-    }
-    if(!result.ok){if(result.validation)setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});else setSaveError({kind:"cas"});return false;}
-    setSaveError(null);
-    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
-    return true;
-  };
-
-  const saveOnboardingSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
-    if(!projectId||!data)return false;
-    const result=await rpc.call("save_onboarding_selection", { ...scoped,
-      projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
-      expectedVersions:{[ONBOARDING_PROVIDER]:data.versions[ONBOARDING_PROVIDER]??0,[ONBOARDING_MODEL]:data.versions[ONBOARDING_MODEL]??0,[ONBOARDING_EFFORT]:data.versions[ONBOARDING_EFFORT]??0,[ONBOARDING_SERVICE_TIER]:data.versions[ONBOARDING_SERVICE_TIER]??0},
-    });
-    if(result.conflict){setSaveError({kind:"cas"});await load();return false;}
-    if(!result.ok){if(result.validation)setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});else setSaveError({kind:"cas"});return false;}
-    setSaveError(null);
-    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
-    return true;
-  };
-
-  const savePlanCritiqueSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
-    if(!projectId||!data)return false;
-    const result=await rpc.call("save_plan_critique_selection", { ...scoped,
-      projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
-      expectedVersions:{[PLAN_CRITIQUE_PROVIDER]:data.versions[PLAN_CRITIQUE_PROVIDER]??0,[PLAN_CRITIQUE_MODEL]:data.versions[PLAN_CRITIQUE_MODEL]??0,[PLAN_CRITIQUE_EFFORT]:data.versions[PLAN_CRITIQUE_EFFORT]??0,[PLAN_CRITIQUE_SERVICE_TIER]:data.versions[PLAN_CRITIQUE_SERVICE_TIER]??0},
-    });
-    if(result.conflict){setSaveError({kind:"cas"});await load();return false;}
-    if(!result.ok){if(result.validation)setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});else setSaveError({kind:"cas"});return false;}
-    setSaveError(null);
-    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
-    return true;
-  };
-
-  const saveCodeCritiqueSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
-    if(!projectId||!data)return false;
-    const result=await rpc.call("save_code_critique_selection", { ...scoped,
-      projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
-      expectedVersions:{[CODE_CRITIQUE_PROVIDER]:data.versions[CODE_CRITIQUE_PROVIDER]??0,[CODE_CRITIQUE_MODEL]:data.versions[CODE_CRITIQUE_MODEL]??0,[CODE_CRITIQUE_EFFORT]:data.versions[CODE_CRITIQUE_EFFORT]??0,[CODE_CRITIQUE_SERVICE_TIER]:data.versions[CODE_CRITIQUE_SERVICE_TIER]??0},
-    });
-    if(result.conflict){setSaveError({kind:"cas"});await load();return false;}
-    if(!result.ok){if(result.validation)setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});else setSaveError({kind:"cas"});return false;}
-    setSaveError(null);
-    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
-    return true;
-  };
 
   const saveCouncilSeatSelection = async (seat:(typeof COUNCIL_SEATS)[number], selection:ExperimentalProviderModelPickerValue)=>{
     if(!projectId||!data)return false;
@@ -627,19 +539,6 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
     reasoningLevel:(String(data?.values[`council.${seat}.reasoning_effort`]??"high")||"high") as ExperimentalProviderModelPickerValue["reasoningLevel"],
   });
 
-  const saveSpecialistSelection = async (selection:ExperimentalProviderModelPickerValue)=>{
-    if(!projectId||!data)return false;
-    const result=await rpc.call("save_specialist_selection", { ...scoped,
-      projectId,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,serviceTier:selection.serviceTier??null,
-      expectedVersions:{[SPECIALIST_PROVIDER]:data.versions[SPECIALIST_PROVIDER]??0,[SPECIALIST_MODEL]:data.versions[SPECIALIST_MODEL]??0,[SPECIALIST_EFFORT]:data.versions[SPECIALIST_EFFORT]??0,[SPECIALIST_SERVICE_TIER]:data.versions[SPECIALIST_SERVICE_TIER]??0},
-    });
-    if(result.conflict){setSaveError({kind:"cas"});await load();return false;}
-    if(!result.ok){if(result.validation)setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});else setSaveError({kind:"cas"});return false;}
-    setSaveError(null);
-    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
-    return true;
-  };
-
   const savedPickerValue: ExperimentalProviderModelPickerValue = {
     providerId: String(data?.values[WRITER_PROVIDER] ?? ""),
     model: String(data?.values[WRITER_MODEL] ?? ""),
@@ -650,72 +549,11 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
   };
   const pickerValue = writerDraft ?? savedPickerValue;
 
-  const memoryProviderId=String(data?.values[MEMORY_PROVIDER] ?? data?.values[WRITER_PROVIDER] ?? "");
-  const memoryPickerValue:ExperimentalProviderModelPickerValue={
-    providerId:memoryProviderId,
-    model:String(data?.values[MEMORY_MODEL] ?? data?.values[WRITER_MODEL] ?? ""),
-    reasoningLevel:(String(data?.values[MEMORY_EFFORT] ?? data?.values[WRITER_EFFORT] ?? "none")||"none") as ExperimentalProviderModelPickerValue["reasoningLevel"],
-    ...(providers.providers?.find((provider)=>provider.id===memoryProviderId)?.serviceTiers?.length
-      ? {serviceTier:data?.values[MEMORY_SERVICE_TIER]==="fast"?"fast":"default"}:{}),
-  };
-  const nightProviderId=String(data?.values[NIGHT_PROVIDER]??data?.values[WRITER_PROVIDER]??"");
-  const nightPickerValue:ExperimentalProviderModelPickerValue={
-    providerId:nightProviderId,
-    model:String(data?.values[NIGHT_MODEL]??data?.values[WRITER_MODEL]??""),
-    reasoningLevel:(String(data?.values[NIGHT_EFFORT]??"high")||"high") as ExperimentalProviderModelPickerValue["reasoningLevel"],
-    ...(providers.providers?.find((provider)=>provider.id===nightProviderId)?.serviceTiers?.length?{serviceTier:data?.values[NIGHT_SERVICE_TIER]==="fast"?"fast":"default"}:{}),
-  };
-  // Without a project choice the docs writer is Codex GPT-6 Luna, high, fast (DOCS_DEFAULT_SELECTION), not the writer model.
-  const docsOwn=Boolean(data?.values[DOCS_PROVIDER]&&data?.values[DOCS_MODEL]);
-  const docsProviderId=String(docsOwn?data?.values[DOCS_PROVIDER]:DOCS_DEFAULT_SELECTION.providerId);
-  const docsPickerValue:ExperimentalProviderModelPickerValue={
-    providerId:docsProviderId,
-    model:String(docsOwn?data?.values[DOCS_MODEL]:DOCS_DEFAULT_SELECTION.model),
-    reasoningLevel:(String(data?.values[DOCS_EFFORT]??DOCS_DEFAULT_SELECTION.reasoningLevel)||DOCS_DEFAULT_SELECTION.reasoningLevel) as ExperimentalProviderModelPickerValue["reasoningLevel"],
-    ...(providers.providers?.find((provider)=>provider.id===docsProviderId)?.serviceTiers?.length?{serviceTier:data?.values[DOCS_SERVICE_TIER]==="standard"||data?.values[DOCS_SERVICE_TIER]==="default"?"default":(data?.values[DOCS_SERVICE_TIER]==="fast"||!docsOwn)?"fast":"default"}:{}),
-  };
-  const projectLifeProviderId=String(data?.values[PROJECT_LIFE_PROVIDER] ?? "codex");
-  const projectLifePickerValue:ExperimentalProviderModelPickerValue={
-    providerId:projectLifeProviderId,
-    model:String(data?.values[PROJECT_LIFE_MODEL] ?? "gpt-6-luna"),
-    reasoningLevel:(String(data?.values[PROJECT_LIFE_EFFORT] ?? "high")||"high") as ExperimentalProviderModelPickerValue["reasoningLevel"],
-    ...(providers.providers?.find((provider)=>provider.id===projectLifeProviderId)?.serviceTiers?.length?{serviceTier:data?.values[PROJECT_LIFE_SERVICE_TIER]==="standard"?"default":"fast"}:{}),
-  };
-  const onboardingProviderId=String(data?.values[ONBOARDING_PROVIDER]??data?.values[WRITER_PROVIDER]??"");
-  const onboardingPickerValue:ExperimentalProviderModelPickerValue={
-    providerId:onboardingProviderId,
-    model:String(data?.values[ONBOARDING_MODEL]??data?.values[WRITER_MODEL]??""),
-    reasoningLevel:(String(data?.values[ONBOARDING_EFFORT]??"medium")||"medium") as ExperimentalProviderModelPickerValue["reasoningLevel"],
-    ...(providers.providers?.find((provider)=>provider.id===onboardingProviderId)?.serviceTiers?.length?{serviceTier:data?.values[ONBOARDING_SERVICE_TIER]==="fast"?"fast":"default"}:{}),
-  };
-  const pmReadProviderId=String(data?.values[PM_READ_PROVIDER]??data?.values[WRITER_PROVIDER]??"");
-  const pmReadPickerValue:ExperimentalProviderModelPickerValue={
-    providerId:pmReadProviderId,
-    model:String(data?.values[PM_READ_MODEL]??data?.values[WRITER_MODEL]??""),
-    reasoningLevel:(String(data?.values[PM_READ_EFFORT]??"low")||"low") as ExperimentalProviderModelPickerValue["reasoningLevel"],
-    ...(providers.providers?.find((provider)=>provider.id===pmReadProviderId)?.serviceTiers?.length?{serviceTier:data?.values[PM_READ_SERVICE_TIER]==="fast"?"fast":"default"}:{}),
-  };
-  const planCritiqueProviderId=String(data?.values[PLAN_CRITIQUE_PROVIDER]??data?.values[WRITER_PROVIDER]??"");
-  const planCritiquePickerValue:ExperimentalProviderModelPickerValue={
-    providerId:planCritiqueProviderId,
-    model:String(data?.values[PLAN_CRITIQUE_MODEL]??data?.values[WRITER_MODEL]??""),
-    reasoningLevel:(String(data?.values[PLAN_CRITIQUE_EFFORT]??data?.values[WRITER_EFFORT]??"medium")||"medium") as ExperimentalProviderModelPickerValue["reasoningLevel"],
-    ...(providers.providers?.find((provider)=>provider.id===planCritiqueProviderId)?.serviceTiers?.length?{serviceTier:data?.values[PLAN_CRITIQUE_SERVICE_TIER]==="fast"?"fast":"default"}:{}),
-  };
-  const codeCritiqueProviderId=String(data?.values[CODE_CRITIQUE_PROVIDER]??data?.values[WRITER_PROVIDER]??"");
-  const codeCritiquePickerValue:ExperimentalProviderModelPickerValue={
-    providerId:codeCritiqueProviderId,
-    model:String(data?.values[CODE_CRITIQUE_MODEL]??data?.values[WRITER_MODEL]??""),
-    reasoningLevel:(String(data?.values[CODE_CRITIQUE_EFFORT]??data?.values[WRITER_EFFORT]??"medium")||"medium") as ExperimentalProviderModelPickerValue["reasoningLevel"],
-    ...(providers.providers?.find((provider)=>provider.id===codeCritiqueProviderId)?.serviceTiers?.length?{serviceTier:data?.values[CODE_CRITIQUE_SERVICE_TIER]==="fast"?"fast":"default"}:{}),
-  };
-  const specialistProviderId=String(data?.values[SPECIALIST_PROVIDER]??data?.values[WRITER_PROVIDER]??"");
-  const specialistPickerValue:ExperimentalProviderModelPickerValue={
-    providerId:specialistProviderId,
-    model:String(data?.values[SPECIALIST_MODEL]??data?.values[WRITER_MODEL]??""),
-    reasoningLevel:(String(data?.values[SPECIALIST_EFFORT]??"high")||"high") as ExperimentalProviderModelPickerValue["reasoningLevel"],
-    ...(providers.providers?.find((provider)=>provider.id===specialistProviderId)?.serviceTiers?.length?{serviceTier:data?.values[SPECIALIST_SERVICE_TIER]==="fast"?"fast":"default"}:{}),
-  };
+  /** Every picker-saved role: what its picker shows and how a choice is saved. */
+  const pickers = Object.fromEntries((Object.keys(SELECTION_SPECS) as SelectionId[]).map((id) => [id, {
+    value: selectionValue(id, data?.values, providers),
+    save: (selection: ExperimentalProviderModelPickerValue) => saveSelection(id, selection),
+  }])) as Record<SelectionId, { value: ExperimentalProviderModelPickerValue; save: (selection: ExperimentalProviderModelPickerValue) => Promise<boolean> }>;
 
   const catalogRow = (key: string) => VISIBLE_CATALOG.find((item) => item.storageKey === key);
 
@@ -817,6 +655,7 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
 
 
   return {
+    pickers, saveSelection,
     activeScope, setActiveScope, rpc, routeProjectId, routeThreadId, selectedProjectId,
     setSelectedProjectId, projectId, isGlobal, projectScreenActive, selectedSectionId, setSelectedSectionId,
     routingStats, setRoutingStats, councilDefaults, setCouncilDefaults, councilSeatsTouched, fallbackTouched,
@@ -835,12 +674,8 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
     loadGeneration, chooseLocale, load, mergeRuns, loadMoreRuns, refreshRuns,
     runsPollMs, runsVisible, tabs, diagnosticsGrouped, extrasGrouped, chooseProject,
     writeDraft, save, saveKey, applySetting, resetInherited, displayedValue,
-    persistWriterSelection, saveWriterSelection, saveMemorySelection, saveNightReviewSelection, saveDocsSelection, saveProjectLifeSelection,
-    savePmReadSelection, saveOnboardingSelection, savePlanCritiqueSelection, saveCodeCritiqueSelection, saveCouncilSeatSelection, saveWriterFallback,
-    councilSeatPickerValue, saveSpecialistSelection, savedPickerValue, pickerValue, memoryProviderId, memoryPickerValue,
-    nightProviderId, nightPickerValue, docsOwn, docsProviderId, docsPickerValue, projectLifeProviderId,
-    projectLifePickerValue, onboardingProviderId, onboardingPickerValue, pmReadProviderId, pmReadPickerValue, planCritiqueProviderId,
-    planCritiquePickerValue, codeCritiqueProviderId, codeCritiquePickerValue, specialistProviderId, specialistPickerValue, catalogRow,
+    persistWriterSelection, saveWriterSelection, saveCouncilSeatSelection, saveWriterFallback,
+    councilSeatPickerValue, savedPickerValue, pickerValue, catalogRow,
     hostId, routing, modelPicker, inheritReset, runStack, finishRuns,
     jevRows, selectedProjectName, selectedSectionName, mobileNavValue, flatSections, walkSections,
     tabSelect, advanced, hostLabel, nativeHostId, installNative, writerChosen,
