@@ -11,7 +11,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { rpcContract } from "../contracts";
-import { SECTION_ORDER, VISIBLE_CATALOG, type CatalogRow } from "../ui-catalog";
+import { SECTION_ORDER, VISIBLE_CATALOG, type CatalogRow } from "@lane-pilot/settings-catalog";
 import {
   t,
   setLocaleOverride,
@@ -28,7 +28,7 @@ import { readRunsWindow } from "./runs-window";
 import { chromeIsCompact, contentStacksControls, useObservedWidth } from "@lane-pilot/ui-kit";
 import { userVisibleProjects } from "../project-scope";
 import { DOCS_DEFAULT_SELECTION } from "../stages/docs-defaults";
-import { GLOBAL_SETTINGS_PROJECT_ID } from "../lp-defaults";
+import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { writerFallbackKeys } from "../writer-fallbacks";
 import { BASIC_SETTING_KEYS, CODE_CRITIQUE_EFFORT, CODE_CRITIQUE_MODEL, CODE_CRITIQUE_PROVIDER, CODE_CRITIQUE_SERVICE_TIER, COUNCIL_SEATS, CouncilDetail, CouncilRow, DOCS_EFFORT, DOCS_MODEL, DOCS_PROVIDER, DOCS_SERVICE_TIER, JEV_KEYS, MEMORY_EFFORT, MEMORY_MODEL, MEMORY_PROVIDER, MEMORY_SERVICE_TIER, NIGHT_EFFORT, NIGHT_MODEL, NIGHT_PROVIDER, NIGHT_SERVICE_TIER, ONBOARDING_EFFORT, ONBOARDING_MODEL, ONBOARDING_PROVIDER, ONBOARDING_SERVICE_TIER, PLAN_CRITIQUE_EFFORT, PLAN_CRITIQUE_MODEL, PLAN_CRITIQUE_PROVIDER, PLAN_CRITIQUE_SERVICE_TIER, PM_READ_EFFORT, PM_READ_MODEL, PM_READ_PROVIDER, PM_READ_SERVICE_TIER, PROJECT_LIFE_EFFORT, PROJECT_LIFE_MODEL, PROJECT_LIFE_PROVIDER, PROJECT_LIFE_SERVICE_TIER, RUNS_PAGE, RoutingStats, SPECIALIST_EFFORT, SPECIALIST_MODEL, SPECIALIST_PROVIDER, SPECIALIST_SERVICE_TIER, ScreenPayload, StackDetectResult, WRITER_EFFORT, WRITER_MODEL, WRITER_PROVIDER, WRITER_SERVICE_TIER, diagnosticRows, extraSettingRows } from "./page-model";
 

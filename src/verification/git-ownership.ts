@@ -1,6 +1,6 @@
 import { lstat, realpath } from "node:fs/promises";
 import { relative, resolve } from "node:path";
-import { filterOwnershipNoise } from "../bookkeeping-paths";
+import { filterOwnershipNoise } from "@lane-pilot/settings-catalog";
 import { spawnAsync } from "@lane-pilot/kit";
 
 export type GitOwnershipBase = {
@@ -72,7 +72,7 @@ async function resolveCommit(cwd:string,ref:string) {
   return {ok:true as const,sha};
 }
 
-export { TOOL_CACHE_DIRS, filterOwnershipNoise } from "../bookkeeping-paths";
+export { TOOL_CACHE_DIRS, filterOwnershipNoise } from "@lane-pilot/settings-catalog";
 
 /**
  * One normalisation before every ownership decision: dirt outside the workspace dropped, the rest made

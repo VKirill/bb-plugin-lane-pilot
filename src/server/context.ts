@@ -1,6 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { LanePilotDatabase } from "../database";
-import { VISIBLE_CATALOG } from "../ui-catalog";
+import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import type { Realtime } from "./realtime";
 
 /** What every server module gets instead of reaching into the closure of `plugin()`. */

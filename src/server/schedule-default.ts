@@ -1,5 +1,5 @@
 import { getSettingVersions, loadProjectSettings, type LanePilotDatabase } from "../database";
-import { GLOBAL_SETTINGS_PROJECT_ID } from "../lp-defaults";
+import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { SCHEDULE_ERRAND_DEFAULT_KEY, parseErrandDefault, resolveErrandModel, type ErrandModelTask } from "../schedule/errand-model";
 import type { ErrandDefaultView, ModelView } from "../schedule/views";
 import type { ServerCore } from "./core";

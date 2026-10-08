@@ -4,7 +4,7 @@ import {
   unappliedNotValidReason,
   type CliBinary,
   type SettingSpec,
-} from "./channels";
+} from "@lane-pilot/settings-catalog";
 import { validateSettingsObject, validationErrorText } from "./setting-validation";
 
 export type UnappliedSetting = {

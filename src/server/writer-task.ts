@@ -3,7 +3,7 @@ import type { PrototypeConfig, TaskV2 } from "../contracts";
 import { valueAt } from "./values";
 import { compactContract, pmReadBrief } from "../writer-brief";
 import { cleanCheckOutput, failureExcerpt, sha256Hex } from "@lane-pilot/kit";
-import { fileAllowedByOwns, matchOwnsPath } from "../owns-paths";
+import { fileAllowedByOwns, matchOwnsPath } from "@lane-pilot/kit";
 export function outputText(value: unknown): string {
   for (const key of ["text", "output", "lastAssistantText", "content"]) {
     const found = valueAt(value, key);

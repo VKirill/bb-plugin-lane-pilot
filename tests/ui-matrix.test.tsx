@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { openAllTabs, openTab } from "./ui-tabs";
 import { cleanup, configure, fireEvent, waitFor, within } from "@testing-library/react";
 import { mountPage, missingStack, screenFixture } from "./ui-harness";
-import { VISIBLE_CATALOG, DISABLED_IDS, EDITABLE_IDS } from "../src/ui-catalog";
+import { VISIBLE_CATALOG, DISABLED_IDS, EDITABLE_IDS } from "@lane-pilot/settings-catalog";
 import { en, ru, setLocaleOverride, t, validationMessage } from "../i18n";
 import { EXTERNAL_OPS } from "../src/constants";
 import { toast } from "sonner";

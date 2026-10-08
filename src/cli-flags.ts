@@ -1,4 +1,4 @@
-import type { CliBinary } from "./channels";
+import type { CliBinary } from "@lane-pilot/settings-catalog";
 
 const PROJECT_CWD_COMMANDS: Record<CliBinary, string[]> = {
   "run-controller": ["run", "start"],

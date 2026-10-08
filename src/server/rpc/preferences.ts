@@ -1,7 +1,7 @@
 import { applyResourceMode, collectAgentInventory } from "../../agent-inventory";
 import { compileEffectiveMainAgent, compileMainAgentProfile } from "../../agent-profile";
 import { detectRequiredSessionPolicyCapability } from "../../helper-context";
-import { LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, packStoredDefaults, parseDefaultsRevision, parseLanePilotDefaults } from "../../lp-defaults";
+import { LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, packStoredDefaults, parseDefaultsRevision, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { userVisibleProjects } from "../../project-scope";
 import { mapListedQaHosts } from "../../qa-host";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";

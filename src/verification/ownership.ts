@@ -1,4 +1,4 @@
-import { matchOwnsPath } from "../owns-paths";
+import { matchOwnsPath } from "@lane-pilot/kit";
 import { posix } from "node:path";
 
 export type OwnershipTask = {

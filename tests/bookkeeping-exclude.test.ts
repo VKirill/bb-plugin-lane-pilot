@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { BOOKKEEPING_EXCLUDE_LINES, isBookkeepingPath } from "../src/bookkeeping-paths";
+import { BOOKKEEPING_EXCLUDE_LINES, isBookkeepingPath } from "@lane-pilot/settings-catalog";
 import { TARGET_SHA } from "../src/constants";
 import { openDatabase, saveProjectSetting, savePrototypeConfig } from "../src/database";
 import { excludeBookkeeping } from "../src/server/bookkeeping-exclude";

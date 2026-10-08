@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { ownsPathsOverlap } from "../src/owns-paths";
+import { ownsPathsOverlap } from "@lane-pilot/kit";
 
 it("lets disjoint tasks run side by side and holds back any that may touch one file", () => {
   expect(ownsPathsOverlap(["apps/bot/**"], ["apps/marketing/**"])).toBe(false);
@@ -12,7 +12,7 @@ it("lets disjoint tasks run side by side and holds back any that may touch one f
 });
 
 it("matches wildcards inside names and double stars inside segments (SelfyStudio patterns)", async () => {
-  const { matchOwnsPath: m, fileAllowedByOwns } = await import("../src/owns-paths");
+  const { matchOwnsPath: m, fileAllowedByOwns } = await import("@lane-pilot/kit");
   expect(m("packages/db/prisma/migrations/20261002_greeting_cards_core/migration.sql", "packages/db/prisma/migrations/*_greeting_cards_core/**")).toBe(true);
   expect(m("packages/db/prisma/migrations/20261002_other/migration.sql", "packages/db/prisma/migrations/*_greeting_cards_core/**")).toBe(false);
   expect(m("apps/api/src/routes/greeting-cards.ts", "apps/api/src/**greeting-card*")).toBe(true);

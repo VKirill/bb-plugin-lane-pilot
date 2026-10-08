@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import type { TaskV2 } from "../contracts";
-import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOverlap } from "../owns-paths";
+import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOverlap } from "@lane-pilot/kit";
 import { findSandboxUnsafeMissingExcludes, runnerFilterArgs, runsWholeSuite } from "../stages/critique-coverage";
 import { parseReadFirstHints } from "../stages/read-first";
 import { SUBJECTIVE_WORDS } from "../stages/role-method";

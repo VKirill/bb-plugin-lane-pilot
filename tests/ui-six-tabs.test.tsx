@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
-import { VISIBLE_CATALOG } from "../src/ui-catalog";
+import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import { SEGMENTS, TAB_IDS, resolveTab, segmentsFor } from "../src/ui/tabs-model";
 import { setLocaleOverride, en, ru } from "../i18n";
 import { HELPER_ROLES } from "../src/helper-context";

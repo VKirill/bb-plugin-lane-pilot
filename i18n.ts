@@ -1,4 +1,4 @@
-import { UNAPPLIED_REASON } from "./src/channels";
+import { UNAPPLIED_REASON } from "@lane-pilot/settings-catalog";
 import { fieldEn, fieldRu } from "./src/i18n-fields";
 import { workflowEn, workflowRu } from "./src/i18n-workflows";
 import { editorEn, editorRu } from "./src/i18n-workflow-editor";

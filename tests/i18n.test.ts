@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { describe, expect, it } from "vitest";
 import { afterEach, vi } from "vitest";
-import { UNAPPLIED_REASON, SETTING_CATALOG, unappliedNotValidReason } from "../src/channels";
+import { UNAPPLIED_REASON, SETTING_CATALOG, unappliedNotValidReason } from "@lane-pilot/settings-catalog";
 import { detectLocale, detectLocaleHint, en, localeFromSources, ru, setLocaleOverride, subscribeToLocaleHintChanges, unappliedReason, type I18nKey } from "../i18n";
 
 afterEach(() => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { en, ru, setLocaleOverride } from "../i18n";
-import { VISIBLE_CATALOG } from "../src/ui-catalog";
+import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import { enumLabelKnown, isBrandEnumValue, presentEnumLabel } from "../src/enum-labels";
 
 describe("enum presentation labels", () => {

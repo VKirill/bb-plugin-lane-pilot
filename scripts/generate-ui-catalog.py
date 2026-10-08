@@ -520,7 +520,7 @@ def upstream_provider_effort_choices() -> dict[str, list[str]] | None:
 
 
 def check_upstream_enum_catalog() -> None:
-    source = (ROOT / "src/ui-catalog.ts").read_text()
+    source = (ROOT / "packages/settings-catalog/src/ui-catalog.ts").read_text()
     checked = 0
     for line in source.splitlines():
         if 'uiStatus:"editable"' not in line or 'control:"select"' not in line:
@@ -1411,7 +1411,7 @@ def main() -> None:
         counts[row["uiStatus"]] += 1
 
     # Write TypeScript catalog
-    ts_path = ROOT / "src/ui-catalog.ts"
+    ts_path = ROOT / "packages/settings-catalog/src/ui-catalog.ts"
     lines = [
         "export type UiStatus = \"editable\" | \"readonly\" | \"gap\" | \"excluded\";",
         "export type ControlKind = \"switch\" | \"select\" | \"slider\" | \"number\" | \"path\" | \"input\";",
@@ -1672,7 +1672,7 @@ def main() -> None:
     if missing_runtime:
         raise SystemExit(f"SETTING_CATALOG keys missing from UI storageKey: {missing_runtime}")
     summary["runtime_keys"] = sorted(SETTING_CATALOG_KEYS & mapped)
-    (ROOT / "src/ui-catalog.summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    (ROOT / "packages/settings-catalog/src/ui-catalog.summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary, indent=2))
 
 

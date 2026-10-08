@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { BOOKKEEPING_PATHS } from "../../src/bookkeeping-paths";
+import { BOOKKEEPING_PATHS } from "@lane-pilot/settings-catalog";
 import { integrateWorktree } from "../../src/verification/git-integrate";
 
 describe("bookkeeping merge collision", () => {

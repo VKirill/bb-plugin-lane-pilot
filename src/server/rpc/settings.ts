@@ -1,4 +1,4 @@
-import { GLOBAL_SETTINGS_PROJECT_ID } from "../../lp-defaults";
+import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { SCHEDULE_ERRAND_DEFAULT_KEY } from "../../schedule/errand-model";
 import { ACCESS_GROUPS, ACCESS_SWITCHES, CORE_PROVIDER_GROUPS, HELPER_ROLES, MANDATORY_BB_PLUGINS, MANDATORY_MCP_SERVERS, effectiveGroup, effectiveSwitch, parseHelperContextSettings, parseRoleAccess, roleAccessKey } from "../../helper-context";
 import { detectCompiledMainAgentCapability } from "../../agent-profile";
@@ -7,9 +7,9 @@ import { cliReceiptAttemptKey, cliReceiptRunKey } from "../../constants";
 import { casResetSettings, casUpsertSetting, casUpsertSettings, getReasoningTrace, countStageReceipts, getSettingVersions, getStageReceiptResult, listRunsPage, listSettingRows, listStageReceiptSummaries, loadProjectSettings, loadPrototypeConfig, sectionBindingId } from "../../database";
 import type { RunHistoryRow } from "../../database";
 import { writerServiceTier, findModelIn } from "@lane-pilot/models";
-import { LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "../../lp-defaults";
+import { LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { mapListedQaHosts } from "../../qa-host";
-import { VISIBLE_CATALOG } from "../../ui-catalog";
+import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import { NATIVE_CODE_CRITIQUE_KEYS, NATIVE_DOCS_KEYS, NATIVE_MEMORY_KEYS, NATIVE_NIGHT_REVIEW_KEYS, NATIVE_ONBOARDING_KEYS, NATIVE_PLAN_CRITIQUE_KEYS, NATIVE_PM_READ_KEYS, NATIVE_PROJECT_LIFE_KEYS, NATIVE_SPECIALIST_KEYS, NATIVE_WRITER_KEYS } from "../run-routing";
 import { asJsonText } from "../writer-task";
 import { stringAt } from "../values";

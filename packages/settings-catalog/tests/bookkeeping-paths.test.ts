@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { BOOKKEEPING_PATHS, bookkeepingSetting, filterOwnershipNoise, isBookkeepingPath, isOwnershipNoise } from "../src/bookkeeping-paths";
+import { BOOKKEEPING_PATHS, bookkeepingSetting, filterOwnershipNoise, isBookkeepingPath, isOwnershipNoise } from "@lane-pilot/settings-catalog";
 
 it("names the bookkeeping the harness, hooks and sibling agents write", () => {
   for (const path of [".agents/PROGRESS.md", ".agents/CHANGELOG.md", ".agents/memory/episodes/a/b.json", ".agents/runs/lprun_1/x", ".agents/reports/r.md", ".bb/chats/thr_1/n.md", "notes/lock/w.lock"]) {

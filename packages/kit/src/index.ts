@@ -5,3 +5,4 @@ export * from "./output-excerpt";
 export * from "./bounded-read";
 export * from "./jsonc";
 export * from "./paths";
+export * from "./owns-paths";

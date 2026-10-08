@@ -1,4 +1,4 @@
-import { parseHelperPlacement, type HelperPlacementMode } from "./lp-defaults";
+import { parseHelperPlacement, type HelperPlacementMode } from "@lane-pilot/settings-catalog";
 
 export type ParentThreadPlacement = {
   id: string;

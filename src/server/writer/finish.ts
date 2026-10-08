@@ -28,7 +28,7 @@ import { askGuestsToCommit } from "../checkout-guests";
 import { shouldMergeAttemptWorktree } from "./spawn";
 import { loadWriterNudge } from "../writer-silence";
 import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON, failureFingerprint, isEnvironmentCheckFailure } from "../../failure-class";
-import { bookkeepingSetting } from "../../bookkeeping-paths";
+import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../merge-intent";
 import { sendServiceMessage } from "../service-message";
 import { runOnHost } from "@lane-pilot/host-calls";

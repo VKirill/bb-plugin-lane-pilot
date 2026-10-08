@@ -5,7 +5,7 @@ import {
 } from "@lane-pilot/run-insights";
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { getRun, getRunSettingsScopes } from "../database";
-import { fileAllowedByOwns, fileBlockedByNeverTouch } from "../owns-paths";
+import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { adoptRuleProposal, refreshRuleProposals, retireAdoptedRule, rewordAdoptedRule } from "./insights";
 import { fullAccessSpawn } from "./pm-spawn";

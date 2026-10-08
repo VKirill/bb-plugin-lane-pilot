@@ -1,6 +1,6 @@
 import { MAIN_AGENT_PROFILE_IDS, compileEffectiveMainAgent, compileMainAgentProfile } from "../agent-profile";
 import { loadPrototypeConfig } from "../database";
-import { GLOBAL_SETTINGS_PROJECT_ID, LP_DEFAULTS_KEY, parseLanePilotDefaults } from "../lp-defaults";
+import { GLOBAL_SETTINGS_PROJECT_ID, LP_DEFAULTS_KEY, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { resolveWriterBinding } from "../project-binding";
 import type { ProjectSourceBinding } from "../project-binding";
 import { mapListedQaHosts } from "../qa-host";

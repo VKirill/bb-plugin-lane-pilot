@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { inheritProjectValues } from "../src/lp-defaults";
+import { inheritProjectValues } from "@lane-pilot/settings-catalog";
 import { automaticEffortRoutingEnabled, writerServiceTier } from "@lane-pilot/models";
 
 it("gives an unconfigured project Luna high fast with explicit effort routing", () => {

@@ -24,7 +24,7 @@ import {
   setRunThread,
   transitionAttempt,
 } from "../src/database";
-import { fileAllowedByOwns, fnmatch, matchOwnsPath } from "../src/owns-paths";
+import { fileAllowedByOwns, fnmatch, matchOwnsPath } from "@lane-pilot/kit";
 import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../src/native-session-hooks";
 import plugin from "../server";
 import {

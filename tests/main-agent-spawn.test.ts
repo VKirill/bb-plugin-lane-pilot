@@ -4,7 +4,7 @@ import plugin from "../server";
 import { compileMainAgentProfile } from "../src/agent-profile";
 import { TARGET_SHA } from "../src/constants";
 import { openDatabase, saveProjectSetting, savePrototypeConfig } from "../src/database";
-import { LP_AGENT_OVERRIDES_KEY } from "../src/lp-defaults";
+import { LP_AGENT_OVERRIDES_KEY } from "@lane-pilot/settings-catalog";
 
 const projectId = "proj_main_spawn";
 const config = {

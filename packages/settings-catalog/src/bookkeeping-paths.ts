@@ -1,4 +1,4 @@
-import { matchOwnsPath } from "./owns-paths";
+import { matchOwnsPath } from "@lane-pilot/kit/owns-paths";
 
 /**
  * Files hooks, the harness and sibling agents write into a checkout while a task runs. They are never a writer's

@@ -4,8 +4,8 @@ import { appendFile, cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, 
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { spawnAsync } from "@lane-pilot/kit";
-import { isBookkeepingPath } from "../bookkeeping-paths";
-import { matchOwnsPath } from "../owns-paths";
+import { isBookkeepingPath } from "@lane-pilot/settings-catalog";
+import { matchOwnsPath } from "@lane-pilot/kit";
 import { REPLAY_CHECK_FAILED } from "../failure-class";
 import { isAllowedProjectLifePath } from "../stages/project-life";
 

@@ -1,4 +1,4 @@
-import { BOOKKEEPING_EXCLUDE_LINES } from "../bookkeeping-paths";
+import { BOOKKEEPING_EXCLUDE_LINES } from "@lane-pilot/settings-catalog";
 import { EXCLUDE_ADDED, ensureExcludeLinesCommand } from "../verification/git-integrate";
 
 type RunCommand = (input:{ requestedHostId:string; cwd:string; command:string; timeoutSec:number }) => Promise<{ exitCode:number; stdout:string; stderr:string }>;

@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import type { rpcContract } from "../contracts";
 import { casResetSettings, casUpsertSetting, getSettingVersions, listSettingRows } from "../database";
-import { GLOBAL_SETTINGS_PROJECT_ID } from "../lp-defaults";
+import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { DraftStore } from "../workflow/draft-store";
 import { validateChoice, type ModelCatalog } from "@lane-pilot/models";
 import { CATALOG_WAIT_MS, createModelCatalog, modelCatalogOf, pmHostOf, within, type ModelCatalogReader } from "./model-catalog-reader";

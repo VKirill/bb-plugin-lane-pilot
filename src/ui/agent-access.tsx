@@ -3,7 +3,7 @@ import { useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { rpcContract } from "../contracts";
 import { detectLocale, t, type I18nKey } from "../../i18n";
-import { GLOBAL_SETTINGS_PROJECT_ID } from "../lp-defaults";
+import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import {
   ACCESS_GROUPS,
   ACCESS_SWITCHES,

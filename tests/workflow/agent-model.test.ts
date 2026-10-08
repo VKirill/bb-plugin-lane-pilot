@@ -4,7 +4,7 @@ import { agentRequest, withResolvedModel, type HelperRequest } from "../../src/s
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_REASONING, modelOverrideKey, resolveAgentModel } from "../../src/server/workflow-agent-model";
 import { resolveStepExecutors, DELEGATED_ACTIONS } from "../../src/server/workflow-step-executors";
 import { validateSettingValue, validateSettingsObject } from "../../src/setting-validation";
-import { VISIBLE_CATALOG } from "../../src/ui-catalog";
+import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import { BUILTIN_PRESETS, PRESET_FIELDS, PRESET_SLUGS, presetKey, presetSelection, presetSlug } from "@lane-pilot/models";
 import type { StepContext } from "../../src/workflow/engine";
 import type { GraphNode } from "../../src/workflow/schema";

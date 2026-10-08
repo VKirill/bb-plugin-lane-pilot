@@ -3,7 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
 import { compileMainAgentProfile } from "../src/agent-profile";
 import { createRun, getRun, loadProjectSettings, openDatabase, savePrototypeConfig } from "../src/database";
-import { inheritProjectValues, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, parseLanePilotDefaults } from "../src/lp-defaults";
+import { inheritProjectValues, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { buildRunPolicy, parseRunPolicy } from "../src/stages/run-policy";
 
 describe("inherited dispatch after override-row delete", () => {

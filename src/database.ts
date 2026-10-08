@@ -9,7 +9,7 @@ import type { StageId, StageState } from "./stages/contract";
 import { parseDirtSnapshots, type DirtSnapshot } from "./cli-outcome";
 import { validateSettingValue, validateSettingsObject, validationErrorText, type SettingValidationError } from "./setting-validation";
 import { sha256Buffer } from "@lane-pilot/kit";
-import { GLOBAL_SETTINGS_PROJECT_ID } from "./lp-defaults";
+import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import packageJson from "../package.json";
 import { IllegalTransitionError, isLegalMove } from "./state-machine";
 import { recordMemoryAccepted } from "@lane-pilot/memory-core";

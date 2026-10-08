@@ -1,5 +1,5 @@
 import { createContext, useContext, type ReactNode } from "react";
-import { type CatalogRow } from "../ui-catalog";
+import { type CatalogRow } from "@lane-pilot/settings-catalog";
 import { t, type Locale, type LocalePreference } from "../../i18n";
 import { settingHelp, settingLabel, settingUsesNumericControl } from "../setting-copy";
 import { Badge } from "@lane-pilot/ui-kit";

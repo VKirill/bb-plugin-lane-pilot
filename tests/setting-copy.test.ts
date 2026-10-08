@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { en, ru } from "../i18n";
 import { SETTING_META, settingLabelIsRaw } from "../src/setting-copy";
-import { VISIBLE_CATALOG } from "../src/ui-catalog";
+import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
 import { estimateTokens } from "../src/stages/memory";
 
 const PICKER_PREFIXES = [

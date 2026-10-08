@@ -1,4 +1,4 @@
-import { PROVIDER_POOL_KEY, providerPoolProblem } from "./provider-pool";
+import { PROVIDER_POOL_KEY, providerPoolProblem } from "@lane-pilot/settings-catalog";
 import { SCHEDULE_ERRAND_DEFAULT_KEY, errandDefaultProblem } from "./schedule/errand-model";
 import "./jev/judgments/route-workflow";
 import "@lane-pilot/jev/judgments/repair-group";
@@ -6,7 +6,7 @@ import "./jev/judgments/failure-class";
 import "@lane-pilot/jev/judgments/output-guard";
 import { listJudgments } from "@lane-pilot/jev";
 import { jevSettingProblem } from "@lane-pilot/jev";
-import { UI_CATALOG, WRITER_EFFORT_CHOICES_BY_PROVIDER } from "./ui-catalog";
+import { UI_CATALOG, WRITER_EFFORT_CHOICES_BY_PROVIDER } from "@lane-pilot/settings-catalog";
 
 export type SettingValidationError = {
   code: "invalid_choice" | "incompatible_setting";

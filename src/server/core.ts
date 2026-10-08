@@ -12,7 +12,7 @@ import { hostContract } from "../contracts";
 import type { PrototypeConfig, TaskV2 } from "../contracts";
 import { getAttempt, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, sectionBindingId, setIllegalTransitionLog, setRunSettingsScopes, setRunState, transitionAttempt } from "../database";
 import { writerServiceTier } from "@lane-pilot/models";
-import { GLOBAL_SETTINGS_PROJECT_ID, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "../lp-defaults";
+import { GLOBAL_SETTINGS_PROJECT_ID, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { createNativeInstaller } from "../native-install-lifecycle";
 import type { WriterBindingResolution } from "../project-binding";
 import { parseRunPolicy } from "../stages/run-policy";

@@ -1,4 +1,4 @@
-import { VISIBLE_CATALOG, type CatalogRow } from "../ui-catalog";
+import { VISIBLE_CATALOG, type CatalogRow } from "@lane-pilot/settings-catalog";
 import { t, type I18nKey } from "../../i18n";
 import { settingUnitKey } from "../setting-copy";
 import { Tabs } from "@lane-pilot/ui-kit";

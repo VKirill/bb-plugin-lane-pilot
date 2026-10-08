@@ -147,7 +147,7 @@ it("accepts a switch's boolean for a true/false setting", async () => {
 
 it("lets every project inherit the global level and override it per project or section", async () => {
   const { casUpsertSettings, loadProjectSettings, sectionBindingId } = await import("../src/database");
-  const { GLOBAL_SETTINGS_PROJECT_ID } = await import("../src/lp-defaults");
+  const { GLOBAL_SETTINGS_PROJECT_ID } = await import("@lane-pilot/settings-catalog");
   const fake = createFakePluginHost({ pluginId: "lane-pilot" });
   cleanup.push(() => fake.harness.lifecycle.dispose());
   const db = openDatabase(fake.bb);

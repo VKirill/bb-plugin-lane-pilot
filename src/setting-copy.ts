@@ -1,5 +1,5 @@
 import { t, type I18nKey } from "../i18n";
-import type { CatalogRow } from "./ui-catalog";
+import type { CatalogRow } from "@lane-pilot/settings-catalog";
 
 export type SettingMeta = {
   label: I18nKey;

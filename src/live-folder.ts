@@ -1,5 +1,5 @@
 import type { DirtSnapshot } from "./cli-outcome";
-import { fileAllowedByOwns, fileBlockedByNeverTouch } from "./owns-paths";
+import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
 
 /**
  * «Folder without git» mode: the owner runs the orchestrator in a plain folder and writers edit the live files. There is

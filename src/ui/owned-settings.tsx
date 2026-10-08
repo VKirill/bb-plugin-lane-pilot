@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { Locale } from "../../i18n";
 import { t } from "../../i18n";
 import { agentPickerLabel } from "../agent-display";
-import type { LanePilotDefaults } from "../lp-defaults";
+import type { LanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { CONTROL_H } from "@lane-pilot/ui-kit";
 import { Disclosure } from "@lane-pilot/ui-kit";
 import { HelpSup } from "@lane-pilot/ui-kit";

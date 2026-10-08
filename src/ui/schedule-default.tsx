@@ -4,7 +4,7 @@ import type { rpcContract } from "../contracts";
 import { t } from "../../i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
-import { GLOBAL_SETTINGS_PROJECT_ID } from "../lp-defaults";
+import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { ERRAND_BUILTIN, SCHEDULE_ERRAND_DEFAULT_KEY } from "../schedule/errand-model";
 import type { ErrandDefaultView } from "../schedule/views";
 import { PRESET_SLUGS } from "@lane-pilot/models";
