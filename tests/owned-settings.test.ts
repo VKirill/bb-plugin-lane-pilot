@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { resolveSelectedMainAgentProfile, compileMainAgentProfile } from "../src/rooms/native-agent/agent-profile";
-import { LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, parseLanePilotDefaults, inheritProjectValues } from "@lane-pilot/settings-catalog";
+import { resolveSelectedMainAgentProfile, compileMainAgentProfile } from "../src/agent-profile";
+import { LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, parseLanePilotDefaults, inheritProjectValues } from "../src/lp-defaults";
 
 describe("owned settings persistence and optimistic concurrency", () => {
   it("atomically saves defaults with one CAS winner and retains explicit project choices", async () => {

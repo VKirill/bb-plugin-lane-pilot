@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { classifyManagedWorkspace, parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "../../src/rooms/verification/routing";
+import { classifyManagedWorkspace, parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "../../src/workspace/routing";
 import plugin from "../../server";
-import { getRun, openDatabase, saveProjectSetting, savePrototypeConfig } from "../../src/rooms/storage/database";
+import { getRun, openDatabase, saveProjectSetting, savePrototypeConfig } from "../../src/database";
 
 describe("workspace routing", () => {
   it("defaults to auto and defers isolation until task risk is available", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { critiquePrompt, shouldRunPlanCritique } from "../../src/rooms/critique/critique";
-import { validateSettingValue } from "../../src/rooms/settings/setting-validation";
+import { critiquePrompt, shouldRunPlanCritique } from "../../src/stages/critique";
+import { validateSettingValue } from "../../src/setting-validation";
 
 describe("plan critique policy", () => {
   it("includes deterministic ownership findings in the actual model critique prompt", () => {

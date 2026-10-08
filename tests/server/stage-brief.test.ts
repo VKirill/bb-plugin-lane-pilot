@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { StageReceiptRow } from "../../src/rooms/storage/database";
-import { compactWaitResult } from "../../src/rooms/tools/server/tools";
-import { compactDispatchReply, compactReceipt, compactStages, stageDetail, stageVerdict } from "../../src/rooms/runs/server/stage-brief";
+import type { StageReceiptRow } from "../../src/database";
+import { compactWaitResult } from "../../src/server/tools";
+import { compactDispatchReply, compactReceipt, compactStages, stageDetail, stageVerdict } from "../../src/server/stage-brief";
 
 const sha = (seed: string) => seed.repeat(64).slice(0, 64);
 const row = (stageId: StageReceiptRow["stageId"], state: StageReceiptRow["state"], extra: Partial<StageReceiptRow> = {}): StageReceiptRow => ({

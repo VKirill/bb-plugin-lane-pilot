@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { taskV2Schema } from "../src/rooms/contracts";
-import { providerForwardsAgentOnly, writerBriefInput, writerBriefSegments, writerPrompt } from "../src/rooms/writer/server/writer-task";
+import { taskV2Schema } from "../src/contracts";
+import { providerForwardsAgentOnly, writerBriefInput, writerBriefSegments, writerPrompt } from "../src/server/writer-task";
 
 const task = taskV2Schema.parse({
   schema_version: 2, id: "t-1", title: "Add the footer", risk: "low", lane: "ui", project_cwd: "/work/p",

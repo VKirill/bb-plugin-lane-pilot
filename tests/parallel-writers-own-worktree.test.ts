@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import plugin from "../server";
-import type { TaskV2 } from "../src/rooms/contracts";
-import { createRun, getAttempt, listGateEvents, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../src/rooms/storage/database";
+import type { TaskV2 } from "../src/contracts";
+import { createRun, getAttempt, listGateEvents, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../src/database";
 import { createFakeWorktreeHost } from "./own-worktree-host";
 
 // Live sandbox 2026-10-07 (0.1.181): three low-risk tasks dispatched seconds apart ran in the shared project folder and

@@ -1,6 +1,6 @@
 import { createFakePluginHost, makeQueueEntry } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { createProviderRetryGuard } from "../../src/rooms/stability/server/provider-retry";
+import { createProviderRetryGuard } from "../../src/server/provider-retry";
 
 type Row = ReturnType<typeof makeQueueEntry>;
 const retryRow = (id: string, threadId: string): Row => makeQueueEntry({ id, threadId, sendAt: Date.now() + 3600_000, payload: { kind: "retry", attempt: 1, reason: "Rate limited", retryOfTurnRequestId: "req-1" } });

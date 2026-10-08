@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { MAX_LISTED, composeDigest, createDigest } from "../../src/rooms/learning/digest";
-import { insertItem, listItems, type Item } from "../../src/rooms/learning/store";
+import { MAX_LISTED, composeDigest, createDigest } from "../../src/learning/digest";
+import { insertItem, listItems, type Item } from "../../src/learning/store";
 import { NOW, database } from "./helpers";
 
 let n = 0;

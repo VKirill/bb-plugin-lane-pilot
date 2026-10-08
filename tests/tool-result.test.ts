@@ -2,9 +2,9 @@ import { z } from "zod";
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { createRun, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../src/rooms/storage/database";
-import { fenceOutside, ToolError, toolFailure } from "../src/rooms/core/server/tool-result";
-import { QA_HOST_KEY } from "../src/rooms/qa/qa-host";
+import { createRun, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../src/database";
+import { fenceOutside, ToolError, toolFailure } from "../src/server/tool-result";
+import { QA_HOST_KEY } from "../src/qa-host";
 
 function parseFailure(raw: unknown) {
   const parsed = JSON.parse(String(raw)) as { ok: boolean; error: { code: string; message: string; retryable: boolean; sideEffects: string; next?: string } };

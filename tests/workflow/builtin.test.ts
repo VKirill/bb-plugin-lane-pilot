@@ -1,10 +1,10 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { LP_TASK_PIPELINE, BUILTIN_SOURCES, builtinWorkflow, builtinWorkflows } from "../../src/rooms/workflow/builtin";
-import { END, START } from "@lane-pilot/workflow-engine";
-import { loadWorkflowStore } from "@lane-pilot/workflow-engine";
-import { validateWorkflow } from "@lane-pilot/workflow-engine";
+import { LP_TASK_PIPELINE, BUILTIN_SOURCES, builtinWorkflow, builtinWorkflows } from "../../src/workflow/builtin";
+import { END, START } from "../../src/workflow/schema";
+import { loadWorkflowStore } from "../../src/workflow/store";
+import { validateWorkflow } from "../../src/workflow/validate";
 
 describe("built-in workflows", () => {
   it("every file in workflows/ is registered, valid and free of warnings", async () => {

@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { parseLpSignal } from "@lane-pilot/ui-kit/realtime-channel";
+import { parseLpSignal } from "../src/realtime-channel";
 
 afterEach(() => cleanup());
 
@@ -16,7 +16,7 @@ describe("the open draft follows the architect's patches", () => {
   it("re-reads on a workflow-draft signal for its draft and ignores other drafts, kinds and projects", async () => {
     await loadPluginApp(() => import("../app"));
     // Imported after the app, so it binds to the SDK the test harness provides.
-    const { useWorkflowDraft } = await import("../src/rooms/workflow/ui/workflow-draft");
+    const { useWorkflowDraft } = await import("../src/ui/workflow-draft");
     const Probe = ({ projectId, draftId }: { projectId: string; draftId: string }) => {
       const view = useWorkflowDraft(projectId, draftId);
       return <div data-testid="draft">{view.loading ? "loading" : `v${view.draft?.version ?? "-"} nodes ${view.check?.nodes ?? "-"} ${view.error ?? ""}`}</div>;

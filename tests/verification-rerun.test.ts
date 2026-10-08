@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runWithFlakyRerun } from "../src/rooms/writer/server/verify";
+import { runWithFlakyRerun } from "../src/server/writer/verify";
 
 const sequence = (...codes: number[]) => { let n = 0; const calls = () => n; return { run: async () => ({ exitCode: codes[Math.min(n++, codes.length - 1)]! }), calls }; };
 

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { openTab } from "./ui-tabs";
 import { cleanup, fireEvent } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
+import { VISIBLE_CATALOG } from "../src/ui-catalog";
 
 afterEach(() => cleanup());
 

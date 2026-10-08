@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reconcile, reconcileHolder, type HolderIdentity, type IdempotencyTriple, type ReconcilePort } from "../src/rooms/stability/reconcile";
+import { reconcile, reconcileHolder, type HolderIdentity, type IdempotencyTriple, type ReconcilePort } from "../src/reconcile";
 
 const key: IdempotencyTriple = { lanePilotRunId:"run", lanePilotTaskId:"task", attemptId:"attempt" };
 const metadata = (match:boolean) => match ? key : { lanePilotRunId:"other" };

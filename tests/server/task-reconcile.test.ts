@@ -1,10 +1,10 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { createAttempt, createRun, getAttempt, listStageReceipts, openDatabase, saveTaskPlan, transitionAttempt } from "../../src/rooms/storage/database";
-import { recordStage } from "../../src/rooms/runs/server/stage-records";
-import { createStability } from "../../src/rooms/stability/server/stability";
-import type { Services } from "../../src/rooms/core/server/services";
-import { createTaskReconcile } from "../../src/rooms/runs/server/task-reconcile";
+import { createAttempt, createRun, getAttempt, listStageReceipts, openDatabase, saveTaskPlan, transitionAttempt } from "../../src/database";
+import { recordStage } from "../../src/server/stage-records";
+import { createStability } from "../../src/server/stability";
+import type { Services } from "../../src/server/services";
+import { createTaskReconcile } from "../../src/server/task-reconcile";
 
 /** A run with one task whose failed attempt waits for a retry that died with a reload (live: bot-preset-catalog-style-fallback-r3). */
 function setup() {

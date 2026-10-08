@@ -1,5 +1,5 @@
 import { describe,expect,it } from "vitest";
-import { acceptedOnboardingEvidence,onboardingPrompt,parseOnboardingPreview } from "../../src/rooms/project-life/onboarding";
+import { acceptedOnboardingEvidence,onboardingPrompt,parseOnboardingPreview } from "../../src/stages/onboarding";
 
 const hash="a".repeat(64);
 

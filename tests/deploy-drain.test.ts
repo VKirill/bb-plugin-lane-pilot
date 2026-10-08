@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { bindDrainTarget, createDeployDrain, DRAIN_SNAPSHOT_KEY, drainForLifecycle } from "../src/rooms/stability/server/deploy-drain";
-import { experimental_vkLifecycle } from "../src/rooms/native-install/native-install-lifecycle";
+import { bindDrainTarget, createDeployDrain, DRAIN_SNAPSHOT_KEY, drainForLifecycle } from "../src/server/deploy-drain";
+import { experimental_vkLifecycle } from "../src/native-install-lifecycle";
 
 it("holds new checkout writes while draining, reports the running ones, and lets reads through", async () => {
   let clock = 0;

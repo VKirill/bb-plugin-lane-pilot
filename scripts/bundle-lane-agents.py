@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Regenerate src/rooms/native-agent/bundled-agents.json from a Claude Lane Stack revision.
+"""Regenerate src/bundled-agents.json from a Claude Lane Stack revision.
 
 Usage: bundle-lane-agents.py <claude-lane-stack checkout> <git revision>
 
 The prompts it writes are the CLI bodies; run `node_modules/.bin/tsx scripts/sync-bundled-prompts.ts` right after: it replaces them
-with the BB session prompts of src/rooms/native-agent/native-agent-overlay.ts (a test keeps the two equal).
+with the BB session prompts of src/native-agent-overlay.ts (a test keeps the two equal).
 """
 import hashlib, json, re, subprocess, sys
 import yaml
 
-OUT = "src/rooms/native-agent/bundled-agents.json"
+OUT = "src/bundled-agents.json"
 TOOL_SPLIT = re.compile(r",\s*(?![^()]*\))")
 OMITTED_ORDER = ["model", "effort", "permissionMode", "color", "background", "maxTurns"]
 

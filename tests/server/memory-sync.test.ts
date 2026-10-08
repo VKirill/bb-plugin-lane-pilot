@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase, saveProjectSetting } from "../../src/rooms/storage/database";
+import { openDatabase, saveProjectSetting } from "../../src/database";
 import { storeMemoryRecords } from "../../packages/memory-core/src/store";
 import { exportedFileName, laneMemoryFileToCandidate, parseLaneMemoryFile, renderLaneMemoryFile } from "../../packages/memory-core/src/files";
-import { exportFileMemory, importFileMemory } from "../../src/rooms/memory/server/memory-sync";
-import type { ServerCore } from "../../src/rooms/core/server/core";
+import { exportFileMemory, importFileMemory } from "../../src/server/memory-sync";
+import type { ServerCore } from "../../src/server/core";
 
 const dir = "/w/.agents/memory";
 
@@ -54,7 +54,7 @@ describe("memory sync: the database is the source of truth, files mirror it", ()
 
 describe("0.1.91 cleanup migration", () => {
   it("removes failure lessons and orphaned index rows, keeps facts and rules", async () => {
-    const { migrations } = await import("../../src/rooms/storage/database");
+    const { migrations } = await import("../../src/database");
     const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
     const db = openDatabase(bb);
     const facts = store(db, "Contract lives in src/site-tool-card-page.", ["contracts"]);

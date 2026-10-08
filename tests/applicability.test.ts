@@ -1,10 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { SETTING_CATALOG } from "@lane-pilot/settings-catalog";
-import { UI_CATALOG, VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
+import { SETTING_CATALOG } from "../src/channels";
+import { UI_CATALOG, VISIBLE_CATALOG } from "../src/ui-catalog";
 
 const summary = JSON.parse(
-  readFileSync(new URL("../packages/settings-catalog/src/ui-catalog.summary.json", import.meta.url), "utf8"),
+  readFileSync(new URL("../src/ui-catalog.summary.json", import.meta.url), "utf8"),
 ) as { editable: number; readonly: number; gap: number; excluded: number; blank: number; tuple_equal: boolean };
 
 // Owner-machine fixture: absent on a clean clone, where the tests comparing against it skip.

@@ -9,11 +9,11 @@
  */
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { anamnesisHandler } from "../src/rooms/anamnesis/host";
-import { createHub } from "../src/rooms/anamnesis/hub";
-import { formatReport, loadAnamnesis } from "../src/rooms/anamnesis/load";
-import { TURN_REQUESTED, isOwnerThread, type EventLike, type ThreadLike, type ThreadsPort } from "../src/rooms/anamnesis/owner-messages";
-import { anamnesisDbPath } from "../src/rooms/anamnesis/store";
+import { anamnesisHandler } from "../src/anamnesis/host";
+import { createHub } from "../src/anamnesis/hub";
+import { formatReport, loadAnamnesis } from "../src/anamnesis/load";
+import { TURN_REQUESTED, isOwnerThread, type EventLike, type ThreadLike, type ThreadsPort } from "../src/anamnesis/owner-messages";
+import { anamnesisDbPath } from "../src/anamnesis/store";
 
 const bb = (args: string[]): Promise<string> => new Promise((resolve, reject) => {
   execFile("bb", args, { maxBuffer: 512 * 1024 * 1024, timeout: 120_000 }, (error, stdout) => (error ? reject(error) : resolve(stdout)));

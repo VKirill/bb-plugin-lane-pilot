@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createObserver, finalRouteOf, fractionOf } from "../../src/rooms/learning/observe";
-import { createDecisionsClient, signalsFromDecisions, type DecisionsClient } from "../../src/rooms/learning/opinion";
-import { getObservation, usageToday } from "../../src/rooms/learning/store";
-import { routeOf } from "../../src/rooms/learning/judgment";
+import { createObserver, finalRouteOf, fractionOf } from "../../src/learning/observe";
+import { createDecisionsClient, signalsFromDecisions, type DecisionsClient } from "../../src/learning/opinion";
+import { getObservation, usageToday } from "../../src/learning/store";
+import { routeOf } from "../../src/learning/judgment";
 import { NOW, config, database, jevWith, message } from "./helpers";
 
 const CORRECTION = /не так|зачем|убери/i;

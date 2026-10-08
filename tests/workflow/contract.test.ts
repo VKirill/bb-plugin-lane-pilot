@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { BUILTIN_SOURCES } from "../../src/rooms/workflow/builtin";
-import { contractProblems, contractRepairPrompt, contractSample, describeProblems } from "@lane-pilot/workflow-engine";
-import { lowerWorkflow } from "@lane-pilot/workflow-engine";
-import { parseWorkflowObject } from "@lane-pilot/workflow-engine";
-import { loadWorkflowStore } from "@lane-pilot/workflow-engine";
-import { loadWorkflow } from "@lane-pilot/workflow-engine";
+import { BUILTIN_SOURCES } from "../../src/workflow/builtin";
+import { contractProblems, contractRepairPrompt, contractSample, describeProblems } from "../../src/workflow/contract";
+import { lowerWorkflow } from "../../src/workflow/lower";
+import { parseWorkflowObject } from "../../src/workflow/schema";
+import { loadWorkflowStore } from "../../src/workflow/store";
+import { loadWorkflow } from "../../src/workflow/validate";
 import { codes, workflow } from "./fixtures";
 import { engineOn, journalDb, ok, rows } from "./engine-helpers";
 import { wf } from "./engine-helpers";

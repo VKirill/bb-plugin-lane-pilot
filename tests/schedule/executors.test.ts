@@ -4,9 +4,9 @@ const observe = vi.hoisted(() => ({ result: { kind: "observing", detail: "" } as
 vi.mock("@lane-pilot/thread-observe", () => ({ observeStageChild: async () => observe.result }));
 
 import Database from "better-sqlite3";
-import { createScheduleExecutors } from "../../src/rooms/schedule/server/schedule-executors";
-import type { ExecutorInput } from "../../src/rooms/schedule/scheduler";
-import type { RunRow, ScheduleRow } from "../../src/rooms/schedule/store";
+import { createScheduleExecutors } from "../../src/server/schedule-executors";
+import type { ExecutorInput } from "../../src/schedule/scheduler";
+import type { RunRow, ScheduleRow } from "../../src/schedule/store";
 
 const schedule = { id: "sch_1", project_id: "p1", name: "Nightly check", timeout_sec: 600 } as ScheduleRow;
 const run = (extra: Partial<RunRow> = {}) => ({ id: "srun_1", schedule_id: "sch_1", run_key: "sch_1:1790000000000", scheduled_at: 1_790_000_000_000, ref_id: null, ...extra }) as RunRow;

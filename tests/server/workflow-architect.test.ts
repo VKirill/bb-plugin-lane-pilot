@@ -4,9 +4,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../../server";
-import { writeWorkflowFile } from "../../src/rooms/host-worker/host-handlers";
-import { REALTIME_WINDOW_MS } from "../../src/rooms/core/server/realtime";
-import { globalWorkflowDir, loadWorkflowStore, projectWorkflowDir } from "@lane-pilot/workflow-engine";
+import { writeWorkflowFile } from "../../src/host-handlers";
+import { REALTIME_WINDOW_MS } from "../../src/server/realtime";
+import { globalWorkflowDir, loadWorkflowStore, projectWorkflowDir } from "../../src/workflow/store";
 import { BROWSER_DIGEST_STEPS } from "../workflow/architect-fixture";
 
 const projectId = "proj_arch";

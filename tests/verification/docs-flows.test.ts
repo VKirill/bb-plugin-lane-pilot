@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { buildDocsFlows, extractRoutes, importGraph } from "../../src/rooms/verification/docs-flows";
+import { buildDocsFlows, extractRoutes, importGraph } from "../../src/verification/docs-flows";
 
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 

@@ -2,10 +2,10 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runAnamnesisCli } from "../../src/rooms/anamnesis/cli";
-import { anamnesisHandler } from "../../src/rooms/anamnesis/host";
-import { createHub } from "../../src/rooms/anamnesis/hub";
-import { profileRecords, profileSchema } from "../../src/rooms/anamnesis/profile-import";
+import { runAnamnesisCli } from "../../src/anamnesis/cli";
+import { anamnesisHandler } from "../../src/anamnesis/host";
+import { createHub } from "../../src/anamnesis/hub";
+import { profileRecords, profileSchema } from "../../src/anamnesis/profile-import";
 
 /** A card as `bb memory-profile get --json` prints it. */
 const CARD = {

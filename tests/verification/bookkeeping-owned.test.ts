@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { integrateWorktree } from "../../src/rooms/verification/git-integrate";
+import { integrateWorktree } from "../../src/verification/git-integrate";
 
 // Bug 3 (review 2026-10-07): the merge reset every bookkeeping path to main's version, so a task whose expected output
 // is `.agents/reports/audit.md` was accepted and the file was dropped silently.

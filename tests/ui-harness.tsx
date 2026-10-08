@@ -1,5 +1,5 @@
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
+import { VISIBLE_CATALOG } from "../src/ui-catalog";
 import { openAllTabs } from "./ui-tabs";
 
 // Shared harness of the settings-page UI tests: the fixture screen, the RPC defaults and a mounted page with every tab warmed.

@@ -3,19 +3,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // Audit 2026-10-08 round 3, P0-7: `bb lane-pilot helper-probe` starts a helper the way the pm-read stage does and checks it answered.
 const spawn = vi.fn();
 const waitIdle = vi.fn();
-vi.mock("../../src/rooms/core/server/pm-spawn", () => ({ fullAccessSpawn: (bb: unknown, args: unknown) => spawn(bb, args) }));
+vi.mock("../../src/server/pm-spawn", () => ({ fullAccessSpawn: (bb: unknown, args: unknown) => spawn(bb, args) }));
 vi.mock("@lane-pilot/thread-observe", () => ({ waitThreadIdle: (...args: unknown[]) => waitIdle(...args) }));
-vi.mock("../../src/rooms/runs/server/run-routing", () => ({
+vi.mock("../../src/server/run-routing", () => ({
   requireHelperSpawn: () => ({ mode: "roles", policy: { required: true } }),
   requiredPolicyField: (_bb: unknown, _snapshot: unknown, providerId: string, role: string) => ({ sessionPolicy: `${providerId}:${role}` }),
   helperChildPlacement: async () => ({ parentThreadId: "thr_pm", projectId: "proj_1" }),
 }));
-vi.mock("../../src/rooms/storage/database", () => ({
+vi.mock("../../src/database", () => ({
   loadPrototypeConfig: (_db: unknown, projectId: string) => projectId === "proj_1" ? { hostId: "host_1", writerWorkspacePath: "/work/p" } : null,
   getRun: (_db: unknown, runId: string) => runId === "lprun_1" ? { id: "lprun_1", project_id: "proj_1", pm_thread_id: "thr_pm" } : undefined,
 }));
 
-const { createHelperProbe } = await import("../../src/rooms/native-agent/server/helper-probe");
+const { createHelperProbe } = await import("../../src/server/helper-probe");
 
 function setup(options: { available?: boolean; models?: Array<{ id: string; model: string; supportedReasoningEfforts: Array<{ reasoningEffort: string }> }>; output?: unknown } = {}) {
   const calls: string[] = [];

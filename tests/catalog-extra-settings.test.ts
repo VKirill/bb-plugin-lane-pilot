@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { en, ru } from "@lane-pilot/i18n";
+import { en, ru } from "../i18n";
 import { readFileSync } from "node:fs";
-import { UI_CATALOG, VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
-import { DEFAULT_SILENCE_NUDGE_MIN } from "../src/rooms/writer/server/writer-silence";
-import { parseIntegrationGateSettings } from "../src/rooms/verification/server/integration-gate";
-import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
-import { DEFAULT_USAGE_SKIP_PERCENT } from "../src/rooms/usage/server/provider-usage";
+import { UI_CATALOG, VISIBLE_CATALOG } from "../src/ui-catalog";
+import { DEFAULT_SILENCE_NUDGE_MIN } from "../src/server/writer-silence";
+import { parseIntegrationGateSettings } from "../src/server/integration-gate";
+import { bookkeepingSetting } from "../src/bookkeeping-paths";
+import { DEFAULT_USAGE_SKIP_PERCENT } from "../src/server/provider-usage";
 
 const row = (key: string) => VISIBLE_CATALOG.find((item) => item.storageKey === key);
 

@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { parsePrisma, prismaAccess, renderDataMap } from "../../src/rooms/verification/docs-data";
+import { parsePrisma, prismaAccess, renderDataMap } from "../../src/verification/docs-data";
 
 const schema = ["enum Role {", "  USER", "  ADMIN // staff", "}", "", "model Generation {", "  id     String @id", "  status String @default(\"pending\") // pipeline state",
   "  user   User   @relation(fields: [userId], references: [id])", "  role   Role", "  @@map(\"generations\")", "}", "model User {", "  id String @id", "}"].join("\n");

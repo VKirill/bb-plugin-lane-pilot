@@ -4,18 +4,18 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createRun, createTask, createAttempt, openDatabase, setRunThread, transitionAttempt } from "../../src/rooms/storage/database";
-import { runCommand } from "../../src/rooms/host-worker/host-handlers";
-import { createCore } from "../../src/rooms/core/server/core";
-import type { Services } from "../../src/rooms/core/server/services";
-import { createWorkflowAgents } from "../../src/rooms/workflow/server/workflow-agent";
-import { chainRuntimeFor, humanOptions, humanOutput, registerChainExecutors } from "../../src/rooms/workflow/server/workflow-executors";
-import type { ChainRuntime } from "../../src/rooms/workflow/server/workflow-runtime";
-import { registerPureActions } from "@lane-pilot/workflow-engine";
-import { WorkflowEngine } from "@lane-pilot/workflow-engine";
-import { registerReducers } from "@lane-pilot/workflow-engine";
-import { parseWorkflow } from "@lane-pilot/workflow-engine";
-import type { Workflow } from "@lane-pilot/workflow-engine";
+import { createRun, createTask, createAttempt, openDatabase, setRunThread, transitionAttempt } from "../../src/database";
+import { runCommand } from "../../src/host-handlers";
+import { createCore } from "../../src/server/core";
+import type { Services } from "../../src/server/services";
+import { createWorkflowAgents } from "../../src/server/workflow-agent";
+import { chainRuntimeFor, humanOptions, humanOutput, registerChainExecutors } from "../../src/server/workflow-executors";
+import type { ChainRuntime } from "../../src/server/workflow-runtime";
+import { registerPureActions } from "../../src/workflow/actions";
+import { WorkflowEngine } from "../../src/workflow/engine";
+import { registerReducers } from "../../src/workflow/reducers";
+import { parseWorkflow } from "../../src/workflow/validate";
+import type { Workflow } from "../../src/workflow/schema";
 
 /**
  * The executors of a chain on the host, against a fake BB: a helper thread is a scripted answer, the PM's checkout is a real git

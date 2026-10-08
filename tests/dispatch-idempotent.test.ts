@@ -1,12 +1,12 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../server";
-import { DISPATCH_STAGES_PENDING } from "../src/rooms/runs/constants";
-import type { TaskV2 } from "../src/rooms/contracts";
+import { DISPATCH_STAGES_PENDING } from "../src/constants";
+import type { TaskV2 } from "../src/contracts";
 import {
   createAttempt, createRun, createTask, getAttempt, listAttemptsForTask, listStageReceipts, openDatabase,
   saveProjectSetting, savePrototypeConfig, setRunThread,
-} from "../src/rooms/storage/database";
+} from "../src/database";
 
 const projectId = "project-test";
 const pmThreadId = "pm-thread";

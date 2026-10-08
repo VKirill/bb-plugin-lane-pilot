@@ -3,8 +3,8 @@ import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { BB_SHIM_NAMES, prepareBbShim } from "../src/rooms/native-agent/bb-shim";
-import { OPENCODE_BASH_DENY } from "../src/rooms/native-install/opencode-min-config";
+import { BB_SHIM_NAMES, prepareBbShim } from "../src/bb-shim";
+import { OPENCODE_BASH_DENY } from "../src/opencode-min-config";
 import { hookEnv } from "./hook-env";
 
 // Audit 2026-10-08 round 4, P0-7: the ways past the shell guard (hub address in other notations, wrapper options that take a value). Since the

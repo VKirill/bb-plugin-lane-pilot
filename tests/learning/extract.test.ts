@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { bbMemoryAddArgs, bbMemoryAddLine, createDecisions } from "../../src/rooms/learning/decide";
-import { compareWithKnown, createExtractor, extractorPrompt, parseExtraction, similarity } from "../../src/rooms/learning/extract";
-import { lpNotesPort, lpRulesPort } from "../../src/rooms/learning/rules-port";
-import { candidatesOf, getItem, getObservation, insertObservation, listItems, type Observation } from "../../src/rooms/learning/store";
+import { bbMemoryAddArgs, bbMemoryAddLine, createDecisions } from "../../src/learning/decide";
+import { compareWithKnown, createExtractor, extractorPrompt, parseExtraction, similarity } from "../../src/learning/extract";
+import { lpNotesPort, lpRulesPort } from "../../src/learning/rules-port";
+import { candidatesOf, getItem, getObservation, insertObservation, listItems, type Observation } from "../../src/learning/store";
 import { searchMemoryRecords } from "@lane-pilot/memory-core";
 import { NOW, database, jevWith } from "./helpers";
 

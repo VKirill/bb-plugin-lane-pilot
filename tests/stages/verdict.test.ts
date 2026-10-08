@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { VERDICT_BLOCK_PREFIX, blockReason, isHardCritical, isVerdictBlockReason, legacyDecisionToStatus, legacySeverityToVerdict, proseOnly, settleVerdict, verdictSchema, verdictSeverityToLegacy } from "@lane-pilot/workflow-engine";
-import type { Verdict } from "@lane-pilot/workflow-engine";
+import { VERDICT_BLOCK_PREFIX, blockReason, isHardCritical, isVerdictBlockReason, legacyDecisionToStatus, legacySeverityToVerdict, proseOnly, settleVerdict, verdictSchema, verdictSeverityToLegacy } from "../../src/stages/verdict";
+import type { Verdict } from "../../src/stages/verdict";
 
 const finding = (over: Record<string, unknown> = {}): never => ({ file: "src/a.ts", line: 12, severity: "high", evidence: "return null; // TODO: implement", ...over }) as never;
 const verdict = (status: string, findings: unknown[], over: Record<string, unknown> = {}) => verdictSchema.parse({ status, findings, evidence: "read src/a.ts and the vitest output", ...over });

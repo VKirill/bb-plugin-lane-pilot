@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { createRun, getRunWriterHost, openDatabase, savePrototypeConfig, setRunThread } from "../src/rooms/storage/database";
-import { LANE_PILOT_READ_NAME } from "@lane-pilot/kit";
-import { readBoundedFile } from "../src/rooms/host-worker/host-handlers";
+import { createRun, getRunWriterHost, openDatabase, savePrototypeConfig, setRunThread } from "../src/database";
+import { LANE_PILOT_READ_NAME } from "../src/bounded-read";
+import { readBoundedFile } from "../src/host-handlers";
 
 const projectId = "proj_read";
 const hostA = "host-read-a";

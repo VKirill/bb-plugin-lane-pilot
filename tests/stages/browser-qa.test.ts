@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { browserQaInputSchema, browserQaVerdict, runBrowserQaOnHost } from "../../src/rooms/qa/browser-qa";
+import { browserQaInputSchema, browserQaVerdict, runBrowserQaOnHost } from "../../src/stages/browser-qa";
 
 describe("browser QA host stage contract", () => {
   it("requires a bounded, concrete browser run request", () => {

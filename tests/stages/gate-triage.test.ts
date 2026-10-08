@@ -1,6 +1,6 @@
 import { describe,expect,it } from "vitest";
-import { gateTriagePrompt,parseGateTriageResult } from "../../src/rooms/verification/gate-triage";
-import type { GateReport } from "../../src/rooms/tasks/gate-report";
+import { gateTriagePrompt,parseGateTriageResult } from "../../src/stages/gate-triage";
+import type { GateReport } from "../../src/stages/gate-report";
 
 const report:GateReport={schemaVersion:1,projectId:"project-a",from:10,to:20,totalEvents:2,totalGateEvents:1,
   byStage:[{stageId:"verification",total:2,byState:{failed:1,passed:1}}],

@@ -9,11 +9,11 @@
     "cssVariables": true
   },
   "aliases": {
-    "components": "@/packages/ui-kit/src",
-    "ui": "@/packages/ui-kit/src/ui",
-    "lib": "@/packages/ui-kit/src/lib",
-    "utils": "@/packages/ui-kit/src/lib/utils",
-    "hooks": "@/packages/ui-kit/src/ui/hooks"
+    "components": "@/components",
+    "ui": "@/components/ui",
+    "lib": "@/lib",
+    "utils": "@/lib/utils",
+    "hooks": "@/hooks"
   },
   "registries": {
     "@bb": "https://raw.githubusercontent.com/get-bb/bb/desktop-v0.43.1/packages/plugin-registry/r/{name}.json"

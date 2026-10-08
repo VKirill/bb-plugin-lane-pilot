@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createScheduleStore } from "../../src/rooms/schedule/store";
-import { fireTimes } from "../../src/rooms/schedule/time";
+import { createScheduleStore } from "../../src/schedule/store";
+import { fireTimes } from "../../src/schedule/time";
 import { addSchedule, createClock, createDb, createFakeExecutor, schedulerOn } from "./harness";
-import type { Executor } from "../../src/rooms/schedule/scheduler";
+import type { Executor } from "../../src/schedule/scheduler";
 
 /**
  * Fault simulation of the scheduler. A seeded random walk drives ticks against a database and a model of the hosts while the hub

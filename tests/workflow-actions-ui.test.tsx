@@ -5,11 +5,11 @@ import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { setLocaleOverride } from "@lane-pilot/i18n";
-import { createWorkflowLibrary } from "../src/rooms/workflow/server/workflow-library";
-import { createWorkflowOps } from "../src/rooms/workflow/server/workflow-ops";
-import type { ServerCore } from "../src/rooms/core/server/core";
-import type { Services } from "../src/rooms/core/server/services";
+import { setLocaleOverride } from "../i18n";
+import { createWorkflowLibrary } from "../src/server/workflow-library";
+import { createWorkflowOps } from "../src/server/workflow-ops";
+import type { ServerCore } from "../src/server/core";
+import type { Services } from "../src/server/services";
 import { engineOn, journalDb, ok, trust, wf } from "./workflow/engine-helpers";
 import { workflow } from "./workflow/fixtures";
 
@@ -58,7 +58,7 @@ async function world(options: { audit?: NonNullable<Parameters<typeof engineOn>[
 
 async function mount(rpc: Record<string, unknown>, architectProjectId: string | null = null) {
   await loadPluginApp(() => import("../app"));
-  const { WorkflowsScreen } = await import("../src/rooms/workflow/ui/workflows");
+  const { WorkflowsScreen } = await import("../src/ui/workflows");
   return renderSlot({ component: () => <WorkflowsScreen locale="en" projectId={null} architectProjectId={architectProjectId} /> }, {}, { context: { projectId: null, threadId: null }, rpc: rpc as never });
 }
 

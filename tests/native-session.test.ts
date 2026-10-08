@@ -6,7 +6,7 @@ import {
   nativeAgentSettingId,
   nativeSelectionMarker,
   tokensFrom,
-} from "../src/rooms/native-agent/native-session";
+} from "../src/native-session";
 
 describe("native agent id", () => {
   it("keeps --agent short and reconstructs the live agentSetting namespace", () => {

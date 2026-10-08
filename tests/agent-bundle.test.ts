@@ -5,8 +5,8 @@ import {
   LEGACY_STOCK_TEMPLATES,
   MAIN_AGENT_PROFILE_IDS,
   PROFILE_SOURCE_VERSION,
-} from "../src/rooms/native-agent/agent-profile";
-import bundledAgents from "../src/rooms/native-agent/bundled-agents.json";
+} from "../src/agent-profile";
+import bundledAgents from "../src/bundled-agents.json";
 
 describe("bundled BB session profiles", () => {
   it("loads all seven profiles under schema limits with resources and no model fields", () => {

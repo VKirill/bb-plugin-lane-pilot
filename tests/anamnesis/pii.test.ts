@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { maskPii } from "../../src/rooms/anamnesis/pii";
+import { maskPii } from "../../src/anamnesis/pii";
 
 // Audit 2026-10-08 round 4, item 19 (F-5): the filter before Jev was word-only, so e-mails, phones, card and account numbers,
 // documents and addresses went to a third party unchanged.

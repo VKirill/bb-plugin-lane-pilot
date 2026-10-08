@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { BB_SHIM_PROVIDER_IDS, createBbShimEnv, mountBbShim } from "../../src/rooms/native-agent/server/helper-bb-shim";
-import { mountOpencodeMinimal } from "../../src/rooms/core/server/opencode-minimal";
+import { BB_SHIM_PROVIDER_IDS, createBbShimEnv, mountBbShim } from "../../src/server/helper-bb-shim";
+import { mountOpencodeMinimal } from "../../src/server/opencode-minimal";
 
 // Audit 2026-10-08 round 3, P0-2: Codex, OpenCode and Cursor threads of Lane Pilot get the bb guard wrappers first on PATH.
 const SHIM = { dir: "/data/bb-shim", path: "/data/bb-shim:/usr/local/bin:/usr/bin" };

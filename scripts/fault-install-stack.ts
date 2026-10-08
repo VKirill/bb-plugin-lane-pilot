@@ -1,5 +1,5 @@
-import { installStack } from "../src/rooms/native-install/stack-ops";
-import type { InstallPhase } from "../src/rooms/native-install/install-runner";
+import { installStack } from "../src/stack-ops";
+import type { InstallPhase } from "../src/install-runner";
 
 const phase = process.env.LANE_PILOT_STOP_AFTER as InstallPhase | undefined;
 if (!phase || !process.env.HOME || !process.env.LANE_PILOT_FALLBACK) {

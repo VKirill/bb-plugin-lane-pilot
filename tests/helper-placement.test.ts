@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { helperSpawnFields, resolveHelperPlacement } from "../src/rooms/native-agent/helper-placement";
+import { helperSpawnFields, resolveHelperPlacement } from "../src/helper-placement";
 
 describe("helper placement", () => {
   const parent = { id:"thr_pm", projectId:"proj", sectionId:"sec_same", environmentId:"env-parent", sourceThreadId:"thr_source", lifecycleOwnerThreadId:"thr_owner" };

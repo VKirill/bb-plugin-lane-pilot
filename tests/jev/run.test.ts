@@ -1,12 +1,12 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { openDatabase } from "../../src/rooms/storage/database";
-import { forgetSecrets, registerSecrets } from "@lane-pilot/kit";
-import { choice, defineJudgment, noul, noulOf } from "@lane-pilot/jev";
-import { summarizeReceipts } from "@lane-pilot/jev";
-import { createJev } from "@lane-pilot/jev";
-import type { JevClient } from "@lane-pilot/jev";
-import type { JevAnswer, JevCallResult, JevQuestion } from "@lane-pilot/jev";
+import { openDatabase } from "../../src/database";
+import { forgetSecrets, registerSecrets } from "../../src/redact";
+import { choice, defineJudgment, noul, noulOf } from "../../src/jev/registry";
+import { summarizeReceipts } from "../../src/jev/receipts";
+import { createJev } from "../../src/jev/run";
+import type { JevClient } from "../../src/jev/client";
+import type { JevAnswer, JevCallResult, JevQuestion } from "../../src/jev/types";
 
 type Input = { text: string; topic?: string };
 /** Urgent when p(yes) clears the threshold; escalates in the grey band; the fallback is the old keyword rule. */

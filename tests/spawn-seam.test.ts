@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { spawnWithSeam } from "../src/rooms/writer/spawn-seam";
+import { spawnWithSeam } from "../src/spawn-seam";
 
 describe("E5 spawn transport seam", () => {
   it("models server-created then response timeout", async () => {

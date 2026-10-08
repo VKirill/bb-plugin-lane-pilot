@@ -2,11 +2,11 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { collectSources } from "../../src/rooms/anamnesis/collect";
-import { DEFAULT_SOURCES } from "../../src/rooms/anamnesis/model";
-import { openStore, type Store } from "../../src/rooms/anamnesis/store";
-import { scanElba } from "../../src/rooms/anamnesis/sources/elba";
-import { channelName, parseHistory, scanTelegram, tgPath } from "../../src/rooms/anamnesis/sources/telegram";
+import { collectSources } from "../../src/anamnesis/collect";
+import { DEFAULT_SOURCES } from "../../src/anamnesis/model";
+import { openStore, type Store } from "../../src/anamnesis/store";
+import { scanElba } from "../../src/anamnesis/sources/elba";
+import { channelName, parseHistory, scanTelegram, tgPath } from "../../src/anamnesis/sources/telegram";
 
 /** Fixtures only: no Telegram session, no Elba cabinet, no network. */
 const tmp = () => mkdtempSync(join(tmpdir(), "anamnesis-a10-"));

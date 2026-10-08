@@ -5,8 +5,8 @@ import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { installTestPluginRuntime, loadPluginApp, renderSlot, type RenderedSlot } from "@get-bb/plugin-sdk/testing/app";
 import React from "react";
-import { saveProjectSetting, savePrototypeConfig, openDatabase } from "../src/rooms/storage/database";
-import { en, setLocaleOverride } from "@lane-pilot/i18n";
+import { saveProjectSetting, savePrototypeConfig, openDatabase } from "../src/database";
+import { en, setLocaleOverride } from "../i18n";
 import plugin from "../server";
 import { toast } from "sonner";
 

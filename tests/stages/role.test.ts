@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {boundedAgentName} from "../../src/rooms/critique/role";
+import {boundedAgentName} from "../../src/stages/role";
 
 describe("native stage role labels",()=>{
   it("keeps bounded slug names and rejects prompt/control injection",()=>{

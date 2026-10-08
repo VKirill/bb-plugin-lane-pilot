@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveWriterBinding } from "../src/rooms/native-agent/project-binding";
+import { resolveWriterBinding } from "../src/project-binding";
 
 describe("resolveWriterBinding", () => {
   it("rejects a same-host foreign-project environment with a different path", () => {

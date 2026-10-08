@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "../../src/rooms/critique/specialist";
+import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "../../src/stages/specialist";
 
 describe("specialist review stage contract", () => {
   it("runs for high or critical risk and supports an explicit always policy", () => {
@@ -17,7 +17,7 @@ describe("specialist review stage contract", () => {
 
   it("accepts only bounded typed findings and rejects malformed model output", () => {
     const output = JSON.stringify({decision:"block",summary:"Unmitigated destructive rollout",risks:[{
-      severity:"critical",path:"src/rooms/native-install/stack-ops.ts",concern:"Writes user settings before snapshot",mitigation:"Isolate the install HOME first",
+      severity:"critical",path:"src/stack-ops.ts",concern:"Writes user settings before snapshot",mitigation:"Isolate the install HOME first",
     }]});
     expect(parseSpecialistResult(output).risks).toHaveLength(1);
     expect(() => parseSpecialistResult('{"decision":"block","summary":"x","risks":[{"severity":"info"}]}')).toThrow();

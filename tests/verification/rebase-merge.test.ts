@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { integrateWorktree } from "../../src/rooms/verification/git-integrate";
+import { integrateWorktree } from "../../src/verification/git-integrate";
 
 // B6: an attempt whose main moved meanwhile is replayed on the current main under the integration lock, so two
 // non-overlapping tasks merged one after the other are both accepted without another writer turn.

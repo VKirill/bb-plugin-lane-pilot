@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase, createRun, createTask, createAttempt, getTask, getTaskPlan, savePrototypeConfig, listStageReceipts, saveProjectSetting, transitionAttempt } from "../src/rooms/storage/database";
-import { createWriterUpdateTask } from "../src/rooms/writer/server/update-task";
-import type { TaskV2 } from "../src/rooms/contracts";
-import type { ServerCore } from "../src/rooms/core/server/core";
-import type { Services } from "../src/rooms/core/server/services";
+import { openDatabase, createRun, createTask, createAttempt, getTask, getTaskPlan, savePrototypeConfig, listStageReceipts, saveProjectSetting, transitionAttempt } from "../src/database";
+import { createWriterUpdateTask } from "../src/server/writer/update-task";
+import type { TaskV2 } from "../src/contracts";
+import type { ServerCore } from "../src/server/core";
+import type { Services } from "../src/server/services";
 
 describe("lane_pilot_update_task", () => {
   let db: ReturnType<typeof openDatabase>;

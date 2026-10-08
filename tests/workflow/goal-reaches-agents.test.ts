@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { agentRequest } from "../../src/rooms/workflow/server/workflow-agent";
-import type { StepContext } from "@lane-pilot/workflow-engine";
+import { agentRequest } from "../../src/server/workflow-agent";
+import type { StepContext } from "../../src/workflow/engine";
 import { chainStore, runSim } from "./chain-harness";
 
 /** The goal and the run's goals reach every agent step of the built-in fragments, also when the fragment runs as a subworkflow. */

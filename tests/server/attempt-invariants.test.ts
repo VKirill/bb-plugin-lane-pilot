@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveTaskPlan, transitionAttempt } from "../../src/rooms/storage/database";
-import { closeOrphanWriterStages, recordStage } from "../../src/rooms/runs/server/stage-records";
+import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, saveTaskPlan, transitionAttempt } from "../../src/database";
+import { closeOrphanWriterStages, recordStage } from "../../src/server/stage-records";
 
 function setup() {
   const db = openDatabase(createFakePluginHost({ pluginId:"lane-pilot" }).bb);

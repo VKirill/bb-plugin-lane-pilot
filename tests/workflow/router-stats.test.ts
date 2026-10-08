@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { STAT_WEIGHT, routeIntent, trackRecord } from "@lane-pilot/workflow-engine";
-import type { RunRecord } from "@lane-pilot/workflow-engine";
-import { runRecords } from "@lane-pilot/workflow-engine";
+import { STAT_WEIGHT, routeIntent, trackRecord } from "../../src/workflow/router";
+import type { RunRecord } from "../../src/workflow/router";
+import { runRecords } from "../../src/workflow/run-stats";
 import { journalDb, wf } from "./engine-helpers";
 import { workflow } from "./fixtures";
 import { publishedCatalog } from "./router-catalog";

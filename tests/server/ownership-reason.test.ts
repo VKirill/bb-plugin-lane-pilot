@@ -1,9 +1,9 @@
 import { expect, it, vi } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { createAttempt, createRun, createTask, openDatabase, setAttemptWorkspace } from "../../src/rooms/storage/database";
-import { createWriterVerify } from "../../src/rooms/writer/server/verify";
-import { classifyWriterOutput } from "../../src/rooms/tasks/validate-output";
-import type { TaskV2 } from "../../src/rooms/contracts";
+import { createAttempt, createRun, createTask, openDatabase, setAttemptWorkspace } from "../../src/database";
+import { createWriterVerify } from "../../src/server/writer/verify";
+import { classifyWriterOutput } from "../../src/validate-output";
+import type { TaskV2 } from "../../src/contracts";
 
 const contract = (id: string, owns: string[]): TaskV2 => ({
   schema_version: 2, id, title: id, risk: "medium", lane: "writer", project_cwd: "/w",

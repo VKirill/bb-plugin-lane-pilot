@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { startLimitWaiting, turnHeldByPlugin, waitThreadIdle } from "@lane-pilot/thread-observe";
-import { createConcurrencyLimit, hostWriterCap } from "../../src/rooms/writer/server/concurrency-limit";
+import { createConcurrencyLimit, hostWriterCap } from "../../src/server/concurrency-limit";
 
 const configuration = (hosts: Array<{ id: string; effectiveLimit: number }>, globalLimit: number | null = null) => ({ globalLimit, hosts });
 

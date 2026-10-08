@@ -20,12 +20,12 @@ import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { createJevClient, type JevClient } from "@lane-pilot/jev";
-import { NONE, routeWorkflow } from "../src/rooms/workflow/route-workflow";
-import { choiceOf } from "@lane-pilot/jev";
-import { createJev } from "@lane-pilot/jev";
-import { createJevRouterModel } from "../src/rooms/workflow/route-model";
-import { routeIntent, scorerOutput, type RouterModel } from "@lane-pilot/workflow-engine";
+import { createJevClient, type JevClient } from "../src/jev/client";
+import { NONE, routeWorkflow } from "../src/jev/judgments/route-workflow";
+import { choiceOf } from "../src/jev/registry";
+import { createJev } from "../src/jev/run";
+import { createJevRouterModel } from "../src/jev/route-model";
+import { routeIntent, scorerOutput, type RouterModel } from "../src/workflow/router";
 import { publishedCatalog } from "../tests/workflow/router-catalog";
 import { EVAL_SET, HELD_OUT_SET, RESERVE_SET } from "../tests/workflow/router-eval-set";
 

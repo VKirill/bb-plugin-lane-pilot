@@ -5,10 +5,10 @@ import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
-import { setLocaleOverride } from "@lane-pilot/i18n";
-import { createWorkflowLibrary } from "../src/rooms/workflow/server/workflow-library";
-import type { ServerCore } from "../src/rooms/core/server/core";
-import type { Services } from "../src/rooms/core/server/services";
+import { setLocaleOverride } from "../i18n";
+import { createWorkflowLibrary } from "../src/server/workflow-library";
+import type { ServerCore } from "../src/server/core";
+import type { Services } from "../src/server/services";
 import { engineOn, journalDb, trust, wf } from "./workflow/engine-helpers";
 import { workflow } from "./workflow/fixtures";
 
@@ -77,7 +77,7 @@ async function world(options: { reviewWaits?: boolean; files?: Record<string, un
 /** The SDK's app runtime exists only after loadPluginApp, so the screen is imported after it. */
 async function screen() {
   await loadPluginApp(() => import("../app"));
-  return (await import("../src/rooms/workflow/ui/workflows")).WorkflowsScreen;
+  return (await import("../src/ui/workflows")).WorkflowsScreen;
 }
 
 async function mount(rpc: Record<string, unknown>, extra: Record<string, unknown> = {}, projectId: string | null = null, locale: "en" | "ru" = "en") {
@@ -246,7 +246,7 @@ describe("Workflow canvas, n8n style", () => {
     fireEvent.click(await slot.findByTestId("wf-row-big-chain"));
     await slot.findByTestId("wf-node-s20");
     await waitFor(() => expect(slot.getByTestId("workflow-graph").getAttribute("data-layout")).toBe("ready"));
-    const { renderStats } = await import("../src/rooms/workflow/ui/workflow-graph-parts");
+    const { renderStats } = await import("../src/ui/workflow-graph-parts");
     await new Promise((resolve) => setTimeout(resolve, 300));
     const card = slot.getByTestId("wf-node-s20").closest(".react-flow__node")!;
     const before = { ...renderStats };
@@ -379,7 +379,7 @@ const draftV2 = () => ({
 
 describe("draft view", () => {
   it("reads an unfinished draft leniently and says what a patch changed", async () => {
-    const { draftView, draftChanges } = await import("@lane-pilot/workflow-engine/ui");
+    const { draftView, draftChanges } = await import("../src/workflow/draft-view");
     const first = draftView(draftV1());
     expect(first.nodes.map((node) => node.id)).toEqual(["$start", "search"]);
     // The edge to a node that is not there yet is left out, not an error.

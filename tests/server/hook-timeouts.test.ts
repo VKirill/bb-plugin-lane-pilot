@@ -1,9 +1,9 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { openDatabase } from "../../src/rooms/storage/database";
-import { HOOK_TIMEOUTS_KEY, mountHookTimeoutWatch, type HookTimeoutRecord } from "../../src/rooms/stability/server/hook-timeouts";
-import { createSelfRepair } from "../../src/rooms/self-repair/server/self-repair";
-import type { ServerCore } from "../../src/rooms/core/server/core";
+import { openDatabase } from "../../src/database";
+import { HOOK_TIMEOUTS_KEY, mountHookTimeoutWatch, type HookTimeoutRecord } from "../../src/server/hook-timeouts";
+import { createSelfRepair } from "../../src/server/self-repair";
+import type { ServerCore } from "../../src/server/core";
 import packageJson from "../../package.json";
 
 type Callback = (event: Record<string, unknown>) => void | Promise<void>;

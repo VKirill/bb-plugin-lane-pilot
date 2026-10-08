@@ -2,8 +2,8 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import bundledAgents from "../src/rooms/native-agent/bundled-agents.json";
-import { compileMainAgentProfile } from "../src/rooms/native-agent/agent-profile";
+import bundledAgents from "../src/bundled-agents.json";
+import { compileMainAgentProfile } from "../src/agent-profile";
 import {
   splitClaudeToolList,
   stockAgentsOverlayFromInstalled,
@@ -14,8 +14,8 @@ import {
   overlayLaneAgentPrompt,
   overlaySessionTools,
   laneSessionOverlayPrompt,
-} from "../src/rooms/native-agent/native-agent-overlay";
-import { resolveInstalledAgentFile } from "../src/rooms/native-agent/native-claude-host";
+} from "../src/native-agent-overlay";
+import { resolveInstalledAgentFile } from "../src/native-claude-host";
 
 const PLUGIN_MD = `---
 name: dev-orchestrator
@@ -236,7 +236,7 @@ You are **dev-orchestrator**. Dispatch run-controller. Then spawn project-onboar
 });
 
 it("keeps a Lane PM from delegating code to general-purpose subagents", async () => {
-  const { withoutCodeWritingSubagents, stockAgentsOverlayFromInstalled } = await import("../src/rooms/native-agent/native-agent-overlay");
+  const { withoutCodeWritingSubagents, stockAgentsOverlayFromInstalled } = await import("../src/native-agent-overlay");
   expect(withoutCodeWritingSubagents("dev-orchestrator", ["Agent(lane-stack:run-supervisor, Explore, Plan, general-purpose)", "Read"]))
     .toEqual(["Agent(Explore, Plan)", "Read"]);
   expect(withoutCodeWritingSubagents("lane-stack:dev-orchestrator", ["Agent"])).toEqual(["Agent(Explore, Plan)"]);

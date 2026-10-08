@@ -4,10 +4,10 @@ import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { TARGET_SHA } from "../src/rooms/runs/constants";
-import { hashPath } from "@lane-pilot/kit";
-import { ownershipLedgerPath } from "../src/rooms/native-install/ownership";
-import { installStack } from "../src/rooms/native-install/stack-ops";
+import { TARGET_SHA } from "../src/constants";
+import { hashPath } from "../src/hash";
+import { ownershipLedgerPath } from "../src/coexistence/ownership";
+import { installStack } from "../src/stack-ops";
 
 const homes: string[] = [];
 const UPSTREAM_FIXTURE = [

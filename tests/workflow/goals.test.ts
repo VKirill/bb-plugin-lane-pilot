@@ -1,15 +1,15 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { createRun, openDatabase, setRunThread } from "../../src/rooms/storage/database";
-import type { ServerCore } from "../../src/rooms/core/server/core";
-import type { Services } from "../../src/rooms/core/server/services";
-import { createGoalAuditor } from "../../src/rooms/workflow/server/workflow-goal-audit";
-import { amendGoalsTool, runWorkflowTool, workflowStatusTool } from "../../src/rooms/workflow/server/workflow-tools";
-import type { WorkflowToolDeps } from "../../src/rooms/workflow/server/workflow-tools";
-import { agentPrompt, outputContract } from "@lane-pilot/workflow-engine";
-import type { StepContext } from "@lane-pilot/workflow-engine";
-import { goalsBlock, goalsSha, parseGoals, regroundDue } from "@lane-pilot/workflow-engine";
-import type { GoalAudit, RunGoal } from "@lane-pilot/workflow-engine";
+import { createRun, openDatabase, setRunThread } from "../../src/database";
+import type { ServerCore } from "../../src/server/core";
+import type { Services } from "../../src/server/services";
+import { createGoalAuditor } from "../../src/server/workflow-goal-audit";
+import { amendGoalsTool, runWorkflowTool, workflowStatusTool } from "../../src/server/workflow-tools";
+import type { WorkflowToolDeps } from "../../src/server/workflow-tools";
+import { agentPrompt, outputContract } from "../../src/workflow/agent-output";
+import type { StepContext } from "../../src/workflow/engine";
+import { goalsBlock, goalsSha, parseGoals, regroundDue } from "../../src/workflow/goals";
+import type { GoalAudit, RunGoal } from "../../src/workflow/goals";
 import { engineOn, journalDb, ok, rows, wf } from "./engine-helpers";
 
 const GOALS: RunGoal[] = [

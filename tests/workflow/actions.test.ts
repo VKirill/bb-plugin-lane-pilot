@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { pureActionExecutor } from "@lane-pilot/workflow-engine";
-import type { StepContext } from "@lane-pilot/workflow-engine";
-import { REDUCERS } from "@lane-pilot/workflow-engine";
-import type { JoinInput } from "@lane-pilot/workflow-engine";
+import { pureActionExecutor } from "../../src/workflow/actions";
+import type { StepContext } from "../../src/workflow/engine";
+import { REDUCERS } from "../../src/workflow/reducers";
+import type { JoinInput } from "../../src/workflow/reducers";
 
 type Row = Record<string, unknown>;
 /** Runs a code action the way the engine does: the node lists what it reads, `resolve` answers by reference. */

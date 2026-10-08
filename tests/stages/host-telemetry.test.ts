@@ -2,7 +2,7 @@ import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { readOpenCodeTelemetry } from "../../src/rooms/host-worker/host-handlers";
+import { readOpenCodeTelemetry } from "../../src/host-handlers";
 
 const read = (input:Parameters<typeof readOpenCodeTelemetry>[0]) => readOpenCodeTelemetry(input,{} as never);
 

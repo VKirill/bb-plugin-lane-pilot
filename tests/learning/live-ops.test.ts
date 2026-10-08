@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createOwnerMessageHub, TURN_REQUESTED, type EventLike, type ThreadLike } from "../../src/rooms/anamnesis/owner-messages";
-import { DEFAULT_CONFIG, loadConfig, parseConfigWords, saveConfig } from "../../src/rooms/learning/config";
-import { FIRST_LOOK_MS, THROTTLE_MS, createLiveFeed } from "../../src/rooms/learning/live";
-import { createObserver } from "../../src/rooms/learning/observe";
-import { createOps, type Kv } from "../../src/rooms/learning/ops";
-import { DAY_MS, agreementReport, getItem, insertItem, labelObservation, reviewStats } from "../../src/rooms/learning/store";
+import { createOwnerMessageHub, TURN_REQUESTED, type EventLike, type ThreadLike } from "../../src/anamnesis/owner-messages";
+import { DEFAULT_CONFIG, loadConfig, parseConfigWords, saveConfig } from "../../src/learning/config";
+import { FIRST_LOOK_MS, THROTTLE_MS, createLiveFeed } from "../../src/learning/live";
+import { createObserver } from "../../src/learning/observe";
+import { createOps, type Kv } from "../../src/learning/ops";
+import { DAY_MS, agreementReport, getItem, insertItem, labelObservation, reviewStats } from "../../src/learning/store";
 import { NOW, config, database, jevWith, message } from "./helpers";
 
 const thread = (over: Partial<ThreadLike> = {}): ThreadLike => ({ id: "thr_pm", projectId: "proj_1", createdAt: NOW - 10 * DAY_MS, visibility: "visible", ...over });

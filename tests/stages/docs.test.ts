@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { listDocsPages } from "../../src/rooms/host-worker/host-handlers";
+import { listDocsPages } from "../../src/host-handlers";
 import {
   docsInputHash, docsScheduleDue, docsSinceEpoch, parseDocsSettings,
   selectDocsPages, validateDocsEdits,
   type DocsPage,
   docsSelection, docsRepairPrompt,
-} from "../../src/rooms/docs/docs";
+} from "../../src/stages/docs";
 
 const now = new Date(2026, 8, 23, 5, 0, 0);
 const page = (path:string, modifiedAt:number, content="# Docs"):DocsPage => ({

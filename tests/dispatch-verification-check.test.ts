@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findSandboxUnsafeMissingExcludes, parseSandboxUnsafePatterns } from "../src/rooms/critique/critique-coverage";
+import { findSandboxUnsafeMissingExcludes, parseSandboxUnsafePatterns } from "../src/stages/critique-coverage";
 
 describe("sandbox-unsafe verification checking", () => {
   const unsafePatterns = [

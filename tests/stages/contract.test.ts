@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { critiquePrompt, parseCritique } from "../../src/rooms/critique/critique";
-import { sha256, stageTransition, validateStageReceipt } from "@lane-pilot/contracts";
+import { critiquePrompt, parseCritique } from "../../src/stages/critique";
+import { sha256, stageTransition, validateStageReceipt } from "../../src/stages/contract";
 
 describe("versioned stage contract", () => {
   it("requires typed critic output and rejects prose or malformed JSON", () => {

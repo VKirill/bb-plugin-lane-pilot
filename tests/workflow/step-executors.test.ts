@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
-import { costTier, nodeEffortsFor, validateChoice, type ModelCatalog } from "@lane-pilot/models";
-import { DELEGATED_ACTIONS, resolveStepExecutors, type StepExecutor } from "../../src/rooms/workflow/server/workflow-step-executors";
+import { builtinWorkflow } from "../../src/workflow/builtin";
+import { costTier, nodeEffortsFor, validateChoice, type ModelCatalog } from "../../src/workflow/model-catalog";
+import { DELEGATED_ACTIONS, resolveStepExecutors, type StepExecutor } from "../../src/server/workflow-step-executors";
 
 const pm = { providerId: "claude-code", model: "claude-opus-5-5" };
 const writer = { "writer.provider": "codex", "writer.model": "gpt-6-luna", "writer.reasoning_effort": "high", "writer.service_tier": "fast" };
@@ -135,7 +135,7 @@ describe("step executors by node type", () => {
   });
 
   it("lists the same delegated actions the executors register", () => {
-    const source = readFileSync(new URL("../../src/rooms/workflow/server/workflow-executors.ts", import.meta.url), "utf8");
+    const source = readFileSync(new URL("../../src/server/workflow-executors.ts", import.meta.url), "utf8");
     const block = source.slice(source.indexOf("const DELEGATED"), source.indexOf("for (const [key, spec] of Object.entries(DELEGATED))"));
     const keys = [...block.matchAll(/^\s+"([a-z_.]+)": \{ role:/gm)].map((match) => match[1]);
     expect([...DELEGATED_ACTIONS].sort()).toEqual(keys.sort());

@@ -1,11 +1,11 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { openDatabase } from "../../src/rooms/storage/database";
-import { classifyFailure } from "../../src/rooms/runs/failure-class";
-import { judgedFailureClass } from "../../src/rooms/runs/failure-class-model";
-import { failureClassJudgment } from "../../src/rooms/runs/failure-class-judgment";
-import { createJev } from "@lane-pilot/jev";
-import type { JevClient } from "@lane-pilot/jev";
+import { openDatabase } from "../../src/database";
+import { classifyFailure } from "../../src/failure-class";
+import { judgedFailureClass } from "../../src/jev/failure-class-model";
+import { failureClassJudgment } from "../../src/jev/judgments/failure-class";
+import { createJev } from "../../src/jev/run";
+import type { JevClient } from "../../src/jev/client";
 
 // J-4: a reason the regular expressions have no confident match for goes to Jev; `shadow` records, `active` acts, the rules' class is the fallback.
 const UNKNOWN = "ssh: connect to host 10.8.0.1 port 22: Operation timed out while syncing the worktree";

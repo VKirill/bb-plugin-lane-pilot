@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { expect, it } from "vitest";
-import { nativeLauncherScript } from "../src/rooms/native-agent/native-claude-host";
+import { nativeLauncherScript } from "../src/native-claude-host";
 
 it("exits 78 when session hooks are missing and does not exec claude", async () => {
   const dest = await mkdtemp(join(tmpdir(), "lp-native-launcher-"));

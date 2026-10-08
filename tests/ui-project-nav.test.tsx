@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
-import { en, setLocaleOverride } from "@lane-pilot/i18n";
-import { isTestProject, splitProjects } from "../src/rooms/ui-shell/ui/service-projects";
+import { en, setLocaleOverride } from "../i18n";
+import { isTestProject, splitProjects } from "../src/ui/service-projects";
 import { screenFixture, mountPage } from "./ui-harness";
 import { openTab } from "./ui-tabs";
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parsePmReadResult, parsePmReadSettings, pmReadPrompt } from "../../src/rooms/critique/pm-read";
+import { parsePmReadResult, parsePmReadSettings, pmReadPrompt } from "../../src/stages/pm-read";
 
 describe("PM read stage",()=>{
   it("parses bounded controls and defaults to disabled",()=>{

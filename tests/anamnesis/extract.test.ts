@@ -2,13 +2,13 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { hostContract } from "../../src/rooms/contracts";
-import { anamnesisHandler } from "../../src/rooms/anamnesis/host";
-import { createHub } from "../../src/rooms/anamnesis/hub";
-import { dailyDue, dailyPass, markDailyDone, type DailyDeps } from "../../src/rooms/anamnesis/daily";
-import { BUDGET_KEY, SEEN_KEY, createExtractConsumer, extractMessages, madridDay, madridHour, overlap, type ExtractDeps } from "../../src/rooms/anamnesis/extract";
-import { matchJudgment, type FragmentDecision, type MatchDecision } from "../../src/rooms/anamnesis/judgment";
-import { createOwnerMessageHub, type EventLike, type OwnerMessage, type ThreadLike, type ThreadsPort } from "../../src/rooms/anamnesis/owner-messages";
+import { hostContract } from "../../src/contracts";
+import { anamnesisHandler } from "../../src/anamnesis/host";
+import { createHub } from "../../src/anamnesis/hub";
+import { dailyDue, dailyPass, markDailyDone, type DailyDeps } from "../../src/anamnesis/daily";
+import { BUDGET_KEY, SEEN_KEY, createExtractConsumer, extractMessages, madridDay, madridHour, overlap, type ExtractDeps } from "../../src/anamnesis/extract";
+import { matchJudgment, type FragmentDecision, type MatchDecision } from "../../src/anamnesis/judgment";
+import { createOwnerMessageHub, type EventLike, type OwnerMessage, type ThreadLike, type ThreadsPort } from "../../src/anamnesis/owner-messages";
 
 /** No real Jev, no real load: fixtures for the messages and a fake for the two judgments. */
 const DAY = 86_400_000;

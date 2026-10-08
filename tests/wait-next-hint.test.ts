@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { FREE_CLASSES, failureClass, liveFolderLockNote, nextStep } from "../src/rooms/runs/failure-class";
+import { FREE_CLASSES, failureClass, liveFolderLockNote, nextStep } from "../src/failure-class";
 
 it("a critic's block verdict is no free redo: its own class, and a message that says to change the approach", () => {
   const reason = "verdict_block:code-critique: The handler is a stub | src/a.ts:12 [critical] login only logs | stopped, not redone";

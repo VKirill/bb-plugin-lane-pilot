@@ -2,8 +2,8 @@ import { mkdtempSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { sensitivityFloor, sensitiveReason, scrubQuote, unsafeReason, recordId } from "../../src/rooms/anamnesis/model";
-import { openStore, type Store } from "../../src/rooms/anamnesis/store";
+import { sensitivityFloor, sensitiveReason, scrubQuote, unsafeReason, recordId } from "../../src/anamnesis/model";
+import { openStore, type Store } from "../../src/anamnesis/store";
 
 const DAY = 86_400_000;
 const T0 = Date.UTC(2026, 0, 10);

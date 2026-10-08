@@ -1,12 +1,12 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, expect, it } from "vitest";
 import { getRuleProposal, listRuleProposals, upsertLessonProposal } from "@lane-pilot/run-insights";
-import { openDatabase } from "../src/rooms/storage/database";
-import { adoptRuleProposal, adoptWaitingRules } from "../src/rooms/self-repair/server/insights";
-import { DEFAULT_RULE_TOKENS, ruleTokens, setRuleBudgets } from "../src/rooms/learning/rule-budget";
+import { openDatabase } from "../src/database";
+import { adoptRuleProposal, adoptWaitingRules } from "../src/server/insights";
+import { DEFAULT_RULE_TOKENS, ruleTokens, setRuleBudgets } from "../src/learning/rule-budget";
 
 afterEach(() => setRuleBudgets({ ...DEFAULT_RULE_TOKENS }));
-// The pool is a token budget now (src/rooms/learning/rule-budget.ts); these tests size it to hold exactly the first twelve writer rules.
+// The pool is a token budget now (src/learning/rule-budget.ts); these tests size it to hold exactly the first twelve writer rules.
 const sizeWritersFor = (db: ReturnType<typeof setup>, ids: string[]) =>
   setRuleBudgets({ writer: ids.reduce((sum, id) => sum + ruleTokens(getRuleProposal(db, "proj", id)!.rule), 0) });
 

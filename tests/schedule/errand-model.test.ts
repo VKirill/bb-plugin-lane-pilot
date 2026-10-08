@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { ERRAND_BUILTIN, errandDefaultProblem, parseErrandDefault, resolveErrandModel } from "../../src/rooms/schedule/errand-model";
-import { errandTaskSchema, normalizeSchedule } from "../../src/rooms/schedule/model";
-import { validateSettingValue, validateSettingsObject } from "../../src/rooms/settings/setting-validation";
+import { ERRAND_BUILTIN, errandDefaultProblem, parseErrandDefault, resolveErrandModel } from "../../src/schedule/errand-model";
+import { errandTaskSchema, normalizeSchedule } from "../../src/schedule/model";
+import { validateSettingValue, validateSettingsObject } from "../../src/setting-validation";
 
 const KEY = "schedule.errand_default";
 const resolve = (task: Parameters<typeof resolveErrandModel>[0]["task"] = {}, settings: Record<string, unknown> = {}, pm: { providerId: string; model: string } | null = null) => resolveErrandModel({ task, settings, pm });

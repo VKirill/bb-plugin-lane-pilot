@@ -1,12 +1,12 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { openDatabase } from "../src/rooms/storage/database";
+import { openDatabase } from "../src/database";
 import plugin from "../server";
-import { costUsd } from "@lane-pilot/models";
+import { costUsd } from "../src/model-prices";
 import {
   EVENT_PAGE, TOKEN_USAGE_CACHE_SPLIT_RESET_KEY, TOKEN_USAGE_CURSOR_RESET_KEY, TOKEN_USAGE_EVENT_TYPES, TOKEN_USAGE_SCHEDULE,
   normalizeModel, queryTokenUsage, syncTokenUsage, threadUsage, tokenDelta, utcDay,
-} from "../src/rooms/usage/server/token-usage";
+} from "../src/server/token-usage";
 
 let dispose: (() => Promise<void> | void) | null = null;
 afterEach(async () => { await dispose?.(); dispose = null; });

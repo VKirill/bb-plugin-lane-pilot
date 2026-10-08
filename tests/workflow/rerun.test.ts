@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { StepContext } from "@lane-pilot/workflow-engine";
+import type { StepContext } from "../../src/workflow/engine";
 import { engineOn, journalDb, ok, rows, stepStates, wf } from "./engine-helpers";
 
 /** W7: the owner re-runs one node of a finished run; what came out of it is removed and the run goes on from there. */

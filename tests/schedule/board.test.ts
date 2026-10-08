@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
-import { createRun, openDatabase, saveProjectSetting, setRunThread } from "../../src/rooms/storage/database";
+import { createRun, openDatabase, saveProjectSetting, setRunThread } from "../../src/database";
 
 /**
  * The schedule board through the whole plugin: the RPCs the board uses, the tick of the isolated schedule, a script that runs as a

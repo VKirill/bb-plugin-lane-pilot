@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { WRITER_FALLBACK_DEFAULTS, writerFallbackChain, writerFallbacks } from "../src/rooms/writer/writer-fallbacks";
+import { WRITER_FALLBACK_DEFAULTS, writerFallbackChain, writerFallbacks } from "../src/writer-fallbacks";
 
 describe("writer fallbacks", () => {
   it("defaults to GLM 5.3 Flash, then Gemini 3.8 high; an emptied slot is off", () => {

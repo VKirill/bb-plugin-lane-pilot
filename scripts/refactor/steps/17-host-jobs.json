@@ -1,6 +1,0 @@
-{
-  "moves": [
-    {"from": "src/rooms/core/server/host-jobs.ts", "to": "packages/host-calls/src/host-jobs.ts"},
-    {"from": "tests/server/host-jobs.test.ts", "to": "packages/host-calls/tests/host-jobs.test.ts"}
-  ]
-}

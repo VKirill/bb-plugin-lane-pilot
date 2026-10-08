@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { choiceOps, choiceRefusal, clearModelOps, effortFor, firstChoice } from "../src/rooms/workflow/ui/workflow-model-ops";
-import type { ModelCatalog } from "@lane-pilot/models";
+import { choiceOps, choiceRefusal, clearModelOps, effortFor, firstChoice } from "../src/ui/workflow-model-ops";
+import type { ModelCatalog } from "../src/workflow/model-catalog";
 
 const catalog: ModelCatalog = {
   hosts: [{ id: "mac", name: "Mac mini", connected: true }],

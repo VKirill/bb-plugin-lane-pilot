@@ -16,7 +16,7 @@ import {
   settingsFromFrozenPolicy,
   sha256Text,
   shouldRequestRepair,
-} from "../../src/rooms/critique/code-critique";
+} from "../../src/stages/code-critique";
 
 describe("code critique policy", () => {
   it("stays off unless explicitly enabled", () => {

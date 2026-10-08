@@ -1,9 +1,9 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
-import { createRun, openDatabase, saveProjectSetting, setRunThread } from "../../src/rooms/storage/database";
-import { forgetSecrets } from "@lane-pilot/kit";
-import { errandAccountLines, errandPrompt } from "../../src/rooms/qa/server/errands";
+import { createRun, openDatabase, saveProjectSetting, setRunThread } from "../../src/database";
+import { forgetSecrets } from "../../src/redact";
+import { errandAccountLines, errandPrompt } from "../../src/server/errands";
 
 // Test values only: none of them is a real credential.
 const PRIVATE_KEY = "-----BEGIN TEST KEY-----\nQUJDREVGR0hJSktMTU5PUA\nUVJTVFVWV1hZWjAxMjM0NTY3\n-----END TEST KEY-----";

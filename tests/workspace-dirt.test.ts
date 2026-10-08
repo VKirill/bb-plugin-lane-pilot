@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { WORKSPACE_DIRT_SCRIPT } from "../src/rooms/verification/workspace-dirt";
+import { WORKSPACE_DIRT_SCRIPT } from "../src/workspace-dirt";
 
 const roots: string[] = [];
 

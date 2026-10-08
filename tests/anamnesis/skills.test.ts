@@ -3,14 +3,14 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runAnamnesisCli } from "../../src/rooms/anamnesis/cli";
-import { anamnesisHandler } from "../../src/rooms/anamnesis/host";
-import { createHub } from "../../src/rooms/anamnesis/hub";
-import type { AnamnesisRecord } from "../../src/rooms/anamnesis/model";
-import { currentLevel, levelAt, levelFor, skillSeries, stepsOf } from "../../src/rooms/anamnesis/skills";
-import { scanGit } from "../../src/rooms/anamnesis/sources/git";
-import { renderWhoami, type WhoamiRecord } from "../../src/rooms/anamnesis/whoami";
-import { renderYearReview } from "../../src/rooms/anamnesis/year-review";
+import { runAnamnesisCli } from "../../src/anamnesis/cli";
+import { anamnesisHandler } from "../../src/anamnesis/host";
+import { createHub } from "../../src/anamnesis/hub";
+import type { AnamnesisRecord } from "../../src/anamnesis/model";
+import { currentLevel, levelAt, levelFor, skillSeries, stepsOf } from "../../src/anamnesis/skills";
+import { scanGit } from "../../src/anamnesis/sources/git";
+import { renderWhoami, type WhoamiRecord } from "../../src/anamnesis/whoami";
+import { renderYearReview } from "../../src/anamnesis/year-review";
 
 const NOW = Date.UTC(2026, 9, 8);
 

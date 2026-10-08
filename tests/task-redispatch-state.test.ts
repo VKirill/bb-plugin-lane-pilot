@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
-import { createAttempt, createRun, latestTaskAttemptState, openDatabase } from "../src/rooms/storage/database";
+import { createAttempt, createRun, latestTaskAttemptState, openDatabase } from "../src/database";
 
 it("a dependency named by the plan id follows its latest redispatch, and only that", () => {
   const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });

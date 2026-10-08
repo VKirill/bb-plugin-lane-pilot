@@ -2,11 +2,11 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runAnamnesisCli } from "../../src/rooms/anamnesis/cli";
-import { anamnesisHandler } from "../../src/rooms/anamnesis/host";
-import { createHub } from "../../src/rooms/anamnesis/hub";
-import type { AnamnesisRecord } from "../../src/rooms/anamnesis/model";
-import { renderCard, renderWhoami, type WhoamiRecord } from "../../src/rooms/anamnesis/whoami";
+import { runAnamnesisCli } from "../../src/anamnesis/cli";
+import { anamnesisHandler } from "../../src/anamnesis/host";
+import { createHub } from "../../src/anamnesis/hub";
+import type { AnamnesisRecord } from "../../src/anamnesis/model";
+import { renderCard, renderWhoami, type WhoamiRecord } from "../../src/anamnesis/whoami";
 
 const DAY = 86_400_000;
 const NOW = Date.UTC(2026, 9, 8);

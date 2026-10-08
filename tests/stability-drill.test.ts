@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { expect, it } from "vitest";
-import { runStabilityDrill } from "../src/rooms/verification/stability-drill";
+import { runStabilityDrill } from "../src/verification/stability-drill";
 
 const hasLsof = spawnSync("lsof", ["-v"]).error === undefined;
 

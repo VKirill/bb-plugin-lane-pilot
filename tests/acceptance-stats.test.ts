@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
-import { acceptanceStats, failureCause } from "../src/rooms/runs/acceptance-stats";
-import { createRun, openDatabase } from "../src/rooms/storage/database";
+import { acceptanceStats, failureCause } from "../src/acceptance-stats";
+import { createRun, openDatabase } from "../src/database";
 
 it("maps a failed attempt to the plan's coarse cause buckets", () => {
   expect(failureCause("validation_failed", "missing expected_outputs: src/x.ts")).toBe("outputs_empty");

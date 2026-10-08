@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { NO_UPSTREAM, upstreamPath, offlineUpstream } from "./upstream-fixture";
-import { installStack } from "../src/rooms/native-install/stack-ops";
-import { SnapshotReadError, rollbackSnapshot, takeSnapshot } from "../src/rooms/native-install/snapshot";
+import { installStack } from "../src/stack-ops";
+import { SnapshotReadError, rollbackSnapshot, takeSnapshot } from "../src/snapshot";
 import { isolatedTestPath, linkSafeTools } from "./npm-isolation";
 
 const FALLBACK = upstreamPath();

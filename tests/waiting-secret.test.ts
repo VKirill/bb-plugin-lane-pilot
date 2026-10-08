@@ -2,14 +2,14 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { createFakeWorktreeHost } from "./own-worktree-host";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../server";
-import type { TaskV2 } from "../src/rooms/contracts";
+import type { TaskV2 } from "../src/contracts";
 import {
   countChargedAttempts, createAttempt, createRun, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread, transitionAttempt,
-} from "../src/rooms/storage/database";
-import { failureClass, isWaitingSecret, nextStep } from "../src/rooms/runs/failure-class";
-import { forgetSecrets } from "@lane-pilot/kit";
-import { createSecrets } from "../src/rooms/secrets/server/secrets";
-import { createStability } from "../src/rooms/stability/server/stability";
+} from "../src/database";
+import { failureClass, isWaitingSecret, nextStep } from "../src/failure-class";
+import { forgetSecrets } from "../src/redact";
+import { createSecrets } from "../src/server/secrets";
+import { createStability } from "../src/server/stability";
 
 // Test values only: none of them is a real credential.
 const KEY = "test-wait-key-Qw83LmZx1p";

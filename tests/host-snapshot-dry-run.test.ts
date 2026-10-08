@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { snapshotDryRun } from "../src/rooms/host-worker/host-handlers";
+import { snapshotDryRun } from "../src/host-handlers";
 
 let dir = "";
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), "lp-dry-")); });

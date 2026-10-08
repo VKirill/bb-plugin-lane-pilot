@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 describe("layout geometry harness", () => {
   it("loads the full bundled prompt, not a stub", () => {
-    const bundled = JSON.parse(readFileSync(join(import.meta.dirname, "../src/rooms/native-agent/bundled-agents.json"), "utf8"));
+    const bundled = JSON.parse(readFileSync(join(import.meta.dirname, "../src/bundled-agents.json"), "utf8"));
     expect(bundled["dev-orchestrator"].prompt).toContain("Lane Pilot PM");
     expect(bundled["dev-orchestrator"].prompt).not.toContain("Boot solo");
     expect(bundled["dev-orchestrator"].prompt.length).toBeGreaterThan(400);
@@ -12,7 +12,7 @@ describe("layout geometry harness", () => {
   });
 
   it("requires fieldset min-inline-size reset in Agents markup", () => {
-    const source = readFileSync(join(import.meta.dirname, "../src/rooms/settings/ui/owned-settings.tsx"), "utf8");
+    const source = readFileSync(join(import.meta.dirname, "../src/ui/owned-settings.tsx"), "utf8");
     expect(source).toContain("minInlineSize: 0");
     expect(source).toContain("min-w-0 max-w-full");
     expect(source).toContain('id="agent-prompt"');
@@ -24,9 +24,9 @@ describe("layout geometry harness", () => {
   });
 
   it("uses one Disclosure and matching control height on project settings", () => {
-    const source = readFileSync(join(import.meta.dirname, "../src/rooms/ui-shell/ui/page.tsx"), "utf8");
-    const header = readFileSync(join(import.meta.dirname, "../src/rooms/ui-shell/ui/project-header.tsx"), "utf8");
-    const service = readFileSync(join(import.meta.dirname, "../src/rooms/runs/ui/runs-service.tsx"), "utf8");
+    const source = readFileSync(join(import.meta.dirname, "../src/ui/page.tsx"), "utf8");
+    const header = readFileSync(join(import.meta.dirname, "../src/ui/project-header.tsx"), "utf8");
+    const service = readFileSync(join(import.meta.dirname, "../src/ui/runs-service.tsx"), "utf8");
     expect(service).toContain("<Disclosure");
     expect(source).toContain("CONTROL_H");
     expect(header).toContain("settings-depth");
@@ -38,11 +38,11 @@ describe("layout geometry harness", () => {
   });
 
   it("rotates only the summary chevron and keeps BB AlertTitle defaults", () => {
-    const disclosure = readFileSync(join(import.meta.dirname, "../packages/ui-kit/src/ui/disclosure.tsx"), "utf8");
+    const disclosure = readFileSync(join(import.meta.dirname, "../src/ui/disclosure.tsx"), "utf8");
     expect(disclosure).toContain("data-disclosure-chevron");
     expect(disclosure).toContain("[&[open]>summary_[data-disclosure-chevron]]:rotate-90");
     expect(disclosure).not.toContain("[&[open]_svg]:rotate-90");
-    const alert = readFileSync(join(import.meta.dirname, "../packages/ui-kit/src/ui/alert.tsx"), "utf8");
+    const alert = readFileSync(join(import.meta.dirname, "../components/ui/alert.tsx"), "utf8");
     expect(alert).toContain("mb-1 font-medium leading-none");
   });
 

@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { gitOwnershipChangedPaths, resolveGitOwnershipBase } from "../../src/rooms/verification/git-ownership";
+import { gitOwnershipChangedPaths, resolveGitOwnershipBase } from "../../src/verification/git-ownership";
 
 let root:string|undefined;
 afterEach(async()=>{if(root) await rm(root,{recursive:true,force:true});root=undefined;});
@@ -65,7 +65,7 @@ describe("git ownership base adapter",()=>{
 });
 
 it("treats tool caches inside monorepo packages as bookkeeping, not as the writer's change", async () => {
-  const { filterOwnershipNoise } = await import("../../src/rooms/verification/git-ownership");
+  const { filterOwnershipNoise } = await import("../../src/verification/git-ownership");
   expect(filterOwnershipNoise([
     "packages/contracts/.vite/vitest/da39a3ee/results.json",
     "apps/web/node_modules/.cache/x",

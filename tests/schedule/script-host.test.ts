@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { hostJobStatus, startHostJob, type JobOptions, type JobStatus } from "../../src/rooms/host-worker/jobs";
-import { createCapture, runScriptOnHost } from "../../src/rooms/host-worker/script-run";
+import { hostJobStatus, startHostJob, type JobOptions, type JobStatus } from "../../src/jobs";
+import { createCapture, runScriptOnHost } from "../../src/script-run";
 
 const run = (command: string, extra: Partial<Parameters<typeof runScriptOnHost>[0]> = {}) =>
   runScriptOnHost({ requestedHostId: "h1", command, cwd: tmpdir(), timeoutSec: 20, ...extra });

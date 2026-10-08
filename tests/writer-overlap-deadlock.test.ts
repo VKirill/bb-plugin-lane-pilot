@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { dependsOnTask } from "../src/rooms/writer/server/start";
+import { dependsOnTask } from "../src/server/writer/start";
 
 it("treats a dependent as no overlap blocker, by exact or base id", () => {
   expect(dependsOnTask(["gc-native-how"], "gc-native-how.5")).toBe(true);

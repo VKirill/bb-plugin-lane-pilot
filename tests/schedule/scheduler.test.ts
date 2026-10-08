@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createScheduler } from "../../src/rooms/schedule/scheduler";
-import { createScheduleStore } from "../../src/rooms/schedule/store";
+import { createScheduler } from "../../src/schedule/scheduler";
+import { createScheduleStore } from "../../src/schedule/store";
 import { addSchedule, bag, createClock, createDb, createFakeExecutor, schedulerOn, statuses } from "./harness";
 
 const T0 = Date.parse("2026-10-08T10:03:00Z");

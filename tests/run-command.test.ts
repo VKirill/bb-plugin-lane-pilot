@@ -1,6 +1,6 @@
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
-import { runCommandOnHost } from "../src/rooms/writer/cli-run";
+import { runCommandOnHost } from "../src/cli-run";
 
 /** How often a 20 ms timer fired while `work` ran: a host call that blocks the worker leaves it at zero. */
 async function ticksDuring(work:()=>Promise<unknown>):Promise<number> {

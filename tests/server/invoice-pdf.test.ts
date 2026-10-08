@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { checkInvoicePdf } from "../../src/rooms/workflow/server/invoice-pdf";
+import { checkInvoicePdf } from "../../src/server/invoice-pdf";
 
 // Audit 2026-10-08 round 4, item 20: the PDF path came from the same agent's report and the PDF was never opened. The check runs on the
 // machine with the file; here the fake machine runs the real command in a shell.

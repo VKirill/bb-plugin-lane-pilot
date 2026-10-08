@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveRetryEffort } from "../../src/rooms/critique/retry-effort";
+import { resolveRetryEffort } from "../../src/stages/retry-effort";
 
 const supported = new Set(["low", "medium", "high", "xhigh"]);
 

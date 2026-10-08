@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyResourceMode, collectAgentInventory, mergeInventoryItems, resourceModeOf } from "../src/rooms/native-agent/agent-inventory";
+import { applyResourceMode, collectAgentInventory, mergeInventoryItems, resourceModeOf } from "../src/agent-inventory";
 
 describe("agent inventory", () => {
   it("keeps inherit, none, and selected distinct", () => {

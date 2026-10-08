@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase, savePrototypeConfig } from "../src/rooms/storage/database";
+import { openDatabase, savePrototypeConfig } from "../src/database";
 import plugin from "../server";
 
 describe("settings CAS over RPC", () => {

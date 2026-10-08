@@ -11,11 +11,11 @@ import {
   findCulpritByFiles,
   formatFixTurnPrompt,
   IntegrationGateRunner,
-} from "../src/rooms/verification/server/integration-gate";
-import { openDatabase, createTask, saveStageReceipt, saveProjectSetting } from "../src/rooms/storage/database";
-import * as hostHandlers from "../src/rooms/host-worker/host-handlers";
-import type { ServerCore } from "../src/rooms/core/server/core";
-import type { Services } from "../src/rooms/core/server/services";
+} from "../src/server/integration-gate";
+import { openDatabase, createTask, saveStageReceipt, saveProjectSetting } from "../src/database";
+import * as hostHandlers from "../src/host-handlers";
+import type { ServerCore } from "../src/server/core";
+import type { Services } from "../src/server/services";
 
 describe("integration-gate settings parsing", () => {
   it("defaults to null command, queue_drained, every 5", () => {
@@ -59,12 +59,12 @@ describe("failing files extraction", () => {
 
   it("extracts failing files from tsc output", () => {
     const output = `
-src/rooms/verification/server/integration-gate.ts:42:10 - error TS2304: Cannot find name 'foo'.
-src/rooms/contracts/index.ts:10:5 - error TS2322: Type 'string' is not assignable to type 'number'.
+src/server/integration-gate.ts:42:10 - error TS2304: Cannot find name 'foo'.
+src/contracts.ts:10:5 - error TS2322: Type 'string' is not assignable to type 'number'.
     `;
     const files = extractFailingFiles(output);
-    expect(files).toContain("src/rooms/verification/server/integration-gate.ts");
-    expect(files).toContain("src/rooms/contracts/index.ts");
+    expect(files).toContain("src/server/integration-gate.ts");
+    expect(files).toContain("src/contracts.ts");
   });
 });
 

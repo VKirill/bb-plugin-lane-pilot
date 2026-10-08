@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { decideThreadCompletion, PROVIDER_START_LIMIT_MS, threadFailure } from "../src/rooms/native-agent/thread-completion";
+import { decideThreadCompletion, PROVIDER_START_LIMIT_MS, threadFailure } from "../src/thread-completion";
 
 const ev = (seq: number, type: string, data: Record<string, unknown> = {}, createdAt = 1_000) => ({ seq, type, createdAt, threadId:"t", data });
 

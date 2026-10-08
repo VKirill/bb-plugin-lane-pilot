@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { bisectCulprit, type MergedTaskInfo } from "../../src/rooms/verification/server/integration-gate";
-import * as hostHandlers from "../../src/rooms/host-worker/host-handlers";
-import { spawnAsync } from "@lane-pilot/kit";
+import { bisectCulprit, type MergedTaskInfo } from "../../src/server/integration-gate";
+import * as hostHandlers from "../../src/host-handlers";
+import { spawnAsync } from "../../src/spawn-async";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";

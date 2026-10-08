@@ -2,8 +2,8 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { writeWorkflowFile } from "../../src/rooms/host-worker/host-handlers";
-import { casWriteWorkflowFile, sha256Text } from "@lane-pilot/workflow-engine";
+import { writeWorkflowFile } from "../../src/host-handlers";
+import { casWriteWorkflowFile, sha256Text } from "../../src/workflow/files";
 
 const dirs: string[] = [];
 const temp = () => { const dir = mkdtempSync(join(tmpdir(), "lp-wff-")); dirs.push(dir); return dir; };

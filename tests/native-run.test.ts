@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { closeRun, createRun, getActivation, openDatabase, setRunThread } from "../src/rooms/storage/database";
-import { claimNativeLaneRun, ownedNativePmRun, projectCheckoutIntentPath, resolveNativeDispatchWorkspace, writerWorkspaceForPmInstructions } from "../src/rooms/native-agent/native-run";
+import { closeRun, createRun, getActivation, openDatabase, setRunThread } from "../src/database";
+import { claimNativeLaneRun, ownedNativePmRun, projectCheckoutIntentPath, resolveNativeDispatchWorkspace, writerWorkspaceForPmInstructions } from "../src/native-run";
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -74,7 +74,7 @@ it("claims one run per native chat without project setup or a project-wide lock"
 });
 
 it("gives a repeated task id a fresh key and frees paths held by a dead task", async () => {
-  const { createTask, createAttempt, freeTaskId, listLiveTasksForRun, saveStageReceipt } = await import("../src/rooms/storage/database");
+  const { createTask, createAttempt, freeTaskId, listLiveTasksForRun, saveStageReceipt } = await import("../src/database");
   const fake = createFakePluginHost({ pluginId: "lane-pilot" });
   cleanup.push(() => fake.harness.lifecycle.dispose());
   const db = openDatabase(fake.bb);
@@ -104,7 +104,7 @@ it("gives a repeated task id a fresh key and frees paths held by a dead task", a
 });
 
 it("accepts upstream task-v2 context fields a BB writer does not use", async () => {
-  const { validateTaskV2 } = await import("../src/rooms/tasks/task-v2");
+  const { validateTaskV2 } = await import("../src/task-v2");
   const task = {
     schema_version: 2, id: "t1", title: "T", risk: "low", lane: "write", project_cwd: "/p", read_first: [], interfaces: [], invariants: [],
     out_of_scope: [], expected_outputs: ["a.ts"], owns_paths: ["a.ts"], never_touch: [], depends_on: [], objective: "o", acceptance: ["a"],
@@ -116,7 +116,7 @@ it("accepts upstream task-v2 context fields a BB writer does not use", async () 
 });
 
 it("keeps section settings on top of the project's and resets a section back to them", async () => {
-  const { casUpsertSetting, casResetSettings, listSettingRows, loadProjectSettings, sectionBindingId, getRunSettingsScopes, setRunSettingsScopes } = await import("../src/rooms/storage/database");
+  const { casUpsertSetting, casResetSettings, listSettingRows, loadProjectSettings, sectionBindingId, getRunSettingsScopes, setRunSettingsScopes } = await import("../src/database");
   const fake = createFakePluginHost({ pluginId: "lane-pilot" });
   cleanup.push(() => fake.harness.lifecycle.dispose());
   const db = openDatabase(fake.bb);
@@ -138,7 +138,7 @@ it("keeps section settings on top of the project's and resets a section back to 
 });
 
 it("accepts a switch's boolean for a true/false setting", async () => {
-  const { validateSettingValue } = await import("../src/rooms/settings/setting-validation");
+  const { validateSettingValue } = await import("../src/setting-validation");
   expect(validateSettingValue("docs.enabled", true)).toBeNull();
   expect(validateSettingValue("memory.enabled", false)).toBeNull();
   expect(validateSettingValue("docs.enabled", "true")).toBeNull();
@@ -146,8 +146,8 @@ it("accepts a switch's boolean for a true/false setting", async () => {
 });
 
 it("lets every project inherit the global level and override it per project or section", async () => {
-  const { casUpsertSettings, loadProjectSettings, sectionBindingId } = await import("../src/rooms/storage/database");
-  const { GLOBAL_SETTINGS_PROJECT_ID } = await import("@lane-pilot/settings-catalog");
+  const { casUpsertSettings, loadProjectSettings, sectionBindingId } = await import("../src/database");
+  const { GLOBAL_SETTINGS_PROJECT_ID } = await import("../src/lp-defaults");
   const fake = createFakePluginHost({ pluginId: "lane-pilot" });
   cleanup.push(() => fake.harness.lifecycle.dispose());
   const db = openDatabase(fake.bb);

@@ -1,14 +1,14 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import "./app.css";
-import { t } from "@lane-pilot/i18n";
-import { LanePilotPage } from "./src/rooms/ui-shell/ui/page";
-import { CouncilPage } from "./src/rooms/council/ui";
-import { ComposerAgentBadge } from "./src/rooms/native-agent/ui";
-import { EnableLanePilotAction } from "./src/rooms/native-agent/ui";
-import { HELPER_PANEL_ACTION, HelperThreadPanel } from "./src/rooms/native-agent/ui";
-import { RUN_CARD_DIRECTIVE, RunCardDirective } from "./src/rooms/runs/ui";
-import { OWNER_ASK_RENDERER_ID } from "./src/rooms/relay";
-import { OwnerAsk } from "./src/rooms/relay/ui";
+import { t } from "./i18n";
+import { LanePilotPage } from "./src/ui/page";
+import { CouncilPage } from "./src/ui/council-page";
+import { ComposerAgentBadge } from "./src/ui/composer-agent-badge";
+import { EnableLanePilotAction } from "./src/ui/composer-enable";
+import { HELPER_PANEL_ACTION, HelperThreadPanel } from "./src/ui/helper-threads";
+import { RUN_CARD_DIRECTIVE, RunCardDirective } from "./src/ui/run-card";
+import { OWNER_ASK_RENDERER_ID } from "./src/owner-ask-shared";
+import { OwnerAsk } from "./src/ui/owner-ask";
 
 export default definePluginApp((app) => {
   app.slots.navPanel({

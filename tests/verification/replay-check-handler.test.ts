@@ -3,15 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { hostContract } from "../../src/rooms/contracts";
+import { hostContract } from "../../src/contracts";
 
 const sandbox = vi.hoisted(() => ({ run: vi.fn() }));
-vi.mock("../../src/rooms/verification/sandbox", async (importOriginal) => ({
-  ...await importOriginal<typeof import("../../src/rooms/verification/sandbox")>(),
+vi.mock("../../src/verification/sandbox", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../src/verification/sandbox")>(),
   runSandboxedCommandOnHost: sandbox.run,
 }));
 
-const { gitIntegrate } = await import("../../src/rooms/host-worker/host-handlers");
+const { gitIntegrate } = await import("../../src/host-handlers");
 
 describe("gitIntegrate with replayChecks (the host runs the task's checks in the sandbox after the replay)", () => {
   let base: string;

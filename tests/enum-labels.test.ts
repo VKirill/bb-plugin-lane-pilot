@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { en, ru, setLocaleOverride } from "@lane-pilot/i18n";
-import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
-import { enumLabelKnown, isBrandEnumValue, presentEnumLabel } from "../src/rooms/settings/enum-labels";
+import { en, ru, setLocaleOverride } from "../i18n";
+import { VISIBLE_CATALOG } from "../src/ui-catalog";
+import { enumLabelKnown, isBrandEnumValue, presentEnumLabel } from "../src/enum-labels";
 
 describe("enum presentation labels", () => {
   it("keeps storage codes and localizes working labels in EN and RU", () => {

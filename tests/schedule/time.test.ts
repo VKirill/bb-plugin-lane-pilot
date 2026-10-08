@@ -1,6 +1,6 @@
 import { CronExpressionParser } from "cron-parser";
 import { describe, expect, it } from "vitest";
-import { fireTimes, nextFire, offsetAt, parseDelay, scheduleTimeProblem } from "../../src/rooms/schedule/time";
+import { fireTimes, nextFire, offsetAt, parseDelay, scheduleTimeProblem } from "../../src/schedule/time";
 
 const iso = (ms: number) => new Date(ms).toISOString();
 const at = (text: string) => Date.parse(text);
