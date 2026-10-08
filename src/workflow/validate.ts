@@ -68,6 +68,12 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
   const error = (code: string, message: string, extra: { node?: string; edge?: number } = {}) => problems.push({ level: "error", code, message, ...extra });
   const warn = (code: string, message: string, extra: { node?: string; edge?: number } = {}) => problems.push({ level: "warning", code, message, ...extra });
 
+  // A token or money budget counts what the provider reports; without usage events (codex, opencode) the engine holds the run to 40 steps and 2 hours unless these are set.
+  const { maxTokens, maxCostUsd, maxSteps, maxWallSeconds } = workflow.budget;
+  if ((maxTokens !== undefined || maxCostUsd !== undefined) && (maxSteps === undefined || maxWallSeconds === undefined) && workflow.nodes.some((node) => node.type === "agent" || node.type === "lp-task")) {
+    warn("budget_blind_without_usage", "the token or money budget counts only what the provider reports; a step without usage events is not counted, and the run is then stopped at 40 steps or 2 hours unless budget.maxSteps and budget.maxWallSeconds say otherwise");
+  }
+
   // Authoring-level checks on the file as written; the structure is checked on the form the engine runs.
   const originals = new Set<string>();
   for (const node of workflow.nodes) {

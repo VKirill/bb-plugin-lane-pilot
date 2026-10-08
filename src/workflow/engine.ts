@@ -25,7 +25,11 @@ export type StepInput = {
   /** How many times the owner re-ran this step by hand: part of its spawn key, so the new try gets a new thread, not the old one. */
   rerun?: number;
 };
-export type Usage = { tokens?: number; costUsd?: number };
+/** Without usage events a run under a token or money budget stops at this many steps / seconds, unless the budget names its own. */
+const UNKNOWN_USAGE_MAX_STEPS = 40;
+const UNKNOWN_USAGE_MAX_WALL_SECONDS = 2 * 3600;
+/** What a step spent. `unknown`: the provider reported no usage, so these numbers are a floor and a token or money budget cannot see the rest. */
+export type Usage = { tokens?: number; costUsd?: number; unknown?: boolean };
 export type StepDone = { output: Record<string, unknown>; usage?: Usage; threadId?: string | null; detail?: unknown };
 export type StepWait = { wait: { kind: string; detail?: unknown; deadline?: number }; partial?: Record<string, unknown>; usage?: Usage; threadId?: string | null };
 export type StepOutcome = StepDone | StepWait;
@@ -140,6 +144,8 @@ export class WorkflowEngine {
   private readonly drives = new Map<string, Promise<RunSummary>>();
   private readonly runtimes = new Map<string, unknown>();
   private readonly aborts = new Map<string, AbortController>();
+  /** Children whose spend a failed step already added to the parent. */
+  private readonly chargedChildren = new Set<string>();
   private readonly compiledRuns = new Map<string, Compiled>();
   private readonly beats = new Map<string, ReturnType<typeof setInterval>>();
   private readonly stoppedRuns = new Set<string>();
@@ -511,8 +517,21 @@ export class WorkflowEngine {
     }
   }
 
+  /** A step whose provider reported no usage: the run's journal says so once, and `checkLimits` takes it from there. */
+  private noteUnknownUsage(runId: string, stepKey: string, usage: Usage): void {
+    if (!usage.unknown) return;
+    const j = this.journal;
+    if (j.db.prepare("SELECT 1 FROM lane_pilot_wf_event WHERE run_id=? AND kind='usage_unknown' LIMIT 1").get(runId)) return;
+    j.event(runId, stepKey, "usage_unknown", null, null, `the provider reported no usage for this step: a token or money budget cannot count it; the run is held to ${UNKNOWN_USAGE_MAX_STEPS} steps and ${UNKNOWN_USAGE_MAX_WALL_SECONDS / 60} minutes unless the budget sets its own`);
+  }
+
   private checkLimits(run: RunRow, c: Compiled): string | null {
     const budget = c.wf.budget;
+    // A token or money budget is blind to a step without usage events; the run then gets a time and step limit of its own.
+    if ((budget.maxTokens !== undefined || budget.maxCostUsd !== undefined) && this.journal.db.prepare("SELECT 1 FROM lane_pilot_wf_event WHERE run_id=? AND kind='usage_unknown' LIMIT 1").get(run.id)) {
+      if (budget.maxSteps === undefined && run.steps_used >= UNKNOWN_USAGE_MAX_STEPS) return "budget_exceeded:usage_unknown_steps";
+      if (budget.maxWallSeconds === undefined && this.now() - run.created_at - run.wait_ms >= UNKNOWN_USAGE_MAX_WALL_SECONDS * 1000) return "budget_exceeded:usage_unknown_wall_time";
+    }
     if (budget.maxSteps !== undefined && run.steps_used >= budget.maxSteps) return "budget_exceeded:steps";
     if (budget.maxTokens !== undefined && run.tokens_used >= budget.maxTokens) return "budget_exceeded:tokens";
     if (budget.maxCostUsd !== undefined && run.cost_micro_usd >= Math.round(budget.maxCostUsd * 1_000_000)) return "budget_exceeded:cost";
@@ -792,7 +811,7 @@ export class WorkflowEngine {
       return "done";
     }
     const usage = outcome.usage;
-    const addUsage = () => { if (usage) j.db.prepare("UPDATE lane_pilot_wf_run SET tokens_used=tokens_used+?, cost_micro_usd=cost_micro_usd+? WHERE id=?").run(Math.round(usage.tokens ?? 0), Math.round((usage.costUsd ?? 0) * 1_000_000), runId); };
+    const addUsage = () => { if (usage) { j.db.prepare("UPDATE lane_pilot_wf_run SET tokens_used=tokens_used+?, cost_micro_usd=cost_micro_usd+? WHERE id=?").run(Math.round(usage.tokens ?? 0), Math.round((usage.costUsd ?? 0) * 1_000_000), runId); this.noteUnknownUsage(runId, stepKey, usage); } };
     if ("wait" in outcome) {
       if (j.moveStep(runId, stepKey, "running", "waiting", { await_json: JSON.stringify({ ...outcome.wait, partial: outcome.partial ?? null }), receipt_json: receipt({ threadId: outcome.threadId ?? null, usage: usage ?? null }) })) addUsage();
       return "done";
@@ -1144,9 +1163,16 @@ export class WorkflowEngine {
   private childOutcome(child: RunSummary, node: Extract<WorkflowNode, { type: "subworkflow" }>): StepOutcome {
     // The child's spending is the parent's: a budget on the outer chain counts the whole tree.
     const spent = this.journal.db.prepare("SELECT tokens_used, cost_micro_usd FROM lane_pilot_wf_run WHERE id=?").get(child.runId) as { tokens_used: number; cost_micro_usd: number } | undefined;
-    const usage = spent && (spent.tokens_used || spent.cost_micro_usd) ? { tokens: spent.tokens_used, costUsd: spent.cost_micro_usd / 1_000_000 } : undefined;
+    const blind = Boolean(this.journal.db.prepare("SELECT 1 FROM lane_pilot_wf_event WHERE run_id=? AND kind='usage_unknown' LIMIT 1").get(child.runId));
+    const usage = spent && (spent.tokens_used || spent.cost_micro_usd || blind) ? { tokens: spent.tokens_used, costUsd: spent.cost_micro_usd / 1_000_000, ...(blind ? { unknown: true as const } : {}) } : undefined;
     if (child.status === "succeeded") return { output: child.output ?? {}, ...(usage ? { usage } : {}) };
     if (child.status === "waiting" || child.status === "running") return { wait: { kind: "subworkflow", detail: { childRunId: child.runId } } };
+    // A child that ended badly still spent: the parent's step fails without an outcome, so its spend is added here, once.
+    if (usage && !this.chargedChildren.has(child.runId)) {
+      this.chargedChildren.add(child.runId);
+      const parent = this.journal.db.prepare("SELECT parent_run_id FROM lane_pilot_wf_run WHERE id=?").get(child.runId) as { parent_run_id: string | null } | undefined;
+      if (parent?.parent_run_id) this.journal.db.prepare("UPDATE lane_pilot_wf_run SET tokens_used=tokens_used+?, cost_micro_usd=cost_micro_usd+? WHERE id=?").run(Math.round(usage.tokens), Math.round(usage.costUsd * 1_000_000), parent.parent_run_id);
+    }
     throw new Error(`subworkflow ${node.workflow} ${child.status}: ${child.error ?? child.reason ?? ""}`);
   }
 
@@ -1251,7 +1277,7 @@ export class WorkflowEngine {
       const outputJson = JSON.stringify(output);
       if (!j.moveStep(runId, stepKey, "waiting", "succeeded", { output_json: outputJson, ended: true,
         receipt_json: JSON.stringify({ ...prior, outputSha256: sha256(outputJson), threadId: result.threadId ?? prior.threadId ?? null, settledBy: "outside" }) })) return false;
-      if (result.usage) j.db.prepare("UPDATE lane_pilot_wf_run SET tokens_used=tokens_used+?, cost_micro_usd=cost_micro_usd+? WHERE id=?").run(Math.round(result.usage.tokens ?? 0), Math.round((result.usage.costUsd ?? 0) * 1_000_000), runId);
+      if (result.usage) { j.db.prepare("UPDATE lane_pilot_wf_run SET tokens_used=tokens_used+?, cost_micro_usd=cost_micro_usd+? WHERE id=?").run(Math.round(result.usage.tokens ?? 0), Math.round((result.usage.costUsd ?? 0) * 1_000_000), runId); this.noteUnknownUsage(runId, stepKey, result.usage); }
       if (run.status === "waiting") j.db.prepare("UPDATE lane_pilot_wf_run SET wait_ms=wait_ms+? WHERE id=?").run(Math.max(0, this.now() - run.updated_at), runId);
       j.setRunStatus(runId, ["waiting"], "running", null);
       return true;

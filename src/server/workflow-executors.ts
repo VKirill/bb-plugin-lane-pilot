@@ -229,7 +229,8 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       // What the writer attempts of this task spent: the threads of every attempt, read once, when the task is over.
       const threads = [...new Set(listed.map((row) => getAttempt(db, row.id)?.thread_id).filter((id): id is string => Boolean(id)))];
       const spent = await Promise.all(threads.map((threadId) => threadUsage(bb, threadId)));
-      const usage = { tokens: spent.reduce((sum, row) => sum + row.tokens, 0), costUsd: spent.reduce((sum, row) => sum + row.costUsd, 0) };
+      const usage = { tokens: spent.reduce((sum, row) => sum + row.tokens, 0), costUsd: spent.reduce((sum, row) => sum + row.costUsd, 0),
+        ...(spent.some((row) => !row.known) ? { unknown: true as const } : {}) };
       return { output: { state, attempts: listed.length, merge_commit: merge.commit, files: merge.files,
         verdict: { status: state === "accepted" ? "pass" : "rework", summary: reason, findings: [], evidence: reason || state } }, usage };
     },

@@ -5,7 +5,7 @@ import plugin from "../server";
 import { costUsd } from "../src/model-prices";
 import {
   EVENT_PAGE, TOKEN_USAGE_CACHE_SPLIT_RESET_KEY, TOKEN_USAGE_CURSOR_RESET_KEY, TOKEN_USAGE_EVENT_TYPES, TOKEN_USAGE_SCHEDULE,
-  normalizeModel, queryTokenUsage, syncTokenUsage, tokenDelta, utcDay,
+  normalizeModel, queryTokenUsage, syncTokenUsage, threadUsage, tokenDelta, utcDay,
 } from "../src/server/token-usage";
 
 let dispose: (() => Promise<void> | void) | null = null;
@@ -387,5 +387,18 @@ describe("token usage schedule", () => {
     ]);
     expect(await settled(TOKEN_USAGE_SCHEDULE)).toBe("returned");
     expect(await settled(TOKEN_USAGE_SCHEDULE)).toBe("returned");
+  });
+});
+
+describe("threadUsage for a workflow budget", () => {
+  const fakeBb = (list: () => Promise<unknown>) => ({ sdk: { threads: { events: { list } } } }) as never;
+  it("says a thread without usage events or one that cannot be read is not measured, not that it spent nothing", async () => {
+    expect(await threadUsage(fakeBb(async () => []), "thr_x")).toEqual({ tokens: 0, costUsd: 0, known: false });
+    expect(await threadUsage(fakeBb(async () => { throw new Error("down"); }), "thr_x")).toEqual({ tokens: 0, costUsd: 0, known: false });
+  });
+  it("is known once the thread has a usage event", async () => {
+    const event = usage(2, { last, total: last });
+    const spent = await threadUsage(fakeBb(async () => [event]), "thr_x", { fallbackModel: "gpt-5.5" });
+    expect(spent.known).toBe(true);
   });
 });

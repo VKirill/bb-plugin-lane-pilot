@@ -284,6 +284,41 @@ describe("guards", () => {
     expect(rows<{ tokens_used: number; cost_micro_usd: number }>(db, "SELECT tokens_used, cost_micro_usd FROM lane_pilot_wf_run")[0]).toEqual({ tokens_used: 150, cost_micro_usd: 500_000 });
   });
 
+  it("budget: a token or money budget with steps that report no usage holds the run to 40 steps, with a journal note", async () => {
+    const workflow = wf({
+      budget: { maxCostUsd: 2 },
+      guards: { maxSteps: 200, maxFanOut: 12, maxSubworkflowDepth: 3 },
+      nodes: [{ id: "search", type: "action", action: "search", maxVisits: 50, output: [{ name: "n", type: "number" }] }],
+      edges: [{ from: "start", to: "search" }, { from: "search", to: "search", when: { field: "n", op: "lt", value: 1000 } }, { from: "search", to: "end", with: { result: "input.query" } }],
+    });
+    let n = 0;
+    const blind: NodeExecutor = { reentrant: true, run: async () => ({ output: { n: ++n }, usage: { tokens: 0, costUsd: 0, unknown: true } }) };
+    const db = journalDb();
+    const summary = await run(engineOn(db, { search: blind }), workflow);
+    expect(summary).toMatchObject({ status: "blocked", reason: "budget_exceeded:usage_unknown_steps" });
+    expect(n).toBe(40);
+    expect(rows<{ kind: string }>(db, "SELECT kind FROM lane_pilot_wf_event WHERE kind='usage_unknown'")).toHaveLength(1);
+    // The same steps with usage reported are not held back by the extra limit.
+    n = 0;
+    const seen: NodeExecutor = { reentrant: true, run: async () => ({ output: { n: ++n }, usage: { tokens: 1, costUsd: 0.001 } }) };
+    const free = await run(engineOn(journalDb(), { search: seen }), wf({ ...workflow, id: "seen" }));
+    expect(free.status).toBe("succeeded");
+  });
+
+  it("budget: a token budget that also names maxSteps keeps its own limit when usage is unknown", async () => {
+    const workflow = wf({
+      budget: { maxTokens: 100000, maxSteps: 5 },
+      guards: { maxSteps: 200, maxFanOut: 12, maxSubworkflowDepth: 3 },
+      nodes: [{ id: "search", type: "action", action: "search", maxVisits: 50, output: [{ name: "n", type: "number" }] }],
+      edges: [{ from: "start", to: "search" }, { from: "search", to: "search", when: { field: "n", op: "lt", value: 1000 } }, { from: "search", to: "end", with: { result: "input.query" } }],
+    });
+    let n = 0;
+    const blind: NodeExecutor = { reentrant: true, run: async () => ({ output: { n: ++n }, usage: { unknown: true } }) };
+    const summary = await run(engineOn(journalDb(), { search: blind }), workflow);
+    expect(summary).toMatchObject({ status: "blocked", reason: "budget_exceeded:steps" });
+    expect(n).toBe(5);
+  });
+
   it("timeoutSec: a step that hangs fails", async () => {
     const workflow = wf({ nodes: [{ id: "search", type: "action", action: "search", timeoutSec: 1, output: [{ name: "items", type: "array" }, { name: "count", type: "number" }, { name: "kind", type: "enum", values: ["fresh", "stale"] }] }, { id: "write", type: "action", action: "write", output: [{ name: "text", type: "string" }] }] });
     const hang: NodeExecutor = { run: () => new Promise(() => undefined) };
@@ -406,6 +441,22 @@ describe("subworkflows", () => {
     const runs = rows<{ depth: number; parent_run_id: string | null; parent_step_key: string | null }>(db, "SELECT depth, parent_run_id, parent_step_key FROM lane_pilot_wf_run ORDER BY created_at, rowid");
     expect(runs).toHaveLength(2);
     expect(runs.find((row) => row.depth === 1)).toMatchObject({ parent_run_id: summary.runId, parent_step_key: "call#1" });
+  });
+
+  it("a child that failed after spending still counts against the parent's budget", async () => {
+    const db = journalDb();
+    const spender = wf({
+      id: "leaf", inputs: [{ name: "query", type: "string" }], outputs: [{ name: "result", type: "string" }],
+      nodes: [{ id: "write", type: "action", action: "leaf-write", output: [{ name: "text", type: "string" }] }, { id: "boom", type: "action", action: "boom", output: [{ name: "text", type: "string" }] }],
+      edges: [{ from: "start", to: "write" }, { from: "write", to: "boom" }, { from: "boom", to: "end", with: { result: "boom.text" } }],
+    });
+    const engine = engineOn(db, {
+      "leaf-write": { reentrant: true, run: async () => ({ output: { text: "x" }, usage: { tokens: 700, costUsd: 0.7 } }) },
+      boom: { reentrant: true, run: async () => { throw new Error("boom"); } },
+    }, { resolveWorkflow: (id) => (id === "leaf" ? spender : null) });
+    const summary = await run(engine, parent);
+    expect(summary.status).toBe("failed");
+    expect(rows<{ tokens_used: number; cost_micro_usd: number }>(db, "SELECT tokens_used, cost_micro_usd FROM lane_pilot_wf_run WHERE depth=0")[0]).toEqual({ tokens_used: 700, cost_micro_usd: 700_000 });
   });
 
   it("refuses a chain deeper than three, at start and at the engine", async () => {

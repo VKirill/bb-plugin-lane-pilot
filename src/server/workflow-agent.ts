@@ -178,9 +178,11 @@ export function createWorkflowAgents() {
       if (edited.length) throw new HelperFailure("repo_edited", `the ${request.role} helper edited repository files it may not touch: ${edited.slice(0, 8).join(", ")}`);
     }
     if (!output) throw new HelperFailure("output_invalid", `the ${request.role} helper's final message could not be read: ${problem}`);
-    // Read last, so the repair turn counts too; a thread whose usage cannot be read reports none, and the budget goes on what it has.
-    const usage = await threadUsage(bb, threadId!, { ...(sentAt !== undefined ? { since: sentAt } : {}), ...(request.model ? { fallbackModel: request.model } : {}) }).catch(() => undefined);
-    return { threadId: threadId!, output, text, ...(usage ? { usage } : {}) };
+    // Read last, so the repair turn counts too. A thread whose usage cannot be read, or has no usage events, reports `unknown`:
+    // the engine then holds the run to a time and step limit instead of letting a token or money budget pass unseen.
+    const measured = await threadUsage(bb, threadId!, { ...(sentAt !== undefined ? { since: sentAt } : {}), ...(request.model ? { fallbackModel: request.model } : {}) }).catch(() => undefined);
+    const usage = measured ? { tokens: measured.tokens, costUsd: measured.costUsd, ...(measured.known ? {} : { unknown: true as const }) } : { tokens: 0, costUsd: 0, unknown: true as const };
+    return { threadId: threadId!, output, text, usage };
   }
 
   return { run };
