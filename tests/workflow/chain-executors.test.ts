@@ -189,6 +189,18 @@ describe("the agent step", () => {
     expect(t.sent[0]!.text).toContain("Continue the workflow step \"plan\"");
   });
 
+  it("a same-session step re-run after a reload does not send its task into the thread a second time", async () => {
+    const t = await setup({ plan: [reply({ plan: "v2", handoff: "revised" })] });
+    dispose = t.dispose;
+    const request = { rt: t.rt, workflowRunId: "wfrun_x", stepKey: "plan#2", nodeId: "plan", spawnKey: "key-1", role: "planner", title: "plan", prompt: "Revise the plan.", fields: [{ name: "plan", type: "string" }] as never, intoThread: "helper-1" };
+    const agents = createWorkflowAgents();
+    await agents.run(request).catch(() => undefined); // the thread has no scripted node here: the answer may not parse, the send is what counts
+    await agents.run(request).catch(() => undefined); // the same step key again: the reload's re-run
+    expect(t.sent.filter((message) => message.text.includes("Revise the plan."))).toHaveLength(1);
+    await agents.run({ ...request, stepKey: "plan#3", spawnKey: "key-2" }).catch(() => undefined); // another step sends its own task
+    expect(t.sent.filter((message) => message.text.includes("Revise the plan."))).toHaveLength(2);
+  });
+
   it("votes: the node runs three times in three helper threads and the majority decides", async () => {
     const answers = [true, true, false].map((confirmed) => reply({ confirmed, handoff: "voted" }));
     const t = await setup({ "check:child": answers });

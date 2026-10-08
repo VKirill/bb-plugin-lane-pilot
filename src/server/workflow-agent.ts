@@ -1,4 +1,4 @@
-import { waitThreadIdle } from "@lane-pilot/thread-observe";
+import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { getRunSettingsScopes } from "../database";
 import { writerExecutionSelection } from "../jev-reasoning";
 import { ROLE_PROFILES } from "../helper-context";
@@ -79,6 +79,12 @@ export function extraAccessOf(request: Pick<HelperRequest, "skills" | "plugins" 
   return Object.keys(extra).length ? extra : undefined;
 }
 
+/** Whether the thread shows a follow-up turn requested at or after `at`. */
+async function followUpRequested(bb: ServerCore["bb"], threadId: string, at: number): Promise<boolean> {
+  const listed = await listThreadEventsRaw(bb, { threadId, types: THREAD_WATCH_EVENT_TYPES, order: "desc", limit: "50" });
+  return listed.ok && listed.events.some((event) => (event as { type?: unknown; createdAt?: unknown }).type === "client/turn/requested" && Number((event as { createdAt?: unknown }).createdAt) >= at);
+}
+
 export function createWorkflowAgents() {
   async function lookup(rt: ChainRuntime, request: HelperRequest): Promise<string | null> {
     // The spawn key makes `spawnKeyed` return the same thread; without the VK keys a thread is found by its metadata, or not at all.
@@ -100,8 +106,16 @@ export function createWorkflowAgents() {
     let threadId = request.intoThread ?? null;
     let sentAt: number | undefined;
     if (threadId) {
-      sentAt = Date.now();
-      await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text: request.prompt, mentions: [] }] } as never);
+      // A re-run of the step after a reload must not send the task a second time: the send is recorded by the step key before it is made,
+      // and a record whose follow-up BB shows as requested means it already went; a record without one (the process died in between) sends again.
+      const sentKey = `workflow-send:${request.workflowRunId}:${request.stepKey}:${request.spawnKey}`;
+      const earlier = await bb.storage.kv.get<{ at: number }>(sentKey).catch(() => null);
+      if (earlier && await followUpRequested(bb, threadId, earlier.at)) sentAt = earlier.at;
+      else {
+        sentAt = Date.now();
+        await bb.storage.kv.set(sentKey, { at: sentAt });
+        await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text: request.prompt, mentions: [] }] } as never);
+      }
     } else {
       threadId = await lookup(rt, request);
       if (!threadId) {
