@@ -206,8 +206,8 @@ export const stepExecutorSchema = z.object({
   mode: z.enum(["model", "chain", "helper", "none"]),
   agent: z.object({ role: z.string().nullable(), helper: z.string().nullable(), label: z.string() }).strict(),
   providerId: z.string().nullable(), model: z.string().nullable(), reasoningEffort: z.string().nullable(), serviceTier: z.string().nullable(),
-  source: z.enum(["override", "node", "preset", "stage", "agent", "pm", "role-default", "writer", "helper", "none"]),
-  /** The setting key, the preset name or the helper the value comes from. */
+  source: z.enum(["override", "node", "preset", "stage", "agent", "pm", "role-default", "writer", "helper", "session", "none"]),
+  /** The setting key, the preset name or the helper the value comes from; for `session` the step whose session this one goes on in. */
   sourceKey: z.string().nullable(),
   inherited: z.boolean(),
   /** The writer chain after the writer's own model: fallback 1, fallback 2, then the PM's model (`pm`). */
@@ -221,6 +221,11 @@ export const stepExecutorSchema = z.object({
   costTier: z.enum(["none", "low", "medium", "high", "unknown"]),
   /** Problems found: `unknown_preset`, `provider_without_model`, `provider_unavailable`, `model_unavailable` ... */
   issues: z.array(z.string()),
+  /**
+   * Set for a step of a called workflow: `workflowId` is the workflow the step is in (`nodeId` above is its id there) and `nodeId` the
+   * call on the graph being shown. The override of such a step is keyed `<workflowId>/<nodeId>`, which is what the executor reads.
+   */
+  fragment: z.object({ nodeId: z.string(), workflowId: z.string() }).strict().optional(),
 }).strict();
 export const modelCatalogSchema = z.object({
   /** With a `projectId`: the machine the project's workflow helpers run on (its PM chat's environment); a model must be offered there. */

@@ -63,9 +63,11 @@ describe("workflow_step_executors", () => {
       { id: "w", type: "lp-task" },
     ] } };
     const lib = { nodes: [{ id: "x", type: "agent", role: "planner", model_preset: "cheap-fast" }] };
+    const frag = { entry: "gather", nodes: [{ id: "gather", type: "agent", role: "analyst" }, { id: "assess", type: "agent", role: "analyst" }], edges: [{ from: "gather", to: "assess", pass: "same-session" }] };
+    const parent = { nodes: [{ id: "analyze", type: "subworkflow", workflow: "frag" }] };
     return createWorkflowModels(ctx, {
       drafts: { get: (id: string) => (id === draft.id ? draft : undefined) } as never,
-      source: async ({ id }) => (id === "lib" ? { workflow: lib } : null),
+      source: async ({ id }) => (id === "lib" ? { workflow: lib } : id === "frag" ? { workflow: frag } : id === "parent" ? { workflow: parent } : null),
     });
   }
 
@@ -76,6 +78,16 @@ describe("workflow_step_executors", () => {
       ["a", "deepseek/v9", ["model_unknown"]], ["w", "gpt-6-luna", ["effort_auto", "effort_unsupported"]],
     ]);
     expect(result.executors[1]!.fallbacks.at(-1)).toEqual({ providerId: null, model: null, reasoningEffort: null, pm: true });
+  });
+
+  it("lists the steps of the workflows a library workflow calls, with the override key of the called workflow, and the session a step goes on in", async () => {
+    const api = models({ "workflow.model_override.frag/gather": { provider: "codex", model: "gpt-6-luna" } });
+    const result = await api.stepExecutors({ workflowId: "parent" });
+    expect(result.executors.map((row) => [row.nodeId, row.fragment ?? null, row.source])).toEqual([
+      ["analyze", null, "none"], ["gather", { nodeId: "analyze", workflowId: "frag" }, "override"], ["assess", { nodeId: "analyze", workflowId: "frag" }, "session"],
+    ]);
+    expect(result.executors[1]).toMatchObject({ sourceKey: "workflow.model_override.frag/gather", model: "gpt-6-luna", canOverride: true });
+    expect(result.executors[2]).toMatchObject({ sourceKey: "gather", model: "gpt-6-luna", canOverride: false });
   });
 
   it("resolves a workflow of the library, and says when there is none", async () => {

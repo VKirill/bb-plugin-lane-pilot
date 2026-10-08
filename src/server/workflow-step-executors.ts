@@ -149,9 +149,10 @@ function stepOf(node: Raw, id: string, settings: Settings, pm: PmPair | null, at
   }
 }
 
-export type ResolveInput = {
-  /** The nodes of a workflow or of a draft as written (a draft may be unfinished). */
-  nodes: ReadonlyArray<unknown>;
+/** The nodes and edges of one workflow, as written (a draft may be unfinished). */
+export type WorkflowShape = { nodes: ReadonlyArray<unknown>; edges?: ReadonlyArray<unknown> | undefined; entry?: string | undefined };
+
+export type ResolveInput = WorkflowShape & {
   /** The effective settings of the project (or the global ones). */
   settings: Settings;
   /** The model the PM chat runs on, when known: the last model of the writer chain. */
@@ -160,9 +161,11 @@ export type ResolveInput = {
   /**
    * The workflow the nodes belong to and the keys of the settings the project holds itself (the rest is the global level): with them
    * the owner's per-step overrides (`workflow.model_override.<workflowId>/<nodeId>`) apply and say which level they come from.
-   * Without a workflow id (a draft of a new workflow) none applies.
+   * Without a workflow id (a draft of a new workflow) none applies to its own steps.
    */
   workflowId?: string; ownKeys?: ReadonlySet<string>;
+  /** The workflows the subworkflow nodes call, by id: their steps are listed right after the call, with the fragment they belong to. */
+  fragments?: ReadonlyMap<string, WorkflowShape>;
 };
 
 /** Marks a step whose provider, model or effort the hub's machines do not offer. */
@@ -174,22 +177,81 @@ function withCatalogIssues(step: StepExecutor, catalog: ModelCatalog): StepExecu
   return step.issues.includes(verdict.code) ? step : { ...step, issues: [...step.issues, verdict.code] };
 }
 
-/** One entry per step that runs (not notes, joins or the container of a parallel), in graph order; the body of a parallel is `<id>:child`. */
+/** How many calls deep the steps of called workflows are followed. */
+const MAX_FRAGMENT_DEPTH = 3;
+
+/**
+ * A step that only ever goes on in an earlier agent's session (every edge into it is `same-session`, it is not the entry and does not
+ * say `session: new`) runs in that session: the model is the earlier step's, whatever the step itself names. The engine takes the step's
+ * own earlier session first and the source's after, so a step with any other way in (the entry, an artifact) starts a session of its own.
+ */
+function withInheritedSessions(raws: ReadonlyArray<Raw>, shape: WorkflowShape, steps: Map<string, StepExecutor>): void {
+  const edges = (shape.edges ?? []).filter(isRaw);
+  const rawById = new Map(raws.map((node) => [text(node.id) ?? "", node]));
+  const sourceOf = (id: string): string | null => {
+    const node = rawById.get(id);
+    if (!node || text(node.session) === "new" || shape.entry === id) return null;
+    const into = edges.filter((edge) => text(edge.to) === id);
+    if (!into.length || !into.every((edge) => text(edge.pass) === "same-session" && text(edge.from) !== "start")) return null;
+    return into.map((edge) => text(edge.from) ?? "").find((from) => from !== id && steps.get(from)?.kind === "agent" && steps.get(from)?.mode === "model") ?? null;
+  };
+  const resolved = new Map<string, StepExecutor>();
+  const finalOf = (id: string, seen: ReadonlySet<string>): StepExecutor | undefined => {
+    const own = steps.get(id);
+    if (!own) return undefined;
+    const known = resolved.get(id);
+    if (known) return known;
+    const from = seen.has(id) ? null : sourceOf(id);
+    const base = from ? finalOf(from, new Set([...seen, id])) : undefined;
+    const done: StepExecutor = base && from
+      ? { ...base, nodeId: own.nodeId, uses: own.uses, agent: own.agent, source: "session", sourceKey: from, inherited: true, overridable: false, canOverride: false, overrideScope: null, settingsKey: null }
+      : own;
+    resolved.set(id, done);
+    return done;
+  };
+  for (const id of [...steps.keys()]) steps.set(id, finalOf(id, new Set())!);
+}
+
+/**
+ * One entry per step that runs (not notes, joins or the container of a parallel), in graph order; the body of a parallel is `<id>:child`.
+ * The steps of a workflow a subworkflow node calls follow the call, each marked with its `fragment`.
+ */
 export function resolveStepExecutors(input: ResolveInput): StepExecutor[] {
-  const out: StepExecutor[] = [];
   // The machine the helpers run on decides what is offered: a model another machine has is not one this step can start on.
   const offered: Offered = input.catalog?.runHostId ? (providerId, model) => offeredOnHost(input.catalog!, providerId, model, input.catalog!.runHostId) : undefined;
-  const at: At = input.workflowId ? { workflowId: input.workflowId, ownKeys: input.ownKeys ?? new Set() } : undefined;
-  for (const raw of input.nodes) {
-    if (!isRaw(raw)) continue;
-    const id = text(raw.id);
-    if (!id) continue;
-    const found = stepOf(raw, id, input.settings, input.pm, at, offered);
-    if (found) out.push(found);
-    if (text(raw.type) === "parallel" && isRaw(raw.child)) {
-      const body = stepOf(raw.child, `${id}:child`, input.settings, input.pm, at, offered);
-      if (body) out.push(body);
+  const ownKeys = input.ownKeys ?? new Set<string>();
+
+  const level = (shape: WorkflowShape, at: At, tag: StepExecutor["fragment"], path: readonly string[]): StepExecutor[] => {
+    const raws = shape.nodes.filter(isRaw);
+    const steps = new Map<string, StepExecutor>();
+    const order: string[] = [];
+    const calls = new Map<string, string>();
+    for (const raw of raws) {
+      const id = text(raw.id);
+      if (!id) continue;
+      const found = stepOf(raw, id, input.settings, input.pm, at, offered);
+      if (found) { steps.set(id, found); order.push(id); }
+      if (text(raw.type) === "parallel" && isRaw(raw.child)) {
+        const body = stepOf(raw.child, `${id}:child`, input.settings, input.pm, at, offered);
+        if (body) { steps.set(`${id}:child`, body); order.push(`${id}:child`); }
+      }
+      const callee = text(raw.type) === "subworkflow" ? text(raw.workflow) : null;
+      if (callee) calls.set(id, callee);
     }
-  }
-  return input.catalog ? out.map((step) => withCatalogIssues(step, input.catalog!)) : out;
+    withInheritedSessions(raws, shape, steps);
+    const out: StepExecutor[] = [];
+    for (const id of order) {
+      const step = steps.get(id)!;
+      // A step of a called workflow is not a node of this graph: only its override setting changes it.
+      const marked = tag ? { ...step, fragment: tag, overridable: false } : step;
+      out.push(input.catalog ? withCatalogIssues(marked, input.catalog) : marked);
+      const callee = calls.get(id);
+      const child = callee ? input.fragments?.get(callee) : undefined;
+      if (callee && child && !path.includes(callee) && path.length <= MAX_FRAGMENT_DEPTH) {
+        out.push(...level(child, { workflowId: callee, ownKeys }, { nodeId: tag?.nodeId ?? id, workflowId: callee }, [...path, callee]));
+      }
+    }
+    return out;
+  };
+  return level(input, input.workflowId ? { workflowId: input.workflowId, ownKeys } : undefined, undefined, input.workflowId ? [input.workflowId] : []);
 }

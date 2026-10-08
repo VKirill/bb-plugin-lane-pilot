@@ -350,4 +350,26 @@ describe("the Models table of a library workflow", () => {
     expect(calls.filter((call) => call.method === "workflow_draft_create")).toHaveLength(1);
     expect(patches(calls)[0]!.ops).toEqual([{ op: "update_node", id: "search", set: { provider: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoning: "high", service_tier: null } }]);
   });
+
+  it("a workflow whose agents live in a called workflow lists them under that workflow, keyed <workflow>/<node>, and the override is set from the parent's view", async () => {
+    const { slot, calls } = await openLibrary("analyze-code", "builtin");
+    // The Models card is not empty: the steps of lp.analyze are in it.
+    await slot.findByTestId("wf-model-row-lp.analyze/gather");
+    expect(slot.queryByTestId("wf-models-empty")).toBeNull();
+    expect(slot.getByTestId("wf-model-group-lp.analyze").textContent).toContain("lp.analyze");
+    expect(slot.getByTestId("wf-model-row-lp.analyze/assess")).toBeTruthy();
+    // assess goes on in gather's session: it names the session, has no picker of its own and shows gather's model.
+    expect(slot.getByTestId("wf-model-source-lp.analyze/assess").textContent).toContain("same session as gather");
+    expect(slot.queryByTestId("wf-override-row-lp.analyze/assess")).toBeNull();
+    const picker = () => slot.getByTestId("wf-override-row-lp.analyze/gather").querySelector("[data-testid='bb-provider-model-picker']") as PickerNode;
+    const before = picker();
+    expect(slot.getByTestId("wf-model-line-lp.analyze/assess").textContent).toContain(before.getAttribute("data-model")!);
+    // The override of gather is written under the called workflow's id, which is the key the executor reads, and assess follows it.
+    before.__onChange!({ ...before.__value!, providerId: "codex", model: "gpt-6-luna", reasoningLevel: "low" });
+    await waitFor(() => expect(calls.filter((call) => call.method === "workflow_model_override")).toHaveLength(1));
+    expect(calls.find((call) => call.method === "workflow_model_override")!.input).toMatchObject({ projectId, scope: "project", workflowId: "lp.analyze", nodeId: "gather", choice: { providerId: "codex", model: "gpt-6-luna", effort: "low" } });
+    await waitFor(() => expect(slot.getByTestId("wf-override-row-lp.analyze/gather").getAttribute("data-active")).toBe("project"));
+    expect(slot.getByTestId("wf-model-line-lp.analyze/assess").textContent).toContain("gpt-6-luna");
+    expect(slot.getByTestId("wf-model-source-lp.analyze/gather").textContent).toContain("overridden for this project");
+  });
 });

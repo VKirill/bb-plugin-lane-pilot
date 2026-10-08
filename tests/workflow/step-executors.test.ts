@@ -169,3 +169,93 @@ describe("the model catalog", () => {
       .toEqual(["high", "medium", "low", "low", "high", "medium", "unknown", "unknown"]);
   });
 });
+
+describe("a step that goes on in an earlier step's session", () => {
+  const nodes = [
+    { id: "gather", type: "agent", role: "analyst", model_preset: "cheap-fast" },
+    { id: "assess", type: "agent", role: "analyst", provider: "codex", model: "gpt-6-luna" },
+    { id: "again", type: "agent", role: "analyst", provider: "codex", model: "gpt-6-luna", session: "new" },
+    { id: "judge", type: "agent", role: "analyst", provider: "codex", model: "gpt-6-luna" },
+  ];
+  const edges = [
+    { from: "start", to: "gather", pass: "artifact" },
+    { from: "gather", to: "assess", pass: "same-session" },
+    { from: "assess", to: "gather", pass: "same-session" },
+    { from: "assess", to: "again", pass: "same-session" },
+    { from: "again", to: "judge", pass: "read-prior-session" },
+  ];
+  const by = (steps: StepExecutor[]) => Object.fromEntries(steps.map((step) => [step.nodeId, step]));
+
+  it("shows the model of the session it runs in, with the step it inherits from, and cannot be overridden on its own", () => {
+    const steps = by(resolveStepExecutors({ nodes, edges, settings: writer, pm, workflowId: "frag" }));
+    // gather starts a session (the entry), so its own model stands, and the loop back into it changes nothing.
+    expect(steps.gather).toMatchObject({ source: "preset", model: "claude-haiku-5-5" });
+    // assess has only a same-session edge in: its own `codex/gpt-6-luna` is never used; the session is gather's.
+    expect(steps.assess).toMatchObject({ providerId: "claude-code", model: "claude-haiku-5-5", source: "session", sourceKey: "gather", inherited: true, canOverride: false, overridable: false, overrideScope: null });
+    // `session: new` opens its own session even on a same-session edge; read-prior-session reads, it does not continue.
+    expect(steps.again).toMatchObject({ providerId: "codex", model: "gpt-6-luna", source: "node" });
+    expect(steps.judge).toMatchObject({ providerId: "codex", model: "gpt-6-luna", source: "node" });
+  });
+
+  it("follows the chain, and an override of the first step moves the whole session", () => {
+    const chain = [{ id: "a", type: "agent", role: "analyst" }, { id: "b", type: "agent", role: "analyst", model: "x" }, { id: "c", type: "agent", role: "analyst", model: "y" }];
+    const links = [{ from: "start", to: "a" }, { from: "a", to: "b", pass: "same-session" }, { from: "b", to: "c", pass: "same-session" }];
+    const settings = { ...writer, "workflow.model_override.frag/a": { provider: "codex", model: "gpt-6-luna" } };
+    const steps = by(resolveStepExecutors({ nodes: chain, edges: links, settings, pm, workflowId: "frag" }));
+    expect(steps.a).toMatchObject({ source: "override", model: "gpt-6-luna" });
+    expect(steps.b).toMatchObject({ source: "session", sourceKey: "a", model: "gpt-6-luna" });
+    expect(steps.c).toMatchObject({ source: "session", sourceKey: "b", model: "gpt-6-luna" });
+  });
+
+  it("an entry named by `entry` counts as a fresh start; a step whose only same-session source is not an agent keeps its own model", () => {
+    const steps = by(resolveStepExecutors({ nodes: [{ id: "a", type: "agent", role: "analyst", model: "x" }, { id: "lint", type: "action", action: "lint" }, { id: "b", type: "agent", role: "analyst", model: "y" }],
+      edges: [{ from: "a", to: "lint" }, { from: "lint", to: "b", pass: "same-session" }], entry: "a", settings: writer, pm }));
+    expect(steps.b).toMatchObject({ source: "node", model: "y" });
+  });
+
+  it("the built-in lp.analyze: assess runs in gather's session", () => {
+    const analyze = builtinWorkflow("lp.analyze")!;
+    const steps = by(resolveStepExecutors({ nodes: analyze.nodes, edges: analyze.edges, entry: analyze.entry, settings: writer, pm, workflowId: "lp.analyze" }));
+    expect(steps.gather).toMatchObject({ source: "pm" });
+    expect(steps.assess).toMatchObject({ source: "session", sourceKey: "gather", model: steps.gather!.model });
+    // second_opinion arrives by artifact: a session of its own.
+    expect(steps.second_opinion!.source).not.toBe("session");
+  });
+});
+
+describe("the steps of a called workflow", () => {
+  const fragment = {
+    nodes: [{ id: "gather", type: "agent", role: "analyst" }, { id: "assess", type: "agent", role: "analyst" }, { id: "done", type: "action", action: "emit" }],
+    edges: [{ from: "start", to: "gather" }, { from: "gather", to: "assess", pass: "same-session" }, { from: "assess", to: "done" }],
+  };
+  const parent = [{ id: "plan", type: "action", action: "fs.write" }, { id: "analyze", type: "subworkflow", workflow: "lp.analyze" }];
+  const fragments = new Map([["lp.analyze", fragment]]);
+
+  it("are listed under their fragment with the override key the executor reads (<child workflow>/<node>), and the parent's own steps stay as they were", () => {
+    const settings = { ...writer, "workflow.model_override.lp.analyze/gather": { provider: "codex", model: "gpt-6-luna", reasoning_effort: "low" } };
+    const steps = resolveStepExecutors({ nodes: parent, settings, pm, workflowId: "analyze-code", fragments, ownKeys: new Set(["workflow.model_override.lp.analyze/gather"]) });
+    expect(steps.filter((step) => !step.fragment).map((step) => step.nodeId)).toEqual(["plan", "analyze"]);
+    const inside = steps.filter((step) => step.fragment);
+    expect(inside.map((step) => [step.fragment, step.nodeId])).toEqual([[{ nodeId: "analyze", workflowId: "lp.analyze" }, "gather"], [{ nodeId: "analyze", workflowId: "lp.analyze" }, "assess"], [{ nodeId: "analyze", workflowId: "lp.analyze" }, "done"]]);
+    expect(inside[0]).toMatchObject({ source: "override", sourceKey: "workflow.model_override.lp.analyze/gather", model: "gpt-6-luna", canOverride: true, overrideScope: "project" });
+    // assess is in gather's session, so the override of gather moves it too.
+    expect(inside[1]).toMatchObject({ source: "session", sourceKey: "gather", model: "gpt-6-luna", canOverride: false });
+  });
+
+  it("a nested call is followed, a cycle and a missing workflow are not", () => {
+    const inner = { nodes: [{ id: "deep", type: "agent", role: "analyst" }, { id: "back", type: "subworkflow", workflow: "outer" }, { id: "gone", type: "subworkflow", workflow: "nope" }], edges: [] };
+    const outer = { nodes: [{ id: "mid", type: "subworkflow", workflow: "inner" }], edges: [] };
+    const steps = resolveStepExecutors({ nodes: [{ id: "top", type: "subworkflow", workflow: "outer" }], settings: writer, pm, workflowId: "root", fragments: new Map<string, { nodes: unknown[]; edges: unknown[] }>([["outer", outer], ["inner", inner]]) });
+    // `outer` is called from `top`, `inner` from `mid` inside it; `back` would call `outer` again (a cycle) and `nope` does not exist: neither adds steps.
+    expect(steps.filter((step) => step.fragment && step.mode !== "none").map((step) => [step.fragment!.workflowId, step.nodeId])).toEqual([["inner", "deep"]]);
+    expect(steps.map((step) => step.nodeId)).toEqual(["top", "mid", "deep", "back", "gone"]);
+    expect(steps.find((step) => step.nodeId === "deep")!.fragment).toEqual({ nodeId: "top", workflowId: "inner" });
+  });
+
+  it("a fragment's step has its override key even when the caller is a draft without an id, and a call the library cannot find adds nothing", () => {
+    const steps = resolveStepExecutors({ nodes: parent, settings: { ...writer, "workflow.model_override.lp.analyze/gather": { provider: "codex", model: "gpt-6-luna" } }, pm, fragments });
+    expect(steps.find((step) => step.nodeId === "gather")).toMatchObject({ source: "override", canOverride: true, overrideScope: "global" });
+    expect(steps.find((step) => step.nodeId === "plan")).toMatchObject({ canOverride: false });
+    expect(resolveStepExecutors({ nodes: parent, settings: writer, pm }).map((step) => step.nodeId)).toEqual(["plan", "analyze"]);
+  });
+});
