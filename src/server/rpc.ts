@@ -18,10 +18,11 @@ import { canaryRpc } from "./canary";
 import { sessionMemoryRpc } from "./session-memory";
 import { createWorkflowArchitect } from "./workflow-architect";
 import { architectStartRpc } from "./architect-start";
+import { timeRpcHandlers } from "./rpc-timing";
 
 /** One handler object from the five groups; each group carries the exact contract keys it implements. */
 export function registerRpc(ctx: ServerCore, services: Services) {
-  ctx.bb.rpc.register(rpcContract, {
+  ctx.bb.rpc.register(rpcContract, timeRpcHandlers({
     ...preferencesRpc(ctx, services),
     ...runsRpc(ctx, services),
     ...settingsRpc(ctx, services),
@@ -39,5 +40,5 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...sessionMemoryRpc(ctx, services),
     ...createWorkflowArchitect(ctx, services).rpc,
     ...architectStartRpc(ctx, services),
-  });
+  }, (message) => ctx.bb.log.debug(message)));
 }
