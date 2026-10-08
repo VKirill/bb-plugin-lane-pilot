@@ -41,12 +41,18 @@ export type CanaryReport = {
   rate: number;
   tripped: boolean;
   samples: CanaryFault[];
-  budget: { days: number; attempts: number; faults: number; rate: number; limit: number; exhausted: boolean };
+  /** `faults` are the harness faults and the dirty-base ones (`dirtyBase` says how many of them). */
+  budget: { days: number; attempts: number; faults: number; dirtyBase: number; rate: number; limit: number; exhausted: boolean };
   previousVersion: string | null;
   rollback: string | null;
 };
 
 const asFault = (row: Row): boolean => row.state !== "accepted" && failureClass(row.state, row.reason) === "harness";
+/**
+ * A merge refused over uncommitted edits in the base checkout: the work did not land, so the 7-day budget counts it, but no
+ * release caused it, so the version's canary does not (audit 2026-10-08 round 2, B5: as a free `merge` it was in neither).
+ */
+const asBudgetFault = (row: Row): boolean => row.state !== "accepted" && ["harness", "dirty_base"].includes(failureClass(row.state, row.reason));
 
 function selectFinished(db: LanePilotDatabase, where: string, args: unknown[]): Row[] {
   return db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, r.project_id, r.pm_thread_id FROM lane_pilot_attempt a
@@ -62,7 +68,8 @@ export function canaryReport(db: LanePilotDatabase, input: { version: string; si
   const minutes = Math.floor((now - since) / 60_000);
   const rate = own.length ? faultRows.length / own.length : 0;
   const week = selectFinished(db, "a.created_at>=?", [now - BUDGET_DAYS * 86_400_000]);
-  const weekFaults = week.filter(asFault).length;
+  const weekFaults = week.filter(asBudgetFault).length;
+  const weekDirtyBase = week.filter((row) => row.state !== "accepted" && failureClass(row.state, row.reason) === "dirty_base").length;
   const weekRate = week.length ? weekFaults / week.length : 0;
   const previous = db.prepare("SELECT harness_version FROM lane_pilot_attempt WHERE harness_version IS NOT NULL AND harness_version<>? AND created_at<? ORDER BY created_at DESC LIMIT 1")
     .get(version, since) as { harness_version: string } | undefined;
@@ -72,7 +79,7 @@ export function canaryReport(db: LanePilotDatabase, input: { version: string; si
     window: { open: own.length < CANARY_MAX_ATTEMPTS && minutes < CANARY_MAX_MINUTES, attempts: own.length, minutes, maxAttempts: CANARY_MAX_ATTEMPTS, maxMinutes: CANARY_MAX_MINUTES },
     faults: faultRows.length, rate, tripped,
     samples: faultRows.slice(0, 5).map((row) => ({ projectId: row.project_id, runId: row.run_id, taskId: row.task_id, pmThreadId: row.pm_thread_id, reason: (row.reason ?? row.state).slice(0, 200) })),
-    budget: { days: BUDGET_DAYS, attempts: week.length, faults: weekFaults, rate: weekRate, limit: ERROR_BUDGET, exhausted: week.length >= BUDGET_MIN_ATTEMPTS && weekRate > ERROR_BUDGET },
+    budget: { days: BUDGET_DAYS, attempts: week.length, faults: weekFaults, dirtyBase: weekDirtyBase, rate: weekRate, limit: ERROR_BUDGET, exhausted: week.length >= BUDGET_MIN_ATTEMPTS && weekRate > ERROR_BUDGET },
     previousVersion: previous?.harness_version ?? null,
     rollback: previous ? rollbackCommand(previous.harness_version) : null,
   };

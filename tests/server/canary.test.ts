@@ -44,6 +44,21 @@ describe("canaryReport on reasons from the hub", () => {
   });
 });
 
+describe("a dirty base checkout (audit 2026-10-08 round 2, B5)", () => {
+  const dirty = "merge_failed: git merge failed: error: Your local changes to the following files would be overwritten by merge:\n  .agents/PROGRESS.md";
+  it("is in the 7-day error budget, under its own count, but never trips the version's canary", () => {
+    const { db, attempt } = setup();
+    for (let i = 0; i < 14; i += 1) attempt("accepted");
+    for (let i = 0; i < 4; i += 1) attempt("validation_failed", dirty);
+    const report = canaryReport(db, { version: VERSION, since: Date.now() - 3600_000, now: Date.now() });
+    expect(report.budget).toMatchObject({ attempts: 18, faults: 4, dirtyBase: 4 });
+    expect(report).toMatchObject({ faults: 0, tripped: false });
+    for (let i = 0; i < 2; i += 1) attempt("accepted");
+    const full = canaryReport(db, { version: VERSION, since: Date.now() - 3600_000, now: Date.now() });
+    expect(full.budget).toMatchObject({ attempts: 20, faults: 4, dirtyBase: 4, exhausted: true });
+  });
+});
+
 describe("canaryReport", () => {
   it("counts the own faults of the version's first attempts and trips on three above the budget", () => {
     const { db, attempt } = setup();
@@ -128,7 +143,7 @@ describe("canary check", () => {
 
   it("alert text carries the count, the rate and a sample", () => {
     const text = canaryAlertText({ version: "0.1.9", since: 0, window: { open: true, attempts: 10, minutes: 5, maxAttempts: 20, maxMinutes: 120 }, faults: 4, rate: 0.4, tripped: true,
-      samples: [{ projectId: "p", runId: "r", taskId: "T1", pmThreadId: "pm", reason: "merge_failed: x" }], budget: { days: 7, attempts: 10, faults: 4, rate: 0.4, limit: 0.05, exhausted: false },
+      samples: [{ projectId: "p", runId: "r", taskId: "T1", pmThreadId: "pm", reason: "merge_failed: x" }], budget: { days: 7, attempts: 10, faults: 4, dirtyBase: 0, rate: 0.4, limit: 0.05, exhausted: false },
       previousVersion: null, rollback: null });
     expect(text).toContain("4 of the first 10 attempts");
     expect(text).toContain("40%");

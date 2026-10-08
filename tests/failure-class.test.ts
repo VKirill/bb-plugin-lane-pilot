@@ -193,8 +193,14 @@ describe("reasons from the hub that were counted as Lane Pilot's own faults", ()
 });
 
 describe("hub 2026-10-08 budget rows that are not Lane Pilot faults", () => {
-  it("reads a merge refused over the owner's uncommitted edits as a merge, and an unsafe contract path as the PM's contract", () => {
-    expect(failureClass("validation_failed", "merge_failed: git merge failed: error: Your local changes to the following files would be overwritten by merge:\n  .agents/PROGRESS.md")).toBe("merge");
+  it("reads a merge refused over uncommitted edits in the base as a dirty base (parked, not redone), and an unsafe contract path as the PM's contract", () => {
+    expect(failureClass("validation_failed", "merge_failed: git merge failed: error: Your local changes to the following files would be overwritten by merge:\n  .agents/PROGRESS.md")).toBe("dirty_base");
+    expect(failureClass("blocked", "base checkout has uncommitted changes in files this attempt also changes")).toBe("dirty_base");
+    expect(failureClass("blocked", "merge_blocked: base checkout has uncommitted changes in files this task changes: owner.ts")).toBe("contract");
+    expect(failureClass("validation_failed", "merge_conflict: src/a.ts")).toBe("merge");
+    expect(FREE_CLASSES.has("dirty_base")).toBe(true);
+    expect(PARKED_CLASSES.has("dirty_base")).toBe(true);
+    expect(nextStep("validation_failed", "merge_failed: ... would be overwritten by merge")).toMatch(/commit or discard them there/);
     expect(failureClass("blocked", "ownership run scope invalid: run task wp-drafts-login-catalog: unsafe owns_paths ../bb-plugin-env-catalog/")).toBe("contract");
     expect(failureClass("blocked", "merge_failed: git merge failed: fatal: refusing to merge unrelated histories")).toBe("harness");
   });

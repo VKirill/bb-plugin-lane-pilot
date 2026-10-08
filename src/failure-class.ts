@@ -2,6 +2,10 @@
  * Which side a failed writer attempt is on, so the reaction fits the cause (Kubernetes podFailurePolicy, Buildkite
  * automatic retry, Temporal non-retryable errors): only `task` and `provider` failures spend the task's two attempts.
  * - merge: main moved while the task ran; redone on the new main for free.
+ * - dirty_base: git refused the merge over uncommitted edits in the base checkout (the owner's, or bookkeeping Lane Pilot left
+ *   there). Another writer run cannot clear them, so the task is parked like an infra fault, backed off and restarted after the
+ *   edits are committed; it is uncharged, and it counts in the 7-day error budget (the work did not land) without tripping
+ *   the version's canary (a release did not cause it).
  * - harness: Lane Pilot's own fault; the task is parked and restarts by itself once a fix ships.
  * - infra: the machine (disk, git lock, host offline); parked and retried with a backoff.
  * - contract, judgment: the PM's to fix or answer; never retried as is.
@@ -10,7 +14,7 @@
  * - limit: the writer's provider takes no work now (plan, quota, credits, or its breaker is open); uncharged, the task
  *   moves down the writer chain at once.
  */
-export type FailureClass = "task" | "provider" | "merge" | "harness" | "infra" | "contract" | "judgment" | "budget" | "limit";
+export type FailureClass = "task" | "provider" | "merge" | "dirty_base" | "harness" | "infra" | "contract" | "judgment" | "budget" | "limit";
 
 import { cleanCheckOutput } from "./output-excerpt";
 import { NO_ANSWER_REASON } from "./validate-output";
@@ -46,7 +50,7 @@ const HARNESS = /internal_error|merge_failed|merge_queue_timeout|ownership run s
 const NO_GIT = /not a git repository|no-git mode/i;
 const CONTRACT = /^merge_blocked:|^missing expected_outputs|output_unowned|depends_on .*(ended|no such task)|plan critique|critique_blocked/i;
 const BUDGET = /^run_budget_exceeded:/;
-/** git refused a merge over someone's uncommitted edits in the base checkout: a dirty base, the merge waits for a commit — not a fault of Lane Pilot. */
+/** git refused a merge over someone's uncommitted edits in the base checkout: a dirty base, the merge waits for a commit — a writer cannot clear it. */
 const DIRTY_BASE = /would be overwritten by merge|base checkout has uncommitted changes/i;
 /** A run task whose contract names an unsafe path (`../other-repo/`): the PM's contract to fix, not Lane Pilot's fault. */
 const UNSAFE_CONTRACT = /ownership run scope invalid: run task [^:]+: unsafe/i;
@@ -73,7 +77,8 @@ export function failureClass(state:string, reason:string | null | undefined):Fai
   if (LIMIT.test(text)) return "limit";
   if (SILENT.test(text)) return "provider";
   if (NO_GIT.test(text) || WAITING_SECRET.test(text)) return "contract";
-  if (MERGE.test(text) || (DIRTY_BASE.test(text) && !/^merge_blocked:/.test(text))) return "merge";
+  if (MERGE.test(text)) return "merge";
+  if (DIRTY_BASE.test(text) && !/^merge_blocked:/.test(text)) return "dirty_base";
   if (UNSAFE_CONTRACT.test(text)) return "contract";
   if (INFRA.test(text) || isEnvironmentReason(text)) return "infra";
   // The words of HARNESS (EROFS, spawn failed, …) in a check's output belong to the check (hub: a red vitest printing EROFS counted as a fault).
@@ -131,7 +136,7 @@ export const isEnvironmentCheckFailure = (check:{ stdout?:string; stderr?:string
 };
 
 /** Failures that do not spend one of the task's attempts. */
-export const FREE_CLASSES:ReadonlySet<FailureClass> = new Set(["merge", "harness", "infra", "budget", "limit"]);
+export const FREE_CLASSES:ReadonlySet<FailureClass> = new Set(["merge", "dirty_base", "harness", "infra", "budget", "limit"]);
 /** What the PM does next about a task that did not end accepted, by its failure class; shown in wait receipts. */
 export function nextStep(state:string, reason:string | null | undefined):string {
   if (["queued", "running", "spawn_requested", "validating"].includes(state)) return "wait: the writer is still on it";
@@ -144,6 +149,7 @@ export function nextStep(state:string, reason:string | null | undefined):string 
     case "harness": case "infra": return "parked: restarts by itself once the fault clears; do nothing";
     case "limit": return "moves down the writer chain by itself; do nothing";
     case "merge": return "redone on the new main by itself; do nothing";
+    case "dirty_base": return "the main checkout has uncommitted changes in files this task changes (see the reason): commit or discard them there; the task is parked and restarts by itself after a backoff (three tries), then redispatch it";
     case "contract": return "fix the contract: lane_pilot_update_task if it has not started, else dispatch it again with the changed contract";
     case "budget": return "the run hit its budget: raise run.max_* or finish the run";
     default: return "its writer session ended without green checks: read the reason, fix the plan or contract and dispatch it again";
@@ -157,7 +163,7 @@ export function liveFolderLockNote(state:string, reason:string | null | undefine
 }
 
 /** Parked failures: the task waits for a fix or the machine, then restarts by itself. */
-export const PARKED_CLASSES:ReadonlySet<FailureClass> = new Set(["harness", "infra"]);
+export const PARKED_CLASSES:ReadonlySet<FailureClass> = new Set(["harness", "infra", "dirty_base"]);
 /** Free retries a task may take on top of its two attempts, so a repeating free failure still ends. */
 export const FREE_RETRY_LIMIT = 3;
 

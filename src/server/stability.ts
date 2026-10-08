@@ -132,7 +132,7 @@ export function createStability(ctx:ServerCore, services:Services) {
     await saveParked([...list.filter((row) => row !== previous), entry]);
     bb.log.info(`Lane Pilot parked ${input.taskId} (${klass}: ${fingerprint})`);
     if (waitingSecret) notePm(input.pmThreadId, `${input.taskId} waits for a secret its checks need (${input.reason.slice(0, 160)}); call env_request for it, or ask the owner to allow it in secrets.allow. It restarts by itself once the access is in place, no attempt is spent.`);
-    else notePm(input.pmThreadId, `${input.taskId} hit ${klass === "harness" ? "a Lane Pilot fault" : "a machine fault"} (${input.reason.slice(0, 160)}); it is parked and restarts by itself ${klass === "harness" ? "once the fix ships" : "after a short wait"}.`);
+    else notePm(input.pmThreadId, `${input.taskId} hit ${klass === "harness" ? "a Lane Pilot fault" : klass === "dirty_base" ? "a dirty base checkout (uncommitted changes there that its merge would overwrite: commit or discard them)" : "a machine fault"} (${input.reason.slice(0, 160)}); it is parked and restarts by itself ${klass === "harness" ? "once the fix ships" : "after a short wait"}.`);
     return true;
   }
 
@@ -195,8 +195,8 @@ export function createStability(ctx:ServerCore, services:Services) {
         continue;
       }
       if (waiting ? !await secretsReady(row) : (!dueForRedrive(row, now) || count >= REDRIVE_PER_SWEEP || breakerHolds(row.projectId, now))) {
-        if (row.klass === "infra" && row.redrives >= INFRA_REDRIVE_LIMIT) {
-          notePm(row.pmThreadId, `${row.taskId} still fails on a machine fault after ${INFRA_REDRIVE_LIMIT} retries (${row.reason.slice(0, 160)}); redispatch it once the machine is fixed.`);
+        if ((row.klass === "infra" || row.klass === "dirty_base") && row.redrives >= INFRA_REDRIVE_LIMIT) {
+          notePm(row.pmThreadId, `${row.taskId} still fails on ${row.klass === "dirty_base" ? "a dirty base checkout" : "a machine fault"} after ${INFRA_REDRIVE_LIMIT} retries (${row.reason.slice(0, 160)}); redispatch it once ${row.klass === "dirty_base" ? "the changes in the main checkout are committed or discarded" : "the machine is fixed"}.`);
           continue;
         }
         keep.push(row);
