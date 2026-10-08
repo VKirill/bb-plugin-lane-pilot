@@ -104,6 +104,8 @@ const task:TaskV2 = {
   verification:[{ command:"test -f note.txt", cwd:config.writerWorkspacePath, timeout_sec:30 }],
 };
 
+/** Threads the fake BB answers "Thread not found" for, like a deleted chat. */
+const goneThreads=new Set<string>();
 async function setup(critiqueOutput:string, browserQaResult?:Record<string,unknown>|((input:unknown)=>Promise<Record<string,unknown>>), projectSettings:Record<string,unknown>={}, specialistOutput='{"decision":"approve","summary":"No unmitigated critical risk","risks":[]}', environmentId?:string, memoryOutput='[{"kind":"core","content":"Durable deployment convention uses managed workspaces","concepts":["deployment","workspace"]}]', nightOutput='{"decision":"clear","summary":"No actionable findings","findings":[]}', nightFixOutput="bounded fix applied", snapshotOverrides?:Array<Array<Record<string,string>>>, readFirstUnavailable=false, writerFailures=0, emergencySelection?:{providerId:string;model:string}, pmReadOutput='{"summary":"README notes the managed workspace contract.","keyFacts":["Managed workspaces isolate task edits."],"openQuestions":[]}', onboardingOutput?:string, writerControl:{hold:boolean;snapshots?:Array<Array<Record<string,string>>>;states:Map<string,"active"|"idle">}={hold:false,states:new Map()}, idleWaitThrowThreadId?:string, startingTurnCompletedThreadId?:string, eventsListThrowThreadId?:string, docsHoldEvents=false, docsControl:{inventoryGate?:Promise<void>;pages?:()=>Array<{path:string;modifiedAt:number;sha256:string;content:string}>;output?:string}={}, holdEventThreadIds:string[]=[], codeCritiqueOutputs?:string[], codeRepairOutput?:string) {
   docsEventsHeld=false;
   extraListPaths=[];
@@ -189,6 +191,7 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
           return { matched:true, thread:{ status:"idle" } };
         },
         get:async ({ threadId }) => {
+          if(goneThreads.has(threadId)) throw new Error("HTTP 404: Thread not found");
           const parentIdentity={projectId,sourceThreadId:pmThreadId,lifecycleOwnerThreadId:pmThreadId};
           if(startingTurnCompletedThreadId && threadId===startingTurnCompletedThreadId) {
             return { id:threadId, status:"starting", queuedWork:"none", ...parentIdentity };
@@ -977,6 +980,29 @@ describe("stage → native writer → receipt", () => {
     db.prepare("UPDATE lane_pilot_task SET kind='cli' WHERE id=?").run(task.id);
     await harness.runSchedule("docs-maintenance-hourly");
     expect(harness.logEntries.some((entry)=>entry.level==="warn"&&entry.message.includes(`Lane Pilot docs maintenance failed for project ${projectId}`))).toBe(true);
+    await harness.lifecycle.dispose();
+  });
+  // 2026-10-08: the PM chat of an accepted run was deleted; every hour maintenance threw "Thread not found" and the receipt stayed running (hub, layout-A3).
+  it("hourly docs schedule closes a receipt left running when the PM chat is gone instead of failing every hour",async()=>{
+    const {db,harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
+      "docs.enabled":true,"docs.maintain":true,"docs.since":"7 days ago","docs.page_cap":3,"docs.hour":(new Date().getHours()+1)%24,
+      "docs.provider":"critic","docs.model":"critic-model",
+    });
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,plan:"Write and verify the fixture",task},{threadId:pmThreadId,projectId});
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
+    claimActivation(db,{projectId,pmThreadId,runId:"stage-run"});
+    saveStageReceipt(db,{
+      runId:"stage-run",taskId:task.id,stageId:"docs-maintenance",contractVersion:1,state:"running",
+      inputSha256:"a".repeat(64),outputSha256:null,attempt:0,providerId:"critic",model:"critic-model",
+      threadId:null,reason:"docs_spawn_requested",updatedAt:Date.now(),result:null,
+    });
+    goneThreads.add(pmThreadId);
+    try{
+      await harness.runSchedule("docs-maintenance-hourly");
+      expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="docs-maintenance")).toMatchObject({state:"canceled",reason:"pm_chat_gone"});
+      await harness.runSchedule("docs-maintenance-hourly");
+      expect(harness.logEntries.some((entry)=>entry.level==="warn"&&entry.message.includes("docs maintenance failed"))).toBe(false);
+    } finally { goneThreads.delete(pmThreadId); }
     await harness.lifecycle.dispose();
   });
   it("returns a read-only onboarding preview, then applies only the exact reviewed hash with a receipt",async()=>{

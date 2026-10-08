@@ -9,7 +9,8 @@ import type { DocsCadence, DocsVerdict, DocsWorthinessFacts } from "../stages/do
 import { blockingDocsFindings, buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDesignCanon, isDocsIndex, lintDocsPages, pagesToRefresh, unlinkedPages, withCitedSources, withVerifiedConfidence } from "../stages/docs-lint";
 import { configuredSetting } from "./context";
 import { fullAccessSpawn } from "./pm-spawn";
-import { stringAt } from "./values";
+import { stringAt, valueAt } from "./values";
+import { recordStage } from "./stage-records";
 import { sleepUntilThreadSignal, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { basename, resolve } from "node:path";
 import { abortable, scheduleIsolated } from "./schedules";
@@ -653,6 +654,17 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
         return !docs || docs.state==="pending" || docs.state==="running";
       });
       if(!taskId) continue;
+      // The PM chat of the run is gone (deleted or archived): maintenance reads it first and would throw "Thread not found"
+      // every hour, leaving the receipt running for good (hub, 2026-10-08, layout-A3). The open receipts end canceled.
+      const pm=await bb.sdk.threads.get({threadId:activation.pm_thread_id}).then((value)=>value as unknown,(cause:unknown)=>/\b404\b|not.?found/i.test(cause instanceof Error?cause.message:String(cause))?null:undefined);
+      if(pm===null||(pm!==undefined&&valueAt(pm,"archivedAt")!=null)){
+        for(const candidate of new Set(runHistory?.attempts.map((item)=>item.task_id))){
+          const open=listStageReceipts(db,run.id,candidate).find((receipt)=>receipt.stageId==="docs-maintenance"&&(receipt.state==="pending"||receipt.state==="running"));
+          if(open) recordStage(db,{runId:run.id,taskId:candidate,stageId:"docs-maintenance",state:"canceled",input:"pm_chat_gone",providerId:open.providerId,model:open.model,threadId:open.threadId,reason:"pm_chat_gone"});
+        }
+        bb.log.info(`Lane Pilot docs maintenance for project ${projectId} skipped: the PM chat ${activation.pm_thread_id} of run ${run.id} is gone`);
+        continue;
+      }
       const docs=listStageReceipts(db,run.id,taskId).find((receipt)=>receipt.stageId==="docs-maintenance");
       const resume=docs?.state==="pending"||docs?.state==="running";
       if(!resume) {
