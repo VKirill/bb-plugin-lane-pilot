@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
-import { extractRoutes, type RouteRef } from "./docs-flows";
+import { extractRoutes, type RouteRef } from "./docs-routes";
 import { parsePrisma, prismaAccess, renderDataMap } from "./docs-data";
 import { expandCitationLists } from "../stages/docs-lint";
 import { promisify } from "node:util";

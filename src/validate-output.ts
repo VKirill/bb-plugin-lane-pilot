@@ -1,5 +1,5 @@
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "./owns-paths";
-import { ENVIRONMENT_REASON, isEnvironmentCheckFailure } from "./failure-class";
+import { ENVIRONMENT_REASON, NO_ANSWER_REASON, isEnvironmentCheckFailure } from "./failure-class";
 import { cleanCheckOutput } from "./output-excerpt";
 import type { TaskV2 } from "./contracts";
 
@@ -45,8 +45,7 @@ export function isMainfixTask(taskId: string): boolean {
   return /-mainfix(\.\d+)*$/.test(taskId);
 }
 
-/** The reason recorded when the writer gave no answer at all; the only empty_output that reads as a provider fault. */
-export const NO_ANSWER_REASON = "writer returned no output";
+export { NO_ANSWER_REASON };
 
 export function classifyWriterOutput(input: {
   task: TaskV2;

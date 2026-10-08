@@ -17,7 +17,9 @@
 export type FailureClass = "task" | "provider" | "merge" | "dirty_base" | "harness" | "infra" | "contract" | "judgment" | "budget" | "limit";
 
 import { cleanCheckOutput } from "./output-excerpt";
-import { NO_ANSWER_REASON } from "./validate-output";
+
+/** The reason recorded when the writer gave no answer at all; the only empty_output that reads as a provider fault. */
+export const NO_ANSWER_REASON = "writer returned no output";
 
 const JUDGMENT = /needs_human/i;
 const MERGE = /(^|: )merge_conflict/i;
