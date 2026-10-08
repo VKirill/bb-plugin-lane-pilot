@@ -2,6 +2,14 @@
 """Sandbox drill (E3): the live regression check run before every Lane Pilot deploy. Entry point: scripts/lp-drill.sh.
 
 Scenarios (each writes its verdict into the receipt, .agents/runs/drills/<date>.json):
+  guard_hash     the installed shell guard (~/.agents/hooks/guard_shell.py and lib_payload.py) on the Mac mini, the MacBook and OVH
+                 is byte for byte the repository's copy (lane-stack/hooks). A drifted or missing copy fails the drill and the
+                 receipt lists the install command per machine; --repair-guard (or LP_DRILL_REPAIR_GUARD=1) installs the
+                 repository copy and checks it again. A machine that cannot be reached is noted, not failed          [--quick]
+  helper_providers one helper per provider in use (claude-code, codex, acp-opencode, and acp-cursor when a setting names it), each
+                 started the way the pm-read stage starts its helper (`bb lane-pilot helper-probe`) with a prompt that asks for
+                 one word: each must start and answer. A provider that refuses its helpers fails the drill (0.1.194 refused
+                 every OpenCode helper for six minutes and the writer-only drill stayed green)                       [--quick]
   parallel3      3 parallel, non-overlapping tasks (risk high): each accepted, each in a worktree of its own        [--quick]
   conflict       two tasks own the same file and rewrite the same line: both end, both accepted, no conflict markers left
   main_moved     main gets a commit while a writer works: the merge is rebased and keeps both
@@ -12,13 +20,13 @@ Scenarios (each writes its verdict into the receipt, .agents/runs/drills/<date>.
                  holder thread, own worktree). A silent fallback to the old path fails it: a broken provider must not ship
   nogit          a project whose folder is not a git repo (live-folder mode): accepted, file in the folder, no .git created
 
-Usage: scripts/lp-drill.sh [--quick] [--scenario a,b] [--dry-run]
-  --quick      parallel3 only (what bb-plugin-push runs before a deploy)
+Usage: scripts/lp-drill.sh [--quick] [--scenario a,b] [--dry-run] [--repair-guard]
+  --quick      the scenarios marked [--quick] (what bb-plugin-push runs before a deploy)
   --scenario   only the named scenarios
   --dry-run    print the tasks, change nothing
 Exit: 0 pass, 1 a scenario failed (the receipt says why), 2 could not start. The last stdout line is `RECEIPT=<path>`.
 Settings (env): LP_DRILL_TIMEOUT_MIN (20, per scenario), LP_DRILL_PROJECT, LP_DRILL_ENVIRONMENT, LP_DRILL_CWD,
-LP_DRILL_NOGIT_PROJECT, LP_DRILL_NOGIT_ENVIRONMENT, LP_DRILL_NOGIT_CWD, LP_DRILL_BAD_MODEL, BB_CLI, BB_HUB_HOST, BB_HUB_KEY.
+LP_DRILL_PROVIDERS (`provider=model,...` instead of the providers read from the sandbox project's settings), LP_DRILL_GUARD_HOSTS (JSON list of machines for guard_hash), LP_DRILL_RECEIPT_DIR, LP_DRILL_NOGIT_PROJECT, LP_DRILL_NOGIT_ENVIRONMENT, LP_DRILL_NOGIT_CWD, LP_DRILL_BAD_MODEL, BB_CLI, BB_HUB_HOST, BB_HUB_KEY.
 """
 from __future__ import annotations
 
@@ -52,7 +60,12 @@ OPEN_STATES = ("queued", "spawn_requested", "spawn_unknown", "running")
 TERMINAL = ("accepted", "blocked", "canceled")
 STAMP = time.strftime("%Y%m%d-%H%M%S")
 DATE = time.strftime("%Y-%m-%d")
-ALL = ["parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit"]
+ALL = ["guard_hash", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit"]
+QUICK = ["guard_hash", "helper_providers", "parallel3"]
+# What a provider runs when no setting of the sandbox project names a model for it.
+PROVIDER_FALLBACK_MODEL = {"claude-code": "claude-sonnet-5-5", "codex": "gpt-6-luna", "acp-opencode": "zai-coding-plan/glm-5.3-flash"}
+# Scenarios that need no PM and no run of their own: they run before the PM starts (guard_hash) or on a project of their own (nogit).
+STANDALONE = ("guard_hash", "nogit")
 
 
 def log(message: str) -> None:
@@ -347,6 +360,61 @@ def scenario_parallel3(ctx: Context) -> dict:
                    dispatch={s["id"]: ctx.dispatches.get(s["id"]) for s in specs})
 
 
+def providers_in_use(project: str) -> dict[str, str]:
+    """provider id -> a model it runs in this project: the pairs of the project's settings (`<stage>.provider` with `<stage>.model`,
+    the PM model, the writer), then a fallback model for the three providers every install has. acp-cursor only when a setting names it."""
+    override = os.environ.get("LP_DRILL_PROVIDERS", "").strip()
+    if override:
+        return dict(pair.split("=", 1) for pair in override.split(",") if "=" in pair)
+    rows = hubsql(f"select key, value from lane_pilot_project_settings where project_id='{project}' and binding_id='' and (key like '%.provider' or key like '%.model' or key in ('pmModel', 'writerProviderId', 'writerModel', 'pmProviderId'));")
+    values = {}
+    for row in rows:
+        try:
+            values[row["key"]] = json.loads(row["value"])
+        except ValueError:
+            continue
+    found: dict[str, str] = {}
+
+    def add(provider: object, model: object) -> None:
+        if isinstance(provider, str) and provider and isinstance(model, str) and model:
+            found.setdefault(provider, model)
+
+    for key, value in values.items():
+        if key.endswith(".provider"):
+            add(value, values.get(key[: -len(".provider")] + ".model"))
+    add(values.get("pmProviderId", "claude-code"), values.get("pmModel"))
+    add(values.get("writerProviderId"), values.get("writerModel"))
+    for provider, model in PROVIDER_FALLBACK_MODEL.items():
+        found.setdefault(provider, model)
+    return found
+
+
+def scenario_helper_providers(ctx: Context) -> dict:
+    """A helper on each provider in use starts and answers (audit 2026-10-08 round 3, P0-7)."""
+    pairs = providers_in_use(ctx.project)
+
+    def probe(item: tuple[str, str]) -> dict:
+        provider, model = item
+        rc, out, err = bb("lane-pilot", "helper-probe", ctx.project, ctx.run_id, provider, model, timeout=240)
+        try:
+            answer = json.loads(out)
+        except ValueError:
+            answer = {}
+        if not isinstance(answer, dict) or "ok" not in answer:
+            answer = {"ok": False, "started": False, "answered": False, "reason": (err or out).strip()[:300] or f"exit {rc}"}
+        return {"provider": provider, "model": model, **{k: answer.get(k) for k in ("ok", "started", "answered", "threadId", "output", "reason", "ms")}}
+
+    with ThreadPoolExecutor(max(1, len(pairs))) as pool:
+        results = list(pool.map(probe, pairs.items()))
+    problems = []
+    for item in results:
+        log(f"helper on {item['provider']} ({item['model']}): started={item['started']} answered={item['answered']} {item['reason'] or ''}")
+        if not item["ok"]:
+            what = "did not start" if not item["started"] else "started but did not answer"
+            problems.append(f"{item['provider']} ({item['model']}): a helper {what}: {item['reason'] or 'no reason given'}")
+    return verdict("helper_providers", problems, providers=results)
+
+
 def task_provider(cwd: str) -> dict:
     return note_task(f"drill-{STAMP}-provider", f"notes/drill/{STAMP}-provider.md", f"Drill {STAMP} provider", cwd)
 
@@ -486,6 +554,129 @@ def scenario_reload(ctx: Context) -> dict:
     return verdict("reload", problems, tasks=[row])
 
 
+GUARD_FILES = ("guard_shell.py", "lib_payload.py")
+GUARD_REPO = ROOT / "lane-stack" / "hooks"
+
+
+def guard_machines() -> list[dict]:
+    """The machines whose installed guard is compared with the repository's. kind: local (this machine), bb (bb file read/write --host), ssh."""
+    raw = os.environ.get("LP_DRILL_GUARD_HOSTS")
+    if raw:
+        return json.loads(raw)
+    return [
+        {"name": "mac-mini", "kind": "local", "home": str(Path.home())},
+        {"name": "macbook", "kind": "bb", "host": os.environ.get("LP_DRILL_MACBOOK_HOST", "host_p7jhrgsapq"), "home": os.environ.get("LP_DRILL_MACBOOK_HOME", "/Users/vechkasov")},
+        {"name": "ovh", "kind": "ssh", "host": os.environ.get("LP_DRILL_OVH_SSH", "ovh-main")},
+    ]
+
+
+def sha256_of(data: bytes) -> str:
+    import hashlib
+    return hashlib.sha256(data).hexdigest()
+
+
+GONE = ("enoent", "no such file", "not found", "does not exist")
+
+
+def guard_read(machine: dict, name: str) -> tuple[bytes | None, str | None]:
+    """(content, None) when read, (None, 'missing') when the machine answers that the file is not there, (None, why) when it cannot be asked."""
+    kind = machine["kind"]
+    if kind == "local":
+        try:
+            return (Path(machine["home"]) / ".agents/hooks" / name).read_bytes(), None
+        except FileNotFoundError:
+            return None, "missing"
+        except OSError as cause:
+            return None, str(cause)
+    if kind == "bb":
+        rc, out, err = bb("file", "read", "--host", machine["host"], f"{machine['home']}/.agents/hooks/{name}", "--json", timeout=60)
+        if rc == 0:
+            try:
+                return str(json.loads(out)["content"]).encode(), None
+            except (ValueError, KeyError, TypeError):
+                return None, f"unreadable answer: {out[:120]}"
+        text = (err + out).lower()
+        return None, "missing" if any(word in text for word in GONE) else (err or out).strip()[:200] or f"exit {rc}"
+    rc, out, err = run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", machine["host"], f"cat ~/.agents/hooks/{name}"], timeout=60)
+    if rc == 0:
+        return out.encode(), None
+    if rc != 255 and any(word in err.lower() for word in GONE):
+        return None, "missing"
+    return None, err.strip()[:200] or f"exit {rc}"
+
+
+def guard_install_command(machine: dict, name: str) -> str:
+    src = GUARD_REPO / name
+    if machine["kind"] == "local":
+        dest = f"{machine['home']}/.agents/hooks/{name}"
+        return f"cp -p {dest} {dest}.bak-{DATE}; install -m 755 {src} {dest}"
+    if machine["kind"] == "bb":
+        return f"bb file write --host {machine['host']} --stdin --create-parents {machine['home']}/.agents/hooks/{name} < {src}"
+    return f"scp {src} {machine['host']}:.agents/hooks/{name} && ssh {machine['host']} chmod 755 .agents/hooks/{name}"
+
+
+def guard_install(machine: dict, name: str) -> str | None:
+    """Puts the repository's file on the machine (the old one is kept as .bak-<date>); None when done, the reason when not."""
+    data = (GUARD_REPO / name).read_bytes()
+    if machine["kind"] == "local":
+        dest = Path(machine["home"]) / ".agents/hooks" / name
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if dest.exists():
+                shutil.copy2(dest, dest.with_name(f"{name}.bak-{DATE}"))
+            tmp = dest.with_name(f".{name}.{os.getpid()}.tmp")
+            tmp.write_bytes(data)
+            tmp.chmod(0o755)
+            tmp.replace(dest)
+        except OSError as cause:
+            return str(cause)
+        return None
+    if machine["kind"] == "bb":
+        path = f"{machine['home']}/.agents/hooks/{name}"
+        done = subprocess.run([BB, "file", "write", "--host", machine["host"], "--stdin", "--create-parents", path, "--json"], input=data.decode(), capture_output=True, text=True, timeout=90)
+        return None if done.returncode == 0 else (done.stderr or done.stdout).strip()[:200]
+    host = machine["host"]
+    done = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", host, f"cd ~/.agents/hooks && [ ! -e {name} ] || cp -p {name} {name}.bak-{DATE}; cat > .{name}.tmp && chmod 755 .{name}.tmp && mv .{name}.tmp {name}"],
+                          input=data.decode(), capture_output=True, text=True, timeout=90)
+    return None if done.returncode == 0 else done.stderr.strip()[:200]
+
+
+def scenario_guard_hash(tmp: Path, repair: bool = False) -> dict:
+    """The guard that actually runs is the installed copy on each machine (audit 2026-10-08 round 3, P0-3): it must be the repository's."""
+    problems: list[str] = []
+    expected = {}
+    for name in GUARD_FILES:
+        try:
+            expected[name] = sha256_of((GUARD_REPO / name).read_bytes())
+        except OSError as cause:
+            return verdict("guard_hash", [f"the repository has no {GUARD_REPO / name}: {cause}"])
+    machines: list[dict] = []
+    for machine in guard_machines():
+        entry: dict = {"machine": machine["name"], "files": {}}
+        machines.append(entry)
+        for name in GUARD_FILES:
+            data, why = guard_read(machine, name)
+            state, installed = "ok", sha256_of(data) if data is not None else None
+            if data is None and why != "missing":
+                state = "unreachable"
+                log(f"guard_hash: {machine['name']}: {name}: {why}")
+            elif installed != expected[name]:
+                state = "missing" if data is None else "drift"
+                if repair:
+                    failure = guard_install(machine, name)
+                    again, _ = guard_read(machine, name)
+                    if failure is None and again is not None and sha256_of(again) == expected[name]:
+                        state, installed = "repaired", expected[name]
+                    else:
+                        state = f"{state}, repair failed: {failure or 'the file read back differs'}"
+                if state != "repaired":
+                    problems.append(f"{machine['name']}: {name} {'is missing' if state.startswith('missing') else 'differs from the repository'} (installed {str(installed)[:12] if installed else 'none'}, repository {expected[name][:12]}); install: {guard_install_command(machine, name)}")
+            entry["files"][name] = {"state": state, "installed": installed, "expected": expected[name]}
+        entry["reachable"] = any(f["state"] != "unreachable" for f in entry["files"].values())
+    unreachable = [m["machine"] for m in machines if not m["reachable"]]
+    return verdict("guard_hash", problems, machines=machines, expected=expected, unreachable=unreachable, repaired=repair)
+
+
 def ensure_prototype_config(spec: dict) -> bool:
     """`bb lane-pilot activate` needs the project's prototype config (host, folders, PM and writer models). The sandbox project that has no git
     gets it once, from the same values as the main sandbox project; it stays (the plugin has no way to remove it). True when this call set it."""
@@ -557,7 +748,7 @@ def write_receipt(path: Path, start: float, scenarios: list[dict], ctx: Context 
     data = {
         "kind": "lane-pilot-sandbox-drill", "date": DATE, "stamp": STAMP, "startedAt": int(start * 1000), "finishedAt": int(time.time() * 1000),
         "durationSec": round(time.time() - start), "project": SANDBOX["project"], "runId": (ctx.run_id or None) if ctx else None, "pmThread": (ctx.pm or None) if ctx else None,
-        "sourceThread": (ctx.source or None) if ctx else None, "mode": "quick" if names == ["parallel3"] else "full", "scenarioNames": names,
+        "sourceThread": (ctx.source or None) if ctx else None, "mode": "quick" if names == QUICK else "full", "scenarioNames": names,
         "result": result, "problems": problems + [f"{s['name']}: {p}" for s in scenarios for p in s["problems"]],
         "checks": first.get("checks") if first else None, "tasks": first.get("tasks") if first else None, "dispatch": first.get("dispatch") if first else None,
         "scenarios": scenarios,
@@ -572,8 +763,10 @@ def main() -> int:
     parser.add_argument("--quick", action="store_true")
     parser.add_argument("--scenario", default="")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--repair-guard", action="store_true")
     args = parser.parse_args()
-    names = ["parallel3"] if args.quick else [n for n in args.scenario.split(",") if n] or ALL
+    names = QUICK if args.quick else [n for n in args.scenario.split(",") if n] or ALL
+    repair_guard = args.repair_guard or os.environ.get("LP_DRILL_REPAIR_GUARD") == "1"
     unknown = [n for n in names if n not in ALL]
     if unknown:
         print(f"unknown scenario: {', '.join(unknown)} (known: {', '.join(ALL)})", file=sys.stderr)
@@ -590,7 +783,7 @@ def main() -> int:
         return 2
     start = time.time()
     tmp = Path(tempfile.mkdtemp(prefix="lp-drill-"))
-    receipt_dir = ROOT / ".agents/runs/drills"
+    receipt_dir = Path(os.environ.get("LP_DRILL_RECEIPT_DIR") or ROOT / ".agents/runs/drills")
     receipt = receipt_dir / f"{DATE}.json"
     if receipt.exists():
         receipt = receipt_dir / f"{DATE}-{STAMP.split('-')[1]}.json"
@@ -598,7 +791,14 @@ def main() -> int:
     problems: list[str] = []
     ctx: Context | None = None
     try:
-        main_names = [n for n in names if n != "nogit"]
+        if "guard_hash" in names:
+            log("scenario guard_hash")
+            try:
+                scenarios.append(scenario_guard_hash(tmp, repair_guard))
+            except Exception as cause:
+                scenarios.append(verdict("guard_hash", [f"scenario raised: {cause}"]))
+            log(f"scenario guard_hash: {scenarios[-1]['result']} {scenarios[-1]['problems']}")
+        main_names = [n for n in names if n not in STANDALONE]
         if main_names:
             ctx = Context(SANDBOX, tmp)
             try:

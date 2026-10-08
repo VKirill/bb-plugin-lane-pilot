@@ -718,6 +718,11 @@ export const hostContract = defineRpcContract({
       result: z.object({ configHome: z.string(), kept: z.array(z.string()), left: z.array(z.string()) }).strict().nullable(),
     }).strict(),
   },
+  /** The directory of guard wrappers (bb, ssh, scp, sftp) for Codex, OpenCode and Cursor helpers (see src/bb-shim.ts) and the PATH that puts it first. */
+  prepareBbShim: {
+    input: z.object({ requestedHostId: z.string().min(1) }).strict(),
+    output: z.object({ dir: z.string(), path: z.string() }).strict(),
+  },
   prepareNativeClaude: {
     input: z.object({
       cwd: z.string().startsWith("/").optional(),
@@ -1417,6 +1422,19 @@ export const rpcContract = defineRpcContract({
   },
   deploy_status: {
     input: z.object({}).strict(),
+    output: z.unknown(),
+  },
+  /** An incident deploy asks the owner (src/server/deploy-incident.ts): without requestId it opens the form, with it it reports the answer. */
+  deploy_incident_request: {
+    input: z.object({
+      requestId: z.string().min(1).max(60).optional(),
+      reason: z.string().trim().min(1).max(300).optional(),
+      version: z.string().max(40).optional(),
+      sha: z.string().max(64).optional(),
+      requestedBy: z.string().max(120).optional(),
+      threadId: z.string().min(1).optional(),
+      consume: z.boolean().optional(),
+    }).strict(),
     output: z.unknown(),
   },
   self_repair_status: {

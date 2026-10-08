@@ -56,6 +56,33 @@ export function keepsPlugin(name: string, providerId: string | null, extra: read
   return false;
 }
 
+/**
+ * OpenCode's own permission rules for the `bash` tool (audit 2026-10-08 round 3, P0-2): the commands a Lane Pilot helper may not run,
+ * the same list as the shell guard (lane-stack/hooks/guard_shell.py, strict) and the PATH wrappers (src/bb-shim.ts). A pattern is
+ * matched against the whole command line; the last matching rule wins, so these go after whatever the owner's config allows.
+ */
+export const OPENCODE_BASH_DENY: readonly string[] = [
+  ...["set", "delete", "export", "import-machine-env"].map((sub) => `*bb env-catalog ${sub}*`),
+  "*bb env-catalog*--raw*",
+  "*bb plugin rpc call env-catalog*",
+  ...["save_", "reset_", "set_", "stack_install", "stack_connect", "stack_rollback", "native_install_start", "decide_rule_proposal", "rule_set_audience", "memory_record_delete", "prepare_native_session"]
+    .map((method) => `*bb plugin rpc call *lane-pilot ${method}*`),
+  ...["config", "token", "disable", "enable", "reload", "remove", "safe-mode"].map((sub) => `*bb plugin ${sub}*`),
+  ...["configure", "budget", "host-run-cli", "host-install", "host-rollback", "host-connect-opencode", "host-import-config"].map((sub) => `*lane-pilot ${sub}*`),
+  ...["ovh-main", "ovh-vps", "vechkasov-ovh", "selfystudio-work", "claude-dev-key", "10.8.0.1", "54.37.129.153"].flatMap((host) => [`*ssh *${host}*`, `*scp *${host}*`, `*sftp *${host}*`, `*rsync *${host}*`]),
+  "*base64*|*sh*",
+  "*base64*|*bash*",
+];
+
+/** The machine's `permission` with the deny rules added to its `bash` rules (a plain `bash: "allow"` becomes `{ "*": "allow" }` first; a global string becomes `{ "*": … }`). */
+export function withBashDeny(permission: unknown): Json {
+  const base: Json = isObject(permission) ? { ...permission } : typeof permission === "string" ? { "*": permission } : {};
+  const bash = base.bash;
+  const rules: Json = isObject(bash) ? { ...bash } : typeof bash === "string" ? { "*": bash } : {};
+  for (const pattern of OPENCODE_BASH_DENY) { delete rules[pattern]; rules[pattern] = "deny"; }
+  return { ...base, bash: rules };
+}
+
 /** What of the machine's OpenCode dir is not carried over: the config itself, plugin folders (rebuilt), global rules, logs, backups. */
 const NOT_CARRIED = /^(opencode\.jsonc?.*|plugins?|AGENTS\.md|.*\.jsonl(\.\d+)?|opencode\.db.*|.*\.bak.*)$/;
 
@@ -150,7 +177,7 @@ async function build(input: OpencodeMinInput): Promise<OpencodeMinResult | null>
   if (!leftSpecs.length && !localLeft.length && !hasAgentKeys && !hasCommandKeys) return null;
 
   const { agent: _agent, command: _command, ...rest } = config.value;
-  const minimal: Json = { ...rest, ...(listed.length ? { plugin: keptSpecs } : {}) };
+  const minimal: Json = { ...rest, ...(listed.length ? { plugin: keptSpecs } : {}), permission: withBashDeny(rest.permission) };
   const key = createHash("sha256").update(JSON.stringify({ kept: keptSpecs.map(pluginName), local: localKept.map((item) => `${item.dir}/${item.name}`) })).digest("hex").slice(0, 12);
   const configHome = join(input.dataDir, "opencode-min", key);
   const dir = join(configHome, "opencode");

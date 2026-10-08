@@ -1,6 +1,7 @@
 import { createAttempt, createRun, getAttempt, loadPrototypeConfig, setRunThread, transitionAttempt } from "../database";
 import { fullAccessSpawn } from "./pm-spawn";
 import { id, stringAt, valueAt } from "./values";
+import { createHelperProbe } from "./helper-probe";
 import type { ServerCore } from "./core";
 import type { Services } from "./services";
 
@@ -133,5 +134,5 @@ export function createProbes(ctx: ServerCore, services: Services) {
     }
   }
 
-  return { startCancelProbe, startProviderErrorProbe, startAmbiguousProbe };
+  return { startCancelProbe, startProviderErrorProbe, startAmbiguousProbe, ...createHelperProbe(ctx) };
 }

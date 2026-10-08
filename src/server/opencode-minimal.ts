@@ -2,6 +2,7 @@ import type { ExperimentalPluginProviderEnvEntry } from "@get-bb/plugin-sdk";
 import { stringAt } from "./values";
 import type { ServerCore } from "./core";
 import { scheduleIsolated } from "./schedules";
+import { createBbShimEnv } from "./helper-bb-shim";
 
 /**
  * Lane Pilot's OpenCode helpers run with a minimal config (see src/opencode-min-config.ts for why and how). The OpenCode provider
@@ -162,8 +163,10 @@ export function createOpencodeMinimalEnv(ctx: Pick<ServerCore, "bb" | "host">, n
 }
 
 export function mountOpencodeMinimal(ctx: ServerCore) {
+  // One resolver per provider: the minimal config's variable and the guard wrappers' PATH (src/bb-shim.ts) go out together.
   const env = createOpencodeMinimalEnv(ctx);
-  ctx.bb.providers.experimental_contributeEnv(OPENCODE_PROVIDER_ID, env);
+  const shim = createBbShimEnv(ctx);
+  ctx.bb.providers.experimental_contributeEnv(OPENCODE_PROVIDER_ID, async (context) => (await Promise.all([env(context), shim(context)])).flat());
   // Ahead of the first helper, and again every few minutes: a machine that connects later is prepared at the next tick.
   const warm = () => { void env.warmConnected().catch(() => undefined); };
   const first = setTimeout(warm, 2_000);
