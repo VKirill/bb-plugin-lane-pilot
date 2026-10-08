@@ -214,6 +214,16 @@ describe("lane_pilot_route", () => {
     expect(answer.candidates.length).toBeLessThanOrEqual(5);
   });
 
+  it("offers a tested chain on the shipped statuses with the «not yet run live» flag, and tells the PM to ask the owner for liveTrial", async () => {
+    const { db } = setup();
+    const shipped = await loadWorkflowStore({ builtin: BUILTIN_SOURCES });
+    const answer = parse(await routeTool(depsOf(db, shipped, fakeEngine().engine), { intent: "Нужен кокон страниц для интернет-магазина чая, с исследованием аудитории" }, ctx));
+    expect(answer).toMatchObject({ decision: "route", workflowId: "seo-cocoon", notYetRunLive: true });
+    expect(answer.candidates[0]).toMatchObject({ id: "seo-cocoon", notYetRunLive: true });
+    expect(answer.next).toContain("liveTrial: true");
+    expect(answer.warnings.join(" ")).toContain("has not run for real yet");
+  });
+
   it("asks at most three questions for a broad request and offers no workflow", async () => {
     const { db } = setup();
     const answer = parse(await routeTool(depsOf(db, publishedStore, fakeEngine().engine), { intent: "Help me with the project" }, ctx));

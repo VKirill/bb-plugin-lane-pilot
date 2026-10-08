@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MIN_CONFIDENCE, routeIntent } from "../../src/workflow/router";
-import { publishedCatalog } from "./router-catalog";
+import { publishedCatalog, realCatalog } from "./router-catalog";
 import { EVAL_SET, HELD_OUT_SET, RESERVE_SET } from "./router-eval-set";
 
 const outcome = async (phrase: string) => {
@@ -61,5 +61,50 @@ describe("router evaluation set (chains spec 6.2)", () => {
     const examples = new Set(publishedCatalog().flatMap((workflow) => [...workflow.examples.en, ...workflow.examples.ru]).map((text) => text.trim().toLowerCase()));
     for (const [, phrase] of EVAL_SET) expect(examples.has(phrase.trim().toLowerCase())).toBe(false);
     for (const [phrase] of RESERVE_SET) expect(examples.has(phrase.trim().toLowerCase())).toBe(false);
+  });
+});
+
+describe("the router on the catalog as it ships (audit 2026-10-08, item 9)", () => {
+  const real = realCatalog();
+  const ask = (phrase: string, workflows = real) => routeIntent({ intent: phrase, workflows });
+
+  it("offers the tested chains instead of hiding them: 27 or more of the 30 phrases, the held-out and the reserve ones too", async () => {
+    expect(real.filter((workflow) => workflow.status === "tested" && !workflow.internal).map((workflow) => workflow.id).sort())
+      .toEqual(["deploy", "insights-post", "reels", "seo-cocoon", "web-research", "x-to-telegram-digest"]);
+    const wrong: string[] = [];
+    for (const [n, phrase, expected] of EVAL_SET) { const decision = await ask(phrase); if ((decision.workflowId ?? "clarify") !== expected) wrong.push(`${n} ${expected} <- ${decision.workflowId ?? "clarify"} (${decision.confidence})`); }
+    expect(30 - wrong.length, wrong.join("; ")).toBeGreaterThanOrEqual(27);
+    let held = 0;
+    for (const [phrase, expected] of HELD_OUT_SET) if ((await ask(phrase)).workflowId === expected) held += 1;
+    expect(held / HELD_OUT_SET.length).toBeGreaterThanOrEqual(0.9);
+    let reserve = 0;
+    for (const [phrase, expected] of RESERVE_SET) if (((await ask(phrase)).workflowId ?? "clarify") === expected) reserve += 1;
+    expect(reserve).toBeGreaterThanOrEqual(7);
+  });
+
+  it("a tested chain is chosen with the «not yet run live» flag and a warning; a published one is not flagged", async () => {
+    const tested = await ask("Нужен кокон страниц для интернет-магазина чая, с исследованием аудитории");
+    expect(tested).toMatchObject({ decision: "route", workflowId: "seo-cocoon", liveTrial: true });
+    expect(tested.candidates[0]).toMatchObject({ id: "seo-cocoon", liveTrial: true });
+    expect(tested.warnings.join(" ")).toContain("has not run for real yet");
+    const published = await ask("Implement dark mode toggle in the settings screen");
+    expect(published).toMatchObject({ workflowId: "analyze-plan-execute", liveTrial: false });
+    expect(published.warnings.join(" ")).not.toContain("not run for real");
+  });
+
+  it("does not trust a neighbour when the chain the rules point at is not offered: asks instead of answering ui-audit at 99", async () => {
+    const withoutCocoon = real.map((workflow) => (workflow.id === "seo-cocoon" ? { ...workflow, status: "draft" as const } : workflow));
+    const decision = await ask("Нужен кокон страниц для интернет-магазина чая, с исследованием аудитории", withoutCocoon);
+    expect(decision.decision).toBe("clarify");
+    expect(decision.workflowId).toBeNull();
+    expect(decision.warnings.join(" ")).toContain("seo-cocoon is not available");
+    // Another request is not touched by it.
+    expect((await ask("Implement dark mode toggle in the settings screen", withoutCocoon)).workflowId).toBe("analyze-plan-execute");
+  });
+
+  it("every phrase of the three sets is routed on the shipped statuses with a confident answer only when it is right", async () => {
+    const confidentMisses: string[] = [];
+    for (const [n, phrase, expected] of EVAL_SET) { const d = await ask(phrase); if (d.workflowId && d.workflowId !== expected && d.confidence >= 90) confidentMisses.push(`${n}:${d.workflowId}`); }
+    expect(confidentMisses).toEqual([]);
   });
 });

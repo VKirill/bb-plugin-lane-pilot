@@ -6,7 +6,9 @@ import type { Workflow } from "./schema";
  * priority rules and state checks of the chains spec (section 1) in code, lets a `RouterModel` choose among the top
  * candidates (a deterministic scorer is the default; a live model is plugged through the port), and either returns the
  * chosen workflow with the recorded evidence, a boundary contract and goals, or up to three clarifying questions.
- * Only `published`, not `internal` workflows are offered. The router sees cards, not graphs.
+ * `published` and `tested` workflows that are not `internal` are offered; a `tested` one (it passed its stub tests, never ran for
+ * real) comes with `liveTrial: true` and a warning, so the PM asks the owner for a first real run instead of the router hiding it.
+ * The router sees cards, not graphs.
  */
 
 export const TOP_N = 5;
@@ -270,8 +272,12 @@ const CONTINUE = new RegExp(`^(?:${foldSource("давай ")})?(?:${foldSource("
 type Doc = { workflow: Workflow; tf: Map<string, number>; len: number; exampleGrams: Array<Set<string>>; nameStems: Set<string> };
 const W_NAME = 3, W_TAG = 2.5, W_DESC = 1.5, W_EXAMPLE = 1, K1 = 1.2, BM_B = 0.6;
 
-/** The router offers, and the PM may start, only a published workflow that is not a fragment and not Lane Pilot's own per-task pipeline. */
-export const isOffered = (workflow: Workflow): boolean => workflow.status === "published" && !workflow.internal && !NEVER_OFFERED.has(workflow.id);
+/**
+ * The router offers a published or tested workflow that is not a fragment and not Lane Pilot's own per-task pipeline. A tested one has never
+ * run for real: it is offered with a «not yet run live» flag (`needsLiveTrial`) and starts only on the owner's word.
+ */
+export const isOffered = (workflow: Workflow): boolean => (workflow.status === "published" || workflow.status === "tested") && !workflow.internal && !NEVER_OFFERED.has(workflow.id);
+export const needsLiveTrial = (workflow: Workflow): boolean => workflow.status === "tested";
 export const isPipeline = (workflow: Workflow): boolean => NEVER_OFFERED.has(workflow.id);
 
 function buildIndex(workflows: ReadonlyArray<Workflow>) {
@@ -369,7 +375,9 @@ export type RouteDecision = {
     /** True when a plugged model failed or named an id outside the candidates and the scorer decided instead. */
     modelFallback?: string;
   };
-  candidates: Array<{ id: string; name: string; score: number; base: number; boost: number; penalty: number; rules: string[]; stat?: number }>;
+  candidates: Array<{ id: string; name: string; score: number; base: number; boost: number; penalty: number; rules: string[]; stat?: number; liveTrial?: true }>;
+  /** The chosen workflow passed its stub tests but never ran for real: ask the owner for a first real run (`liveTrial: true`) before starting it. */
+  liveTrial: boolean;
   questions: string[];
   boundary_contract: BoundaryContract | null;
   goals: RouteGoal[];
@@ -492,7 +500,7 @@ export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
   let s = signalsOf(intent);
   const empty = (partial: Partial<RouteDecision>): RouteDecision => ({
     decision: "clarify", workflowId: null, suggested: null, confidence: 0,
-    evidence: { pattern: "", rejected: [], rules: [], model: "deterministic" }, candidates: [], questions: [], boundary_contract: null, goals: [], inputs: {}, missingInputs: [], guessedInputs: [], warnings: [], stateContinue: false,
+    evidence: { pattern: "", rejected: [], rules: [], model: "deterministic" }, candidates: [], liveTrial: false, questions: [], boundary_contract: null, goals: [], inputs: {}, missingInputs: [], guessedInputs: [], warnings: [], stateContinue: false,
     ...partial,
   });
   const lang = s.ru ? "ru" : "en";
@@ -562,12 +570,19 @@ export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
     rules: hits.map((hit) => ({ id: hit.id, note: hit.note })), model: usedModel ? "external" : "deterministic", ...(modelFallback ? { modelFallback } : {}),
   });
   const candidates = top.map((item, i) => ({ id: item.workflow.id, name: item.workflow.name[lang], score: cards[i]!.score, base: round3(item.base), boost: round3(item.boost), penalty: round3(item.penalty), rules: item.rules,
-    ...(input.stats ? { stat: round3(trackRecord(input.stats.get(item.workflow.id), input.now ?? Date.now())) } : {}) }));
+    ...(input.stats ? { stat: round3(trackRecord(input.stats.get(item.workflow.id), input.now ?? Date.now())) } : {}), ...(needsLiveTrial(item.workflow) ? { liveTrial: true as const } : {}) }));
   const chosen = output.choice ? top.find((item) => item.workflow.id === output!.choice)?.workflow ?? null : null;
+
+  // A rule that names a workflow the owner cannot have now (a draft, a fragment's sibling, a missing plugin or secret) and points there more strongly than at
+  // anything offered means the best match is not on the list: the pick among the rest is a neighbour's, so it is asked about, never trusted.
+  const hiddenBest = input.workflows.filter((workflow) => !workflow.internal && !NEVER_OFFERED.has(workflow.id) && (!isOffered(workflow) || excluded.some((e) => e.id === workflow.id)))
+    .map((workflow) => ({ workflow, boost: boost.get(workflow.id) ?? 0 })).sort((a, b) => b.boost - a.boost)[0];
+  const missedBest = hiddenBest && hiddenBest.boost >= 0.3 && hiddenBest.boost > (chosen ? boost.get(chosen.id) ?? 0 : 0) ? hiddenBest.workflow : null;
+  if (missedBest) warnings.push(`the closest match ${missedBest.id} is not available: ${excluded.find((e) => e.id === missedBest.id)?.reason ?? `it is ${missedBest.status}, not published`}`);
 
   // Too weak, too broad, or no choice: questions, no workflow.
   const strongRule = hits.some((hit) => Object.values(hit.boosts).some((value) => value >= 0.3));
-  if (!chosen || output.confidence < MIN_CONFIDENCE || (broad && !strongRule) || (top[0]?.score ?? 0) < 0.12) {
+  if (!chosen || output.confidence < MIN_CONFIDENCE || (broad && !strongRule) || (top[0]?.score ?? 0) < 0.12 || missedBest) {
     const modelQuestions = output.questions.filter((question) => question.trim());
     const filled = chosen ? fillInputs(chosen, s, intent) : null;
     const questions = modelQuestions.length ? modelQuestions.slice(0, MAX_QUESTIONS)
@@ -576,9 +591,10 @@ export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
   }
 
   const filled = fillInputs(chosen, s, intent, output.inputs);
+  if (needsLiveTrial(chosen)) warnings.push(`${chosen.id} passed its tests on stubs but has not run for real yet: ask the owner for a first real run (it will really send, post and spend) and start it with liveTrial: true`);
   if (chosen.id === "milestone-close" && (input.state?.openTasks?.() ?? 0) > 0) warnings.push(`${input.state!.openTasks!()} tasks of this run are still open: close the milestone only after they finish`);
   return empty({
-    decision: "route", workflowId: chosen.id, confidence: output.confidence, evidence: record(output.pattern, output.rejected), candidates, warnings,
+    decision: "route", workflowId: chosen.id, liveTrial: needsLiveTrial(chosen), confidence: output.confidence, evidence: record(output.pattern, output.rejected), candidates, warnings,
     boundary_contract: boundaryFor({ workflow: chosen, s, intent, context: input.context, hits }), goals: goalsFor(chosen, intent),
     inputs: filled.inputs, missingInputs: filled.missing, guessedInputs: filled.guessed,
   });
