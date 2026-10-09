@@ -61,6 +61,8 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
   const outlineMat = new THREE.LineBasicMaterial({ color: OUTLINE });
   disposables.push(outlineMat);
 
+  /** Name given to every mesh built next: the geometry audit reports overlaps by part. */
+  let part = "floor";
   const materials = new Map<string, ThreeType.MeshLambertMaterial>();
   const material = (color: number, opacity?: number) => {
     const key = `${color}:${opacity ?? 1}`;
@@ -88,6 +90,7 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
     const geom = new THREE.BoxGeometry(maxX - minX, maxY - minY, maxZ - minZ);
     disposables.push(geom);
     const mesh = new THREE.Mesh(geom, material(color, opts?.opacity));
+    mesh.name = part;
     mesh.position.set(mid(minX, maxX), mid(minY, maxY), mid(minZ, maxZ));
     if (opts?.outline !== false) {
       const edges = new THREE.EdgesGeometry(geom, 30);
@@ -123,18 +126,29 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
     return mesh;
   };
 
-  /** Low-poly ball (icosahedron) with outlines: tree canopies, bushes, leaf clusters. */
+  /**
+   * Faceted ball for canopies, bushes and leaf clusters. Pixel art outlines only the silhouette,
+   * so the outline is an inverted hull (a slightly larger back-face shell), not every facet edge.
+   */
+  const hullMat = new THREE.MeshBasicMaterial({ color: OUTLINE, side: THREE.BackSide });
+  disposables.push(hullMat);
+  const flatMaterials = new Map<number, ThreeType.MeshLambertMaterial>();
   const blob = (parent: ThreeType.Object3D, x: number, y: number, z: number, radius: number, color: number, squashY = 1) => {
-    const geom = new THREE.IcosahedronGeometry(radius, 0);
+    const geom = new THREE.IcosahedronGeometry(radius, 1);
     disposables.push(geom);
-    const mat = material(color);
-    mat.flatShading = true;
+    let mat = flatMaterials.get(color);
+    if (!mat) {
+      mat = new THREE.MeshLambertMaterial({ color, flatShading: true });
+      flatMaterials.set(color, mat);
+      disposables.push(mat);
+    }
     const mesh = new THREE.Mesh(geom, mat);
+    mesh.name = part;
     mesh.position.set(x, y, z);
     mesh.scale.y = squashY;
-    const edges = new THREE.EdgesGeometry(geom, 30);
-    disposables.push(edges);
-    mesh.add(new THREE.LineSegments(edges, outlineMat));
+    const hull = new THREE.Mesh(geom, hullMat);
+    hull.scale.setScalar(1 + 0.07 / radius);
+    mesh.add(hull);
     parent.add(mesh);
     return mesh;
   };
@@ -161,6 +175,7 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
   // ==========================================
   // 1. SLAB, GROUND, PAVING AND TREES
   // ==========================================
+  part = "exterior";
   scene.background = new THREE.Color(SKY);
   // The slab top stays just below the floor zones, so the two never share a plane (no z-fighting)
   box(scene, -20, 20, -0.5, -0.05, -10, 10, SLAB, { outline: false });
@@ -201,6 +216,7 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
   // ==========================================
   // 2. FLOOR ZONES
   // ==========================================
+  part = "floor";
   for (const zone of FLOOR_ZONES) {
     gridBox(scene, zone.gx0, zone.gx1, zone.gz0, zone.gz1, -0.05, 0, zone.color, { outline: false });
   }
@@ -235,6 +251,7 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
   // ==========================================
   // 3. WALLS, WINDOWS AND DOORS
   // ==========================================
+  part = "walls";
   const WALL_H = 3.5;
   // Back walls: north (gz 0) and west (gx 0), full height
   box(scene, -20, 20, 0, WALL_H, -10.3, -10, WALL_CREAM);
@@ -315,7 +332,8 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
   // Interior walls from the layout: glass in the meeting room, walnut in the director's office, server grey in the server room
   for (const wall of OFFICE_WALLS) {
     if (wall.id.startsWith("wall_meeting")) {
-      box(scene, wall.minX, wall.maxX, 0, 2.6, wall.minZ, wall.maxZ, 0xcfe6ee, { outline: false, opacity: 0.35 });
+      // Glass between the bottom rail and the top rail, so no face of it shares a plane with the white frame
+      box(scene, wall.minX + 0.03, wall.maxX - 0.03, 0.08, 2.5, wall.minZ + 0.03, wall.maxZ - 0.03, 0xcfe6ee, { outline: false, opacity: 0.35 });
       box(scene, wall.minX, wall.maxX, 2.5, 2.6, wall.minZ, wall.maxZ, 0xf4f7f8);
       box(scene, wall.minX, wall.maxX, 0, 0.08, wall.minZ, wall.maxZ, 0xf4f7f8);
       const alongX = wall.maxX - wall.minX > wall.maxZ - wall.minZ;
@@ -338,9 +356,9 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
 
   // Director's double door (gx 33.8–35.8): frame posts 2.4 high with a cornice; both walnut leaves
   // stand open inwards along gx 33.8 and 35.8 between gz 10 and 11, brass handles on the inner faces
-  box(scene, 13.7, 13.85, 0, 2.4, 0.85, 1.15, 0x5e3721);
-  box(scene, 15.75, 15.9, 0, 2.4, 0.85, 1.15, 0x5e3721);
-  box(scene, 13.7, 15.9, 2.4, 2.7, 0.8, 1.2, 0x5e3721);
+  box(scene, 13.7, 13.85, 0, 2.4, 0.81, 1.19, 0x5e3721);
+  box(scene, 15.75, 15.9, 0, 2.4, 0.81, 1.19, 0x5e3721);
+  box(scene, 13.66, 15.94, 2.4, 2.7, 0.79, 1.21, 0x5e3721);
   for (const [x0, x1, hx0, hx1] of [[13.85, 13.95, 13.95, 14.0], [15.65, 15.75, 15.6, 15.65]] as const) {
     box(scene, x0, x1, 0.02, 2.3, 0.0, 0.85, 0x6b4029);
     box(scene, x0 - 0.005, x1 + 0.005, 0.3, 1.0, 0.12, 0.73, 0x7b4a2e, { outline: false });
@@ -376,19 +394,46 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
     scene.add(group);
   };
 
-  const buildSofa = (prop: PropFootprint, color: number) => {
-    const wide = prop.maxX - prop.minX > prop.maxZ - prop.minZ;
-    box(scene, prop.minX, prop.maxX, 0, 0.42, prop.minZ, prop.maxZ, color);
-    if (wide) box(scene, prop.minX, prop.maxX, 0.42, 0.85, prop.minZ, prop.minZ + 0.25, color);
-    else box(scene, prop.minX, prop.minX + 0.25, 0.42, 0.85, prop.minZ, prop.maxZ, color);
+  /** Sofa: base, back on the side away from where it faces, rolled arms at both ends, seat cushions. */
+  const buildSofa = (prop: PropFootprint, color: number, shade: number, facing: "north" | "south" | "west") => {
+    const { minX, maxX, minZ, maxZ } = prop;
+    box(scene, minX, maxX, 0.05, 0.38, minZ, maxZ, shade);
+    if (facing === "west") {
+      box(scene, maxX - 0.25, maxX, 0.38, 0.85, minZ, maxZ, color);
+      box(scene, minX + 0.01, maxX - 0.25, 0.38, 0.6, minZ + 0.01, minZ + 0.22, color);
+      box(scene, minX + 0.01, maxX - 0.25, 0.38, 0.6, maxZ - 0.22, maxZ - 0.01, color);
+      const n = Math.max(2, Math.round((maxZ - minZ - 0.44) / 1));
+      for (let i = 0; i < n; i++) {
+        const z0 = minZ + 0.22 + (i * (maxZ - minZ - 0.44)) / n;
+        box(scene, minX + 0.04, maxX - 0.27, 0.38, 0.5, z0 + 0.02, z0 + (maxZ - minZ - 0.44) / n - 0.02, color);
+      }
+      return;
+    }
+    const backAtMin = facing === "south";
+    if (backAtMin) box(scene, minX, maxX, 0.38, 0.85, minZ, minZ + 0.25, color);
+    else box(scene, minX, maxX, 0.38, 0.85, maxZ - 0.25, maxZ, color);
+    const [az0, az1] = backAtMin ? [minZ + 0.25, maxZ - 0.01] : [minZ + 0.01, maxZ - 0.25];
+    box(scene, minX + 0.01, minX + 0.22, 0.38, 0.6, az0, az1, color);
+    box(scene, maxX - 0.22, maxX - 0.01, 0.38, 0.6, az0, az1, color);
+    const n = Math.max(2, Math.round((maxX - minX - 0.44) / 1));
+    for (let i = 0; i < n; i++) {
+      const x0 = minX + 0.22 + (i * (maxX - minX - 0.44)) / n;
+      const [z0, z1] = backAtMin ? [minZ + 0.27, maxZ - 0.04] : [minZ + 0.04, maxZ - 0.27];
+      box(scene, x0 + 0.02, x0 + (maxX - minX - 0.44) / n - 0.02, 0.38, 0.5, z0, z1, color);
+    }
   };
 
   const buildDecor = (id: string, minX: number, maxX: number, minZ: number, maxZ: number) => {
     const cx = mid(minX, maxX);
     const cz = mid(minZ, maxZ);
     if (id === "prop_bust") {
-      box(scene, minX, maxX, 0, 1.0, minZ, maxZ, 0xeceae4);
-      box(scene, cx - 0.2, cx + 0.2, 1.0, 1.5, cz - 0.2, cz + 0.2, 0xeceae4);
+      box(scene, minX, maxX, 0, 0.12, minZ, maxZ, 0xc9c5bb);
+      box(scene, minX + 0.08, maxX - 0.08, 0.12, 0.88, minZ + 0.08, maxZ - 0.08, 0xeceae4);
+      box(scene, minX, maxX, 0.88, 1.0, minZ, maxZ, 0xc9c5bb);
+      box(scene, cx - 0.24, cx + 0.24, 1.0, 1.18, cz - 0.13, cz + 0.13, 0xeceae4);
+      box(scene, cx - 0.06, cx + 0.06, 1.18, 1.24, cz - 0.06, cz + 0.06, 0xeceae4);
+      box(scene, cx - 0.13, cx + 0.13, 1.24, 1.52, cz - 0.13, cz + 0.13, 0xeceae4);
+      box(scene, cx - 0.14, cx + 0.14, 1.42, 1.55, cz - 0.15, cz + 0.1, 0xc9c5bb);
     } else if (id === "prop_credenza") {
       box(scene, minX, maxX, 0, 0.75, minZ, maxZ, WALNUT);
       box(scene, minX - 0.02, maxX + 0.02, 0.75, 0.8, minZ - 0.02, maxZ + 0.02, WALNUT_TOP);
@@ -426,21 +471,38 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
       box(scene, minX, maxX, 0, 0.42, minZ, maxZ, LEATHER);
       if (facesEast) box(scene, minX, minX + 0.22, 0.42, 0.85, minZ, maxZ, 0x5c2a17);
       else box(scene, maxX - 0.22, maxX, 0.42, 0.85, minZ, maxZ, 0x5c2a17);
-      box(scene, minX, maxX, 0.42, 0.66, minZ, minZ + 0.16, LEATHER);
-      box(scene, minX, maxX, 0.42, 0.66, maxZ - 0.16, maxZ, LEATHER);
+      // Arms run from the back to the front edge and touch the back without sharing its faces
+      const [ax0, ax1] = facesEast ? [minX + 0.22, maxX] : [minX, maxX - 0.22];
+      box(scene, ax0, ax1, 0.42, 0.66, minZ + 0.01, minZ + 0.16, LEATHER);
+      box(scene, ax0, ax1, 0.42, 0.66, maxZ - 0.16, maxZ - 0.01, LEATHER);
     } else if (id === "prop_globe") {
-      cylinder(scene, cx, cz, 0.04, 0, 0.5, 0x5c3a24);
-      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.4, 10, 8), material(0xc9b98a));
-      disposables.push(ball.geometry);
-      ball.position.set(cx, 0.9, cz);
-      scene.add(ball);
+      for (const a of [0, 2.1, 4.2]) {
+        const leg = box(scene, -0.03, 0.03, 0, 0.55, -0.03, 0.03, 0x5c3a24, { outline: false });
+        leg.position.set(cx + Math.cos(a) * 0.18, 0.27, cz + Math.sin(a) * 0.18);
+        leg.rotation.set(Math.sin(a) * 0.3, 0, -Math.cos(a) * 0.3);
+      }
+      blob(scene, cx, 0.85, cz, 0.3, 0xc9b98a);
+      blob(scene, cx + 0.08, 0.92, cz + 0.12, 0.17, 0x8a9a5b);
+      const ringGeom = new THREE.TorusGeometry(0.36, 0.025, 4, 20);
+      disposables.push(ringGeom);
+      const ring = new THREE.Mesh(ringGeom, material(BRASS));
+      ring.position.set(cx, 0.85, cz);
+      ring.rotation.y = 0.6;
+      scene.add(ring);
     } else if (id === "prop_bar_island") {
       box(scene, minX, maxX, 0, 0.95, minZ, maxZ, 0xf2e4c9);
       box(scene, minX - 0.03, maxX + 0.03, 0.95, 1.0, minZ - 0.03, maxZ + 0.03, 0xe9a964);
     } else if (id === "prop_fridge") {
       box(scene, minX, maxX, 0, 2.0, minZ, maxZ, 0xc6d5da);
+      box(scene, minX + 0.04, maxX - 0.04, 1.28, 1.3, maxZ, maxZ + 0.01, 0x8fa3aa, { outline: false });
+      box(scene, maxX - 0.18, maxX - 0.12, 1.4, 1.8, maxZ, maxZ + 0.05, 0x9aa3ab);
+      box(scene, maxX - 0.18, maxX - 0.12, 0.7, 1.15, maxZ, maxZ + 0.05, 0x9aa3ab);
+      box(scene, minX + 0.2, minX + 0.45, 1.5, 1.75, maxZ, maxZ + 0.01, 0xf9e05c, { outline: false });
     } else if (id === "prop_ac_unit") {
       box(scene, minX, maxX, 0, 1.0, minZ, maxZ, 0xe8eef0);
+    } else if (id === "prop_bin") {
+      box(scene, minX, maxX, 0, 0.5, minZ, maxZ, 0x2563eb);
+      box(scene, minX - 0.02, maxX + 0.02, 0.5, 0.54, minZ - 0.02, maxZ + 0.02, 0x1e40af);
     } else if (id === "prop_tv_cabinet") {
       box(scene, minX, maxX, 0, 0.5, minZ, maxZ, 0xa8693f);
       box(scene, minX + 0.4, maxX - 0.4, 0.5, 1.2, minZ, minZ + 0.1, 0x3d363e);
@@ -449,7 +511,10 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
       box(scene, cx - 0.03, cx + 0.03, 0, 1.5, cz - 0.03, cz + 0.03, CHAIR_BASE);
       box(scene, cx - 0.2, cx + 0.2, 1.4, 1.6, cz - 0.2, cz + 0.2, 0xf3e3b5);
     } else if (id === "prop_coat_stand") {
-      box(scene, cx - 0.04, cx + 0.04, 0, 1.7, cz - 0.04, cz + 0.04, WALNUT_TOP);
+      box(scene, cx - 0.2, cx + 0.2, 0, 0.05, cz - 0.2, cz + 0.2, WALNUT_TOP);
+      box(scene, cx - 0.04, cx + 0.04, 0.05, 1.7, cz - 0.04, cz + 0.04, WALNUT_TOP);
+      box(scene, cx - 0.22, cx - 0.04, 0.85, 1.55, cz - 0.12, cz + 0.12, 0x3e5c8a);
+      box(scene, cx + 0.04, cx + 0.2, 0.95, 1.6, cz - 0.1, cz + 0.1, 0xb5651d);
     } else if (id === "prop_bin") {
       box(scene, minX, maxX, 0, 0.5, minZ, maxZ, 0x2563eb);
     } else {
@@ -459,6 +524,7 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
 
   for (const furniture of OFFICE_PROPS) {
     const { id, kind, minX, maxX, minZ, maxZ, zone } = furniture;
+    part = id;
     const cx = mid(minX, maxX);
     const cz = mid(minZ, maxZ);
 
@@ -519,20 +585,36 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
         break;
       }
       case "bookshelf": {
-        const bodyColor = zone === "director" ? 0x6b4029 : 0x805242;
-        box(scene, minX, maxX, 0, 2.4, minZ, maxZ, bodyColor);
-        const palette = [0xc3182a, 0x3b82f6, 0x64a83b, 0xf0c419, 0xb5651d, LEATHER];
-        for (let shelf = 0; shelf < 4; shelf++) {
-          const y = 1.0 + shelf * 0.4;
-          for (let book = 0; book < 3; book++) {
-            const z0 = minZ + 0.08 + book * ((maxZ - minZ - 0.16) / 3);
-            box(scene, maxX, maxX + 0.02, y, y + 0.3, z0, z0 + 0.12, palette[(shelf + book) % palette.length]!, { outline: false });
+        const director = zone === "director";
+        const bodyColor = director ? 0x6b4029 : 0x805242;
+        const height = director ? 2.4 : 1.6;
+        box(scene, minX, maxX, 0, height, minZ, maxZ, bodyColor);
+        const palette = [0xc3182a, 0x3b82f6, 0x64a83b, 0xf0c419, 0xb5651d, LEATHER, 0xd4a537];
+        const shelves = director ? 4 : 3;
+        const y0 = director ? 0.9 : 0.15;
+        // Director's units face east (books on the +X face), the lounge unit faces south (+Z face)
+        const span = director ? maxZ - minZ : maxX - minX;
+        const from = director ? minZ : minX;
+        for (let shelf = 0; shelf < shelves; shelf++) {
+          const y = y0 + shelf * 0.38;
+          box(scene, ...(director ? [maxX, maxX + 0.015, y - 0.03, y, minZ + 0.05, maxZ - 0.05] as const : [minX + 0.05, maxX - 0.05, y - 0.03, y, maxZ, maxZ + 0.015] as const), 0x4a2a18, { outline: false });
+          let at = from + 0.08;
+          let book = 0;
+          while (at < from + span - 0.12) {
+            const w = 0.07 + ((shelf * 7 + book * 3) % 4) * 0.025;
+            const h = 0.22 + ((shelf + book * 5) % 3) * 0.04;
+            const color = palette[(shelf * 3 + book) % palette.length]!;
+            if (director) box(scene, maxX, maxX + 0.025, y, y + h, at, at + w, color, { outline: false });
+            else box(scene, at, at + w, y, y + h, maxZ, maxZ + 0.025, color, { outline: false });
+            at += w + 0.015;
+            book++;
           }
         }
         break;
       }
       case "sofa":
-        buildSofa(furniture, zone === "director" ? LEATHER : TEAL);
+        if (zone === "director") buildSofa(furniture, LEATHER, 0x5c2a17, "south");
+        else buildSofa(furniture, TEAL, 0x2c626e, id === "prop_sofa_b" ? "west" : "north");
         break;
       case "coffee_table":
         box(scene, minX, maxX, 0.36, 0.4, minZ, maxZ, zone === "director" ? WALNUT : 0xa8693f);
@@ -551,9 +633,20 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
       }
       case "coffee_counter": {
         box(scene, minX, maxX, 0, 0.95, minZ, maxZ, 0xf2e4c9);
+        for (let x = minX + 0.5; x < maxX; x += 0.5) {
+          box(scene, x - 0.01, x + 0.01, 0.08, 0.88, maxZ, maxZ + 0.01, 0xe2cfae, { outline: false });
+        }
         box(scene, minX - 0.03, maxX + 0.03, 0.95, 1.0, minZ - 0.03, maxZ + 0.03, 0xe9a964);
-        box(scene, minX + 0.3, minX + 0.7, 1.0, 1.35, minZ + 0.1, minZ + 0.4, 0x3d363e);
-        box(scene, maxX - 0.5, maxX - 0.3, 1.0, 1.1, minZ + 0.1, minZ + 0.3, 0xb8bcc4, { outline: false });
+        // Espresso machine with a red light and a cup
+        box(scene, minX + 0.25, minX + 0.75, 1.0, 1.4, minZ + 0.08, minZ + 0.45, 0x3d363e);
+        box(scene, minX + 0.6, minX + 0.66, 1.3, 1.34, minZ + 0.45, minZ + 0.46, 0xef4444, { outline: false });
+        box(scene, minX + 0.42, minX + 0.56, 1.0, 1.1, minZ + 0.45, minZ + 0.6, 0xffffff);
+        // Sink with a tap at gx 16.5
+        box(scene, minX + 2.25, minX + 2.75, 0.97, 1.005, minZ + 0.12, maxZ - 0.12, 0x9aa3ab, { outline: false });
+        box(scene, minX + 2.47, minX + 2.53, 1.0, 1.25, minZ + 0.06, minZ + 0.12, 0xb8bcc4);
+        box(scene, minX + 2.47, minX + 2.53, 1.2, 1.25, minZ + 0.06, minZ + 0.3, 0xb8bcc4);
+        // Cup stack at gx 17.5
+        for (let i = 0; i < 3; i++) box(scene, minX + 3.4, minX + 3.6, 1.0 + i * 0.09, 1.08 + i * 0.09, minZ + 0.25, minZ + 0.45, i % 2 ? 0x3e898e : 0xffffff);
         break;
       }
       case "water_cooler":
@@ -595,10 +688,23 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
     }
   }
 
+  part = "details";
   // Stools at the kitchen island (grid 14.5 / 16 / 17.5, gz 17.7)
   for (const gx of [14.5, 16, 17.5]) {
-    cylinder(scene, gx - 20, 17.7 - 10, 0.12, 0, 0.7, 0xd98f5e);
+    box(scene, gx - 20 - 0.04, gx - 20 + 0.04, 0, 0.62, 7.66, 7.74, 0x3a3d4a);
+    box(scene, gx - 20 - 0.15, gx - 20 + 0.15, 0.04, 0.07, 7.55, 7.85, 0x3a3d4a, { outline: false });
+    box(scene, gx - 20 - 0.2, gx - 20 + 0.2, 0.62, 0.7, 7.5, 7.9, 0xd98f5e);
   }
+
+  // Server room: cable tray along the north wall at y 2.4, with drop posts to each rack
+  box(scene, 1.5, 5.8, 2.4, 2.48, 3.15, 3.55, 0xb8bcc4);
+  for (const x of [2.2, 3.6, 5.0]) box(scene, x - 0.03, x + 0.03, 2.2, 2.4, 3.5, 3.56, 0xb8bcc4, { outline: false });
+
+  // Lounge coffee table: magazines; reception: a phone and papers
+  box(scene, -16.2, -15.6, 0.4, 0.42, 6.2, 6.6, 0xf48fb1, { outline: false });
+  box(scene, -15.4, -14.9, 0.4, 0.42, 6.35, 6.75, 0x81d4fa, { outline: false });
+  box(scene, 11.3, 11.7, 1.05, 1.07, 4.6, 5.0, 0xf8fafc, { outline: false });
+  box(scene, 11.35, 11.65, 1.05, 1.12, 6.2, 6.45, 0x282a36);
 
   // Low teal dividers between the desk pairs (grid gz 4, gx 14–18 and 20–24). Desks already block walking.
   const dividerA = gridRect(14, 18, 4, 4);

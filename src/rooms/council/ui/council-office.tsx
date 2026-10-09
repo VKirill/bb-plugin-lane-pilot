@@ -4,6 +4,8 @@ import { buildOfficeFloor } from "./office-scene";
 import {
   OFFICE_SEATS,
   OWNER_SEAT_ID,
+  RECEPTIONIST_ID,
+  STAFF_PREFIX,
   assignOfficeSeats,
   createOfficeAgents,
   deriveOfficeActors,
@@ -44,6 +46,28 @@ const HAIR_PALETTE = ["#3a2a22", "#f0c060", "#6b3a1f"];
 const PANTS_COLOR = 0x3a3d4a;
 const SHOE_COLOR = 0x282a36;
 const OUTLINE_COLOR = 0x282a36;
+/** Background staff take the desks the council leaves free; the receptionist is always in. */
+const DESK_COUNT = 8;
+const MAX_STAFF_WORKERS = 5;
+const STAFF_COLORS = ["#e8833a", "#4f9d4a", "#3d7cc9", "#9a5bb5", "#d9a03f", "#c0504d"];
+const RECEPTIONIST_COLOR = "#2c9a8f";
+const CHAT_GLYPHS = ["…", "ха", "!", "?", "👍", "☕"];
+
+/** Camera orbit: the default view and the limits that keep the cutaway's back walls behind the floor. */
+const VIEW_DEFAULT = { yaw: Math.atan2(0.4716, 0.7263), pitch: Math.PI / 6, zoom: 1, tx: 0, tz: 0 };
+const YAW_RANGE = [0.05, Math.PI / 2 - 0.05] as const;
+const PITCH_RANGE = [0.3, 1.25] as const;
+const ZOOM_RANGE = [0.8, 4] as const;
+const CAMERA_DISTANCE = 60;
+type OfficeView = typeof VIEW_DEFAULT;
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+export function staffIdsFor(councilActorIds: string[]): string[] {
+  const council = councilActorIds.filter((id) => id !== OWNER_SEAT_ID).length;
+  const workers = clamp(DESK_COUNT - council, 0, MAX_STAFF_WORKERS);
+  return [RECEPTIONIST_ID, ...Array.from({ length: workers }, (_, i) => `${STAFF_PREFIX}${i + 1}`)];
+}
 
 function checkWebGLSupport(): boolean {
   if (typeof window === "undefined" || typeof document === "undefined") return false;
@@ -70,7 +94,10 @@ function hashString(id: string): number {
 function actionForPoint(pointKind: string | undefined, pose: string | undefined): string | undefined {
   if (pose === "typing") return "typing";
   if (pose === "window_gaze") return "window";
-  if (pose === "drinking") return pointKind === "bar" ? "bar" : "coffee";
+  if (pose === "operating") return "operate";
+  if (pose === "chatting") return "chat";
+  if (pointKind === "bar") return "bar";
+  if (pose === "drinking" || pointKind === "coffee" || pointKind === "water") return "coffee";
   return undefined;
 }
 
@@ -112,6 +139,12 @@ export function CouncilOffice({
     deriveOfficeActors(detail, cursor, Date.now())
   );
   const [reactionGlyphs, setReactionGlyphs] = useState<Record<string, string>>({});
+  /** Short reactions over people chatting at the coffee point, the open space or the entrance. */
+  const [chatGlyphs, setChatGlyphs] = useState<Record<string, string>>({});
+  const [staffIds, setStaffIds] = useState<string[]>(() => staffIdsFor(actors.map((a) => a.id)));
+  const [viewMoved, setViewMoved] = useState(false);
+  const viewTargetRef = useRef<OfficeView>({ ...VIEW_DEFAULT });
+  const staffOverlayRef = useRef(new Map<string, HTMLDivElement>());
 
   // Mutable refs so the animation loop never closes over stale props and the scene is not recreated
   const detailRef = useRef(detail);
@@ -143,11 +176,12 @@ export function CouncilOffice({
         lastCursorRef.current = next;
         cursorSelectedTimeRef.current = now;
       }
-      setActors(
-        deriveOfficeActors(detailRef.current, cursorRef.current, now, {
-          cursorSelectedAt: cursorSelectedTimeRef.current,
-        })
-      );
+      const nextActors = deriveOfficeActors(detailRef.current, cursorRef.current, now, {
+        cursorSelectedAt: cursorSelectedTimeRef.current,
+      });
+      setActors(nextActors);
+      const nextStaff = staffIdsFor(nextActors.map((a) => a.id));
+      setStaffIds((prev) => (prev.join("|") === nextStaff.join("|") ? prev : nextStaff));
     };
     syncActors();
     const timer = setInterval(syncActors, 1000);
@@ -187,7 +221,10 @@ export function CouncilOffice({
         setHasWebGL(false);
         return;
       }
-      // One render pixel per two CSS pixels: the pixel-art look (reference.md §4)
+      // One render pixel per two CSS pixels at the default view: the pixel-art look (reference.md §4).
+      // Zooming in keeps the render resolution fixed in world units, so the pixels grow with the zoom
+      // like a zoomed pixel-art picture instead of turning into smooth 3D.
+      let pixelZoomStep = 1;
       renderer.setPixelRatio(0.5);
 
       const scene = new THREE.Scene();
@@ -195,8 +232,21 @@ export function CouncilOffice({
 
       // Camera: orthographic, azimuth 33°, elevation 30°, target = floor centre
       const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 500);
-      camera.position.set(28.3, 30.0, 43.6);
-      camera.lookAt(0, 0, 0);
+      // The view eases towards the target the controls set (frame-rate independent), within the limits above
+      const view: OfficeView = { ...viewTargetRef.current };
+      let fitViewHeight = 22.7;
+      const applyView = () => {
+        const cp = Math.cos(view.pitch);
+        camera.position.set(
+          view.tx + CAMERA_DISTANCE * Math.sin(view.yaw) * cp,
+          CAMERA_DISTANCE * Math.sin(view.pitch),
+          view.tz + CAMERA_DISTANCE * Math.cos(view.yaw) * cp
+        );
+        camera.lookAt(view.tx, 0, view.tz);
+        camera.zoom = view.zoom;
+        camera.updateProjectionMatrix();
+      };
+      applyView();
 
       buildOfficeFloor({ THREE, scene, disposables });
 
@@ -344,11 +394,84 @@ export function CouncilOffice({
         const h = container.clientHeight || 240;
         renderer.setSize(w, h, false);
         const { viewWidth, viewHeight, centerY } = fitOfficeCamera(w / h);
+        fitViewHeight = viewHeight;
         camera.left = -viewWidth / 2;
         camera.right = viewWidth / 2;
         camera.top = viewHeight / 2 + centerY;
         camera.bottom = -viewHeight / 2 + centerY;
         camera.updateProjectionMatrix();
+      };
+
+      // Orbit controls: drag rotates, right/shift-drag or two fingers move, wheel or pinch zooms, double-click resets
+      const pointers = new Map<number, { x: number; y: number }>();
+      let pinchDistance = 0;
+      const target = viewTargetRef.current;
+      const markMoved = () => setViewMoved(true);
+      const panBy = (dxPx: number, dyPx: number) => {
+        const unitsPerPx = fitViewHeight / target.zoom / (container.clientHeight || 1);
+        const right = { x: Math.cos(target.yaw), z: -Math.sin(target.yaw) };
+        const back = { x: Math.sin(target.yaw), z: Math.cos(target.yaw) };
+        const lift = 1 / Math.max(0.3, Math.sin(target.pitch));
+        target.tx = clamp(target.tx - (dxPx * right.x + dyPx * -back.x * lift) * unitsPerPx, -20, 20);
+        target.tz = clamp(target.tz - (dxPx * right.z + dyPx * -back.z * lift) * unitsPerPx, -10, 10);
+      };
+      const onPointerDown = (e: PointerEvent) => {
+        canvas.setPointerCapture(e.pointerId);
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (pointers.size === 2) {
+          const [a, b] = [...pointers.values()];
+          pinchDistance = Math.hypot(a!.x - b!.x, a!.y - b!.y);
+        }
+      };
+      const onPointerMove = (e: PointerEvent) => {
+        const prev = pointers.get(e.pointerId);
+        if (!prev) return;
+        const dx = e.clientX - prev.x;
+        const dy = e.clientY - prev.y;
+        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (pointers.size >= 2) {
+          const [a, b] = [...pointers.values()];
+          const dist = Math.hypot(a!.x - b!.x, a!.y - b!.y);
+          if (pinchDistance > 0) target.zoom = clamp(target.zoom * (dist / pinchDistance), ZOOM_RANGE[0], ZOOM_RANGE[1]);
+          pinchDistance = dist;
+          panBy(dx / 2, dy / 2);
+        } else if (e.buttons === 2 || e.shiftKey) {
+          panBy(dx, dy);
+        } else {
+          target.yaw = clamp(target.yaw - dx * 0.006, YAW_RANGE[0], YAW_RANGE[1]);
+          target.pitch = clamp(target.pitch + dy * 0.004, PITCH_RANGE[0], PITCH_RANGE[1]);
+        }
+        markMoved();
+      };
+      const onPointerUp = (e: PointerEvent) => {
+        pointers.delete(e.pointerId);
+        pinchDistance = 0;
+      };
+      const onWheel = (e: WheelEvent) => {
+        e.preventDefault();
+        target.zoom = clamp(target.zoom * Math.exp(-e.deltaY * 0.0015), ZOOM_RANGE[0], ZOOM_RANGE[1]);
+        markMoved();
+      };
+      const onDoubleClick = () => {
+        Object.assign(target, VIEW_DEFAULT);
+        setViewMoved(false);
+      };
+      const onContextMenu = (e: Event) => e.preventDefault();
+      canvas.addEventListener("pointerdown", onPointerDown);
+      canvas.addEventListener("pointermove", onPointerMove);
+      canvas.addEventListener("pointerup", onPointerUp);
+      canvas.addEventListener("pointercancel", onPointerUp);
+      canvas.addEventListener("wheel", onWheel, { passive: false });
+      canvas.addEventListener("dblclick", onDoubleClick);
+      canvas.addEventListener("contextmenu", onContextMenu);
+      const removeControls = () => {
+        canvas.removeEventListener("pointerdown", onPointerDown);
+        canvas.removeEventListener("pointermove", onPointerMove);
+        canvas.removeEventListener("pointerup", onPointerUp);
+        canvas.removeEventListener("pointercancel", onPointerUp);
+        canvas.removeEventListener("wheel", onWheel);
+        canvas.removeEventListener("dblclick", onDoubleClick);
+        canvas.removeEventListener("contextmenu", onContextMenu);
       };
 
       resizeObserver = new ResizeObserver(handleResize);
@@ -361,6 +484,106 @@ export function CouncilOffice({
 
       let lastTime = performance.now();
       let lastReactionCheck = Date.now();
+      let lastChatGlyph = Date.now();
+
+      /** Moves one character towards its spot (path, waiting for blockers, turning, sitting) and poses it. */
+      const driveRig = (
+        id: string,
+        rig: Rig,
+        want: { desiredPos: { x: number; z: number }; desiredYaw: number; shouldSit: boolean; speed: number; action?: string },
+        activity: OfficeActor["activity"],
+        isNewRig: boolean,
+        snap: boolean,
+        dt: number,
+        timeSec: number
+      ) => {
+        const { desiredPos, desiredYaw, shouldSit, speed, action } = want;
+        rig.targetSit = shouldSit;
+        rig.action = action;
+        if (isNewRig) {
+          // A character appears where it belongs (the owner in his chair), not at a meeting chair
+          rig.pos = { x: desiredPos.x, z: desiredPos.z };
+          rig.target = { x: desiredPos.x, z: desiredPos.z };
+          rig.yaw = desiredYaw;
+          rig.sitProgress = shouldSit ? 1 : 0;
+        }
+
+        const distToDesired = Math.hypot(rig.target.x - desiredPos.x, rig.target.z - desiredPos.z);
+        rig.targetYaw = desiredYaw;
+        if (distToDesired > 0.15) {
+          rig.target = { x: desiredPos.x, z: desiredPos.z };
+          if (motionReduced || snap) {
+            rig.pos = { x: desiredPos.x, z: desiredPos.z };
+            rig.path = [];
+          } else {
+            rig.path = findOfficePath(rig.pos, rig.target);
+          }
+        }
+
+        // Walk along the path at bounded speed. A character waits when a standing one blocks the next step.
+        if (rig.path.length > 0 && !motionReduced) {
+          const nextWaypoint = rig.path[0]!;
+          const blockedBy = [...charRigs.entries()].some(([otherId, other]) =>
+            otherId !== id && !other.walking &&
+            Math.hypot(other.pos.x - nextWaypoint.x, other.pos.z - nextWaypoint.z) < 0.35
+          );
+          if (blockedBy && rig.blockedSeconds < 2.5) {
+            rig.blockedSeconds += dt;
+            rig.walking = false;
+          } else {
+            rig.blockedSeconds = 0;
+            const stepResult = walkStep(rig.pos, nextWaypoint, speed, dt);
+            rig.pos = { x: stepResult.x, z: stepResult.z };
+            rig.walking = true;
+            rig.walkTick += dt * 10;
+            const angleDiff = Math.atan2(Math.sin(stepResult.heading - rig.yaw), Math.cos(stepResult.heading - rig.yaw));
+            rig.yaw += Math.sign(angleDiff) * Math.min(Math.abs(angleDiff), 9.0 * dt);
+            if (stepResult.reached) rig.path.shift();
+          }
+        } else {
+          rig.walking = false;
+          const angleDiff = Math.atan2(Math.sin(rig.targetYaw - rig.yaw), Math.cos(rig.targetYaw - rig.yaw));
+          rig.yaw += Math.sign(angleDiff) * Math.min(Math.abs(angleDiff), 7.0 * dt);
+        }
+
+        // Sitting / standing transition
+        if (rig.targetSit && !rig.walking) {
+          rig.sitProgress = Math.min(1, rig.sitProgress + 3.0 * dt);
+        } else {
+          rig.sitProgress = Math.max(0, rig.sitProgress - 3.0 * dt);
+        }
+
+        rig.group.position.set(rig.pos.x, 0, rig.pos.z);
+        rig.group.rotation.y = rig.yaw;
+
+        const pose = getOfficePose(activity, {
+          tick: timeSec + rig.phase,
+          isWalking: rig.walking,
+          sittingProgress: rig.sitProgress,
+          action: rig.action,
+        });
+
+        rig.body.position.y = pose.bodyY;
+        rig.headGroup.position.y = pose.headY;
+        rig.headGroup.rotation.x = pose.headPitch;
+        rig.headGroup.rotation.y = pose.headYaw;
+
+        // Blinking
+        const isBlink = (Math.floor((timeSec + rig.phase) * 3) % 11) === 0;
+        rig.leftEye.scale.y = isBlink ? 0.15 : 1.0;
+        rig.rightEye.scale.y = isBlink ? 0.15 : 1.0;
+
+        rig.leftArmPivot.rotation.x = pose.leftArmPitch;
+        rig.rightArmPivot.rotation.x = pose.rightArmPitch;
+        rig.leftArmPivot.rotation.y = pose.leftArmYaw;
+        rig.rightArmPivot.rotation.y = pose.rightArmYaw;
+        rig.leftArmPivot.rotation.z = pose.leftArmRoll;
+        rig.rightArmPivot.rotation.z = pose.rightArmRoll;
+
+        rig.leftLegPivot.rotation.x = pose.leftLegPitch;
+        rig.rightLegPivot.rotation.x = pose.rightLegPitch;
+
+      };
 
       const animate = (nowTime: number) => {
         if (disposed) return;
@@ -368,6 +591,27 @@ export function CouncilOffice({
         lastTime = nowTime;
         const nowMs = Date.now();
         const timeSec = nowTime / 1000;
+
+        // Ease the view towards the controls' target: exponential smoothing, independent of frame rate
+        const ease = motionReduced ? 1 : 1 - Math.exp(-12 * dt);
+        const goal = viewTargetRef.current;
+        if (
+          Math.abs(goal.yaw - view.yaw) + Math.abs(goal.pitch - view.pitch) + Math.abs(goal.zoom - view.zoom) +
+          Math.abs(goal.tx - view.tx) + Math.abs(goal.tz - view.tz) > 1e-4
+        ) {
+          view.yaw += (goal.yaw - view.yaw) * ease;
+          view.pitch += (goal.pitch - view.pitch) * ease;
+          view.zoom += (goal.zoom - view.zoom) * ease;
+          view.tx += (goal.tx - view.tx) * ease;
+          view.tz += (goal.tz - view.tz) * ease;
+          applyView();
+          const step = Math.max(1, Math.round(view.zoom * 2) / 2);
+          if (step !== pixelZoomStep) {
+            pixelZoomStep = step;
+            renderer.setPixelRatio(0.5 / step);
+            handleResize();
+          }
+        }
 
         const currentDetail = detailRef.current;
         const currentCursor = cursorRef.current;
@@ -389,11 +633,19 @@ export function CouncilOffice({
         );
 
         // Sim agents follow the actor list (the same order as the seat assignment above)
-        const ids = currentActors.map((a) => a.id).join("|");
+        const currentStaff = staffIdsFor(currentActors.map((a) => a.id));
+        const ids = [...currentActors.map((a) => a.id), ...currentStaff].join("|");
         if (ids !== simIds) {
           simIds = ids;
-          simAgents = createOfficeAgents(currentActors.map((a) => a.id));
+          simAgents = createOfficeAgents(currentActors.map((a) => a.id), currentStaff);
           reservations.clear();
+          // Staff that left the floor (a bigger council took their desks) are removed from the scene
+          for (const [id, rig] of charRigs) {
+            if (id.startsWith(STAFF_PREFIX) && !currentStaff.includes(id)) {
+              scene.remove(rig.group);
+              charRigs.delete(id);
+            }
+          }
         }
         // The owner pulls report visitors away from the corridor the moment he walks to the table
         if (ownerWantsMeeting) {
@@ -450,7 +702,7 @@ export function CouncilOffice({
             // Idle: the owner's sim spot (home chair, window or bar)
             const point = getInteractionPoint(sim?.currentPointId ?? "");
             if (point) {
-              desiredPos = { x: point.x, z: point.z };
+              desiredPos = { x: point.seatX ?? point.x, z: point.seatZ ?? point.z };
               desiredYaw = point.approachAngle;
               shouldSit = point.pose === "typing" || point.pose === "sitting_sofa";
               action = actionForPoint(point.kind, point.pose);
@@ -475,97 +727,14 @@ export function CouncilOffice({
             // Idle: the simulation's spot (desk, sofa, coffee, window, chat or report)
             const point = getInteractionPoint(sim.currentPointId);
             if (point) {
-              desiredPos = { x: point.x, z: point.z };
+              desiredPos = { x: point.seatX ?? point.x, z: point.seatZ ?? point.z };
               desiredYaw = point.approachAngle;
               shouldSit = point.pose === "typing" || point.pose === "sitting_sofa";
               action = actionForPoint(point.kind, point.pose);
             }
           }
 
-          rig.targetSit = shouldSit;
-          rig.action = action;
-          if (isNewRig) {
-            // A character appears where it belongs (the owner in his chair), not at a meeting chair
-            rig.pos = { x: desiredPos.x, z: desiredPos.z };
-            rig.target = { x: desiredPos.x, z: desiredPos.z };
-            rig.yaw = desiredYaw;
-            rig.sitProgress = shouldSit ? 1 : 0;
-          }
-
-          const distToDesired = Math.hypot(rig.target.x - desiredPos.x, rig.target.z - desiredPos.z);
-          rig.targetYaw = desiredYaw;
-          if (distToDesired > 0.15) {
-            rig.target = { x: desiredPos.x, z: desiredPos.z };
-            if (motionReduced || snap) {
-              rig.pos = { x: desiredPos.x, z: desiredPos.z };
-              rig.path = [];
-            } else {
-              rig.path = findOfficePath(rig.pos, rig.target);
-            }
-          }
-
-          // Walk along the path at bounded speed. A character waits when a standing one blocks the next step.
-          if (rig.path.length > 0 && !motionReduced) {
-            const nextWaypoint = rig.path[0]!;
-            const blockedBy = [...charRigs.entries()].some(([id, other]) =>
-              id !== actor.id && !other.walking &&
-              Math.hypot(other.pos.x - nextWaypoint.x, other.pos.z - nextWaypoint.z) < 0.35
-            );
-            if (blockedBy && rig.blockedSeconds < 2.5) {
-              rig.blockedSeconds += dt;
-              rig.walking = false;
-            } else {
-              rig.blockedSeconds = 0;
-              const stepResult = walkStep(rig.pos, nextWaypoint, speed, dt);
-              rig.pos = { x: stepResult.x, z: stepResult.z };
-              rig.walking = true;
-              rig.walkTick += dt * 10;
-              const angleDiff = Math.atan2(Math.sin(stepResult.heading - rig.yaw), Math.cos(stepResult.heading - rig.yaw));
-              rig.yaw += Math.sign(angleDiff) * Math.min(Math.abs(angleDiff), 9.0 * dt);
-              if (stepResult.reached) rig.path.shift();
-            }
-          } else {
-            rig.walking = false;
-            const angleDiff = Math.atan2(Math.sin(rig.targetYaw - rig.yaw), Math.cos(rig.targetYaw - rig.yaw));
-            rig.yaw += Math.sign(angleDiff) * Math.min(Math.abs(angleDiff), 7.0 * dt);
-          }
-
-          // Sitting / standing transition
-          if (rig.targetSit && !rig.walking) {
-            rig.sitProgress = Math.min(1, rig.sitProgress + 3.0 * dt);
-          } else {
-            rig.sitProgress = Math.max(0, rig.sitProgress - 3.0 * dt);
-          }
-
-          rig.group.position.set(rig.pos.x, 0, rig.pos.z);
-          rig.group.rotation.y = rig.yaw;
-
-          const pose = getOfficePose(actor.activity, {
-            tick: timeSec + rig.phase,
-            isWalking: rig.walking,
-            sittingProgress: rig.sitProgress,
-            action: rig.action,
-          });
-
-          rig.body.position.y = pose.bodyY;
-          rig.headGroup.position.y = pose.headY;
-          rig.headGroup.rotation.x = pose.headPitch;
-          rig.headGroup.rotation.y = pose.headYaw;
-
-          // Blinking
-          const isBlink = (Math.floor((timeSec + rig.phase) * 3) % 11) === 0;
-          rig.leftEye.scale.y = isBlink ? 0.15 : 1.0;
-          rig.rightEye.scale.y = isBlink ? 0.15 : 1.0;
-
-          rig.leftArmPivot.rotation.x = pose.leftArmPitch;
-          rig.rightArmPivot.rotation.x = pose.rightArmPitch;
-          rig.leftArmPivot.rotation.y = pose.leftArmYaw;
-          rig.rightArmPivot.rotation.y = pose.rightArmYaw;
-          rig.leftArmPivot.rotation.z = pose.leftArmRoll;
-          rig.rightArmPivot.rotation.z = pose.rightArmRoll;
-
-          rig.leftLegPivot.rotation.x = pose.leftLegPitch;
-          rig.rightLegPivot.rotation.x = pose.rightLegPitch;
+          driveRig(actor.id, rig, { desiredPos, desiredYaw, shouldSit, speed, action }, actor.activity, isNewRig, snap, dt, timeSec);
 
           // The character being answered turns to face the speaker
           if (actor.activity === "arguing" && actor.facing) {
@@ -576,7 +745,43 @@ export function CouncilOffice({
             }
           }
         });
+        // Background staff: their own simulation spots, idle poses, no council duties
+        currentStaff.forEach((staffId, idx) => {
+          const sim = simById.get(staffId);
+          const point = getInteractionPoint(sim?.currentPointId ?? "");
+          if (!point) return;
+          const isNewRig = !charRigs.has(staffId);
+          let rig = charRigs.get(staffId);
+          if (!rig) {
+            const color = staffId === RECEPTIONIST_ID ? RECEPTIONIST_COLOR : STAFF_COLORS[idx % STAFF_COLORS.length]!;
+            const pseudo: OfficeActor = { id: staffId, label: "", color, activity: "idle" };
+            const spawn = { id: staffId, seatId: staffId, pointId: point.id, x: point.x, z: point.z, angle: point.approachAngle, speakX: point.x, speakZ: point.z };
+            rig = buildRig(pseudo, spawn, currentActors.length + idx + 1);
+            charRigs.set(staffId, rig);
+          }
+          driveRig(staffId, rig, {
+            desiredPos: { x: point.seatX ?? point.x, z: point.seatZ ?? point.z },
+            desiredYaw: point.approachAngle,
+            shouldSit: point.pose === "typing" || point.pose === "sitting_sofa",
+            speed: WALK_SPEED,
+            action: actionForPoint(point.kind, point.pose),
+          }, "idle", isNewRig, snap, dt, timeSec);
+        });
         snapRef.current = false;
+
+        // Now and then someone who is chatting says something short
+        if (nowMs - lastChatGlyph > 2600) {
+          lastChatGlyph = nowMs;
+          const chatting = simAgents.filter((a) => (a.activity === "chat" || a.activity === "coffee") && !charRigs.get(a.id)?.walking);
+          if (chatting.length > 0 && Math.random() < 0.7) {
+            const who = chatting[Math.floor(Math.random() * chatting.length)]!;
+            const glyph = CHAT_GLYPHS[Math.floor(Math.random() * CHAT_GLYPHS.length)]!;
+            setChatGlyphs({ [who.id]: glyph });
+            setTimeout(() => {
+              if (!disposed) setChatGlyphs({});
+            }, 1800);
+          }
+        }
 
         // Name tags, bubbles and reactions: projected HTML overlays with collision resolution
         const w = container.clientWidth || 320;
@@ -618,6 +823,13 @@ export function CouncilOffice({
           }
         });
 
+        for (const [id, el] of staffOverlayRef.current) {
+          const rig = charRigs.get(id);
+          if (!rig) continue;
+          const p = new THREE.Vector3(rig.pos.x, rig.headGroup.position.y * RIG_SCALE + 0.5, rig.pos.z).project(camera);
+          el.style.transform = `translate3d(${Math.round(((p.x + 1) * w) / 2)}px, ${Math.round(((-p.y + 1) * h) / 2)}px, 0)`;
+        }
+        // Council chat glyphs ride on the council members' own overlays
         renderer.render(scene, camera);
         animId = requestAnimationFrame(animate);
       };
@@ -628,6 +840,7 @@ export function CouncilOffice({
         disposed = true;
         if (animId !== null) cancelAnimationFrame(animId);
         if (resizeObserver) resizeObserver.disconnect();
+        removeControls();
         for (const item of disposables) {
           try {
             item.dispose();
@@ -668,7 +881,7 @@ export function CouncilOffice({
   return (
     <div
       ref={containerRef}
-      className="absolute inset-0 select-none overflow-hidden bg-[#acddec] font-mono text-xs touch-pan-x touch-pan-y"
+      className="absolute inset-0 select-none overflow-hidden bg-[#acddec] font-mono text-xs touch-none"
       style={{ boxShadow: "inset 0 0 0 2px #0f172a", imageRendering: "pixelated" }}
       data-testid="council-office"
     >
@@ -711,8 +924,9 @@ export function CouncilOffice({
         <>
           <canvas
             ref={canvasRef}
-            className="absolute inset-0 h-full w-full block"
+            className="absolute inset-0 h-full w-full block cursor-grab active:cursor-grabbing"
             style={{ imageRendering: "pixelated" }}
+            data-testid="council-office-canvas"
           />
 
           {/* Projected HTML overlays: name tags, typewriter speech bubbles, listener reactions */}
@@ -737,6 +951,11 @@ export function CouncilOffice({
                   style={{ transform: "translate3d(-9999px, -9999px, 0)" }}
                   onClick={() => onSelectSpeaker?.(actor.id)}
                 >
+                  {!reaction && chatGlyphs[actor.id] ? (
+                    <div className="mb-1 bg-white px-1.5 py-0.5 text-xs font-mono font-bold text-slate-900 border border-slate-900" style={{ boxShadow: "1px 1px 0 #0f172a" }}>
+                      {chatGlyphs[actor.id]}
+                    </div>
+                  ) : null}
                   {reaction ? (
                     <div
                       className="mb-1 bg-amber-200 px-1.5 py-0.5 text-xs font-mono font-bold text-slate-900 border border-slate-900 animate-bounce"
@@ -786,6 +1005,42 @@ export function CouncilOffice({
                 </div>
               );
             })}
+            {staffIds.map((id) => (
+              <div
+                key={id}
+                ref={(el) => {
+                  if (el) staffOverlayRef.current.set(id, el);
+                  else staffOverlayRef.current.delete(id);
+                }}
+                className="absolute left-0 top-0 -translate-x-1/2 -translate-y-full"
+                style={{ transform: "translate3d(-9999px, -9999px, 0)" }}
+              >
+                {chatGlyphs[id] ? (
+                  <div className="bg-white px-1.5 py-0.5 text-xs font-mono font-bold text-slate-900 border border-slate-900" style={{ boxShadow: "1px 1px 0 #0f172a" }}>
+                    {chatGlyphs[id]}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+
+          {/* Camera: a hint and a reset once the view has moved */}
+          <div className="pointer-events-none absolute bottom-2 left-2 z-10 flex items-center gap-2 text-[10px] font-mono text-slate-800">
+            {viewMoved ? (
+              <button
+                type="button"
+                className="pointer-events-auto border-2 border-slate-900 bg-amber-200 px-2 py-0.5 font-bold"
+                style={{ boxShadow: "2px 2px 0 #0f172a" }}
+                onClick={() => {
+                  Object.assign(viewTargetRef.current, VIEW_DEFAULT);
+                  setViewMoved(false);
+                }}
+                data-testid="council-camera-reset"
+              >
+                ⟲ {t("councilCameraReset")}
+              </button>
+            ) : null}
+            <span className="bg-white/70 px-1.5 py-0.5">{t("councilCameraHint")}</span>
           </div>
         </>
       )}

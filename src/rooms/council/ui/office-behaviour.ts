@@ -383,6 +383,18 @@ export function getOfficePose(
       rightArmPitch = -1.1 + Math.sin(tick * 2) * 0.06;
       rightArmYaw = 0.45;
       leftArmPitch = 0.1;
+    } else if (action === "chat") {
+      // Talking with someone: hands move, the head nods
+      leftArmPitch = -0.35 + Math.sin(tick * 3.1) * 0.3;
+      rightArmPitch = 0.1 + Math.cos(tick * 2.3) * 0.25;
+      leftArmRoll = 0.15;
+      headPitch = Math.sin(tick * 2.2) * 0.08;
+      headYaw = Math.sin(tick * 0.7) * 0.15;
+    } else if (action === "operate") {
+      // Working a machine or a shelf standing: both hands forward, one reaching
+      leftArmPitch = -0.9 + Math.sin(tick * 5) * 0.08;
+      rightArmPitch = -1.25 + Math.sin(tick * 1.6) * 0.25;
+      headPitch = 0.12;
     } else if (action === "window") {
       leftArmPitch = 0.2;
       rightArmPitch = 0.2;

@@ -44,7 +44,10 @@ export type InteractionPointKind =
   | "printer"
   | "director_chair"
   | "bar"
-  | "report";
+  | "report"
+  | "reception"
+  | "server"
+  | "browse";
 
 export type InteractionPose =
   | "sitting_table"
@@ -54,7 +57,8 @@ export type InteractionPose =
   | "drinking"
   | "sitting_sofa"
   | "window_gaze"
-  | "chatting";
+  | "chatting"
+  | "operating";
 
 export type InteractionPoint = {
   id: string;
@@ -67,6 +71,9 @@ export type InteractionPoint = {
   capacity: number;
   zone: ZoneKind;
   assignedTo?: string; // dedicated seatId, or "owner" for the director's office
+  /** Where the body ends up when the spot is on furniture that blocks walking (a sofa seat); x/z is where one walks to. */
+  seatX?: number;
+  seatZ?: number;
 };
 
 export type PropFootprint = {
@@ -130,9 +137,10 @@ function point(
   approachAngle: number,
   pose: InteractionPose,
   zone: ZoneKind,
-  extra: { capacity?: number; assignedTo?: string } = {}
+  extra: { capacity?: number; assignedTo?: string; seat?: [number, number] } = {}
 ): InteractionPoint {
   const { x, z } = gridPoint(gx, gz);
+  const seat = extra.seat ? gridPoint(extra.seat[0], extra.seat[1]) : null;
   return {
     id,
     propId,
@@ -144,6 +152,7 @@ function point(
     capacity: extra.capacity ?? 1,
     zone,
     ...(extra.assignedTo ? { assignedTo: extra.assignedTo } : {}),
+    ...(seat ? { seatX: seat.x, seatZ: seat.z } : {}),
   };
 }
 
@@ -213,6 +222,10 @@ const DESK_DEFS: Array<{ id: string; area: [number, number, number, number]; cha
 ];
 
 export const OWNER_SEAT_ID = "owner";
+/** Background staff: they live on the floor and never join the council. */
+export const STAFF_PREFIX = "staff_";
+export const RECEPTIONIST_ID = "staff_reception";
+export const isStaffId = (id: string) => id.startsWith(STAFF_PREFIX);
 export const OWNER_HOME_POINT_ID = "pt_director_chair";
 
 export const OFFICE_PROPS: PropFootprint[] = [
@@ -246,6 +259,11 @@ export const OFFICE_PROPS: PropFootprint[] = [
   prop("prop_planter_19", "plant", "open_space", gridRect(18.7, 19.3, 10.1, 10.7)),
   prop("prop_planter_25", "plant", "open_space", gridRect(24.7, 25.3, 10.1, 10.7)),
   prop("prop_plant_open", "plant", "open_space", gridRect(25.2, 25.8, 0.3, 0.9)),
+  // Two people standing and talking in the free strip of the open space (gz 6–10)
+  prop("prop_chat_open", "marker", "open_space", gridRect(18.2, 20.0, 7.6, 8.4), [
+    point("pt_chat_open_a", "prop_chat_open", "chat", 18.6, 8, FACE_EAST, "chatting", "open_space"),
+    point("pt_chat_open_b", "prop_chat_open", "chat", 19.6, 8, FACE_WEST, "chatting", "open_space"),
+  ], false),
 
   // ---- Director's office (gx 26–40, gz 0–11) ----
   prop("prop_bookshelf_1", "bookshelf", "director", gridRect(26.15, 26.75, 0.6, 2.4)),
@@ -293,20 +311,28 @@ export const OFFICE_PROPS: PropFootprint[] = [
     point("pt_water", "prop_water_cooler", "water", 20.0, 14.6, FACE_NORTH, "drinking", "kitchen"),
   ]),
   prop("prop_bar_island", "decor", "kitchen", gridRect(14, 18, 16, 17)),
+  // Bar stools at the island: sit with a coffee, facing the island
+  prop("prop_stools", "marker", "kitchen", gridRect(14.2, 17.8, 17.4, 18.0), [
+    point("pt_stool_1", "prop_stools", "coffee", 14.5, 17.7, FACE_NORTH, "sitting_sofa", "kitchen"),
+    point("pt_stool_2", "prop_stools", "coffee", 16, 17.7, FACE_NORTH, "sitting_sofa", "kitchen"),
+    point("pt_stool_3", "prop_stools", "coffee", 17.5, 17.7, FACE_NORTH, "sitting_sofa", "kitchen"),
+  ], false),
   prop("prop_bin", "decor", "kitchen", gridRect(11.25, 11.65, 19.25, 19.65)),
   prop("prop_plant_kitchen", "plant", "kitchen", gridRect(20.1, 20.7, 19.1, 19.7)),
 
   // ---- Lounge (gx 0–11, gz 13–20) ----
   prop("prop_tv_cabinet", "decor", "lounge", gridRect(2, 5, 13.2, 13.8)),
-  prop("prop_bookshelf_lounge", "bookshelf", "lounge", gridRect(5.5, 7, 13.2, 13.7)),
+  prop("prop_bookshelf_lounge", "bookshelf", "lounge", gridRect(5.5, 7, 13.2, 13.7), [
+    point("pt_bookshelf", "prop_bookshelf_lounge", "browse", 6.25, 14.3, FACE_NORTH, "operating", "lounge"),
+  ]),
   prop("prop_floor_lamp", "decor", "lounge", gridRect(0.8, 1.2, 13.8, 14.2)),
   prop("prop_lounge_table", "coffee_table", "lounge", gridRect(3.5, 5.5, 16, 17)),
   prop("prop_sofa_a", "sofa", "lounge", gridRect(2.5, 6.5, 18.2, 19.2), [
-    point("pt_sofa_1", "prop_sofa_a", "sofa", 3.5, 17.6, FACE_SOUTH, "sitting_sofa", "lounge"),
-    point("pt_sofa_2", "prop_sofa_a", "sofa", 5.5, 17.6, FACE_SOUTH, "sitting_sofa", "lounge"),
+    point("pt_sofa_1", "prop_sofa_a", "sofa", 3.5, 17.6, FACE_NORTH, "sitting_sofa", "lounge", { seat: [3.5, 18.6] }),
+    point("pt_sofa_2", "prop_sofa_a", "sofa", 5.5, 17.6, FACE_NORTH, "sitting_sofa", "lounge", { seat: [5.5, 18.6] }),
   ]),
   prop("prop_sofa_b", "sofa", "lounge", gridRect(7.6, 8.6, 15, 18), [
-    point("pt_sofa_3", "prop_sofa_b", "sofa", 9.2, 16.5, FACE_WEST, "sitting_sofa", "lounge"),
+    point("pt_sofa_3", "prop_sofa_b", "sofa", 9.2, 16.5, FACE_WEST, "sitting_sofa", "lounge", { seat: [8.0, 16.5] }),
   ]),
   prop("prop_window_lounge", "window_ledge", "lounge", gridRect(0.6, 1.4, 16, 17), [
     point("pt_window_lounge", "prop_window_lounge", "window", 1.0, 16.5, FACE_WEST, "window_gaze", "lounge"),
@@ -320,8 +346,11 @@ export const OFFICE_PROPS: PropFootprint[] = [
   prop("prop_rack_3", "server_rack", "server_room", gridRect(24.4, 25.6, 13.3, 14.5)),
   prop("prop_ac_unit", "decor", "server_room", gridRect(26.8, 27.6, 18.6, 19.6)),
   prop("prop_printer", "printer", "server_room", gridRect(22.0, 23.2, 18.4, 19.4), [
-    point("pt_printer", "prop_printer", "printer", 22.6, 17.8, FACE_SOUTH, "typing", "server_room"),
+    point("pt_printer", "prop_printer", "printer", 22.6, 17.8, FACE_SOUTH, "operating", "server_room"),
   ]),
+  prop("prop_server_spot", "marker", "server_room", gridRect(22.9, 23.9, 14.8, 15.6), [
+    point("pt_server", "prop_server_spot", "server", 23.4, 15.2, FACE_NORTH, "operating", "server_room"),
+  ], false),
 
   // ---- Entrance / reception (gx 28–40, gz 13–20) ----
   prop("prop_reception", "reception", "entrance", gridRect(31, 32, 14, 17)),
@@ -330,8 +359,12 @@ export const OFFICE_PROPS: PropFootprint[] = [
   prop("prop_plant_entrance_1", "plant", "entrance", gridRect(39.1, 39.7, 15.1, 15.7)),
   prop("prop_plant_entrance_2", "plant", "entrance", gridRect(39.1, 39.7, 18.3, 18.9)),
   prop("prop_plant_entrance_3", "plant", "entrance", gridRect(28.3, 28.9, 19.1, 19.7)),
-  prop("prop_chat_entrance", "marker", "entrance", gridRect(34.5, 35.5, 14.5, 15.5), [
-    point("pt_chat_entrance", "prop_chat_entrance", "chat", 35, 15, FACE_SOUTH, "chatting", "entrance", { capacity: 2 }),
+  prop("prop_chat_entrance", "marker", "entrance", gridRect(34.2, 35.8, 14.6, 15.4), [
+    point("pt_chat_entrance", "prop_chat_entrance", "chat", 34.6, 15, FACE_EAST, "chatting", "entrance"),
+    point("pt_chat_entrance_b", "prop_chat_entrance", "chat", 35.6, 15, FACE_WEST, "chatting", "entrance"),
+  ], false),
+  prop("prop_reception_chair", "workstation_chair", "entrance", gridRect(30.1, 30.7, 15.2, 15.8), [
+    point("pt_reception", "prop_reception_chair", "reception", 30.4, 15.5, FACE_EAST, "typing", "entrance", { assignedTo: RECEPTIONIST_ID }),
   ], false),
 ];
 
@@ -561,7 +594,7 @@ export const OFFICE_SEATS: OfficeSeat[] = (() => {
   });
 })();
 
-export type OfficeSpotAction = "typing" | "coffee" | "sofa" | "window" | "chat" | "report" | "bar";
+export type OfficeSpotAction = "typing" | "coffee" | "sofa" | "window" | "chat" | "report" | "bar" | "errand";
 
 export type OfficeSpot = {
   key: string;
@@ -574,7 +607,7 @@ export type OfficeSpot = {
 
 function spotFromPoint(p: InteractionPoint): OfficeSpot {
   const action: OfficeSpotAction =
-    p.kind === "desk" || p.kind === "director_chair" || p.kind === "printer"
+    p.kind === "desk" || p.kind === "director_chair" || p.kind === "reception"
       ? "typing"
       : p.kind === "coffee" || p.kind === "water"
       ? "coffee"
@@ -586,6 +619,8 @@ function spotFromPoint(p: InteractionPoint): OfficeSpot {
       ? "bar"
       : p.kind === "report"
       ? "report"
+      : p.kind === "printer" || p.kind === "server" || p.kind === "browse"
+      ? "errand"
       : "chat";
   return {
     key: p.id,
@@ -597,7 +632,7 @@ function spotFromPoint(p: InteractionPoint): OfficeSpot {
   };
 }
 
-const AMBIENT_KINDS: ReadonlySet<InteractionPointKind> = new Set(["desk", "coffee", "water", "sofa", "window", "chat", "report"]);
+const AMBIENT_KINDS: ReadonlySet<InteractionPointKind> = new Set(["desk", "coffee", "water", "sofa", "window", "chat", "report", "printer", "server", "browse"]);
 
 /** Spots for council seats and ambient people. Owner-only points are excluded. */
 export const OFFICE_SPOTS: Record<string, OfficeSpot> = Object.fromEntries(
@@ -647,10 +682,12 @@ export function assignOfficeSeats(actors: Array<{ id: string }>): Map<string, Of
 // PURE OFFICE AGENT SIMULATION
 // ==========================================
 
-export type AgentActivity = "desk" | "sofa" | "coffee" | "window" | "chat" | "report" | "bar" | "meeting" | "walking";
+export type AgentActivity = "desk" | "sofa" | "coffee" | "window" | "chat" | "errand" | "report" | "bar" | "meeting" | "walking";
 
 export type OfficeSimAgent = {
   id: string;
+  /** Background staff ignore the council and never report to the director. */
+  staff: boolean;
   assignedDeskId: string;
   assignedMeetingSeatId: string;
   currentPointId: string;
@@ -668,6 +705,7 @@ export type OfficeSimAgent = {
   coffeeSeconds: number;
   windowSeconds: number;
   chatSeconds: number;
+  errandSeconds: number;
   meetingSeconds: number;
   reportSeconds: number;
   barSeconds: number;
@@ -677,24 +715,25 @@ const REPORT_COOLDOWN_SECONDS = 180;
 const MAX_REPORTS_AT_ONCE = 2;
 
 /**
- * Creates pure agent instances for the simulation. The owner gets the director's chair as home;
- * the other actors get one desk each, in order.
+ * Creates pure agent instances for the simulation. The owner gets the director's chair as home,
+ * the receptionist the reception chair; the other actors and then the staff get one desk each, in order.
  */
-export function createOfficeAgents(actorIds: string[]): OfficeSimAgent[] {
+export function createOfficeAgents(actorIds: string[], staffIds: string[] = []): OfficeSimAgent[] {
   const seats = assignOfficeSeats(actorIds.map((id) => ({ id })));
   const deskPoints = ALL_INTERACTION_POINTS.filter((p) => p.kind === "desk");
   let ambientIndex = 0;
 
-  return actorIds.map((id) => {
-    const seat = seats.get(id)!;
+  const make = (id: string, staff: boolean): OfficeSimAgent => {
     const home = id === OWNER_SEAT_ID
       ? POINTS_BY_ID.get(OWNER_HOME_POINT_ID)!
+      : id === RECEPTIONIST_ID
+      ? POINTS_BY_ID.get("pt_reception")!
       : deskPoints[ambientIndex++ % deskPoints.length]!;
-
     return {
       id,
+      staff,
       assignedDeskId: home.id,
-      assignedMeetingSeatId: seat.pointId,
+      assignedMeetingSeatId: staff ? "" : seats.get(id)!.pointId,
       currentPointId: home.id,
       currentX: home.x,
       currentZ: home.z,
@@ -708,11 +747,14 @@ export function createOfficeAgents(actorIds: string[]): OfficeSimAgent[] {
       coffeeSeconds: 0,
       windowSeconds: 0,
       chatSeconds: 0,
+      errandSeconds: 0,
       meetingSeconds: 0,
       reportSeconds: 0,
       barSeconds: 0,
     };
-  });
+  };
+
+  return [...actorIds.map((id) => make(id, false)), ...staffIds.map((id) => make(id, true))];
 }
 
 function accumulateActivity(agent: OfficeSimAgent, dt: number): void {
@@ -723,6 +765,7 @@ function accumulateActivity(agent: OfficeSimAgent, dt: number): void {
     case "coffee": agent.coffeeSeconds += dt; break;
     case "window": agent.windowSeconds += dt; break;
     case "chat": agent.chatSeconds += dt; break;
+    case "errand": agent.errandSeconds += dt; break;
     case "report": agent.reportSeconds += dt; break;
     case "bar": agent.barSeconds += dt; break;
     case "meeting": agent.meetingSeconds += dt; break;
@@ -759,6 +802,9 @@ function pickFreePoint(
 ): InteractionPoint | null {
   const free = ALL_INTERACTION_POINTS.filter((p) => kinds.includes(p.kind) && !p.assignedTo && !reservations.has(p.id));
   if (free.length === 0) return null;
+  // A conversation needs two: join someone who already stands at a chat spot
+  const joining = free.filter((p) => p.kind === "chat" && ALL_INTERACTION_POINTS.some((o) => o.propId === p.propId && o.id !== p.id && reservations.has(o.id)));
+  if (joining.length > 0) return joining[Math.min(joining.length - 1, Math.floor(rng() * joining.length))]!;
   return free[Math.min(free.length - 1, Math.floor(rng() * free.length))]!;
 }
 
@@ -774,8 +820,10 @@ function reportsInProgress(reservations: Map<string, string>): number {
  * Advances the pure office simulation by dt seconds with an injected clock and rng.
  * - Council active: every actor except the owner walks to its meeting chair; the owner stays home.
  * - Owner: the director's chair for 90–240 s, then 60 % stays, 25 % window (15–30 s), 15 % bar (20–40 s).
- * - Other actors: desk stints, then coffee 35 %, sofa 30 %, window 10 %, chat 15 %, report 10 %.
- *   A report visit needs the owner at home, a free report point, a 3-minute cooldown and at most two at once.
+ * - Other actors: desk stints, then coffee 30 %, sofa 25 %, window 10 %, chat 15 %, errand 10 % (printer,
+ *   server, bookshelf), report 10 %. A report visit needs the owner at home, a free report point,
+ *   a 3-minute cooldown and at most two at once; staff take a second chat instead of reporting.
+ * - Staff never join the council.
  */
 export function stepOfficeSimulation(
   agents: OfficeSimAgent[],
@@ -794,7 +842,8 @@ export function stepOfficeSimulation(
     if (agent.stateStartTime < 0) {
       // First step: start the stint at the home point, then apply the rules below in the same step
       agent.stateStartTime = now;
-      agent.stateDuration = agent.id === OWNER_SEAT_ID ? 90 + rng() * 150 : 60 + rng() * 120;
+      // The first stint is staggered and may be short, so the floor comes alive soon after the page opens
+      agent.stateDuration = agent.id === OWNER_SEAT_ID ? 90 + rng() * 150 : 10 + rng() * 150;
       reservations.set(agent.currentPointId, agent.id);
     }
 
@@ -803,7 +852,7 @@ export function stepOfficeSimulation(
       continue;
     }
 
-    if (isCouncilActive) {
+    if (isCouncilActive && !agent.staff) {
       if (agent.currentPointId !== agent.assignedMeetingSeatId) {
         releasePoint(agent, reservations);
         moveAgentTo(agent, reservations, agent.assignedMeetingSeatId, "meeting", now, 9999);
@@ -847,25 +896,28 @@ function stepAmbient(
 
   if (agent.activity !== "desk") {
     // After a break, back to the own desk.
-    moveAgentTo(agent, reservations, agent.assignedDeskId, "desk", now, 80 + rng() * 100);
+    moveAgentTo(agent, reservations, agent.assignedDeskId, "desk", now, 30 + rng() * 70);
     return;
   }
 
   const roll = rng();
   let picked: { pointId: string; activity: AgentActivity; duration: number } | null = null;
 
-  if (roll < 0.35) {
+  if (roll < 0.3) {
     const point = pickFreePoint(["coffee", "water"], reservations, rng);
     if (point) picked = { pointId: point.id, activity: "coffee", duration: 20 + rng() * 20 };
-  } else if (roll < 0.65) {
+  } else if (roll < 0.55) {
     const point = pickFreePoint(["sofa"], reservations, rng);
     if (point) picked = { pointId: point.id, activity: "sofa", duration: 40 + rng() * 50 };
-  } else if (roll < 0.75) {
+  } else if (roll < 0.65) {
     const point = pickFreePoint(["window"], reservations, rng);
     if (point) picked = { pointId: point.id, activity: "window", duration: 15 + rng() * 15 };
-  } else if (roll < 0.9) {
+  } else if (roll < 0.8 || (agent.staff && roll >= 0.9)) {
     const point = pickFreePoint(["chat"], reservations, rng);
     if (point) picked = { pointId: point.id, activity: "chat", duration: 20 + rng() * 25 };
+  } else if (roll < 0.9) {
+    const point = pickFreePoint(["printer", "server", "browse"], reservations, rng);
+    if (point) picked = { pointId: point.id, activity: "errand", duration: 10 + rng() * 15 };
   } else if (ownerAtHome && now - agent.lastReportAt >= REPORT_COOLDOWN_SECONDS && reportsInProgress(reservations) < MAX_REPORTS_AT_ONCE) {
     const point = pickFreePoint(["report"], reservations, rng);
     if (point) {
@@ -877,6 +929,6 @@ function stepAmbient(
   if (picked) {
     moveAgentTo(agent, reservations, picked.pointId, picked.activity, now, picked.duration);
   } else {
-    moveAgentTo(agent, reservations, agent.assignedDeskId, "desk", now, 60 + rng() * 120);
+    moveAgentTo(agent, reservations, agent.assignedDeskId, "desk", now, 30 + rng() * 70);
   }
 }

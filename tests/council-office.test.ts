@@ -567,6 +567,7 @@ describe("office agent simulation", () => {
         agent.coffeeSeconds +
         agent.windowSeconds +
         agent.chatSeconds +
+        agent.errandSeconds +
         agent.reportSeconds +
         agent.barSeconds;
 
@@ -649,5 +650,48 @@ describe("office agent simulation", () => {
     for (const agent of agents.filter((a) => a.id !== OWNER_SEAT_ID)) {
       expect(agent.currentPointId === agent.assignedDeskId || agent.activity !== "desk").toBe(true);
     }
+  });
+});
+
+describe("office background staff", () => {
+  const staff = ["staff_reception", "staff_1", "staff_2", "staff_3"];
+
+  it("gives the receptionist the reception chair and the other staff free desks after the council", () => {
+    const agents = createOfficeAgents(["chair", "owner", "product"], staff);
+    const receptionist = agents.find((a) => a.id === "staff_reception")!;
+    expect(receptionist.staff).toBe(true);
+    expect(receptionist.assignedDeskId).toBe("pt_reception");
+    const desks = agents.filter((a) => a.id !== OWNER_SEAT_ID && a.id !== "staff_reception").map((a) => a.assignedDeskId);
+    expect(new Set(desks).size).toBe(desks.length);
+  });
+
+  it("keeps staff out of the council and out of report visits, and still one person per point", () => {
+    const agents = createOfficeAgents(["chair", "owner", "product", "skeptic"], staff);
+    const reservations = new Map<string, string>();
+    const rng = makeRng(77);
+    let staffBreaks = 0;
+    for (let sec = 0; sec < 1800; sec += 5) {
+      stepOfficeSimulation(agents, reservations, sec, 5, rng, sec >= 900);
+      const used = new Set<string>();
+      for (const agent of agents) {
+        expect(used.has(agent.currentPointId)).toBe(false);
+        used.add(agent.currentPointId);
+        if (agent.staff) {
+          expect(agent.activity).not.toBe("meeting");
+          expect(agent.activity).not.toBe("report");
+          if (agent.activity !== "desk") staffBreaks++;
+        }
+      }
+    }
+    expect(staffBreaks).toBeGreaterThan(0);
+  });
+
+  it("puts sofa sitters on the seat, facing the way the sofa faces", () => {
+    for (const id of ["pt_sofa_1", "pt_sofa_2", "pt_sofa_3"]) {
+      const point = getInteractionPoint(id)!;
+      expect(point.seatX).toBeDefined();
+      expect(isOfficeFloorBlocked(point.seatX!, point.seatZ!)).toBe(true);
+    }
+    expect(getInteractionPoint("pt_sofa_1")!.approachAngle).toBe(Math.PI);
   });
 });
