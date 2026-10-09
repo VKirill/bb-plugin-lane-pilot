@@ -1,6 +1,7 @@
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { getRunSettingsScopes } from "../../storage";
 import { writerExecutionSelection, findModelIn } from "@lane-pilot/models";
+import { providerLimitNotice } from "../../writer/server/writer-task";
 import { ROLE_PROFILES } from "../../native-agent";
 import type { ExtraAccess, HelperRole } from "../../native-agent";
 import { redactKnown } from "@lane-pilot/kit";
@@ -118,6 +119,26 @@ export function createWorkflowAgents() {
     const checkoutPath = stringAt(envObj, "path") ?? "", checkoutHostId = stringAt(envObj, "hostId") ?? "";
     const before = checkoutPath && checkoutHostId ? await gitRepoStatus(host, checkoutHostId, checkoutPath) : null;
 
+    async function spawn(req: HelperRequest): Promise<string> {
+      const providerId = req.provider ?? DEFAULT_PROVIDER;
+      const policy = requireHelperSpawn({ bb, db, projectId: rt.projectId, runId: rt.runId });
+      const placement = await helperChildPlacement({ bb, db, projectId: rt.projectId, runId: rt.runId, role: spec.metadata, taskTitle: `${req.title}`.slice(0, 80) });
+      const spawned = await fullAccessSpawn(bb, {
+        ...placement,
+        ...requiredPolicyField(bb, policy, providerId, spec.helper, extraAccessOf(req)),
+        ...writerExecutionSelection(providerId, req.model ?? DEFAULT_MODEL, req.reasoning ?? DEFAULT_REASONING, req.serviceTier ?? null),
+        prompt: req.prompt,
+        environment: { type: "reuse", environmentId },
+        pluginMetadata: {
+          role: spec.metadata, ...(spec.specialist ? { specialist: spec.specialist } : {}), ...(rt.origin ? { origin: rt.origin } : {}), spawnId: req.spawnKey, lanePilotRunId: rt.runId, parentPmThreadId: rt.pmThreadId, helperMode: policy.mode,
+          lanePilotWorkflowRunId: req.workflowRunId, lanePilotWorkflowStep: req.stepKey, lanePilotWorkflowSpawn: req.spawnKey, lanePilotWorkflowNode: req.nodeId,
+        },
+      } as Parameters<typeof fullAccessSpawn>[1]);
+      const id = stringAt(spawned, "id");
+      if (!id) throw new HelperFailure("thread_id_missing", "the helper thread was not created");
+      return id;
+    }
+
     let threadId = request.intoThread ?? null;
     let sentAt: number | undefined;
     if (threadId) {
@@ -132,25 +153,7 @@ export function createWorkflowAgents() {
         await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text: request.prompt, mentions: [] }] } as never);
       }
     } else {
-      threadId = await lookup(rt, request);
-      if (!threadId) {
-        const providerId = request.provider ?? DEFAULT_PROVIDER;
-        const policy = requireHelperSpawn({ bb, db, projectId: rt.projectId, runId: rt.runId });
-        const placement = await helperChildPlacement({ bb, db, projectId: rt.projectId, runId: rt.runId, role: spec.metadata, taskTitle: `${request.title}`.slice(0, 80) });
-        const spawned = await fullAccessSpawn(bb, {
-          ...placement,
-          ...requiredPolicyField(bb, policy, providerId, spec.helper, extraAccessOf(request)),
-          ...writerExecutionSelection(providerId, request.model ?? DEFAULT_MODEL, request.reasoning ?? DEFAULT_REASONING, request.serviceTier ?? null),
-          prompt: request.prompt,
-          environment: { type: "reuse", environmentId },
-          pluginMetadata: {
-            role: spec.metadata, ...(spec.specialist ? { specialist: spec.specialist } : {}), ...(rt.origin ? { origin: rt.origin } : {}), spawnId: request.spawnKey, lanePilotRunId: rt.runId, parentPmThreadId: rt.pmThreadId, helperMode: policy.mode,
-            lanePilotWorkflowRunId: request.workflowRunId, lanePilotWorkflowStep: request.stepKey, lanePilotWorkflowSpawn: request.spawnKey, lanePilotWorkflowNode: request.nodeId,
-          },
-        } as Parameters<typeof fullAccessSpawn>[1]);
-        threadId = stringAt(spawned, "id");
-        if (!threadId) throw new HelperFailure("thread_id_missing", "the helper thread was not created");
-      }
+      threadId = await lookup(rt, request) ?? await spawn(request);
     }
 
     const wait = async (since?: number) => {
@@ -168,6 +171,18 @@ export function createWorkflowAgents() {
 
     await wait(sentAt);
     let text = await read();
+    // A provider out of plan or quota answers with its notice and does no work (insights-post critic on acp-cursor, 2026-10-09:
+    // «Upgrade your plan to continue»). The step runs once more in a fresh thread on the default model instead of failing the run.
+    const limit = providerLimitNotice(text);
+    if (limit && !request.intoThread && (request.provider ?? DEFAULT_PROVIDER) !== DEFAULT_PROVIDER) {
+      const fallback = { ...request, provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL, reasoning: DEFAULT_REASONING, serviceTier: undefined, spawnKey: `${request.spawnKey}:limit` };
+      rt.ctx.bb.log.warn(`workflow step ${request.stepKey}: ${request.provider}/${request.model} hit a provider limit (${limit}); rerunning on ${DEFAULT_PROVIDER}/${DEFAULT_MODEL}`);
+      // A fresh thread starts with the prompt: its first turn is the one to wait for, as for the first spawn.
+      sentAt = undefined;
+      threadId = await lookup(rt, fallback) ?? await spawn(fallback);
+      await wait();
+      text = await read();
+    }
     let output: Record<string, unknown> | null = null, problem = "", broken = false;
     for (let round = 0; round < 2 && !output; round += 1) {
       try {

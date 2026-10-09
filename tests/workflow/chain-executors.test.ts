@@ -210,6 +210,26 @@ describe("the agent step", () => {
     edges: [{ from: "start", to: "look" }, { from: "look", to: "done" }],
   });
 
+  it("a step whose provider answers with its plan limit runs once more in a fresh thread on the default model (insights-post critic, 2026-10-09)", async () => {
+    let calls = 0;
+    const answer = () => ((calls += 1) === 1 ? "Upgrade your plan to continue" : reply({ count: 3, summary: "three", handoff: "counted" }));
+    const t = await setup({ look: [answer] });
+    dispose = t.dispose;
+    const summary = await t.start(oneAgent({ provider: "acp-cursor", model: "grok-4.6" })).done;
+    expect(summary).toMatchObject({ status: "succeeded", output: { count: 3 } });
+    expect(t.spawned).toHaveLength(2);
+    expect(JSON.stringify(t.spawned[1])).toContain("claude-code");
+    expect(String((t.spawned[1]!.pluginMetadata as Row).spawnId)).toMatch(/:limit$/);
+  });
+
+  it("a plan-limit notice on the default model is not retried: the step fails as before", async () => {
+    const t = await setup({ look: ["Upgrade your plan to continue"] });
+    dispose = t.dispose;
+    const summary = await t.start(oneAgent()).done;
+    expect(summary.status).toBe("failed");
+    expect(t.spawned).toHaveLength(1);
+  });
+
   it("spawns a helper thread of the PM chat with the node's role, prompt and typed answer, and reads the JSON block back", async () => {
     const t = await setup({ look: [reply({ count: 7, summary: "seven files", handoff: "counted" })] });
     dispose = t.dispose;
