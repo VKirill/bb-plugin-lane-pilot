@@ -188,7 +188,7 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
   // The slab top stays just below the floor zones, so the two never share a plane (no z-fighting)
   box(scene, -20, 20, -0.5, -0.05, -10, 10, SLAB, { outline: false });
 
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), material(GRASS));
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), material(GRASS));
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -0.5;
   disposables.push(ground.geometry);

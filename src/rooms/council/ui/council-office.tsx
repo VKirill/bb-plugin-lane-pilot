@@ -295,7 +295,9 @@ export function CouncilOffice({
         presenter.resize(w, h, Math.min(window.devicePixelRatio || 1, 3));
         const { viewHeight, centerY } = fitOfficeCamera(w / h);
         fitCenterY = centerY;
-        autoScale = [...ZOOM_SCALES].reverse().find((step) => viewHeight * PIXELS_PER_UNIT * step <= h) ?? ZOOM_SCALES[0];
+        // Default: the largest whole-pixel scale at which the building nearly fits; up to 20 % may run past the
+        // edges (mostly street and lawn), otherwise a BB panel narrower than the floor gets a tiny 1× office
+        autoScale = [...ZOOM_SCALES].reverse().find((step) => viewHeight * PIXELS_PER_UNIT * step <= h * 1.2) ?? ZOOM_SCALES[0];
         applyView();
       };
 
