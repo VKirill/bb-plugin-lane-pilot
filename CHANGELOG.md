@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.209
+
+- **`ins.post` takes a post as an address or as a pick object.** The third live run showed the pick agent keeps answering objects (rank, url, author, counts) despite the prompt. `ins.post`'s `post_url` input is now `json`, its collect step is told the address may sit in `url`, and `init_post.py` takes the address from the collected post.json (no `--url`). Checking item types of `string[]` in the engine was left out on purpose: `parseTypeHint`/`typeOk` feed 74 processes (GitNexus: CRITICAL), including the live lp-task-pipeline.
+
 ## 0.1.208
 
 - **`insights-post`: `pick` returns post addresses as strings.** The second live run passed `init` and failed at the fan-out: `pick` answered `picked` with objects (url, author, counts) although the field is `string[]`, and the child `ins.post` got an object as `post_url`. The pick prompt now asks for each item as the post URL string. Known gap: the engine checks only that an array field is an array, not the type of its items.

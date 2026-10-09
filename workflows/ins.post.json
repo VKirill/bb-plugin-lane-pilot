@@ -11,7 +11,7 @@
   },
   "inputs": {
     "post_url": {
-      "type": "string",
+      "type": "json",
       "required": true
     },
     "topic": {
@@ -41,7 +41,7 @@
         "ru": "Собрать пост и комментарии"
       },
       "src": "social-insights SKILL stage 2",
-      "prompt": "social-browser: open the post, load all comments and replies (top-N by likes plus a random sample of the rest), save post.json and replies.json verbatim; record coverage. Read-only.",
+      "prompt": "social-browser: open the post (post_url is its address, or an object whose url is the address), load all comments and replies (top-N by likes plus a random sample of the rest), save post.json and replies.json verbatim; record coverage. Read-only.",
       "out": {
         "post_json": "string",
         "replies_json": "string",
@@ -59,7 +59,7 @@
       "action": "shell.skill_script",
       "skill": "social-insights",
       "script": "scripts/init_post.py",
-      "args": "--posts {{collect.post_json}} --url {{$inputs.post_url}} --replies {{collect.replies_json}} --root {{$inputs.root}} --topic {{$inputs.topic}}",
+      "args": "--posts {{collect.post_json}} --replies {{collect.replies_json}} --root {{$inputs.root}} --topic {{$inputs.topic}}",
       "out": {
         "post_folder": "string",
         "ok": "bool"
