@@ -188,6 +188,140 @@ export function formatBubbleText(text: string, max = 80): string {
   return `${plain.slice(0, max - 1).trimEnd()}…`;
 }
 
+export type DioramaBounds = {
+  width: number;
+  depth: number;
+  height?: number;
+};
+
+export function fitCamera(
+  bounds: DioramaBounds,
+  aspect: number,
+  margin = 0.08
+): { viewSize: number } {
+  const w = bounds.width;
+  const d = bounds.depth;
+  const h = bounds.height ?? 4.0;
+
+  // Isometric projection bounding box at 45 deg azimuth and ~35.264 deg elevation
+  const projWidth = (w + d) * Math.SQRT1_2;
+  const projHeight = (w + d) * 0.4082 + h * 0.8165;
+
+  const usableRatio = Math.max(0.1, 1 - 2 * margin);
+  const neededViewH = projWidth / (Math.max(0.01, aspect) * usableRatio);
+  const neededViewV = projHeight / usableRatio;
+
+  const viewSize = Math.max(neededViewH, neededViewV);
+  return { viewSize };
+}
+
+export type ScreenLabel = {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  isSpeaker?: boolean;
+};
+
+export type ResolvedLabel = {
+  id: string;
+  x: number;
+  y: number;
+  collapsed: boolean;
+};
+
+export function resolveLabelCollisions(
+  labels: ScreenLabel[],
+  bounds?: { width: number; height: number }
+): ResolvedLabel[] {
+  const result: ResolvedLabel[] = labels.map((l) => ({
+    id: l.id,
+    x: l.x,
+    y: l.y,
+    collapsed: false,
+  }));
+
+  const calcOverlap = (
+    l1: { x: number; y: number; width: number; height: number },
+    l2: { x: number; y: number; width: number; height: number }
+  ) => {
+    const left = Math.max(l1.x - l1.width / 2, l2.x - l2.width / 2);
+    const right = Math.min(l1.x + l1.width / 2, l2.x + l2.width / 2);
+    const top = Math.max(l1.y - l1.height / 2, l2.y - l2.height / 2);
+    const bottom = Math.min(l1.y + l1.height / 2, l2.y + l2.height / 2);
+    if (right <= left || bottom <= top) return 0;
+    const intersection = (right - left) * (bottom - top);
+    const minArea = Math.min(l1.width * l1.height, l2.width * l2.height);
+    return minArea > 0 ? intersection / minArea : 0;
+  };
+
+  // Pass 1: Collapse crowded non-speakers
+  for (let i = 0; i < result.length; i++) {
+    for (let j = i + 1; j < result.length; j++) {
+      const orig1 = labels[i]!;
+      const orig2 = labels[j]!;
+      const r1 = result[i]!;
+      const r2 = result[j]!;
+
+      const w1 = r1.collapsed ? 16 : orig1.width;
+      const h1 = r1.collapsed ? 16 : orig1.height;
+      const w2 = r2.collapsed ? 16 : orig2.width;
+      const h2 = r2.collapsed ? 16 : orig2.height;
+
+      const overlap = calcOverlap({ x: r1.x, y: r1.y, width: w1, height: h1 }, { x: r2.x, y: r2.y, width: w2, height: h2 });
+      if (overlap > 0.10) {
+        if (!orig1.isSpeaker) r1.collapsed = true;
+        if (!orig2.isSpeaker) r2.collapsed = true;
+      }
+    }
+  }
+
+  // Pass 2: Separate any remaining overlaps
+  for (let pass = 0; pass < 3; pass++) {
+    for (let i = 0; i < result.length; i++) {
+      for (let j = i + 1; j < result.length; j++) {
+        const orig1 = labels[i]!;
+        const orig2 = labels[j]!;
+        const r1 = result[i]!;
+        const r2 = result[j]!;
+
+        const w1 = r1.collapsed ? 16 : orig1.width;
+        const h1 = r1.collapsed ? 16 : orig1.height;
+        const w2 = r2.collapsed ? 16 : orig2.width;
+        const h2 = r2.collapsed ? 16 : orig2.height;
+
+        const overlap = calcOverlap({ x: r1.x, y: r1.y, width: w1, height: h1 }, { x: r2.x, y: r2.y, width: w2, height: h2 });
+        if (overlap > 0.10) {
+          const dy = r2.y - r1.y;
+          const shift = Math.max(2, ((h1 + h2) / 2 - Math.abs(dy)) / 2 + 2);
+          if (orig1.isSpeaker) {
+            r2.y += dy >= 0 ? shift * 2 : -shift * 2;
+          } else if (orig2.isSpeaker) {
+            r1.y += dy >= 0 ? -shift * 2 : shift * 2;
+          } else {
+            r1.y -= shift;
+            r2.y += shift;
+          }
+        }
+      }
+    }
+  }
+
+  if (bounds) {
+    for (let i = 0; i < result.length; i++) {
+      const r = result[i]!;
+      const orig = labels[i]!;
+      const w = r.collapsed ? 16 : orig.width;
+      const h = r.collapsed ? 16 : orig.height;
+      r.x = Math.max(w / 2 + 4, Math.min(bounds.width - w / 2 - 4, r.x));
+      r.y = Math.max(h / 2 + 4, Math.min(bounds.height - h / 2 - 4, r.y));
+    }
+  }
+
+  return result;
+}
+
 export function isFloorBlocked(x: number, z: number, margin = 0): boolean {
   if (x < -5.0 + margin || x > 5.0 - margin || z < -5.0 + margin || z > 5.0 - margin) {
     return true;
@@ -675,7 +809,8 @@ function truncateBubble(text: string, max = 80): string {
 export function deriveOfficeActors(
   detail: CouncilDetailLike,
   cursor: number | null,
-  now: number
+  now: number,
+  options?: { pausedSince?: number | null; cursorSelectedAt?: number | null }
 ): OfficeActor[] {
   const visibleMessages = cursor === null
     ? detail.messages
@@ -685,6 +820,12 @@ export function deriveOfficeActors(
   if (cursor !== null) {
     const activeMsg = visibleMessages.find((m) => m.seq === cursor) ?? null;
     const activeSpeakerId = activeMsg?.seatId ?? null;
+
+    const isReplayIdle = Boolean(
+      (options?.pausedSince && now - options.pausedSince > IDLE_TIMEOUT_MS) ||
+      (options?.cursorSelectedAt && now - options.cursorSelectedAt > IDLE_TIMEOUT_MS)
+    );
+    const nonSpeakerActivity = (activeSpeakerId && !isReplayIdle) ? "waiting" : "idle";
 
     // Previous speaker to face if active message is reply
     let previousSpeakerId: string | undefined;
@@ -709,7 +850,7 @@ export function deriveOfficeActors(
       color: seatColor("chair", detail.seats),
       activity: "chair" === activeSpeakerId
         ? (activeMsg?.kind === "reply" ? "arguing" : "speaking")
-        : (activeSpeakerId ? "waiting" : "idle"),
+        : nonSpeakerActivity,
       ...(activeSpeakerId === "chair" && activeMsg ? { bubble: formatBubbleText(activeMsg.text) } : {}),
       ...(activeSpeakerId === "chair" && activeMsg?.kind === "reply" && previousSpeakerId ? { facing: previousSpeakerId } : {}),
     });
@@ -722,7 +863,7 @@ export function deriveOfficeActors(
         color: seatColor("owner", detail.seats),
         activity: "owner" === activeSpeakerId
           ? (activeMsg?.kind === "reply" ? "arguing" : "speaking")
-          : (activeSpeakerId ? "waiting" : "idle"),
+          : nonSpeakerActivity,
         ...(activeSpeakerId === "owner" && activeMsg ? { bubble: formatBubbleText(activeMsg.text) } : {}),
         ...(activeSpeakerId === "owner" && activeMsg?.kind === "reply" && previousSpeakerId ? { facing: previousSpeakerId } : {}),
       });
@@ -737,7 +878,7 @@ export function deriveOfficeActors(
         color: seatColor(seat.id, detail.seats),
         activity: isSpeaking
           ? (activeMsg?.kind === "reply" ? "arguing" : "speaking")
-          : (activeSpeakerId ? "waiting" : "idle"),
+          : nonSpeakerActivity,
         ...(isSpeaking && activeMsg ? { bubble: formatBubbleText(activeMsg.text) } : {}),
         ...(isSpeaking && activeMsg?.kind === "reply" && previousSpeakerId ? { facing: previousSpeakerId } : {}),
       });

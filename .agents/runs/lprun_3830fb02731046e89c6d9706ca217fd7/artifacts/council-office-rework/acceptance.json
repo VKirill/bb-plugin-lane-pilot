@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "council-office-rework",
+  "task_sha256": "8a7c9852ff87425c291ff410d4f11dbf3f76fa45deb7d30e6e02a6ec5fccc0af",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "f6d14db083e7b282e83b0c65c5565f85132f3e10ef7ca968db89503b26aff147",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-09T10:36:52.396Z",
+  "model": "router9/ag/gemini-3.8-flash-medium"
+}

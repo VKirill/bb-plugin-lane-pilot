@@ -81,5 +81,8 @@ describe("council page", () => {
     const questionEl = header.querySelector(".line-clamp-2");
     expect(questionEl).toBeDefined();
     expect(questionEl?.textContent).toContain(detail.question);
+
+    const officeContainer = view.getByTestId("council-office-fallback").parentElement?.parentElement;
+    expect(officeContainer?.className).toContain("min-h-[300px]");
   });
 });

@@ -5,11 +5,13 @@ import {
   chooseIdleSpot,
   deriveOfficeActors,
   findOfficePath,
+  fitCamera,
   formatBubbleText,
   getOfficePose,
   isFloorBlocked,
   isLineSegmentBlocked,
   nextWanderTarget,
+  resolveLabelCollisions,
   seatColor,
   stripMarkdown,
   walkStep,
@@ -418,5 +420,63 @@ describe("deriveOfficeActors", () => {
     const skeptic = actors.find((a: OfficeActor) => a.id === "skeptic")!;
     expect(skeptic.activity).toBe("arguing");
     expect(skeptic.facing).toBe("product");
+  });
+
+  it("after replay pause (>20s), non-speakers become idle to wander and on resume switch back to waiting", () => {
+    // Paused for 5 seconds -> still waiting
+    const pausedRecently = deriveOfficeActors(baseDetail, 2, 6000, {
+      pausedSince: 1000,
+    });
+    const skepticRecent = pausedRecently.find((a: OfficeActor) => a.id === "skeptic")!;
+    expect(skepticRecent.activity).toBe("waiting");
+
+    // Paused for 25 seconds (>20s) -> non-speakers become idle
+    const pausedLong = deriveOfficeActors(baseDetail, 2, 26000, {
+      pausedSince: 1000,
+    });
+    const skepticIdle = pausedLong.find((a: OfficeActor) => a.id === "skeptic")!;
+    const productSpeaker = pausedLong.find((a: OfficeActor) => a.id === "product")!;
+    expect(productSpeaker.activity).toBe("speaking");
+    expect(skepticIdle.activity).toBe("idle");
+
+    // Resume playing -> non-speakers switch back to waiting
+    const resumed = deriveOfficeActors(baseDetail, 2, 27000, {
+      pausedSince: null,
+    });
+    const skepticResumed = resumed.find((a: OfficeActor) => a.id === "skeptic")!;
+    expect(skepticResumed.activity).toBe("waiting");
+  });
+});
+
+describe("fitCamera", () => {
+  it("computes viewSize filling the diorama with ~8% margin for wide and tall views", () => {
+    const bounds = { width: 10.6, depth: 10.6, height: 4.0 };
+
+    const wide = fitCamera(bounds, 16 / 9, 0.08);
+    expect(wide.viewSize).toBeGreaterThan(10);
+    expect(wide.viewSize).toBeLessThan(25);
+
+    const tall = fitCamera(bounds, 9 / 16, 0.08);
+    expect(tall.viewSize).toBeGreaterThan(wide.viewSize);
+  });
+});
+
+describe("resolveLabelCollisions", () => {
+  it("resolves crowded overlapping labels so overlap is <= 10% and collapses non-speakers", () => {
+    const crowded = [
+      { id: "speaker", x: 100, y: 100, width: 60, height: 20, isSpeaker: true },
+      { id: "listener1", x: 105, y: 105, width: 60, height: 20, isSpeaker: false },
+      { id: "listener2", x: 110, y: 110, width: 60, height: 20, isSpeaker: false },
+    ];
+
+    const resolved = resolveLabelCollisions(crowded, { width: 400, height: 300 });
+    expect(resolved).toHaveLength(3);
+
+    const speaker = resolved.find((r) => r.id === "speaker")!;
+    const l1 = resolved.find((r) => r.id === "listener1")!;
+    const l2 = resolved.find((r) => r.id === "listener2")!;
+
+    expect(speaker.collapsed).toBe(false); // Speaker is never collapsed
+    expect(l1.collapsed || l2.collapsed).toBe(true); // Non-speaker collapses when crowded
   });
 });

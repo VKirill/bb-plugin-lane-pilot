@@ -64,26 +64,26 @@ export function buildOfficeDiorama({ THREE, scene, disposables }: OfficeSceneOpt
   const slabDepth = 10.6;
   const slabHeight = 0.55;
 
-  // Slab base / sides (warm concrete base)
-  const slabBaseMat = createMat(0xd8dcd6);
+  // Slab base / sides (darker diorama slab side)
+  const slabBaseMat = createMat(0x475569);
   const slabBase = createOutlinedBox(slabWidth, slabHeight, slabDepth, slabBaseMat);
   slabBase.position.set(0, -slabHeight / 2, 0);
   scene.add(slabBase);
 
-  // Top floor finish: Sage green carpet / office mat
-  const carpetMat = createMat(0x8fae92); // muted sage green carpet
+  // Top floor finish: Green carpet
+  const carpetMat = createMat(0x7d9d80); // green carpet floor
   const carpet = createOutlinedBox(slabWidth - 0.1, 0.04, slabDepth - 0.1, carpetMat);
   carpet.position.set(0, 0.02, 0);
   scene.add(carpet);
 
   // Subtle floor tile / walkway accents
-  const aisleMat = createMat(0x9cbba0);
+  const aisleMat = createMat(0x8fae92);
   const aisle = createOutlinedBox(3.6, 0.05, 7.8, aisleMat);
   aisle.position.set(0, 0.025, 0);
   scene.add(aisle);
 
-  // --- Back-Left Wall (Cutaway with thickness) ---
-  const wallMat = createMat(0xfef3c7); // Pale peach / warm cream wall
+  // --- Back-Left Wall: Peach (#fde8d7) with dark baseboard stripe ---
+  const wallLeftMat = createMat(0xfde8d7); // Peach wall
   const wallBaseboardMat = createMat(0x1e293b); // Dark slate baseboard stripe
   const wallHeight = 4.0;
   const wallThick = 0.45;
@@ -92,7 +92,7 @@ export function buildOfficeDiorama({ THREE, scene, disposables }: OfficeSceneOpt
   wallLeftGroup.position.set(-slabWidth / 2 + wallThick / 2, 0, 0);
 
   // Main back-left wall body
-  const wallLeft = createOutlinedBox(wallThick, wallHeight, slabDepth, wallMat);
+  const wallLeft = createOutlinedBox(wallThick, wallHeight, slabDepth, wallLeftMat);
   wallLeft.position.set(0, wallHeight / 2, 0);
   wallLeftGroup.add(wallLeft);
 
@@ -102,17 +102,18 @@ export function buildOfficeDiorama({ THREE, scene, disposables }: OfficeSceneOpt
   wallLeftGroup.add(baseboardLeft);
 
   // Wall crown molding stripe at top
-  const crownLeft = createOutlinedBox(wallThick + 0.04, 0.15, slabDepth, createMat(0xfde68a));
+  const crownLeft = createOutlinedBox(wallThick + 0.04, 0.15, slabDepth, createMat(0xfed7aa));
   crownLeft.position.set(0, wallHeight - 0.075, 0);
   wallLeftGroup.add(crownLeft);
 
   scene.add(wallLeftGroup);
 
-  // --- Back-Right Wall (Cutaway with thickness) ---
+  // --- Back-Right Wall: Pale Yellow (#f8f3a6) with dark baseboard stripe ---
+  const wallRightMat = createMat(0xf8f3a6); // Pale yellow wall
   const wallRightGroup = new THREE.Group();
   wallRightGroup.position.set(0, 0, -slabDepth / 2 + wallThick / 2);
 
-  const wallRight = createOutlinedBox(slabWidth, wallHeight, wallThick, wallMat);
+  const wallRight = createOutlinedBox(slabWidth, wallHeight, wallThick, wallRightMat);
   wallRight.position.set(0, wallHeight / 2, 0);
   wallRightGroup.add(wallRight);
 
@@ -120,8 +121,9 @@ export function buildOfficeDiorama({ THREE, scene, disposables }: OfficeSceneOpt
   baseboardRight.position.set(0, 0.12, 0);
   wallRightGroup.add(baseboardRight);
 
-  const crownRight = createOutlinedBox(slabWidth, 0.15, wallThick + 0.04, createMat(0xfde68a));
+  const crownRight = createOutlinedBox(slabWidth, 0.15, wallThick + 0.04, createMat(0xfef08a));
   crownRight.position.set(0, wallHeight - 0.075, 0);
+  wallRightGroup.add(crownRight);
   wallRightGroup.add(crownRight);
 
   scene.add(wallRightGroup);

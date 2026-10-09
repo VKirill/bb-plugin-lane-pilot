@@ -6,8 +6,10 @@ import {
   chooseIdleSpot,
   deriveOfficeActors,
   findOfficePath,
+  fitCamera,
   formatBubbleText,
   getOfficePose,
+  resolveLabelCollisions,
   seatColor,
   walkStep,
   OFFICE_SEATS,
@@ -74,13 +76,25 @@ export function CouncilOffice({
   cursorRef.current = cursor;
   highlightSeatIdRef.current = highlightSeatId;
 
+  const lastCursorRef = useRef<number | null>(cursor);
+  const cursorSelectedTimeRef = useRef<number>(Date.now());
+
   // DOM node references for projected HTML overlays (updated directly via ref transforms)
   const overlayMapRef = useRef(new Map<string, HTMLDivElement>());
 
   // Sync actors for React content (text, bubbles, highlight)
   useEffect(() => {
     const syncActors = () => {
-      setActors(deriveOfficeActors(detailRef.current, cursorRef.current, Date.now()));
+      const now = Date.now();
+      if (cursorRef.current !== lastCursorRef.current) {
+        lastCursorRef.current = cursorRef.current;
+        cursorSelectedTimeRef.current = now;
+      }
+      setActors(
+        deriveOfficeActors(detailRef.current, cursorRef.current, now, {
+          cursorSelectedAt: cursorSelectedTimeRef.current,
+        })
+      );
     };
     syncActors();
     const timer = setInterval(syncActors, 1000);
@@ -348,16 +362,21 @@ export function CouncilOffice({
         if (!container || !renderer) return;
         const w = container.clientWidth || 320;
         const h = container.clientHeight || 240;
-        const scale = 3;
+        const scale = 2; // Internal render scale 1/2 for crisp pixel look
         const pixelW = Math.max(100, Math.floor(w / scale));
         const pixelH = Math.max(80, Math.floor(h / scale));
 
         renderer.setSize(pixelW, pixelH, false);
         const newAspect = w / h;
-        camera.left = (-viewSize * newAspect) / 2;
-        camera.right = (viewSize * newAspect) / 2;
-        camera.top = viewSize / 2;
-        camera.bottom = -viewSize / 2;
+        const { viewSize: fittedViewSize } = fitCamera(
+          { width: 10.6, depth: 10.6, height: 4.0 },
+          newAspect,
+          0.08
+        );
+        camera.left = (-fittedViewSize * newAspect) / 2;
+        camera.right = (fittedViewSize * newAspect) / 2;
+        camera.top = fittedViewSize / 2;
+        camera.bottom = -fittedViewSize / 2;
         camera.updateProjectionMatrix();
       };
 
@@ -587,30 +606,45 @@ export function CouncilOffice({
               opp.headGroup.rotation.y = Math.max(-0.6, Math.min(0.6, oppOppAngle - opp.yaw));
             }
           }
+        });
 
-          // Direct DOM transform update for overlay (avoid React re-rendering every frame)
+        // Direct DOM transform update for overlays with collision resolution
+        const w = container.clientWidth || 320;
+        const h = container.clientHeight || 240;
+
+        const rawLabels = currentActors.map((actor) => {
+          const char = charObjects.get(actor.id);
+          const projPos = new THREE.Vector3(
+            char ? char.currentPos.x : 0,
+            char ? char.headGroup.position.y + 0.45 : 1.8,
+            char ? char.currentPos.z : 0
+          );
+          projPos.project(camera);
+
+          const screenX = Math.round(((projPos.x + 1) * w) / 2);
+          const screenY = Math.round(((-projPos.y + 1) * h) / 2);
+          const isSpeaker = actor.activity === "speaking" || actor.activity === "arguing";
+          return {
+            id: actor.id,
+            x: screenX,
+            y: screenY,
+            width: 58,
+            height: 20,
+            isSpeaker,
+          };
+        });
+
+        const resolvedLabels = resolveLabelCollisions(rawLabels, { width: w, height: h });
+        const resolvedMap = new Map(resolvedLabels.map((r) => [r.id, r]));
+
+        currentActors.forEach((actor) => {
           const overlayEl = overlayMapRef.current.get(actor.id);
-          if (overlayEl) {
-            const projPos = new THREE.Vector3(
-              char.currentPos.x,
-              char.headGroup.position.y + 0.45,
-              char.currentPos.z
-            );
-            projPos.project(camera);
-
-            const w = container.clientWidth || 320;
-            const h = container.clientHeight || 240;
-            const screenX = Math.round(((projPos.x + 1) * w) / 2);
-            const screenY = Math.round(((-projPos.y + 1) * h) / 2);
-
-            // Clamp inside office bounds so speech bubbles and tags don't clip horizontally
-            const adjX = Math.max(90, Math.min(w - 90, screenX));
-            // When close to top, flip bubble below head
-            const isFlipped = screenY < 110;
-            const adjY = isFlipped ? Math.max(10, screenY) : Math.min(h - 10, screenY);
-
+          const r = resolvedMap.get(actor.id);
+          if (overlayEl && r) {
+            const isFlipped = r.y < 110;
             overlayEl.setAttribute("data-flipped", isFlipped ? "true" : "false");
-            overlayEl.style.transform = `translate3d(${adjX}px, ${adjY}px, 0)`;
+            overlayEl.setAttribute("data-collapsed", r.collapsed ? "true" : "false");
+            overlayEl.style.transform = `translate3d(${r.x}px, ${r.y}px, 0)`;
           }
         });
 
@@ -663,7 +697,7 @@ export function CouncilOffice({
   return (
     <div
       ref={containerRef}
-      className="relative flex h-full w-full min-h-[220px] select-none flex-col items-center justify-center overflow-hidden bg-[#cbd5e1] text-xs font-mono"
+      className="relative flex h-full w-full min-h-[300px] select-none flex-col items-center justify-center overflow-hidden bg-[#cbd5e1] text-xs font-mono"
       style={{
         boxShadow: "inset 0 0 0 2px #0f172a",
         imageRendering: "pixelated",
@@ -777,7 +811,7 @@ export function CouncilOffice({
 
                   {/* Character label tag */}
                   <div
-                    className={`px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white border-2 cursor-pointer transition-all ${
+                    className={`group relative px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white border-2 cursor-pointer transition-all ${
                       isHighlighted ? "scale-110 shadow-lg ring-2 ring-white" : ""
                     }`}
                     style={{
@@ -786,7 +820,11 @@ export function CouncilOffice({
                       boxShadow: "1px 1px 0 #0f172a",
                     }}
                   >
-                    {actor.label}
+                    <span className="hidden group-data-[collapsed=true]:inline font-mono">●</span>
+                    <span className="group-data-[collapsed=true]:hidden">{actor.label}</span>
+                    <div className="hidden group-hover:block absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-1.5 py-0.5 rounded text-[9px] whitespace-nowrap shadow z-30 pointer-events-none">
+                      {actor.label}
+                    </div>
                   </div>
                 </div>
               );

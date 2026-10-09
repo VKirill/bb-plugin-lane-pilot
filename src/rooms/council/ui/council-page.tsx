@@ -270,11 +270,11 @@ export function CouncilPage() {
             <div className={`flex min-h-0 min-w-0 flex-1 overflow-hidden ${wide ? "flex-row" : "flex-col"}`}>
               {/* Office Canvas Container */}
               <div
-                className={`min-h-[200px] shrink-0 border-slate-900 ${
+                className={`min-h-[300px] shrink-0 border-slate-900 ${
                   wide
-                    ? "w-1/2 border-r-2"
+                    ? "w-1/2 min-h-[300px] h-full border-r-2"
                     : compact
-                    ? "h-[35vh] min-h-[180px] border-b-2"
+                    ? "h-[35vh] min-h-[200px] border-b-2"
                     : "h-[42%] max-h-[280px] min-h-[200px] border-b-2"
                 }`}
               >
