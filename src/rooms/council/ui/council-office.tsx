@@ -34,8 +34,8 @@ const OWNER_HOLD_MS = 15000;
 const WALK_SPEED = 2.0;
 /** The owner hurries to the table; other people walk at WALK_SPEED. */
 const OWNER_WALK_SPEED = 3.5;
-/** Characters are 1.15 tiles tall: the chibi rig is built at 1.6 and scaled down. */
-const RIG_SCALE = 0.72;
+/** The chibi rig is built at 1.6 tall and scaled to read at the contain fit, like the people in the reference picture. */
+const RIG_SCALE = 0.88;
 const LABEL_HEIGHT = 16;
 const LABEL_CHAR_WIDTH = 6.2;
 const LABEL_MAX_CHARS = 10;
@@ -232,16 +232,35 @@ export function CouncilOffice({
 
         const headGroup = new THREE.Group();
         headGroup.position.y = 1.35;
-        headGroup.add(createCharBox(0.42, 0.42, 0.42, skinMat));
-        const leftEye = createCharBox(0.06, 0.08, 0.04, eyeMat);
-        leftEye.position.set(-0.1, 0.02, 0.22);
+        headGroup.add(createCharBox(0.5, 0.48, 0.46, skinMat));
+        const leftEye = createCharBox(0.07, 0.1, 0.04, eyeMat);
+        leftEye.position.set(-0.12, 0.0, 0.24);
         headGroup.add(leftEye);
-        const rightEye = createCharBox(0.06, 0.08, 0.04, eyeMat);
-        rightEye.position.set(0.1, 0.02, 0.22);
+        const rightEye = createCharBox(0.07, 0.1, 0.04, eyeMat);
+        rightEye.position.set(0.12, 0.0, 0.24);
         headGroup.add(rightEye);
-        const hairTop = createCharBox(0.44, 0.16, 0.44, hairMat);
-        hairTop.position.set(0, 0.16, -0.02);
+        // Hair: a cap with a fringe for everyone; long hair or a bun for some seats
+        const hairTop = createCharBox(0.54, 0.16, 0.5, hairMat);
+        hairTop.position.set(0, 0.2, -0.01);
         headGroup.add(hairTop);
+        const fringe = createCharBox(0.54, 0.1, 0.08, hairMat);
+        fringe.position.set(0, 0.11, 0.22);
+        headGroup.add(fringe);
+        const hairStyle = actor.id === OWNER_SEAT_ID ? 0 : hashString(actor.id) % 3;
+        if (hairStyle === 1) {
+          const back = createCharBox(0.54, 0.5, 0.1, hairMat);
+          back.position.set(0, -0.06, -0.24);
+          headGroup.add(back);
+          for (const side of [-1, 1]) {
+            const lock = createCharBox(0.08, 0.36, 0.4, hairMat);
+            lock.position.set(side * 0.27, -0.02, -0.02);
+            headGroup.add(lock);
+          }
+        } else if (hairStyle === 2) {
+          const bun = createCharBox(0.2, 0.18, 0.2, hairMat);
+          bun.position.set(0, 0.32, -0.12);
+          headGroup.add(bun);
+        }
         group.add(headGroup);
 
         const body = createCharBox(0.5, 0.55, 0.32, shirtMat);
@@ -405,6 +424,7 @@ export function CouncilOffice({
         const snap = snapRef.current;
         currentActors.forEach((actor, idx) => {
           const seat = seatAssignments.get(actor.id) ?? OFFICE_SEATS[idx % OFFICE_SEATS.length]!;
+          const isNewRig = !charRigs.has(actor.id);
           const rig = getOrAddRig(actor, seat, idx);
           const sim = simById.get(actor.id);
 
@@ -464,6 +484,13 @@ export function CouncilOffice({
 
           rig.targetSit = shouldSit;
           rig.action = action;
+          if (isNewRig) {
+            // A character appears where it belongs (the owner in his chair), not at a meeting chair
+            rig.pos = { x: desiredPos.x, z: desiredPos.z };
+            rig.target = { x: desiredPos.x, z: desiredPos.z };
+            rig.yaw = desiredYaw;
+            rig.sitProgress = shouldSit ? 1 : 0;
+          }
 
           const distToDesired = Math.hypot(rig.target.x - desiredPos.x, rig.target.z - desiredPos.z);
           rig.targetYaw = desiredYaw;

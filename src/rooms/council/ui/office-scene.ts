@@ -205,6 +205,33 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
     gridBox(scene, zone.gx0, zone.gx1, zone.gz0, zone.gz1, -0.05, 0, zone.color, { outline: false });
   }
 
+  // Floor detail (reference.md §3 Floors): plank lines run along X, tile grout and raised-floor grids both ways
+  const floorLines = (gx0: number, gx1: number, gz0: number, gz1: number, color: number, step: number, grid: boolean) => {
+    for (let gz = gz0 + step; gz < gz1 - 0.01; gz += step) {
+      gridBox(scene, gx0, gx1, gz - 0.02, gz + 0.02, 0, 0.004, color, { outline: false });
+    }
+    if (!grid) {
+      // Staggered plank ends
+      for (let gz = gz0, row = 0; gz < gz1 - 0.01; gz += step, row++) {
+        for (let gx = gx0 + (row % 2 ? 1.5 : 0.75); gx < gx1 - 0.2; gx += 1.5) {
+          gridBox(scene, gx - 0.02, gx + 0.02, gz, gz + step, 0, 0.004, color, { outline: false });
+        }
+      }
+      return;
+    }
+    for (let gx = gx0 + step; gx < gx1 - 0.01; gx += step) {
+      gridBox(scene, gx - 0.02, gx + 0.02, gz0, gz1, 0, 0.004, color, { outline: false });
+    }
+  };
+  floorLines(0, 12, 0, 11, 0xcf8f4f, 0.5, false);
+  floorLines(26, 40, 0, 11, 0x8f5532, 0.5, false);
+  floorLines(0, 11, 13, 20, 0xc27e4a, 0.5, false);
+  floorLines(28, 40, 13, 20, 0xc27e4a, 0.5, false);
+  floorLines(11, 21, 13, 20, 0xd9a982, 1, true);
+  floorLines(21, 28, 13, 20, 0xaab6bd, 1, true);
+  gridBox(scene, 0, 40, 11.05, 11.2, 0, 0.004, 0xa9b8c2, { outline: false });
+  gridBox(scene, 0, 40, 12.8, 12.95, 0, 0.004, 0xa9b8c2, { outline: false });
+
   // ==========================================
   // 3. WALLS, WINDOWS AND DOORS
   // ==========================================
@@ -309,15 +336,23 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
     }
   }
 
-  // Director's double door (gx 33.8–35.8, walnut leaves with brass handles, cornice over the opening)
-  box(scene, 13.8, 15.8, 0, 2.4, 0.85, 1.15, LEATHER_DARK);
-  box(scene, 13.8, 15.8, 2.4, 2.7, 0.85, 1.15, WALNUT);
-  box(scene, 14.1, 14.3, 0.8, 1.2, 0.7, 0.8, BRASS, { outline: false });
-  box(scene, 15.3, 15.5, 0.8, 1.2, 0.7, 0.8, BRASS, { outline: false });
-  // Glass double door on the east edge (gz 16–18)
-  box(scene, 19.9, 20.1, 0, 2.4, -4, -2, 0xaee1f4, { outline: false, opacity: 0.55 });
-  box(scene, 19.9, 20.1, 0, 2.4, 6.2, 6.3, 0xaee1f4, { outline: false, opacity: 0.55 });
-  box(scene, 19.9, 20.1, 0, 2.4, 7.9, 8.0, 0xaee1f4, { outline: false, opacity: 0.55 });
+  // Director's double door (gx 33.8–35.8): frame posts 2.4 high with a cornice; both walnut leaves
+  // stand open inwards along gx 33.8 and 35.8 between gz 10 and 11, brass handles on the inner faces
+  box(scene, 13.7, 13.85, 0, 2.4, 0.85, 1.15, 0x5e3721);
+  box(scene, 15.75, 15.9, 0, 2.4, 0.85, 1.15, 0x5e3721);
+  box(scene, 13.7, 15.9, 2.4, 2.7, 0.8, 1.2, 0x5e3721);
+  for (const [x0, x1, hx0, hx1] of [[13.85, 13.95, 13.95, 14.0], [15.65, 15.75, 15.6, 15.65]] as const) {
+    box(scene, x0, x1, 0.02, 2.3, 0.0, 0.85, 0x6b4029);
+    box(scene, x0 - 0.005, x1 + 0.005, 0.3, 1.0, 0.12, 0.73, 0x7b4a2e, { outline: false });
+    box(scene, x0 - 0.005, x1 + 0.005, 1.2, 2.1, 0.12, 0.73, 0x7b4a2e, { outline: false });
+    box(scene, hx0, hx1, 1.05, 1.15, 0.08, 0.22, BRASS, { outline: false });
+  }
+  // Glass double door on the east edge (gz 16–18): frame posts and two glass leaves
+  box(scene, 19.9, 20.1, 0, 2.4, 6.0, 6.1, 0xe1e7ea);
+  box(scene, 19.9, 20.1, 0, 2.4, 7.9, 8.0, 0xe1e7ea);
+  box(scene, 19.9, 20.1, 2.3, 2.4, 6.0, 8.0, 0xe1e7ea);
+  box(scene, 19.95, 20.05, 0, 2.3, 6.1, 7.9, 0xaee1f4, { outline: false, opacity: 0.45 });
+  box(scene, 19.92, 20.08, 0, 2.3, 6.98, 7.02, 0xe1e7ea, { outline: false });
   box(scene, 20, 21.2, -0.02, 0.01, 6, 8, 0x8a6a4a, { outline: false });
 
   // ==========================================
@@ -429,7 +464,8 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
 
     switch (kind) {
       case "meeting_table": {
-        box(scene, minX, maxX, 0.85, 0.95, minZ, maxZ, 0xedb168);
+        box(scene, minX, maxX, 0.85, 0.92, minZ, maxZ, 0xc98a4a);
+        box(scene, minX + 0.08, maxX - 0.08, 0.92, 0.96, minZ + 0.08, maxZ - 0.08, 0xedb168, { outline: false });
         box(scene, minX + 0.1, maxX - 0.1, 0.7, 0.85, minZ + 0.1, maxZ - 0.1, 0xc98a4a);
         for (const [lx, lz] of [[minX + 0.2, minZ + 0.2], [maxX - 0.2, minZ + 0.2], [minX + 0.2, maxZ - 0.2], [maxX - 0.2, maxZ - 0.2]]) {
           box(scene, lx - 0.08, lx + 0.08, 0, 0.85, lz - 0.08, lz + 0.08, 0x8a5a3c);
