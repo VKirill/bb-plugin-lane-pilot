@@ -116,7 +116,7 @@ export function createCouncil(ctx: ServerCore) {
   /** One System One call through the run's host; null when the judge is off or fails, so the rule answers. */
   async function judge(hostId: string, state: unknown, questions: Record<string, { instructions: string; criteria: Record<string, string> }>): Promise<{ answers: Record<string, string>; confidence: Record<string, number> } | null> {
     try {
-      const result = await host.call("councilJudge", { requestedHostId: hostId, state: JSON.stringify(state).slice(0, 60_000), questions }, { hostId, timeoutMs: 8_000 });
+      const result = await host.call("councilJudge", { requestedHostId: hostId, state: JSON.stringify(state).slice(0, 60_000), questions }, { hostId, timeoutMs: 10_000 });
       return result.status === "ok" ? { answers: result.answers, confidence: result.confidence ?? {} } : null;
     } catch {
       return null;

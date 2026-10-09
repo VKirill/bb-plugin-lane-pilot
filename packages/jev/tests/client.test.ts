@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { createJevClient } from "@lane-pilot/jev";
+import { describe, expect, it, vi } from "vitest";
+import { JEV_PROVIDERS, createJevClient, resolveJevProvider } from "@lane-pilot/jev";
+import type { JevProvider } from "@lane-pilot/jev";
 import type { JevQuestion } from "@lane-pilot/jev";
 
 const QUESTIONS: Record<string, JevQuestion> = { urgent: { type: "noul", instructions: "Is it urgent?" } };
@@ -17,9 +18,9 @@ function fakeFetch(replies: Reply[]) {
   }) as unknown as typeof fetch;
   return { fn, calls };
 }
-const clientWith = (replies: Reply[], extra: { key?: string | undefined; now?: () => number } = {}) => {
+const clientWith = (replies: Reply[], extra: { key?: string | undefined; now?: () => number; provider?: JevProvider } = {}) => {
   const f = fakeFetch(replies), sleeps: number[] = [];
-  const client = createJevClient({ apiKey: async () => ("key" in extra ? extra.key : "k-secret"), fetch: f.fn, sleep: async (ms) => { sleeps.push(ms); }, ...(extra.now ? { now: extra.now } : {}) });
+  const client = createJevClient({ endpoint: async () => ({ provider: extra.provider ?? JEV_PROVIDERS.typesafe, apiKey: "key" in extra ? extra.key : "k-secret" }), fetch: f.fn, sleep: async (ms) => { sleeps.push(ms); }, ...(extra.now ? { now: extra.now } : {}) });
   return { client, ...f, sleeps };
 };
 
@@ -86,5 +87,54 @@ describe("jev client", () => {
     expect(calls).toHaveLength(sent);
     at += 5 * 60_000 + 1;
     expect(client.breaker().open).toBe(false);
+  });
+
+  it("names the key of the chosen provider when it is missing", async () => {
+    const { client } = clientWith([{ status: 200, body: OK_BODY }], { key: undefined, provider: JEV_PROVIDERS.openlux });
+    expect(await client.call({ state: "x", questions: QUESTIONS })).toMatchObject({ ok: false, status: "disabled", error: "no OPENLUX_API_KEY" });
+  });
+});
+
+describe("jev providers", () => {
+  it("defaults to OpenLux and falls back to it for an unknown value", () => {
+    expect(resolveJevProvider(undefined).id).toBe("openlux");
+    expect(resolveJevProvider("nope").id).toBe("openlux");
+    expect(resolveJevProvider("toString").id).toBe("openlux");
+    expect(resolveJevProvider("typesafe").id).toBe("typesafe");
+  });
+
+  it("sends to OpenLux with its pinned model and its own url", async () => {
+    const { client, calls } = clientWith([{ status: 200, body: { ...OK_BODY, model: "jev-1.13.0" } }], { provider: JEV_PROVIDERS.openlux });
+    const result = await client.call({ state: "payouts failing", questions: QUESTIONS });
+    expect(result).toMatchObject({ ok: true, model: "jev-1.13.0" });
+    expect(calls[0]).toMatchObject({ url: "https://api.openlux.ai/v1/systemone", auth: "Bearer k-secret", body: { model: "jev-1.13.0:stable" } });
+  });
+
+  it("adds the provider's headroom to every timeout, the caller's own included", async () => {
+    const timeouts: number[] = [];
+    const spy = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms: number) => { timeouts.push(ms); return new AbortController().signal; });
+    try {
+      const official = clientWith([{ status: 200, body: OK_BODY }]);
+      await official.client.call({ state: "x", questions: QUESTIONS });
+      await official.client.call({ state: "x", questions: QUESTIONS }, { timeoutMs: 8_000 });
+      const reseller = clientWith([{ status: 200, body: OK_BODY }], { provider: JEV_PROVIDERS.openlux });
+      await reseller.client.call({ state: "x", questions: QUESTIONS });
+      await reseller.client.call({ state: "x", questions: QUESTIONS }, { timeoutMs: 8_000 });
+    } finally { spy.mockRestore(); }
+    expect(timeouts).toEqual([4_000, 8_000, 5_500, 9_500]);
+  });
+
+  it("does not retry OpenLux's 500 invalid_request nor count it against the breaker", async () => {
+    const bad = { status: 500, body: { error: { message: "question a has unsupported type", type: "new_api_error", code: "invalid_request" } } } as const;
+    const { client, calls } = clientWith([bad], { provider: JEV_PROVIDERS.openlux });
+    for (let i = 0; i < 6; i += 1) expect(await client.call({ state: "x", questions: QUESTIONS })).toMatchObject({ ok: false, status: "error", attempts: 1, error: "http 500 invalid_request" });
+    expect(calls).toHaveLength(6);
+    expect(client.breaker()).toEqual({ open: false, failures: 0 });
+  });
+
+  it("still retries a plain 500 (the service, not the request)", async () => {
+    const { client, calls } = clientWith([{ status: 500, body: { error: { code: "internal" } } }, { status: 200, body: OK_BODY }], { provider: JEV_PROVIDERS.openlux });
+    expect(await client.call({ state: "x", questions: QUESTIONS })).toMatchObject({ ok: true, attempts: 2 });
+    expect(calls).toHaveLength(2);
   });
 });

@@ -1,7 +1,7 @@
 import { networkInterfaces } from "node:os";
 import { createWorktree, integrateWorktree, prepareWorktree, removeLaneWorktree, syncWorktree, snapshotWorktree, type ReplayCheckOutcome } from "../verification";
 import { attributeGateOnHost, bisectGateOnHost, runGateOnHost } from "../verification";
-import { buildDocsAnchors, docsDepth as readDocsDepth, docsStaleness, jevApiKey, provideJevKey, verifyDocsCitations } from "../verification";
+import { buildDocsAnchors, docsDepth as readDocsDepth, docsStaleness, jevApiKey, jevProviderOfKey, provideJevKey, verifyDocsCitations } from "../verification";
 import { buildDocsFlows } from "../verification";
 import { runStabilityDrill } from "../verification";
 import { commitDocs, docsLineCounts as readDocsLineCounts, docsWorthinessFacts as readDocsWorthinessFacts, gitDocsScope as readGitDocsScope, revertPaths } from "../verification";
@@ -581,7 +581,9 @@ export const classifyPlan: ExperimentalHostRpcHandlers<typeof hostContract>["cla
   const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
   const planSha256 = sha256Hex(input.plan);
   const sourceLength = Buffer.byteLength(input.plan, "utf8");
-  const payload = { model:"jev-latest", state:{ task:input.plan }, questions:{ effort:PLAN_EFFORT_QUESTION } };
+  const apiKey = await jevApiKey();
+  const provider = jevProviderOfKey(apiKey);
+  const payload = { model:provider.model, state:{ task:input.plan }, questions:{ effort:PLAN_EFFORT_QUESTION } };
   const body = JSON.stringify(payload);
   const decodedPlan = (JSON.parse(body) as { state:{ task:string } }).state.task;
   const sentPlanSha256 = sha256Hex(decodedPlan);
@@ -590,15 +592,14 @@ export const classifyPlan: ExperimentalHostRpcHandlers<typeof hostContract>["cla
   if (sentPlanSha256 !== planSha256 || sentLength !== sourceLength) {
     return { hostId, status:"error", effort:null, reason:"plan_serialization_mismatch", ...transportProof };
   }
-  const apiKey = await jevApiKey();
   if (!apiKey) return { hostId, status:"disabled", effort:null, reason:"missing_typesafe_api_key",
     planSha256, sentPlanSha256:null, sourceLength, sentLength:null };
   try {
-    const response = await fetch("https://api.typesafe.ai/v1/systemone", {
+    const response = await fetch(provider.url, {
       method:"POST",
       headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
       body,
-      signal:AbortSignal.timeout(2500),
+      signal:AbortSignal.timeout(2500 + provider.timeoutPadMs),
     });
     if (!response.ok) return { hostId, status:"error", effort:null, reason:`http_${response.status}`, ...transportProof };
     const value: unknown = await response.json();
@@ -626,11 +627,12 @@ export const councilJudge: ExperimentalHostRpcHandlers<typeof hostContract>["cou
   try { state = JSON.parse(input.state); } catch { /* a plain text state is allowed */ }
   const questions = Object.fromEntries(Object.entries(input.questions).map(([name, question]) => [name, { type:"choice", instructions:question.instructions, criteria:question.criteria }]));
   try {
-    const response = await fetch("https://api.typesafe.ai/v1/systemone", {
+    const provider = jevProviderOfKey(apiKey);
+    const response = await fetch(provider.url, {
       method:"POST",
       headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
-      body:JSON.stringify({ model:"jev-latest", state, questions }),
-      signal:AbortSignal.timeout(4000),
+      body:JSON.stringify({ model:provider.model, state, questions }),
+      signal:AbortSignal.timeout(4000 + provider.timeoutPadMs),
     });
     if (!response.ok) return { hostId, status:"error", answers:{}, reason:`http_${response.status}` };
     const value: unknown = await response.json();

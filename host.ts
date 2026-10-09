@@ -69,8 +69,8 @@ import { provideJevKey } from "./src/rooms/verification";
 import { anamnesisHandler } from "./src/rooms/anamnesis";
 
 /** Takes the Env Catalog key the server attached to a Jev call before the handler runs. */
-const withJevKey = <I extends { jevApiKey?: string }, C, O>(handler: (input: I, context: C) => O | Promise<O>) => async (input: I, context: C) => {
-  provideJevKey(input.jevApiKey);
+const withJevKey = <I extends { jevApiKey?: string; jevProvider?: string }, C, O>(handler: (input: I, context: C) => O | Promise<O>) => async (input: I, context: C) => {
+  provideJevKey(input.jevApiKey, input.jevProvider);
   return await handler(input, context);
 };
 

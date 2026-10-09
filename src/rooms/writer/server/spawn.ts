@@ -120,7 +120,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
     const state=JSON.stringify(ruleRelevanceState(task)).slice(0,60_000);
     // Chunks are independent questions; asking them together keeps the wait at one answer (~0.5–1 s).
     const answered=await Promise.all(chunks.map(async(chunk)=>{
-      const judged=await host.call("councilJudge",{requestedHostId:hostId,state,questions:ruleRelevanceQuestions(chunk)},{hostId,timeoutMs:6_000}).catch(()=>null);
+      const judged=await host.call("councilJudge",{requestedHostId:hostId,state,questions:ruleRelevanceQuestions(chunk)},{hostId,timeoutMs:10_000}).catch(()=>null);
       return judged?.status==="ok"?pickRelevantRules(chunk,judged.answers,judged.confidence??{},undefined,judged.probabilities??{}):chunk;
     }));
     const picked=new Set([...forWriter.filter((rule)=>rule.always),...answered.flat()]);

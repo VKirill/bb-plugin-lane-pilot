@@ -149,6 +149,7 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "workflow.preset.ins-digest.model": { label: "field_s472", help: "reason_s472" },
   "workflow.preset.ins-digest.reasoning_effort": { label: "field_s473", help: "reason_s473" },
   "jev.modes": { label: "field_s442", help: "reason_s442" },
+  "jev.provider": { label: "field_s475", help: "reason_s475" },
   "quality_mode": { label: "field_s423", help: "reason_s423" },
   "run.gate": { label: "settingRunGate", help: "settingRunGateHelp" },
 };
