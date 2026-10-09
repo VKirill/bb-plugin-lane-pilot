@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.205
+
+- **The route-first rule is enforced, not only written.** Live in the sandbox, 0.1.204's PM still answered «find discussed posts on vibe coding» with three web searches. The PM guard now refuses WebSearch, WebFetch and a tavily specialist until `lane_pilot_route` has been called after the owner's last message, and says to call the router; once it answers that no workflow fits, the search goes through in the same turn. Other roles, other specialists and an unreadable transcript are untouched (`tests/guard-route-first.test.ts`). Installed into `~/.agents/hooks` on the Mac mini, MacBook and OVH and into claude-lane-stack.
+
 ## 0.1.204
 
 - **The PM sends work that is not code to a workflow first.** Asked to «find discussed posts on vibe coding», the PM read «tavily (web research)» right before the routing rule, searched the web itself and never called `lane_pilot_route`, so `insights-post` was not offered (thr_n6ukbhcv9t); a follow-up then ran the old BB Tasks pipeline, whose worker threads appeared visible in another project. The routing rule now opens «When to act»: posts, insights, research, reels, a cocoon, a digest or a deploy go to `lane_pilot_route` before any search, skill, errand or specialist, and `bb tasks` pipelines are not run from skills; tavily is for one quick lookup or research when no workflow fits. A test pins the rule's place.
