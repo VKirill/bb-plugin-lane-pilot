@@ -178,16 +178,22 @@ export function CouncilPage() {
   const seatLine = detail ? detail.seats.map((seat) => `${seat.title}${seat.providerId && seat.model ? ` (${seat.providerId}/${seat.model})` : ""}`).join(" · ") : "";
   const roster = detail ? (
     <>
-      <div className="text-xs text-muted-foreground font-mono">{seatLine}</div>
-      {detail.agenda.length ? <ol className="list-decimal pl-5 text-xs font-mono">{detail.agenda.map((item) => <li key={item}>{item}</li>)}</ol> : null}
+      <div className="text-xs text-muted-foreground font-mono truncate">{seatLine}</div>
+      {detail.agenda.length ? (
+        <Disclosure compact summary={`${t("councilAgenda")} (${detail.agenda.length})`}>
+          <ol className="list-decimal pl-5 text-xs font-mono max-h-28 overflow-y-auto">
+            {detail.agenda.map((item) => <li key={item}>{item}</li>)}
+          </ol>
+        </Disclosure>
+      ) : null}
     </>
   ) : null;
   return (
     <div ref={rootRef} className={`flex h-full min-h-0 min-w-0 flex-col overflow-hidden ${compact ? "gap-2 p-2" : "gap-3 p-4"}`} data-testid="council-page" data-council-layout={compact ? "compact" : "split"} data-bb-ru-skip>
       <div className="flex min-w-0 items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <h1 className="shrink-0 text-base font-bold font-mono tracking-wide">[ {t("councilPageTitle")} ]</h1>
-          <select className={`${SELECT_CLASS} min-w-0 ${compact ? "flex-1" : "max-w-[16rem]"}`} value={projectId ?? ""} onChange={(event) => setProjectId(event.target.value || null)} aria-label={t("councilPick")}>
+        <div className="flex min-w-0 items-center gap-1.5 flex-1">
+          <h1 className="shrink-0 text-base font-bold font-mono tracking-wide hidden sm:inline">[ {t("councilPageTitle")} ]</h1>
+          <select className={`${SELECT_CLASS} min-w-0 flex-1 max-w-[16rem]`} value={projectId ?? ""} onChange={(event) => setProjectId(event.target.value || null)} aria-label={t("councilPick")}>
             {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
           </select>
         </div>
@@ -195,28 +201,28 @@ export function CouncilPage() {
           <div className="flex items-center gap-1 shrink-0 font-mono text-xs">
             <button
               type="button"
-              className="pixel-btn bg-amber-200 px-2 py-1 text-slate-900 font-bold hover:bg-amber-100"
+              className="pixel-btn bg-amber-200 px-1.5 sm:px-2 py-1 text-slate-900 font-bold hover:bg-amber-100"
               onClick={handleReplayToggle}
               data-testid="council-replay-toggle"
             >
-              {isPlaying ? `⏸ ${t("councilReplayPause")}` : `▶ ${t("councilReplayPlay")}`}
+              {isPlaying ? `⏸` : `▶`}{compact ? "" : ` ${isPlaying ? t("councilReplayPause") : t("councilReplayPlay")}`}
             </button>
             <button
               type="button"
-              className="pixel-btn bg-slate-200 px-2 py-1 text-slate-900 font-bold hover:bg-slate-100"
+              className="pixel-btn bg-slate-200 px-1.5 sm:px-2 py-1 text-slate-900 font-bold hover:bg-slate-100"
               onClick={handleReplayStep}
               data-testid="council-replay-step"
             >
-              ⏭ {t("councilReplayStep")}
+              ⏭{compact ? "" : ` ${t("councilReplayStep")}`}
             </button>
             {replayCursor !== null ? (
               <button
                 type="button"
-                className="pixel-btn bg-rose-200 px-2 py-1 text-slate-900 font-bold hover:bg-rose-100"
+                className="pixel-btn bg-rose-200 px-1.5 sm:px-2 py-1 text-slate-900 font-bold hover:bg-rose-100"
                 onClick={handleReplayReset}
                 data-testid="council-replay-reset"
               >
-                ⏹ {t("councilReplayReset")}
+                ⏹{compact ? "" : ` ${t("councilReplayReset")}`}
               </button>
             ) : null}
           </div>
@@ -254,28 +260,22 @@ export function CouncilPage() {
             </aside>
           )}
           <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-2 border-slate-900 bg-[var(--lp-card)] shadow-[4px_4px_0_#0f172a]">
-            <header className={`shrink-0 border-b-2 border-slate-900 bg-slate-50 p-2 sm:p-3`} data-testid="council-header">
-              <div className={`text-sm font-bold font-mono text-slate-900 ${compact ? "line-clamp-2" : ""}`}>
+            <header className="shrink-0 border-b-2 border-slate-900 bg-slate-50 p-2 sm:p-3" data-testid="council-header">
+              <div className="text-sm font-bold font-mono text-slate-900 line-clamp-2">
                 {detail.question}
               </div>
-              {compact ? (
-                <Disclosure compact summary={`${t("councilTitle")} · ${t("councilRound")} ${detail.round}/${detail.maxRounds}`}>
-                  {roster}
-                </Disclosure>
-              ) : (
-                roster
-              )}
+              {roster}
             </header>
 
             <div className={`flex min-h-0 min-w-0 flex-1 overflow-hidden ${wide ? "flex-row" : "flex-col"}`}>
               {/* Office Canvas Container */}
               <div
-                className={`min-h-[220px] shrink-0 border-slate-900 ${
+                className={`min-h-[200px] shrink-0 border-slate-900 ${
                   wide
                     ? "w-1/2 border-r-2"
                     : compact
-                    ? "h-[38vh] min-h-[200px] border-b-2"
-                    : "h-[50%] min-h-[240px] border-b-2"
+                    ? "h-[35vh] min-h-[180px] border-b-2"
+                    : "h-[42%] max-h-[280px] min-h-[200px] border-b-2"
                 }`}
               >
                 <CouncilOffice
@@ -296,7 +296,7 @@ export function CouncilPage() {
                   {detail.messages.map((message) => {
                     const isCursor = replayCursor === message.seq;
                     const isSpeakerHighlighted = highlightSeatId === message.seatId;
-                    const color = seatColor(message.seatId);
+                    const color = seatColor(message.seatId, detail.seats);
 
                     return (
                       <div
