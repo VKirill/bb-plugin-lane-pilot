@@ -24,11 +24,21 @@ const stateText = (state: string | null) => state === null ? t("runCardState_non
  * chat and, for a task that left a failed check's log, the log in BB's file preview. The id is untrusted text from the
  * message; the card shows only what the plugin server answers for it.
  */
+/**
+ * The chat is virtualized: a message leaves the page and mounts again while the owner scrolls. A card that started from a
+ * 48 px placeholder each time grew to its full height a moment later, and the chat jumped (2026-10-09). The last card of a
+ * run is kept here, so a mount shows it at once; and the list shows a few rows with a «show all» toggle so its height stays small.
+ */
+const lastCard = new Map<string, RunCard | "missing">();
+const ROWS_SHOWN = 5;
+
 export function RunCardDirective({ attributes, source }: PluginMessageDirectiveProps) {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
   const runId = attributes.id ?? "";
-  const [card, setCard] = useState<RunCard | "missing" | null>(null);
+  const [card, setCardState] = useState<RunCard | "missing" | null>(() => lastCard.get(runId) ?? null);
+  const [expanded, setExpanded] = useState(false);
+  const setCard = (value: RunCard | "missing") => { lastCard.set(runId, value); setCardState(value); };
   useEffect(() => {
     if (!runId) { setCard("missing"); return; }
     let alive = true;
@@ -45,6 +55,7 @@ export function RunCardDirective({ attributes, source }: PluginMessageDirectiveP
   if (card === null) return <div role="status" aria-busy="true" className="my-2 h-12 animate-pulse rounded-md border border-border bg-muted/40" />;
   if (card === "missing") return <div className="my-2 rounded-md border border-border px-3 py-2 text-sm text-muted-foreground" title={source}>{t("runCardGone")}</div>;
   const done = card.tasks.filter((task) => task.state === "accepted").length;
+  const shown = expanded ? card.tasks : card.tasks.slice(0, ROWS_SHOWN);
   return (
     <div className="my-2 min-w-0 rounded-md border border-border text-sm" data-testid="run-card">
       <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
@@ -52,7 +63,7 @@ export function RunCardDirective({ attributes, source }: PluginMessageDirectiveP
         <span className="text-xs text-muted-foreground">{card.closed ? t("runCardClosed") : t("runCardProgress").replace("{done}", String(done)).replace("{total}", String(card.tasks.length))}</span>
       </div>
       <ul className="divide-y divide-border">
-        {card.tasks.map((task) => (
+        {shown.map((task) => (
           <li key={task.id} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5">
             <span className="min-w-0 flex-1 truncate" title={`${task.id}: ${task.title}`}>{task.title}</span>
             <span className="shrink-0 text-xs text-muted-foreground">{stateText(task.state)}</span>
@@ -71,6 +82,12 @@ export function RunCardDirective({ attributes, source }: PluginMessageDirectiveP
           </li>
         ))}
       </ul>
+      {card.tasks.length > ROWS_SHOWN ? (
+        <button type="button" data-testid="run-card-toggle" className="w-full border-t border-border px-3 py-1.5 text-left text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          onClick={() => setExpanded((open) => !open)}>
+          {expanded ? t("runCardShowLess") : t("runCardShowAll").replace("{count}", String(card.tasks.length))}
+        </button>
+      ) : null}
     </div>
   );
 }

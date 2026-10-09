@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.207
+
+- **The PM chat no longer jumps while scrolling.** BB's chat unmounts messages that leave the screen and mounts them again; the Lane Pilot run card started from a 48 px placeholder on every mount and grew to its full height (up to ~600 px for 18 tasks) a moment later, so the chat re-laid out under the owner's scroll — once per card, and the PM puts the card in most of its reports. The last card of a run is kept in memory and shown at once on a new mount, and the task list shows 5 rows with a «show all» toggle.
+
 ## 0.1.206
 
 - **The route-first rule reaches the real PM.** 0.1.205 checked only `agent_type: lane-pilot-pm`, while a BB PM's hook calls arrive as `dev-orchestrator` with `LANE_PILOT_AGENT_TYPE` set (the launcher's hook trace showed three WebSearch calls allowed). The rule now applies to every Lane Pilot chat; a CLI dev-orchestrator without that variable is untouched.

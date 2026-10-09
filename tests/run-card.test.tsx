@@ -47,6 +47,23 @@ describe("lane-run message directive", () => {
     }));
   });
 
+  it("mounts again at full height without a placeholder, and folds a long task list (the chat jumped while scrolling)", async () => {
+    const many = { ...card, runId: "run_long", tasks: Array.from({ length: 12 }, (_, i) => ({ id: `t${i}`, title: `Task ${i}`, state: "accepted", threadId: null, checkLog: null })) };
+    let calls = 0;
+    const rpc = { get_run_card: () => { calls += 1; return many; } };
+    const first = await mount(rpc, { id: "run_long" });
+    const root = await first.findByTestId("run-card");
+    expect(root.querySelectorAll("li")).toHaveLength(5);
+    fireEvent.click(await first.findByTestId("run-card-toggle"));
+    await waitFor(() => expect(root.querySelectorAll("li")).toHaveLength(12));
+    cleanup();
+    const again = await mount({ get_run_card: () => new Promise(() => {}) }, { id: "run_long" });
+    // The answer never comes: the card still renders from the last one at once.
+    expect(again.queryByRole("status")).toBeNull();
+    expect((await again.findByTestId("run-card")).textContent).toContain("Task 0");
+    expect(calls).toBeGreaterThan(0);
+  });
+
   it("says so when the run is unknown", async () => {
     expect(await (await mount({ get_run_card: () => null }, { id: "nope" })).findByText("This Lane Pilot run is no longer available.")).toBeTruthy();
   }, 60_000);
