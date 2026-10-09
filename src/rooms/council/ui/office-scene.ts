@@ -123,6 +123,41 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
     return mesh;
   };
 
+  /** Low-poly ball (icosahedron) with outlines: tree canopies, bushes, leaf clusters. */
+  const blob = (parent: ThreeType.Object3D, x: number, y: number, z: number, radius: number, color: number, squashY = 1) => {
+    const geom = new THREE.IcosahedronGeometry(radius, 0);
+    disposables.push(geom);
+    const mat = material(color);
+    mat.flatShading = true;
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.position.set(x, y, z);
+    mesh.scale.y = squashY;
+    const edges = new THREE.EdgesGeometry(geom, 30);
+    disposables.push(edges);
+    mesh.add(new THREE.LineSegments(edges, outlineMat));
+    parent.add(mesh);
+    return mesh;
+  };
+
+  /** Leafy pot plant: a pot, soil and a fan of leaves around a central cluster. */
+  const pottedPlant = (cx: number, cz: number, potHalf: number, height: number, pot: number) => {
+    box(scene, cx - potHalf, cx + potHalf, 0, 0.45, cz - potHalf, cz + potHalf, pot);
+    box(scene, cx - potHalf + 0.04, cx + potHalf - 0.04, 0.45, 0.47, cz - potHalf + 0.04, cz + potHalf - 0.04, 0x5a3d2b, { outline: false });
+    const leafCount = 7;
+    for (let i = 0; i < leafCount; i++) {
+      const leaf = new THREE.Group();
+      leaf.position.set(cx, 0.47, cz);
+      leaf.rotation.y = (i / leafCount) * Math.PI * 2 + cx * 0.7;
+      const blade = new THREE.Group();
+      blade.rotation.z = 0.55 + (i % 3) * 0.18;
+      leaf.add(blade);
+      const len = (height - 0.4) * (0.75 + (i % 2) * 0.25);
+      box(blade, -0.05, 0.05, 0, len, -0.13, 0.13, i % 2 === 0 ? LEAF : LEAF_SHADE);
+      scene.add(leaf);
+    }
+    blob(scene, cx, 0.45 + (height - 0.45) * 0.62, cz, Math.max(0.22, potHalf * 0.9), LEAF, 1.25);
+  };
+
   // ==========================================
   // 1. SLAB, GROUND, PAVING AND TREES
   // ==========================================
@@ -141,9 +176,23 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
   box(scene, -30, 70, -0.52, -0.49, 11, 13, PAVING, { outline: false });
 
   for (const [x, z] of TREES) {
-    box(scene, x - 0.15, x + 0.15, -0.5, 0.5, z - 0.15, z + 0.15, 0x8a5a3c);
-    box(scene, x - 0.7, x + 0.7, 0.5, 1.9, z - 0.7, z + 0.7, 0x81b352);
+    box(scene, x - 0.15, x + 0.15, -0.5, 0.7, z - 0.15, z + 0.15, 0x8a5a3c);
+    blob(scene, x, 1.45, z, 1.0, 0x81b352);
+    blob(scene, x + 0.25, 2.05, z + 0.2, 0.6, 0x93c45f);
   }
+
+  // Flower bushes along the slab edges (front and east), as in the reference picture
+  const flowerColors = [0xf6f0f6, 0xc58be0, 0xf48fb1];
+  const bushes: Array<[number, number]> = [[-17, 10.9], [-9, 10.8], [-2, 10.9], [6, 10.8], [14, 10.9], [20.9, -6], [20.9, 1], [20.9, 9.5]];
+  bushes.forEach(([x, z], i) => {
+    blob(scene, x, -0.2, z, 0.45, 0x669e3b, 0.8);
+    for (let k = 0; k < 3; k++) {
+      const a = k * 2.1 + i;
+      const fx = x + Math.cos(a) * 0.28;
+      const fz = z + Math.sin(a) * 0.28;
+      box(scene, fx - 0.06, fx + 0.06, 0.05, 0.15, fz - 0.06, fz + 0.06, flowerColors[(i + k) % 3]!, { outline: false });
+    }
+  });
 
   // Street lamp at grid (43, 21)
   box(scene, 22.9, 23.1, -0.5, 1.8, 10.9, 11.1, 0x3a3d4a);
@@ -168,23 +217,69 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
   box(scene, 20, 20.3, 0, 0.35, -10, 6, WALL_CREAM_SHADE);
   box(scene, 20, 20.3, 0, 0.35, 8, 10, WALL_CREAM_SHADE);
 
-  // Windows on the north wall (gx 13–16, 17–20, 21–24) and the west wall (meeting gz 3–7, lounge gz 15–18)
-  for (const [gx0, gx1] of [[13, 16], [17, 20], [21, 24]] as const) {
-    box(scene, gx0 - 20, gx1 - 20, 0.9, 2.9, -10, -9.95, GLASS, { outline: false, opacity: 0.55 });
-  }
-  box(scene, -20, -19.95, 0.9, 2.9, -7, -3, GLASS, { outline: false, opacity: 0.55 });
-  box(scene, -20, -19.95, 0.9, 2.9, 5, 8, GLASS, { outline: false, opacity: 0.55 });
+  // Windows on the north wall (gx 13–16, 17–20, 21–24) and the west wall (meeting gz 3–7, lounge gz 15–18).
+  // The wall is solid, so the view outside (sky, tree tops) is painted on it under the glass.
+  const northWindow = (x0: number, x1: number, y0: number, y1: number, panes: number) => {
+    box(scene, x0, x1, y0, y1, -10.0, -9.99, 0xcdeefa, { outline: false });
+    for (let i = 0; i < 3; i++) {
+      const tx = x0 + ((i + 0.5) * (x1 - x0)) / 3;
+      box(scene, tx - 0.45, tx + 0.45, y0, y0 + 0.55 + (i % 2) * 0.25, -9.99, -9.98, i % 2 ? 0x9fcf7a : 0x8cc06a, { outline: false });
+    }
+    box(scene, x0, x1, y0, y1, -9.98, -9.95, GLASS, { outline: false, opacity: 0.35 });
+    for (let i = 0; i <= panes; i++) {
+      const x = x0 + (i * (x1 - x0)) / panes;
+      box(scene, x - 0.05, x + 0.05, y0, y1, -9.98, -9.92, 0xffffff);
+    }
+    box(scene, x0 - 0.05, x1 + 0.05, y0 - 0.08, y0, -9.98, -9.88, 0xffffff);
+    box(scene, x0 - 0.05, x1 + 0.05, y1, y1 + 0.06, -9.98, -9.92, 0xffffff);
+    // Diagonal glare streak
+    const streak = box(scene, -0.06, 0.06, -0.5, 0.5, 0, 0.005, 0xffffff, { outline: false, opacity: 0.6 });
+    streak.position.set(x0 + (x1 - x0) * 0.3, (y0 + y1) / 2, -9.94);
+    streak.rotation.z = -0.6;
+  };
+  for (const [gx0, gx1] of [[13, 16], [17, 20], [21, 24]] as const) northWindow(gx0 - 20, gx1 - 20, 0.9, 2.9, 2);
 
-  // Panoramic window in the director's office (gx 30.4–39.6): six panes, white mullions every 1.53
-  box(scene, 10.4, 19.6, 0.6, 3.2, -10, -9.95, GLASS, { outline: false, opacity: 0.55 });
+  const westWindow = (z0: number, z1: number) => {
+    box(scene, -20.0, -19.99, 0.9, 2.9, z0, z1, 0xcdeefa, { outline: false });
+    box(scene, -19.99, -19.98, 0.9, 1.5, z0 + 0.3, z1 - 0.3, 0x9fcf7a, { outline: false });
+    box(scene, -19.98, -19.95, 0.9, 2.9, z0, z1, GLASS, { outline: false, opacity: 0.35 });
+    for (const z of [z0, (z0 + z1) / 2, z1]) box(scene, -19.98, -19.92, 0.9, 2.9, z - 0.05, z + 0.05, 0xffffff);
+    box(scene, -19.98, -19.88, 0.82, 0.9, z0 - 0.05, z1 + 0.05, 0xffffff);
+  };
+  westWindow(-7, -3);
+  westWindow(5, 8);
+
+  // Panoramic window in the director's office (gx 30.4–39.6): city skyline and tree tops behind six panes
+  box(scene, 10.4, 19.6, 0.6, 3.2, -10.0, -9.99, 0xcdeefa, { outline: false });
+  const skyline: Array<[number, number, number]> = [
+    [10.5, 11.6, 2.6], [11.7, 12.4, 3.1], [12.5, 13.6, 2.2], [13.7, 14.5, 2.9], [14.6, 15.9, 2.4],
+    [16.0, 16.7, 3.15], [16.8, 17.9, 2.5], [18.0, 18.8, 2.8], [18.9, 19.5, 2.3],
+  ];
+  skyline.forEach(([x0, x1, top], i) => {
+    box(scene, x0, x1, 0.6, top, -9.99, -9.985, i % 2 ? 0x9fb3c8 : 0xb8c8d8, { outline: false });
+    for (let y = 1.4; y < top - 0.2; y += 0.35) {
+      box(scene, x0 + 0.12, x1 - 0.12, y, y + 0.12, -9.985, -9.982, 0xdfe8f0, { outline: false });
+    }
+  });
+  for (let i = 0; i < 6; i++) {
+    const tx = 11 + i * 1.6;
+    box(scene, tx - 0.6, tx + 0.6, 0.6, 1.3 + (i % 2) * 0.25, -9.982, -9.978, i % 2 ? 0x9fcf7a : 0x86bb63, { outline: false });
+  }
+  box(scene, 10.4, 19.6, 0.6, 3.2, -9.975, -9.95, GLASS, { outline: false, opacity: 0.3 });
   for (let i = 0; i <= 6; i++) {
     const x = 10.4 + i * (9.2 / 6);
-    box(scene, x - 0.05, x + 0.05, 0.6, 3.2, -10.02, -9.93, 0xffffff);
+    box(scene, x - 0.05, x + 0.05, 0.6, 3.2, -9.97, -9.9, 0xffffff);
   }
+  box(scene, 10.35, 19.65, 0.52, 0.6, -9.97, -9.86, 0xffffff);
+  box(scene, 10.35, 19.65, 3.2, 3.26, -9.97, -9.9, 0xffffff);
 
   // Wall screen (north wall gx 4–8, y 1.3–2.6) and the whiteboard (west wall gz 7.5–10, y 1.0–2.3)
   box(scene, -16, -12, 1.3, 2.6, -10.1, -9.95, 0x2f3340);
   box(scene, -15.8, -12.2, 1.45, 2.45, -9.94, -9.9, 0x2b4a6b, { outline: false });
+  [0.35, 0.55, 0.45, 0.75, 0.65, 0.9].forEach((hgt, i) => {
+    const x = -15.5 + i * 0.5;
+    box(scene, x, x + 0.3, 1.55, 1.55 + hgt * 0.75, -9.9, -9.89, i % 2 ? 0x38bdf8 : 0x4ade80, { outline: false });
+  });
   box(scene, -20.1, -19.95, 1.0, 2.3, -2.5, 0, 0xffffff, { outline: false });
   box(scene, -20.0, -19.9, 1.8, 2.0, -2.3, -2.1, 0xf472b6);
   box(scene, -20.0, -19.9, 1.8, 2.0, -1.6, -1.4, 0xfef08a);
@@ -195,6 +290,13 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
     if (wall.id.startsWith("wall_meeting")) {
       box(scene, wall.minX, wall.maxX, 0, 2.6, wall.minZ, wall.maxZ, 0xcfe6ee, { outline: false, opacity: 0.35 });
       box(scene, wall.minX, wall.maxX, 2.5, 2.6, wall.minZ, wall.maxZ, 0xf4f7f8);
+      box(scene, wall.minX, wall.maxX, 0, 0.08, wall.minZ, wall.maxZ, 0xf4f7f8);
+      const alongX = wall.maxX - wall.minX > wall.maxZ - wall.minZ;
+      const [from, to] = alongX ? [wall.minX, wall.maxX] : [wall.minZ, wall.maxZ];
+      for (let at = from; at <= to + 0.01; at += Math.min(2, to - from)) {
+        if (alongX) box(scene, at - 0.06, at + 0.06, 0, 2.5, wall.minZ - 0.02, wall.maxZ + 0.02, 0xf4f7f8);
+        else box(scene, wall.minX - 0.02, wall.maxX + 0.02, 0, 2.5, at - 0.06, at + 0.06, 0xf4f7f8);
+      }
       continue;
     }
     const isWalnut = wall.id.startsWith("wall_director");
@@ -255,11 +357,42 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
     } else if (id === "prop_credenza") {
       box(scene, minX, maxX, 0, 0.75, minZ, maxZ, WALNUT);
       box(scene, minX - 0.02, maxX + 0.02, 0.75, 0.8, minZ - 0.02, maxZ + 0.02, WALNUT_TOP);
-      box(scene, minX + 0.6, minX + 1.8, 0.8, 1.4, minZ + 0.1, minZ + 0.4, 0x9b6b3a);
-      box(scene, minX + 3.4, minX + 3.8, 0.8, 1.35, minZ + 0.2, minZ + 0.4, BRASS);
-      box(scene, minX + 4.6, minX + 5.0, 0.8, 1.0, minZ + 0.2, minZ + 0.4, 0xc3262e);
+      for (let i = 1; i < 4; i++) {
+        const x = minX + (i * (maxX - minX)) / 4;
+        box(scene, x - 0.01, x + 0.01, 0.1, 0.68, maxZ, maxZ + 0.01, 0x5e3721, { outline: false });
+        box(scene, x - 0.12, x - 0.06, 0.4, 0.5, maxZ, maxZ + 0.03, BRASS, { outline: false });
+      }
+      // Model sailing ship: hull, three masts, cream sails, small stand
+      const shipX = mid(minX + 0.6, minX + 1.8);
+      box(scene, shipX - 0.08, shipX + 0.08, 0.8, 0.88, cz - 0.05, cz + 0.05, 0x5c3a24);
+      box(scene, shipX - 0.55, shipX + 0.55, 0.88, 1.02, cz - 0.1, cz + 0.1, 0x8a5a3c);
+      box(scene, shipX - 0.4, shipX + 0.45, 1.02, 1.05, cz - 0.08, cz + 0.08, 0xc98a4a, { outline: false });
+      for (const [dx, h] of [[-0.3, 0.38], [0.02, 0.5], [0.32, 0.36]] as const) {
+        box(scene, shipX + dx - 0.015, shipX + dx + 0.015, 1.05, 1.05 + h, cz - 0.015, cz + 0.015, 0x5c3a24, { outline: false });
+        box(scene, shipX + dx - 0.13, shipX + dx + 0.13, 1.15, 1.0 + h, cz + 0.02, cz + 0.04, 0xf4ead2);
+      }
+      // Trophy cup on a black base
+      const cupX = minX + 3.8;
+      box(scene, cupX - 0.12, cupX + 0.12, 0.8, 0.9, cz - 0.12, cz + 0.12, 0x282a36);
+      cylinder(scene, cupX, cz, 0.03, 0.9, 1.05, 0xe8b923);
+      cylinder(scene, cupX, cz, 0.13, 1.05, 1.3, 0xe8b923);
+      box(scene, cupX - 0.2, cupX - 0.13, 1.12, 1.24, cz - 0.02, cz + 0.02, 0xe8b923, { outline: false });
+      box(scene, cupX + 0.13, cupX + 0.2, 1.12, 1.24, cz - 0.02, cz + 0.02, 0xe8b923, { outline: false });
+      // Red vintage model car with chrome bumpers and wheels
+      const carX = minX + 5.4;
+      box(scene, carX - 0.4, carX + 0.4, 0.86, 0.98, cz - 0.15, cz + 0.15, 0xc3262e);
+      box(scene, carX - 0.18, carX + 0.15, 0.98, 1.08, cz - 0.13, cz + 0.13, 0x8f1b22);
+      box(scene, carX - 0.43, carX - 0.4, 0.86, 0.93, cz - 0.15, cz + 0.15, 0xd9dde2, { outline: false });
+      box(scene, carX + 0.4, carX + 0.43, 0.86, 0.93, cz - 0.15, cz + 0.15, 0xd9dde2, { outline: false });
+      for (const wx of [carX - 0.25, carX + 0.25]) box(scene, wx - 0.07, wx + 0.07, 0.8, 0.92, cz - 0.17, cz + 0.17, 0x282a36, { outline: false });
     } else if (id.startsWith("prop_armchair")) {
-      box(scene, minX, maxX, 0, 0.85, minZ, maxZ, LEATHER);
+      // Chesterfield armchair: seat, back on the far side, rolled arms
+      const facesEast = id.endsWith("_w");
+      box(scene, minX, maxX, 0, 0.42, minZ, maxZ, LEATHER);
+      if (facesEast) box(scene, minX, minX + 0.22, 0.42, 0.85, minZ, maxZ, 0x5c2a17);
+      else box(scene, maxX - 0.22, maxX, 0.42, 0.85, minZ, maxZ, 0x5c2a17);
+      box(scene, minX, maxX, 0.42, 0.66, minZ, minZ + 0.16, LEATHER);
+      box(scene, minX, maxX, 0.42, 0.66, maxZ - 0.16, maxZ, LEATHER);
     } else if (id === "prop_globe") {
       cylinder(scene, cx, cz, 0.04, 0, 0.5, 0x5c3a24);
       const ball = new THREE.Mesh(new THREE.SphereGeometry(0.4, 10, 8), material(0xc9b98a));
@@ -297,6 +430,7 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
     switch (kind) {
       case "meeting_table": {
         box(scene, minX, maxX, 0.85, 0.95, minZ, maxZ, 0xedb168);
+        box(scene, minX + 0.1, maxX - 0.1, 0.7, 0.85, minZ + 0.1, maxZ - 0.1, 0xc98a4a);
         for (const [lx, lz] of [[minX + 0.2, minZ + 0.2], [maxX - 0.2, minZ + 0.2], [minX + 0.2, maxZ - 0.2], [maxX - 0.2, maxZ - 0.2]]) {
           box(scene, lx - 0.08, lx + 0.08, 0, 0.85, lz - 0.08, lz + 0.08, 0x8a5a3c);
         }
@@ -403,11 +537,8 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
         break;
       case "plant": {
         const pot = zone === "director" ? BRASS : zone === "entrance" ? TEAL : TERRACOTTA;
-        const tall = zone === "director" ? 1.6 : 1.2;
-        const half = (maxX - minX) * 0.4;
-        box(scene, cx - half, cx + half, 0, 0.5, cz - half, cz + half, pot);
-        box(scene, cx - half - 0.25, cx + half + 0.25, 0.5, tall, cz - half - 0.25, cz + half + 0.25, LEAF);
-        box(scene, cx - 0.2, cx + 0.2, tall, tall + 0.3, cz - 0.2, cz + 0.2, LEAF_SHADE);
+        const tall = id === "prop_plant_fig" ? 1.9 : id === "prop_plant_monstera" ? 1.5 : zone === "director" ? 1.6 : 1.25;
+        pottedPlant(cx, cz, Math.min(0.3, (maxX - minX) * 0.35), tall, pot);
         break;
       }
       case "reception":
@@ -440,8 +571,27 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
   box(scene, dividerB.minX, dividerB.maxX, 0.3, 1.15, -6.05, -5.95, 0x6fa8b0);
 
   // Rugs: Persian under the director's desk, olive sitting corner, lounge rug
-  gridBox(scene, 31.8, 37.8, 1.6, 6.6, 0, 0.02, 0x8e2b3a, { outline: false });
-  gridBox(scene, 26.6, 31.6, 6.3, 9.8, 0, 0.02, 0x7a7046, { outline: false });
+  gridBox(scene, 31.8, 37.8, 1.6, 6.6, 0, 0.02, 0xd4a537, { outline: false });
+  gridBox(scene, 32.0, 37.6, 1.8, 6.4, 0, 0.025, 0x8e2b3a, { outline: false });
+  gridBox(scene, 32.5, 37.1, 2.3, 5.9, 0, 0.03, 0x6e1f2c, { outline: false });
+  gridBox(scene, 34.1, 35.5, 5.2, 5.8, 0, 0.035, 0x3e898e, { outline: false });
+  gridBox(scene, 26.6, 31.6, 6.3, 9.8, 0, 0.02, 0x5e5636, { outline: false });
+  gridBox(scene, 26.75, 31.45, 6.45, 9.65, 0, 0.025, 0x7a7046, { outline: false });
+
+  // Gold-framed painting (north wall gx 28–30, y 1.8–2.9) and two diplomas (gx 26.95–27.65)
+  box(scene, 8.0, 10.0, 1.8, 2.9, -10.0, -9.93, 0xe8b923);
+  box(scene, 8.12, 9.88, 1.92, 2.78, -9.93, -9.92, 0xf0c070, { outline: false });
+  box(scene, 8.12, 9.88, 1.92, 2.3, -9.92, -9.91, 0x9fcf7a, { outline: false });
+  for (const [y0, y1] of [[1.45, 1.95], [2.15, 2.65]] as const) {
+    box(scene, 6.95, 7.65, y0, y1, -10.0, -9.94, 0x6b4029);
+    box(scene, 7.02, 7.58, y0 + 0.06, y1 - 0.06, -9.94, -9.93, 0xf4ead2, { outline: false });
+    box(scene, 7.38, 7.48, y0 + 0.1, y0 + 0.2, -9.93, -9.92, 0xc3182a, { outline: false });
+  }
+
+  // Shelf statuettes facing the room: bronze horse, crystal obelisk, jade elephant
+  box(scene, 6.62, 6.82, 1.62, 1.95, -6.95, -6.75, 0xb08d57);
+  box(scene, 6.62, 6.78, 1.12, 1.42, -6.45, -6.35, 0xbfe9ff, { opacity: 0.8 });
+  box(scene, 6.62, 6.85, 1.62, 1.85, -5.05, -4.75, 0x4f9a7a);
   gridBox(scene, 2, 7, 15, 18, 0, 0.02, 0xdc9a5d, { outline: false });
 
   // Lights: ambient plus one directional light from (1, 2, 0.35), no shadows (reference.md §4).
