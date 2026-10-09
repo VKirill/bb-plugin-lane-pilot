@@ -1,8 +1,8 @@
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { cp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { basename, isAbsolute, join } from "node:path";
 import { parse } from "jsonc-parser/lib/esm/main.js";
 import { NATIVE_HOOK_SOURCES } from "../native-install";
-import { defaultGuardSource } from "@lane-pilot/kit";
 
 function shellQuote(s: string) {
   return "'" + s.replace(/'/g, "'\\''") + "'";
@@ -186,18 +186,19 @@ async function copyBeside(source: string, destDir: string, name: string): Promis
   return dest;
 }
 
-async function materializePluginHook(
-  name: keyof typeof NATIVE_HOOK_SOURCES,
-  destDir: string,
-  moduleUrl: string,
-): Promise<string> {
+/**
+ * Writes one of Lane Pilot's hook modules from the bundle (NATIVE_HOOK_SOURCES, equal to lane-stack/hooks). A lane-stack checkout
+ * next to the host is not read: it can lag this repo's fixes (2026-10-09: the launcher ran the pinned claude-lane-stack guard, which
+ * still refused the PM's thread stop). Every refresh overwrites the file, so a launcher written before a fix gets it on the next turn.
+ */
+async function writeBundledHook(name: keyof typeof NATIVE_HOOK_SOURCES, destDir: string): Promise<string> {
   const dest = join(destDir, name);
-  const source = join(dirname(defaultGuardSource(moduleUrl)), name);
+  const temp = `${dest}.${randomUUID()}`;
   try {
-    await cp(source, dest, { dereference: true });
-  } catch (error) {
-    if (!error || typeof error !== "object" || !("code" in error) || error.code !== "ENOENT") throw error;
-    await writeFile(dest, NATIVE_HOOK_SOURCES[name], { mode: 0o644 });
+    await writeFile(temp, NATIVE_HOOK_SOURCES[name], { mode: 0o644 });
+    await rename(temp, dest);
+  } finally {
+    await rm(temp, { force: true });
   }
   return dest;
 }
@@ -205,13 +206,14 @@ async function materializePluginHook(
 export async function materializeNativeHookSession(input: {
   cwd?: string | null;
   destDir: string;
-  moduleUrl: string;
+  /** No longer read: the hooks always come from the bundle. Kept so callers pass the same input. */
+  moduleUrl?: string;
 }): Promise<{ settingsPath: string; commands: string[] }> {
   const hooksDir = join(input.destDir, "hooks");
   await mkdir(hooksDir, { recursive: true, mode: 0o700 });
-  const inject = await materializePluginHook("inject_agent_type.py", hooksDir, input.moduleUrl);
-  const guard = await materializePluginHook("guard_shell.py", hooksDir, input.moduleUrl);
-  await materializePluginHook("lib_payload.py", hooksDir, input.moduleUrl);
+  const inject = await writeBundledHook("inject_agent_type.py", hooksDir);
+  const guard = await writeBundledHook("guard_shell.py", hooksDir);
+  await writeBundledHook("lib_payload.py", hooksDir);
 
   const cwd = input.cwd?.trim() && input.cwd.startsWith("/") ? input.cwd : null;
   const project = cwd ? await readSettingsFile(join(cwd, ".claude/settings.json")) : null;
