@@ -12,11 +12,11 @@
 - [ ] Resolve the remaining owner decisions in the harness engineering gaps plan.
 
 ## Last verify
-- command: Lane Pilot acceptance for 7 tasks in `lprun_987d16c051234cf4b4be09cff5817a86`
-- result: green; all listed tasks accepted and merged (latest task commit `d683d55`)
+- command: Lane Pilot acceptance for 17 tasks in `lprun_3830fb02731046e89c6d9706ca217fd7`
+- result: green; all listed tasks accepted and merged (latest task merge `d71d4df`)
 - when: 2026-10-09
 
 ## Pointers
 - Open todos: none (`.agents/todos/INDEX.md`)
-- Active plans: `2026-10-05-harness-engineering-gaps.md` — Harness engineering gaps — follow-up plan; `2026-10-07-lane-pilot-handoff.md` — §2–§8 open; `items/writer-task-folder/PLAN.md` — Task folder for writers + actionable retries (dispatched)
+- Active plans: `2026-10-05-harness-engineering-gaps.md` — awaiting owner decisions; `2026-10-07-lane-pilot-handoff.md` — §2–§8 open; `items/writer-task-folder/PLAN.md` — dispatched
 - Changelog: `.agents/CHANGELOG.md`
