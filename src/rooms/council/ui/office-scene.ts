@@ -127,7 +127,8 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
   // 1. SLAB, GROUND, PAVING AND TREES
   // ==========================================
   scene.background = new THREE.Color(SKY);
-  box(scene, -20, 20, -0.5, 0, -10, 10, SLAB, { outline: false });
+  // The slab top stays just below the floor zones, so the two never share a plane (no z-fighting)
+  box(scene, -20, 20, -0.5, -0.05, -10, 10, SLAB, { outline: false });
 
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), material(GRASS));
   ground.rotation.x = -Math.PI / 2;
@@ -152,7 +153,7 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
   // 2. FLOOR ZONES
   // ==========================================
   for (const zone of FLOOR_ZONES) {
-    gridBox(scene, zone.gx0, zone.gx1, zone.gz0, zone.gz1, -0.04, 0, zone.color, { outline: false });
+    gridBox(scene, zone.gx0, zone.gx1, zone.gz0, zone.gz1, -0.05, 0, zone.color, { outline: false });
   }
 
   // ==========================================
@@ -443,9 +444,11 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
   gridBox(scene, 26.6, 31.6, 6.3, 9.8, 0, 0.02, 0x7a7046, { outline: false });
   gridBox(scene, 2, 7, 15, 18, 0, 0.02, 0xdc9a5d, { outline: false });
 
-  // Lights: ambient plus one directional light from (1, 2, 0.35), no shadows (reference.md §4)
-  scene.add(new THREE.AmbientLight(0xffffff, 0.72));
-  const sun = new THREE.DirectionalLight(0xfff5ea, 0.45);
+  // Lights: ambient plus one directional light from (1, 2, 0.35), no shadows (reference.md §4).
+  // three.js lights are physical since r155: Lambert divides by π, so the intensities carry π back
+  // and a lit top face shows its base colour.
+  scene.add(new THREE.AmbientLight(0xffffff, 0.62 * Math.PI));
+  const sun = new THREE.DirectionalLight(0xfff5ea, 0.45 * Math.PI);
   sun.position.set(1, 2, 0.35).multiplyScalar(10);
   scene.add(sun);
 }
