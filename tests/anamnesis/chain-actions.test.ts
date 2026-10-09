@@ -78,5 +78,5 @@ describe("anamnesis.check", () => {
     expect(checkArtifact("Lane Pilot [draft]", FACTS)).toEqual(["draft_mark"]);
     expect(checkArtifact("   ", FACTS)).toEqual(["empty_artifact"]);
     expect(checkArtifact("x".repeat(60_001), FACTS)).toEqual(["too_long:60001"]);
-  });
+  }, 30_000); // the enormous-text case timed out at 5 s under the deploy suite (2026-10-09)
 });

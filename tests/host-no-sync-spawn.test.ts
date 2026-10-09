@@ -26,7 +26,7 @@ it("reaches the host handlers' code (so the scan below cannot go quiet by findin
     expect(files).toContain(expected);
   }
   expect(files.some((file) => file.startsWith("src/server/"))).toBe(false);
-});
+}, 30_000); // scans every host file; 5 s ran out under the deploy suite (2026-10-09)
 
 it("starts no child process synchronously anywhere the host handlers can reach, but where listed with a reason", () => {
   const found: Record<string, number> = {};
