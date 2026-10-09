@@ -32,6 +32,17 @@ import {
   type OfficeSeat,
   type OfficeSimAgent,
 } from "./office-behaviour";
+import {
+  CLIP_FADE,
+  SEAT_HEIGHT_CHAIR,
+  clipForState,
+  loadOfficePeople,
+  pickPersonVariant,
+  seatHeightForPoint,
+  walkTimeScale,
+  type OfficePeople,
+  type Person,
+} from "./office-people";
 
 export type CouncilOfficeProps = {
   detail: CouncilDetailLike;
@@ -102,8 +113,11 @@ function actionForPoint(pointKind: string | undefined, pose: string | undefined)
 
 type Rig = {
   group: import("three").Group;
-  model: CharacterModel;
-  headGroup: import("three").Group;
+  /** The procedural rig: shown while the rigged people load, or when they cannot. */
+  model: CharacterModel | null;
+  headGroup: import("three").Group | null;
+  /** The rigged person (office-people.glb) once loaded. */
+  person: Person | null;
   pos: { x: number; z: number };
   target: { x: number; z: number };
   path: Array<{ x: number; z: number }>;
@@ -247,11 +261,24 @@ export function CouncilOffice({
       const charRigs = new Map<string, Rig>();
       const characterKit = { THREE, outlineMaterial: outlineMat, disposables };
 
+      /** The rigged people, parsed once in the background; until then (or if that fails) the procedural rig stands in. */
+      let people: OfficePeople | null = null;
+      const makePerson = (id: string): Person | null => {
+        if (!people) return null;
+        const others = [...charRigs.entries()].filter(([otherId]) => otherId !== id).flatMap(([, r]) => (r.person ? [r.person.variant] : []));
+        try {
+          return people.createPerson(pickPersonVariant(id, others));
+        } catch {
+          return null;
+        }
+      };
+
       const buildRig = (actor: OfficeActor, seat: OfficeSeat, index: number): Rig => {
-        const model = buildCharacter(characterKit, pickCharacterLook(actor.id, actor.color));
-        const group = model.root;
-        group.scale.setScalar(RIG_SCALE);
-        const headGroup = model.headGroup;
+        const person = makePerson(actor.id);
+        const model = person ? null : buildCharacter(characterKit, pickCharacterLook(actor.id, actor.color));
+        const group = person ? person.root : model!.root;
+        if (model) group.scale.setScalar(RIG_SCALE);
+        const headGroup = model ? model.headGroup : null;
 
         group.position.set(seat.x, 0, seat.z);
         group.rotation.y = seat.angle;
@@ -261,6 +288,7 @@ export function CouncilOffice({
           group,
           model,
           headGroup,
+          person,
           pos: { x: seat.x, z: seat.z },
           target: { x: seat.x, z: seat.z },
           path: [],
@@ -283,6 +311,30 @@ export function CouncilOffice({
         }
         return rig;
       };
+
+      // Rigged people replace the procedural ones that already stand on the floor once the GLB is parsed
+      loadOfficePeople(THREE).then((loaded) => {
+        if (disposed) {
+          loaded.dispose();
+          return;
+        }
+        people = loaded;
+        for (const [id, rig] of charRigs) {
+          if (rig.person) continue;
+          const person = makePerson(id);
+          if (!person) continue;
+          person.root.position.copy(rig.group.position);
+          person.root.rotation.y = rig.group.rotation.y;
+          scene.remove(rig.group);
+          scene.add(person.root);
+          rig.group = person.root;
+          rig.person = person;
+          rig.model = null;
+          rig.headGroup = null;
+        }
+      }, () => {
+        // The procedural people stay; nothing else to do
+      });
 
       // Behaviour: the same simulation the tests check, re-created when the set of actors changes
       let simAgents: OfficeSimAgent[] = [];
@@ -410,7 +462,7 @@ export function CouncilOffice({
       const driveRig = (
         id: string,
         rig: Rig,
-        want: { desiredPos: { x: number; z: number }; desiredYaw: number; shouldSit: boolean; speed: number; action?: string },
+        want: { desiredPos: { x: number; z: number }; desiredYaw: number; shouldSit: boolean; speed: number; action?: string; seatHeight?: number },
         activity: OfficeActor["activity"],
         isNewRig: boolean,
         snap: boolean,
@@ -483,7 +535,20 @@ export function CouncilOffice({
           action: rig.action,
         });
 
-        applyCharacterPose(rig.model, pose, timeSec + rig.phase);
+        if (rig.person) {
+          const person = rig.person;
+          const sitting = rig.targetSit && !rig.walking;
+          person.play(
+            clipForState({ walking: rig.walking, sitting, activity, action: rig.action, slot: Math.floor((timeSec + rig.phase) / 7) }),
+            CLIP_FADE,
+            rig.phase
+          );
+          person.setTimeScale(walkTimeScale(speed));
+          person.setSeat(rig.sitProgress, want.seatHeight ?? SEAT_HEIGHT_CHAIR);
+          person.update(dt);
+        } else if (rig.model) {
+          applyCharacterPose(rig.model, pose, timeSec + rig.phase);
+        }
       };
 
       const projectedPoint = { x: 0, y: 0 };
@@ -541,6 +606,7 @@ export function CouncilOffice({
           for (const [id, rig] of charRigs) {
             if (id.startsWith(STAFF_PREFIX) && !currentStaff.includes(id)) {
               scene.remove(rig.group);
+              rig.person?.dispose();
               charRigs.delete(id);
             }
           }
@@ -583,6 +649,7 @@ export function CouncilOffice({
           let shouldSit = true;
           let speed = WALK_SPEED;
           let action: string | undefined;
+          let seatHeight = SEAT_HEIGHT_CHAIR;
 
           if (actor.id === OWNER_SEAT_ID && ownerWantsMeeting) {
             // The owner stands at his head chair and plays the speaking or arguing pose
@@ -604,6 +671,7 @@ export function CouncilOffice({
               desiredYaw = point.approachAngle;
               shouldSit = point.pose === "typing" || point.pose === "sitting_sofa";
               action = actionForPoint(point.kind, point.pose);
+              seatHeight = seatHeightForPoint(point.id, point.kind);
             }
           } else if (actor.activity === "speaking" || actor.activity === "arguing") {
             // Stand at the speaker spot, facing the seat answered or the table centre
@@ -629,17 +697,18 @@ export function CouncilOffice({
               desiredYaw = point.approachAngle;
               shouldSit = point.pose === "typing" || point.pose === "sitting_sofa";
               action = actionForPoint(point.kind, point.pose);
+              seatHeight = seatHeightForPoint(point.id, point.kind);
             }
           }
 
-          driveRig(actor.id, rig, { desiredPos, desiredYaw, shouldSit, speed, action }, actor.activity, isNewRig, snap, dt, timeSec);
+          driveRig(actor.id, rig, { desiredPos, desiredYaw, shouldSit, speed, action, seatHeight }, actor.activity, isNewRig, snap, dt, timeSec);
 
           // The character being answered turns to face the speaker
           if (actor.activity === "arguing" && actor.facing) {
             const opponent = charRigs.get(actor.facing);
             if (opponent) {
               const angleToSpeaker = Math.atan2(rig.pos.x - opponent.pos.x, rig.pos.z - opponent.pos.z);
-              opponent.headGroup.rotation.y = Math.max(-0.6, Math.min(0.6, angleToSpeaker - opponent.yaw));
+              if (opponent.headGroup) opponent.headGroup.rotation.y = Math.max(-0.6, Math.min(0.6, angleToSpeaker - opponent.yaw));
             }
           }
         });
@@ -663,6 +732,7 @@ export function CouncilOffice({
             shouldSit: point.pose === "typing" || point.pose === "sitting_sofa",
             speed: WALK_SPEED,
             action: actionForPoint(point.kind, point.pose),
+            seatHeight: seatHeightForPoint(point.id, point.kind),
           }, "idle", isNewRig, snap, dt, timeSec);
         });
         snapRef.current = false;
@@ -690,7 +760,7 @@ export function CouncilOffice({
           const label = actor.label.slice(0, LABEL_MAX_CHARS);
           const projPos = new THREE.Vector3(
             rig ? rig.pos.x : 0,
-            rig ? rig.model.headY * RIG_SCALE + 0.45 : 1.2,
+            rig ? (rig.person ? rig.person.headTop + 0.15 : rig.model!.headY * RIG_SCALE + 0.45) : 1.2,
             rig ? rig.pos.z : 0
           );
           const screen = presenter.project(projPos, camera, projectedPoint);
@@ -729,7 +799,7 @@ export function CouncilOffice({
         for (const [id, el] of staffOverlayRef.current) {
           const rig = charRigs.get(id);
           if (!rig) continue;
-          const p = presenter.project(new THREE.Vector3(rig.pos.x, rig.model.headY * RIG_SCALE + 0.5, rig.pos.z), camera, projectedPoint);
+          const p = presenter.project(new THREE.Vector3(rig.pos.x, rig.person ? rig.person.headTop + 0.2 : rig.model!.headY * RIG_SCALE + 0.5, rig.pos.z), camera, projectedPoint);
           el.style.transform = `translate3d(${Math.round(p.x)}px, ${Math.round(p.y)}px, 0)`;
         }
         // Council chat glyphs ride on the council members' own overlays
@@ -744,6 +814,8 @@ export function CouncilOffice({
         if (animId !== null) cancelAnimationFrame(animId);
         if (resizeObserver) resizeObserver.disconnect();
         removeControls();
+        for (const rig of charRigs.values()) rig.person?.dispose();
+        people?.dispose();
         for (const item of disposables) {
           try {
             item.dispose();
