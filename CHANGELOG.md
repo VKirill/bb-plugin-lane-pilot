@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.215
+
+- **No tags pinned to the edge of the council office.** With the camera zoomed in or moved, a council member out of frame kept its name tag clamped to the edge of the office (the owner's tag sat in the corner). Tags of people out of frame are now hidden.
+
 ## 0.1.214
 
 - **The council office lives.** Background staff work at the desks the council leaves free (up to five) and a receptionist sits at the front desk. Between desk stints of 30–100 s they get coffee at the counter or the cooler, sit on the kitchen stools with a cup, sit on the lounge sofas facing the TV, stand at a window, run errands to the printer, the server racks or the lounge bookshelf, and talk in pairs in the open space and at the entrance (the second person joins the first; short glyphs pop over people talking). Staff never join the council or report to the director. The first stint is staggered, so the floor moves soon after the page opens.

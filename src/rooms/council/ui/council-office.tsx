@@ -812,10 +812,15 @@ export function CouncilOffice({
         const resolvedLabels = resolveLabelCollisions(rawLabels, { width: w, height: h });
         const resolvedMap = new Map(resolvedLabels.map((r) => [r.id, r]));
 
+        const rawById = new Map(rawLabels.map((l) => [l.id, l] as const));
         currentActors.forEach((actor) => {
           const overlayEl = overlayMapRef.current.get(actor.id);
           const r = resolvedMap.get(actor.id);
           if (overlayEl && r) {
+            // A person the zoomed or moved camera leaves out of frame has no tag pinned to the edge
+            const raw = rawById.get(actor.id);
+            const offscreen = !raw || raw.x < 0 || raw.x > w || raw.y < 0 || raw.y > h;
+            overlayEl.style.visibility = offscreen ? "hidden" : "visible";
             const isFlipped = r.y < 110;
             overlayEl.setAttribute("data-flipped", isFlipped ? "true" : "false");
             overlayEl.setAttribute("data-collapsed", r.collapsed ? "true" : "false");
