@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { agentPickerLabel } from "../../native-agent/agent-display";
 import { Badge } from "@lane-pilot/ui-kit";
@@ -19,6 +19,29 @@ import type { LpPage } from "./use-lp-page";
 
 const ORIGIN_TONE: Record<RoleOrigin, PillTone> = { here: "info", inherited: "neutral", default: "muted" };
 
+/** What the model catalog says about one provider's models: the shape `workflow_model_catalog` returns, trimmed to what the writer row reads. */
+export type FallbackCatalog = { providers: ReadonlyArray<{ id: string; models: ReadonlyArray<{ id: string; model: string; displayName: string }> }> };
+
+/** The catalog's display names by `providerId/model`; a model is listed under its id and its model name, whichever a setting stores. */
+export function fallbackModelNames(catalog: FallbackCatalog | null): ReadonlyMap<string, string> {
+  const names = new Map<string, string>();
+  for (const provider of catalog?.providers ?? []) {
+    for (const model of provider.models) {
+      names.set(`${provider.id}/${model.id}`, model.displayName);
+      names.set(`${provider.id}/${model.model}`, model.displayName);
+    }
+  }
+  return names;
+}
+
+/** The writer row's fallback chain: display names, the raw model id while the catalog is missing that model, "—" for an off slot
+ * before a filled one, and no trailing off slots. */
+export function writerFallbackSummaryText(rows: ReadonlyArray<{ providerId: string; model: string } | null>, names: ReadonlyMap<string, string>): string {
+  const last = rows.reduce((at, row, index) => (row ? index : at), -1);
+  if (last < 0) return "—";
+  return rows.slice(0, last + 1).map((row) => (row ? names.get(`${row.providerId}/${row.model}`) ?? row.model : "—")).join(" → ");
+}
+
 /** The row grid on a wide column: role, on/off, model, where the value comes from, what the role loads. */
 const WIDE_GRID = "grid min-w-0 items-center gap-x-3 gap-y-1 md:grid-cols-[minmax(0,1.15fr)_4.5rem_minmax(0,1.7fr)_6.75rem_minmax(0,1fr)]";
 
@@ -29,8 +52,8 @@ function useRoleModel(page: LpPage) {
 }
 
 /** One role of the table: name, on/off, model picker, origin and access, with a drawer for what is specific to the role. */
-function RoleRow({ spec, page, access, rules, open, onToggle }: {
-  spec: RoleSpec; page: LpPage; access: AccessApi; rules: ReturnType<typeof useRulesAnalyzer>; open: boolean; onToggle: () => void;
+function RoleRow({ spec, page, access, rules, open, onToggle, fallbackNames }: {
+  spec: RoleSpec; page: LpPage; access: AccessApi; rules: ReturnType<typeof useRulesAnalyzer>; open: boolean; onToggle: () => void; fallbackNames: ReadonlyMap<string, string>;
 }) {
   const { data, isGlobal, selectedSectionId, displayedValue, applySetting, catalogRow, modelPicker, pickerValue, saveWriterSelection, pickers, inheritReset, stackControls, wideTable } = page;
   const id = roleKey(spec.id);
@@ -43,11 +66,11 @@ function RoleRow({ spec, page, access, rules, open, onToggle }: {
 
   let model: ReactNode = <span className="text-xs text-muted-foreground">—</span>;
   if (spec.model === "writer") {
-    const chain = writerFallbackSlots(data?.values ?? {}).map((row) => row ? row.model : "—").join(" → ");
+    const chain = writerFallbackSummaryText(writerFallbackSlots(data?.values ?? {}), fallbackNames);
     model = <div className="min-w-0 space-y-1">
       {modelPicker(pickerValue, (next) => { saveWriterSelection(next); })}
       <button type="button" aria-expanded={open} aria-controls={`role-drawer-${id}`} onClick={onToggle}
-        className="block max-w-full truncate rounded px-1 text-left text-xs text-muted-foreground hover:bg-[var(--lp-well)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="block w-full break-words rounded px-1 text-left text-xs text-muted-foreground hover:bg-[var(--lp-well)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         data-testid="writer-fallback-summary">
         {t("writerFallbackSummary")} {chain}
       </button>
@@ -176,9 +199,17 @@ function PmRow({ page }: { page: LpPage }) {
 
 /** Who works: one table of every role with its on/off switch, model, where the value comes from and what the role loads. */
 export function TeamTab({ page }: { page: LpPage }) {
-  const { projectId, selectedSectionId, isGlobal, data, displayedValue, stackControls, wideTable } = page;
+  const { projectId, selectedSectionId, isGlobal, data, displayedValue, stackControls, wideTable, rpc } = page;
   const access = useAccessView(projectId!, selectedSectionId, data?.versions["helper.context_mode"] ?? 0);
   const { rules } = useRoleModel(page);
+  // The fallback chain names its models as the pickers do; until the catalog arrives it shows the raw model ids.
+  const [catalog, setCatalog] = useState<FallbackCatalog | null>(null);
+  useEffect(() => {
+    let live = true;
+    void rpc.call("workflow_model_catalog", projectId ? { projectId } : {}).then((value) => { if (live) setCatalog(value); }, () => undefined);
+    return () => { live = false; };
+  }, [rpc, projectId]);
+  const fallbackNames = useMemo(() => fallbackModelNames(catalog), [catalog]);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const toggle = (id: string) => setOpen((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const wide = wideTable && !stackControls;
@@ -210,7 +241,7 @@ export function TeamTab({ page }: { page: LpPage }) {
                 <section key={group.id} data-testid={`access-section-${group.id}`}>
                   <h3 className="border-t border-[var(--lp-hairline)] bg-[var(--lp-well)] px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground first:border-t-0">{t(`accessGroup_${group.id}` as I18nKey)}</h3>
                   {group.roles.map((spec) => (
-                    <RoleRow key={spec.id} spec={spec} page={page} access={access} rules={rules} open={open.has(spec.id)} onToggle={() => toggle(spec.id)} />
+                    <RoleRow key={spec.id} spec={spec} page={page} access={access} rules={rules} open={open.has(spec.id)} onToggle={() => toggle(spec.id)} fallbackNames={fallbackNames} />
                   ))}
                 </section>
               ))}
