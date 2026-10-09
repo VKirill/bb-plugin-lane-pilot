@@ -1,0 +1,11 @@
+{
+  "id": "lunch-rush",
+  "title": "Lunch rush: workers pour into cafes, residents take a walk in the park",
+  "routines": [
+    { "id": "lunch", "hours": [12, 13.5], "who": { "hasWork": true }, "action": "eat", "mode": "force", "chance": 0.8 },
+    { "id": "stroll", "hours": [12, 14], "who": { "role": "resident" }, "action": "park", "mode": "bias", "weight": 1.5 }
+  ],
+  "events": [
+    { "id": "lunch-park-walk", "hours": [13, 14], "cooldownHours": 22, "do": [{ "type": "force_action", "who": { "role": "resident" }, "action": "park", "forHours": 1 }] }
+  ]
+}

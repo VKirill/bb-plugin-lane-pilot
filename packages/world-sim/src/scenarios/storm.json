@@ -1,0 +1,8 @@
+{
+  "id": "storm",
+  "title": "Storm: now and then wind knocks down the scaffolding of a site in progress",
+  "routines": [],
+  "events": [
+    { "id": "gust", "cooldownHours": 6, "if": [{ "fact": "openSites", "op": ">=", "value": 1 }, { "fact": "chance", "value": 0.12 }], "do": [{ "type": "damage_site", "target": "random_site" }] }
+  ]
+}

@@ -5,6 +5,7 @@ import { registerCli } from "./src/rooms/tools/server/cli";
 import { createCore } from "./src/rooms/core/server/core";
 import { createCanary, mountCanary } from "./src/rooms/stability/server";
 import { createCouncil } from "./src/rooms/council/server";
+import { createWorldService } from "./src/rooms/world/server";
 import { createDocsNightly } from "./src/rooms/docs/server";
 import { mountNativeWiring } from "./src/rooms/core/server/native-wiring";
 import { createProbes } from "./src/rooms/stability/server";
@@ -82,6 +83,7 @@ export default async function plugin(bb: BbPluginApi) {
     createProbes(ctx, services),
     createWriterHost(ctx),
     { council: createCouncil(ctx) },
+    { world: createWorldService(ctx, { projectName: (projectId) => bb.sdk.projects.get({ projectId }).then((p) => (typeof p?.name === "string" ? p.name : null), () => null) }) },
     { canary: createCanary(ctx) },
     { ruleScan: createRuleScan(ctx, services) },
     createStability(ctx, services),
@@ -92,6 +94,8 @@ export default async function plugin(bb: BbPluginApi) {
     if (typeof id === "string") return relayFor(ctx).queueEvent(name, id).then(() => undefined);
   } });
   registerRpc(ctx, services);
+  // The Pixel World: tick loop, WebSocket route and listeners; the world starts with the service.
+  services.world.mount();
   mountCanary(ctx, services.canary);
   // Learning from the owner's messages (src/learning): registers its PM tool before the tool families fold, so it comes first.
   mountLearning(ctx, services);

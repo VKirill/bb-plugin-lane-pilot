@@ -21,6 +21,7 @@ import { createWorkflowArchitect } from "../../workflow/server";
 import { architectStartRpc } from "../../workflow/server";
 import { timeRpcHandlers } from "./rpc-timing";
 import { anamnesisFor } from "../../anamnesis";
+import { worldRpc } from "../../world/server";
 
 /** One handler object from the five groups; each group carries the exact contract keys it implements. */
 export function registerRpc(ctx: ServerCore, services: Services) {
@@ -45,5 +46,6 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...createWorkflowArchitect(ctx, services).rpc,
     ...architectStartRpc(ctx, services),
     ...anamnesisFor(ctx).rpc,
+    ...worldRpc(services.world),
   }, (message) => ctx.bb.log.debug(message)));
 }

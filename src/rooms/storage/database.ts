@@ -19,6 +19,7 @@ import { draftMigrations } from "@lane-pilot/workflow-engine";
 import { jevMigrations } from "@lane-pilot/jev";
 import { learningMigrations } from "../learning/migrations";
 import { scheduleMigrations } from "../schedule";
+import { worldMigrations } from "../world";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
 export type LanePilotDatabase = Database.Database;
@@ -315,6 +316,8 @@ export const migrations = [
   ...scheduleMigrations,
   // Learning from the owner's messages (src/learning): observations, learned items, other signals. Append only.
   ...learningMigrations,
+  // The Pixel World: the one saved world (src/rooms/world).
+  ...worldMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
