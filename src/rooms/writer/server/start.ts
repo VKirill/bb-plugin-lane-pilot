@@ -9,6 +9,7 @@ import { ownsPathsOverlap } from "@lane-pilot/kit";
 import { reconcile } from "../../stability";
 import { emergencyFallbackDecision } from "../../night";
 import { writerFallbackChain, writerFallbacks } from "../writer-fallbacks";
+import { reassignedReason, takeReassignRequest, type ReassignRequest } from "./reassign";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../runs";
 import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, isWaitingSecret, isWriterSilent, repeatedFailureReason, taskFamily, turnFailureKey } from "../../runs";
@@ -129,6 +130,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     // The class Jev (J-4, active) or the rules gave the last failure: parking reads the same one, not its own recount.
     let judged: { status: string; reason: string | null; klass: FailureClass } | null = null;
     let primaryFailure:Record<string,unknown>|null=null;
+    // The PM reassigned the task: the next writer continues the stopped one's worktree and starts with the requested model.
+    let pendingReassign:{from:ReturnType<typeof getAttempt>; request:ReassignRequest}|null=null;
     // The last failed attempt's worktree, kept until the next attempt starts or the fallback chain takes it over.
     let unremovedWorktree:ReturnType<typeof getAttempt>=undefined;
     // An earlier task of the same family (a redispatch, a mainfix) that failed the same way stops the next one early.
@@ -484,6 +487,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           }
         }
         if (!writerThreadId && !halfBound && last.status !== "accepted") {
+          const reassigned = pendingReassign;
           // The writer's provider window is nearly spent (provider-usage): another model of the chain takes the task at once,
           // instead of a failed attempt that opens the breaker. Nothing is skipped when no other pair has room.
           const primaryPair = { providerId:typeof runSettings["writer.provider"] === "string" && runSettings["writer.provider"] ? runSettings["writer.provider"] as string : freshConfig.writerProviderId,
@@ -497,14 +501,15 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             break;
           }
           // The task's overall budget of writers, kept across reloads and restarts (retry-budget.ts).
-          const spent = await spendRetryBudget(bb.storage.kv as never, input.runId, input.taskId, "attempt");
-          if (!spent.ok) {
+          // A reassigned task's new writer spends no attempt of the task's budget (the PM asked for it).
+          const spent = reassigned ? null : await spendRetryBudget(bb.storage.kv as never, input.runId, input.taskId, "attempt");
+          if (spent && !spent.ok) {
             const reason = retryBudgetReason(input.taskId, spent.record);
             transitionAttempt(db, attemptId, "blocked", { reason });
             last = { status:"blocked", reason, attemptId };
             break;
           }
-          budget.noteAttempt();
+          if (!reassigned) budget.noteAttempt();
           const afterAttempt=budget.check();
           if (!afterAttempt.ok) {
             const reason=budgetStopReason(afterAttempt.exceeded);
@@ -512,11 +517,21 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             last = { status:"blocked", reason, attemptId };
             break;
           }
+          const carried=reassigned?.from?.thread_id&&reassigned.from.workspace_path&&!liveFolder ? {
+            workspacePath:reassigned.from.workspace_path, environmentId:reassigned.from.environment_id, dirtBefore:reassigned.from.dirt_before,
+            fromThreadId:reassigned.from.thread_id,
+            brief:await collectHandoffBrief({ bb, host, hostId:input.config.hostId, threadId:reassigned.from.thread_id, workspacePath:reassigned.from.workspace_path,
+              stopReason:`reassigned by the PM: ${reassigned.request.reason}` }),
+          } : undefined;
+          const requested=reassigned?.request.selection;
+          pendingReassign=null;
           const spawned = await services.spawnWriterAttempt({
             projectId:input.projectId, runId:input.runId, taskId:input.taskId, attemptId,
             config:freshConfig, task:freshTask, plan:input.plan, pmThreadId:input.pmThreadId, pmReadContext,
             retryIndex:Math.max(0,countAttempts(db,input.runId,input.taskId)-1),
             previousAttempt:previousAttemptBrief(last.status ? last : null, freshTask, undefined, liveFolder),
+            ...(requested ? { emergency:{...requested, reason:"reassigned by the PM"} } : {}),
+            ...(carried ? { continuation:carried } : {}),
           });
           if (!spawned.ok) {
             last = { status:spawned.status, reason:spawned.reason, attemptId:spawned.attemptId };
@@ -550,6 +565,24 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           await noteAttemptOutcome({ budget, writerThreadId, writerSelection, status:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
         }
         if (last.status === "accepted") { acceptedAttemptId = attemptId; break; }
+        // The PM moved the task to a fresh writer (lane_pilot_reassign_task): the stop is not a failure, so no attempt is spent.
+        // The next iteration starts the writer in the stopped attempt's worktree, with its edits and a handoff brief.
+        const reassign = last.status === "canceled" ? await takeReassignRequest(bb.storage.kv as never, attemptId) : null;
+        if (reassign) {
+          const stopped = getAttempt(db, attemptId);
+          transitionAttempt(db, attemptId, "canceled", { threadId:stopped?.thread_id ?? undefined, reason:reassignedReason(reassign.reason) });
+          pendingReassign={from:stopped, request:reassign};
+          // A new session that is not charged: the loop top counts it back, so attemptsHere ends where it was.
+          inSession=false;
+          attemptsHere-=1;
+          attemptId=id("lpattempt");
+          createAttempt(db,{id:attemptId,runId:input.runId,taskId:input.taskId});
+          writerThreadId=undefined;
+          writerSelection=undefined;
+          dirtBefore=[];
+          executionPacketSha256=null;
+          continue;
+        }
         // A failure the writer can fix itself is redone in its own thread and worktree, with the reason.
         const failedBinding=getAttempt(db,attemptId);
         const moreAttempts = attemptsLeftAfter(failedBinding);

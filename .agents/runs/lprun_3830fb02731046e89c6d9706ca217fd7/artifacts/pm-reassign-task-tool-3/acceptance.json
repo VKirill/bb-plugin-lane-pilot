@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "pm-reassign-task-tool-3",
+  "task_sha256": "c4c8ff042b1651bb77b9bf07e266af573ee82992fa1a5c2128d4118a90400760",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "097707206982d3dd9ccdf93cefeda65a11849172491bef3dc8013bf153dd0740",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-09T17:07:27.929Z",
+  "model": "claude-haiku-5-5"
+}

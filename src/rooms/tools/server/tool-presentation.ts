@@ -18,6 +18,7 @@ export const TOOL_PRESENTATION: Record<string, Entry> = {
   lane_pilot_dispatch_writer: row("Sending a task to a writer", "Sent a task to a writer", "Отправляю задачу писателю", "Задача отправлена писателю"),
   lane_pilot_cancel_task: row("Canceling a task", "Canceled a task", "Отменяю задачу", "Задача отменена"),
   lane_pilot_update_task: row("Updating a task", "Updated a task", "Обновляю задачу", "Задача обновлена"),
+  lane_pilot_reassign_task: row("Reassigning a task", "Reassigned a task", "Переназначаю задачу", "Задача переназначена"),
   lane_pilot_wait_writer: row("Waiting for a writer", "Waited for a writer", "Жду писателя", "Дождался писателя", true),
   lane_pilot_answer_writer: row("Answering a writer", "Answered a writer", "Отвечаю писателю", "Ответ писателю отправлен"),
   lane_pilot_ask_owner: row("Asking the owner", "Asked the owner", "Спрашиваю владельца", "Вопрос владельцу задан"),
