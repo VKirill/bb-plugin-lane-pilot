@@ -134,6 +134,11 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
     emergency?:{providerId:string;model:string;reason:string;reasoningLevel?:string}; retryIndex?:number;
     /** The previous attempt's failure, for a retry (`previousAttemptBrief`). */
     previousAttempt?:string;
+    /**
+     * A fallback that continues an interrupted attempt: it works in that attempt's worktree with the edits left there, against
+     * the dirt baseline the attempt was measured with, and starts from the handoff brief.
+     */
+    continuation?:{workspacePath:string; environmentId:string|null; dirtBefore:DirtSnapshot[]; fromThreadId:string; brief:string};
   }): Promise<
     | { ok:true; threadId:string; providerId:string|null; model:string|null; reasoningLevel?:string; serviceTier?:"default"|"fast"|null; selectionSource?:{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;reasoningLevelSource:"explicit"|"client-preference"}; dirtBefore:import("../cli-outcome").DirtSnapshot[]; workspacePath:string; executionPacketSha256?:string }
     | { ok:false; status:"spawn_rejected" | "canceled" | "blocked"; reason:string; attemptId:string }
@@ -282,7 +287,16 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       // Set when the attempt's worktree is a BB environment of Lane Pilot's own provider; `environment` is then the old
       // path's answer for the same worktree, which the attempt falls back to.
       let providerEnvironment:ProviderEnvironment|null=null;
-      if (workspaceDecision.strategy === "provision_attempt_worktree") {
+      if (input.continuation) {
+        // The interrupted attempt's worktree is kept as it was left: its edits and its dirt baseline stay as they were.
+        const continued=input.continuation;
+        workspacePath=continued.workspacePath;
+        environment=inPlaceEnvironment(input.config.hostId,workspacePath,continued.environmentId);
+        dirtBefore=continued.dirtBefore;
+        if(!setAttemptWorkspace(db,input.attemptId,{path:workspacePath,environmentId:continued.environmentId,decision:workspaceDecision})) {
+          throw new WriterSelectionError("attempt_workspace_cas_conflict");
+        }
+      } else if (workspaceDecision.strategy === "provision_attempt_worktree") {
         const bound=getAttempt(db,input.attemptId);
         const onProvider=bound?.workspace_path&&bound.environment_id ? null
           : await prepareProviderWorktree(input,settings,bound,run.writer_workspace_path,workspaceDecision);
@@ -430,9 +444,13 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         providerId:writerProviderId, skills:writerSkills.skills, sources:writerSkills.sources });
       const writerAgent = boundedAgentName(settings["writer.agent"],"Lane Pilot writer");
       const taskFolder = await listTaskFolder(bb, input.config.hostId, workspacePath, input.taskId);
-      const briefSegments = writerBriefSegments(attemptTask,relevantMemory.text,executionPacket,input.emergency
+      const contextSegments = writerBriefSegments(attemptTask,relevantMemory.text,executionPacket,input.emergency&&!input.continuation
         ? "fallback"  // the reason stays in the trace; the writer is only told it is the fallback
         : undefined,writerAgent,input.pmReadContext ?? "",rulesText,input.previousAttempt ?? "",taskFolder,live);
+      // A fallback that continues the interrupted session reads its handoff right after its role line.
+      const briefSegments = input.continuation
+        ? [contextSegments[0]!,{text:input.continuation.brief,hidden:true},...contextSegments.slice(1)]
+        : contextSegments;
       const writerBrief = briefSegments.map(segment=>segment.text).join("\n\n");
       const existingTrace = getReasoningTrace(db, input.attemptId);
       if (existingTrace) {
