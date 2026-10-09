@@ -236,56 +236,56 @@ export function CouncilPage() {
       ) : null}
       {projects.length > 0 && !detail ? <p className="text-sm text-muted-foreground">{t("councilEmpty")}</p> : null}
       {detail ? (
-        <div className="flex min-h-0 min-w-0 flex-1 gap-3">
-          {compact ? null : (
-            <aside className="w-64 shrink-0 space-y-1 overflow-y-auto border-2 border-slate-900 bg-[var(--lp-well)] p-2 shadow-[2px_2px_0_#0f172a]" data-testid="council-list">
-              {councils.map((row) => (
-                <button
-                  key={row.id}
-                  type="button"
-                  onClick={() => setCouncilId(row.id)}
-                  aria-current={row.id === councilId ? "page" : undefined}
-                  className={`block w-full border-2 p-2 text-left font-mono text-sm transition-all ${
-                    row.id === councilId
-                      ? "border-slate-900 bg-amber-100 shadow-[2px_2px_0_#0f172a] text-slate-900 font-bold"
-                      : "border-transparent hover:border-slate-700 hover:bg-slate-100/50"
-                  }`}
-                >
-                  <div className="line-clamp-2 break-words">{row.question}</div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    {t(`councilState_${row.state}` as never) || row.state} · {t("councilRound")} {row.round}
-                  </div>
-                </button>
-              ))}
-            </aside>
-          )}
-          <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-2 border-slate-900 bg-[var(--lp-card)] shadow-[4px_4px_0_#0f172a]">
-            <header className="shrink-0 border-b-2 border-slate-900 bg-slate-50 p-2 sm:p-3" data-testid="council-header">
-              <div className="text-sm font-bold font-mono text-slate-900 line-clamp-2">
-                {detail.question}
-              </div>
-              {roster}
-            </header>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2.5 overflow-hidden">
+          {/* Header Info */}
+          <header className="shrink-0 border-2 border-slate-900 bg-slate-50 p-2 sm:p-2.5 shadow-[2px_2px_0_#0f172a]" data-testid="council-header">
+            <div className="text-sm font-bold font-mono text-slate-900 line-clamp-2">
+              {detail.question}
+            </div>
+            {roster}
+          </header>
 
-            <div className={`flex min-h-0 min-w-0 flex-1 overflow-hidden ${wide ? "flex-row" : "flex-col"}`}>
-              {/* Office Canvas Container */}
-              <div
-                className={`min-h-[300px] shrink-0 border-slate-900 ${
-                  wide
-                    ? "w-1/2 min-h-[300px] h-full border-r-2"
-                    : compact
-                    ? "h-[35vh] min-h-[200px] border-b-2"
-                    : "h-[42%] max-h-[280px] min-h-[200px] border-b-2"
-                }`}
-              >
-                <CouncilOffice
-                  detail={detail}
-                  cursor={replayCursor}
-                  highlightSeatId={highlightSeatId}
-                  onSelectSpeaker={(id) => setHighlightSeatId(id === highlightSeatId ? null : id)}
-                />
-              </div>
+          {/* Full-width Office Band */}
+          <div
+            className={`w-full shrink-0 border-2 border-slate-900 bg-[var(--lp-card)] shadow-[4px_4px_0_#0f172a] overflow-hidden ${
+              compact
+                ? "h-[260px] min-h-[220px]"
+                : "h-[340px] min-h-[320px]"
+            }`}
+          >
+            <CouncilOffice
+              detail={detail}
+              cursor={replayCursor}
+              highlightSeatId={highlightSeatId}
+              onSelectSpeaker={(id) => setHighlightSeatId(id === highlightSeatId ? null : id)}
+            />
+          </div>
 
+          {/* Row below office: Council List + Messages Log + Composer */}
+          <div className="flex min-h-0 min-w-0 flex-1 gap-3 overflow-hidden">
+            {compact ? null : (
+              <aside className="w-64 shrink-0 space-y-1 overflow-y-auto border-2 border-slate-900 bg-[var(--lp-well)] p-2 shadow-[2px_2px_0_#0f172a]" data-testid="council-list">
+                {councils.map((row) => (
+                  <button
+                    key={row.id}
+                    type="button"
+                    onClick={() => setCouncilId(row.id)}
+                    aria-current={row.id === councilId ? "page" : undefined}
+                    className={`block w-full border-2 p-2 text-left font-mono text-sm transition-all ${
+                      row.id === councilId
+                        ? "border-slate-900 bg-amber-100 shadow-[2px_2px_0_#0f172a] text-slate-900 font-bold"
+                        : "border-transparent hover:border-slate-700 hover:bg-slate-100/50"
+                    }`}
+                  >
+                    <div className="line-clamp-2 break-words">{row.question}</div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {t(`councilState_${row.state}` as never) || row.state} · {t("councilRound")} {row.round}
+                    </div>
+                  </button>
+                ))}
+              </aside>
+            )}
+            <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden border-2 border-slate-900 bg-[var(--lp-card)] shadow-[4px_4px_0_#0f172a]">
               {/* Pixel-styled History Log & Composer */}
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-100/30">
                 <div
@@ -424,8 +424,8 @@ export function CouncilPage() {
                   </Button>
                 </footer>
               </div>
-            </div>
-          </section>
+            </section>
+          </div>
         </div>
       ) : null}
     </div>
