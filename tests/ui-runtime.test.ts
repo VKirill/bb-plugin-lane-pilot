@@ -17,6 +17,7 @@ function representativeValues(row: CatalogRow, spec: SettingSpec): unknown[] {
   if (spec.key === "ops.provider_pool") return ["codex=2, claude-code=3"];
   if (spec.key === "jev.thresholds") return ["route.workflow.min_p=0.7"];
   if (spec.key === "jev.modes") return ["route.workflow=active"];
+  if (spec.key === "jev.provider") return ["openlux", "typesafe"];
   if (spec.booleanFlag || spec.key.startsWith("jev.")) return [true, false];
   if (spec.key === "install.LANE_INSTALL_LOCAL_MARKETPLACE" || spec.key === "install.LANE_INSTALL_CLAUDE_PLUGIN") {
     return [true, false];
@@ -121,7 +122,7 @@ describe("UI storage keys feed runtime channels", () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     await plugin(bb);
     const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
-    expect(editable).toHaveLength(232);
+    expect(editable).toHaveLength(233);
     const atomicPickerKeys = new Set([
       "memory.provider", "memory.model", "memory.reasoning_effort", "memory.service_tier",
       "night_review.provider", "night_review.model", "night_review.reasoning_effort", "night_review.service_tier",
@@ -167,7 +168,7 @@ describe("UI storage keys feed runtime channels", () => {
     const booleanFlags = SETTING_CATALOG.filter((spec) => spec.booleanFlag);
     expect(booleanFlags.map((spec) => spec.key)).toEqual([]);
     const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
-    expect(editable).toHaveLength(232);
+    expect(editable).toHaveLength(233);
     expect(new Set(editable.map((row) => row.storageKey)).size).toBeLessThan(editable.length);
     for (const row of editable) {
       if (row.storageKey === "ui.language") {

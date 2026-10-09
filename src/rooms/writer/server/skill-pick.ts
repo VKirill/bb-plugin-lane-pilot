@@ -7,7 +7,7 @@ import type { ServerCore } from "../../core/server";
 export const SKILL_PICK_DEADLINE_MS = 15_000;
 /** BB's skill list changes rarely: a list is reused for this long per project. */
 export const SKILL_LIST_TTL_MS = 10 * 60_000;
-const JUDGE_TIMEOUT_MS = 6_000;
+const JUDGE_TIMEOUT_MS = 10_000;
 const KIND_KEY_PREFIX = "writer-skill-kind:";
 
 /** `writer.skill_pick` is on unless the owner set it to off, in the same words the other switches read as off. */

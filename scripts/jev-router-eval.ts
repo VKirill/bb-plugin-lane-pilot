@@ -20,7 +20,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { createJevClient, type JevClient } from "@lane-pilot/jev";
+import { JEV_PROVIDERS, createJevClient, type JevClient } from "@lane-pilot/jev";
 import { NONE, routeWorkflow } from "../src/rooms/workflow/route-workflow";
 import { choiceOf } from "@lane-pilot/jev";
 import { createJev } from "@lane-pilot/jev";
@@ -65,7 +65,7 @@ async function main(): Promise<void> {
   const reverse = flag("--reverse");
 
   const calls: Array<{ ms: number; tokensIn: number; tokensOut: number; ok: boolean; status?: string }> = [];
-  const real = createJevClient({ apiKey: async () => key });
+  const real = createJevClient({ endpoint: async () => ({ provider: JEV_PROVIDERS.typesafe, apiKey: key }) });
   const client: JevClient = {
     breaker: real.breaker,
     async call(request, options) {

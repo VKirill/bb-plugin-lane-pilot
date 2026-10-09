@@ -22,7 +22,7 @@ import { recordStage } from "../../runs/server";
 import { stringAt, valueAt } from "./values";
 import { resolve } from "node:path";
 import { z } from "zod";
-import { installJev, jev } from "@lane-pilot/jev";
+import { JEV_PROVIDERS, installJev, jev, resolveJevProvider, type JevEndpoint } from "@lane-pilot/jev";
 import { createOutputGuard } from "@lane-pilot/jev";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { LanePilotDatabase } from "../../storage";
@@ -47,27 +47,45 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
 
   const rawHost = bb.hosts.experimental_client({ contract:hostContract });
 
-  // Jev's key lives in BB's Env Catalog (TYPESAFE_API_KEY); the server reads it there and sends it with each Jev
-  // call, so machines need no ~/secrets/typesafe.env. Without Env Catalog or the record a machine falls back to its own.
+  // Jev's provider is the global setting jev.provider (OpenLux by default, TypeSafe the official one); its key lives in BB's Env
+  // Catalog (OPENLUX_API_KEY / TYPESAFE_API_KEY). The server reads both and sends the key and the provider id with each Jev call, so
+  // machines need no ~/secrets/typesafe.env. Without Env Catalog or the record a machine falls back to its own (TypeSafe).
   const JEV_METHODS = new Set(["classifyPlan","councilJudge","docsAnchors","docsFlows","docsDepth","docsVerifyCitations","docsStaleness"]);
-  let jevKeyCache: { value: string | undefined; at: number } | null = null;
-  async function catalogJevKey(): Promise<string | undefined> {
-    if (jevKeyCache && Date.now() - jevKeyCache.at < 10 * 60_000) return jevKeyCache.value;
+  const jevKeyCache = new Map<string, { value: string | undefined; at: number }>();
+  async function catalogKey(name: string): Promise<string | undefined> {
+    const cached = jevKeyCache.get(name);
+    if (cached && Date.now() - cached.at < 10 * 60_000) return cached.value;
     const plugins = (bb.sdk as { plugins?: { callRpc?: (args:{pluginId:string;method:string;input?:unknown;outputSchema:z.ZodType<unknown>}) => Promise<unknown> } }).plugins;
     let value: string | undefined;
     try {
-      const record = await plugins?.callRpc?.({ pluginId:"env-catalog", method:"env_get_value", input:{ name:"TYPESAFE_API_KEY" },
+      const record = await plugins?.callRpc?.({ pluginId:"env-catalog", method:"env_get_value", input:{ name },
         outputSchema:z.object({ value:z.string().nullable() }).passthrough() }) as { value:string | null } | undefined;
       value = record?.value?.trim() || undefined;
     } catch { value = undefined; }
-    if (Boolean(value) !== Boolean(jevKeyCache?.value)) {
-      bb.log.info(value ? "jev key: from Env Catalog (TYPESAFE_API_KEY)" : "jev key: not in Env Catalog, machines use their own");
+    if (Boolean(value) !== Boolean(cached?.value)) {
+      bb.log.info(value ? `jev key: from Env Catalog (${name})` : `jev key: ${name} not in Env Catalog`);
     }
-    jevKeyCache = { value, at: Date.now() };
+    jevKeyCache.set(name, { value, at: Date.now() });
     return value;
   }
+  let jevServing = "";
+  // The provider the owner chose and its key; TypeSafe's own key when the chosen provider has none, so Jev does not go dark over a missing record.
+  async function jevEndpoint(): Promise<JevEndpoint> {
+    const wanted = resolveJevProvider(loadProjectSettings(db, GLOBAL_SETTINGS_PROJECT_ID)["jev.provider"]);
+    let endpoint: JevEndpoint = { provider: wanted, apiKey: await catalogKey(wanted.keyName) };
+    if (!endpoint.apiKey && wanted.id !== "typesafe") {
+      const apiKey = await catalogKey(JEV_PROVIDERS.typesafe.keyName);
+      if (apiKey) endpoint = { provider: JEV_PROVIDERS.typesafe, apiKey };
+    }
+    const serving = `${endpoint.provider.id}:${Boolean(endpoint.apiKey)}`;
+    if (serving !== jevServing) {
+      jevServing = serving;
+      bb.log.info(endpoint.provider.id === wanted.id ? `jev provider: ${wanted.id}` : `jev provider: ${wanted.id} has no key in Env Catalog, using ${endpoint.provider.id}`);
+    }
+    return endpoint;
+  }
   // The Jev layer (src/jev): one client with this key reader, receipts in the plugin database; dropped on reload.
-  bb.onDispose(installJev({ apiKey: catalogJevKey, db, log: (message) => bb.log.warn(message) }));
+  bb.onDispose(installJev({ endpoint: jevEndpoint, db, log: (message) => bb.log.warn(message) }));
   const deployDrain = createDeployDrain(() => state.disposed);
   bb.onDispose(bindDrainTarget({ drain: deployDrain, log: (line) => bb.log.info(line) }, (bb as unknown as { vk?: { instanceId?: string } }).vk?.instanceId));
   const rawCall = rawHost.call as (method: string, input: unknown, options: unknown) => Promise<unknown>;
@@ -88,8 +106,8 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
       // is taken again only under the same key, never by another call with the same input.
       const { job, jobKey, ...hostOptions } = withSignal as typeof withSignal & { jobKey?: string };
       const direct = async () => {
-        const key = JEV_METHODS.has(method) ? await catalogJevKey() : undefined;
-        return await rawCall(method, key ? { ...(input as Record<string, unknown>), jevApiKey:key } : input, hostOptions);
+        const endpoint = JEV_METHODS.has(method) ? await jevEndpoint() : undefined;
+        return await rawCall(method, endpoint?.apiKey ? { ...(input as Record<string, unknown>), jevApiKey:endpoint.apiKey, jevProvider:endpoint.provider.id } : input, hostOptions);
       };
       // LANE_PILOT_HOST_JOBS=0 runs every call directly, as before jobs: a switch for a host where they misbehave.
       if (process.env.LANE_PILOT_HOST_JOBS !== "0" && isHostJobKind(method) && (method !== "runSandboxedCommand" || job === true)) return await hostJobs.run(method, input, hostOptions, direct, jobKey);

@@ -15,11 +15,11 @@ language: ru
 
 | Решение | Число |
 |---|---:|
-| editable | 232 |
+| editable | 233 |
 | read-only | 91 |
 | gap | 0 |
 | excluded | 130 |
-| **сумма** | **453** |
+| **сумма** | **454** |
 
 Из бывших 88 read-only: (a) канал найден и поле стало editable — 0; (b) неприменимо в BB — 50; (c) gap без контракта upstream/SDK — 33.
 
@@ -478,3 +478,4 @@ language: ru
 | 450 | Lane Pilot workflow models | workflow.preset.ins-digest.model | src/workflow/model-presets.ts | user | OWN | editable | The model preset «ins-digest», the Insights pipeline stage «INS - сводка» (summary for the author); empty means the built-in default (claude-code / claude-sonnet-5 / medium) (`src/workflow/model-presets.ts:12`) |
 | 451 | Lane Pilot workflow models | workflow.preset.ins-digest.reasoning_effort | src/workflow/model-presets.ts | user | OWN | editable | The model preset «ins-digest», the Insights pipeline stage «INS - сводка» (summary for the author); empty means the built-in default (claude-code / claude-sonnet-5 / medium) (`src/workflow/model-presets.ts:12`) |
 | 452 | Lane Pilot writer | writer.skill_pick | src/rooms/writer/server/skill-pick.ts | user | OWN | editable | Whether a writer gets the BB skills picked for its task: on (default) lets the pick add the project skills the task needs, off gives the writer its role skills only; a pick that runs past 15 s also leaves only the role skills (`src/rooms/writer/server/skill-pick.ts:115`) |
+| 453 | Lane Pilot Jev judgments | jev.provider | src/rooms/core/server/core.ts | user | OWN | editable | Who serves every Jev request: openlux (a reseller, same bodies, about 60% cheaper, model jev-1.13.0:stable, key OPENLUX_API_KEY) or typesafe (the official service, jev-latest, key TYPESAFE_API_KEY); read from the global settings, and a provider with no key in the Env Catalog falls back to TypeSafe's (`src/rooms/core/server/core.ts:73`) |

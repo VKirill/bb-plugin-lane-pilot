@@ -1,7 +1,7 @@
 // Public API of verification: what other rooms import. Everything else in this room is private.
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { buildDocsFlows } from "./docs-flows";
-export { buildDocsAnchors, docsDepth, docsStaleness, jevApiKey, provideJevKey, verifyDocsCitations } from "./docs-jev";
+export { buildDocsAnchors, docsDepth, docsStaleness, jevApiKey, provideJevKey, jevProviderOfKey, verifyDocsCitations } from "./docs-jev";
 export { gateTriagePrompt, parseGateTriageResult } from "./gate-triage";
 export { commitDocs, docsLineCounts, docsWorthinessFacts, gitDocsScope, revertPaths } from "./git-docs";
 export { appendExcludeCommand, createWorktree, ensureExcludeLinesCommand, EXCLUDE_NOT_GIT, integrateWorktree, persistTaskFolder, prepareWorktree, removeLaneWorktree, snapshotWorktree, syncWorktree, taskFolderRel } from "./git-integrate";

@@ -45,7 +45,7 @@ It builds on [Lane Stack](https://github.com/VKirill/claude-lane-stack) (MIT): t
 | Plugin SDK | `@get-bb/plugin-sdk` ≥ 0.4.104 |
 | Node | 22.19+, 24 or 26 |
 | Machines | enrolled BB hosts with git; `bwrap` (bubblewrap) on Linux, `sandbox-exec` on macOS for checks |
-| Optional | TypeSafe Jev key `TYPESAFE_API_KEY` in Env Catalog (routing, triage, council judge); a WireGuard (or Tailscale) network between machines for browser checks of dev servers on another machine |
+| Optional | Jev key in Env Catalog: `OPENLUX_API_KEY` (default provider, setting `jev.provider`) or `TYPESAFE_API_KEY` (routing, triage, council judge); a WireGuard (or Tailscale) network between machines for browser checks of dev servers on another machine |
 
 ### Experimental core functions
 

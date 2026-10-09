@@ -6,6 +6,7 @@ import { extractRoutes, type RouteRef } from "./docs-routes";
 import { parsePrisma, prismaAccess, renderDataMap } from "./docs-data";
 import { expandCitationLists } from "../docs";
 import { promisify } from "node:util";
+import { JEV_PROVIDERS, jevProviderOfHostCall, type JevProvider } from "@lane-pilot/jev/provider";
 
 /**
  * Jev (TypeSafe System One) as the documentation pipeline's judgment layer. Code finds candidates -
@@ -15,7 +16,6 @@ import { promisify } from "node:util";
  */
 
 const run = promisify(execFile);
-const JEV_URL = "https://api.typesafe.ai/v1/systemone";
 /** Jev takes about 32k tokens of state; English code is roughly 4 characters a token. */
 const JEV_STATE_CHARS = 100_000;
 const JEV_CONCURRENCY = 16;
@@ -33,11 +33,17 @@ type JevQuestion = { type:"noul" | "choice" | "score"; instructions:unknown; cri
 type JevAnswer = { noul?:number; choice?:string; probabilities?:Record<string, number>; score?:number; confidence?:number };
 
 let providedJevKey = "";
+let providedJevProvider: JevProvider = JEV_PROVIDERS.typesafe;
 
-/** The server sends the key from BB's Env Catalog with each Jev call; it wins over this machine's env and file. */
-export function provideJevKey(key: string | undefined): void {
-  if (key?.trim()) providedJevKey = key.trim();
+/** The server sends the key from BB's Env Catalog and the provider it belongs to with each Jev call; they win over this machine's env and file. */
+export function provideJevKey(key: string | undefined, provider?: string): void {
+  if (!key?.trim()) return;
+  providedJevKey = key.trim();
+  providedJevProvider = jevProviderOfHostCall(provider);
 }
+
+/** Whose key this is: the provider the server named for the key it sent; every other key (env, file) is TypeSafe's, as before providers. */
+export const jevProviderOfKey = (key: string): JevProvider => key === providedJevKey ? providedJevProvider : JEV_PROVIDERS.typesafe;
 
 export async function jevApiKey(): Promise<string> {
   if (providedJevKey) return providedJevKey;
@@ -90,11 +96,12 @@ export async function jevAsk(key:string, state:unknown, questions:Record<string,
   if (jevInFlight >= JEV_MACHINE_LIMIT) await new Promise<void>((ready) => jevWaiting.push(ready));
   jevInFlight++;
   try {
-    const response = await fetch(JEV_URL, {
+    const provider = jevProviderOfKey(key);
+    const response = await fetch(provider.url, {
       method:"POST",
       headers:{ authorization:`Bearer ${key}`, "content-type":"application/json" },
-      body:JSON.stringify({ model:"jev-latest", state:boundJevState(state), questions }),
-      signal:AbortSignal.timeout(timeoutMs),
+      body:JSON.stringify({ model:provider.model, state:boundJevState(state), questions }),
+      signal:AbortSignal.timeout(timeoutMs + provider.timeoutPadMs),
     });
     if (!response.ok) return null;
     const body = await response.json() as { answers?:Record<string, JevAnswer> };

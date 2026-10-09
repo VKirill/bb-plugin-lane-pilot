@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { classifyPlan } from "../src/rooms/host-worker/host-handlers";
+import { classifyPlan, councilJudge } from "../src/rooms/host-worker/host-handlers";
+import { provideJevKey } from "../src/rooms/verification";
 import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier } from "@lane-pilot/models";
 
 const { missingCredentialFile } = vi.hoisted(() => ({ missingCredentialFile:{ value:false } }));
@@ -90,5 +91,21 @@ describe("Lane Pilot Jev complete-plan adapter", () => {
     expect(await classifyPlan({ requestedHostId:"host-a", plan:"Full plan" }, {} as never)).toMatchObject({ status:"error", reason:"http_503" });
     globalThis.fetch = vi.fn(async () => { const error = new Error("timeout"); error.name = "TimeoutError"; throw error; }) as typeof fetch;
     expect(await classifyPlan({ requestedHostId:"host-a", plan:"Full plan" }, {} as never)).toMatchObject({ status:"timeout", reason:"timeout" });
+  });
+
+  it("sends to OpenLux with its pinned model and extra timeout headroom when the server named it", async () => {
+    provideJevKey("openlux-key", "openlux");
+    const seen:Array<{ url:string; auth:unknown; body:{ model:string } }> = [];
+    const timeouts:number[] = [];
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms:number) => { timeouts.push(ms); return new AbortController().signal; });
+    globalThis.fetch = vi.fn(async (url, init) => {
+      seen.push({ url:String(url), auth:(init?.headers as Record<string, string>).authorization, body:JSON.parse(String(init?.body)) });
+      return new Response(JSON.stringify({ answers:{ effort:{ choice:"low", confidence:0.9 }, pick:{ choice:"a", confidence:0.9 } } }), { status:200 });
+    }) as typeof fetch;
+    expect(await classifyPlan({ requestedHostId:"host-a", plan:"Full plan" }, {} as never)).toMatchObject({ status:"ok", effort:"low" });
+    const questions = { pick:{ instructions:"Pick", criteria:{ a:"first", b:"second" } } };
+    expect(await councilJudge({ requestedHostId:"host-a", state:"{}", questions }, {} as never)).toMatchObject({ status:"ok", answers:{ pick:"a" } });
+    expect(seen.map((call) => [call.url, call.auth, call.body.model])).toEqual(Array(2).fill(["https://api.openlux.ai/v1/systemone", "Bearer openlux-key", "jev-1.13.0:stable"]));
+    expect(timeouts).toEqual([4_000, 5_500]);
   });
 });

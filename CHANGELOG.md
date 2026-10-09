@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.221
+
+- **Jev provider switch: OpenLux (default) or TypeSafe.** The global setting `jev.provider` (`openlux` | `typesafe`, Russian label «Поставщик Jev») picks who serves every Jev request: the Jev client, the host `classifyPlan` / `councilJudge` and the docs Jev calls. OpenLux is a reseller with the same request and answer bodies at ~60% of the price (`https://api.openlux.ai/v1/systemone`, model `jev-1.13.0:stable`, key `OPENLUX_API_KEY`); TypeSafe stays the official route (`jev-latest`, `TYPESAFE_API_KEY`). One table (`packages/jev/src/provider.ts`) gives url, model and key name; the server reads the right Env Catalog key (TypeSafe's when OpenLux has none) and sends it with the provider id to the host workers, which map the id to the url themselves; a host without them keeps the TypeSafe behaviour. OpenLux answers a call ~0.6 s slower, so every Jev timeout gets +1.5 s on it (the client adds it to the judgment's timeout; host `classifyPlan` 2.5 s -> 4 s, `councilJudge` 4 s -> 5.5 s, docs calls +1.5 s) and the host-call deadlines around `councilJudge` rose to leave room (council 8 s -> 10 s, writer rule relevance 6 s -> 10 s, skill pick 6 s -> 10 s). OpenLux's HTTP 500 `invalid_request` (a malformed request; TypeSafe gives 422) is no longer retried nor counted by the breaker.
+
 ## 0.1.220
 
 - **Cool cars outside the council office.** The box cars are replaced by seven stylised models made from concept art with Meshy image-to-3D (`assets/office-cars.glb`, 926 KB, embedded): a red 1967 Mustang fastback with white stripes, a Ford F-150 Raptor, a yellow Porsche 911, a black G-Class, a lime supercar, a Cybertruck and a mint VW T1 bus. Five stand in the south bays and two on the east strip; the 911 and the bus drive slowly along the road (not with reduced motion). They get the scene's toon shading and pixel outlines; the box cars stay as the fallback while the model loads.

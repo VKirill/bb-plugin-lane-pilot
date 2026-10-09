@@ -21,6 +21,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "integration.gate_when": { queue_drained: "enumIntegrationGateDrained", every_n: "enumIntegrationGateEveryN" },
   "workspace.provider": { auto: "enumWorkspaceProviderAuto", off: "enumWorkspaceProviderOff" },
   "writer.skill_pick": { on: "enumSkillPickOn", off: "enumSkillPickOff" },
+  "jev.provider": { openlux: "enumJevProviderOpenlux", typesafe: "enumJevProviderTypesafe" },
   "sandbox.backend": {
     auto: "enumSandboxAuto",
     "macos-seatbelt": "enumSandboxSeatbelt",

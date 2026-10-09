@@ -9,6 +9,7 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./provider": "./src/provider.ts",
     "./judgments/output-guard": "./src/judgments/output-guard.ts",
     "./judgments/invoice-check": "./src/judgments/invoice-check.ts",
     "./judgments/repair-group": "./src/judgments/repair-group.ts",
