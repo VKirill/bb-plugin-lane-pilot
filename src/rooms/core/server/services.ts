@@ -2,6 +2,7 @@ import type { CouncilApi } from "../../council/server";
 import type { ErrandsApi } from "../../qa/server";
 import type { ScheduleService } from "../../schedule/server";
 import type { RuleScanApi } from "../../self-repair/server";
+import type { WorldApi } from "../../world/server";
 import type { Canary } from "../../stability/server";
 import type { createActivation } from "../../native-agent/server";
 import type { createDocsNightly } from "../../docs/server";
@@ -49,6 +50,8 @@ type WorkflowTriggersApi = ReturnType<typeof createWorkflowTriggersService>;
 /** Every function one server module offers another; filled once all modules exist, read at call time. */
 export interface Services {
   council: CouncilApi;
+  /** The Pixel World tick service (src/rooms/world). */
+  world: WorldApi;
   canary: Canary;
   ruleScan: RuleScanApi;
   DOCS_NIGHT_ATTEMPTS: DocsNightlyApi["DOCS_NIGHT_ATTEMPTS"];

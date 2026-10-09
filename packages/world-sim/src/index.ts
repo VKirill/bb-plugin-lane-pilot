@@ -2,6 +2,8 @@
 export { applyLanePilotSignal, SIGNAL_RULES } from "./binding";
 export { STAGE_MATERIAL, STAGE_WORK, targetForPercent } from "./construction";
 export { generateMap } from "./map";
+export { WORLD_CHANNEL, WORLD_STREAM_PATH, parseWorldBatch } from "./protocol";
+export type { WorldBatch, WorldClientMessage, WorldServerMessage } from "./protocol";
 export { hashString, nextRandom } from "./rng";
 export { DEFAULT_SCENARIOS, listScenarios, parseScenario, registerScenario } from "./scenarios";
 export { dayOf, hourOf, positionAt } from "./sim";

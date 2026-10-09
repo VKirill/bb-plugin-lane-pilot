@@ -46,14 +46,37 @@ export function ensureDistrict(sim: Sim, projectId: string, name?: string): Dist
   return district;
 }
 
-function claimPlot(s: WorldState, district: District): Plot | null {
+/** A free plot of the district's block, else any free plot; when the city is full the oldest building made from a site is pulled down. */
+function claimPlot(sim: Sim, district: District): Plot | null {
+  const s = sim.s;
   const plots = Object.values(s.map.plots);
-  const own = plots.find((p) => p.blockId === district.blockId && plotFree(s, p));
-  const found = own ?? plots.find((p) => p.zone === "free" && plotFree(s, p));
-  if (!found) return null;
+  let found = plots.find((p) => p.blockId === district.blockId && plotFree(s, p)) ?? plots.find((p) => p.zone === "free" && plotFree(s, p));
+  if (!found) {
+    const old = Object.values(s.buildings).filter((b) => b.siteId !== null).sort((a, b) => a.openedAt - b.openedAt)[0];
+    if (!old) return null;
+    found = s.map.plots[old.plotId]!;
+    demolish(sim, old);
+  }
+  const previous = s.districts[s.plotDistrict[found.id] ?? ""];
+  if (previous) previous.plotIds = previous.plotIds.filter((id) => id !== found!.id);
   s.plotDistrict[found.id] = district.id;
   district.plotIds.push(found.id);
   return found;
+}
+
+function demolish(sim: Sim, building: Building): void {
+  const s = sim.s;
+  for (const id of building.poiIds) { delete s.pois[id]; delete s.poiLoad[id]; }
+  delete s.buildings[building.id];
+  delete s.plotBuilding[building.plotId];
+  delete s.plotDistrict[building.plotId];
+  s.rev++;
+  const home = Object.values(s.buildings).find((b) => b.kind === "house");
+  for (const c of Object.values(s.citizens)) {
+    if (c.homeId === building.id && home) c.homeId = home.id;
+    if (c.workId === building.id) { c.workId = null; if (c.role === "worker") c.role = "resident"; }
+  }
+  emit(sim, { type: "removed", kind: "building", id: building.id });
 }
 
 // ---- sites ----
@@ -65,7 +88,7 @@ export function createSite(sim: Sim, input: { projectId: string; taskId: string;
   const existing = s.sites[s.tasks[siteKey(input.projectId, input.taskId)] ?? ""];
   if (existing) { bindAttempt(s, existing, input.attemptId); return existing; }
   const district = ensureDistrict(sim, input.projectId);
-  const plot = claimPlot(s, district);
+  const plot = claimPlot(sim, district);
   if (!plot) return null;
   const id = nextId(s, "s");
   const blueprint = BLUEPRINT_KINDS[hashString(input.taskId) % BLUEPRINT_KINDS.length]!;

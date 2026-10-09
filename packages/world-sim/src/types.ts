@@ -302,7 +302,7 @@ export type WorldEvent =
   | { seq: number; t: number; type: "site"; siteId: string; state: "created" | "delivered" | "collapsed" | "repaired" | "rejected" | "approved" | "opened"; buildingId?: string }
   | { seq: number; t: number; type: "district"; district: District }
   | { seq: number; t: number; type: "spawned"; kind: "citizen" | "vehicle" | "building" | "site"; id: string; data: unknown }
-  | { seq: number; t: number; type: "removed"; kind: "citizen" | "vehicle" | "site"; id: string }
+  | { seq: number; t: number; type: "removed"; kind: "citizen" | "vehicle" | "site" | "building"; id: string }
   | { seq: number; t: number; type: "meeting"; meetingId: string; state: "started" | "ended"; citizenIds: string[] }
   | { seq: number; t: number; type: "signal"; signal: LanePilotSignal; applied: boolean; note?: string };
 

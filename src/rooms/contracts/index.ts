@@ -6,6 +6,7 @@ import { rpcSettings } from "./rpc-settings";
 import { rpcOps } from "./rpc-ops";
 import { rpcKnowledge } from "./rpc-knowledge";
 import { rpcWorkflow } from "./rpc-workflow";
+import { rpcWorld } from "./rpc-world";
 
 // The RPC contracts of the plugin. The schemas are in schemas.ts, the host methods in host.ts and the methods of the
 // screens in the rpc-*.ts parts; this file assembles them and is the only public file of the room.
@@ -21,4 +22,5 @@ export const rpcContract = defineRpcContract({
   ...rpcOps,
   ...rpcKnowledge,
   ...rpcWorkflow,
+  ...rpcWorld,
 });

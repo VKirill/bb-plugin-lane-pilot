@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decide } from "../src/ai";
+import { addBuilding } from "../src/buildings";
 import { hasEdge } from "../src/graph";
 import { generateMap } from "../src/map";
 import { applyLanePilotSignal, catchUp, cloneState, createWorld, hourOf, listScenarios, parseScenario, parseWorld, positionAt, serializeWorld, snapshot, step, targetForPercent, type Graph, type LanePilotSignal, type Plan, type Vec, type WorldEvent, type WorldState } from "../src";
@@ -227,6 +228,25 @@ describe("lane pilot signals", () => {
     expect(Object.values(s.districts)[1]!.blockId).not.toBe(district.blockId);
     const unknown = applyLanePilotSignal(s, { type: "bogus" } as never);
     expect(unknown.events[0]).toMatchObject({ applied: false });
+  });
+
+  it("pulls down the oldest finished building when the city is out of free plots", () => {
+    const s = createWorld(2, { citizens: 12 });
+    const freePlots = Object.values(s.map.plots).filter((p) => p.zone === "free").length;
+    const events: WorldEvent[] = [];
+    for (let i = 0; i < freePlots; i++) signal(s, { type: "task_dispatched", projectId: `p${i % 3}`, taskId: `T${i}`, attemptId: `a${i}` });
+    expect(Object.keys(s.sites)).toHaveLength(freePlots);
+    expect(signal(s, { type: "task_dispatched", projectId: "p0", taskId: "extra", attemptId: "ax" }).events.at(-1)).toMatchObject({ applied: false, note: "no free plot for a new site" });
+    // Finish the first site by hand: it becomes a building on its plot.
+    const first = Object.values(s.sites)[0]!;
+    const sim = { s, events };
+    addBuilding(sim, { plotId: first.plotId, kind: "house", name: "Done", districtId: first.districtId, siteId: first.id });
+    delete s.sites[first.id]; delete s.plotSite[first.plotId];
+    const r = signal(s, { type: "task_dispatched", projectId: "p0", taskId: "extra", attemptId: "ax" });
+    expect(r.events.some((e) => e.type === "removed" && e.kind === "building")).toBe(true);
+    expect(r.events.at(-1)).toMatchObject({ applied: true });
+    expect(Object.values(s.sites).find((x) => x.taskId === "extra")!.plotId).toBe(first.plotId);
+    for (const c of Object.values(s.citizens)) expect(s.buildings[c.homeId]).toBeDefined();
   });
 
   it("verification sends the inspector; passed and failed mark the site", () => {
