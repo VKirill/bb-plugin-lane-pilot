@@ -32,6 +32,7 @@ import type { AttemptState } from "../../runs";
 import { closeWriterStages, recordStage } from "../../runs/server";
 import { id, stringAt } from "../../core/server";
 import { shouldMergeAttemptWorktree } from "./spawn";
+import { collectHandoffBrief } from "./writer-handoff";
 import { isLiveDecision, LIVE_FOLDER_RECEIPT } from "../live-folder";
 import { resolve } from "node:path";
 import { findThreadsByMetadata } from "../../core/server";
@@ -128,6 +129,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     // The class Jev (J-4, active) or the rules gave the last failure: parking reads the same one, not its own recount.
     let judged: { status: string; reason: string | null; klass: FailureClass } | null = null;
     let primaryFailure:Record<string,unknown>|null=null;
+    // The last failed attempt's worktree, kept until the next attempt starts or the fallback chain takes it over.
+    let unremovedWorktree:ReturnType<typeof getAttempt>=undefined;
     // An earlier task of the same family (a redispatch, a mainfix) that failed the same way stops the next one early.
     let familyFailure = familyFailureRecord(db, input.runId, input.taskId);
     let acceptedAttemptId:string|null=null;
@@ -297,6 +300,14 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     const releaseFailedThreads = async () => {
       for (const row of listAttemptsForTask(db, input.runId, input.taskId)) {
         if (row.thread_id && row.state !== "accepted") await services.providerRetry.abandon(row.thread_id);
+      }
+    };
+    /** Removes a failed attempt's own worktree; a worktree that is the run folder, or a BB environment, is left alone. */
+    const removeWorktreeOf = async (failed:ReturnType<typeof getAttempt>) => {
+      const failedBase=getRun(db,input.runId)?.writer_workspace_path;
+      if(failed?.workspace_path&&failed.environment_id===null&&failedBase&&shouldMergeAttemptWorktree(failed.workspace_path,failedBase)) {
+        await host.call("gitRemoveWorktree",{requestedHostId:input.config.hostId,basePath:failedBase,worktreePath:failed.workspace_path},
+          {hostId:input.config.hostId,timeoutMs:60_000}).catch((cause)=>bb.log.warn(`Lane Pilot could not remove worktree of ${failed.id}: ${cause instanceof Error?cause.message:String(cause)}`));
       }
     };
     void (async () => {
@@ -547,14 +558,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         if (sessionEnd) redo = null;
         previousTurn = turn;
         // A failed attempt's own worktree is never merged; the next attempt starts from a fresh one.
-        const removeFailedWorktree = async () => {
-          const failedBase=getRun(db,input.runId)?.writer_workspace_path;
-          if(failedBinding?.workspace_path&&failedBinding.environment_id===null&&failedBase&&shouldMergeAttemptWorktree(failedBinding.workspace_path,failedBase)) {
-            await host.call("gitRemoveWorktree",{requestedHostId:input.config.hostId,basePath:failedBase,worktreePath:failedBinding.workspace_path},
-              {hostId:input.config.hostId,timeoutMs:60_000}).catch((cause)=>bb.log.warn(`Lane Pilot could not remove worktree of ${failedBinding.id}: ${cause instanceof Error?cause.message:String(cause)}`));
-          }
-        };
-        if (!redo) { await removeFailedWorktree(); await rollbackLive(); }
+        const removeFailedWorktree = () => removeWorktreeOf(failedBinding);
+        // The worktree waits: the next attempt removes it when it starts, and a fallback writer may continue in it (below).
+        if (!redo) { unremovedWorktree = failedBinding; await rollbackLive(); }
         if (last.status === "spawn_rejected" && typeof last.reason === "string"
           && (last.reason.startsWith("execution_packet_failed:") || last.reason.startsWith("attempt_worktree_")
             || last.reason.startsWith("attempt_workspace_"))) {
@@ -642,6 +648,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         familyFailure = { state:String(last.status), reason:typeof last.reason === "string" ? last.reason : null };
         halfBound = false;
         const failedLast = last;
+        if (unremovedWorktree) { const stale = unremovedWorktree; unremovedWorktree = undefined; await removeWorktreeOf(stale); }
         attemptId = id("lpattempt");
         createAttempt(db, { id:attemptId, runId:input.runId, taskId:input.taskId });
         writerThreadId = undefined;
@@ -677,6 +684,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           : [];
         let failure:Record<string, unknown>=primaryFailure;
         const primaryAttemptId=typeof primaryFailure.attemptId === "string" ? primaryFailure.attemptId : attemptId;
+        // The writer the next fallback continues: the failed attempt that kept its worktree (worktree mode only), then each
+        // fallback that started. Its thread and workspace are read when a fallback starts.
+        let continueFrom:ReturnType<typeof getAttempt>=!liveFolder&&unremovedWorktree?.id===primaryAttemptId ? unremovedWorktree : undefined;
         if (!chain.length) last={...last,emergencyFallback:{state:"skipped",
           reason:primaryClass === "provider" || primaryClass === "limit" ? "configured_pm_selection_matches_primary" : `failure is not a provider fault (${primaryClass})`}};
         for (const fallback of chain) {
@@ -703,6 +713,13 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           // The task moves to another writer: a retry BB's provider-retry queued in a failed thread must not wake it later.
           await releaseFailedThreads();
           const emergencySelection={providerId:fallback.providerId,model:fallback.model};
+            // The interrupted writer's worktree goes on to the fallback with its edits, and the handoff tells the fallback what was done.
+            const from=continueFrom;
+            const continuation=from?.thread_id&&from.workspace_path ? {
+              workspacePath:from.workspace_path, environmentId:from.environment_id, dirtBefore:from.dirt_before, fromThreadId:from.thread_id,
+              brief:await collectHandoffBrief({ bb, host, hostId:input.config.hostId, threadId:from.thread_id, workspacePath:from.workspace_path,
+                stopReason:`${String(failure.status ?? "failed")}${typeof failure.reason === "string" && failure.reason ? `: ${failure.reason}` : ""}` }),
+            } : undefined;
             const emergencyAttemptId=id("lpattempt");
             createAttempt(db,{id:emergencyAttemptId,runId:input.runId,taskId:input.taskId});
             writerSelection=undefined;
@@ -710,6 +727,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               projectId:input.projectId,runId:input.runId,taskId:input.taskId,attemptId:emergencyAttemptId,
               config:freshConfig,task:freshTask,plan:input.plan,pmThreadId:input.pmThreadId,pmReadContext,
               emergency:{...emergencySelection,reason:decision.reason,...(fallback.pm?{}:{reasoningLevel:fallback.reasoningLevel})},
+              continuation,
             });
             if (!spawned.ok) {
               const fallbackFailureReason=`emergency_fallback_failed:${spawned.reason}`;
@@ -722,7 +740,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               continue;
             } else {
               writerThreadId=spawned.threadId;
-              mirror.thread(spawned.threadId, `Fallback writer ${spawned.providerId ?? "?"}/${spawned.model ?? "?"} started (${decision.reason}).`);
+              mirror.thread(spawned.threadId, continuation
+                ? `Fallback writer ${spawned.providerId ?? "?"}/${spawned.model ?? "?"} continues @thread:${continuation.fromThreadId} (${decision.reason}).`
+                : `Fallback writer ${spawned.providerId ?? "?"}/${spawned.model ?? "?"} started (${decision.reason}).`);
+              // The fallback owns the continued worktree now; the next fallback, if this one fails, continues from here.
+              if (continuation) unremovedWorktree=undefined;
+              continueFrom=getAttempt(db,emergencyAttemptId);
               if (liveFolder) { liveBackupId=emergencyAttemptId; await bindLiveBackup(); }
               writerSelection=spawned.providerId&&spawned.model?{
               providerId:spawned.providerId,model:spawned.model,
@@ -732,7 +755,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               activeTask=retargetTask(freshTask,spawned.workspacePath);
               executionPacketSha256=spawned.executionPacketSha256 ?? null;
               const fallbackWorkspace=getAttempt(db,emergencyAttemptId)?.workspace_path;
-              dirtBefore=baselineWorkspacePath&&fallbackWorkspace===baselineWorkspacePath
+              dirtBefore=!continuation&&baselineWorkspacePath&&fallbackWorkspace===baselineWorkspacePath
                 ? baselineDirtBefore??spawned.dirtBefore : spawned.dirtBefore;
               const emergencyFallback={reason:decision.reason,primaryAttemptId,providerId:emergencySelection.providerId,model:emergencySelection.model};
               last={...await services.finishWriterAttempt({
@@ -750,6 +773,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             }
         }
       }
+      // A worktree kept for a fallback that did not continue in it (no chain, a guard stopped it) is removed as any failed one.
+      if (unremovedWorktree) await removeWorktreeOf(unremovedWorktree);
       // Whatever the writers left in a folder without git is taken back when no attempt was accepted.
       if (last.status !== "accepted") await rollbackLive();
       // The task is over for these writers (a writer's question keeps its thread: its answer goes on there).
@@ -804,6 +829,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     })().catch((cause: unknown) => {
       // After a reload the database is closed: stop quietly, the next load reconciles the attempt.
       if (ctx.state.disposed) return;
+      // A failed attempt's worktree that no fallback took is removed here too, as it was before fallbacks could keep it.
+      if (unremovedWorktree) void removeWorktreeOf(unremovedWorktree).catch((removeCause) => bb.log.warn(`Lane Pilot could not remove the worktree of ${input.taskId}: ${removeCause instanceof Error ? removeCause.message : String(removeCause)}`));
       try {
         const message = cause instanceof Error ? cause.message : String(cause);
         const reason = `internal_error: ${message}`;
