@@ -1,9 +1,30 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 
-afterEach(() => cleanup());
+/** Node's experimental localStorage is undefined here, so each test gets an in-memory Storage. */
+function memoryStorage(): Storage {
+  const data = new Map<string, string>();
+  return {
+    get length() { return data.size; },
+    key: (index: number) => [...data.keys()][index] ?? null,
+    getItem: (key: string) => data.get(key) ?? null,
+    setItem: (key: string, value: string) => { data.set(key, String(value)); },
+    removeItem: (key: string) => { data.delete(key); },
+    clear: () => { data.clear(); },
+  };
+}
+
+beforeEach(() => {
+  vi.stubGlobal("localStorage", memoryStorage());
+});
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 const detail = {
   id: "cncl_1", question: "Как поднять повторные покупки?", state: "discussion", round: 2, maxRounds: 3,
@@ -16,6 +37,13 @@ const detail = {
     { seq: 3, seatId: "product", round: 1, kind: "position", text: "Убрать шаг с аккаунтом.", at: 3 },
   ],
 };
+
+/** The block width the page measures: below 1024 the chat page, at or above it the office. */
+function setBlockWidth(width: number) {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+    width, height: 700, top: 0, left: 0, right: width, bottom: 700, x: 0, y: 0, toJSON: () => ({}),
+  } as DOMRect);
+}
 
 async function mountCouncilPage(said: Array<Record<string, unknown>>) {
   const app = await loadPluginApp(() => import("../app"));
@@ -34,7 +62,9 @@ async function mountCouncilPage(said: Array<Record<string, unknown>>) {
   });
 }
 
-describe("council page", () => {
+describe("council page on the chat layout (below 1024 px)", () => {
+  beforeEach(() => setBlockWidth(800));
+
   it("shows the council as a chat with presence and lets the owner speak and ask for the decision", async () => {
     const said: Array<Record<string, unknown>> = [];
     const view = await mountCouncilPage(said);
@@ -51,38 +81,68 @@ describe("council page", () => {
     expect(said[1]).toEqual({ councilId: "cncl_1", decide: true });
   });
 
-  it("renders office fallback in jsdom without throwing alongside the log and supports replay step", async () => {
-    const said: Array<Record<string, unknown>> = [];
-    const view = await mountCouncilPage(said);
-    await waitFor(() => expect(view.getByTestId("council-messages").textContent).toContain("Убрать шаг с аккаунтом."));
-
-    // Fallback renders alongside the log
-    expect(view.getByTestId("council-office-fallback")).toBeDefined();
-    expect(view.getByTestId("council-office-fallback").textContent).toMatch(/WebGL|Office/i);
-
-    // Replay controls exist
-    const stepBtn = view.getByTestId("council-replay-step");
-    expect(stepBtn).toBeDefined();
-
-    // Clicking step highlights the first message
-    fireEvent.click(stepBtn);
-    const msg1 = view.container.querySelector('[data-seq="1"]');
-    expect(msg1).toBeDefined();
-    expect(msg1?.className).toContain("border-amber-500");
+  it("has no office, no canvas and no drawer on the chat page", async () => {
+    const view = await mountCouncilPage([]);
+    await waitFor(() => expect(view.getByTestId("council-messages")).toBeDefined());
+    expect(view.queryByTestId("council-office")).toBeNull();
+    expect(view.queryByTestId("council-drawer")).toBeNull();
+    expect(view.queryByTestId("council-peek")).toBeNull();
+    expect(view.container.querySelector("canvas")).toBeNull();
+    expect(view.getByTestId("council-page").getAttribute("data-council-layout")).toBe("chat");
   });
 
-  it("bounds the header with line-clamp and places agenda in disclosure", async () => {
-    const said: Array<Record<string, unknown>> = [];
-    const view = await mountCouncilPage(said);
+  it("bounds the header with line-clamp and replays the cursor message in the feed", async () => {
+    const view = await mountCouncilPage([]);
     await waitFor(() => expect(view.getByTestId("council-messages").textContent).toContain("Убрать шаг с аккаунтом."));
 
     const header = view.getByTestId("council-header");
-    expect(header).toBeDefined();
-    const questionEl = header.querySelector(".line-clamp-2");
-    expect(questionEl).toBeDefined();
-    expect(questionEl?.textContent).toContain(detail.question);
+    expect(header.querySelector(".line-clamp-3")?.textContent).toContain(detail.question);
 
-    const officeContainer = view.getByTestId("council-office-fallback").parentElement?.parentElement;
-    expect(officeContainer?.className).toContain("min-h-[320px]");
+    fireEvent.click(view.getByTestId("council-replay-step"));
+    const msg1 = view.container.querySelector('[data-seq="1"]');
+    expect(msg1?.className).toContain("border-amber-500");
+  });
+});
+
+describe("council page on the desktop layout (1024 px and up)", () => {
+  beforeEach(() => setBlockWidth(1280));
+
+  it("renders the office with the chat drawer collapsed and the last message as a peek card", async () => {
+    const view = await mountCouncilPage([]);
+    await waitFor(() => expect(view.getByTestId("council-office-fallback")).toBeDefined());
+    expect(view.getByTestId("council-page").getAttribute("data-council-layout")).toBe("desktop");
+    expect(view.queryByTestId("council-messages")).toBeNull();
+    expect(view.getByTestId("council-peek").textContent).toContain("Убрать шаг с аккаунтом.");
+    expect(view.getByTestId("council-topbar")).toBeDefined();
+  });
+
+  it("opens the drawer with the feed and the composer, and remembers the state", async () => {
+    const said: Array<Record<string, unknown>> = [];
+    const view = await mountCouncilPage(said);
+    await waitFor(() => expect(view.getByTestId("council-peek")).toBeDefined());
+
+    fireEvent.click(view.getByTestId("council-drawer-toggle"));
+    await waitFor(() => expect(view.getByTestId("council-messages").textContent).toContain("Убрать шаг с аккаунтом."));
+    expect(view.getByTestId("council-composer")).toBeDefined();
+    expect(view.queryByTestId("council-peek")).toBeNull();
+    expect(localStorage.getItem("lane-pilot:council:drawer")).toBe("open");
+  });
+
+  it("starts the drawer closed when nothing is stored, and opens it when the stored state says so", async () => {
+    localStorage.setItem("lane-pilot:council:drawer", "open");
+    const view = await mountCouncilPage([]);
+    await waitFor(() => expect(view.getByTestId("council-messages")).toBeDefined());
+    expect(view.getByTestId("council-drawer")).toBeDefined();
+  });
+
+  it("replays from the drawer feed and shows the council as a select in the top bar", async () => {
+    const view = await mountCouncilPage([]);
+    await waitFor(() => expect(view.getByTestId("council-peek")).toBeDefined());
+    fireEvent.click(view.getByTestId("council-drawer-toggle"));
+    await waitFor(() => expect(view.getByTestId("council-messages")).toBeDefined());
+
+    expect(view.getByTestId("council-list").tagName).toBe("SELECT");
+    fireEvent.click(view.getByTestId("council-replay-step"));
+    expect(view.container.querySelector('[data-seq="1"]')?.className).toContain("border-amber-500");
   });
 });
