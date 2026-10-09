@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "status": "accepted",
+  "lanePilotRunId": "lprun_3830fb02731046e89c6d9706ca217fd7",
+  "lanePilotTaskId": "applicability-table-skill-pick",
+  "attemptId": "lpattempt_20a9c48c6f10479098458039718fc0c9",
+  "pmThreadId": "thr_d6zg57egme",
+  "writerThreadId": "thr_4nyzdr589k",
+  "ownsPaths": [
+    "docs/adoc-applicability.md",
+    "tests/applicability.test.ts"
+  ],
+  "readFirst": [],
+  "output": "Added the `writer.skill_pick` row and updated the test literals. Both files in the verification command pass (2 files, 33 passed, 3 skipped), but the count and list checks are unverified because the test is skipped here.\n\nChanged paths, both in `owns_paths`:\n- `docs/adoc-applicability.md`: new row 452, `writer.skill_pick`, area \"Lane Pilot writer\", category user, channel OWN, decision editable, evidence `src/rooms/writer/server/skill-pick.ts:115` (where the setting is read). The table had 452 rows (ids 0–451), so 452 is the next id.\n- `tests/applicability.test.ts`: the row-count expectation in the 355-row test goes from 452 to 453, and `\"writer.skill_pick\"` is appended last to the native-additions list.\n\nThe 355-row test (`matches`/`documents the 355 source rows…`) is skipped in this worktree because `.agency/jobs/AG-179/settings.json` is absent. So the 453 count and the list are checked only by reading. The sandbox run is where they get exercised.\n\nNo product code or `src/` files were touched. The other project-memory rule about checking edits against `owns_paths` was also satisfied: `git status` shows only these two files.",
+  "verification": [
+    {
+      "command": "npx vitest run tests/applicability.test.ts tests/ui-runtime.test.ts",
+      "exitCode": 0,
+      "stdout": "\u001b[?25l\r\n\u001b[1m\u001b[30m\u001b[46m RUN \u001b[49m\u001b[39m\u001b[22m \u001b[36mv4.1.11 \u001b[39m\u001b[90m/Users/vechkasov/.lane-pilot/worktrees/lpattempt_20a9c48c6f10479098458039718fc0c9/bb-plugin-lane-pilot\u001b[39m\r\n\r\n\u001b[?2026h\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/applicability.test.ts\u001b[2m [queued]\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (2)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (0)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m17:21:44\r\n\u001b[2m   Duration \u001b[22m0ms\r\n\u001b[?2026l\u001b[?2026h\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/applicability.test.ts\u001b[2m 0/25\u001b[22m\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/ui-runtime.test.ts\u001b[2m [queued]\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (2)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (25)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m17:21:44\r\n\u001b[2m   Duration \u001b[22m200ms\r\n\u001b[?2026l\u001b[?2026h\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K \u001b[32m✓\u001b[39m tests/applicability.test.ts \u001b[2m(\u001b[22m\u001b[2m25 tests\u001b[22m\u001b[2m | \u001b[22m\u001b[33m2 skipped\u001b[39m\u001b[2m)\u001b[22m\u001b[32m 6\u001b[2mms\u001b[22m\u001b[39m\r\n\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/ui-runtime.test.ts\u001b[2m [queued]\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m1 passed\u001b[39m\u001b[22m\u001b[90m (2)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m23 passed\u001b[39m\u001b[22m\u001b[2m | \u001b[22m\u001b[33m2 skipped\u001b[39m\u001b[90m (25)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m17:21:44\r\n\u001b[2m   Duration \u001b[22m904ms\r\n\u001b[?2026l\u001b[?2026h\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/ui-runtime.test.ts\u001b[2m 0/11\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m1 passed\u001b[39m\u001b[22m\u001b[90m (2)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m23 passed\u001b[39m\u001b[22m\u001b[2m | \u001b[22m\u001b[33m2 skipped\u001b[39m\u001b[90m (36)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m17:21:44\r\n\u001b[2m   Duration \u001b[22m1.70s\r\n\u001b[?2026l\u001b[?2026h\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/ui-runtime.test.ts\u001b[2m 1/11\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m1 passed\u001b[39m\u001b[22m\u001b[90m (2)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m23 passed\u001b[39m\u001b[22m\u001b[2m | \u001b[22m\u001b[33m3 skipped\u001b[39m\u001b[90m (36)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m17:21:44\r\n\u001b[2m   Duration \u001b[22m1.81s\r\n\u001b[?2026l\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K \u001b[32m✓\u001b[39m tests/ui-runtime.test.ts \u001b[2m(\u001b[22m\u001b[2m11 tests\u001b[22m\u001b[2m | \u001b[22m\u001b[33m1 skipped\u001b[39m\u001b[2m)\u001b[22m\u001b[32m 151\u001b[2mms\u001b[22m\u001b[39m\r\n\r\n\u001b[2m Test Files \u001b[22m \u001b[1m\u001b[32m2 passed\u001b[39m\u001b[22m\u001b[90m (2)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[32m33 passed\u001b[39m\u001b[22m\u001b[2m | \u001b[22m\u001b[33m3 skipped\u001b[39m\u001b[90m (36)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m 17:21:44\r\n\u001b[2m   Duration \u001b[22m 1.87s\u001b[2m (transform 1.32s, setup 21ms, import 1.72s, tests 156ms, environment 0ms)\u001b[22m\r\n\r\n\u001b[?25h\\\u001b[1G\u001b[0K\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m New \u001b[31mmajor\u001b[39m version of npm available! \u001b[31m11.16.0\u001b[39m -> \u001b[34m12.2.0\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m Changelog: \u001b[34mhttps://github.com/npm/cli/releases/tag/v12.2.0\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m To update run: \u001b[4mnpm install -g npm@12.2.0\u001b[24m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\\\u001b[1G\u001b[0K",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "3c3497252fa4d5f892ac0cff96a5e392db17093d8c6ea163a66a5b99dd2080d8",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_20a9c48c6f10479098458039718fc0c9/bb-plugin-lane-pilot"
+    }
+  ],
+  "runV2": {
+    "schemaVersion": 1,
+    "pools": {
+      "provider": 15,
+      "verification": 2
+    },
+    "score": 2,
+    "risk": "low",
+    "sourceRisk": "low",
+    "scoreAdapter": "task-risk-v1"
+  },
+  "reasoning": [
+    {
+      "planSha256": "292d83c6dbd9382b166681f68488f9d375f39176dff4b41818bf80170b2433f6",
+      "sentPlanSha256": "292d83c6dbd9382b166681f68488f9d375f39176dff4b41818bf80170b2433f6",
+      "sourceLength": 1450,
+      "sentLength": 1450,
+      "jevStatus": "ok",
+      "jevDecision": "medium",
+      "requestedReasoningLevel": "medium",
+      "effectiveReasoningLevel": "medium",
+      "fallbackReason": null,
+      "retryEffort": {
+        "enabled": true,
+        "retryIndex": 0,
+        "before": "medium",
+        "after": "medium",
+        "changed": false
+      },
+      "providerId": "claude-code",
+      "model": "claude-haiku-5-5",
+      "serviceTier": "default",
+      "requestedServiceTier": "default",
+      "runId": "lprun_3830fb02731046e89c6d9706ca217fd7",
+      "attemptId": "lpattempt_20a9c48c6f10479098458039718fc0c9",
+      "threadId": "thr_4nyzdr589k",
+      "effortMode": "automatic",
+      "selectionSource": {
+        "providerId": "claude-code",
+        "model": "claude-haiku-5-5",
+        "reasoningLevel": "medium",
+        "serviceTier": "default",
+        "reasoningLevelSource": "client-preference"
+      },
+      "dispatchContext": {
+        "memoryText": "- Full plugin backups use a versioned JSON payload (`kind: 'bb-project-folders-backup'`, version 1) containing settings and all 11 durable tables: folders, folder_paths, thread_places, folder_rules, project_rules, project_order, execution_defaults, session_policies, preferences, item_styles, and folder_archives. Imports preserve row IDs and run in one transaction; invalid backups and imports during an active move or archive are rejected. Transient tables (exports, pending_exports, project_moves, thread_moves, section_moves) are excluded. This adds no schema changes and preserves the existing appearance-only export/import flow.\n- Errand, QA, and reviewer helper threads are read-only for repository files; specialists may write under `.agents/`. Writers retain full worktree access. Wait backstops report helper edits as `repo_edited` with changed files and do not revert them.\n- In bb-plugin-lane-pilot, never use the full vitest suite as a task's verification command: list the test files covering the changed code and run that set outside the sandbox yourself before dispatch. Several suite tests (tests/verification/**, tests/scenarios.test.ts S5) fail only inside Lane Pilot's Seatbelt check.",
+        "memoryPicked": [
+          "a1e24df18c9424b7d28552a47384aeafc3bb57aef551ddef568e5654b8b2653f",
+          "d86da4f3ab41999c5f5c25ee3cfa928584b004ab91c199582af9cfac872e28c2",
+          "8ee6adb7f59ce417e246cd2230d11fbf559eb1e5adb9f82b3015b5e51961182d"
+        ],
+        "rulesText": "- Перед ответом сверь список изменённых файлов с `owns_paths` и откати из своей задачи каждое изменение, путь которого туда не входит.\n- Перед ответом по задаче Lane Pilot сверяй каждый путь, который собираешься изменить из-за ошибки проверки, с owns_paths; если пути там нет, не меняй файл и сообщи об ошибке диспетчеру.",
+        "rulesPicked": {
+          "total": 18,
+          "picked": [
+            "rule_1014724209246da9",
+            "rule_572535fb78e20b9d"
+          ]
+        },
+        "executionPacket": "",
+        "executionPacketSha256": "b8b89ebb6b2ebc901cde1feeee2c673aa5a1accc13e8e58c2911f4329d038c10",
+        "pmReadContext": "",
+        "agent": "Lane Pilot writer",
+        "promptChars": 6066,
+        "helperMode": "roles",
+        "helperRequired": false
+      }
+    }
+  ],
+  "emergencyFallback": null,
+  "turns": 1
+}
