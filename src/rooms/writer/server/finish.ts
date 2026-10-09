@@ -28,6 +28,7 @@ import { askGuestsToCommit } from "./checkout-guests";
 import { shouldMergeAttemptWorktree } from "./spawn";
 import { loadWriterNudge } from "./writer-silence";
 import { recordedWriterSkills } from "./skill-pick";
+import { createSkillMaterializer, recordedMaterializedSkills } from "./skill-materialize";
 import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON, failureFingerprint, isEnvironmentCheckFailure } from "../../runs";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../../verification/server";
@@ -70,6 +71,7 @@ export function postMergeRepair(onMain:TaskV2, red:Array<{ command:string; exitC
 export function createWriterFinish(ctx: ServerCore, services: Services) {
   const { bb, db, getThreadBounded, host } = ctx;
   const integrationGateRunner = new IntegrationGateRunner(ctx, services);
+  const skillMaterial = createSkillMaterializer(ctx, (message) => bb.log.info(message));
 
   /** The project's gate (explicit, detected on its host, or none). */
   const gateFor = (projectId:string, runId:string, hostId:string, basePath:string) =>
@@ -98,12 +100,24 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       since:new Date(since).toISOString(), retryAfterSec:60, detail:holder };
   }
 
-  async function finishWriterAttempt(input: {
+  type FinishInput = {
     projectId:string; config:PrototypeConfig; task:TaskV2;
     runId:string; taskId:string; attemptId:string; pmThreadId:string; writerThreadId:string;
     dirtBefore:import("../cli-outcome").DirtSnapshot[];
     emergencyFallback?:{reason:string;primaryAttemptId:string;providerId:string;model:string};
-  }): Promise<Record<string,unknown>> {
+  };
+
+  /** The attempt's end, whatever its outcome: the skill links an OpenCode writer got leave its worktree. */
+  async function finishWriterAttempt(input: FinishInput): Promise<Record<string,unknown>> {
+    try { return await finishWriterAttemptBody(input); }
+    finally {
+      await skillMaterial.remove({ attemptId:input.attemptId, hostId:input.config.hostId,
+        workspacePath:getAttempt(db, input.attemptId)?.workspace_path ?? null,
+        names:recordedMaterializedSkills(getReasoningTrace(db, input.attemptId)?.dispatchContext) });
+    }
+  }
+
+  async function finishWriterAttemptBody(input: FinishInput): Promise<Record<string,unknown>> {
     // The PM's stop and a failure can land together: an attempt whose stop was requested ends canceled whatever failed
     // (cancel_requested has only canceled, blocked and accepted to go to, and the owner asked for the stop).
     const endedByStop = (reason:string, threadId = input.writerThreadId):Record<string,unknown>|null => {
