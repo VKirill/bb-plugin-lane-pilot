@@ -1579,7 +1579,9 @@ describe("stage → native writer → receipt", () => {
     expect(fallback).toHaveLength(1);
     expect(fallback[0]?.providerId).toBe("critic");
     expect(fallback[0]?.model).toBe("critic-model");
-    expect(fallback[0]?.prompt).toContain("Fallback writer: the first writer's model failed");
+    expect(fallback[0]?.prompt).toContain("You are continuing an interrupted session of this task");
+    expect(fallback[0]?.prompt).toContain("Stop reason: provider_error");
+    expect(fallback[0]?.prompt).not.toContain("Fallback writer: the first writer's model failed");
     expect(fallback[0]?.prompt).not.toMatch(/recovery|unsafe/);
     const writerReceipt=listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="writer-agent");
     expect(writerReceipt?.state).toBe("passed");

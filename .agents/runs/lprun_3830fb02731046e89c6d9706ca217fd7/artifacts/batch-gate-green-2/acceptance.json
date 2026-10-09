@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "batch-gate-green-2",
+  "task_sha256": "a31673c2cd83a6e5737536bf880120edc9f3150cb28a97038c4c26db8e9319f1",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "fcbe0b8b94bf2425a660dfc74039b455cfcd9096fd71a109361c758cd3e72488",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-09T15:13:10.806Z",
+  "model": "claude-haiku-5-5"
+}
