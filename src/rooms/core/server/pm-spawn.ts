@@ -31,6 +31,24 @@ export function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspac
   ].join("\n");
 }
 
+export function providerSupportsServiceTier(provider: {
+  capabilities?: { supportsServiceTier?: boolean };
+  supportsServiceTier?: boolean;
+  serviceTiers?: ReadonlyArray<{ id?: string } | string>;
+} | null | undefined): boolean {
+  if (!provider) return false;
+  if (provider.capabilities?.supportsServiceTier === false || provider.supportsServiceTier === false) {
+    return false;
+  }
+  if (provider.capabilities?.supportsServiceTier === true || provider.supportsServiceTier === true) {
+    return true;
+  }
+  if (Array.isArray(provider.serviceTiers) && provider.serviceTiers.length > 0) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Every thread Lane Pilot starts (PM, writers, helpers) runs with full access. BB honours the mode only when it is
  * marked explicit; otherwise the project's remembered mode (often accept-edits) makes agents stop for approval.
@@ -38,10 +56,41 @@ export function pmPrompt(runId: string, config: PrototypeConfig, managedWorkspac
 
 export function fullAccessSpawn(bb: BbPluginApi, args: Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0]) {
   enforceRunChildBudget(bb, args);
-  const full = { ...quietHelper(args), permissionMode:"full" as const,
-    executionInputSources:{ ...args.executionInputSources, permissionMode:"explicit" as const } };
-  // With the VK thread keys the spawn is idempotent: a lost answer repeated returns the same thread (thread-keys.ts).
-  return spawnKeyed(bb, full, () => bb.sdk.threads.spawn(full)) as ReturnType<BbPluginApi["sdk"]["threads"]["spawn"]>;
+  return (async () => {
+    let supportsTier = true;
+    if (typeof bb.sdk?.providers?.list === "function") {
+      const hostId = args.environment?.type === "host" && typeof args.environment.hostId === "string" ? args.environment.hostId : undefined;
+      const providers = await bb.sdk.providers.list(hostId ? { hostId } : undefined).catch(() => null);
+      if (Array.isArray(providers) && args.providerId) {
+        const provider = providers.find((row) => row.id === args.providerId);
+        if (provider) {
+          supportsTier = providerSupportsServiceTier(provider);
+        }
+      }
+    }
+
+    const quiet = quietHelper(args);
+    const { serviceTier: _incomingTier, ...restQuiet } = quiet;
+    let executionInputSources = restQuiet.executionInputSources ? { ...restQuiet.executionInputSources } : undefined;
+    if (executionInputSources) {
+      const { serviceTier: _dropped, ...restSources } = executionInputSources;
+      executionInputSources = restSources;
+    }
+
+    const requestedTier: "default" | "fast" = args.serviceTier === "fast" ? "fast" : "default";
+    const full = {
+      ...restQuiet,
+      ...(supportsTier ? { serviceTier: requestedTier } : {}),
+      permissionMode: "full" as const,
+      executionInputSources: {
+        ...executionInputSources,
+        permissionMode: "explicit" as const,
+        ...(supportsTier ? { serviceTier: "explicit" as const } : {}),
+      },
+    } as Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0] & Record<string, unknown>;
+    // With the VK thread keys the spawn is idempotent: a lost answer repeated returns the same thread (thread-keys.ts).
+    return spawnKeyed(bb, full, () => bb.sdk.threads.spawn(full)) as ReturnType<BbPluginApi["sdk"]["threads"]["spawn"]>;
+  })();
 }
 
 type ChildBudgetLookup = (runId: string) => RunBudget | null;

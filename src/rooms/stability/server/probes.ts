@@ -27,7 +27,8 @@ export function createProbes(ctx: ServerCore, services: Services) {
         environment:{ type:"host", hostId:config.hostId, workspace:{ type:"unmanaged", path:config.writerWorkspacePath } },
         visibility:"hidden",
         pluginMetadata:{ role:"writer", lanePilotRunId:runId, lanePilotTaskId:taskId, attemptId, parentPmThreadId:pmThreadId },
-        executionInputSources:{ providerId:"explicit", model:"explicit" },
+        serviceTier:"default" as const,
+        executionInputSources:{ providerId:"explicit", model:"explicit", serviceTier:"explicit" as const },
       });
       const threadId = stringAt(spawned, "id");
       if (!threadId) throw new Error("threads.spawn returned no cancel-probe thread id");
@@ -57,7 +58,8 @@ export function createProbes(ctx: ServerCore, services: Services) {
       environment:{ type:"host", hostId:config.hostId, workspace:{ type:"unmanaged", path:config.writerWorkspacePath } },
       visibility:"hidden",
       pluginMetadata:{ role:"writer", lanePilotRunId:runId, lanePilotTaskId:taskId, attemptId, parentPmThreadId:pmThreadId },
-      executionInputSources:{ providerId:"explicit", model:"explicit" },
+      serviceTier:"default" as const,
+      executionInputSources:{ providerId:"explicit", model:"explicit", serviceTier:"explicit" as const },
     });
     const threadId = stringAt(spawned, "id");
     if (!threadId) throw new Error("threads.spawn returned no provider-error probe thread id");
@@ -94,7 +96,8 @@ export function createProbes(ctx: ServerCore, services: Services) {
           environment:{ type:"host", hostId:config.hostId, workspace:{ type:"unmanaged", path:config.writerWorkspacePath } },
           visibility:"hidden",
           pluginMetadata:{ role:"ambiguous-probe", probeOrdinal:ordinal },
-          executionInputSources:{ providerId:"explicit", model:"explicit" },
+          serviceTier:"default" as const,
+          executionInputSources:{ providerId:"explicit", model:"explicit", serviceTier:"explicit" as const },
         });
         const threadId = stringAt(spawned, "id");
         if (!threadId) throw new Error("threads.spawn returned no ambiguous-probe thread id");

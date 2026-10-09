@@ -256,7 +256,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     const spawned = await fullAccessSpawn(bb, {
       projectId, visibility: "hidden", title,
       ...projectRoleField(bb, db, projectId, analyzer.providerId, "rules-analyzer"),
-      ...writerExecutionSelection(analyzer.providerId, analyzer.model, analyzer.reasoningLevel, analyzer.serviceTier ? bbServiceTier(analyzer.serviceTier === "fast" ? "fast" : "standard") : null),
+      ...writerExecutionSelection(analyzer.providerId, analyzer.model, analyzer.reasoningLevel, analyzer.serviceTier ? bbServiceTier(analyzer.serviceTier === "fast" ? "fast" : "standard") : "default"),
       prompt,
       environment: { type: "host", hostId: place.hostId, workspace: { type: "unmanaged", path: place.path } },
       pluginMetadata: { role: "rules-analyzer", stageId: "rules-analyzer", spawnId: `${projectId}:${spawnTextId(title)}`, ...metadata },

@@ -185,7 +185,7 @@ export function mountErrands(ctx: ServerCore) {
     const spawned = await fullAccessSpawn(bb, {
       ...placement,
       ...requiredPolicyField(bb, helperPolicy, providerId, "errand"),
-      ...writerExecutionSelection(providerId, input.model ?? ERRAND_BUILTIN.model, input.reasoning ?? ERRAND_BUILTIN.reasoningEffort, input.serviceTier ?? null),
+      ...writerExecutionSelection(providerId, input.model ?? ERRAND_BUILTIN.model, input.reasoning ?? ERRAND_BUILTIN.reasoningEffort, input.serviceTier ?? "default"),
       prompt: errandPrompt({ task: input.task, browserHostId: setup.hostId, authorized: input.authorized, accounts: [...input.accounts] }),
       environment: { type: "reuse", environmentId },
       pluginMetadata: { role: "errand", spawnId: input.spawnId ?? `${input.runId}:${spawnTextId(input.task)}`, lanePilotRunId: input.runId, parentPmThreadId: input.pmThreadId, helperMode: helperPolicy.mode, ...input.metadata },

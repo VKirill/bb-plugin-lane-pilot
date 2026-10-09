@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "status": "accepted",
+  "lanePilotRunId": "lprun_3830fb02731046e89c6d9706ca217fd7",
+  "lanePilotTaskId": "spawn-explicit-service-tier",
+  "attemptId": "lpattempt_ce317ae60fe54004bc8a7680893b030a",
+  "pmThreadId": "thr_d6zg57egme",
+  "writerThreadId": "thr_dzuw2hkx4q",
+  "ownsPaths": [
+    "src/rooms/core/server/",
+    "src/rooms/qa/server/",
+    "src/rooms/council/server/",
+    "src/rooms/memory/server/",
+    "src/rooms/docs/server/",
+    "src/rooms/native-agent/server/",
+    "src/rooms/self-repair/server/",
+    "src/rooms/stability/server/",
+    "src/rooms/workflow/server/",
+    "tests/spawn-service-tier.test.ts"
+  ],
+  "readFirst": [
+    {
+      "path": "src/rooms/core/server/pm-spawn.ts",
+      "windows": []
+    },
+    {
+      "path": "src/rooms/qa/server/errands.ts",
+      "windows": []
+    },
+    {
+      "path": "src/rooms/self-repair/server/self-repair.ts",
+      "windows": []
+    }
+  ],
+  "output": "Changed paths:\n- src/rooms/core/server/index.ts\n- src/rooms/core/server/pm-spawn.ts\n- src/rooms/council/server/council.ts\n- src/rooms/native-agent/server/activation.ts\n- src/rooms/native-agent/server/helper-probe.ts\n- src/rooms/qa/server/errands.ts\n- src/rooms/qa/server/qa-thread.ts\n- src/rooms/self-repair/server/rule-scan.ts\n- src/rooms/stability/server/probes.ts\n- src/rooms/workflow/server/workflow-agent.ts\n- tests/spawn-service-tier.test.ts\n\nVerification:\n- `npm run typecheck` passed (exit 0)\n- `npx vitest run tests/spawn-service-tier.test.ts` passed (13 tests passing, exit 0)",
+  "verification": [
+    {
+      "command": "npm run typecheck",
+      "exitCode": 0,
+      "stdout": "\r\n> bb-plugin-lane-pilot@0.1.212 typecheck\r\n> tsc --noEmit\r\n\r\n\\\u001b[1G\u001b[0K\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m New \u001b[31mmajor\u001b[39m version of npm available! \u001b[31m11.16.0\u001b[39m -> \u001b[34m12.2.0\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m Changelog: \u001b[34mhttps://github.com/npm/cli/releases/tag/v12.2.0\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m To update run: \u001b[4mnpm install -g npm@12.2.0\u001b[24m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\\\u001b[1G\u001b[0K",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "087169c4aa912334b2e3dab9bb1f50f1e96e6d390cc0e017158489456e669265",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_ce317ae60fe54004bc8a7680893b030a/bb-plugin-lane-pilot"
+    },
+    {
+      "command": "npx vitest run tests/spawn-service-tier.test.ts",
+      "exitCode": 0,
+      "stdout": "\u001b[?25l\r\n\u001b[1m\u001b[30m\u001b[46m RUN \u001b[49m\u001b[39m\u001b[22m \u001b[36mv4.1.11 \u001b[39m\u001b[90m/Users/vechkasov/.lane-pilot/worktrees/lpattempt_ce317ae60fe54004bc8a7680893b030a/bb-plugin-lane-pilot\u001b[39m\r\n\r\n\u001b[?2026h\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/spawn-service-tier.test.ts\u001b[2m [queued]\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (0)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m14:39:39\r\n\u001b[2m   Duration \u001b[22m200ms\r\n\u001b[?2026l\u001b[?2026h\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/spawn-service-tier.test.ts\u001b[2m [queued]\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (0)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m14:39:39\r\n\u001b[2m   Duration \u001b[22m903ms\r\n\u001b[?2026l\u001b[?2026h\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/spawn-service-tier.test.ts\u001b[2m [queued]\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (0)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m14:39:39\r\n\u001b[2m   Duration \u001b[22m1.90s\r\n\u001b[?2026l\u001b[?2026h\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/spawn-service-tier.test.ts\u001b[2m 0/13\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (13)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m14:39:39\r\n\u001b[2m   Duration \u001b[22m2.21s\r\n\u001b[?2026l\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K \u001b[32m✓\u001b[39m tests/spawn-service-tier.test.ts \u001b[2m(\u001b[22m\u001b[2m13 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 71\u001b[2mms\u001b[22m\u001b[39m\r\n   \u001b[32m✓\u001b[39m spawn service tier \u001b[2m(13)\u001b[22m\r\n     \u001b[32m✓\u001b[39m providerSupportsServiceTier \u001b[2m(3)\u001b[22m\r\n       \u001b[32m✓\u001b[39m returns true when provider has capabilities.supportsServiceTier: true\u001b[32m 1\u001b[2mms\u001b[22m\u001b[39m\r\n       \u001b[32m✓\u001b[39m returns true when provider has top-level supportsServiceTier: true or non-empty serviceTiers\u001b[32m 0\u001b[2mms\u001b[22m\u001b[39m\r\n       \u001b[32m✓\u001b[39m returns false when provider has supportsServiceTier: false or empty serviceTiers\u001b[32m 0\u001b[2mms\u001b[22m\u001b[39m\r\n     \u001b[32m✓\u001b[39m central helper spawn (fullAccessSpawn) \u001b[2m(4)\u001b[22m\r\n       \u001b[32m✓\u001b[39m passes serviceTier: 'default' when no tier is specified and provider supports service tiers\u001b[32m 1\u001b[2mms\u001b[22m\u001b[39m\r\n       \u001b[32m✓\u001b[39m passes configured serviceTier when given and provider supports service tiers\u001b[32m 0\u001b[2mms\u001b[22m\u001b[39m\r\n       \u001b[32m✓\u001b[39m sends no service tier to a provider that has no service tiers\u001b[32m 0\u001b[2mms\u001b[22m\u001b[39m\r\n       \u001b[32m✓\u001b[39m strips requested service tier if provider has no service tiers\u001b[32m 0\u001b[2mms\u001b[22m\u001b[39m\r\n     \u001b[32m✓\u001b[39m errand helper spawn inputs \u001b[2m(3)\u001b[22m\r\n       \u001b[32m✓\u001b[39m sends serviceTier: 'default' when errand has no service tier specified\u001b[32m 15\u001b[2mms\u001b[22m\u001b[39m\r\n       \u001b[32m✓\u001b[39m sends configured serviceTier: 'fast' when errand specifies fast tier\u001b[32m 11\u001b[2mms\u001b[22m\u001b[39m\r\n       \u001b[32m✓\u001b[39m sends no service tier when errand runs on a provider without service tiers\u001b[32m 10\u001b[2mms\u001b[22m\u001b[39m\r\n     \u001b[32m✓\u001b[39m browser-qa helper spawn inputs \u001b[2m(3)\u001b[22m\r\n       \u001b[32m✓\u001b[39m sends serviceTier: 'default' when browser-qa has no service tier specified\u001b[32m 10\u001b[2mms\u001b[22m\u001b[39m\r\n       \u001b[32m✓\u001b[39m sends configured serviceTier: 'fast' when browser-qa specifies fast tier\u001b[32m 12\u001b[2mms\u001b[22m\u001b[39m\r\n       \u001b[32m✓\u001b[39m sends no service tier when browser-qa runs on a provider without service tiers\u001b[32m 9\u001b[2mms\u001b[22m\u001b[39m\r\n\r\n\u001b[2m Test Files \u001b[22m \u001b[1m\u001b[32m1 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[32m13 passed\u001b[39m\u001b[22m\u001b[90m (13)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m 14:39:39\r\n\u001b[2m   Duration \u001b[22m 2.35s\u001b[2m (transform 1.54s, setup 25ms, import 2.05s, tests 71ms, environment 0ms)\u001b[22m\r\n\r\n\u001b[?25h\\\u001b[1G\u001b[0K\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m New \u001b[31mmajor\u001b[39m version of npm available! \u001b[31m11.16.0\u001b[39m -> \u001b[34m12.2.0\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m Changelog: \u001b[34mhttps://github.com/npm/cli/releases/tag/v12.2.0\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m To update run: \u001b[4mnpm install -g npm@12.2.0\u001b[24m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\\\u001b[1G\u001b[0K",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "b3297e8f386847b459741962740a846e150139841d08e64bbbdc87e6a78adb93",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_ce317ae60fe54004bc8a7680893b030a/bb-plugin-lane-pilot"
+    }
+  ],
+  "runV2": {
+    "schemaVersion": 1,
+    "pools": {
+      "provider": 15,
+      "verification": 2
+    },
+    "score": 5,
+    "risk": "medium",
+    "sourceRisk": "medium",
+    "scoreAdapter": "task-risk-v1"
+  },
+  "reasoning": [
+    {
+      "planSha256": "73550ce02fae3b3fbf9f43665839802638d0e7cd3ff1b5c891e200a9c007abee",
+      "sentPlanSha256": "73550ce02fae3b3fbf9f43665839802638d0e7cd3ff1b5c891e200a9c007abee",
+      "sourceLength": 2194,
+      "sentLength": 2194,
+      "jevStatus": "ok",
+      "jevDecision": "medium",
+      "requestedReasoningLevel": "medium",
+      "effectiveReasoningLevel": "medium",
+      "fallbackReason": null,
+      "retryEffort": {
+        "enabled": true,
+        "retryIndex": 0,
+        "before": "medium",
+        "after": "medium",
+        "changed": false
+      },
+      "providerId": "acp-opencode",
+      "model": "router9/ag/gemini-3.8-flash-medium",
+      "serviceTier": "fast",
+      "requestedServiceTier": "fast",
+      "runId": "lprun_3830fb02731046e89c6d9706ca217fd7",
+      "attemptId": "lpattempt_ce317ae60fe54004bc8a7680893b030a",
+      "threadId": "thr_dzuw2hkx4q",
+      "effortMode": "automatic",
+      "selectionSource": {
+        "providerId": "acp-opencode",
+        "model": "router9/ag/gemini-3.8-flash-medium",
+        "reasoningLevel": "medium",
+        "serviceTier": "fast",
+        "reasoningLevelSource": "client-preference"
+      },
+      "dispatchContext": {
+        "memoryText": "- Execution defaults can pin a chat environment as `folder` or `worktree`. Resolve the pin nearest-first across section, ancestors, project, and global settings. A `worktree` pin preselects a managed worktree on the folder host in both New chat and the composer chip; spawn must preserve that managed-worktree selection. With no pin, keep the existing folder/section-provider behavior. Groups must never become chat environments.\n- Full plugin backups use a versioned JSON payload (`kind: 'bb-project-folders-backup'`, version 1) containing settings and all 11 durable tables: folders, folder_paths, thread_places, folder_rules, project_rules, project_order, execution_defaults, session_policies, preferences, item_styles, and folder_archives. Imports preserve row IDs and run in one transaction; invalid backups and imports during an active move or archive are rejected. Transient tables (exports, pending_exports, project_moves, thread_moves, section_moves) are excluded. This adds no schema changes and preserves the existing appearance-only export/import flow.\n- Errand, QA, and reviewer helper threads are read-only for repository files; specialists may write under `.agents/`. Writers retain full worktree access. Wait backstops report helper edits as `repo_edited` with changed files and do not revert them.",
+        "memoryPicked": [
+          "39467d1db13cd0d2692a4e6c1934571d085dddc651a02deec6aeba4e0829c97b",
+          "a1e24df18c9424b7d28552a47384aeafc3bb57aef551ddef568e5654b8b2653f",
+          "d86da4f3ab41999c5f5c25ee3cfa928584b004ab91c199582af9cfac872e28c2"
+        ],
+        "rulesText": "- Перед ответом сверь список изменённых файлов с `owns_paths` и откати из своей задачи каждое изменение, путь которого туда не входит.\n- Перед ответом по задаче Lane Pilot сверяй каждый путь, который собираешься изменить из-за ошибки проверки, с owns_paths; если пути там нет, не меняй файл и сообщи об ошибке диспетчеру.",
+        "rulesPicked": {
+          "total": 18,
+          "picked": [
+            "rule_1014724209246da9",
+            "rule_572535fb78e20b9d"
+          ]
+        },
+        "executionPacket": "Read these before editing; they are the context for this task:\n- src/rooms/core/server/pm-spawn.ts L1-L84 (sha256 1ae63b08)\n- src/rooms/qa/server/errands.ts L1-L262 (sha256 1f782d82)",
+        "executionPacketSha256": "69f957f9e2dc72a6f01bb2147eb1c1fc565ede92a0fc8a3afa7e57ab32c28081",
+        "pmReadContext": "",
+        "agent": "Lane Pilot writer",
+        "promptChars": 6774,
+        "helperMode": "roles",
+        "helperRequired": false
+      }
+    }
+  ],
+  "emergencyFallback": null,
+  "turns": 1
+}

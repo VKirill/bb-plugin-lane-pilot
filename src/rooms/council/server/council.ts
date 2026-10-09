@@ -237,7 +237,7 @@ export function createCouncil(ctx: ServerCore) {
     const spawned = await fullAccessSpawn(bb, {
       ...placement,
       ...requiredPolicyField(bb, helperPolicy, providerId, "council-seat"),
-      ...writerExecutionSelection(providerId, model, effort, null),
+      ...writerExecutionSelection(providerId, model, effort, (input.seat as { serviceTier?: "default" | "fast" } | null)?.serviceTier ?? "default"),
       prompt: input.prompt,
       environment: workspaceExecutionEnvironment(input.place.hostId, { path: input.place.workspace, environmentId: null }),
       pluginMetadata: { role: "council-seat", spawnId: `${input.session.id}:${input.seat?.id ?? "chair"}:r${input.round}`, lanePilotRunId: input.session.runId, councilId: input.session.id, seatId: input.seat?.id ?? "chair", round: input.round, parentPmThreadId: input.pmThreadId, helperMode: helperPolicy.mode },

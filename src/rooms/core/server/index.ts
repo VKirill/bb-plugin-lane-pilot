@@ -5,7 +5,7 @@ export type { ServerContext } from "./context";
 export type { ServerCore } from "./core";
 export { CATALOG_WAIT_MS, createModelCatalog, modelCatalogOf, pmHostOf, within } from "./model-catalog-reader";
 export type { ModelCatalogReader } from "./model-catalog-reader";
-export { bindRunChildBudget, fullAccessSpawn, pmHasGuard, pmPrompt } from "./pm-spawn";
+export { bindRunChildBudget, fullAccessSpawn, pmHasGuard, pmPrompt, providerSupportsServiceTier } from "./pm-spawn";
 export { abortable, scheduleIsolated } from "./schedules";
 export type { Services } from "./services";
 export { clearSpawnMarker, findThreadsByMetadata, keyedSpawnSupported, spawnTextId } from "./thread-keys";

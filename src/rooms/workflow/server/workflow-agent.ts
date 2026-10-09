@@ -126,7 +126,7 @@ export function createWorkflowAgents() {
       const spawned = await fullAccessSpawn(bb, {
         ...placement,
         ...requiredPolicyField(bb, policy, providerId, spec.helper, extraAccessOf(req)),
-        ...writerExecutionSelection(providerId, req.model ?? DEFAULT_MODEL, req.reasoning ?? DEFAULT_REASONING, req.serviceTier ?? null),
+        ...writerExecutionSelection(providerId, req.model ?? DEFAULT_MODEL, req.reasoning ?? DEFAULT_REASONING, req.serviceTier ?? "default"),
         prompt: req.prompt,
         environment: { type: "reuse", environmentId },
         pluginMetadata: {
