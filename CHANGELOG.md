@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.219
+
+- **Real cartoon people in the council office.** Eight rigged chibi characters made in Blender (concepts in the reference's style → Meshy image-to-3D with auto-rigging → Universal Animation Library actions retargeted, plus typing, drinking, pointing and window poses keyed by hand) replace the procedural box people: the owner in a navy jacket over red, the receptionist with a red bun, and six office workers with distinct hair and clothes. One 1.34 MB GLB is embedded in the bundle (`assets/office-people.glb`, `scripts/embed-office-people.mjs`). Each person plays clips by what they do — walking (time-scaled to the walk speed), typing at desks, sitting on sofas and at the meeting table, talking, pointing while arguing, drinking at the coffee point, working the printer or servers, standing at a window — with 0.25 s crossfades and desynced phases; seated people sit on the seat. They get the scene's 3-tone toon shading and pixel outlines. The procedural people stay as the fallback while the model loads or if it fails.
+
 ## 0.1.218
 
 - **The pixel office fills the BB panel.** In a panel narrower than the floor the default scale fell to 1× and the office took a third of the view, with the lawn's edge showing in the corners. The default is now the largest whole-pixel scale at which the building nearly fits (up to a fifth of street and lawn may run past the edges), and the lawn is four times larger.
