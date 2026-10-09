@@ -1,7 +1,7 @@
 import type { I18nKey } from "@lane-pilot/i18n";
 import { selectionKeys, type SelectionId } from "../../settings/ui/picker-selections";
 import { COUNCIL_SEATS } from "../../ui-shell/ui/page-model";
-import { writerFallbackKeys } from "../../writer/writer-fallbacks";
+import { WRITER_FALLBACK_SLOTS, writerFallbackKeys } from "../../writer/writer-fallbacks";
 
 /** Which roles the table lists, in the order of the access roles (the same groups as the agent profile). */
 export type RoleGroupId = "code" | "check" | "project" | "browser" | "specialists" | "workflow";
@@ -25,7 +25,7 @@ const picked = (id: SelectionId) => Object.values(selectionKeys(id));
 
 export const ROLE_GROUPS: Array<{ id: RoleGroupId; roles: RoleSpec[] }> = [
   { id: "code", roles: [
-    { id: "writer", testId: "writer-picker", model: "writer", detail: "writer", keys: ["writer.provider", "writer.model", "writer.reasoning_effort", "writer.service_tier", "writer.agent", "jev.LANE_JEV_EFFORT", "jev.LANE_OPENCODE_JEV", ...[1, 2].flatMap((slot) => Object.values(writerFallbackKeys(slot as 1 | 2)))] },
+    { id: "writer", testId: "writer-picker", model: "writer", detail: "writer", keys: ["writer.provider", "writer.model", "writer.reasoning_effort", "writer.service_tier", "writer.agent", "jev.LANE_JEV_EFFORT", "jev.LANE_OPENCODE_JEV", ...WRITER_FALLBACK_SLOTS.flatMap((slot) => Object.values(writerFallbackKeys(slot)))] },
     { id: "code-repair", keys: [] },
     { id: "night-fixer", keys: [] },
   ] },

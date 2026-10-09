@@ -9,6 +9,7 @@ import { CONTROL_H } from "@lane-pilot/ui-kit";
 import { AccessModePanel, isChanged, ORIGIN_LABEL, PmAccessNote, RoleAccessBody, roleSummary, useAccessView, type AccessApi, type RoleView } from "../../settings/ui";
 import { useRulesAnalyzer } from "../../self-repair/ui";
 import { asBoolean } from "./page-model";
+import { writerFallbackSlots } from "../../writer/writer-fallbacks";
 import { SettingField } from "../../settings/ui";
 import { BrowserDetail, CouncilDetail, WriterDetail } from "../../native-agent/ui";
 import { originOfKeys, roleKey, roleName, rolePurpose, ROLE_GROUPS, type RoleOrigin, type RoleSpec } from "../../native-agent/ui";
@@ -41,7 +42,17 @@ function RoleRow({ spec, page, access, rules, open, onToggle }: {
   const name = t(roleName(spec.id));
 
   let model: ReactNode = <span className="text-xs text-muted-foreground">—</span>;
-  if (spec.model === "writer") model = modelPicker(pickerValue, (next) => { saveWriterSelection(next); });
+  if (spec.model === "writer") {
+    const chain = writerFallbackSlots(data?.values ?? {}).map((row) => row ? row.model : "—").join(" → ");
+    model = <div className="min-w-0 space-y-1">
+      {modelPicker(pickerValue, (next) => { saveWriterSelection(next); })}
+      <button type="button" aria-expanded={open} aria-controls={`role-drawer-${id}`} onClick={onToggle}
+        className="block max-w-full truncate rounded px-1 text-left text-xs text-muted-foreground hover:bg-[var(--lp-well)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        data-testid="writer-fallback-summary">
+        {t("writerFallbackSummary")} {chain}
+      </button>
+    </div>;
+  }
   else if (spec.model === "rules") {
     model = isGlobal || !rules.loaded ? <span className="text-xs text-muted-foreground">{isGlobal ? t("teamRulesPerProject") : t("writerCatalogLoading")}</span>
       : <div onPointerDownCapture={() => { rules.touched.current = true; }} onKeyDownCapture={() => { rules.touched.current = true; }}>
