@@ -26,6 +26,8 @@ export type WorldServiceOptions = {
   /** Sim seconds per real second. */
   speed?: number;
   citizens?: number;
+  /** Sim seconds in a game hour for a new world (a saved world keeps its own). */
+  hourSeconds?: number;
   seed?: number;
   now?: () => number;
   /** Looks up a project's name for the sign of its district. */
@@ -165,7 +167,7 @@ export function createWorldService(ctx: { bb: BbPluginApi; db: LanePilotDatabase
       const elapsed = Math.min(Math.max(0, at - loaded.tickAt), cfg.maxCatchUpMs) / 1000 * cfg.speed;
       if (elapsed > 1) { catchUp(world, elapsed, 30); ctx.log(`world: caught up ${Math.round(elapsed)} sim seconds after the stop`); }
     } else {
-      world = createWorld(cfg.seed ?? hashString("lane-pilot-world"), { citizens: cfg.citizens });
+      world = createWorld(cfg.seed ?? hashString("lane-pilot-world"), { citizens: cfg.citizens, ...(cfg.hourSeconds ? { hourSeconds: cfg.hourSeconds } : {}) });
       ctx.log("world: created a new world");
     }
     lastTickAt = at; lastPoll = 0; lastFlush = at; lastSave = at;
@@ -191,7 +193,11 @@ export function createWorldService(ctx: { bb: BbPluginApi; db: LanePilotDatabase
         if (signal.aborted || ctx.isDisposed()) break;
         tickAt(now());
       }
-      if (failures >= MAX_FAILURES) ctx.log("world: stopped after repeated tick failures; the next reload starts it again");
+      if (failures >= MAX_FAILURES) {
+        ctx.log("world: stopped after repeated tick failures; the next reload starts it again");
+        // Resolving would look like a clean end to BB; wait for the stop instead.
+        await new Promise<void>((resolve) => { if (signal.aborted) resolve(); else signal.addEventListener("abort", () => resolve(), { once: true }); });
+      }
     } finally {
       running = false;
       flush(true);
