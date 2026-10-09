@@ -1,4 +1,4 @@
-import { runningWriterBudgetStop, tokenUsageFromEvent } from "@lane-pilot/resilience";
+import { breakerKey, runningWriterBudgetStop, tokenUsageFromEvent } from "@lane-pilot/resilience";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { countAttempts, countThreadTurns, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../storage";
 import { saveBlockedBy, type BlockedBy } from "../../runs/server";
@@ -131,6 +131,11 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       transitionAttempt(db, input.attemptId, "provider_error", { reason });
       return { status:"provider_error", reason, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
     };
+    // A provider limit the OpenCode log named holds the writer's provider/model open until its reset time (else the cooldown).
+    const holdProviderLimit = (until?:number) => {
+      const trace = getReasoningTrace(db, input.attemptId);
+      if (trace) services.providerBreaker.record(breakerKey(trace.providerId, trace.model), "exhausted", Date.now(), until);
+    };
     try {
       const budget = services.runBudgetFor(input.runId, loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)));
       const watchBudget = budget.snapshot().limits.maxWallMs !== undefined || budget.snapshot().limits.maxTokens !== undefined;
@@ -194,7 +199,9 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         // The silence sweep nudged this writer twice and it stayed silent: the attempt ends and the task moves on.
         const nudge = await loadWriterNudge(bb.storage.kv, input.attemptId);
         if (nudge?.ended) {
-          const reason = `${WRITER_SILENT_REASON}: no activity after ${nudge.count} nudges`;
+          // The silence sweep found a provider limit in the log (writer-silence.ts): that reason, else the silent one.
+          const reason = nudge.reason ?? `${WRITER_SILENT_REASON}: no activity after ${nudge.count} nudges`;
+          if (nudge.reason) holdProviderLimit(nudge.until);
           const ended = providerFailed(reason);
           if (["active", "starting"].includes(currentStatus ?? "")) await bb.sdk.threads.stop({ threadId:input.writerThreadId }).catch(() => undefined);
           return ended;

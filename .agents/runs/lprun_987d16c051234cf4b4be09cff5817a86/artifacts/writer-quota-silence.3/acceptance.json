@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "writer-quota-silence.3",
+  "task_sha256": "bd6bb131da7baf97946f64564121a61cb8d7882b4310ada5888c2ce1c44a6e07",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "6a797aa2078c34738c8556cdc93d0c726a7910700f29c1f67e14bffc559a896b",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-09T14:30:23.007Z",
+  "model": "claude-haiku-5-5"
+}

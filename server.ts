@@ -1,4 +1,4 @@
-import { getRunSettingsScopes, listOpenAttempts, listUnfinishedStages, loadProjectSettings, openDatabase } from "./src/rooms/storage";
+import { getReasoningTrace, getRunSettingsScopes, listOpenAttempts, listUnfinishedStages, loadPrototypeConfig, loadProjectSettings, openDatabase } from "./src/rooms/storage";
 import { createTaskReconcile } from "./src/rooms/runs/server";
 import { createActivation } from "./src/rooms/native-agent/server";
 import { registerCli } from "./src/rooms/tools/server/cli";
@@ -19,6 +19,7 @@ import { registerLaneWorktreeProvider } from "./src/rooms/native-agent/server";
 import { scheduleIsolated } from "./src/rooms/core/server";
 import { DRAIN_SNAPSHOT_KEY, skipRedundantStartupScans } from "./src/rooms/stability/server";
 import { DEFAULT_SILENCE_NUDGE_MIN, sweepWriterSilence } from "./src/rooms/writer/server";
+import { OPENCODE_WRITER_PROVIDER } from "./src/rooms/writer/server/skill-materialize";
 import { threadPendingInteractions } from "./src/rooms/relay/server";
 import type { Services } from "./src/rooms/core/server";
 import { createStageChildren } from "./src/rooms/qa/server";
@@ -128,6 +129,13 @@ export default async function plugin(bb: BbPluginApi) {
     bb, signal, getThread:(threadId) => ctx.getThreadBounded(threadId), isDisposed:ctx.isDisposed, log:(line) => bb.log.info(line),
     waitingForOwner:async (threadId) => await ctx.ownerAsk.pending(threadId) || (await threadPendingInteractions(bb, threadId)) > 0,
     openAttempts:() => listOpenAttempts(db),
+    // Only an acp-opencode writer's provider log is read (the OpenCode host of its project holds it); other writers are nudged as before.
+    limitProbe:async (attempt, sessionId, sinceMs) => {
+      const hostId = loadPrototypeConfig(db, attempt.project_id)?.hostId;
+      if (!hostId || getReasoningTrace(db, attempt.id)?.providerId !== OPENCODE_WRITER_PROVIDER) return null;
+      const probe = await ctx.host.call("openCodeLimitProbe", { requestedHostId:hostId, sessionId, sinceMs }, { hostId, timeoutMs:60_000 });
+      return probe.status === "limit" ? probe : null;
+    },
     silenceMinutes:(projectId, runId) => {
       const minutes = Number(loadProjectSettings(db, projectId, getRunSettingsScopes(db, runId))["writer.silence_nudge_min"]);
       return Number.isFinite(minutes) && minutes >= 1 ? minutes : DEFAULT_SILENCE_NUDGE_MIN;
