@@ -6,7 +6,7 @@ import { docsRepairPrompt, docsSelection, docsScheduleDue, docsSinceEpoch, flowD
 import type { DocsUnit } from "../docs";
 import { cadenceAllowsToday, codeDocsVerdict, docsCadence, docsFactsKey, docsWorthinessState, DOCS_WORTHINESS_QUESTION, fallbackDocsVerdict } from "../docs-worthiness";
 import type { DocsCadence, DocsVerdict, DocsWorthinessFacts } from "../docs-worthiness";
-import { blockingDocsFindings, buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDesignCanon, isDocsIndex, lintDocsPages, pagesToRefresh, unlinkedPages, withCitedSources, withVerifiedConfidence } from "../docs-lint";
+import { blockingDocsFindings, buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDesignCanon, isDocsIndex, lintDocsPages, pagesToRefresh, uncataloguedPages, withCitedSources, withVerifiedConfidence } from "../docs-lint";
 import { configuredSetting } from "../../core/server";
 import { fullAccessSpawn } from "../../core/server";
 import { stringAt, valueAt } from "../../core/server";
@@ -548,7 +548,8 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
         const catalogue=unit.flows?.length?pages.find((page)=>page.path===`${d}/capabilities.md`):undefined;
         if(catalogue){
           const features=pages.map((page)=>page.path).filter((path)=>/^apps\/[^/]+\/docs\/features\/[^/]+\.md$/.test(path));
-          for(const path of unlinkedPages(catalogue,features)) findings.push({path:catalogue.path,rule:"coverage",detail:`does not link ${path}: add the capability that page describes, with its conditions and where it is available, and link it (operator tools under operator capabilities)`});
+          // A link on an area page the catalogue links (docs/capabilities/<area>.md) counts: the size limit splits it.
+          for(const path of uncataloguedPages(catalogue,pages,features)) findings.push({path:catalogue.path,rule:"coverage",detail:`does not link ${path}: add the capability that page describes, with its conditions and where it is available, and link it from ${d}/capabilities.md or an area page it links under ${d}/capabilities/ (operator tools under operator capabilities); keep the links already there`});
         }
         let pageStats:Array<{path:string;checked:number;supported:number;partial:number}>=[];
         // Structure first; once it holds, Jev checks each claim against its cited lines on the pages written now,

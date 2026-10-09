@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { BACKLINKS_MARK, blockingDocsFindings, buildBacklinks, expandCitationLists, pageCitations, unlinkedPages, buildDocsIndex, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "../../src/rooms/docs/docs-lint";
+import { BACKLINKS_MARK, blockingDocsFindings, buildBacklinks, expandCitationLists, pageCitations, uncataloguedPages, unlinkedPages, buildDocsIndex, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "../../src/rooms/docs/docs-lint";
 import { commitDocs } from "../../src/rooms/verification/git-docs";
 
 const page = (fields: Record<string, string>, body: string) => [
@@ -187,4 +187,17 @@ it("blocks a docs pass only on the pages it wrote, or on links to pages it remov
   expect(blockingDocsFindings(findings, [written.path, "docs/old.md"]).map((finding) => `${finding.path} ${finding.rule}`))
     .toContain("docs/ARCHITECTURE.md links");
   expect(blockingDocsFindings(findings, [])).toEqual([]);
+});
+
+// SelfyStudio, 2026-10-09: the repair round kept docs/capabilities.md under 30000 bytes by moving the operator
+// entries to docs/capabilities/operators.md, which it links; the coverage check read only the catalogue page,
+// so 5 findings became 39, 29 of them for pages the area page links.
+it("counts links on the area pages a catalogue links", () => {
+  const features = ["apps/admin/docs/features/analytics.md", "apps/cabinet/docs/features/wardrobe.md", "apps/api/docs/features/admin-challenges.md", "apps/worker/docs/features/runtime.md"];
+  const catalogue = { path:"docs/capabilities.md", content:"# C\n\n- [Wardrobe](../apps/cabinet/docs/features/wardrobe.md)\n- [Operator capabilities](capabilities/operators.md)\n" };
+  const operators = { path:"docs/capabilities/operators.md", content:"# Operators\n\n- [Analytics](../../apps/admin/docs/features/analytics.md)\n" };
+  // An area page the catalogue does not link is not part of it.
+  const orphan = { path:"docs/capabilities/orphan.md", content:"# Orphan\n\n- [Runtime](../../apps/worker/docs/features/runtime.md)\n" };
+  expect(unlinkedPages(catalogue, features)).toEqual(["apps/admin/docs/features/analytics.md", "apps/api/docs/features/admin-challenges.md", "apps/worker/docs/features/runtime.md"]);
+  expect(uncataloguedPages(catalogue, [catalogue, operators, orphan], features)).toEqual(["apps/api/docs/features/admin-challenges.md", "apps/worker/docs/features/runtime.md"]);
 });

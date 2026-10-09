@@ -143,6 +143,17 @@ export function unlinkedPages(from:DocPage, targets:string[]):string[] {
 }
 
 /**
+ * The targets a catalogue does not link, counting the area pages it links under its own folder
+ * (docs/capabilities.md and the docs/capabilities/<area>.md pages it links): a catalogue split to stay
+ * under the size limit still covers what its area pages link.
+ */
+export function uncataloguedPages(catalogue:DocPage, pages:DocPage[], targets:string[]):string[] {
+  const folder = `${catalogue.path.replace(/\.md$/, "")}/`;
+  const areas = pages.filter((page) => page.path.startsWith(folder) && !unlinkedPages(catalogue, [page.path]).length);
+  return areas.reduce((left, area) => unlinkedPages(area, left), unlinkedPages(catalogue, targets));
+}
+
+/**
  * The findings that block a docs pass: those on a page the pass wrote, or about a page it wrote
  * (a link to a page it removed or moved).
  * Pages it did not touch are already on main as they are; holding the pass to them blocks every
