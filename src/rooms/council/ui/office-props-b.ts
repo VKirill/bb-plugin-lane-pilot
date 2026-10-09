@@ -1,5 +1,5 @@
 import type * as ThreeType from "three";
-import type { PropsKit } from "./office-props-kit";
+import type { PropsKit } from "@lane-pilot/pixel-world";
 
 // Palette (reference.md §3) plus a few prop colours
 const LEAF = 0x669e3b;

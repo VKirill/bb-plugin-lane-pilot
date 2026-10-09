@@ -1,15 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import { t } from "@lane-pilot/i18n";
-import { buildOfficeFloor } from "./office-scene";
 import {
-  CAMERA_PITCH,
-  CAMERA_YAW,
-  PIXELS_PER_UNIT,
+  CAMERA_VIEW_DEFAULT,
+  CLIP_FADE,
+  PixelCameraControls,
   PixelPresenter,
-  ZOOM_SCALES,
-  getPixelStyle,
+  batchStatic,
+  clipForState,
+  loadPeople,
   sunPosition,
-} from "./office-pixel";
+  walkTimeScale,
+  type CameraView,
+  type People,
+  type Person,
+} from "@lane-pilot/pixel-world";
+import { buildOfficeFloor } from "./office-scene";
 import { applyCharacterPose, buildCharacter, pickCharacterLook, type CharacterModel } from "./office-character";
 import {
   OFFICE_SEATS,
@@ -32,17 +37,7 @@ import {
   type OfficeSeat,
   type OfficeSimAgent,
 } from "./office-behaviour";
-import {
-  CLIP_FADE,
-  SEAT_HEIGHT_CHAIR,
-  clipForState,
-  loadOfficePeople,
-  pickPersonVariant,
-  seatHeightForPoint,
-  walkTimeScale,
-  type OfficePeople,
-  type Person,
-} from "./office-people";
+import { SEAT_HEIGHT_CHAIR, pickPersonVariant, seatHeightForPoint } from "./office-people";
 import { loadOfficeCars, type OfficeCars } from "./office-cars";
 
 export type CouncilOfficeProps = {
@@ -71,14 +66,8 @@ const STAFF_COLORS = ["#e8833a", "#4f9d4a", "#3d7cc9", "#9a5bb5", "#d9a03f", "#c
 const RECEPTIONIST_COLOR = "#2c9a8f";
 const CHAT_GLYPHS = ["…", "ха", "!", "?", "👍", "☕"];
 
-/**
- * Camera: 2:1 dimetric (azimuth 45°, pitch 30°), four views 90° apart, fixed pitch. `zoom` is the
- * CSS pixels per render pixel (one of ZOOM_SCALES); 0 means the largest step that fits the floor.
- */
-const VIEW_DEFAULT = { yaw: CAMERA_YAW, pitch: CAMERA_PITCH, zoom: 0, tx: 0, tz: 0 };
-/** A drag this long (CSS px) turns the office by one view. */
-const TURN_DRAG_PX = 50;
-type OfficeView = typeof VIEW_DEFAULT;
+/** The view point may move this far from the floor centre (the floor is 40 × 20). */
+const PAN_LIMIT = { x: 20, z: 10 };
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -151,7 +140,7 @@ export function CouncilOffice({
   const [chatGlyphs, setChatGlyphs] = useState<Record<string, string>>({});
   const [staffIds, setStaffIds] = useState<string[]>(() => staffIdsFor(actors.map((a) => a.id)));
   const [viewMoved, setViewMoved] = useState(false);
-  const viewTargetRef = useRef<OfficeView>({ ...VIEW_DEFAULT });
+  const viewTargetRef = useRef<CameraView>({ ...CAMERA_VIEW_DEFAULT });
   const staffOverlayRef = useRef(new Map<string, HTMLDivElement>());
 
   // Mutable refs so the animation loop never closes over stale props and the scene is not recreated
@@ -229,32 +218,39 @@ export function CouncilOffice({
         setHasWebGL(false);
         return;
       }
-      // 3D pixel art: low-res target, depth outlines, nearest upscale (office-pixel.ts)
+      // 3D pixel art: low-res target, depth outlines, nearest upscale (@lane-pilot/pixel-world)
       const presenter = new PixelPresenter(THREE, renderer);
 
       const scene = new THREE.Scene();
       const disposables: Array<{ dispose: () => void }> = [];
 
-      // Camera: orthographic, azimuth 33°, elevation 30°, target = floor centre
+      // Camera: orthographic, 2:1 dimetric (pixel-world camera controls place it)
       const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 500);
-      // The view eases towards the target the controls set (frame-rate independent)
-      const view: OfficeView = { ...viewTargetRef.current };
-      let fitCenterY = 1.3;
-      /** The zoom step that fits the whole floor (CSS px per render pixel). */
-      let autoScale: number = ZOOM_SCALES[1];
-      const pixelStyle = getPixelStyle(THREE);
       const sunLight = { current: null as import("three").DirectionalLight | null };
-      const currentScale = (zoom: number) => (zoom > 0 ? zoom : autoScale);
-      const applyView = () => {
-        presenter.setScale(currentScale(view.zoom));
-        presenter.placeCamera(camera, view, fitCenterY);
-        pixelStyle.setFrontWalls(view.yaw);
-        if (sunLight.current) sunPosition(view.yaw, sunLight.current.position);
-      };
+      const motionReduced =
+        typeof window !== "undefined" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      // The view eases towards the target the controls set (the target outlives the scene: viewTargetRef)
+      const controls = new PixelCameraControls({
+        THREE,
+        canvas,
+        presenter,
+        camera,
+        target: viewTargetRef.current,
+        panLimit: PAN_LIMIT,
+        reducedMotion: motionReduced,
+        onApply: (view) => {
+          if (sunLight.current) sunPosition(view.yaw, sunLight.current.position);
+        },
+        onMoved: () => setViewMoved(true),
+        onReset: () => setViewMoved(false),
+      });
 
       buildOfficeFloor({ THREE, scene, disposables });
+      // The ~2000 static meshes become two draw calls; the box cars stay apart (they are hidden once the GLB cars load)
+      disposables.push(batchStatic(THREE, scene, { isolate: (o) => o.userData.boxCar === true }));
       sunLight.current = scene.getObjectByName("sun") as import("three").DirectionalLight | null;
-      applyView();
+      controls.apply();
 
       const outlineMat = new THREE.LineBasicMaterial({ color: OUTLINE_COLOR });
       disposables.push(outlineMat);
@@ -263,7 +259,7 @@ export function CouncilOffice({
       const characterKit = { THREE, outlineMaterial: outlineMat, disposables };
 
       /** The rigged people, parsed once in the background; until then (or if that fails) the procedural rig stands in. */
-      let people: OfficePeople | null = null;
+      let people: People | null = null;
       const makePerson = (id: string): Person | null => {
         if (!people) return null;
         const others = [...charRigs.entries()].filter(([otherId]) => otherId !== id).flatMap(([, r]) => (r.person ? [r.person.variant] : []));
@@ -321,7 +317,7 @@ export function CouncilOffice({
       }, () => {});
 
       // Rigged people replace the procedural ones that already stand on the floor once the GLB is parsed
-      loadOfficePeople(THREE).then((loaded) => {
+      loadPeople(THREE).then((loaded) => {
         if (disposed) {
           loaded.dispose();
           return;
@@ -354,113 +350,14 @@ export function CouncilOffice({
         const h = container.clientHeight || 240;
         presenter.resize(w, h, Math.min(window.devicePixelRatio || 1, 3));
         const { viewHeight, centerY } = fitOfficeCamera(w / h);
-        fitCenterY = centerY;
-        // Default: the largest whole-pixel scale at which the building nearly fits; up to 20 % may run past the
-        // edges (mostly street and lawn), otherwise a BB panel narrower than the floor gets a tiny 1× office
-        autoScale = [...ZOOM_SCALES].reverse().find((step) => viewHeight * PIXELS_PER_UNIT * step <= h * 1.2) ?? ZOOM_SCALES[0];
-        applyView();
+        controls.fit(viewHeight, centerY, h);
       };
 
-      // Orbit controls: drag rotates, right/shift-drag or two fingers move, wheel or pinch zooms, double-click resets
-      const pointers = new Map<number, { x: number; y: number }>();
-      let pinchDistance = 0;
-      const target = viewTargetRef.current;
-      const markMoved = () => setViewMoved(true);
-      let turnDrag = 0;
-      /** One zoom step in or out along ZOOM_SCALES from the current scale. */
-      const stepZoom = (direction: number) => {
-        const now = currentScale(target.zoom);
-        const index = ZOOM_SCALES.findIndex((step) => step >= now);
-        const from = index < 0 ? ZOOM_SCALES.length - 1 : index;
-        target.zoom = ZOOM_SCALES[clamp(from + direction, 0, ZOOM_SCALES.length - 1)]!;
-      };
-      const panBy = (dxPx: number, dyPx: number) => {
-        const unitsPerPx = 1 / (PIXELS_PER_UNIT * currentScale(target.zoom));
-        const right = { x: Math.cos(target.yaw), z: -Math.sin(target.yaw) };
-        const back = { x: Math.sin(target.yaw), z: Math.cos(target.yaw) };
-        const lift = 1 / Math.max(0.3, Math.sin(target.pitch));
-        target.tx = clamp(target.tx - (dxPx * right.x + dyPx * -back.x * lift) * unitsPerPx, -20, 20);
-        target.tz = clamp(target.tz - (dxPx * right.z + dyPx * -back.z * lift) * unitsPerPx, -10, 10);
-      };
-      const onPointerDown = (e: PointerEvent) => {
-        canvas.setPointerCapture(e.pointerId);
-        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-        turnDrag = 0;
-        if (pointers.size === 2) {
-          const [a, b] = [...pointers.values()];
-          pinchDistance = Math.hypot(a!.x - b!.x, a!.y - b!.y);
-        }
-      };
-      const onPointerMove = (e: PointerEvent) => {
-        const prev = pointers.get(e.pointerId);
-        if (!prev) return;
-        const dx = e.clientX - prev.x;
-        const dy = e.clientY - prev.y;
-        pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-        if (pointers.size >= 2) {
-          const [a, b] = [...pointers.values()];
-          const dist = Math.hypot(a!.x - b!.x, a!.y - b!.y);
-          if (pinchDistance > 0 && (dist / pinchDistance > 1.25 || dist / pinchDistance < 0.8)) {
-            stepZoom(dist > pinchDistance ? 1 : -1);
-            pinchDistance = dist;
-          }
-          if (pinchDistance === 0) pinchDistance = dist;
-          panBy(dx / 2, dy / 2);
-        } else if (e.buttons === 2 || e.shiftKey) {
-          panBy(dx, dy);
-        } else {
-          // Dragging turns the office by whole views: each TURN_DRAG_PX of drag is a quarter turn
-          turnDrag += dx;
-          if (Math.abs(turnDrag) >= TURN_DRAG_PX) {
-            target.yaw -= Math.sign(turnDrag) * (Math.PI / 2);
-            turnDrag = 0;
-          }
-        }
-        markMoved();
-      };
-      const onPointerUp = (e: PointerEvent) => {
-        pointers.delete(e.pointerId);
-        pinchDistance = 0;
-      };
-      let wheelDelta = 0;
-      const onWheel = (e: WheelEvent) => {
-        e.preventDefault();
-        wheelDelta += e.deltaY;
-        if (Math.abs(wheelDelta) >= 40) {
-          stepZoom(wheelDelta < 0 ? 1 : -1);
-          wheelDelta = 0;
-        }
-        markMoved();
-      };
-      const onDoubleClick = () => {
-        Object.assign(target, VIEW_DEFAULT);
-        setViewMoved(false);
-      };
-      const onContextMenu = (e: Event) => e.preventDefault();
-      canvas.addEventListener("pointerdown", onPointerDown);
-      canvas.addEventListener("pointermove", onPointerMove);
-      canvas.addEventListener("pointerup", onPointerUp);
-      canvas.addEventListener("pointercancel", onPointerUp);
-      canvas.addEventListener("wheel", onWheel, { passive: false });
-      canvas.addEventListener("dblclick", onDoubleClick);
-      canvas.addEventListener("contextmenu", onContextMenu);
-      const removeControls = () => {
-        canvas.removeEventListener("pointerdown", onPointerDown);
-        canvas.removeEventListener("pointermove", onPointerMove);
-        canvas.removeEventListener("pointerup", onPointerUp);
-        canvas.removeEventListener("pointercancel", onPointerUp);
-        canvas.removeEventListener("wheel", onWheel);
-        canvas.removeEventListener("dblclick", onDoubleClick);
-        canvas.removeEventListener("contextmenu", onContextMenu);
-      };
+      controls.attach();
 
       resizeObserver = new ResizeObserver(handleResize);
       resizeObserver.observe(container);
       handleResize();
-
-      const motionReduced =
-        typeof window !== "undefined" &&
-        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
       let lastTime = performance.now();
       let lastReactionCheck = Date.now();
@@ -568,22 +465,7 @@ export function CouncilOffice({
         const timeSec = nowTime / 1000;
         if (!motionReduced) cars?.update(dt);
 
-        // Ease the view towards the controls' target: exponential smoothing, independent of frame rate
-        const ease = motionReduced ? 1 : 1 - Math.exp(-12 * dt);
-        const goal = viewTargetRef.current;
-        // Take the short way round after a reset, and land exactly on the snapped view
-        view.yaw = goal.yaw + Math.atan2(Math.sin(view.yaw - goal.yaw), Math.cos(view.yaw - goal.yaw));
-        if (
-          Math.abs(goal.yaw - view.yaw) + Math.abs(goal.pitch - view.pitch) + (goal.zoom === view.zoom ? 0 : 1) +
-          Math.abs(goal.tx - view.tx) + Math.abs(goal.tz - view.tz) > 1e-4
-        ) {
-          view.yaw = Math.abs(goal.yaw - view.yaw) < 2e-3 ? goal.yaw : view.yaw + (goal.yaw - view.yaw) * ease;
-          view.pitch = goal.pitch;
-          view.zoom = goal.zoom; // pixel zoom steps are not eased
-          view.tx += (goal.tx - view.tx) * ease;
-          view.tz += (goal.tz - view.tz) * ease;
-          applyView();
-        }
+        controls.update(dt);
 
         const currentDetail = detailRef.current;
         const currentCursor = cursorRef.current;
@@ -822,7 +704,7 @@ export function CouncilOffice({
         disposed = true;
         if (animId !== null) cancelAnimationFrame(animId);
         if (resizeObserver) resizeObserver.disconnect();
-        removeControls();
+        controls.dispose();
         for (const rig of charRigs.values()) rig.person?.dispose();
         people?.dispose();
         cars?.dispose();
@@ -1017,7 +899,7 @@ export function CouncilOffice({
                 className="pointer-events-auto border-2 border-slate-900 bg-amber-200 px-2 py-0.5 font-bold"
                 style={{ boxShadow: "2px 2px 0 #0f172a" }}
                 onClick={() => {
-                  Object.assign(viewTargetRef.current, VIEW_DEFAULT);
+                  Object.assign(viewTargetRef.current, CAMERA_VIEW_DEFAULT);
                   setViewMoved(false);
                 }}
                 data-testid="council-camera-reset"

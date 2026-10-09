@@ -1,8 +1,8 @@
 import type * as ThreeType from "three";
+import { CAMERA_YAW, WALL_STUB_HEIGHT, createPropsKit, getPixelStyle, sunPosition } from "@lane-pilot/pixel-world";
 import { OFFICE_PROPS, OFFICE_WALLS, gridRect, type PropFootprint } from "./office-layout";
 import { buildPropsA } from "./office-props-a";
 import { buildPropsB } from "./office-props-b";
-import { MESH_EDGE_LINES, WALL_STUB_HEIGHT, getPixelStyle, sunPosition, CAMERA_YAW } from "./office-pixel";
 
 export type OfficeSceneOptions = {
   THREE: typeof import("three");
@@ -61,105 +61,12 @@ const mid = (a: number, b: number) => (a + b) / 2;
  * the furniture from `OFFICE_PROPS`, and the exterior lot. Every solid has dark pixel outlines.
  */
 export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptions): void {
-  const outlineMat = new THREE.LineBasicMaterial({ color: OUTLINE });
-  disposables.push(outlineMat);
   const pixelStyle = getPixelStyle(THREE);
   disposables.push(pixelStyle.gradient);
 
-  /** Name given to every mesh built next: the geometry audit reports overlaps by part. */
-  let part = "floor";
-  const materials = new Map<string, ThreeType.MeshToonMaterial>();
-  const material = (color: number, opacity?: number) => {
-    const key = `${color}:${opacity ?? 1}`;
-    let mat = materials.get(key);
-    if (!mat) {
-      mat = pixelStyle.toon({ color, transparent: opacity !== undefined, opacity: opacity ?? 1 });
-      materials.set(key, mat);
-      disposables.push(mat);
-    }
-    return mat;
-  };
-
-  /** Box from world bounds, outlined unless `outline` is false. */
-  const box = (
-    parent: ThreeType.Object3D,
-    minX: number,
-    maxX: number,
-    minY: number,
-    maxY: number,
-    minZ: number,
-    maxZ: number,
-    color: number,
-    opts?: { outline?: boolean; opacity?: number }
-  ): ThreeType.Mesh => {
-    const geom = new THREE.BoxGeometry(maxX - minX, maxY - minY, maxZ - minZ);
-    disposables.push(geom);
-    const mesh = new THREE.Mesh(geom, material(color, opts?.opacity));
-    mesh.name = part;
-    mesh.position.set(mid(minX, maxX), mid(minY, maxY), mid(minZ, maxZ));
-    if (MESH_EDGE_LINES && opts?.outline !== false) {
-      const edges = new THREE.EdgesGeometry(geom, 30);
-      disposables.push(edges);
-      mesh.add(new THREE.LineSegments(edges, outlineMat));
-    }
-    parent.add(mesh);
-    return mesh;
-  };
-
-  /** Box over a grid rectangle (gx0–gx1 × gz0–gz1) and a height range. */
-  const gridBox = (
-    parent: ThreeType.Object3D,
-    gx0: number,
-    gx1: number,
-    gz0: number,
-    gz1: number,
-    minY: number,
-    maxY: number,
-    color: number,
-    opts?: { outline?: boolean; opacity?: number }
-  ) => {
-    const r = gridRect(gx0, gx1, gz0, gz1);
-    return box(parent, r.minX, r.maxX, minY, maxY, r.minZ, r.maxZ, color, opts);
-  };
-
-  const cylinder = (parent: ThreeType.Object3D, x: number, z: number, radius: number, minY: number, maxY: number, color: number) => {
-    const geom = new THREE.CylinderGeometry(radius, radius, maxY - minY, 8);
-    disposables.push(geom);
-    const mesh = new THREE.Mesh(geom, material(color));
-    mesh.position.set(x, mid(minY, maxY), z);
-    parent.add(mesh);
-    return mesh;
-  };
-
-  /**
-   * Faceted ball for canopies, bushes and leaf clusters. Pixel art outlines only the silhouette,
-   * so the outline is an inverted hull (a slightly larger back-face shell), not every facet edge.
-   */
-  const hullMat = new THREE.MeshBasicMaterial({ color: OUTLINE, side: THREE.BackSide });
-  disposables.push(hullMat);
-  const flatMaterials = new Map<number, ThreeType.MeshToonMaterial>();
-  const blob = (parent: ThreeType.Object3D, x: number, y: number, z: number, radius: number, color: number, squashY = 1) => {
-    const geom = new THREE.IcosahedronGeometry(radius, 1);
-    geom.computeVertexNormals(); // non-indexed: one normal per facet (toon materials have no flatShading)
-    disposables.push(geom);
-    let mat = flatMaterials.get(color);
-    if (!mat) {
-      mat = pixelStyle.toon({ color });
-      flatMaterials.set(color, mat);
-      disposables.push(mat);
-    }
-    const mesh = new THREE.Mesh(geom, mat);
-    mesh.name = part;
-    mesh.position.set(x, y, z);
-    mesh.scale.y = squashY;
-    if (MESH_EDGE_LINES) {
-      const hull = new THREE.Mesh(geom, hullMat);
-      hull.scale.setScalar(1 + 0.07 / radius);
-      mesh.add(hull);
-    }
-    parent.add(mesh);
-    return mesh;
-  };
+  // Grid point (0, 0) is the north-west corner of the floor
+  const kit = createPropsKit({ THREE, scene, disposables, gridOrigin: { x: -20, z: -10 } });
+  const { box, gridBox, blob, cylinder, material, setPart } = kit;
 
   /** Leafy pot plant: a pot, soil and a fan of leaves around a central cluster. */
   const pottedPlant = (cx: number, cz: number, potHalf: number, height: number, pot: number) => {
@@ -183,7 +90,7 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
   // ==========================================
   // 1. SLAB, GROUND, PAVING AND TREES
   // ==========================================
-  part = "exterior";
+  setPart("exterior");
   scene.background = new THREE.Color(SKY);
   // The slab top stays just below the floor zones, so the two never share a plane (no z-fighting)
   box(scene, -20, 20, -0.5, -0.05, -10, 10, SLAB, { outline: false });
@@ -224,7 +131,7 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
   // ==========================================
   // 2. FLOOR ZONES
   // ==========================================
-  part = "floor";
+  setPart("floor");
   for (const zone of FLOOR_ZONES) {
     gridBox(scene, zone.gx0, zone.gx1, zone.gz0, zone.gz1, -0.05, 0, zone.color, { outline: false });
   }
@@ -259,7 +166,7 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
   // ==========================================
   // 3. WALLS, WINDOWS AND DOORS
   // ==========================================
-  part = "walls";
+  setPart("walls");
   const WALL_H = 3.5;
   // Back walls: north (gz 0) and west (gx 0), full height
   // Every outer wall is a stub plus a tall part above WALL_STUB_HEIGHT; the shader cuts the tall part
@@ -541,7 +448,7 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
 
   for (const furniture of OFFICE_PROPS) {
     const { id, kind, minX, maxX, minZ, maxZ, zone } = furniture;
-    part = id;
+    setPart(id);
     const cx = mid(minX, maxX);
     const cz = mid(minZ, maxZ);
 
@@ -712,7 +619,7 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
     }
   }
 
-  part = "details";
+  setPart("details");
   // Stools at the kitchen island (grid 14.5 / 16 / 17.5, gz 17.7)
   for (const gx of [14.5, 16, 17.5]) {
     box(scene, gx - 20 - 0.04, gx - 20 + 0.04, 0, 0.62, 7.66, 7.74, 0x3a3d4a);
@@ -761,10 +668,9 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
   gridBox(scene, 2, 7, 15, 18, 0, 0.02, 0xdc9a5d, { outline: false });
 
   // Extra props (two modules): desk clutter, wall decor, kitchen and lounge things, the lot outside
-  const kit = { THREE, scene, disposables, box, gridBox, blob, cylinder, material, OUTLINE, setPart: (name: string) => { part = name; } };
-  part = "props-a";
+  setPart("props-a");
   buildPropsA(kit);
-  part = "props-b";
+  setPart("props-b");
   buildPropsB(kit);
 
   // Lights: ambient plus one directional light from (1, 2, 0.35), no shadows (reference.md §4).
