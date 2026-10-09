@@ -324,10 +324,10 @@ Size: 1.15 total height. Legs 0.4, torso 0.5×0.45×0.32, head a 0.42 cube with 
 
 * `OrthographicCamera`. Direction from the target: **azimuth 33°** from +Z towards +X, **elevation 30°**. Offset = `R · (0.4716, 0.5, 0.7263)`, so with R = 60, camera at target + (28.3, 30.0, 43.6). This is the picture's view: the long north wall runs almost flat across the screen (slope ≈ 0.32) and the west wall drops steeper (≈ 0.77). Today's (12,14,12) 45° view cannot fill a wide block.
 * Target = floor centre (0, 0, 0) (= grid gx 20, gz 10). The projected bounds of slab + back walls are **44.4 × 22.7 units (1.95:1)** for the 40×20 floor (were 37.7 × 20.6 for 32×20), centred 1.3 units above the target on screen. Shift the frustum by that.
-* **Fit = contain + 3 % padding**: `viewHeight = max(22.7, 44.4 / aspect) × 1.03`. A 1280×656 block (1.95) fits exactly. A 21:9 block shows the lot on both sides, and a tall block shows the lot above and below. No grey band at any size.
-* Mobile (block narrower than 640): start at **cover-height** zoom (`viewHeight = 22.7 × 1.03`) centred on the meeting table (world −14, 0, −5). One-finger drag pans, pinch zooms (clamp 1×–2.5× of contain). A «⌖» button recentres.
+* **Fit = contain + 3 % padding**: `viewHeight = max(22.7, 44.4 / aspect) × 1.03`. A 1280×656 block (1.95) fits exactly. A 21:9 block shows the lot on both sides, and a taller block (e.g. 1024 with the drawer) shows the lot above and below. No grey band at any size.
+* The office is desktop-only (content block ≥ 1024 px, see `layout.md` §0). No pan, no zoom: the camera is always the contain fit above.
 * Light: `AmbientLight(#ffffff, 0.72)` + `DirectionalLight(#fff5ea, 0.45)` from direction (1.0, 2.0, 0.35), so tops are brightest, +X faces lit and +Z faces one step darker (the wall pair `#f7edd2` / `#e6cfaf` above). No shadows. `MeshLambertMaterial` only.
-* Pixel look: `renderer.setPixelRatio(0.5)` on ≥ 768 (1 render pixel = 2 CSS px) and `0.75` below. Canvas CSS `image-rendering: pixelated`, `antialias: false`. HTML overlays (tags, bubbles) stay crisp on top.
+* Pixel look: `renderer.setPixelRatio(0.5)` (1 render pixel = 2 CSS px). Canvas CSS `image-rendering: pixelated`, `antialias: false`. HTML overlays (tags, bubbles) stay crisp on top.
 * Outlines: `EdgesGeometry(geom, 30)` + `LineBasicMaterial(#282a36)` on every box and person. At pixel ratio 0.5 they come out as 2 CSS px lines, like the picture.
 
 ## 5. Behaviour: the owner and the director's office
