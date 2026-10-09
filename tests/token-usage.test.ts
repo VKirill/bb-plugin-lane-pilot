@@ -422,3 +422,29 @@ describe("threadUsage", () => {
     expect(await threadUsage(bb, "thr_a", { since: 5000 })).toEqual({ tokens: 0, costUsd: 0, known: true });
   });
 });
+
+describe("token counter atomicity (incident 2026-10-10)", () => {
+  const twoTurns = {
+    thr_a: [
+      { seq: 1, createdAt: Date.now(), type: "client/turn/requested", data: { execution: { model: "gpt-5" } } },
+      usage(2, { last, total: last }),
+      usage(3, { last: { inputTokens: 5, outputTokens: 1, cachedInputTokens: 0, totalTokens: 6 }, total: { inputTokens: 15, outputTokens: 5, cachedInputTokens: 2, totalTokens: 20 } }),
+    ],
+  };
+
+  it("a failure between the counts and the cursor write does not count the same events again on the next pass", async () => {
+    const { bb, db } = host(twoTurns);
+    // The cursor write fails after the daily counts were written (the process dying between the two statements looks the same).
+    db.exec(`CREATE TRIGGER cursor_write_fails BEFORE INSERT ON lane_pilot_token_cursor BEGIN SELECT RAISE(ABORT, 'cursor_write_failed'); END`);
+    await expect(syncTokenUsage({ bb, db }, { sinceDays: 90 })).rejects.toThrow("cursor_write_failed");
+    db.exec(`DROP TRIGGER cursor_write_fails`);
+    await syncTokenUsage({ bb, db }, { sinceDays: 90 });
+    expect((await queryTokenUsage({ bb, db }, { range: "7d" })).byModel[0]?.total).toBe(20);
+  });
+
+  it("two passes that overlap (a reload while the old pass still runs) count each event once", async () => {
+    const { bb, db } = host(twoTurns);
+    await Promise.all([syncTokenUsage({ bb, db }, { sinceDays: 90 }), syncTokenUsage({ bb, db }, { sinceDays: 90 })]);
+    expect((await queryTokenUsage({ bb, db }, { range: "7d" })).byModel[0]?.total).toBe(20);
+  });
+});

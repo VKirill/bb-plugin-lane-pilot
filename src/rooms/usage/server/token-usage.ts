@@ -400,7 +400,7 @@ export async function syncTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDataba
       let providerId = cursor.last_provider || thread.providerId;
       let prev = { last: parseBreakdown(cursor.last_json), total: parseBreakdown(cursor.total_json), turnId: cursor.last_turn_id };
       let lastSeq = cursor.last_seq;
-      const apply = ctx.db.transaction((event: unknown) => {
+      const apply = (event: unknown) => {
         const type = eventType(event);
         const createdAt = eventCreatedAt(event);
         const tooOld = createdAt !== null && createdAt < since;
@@ -424,16 +424,22 @@ export async function syncTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDataba
           }
         }
         lastSeq = Math.max(lastSeq, eventSeq(event));
-      });
-      for (const event of events) apply(event);
-      saveCursor(ctx.db, thread, {
-        last_seq: lastSeq,
-        last_json: JSON.stringify(prev.last),
-        total_json: JSON.stringify(prev.total),
-        last_model: model,
-        last_provider: providerId,
-        last_turn_id: prev.turnId,
-      }, now);
+      };
+      // The counts and the cursor move in one transaction: a failure (or a kill) between them would leave counted events
+      // behind an old cursor, and the next pass would count them again. A pass that finds the cursor already moved since it
+      // read it (an overlapping pass, e.g. after a reload) drops its events: the other pass counted them.
+      ctx.db.transaction(() => {
+        if (loadCursor(ctx.db, thread.id).last_seq !== cursor.last_seq) return;
+        for (const event of events) apply(event);
+        saveCursor(ctx.db, thread, {
+          last_seq: lastSeq,
+          last_json: JSON.stringify(prev.last),
+          total_json: JSON.stringify(prev.total),
+          last_model: model,
+          last_provider: providerId,
+          last_turn_id: prev.turnId,
+        }, now);
+      }).immediate();
     }
     const usageCursors = ctx.db.prepare(`SELECT last_json, total_json FROM lane_pilot_token_cursor`).all() as Array<{ last_json: string; total_json: string }>;
     diagnostics.threadsWithUsage = usageCursors.filter((row) => hasTokens(parseBreakdown(row.last_json)) || hasTokens(parseBreakdown(row.total_json))).length;
