@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "writer-skill-pick-v2",
+  "task_sha256": "6952eefba9c2d764392d2bbd7d3a9c6b952d0bb65c7945492f2ef830075e4ed1",
+  "attempt": 2,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "1d968a054e589a48fed7f43fe9fd6e9e64f805f10b395bf1e16ba71029d31503",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-09T14:06:33.327Z",
+  "model": "claude-haiku-5-5"
+}

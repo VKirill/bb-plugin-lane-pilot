@@ -11,6 +11,7 @@
     ".": "./src/index.ts",
     "./judgments/output-guard": "./src/judgments/output-guard.ts",
     "./judgments/invoice-check": "./src/judgments/invoice-check.ts",
-    "./judgments/repair-group": "./src/judgments/repair-group.ts"
+    "./judgments/repair-group": "./src/judgments/repair-group.ts",
+    "./judgments/skill-pick": "./src/judgments/skill-pick.ts"
   }
 }
