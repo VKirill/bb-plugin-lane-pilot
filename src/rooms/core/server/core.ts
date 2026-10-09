@@ -15,7 +15,7 @@ import { writerServiceTier } from "@lane-pilot/models";
 import { GLOBAL_SETTINGS_PROJECT_ID, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { createNativeInstaller } from "../../native-install";
 import type { WriterBindingResolution } from "../../native-agent";
-import { parseRunPolicy } from "../../tasks";
+import { parseRunPolicy, retargetTask } from "../../tasks";
 import type { AttemptState } from "../../runs";
 import { cancelRejection } from "../../runs/server";
 import { recordStage } from "../../runs/server";
@@ -191,7 +191,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
     const merged=!attemptId&&binding?.state==="accepted"&&Boolean(binding.workspace_path)&&binding.workspace_path!==runWorkspacePath;
     const path=ownWorktree||merged?runWorkspacePath:(binding?.workspace_path??runWorkspacePath);
     return {path,environmentId:merged?getRun(db,runId)?.writer_environment_id??null:binding?.environment_id??null,
-      task:{...contractTask,project_cwd:path,verification:contractTask.verification.map((command)=>({...command,cwd:path}))}};
+      task:retargetTask(contractTask,path)};
   }
 
   function workspaceExecutionEnvironment(hostId:string, workspace:{path:string;environmentId:string|null}) {

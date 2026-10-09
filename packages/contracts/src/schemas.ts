@@ -86,7 +86,8 @@ export const taskV2Schema = z.object({
   verify: z.enum(["none", "smoke", "tests"]),
   verification: z.array(z.object({
     command: z.string().min(1),
-    cwd: z.string().startsWith("/"),
+    /** The folder the check runs in: absolute inside project_cwd, or relative to it (apps/marketing). Dispatch makes it absolute; the contract lint refuses one outside the project. */
+    cwd: z.string().min(1),
     timeout_sec: z.number().int().min(1).max(7200).optional(),
     /** Env Catalog names this check needs (kind secret or login): the server passes their values to the check as environment variables, by name; the writer never sees them. */
     secrets: z.array(secretNameSchema).max(16).optional(),

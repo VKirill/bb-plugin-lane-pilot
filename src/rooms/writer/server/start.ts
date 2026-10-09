@@ -14,7 +14,7 @@ import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../runs";
 import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, isWaitingSecret, isWriterSilent, repeatedFailureReason, taskFamily, turnFailureKey } from "../../runs";
 import { isTaskSatisfied } from "../../runs/server";
 import { previousAttemptBrief, stickyTurnPrompt } from "./writer-task";
-import { isMainfixTask } from "../../tasks";
+import { isMainfixTask, retargetTask } from "../../tasks";
 import { openDatabase } from "../../storage";
 import { createWriterSticky } from "./sticky";
 import { failureClass, type FailureClass } from "../../runs";
@@ -43,7 +43,7 @@ import { sendServiceMessage } from "../../relay/server";
 export function freshAttemptStart(task:TaskV2, config:PrototypeConfig, runWorkspace:string|null):{task:TaskV2;config:PrototypeConfig} {
   if (!runWorkspace || resolve(task.project_cwd) === resolve(runWorkspace)) return { task, config };
   return {
-    task:{...task,project_cwd:runWorkspace,verification:task.verification.map((command)=>({...command,cwd:runWorkspace}))},
+    task:retargetTask(task,runWorkspace),
     config:{...config,writerWorkspacePath:runWorkspace},
   };
 }
@@ -415,7 +415,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         && attemptsHere + 1 < MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT;
       /** Takes over an existing writer thread for this attempt; false leaves the attempt to a fresh spawn. */
       const continueWith = async (writer:NonNullable<Awaited<ReturnType<typeof sticky.hotWriter>>>, kind:"next-task"|"retry"|"merge", previousAttempt:string, keepDirt?:DirtSnapshot[]):Promise<boolean> => {
-        const bound = {...freshTask,project_cwd:writer.workspacePath,verification:freshTask.verification.map(command=>({...command,cwd:writer.workspacePath}))};
+        const bound = retargetTask(freshTask,writer.workspacePath);
         const turn = await sticky.continueInThread({ runId:input.runId, taskId:input.taskId, attemptId, config:freshConfig, writer, kind, dirtBefore:keepDirt,
           prompt:(conflicts) => stickyTurnPrompt({ kind, task:bound, previousAttempt:kind === "merge" && !previousAttempt.includes(REPLAY_CHECK_FAILED) ? "" : previousAttempt, conflicts, liveFolder }) });
         if (!turn.ok) {
@@ -513,8 +513,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               reasoningLevel:spawned.reasoningLevel,serviceTier:spawned.serviceTier,selectionSource:spawned.selectionSource,
             }:undefined;
             activeConfig = freshConfig;
-            activeTask = {...freshTask,project_cwd:spawned.workspacePath,
-              verification:freshTask.verification.map(command=>({...command,cwd:spawned.workspacePath}))};
+            activeTask = retargetTask(freshTask,spawned.workspacePath);
             // In a folder without git every attempt of the task starts from the same state (the owned files are rolled
             // back), so a file outside owns_paths that an earlier attempt left behind keeps counting as changed until undone.
             dirtBefore = liveFolder && baselineDirtBefore ? baselineDirtBefore : spawned.dirtBefore;
@@ -730,8 +729,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               reasoningLevel:spawned.reasoningLevel,serviceTier:spawned.serviceTier,selectionSource:spawned.selectionSource,
             }:undefined;
               activeConfig=freshConfig;
-              activeTask={...freshTask,project_cwd:spawned.workspacePath,
-                verification:freshTask.verification.map(command=>({...command,cwd:spawned.workspacePath}))};
+              activeTask=retargetTask(freshTask,spawned.workspacePath);
               executionPacketSha256=spawned.executionPacketSha256 ?? null;
               const fallbackWorkspace=getAttempt(db,emergencyAttemptId)?.workspace_path;
               dirtBefore=baselineWorkspacePath&&fallbackWorkspace===baselineWorkspacePath

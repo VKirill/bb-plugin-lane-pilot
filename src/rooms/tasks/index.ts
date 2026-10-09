@@ -6,5 +6,6 @@ export type { StageId, StageReceipt, StageState } from "@lane-pilot/contracts";
 export type { GateReport } from "./gate-report";
 export { RunWriterPool, buildRunExecutionProfile, buildRunPolicy, mapBounded, parseRunPolicy, shouldReconcileAttemptThread, shouldResumeWorktreeHolder, shouldScanLostWorktreeHolder } from "./run-policy";
 export { taskStem } from "./task-stem";
+export { mapVerificationCwd, retargetTask } from "./verification-cwd";
 export { classifyWriterOutput, isMainfixTask, isOutputPath, unownedExpectedOutputs } from "./validate-output";
 export type { VerifyResult } from "./validate-output";
