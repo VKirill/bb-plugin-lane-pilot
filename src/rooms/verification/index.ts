@@ -7,7 +7,7 @@ export { commitDocs, docsLineCounts, docsWorthinessFacts, gitDocsScope, revertPa
 export { appendExcludeCommand, createWorktree, integrateWorktree, persistTaskFolder, prepareWorktree, removeLaneWorktree, snapshotWorktree, syncWorktree, taskFolderRel } from "./git-integrate";
 export type { ReplayCheckOutcome } from "./git-integrate";
 export { gitOwnershipChangedPaths, resolveGitOwnershipBase } from "./git-ownership";
-export { bisectGateOnHost, runGateOnHost } from "./integration-gate-host";
+export { attributeGateOnHost, bisectGateOnHost, runGateOnHost } from "./integration-gate-host";
 export { findUnownedChanges, findUnownedRunChanges, resolveRunOwnershipScope, safeRelative, validateOwnershipContract } from "./ownership";
 export type { OwnershipTask } from "./ownership";
 export { createProviderGate, providerListed, providerSwitchOn, waitProviderEnvironment } from "./provider-gate";

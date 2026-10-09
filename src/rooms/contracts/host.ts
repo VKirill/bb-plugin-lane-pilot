@@ -284,6 +284,22 @@ export const hostContract = defineRpcContract({
       goodSha:z.string().regex(/^[a-f0-9]{7,64}$/), badSha:z.string().regex(/^[a-f0-9]{7,64}$/), timeoutSec:z.number().int().min(1).max(7200) }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["found", "none", "failed"]), commit:z.string().nullable(), reason:z.string().nullable() }).strict(),
   },
+  // Which merged commit can have broken which failing test: changed paths per commit, the workspace of each failing test, and a
+  // run of the failing test files on the base the batch started from (failing there too = pre-existing, nobody's to blame).
+  gateAttribute: {
+    input: z.object({
+      requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), baseSha:z.string().regex(/^[a-f0-9]{7,64}(\^1)?$/).nullable(),
+      commits:z.array(z.string().regex(/^[a-f0-9]{7,64}$/)).max(200),
+      failing:z.array(z.object({ file:z.string().min(1).max(500), workspacePackage:z.string().max(200).nullable() }).strict()).max(300),
+      timeoutSec:z.number().int().min(1).max(7200),
+    }).strict(),
+    output: z.object({
+      hostId:z.string(),
+      commits:z.record(z.string(), z.object({ paths:z.array(z.string()), workspaces:z.array(z.string()) }).strict()),
+      failing:z.array(z.object({ workspaceDir:z.string().nullable(), path:z.string().nullable(), preexisting:z.boolean().nullable() }).strict()),
+      baseline:z.object({ status:z.enum(["ran", "skipped", "failed"]), reason:z.string().nullable() }).strict(),
+    }).strict(),
+  },
   // A scheduled script (schedule board): runs as a host job so a reload of the hub loses the poll, not the script.
   runScript: {
     input: z.object({

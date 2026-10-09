@@ -1,6 +1,6 @@
 import { networkInterfaces } from "node:os";
 import { createWorktree, integrateWorktree, prepareWorktree, removeLaneWorktree, syncWorktree, snapshotWorktree, type ReplayCheckOutcome } from "../verification";
-import { bisectGateOnHost, runGateOnHost } from "../verification";
+import { attributeGateOnHost, bisectGateOnHost, runGateOnHost } from "../verification";
 import { buildDocsAnchors, docsDepth as readDocsDepth, docsStaleness, jevApiKey, provideJevKey, verifyDocsCitations } from "../verification";
 import { buildDocsFlows } from "../verification";
 import { runStabilityDrill } from "../verification";
@@ -108,6 +108,11 @@ export const gateRun: ExperimentalHostRpcHandlers<typeof hostContract>["gateRun"
 export const gateBisect: ExperimentalHostRpcHandlers<typeof hostContract>["gateBisect"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
   ...await bisectGateOnHost({basePath:input.basePath,command:input.command,goodSha:input.goodSha,badSha:input.badSha,timeoutSec:input.timeoutSec}),
+});
+
+export const gateAttribute: ExperimentalHostRpcHandlers<typeof hostContract>["gateAttribute"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  ...await attributeGateOnHost({basePath:input.basePath,baseSha:input.baseSha,commits:input.commits,failing:input.failing,timeoutSec:input.timeoutSec}),
 });
 
 /** Background jobs (B4): ordinary short calls; the long work runs in a process of its own, see src/jobs.ts. */

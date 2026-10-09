@@ -10,6 +10,9 @@ import { sendServiceMessage } from "../../relay/server";
 import { isEnvironmentCheckFailure } from "../../runs";
 import { gateLabel, gateResolverFor, type ResolvedGate } from "./gate-detect";
 import { continuesEpisode, fixesInFlight, type GateEpisode } from "./gate-episode";
+import { attributeFailures, testLabel } from "./gate-attribution";
+import { cacheHitsNote, extractCacheHits, extractFailingFiles, extractFailingTests } from "../gate-output";
+import type { GateAttributeResult } from "../integration-gate-host";
 import { join } from "node:path";
 
 export type GateWhen = "queue_drained" | "every_n";
@@ -42,32 +45,7 @@ export type FailingGateCheck = {
   failedFiles: string[];
 };
 
-export function extractFailingFiles(output: string): string[] {
-  const files = new Set<string>();
-  // Match test failure headers or tsc errors:
-  // e.g. FAIL tests/integration-gate.test.ts, ❯ tests/foo.test.ts:12:3
-  // src/file.ts:14:5 - error TS...
-  // (tests/foo.test.ts)
-  const lines = output.split("\n");
-  for (const line of lines) {
-    const tscMatch = line.match(/^([a-zA-Z0-9_./-]+\.(?:ts|tsx|js|jsx|mjs|cjs)):(\d+):(\d+)\s+-\s+error/);
-    if (tscMatch && tscMatch[1]) {
-      files.add(tscMatch[1].trim());
-      continue;
-    }
-    const vitestFail = line.match(/(?:FAIL|✕|❯)\s+([a-zA-Z0-9_./-]+\.(?:test|spec)\.(?:ts|tsx|js|jsx))/);
-    if (vitestFail && vitestFail[1]) {
-      files.add(vitestFail[1].trim());
-      continue;
-    }
-    const fileWithExt = line.match(/\b([a-zA-Z0-9_./-]+\.(?:test|spec)\.(?:ts|tsx|js|jsx))\b/);
-    if (fileWithExt && fileWithExt[1]) {
-      files.add(fileWithExt[1].trim());
-      continue;
-    }
-  }
-  return [...files];
-}
+export { extractFailingFiles };
 
 export type MergedTaskInfo = {
   taskId: string;
@@ -206,12 +184,16 @@ export function formatFixTurnPrompt(input: {
   stdout: string;
   stderr: string;
   logPath: string;
+  /** The failing tests your task's diff can have broken (the host checked they pass on the base and live in a workspace the task touched). */
+  failingTests?: string[];
+  /** Failing tests that also fail on the base commit: not this task's, to be left alone. */
+  preexistingTests?: string[];
 }): string {
   const tail = `${input.stderr}\n${input.stdout}`.trim().slice(-800);
   return `Result: integration gate failed after merging your task ${input.taskId}.
 Full check log: ${input.logPath}
 
-→ The integration gate command \`${input.gateCommand}\` exited with code ${input.exitCode}.
+→ The integration gate command \`${input.gateCommand}\` exited with code ${input.exitCode}.${input.failingTests?.length ? `\n→ Failing tests your change can have broken: ${input.failingTests.join(", ")}.` : ""}${input.preexistingTests?.length ? `\n→ Also red, but they fail without your change too (not yours, leave them): ${input.preexistingTests.join(", ")}.` : ""}
 → Output tail:
 ${tail}
 
@@ -333,6 +315,9 @@ export class IntegrationGateRunner {
     const stderr = ran.stderr;
     const passed = exitCode === 0;
 
+    // turbo answers a task from its cache without running it: a result the PM should know was not rerun.
+    const cache = extractCacheHits(`${stdout}\n${stderr}`);
+    const cacheNote = cacheHitsNote(cache);
     const receiptResult = {
       command: gateCommand,
       source: gate.source,
@@ -340,6 +325,7 @@ export class IntegrationGateRunner {
       exitCode,
       passed,
       mergesChecked: this.mergesSinceLastGate,
+      ...(cache.hits.length ? { cacheHits: cache.hits } : {}),
     };
 
     // The gate's verdict is a gate evaluation of the batch. It used to be written over the last merged task's own
@@ -382,14 +368,44 @@ export class IntegrationGateRunner {
     }
 
     // Gate failed. Find culprit.
-    const failingFiles = extractFailingFiles(`${stderr}\n${stdout}`);
+    const failingTests = extractFailingTests(`${stderr}\n${stdout}`);
+    const failingFiles = [...new Set(failingTests.map((test) => test.file))];
     const tasksToCheck = [...this.mergedTasksSinceLastGate];
 
-    // A folder without git has no commits to bisect and no merges to blame: the PM and the owner get the red result.
-    let culprit = input.live ? null : await findCulpritByFiles(failingFiles, tasksToCheck, readProjectFile);
+    // The host knows what each merged commit changed and which failing tests also fail on the base the batch started from.
+    let info: GateAttributeResult | null = null;
+    if (!input.live && failingTests.length) {
+      const commits = tasksToCheck.map((task) => task.commitSha).filter((sha) => /^[a-f0-9]{7,64}$/.test(sha));
+      const baseSha = this.lastGreenCommit ?? (commits[0] ? `${commits[0]}^1` : null);
+      const ATTRIBUTE_TIMEOUT_SEC = 20 * 60;
+      info = await host.call("gateAttribute", { requestedHostId: configHostId, basePath, baseSha, commits, failing: failingTests.slice(0, 300), timeoutSec: ATTRIBUTE_TIMEOUT_SEC },
+        { hostId: configHostId, timeoutMs: (ATTRIBUTE_TIMEOUT_SEC + 60) * 1000 }).catch((cause: unknown) => {
+        this.ctx.log(`integration-gate: could not attribute the failing tests on host ${configHostId}, the older file search is used: ${cause instanceof Error ? cause.message : String(cause)}`);
+        return null;
+      });
+    }
+    const attribution = attributeFailures(failingTests, tasksToCheck, info);
 
-    // Fallback: git bisect if ambiguous and we have a lastGreenCommit and merged tasks
+    let culprit: MergedTaskInfo | null = null;
     if (input.live) {
+      // A folder without git has no commits to bisect and no merges to blame: the PM and the owner get the red result.
+    } else if (attribution.strict) {
+      // Only a task whose diff touches a failing test (or its workspace) and that was green on the base can be the culprit.
+      const { candidates, remaining } = attribution;
+      if (candidates.length === 1) culprit = candidates[0]!;
+      else if (candidates.length > 1) {
+        culprit = await findCulpritByFiles(remaining.map((test) => test.file), candidates, readProjectFile);
+        if (!culprit && this.lastGreenCommit && ran.head && ran.head !== this.lastGreenCommit) {
+          const found = await bisectCulprit(host, configHostId, gateCommand, this.lastGreenCommit, ran.head, basePath, tasksToCheck);
+          culprit = found && candidates.includes(found) ? found : null;
+        }
+      }
+    } else {
+      culprit = await findCulpritByFiles(failingFiles, tasksToCheck, readProjectFile);
+    }
+
+    // Fallback (the host could not attribute): git bisect if ambiguous and we have a lastGreenCommit and merged tasks
+    if (input.live || attribution.strict) {
       // reported below
     } else if (!culprit && this.lastGreenCommit && tasksToCheck.length > 1) {
       const currentHead = ran.head;
@@ -399,6 +415,10 @@ export class IntegrationGateRunner {
     } else if (!culprit && tasksToCheck.length === 1) {
       culprit = tasksToCheck[0]!;
     }
+
+    const preexistingNote = attribution.preexisting.length
+      ? ` Pre-existing, not caused by this batch (they also fail on the base commit): ${attribution.preexisting.map(testLabel).join(", ")}.`
+      : "";
 
     // Reset counts for the next cycle
     this.mergesSinceLastGate = 0;
@@ -428,6 +448,7 @@ export class IntegrationGateRunner {
         stdout,
         stderr,
         logPath: logRelativePath,
+        ...(attribution.strict ? { failingTests: attribution.remaining.map(testLabel), preexistingTests: attribution.preexisting.map(testLabel) } : {}),
       });
 
       if (culprit.attemptId) {
@@ -438,7 +459,7 @@ export class IntegrationGateRunner {
 
       await sendServiceMessage(bb, {
         threadId: pmThreadId,
-        text: `Lane Pilot: integration gate ${label} failed. Traced to ${culprit.taskId}; sent fix turn to @thread:${culprit.threadId}. Full log: ${logRelativePath}`,
+        text: `Lane Pilot: integration gate ${label} failed. Traced to ${culprit.taskId} (its diff touches the failing tests or their workspace); sent fix turn to @thread:${culprit.threadId}.${preexistingNote}${cacheNote ? ` ${cacheNote}` : ""} Full log: ${logRelativePath}`,
         senderThreadId: culprit.threadId,
       }).catch(() => undefined);
 
@@ -447,17 +468,25 @@ export class IntegrationGateRunner {
 
     // Tell PM with log; the owner is asked what to do (a form in the PM chat and a push on the phone), once per red-gate episode.
     const tasks = tasksToCheck.map((task) => task.taskId).join(", ");
+    const allPreexisting = attribution.strict && failingTests.length > 0 && attribution.remaining.length === 0;
     const why = input.live
       ? `This folder has no git, so no culprit can be searched${tasks ? ` (tasks since the last gate: ${tasks})` : ""}.`
-      : "Could not unambiguously identify culprit.";
-    const failingList = failingFiles.length ? ` Failing tests: ${failingFiles.join(", ")}.` : "";
+      : allPreexisting
+        ? `All ${failingTests.length} failing tests also fail on the base from before this batch (pre-existing), so no merged task is to blame.`
+        : attribution.strict && attribution.candidates.length === 0
+          ? `No task merged in this batch touched the failing tests or their workspaces, so none is to blame.${preexistingNote}`
+          : `Could not unambiguously identify culprit.${preexistingNote}`;
+    const failingList = failingTests.length ? ` Failing tests: ${failingTests.map(testLabel).join(", ")}.` : "";
+    const cacheSuffix = cacheNote ? ` ${cacheNote}` : "";
     const { episode, repeat } = this.enterEpisode(runId, gateCommand, failingFiles);
     if (repeat) {
       await this.repeatRed(runId, pmThreadId, episode, failingFiles, `Lane Pilot: integration gate ${label} is still red (exit ${exitCode}), the same failing tests as before.${failingList} The owner was already asked about this red gate and is not asked again until a gate run is green. Full log: ${logRelativePath}`, tasksToCheck.map((task) => task.taskId));
       return { ran: true, passed: false, culpritTaskId: null };
     }
-    await this.tellPm(pmThreadId, `Lane Pilot: integration gate ${label} failed (exit ${exitCode}). ${why}${failingList} Full log: ${logRelativePath}`, {
-      question: `The integration gate \`${gateCommand}\` is red and no single task is to blame. What should the PM do?`,
+    await this.tellPm(pmThreadId, `Lane Pilot: integration gate ${label} failed (exit ${exitCode}). ${why}${failingList}${cacheSuffix} Full log: ${logRelativePath}`, {
+      question: allPreexisting
+        ? `The integration gate \`${gateCommand}\` is red, but its failing tests already fail without the work merged in this batch. What should the PM do?`
+        : `The integration gate \`${gateCommand}\` is red and no single task is to blame. What should the PM do?`,
       detail: `Full log: ${logRelativePath}\n\n${`${stderr}\n${stdout}`.trim().slice(-1200)}`,
       options: ["Investigate and fix it", "Leave it, I will look myself"],
     }, episode);

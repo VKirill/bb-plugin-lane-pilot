@@ -11,7 +11,7 @@ export const isHostJobKind = (method: string): method is HostJobKind => (HOST_JO
 /** The least a job may be waited for: its caller's own call timeout was sized for a call, not for the work behind it. */
 const MIN_WAIT_MS: Partial<Record<HostJobKind, number>> = {
   detect: 180_000, install: 600_000, rollback: 600_000, snapshot: 600_000, importConfig: 600_000, connectOpencode: 600_000,
-  coexistenceOperation: 600_000, coexistenceInventory: 180_000, gitIntegrate: 900_000, gitPrepareWorktree: 900_000, gateRun: 600_000, gateBisect: 600_000,
+  coexistenceOperation: 600_000, coexistenceInventory: 180_000, gitIntegrate: 900_000, gitPrepareWorktree: 900_000, gateRun: 600_000, gateBisect: 600_000, gateAttribute: 600_000,
 };
 /** Slack on top of a caller's own limit (runSandboxedCommand, runBrowserQa): the job's start-up is not the check's time. */
 const START_SLACK_MS = 60_000;
