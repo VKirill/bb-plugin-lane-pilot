@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { LIVE_FALLBACK_MS, OFFLINE_POLL_MS } from "@lane-pilot/ui-kit/realtime-channel";
 
@@ -81,6 +81,9 @@ describe("the council page follows the server's signals (H6)", () => {
         get_council: () => { state.detailReads += 1; return { ...detail, messages: state.messages }; },
       },
     });
+    // On a desktop window the feed lives in the drawer, which starts collapsed (see council-page.test.tsx).
+    await waitFor(() => expect(view.getByTestId("council-peek")).toBeDefined());
+    fireEvent.click(view.getByTestId("council-drawer-toggle"));
     await waitFor(() => expect(view.getByTestId("council-messages").textContent).toContain("Q?"));
     const before = state.detailReads;
     state.messages = [...detail.messages, { seq: 2, seatId: "product", round: 1, kind: "position", text: "Drop the account step.", at: 2 }];
