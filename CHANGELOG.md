@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.218
+
+- **The pixel office fills the BB panel.** In a panel narrower than the floor the default scale fell to 1× and the office took a third of the view, with the lawn's edge showing in the corners. The default is now the largest whole-pixel scale at which the building nearly fits (up to a fifth of street and lawn may run past the edges), and the lawn is four times larger.
+
 ## 0.1.217
 
 - **The council office is real pixel art now.** The scene renders into a low-resolution target and is upscaled by whole pixels with nearest filtering (`office-pixel.ts`), through a true 2:1 dimetric camera (45° azimuth, 30° pitch) snapped to the render-pixel grid, so edges step cleanly and nothing shimmers while panning. Outlines are a depth post pass: one render pixel in a darker shade of the object's own colour, plus a light rim on top edges, instead of a black line on every box edge (those made pixels merge into mush). Materials are 3-tone toon shading with the light relative to the view. Dragging turns the office in four 90° views with an eased turn; the walls facing the camera are cut away in each view. Zoom steps through whole pixel scales (1, 2, 3, 4, 6, 8); double-click or «Reset view» returns to the default.
