@@ -1,14 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   assignOfficeSeats,
+  assignSeatColors,
   chooseIdleSpot,
   deriveOfficeActors,
   findOfficePath,
+  formatBubbleText,
   getOfficePose,
   isFloorBlocked,
   isLineSegmentBlocked,
   nextWanderTarget,
   seatColor,
+  stripMarkdown,
   walkStep,
   OFFICE_OBSTACLES,
   OFFICE_SEATS,
@@ -29,6 +32,47 @@ describe("seatColor", () => {
     const c2 = seatColor("skeptic");
     expect(c1).toBe(c2);
     expect(typeof c1).toBe("string");
+  });
+
+  it("assigns distinct colors to all seats of a council without collisions", () => {
+    const seats = [
+      { id: "product" },
+      { id: "skeptic" },
+      { id: "growth" },
+      { id: "finance" },
+      { id: "design" },
+    ];
+    const colors = seats.map((s) => seatColor(s.id, seats));
+    const uniqueColors = new Set(colors);
+    expect(uniqueColors.size).toBe(seats.length);
+
+    const map = assignSeatColors(seats);
+    expect(map.size).toBe(seats.length);
+  });
+});
+
+describe("stripMarkdown & formatBubbleText", () => {
+  it("strips headers, bold, italics, code and blockquotes", () => {
+    const markdown = "### Proposal\n\n**Bold text** with *italic* and `inline code`.\n> Important quote!\n- List item 1";
+    const stripped = stripMarkdown(markdown);
+    expect(stripped).not.toContain("###");
+    expect(stripped).not.toContain("**");
+    expect(stripped).not.toContain("`");
+    expect(stripped).not.toContain(">");
+    expect(stripped).toContain("Bold text with italic and inline code.");
+    expect(stripped).toContain("Important quote!");
+  });
+
+  it("strips links and keeps link text", () => {
+    const textWithLink = "Check [our dashboard](https://example.com/metrics) for details.";
+    expect(stripMarkdown(textWithLink)).toBe("Check our dashboard for details.");
+  });
+
+  it("truncates with ellipsis when longer than limit", () => {
+    const longText = "This is a very long speech from one of the council members about architecture and conversion.";
+    const bubble = formatBubbleText(longText, 40);
+    expect(bubble.length).toBeLessThanOrEqual(40);
+    expect(bubble.endsWith("…")).toBe(true);
   });
 });
 

@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "council-office-qa-fixes",
+  "task_sha256": "6a74c26f091c6d10e822e9cf6950dd111bcf41fe6b3459564641c4ece03b3822",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "5b41141f04775bec855082fab3480d4f98aa281f1edbd61fb3bd482e811e9a2e",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-09T09:46:01.652Z",
+  "model": "router9/ag/gemini-3.8-flash-medium"
+}

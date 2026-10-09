@@ -70,4 +70,16 @@ describe("council page", () => {
     expect(msg1).toBeDefined();
     expect(msg1?.className).toContain("border-amber-500");
   });
+
+  it("bounds the header with line-clamp and places agenda in disclosure", async () => {
+    const said: Array<Record<string, unknown>> = [];
+    const view = await mountCouncilPage(said);
+    await waitFor(() => expect(view.getByTestId("council-messages").textContent).toContain("Убрать шаг с аккаунтом."));
+
+    const header = view.getByTestId("council-header");
+    expect(header).toBeDefined();
+    const questionEl = header.querySelector(".line-clamp-2");
+    expect(questionEl).toBeDefined();
+    expect(questionEl?.textContent).toContain(detail.question);
+  });
 });

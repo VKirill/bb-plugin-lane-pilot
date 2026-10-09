@@ -120,16 +120,72 @@ export const OFFICE_SPOTS: Record<string, OfficeSpot> = {
   plant2: { key: "plant2", x: -3.5, z: 3.5, angle: -3 * Math.PI / 4, action: "plant" },
 };
 
-export function seatColor(id: string): string {
+export function seatColor(id: string, seatsOrIndex?: Array<{ id: string }> | number): string {
   if (id === "owner") return "#e11d48"; // rose
   if (id === "chair") return "#64748b"; // slate
   if (id === "moderator") return "#71717a"; // zinc
+
+  if (typeof seatsOrIndex === "number") {
+    return SEAT_PALETTE[Math.abs(seatsOrIndex) % SEAT_PALETTE.length]!;
+  }
+
+  if (Array.isArray(seatsOrIndex)) {
+    const regularSeats = seatsOrIndex.filter(
+      (s) => s.id !== "owner" && s.id !== "chair" && s.id !== "moderator"
+    );
+    const idx = regularSeats.findIndex((s) => s.id === id);
+    if (idx !== -1) {
+      return SEAT_PALETTE[idx % SEAT_PALETTE.length]!;
+    }
+  }
 
   let hash = 0;
   for (let i = 0; i < id.length; i++) {
     hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
   }
   return SEAT_PALETTE[hash % SEAT_PALETTE.length]!;
+}
+
+export function assignSeatColors(seats: Array<{ id: string }>): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const s of seats) {
+    map.set(s.id, seatColor(s.id, seats));
+  }
+  return map;
+}
+
+export function stripMarkdown(text: string): string {
+  return text
+    // Fenced code blocks
+    .replace(/```[\s\S]*?```/g, "")
+    // Inline code
+    .replace(/`([^`]+)`/g, "$1")
+    // Images
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    // Links
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    // Headers
+    .replace(/^#{1,6}\s+/gm, "")
+    // Blockquotes
+    .replace(/^>\s+/gm, "")
+    // Bold / italic
+    .replace(/(\*\*|__)(.*?)\1/g, "$2")
+    .replace(/(\*|_)(.*?)\1/g, "$2")
+    // Strikethrough
+    .replace(/~~(.*?)~~/g, "$1")
+    // Bullet / numbered lists
+    .replace(/^[\*\-+]\s+/gm, "")
+    .replace(/^\d+\.\s+/gm, "")
+    // Collapse whitespace
+    .replace(/\n+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function formatBubbleText(text: string, max = 80): string {
+  const plain = stripMarkdown(text);
+  if (plain.length <= max) return plain;
+  return `${plain.slice(0, max - 1).trimEnd()}…`;
 }
 
 export function isFloorBlocked(x: number, z: number, margin = 0): boolean {
@@ -650,11 +706,11 @@ export function deriveOfficeActors(
     actors.push({
       id: "chair",
       label: "Chair",
-      color: seatColor("chair"),
+      color: seatColor("chair", detail.seats),
       activity: "chair" === activeSpeakerId
         ? (activeMsg?.kind === "reply" ? "arguing" : "speaking")
         : (activeSpeakerId ? "waiting" : "idle"),
-      ...(activeSpeakerId === "chair" && activeMsg ? { bubble: truncateBubble(activeMsg.text) } : {}),
+      ...(activeSpeakerId === "chair" && activeMsg ? { bubble: formatBubbleText(activeMsg.text) } : {}),
       ...(activeSpeakerId === "chair" && activeMsg?.kind === "reply" && previousSpeakerId ? { facing: previousSpeakerId } : {}),
     });
 
@@ -663,11 +719,11 @@ export function deriveOfficeActors(
       actors.push({
         id: "owner",
         label: "Owner",
-        color: seatColor("owner"),
+        color: seatColor("owner", detail.seats),
         activity: "owner" === activeSpeakerId
           ? (activeMsg?.kind === "reply" ? "arguing" : "speaking")
           : (activeSpeakerId ? "waiting" : "idle"),
-        ...(activeSpeakerId === "owner" && activeMsg ? { bubble: truncateBubble(activeMsg.text) } : {}),
+        ...(activeSpeakerId === "owner" && activeMsg ? { bubble: formatBubbleText(activeMsg.text) } : {}),
         ...(activeSpeakerId === "owner" && activeMsg?.kind === "reply" && previousSpeakerId ? { facing: previousSpeakerId } : {}),
       });
     }
@@ -678,11 +734,11 @@ export function deriveOfficeActors(
       actors.push({
         id: seat.id,
         label: seat.title,
-        color: seatColor(seat.id),
+        color: seatColor(seat.id, detail.seats),
         activity: isSpeaking
           ? (activeMsg?.kind === "reply" ? "arguing" : "speaking")
           : (activeSpeakerId ? "waiting" : "idle"),
-        ...(isSpeaking && activeMsg ? { bubble: truncateBubble(activeMsg.text) } : {}),
+        ...(isSpeaking && activeMsg ? { bubble: formatBubbleText(activeMsg.text) } : {}),
         ...(isSpeaking && activeMsg?.kind === "reply" && previousSpeakerId ? { facing: previousSpeakerId } : {}),
       });
     }
@@ -706,7 +762,7 @@ export function deriveOfficeActors(
   const getLiveBubble = (id: string): string => {
     for (let i = detail.messages.length - 1; i >= 0; i--) {
       if (detail.messages[i]!.seatId === id) {
-        return truncateBubble(detail.messages[i]!.text);
+        return formatBubbleText(detail.messages[i]!.text);
       }
     }
     return "…";
@@ -729,7 +785,7 @@ export function deriveOfficeActors(
   actors.push({
     id: "chair",
     label: "Chair",
-    color: seatColor("chair"),
+    color: seatColor("chair", detail.seats),
     activity: chairIsSpeaking
       ? (latestMsg?.kind === "reply" && latestMsg.seatId === "chair" ? "arguing" : "speaking")
       : (isWandering ? "idle" : "waiting"),
@@ -743,7 +799,7 @@ export function deriveOfficeActors(
     actors.push({
       id: "owner",
       label: "Owner",
-      color: seatColor("owner"),
+      color: seatColor("owner", detail.seats),
       activity: ownerIsSpeaking
         ? (latestMsg?.kind === "reply" && latestMsg.seatId === "owner" ? "arguing" : "speaking")
         : (isWandering ? "idle" : "waiting"),
@@ -758,7 +814,7 @@ export function deriveOfficeActors(
     actors.push({
       id: seat.id,
       label: seat.title,
-      color: seatColor(seat.id),
+      color: seatColor(seat.id, detail.seats),
       activity: seatIsSpeaking
         ? (latestMsg?.kind === "reply" && latestMsg.seatId === seat.id ? "arguing" : "speaking")
         : (isWandering ? "idle" : "waiting"),

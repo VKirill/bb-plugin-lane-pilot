@@ -5,6 +5,7 @@ import {
   chooseIdleSpot,
   deriveOfficeActors,
   findOfficePath,
+  formatBubbleText,
   getOfficePose,
   seatColor,
   walkStep,
@@ -714,7 +715,14 @@ export function CouncilOffice({
             const screenX = Math.round(((projPos.x + 1) * w) / 2);
             const screenY = Math.round(((-projPos.y + 1) * h) / 2);
 
-            overlayEl.style.transform = `translate3d(${screenX}px, ${screenY}px, 0)`;
+            // Clamp inside office bounds so speech bubbles and tags don't clip horizontally
+            const adjX = Math.max(90, Math.min(w - 90, screenX));
+            // When close to top, flip bubble below head
+            const isFlipped = screenY < 110;
+            const adjY = isFlipped ? Math.max(10, screenY) : Math.min(h - 10, screenY);
+
+            overlayEl.setAttribute("data-flipped", isFlipped ? "true" : "false");
+            overlayEl.style.transform = `translate3d(${adjX}px, ${adjY}px, 0)`;
           }
         });
 
@@ -755,6 +763,15 @@ export function CouncilOffice({
     };
   }, [hasWebGL]);
 
+  // Moderator message presence (wall-speaker notice when selected or replayed)
+  const activeMsg = cursor !== null ? detail.messages.find((m) => m.seq === cursor) : null;
+  const isModeratorActive = (cursor !== null && activeMsg?.seatId === "moderator") || highlightSeatId === "moderator";
+  const moderatorMsg = (cursor !== null && activeMsg?.seatId === "moderator")
+    ? activeMsg
+    : highlightSeatId === "moderator"
+    ? detail.messages.slice().reverse().find((m) => m.seatId === "moderator")
+    : null;
+
   return (
     <div
       ref={containerRef}
@@ -765,6 +782,22 @@ export function CouncilOffice({
       }}
       data-testid="council-office"
     >
+      {/* Wall-speaker Moderator Notice */}
+      {isModeratorActive && moderatorMsg ? (
+        <div
+          className="pointer-events-auto absolute top-2.5 left-1/2 -translate-x-1/2 z-20 max-w-[320px] rounded bg-slate-900/90 px-3 py-1.5 text-[11px] font-sans text-amber-300 border-2 border-amber-400 shadow-[2px_2px_0_#0f172a] animate-in fade-in"
+          data-testid="council-moderator-notice"
+        >
+          <div className="font-mono text-[9px] font-bold text-amber-400 uppercase flex items-center gap-1.5 mb-0.5">
+            <span>📢</span>
+            <span>{t("councilModerator")}</span>
+          </div>
+          <div className="line-clamp-3 leading-snug text-slate-100">
+            <TypewriterText text={formatBubbleText(moderatorMsg.text, 120)} />
+          </div>
+        </div>
+      ) : null}
+
       {!hasWebGL ? (
         <div
           className="flex flex-col items-center justify-center gap-2 p-4 text-center text-slate-300"
@@ -815,7 +848,8 @@ export function CouncilOffice({
                       overlayMapRef.current.delete(actor.id);
                     }
                   }}
-                  className="pointer-events-auto absolute left-0 top-0 flex flex-col items-center -translate-x-1/2 -translate-y-full transition-[filter,opacity] duration-150 will-change-transform"
+                  data-flipped="false"
+                  className="pointer-events-auto absolute left-0 top-0 flex flex-col items-center -translate-x-1/2 transition-[filter,opacity] duration-150 will-change-transform data-[flipped=true]:translate-y-2 data-[flipped=true]:flex-col-reverse data-[flipped=false]:-translate-y-full"
                   style={{ transform: "translate3d(-9999px, -9999px, 0)" }}
                   onClick={() => onSelectSpeaker?.(actor.id)}
                 >
