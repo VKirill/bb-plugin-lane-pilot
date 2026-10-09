@@ -2,14 +2,14 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { THREAD_WATCH_EVENT_TYPES } from "@lane-pilot/thread-observe";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { afterEach, describe, expect, it } from "vitest";
-import plugin from "../../server";
-import { runBrowserQaOnHost, type BrowserQaInput } from "../../src/rooms/qa/browser-qa";
-import { claimActivation, countChargedAttempts, createAttempt, createRun, createTask, getAttempt, getRun, listGateEvents, listStageReceipts, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, saveTaskPlan, setAttemptHolderThread, setRunThread, setRunWorkspace, storeMemoryRecords, transitionAttempt } from "../../src/rooms/storage/database";
-import { memoryRecordId } from "../../src/rooms/memory/memory";
-import type { TaskV2 } from "../../src/rooms/contracts";
-import { buildRunPolicy } from "../../src/rooms/tasks/run-policy";
-import { docsInputHash } from "../../src/rooms/docs/docs";
+import { afterEach, describe, expect, it as vitestIt } from "vitest";
+import plugin from "../../../server";
+import { runBrowserQaOnHost, type BrowserQaInput } from "../../../src/rooms/qa/browser-qa";
+import { claimActivation, countChargedAttempts, createAttempt, createRun, createTask, getAttempt, getRun, listGateEvents, listStageReceipts, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, saveStageReceipt, saveTaskPlan, setAttemptHolderThread, setRunThread, setRunWorkspace, storeMemoryRecords, transitionAttempt } from "../../../src/rooms/storage/database";
+import { memoryRecordId } from "../../../src/rooms/memory/memory";
+import type { TaskV2 } from "../../../src/rooms/contracts";
+import { buildRunPolicy } from "../../../src/rooms/tasks/run-policy";
+import { docsInputHash } from "../../../src/rooms/docs/docs";
 
 const projectId = "stage-project";
 const pmThreadId = "stage-pm";
@@ -454,7 +454,21 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
   return { bb, db, harness, spawned, telemetryReads, docsWrites, sandboxRequests, gitChangedPaths, writerControl, fileReads, stopCalls, docsInventoryCalls:()=>docsInventoryCalls, hostRpcCalls, qaHostId };
 }
 
+/** The tests are registered in the order of the file; a part file runs the slice [from, to) of them (the file was one 94 s run). */
+export const STAGE_PARTS: ReadonlyArray<readonly [number, number]> = [[0, 20], [20, 48], [48, 86], [86, 124]];
+
+function slicedIt(part: number): typeof vitestIt {
+  const [from, to] = STAGE_PARTS[part]!;
+  let index = 0;
+  const mine = () => { const at = index++; return at >= from && at < to; };
+  const wrapped = ((name: never, fn: never, timeout: never) => { if (mine()) vitestIt(name, fn, timeout); }) as unknown as typeof vitestIt;
+  wrapped.skipIf = ((cond: unknown) => (name: never, fn: never, timeout: never) => { if (mine()) vitestIt.skipIf(cond as boolean)(name, fn, timeout); }) as unknown as typeof vitestIt.skipIf;
+  return wrapped;
+}
+
+export function registerStageTests(part: number) {
 describe("stage → native writer → receipt", () => {
+  const it = slicedIt(part);
   it("queues distinct task-owned outputs at provider pool size one and records both writer receipts",async()=>{
     // Each attempt checks the project folder, then its fresh worktree (both clean), then reads what its writer left there.
     const writerControl={hold:true,states:new Map<string,"active"|"idle">(),snapshots:[[],[],
@@ -597,9 +611,9 @@ describe("stage → native writer → receipt", () => {
     expect(dispatched.state).toBe("queued");
     const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId})));
     expect(result.state).toBe("accepted");
-    expect(JSON.parse((await import("../../src/rooms/storage/database")).getRun(db,"stage-run")!.run_policy_json))
+    expect(JSON.parse((await import("../../../src/rooms/storage/database")).getRun(db,"stage-run")!.run_policy_json))
       .toEqual({schemaVersion:1,pools:{provider:15,verification:2}});
-    const receipt=(await import("../../src/rooms/storage/database")).listStageReceipts(db,"stage-run",task.id)
+    const receipt=(await import("../../../src/rooms/storage/database")).listStageReceipts(db,"stage-run",task.id)
       .find((row)=>row.stageId==="writer-agent")?.result as {runV2?:unknown};
     expect(receipt.runV2).toMatchObject({schemaVersion:1,pools:{provider:15,verification:2},score:2,risk:"low",sourceRisk:"low"});
     expect((listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="writer-agent")?.result as {produced?:string[]})?.produced)
@@ -2683,3 +2697,4 @@ describe("stage → native writer → receipt", () => {
     }
   },20_000);
 });
+}
