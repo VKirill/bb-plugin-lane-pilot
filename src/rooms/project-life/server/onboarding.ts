@@ -1,5 +1,5 @@
 import { taskV2Schema } from "../../contracts";
-import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings } from "../../storage";
+import { claimStageSpawn, getRun, getTask, listStageReceipts } from "../../storage";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { resolveStageWriterSelection } from "../../writer";
 import { sha256 } from "../../tasks";
@@ -7,7 +7,7 @@ import { acceptedOnboardingEvidence, onboardingPreviewSchema, onboardingPreviewS
 import type { OnboardingInputPage } from "../onboarding";
 import { boundedAgentName } from "../../critique";
 import { OnboardingChildSnapshot, childResultObject, onboardingChildSnapshot } from "../../runs/server";
-import { fullAccessSpawn } from "../../core/server";
+import { fullAccessSpawn, stageHelperSettings } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { recordStage } from "../../runs/server";
 import { stringAt, valueAt } from "../../core/server";
@@ -28,7 +28,7 @@ export function createOnboardingStage(ctx: ServerCore, services: Services) {
     const task=workspace.task;
     const accepted=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="acceptance-receipt");
     if(accepted?.state!=="passed") throw new Error("onboarding preview requires an accepted writer receipt first");
-    const settings=loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId));
+    const settings=await stageHelperSettings(bb,db,args.projectId,args.runId);
     const agent=boundedAgentName(settings["onboarding.agent"],"project-onboarder");
     const depth=settings["onboarding.depth"]==="deep"?"deep":"fast";
     const selection=resolveStageWriterSelection({settings,config,stageProviderKey:"onboarding.provider",stageModelKey:"onboarding.model"});

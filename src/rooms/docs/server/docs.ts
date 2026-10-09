@@ -1,5 +1,5 @@
 import { taskV2Schema } from "../../contracts";
-import { claimDocsSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings } from "../../storage";
+import { claimDocsSpawn, getRun, getTask, listStageReceipts } from "../../storage";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { sha256 } from "../../tasks";
 import { extractModelJson } from "../../critique";
@@ -7,7 +7,7 @@ import { docsInputHash, docsMaintenancePrompt, docsSelection, parseDocsSettings,
 import type { DocsPage } from "../docs";
 import { boundedAgentName } from "../../critique";
 import { DocsChildSnapshot, docsChildSnapshot, docsResultObject, resolveDocsSnapshotPageCap } from "../../runs/server";
-import { configuredSetting } from "../../core/server";
+import { configuredSetting, stageHelperSettings } from "../../core/server";
 import { fullAccessSpawn } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { recordStage } from "../../runs/server";
@@ -28,7 +28,7 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
     const workspace=acceptedTaskWorkspace(args.runId,args.taskId,run.writer_workspace_path!,taskContract);
     const task=workspace.task;
     if (listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="acceptance-receipt")?.state !== "passed") throw new Error("docs maintenance requires an accepted writer receipt first");
-    const settings = loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId));
+    const settings = await stageHelperSettings(bb,db,args.projectId,args.runId);
     const docsAgent=boundedAgentName(settings["docs.agent"],"docs-maintainer");
     const docsChoice=docsSelection(settings);
     const docsProviderId=docsChoice.providerId;

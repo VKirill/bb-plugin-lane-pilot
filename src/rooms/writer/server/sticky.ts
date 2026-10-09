@@ -125,14 +125,29 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
     return true;
   }
 
-  /** The area's writer of this run, when its last task was accepted recently and the thread can take another. */
-  async function hotWriter(projectId: string, runId: string, area: string | undefined): Promise<HotWriter | null> {
+  /** The thread runs another provider or model than the writer setting names. A thread whose model is unknown is not a difference. */
+  async function threadOnOtherModel(threadId: string, wanted: { providerId: string; model: string }): Promise<boolean> {
+    try {
+      const options = await bb.sdk.threads.defaultExecutionOptions({ threadId });
+      const providerId = stringAt(options, "providerId"), model = stringAt(options, "model");
+      return Boolean(providerId && model && (providerId !== wanted.providerId || model !== wanted.model));
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * The area's writer of this run, when its last task was accepted recently, the thread can take another, and it still runs
+   * the writer setting's provider and model (`wanted`): a writer on another model is retired, and the task starts a fresh one.
+   */
+  async function hotWriter(projectId: string, runId: string, area: string | undefined, wanted?: { providerId: string; model: string }): Promise<HotWriter | null> {
     if (!area) return null;
     const record = await loadArea(bb.storage.kv, projectId, area);
     if (!record || record.runId !== runId || Date.now() - record.acceptedAt > STICKY_WINDOW_MS) return null;
     const previous = getAttempt(db, record.attemptId);
     if (!previous || previous.state !== "accepted" || previous.thread_id !== record.threadId) return null;
     if (!await threadUsable(previous)) return null;
+    if (wanted && await threadOnOtherModel(record.threadId, wanted)) return null;
     return { threadId:record.threadId, attemptId:previous.id, workspacePath:previous.workspace_path!, environmentId:previous.environment_id,
       decision:previous.workspace_decision, turns:threadTurns(record.threadId) };
   }

@@ -1,5 +1,5 @@
 import { taskV2Schema } from "../../contracts";
-import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, loadProjectSettings, searchMemoryRecords, storeMemoryRecords } from "../../storage";
+import { claimStageSpawn, getRun, getTask, listStageReceipts, searchMemoryRecords, storeMemoryRecords } from "../../storage";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { resolveStageWriterSelection } from "../../writer";
 import { sha256 } from "../../tasks";
@@ -7,7 +7,7 @@ import { memoryContext, memoryMaintenancePrompt, memoryRecordId, parseMemoryCand
 import { boundedAgentName } from "../../critique";
 import { MemoryChildSnapshot, childResultObject, memoryChildSnapshot, spawnRefused } from "../../runs/server";
 import { compactAcceptedResult } from "../../tasks/server";
-import { configuredSetting } from "../../core/server";
+import { configuredSetting, stageHelperSettings } from "../../core/server";
 import { fullAccessSpawn } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { recordStage } from "../../runs/server";
@@ -44,7 +44,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     const task=workspace.task;
     const accepted=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="acceptance-receipt");
     if(accepted?.state!=="passed"||!accepted.outputSha256) throw new Error("memory maintenance requires an accepted writer receipt first");
-    const settings=loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId));
+    const settings=await stageHelperSettings(bb,db,args.projectId,args.runId);
     const memoryAgent=boundedAgentName(settings["memory.agent"],"memory-maintainer");
     const memorySettings=parseMemorySettings(Object.fromEntries([
       "memory.enabled","memory.maintain","memory.inject","memory.audience","memory.personal_bot","memory.search_engine",
@@ -218,7 +218,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     if(valueAt(metadata,"role")!=="pm"||stringAt(metadata,"lanePilotRunId")!==args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
     const run=getRun(db,args.runId);
     if(!run||run.project_id!==args.projectId||run.pm_thread_id!==args.threadId||run.closed_at) throw new Error("run does not belong to this active PM thread and project");
-    const settings=loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId));
+    const settings=await stageHelperSettings(bb,db,args.projectId,args.runId);
     const memorySettings=parseMemorySettings(Object.fromEntries([
       "memory.enabled","memory.maintain","memory.inject","memory.audience","memory.personal_bot","memory.search_engine",
       "memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget",

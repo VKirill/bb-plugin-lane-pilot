@@ -1,10 +1,10 @@
 import { acceptanceArtifactDir } from "../../tasks";
 import { taskV2Schema } from "../../contracts";
-import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listOpenAttempts, listStageReceipts, loadProjectSettings } from "../../storage";
+import { claimStageSpawn, getRun, getTask, listOpenAttempts, listStageReceipts } from "../../storage";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { PROJECT_LIFE_DEFAULT_WRITER, findOutOfScopeProjectLifeWrites, foldCoveredTaskIds, parseProjectLifeFinalMessage, parseProjectLifeSettings, projectLifePrompt, projectLifeWriterSelection, shouldTriggerProjectLife } from "../project-life";
 import { ProjectLifeChildSnapshot, childResultObject, projectLifeChildSnapshot, spawnRefused } from "../../runs/server";
-import { configuredSetting } from "../../core/server";
+import { configuredSetting, stageHelperSettings } from "../../core/server";
 import { fullAccessSpawn } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { recordStage } from "../../runs/server";
@@ -51,7 +51,7 @@ export function createProjectLifeStage(ctx: ServerCore, services: Services) {
     const accepted=listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="acceptance-receipt");
     if(accepted?.state!=="passed") throw new Error("project-life maintenance requires an accepted writer receipt first");
 
-    const settings=loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId));
+    const settings=await stageHelperSettings(bb,db,args.projectId,args.runId);
     const projectLifeSettings=parseProjectLifeSettings({"project_life.enabled":configuredSetting(settings,"project_life.enabled")});
     const projectLifeSelection=projectLifeWriterSelection(settings);
     const projectLifeProviderId=projectLifeSelection.providerId;

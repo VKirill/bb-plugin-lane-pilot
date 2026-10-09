@@ -450,9 +450,14 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         executionPacketSha256 = null;
         return true;
       };
-      // The area's writer from an earlier task of this run takes this one in its own thread.
+      // The area's writer from an earlier task of this run takes this one in its own thread, unless the writer setting now names
+      // another provider or model: then this task gets a fresh writer on the current one (the spawn's own selection, below).
       if (!writerThreadId && input.task.area && !liveFolder) {
-        const hot = await sticky.hotWriter(input.projectId, input.runId, input.task.area);
+        const wanted = {
+          providerId: typeof runSettings["writer.provider"] === "string" ? runSettings["writer.provider"] as string : freshConfig.writerProviderId,
+          model: typeof runSettings["writer.model"] === "string" && runSettings["writer.model"] ? runSettings["writer.model"] as string : freshConfig.writerModel,
+        };
+        const hot = await sticky.hotWriter(input.projectId, input.runId, input.task.area, wanted);
         if (hot) await continueWith(hot, "next-task", "");
       }
       while (attemptsLeft()) {
