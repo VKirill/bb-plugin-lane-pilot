@@ -27,6 +27,7 @@ import { clearFollowUpCancelled, followUpCancelled, loadFollowUp } from "./stick
 import { askGuestsToCommit } from "./checkout-guests";
 import { shouldMergeAttemptWorktree } from "./spawn";
 import { loadWriterNudge } from "./writer-silence";
+import { recordedWriterSkills } from "./skill-pick";
 import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON, failureFingerprint, isEnvironmentCheckFailure } from "../../runs";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../../verification/server";
@@ -495,7 +496,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           if (!repairThreadId) try {
             spawned = await fullAccessSpawn(bb, {
               ...placement,
-              ...requiredPolicyField(bb, helperPolicy, writerSnapshot.providerId, "code-repair"),
+              ...requiredPolicyField(bb, helperPolicy, writerSnapshot.providerId, "code-repair", { skills:recordedWriterSkills(dispatch) }),
               ...writerExecutionSelection(
                 writerSnapshot.providerId,
                 writerSnapshot.model,

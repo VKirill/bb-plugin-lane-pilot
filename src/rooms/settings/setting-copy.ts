@@ -117,6 +117,7 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "integration.gate_every": { label: "field_s417", help: "reason_s417", unit: "fieldUnitTasks" },
   "verification.sandbox_unsafe": { label: "field_s418", help: "reason_s418" },
   "workspace.provider": { label: "field_s419", help: "reason_s419" },
+  "writer.skill_pick": { label: "field_s474", help: "reason_s474" },
   "usage.skip_percent": { label: "field_s420", help: "reason_s420", unit: "fieldUnitPercent" },
   "tasks.mirror": { label: "field_s421", help: "reason_s421" },
   "secrets.allow": { label: "field_s422", help: "reason_s422" },

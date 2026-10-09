@@ -16,6 +16,7 @@ import { boundedAgentName } from "../../critique";
 import { WORKSPACE_DIRT_COMMAND } from "../../verification";
 import { LIVE_FOLDER_REASON, liveOwnedFiles } from "../live-folder";
 import { createLiveFolder } from "./live-folder";
+import { createWriterSkillPick } from "./skill-pick";
 import { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, waitManagedWorktreeReady } from "../../verification";
 import { createProviderGate, providerListed, providerSwitchOn, waitProviderEnvironment } from "../../verification";
 import { LANE_WORKTREE_PROVIDER_ID } from "../../native-agent/server";
@@ -91,6 +92,7 @@ async function listTaskFolder(bb:{sdk:{files:{read(args:{hostId:string;rootPath:
 export function createWriterSpawn(ctx: ServerCore, services: Services) {
   const { bb, db, effectiveProjectSettings, host } = ctx;
   const liveFolder = createLiveFolder(ctx);
+  const skillPick = createWriterSkillPick(ctx);
   const providerGate = createProviderGate({ kv:bb.storage.kv, serialized:(work) => ctx.serializedKv(work), version:HARNESS_VERSION, warn:(message) => bb.log.warn(message) });
 
   /** Why this attempt does not use the provider (null: it does). Anything but the owner's own switch is one log line. */
@@ -418,6 +420,9 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         throw new WriterSelectionError(`execution_packet_failed:${cause instanceof Error ? cause.message : String(cause)}`);
       }
       const helperSnapshot = requireHelperSpawn({ bb, db, projectId:input.projectId, runId:input.runId });
+      // Jev picks the task's skills before the writer starts; the picks and the PM's hints are the writer's extra access.
+      const writerSkills = await skillPick.pick({ attemptId:input.attemptId, projectId:input.projectId, hostId:input.config.hostId,
+        projectCwd:input.task.project_cwd, task:input.task, plan:input.plan, settings });
       const writerAgent = boundedAgentName(settings["writer.agent"],"Lane Pilot writer");
       const taskFolder = await listTaskFolder(bb, input.config.hostId, workspacePath, input.taskId);
       const briefSegments = writerBriefSegments(attemptTask,relevantMemory.text,executionPacket,input.emergency
@@ -428,22 +433,22 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       if (existingTrace) {
         // The brief is final: each note in it counts one use; the attempt's acceptance later credits the same ids.
         recordMemoryMixed(db, input.projectId, mixed.ids);
-        saveReasoningTrace(db, {
-          ...existingTrace,
-          dispatchContext:{
-            memoryText:relevantMemory.text,
-            memoryPicked:mixed.ids,
-            rulesText,
-            rulesPicked:{total:allRules.length,picked:rules.map((rule)=>rule.id)},
-            executionPacket,
-            executionPacketSha256,
-            pmReadContext:input.pmReadContext ?? "",
-            agent:writerAgent,
-            promptChars:writerBrief.length,
-            helperMode:helperSnapshot?.mode ?? "inherit",
-            helperRequired:helperSnapshot?.policy?.required === true,
-          },
-        });
+        // Held in a variable: the skill pick is not in the trace type, and code-repair reads it back from the saved trace.
+        const dispatchContext = {
+          memoryText:relevantMemory.text,
+          memoryPicked:mixed.ids,
+          rulesText,
+          rulesPicked:{total:allRules.length,picked:rules.map((rule)=>rule.id)},
+          executionPacket,
+          executionPacketSha256,
+          pmReadContext:input.pmReadContext ?? "",
+          agent:writerAgent,
+          promptChars:writerBrief.length,
+          helperMode:helperSnapshot?.mode ?? "inherit",
+          helperRequired:helperSnapshot?.policy?.required === true,
+          skillPick:writerSkills,
+        };
+        saveReasoningTrace(db, { ...existingTrace, dispatchContext });
       }
       const placement = await helperChildPlacement({
         bb, db, projectId:input.projectId, runId:input.runId,
@@ -452,7 +457,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       });
       const launchArgs = {
         ...placement,
-        ...requiredPolicyField(bb, helperSnapshot, writerProviderId, "writer"),
+        ...requiredPolicyField(bb, helperSnapshot, writerProviderId, "writer", { skills:writerSkills.skills }),
         ...execution,
         input: writerBriefInput(attemptTask, briefSegments, writerProviderId),
         pluginMetadata:{

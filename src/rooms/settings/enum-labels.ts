@@ -20,6 +20,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "run.gate": { none: "enumGateNone", "pre-merge": "enumGatePreMerge" },
   "integration.gate_when": { queue_drained: "enumIntegrationGateDrained", every_n: "enumIntegrationGateEveryN" },
   "workspace.provider": { auto: "enumWorkspaceProviderAuto", off: "enumWorkspaceProviderOff" },
+  "writer.skill_pick": { on: "enumSkillPickOn", off: "enumSkillPickOff" },
   "sandbox.backend": {
     auto: "enumSandboxAuto",
     "macos-seatbelt": "enumSandboxSeatbelt",

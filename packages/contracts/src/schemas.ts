@@ -94,6 +94,8 @@ export const taskV2Schema = z.object({
   }).strict()),
   /** The page or feature the task belongs to («page:/tools/cards»): one writer at a time per area, and the area's writer continues its next task. */
   area: z.string().trim().min(1).max(120).optional(),
+  /** PM hints: skill names the writer gets on top of its role, whatever Jev picks (only names the skill catalog lists are added). */
+  skills: z.array(z.string().trim().min(1).max(200)).max(8).optional(),
   /** Which review stages this task goes through (quick, standard, full); the project setting `quality_mode` when absent, and standard when that is absent too. */
   quality_mode: z.enum(["quick", "standard", "full"]).optional(),
   /** Browser checks for a task of a project in full mode: the PM runs them with lane_pilot_helpers (action browser_qa), and the task is not done until they pass. */
