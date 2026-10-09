@@ -1,5 +1,7 @@
 import type * as ThreeType from "three";
 import { OFFICE_PROPS, OFFICE_WALLS, gridRect, type PropFootprint } from "./office-layout";
+import { buildPropsA } from "./office-props-a";
+import { buildPropsB } from "./office-props-b";
 
 export type OfficeSceneOptions = {
   THREE: typeof import("three");
@@ -735,6 +737,13 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
   box(scene, 6.62, 6.78, 1.12, 1.42, -6.45, -6.35, 0xbfe9ff, { opacity: 0.8 });
   box(scene, 6.62, 6.85, 1.62, 1.85, -5.05, -4.75, 0x4f9a7a);
   gridBox(scene, 2, 7, 15, 18, 0, 0.02, 0xdc9a5d, { outline: false });
+
+  // Extra props (two modules): desk clutter, wall decor, kitchen and lounge things, the lot outside
+  const kit = { THREE, scene, disposables, box, gridBox, blob, cylinder, material, OUTLINE, setPart: (name: string) => { part = name; } };
+  part = "props-a";
+  buildPropsA(kit);
+  part = "props-b";
+  buildPropsB(kit);
 
   // Lights: ambient plus one directional light from (1, 2, 0.35), no shadows (reference.md §4).
   // three.js lights are physical since r155: Lambert divides by π, so the intensities carry π back
