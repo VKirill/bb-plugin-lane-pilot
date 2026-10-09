@@ -43,7 +43,7 @@ function parseApplicabilityTable(): Array<{
 
 describe("adoc applicability catalog", () => {
   it.skipIf(NO_AGENCY_SETTINGS)("matches settings.json 1:1 on area+setting+location+category", () => {
-    expect(UI_CATALOG).toHaveLength(452);
+    expect(UI_CATALOG).toHaveLength(453);
     expect(SETTINGS!.settings).toHaveLength(355);
     const catalogKeys = UI_CATALOG.slice(0,355).map((row) => `${row.area}\0${row.setting}\0${row.location}\0${row.category}`);
     const settingKeys = SETTINGS!.settings.map((row) => `${row.area}\0${row.setting}\0${row.location}\0${row.category}`);
@@ -60,7 +60,7 @@ describe("adoc applicability catalog", () => {
       gap: summary.gap,
       excluded: summary.excluded,
     });
-    expect(counts.editable + counts.readonly + counts.gap + counts.excluded).toBe(452);
+    expect(counts.editable + counts.readonly + counts.gap + counts.excluded).toBe(453);
     expect(summary.blank).toBe(0);
     expect(summary.tuple_equal).toBe(true);
   });
@@ -186,7 +186,7 @@ describe("adoc applicability catalog", () => {
   });
 
   it("keeps all former UI-visible fields on screen", () => {
-    expect(VISIBLE_CATALOG).toHaveLength(322);
+    expect(VISIBLE_CATALOG).toHaveLength(323);
     expect(VISIBLE_CATALOG.every((row) => row.uiStatus !== "excluded")).toBe(true);
     expect(UI_CATALOG.filter((row) => row.id >= "s355" && row.setting.startsWith("docs.")).every((row) => row.uiStatus === "editable" && row.channel === "OWN")).toBe(true);
     expect(UI_CATALOG.filter((row)=>["night_review.enabled","night_review.provider","night_review.model","night_review.agent"].includes(row.storageKey)&&row.id!=="s290").every((row)=>row.uiStatus==="editable"&&row.channel==="OWN")).toBe(true);
