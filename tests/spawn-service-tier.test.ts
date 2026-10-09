@@ -161,6 +161,108 @@ describe("spawn service tier", () => {
     });
   });
 
+  describe("best-effort tier lookup (providers.list)", () => {
+    function setupSpawnHost(list: () => Promise<unknown>) {
+      const spawned: Record<string, unknown>[] = [];
+      const warnings: string[] = [];
+      const { bb } = createFakePluginHost({
+        pluginId: "lane-pilot",
+        sdk: {
+          providers: { list },
+          threads: {
+            spawn: async (args: unknown) => {
+              spawned.push(args as Record<string, unknown>);
+              return { id: `thr-${spawned.length}` };
+            },
+          },
+        } as never,
+      });
+      (bb.log as { warn: (message: string) => void }).warn = (message) => warnings.push(message);
+      return { bb, spawned, warnings };
+    }
+
+    it("spawns with no service tier when providers.list throws", async () => {
+      const { bb, spawned, warnings } = setupSpawnHost(async () => {
+        throw new Error("provider host unreachable");
+      });
+
+      await fullAccessSpawn(bb, { projectId: "p1", providerId: "claude-code", prompt: "test", pluginMetadata: { role: "helper" } } as never);
+
+      expect(spawned).toHaveLength(1);
+      expect(spawned[0]?.serviceTier).toBeUndefined();
+      expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBeUndefined();
+      expect(spawned[0]?.permissionMode).toBe("full");
+      expect(warnings.some((line) => line.includes("providers.list failed") && line.includes("provider host unreachable"))).toBe(true);
+    });
+
+    it("spawns with no service tier when providers.list is not stubbed", async () => {
+      const spawned: Record<string, unknown>[] = [];
+      const { bb } = createFakePluginHost({
+        pluginId: "lane-pilot",
+        sdk: {
+          threads: {
+            spawn: async (args: unknown) => {
+              spawned.push(args as Record<string, unknown>);
+              return { id: "thr-1" };
+            },
+          },
+        } as never,
+      });
+
+      await fullAccessSpawn(bb, { projectId: "p1", providerId: "claude-code", prompt: "test", pluginMetadata: { role: "helper" } } as never);
+
+      expect(spawned).toHaveLength(1);
+      expect(spawned[0]?.serviceTier).toBeUndefined();
+      expect(spawned[0]?.permissionMode).toBe("full");
+    });
+
+    it("keeps a configured fast tier when providers.list fails", async () => {
+      const { bb, spawned } = setupSpawnHost(async () => {
+        throw new Error("timeout");
+      });
+
+      await fullAccessSpawn(bb, { projectId: "p1", providerId: "codex", serviceTier: "fast", prompt: "test", pluginMetadata: { role: "writer" } } as never);
+
+      expect(spawned).toHaveLength(1);
+      expect(spawned[0]?.serviceTier).toBe("fast");
+      expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBe("explicit");
+    });
+
+    it("sends no service tier when the provider is missing from the list", async () => {
+      const { bb, spawned } = setupSpawnHost(async () => [{ id: "other", capabilities: { supportsServiceTier: true } }]);
+
+      await fullAccessSpawn(bb, { projectId: "p1", providerId: "claude-code", prompt: "test", pluginMetadata: { role: "helper" } } as never);
+
+      expect(spawned).toHaveLength(1);
+      expect(spawned[0]?.serviceTier).toBeUndefined();
+    });
+
+    it("sends 'default' for a provider with tiers and no configured tier", async () => {
+      const { bb, spawned } = setupSpawnHost(async () => [{ id: "claude-code", capabilities: { supportsServiceTier: true }, serviceTiers: [{ id: "fast" }] }]);
+
+      await fullAccessSpawn(bb, { projectId: "p1", providerId: "claude-code", prompt: "test", pluginMetadata: { role: "helper" } } as never);
+
+      expect(spawned[0]?.serviceTier).toBe("default");
+      expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBe("explicit");
+    });
+
+    it("reads the provider list once per host within the cache window", async () => {
+      let calls = 0;
+      const { bb, spawned } = setupSpawnHost(async () => {
+        calls += 1;
+        return [{ id: "claude-code", capabilities: { supportsServiceTier: true } }];
+      });
+      const hostSpawn = { projectId: "p1", providerId: "claude-code", prompt: "test", pluginMetadata: { role: "helper" }, environment: { type: "host", hostId: "host-1" } };
+
+      await fullAccessSpawn(bb, hostSpawn as never);
+      await fullAccessSpawn(bb, hostSpawn as never);
+      await fullAccessSpawn(bb, { ...hostSpawn, environment: { type: "host", hostId: "host-2" } } as never);
+
+      expect(spawned).toHaveLength(3);
+      expect(calls).toBe(2);
+    });
+  });
+
   describe("errand helper spawn inputs", () => {
     function setupErrandHost(providersList: Array<Record<string, unknown>>) {
       const spawned: Record<string, unknown>[] = [];

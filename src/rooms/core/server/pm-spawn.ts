@@ -49,6 +49,42 @@ export function providerSupportsServiceTier(provider: {
   return false;
 }
 
+const PROVIDER_LIST_TTL_MS = 60_000;
+
+type ProviderList = Awaited<ReturnType<BbPluginApi["sdk"]["providers"]["list"]>>;
+
+const providerListByApi = new WeakMap<BbPluginApi, Map<string, { at: number; list: ProviderList }>>();
+
+/**
+ * Whether the provider takes a service tier: true or false when the provider list names it, null when the list could not
+ * be read or does not name the provider. Best-effort: a failed lookup must not stop a spawn (the sdk throws synchronously
+ * when a method is not available, so the call sits inside the try). The list is cached per host for a minute.
+ */
+async function providerSupportsTier(bb: BbPluginApi, providerId: string | undefined, hostId: string | undefined): Promise<boolean | null> {
+  if (!providerId || typeof bb.sdk?.providers?.list !== "function") return null;
+  let cache = providerListByApi.get(bb);
+  if (!cache) {
+    cache = new Map();
+    providerListByApi.set(bb, cache);
+  }
+  const key = hostId ?? "";
+  const now = Date.now();
+  let entry = cache.get(key);
+  if (!entry || now - entry.at > PROVIDER_LIST_TTL_MS) {
+    try {
+      const list = await bb.sdk.providers.list(hostId ? { hostId } : undefined);
+      if (!Array.isArray(list)) throw new Error("providers.list did not return a list");
+      entry = { at: now, list };
+      cache.set(key, entry);
+    } catch (cause) {
+      bb.log.warn(`Lane Pilot: providers.list failed, the spawn of ${providerId} goes without a service tier: ${cause instanceof Error ? cause.message : String(cause)}`);
+      return null;
+    }
+  }
+  const provider = entry.list.find((row) => row.id === providerId);
+  return provider ? providerSupportsServiceTier(provider) : null;
+}
+
 /**
  * Every thread Lane Pilot starts (PM, writers, helpers) runs with full access. BB honours the mode only when it is
  * marked explicit; otherwise the project's remembered mode (often accept-edits) makes agents stop for approval.
@@ -57,17 +93,10 @@ export function providerSupportsServiceTier(provider: {
 export function fullAccessSpawn(bb: BbPluginApi, args: Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0]) {
   enforceRunChildBudget(bb, args);
   return (async () => {
-    let supportsTier = true;
-    if (typeof bb.sdk?.providers?.list === "function") {
-      const hostId = args.environment?.type === "host" && typeof args.environment.hostId === "string" ? args.environment.hostId : undefined;
-      const providers = await bb.sdk.providers.list(hostId ? { hostId } : undefined).catch(() => null);
-      if (Array.isArray(providers) && args.providerId) {
-        const provider = providers.find((row) => row.id === args.providerId);
-        if (provider) {
-          supportsTier = providerSupportsServiceTier(provider);
-        }
-      }
-    }
+    const hostId = args.environment?.type === "host" && typeof args.environment.hostId === "string" ? args.environment.hostId : undefined;
+    const supportsTier = await providerSupportsTier(bb, args.providerId, hostId);
+    // An unknown tier support sends only a tier the caller configured: "fast" is honoured, "default" is not guessed.
+    const sendTier = supportsTier === true || (supportsTier === null && args.serviceTier === "fast");
 
     const quiet = quietHelper(args);
     const { serviceTier: _incomingTier, ...restQuiet } = quiet;
@@ -80,12 +109,12 @@ export function fullAccessSpawn(bb: BbPluginApi, args: Parameters<BbPluginApi["s
     const requestedTier: "default" | "fast" = args.serviceTier === "fast" ? "fast" : "default";
     const full = {
       ...restQuiet,
-      ...(supportsTier ? { serviceTier: requestedTier } : {}),
+      ...(sendTier ? { serviceTier: requestedTier } : {}),
       permissionMode: "full" as const,
       executionInputSources: {
         ...executionInputSources,
         permissionMode: "explicit" as const,
-        ...(supportsTier ? { serviceTier: "explicit" as const } : {}),
+        ...(sendTier ? { serviceTier: "explicit" as const } : {}),
       },
     } as Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0] & Record<string, unknown>;
     // With the VK thread keys the spawn is idempotent: a lost answer repeated returns the same thread (thread-keys.ts).
