@@ -59,7 +59,7 @@
       "action": "shell.skill_script",
       "skill": "social-insights",
       "script": "scripts/init_post.py",
-      "args": "--post {{collect.post_json}} --replies {{collect.replies_json}} --root {{$inputs.root}} --topic {{$inputs.topic}}",
+      "args": "--posts {{collect.post_json}} --url {{$inputs.post_url}} --replies {{collect.replies_json}} --root {{$inputs.root}} --topic {{$inputs.topic}}",
       "out": {
         "post_folder": "string",
         "ok": "bool"

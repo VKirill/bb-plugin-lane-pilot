@@ -2,6 +2,10 @@
 
 ## 0.1.207
 
+- **`insights-post` gets past its first post.** In the first live run (sandbox, «вайбкодинг + Claude 5.5», Threads/VK) discovery, pick and collect worked, but `ins.post` called `init_post.py` with `--post` and no `--url`, so the post folder was never created and the run failed with `output field "post_folder" is missing`. The step now passes `--posts <post.json> --url <post_url>`; the skill script (agent-skills) accepts one post.json and reads VK wall addresses. Also checked live: the PM called `lane_pilot_route` first on «найди обсуждаемые посты…», asked platform and result, and ran the chain with its steps as hidden child threads of the chat.
+
+## 0.1.207
+
 - **The PM chat no longer jumps while scrolling.** BB's chat unmounts messages that leave the screen and mounts them again; the Lane Pilot run card started from a 48 px placeholder on every mount and grew to its full height (up to ~600 px for 18 tasks) a moment later, so the chat re-laid out under the owner's scroll — once per card, and the PM puts the card in most of its reports. The last card of a run is kept in memory and shown at once on a new mount, and the task list shows 5 rows with a «show all» toggle.
 
 ## 0.1.206
