@@ -114,7 +114,7 @@
       "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "auditor",
-      "model_preset": "INS - проверка (Grok 4.6)",
+      "model_preset": "INS - проверка (GPT-6.1 Sol)",
       "prompt": "Stage 5: review.yaml - verdict per item against the original comments; reject unsupported quotes, inflated shares, 'unique' claims without a comparison corpus.",
       "out": {
         "rejects_open": "int",

@@ -18,7 +18,7 @@ export const BUILTIN_PRESETS: Readonly<Record<string, BuiltinPreset>> = {
   // The Insights pipeline (skills/social-insights/references/pipeline.md): the model each stage's BB Tasks preset names.
   "ins-analysis": { providerId: "claude-code", model: "claude-opus-5", reasoning: "high", aliases: ["INS - анализ"] },
   "ins-psychology": { providerId: "codex", model: "gpt-5.6-luna", reasoning: "max", aliases: ["INS - психология"] },
-  "ins-check": { providerId: "acp-cursor", model: "grok-4.6", reasoning: "medium", aliases: ["INS - проверка"] },
+  "ins-check": { providerId: "codex", model: "gpt-6.1-sol", reasoning: "medium", aliases: ["INS - проверка"] },
   "ins-digest": { providerId: "claude-code", model: "claude-sonnet-5", reasoning: "medium", aliases: ["INS - сводка"] },
 };
 export const PRESET_SLUGS = Object.keys(BUILTIN_PRESETS);

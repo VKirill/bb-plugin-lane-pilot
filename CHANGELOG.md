@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.211
+
+- **The Insights critic runs on GPT-6.1 Sol instead of Cursor Grok.** The owner's Cursor plan ran out, so every step on `acp-cursor` answered «Upgrade your plan to continue». The built-in preset `ins-check` («INS - проверка», the critic of `insights-post` / `ins.post`) is now codex / gpt-6.1-sol / medium, still a model family other than the Claude analysis steps. Outside the plugin the same day: the BB Tasks presets on Grok moved to codex gpt-6.1-sol, and SelfyStudio's night review moved from acp-cursor to codex gpt-6.1-sol.
+
 ## 0.1.210
 
 - **A chain step survives its provider's plan limit.** The fifth live `insights-post` run (Threads only) prepared the posts and ran lenses and psychology, then failed at `critic`: the auditor ran on acp-cursor, answered «Upgrade your plan to continue» twice (the task and the JSON repair) and the run died. Writers already treated that notice as a provider limit; chain steps did not. Now an agent step whose answer is a provider-limit notice runs once more in a fresh thread on the default model (claude-code); a notice on the default model fails the step as before.

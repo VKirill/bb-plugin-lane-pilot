@@ -93,7 +93,7 @@ describe("model presets", () => {
 
   it("know the long names the Insights chain uses", () => {
     const names: Array<[string, string]> = [
-      ["INS - анализ (Claude Opus 5)", "ins-analysis"], ["INS - психология (GPT-5.6 Luna)", "ins-psychology"], ["INS - проверка (Grok 4.6)", "ins-check"], ["INS - сводка (Claude Sonnet 5)", "ins-digest"],
+      ["INS - анализ (Claude Opus 5)", "ins-analysis"], ["INS - психология (GPT-5.6 Luna)", "ins-psychology"], ["INS - проверка (GPT-6.1 Sol)", "ins-check"], ["INS - сводка (Claude Sonnet 5)", "ins-digest"],
       ["INS — анализ", "ins-analysis"], ["ins - сводка", "ins-digest"], ["cheap-fast", "cheap-fast"], ["strong", "strong"],
     ];
     for (const [name, slug] of names) expect(presetSlug(name)).toBe(slug);
