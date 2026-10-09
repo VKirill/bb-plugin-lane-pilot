@@ -325,7 +325,6 @@ export class IntegrationGateRunner {
       exitCode,
       passed,
       mergesChecked: this.mergesSinceLastGate,
-      ...(cache.hits.length ? { cacheHits: cache.hits } : {}),
     };
 
     // The gate's verdict is a gate evaluation of the batch. It used to be written over the last merged task's own

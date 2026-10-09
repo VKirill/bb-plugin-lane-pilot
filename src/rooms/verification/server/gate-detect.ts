@@ -24,6 +24,18 @@ export const GATE_PROBE = [
 /** What `npm init` writes for «test»: no test at all. */
 const NPM_PLACEHOLDER = /no test specified/i;
 
+/**
+ * A detected `npm test` whose script calls turbo must not take results from turbo's cache: the gate exists to run the tests
+ * (live 2026-10-09: marketing came from the cache and 14 failures surfaced only later). `npm test -- --force` reaches turbo
+ * when the script is that one command; when turbo is one step of a longer script the argument would land on another program,
+ * so the environment variable turbo reads is used. Null when the script has no turbo or already forces. Only detected
+ * commands are changed: the owner's explicit `integration.gate_command` runs as typed.
+ */
+export function turboForce(script:string):string | null {
+  if (!/\bturbo\b/.test(script) || /(?:^|\s)--force(?:[\s=]|$)|\bTURBO_FORCE=/.test(script)) return null;
+  return /&&|\|\||;|\||&/.test(script) ? "TURBO_FORCE=true npm test" : "npm test -- --force";
+}
+
 /** The command the probe's output names, with the reason it was chosen; null when the folder has no test runner. */
 export function detectGateCommand(probe:string):{ command:string; detail:string } | null {
   const lines = probe.split("\n");
@@ -37,7 +49,10 @@ export function detectGateCommand(probe:string):{ command:string; detail:string 
   }
   const script = typeof pkg?.scripts?.test === "string" ? pkg.scripts.test.trim() : "";
   // A watch-mode script never ends on its own, so it cannot be a gate.
-  if (script && !NPM_PLACEHOLDER.test(script) && !/(?:^|\s)--watch(?:All)?(?:\s|$)|\bnodemon\b/.test(script)) return { command:"npm test", detail:"package.json script «test»" };
+  if (script && !NPM_PLACEHOLDER.test(script) && !/(?:^|\s)--watch(?:All)?(?:\s|$)|\bnodemon\b/.test(script)) {
+    const forced = turboForce(script);
+    return forced ? { command:forced, detail:"package.json script «test» (turbo: run with --force, its cache is bypassed)" } : { command:"npm test", detail:"package.json script «test»" };
+  }
   const declared = (name:string) => Boolean(pkg?.dependencies?.[name] || pkg?.devDependencies?.[name]);
   if (bins.has("vitest") || declared("vitest")) return { command:"npx vitest run", detail:"vitest is installed" };
   if (bins.has("jest") || declared("jest")) return { command:"npx jest", detail:"jest is installed" };
