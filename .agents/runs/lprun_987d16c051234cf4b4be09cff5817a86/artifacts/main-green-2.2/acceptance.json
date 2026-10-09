@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "main-green-2.2",
+  "task_sha256": "83b12ff7c01b01ca37c7692efead359f398da8feb048350640b7f3eb5fd74ef0",
+  "attempt": 3,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "823a5a8ebc5a610bd111b490f20896ddc11c5ce08a497b80f37340d0e4c24e25",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-09T15:47:08.996Z",
+  "model": "claude-haiku-5-5"
+}
