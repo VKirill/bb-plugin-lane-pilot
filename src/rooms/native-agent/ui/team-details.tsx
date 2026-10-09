@@ -1,6 +1,6 @@
 import type { ExperimentalProviderModelPickerValue } from "@get-bb/plugin-sdk/app";
 import { t, validationMessage, type I18nKey } from "@lane-pilot/i18n";
-import { WRITER_FALLBACK_DEFAULTS, WRITER_FALLBACK_SLOTS, writerFallbackKeys } from "../../writer/writer-fallbacks";
+import { WRITER_FALLBACK_DEFAULTS, WRITER_FALLBACK_SLOTS, writerFallbackKeys, writerFallbackSeed, writerFallbackSlots, type WriterFallbackSlot } from "../../writer/writer-fallbacks";
 import { QA_HOST_KEY, QA_WORKSPACE_KEY } from "../../qa/qa-host";
 import { Button } from "@lane-pilot/ui-kit";
 import { Input } from "@lane-pilot/ui-kit";
@@ -12,11 +12,14 @@ import { CatalogField } from "../../settings/ui";
 import { asBoolean, COUNCIL_SEATS } from "../../ui-shell/ui";
 import type { LpPage } from "../../ui-shell/ui";
 
-/** The writer's own settings: the two fallbacks, how the reasoning effort is picked, the agent profile and what the runs say about the pair. */
+const FALLBACK_TITLES: Record<WriterFallbackSlot, I18nKey> = { 1: "writerFallback1", 2: "writerFallback2", 3: "writerFallback3" };
+
+/** The writer's own settings: the three fallbacks, how the reasoning effort is picked, the agent profile and what the runs say about the pair. */
 export function WriterDetail({ page }: { page: LpPage }) {
   const { data, modelPicker, saveWriterFallback, fallbackTouched, writerRejected, saveError, advanced, jevRows, displayedValue, applySetting } = page;
   const effortRow = jevRows.find((row) => row.storageKey === "jev.LANE_JEV_EFFORT");
   const automaticEffort = asBoolean(displayedValue("jev.LANE_JEV_EFFORT"), true);
+  const slotRows = writerFallbackSlots(data?.values ?? {});
   return (
     <div className="space-y-3" data-testid="writer-detail">
       <p className="max-w-xl text-xs text-muted-foreground">{t("writerPickerHelp")}</p>
@@ -25,26 +28,27 @@ export function WriterDetail({ page }: { page: LpPage }) {
         {WRITER_FALLBACK_SLOTS.map((slot, index) => {
           const keys = writerFallbackKeys(slot);
           const stored = data?.values[keys.provider];
-          const off = stored === "";
-          const fallback = WRITER_FALLBACK_DEFAULTS[index]!;
+          const isOff = slotRows[index] === null;
+          const fallback = WRITER_FALLBACK_DEFAULTS[index] ?? null;
+          const seed = writerFallbackSeed(index);
           // A slot turned back on stores its default: it still reads as the default.
           const configured = typeof stored === "string" && stored !== ""
-            && !(stored === fallback.providerId && data?.values[keys.model] === fallback.model && data?.values[keys.effort] === fallback.reasoningLevel);
+            && !(fallback && stored === fallback.providerId && data?.values[keys.model] === fallback.model && data?.values[keys.effort] === fallback.reasoningLevel);
           const value: ExperimentalProviderModelPickerValue = configured
             ? { providerId: String(stored), model: String(data?.values[keys.model] ?? ""), reasoningLevel: (String(data?.values[keys.effort] ?? "high") || "high") as ExperimentalProviderModelPickerValue["reasoningLevel"] }
-            : { providerId: fallback.providerId, model: fallback.model, reasoningLevel: fallback.reasoningLevel as ExperimentalProviderModelPickerValue["reasoningLevel"] };
+            : { providerId: seed.providerId, model: seed.model, reasoningLevel: seed.reasoningLevel as ExperimentalProviderModelPickerValue["reasoningLevel"] };
           const touch = () => { fallbackTouched.current.add(slot); };
           return (
             <div key={slot} className="space-y-1.5" data-testid={`writer-fallback-${slot}`}>
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="text-sm font-medium">{t(slot === 1 ? "writerFallback1" : "writerFallback2")}</span>
-                <span className="text-xs text-muted-foreground">{off ? t("writerFallbackOffState") : configured ? t("councilSeatOwnSet") : t("writerFallbackDefault")}</span>
+                <span className="text-sm font-medium">{t(FALLBACK_TITLES[slot])}</span>
+                <span className="text-xs text-muted-foreground">{isOff ? t("writerFallbackOffState") : configured ? t("councilSeatOwnSet") : t("writerFallbackDefault")}</span>
                 <Button type="button" size="sm" variant="ghost" className="h-7 px-2" data-testid={`writer-fallback-${slot}-toggle`}
-                  onClick={() => void (off ? saveWriterFallback(slot, { providerId: fallback.providerId, model: fallback.model, reasoningLevel: fallback.reasoningLevel as ExperimentalProviderModelPickerValue["reasoningLevel"] }) : saveWriterFallback(slot, null))}>
-                  {off ? t("writerFallbackTurnOn") : t("writerFallbackTurnOff")}
+                  onClick={() => void (isOff ? saveWriterFallback(slot, { providerId: seed.providerId, model: seed.model, reasoningLevel: seed.reasoningLevel as ExperimentalProviderModelPickerValue["reasoningLevel"] }) : saveWriterFallback(slot, null))}>
+                  {isOff ? t("writerFallbackTurnOn") : t("writerFallbackTurnOff")}
                 </Button>
               </div>
-              {off ? null : <div onPointerDownCapture={touch} onKeyDownCapture={touch}>
+              {isOff ? null : <div onPointerDownCapture={touch} onKeyDownCapture={touch}>
                 {modelPicker(value, (next) => { if (fallbackTouched.current.has(slot)) void saveWriterFallback(slot, next); })}
               </div>}
             </div>

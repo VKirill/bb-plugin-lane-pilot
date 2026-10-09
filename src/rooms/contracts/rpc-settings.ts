@@ -184,10 +184,10 @@ export const rpcSettings = {
     }).strict(),
     output:z.object({ok:z.boolean(),conflict:z.boolean(),values:z.record(z.string(),z.unknown()),versions:z.record(z.string(),z.number().int()),validation:settingValidationSchema.optional()}).strict(),
   },
-  // A writer fallback model (slot 1 or 2); off: true stores an empty slot, so the default does not come back.
+  // A writer fallback model (slot 1, 2 or 3); off: true stores an empty slot, so the default does not come back.
   save_writer_fallback_selection: {
     input:z.object({
-      projectId:z.string().min(1),slot:z.union([z.literal(1),z.literal(2)]),sectionId:z.string().min(1).optional(),
+      projectId:z.string().min(1),slot:z.union([z.literal(1),z.literal(2),z.literal(3)]),sectionId:z.string().min(1).optional(),
       off:z.boolean().optional(),providerId:z.string().min(1).optional(),model:z.string().min(1).optional(),
       reasoningLevel:z.enum(["none","low","medium","high","xhigh","ultracode","max","ultra"]).optional(),
       expectedVersions:z.record(z.string(),z.number().int().min(0)),
