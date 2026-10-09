@@ -27,6 +27,24 @@ if (typeof window !== "undefined") {
   }
 }
 
+// i18n's detectLocale() looks for the Russianizer footer marker on every t() call: one full-document scan each, which was
+// most of the CPU of the page tests (7.8 of 12 s in "renders every setting row", a page of several thousand nodes). The answer
+// is kept until the DOM reports a change; takeRecords() hands over pending mutations synchronously, so a marker added just
+// before the call is still seen at once.
+if (typeof document !== "undefined" && typeof MutationObserver !== "undefined") {
+  const footerMarker = '[data-footer-item="plugin:ru/toggle"]';
+  const nativeQuery = Document.prototype.querySelector;
+  let cached: Element | null | undefined;
+  const observer = new MutationObserver(() => { cached = undefined; });
+  observer.observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-footer-item"] });
+  Document.prototype.querySelector = function (this: Document, selectors: string) {
+    if (this !== document || selectors !== footerMarker) return nativeQuery.call(this, selectors);
+    if (observer.takeRecords().length) cached = undefined;
+    if (cached === undefined) cached = nativeQuery.call(this, selectors);
+    return cached;
+  } as Document["querySelector"];
+}
+
 // Tests script the host call by call; the one that checks the job path switches it on (packages/host-calls/tests/host-jobs.test.ts).
 process.env.LANE_PILOT_HOST_JOBS ??= "0";
 // Fake threads change state without BB's events, so tests watch them by polling; tests/thread-signals.test.ts switches the events on.
