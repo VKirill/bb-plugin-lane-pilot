@@ -127,6 +127,10 @@ export const hostContract = defineRpcContract({
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), baseSha:z.string().regex(/^[a-f0-9]{40,64}$/).nullable(), compareCommitted:z.boolean(), unfiltered:z.boolean().optional(), bookkeeping:z.array(z.string().max(300)).max(100).optional() }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["ready","not-git","failed"]), headSha:z.string().nullable(), paths:z.array(z.string()), reason:z.string().nullable() }).strict(),
   },
+  openCodeLimitProbe: {
+    input: z.object({ requestedHostId:z.string().min(1), sessionId:z.string().regex(/^ses_[A-Za-z0-9]{1,80}$/), sinceMs:z.number().int().nonnegative() }).strict(),
+    output: z.object({ hostId:z.string(), status:z.enum(["limit","none"]), providerId:z.string().nullable(), model:z.string().nullable(), resetAt:z.number().nullable(), reason:z.string().nullable() }).strict(),
+  },
   readOpenCodeTelemetry: {
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), relativePath:z.string().min(1) }).strict(),
     output: z.object({ hostId:z.string(), relativePath:z.string(), size:z.number().int().nonnegative().max(262144), sha256:z.string().regex(/^[a-f0-9]{64}$/), content:z.string().max(262144) }).strict(),

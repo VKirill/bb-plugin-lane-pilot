@@ -1,3 +1,4 @@
+import { createProviderBreaker } from "@lane-pilot/resilience";
 import { describe, expect, it } from "vitest";
 import { FREE_CLASSES, PARKED_CLASSES, failureClass, isEnvironmentCheckFailure, nextStep, repeatedFailureReason, taskFamily } from "../src/rooms/runs/failure-class";
 import { classifyWriterOutput } from "../src/rooms/tasks/validate-output";
@@ -203,5 +204,43 @@ describe("hub 2026-10-08 budget rows that are not Lane Pilot faults", () => {
     expect(nextStep("validation_failed", "merge_failed: ... would be overwritten by merge")).toMatch(/commit or discard them there/);
     expect(failureClass("blocked", "ownership run scope invalid: run task wp-drafts-login-catalog: unsafe owns_paths ../bb-plugin-env-catalog/")).toBe("contract");
     expect(failureClass("blocked", "merge_failed: git merge failed: fatal: refusing to merge unrelated histories")).toBe("harness");
+  });
+});
+
+describe("provider breaker hold for a writer_provider_limit", () => {
+  const MIN = 60_000;
+  const NOW = 1_800_000_000_000;
+  const KEY = "acp-opencode/router9/ag/gemini-3.8-flash-high";
+
+  it("stays open for the 5-minute cooldown when the limit names no reset time", () => {
+    const breaker = createProviderBreaker();
+    breaker.record(KEY, "exhausted", NOW);
+    expect(breaker.decide(KEY, NOW + 4 * MIN)).toMatchObject({ allow:false, retryAt:NOW + 5 * MIN });
+    expect(breaker.decide(KEY, NOW + 5 * MIN)).toMatchObject({ allow:true, state:"half_open" });
+  });
+
+  it("stays open until the reset time when the limit names one, past the cooldown", () => {
+    const breaker = createProviderBreaker();
+    const resetAt = NOW + 160 * MIN;
+    breaker.record(KEY, "exhausted", NOW, resetAt);
+    expect(breaker.decide(KEY, NOW + 90 * MIN)).toMatchObject({ allow:false, retryAt:resetAt });
+    expect(breaker.decide(KEY, resetAt - 1)).toMatchObject({ allow:false });
+    expect(breaker.decide(KEY, resetAt)).toMatchObject({ allow:true, state:"half_open" });
+  });
+
+  it("is not shortened by a later limit without a reset time, and a past reset time is ignored", () => {
+    const breaker = createProviderBreaker();
+    breaker.record(KEY, "exhausted", NOW, NOW + 160 * MIN);
+    breaker.record(KEY, "exhausted", NOW + 10 * MIN);
+    expect(breaker.decide(KEY, NOW + 30 * MIN)).toMatchObject({ allow:false, retryAt:NOW + 160 * MIN });
+    breaker.record("other/model", "exhausted", NOW, NOW - MIN);
+    expect(breaker.decide("other/model", NOW + MIN)).toMatchObject({ allow:false, retryAt:NOW + 5 * MIN });
+  });
+
+  it("is cleared by a successful attempt", () => {
+    const breaker = createProviderBreaker();
+    breaker.record(KEY, "exhausted", NOW, NOW + 160 * MIN);
+    breaker.record(KEY, "ok", NOW + MIN);
+    expect(breaker.decide(KEY, NOW + 2 * MIN)).toMatchObject({ allow:true, state:"closed" });
   });
 });

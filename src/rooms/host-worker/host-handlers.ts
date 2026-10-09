@@ -24,6 +24,7 @@ import { prepareSandboxedCommandLine, releaseSandboxedCommandLine, runSandboxedC
 import { gitOwnershipChangedPaths, resolveGitOwnershipBase } from "../verification";
 import { runCliOnHost, runCommandOnHost, writePmSettingsOnHost } from "../writer";
 import { runScriptOnHost } from "./script-run";
+import { probeOpenCodeLimit } from "./opencode-limit-log";
 import { execFile } from "node:child_process";
 import { discoverClaudeAgents, prepareNativeClaude } from "../native-agent";
 import { prepareOpencodeMinimal } from "../native-install";
@@ -136,6 +137,12 @@ export const jobCancel: ExperimentalHostRpcHandlers<typeof hostContract>["jobCan
 export const stabilityDrill: ExperimentalHostRpcHandlers<typeof hostContract>["stabilityDrill"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
   checks:await runStabilityDrill(),
+});
+
+/** The writer host reads its OpenCode log for a silent writer's session (writer-silence.ts asks only for acp-opencode writers). */
+export const openCodeLimitProbe: ExperimentalHostRpcHandlers<typeof hostContract>["openCodeLimitProbe"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  ...await probeOpenCodeLimit({sessionId:input.sessionId,sinceMs:input.sinceMs}),
 });
 
 export const gitWorktreeSnapshot: ExperimentalHostRpcHandlers<typeof hostContract>["gitWorktreeSnapshot"] = async (input) => ({

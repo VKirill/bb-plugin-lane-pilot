@@ -17,7 +17,8 @@ export type BreakerDecision =
 
 export type BreakerSnapshot = { key: string; state: BreakerState; failures: number; openedAt: number | null; lastOutcome: BreakerOutcome | null };
 
-type Entry = { failures: number[]; openedAt: number | null; trialInFlight: boolean; lastOutcome: BreakerOutcome | null };
+/** `holdUntil` is the provider's reset time when a limit named one: the pair stays open until then instead of the cooldown. */
+type Entry = { failures: number[]; openedAt: number | null; holdUntil: number | null; trialInFlight: boolean; lastOutcome: BreakerOutcome | null };
 
 const DEFAULTS: Required<ProviderBreakerOptions> = { failureThreshold: 3, windowMs: 10 * 60_000, cooldownMs: 5 * 60_000 };
 
@@ -50,7 +51,7 @@ export function createProviderBreaker(options: ProviderBreakerOptions = {}) {
   function entry(key: string): Entry {
     let found = entries.get(key);
     if (!found) {
-      found = { failures: [], openedAt: null, trialInFlight: false, lastOutcome: null };
+      found = { failures: [], openedAt: null, holdUntil: null, trialInFlight: false, lastOutcome: null };
       entries.set(key, found);
     }
     return found;
@@ -60,17 +61,29 @@ export function createProviderBreaker(options: ProviderBreakerOptions = {}) {
     item.failures = item.failures.filter((at) => now - at <= config.windowMs);
   }
 
-  function stateOf(item: Entry, now: number): BreakerState {
-    if (item.openedAt === null) return "closed";
-    return now - item.openedAt >= config.cooldownMs ? "half_open" : "open";
+  /** When an open pair may take a trial call: the reset time a limit named, else the cooldown after it opened. */
+  function reopenAt(item: Entry): number {
+    return item.holdUntil ?? (item.openedAt ?? 0) + config.cooldownMs;
   }
 
-  function record(key: string, outcome: BreakerOutcome, now = Date.now()): BreakerSnapshot {
+  function stateOf(item: Entry, now: number): BreakerState {
+    if (item.openedAt === null) return "closed";
+    return now >= reopenAt(item) ? "half_open" : "open";
+  }
+
+  /** The reset time still ahead that an open pair holds to: the one this limit named, or one an earlier limit named and is still ahead. */
+  function holdFor(item: Entry, outcome: BreakerOutcome, now: number, until: number | undefined): number | null {
+    const known = [outcome === "exhausted" ? until : undefined, item.holdUntil].filter((time): time is number => typeof time === "number" && time > now);
+    return known.length ? Math.max(...known) : null;
+  }
+
+  function record(key: string, outcome: BreakerOutcome, now = Date.now(), until?: number): BreakerSnapshot {
     const item = entry(key);
     item.lastOutcome = outcome;
     if (outcome === "ok") {
       item.failures = [];
       item.openedAt = null;
+      item.holdUntil = null;
       item.trialInFlight = false;
     } else if (outcome !== "product") {
       item.failures.push(now);
@@ -78,6 +91,7 @@ export function createProviderBreaker(options: ProviderBreakerOptions = {}) {
       const wasTrial = item.openedAt !== null && stateOf(item, now) === "half_open";
       if (wasTrial || outcome === "exhausted" || item.failures.length >= config.failureThreshold) {
         item.openedAt = now;
+        item.holdUntil = holdFor(item, outcome, now, until);
         item.trialInFlight = false;
       }
     }
@@ -94,7 +108,7 @@ export function createProviderBreaker(options: ProviderBreakerOptions = {}) {
       item.trialInFlight = true;
       return { allow: true, state };
     }
-    const retryAt = (item.openedAt ?? now) + config.cooldownMs;
+    const retryAt = reopenAt(item);
     return { allow: false, state, retryAt, reason: `${key}: ${item.failures.length} provider failures in ${Math.round(config.windowMs / 60_000)} min; retry after ${new Date(retryAt).toISOString()}` };
   }
 
