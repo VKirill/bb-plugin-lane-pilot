@@ -149,6 +149,38 @@ describe("findOfficePath & obstacles", () => {
       expect(isFloorBlocked(pt.x, pt.z)).toBe(false);
     }
   });
+
+  it("proves every seat and wander spot is on unblocked floor and mutually reachable", () => {
+    // Check every seat is unblocked
+    for (const seat of OFFICE_SEATS) {
+      expect(isFloorBlocked(seat.x, seat.z)).toBe(false);
+      expect(isFloorBlocked(seat.speakX, seat.speakZ)).toBe(false);
+    }
+
+    // Check every wander spot is unblocked
+    const spotList = Object.values(OFFICE_SPOTS);
+    for (const spot of spotList) {
+      expect(isFloorBlocked(spot.x, spot.z)).toBe(false);
+    }
+
+    // Test reachability between seats and wander spots
+    const centerAisle = { x: 0, z: 2.5 };
+    for (const seat of OFFICE_SEATS) {
+      const pathToCenter = findOfficePath({ x: seat.x, z: seat.z }, centerAisle);
+      expect(pathToCenter.length).toBeGreaterThan(0);
+      for (const pt of pathToCenter) {
+        expect(isFloorBlocked(pt.x, pt.z)).toBe(false);
+      }
+    }
+
+    for (const spot of spotList) {
+      const pathToCenter = findOfficePath({ x: spot.x, z: spot.z }, centerAisle);
+      expect(pathToCenter.length).toBeGreaterThan(0);
+      for (const pt of pathToCenter) {
+        expect(isFloorBlocked(pt.x, pt.z)).toBe(false);
+      }
+    }
+  });
 });
 
 describe("walkStep", () => {
