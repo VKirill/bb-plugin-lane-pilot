@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.220
+
+- **Cool cars outside the council office.** The box cars are replaced by seven stylised models made from concept art with Meshy image-to-3D (`assets/office-cars.glb`, 926 KB, embedded): a red 1967 Mustang fastback with white stripes, a Ford F-150 Raptor, a yellow Porsche 911, a black G-Class, a lime supercar, a Cybertruck and a mint VW T1 bus. Five stand in the south bays and two on the east strip; the 911 and the bus drive slowly along the road (not with reduced motion). They get the scene's toon shading and pixel outlines; the box cars stay as the fallback while the model loads.
+
 ## 0.1.219
 
 - **Real cartoon people in the council office.** Eight rigged chibi characters made in Blender (concepts in the reference's style → Meshy image-to-3D with auto-rigging → Universal Animation Library actions retargeted, plus typing, drinking, pointing and window poses keyed by hand) replace the procedural box people: the owner in a navy jacket over red, the receptionist with a red bun, and six office workers with distinct hair and clothes. One 1.34 MB GLB is embedded in the bundle (`assets/office-people.glb`, `scripts/embed-office-people.mjs`). Each person plays clips by what they do — walking (time-scaled to the walk speed), typing at desks, sitting on sofas and at the meeting table, talking, pointing while arguing, drinking at the coffee point, working the printer or servers, standing at a window — with 0.25 s crossfades and desynced phases; seated people sit on the seat. They get the scene's 3-tone toon shading and pixel outlines. The procedural people stay as the fallback while the model loads or if it fails.
