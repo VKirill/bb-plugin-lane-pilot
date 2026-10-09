@@ -1,3 +1,4 @@
+import { createNavGrid } from "@lane-pilot/pixel-world";
 import { BLOCKERS_A } from "./office-blockers-a";
 import { BLOCKERS_B } from "./office-blockers-b";
 
@@ -379,52 +380,27 @@ const EXTRA_BLOCKERS = [...BLOCKERS_A, ...BLOCKERS_B];
 const POINTS_BY_ID = new Map(ALL_INTERACTION_POINTS.map((p) => [p.id, p] as const));
 
 /**
+ * The walking grid of the office, built once: the floor bounds, the walls, the extra blockers of the prop modules and
+ * every prop that blocks. (The engine, packages/pixel-world/src/nav.ts, answers the queries.)
+ */
+const OFFICE_NAV = createNavGrid({
+  bounds: FLOOR_BOUNDS,
+  obstacles: [...OFFICE_WALLS, ...EXTRA_BLOCKERS, ...OFFICE_PROPS.filter((p) => p.blocks !== false)],
+});
+
+/**
  * Checks if a world coordinate is blocked by the floor bounds, walls or blocking props.
  */
 export function isOfficeFloorBlocked(x: number, z: number, margin = 0.15): boolean {
-  if (
-    x < FLOOR_BOUNDS.minX + margin ||
-    x > FLOOR_BOUNDS.maxX - margin ||
-    z < FLOOR_BOUNDS.minZ + margin ||
-    z > FLOOR_BOUNDS.maxZ - margin
-  ) {
-    return true;
-  }
-  for (const w of OFFICE_WALLS) {
-    if (x >= w.minX - margin && x <= w.maxX + margin && z >= w.minZ - margin && z <= w.maxZ + margin) {
-      return true;
-    }
-  }
-  for (const r of EXTRA_BLOCKERS) {
-    if (x >= r.minX - margin && x <= r.maxX + margin && z >= r.minZ - margin && z <= r.maxZ + margin) {
-      return true;
-    }
-  }
-  for (const p of OFFICE_PROPS) {
-    if (p.blocks === false) continue;
-    if (x >= p.minX - margin && x <= p.maxX + margin && z >= p.minZ - margin && z <= p.maxZ + margin) {
-      return true;
-    }
-  }
-  return false;
+  return OFFICE_NAV.isBlocked(x, z, margin);
 }
 
 /**
  * Checks whether a straight line between two world points crosses a wall or a blocking prop.
  */
 export function isOfficeSegmentBlocked(x1: number, z1: number, x2: number, z2: number, margin = 0.08): boolean {
-  const dist = Math.hypot(x2 - x1, z2 - z1);
-  const steps = Math.max(3, Math.ceil(dist / 0.18));
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    if (isOfficeFloorBlocked(x1 + (x2 - x1) * t, z1 + (z2 - z1) * t, margin)) {
-      return true;
-    }
-  }
-  return false;
+  return OFFICE_NAV.isSegmentBlocked(x1, z1, x2, z2, margin);
 }
-
-const PATH_STEP = 0.5;
 
 /**
  * A* grid pathfinder across the office floor. Returns string-pulled waypoints ending at the target.
@@ -433,143 +409,7 @@ export function findOfficeFloorPath(
   start: { x: number; z: number },
   target: { x: number; z: number }
 ): Array<{ x: number; z: number }> {
-  if (!isOfficeSegmentBlocked(start.x, start.z, target.x, target.z)) {
-    return [{ x: target.x, z: target.z }];
-  }
-
-  const MIN_X = FLOOR_BOUNDS.minX;
-  const MIN_Z = FLOOR_BOUNDS.minZ;
-  const GRID_CELLS_W = Math.round((FLOOR_BOUNDS.maxX - MIN_X) / PATH_STEP) + 1;
-  const GRID_CELLS_H = Math.round((FLOOR_BOUNDS.maxZ - MIN_Z) / PATH_STEP) + 1;
-
-  const toGridX = (x: number) => Math.max(0, Math.min(GRID_CELLS_W - 1, Math.round((x - MIN_X) / PATH_STEP)));
-  const toGridZ = (z: number) => Math.max(0, Math.min(GRID_CELLS_H - 1, Math.round((z - MIN_Z) / PATH_STEP)));
-  const toWorldX = (gx: number) => MIN_X + gx * PATH_STEP;
-  const toWorldZ = (gz: number) => MIN_Z + gz * PATH_STEP;
-  const isCellBlocked = (gx: number, gz: number) => isOfficeFloorBlocked(toWorldX(gx), toWorldZ(gz));
-
-  // A blocked start or target snaps to the nearest free cell within 3 cells.
-  const findFreeCell = (gx: number, gz: number) => {
-    if (!isCellBlocked(gx, gz)) return { gx, gz };
-    let bestDist = Infinity;
-    let best = { gx, gz };
-    for (let r = 1; r <= 3; r++) {
-      for (let dx = -r; dx <= r; dx++) {
-        for (let dz = -r; dz <= r; dz++) {
-          const nx = gx + dx;
-          const nz = gz + dz;
-          if (nx < 0 || nx >= GRID_CELLS_W || nz < 0 || nz >= GRID_CELLS_H || isCellBlocked(nx, nz)) continue;
-          const d = Math.hypot(dx, dz);
-          if (d < bestDist) {
-            bestDist = d;
-            best = { gx: nx, gz: nz };
-          }
-        }
-      }
-      if (bestDist < Infinity) break;
-    }
-    return best;
-  };
-
-  const actualStart = findFreeCell(toGridX(start.x), toGridZ(start.z));
-  const actualTarget = findFreeCell(toGridX(target.x), toGridZ(target.z));
-
-  const key = (gx: number, gz: number) => `${gx},${gz}`;
-  const startKey = key(actualStart.gx, actualStart.gz);
-  const targetKey = key(actualTarget.gx, actualTarget.gz);
-
-  type Node = { gx: number; gz: number; g: number; f: number };
-  const openSet = new Map<string, Node>();
-  const closedSet = new Set<string>();
-  const cameFrom = new Map<string, { gx: number; gz: number }>();
-
-  const h = (gx: number, gz: number) =>
-    Math.hypot(toWorldX(gx) - toWorldX(actualTarget.gx), toWorldZ(gz) - toWorldZ(actualTarget.gz));
-
-  openSet.set(startKey, { gx: actualStart.gx, gz: actualStart.gz, g: 0, f: h(actualStart.gx, actualStart.gz) });
-
-  const dirs = [
-    { dx: 1, dz: 0, cost: 1 },
-    { dx: -1, dz: 0, cost: 1 },
-    { dx: 0, dz: 1, cost: 1 },
-    { dx: 0, dz: -1, cost: 1 },
-    { dx: 1, dz: 1, cost: 1.414 },
-    { dx: -1, dz: 1, cost: 1.414 },
-    { dx: 1, dz: -1, cost: 1.414 },
-    { dx: -1, dz: -1, cost: 1.414 },
-  ];
-
-  let found = false;
-  let maxIters = 8000;
-
-  while (openSet.size > 0 && maxIters-- > 0) {
-    let current: Node | null = null;
-    for (const node of openSet.values()) {
-      if (!current || node.f < current.f) current = node;
-    }
-    if (!current) break;
-
-    const currentKey = key(current.gx, current.gz);
-    if (currentKey === targetKey) {
-      found = true;
-      break;
-    }
-
-    openSet.delete(currentKey);
-    closedSet.add(currentKey);
-
-    for (const d of dirs) {
-      const ngx = current.gx + d.dx;
-      const ngz = current.gz + d.dz;
-      if (ngx < 0 || ngx >= GRID_CELLS_W || ngz < 0 || ngz >= GRID_CELLS_H) continue;
-
-      const nKey = key(ngx, ngz);
-      if (closedSet.has(nKey) || isCellBlocked(ngx, ngz)) continue;
-
-      // Diagonal steps need both orthogonal neighbours free, so paths never clip a corner.
-      if (d.dx !== 0 && d.dz !== 0 && (isCellBlocked(current.gx + d.dx, current.gz) || isCellBlocked(current.gx, current.gz + d.dz))) {
-        continue;
-      }
-
-      const tentativeG = current.g + d.cost * PATH_STEP;
-      const existing = openSet.get(nKey);
-      if (!existing || tentativeG < existing.g) {
-        cameFrom.set(nKey, { gx: current.gx, gz: current.gz });
-        openSet.set(nKey, { gx: ngx, gz: ngz, g: tentativeG, f: tentativeG + h(ngx, ngz) });
-      }
-    }
-  }
-
-  const rawPoints: Array<{ x: number; z: number }> = [];
-  if (found) {
-    let currKey = targetKey;
-    while (currKey !== startKey) {
-      const [gxStr, gzStr] = currKey.split(",");
-      rawPoints.push({ x: toWorldX(Number(gxStr)), z: toWorldZ(Number(gzStr)) });
-      const prev = cameFrom.get(currKey);
-      if (!prev) break;
-      currKey = key(prev.gx, prev.gz);
-    }
-    rawPoints.reverse();
-  }
-
-  // String pulling: skip waypoints that are visible from the current one.
-  const full = [{ x: start.x, z: start.z }, ...rawPoints, { x: target.x, z: target.z }];
-  const smoothed: Array<{ x: number; z: number }> = [];
-  let currIdx = 0;
-  while (currIdx < full.length - 1) {
-    let farthest = currIdx + 1;
-    for (let next = full.length - 1; next > currIdx + 1; next--) {
-      if (!isOfficeSegmentBlocked(full[currIdx]!.x, full[currIdx]!.z, full[next]!.x, full[next]!.z)) {
-        farthest = next;
-        break;
-      }
-    }
-    smoothed.push(full[farthest]!);
-    currIdx = farthest;
-  }
-
-  return smoothed.length > 0 ? smoothed : [{ x: target.x, z: target.z }];
+  return OFFICE_NAV.findPath(start, target);
 }
 
 // ==========================================

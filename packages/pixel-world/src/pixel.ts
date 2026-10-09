@@ -45,10 +45,16 @@ export function sunPosition(yaw: number, out: ThreeNS.Vector3): ThreeNS.Vector3 
   return out.set((fx - rx) * 0.8, 1.6, (fz - rz) * 0.8).multiplyScalar(10);
 }
 
+/** Inner faces of the four outer walls in world units. */
+export type WallBounds = { minX: number; maxX: number; minZ: number; maxZ: number };
+const DEFAULT_CUT_BOUNDS: WallBounds = { minX: -20, maxX: 20, minZ: -10, maxZ: 10 };
+
 export type PixelStyle = {
   gradient: ThreeNS.DataTexture;
   /** Flags (north, south, west, east): the wall is in front of the camera and cut down to its stub. */
   wallCut: { value: ThreeNS.Vector4 };
+  /** Where the outer walls stand (world x/z of their inner faces); the wall cut follows. Default: the office floor. */
+  setWallBounds: (bounds: WallBounds) => void;
   /** Toon material with the 3-tone gradient and the front-wall cut. */
   toon: (params: ThreeNS.MeshToonMaterialParameters) => ThreeNS.MeshToonMaterial;
   /** Flags the walls that stand between the camera and the room for this yaw. */
@@ -76,24 +82,32 @@ export function getPixelStyle(THREE: Three): PixelStyle {
   gradient.needsUpdate = true;
 
   const wallCut = { value: new THREE.Vector4(0, 0, 0, 0) };
+  const cutBounds = { value: new THREE.Vector4(DEFAULT_CUT_BOUNDS.minX, DEFAULT_CUT_BOUNDS.maxX, DEFAULT_CUT_BOUNDS.minZ, DEFAULT_CUT_BOUNDS.maxZ) };
+  // The wall bands: 0.3 inside and 0.5 outside each bound (x = west/east, z = north/south)
   const cutTest = (
     "(vCutPos.y > " + (WALL_STUB_HEIGHT + 0.001).toFixed(3) + " && (" +
-    "(uWallCut.x > 0.5 && vCutPos.z < -9.7 && vCutPos.z > -10.5) || (uWallCut.y > 0.5 && vCutPos.z > 9.7 && vCutPos.z < 10.5) || " +
-    "(uWallCut.z > 0.5 && vCutPos.x < -19.7 && vCutPos.x > -20.5) || (uWallCut.w > 0.5 && vCutPos.x > 19.7 && vCutPos.x < 20.5)))"
+    "(uWallCut.x > 0.5 && vCutPos.z < uCutBounds.z + 0.3 && vCutPos.z > uCutBounds.z - 0.5) || " +
+    "(uWallCut.y > 0.5 && vCutPos.z > uCutBounds.w - 0.3 && vCutPos.z < uCutBounds.w + 0.5) || " +
+    "(uWallCut.z > 0.5 && vCutPos.x < uCutBounds.x + 0.3 && vCutPos.x > uCutBounds.x - 0.5) || " +
+    "(uWallCut.w > 0.5 && vCutPos.x > uCutBounds.y - 0.3 && vCutPos.x < uCutBounds.y + 0.5)))"
   );
   const onBeforeCompile = (shader: ThreeNS.WebGLProgramParametersWithUniforms) => {
     shader.uniforms.uWallCut = wallCut;
+    shader.uniforms.uCutBounds = cutBounds;
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vCutPos;")
       .replace("#include <begin_vertex>", "#include <begin_vertex>\nvCutPos = (modelMatrix * vec4(transformed, 1.0)).xyz;");
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vCutPos;\nuniform vec4 uWallCut;")
+      .replace("#include <common>", "#include <common>\nvarying vec3 vCutPos;\nuniform vec4 uWallCut;\nuniform vec4 uCutBounds;")
       .replace("void main() {", "void main() {\n  if " + cutTest + " discard;");
   };
 
   const style: PixelStyle = {
     gradient,
     wallCut,
+    setWallBounds(bounds) {
+      cutBounds.value.set(bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ);
+    },
     toon(params) {
       const transparent = params.transparent === true;
       const mat = new THREE.MeshToonMaterial({ ...params, gradientMap: gradient, depthWrite: !transparent });

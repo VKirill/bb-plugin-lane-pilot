@@ -30,4 +30,4 @@ Seven stylised cars for the lot outside the council office (toy-like proportions
 4. Metallic and coat are removed from the high-poly material before the bake (a metallic base colour bakes black). Cage extrusion 0.08 (0.03 smeared the angular Cybertruck with window colours).
 5. The Raptor and the G-Wagon are voxel-remeshed (0.05 / 0.04 m) before decimation: their Meshy meshes are loose shells (floating wheels, interior) that the decimator cannot reduce. The G-Wagon texture is darkened x0.4 (Meshy bakes the sky reflection into the black paint).
 6. Decimate to about 2.4k triangles, smooth shading with sharp edges above 30-55 deg, smart UV project (86 deg), bake base colour 1024 -> 512, saved as JPEG quality 70 with the **Standard** view transform (the default AgX washes the colours out).
-7. `gltf-transform quantize` brings the file under 1 MB. Then `node scripts/embed-office-cars.mjs` writes `office-cars-glb.ts`.
+7. `gltf-transform quantize` brings the file under 1 MB. The file is served as it is from `assets/world/` (src/rooms/world-assets/server), nothing is embedded in the bundle.

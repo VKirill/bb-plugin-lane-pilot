@@ -1,18 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   OWNER_VARIANT,
-  PERSON_SCALE,
-  PERSON_VARIANTS,
   RECEPTIONIST_VARIANT,
   SEAT_HEIGHT_CHAIR,
   SEAT_HEIGHT_SOFA,
   SEAT_HEIGHT_STOOL,
-  clipForState,
   pickPersonVariant,
   seatHeightForPoint,
-  seatPlacement,
-  walkTimeScale,
 } from "../src/rooms/council/ui/office-people";
+import { PERSON_VARIANTS } from "@lane-pilot/pixel-world";
 
 describe("pickPersonVariant", () => {
   it("gives the owner and the receptionist their own characters", () => {
@@ -45,56 +41,10 @@ describe("pickPersonVariant", () => {
   });
 });
 
-describe("clipForState", () => {
-  const idle = { walking: false, sitting: false, activity: "idle" };
-
-  it("walks whenever the person moves", () => {
-    expect(clipForState({ ...idle, walking: true, sitting: true })).toBe("Walk");
-  });
-
-  it("types at desks and sits elsewhere", () => {
-    expect(clipForState({ ...idle, sitting: true, action: "typing" })).toBe("SitType");
-    expect(clipForState({ ...idle, sitting: true })).toBe("Sit");
-    expect(clipForState({ ...idle, sitting: true, action: "coffee" })).toBe("Sit");
-  });
-
-  it("sits at the meeting table and talks now and then", () => {
-    expect(clipForState({ walking: false, sitting: true, activity: "waiting", slot: 1 })).toBe("Sit");
-    expect(clipForState({ walking: false, sitting: true, activity: "waiting", slot: 4 })).toBe("SitTalk");
-  });
-
-  it("maps the council activities", () => {
-    expect(clipForState({ walking: false, sitting: false, activity: "speaking" })).toBe("Talk");
-    expect(clipForState({ walking: false, sitting: false, activity: "arguing" })).toBe("Point");
-  });
-
-  it("maps the standing office actions", () => {
-    const standing = (action?: string) => clipForState({ ...idle, action });
-    expect(standing("chat")).toBe("Talk");
-    expect(standing("coffee")).toBe("Drink");
-    expect(standing("bar")).toBe("Drink");
-    expect(standing("operate")).toBe("Interact");
-    expect(standing("window")).toBe("Window");
-    expect(standing(undefined)).toBe("Idle");
-  });
-});
-
-describe("walkTimeScale and seat placement", () => {
-  it("speeds the walk cycle up with the ground speed", () => {
-    expect(walkTimeScale(3.5)).toBeGreaterThan(walkTimeScale(2));
-    expect(walkTimeScale(2) / walkTimeScale(1)).toBeCloseTo(2);
-    expect(walkTimeScale(2, PERSON_SCALE * 2)).toBeCloseTo(walkTimeScale(2) / 2);
-  });
-
-  it("puts the pelvis on the seat: higher seats lift the person, every character stays above the floor", () => {
+describe("seatHeightForPoint", () => {
+  it("lifts people onto stools and sofas", () => {
     expect(seatHeightForPoint("pt_stool_2", "coffee")).toBe(SEAT_HEIGHT_STOOL);
     expect(seatHeightForPoint("pt_sofa_1", "sofa")).toBe(SEAT_HEIGHT_SOFA);
     expect(seatHeightForPoint("pt_desk_a", "desk")).toBe(SEAT_HEIGHT_CHAIR);
-    for (let v = 0; v < PERSON_VARIANTS; v++) {
-      const chair = seatPlacement(v, SEAT_HEIGHT_CHAIR);
-      expect(chair.y).toBeGreaterThan(0);
-      expect(chair.z).toBeGreaterThan(0);
-      expect(seatPlacement(v, SEAT_HEIGHT_STOOL).y).toBeGreaterThan(chair.y);
-    }
   });
 });

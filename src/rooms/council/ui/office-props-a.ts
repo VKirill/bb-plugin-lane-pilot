@@ -1,4 +1,4 @@
-import type { PropsKit } from "./office-props-kit";
+import type { PropsKit } from "@lane-pilot/pixel-world";
 
 // Part A of the set dressing: meeting room, open space, corridor and the wall decor of the two back walls.
 // Everything is authored in grid units (x = gx − 20, z = gz − 10); the north wall face is gz 0, the west wall face gx 0.

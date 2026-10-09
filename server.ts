@@ -15,6 +15,7 @@ import { createRuleScan } from "./src/rooms/self-repair/server";
 import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, pluginStopped } from "./src/rooms/runs/server";
 import { registerRpc } from "./src/rooms/core/server/rpc";
 import { mountAnamnesis } from "./src/rooms/anamnesis";
+import { mountWorldAssets } from "./src/rooms/world-assets/server";
 import { registerLaneWorktreeProvider } from "./src/rooms/native-agent/server";
 import { scheduleIsolated } from "./src/rooms/core/server";
 import { DRAIN_SNAPSHOT_KEY, skipRedundantStartupScans } from "./src/rooms/stability/server";
@@ -96,6 +97,8 @@ export default async function plugin(bb: BbPluginApi) {
   mountLearning(ctx, services);
   registerTools(ctx, services);
   registerCli(ctx, services);
+  // The pixel world's GLB files (council office people and cars) over HTTP, not inside app.js.
+  mountWorldAssets(bb);
   // What Lane Pilot learns about its owner by itself (the daily pass and new messages); inert until the owner switches it on.
   mountAnamnesis(ctx);
   // Writer attempts get BB environments of this provider unless workspace.provider is off; a BB without the API

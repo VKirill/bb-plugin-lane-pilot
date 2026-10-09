@@ -1,4 +1,4 @@
-import type { FloorRect } from "./office-props-kit";
+import type { FloorRect } from "@lane-pilot/pixel-world";
 
 /** Grid rectangle gx0–gx1 × gz0–gz1 as a world footprint (x = gx − 20, z = gz − 10). */
 const g = (gx0: number, gx1: number, gz0: number, gz1: number): FloorRect => ({

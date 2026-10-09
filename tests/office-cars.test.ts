@@ -10,7 +10,7 @@ import {
   advanceDriver,
 } from "../src/rooms/council/ui/office-cars";
 
-const GLB = readFileSync(new URL("../src/rooms/council/ui/assets/office-cars.glb", import.meta.url));
+const GLB = readFileSync(new URL("../assets/world/office-cars.glb", import.meta.url));
 
 describe("office-cars.glb", () => {
   const jsonLength = GLB.readUInt32LE(12);

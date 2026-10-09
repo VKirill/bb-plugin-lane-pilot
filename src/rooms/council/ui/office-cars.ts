@@ -1,12 +1,11 @@
 /**
- * Stylised cars for the lot outside the council office (assets/office-cars.glb, embedded as base64 because the
- * plugin bundles into one app.js). Seven single-mesh models on the scene's toon gradient. The box cars drawn by
- * office-props-b.ts stay as the fallback: they are hidden once the cars are added, and stay if the GLB cannot load.
- *
- * Model space: metres, ground at y = 0, centred on x/z, the front faces +Z (see assets/office-cars.md).
+ * Stylised cars for the lot outside the council office (assets/world/office-cars.glb, fetched over HTTP; the model
+ * loading lives in @lane-pilot/pixel-world). Seven single-mesh models on the scene's toon gradient. The box cars drawn
+ * by office-props-b.ts stay as the fallback: they are hidden once the cars are added, and stay if the GLB cannot load.
+ * This file is the office's content: which car stands where and which drive the street.
  */
 import type * as ThreeNS from "three";
-import { getPixelStyle } from "./office-pixel";
+import { advanceAlongLane, loadVehicles } from "@lane-pilot/pixel-world";
 
 type Three = typeof ThreeNS;
 
@@ -59,8 +58,7 @@ export const CAR_DRIVERS: readonly CarDriver[] = [
 
 /** Next x of a driving car: moves east, re-enters from the west edge once past the east edge. */
 export function advanceDriver(x: number, speed: number, dt: number): number {
-  const next = x + speed * dt;
-  return next > DRIVE_MAX_X ? DRIVE_MIN_X + (next - DRIVE_MAX_X) : next;
+  return advanceAlongLane(x, speed, dt, DRIVE_MIN_X, DRIVE_MAX_X);
 }
 
 export type OfficeCars = {
@@ -71,56 +69,18 @@ export type OfficeCars = {
   dispose: () => void;
 };
 
-function decodeBase64(base64: string): ArrayBuffer {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
-}
-
 /**
- * Parses the embedded GLB, puts the cars on their spots and hides the box cars. Resolves after the first
- * frames have no need to wait for it; rejects (the box cars stay) when the GLB cannot be parsed.
+ * Fetches and parses the GLB, puts the cars on their spots and hides the box cars. Resolves after the first
+ * frames have no need to wait for it; rejects (the box cars stay) when the GLB cannot be loaded.
  */
 export async function loadOfficeCars(THREE: Three, scene: ThreeNS.Scene): Promise<OfficeCars> {
-  const [{ GLTFLoader }, { OFFICE_CARS_GLB_BASE64 }] = await Promise.all([
-    import("three/examples/jsm/loaders/GLTFLoader.js"),
-    import("./assets/office-cars-glb"),
-  ]);
-  const gltf = await new Promise<{ scene: ThreeNS.Group }>((resolve, reject) => {
-    new GLTFLoader().parse(decodeBase64(OFFICE_CARS_GLB_BASE64), "", resolve, reject);
-  });
-
-  const style = getPixelStyle(THREE);
-  const owned: Array<{ dispose: () => void }> = [];
-  const sources = new Map<CarId, ThreeNS.Mesh>();
-  for (const id of CAR_IDS) {
-    const node = gltf.scene.getObjectByName(CAR_NODE[id]);
-    let found: ThreeNS.Mesh | null = null;
-    node?.traverse((o) => {
-      if (!found && (o as ThreeNS.Mesh).isMesh) found = o as ThreeNS.Mesh;
-    });
-    if (!found) throw new Error(`office-cars: ${CAR_NODE[id]} missing`);
-    const mesh: ThreeNS.Mesh = found;
-    const old = mesh.material as ThreeNS.MeshStandardMaterial;
-    if (old.map) old.map.colorSpace = THREE.SRGBColorSpace;
-    const toon = style.toon({ map: old.map ?? null, emissive: 0x333333, emissiveMap: old.map ?? null });
-    old.dispose();
-    mesh.material = toon;
-    mesh.frustumCulled = false; // quantized positions pop out of the culling box
-    owned.push(toon, mesh.geometry);
-    if (toon.map) owned.push(toon.map);
-    sources.set(id, mesh);
-  }
+  const vehicles = await loadVehicles(THREE, CAR_NODE);
 
   const cars: ThreeNS.Object3D[] = [];
   const addCar = (car: CarId, x: number, z: number, heading: number) => {
-    const root = new THREE.Group();
-    root.name = `car:${car}`;
+    const root = vehicles.create(car);
     root.position.set(x, CAR_GROUND_Y, z);
     root.rotation.y = heading;
-    // shares the geometry and the material; keeps the node transform that undoes the position quantization
-    root.add(sources.get(car)!.clone());
     scene.add(root);
     cars.push(root);
     return root;
@@ -138,7 +98,7 @@ export async function loadOfficeCars(THREE: Three, scene: ThreeNS.Scene): Promis
     },
     dispose() {
       for (const root of cars) root.removeFromParent();
-      for (const item of owned) item.dispose();
+      vehicles.dispose();
     },
   };
 }

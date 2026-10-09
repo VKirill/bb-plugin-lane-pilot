@@ -8,7 +8,7 @@
  */
 import type * as ThreeNS from "three";
 import type { OfficePose } from "./office-behaviour";
-import { MESH_EDGE_LINES, getPixelStyle } from "./office-pixel";
+import { MESH_EDGE_LINES, getPixelStyle } from "@lane-pilot/pixel-world";
 
 type Three = typeof ThreeNS;
 
