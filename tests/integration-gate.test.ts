@@ -11,6 +11,8 @@ import {
   findCulpritByFiles,
   formatFixTurnPrompt,
   IntegrationGateRunner,
+  allFailuresAreTimeouts,
+  buildRecheckGateCommand,
 } from "../src/rooms/verification/server/integration-gate";
 import { openDatabase, createTask, saveStageReceipt, saveProjectSetting } from "../src/rooms/storage/database";
 import * as hostHandlers from "../src/rooms/host-worker/host-handlers";
@@ -436,6 +438,256 @@ describe("IntegrationGateRunner with mock core & services", () => {
       const pm = sentMessages.find((m) => m.threadId === "pm-thread-999")?.text ?? "";
       expect(pm).toContain("no git");
       expect(pm).toContain("t1, t2");
+    });
+  });
+
+  describe("timeout recheck under machine load", () => {
+    it("allFailuresAreTimeouts identifies timeout-only failures", () => {
+      const timeoutOutput = `
+ FAIL  tests/a.test.ts > suite > test
+Error: Test timed out in 5000ms.
+
+ FAIL  tests/b.test.ts > suite > test 2
+Error: Hook timed out in 5000ms.
+`;
+      const failing = [
+        { file: "tests/a.test.ts", workspacePackage: null },
+        { file: "tests/b.test.ts", workspacePackage: null },
+      ];
+      expect(allFailuresAreTimeouts(timeoutOutput, failing)).toBe(true);
+    });
+
+    it("allFailuresAreTimeouts returns false for assertion or mixed failures", () => {
+      const mixedOutput = `
+ FAIL  tests/a.test.ts > suite > test
+Error: Test timed out in 5000ms.
+
+ FAIL  tests/b.test.ts > suite > test 2
+AssertionError: expected 1 to be 2
+`;
+      const failing = [
+        { file: "tests/a.test.ts", workspacePackage: null },
+        { file: "tests/b.test.ts", workspacePackage: null },
+      ];
+      expect(allFailuresAreTimeouts(mixedOutput, failing)).toBe(false);
+    });
+
+    it("buildRecheckGateCommand appends failing files for vitest and jest", () => {
+      expect(buildRecheckGateCommand("npx vitest run", ["tests/a.test.ts", "tests/b.test.ts"])).toBe(
+        "npx vitest run tests/a.test.ts tests/b.test.ts"
+      );
+      expect(buildRecheckGateCommand("npx jest", ["tests/a.test.ts"])).toBe(
+        "npx jest tests/a.test.ts"
+      );
+      expect(buildRecheckGateCommand("npm test", ["tests/a.test.ts"])).toBe(
+        "npm test"
+      );
+    });
+
+    it("reruns load timeouts once and goes green if recheck exits 0", async () => {
+      const timeoutErr = " FAIL  tests/timeout.test.ts\nError: Test timed out in 5000ms.";
+      const gateRuns: string[] = [];
+      const coreWithGate = {
+        ...mockCore,
+        host: {
+          call: async (method: string, input: any) => {
+            if (method === "gateRun") {
+              gateRuns.push(input.command);
+              if (gateRuns.length === 1) {
+                return { hostId: "host-1", exitCode: 1, stdout: "", stderr: timeoutErr, head: "sha-head" };
+              }
+              return { hostId: "host-1", exitCode: 0, stdout: "passed", stderr: "", head: "sha-head" };
+            }
+            return (hostHandlers as any)[method]?.(input);
+          },
+        },
+      } as unknown as ServerCore;
+
+      saveProjectSetting(db, "proj-1", "integration.gate_command", "npx vitest run");
+      db.prepare(`INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES ('task-1', 'run-1', 'bb', '{}', 0)`).run();
+
+      const runner = new IntegrationGateRunner(coreWithGate, mockServices);
+      runner.noteMergedTask({
+        taskId: "task-1",
+        commitSha: "sha-1",
+        threadId: "thr-1",
+        attemptId: "att-1",
+        produced: ["tests/timeout.test.ts"],
+      });
+
+      const res = await runner.maybeRunGate({
+        runId: "run-1",
+        projectId: "proj-1",
+        pmThreadId: "pm-thread-999",
+        basePath: "/tmp/project",
+        configHostId: "host-1",
+        trigger: "drain",
+      });
+
+      expect(res).toMatchObject({ ran: true, passed: true });
+      expect(gateRuns).toEqual([
+        "npx vitest run",
+        "npx vitest run tests/timeout.test.ts",
+      ]);
+      expect(sentMessages.length).toBe(0);
+
+      const events = db.prepare(`SELECT status FROM lane_pilot_gate_event WHERE run_id='run-1' AND gate='verification' ORDER BY id ASC`).all() as { status: string }[];
+      expect(events.map((e) => e.status)).toEqual(["failed", "passed"]);
+    });
+
+    it("a recheck that fails with an assertion error leads to normal culprit flow", async () => {
+      const timeoutErr = " FAIL  tests/timeout.test.ts\nError: Test timed out in 5000ms.";
+      const assertionErr = " FAIL  tests/timeout.test.ts\nAssertionError: expected false to be true";
+      const gateRuns: string[] = [];
+      const coreWithGate = {
+        ...mockCore,
+        host: {
+          call: async (method: string, input: any) => {
+            if (method === "gateRun") {
+              gateRuns.push(input.command);
+              if (gateRuns.length === 1) {
+                return { hostId: "host-1", exitCode: 1, stdout: "", stderr: timeoutErr, head: "sha-head" };
+              }
+              return { hostId: "host-1", exitCode: 1, stdout: "", stderr: assertionErr, head: "sha-head" };
+            }
+            if (method === "readBoundedFile") {
+              return { content: "" };
+            }
+            return (hostHandlers as any)[method]?.(input);
+          },
+        },
+      } as unknown as ServerCore;
+
+      saveProjectSetting(db, "proj-1", "integration.gate_command", "npx vitest run");
+      db.prepare(`INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES ('task-1', 'run-1', 'bb', '{}', 0)`).run();
+
+      const runner = new IntegrationGateRunner(coreWithGate, mockServices);
+      runner.noteMergedTask({
+        taskId: "task-1",
+        commitSha: "sha-1",
+        threadId: "thr-1",
+        attemptId: "att-1",
+        produced: ["tests/timeout.test.ts"],
+      });
+
+      const res = await runner.maybeRunGate({
+        runId: "run-1",
+        projectId: "proj-1",
+        pmThreadId: "pm-thread-999",
+        basePath: "/tmp/project",
+        configHostId: "host-1",
+        trigger: "drain",
+      });
+
+      expect(res).toMatchObject({ ran: true, passed: false, culpritTaskId: "task-1" });
+      expect(gateRuns).toEqual([
+        "npx vitest run",
+        "npx vitest run tests/timeout.test.ts",
+      ]);
+      const writerMsg = sentMessages.find((m) => m.threadId === "thr-1");
+      expect(writerMsg?.text).toContain("AssertionError");
+    });
+
+    it("mixed timeout and assertion failures get no recheck", async () => {
+      const mixedErr = `
+ FAIL  tests/timeout.test.ts
+Error: Test timed out in 5000ms.
+ FAIL  tests/assert.test.ts
+AssertionError: expected 1 to be 2
+`;
+      const gateRuns: string[] = [];
+      const coreWithGate = {
+        ...mockCore,
+        host: {
+          call: async (method: string, input: any) => {
+            if (method === "gateRun") {
+              gateRuns.push(input.command);
+              return { hostId: "host-1", exitCode: 1, stdout: "", stderr: mixedErr, head: "sha-head" };
+            }
+            if (method === "readBoundedFile") return { content: "" };
+            return (hostHandlers as any)[method]?.(input);
+          },
+        },
+      } as unknown as ServerCore;
+
+      saveProjectSetting(db, "proj-1", "integration.gate_command", "npx vitest run");
+      db.prepare(`INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES ('task-1', 'run-1', 'bb', '{}', 0)`).run();
+
+      const runner = new IntegrationGateRunner(coreWithGate, mockServices);
+      runner.noteMergedTask({
+        taskId: "task-1",
+        commitSha: "sha-1",
+        threadId: "thr-1",
+        attemptId: "att-1",
+        produced: ["tests/assert.test.ts"],
+      });
+
+      const res = await runner.maybeRunGate({
+        runId: "run-1",
+        projectId: "proj-1",
+        pmThreadId: "pm-thread-999",
+        basePath: "/tmp/project",
+        configHostId: "host-1",
+        trigger: "drain",
+      });
+
+      expect(res).toMatchObject({ ran: true, passed: false, culpritTaskId: "task-1" });
+      expect(gateRuns).toEqual(["npx vitest run"]);
+    });
+
+    it("repeated timeouts on recheck are reported with a note", async () => {
+      const timeoutErr = " FAIL  tests/timeout.test.ts\nError: Test timed out in 5000ms.";
+      const gateRuns: string[] = [];
+      const coreWithGate = {
+        ...mockCore,
+        host: {
+          call: async (method: string, input: any) => {
+            if (method === "gateRun") {
+              gateRuns.push(input.command);
+              return { hostId: "host-1", exitCode: 1, stdout: "", stderr: timeoutErr, head: "sha-head" };
+            }
+            if (method === "readBoundedFile") return { content: "" };
+            return (hostHandlers as any)[method]?.(input);
+          },
+        },
+      } as unknown as ServerCore;
+
+      saveProjectSetting(db, "proj-1", "integration.gate_command", "npx vitest run");
+      db.prepare(`INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES ('task-1', 'run-1', 'bb', '{}', 0)`).run();
+
+      const runner = new IntegrationGateRunner(coreWithGate, mockServices);
+      // Multiple tasks so culprit is ambiguous and tellPm is invoked
+      runner.noteMergedTask({
+        taskId: "task-1",
+        commitSha: "sha-1",
+        threadId: "thr-1",
+        attemptId: "att-1",
+        produced: ["src/a.ts"],
+      });
+      runner.noteMergedTask({
+        taskId: "task-2",
+        commitSha: "sha-2",
+        threadId: "thr-2",
+        attemptId: "att-2",
+        produced: ["src/b.ts"],
+      });
+
+      const res = await runner.maybeRunGate({
+        runId: "run-1",
+        projectId: "proj-1",
+        pmThreadId: "pm-thread-999",
+        basePath: "/tmp/project",
+        configHostId: "host-1",
+        trigger: "drain",
+      });
+
+      expect(res).toMatchObject({ ran: true, passed: false, culpritTaskId: null });
+      expect(gateRuns).toEqual([
+        "npx vitest run",
+        "npx vitest run tests/timeout.test.ts",
+      ]);
+      const pmMsg = sentMessages.find((m) => m.threadId === "pm-thread-999");
+      expect(pmMsg?.text).toContain("timed out twice, also on recheck");
     });
   });
 });
