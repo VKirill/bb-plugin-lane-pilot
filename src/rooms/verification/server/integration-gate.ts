@@ -11,7 +11,7 @@ import { isEnvironmentCheckFailure } from "../../runs";
 import { gateLabel, gateResolverFor, type ResolvedGate } from "./gate-detect";
 import { continuesEpisode, fixesInFlight, type GateEpisode } from "./gate-episode";
 import { attributeFailures, testLabel } from "./gate-attribution";
-import { cacheHitsNote, extractCacheHits, extractFailingFiles, extractFailingTests } from "../gate-output";
+import { cacheHitsNote, extractCacheHits, extractFailingFiles, extractFailingTests, type FailingTest } from "../gate-output";
 import type { GateAttributeResult } from "../integration-gate-host";
 import { join } from "node:path";
 
@@ -200,6 +200,76 @@ ${tail}
 Make this pass on main. Change only what your task requires within owns_paths.`;
 }
 
+const TIMEOUT_ERROR_PATTERN = /(?:Test timed out in|Hook timed out in|\bTimeout\b|\btimed out\b)/i;
+
+/**
+ * Returns true if every failing test was caused exclusively by a timeout (e.g. machine load).
+ * Returns false if there are no failing tests or if any test failed with non-timeout errors (e.g. assertion).
+ */
+export function allFailuresAreTimeouts(output: string, failingTests: readonly FailingTest[]): boolean {
+  if (!failingTests.length) return false;
+  const clean = stripAnsi(output);
+  const lines = clean.split("\n");
+
+  // If there are standard assertion / syntax / type errors anywhere in output, it's not all timeouts
+  if (/\bAssertionError\b|\bexpected\s+.+\s+to\b|\berror TS\d+:/.test(clean)) {
+    return false;
+  }
+
+  // Find sections or errors per failing test
+  // Map files to whether a timeout was seen for that file
+  const testFiles = new Set(failingTests.map((t) => t.file));
+  const timeoutsByFile = new Set<string>();
+
+  // In vitest / jest output:
+  // e.g. FAIL tests/foo.test.ts > suite > test
+  // Error: Test timed out in 5000ms.
+  // or ❯ tests/foo.test.ts:24:5
+  // or blocks per file. Let's associate lines with the current failing file being reported.
+  let currentFile: string | null = null;
+
+  for (const line of lines) {
+    for (const file of testFiles) {
+      if (line.includes(file)) {
+        currentFile = file;
+        break;
+      }
+    }
+
+    if (TIMEOUT_ERROR_PATTERN.test(line)) {
+      if (currentFile) {
+        timeoutsByFile.add(currentFile);
+      }
+    }
+  }
+
+  // If not every file was associated via block tracking, check if global output has timeout
+  // and each file is mentioned with a timeout or all errors in output are timeouts.
+  if (timeoutsByFile.size === testFiles.size) {
+    return true;
+  }
+
+  // Also handle case where test headers and errors appear in distinct structures:
+  // If the output contains TIMEOUT_ERROR_PATTERN and no other failure keywords (AssertionError, etc.)
+  const hasTimeout = TIMEOUT_ERROR_PATTERN.test(clean);
+  const hasAssertionOrOtherFail = /\bAssertionError\b|\bExpected:|\bReceived:|\bexpect\(|\bassert\b/i.test(clean);
+
+  if (hasTimeout && !hasAssertionOrOtherFail) {
+    return true;
+  }
+
+  return false;
+}
+
+export function buildRecheckGateCommand(gateCommand: string, failingFiles: readonly string[]): string {
+  const isVitestOrJest = /(?:^|[;&|]\s*)(?:npx\s+)?(?:vitest|jest)(?:\s+run)?(?:\s+|$)/i.test(gateCommand);
+  if (!isVitestOrJest || !failingFiles.length) {
+    return gateCommand;
+  }
+  const uniqueFiles = [...new Set(failingFiles)];
+  return `${gateCommand} ${uniqueFiles.join(" ")}`;
+}
+
 export class IntegrationGateRunner {
   private inFlight = false;
   private mergesSinceLastGate = 0;
@@ -362,8 +432,79 @@ export class IntegrationGateRunner {
       return { ran: true, passed: false, culpritTaskId: null };
     }
 
+    // Gate failed. Check if all failures are test timeouts (e.g. machine load) and can be rechecked once.
+    let failingTests = extractFailingTests(`${stderr}\n${stdout}`);
+    let activeExitCode = exitCode;
+    let activeStdout = stdout;
+    let activeStderr = stderr;
+    let activeHead = ran.head;
+    let repeatedTimeouts = false;
+
+    if (allFailuresAreTimeouts(`${stderr}\n${stdout}`, failingTests)) {
+      const initialFailingFiles = [...new Set(failingTests.map((t) => t.file))];
+      const recheckCmd = buildRecheckGateCommand(gateCommand, initialFailingFiles);
+      this.ctx.log(`integration-gate: all failures are timeouts under load; rechecking with \`${recheckCmd}\``);
+
+      const rechecked = await host.call("gateRun", { requestedHostId: configHostId, basePath, command: recheckCmd, timeoutSec: GATE_TIMEOUT_SEC },
+        { hostId: configHostId, timeoutMs: (GATE_TIMEOUT_SEC + 60) * 1000 }).catch((cause: unknown) => {
+        this.ctx.log(`integration-gate: recheck \`${recheckCmd}\` failed to run on host ${configHostId}: ${cause instanceof Error ? cause.message : String(cause)}`);
+        return null;
+      });
+
+      if (rechecked && rechecked.exitCode === 0) {
+        this.ctx.log(`integration-gate: ${failingTests.length} timeouts passed on recheck (load), gate green`);
+        if (hasTaskInDb) {
+          const recheckReceiptResult = {
+            command: recheckCmd,
+            originalCommand: gateCommand,
+            source: gate.source,
+            detail: gate.detail,
+            exitCode: 0,
+            passed: true,
+            mergesChecked: this.mergesSinceLastGate,
+            note: "rechecked: timeouts under load",
+            recheckedTests: failingTests.map(testLabel),
+          };
+          try {
+            recordGateEvaluation(db, {
+              projectId,
+              runId,
+              taskId: runTaskId,
+              gate: "verification",
+              status: "passed",
+              attempt: 0,
+              input: gateCommand,
+              summary: recheckReceiptResult,
+            });
+          } catch (cause) {
+            this.ctx.log(`integration-gate: could not record recheck verdict: ${cause instanceof Error ? cause.message : String(cause)}`);
+          }
+        }
+
+        this.episodes.delete(runId);
+        this.mergesSinceLastGate = 0;
+        this.mergedTasksSinceLastGate = [];
+        if (rechecked.head) this.lastGreenCommit = rechecked.head;
+        return { ran: true, passed: true };
+      }
+
+      if (rechecked) {
+        const recheckFailingTests = extractFailingTests(`${rechecked.stderr}\n${rechecked.stdout}`);
+        if (allFailuresAreTimeouts(`${rechecked.stderr}\n${rechecked.stdout}`, recheckFailingTests)) {
+          // Still timeouts on recheck: continue normal culprit flow with original output, note repeated timeouts
+          repeatedTimeouts = true;
+        } else {
+          // Recheck failed with real failures: switch to recheck output for culprit flow
+          activeExitCode = rechecked.exitCode;
+          activeStdout = rechecked.stdout;
+          activeStderr = rechecked.stderr;
+          activeHead = rechecked.head;
+          failingTests = recheckFailingTests;
+        }
+      }
+    }
+
     // Gate failed. Find culprit.
-    const failingTests = extractFailingTests(`${stderr}\n${stdout}`);
     const failingFiles = [...new Set(failingTests.map((test) => test.file))];
     const tasksToCheck = [...this.mergedTasksSinceLastGate];
 
@@ -422,7 +563,7 @@ export class IntegrationGateRunner {
     // Write log file
     const logRelativePath = `.agents/plans/items/${culprit ? culprit.taskId : "integration-gate"}/logs/integration-gate.log`;
     const logFullPath = join(basePath, logRelativePath);
-    const logContent = `$ ${gateCommand}\nexit ${exitCode}\n\n${stdout}\n${stderr}`.trim() + "\n";
+    const logContent = `$ ${gateCommand}\nexit ${activeExitCode}\n\n${activeStdout}\n${activeStderr}`.trim() + "\n";
 
     await bb.sdk.files.write({
       hostId: configHostId,
@@ -439,9 +580,9 @@ export class IntegrationGateRunner {
       const prompt = formatFixTurnPrompt({
         taskId: culprit.taskId,
         gateCommand,
-        exitCode,
-        stdout,
-        stderr,
+        exitCode: activeExitCode,
+        stdout: activeStdout,
+        stderr: activeStderr,
         logPath: logRelativePath,
         ...(attribution.strict ? { failingTests: attribution.remaining.map(testLabel), preexistingTests: attribution.preexisting.map(testLabel) } : {}),
       });
@@ -471,14 +612,15 @@ export class IntegrationGateRunner {
         : attribution.strict && attribution.candidates.length === 0
           ? `No task merged in this batch touched the failing tests or their workspaces, so none is to blame.${preexistingNote}`
           : `Could not unambiguously identify culprit.${preexistingNote}`;
-    const failingList = failingTests.length ? ` Failing tests: ${failingTests.map(testLabel).join(", ")}.` : "";
+    const timeoutNote = repeatedTimeouts ? " (timed out twice, also on recheck)" : "";
+    const failingList = failingTests.length ? ` Failing tests${timeoutNote}: ${failingTests.map(testLabel).join(", ")}.` : "";
     const cacheSuffix = cacheNote ? ` ${cacheNote}` : "";
     const { episode, repeat } = this.enterEpisode(runId, gateCommand, failingFiles);
     if (repeat) {
-      await this.repeatRed(runId, pmThreadId, episode, failingFiles, `Lane Pilot: integration gate ${label} is still red (exit ${exitCode}), the same failing tests as before.${failingList} You were already told about this red gate; keep fixing it. Full log: ${logRelativePath}`, tasksToCheck.map((task) => task.taskId));
+      await this.repeatRed(runId, pmThreadId, episode, failingFiles, `Lane Pilot: integration gate ${label} is still red (exit ${activeExitCode}), the same failing tests as before.${failingList} You were already told about this red gate; keep fixing it. Full log: ${logRelativePath}`, tasksToCheck.map((task) => task.taskId));
       return { ran: true, passed: false, culpritTaskId: null };
     }
-    await this.tellPm(pmThreadId, `Lane Pilot: integration gate ${label} failed (exit ${exitCode}). ${why}${failingList}${cacheSuffix} Full log: ${logRelativePath}. Decide and act yourself, do not ask the owner: read the log, then dispatch fix tasks for these tests (one per workspace is fine); pre-existing failures are fixed the same way.`, episode);
+    await this.tellPm(pmThreadId, `Lane Pilot: integration gate ${label} failed (exit ${activeExitCode}). ${why}${failingList}${cacheSuffix} Full log: ${logRelativePath}. Decide and act yourself, do not ask the owner: read the log, then dispatch fix tasks for these tests (one per workspace is fine); pre-existing failures are fixed the same way.`, episode);
 
     return { ran: true, passed: false, culpritTaskId: null };
   }
