@@ -1,0 +1,10 @@
+{
+  "id": "morning-commute",
+  "title": "Morning commute: the city goes to work and the streets fill with cars",
+  "routines": [
+    { "id": "commute", "hours": [6.5, 9], "who": { "hasWork": true }, "action": "work", "mode": "force", "chance": 0.9 }
+  ],
+  "events": [
+    { "id": "rush-hour-traffic", "hours": [7, 9], "cooldownHours": 0.4, "do": [{ "type": "spawn_traffic", "kind": "car", "count": 3 }] }
+  ]
+}

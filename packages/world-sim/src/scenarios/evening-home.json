@@ -1,0 +1,9 @@
+{
+  "id": "evening-home",
+  "title": "Evening at home: people leave work and settle down at home",
+  "routines": [
+    { "id": "go-home", "hours": [19.5, 22], "action": "rest", "mode": "force", "chance": 0.75 },
+    { "id": "dinner-at-home", "hours": [18, 21], "action": "eat", "mode": "bias", "weight": 0.5 }
+  ],
+  "events": []
+}

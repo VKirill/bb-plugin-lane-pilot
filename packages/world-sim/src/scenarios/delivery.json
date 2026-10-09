@@ -1,0 +1,14 @@
+{
+  "id": "delivery",
+  "title": "Delivery: while sites are being built, a truck brings the next stage's materials ahead of the crew",
+  "routines": [],
+  "events": [
+    {
+      "id": "supply-run",
+      "hours": [8, 17],
+      "cooldownHours": 0.5,
+      "if": [{ "fact": "sitesNeedingMaterials", "op": ">=", "value": 1 }, { "fact": "chance", "value": 0.6 }],
+      "do": [{ "type": "delivery", "target": "neediest_site" }]
+    }
+  ]
+}
