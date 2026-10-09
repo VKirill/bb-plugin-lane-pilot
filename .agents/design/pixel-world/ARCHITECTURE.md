@@ -63,6 +63,30 @@ assets/world/         GLB files served over HTTP, not bundled
 | self-repair thread | emergency service van |
 | council session | meeting in the office (today's council room) |
 
+## Economy (council cncl_cdc0a11174ac438c, 2026-10-10)
+
+* **Income = accepted work, not tokens.** A district earns credits for each distinct accepted task (merge recorded in
+  `lane_pilot_attempt_transition`), with a daily cap per district. Tokens are shown as the **cost** of construction:
+  `total_tokens` includes cache reads (`src/rooms/usage/server/token-usage.ts`), and retries and long contexts inflate it,
+  so tokens as income would reward waste.
+* **Rules, event-driven.** Wages, prices, taxes, upkeep and inflation are formulas with fixed rates, settled on events
+  (task accepted) and a daily settlement. The 1–2 Hz tick only moves figures.
+* **Ledger.** Money is an append-only journal keyed by the source event id, so a hub restart or a replayed signal never
+  pays twice.
+* **Mayors.** A rule autopilot first (build what the budget allows by a priority table). An LLM mayor (free providers:
+  OpenRouter `:free`, Groq, Gemini free tier, Workers AI, Cerebras — keys in Env Catalog, rotation, hourly call cap,
+  cache, rule fallback) only after the autopilot ran without faults; it decides rare, flavourful things (what to build
+  next, a daily decree), never balances.
+* **MVP.** One district (BB-сервис), the «Город» screen behind a flag. Before enabling: p95 CPU/memory of the tick on the
+  hub and a restart-recovery test.
+* **Before any economy code:** a read-only reconciliation of token data, and the token-counter defect the council
+  reported, handled as an incident fix.
+
+## Feature freeze
+
+The owner approved Pixel World as an exception to the 2026-10-07 freeze (2026-10-10): it is a separate module behind a
+flag, off by default, and must not touch PM/writer paths. Engine optimisation ships as a stability improvement.
+
 ## Phases
 
 1. **Engine split and performance** — extract `pixel-world` (verbatim moves first), static batching + instancing,
