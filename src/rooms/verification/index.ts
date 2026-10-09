@@ -4,7 +4,7 @@ export { buildDocsFlows } from "./docs-flows";
 export { buildDocsAnchors, docsDepth, docsStaleness, jevApiKey, provideJevKey, verifyDocsCitations } from "./docs-jev";
 export { gateTriagePrompt, parseGateTriageResult } from "./gate-triage";
 export { commitDocs, docsLineCounts, docsWorthinessFacts, gitDocsScope, revertPaths } from "./git-docs";
-export { appendExcludeCommand, createWorktree, integrateWorktree, persistTaskFolder, prepareWorktree, removeLaneWorktree, snapshotWorktree, syncWorktree, taskFolderRel } from "./git-integrate";
+export { appendExcludeCommand, createWorktree, ensureExcludeLinesCommand, EXCLUDE_NOT_GIT, integrateWorktree, persistTaskFolder, prepareWorktree, removeLaneWorktree, snapshotWorktree, syncWorktree, taskFolderRel } from "./git-integrate";
 export type { ReplayCheckOutcome } from "./git-integrate";
 export { gitOwnershipChangedPaths, resolveGitOwnershipBase } from "./git-ownership";
 export { attributeGateOnHost, bisectGateOnHost, runGateOnHost } from "./integration-gate-host";

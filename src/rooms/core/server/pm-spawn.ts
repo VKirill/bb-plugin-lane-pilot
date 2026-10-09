@@ -95,8 +95,10 @@ export function fullAccessSpawn(bb: BbPluginApi, args: Parameters<BbPluginApi["s
   return (async () => {
     const hostId = args.environment?.type === "host" && typeof args.environment.hostId === "string" ? args.environment.hostId : undefined;
     const supportsTier = await providerSupportsTier(bb, args.providerId, hostId);
-    // An unknown tier support sends only a tier the caller configured: "fast" is honoured, "default" is not guessed.
-    const sendTier = supportsTier === true || (supportsTier === null && args.serviceTier === "fast");
+    // A tier the caller named is sent whatever the lookup says, unless the list shows the provider has no tiers.
+    // With no named tier and an unknown support, nothing is guessed.
+    const namedTier = args.serviceTier === "default" || args.serviceTier === "fast";
+    const sendTier = supportsTier === true || (supportsTier === null && namedTier);
 
     const quiet = quietHelper(args);
     const { serviceTier: _incomingTier, ...restQuiet } = quiet;

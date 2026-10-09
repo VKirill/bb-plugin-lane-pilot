@@ -5,6 +5,7 @@ export { lpTaskPipelineExecutor, registerDispatchExecutors } from "./dispatch-wo
 export type { DispatchRuntime } from "./dispatch-workflow";
 export { createWriterDispatch } from "./dispatch";
 export { createWriterFinish } from "./finish";
+export { OPENCODE_WRITER_PROVIDER } from "./skill-materialize";
 export { createWriterSpawn } from "./spawn";
 export { createWriterStart } from "./start";
 export { createWriterState } from "./state";

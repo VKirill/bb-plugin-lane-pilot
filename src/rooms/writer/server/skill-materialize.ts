@@ -1,5 +1,5 @@
 import { runOnHost, type RunCommandHost } from "@lane-pilot/host-calls";
-import { ensureExcludeLinesCommand, EXCLUDE_NOT_GIT } from "../../verification/git-integrate";
+import { ensureExcludeLinesCommand, EXCLUDE_NOT_GIT } from "../../verification";
 
 /**
  * Lane Stack's opencode-lane guard lets an OpenCode writer load a skill that exists as `<cwd>/.opencode/skills/<name>/SKILL.md`
