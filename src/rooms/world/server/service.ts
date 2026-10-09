@@ -42,11 +42,16 @@ const REPLAY_MAX = 1500;
 /** A tick after a stall longer than this runs as a coarse catch-up instead of one step. */
 const STALL_SECONDS = 5;
 const MAX_FAILURES = 10;
+/** KV key of the switch: the world is off until the owner turns it on (feature-freeze exception, 2026-10-10). */
+export const WORLD_ENABLED_KEY = "world:enabled";
+/** While the world is off the loop only checks the switch this often. */
+const SWITCH_POLL_MS = 5_000;
 
 type RealtimeHost = { realtime?: { publish?: (channel: string, payload: unknown) => void } };
 type EventsHost = { events?: { on?: (event: string, handler: (payload: unknown) => unknown) => void } };
 
 export type WorldStatus = {
+  enabled: boolean;
   running: boolean;
   broken: boolean;
   tick: number;
@@ -184,11 +189,32 @@ export function createWorldService(ctx: { bb: BbPluginApi; db: LanePilotDatabase
     timer.unref?.();
   });
 
+  let enabled = false;
+  async function readEnabled(): Promise<boolean> {
+    try { return (await bb.storage.kv.get(WORLD_ENABLED_KEY)) === true; } catch { return false; }
+  }
+  /** Turns the world on or off; off saves it and stops ticking and polling until it is turned on again. */
+  async function setEnabled(value: boolean): Promise<void> {
+    await bb.storage.kv.set(WORLD_ENABLED_KEY, value);
+    enabled = value;
+  }
+
   async function loop(signal: AbortSignal): Promise<void> {
     running = true;
     try {
-      boot(now());
+      let lastSwitchCheck = 0;
       while (!signal.aborted && !ctx.isDisposed() && failures < MAX_FAILURES) {
+        const at = now();
+        if (!world || at - lastSwitchCheck >= SWITCH_POLL_MS) {
+          lastSwitchCheck = at;
+          const on = await readEnabled();
+          if (on && !enabled) ctx.log("world: switched on");
+          if (!on && enabled && world) { flush(true); save(); ctx.log("world: switched off; saved and paused"); }
+          enabled = on;
+        }
+        if (!enabled) { await sleep(SWITCH_POLL_MS, signal); continue; }
+        // Boot on the first tick after switching on; a paused world catches up through tickAt's stall path
+        if (!world) boot(now());
         await sleep(cfg.tickMs, signal);
         if (signal.aborted || ctx.isDisposed()) break;
         tickAt(now());
@@ -221,7 +247,7 @@ export function createWorldService(ctx: { bb: BbPluginApi; db: LanePilotDatabase
   }
 
   function currentSnapshot(input: { withMap?: boolean; projectId?: string } = {}): WorldSnapshot {
-    if (!world) throw new Error("The world is not running yet");
+    if (!world) throw new Error(enabled ? "The world is starting" : "The world is off (world_enable turns it on)");
     touch();
     return filtered(snapshot(world, { withMap: input.withMap === true }), input.projectId);
   }
@@ -242,7 +268,7 @@ export function createWorldService(ctx: { bb: BbPluginApi; db: LanePilotDatabase
   function status(): WorldStatus {
     const w = world;
     return {
-      running, broken: failures >= MAX_FAILURES, tick: w?.tick ?? 0, time: w?.time ?? 0, hour: w ? hourOf(w) : 0, day: w ? dayOf(w) : 0,
+      enabled, running, broken: failures >= MAX_FAILURES, tick: w?.tick ?? 0, time: w?.time ?? 0, hour: w ? hourOf(w) : 0, day: w ? dayOf(w) : 0,
       citizens: w ? Object.keys(w.citizens).length : 0, sites: w ? Object.keys(w.sites).length : 0, districts: w ? Object.keys(w.districts).length : 0,
       eventSeq: w?.eventSeq ?? 0, lastTickAt: lastTickAt || null, savedAt, stateBytes, sockets: sockets.size, watching: watching(),
     };
@@ -323,7 +349,7 @@ export function createWorldService(ctx: { bb: BbPluginApi; db: LanePilotDatabase
     });
   }
 
-  return { mount, snapshot: currentSnapshot, eventsAfter, status, ingest, tickAt, boot, save, flush, source, world: () => world };
+  return { mount, snapshot: currentSnapshot, eventsAfter, status, setEnabled, ingest, tickAt, boot, save, flush, source, world: () => world };
 }
 
 export type WorldApi = ReturnType<typeof createWorldService>;

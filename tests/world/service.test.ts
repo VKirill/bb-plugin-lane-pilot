@@ -92,6 +92,7 @@ describe("world service: load, tick, persist, catch up, dispose", () => {
   it("runs as a background service and saves when it stops", async () => {
     const { host, service, db } = setup({ tickMs: 5, speed: 400, now: Date.now });
     service.mount();
+    await service.setEnabled(true);
     const { controller, done } = host.harness.behavior.runService("world-tick");
     const deadline = Date.now() + 3000;
     while (service.status().tick < 2 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
@@ -101,6 +102,18 @@ describe("world service: load, tick, persist, catch up, dispose", () => {
     expect(service.status().running).toBe(false);
     expect(loadWorld(db)!.world.tick).toBeGreaterThanOrEqual(2);
   });
+});
+
+it("stays off until switched on: no world, no ticks", async () => {
+  const { host, service } = setup({ tickMs: 5, speed: 400, now: Date.now });
+  service.mount();
+  const { controller, done } = host.harness.behavior.runService("world-tick");
+  await new Promise((r) => setTimeout(r, 60));
+  expect(service.status().enabled).toBe(false);
+  expect(service.status().tick).toBe(0);
+  expect(() => service.snapshot()).toThrow(/off/);
+  controller.abort();
+  await done;
 });
 
 describe("world service: Lane Pilot signals", () => {

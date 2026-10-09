@@ -17,8 +17,12 @@ export const rpcWorld = {
   world_status: {
     input: z.object({}).strict(),
     output: z.object({
-      running: z.boolean(), broken: z.boolean(), tick: z.number(), time: z.number(), hour: z.number(), day: z.number(), citizens: z.number().int(), sites: z.number().int(),
+      enabled: z.boolean(), running: z.boolean(), broken: z.boolean(), tick: z.number(), time: z.number(), hour: z.number(), day: z.number(), citizens: z.number().int(), sites: z.number().int(),
       districts: z.number().int(), eventSeq: z.number().int(), lastTickAt: z.number().nullable(), savedAt: z.number().nullable(), stateBytes: z.number().int(), sockets: z.number().int(), watching: z.boolean(),
     }).strict(),
+  },
+  world_enable: {
+    input: z.object({ enabled: z.boolean() }).strict(),
+    output: z.object({ enabled: z.boolean() }).strict(),
   },
 } as const;

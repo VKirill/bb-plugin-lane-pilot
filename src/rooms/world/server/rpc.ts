@@ -9,5 +9,9 @@ export function worldRpc(world: WorldApi) {
     }),
     world_events: async (input: { afterSeq: number }) => world.eventsAfter(input.afterSeq),
     world_status: async () => world.status(),
+    world_enable: async (input: { enabled: boolean }) => {
+      await world.setEnabled(input.enabled);
+      return { enabled: input.enabled };
+    },
   };
 }
