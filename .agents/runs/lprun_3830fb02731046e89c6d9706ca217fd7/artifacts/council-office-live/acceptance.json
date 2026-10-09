@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "council-office-live",
+  "task_sha256": "d095680db71a5f0beca685c1758e77419ef41267ca7f5642a5d1058104a1618b",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "9ffacc0e11becbdc3b94c799d0a3d08a2227273433322fe7df826ead084ea7d5",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-09T08:59:40.951Z",
+  "model": "router9/ag/gemini-3.8-flash-medium"
+}
