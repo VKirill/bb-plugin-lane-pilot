@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "council-office-desktop-fixes",
+  "task_sha256": "91bf9906efbb05c470d7fa38cb1867f5a793512558f45e0d2e739080b10a8dfc",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "5b6acda205c9c20373b4af7c9009ab4a54cd9612c960484278b50747b69fba13",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-09T15:52:41.478Z",
+  "model": "claude-haiku-5-5"
+}
