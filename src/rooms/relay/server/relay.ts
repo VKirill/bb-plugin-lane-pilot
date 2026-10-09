@@ -34,7 +34,7 @@ export type RelayItem = RelayAsk | RelayReminder;
 export const DUPLICATE_REMINDER_MS = 60_000;
 /** Guards against two agents talking in circles or an agent snoozing for ever. */
 // A PM watching a day-long run sets a reminder per batch; 30 a day ran out on SelfyStudio (2026-10-04).
-export const RELAY_LIMITS = { asksPerPairPerHour:6, openRemindersPerThread:20, remindersPerThreadPerDay:150, keepMs:7 * 86_400_000 };
+export const RELAY_LIMITS = { asksPerPairPerHour:6, openRemindersPerThread:20, remindersPerThreadPerDay:150, keepMs:7 * 86_400_000, maxStoredBytes:200_000 };
 
 export type RelayDeps = {
   load():Promise<RelayItem[]>;
@@ -69,6 +69,67 @@ const TASK_DONE = new Set(["accepted", "blocked", "canceled"]);
 
 const id = (prefix:string) => `${prefix}_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
 
+function isOpen(item:RelayItem):boolean {
+  return item.kind === "remind" ? !item.firedAt : !item.answeredAt;
+}
+
+function truncateItemText(item:RelayItem, maxLen:number):void {
+  if (item.kind === "remind") {
+    if (item.note.length > maxLen) {
+      item.note = `${item.note.slice(0, maxLen)}…`;
+    }
+  } else {
+    if (item.question.length > maxLen) {
+      item.question = `${item.question.slice(0, maxLen)}…`;
+    }
+  }
+}
+
+function boundItemsSize(items:RelayItem[], maxBytes:number):RelayItem[] {
+  let kept = [...items];
+  if (Buffer.byteLength(JSON.stringify(kept)) <= maxBytes) return kept;
+
+  // 1. Drop finished items first, oldest createdAt first
+  const finished = kept
+    .filter((item) => !isOpen(item))
+    .sort((a, b) => a.createdAt - b.createdAt);
+
+  const dropSet = new Set<RelayItem>();
+  // Binary search to find how many finished items to drop efficiently
+  let low = 1;
+  let high = finished.length;
+  let dropCount = finished.length;
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const testDrop = new Set(finished.slice(0, mid));
+    const candidate = kept.filter((it) => !testDrop.has(it));
+    if (Buffer.byteLength(JSON.stringify(candidate)) <= maxBytes) {
+      dropCount = mid;
+      high = mid - 1; // Try dropping fewer
+    } else {
+      low = mid + 1; // Need to drop more
+    }
+  }
+
+  for (let i = 0; i < dropCount; i++) {
+    dropSet.add(finished[i]!);
+  }
+  kept = kept.filter((it) => !dropSet.has(it));
+
+  // 2. If still over budget, truncate long text fields of remaining items with «…»
+  if (Buffer.byteLength(JSON.stringify(kept)) > maxBytes) {
+    for (const maxLen of [200, 80, 20, 0]) {
+      for (const item of kept) {
+        truncateItemText(item, maxLen);
+      }
+      if (Buffer.byteLength(JSON.stringify(kept)) <= maxBytes) break;
+    }
+  }
+
+  return kept;
+}
+
 export function createRelay(deps:RelayDeps) {
   let chain:Promise<unknown> = Promise.resolve();
   /** One read-modify-write at a time: tools, events and the sweep all touch the same list. */
@@ -77,7 +138,9 @@ export function createRelay(deps:RelayDeps) {
       const items = await deps.load();
       const result = await work(items);
       const cutoff = deps.now() - RELAY_LIMITS.keepMs;
-      await deps.save(items.filter((item) => item.createdAt > cutoff || (item.kind === "remind" ? !item.firedAt : !item.answeredAt)));
+      const filtered = items.filter((item) => item.createdAt > cutoff || isOpen(item));
+      const bounded = boundItemsSize(filtered, RELAY_LIMITS.maxStoredBytes);
+      await deps.save(bounded);
       return result;
     });
     chain = next.catch(() => undefined);
