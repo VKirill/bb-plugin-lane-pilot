@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { t } from "@lane-pilot/i18n";
 import { buildOfficeFloor } from "./office-scene";
+import {
+  CAMERA_PITCH,
+  CAMERA_YAW,
+  PIXELS_PER_UNIT,
+  PixelPresenter,
+  ZOOM_SCALES,
+  getPixelStyle,
+  sunPosition,
+} from "./office-pixel";
 import { applyCharacterPose, buildCharacter, pickCharacterLook, type CharacterModel } from "./office-character";
 import {
   OFFICE_SEATS,
@@ -50,12 +59,13 @@ const STAFF_COLORS = ["#e8833a", "#4f9d4a", "#3d7cc9", "#9a5bb5", "#d9a03f", "#c
 const RECEPTIONIST_COLOR = "#2c9a8f";
 const CHAT_GLYPHS = ["…", "ха", "!", "?", "👍", "☕"];
 
-/** Camera orbit: the default view and the limits that keep the cutaway's back walls behind the floor. */
-const VIEW_DEFAULT = { yaw: Math.atan2(0.4716, 0.7263), pitch: Math.PI / 6, zoom: 1, tx: 0, tz: 0 };
-const YAW_RANGE = [0.05, Math.PI / 2 - 0.05] as const;
-const PITCH_RANGE = [0.3, 1.25] as const;
-const ZOOM_RANGE = [0.8, 4] as const;
-const CAMERA_DISTANCE = 60;
+/**
+ * Camera: 2:1 dimetric (azimuth 45°, pitch 30°), four views 90° apart, fixed pitch. `zoom` is the
+ * CSS pixels per render pixel (one of ZOOM_SCALES); 0 means the largest step that fits the floor.
+ */
+const VIEW_DEFAULT = { yaw: CAMERA_YAW, pitch: CAMERA_PITCH, zoom: 0, tx: 0, tz: 0 };
+/** A drag this long (CSS px) turns the office by one view. */
+const TURN_DRAG_PX = 50;
 type OfficeView = typeof VIEW_DEFAULT;
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -196,7 +206,7 @@ export function CouncilOffice({
       try {
         renderer = new THREE.WebGLRenderer({
           canvas,
-          antialias: false,
+          antialias: false, // the scene is drawn at low resolution and upscaled with nearest sampling
           alpha: false,
           powerPreference: "low-power",
         });
@@ -204,34 +214,32 @@ export function CouncilOffice({
         setHasWebGL(false);
         return;
       }
-      // One render pixel per two CSS pixels at the default view: the pixel-art look (reference.md §4).
-      // Zooming in keeps the render resolution fixed in world units, so the pixels grow with the zoom
-      // like a zoomed pixel-art picture instead of turning into smooth 3D.
-      let pixelZoomStep = 1;
-      renderer.setPixelRatio(0.5);
+      // 3D pixel art: low-res target, depth outlines, nearest upscale (office-pixel.ts)
+      const presenter = new PixelPresenter(THREE, renderer);
 
       const scene = new THREE.Scene();
       const disposables: Array<{ dispose: () => void }> = [];
 
       // Camera: orthographic, azimuth 33°, elevation 30°, target = floor centre
       const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 500);
-      // The view eases towards the target the controls set (frame-rate independent), within the limits above
+      // The view eases towards the target the controls set (frame-rate independent)
       const view: OfficeView = { ...viewTargetRef.current };
-      let fitViewHeight = 22.7;
+      let fitCenterY = 1.3;
+      /** The zoom step that fits the whole floor (CSS px per render pixel). */
+      let autoScale: number = ZOOM_SCALES[1];
+      const pixelStyle = getPixelStyle(THREE);
+      const sunLight = { current: null as import("three").DirectionalLight | null };
+      const currentScale = (zoom: number) => (zoom > 0 ? zoom : autoScale);
       const applyView = () => {
-        const cp = Math.cos(view.pitch);
-        camera.position.set(
-          view.tx + CAMERA_DISTANCE * Math.sin(view.yaw) * cp,
-          CAMERA_DISTANCE * Math.sin(view.pitch),
-          view.tz + CAMERA_DISTANCE * Math.cos(view.yaw) * cp
-        );
-        camera.lookAt(view.tx, 0, view.tz);
-        camera.zoom = view.zoom;
-        camera.updateProjectionMatrix();
+        presenter.setScale(currentScale(view.zoom));
+        presenter.placeCamera(camera, view, fitCenterY);
+        pixelStyle.setFrontWalls(view.yaw);
+        if (sunLight.current) sunPosition(view.yaw, sunLight.current.position);
       };
-      applyView();
 
       buildOfficeFloor({ THREE, scene, disposables });
+      sunLight.current = scene.getObjectByName("sun") as import("three").DirectionalLight | null;
+      applyView();
 
       const outlineMat = new THREE.LineBasicMaterial({ color: OUTLINE_COLOR });
       disposables.push(outlineMat);
@@ -284,14 +292,11 @@ export function CouncilOffice({
       const handleResize = () => {
         const w = container.clientWidth || 320;
         const h = container.clientHeight || 240;
-        renderer.setSize(w, h, false);
-        const { viewWidth, viewHeight, centerY } = fitOfficeCamera(w / h);
-        fitViewHeight = viewHeight;
-        camera.left = -viewWidth / 2;
-        camera.right = viewWidth / 2;
-        camera.top = viewHeight / 2 + centerY;
-        camera.bottom = -viewHeight / 2 + centerY;
-        camera.updateProjectionMatrix();
+        presenter.resize(w, h, Math.min(window.devicePixelRatio || 1, 3));
+        const { viewHeight, centerY } = fitOfficeCamera(w / h);
+        fitCenterY = centerY;
+        autoScale = [...ZOOM_SCALES].reverse().find((step) => viewHeight * PIXELS_PER_UNIT * step <= h) ?? ZOOM_SCALES[0];
+        applyView();
       };
 
       // Orbit controls: drag rotates, right/shift-drag or two fingers move, wheel or pinch zooms, double-click resets
@@ -299,8 +304,16 @@ export function CouncilOffice({
       let pinchDistance = 0;
       const target = viewTargetRef.current;
       const markMoved = () => setViewMoved(true);
+      let turnDrag = 0;
+      /** One zoom step in or out along ZOOM_SCALES from the current scale. */
+      const stepZoom = (direction: number) => {
+        const now = currentScale(target.zoom);
+        const index = ZOOM_SCALES.findIndex((step) => step >= now);
+        const from = index < 0 ? ZOOM_SCALES.length - 1 : index;
+        target.zoom = ZOOM_SCALES[clamp(from + direction, 0, ZOOM_SCALES.length - 1)]!;
+      };
       const panBy = (dxPx: number, dyPx: number) => {
-        const unitsPerPx = fitViewHeight / target.zoom / (container.clientHeight || 1);
+        const unitsPerPx = 1 / (PIXELS_PER_UNIT * currentScale(target.zoom));
         const right = { x: Math.cos(target.yaw), z: -Math.sin(target.yaw) };
         const back = { x: Math.sin(target.yaw), z: Math.cos(target.yaw) };
         const lift = 1 / Math.max(0.3, Math.sin(target.pitch));
@@ -310,6 +323,7 @@ export function CouncilOffice({
       const onPointerDown = (e: PointerEvent) => {
         canvas.setPointerCapture(e.pointerId);
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        turnDrag = 0;
         if (pointers.size === 2) {
           const [a, b] = [...pointers.values()];
           pinchDistance = Math.hypot(a!.x - b!.x, a!.y - b!.y);
@@ -324,14 +338,21 @@ export function CouncilOffice({
         if (pointers.size >= 2) {
           const [a, b] = [...pointers.values()];
           const dist = Math.hypot(a!.x - b!.x, a!.y - b!.y);
-          if (pinchDistance > 0) target.zoom = clamp(target.zoom * (dist / pinchDistance), ZOOM_RANGE[0], ZOOM_RANGE[1]);
-          pinchDistance = dist;
+          if (pinchDistance > 0 && (dist / pinchDistance > 1.25 || dist / pinchDistance < 0.8)) {
+            stepZoom(dist > pinchDistance ? 1 : -1);
+            pinchDistance = dist;
+          }
+          if (pinchDistance === 0) pinchDistance = dist;
           panBy(dx / 2, dy / 2);
         } else if (e.buttons === 2 || e.shiftKey) {
           panBy(dx, dy);
         } else {
-          target.yaw = clamp(target.yaw - dx * 0.006, YAW_RANGE[0], YAW_RANGE[1]);
-          target.pitch = clamp(target.pitch + dy * 0.004, PITCH_RANGE[0], PITCH_RANGE[1]);
+          // Dragging turns the office by whole views: each TURN_DRAG_PX of drag is a quarter turn
+          turnDrag += dx;
+          if (Math.abs(turnDrag) >= TURN_DRAG_PX) {
+            target.yaw -= Math.sign(turnDrag) * (Math.PI / 2);
+            turnDrag = 0;
+          }
         }
         markMoved();
       };
@@ -339,9 +360,14 @@ export function CouncilOffice({
         pointers.delete(e.pointerId);
         pinchDistance = 0;
       };
+      let wheelDelta = 0;
       const onWheel = (e: WheelEvent) => {
         e.preventDefault();
-        target.zoom = clamp(target.zoom * Math.exp(-e.deltaY * 0.0015), ZOOM_RANGE[0], ZOOM_RANGE[1]);
+        wheelDelta += e.deltaY;
+        if (Math.abs(wheelDelta) >= 40) {
+          stepZoom(wheelDelta < 0 ? 1 : -1);
+          wheelDelta = 0;
+        }
         markMoved();
       };
       const onDoubleClick = () => {
@@ -458,6 +484,7 @@ export function CouncilOffice({
         applyCharacterPose(rig.model, pose, timeSec + rig.phase);
       };
 
+      const projectedPoint = { x: 0, y: 0 };
       const animate = (nowTime: number) => {
         if (disposed) return;
         const dt = Math.min(0.1, Math.max(0.001, (nowTime - lastTime) / 1000));
@@ -468,22 +495,18 @@ export function CouncilOffice({
         // Ease the view towards the controls' target: exponential smoothing, independent of frame rate
         const ease = motionReduced ? 1 : 1 - Math.exp(-12 * dt);
         const goal = viewTargetRef.current;
+        // Take the short way round after a reset, and land exactly on the snapped view
+        view.yaw = goal.yaw + Math.atan2(Math.sin(view.yaw - goal.yaw), Math.cos(view.yaw - goal.yaw));
         if (
-          Math.abs(goal.yaw - view.yaw) + Math.abs(goal.pitch - view.pitch) + Math.abs(goal.zoom - view.zoom) +
+          Math.abs(goal.yaw - view.yaw) + Math.abs(goal.pitch - view.pitch) + (goal.zoom === view.zoom ? 0 : 1) +
           Math.abs(goal.tx - view.tx) + Math.abs(goal.tz - view.tz) > 1e-4
         ) {
-          view.yaw += (goal.yaw - view.yaw) * ease;
-          view.pitch += (goal.pitch - view.pitch) * ease;
-          view.zoom += (goal.zoom - view.zoom) * ease;
+          view.yaw = Math.abs(goal.yaw - view.yaw) < 2e-3 ? goal.yaw : view.yaw + (goal.yaw - view.yaw) * ease;
+          view.pitch = goal.pitch;
+          view.zoom = goal.zoom; // pixel zoom steps are not eased
           view.tx += (goal.tx - view.tx) * ease;
           view.tz += (goal.tz - view.tz) * ease;
           applyView();
-          const step = Math.max(1, Math.round(view.zoom * 2) / 2);
-          if (step !== pixelZoomStep) {
-            pixelZoomStep = step;
-            renderer.setPixelRatio(0.5 / step);
-            handleResize();
-          }
         }
 
         const currentDetail = detailRef.current;
@@ -668,9 +691,9 @@ export function CouncilOffice({
             rig ? rig.model.headY * RIG_SCALE + 0.45 : 1.2,
             rig ? rig.pos.z : 0
           );
-          projPos.project(camera);
-          const screenX = Math.round(((projPos.x + 1) * w) / 2);
-          const screenY = Math.round(((-projPos.y + 1) * h) / 2);
+          const screen = presenter.project(projPos, camera, projectedPoint);
+          const screenX = Math.round(screen.x);
+          const screenY = Math.round(screen.y);
           const isSpeaker = actor.activity === "speaking" || actor.activity === "arguing";
           return {
             id: actor.id,
@@ -704,11 +727,11 @@ export function CouncilOffice({
         for (const [id, el] of staffOverlayRef.current) {
           const rig = charRigs.get(id);
           if (!rig) continue;
-          const p = new THREE.Vector3(rig.pos.x, rig.model.headY * RIG_SCALE + 0.5, rig.pos.z).project(camera);
-          el.style.transform = `translate3d(${Math.round(((p.x + 1) * w) / 2)}px, ${Math.round(((-p.y + 1) * h) / 2)}px, 0)`;
+          const p = presenter.project(new THREE.Vector3(rig.pos.x, rig.model.headY * RIG_SCALE + 0.5, rig.pos.z), camera, projectedPoint);
+          el.style.transform = `translate3d(${Math.round(p.x)}px, ${Math.round(p.y)}px, 0)`;
         }
         // Council chat glyphs ride on the council members' own overlays
-        renderer.render(scene, camera);
+        presenter.render(scene, camera);
         animId = requestAnimationFrame(animate);
       };
 
@@ -727,6 +750,7 @@ export function CouncilOffice({
           }
         }
         try {
+          presenter.dispose();
           renderer.dispose();
           renderer.forceContextLoss();
         } catch {
@@ -760,7 +784,7 @@ export function CouncilOffice({
     <div
       ref={containerRef}
       className="absolute inset-0 select-none overflow-hidden bg-[#acddec] font-mono text-xs touch-none"
-      style={{ boxShadow: "inset 0 0 0 2px #0f172a", imageRendering: "pixelated" }}
+      style={{ boxShadow: "inset 0 0 0 2px #0f172a" }}
       data-testid="council-office"
     >
       {/* Wall-speaker Moderator Notice, under the top bar */}
@@ -803,7 +827,6 @@ export function CouncilOffice({
           <canvas
             ref={canvasRef}
             className="absolute inset-0 h-full w-full block cursor-grab active:cursor-grabbing"
-            style={{ imageRendering: "pixelated" }}
             data-testid="council-office-canvas"
           />
 

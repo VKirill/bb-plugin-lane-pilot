@@ -1,13 +1,14 @@
 /**
  * Chibi office people for the council office: a jointed rig (pelvis, spine, neck/head, shoulders with elbows,
  * hips with knees and ankles) built from a few merged, vertex-coloured low-poly parts, and a pose applier that
- * turns an OfficePose into joint angles. One shared vertex-coloured Lambert material, flat colours, dark outlines.
+ * turns an OfficePose into joint angles. One shared vertex-coloured toon material, flat colours, dark outlines.
  *
  * Units are rig units (the caller scales the whole rig). +Z is the front of the character, +Y up, x = right/left.
  * A standing character is about 1.6 tall, a seat top is 0.52 / RIG_SCALE above the floor.
  */
 import type * as ThreeNS from "three";
 import type { OfficePose } from "./office-behaviour";
+import { MESH_EDGE_LINES, getPixelStyle } from "./office-pixel";
 
 type Three = typeof ThreeNS;
 
@@ -556,12 +557,12 @@ export type CharacterKit = {
   disposables: Array<{ dispose: () => void }>;
 };
 
-/** One shared vertex-coloured Lambert material for every person (flat colours, no textures). */
-const materialCache = new WeakMap<object, ThreeNS.MeshLambertMaterial>();
-function sharedMaterial(kit: CharacterKit): ThreeNS.MeshLambertMaterial {
+/** One shared vertex-coloured toon material for every person (flat colours, no textures). */
+const materialCache = new WeakMap<object, ThreeNS.MeshToonMaterial>();
+function sharedMaterial(kit: CharacterKit): ThreeNS.MeshToonMaterial {
   let mat = materialCache.get(kit.disposables);
   if (!mat) {
-    mat = new kit.THREE.MeshLambertMaterial({ vertexColors: true });
+    mat = getPixelStyle(kit.THREE).toon({ vertexColors: true });
     kit.disposables.push(mat);
     materialCache.set(kit.disposables, mat);
   }
@@ -576,7 +577,7 @@ export function buildCharacter(kit: CharacterKit, look: CharacterLook): Characte
     const { main, detail } = "main" in part ? part : { main: part, detail: null };
     kit.disposables.push(main);
     const mesh = new T.Mesh(main, material);
-    if (outlined) {
+    if (outlined && MESH_EDGE_LINES) {
       const edges = new T.EdgesGeometry(main, 30);
       kit.disposables.push(edges);
       mesh.add(new T.LineSegments(edges, kit.outlineMaterial));

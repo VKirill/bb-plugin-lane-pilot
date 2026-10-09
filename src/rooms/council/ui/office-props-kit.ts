@@ -5,13 +5,13 @@ export type FloorRect = { minX: number; maxX: number; minZ: number; maxZ: number
 
 /**
  * Drawing helpers the floor builder hands to the prop modules, so every prop shares the scene's
- * pixel-art style: Lambert materials cached by colour, dark outlines on boxes, silhouette-outlined balls.
+ * pixel-art style: 3-tone toon materials cached by colour; outlines come from the depth post pass.
  */
 export type PropsKit = {
   THREE: typeof import("three");
   scene: ThreeType.Scene;
   disposables: Array<{ dispose: () => void }>;
-  /** Box from world bounds; outlined unless `outline: false`. Returns the mesh (position may be changed). */
+  /** Box from world bounds (`outline` only matters with MESH_EDGE_LINES). Returns the mesh (position may be changed). */
   box: (
     parent: ThreeType.Object3D,
     minX: number, maxX: number, minY: number, maxY: number, minZ: number, maxZ: number,
@@ -29,8 +29,8 @@ export type PropsKit = {
   blob: (parent: ThreeType.Object3D, x: number, y: number, z: number, radius: number, color: number, squashY?: number) => ThreeType.Mesh;
   /** Unoutlined 8-sided cylinder. */
   cylinder: (parent: ThreeType.Object3D, x: number, z: number, radius: number, minY: number, maxY: number, color: number) => ThreeType.Mesh;
-  /** Cached Lambert material. */
-  material: (color: number, opacity?: number) => ThreeType.MeshLambertMaterial;
+  /** Cached toon material. */
+  material: (color: number, opacity?: number) => ThreeType.MeshToonMaterial;
   /** Outline colour #282a36. */
   OUTLINE: number;
   /** Name given to meshes built next (the geometry audit reports overlaps by part). */

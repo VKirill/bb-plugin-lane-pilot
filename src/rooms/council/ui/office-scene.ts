@@ -2,6 +2,7 @@ import type * as ThreeType from "three";
 import { OFFICE_PROPS, OFFICE_WALLS, gridRect, type PropFootprint } from "./office-layout";
 import { buildPropsA } from "./office-props-a";
 import { buildPropsB } from "./office-props-b";
+import { MESH_EDGE_LINES, WALL_STUB_HEIGHT, getPixelStyle, sunPosition, CAMERA_YAW } from "./office-pixel";
 
 export type OfficeSceneOptions = {
   THREE: typeof import("three");
@@ -62,15 +63,17 @@ const mid = (a: number, b: number) => (a + b) / 2;
 export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptions): void {
   const outlineMat = new THREE.LineBasicMaterial({ color: OUTLINE });
   disposables.push(outlineMat);
+  const pixelStyle = getPixelStyle(THREE);
+  disposables.push(pixelStyle.gradient);
 
   /** Name given to every mesh built next: the geometry audit reports overlaps by part. */
   let part = "floor";
-  const materials = new Map<string, ThreeType.MeshLambertMaterial>();
+  const materials = new Map<string, ThreeType.MeshToonMaterial>();
   const material = (color: number, opacity?: number) => {
     const key = `${color}:${opacity ?? 1}`;
     let mat = materials.get(key);
     if (!mat) {
-      mat = new THREE.MeshLambertMaterial({ color, transparent: opacity !== undefined, opacity: opacity ?? 1 });
+      mat = pixelStyle.toon({ color, transparent: opacity !== undefined, opacity: opacity ?? 1 });
       materials.set(key, mat);
       disposables.push(mat);
     }
@@ -94,7 +97,7 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
     const mesh = new THREE.Mesh(geom, material(color, opts?.opacity));
     mesh.name = part;
     mesh.position.set(mid(minX, maxX), mid(minY, maxY), mid(minZ, maxZ));
-    if (opts?.outline !== false) {
+    if (MESH_EDGE_LINES && opts?.outline !== false) {
       const edges = new THREE.EdgesGeometry(geom, 30);
       disposables.push(edges);
       mesh.add(new THREE.LineSegments(edges, outlineMat));
@@ -134,13 +137,14 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
    */
   const hullMat = new THREE.MeshBasicMaterial({ color: OUTLINE, side: THREE.BackSide });
   disposables.push(hullMat);
-  const flatMaterials = new Map<number, ThreeType.MeshLambertMaterial>();
+  const flatMaterials = new Map<number, ThreeType.MeshToonMaterial>();
   const blob = (parent: ThreeType.Object3D, x: number, y: number, z: number, radius: number, color: number, squashY = 1) => {
     const geom = new THREE.IcosahedronGeometry(radius, 1);
+    geom.computeVertexNormals(); // non-indexed: one normal per facet (toon materials have no flatShading)
     disposables.push(geom);
     let mat = flatMaterials.get(color);
     if (!mat) {
-      mat = new THREE.MeshLambertMaterial({ color, flatShading: true });
+      mat = pixelStyle.toon({ color });
       flatMaterials.set(color, mat);
       disposables.push(mat);
     }
@@ -148,9 +152,11 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
     mesh.name = part;
     mesh.position.set(x, y, z);
     mesh.scale.y = squashY;
-    const hull = new THREE.Mesh(geom, hullMat);
-    hull.scale.setScalar(1 + 0.07 / radius);
-    mesh.add(hull);
+    if (MESH_EDGE_LINES) {
+      const hull = new THREE.Mesh(geom, hullMat);
+      hull.scale.setScalar(1 + 0.07 / radius);
+      mesh.add(hull);
+    }
     parent.add(mesh);
     return mesh;
   };
@@ -226,19 +232,19 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
   // Floor detail (reference.md §3 Floors): plank lines run along X, tile grout and raised-floor grids both ways
   const floorLines = (gx0: number, gx1: number, gz0: number, gz1: number, color: number, step: number, grid: boolean) => {
     for (let gz = gz0 + step; gz < gz1 - 0.01; gz += step) {
-      gridBox(scene, gx0, gx1, gz - 0.02, gz + 0.02, 0, 0.004, color, { outline: false });
+      gridBox(scene, gx0, gx1, gz - 0.04, gz + 0.04, 0, 0.004, color, { outline: false });
     }
     if (!grid) {
       // Staggered plank ends
       for (let gz = gz0, row = 0; gz < gz1 - 0.01; gz += step, row++) {
         for (let gx = gx0 + (row % 2 ? 1.5 : 0.75); gx < gx1 - 0.2; gx += 1.5) {
-          gridBox(scene, gx - 0.02, gx + 0.02, gz, gz + step, 0, 0.004, color, { outline: false });
+          gridBox(scene, gx - 0.04, gx + 0.04, gz, gz + step, 0, 0.004, color, { outline: false });
         }
       }
       return;
     }
     for (let gx = gx0 + step; gx < gx1 - 0.01; gx += step) {
-      gridBox(scene, gx - 0.02, gx + 0.02, gz0, gz1, 0, 0.004, color, { outline: false });
+      gridBox(scene, gx - 0.04, gx + 0.04, gz0, gz1, 0, 0.004, color, { outline: false });
     }
   };
   floorLines(0, 12, 0, 11, 0xcf8f4f, 0.5, false);
@@ -256,12 +262,21 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
   part = "walls";
   const WALL_H = 3.5;
   // Back walls: north (gz 0) and west (gx 0), full height
-  box(scene, -20, 20, 0, WALL_H, -10.3, -10, WALL_CREAM);
-  box(scene, -20.3, -20, 0, WALL_H, -10, 10, WALL_CREAM);
-  // Front stubs (cutaway) on the south edge and the east edge, with the entrance door gap at gz 16–18
-  box(scene, -20, 20, 0, 0.35, 10, 10.3, WALL_CREAM_SHADE);
-  box(scene, 20, 20.3, 0, 0.35, -10, 6, WALL_CREAM_SHADE);
-  box(scene, 20, 20.3, 0, 0.35, 8, 10, WALL_CREAM_SHADE);
+  // Every outer wall is a stub plus a tall part above WALL_STUB_HEIGHT; the shader cuts the tall part
+  // of the walls that stand in front of the camera (the cutaway), so the four views all look inside
+  const S = WALL_STUB_HEIGHT;
+  box(scene, -20, 20, 0, S, -10.3, -10, WALL_CREAM_SHADE);
+  box(scene, -20.3, -20, 0, S, -10, 10, WALL_CREAM_SHADE);
+  box(scene, -20, 20, S, WALL_H, -10.3, -10, WALL_CREAM);
+  box(scene, -20.3, -20, S, WALL_H, -10, 10, WALL_CREAM);
+  // South edge and east edge, with the entrance door gap at gz 16–18
+  box(scene, -20, 20, 0, S, 10, 10.3, WALL_CREAM_SHADE);
+  box(scene, 20, 20.3, 0, S, -10, 6, WALL_CREAM_SHADE);
+  box(scene, 20, 20.3, 0, S, 8, 10, WALL_CREAM_SHADE);
+  box(scene, -20, 20, S, WALL_H, 10, 10.3, WALL_CREAM);
+  box(scene, 20, 20.3, S, WALL_H, -10, 6, WALL_CREAM);
+  box(scene, 20, 20.3, S, WALL_H, 8, 10, WALL_CREAM);
+  box(scene, 20, 20.3, 2.4, WALL_H, 6, 8, WALL_CREAM);
 
   // Windows on the north wall (gx 13–16, 17–20, 21–24) and the west wall (meeting gz 3–7, lounge gz 15–18).
   // The wall is solid, so the view outside (sky, tree tops) is painted on it under the glass.
@@ -755,8 +770,9 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
   // Lights: ambient plus one directional light from (1, 2, 0.35), no shadows (reference.md §4).
   // three.js lights are physical since r155: Lambert divides by π, so the intensities carry π back
   // and a lit top face shows its base colour.
-  scene.add(new THREE.AmbientLight(0xffffff, 0.62 * Math.PI));
-  const sun = new THREE.DirectionalLight(0xfff5ea, 0.45 * Math.PI);
-  sun.position.set(1, 2, 0.35).multiplyScalar(10);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.56 * Math.PI));
+  const sun = new THREE.DirectionalLight(0xfff5ea, 0.44 * Math.PI);
+  sun.name = "sun";
+  sunPosition(CAMERA_YAW, sun.position);
   scene.add(sun);
 }
