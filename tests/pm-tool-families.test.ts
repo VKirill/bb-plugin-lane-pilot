@@ -33,17 +33,71 @@ describe("the PM's folded tool list", () => {
     }
   });
 
-  it("keeps every family's instructions under BB's limit and names the actions in the description", async () => {
+  it("keeps every family's instructions under the family cap and names the actions in the description", async () => {
     const harness = await start();
     for (const [name, family] of Object.entries(PM_TOOL_FAMILIES)) {
       const tool = harness.registrations.agentTools.find((row) => row.name === name)!;
-      expect(tool.instructions!.length, name).toBeLessThanOrEqual(4096);
+      expect(tool.instructions!.length, name).toBeLessThanOrEqual(4000);
       for (const action of Object.keys(family.actions)) {
         expect(tool.description, `${name} ${action}`).toContain(action);
         expect(tool.instructions, `${name} ${action}`).toContain(`action "${action}"`);
       }
       expect(JSON.stringify(tool.inputSchema)).toContain('"action"');
     }
+  });
+
+  // BB keeps only `type: object` of a top-level union, so the schema the bridge gets must be one flat object.
+  it("publishes each family as one flat object: the action enum and every argument, with no top-level union", async () => {
+    const harness = await start();
+    for (const [name, family] of Object.entries(PM_TOOL_FAMILIES)) {
+      const schema = harness.registrations.agentTools.find((row) => row.name === name)!.inputSchema as Record<string, any>;
+      expect(schema.type, name).toBe("object");
+      expect(schema.oneOf, name).toBeUndefined();
+      expect(schema.anyOf, name).toBeUndefined();
+      expect(schema.properties.action.enum, name).toEqual(Object.keys(family.actions));
+    }
+    const helpers = harness.registrations.agentTools.find((row) => row.name === "lane_pilot_helpers")!.inputSchema as Record<string, any>;
+    expect(Object.keys(helpers.properties)).toEqual(expect.arrayContaining(["runId", "envClass", "cases", "url"]));
+    const relay = harness.registrations.agentTools.find((row) => row.name === "lane_pilot_relay")!.inputSchema as Record<string, any>;
+    expect(Object.keys(relay.properties)).toEqual(expect.arrayContaining(["note", "taskIds", "inMinutes"]));
+  });
+
+  it("lists each action's required arguments in the family instructions, generated from the schema", async () => {
+    const harness = await start();
+    const instructions = (name: string) => harness.registrations.agentTools.find((row) => row.name === name)!.instructions!;
+    expect(instructions("lane_pilot_helpers")).toContain('action "browser_qa": Required: runId (string), taskId (string), url (string), cases (array), envClass (local|staging|preview|production|unknown).');
+    expect(instructions("lane_pilot_relay")).toContain('action "list": No required argument.');
+  });
+
+  it("says where browser_qa's runId comes from and what envClass means", async () => {
+    const harness = await start();
+    const browserQa = harness.registrations.agentTools.find((row) => row.name === "lane_pilot_browser_qa")!;
+    expect(browserQa.instructions).toContain("runId is this PM thread's Lane Pilot run id (lprun_");
+    expect(browserQa.instructions).toContain("envClass says what the URL is: local");
+  });
+
+  it("refuses a browser_qa call without runId or envClass, naming both with their types", async () => {
+    const harness = await start();
+    const call = (args: Record<string, unknown>) => harness.behavior.callAgentTool("lane_pilot_helpers", args, ctx);
+    await expect(call({ action: "browser_qa", taskId: "t1", url: "https://example.com", cases: ["home renders"] }))
+      .rejects.toThrow("lane_pilot_helpers browser_qa needs: runId (string), envClass (local|staging|preview|production|unknown)");
+  });
+
+  it("names the action that owns an argument sent to another action", async () => {
+    const harness = await start();
+    const call = (name: string, args: Record<string, unknown>) => harness.behavior.callAgentTool(name, args, ctx);
+    await expect(call("lane_pilot_relay", { action: "list", inMinutes: 5 })).rejects.toThrow("lane_pilot_relay list does not take inMinutes (an argument of remind)");
+    await expect(call("lane_pilot_memory", { action: "context", query: "x", inMinutes: 5 })).rejects.toThrow('Unrecognized key: "inMinutes"');
+  });
+
+  it("hands a list sent as JSON text to browser_qa as the list", async () => {
+    const harness = await start();
+    const outcome = async (cases: unknown) => {
+      try { return String(await harness.behavior.callAgentTool("lane_pilot_helpers", { action: "browser_qa", runId: "lprun_1", taskId: "t1", url: "https://example.com", cases, envClass: "staging" }, ctx)); } catch (cause) { return String(cause); }
+    };
+    const asText = await outcome('["home renders"]');
+    expect(asText).not.toMatch(/expected array|Invalid arguments|arguments are invalid/i);
+    expect(asText).toBe(await outcome(["home renders"]));
   });
 
   it("runs the old handler with the old arguments: the same answer as the old tool", async () => {

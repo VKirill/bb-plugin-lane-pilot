@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "family-tools-schema-r2",
+  "task_sha256": "866455d2bc2ea02d760c10ef6400949a31e64b4c18e55daf9985fb81a2ee7855",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "0a2e437b745dc145e821f1d94d1250e8524b262e74b3751b02be19990db96e6a",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-09T13:36:33.902Z",
+  "model": "claude-haiku-5-5"
+}
