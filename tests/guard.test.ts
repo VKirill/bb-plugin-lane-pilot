@@ -1,4 +1,5 @@
-import { mkdirSync, symlinkSync, unlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
@@ -131,6 +132,62 @@ describe("E2 Lane Pilot PM guard", () => {
       const after = spawnSync(python,[guard],options);
       expect({status:after.status,stdout:after.stdout,stderr:after.stderr})
         .toEqual({status:before.status,stdout:before.stdout,stderr:before.stderr});
+    }
+  });
+});
+
+// 2026-10-09 refusals: the PM's temp files and its chat folder (any file type; thread.json and history/ stay closed), redirects that a
+// leading `cd` moves, and heredoc bodies fed to something other than a shell, which are data and not shell syntax.
+const chat = ".bb/chats/thr_d6zg57egme";
+const pmFileCases: Case[] = [
+  edit("Write temp .mts","Write","/tmp/tjs/s/eval.mts",true),
+  edit("Write private temp .mts","Write","/private/tmp/tjs/s/eval.mts",true),
+  edit("Write TMPDIR file","Write",join(tmpdir(),"tjs","eval.mts"),true),
+  bash("sed -i temp script","sed -i 's/a/b/' /tmp/tjs/run.sh",true),
+  bash("sed -i TMPDIR script","sed -i 's/a/b/' $TMPDIR/run.sh",true),
+  bash("redirect TMPDIR","node run.mjs > $TMPDIR/out.json",true),
+  edit("Write chat tmp .mts","Write",`${chat}/tmp/eval.mts`,true),
+  edit("Write chat REPORT.md","Write",`${chat}/artifacts/skill-eval/REPORT.md`,true),
+  bash("heredoc chat REPORT.md with > body",`cat > ${chat}/artifacts/skill-eval/REPORT.md <<'EOF'\n# Report\n> quoted line\n- a -> b\nEOF`,true),
+  bash("cd chat then redirect labels.json",`cd ${chat}/artifacts/skill-eval && node run.mjs > labels.json`,true),
+  bash("cd temp then redirect",`cd /tmp && node run.mjs > out.json`,true),
+  bash("heredoc temp quoted body with <","cat > /tmp/x <<'EOF'\nif a < b then\nEOF",true),
+  bash("heredoc temp, eval in the path, body with > and <","cat > /tmp/skill-eval/x.md <<'EOF'\n> a < b\nEOF",true),
+  bash("heredoc body with a bb command word","cat > /tmp/x <<'EOF'\nok; bb thread new\nEOF",true),
+  edit("Write chat thread.json","Write",`${chat}/thread.json`,false),
+  edit("Write chat history","Write",`${chat}/history/a.md`,false),
+  bash("redirect into chat thread.json",`echo x > ${chat}/thread.json`,false),
+  bash("cd into chat history then redirect",`cd ${chat}/history && echo x > a.md`,false),
+  bash("cd into project source then redirect","cd src && node x > out.txt",false),
+  bash("redirect into project source","node x > src/out.ts",false),
+  bash("sed -i project source","sed -i s/a/b/ src/app.ts",false),
+  bash("heredoc into project source","cat > src/x.ts <<'EOF'\nhello\nEOF",false),
+  bash("bash heredoc runs a project write","bash <<'EOF'\necho hi > src/x.ts\nEOF",false),
+  bash("heredoc piped to sh runs a project write","cat <<'EOF' | sh\necho hi > src/x.ts\nEOF",false),
+  edit("Write project source","Write","src/app.ts",false),
+];
+
+describe("E3 Lane Pilot PM temp files, chat folder, cd-relative redirects and heredoc bodies", () => {
+  for (const testCase of pmFileCases) {
+    it(`${testCase.name}: ${testCase.allowed ? "allow" : "deny"}`, () => {
+      const result = invoke(guard,testCase);
+      expect(result.status, result.stdout + result.stderr).toBe(testCase.allowed ? 0 : 2);
+    });
+  }
+
+  it("keeps the project's own files closed when the checkout itself lies under a temp folder", () => {
+    const checkout = mkdtempSync(join(tmpdir(), "lp-guard-checkout-"));
+    try {
+      const run = (command: string) => spawnSync("python3", [guard], {
+        input: JSON.stringify({ agent_type: "lane-pilot-pm", tool_name: "Bash", tool_input: { command }, cwd: checkout }),
+        encoding: "utf8",
+        env: hookEnv({ AGENT_HOOK_CLIENT: "claude" }),
+      }).status;
+      expect(run("sed -i s/a/b/ src/app.ts"), "sed -i src/app.ts").toBe(2);
+      expect(run("echo x > src/app.ts"), "redirect into src/app.ts").toBe(2);
+      expect(run("echo x > /tmp/lane-pilot-probe.log"), "redirect to /tmp").toBe(0);
+    } finally {
+      rmSync(checkout, { recursive: true, force: true });
     }
   });
 });
