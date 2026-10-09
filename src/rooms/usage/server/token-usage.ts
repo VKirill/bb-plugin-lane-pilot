@@ -126,16 +126,33 @@ export function billedFrom(delta: TokenBreakdown): {
   return { uncached, cacheRead, cacheWrite, output: delta.output, input, cached: cachedOut, total };
 }
 
-/** Per-turn delta from `last`; consecutive `total` only when last is missing or a re-emit. Never add cumulative totals. */
+/**
+ * Which providers report a cumulative `total` and keep few `thread/tokenUsage/updated` events (BB keeps one per Codex thread, the
+ * latest): there `last` is only the final model call, so the thread's spend is the growth of `total`. Claude Code (and any provider
+ * not listed) emits one event per turn, where `last` is the turn. Decided by provider id: the event shape cannot tell them apart.
+ */
+export function isCumulativeProvider(providerId: string): boolean {
+  return providerId.toLowerCase().startsWith("codex");
+}
+
+/**
+ * Per-turn delta from `last`; consecutive `total` only when last is missing or a re-emit. Never add cumulative totals.
+ * `cumulative` (see `isCumulativeProvider`): delta = `total` minus the previous cumulative `total`; a `total` that went down (new session,
+ * compaction) is a reset and counts as the new value, never a negative.
+ */
 export function tokenDelta(
   usage: { last?: TokenBreakdown | null; total?: TokenBreakdown | null },
   prev: { last: TokenBreakdown; total: TokenBreakdown; turnId: string },
   turnId = "",
+  cumulative = false,
 ): TokenBreakdown {
   const last = asBreakdown(usage.last);
   const total = asBreakdown(usage.total);
   const prevLast = asBreakdown(prev.last);
   const prevTotal = asBreakdown(prev.total);
+  if (cumulative && hasTokens(total)) {
+    return !hasTokens(prevTotal) || total.total < prevTotal.total ? total : subTokens(total, prevTotal);
+  }
   if (turnId && turnId === prev.turnId && hasTokens(last)) return subTokens(last, prevLast);
   if (hasTokens(last) && !sameTokens(last, prevLast)) return last;
   if (hasTokens(total) && hasTokens(prevTotal)) return subTokens(total, prevTotal);
@@ -417,7 +434,7 @@ export async function syncTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDataba
                 projectId: thread.projectId,
                 providerId: providerId || thread.providerId || "unknown",
                 model: model || "unknown",
-                delta: tokenDelta(usage, prev, turnId),
+                delta: tokenDelta(usage, prev, turnId, isCumulativeProvider(providerId || thread.providerId)),
               });
             }
             prev = { last: usage.last, total: usage.total, turnId };
@@ -451,6 +468,38 @@ export async function syncTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDataba
     await saveDiagnostics();
     throw cause;
   }
+}
+
+export type TokenUsageRebuildReset = { backups: string[]; backupsKept: string[]; cursorsCleared: number; dailyRowsCleared: number };
+
+/**
+ * First half of a rebuild: copies `lane_pilot_token_daily` and `lane_pilot_token_cursor` to `*_bak_<YYYYMMDD>` tables, then empties both, in one
+ * transaction. A backup that already exists (a second rebuild the same day) is kept as it is, so the first one, the state before the rule
+ * changed, is never overwritten. The next `syncTokenUsage` re-reads every thread from seq 0 with the current delta rule.
+ */
+export function resetTokenUsageForRebuild(db: LanePilotDatabase, now = Date.now()): TokenUsageRebuildReset {
+  const suffix = utcDay(now).replace(/-/g, "");
+  const result: TokenUsageRebuildReset = { backups: [], backupsKept: [], cursorsCleared: 0, dailyRowsCleared: 0 };
+  db.transaction(() => {
+    for (const table of ["lane_pilot_token_daily", "lane_pilot_token_cursor"]) {
+      const backup = `${table}_bak_${suffix}`;
+      const exists = db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name=?`).get(backup);
+      if (exists) result.backupsKept.push(backup);
+      else {
+        db.exec(`CREATE TABLE ${backup} AS SELECT * FROM ${table}`);
+        result.backups.push(backup);
+      }
+    }
+    result.cursorsCleared = db.prepare(`DELETE FROM lane_pilot_token_cursor`).run().changes;
+    result.dailyRowsCleared = db.prepare(`DELETE FROM lane_pilot_token_daily`).run().changes;
+  }).immediate();
+  return result;
+}
+
+/** Reset (with backups) and re-sync from the thread events with the current delta rule. Safe to repeat: it ends in the same numbers. */
+export async function rebuildTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatabase }, input: { sinceDays: number } = { sinceDays: 90 }): Promise<TokenUsageRebuildReset & { diagnostics: TokenUsageDiagnostics }> {
+  const reset = resetTokenUsageForRebuild(ctx.db);
+  return { ...reset, diagnostics: await syncTokenUsage(ctx, input) };
 }
 
 export async function queryTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatabase }, input: TokenUsageQuery): Promise<TokenUsageResult> {
@@ -585,7 +634,10 @@ export async function threadUsage(bb: BbPluginApi, threadId: string, options: { 
   return { tokens, costUsd: cost, known: true };
 }
 
-export function attachTokenUsage(ctx: ServerCore): { start: (sinceDays?: number) => boolean } {
+export function attachTokenUsage(ctx: ServerCore): {
+  start: (sinceDays?: number) => boolean;
+  rebuild: (sinceDays?: number) => (TokenUsageRebuildReset & { started: true; startedAt: number }) | { started: false };
+} {
   let running = false;
   const start = (sinceDays = 90) => {
     if (running) return false;
@@ -599,6 +651,15 @@ export function attachTokenUsage(ctx: ServerCore): { start: (sinceDays?: number)
   };
   // The sync runs detached (`start` returns at once), so the isolated run is short; the limit only guards a stuck start.
   scheduleIsolated(ctx.bb, TOKEN_USAGE_SCHEDULE, "7,37 * * * *", async () => { start(90); }, { timeoutMs: 5 * 60_000 });
+  // Rebuild: backups and reset run at once (local SQLite), the re-sync runs detached like `start`; `lastSyncAt` of `token_usage` moving past
+  // `startedAt` means it finished. Refused (nothing touched) while a sync runs: the reset must not cut a pass in the middle.
+  const rebuild = (sinceDays = 90) => {
+    if (running) return { started: false as const };
+    const startedAt = Date.now();
+    const reset = resetTokenUsageForRebuild(ctx.db, startedAt);
+    start(sinceDays);
+    return { started: true as const, startedAt, ...reset };
+  };
   start(90);
-  return { start };
+  return { start, rebuild };
 }

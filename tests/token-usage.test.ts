@@ -5,7 +5,7 @@ import plugin from "../server";
 import { costUsd } from "@lane-pilot/models";
 import {
   EVENT_PAGE, TOKEN_USAGE_CACHE_SPLIT_RESET_KEY, TOKEN_USAGE_CURSOR_RESET_KEY, TOKEN_USAGE_EVENT_TYPES, TOKEN_USAGE_SCHEDULE,
-  normalizeModel, queryTokenUsage, syncTokenUsage, threadUsage, tokenDelta, utcDay,
+  isCumulativeProvider, normalizeModel, queryTokenUsage, rebuildTokenUsage, resetTokenUsageForRebuild, syncTokenUsage, threadUsage, tokenDelta, utcDay,
 } from "../src/rooms/usage/server/token-usage";
 
 let dispose: (() => Promise<void> | void) | null = null;
@@ -446,5 +446,158 @@ describe("token counter atomicity (incident 2026-10-10)", () => {
     const { bb, db } = host(twoTurns);
     await Promise.all([syncTokenUsage({ bb, db }, { sinceDays: 90 }), syncTokenUsage({ bb, db }, { sinceDays: 90 })]);
     expect((await queryTokenUsage({ bb, db }, { range: "7d" })).byModel[0]?.total).toBe(20);
+  });
+});
+
+describe("cumulative providers (Codex undercount, 2026-10-10)", () => {
+  const cum = (n: number) => ({ inputTokens: n * 100, outputTokens: n * 10, cachedInputTokens: n * 60, totalTokens: n * 110 });
+  const lastCall = { inputTokens: 100, outputTokens: 10, cachedInputTokens: 60, totalTokens: 110 };
+  const request = (seq: number, model: string, providerId: string) => ({ seq, createdAt: Date.now(), type: "client/turn/requested", data: { execution: { model, providerId } } });
+  const totalOf = async (bb: never, db: never, providerId: string) =>
+    (await queryTokenUsage({ bb, db }, { range: "7d" })).byModel.find((row) => row.providerId === providerId)?.total;
+
+  it("detects cumulative providers by id", () => {
+    expect(isCumulativeProvider("codex")).toBe(true);
+    expect(isCumulativeProvider("codex-cli")).toBe(true);
+    expect(isCumulativeProvider("claude-code")).toBe(false);
+    expect(isCumulativeProvider("")).toBe(false);
+  });
+
+  it("tokenDelta: cumulative total minus the previous total, first event counts in full, same total twice counts once", () => {
+    const zero = { input: 0, output: 0, cached: 0, total: 0, cacheRead: 0, cacheWrite: 0 };
+    const t = (n: number) => ({ input: n * 100, output: n * 10, cached: n * 60, total: n * 110, cacheRead: n * 60, cacheWrite: 0 });
+    const one = { input: 100, output: 10, cached: 60, total: 110, cacheRead: 60, cacheWrite: 0 };
+    expect(tokenDelta({ last: one, total: t(5) }, { last: zero, total: zero, turnId: "" }, "", true)).toEqual(t(5));
+    expect(tokenDelta({ last: one, total: t(8) }, { last: one, total: t(5), turnId: "" }, "", true)).toEqual(t(3));
+    expect(tokenDelta({ last: one, total: t(8) }, { last: one, total: t(8), turnId: "" }, "", true)).toEqual(zero);
+  });
+
+  it("a Codex thread counts the growth of the cumulative total, not the last call: one surviving event holds the whole thread", async () => {
+    const { bb, db } = host({ thr_a: [request(1, "gpt-6-luna", "codex"), usage(2, { last: lastCall, total: cum(50) })] });
+    await syncTokenUsage({ bb, db }, { sinceDays: 90 });
+    expect(await totalOf(bb as never, db as never, "codex")).toBe(50 * 110);
+    await syncTokenUsage({ bb, db }, { sinceDays: 90 });
+    expect(await totalOf(bb as never, db as never, "codex")).toBe(50 * 110);
+  });
+
+  it("a Codex sequence over several passes sums to the final cumulative total, including many events in one turn", async () => {
+    const events: Record<string, unknown[]> = {
+      thr_a: [
+        request(1, "gpt-6-luna", "codex"),
+        usage(2, { last: lastCall, total: cum(1) }, { turnId: "t1" }),
+        usage(3, { last: lastCall, total: cum(2) }, { turnId: "t1" }),
+        usage(4, { last: lastCall, total: cum(2) }, { turnId: "t1" }),
+      ],
+    };
+    const { bb, db } = host(events);
+    await syncTokenUsage({ bb, db }, { sinceDays: 90 });
+    expect(await totalOf(bb as never, db as never, "codex")).toBe(2 * 110);
+    events.thr_a!.push(usage(5, { last: lastCall, total: cum(7) }, { turnId: "t2" }));
+    await syncTokenUsage({ bb, db }, { sinceDays: 90 });
+    expect(await totalOf(bb as never, db as never, "codex")).toBe(7 * 110);
+    const row = (await queryTokenUsage({ bb, db }, { range: "7d" })).byModel[0]!;
+    expect(row).toMatchObject({ input: 700, output: 70, cached: 420 });
+  });
+
+  it("a cumulative counter that goes down is a reset: the new value counts, never a negative", async () => {
+    const events: Record<string, unknown[]> = {
+      thr_a: [request(1, "gpt-6-luna", "codex"), usage(2, { last: lastCall, total: cum(10) }), usage(3, { last: lastCall, total: cum(3) })],
+    };
+    const { bb, db } = host(events);
+    await syncTokenUsage({ bb, db }, { sinceDays: 90 });
+    expect(await totalOf(bb as never, db as never, "codex")).toBe(13 * 110);
+    events.thr_a!.push(usage(4, { last: lastCall, total: cum(5) }));
+    await syncTokenUsage({ bb, db }, { sinceDays: 90 });
+    expect(await totalOf(bb as never, db as never, "codex")).toBe(15 * 110);
+  });
+
+  it("mixed providers: Codex by cumulative total, Claude Code by last per turn", async () => {
+    const claudeLast = { inputTokens: 2, cacheReadInputTokens: 90, cacheWriteInputTokens: 8, cachedInputTokens: 98, outputTokens: 10, totalTokens: 110 };
+    const claudeTotal = (n: number) => ({ ...claudeLast, totalTokens: 110 * n });
+    const { bb, db } = host({
+      thr_cx: [request(1, "gpt-6-luna", "codex"), usage(2, { last: lastCall, total: cum(40) })],
+      thr_cc: [
+        request(1, "claude-opus-5-5", "claude-code"),
+        usage(2, { last: claudeLast, total: claudeTotal(1) }, { turnId: "a" }),
+        usage(3, { last: { ...claudeLast, outputTokens: 20, totalTokens: 120 }, total: claudeTotal(2) }, { turnId: "b" }),
+      ],
+    }, [
+      { id: "thr_cx", projectId: "proj_a", providerId: "codex" },
+      { id: "thr_cc", projectId: "proj_a", providerId: "claude-code" },
+    ]);
+    await syncTokenUsage({ bb, db }, { sinceDays: 90 });
+    expect(await totalOf(bb as never, db as never, "codex")).toBe(40 * 110);
+    expect(await totalOf(bb as never, db as never, "claude-code")).toBe(110 + 120);
+  });
+
+  it("falls back to the thread's provider when no turn request named one", async () => {
+    const { bb, db } = host({ thr_a: [usage(1, { last: lastCall, total: cum(9) })] });
+    await syncTokenUsage({ bb, db }, { sinceDays: 90 });
+    expect(await totalOf(bb as never, db as never, "codex")).toBe(9 * 110);
+  });
+});
+
+describe("token usage rebuild", () => {
+  const cum = (n: number) => ({ inputTokens: n * 100, outputTokens: n * 10, cachedInputTokens: n * 60, totalTokens: n * 110 });
+  const lastCall = { inputTokens: 100, outputTokens: 10, cachedInputTokens: 60, totalTokens: 110 };
+  const suffix = utcDay(Date.now()).replace(/-/g, "");
+  const events = () => ({
+    thr_cx: [
+      { seq: 1, createdAt: Date.now(), type: "client/turn/requested", data: { execution: { model: "gpt-6-luna", providerId: "codex" } } },
+      usage(2, { last: lastCall, total: cum(30) }),
+    ],
+    thr_cc: [
+      { seq: 1, createdAt: Date.now(), type: "client/turn/requested", data: { execution: { model: "claude-opus-5-5", providerId: "claude-code" } } },
+      usage(2, { last, total: last }),
+    ],
+  });
+  const threads = [
+    { id: "thr_cx", projectId: "proj_a", providerId: "codex" },
+    { id: "thr_cc", projectId: "proj_a", providerId: "claude-code" },
+  ];
+  const snapshot = (db: ReturnType<typeof host>["db"]) => ({
+    daily: db.prepare(`SELECT * FROM lane_pilot_token_daily ORDER BY provider_id, model, day`).all(),
+    cursors: db.prepare(`SELECT thread_id, last_seq, last_json, total_json FROM lane_pilot_token_cursor ORDER BY thread_id`).all(),
+  });
+
+  it("backs up both tables, resets the cursors and recounts with the current rule; twice gives the same numbers", async () => {
+    const { bb, db } = host(events(), threads);
+    // The old rule's numbers: one last call for the Codex thread, 100x too low.
+    db.prepare(`INSERT INTO lane_pilot_token_daily (day, project_id, provider_id, model, input_tokens, output_tokens, cached_tokens, total_tokens, uncached_tokens, cache_read_tokens, cache_write_tokens)
+      VALUES (?, 'proj_a', 'codex', 'gpt-6-luna', 100, 10, 60, 110, 40, 60, 0)`).run(day);
+    db.prepare(`INSERT INTO lane_pilot_token_cursor (thread_id, project_id, provider_id, last_seq, last_json, total_json, last_model, last_provider, last_turn_id, updated_at)
+      VALUES ('thr_cx','proj_a','codex',2,'{}','{}','gpt-6-luna','codex','',0)`).run();
+    const before = snapshot(db);
+
+    const first = await rebuildTokenUsage({ bb, db }, { sinceDays: 90 });
+    expect(first).toMatchObject({ backups: [`lane_pilot_token_daily_bak_${suffix}`, `lane_pilot_token_cursor_bak_${suffix}`], backupsKept: [], cursorsCleared: 1, dailyRowsCleared: 1 });
+    const countOf = (table: string) => (db.prepare(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n;
+    expect(countOf(`lane_pilot_token_daily_bak_${suffix}`)).toBe(1);
+    expect(countOf(`lane_pilot_token_cursor_bak_${suffix}`)).toBe(1);
+    expect(db.prepare(`SELECT total_tokens FROM lane_pilot_token_daily_bak_${suffix}`).get()).toEqual({ total_tokens: 110 });
+    expect(before.daily).toHaveLength(1);
+
+    const afterFirst = await queryTokenUsage({ bb, db }, { range: "7d" });
+    expect(afterFirst.byModel.find((row) => row.providerId === "codex")?.total).toBe(30 * 110);
+    expect(afterFirst.byModel.find((row) => row.providerId === "claude-code")?.total).toBe(14);
+    const numbers = snapshot(db);
+
+    const second = await rebuildTokenUsage({ bb, db }, { sinceDays: 90 });
+    expect(second).toMatchObject({ backups: [], backupsKept: [`lane_pilot_token_daily_bak_${suffix}`, `lane_pilot_token_cursor_bak_${suffix}`], cursorsCleared: 2 });
+    expect(snapshot(db)).toEqual(numbers);
+    // The first backup (the state before the rebuild) is not overwritten by the second run.
+    expect(db.prepare(`SELECT total_tokens FROM lane_pilot_token_daily_bak_${suffix}`).get()).toEqual({ total_tokens: 110 });
+    // A plain sync after a rebuild adds nothing.
+    await syncTokenUsage({ bb, db }, { sinceDays: 90 });
+    expect(snapshot(db)).toEqual(numbers);
+  });
+
+  it("resetTokenUsageForRebuild copies and empties in one step", () => {
+    const { db } = host({});
+    db.prepare(`INSERT INTO lane_pilot_token_cursor (thread_id, last_seq, updated_at) VALUES ('thr_x', 5, 0)`).run();
+    const reset = resetTokenUsageForRebuild(db);
+    expect(reset).toMatchObject({ cursorsCleared: 1, dailyRowsCleared: 0 });
+    expect((db.prepare(`SELECT count(*) AS n FROM lane_pilot_token_cursor`).get() as { n: number }).n).toBe(0);
+    expect((db.prepare(`SELECT count(*) AS n FROM lane_pilot_token_cursor_bak_${suffix}`).get() as { n: number }).n).toBe(1);
   });
 });

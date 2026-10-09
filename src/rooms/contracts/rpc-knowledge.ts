@@ -154,6 +154,18 @@ export const rpcKnowledge = {
     input: z.object({}).strict(),
     output: z.object({ started: z.boolean() }).strict(),
   },
+  // Backs up the daily and cursor tables (`*_bak_<YYYYMMDD>`), resets the cursors and re-syncs every thread with the current delta rule.
+  // Refused (`started: false`, nothing touched) while a sync runs. `token_usage.lastSyncAt` past `startedAt` means it finished.
+  token_usage_rebuild: {
+    input: z.object({}).strict(),
+    output: z.union([
+      z.object({
+        started: z.literal(true), startedAt: z.number(), backups: z.array(z.string()), backupsKept: z.array(z.string()),
+        cursorsCleared: z.number().int(), dailyRowsCleared: z.number().int(),
+      }).strict(),
+      z.object({ started: z.literal(false) }).strict(),
+    ]),
+  },
   // The journal of Env Catalog names handed to checks, browser checks and errands (never a value), newest first.
   secret_issuance: {
     input: z.object({ projectId: z.string().min(1), limit: z.number().int().min(1).max(500).optional() }).strict(),

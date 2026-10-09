@@ -8,5 +8,6 @@ export function tokenUsageRpc(ctx: ServerCore) {
   return {
     token_usage: ({ range, month, projectId }) => queryTokenUsage(ctx, { range, month, projectId }),
     token_usage_sync: async () => ({ started: sync.start(90) }),
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "token_usage" | "token_usage_sync">;
+    token_usage_rebuild: async () => sync.rebuild(90),
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "token_usage" | "token_usage_sync" | "token_usage_rebuild">;
 }
