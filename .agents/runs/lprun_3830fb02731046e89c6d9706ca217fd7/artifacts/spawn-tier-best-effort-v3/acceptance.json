@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "spawn-tier-best-effort-v3",
+  "task_sha256": "2e5673f815879cea63e23f951ade60b97ba42acadfafd04b6bb978ac0165b0ab",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "f6da69349e589ad9fdcee504629d34917bcac86b33181437ce8dc37e515b6a41",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-09T14:25:57.491Z",
+  "model": "claude-haiku-5-5"
+}
