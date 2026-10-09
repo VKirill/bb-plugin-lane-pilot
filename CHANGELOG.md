@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.213
+
+- **The council office looks like its reference.** The floor was 1.5–2× too dark and the corridor, kitchen and parts of other rooms showed black: three.js lights are physical since r155, so the intensities now carry π, and the floor zones no longer share a plane with the slab under them (z-fighting). Art pass towards `.agents/design/council-office/reference.jpg`: windows show sky and tree tops, the director's panoramic window a city skyline; round low-poly trees, leafy pot plants and flower bushes instead of cubes; glass walls get white frame posts; wood planks, kitchen tiles and the server-room grid on the floors; the meeting table has a dark edge so it stands out from the floor; the director's office gets the model ship, trophy cup, red model car, painting, diplomas, shelf statuettes, Chesterfield armchairs and a Persian rug with a gold border. Bugs fixed on the way: the east entrance's glass door stood inside the director's office, and the director's door was a closed solid slab (its leaves now stand open inwards).
+- **People appear where they belong and read at a glance.** On page load the owner appeared at the meeting table and walked to his office; now everyone appears at their simulation spot (the owner in his chair). The chibi people are larger (head-heavy, as in the reference) and some have long hair or a bun.
+
 ## 0.1.212
 
 - **A red integration gate never asks the owner.** It opened a form «The integration gate … is red and no single task is to blame. What should the PM do?» (in English, with raw terminal colour codes) whose answer was always «investigate and fix it». The PM now gets the failing tests and the instruction to read the log and dispatch the fixes itself; a machine fault goes to the PM to fix on that host. Colour codes are stripped from what the PM reads.
