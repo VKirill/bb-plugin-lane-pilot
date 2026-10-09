@@ -4,11 +4,9 @@
 
 - **The route-first rule reaches the real PM.** 0.1.205 checked only `agent_type: lane-pilot-pm`, while a BB PM's hook calls arrive as `dev-orchestrator` with `LANE_PILOT_AGENT_TYPE` set (the launcher's hook trace showed three WebSearch calls allowed). The rule now applies to every Lane Pilot chat; a CLI dev-orchestrator without that variable is untouched.
 
-<<<<<<< HEAD
 ## 0.1.205
 
 - **The route-first rule is enforced, not only written.** Live in the sandbox, 0.1.204's PM still answered «find discussed posts on vibe coding» with three web searches. The PM guard now refuses WebSearch, WebFetch and a tavily specialist until `lane_pilot_route` has been called after the owner's last message, and says to call the router; once it answers that no workflow fits, the search goes through in the same turn. Other roles, other specialists and an unreadable transcript are untouched (`tests/guard-route-first.test.ts`). Installed into `~/.agents/hooks` on the Mac mini, MacBook and OVH and into claude-lane-stack.
-=======
 ## Unreleased
 
 - **A red integration gate asks the owner once per episode.** An episode is one gate command failing on the same test files until a gate run is green (fewer of the same files stay in it). Live 2026-10-09 the same «no single task is to blame» form reached the owner three times and his answer reached the PM twice. The first red run of an episode tells the PM the failing tests and opens the one form; the answer is handed to the PM once. A later red run of the same episode tells the PM «still red» with the list and no form, and says nothing at all while a PM fix task is in flight (an open attempt of the run whose owns_paths or expected_outputs cover a failing file, or a task dispatched after the episode began). A green run ends the episode. The episode is kept in memory: a plugin reload may ask once more.
@@ -20,7 +18,6 @@
 - **A detected turbo gate runs with `--force`, and the report names the cache hits.** The SelfyStudio gate `npm test` (`turbo run test --concurrency=4`) took the marketing results from turbo's cache; 14 failures surfaced only later. When the command is detected from the package.json `test` script and that script calls turbo, the gate now runs `npm test -- --force` (the script is one turbo command, so the flag reaches turbo), or `TURBO_FORCE=true npm test` when turbo is one step of a longer script; a script that already forces is left as it is. An explicit `integration.gate_command` runs exactly as typed (the owner chose it). Whatever the command, a red-gate message to the PM now says which turbo tasks the output shows as `cache hit` (`pkg#task`, with turbo's `Cached: n cached, m total` line), so a result that was replayed rather than run is not read as fresh. The setting's help text says so.
 
 - **A reminder on tasks no longer says «blocked» about a task that is running again.** Live 2026-10-09 three reminders on `fix-marketing-greeting-cards-tests.2` arrived 8 to 45 seconds after the PM answered its writer, each reading «.2 — blocked», while the attempt was running. The sweep read the state while the task was blocked, the PM's thread was in a turn, and BB's queue (`queue-if-active`) held the text behind that turn with the state it was written with. A reminder on `taskIds` now reads the live attempt state again just before it sends, and does not send while the PM's thread is in a turn (it stays open and the next sweep, 30 s later, decides again with the state as it is then). A task that is running again keeps the reminder waiting; a task that is blocked when the PM is idle still wakes it.
->>>>>>> worktree-agent-afcaba9dee0b7921a
 
 ## 0.1.204
 
