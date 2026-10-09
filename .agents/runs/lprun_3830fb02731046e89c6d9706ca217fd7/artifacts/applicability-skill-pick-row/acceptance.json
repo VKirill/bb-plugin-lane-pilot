@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "applicability-skill-pick-row",
+  "task_sha256": "56e371504fac534fa8b06a7a3320c736cb92fcda8c5678400fe46b50bda97270",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "239c5dce6495d126c12b867ae35666b74c584dc63a04375036504ecbef2765ab",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-09T14:25:27.978Z",
+  "model": "claude-haiku-5-5"
+}
