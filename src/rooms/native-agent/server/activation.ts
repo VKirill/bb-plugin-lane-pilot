@@ -137,7 +137,7 @@ export function createActivation(ctx: ServerCore, services: Services) {
     }
     const spawnProviderId = native?.providerId ?? config.pmProviderId;
     const spawnModel = native?.model ?? config.pmModel;
-    const spawnTier = native?.serviceTier === "fast" ? "fast" as const : native?.serviceTier === "default" ? "default" as const : null;
+    const spawnTier = native?.serviceTier === "fast" ? "fast" as const : "default" as const;
     let spawned:Awaited<ReturnType<typeof bb.sdk.threads.spawn>>;
     try {
       spawned = await fullAccessSpawn(bb, {
@@ -149,7 +149,7 @@ export function createActivation(ctx: ServerCore, services: Services) {
         } : {}),
         ...(native
           ? writerExecutionSelection(spawnProviderId, spawnModel, native.reasoningLevel, spawnTier)
-          : { providerId: spawnProviderId, model: spawnModel, executionInputSources:{ providerId:"explicit" as const, model:"explicit" as const } }),
+          : { providerId: spawnProviderId, model: spawnModel, serviceTier: spawnTier, executionInputSources:{ providerId:"explicit" as const, model:"explicit" as const, serviceTier:"explicit" as const } }),
         // The owner's confirmed, non-sensitive facts (anamnesis A5), within 1800 characters; nothing when there are none or the store is out of reach.
         prompt: pmPrompt(runId, config, !native && managedWorkspace, Boolean(native), pmHasGuard(settings["main.agent"])) + await ownerCardBlock(anamnesisFor(ctx).hub)
           // The rules the owner's corrections produced for the PM, within a token budget (src/learning/pm-rules.ts).

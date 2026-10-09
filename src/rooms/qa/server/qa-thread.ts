@@ -113,7 +113,7 @@ export function qaThreadPrompt(input: { url: string; cases: string[]; viewports:
 export async function runQaThread(ctx: Pick<ServerCore, "bb" | "db" | "isDisposed"> & Partial<Pick<ServerCore, "outputGuard">>, input: {
   projectId: string; runId: string; pmThreadId: string; taskTitle: string; qaHostId: string; timeoutSec: number;
   url: string; cases: string[]; viewports: string; envClass: string; authorized: boolean; devServer?: string; vpnAddress?: string | null;
-  agent: { providerId: string; model: string; effort: string };
+  agent: { providerId: string; model: string; effort: string; serviceTier?: "default" | "fast" | undefined };
   onSpawned?: (threadId: string, deadline: number) => void;
 }): Promise<QaVerdict & { threadId: string; link: string }> {
   const { bb, db } = ctx;
@@ -126,7 +126,7 @@ export async function runQaThread(ctx: Pick<ServerCore, "bb" | "db" | "isDispose
     ...placement,
     // Env Catalog only for a check that has a login to read (J5); the account itself is named in the prompt.
     ...requiredPolicyField(bb, helperPolicy, input.agent.providerId, "browser-qa", parseQaCases(input.cases).logins.length ? { bbPlugins: ["env-catalog"], skills: ["env-catalog"] } : undefined),
-    ...writerExecutionSelection(input.agent.providerId, input.agent.model, input.agent.effort, null),
+    ...writerExecutionSelection(input.agent.providerId, input.agent.model, input.agent.effort, input.agent.serviceTier ?? "default"),
     prompt: qaThreadPrompt(input),
     environment: { type: "reuse", environmentId },
     pluginMetadata: { role: "browser-qa", spawnId: `${input.runId}:${spawnTextId([input.taskTitle, input.url, ...input.cases].join("\n"))}`, lanePilotRunId: input.runId, parentPmThreadId: input.pmThreadId, helperMode: helperPolicy.mode },

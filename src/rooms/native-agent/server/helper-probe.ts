@@ -50,7 +50,7 @@ export function createHelperProbe(ctx: Pick<ServerCore, "bb" | "db">) {
       const spawned = await fullAccessSpawn(bb, {
         ...placement,
         ...requiredPolicyField(bb, helperPolicy, providerId, "pm-reader"),
-        ...writerExecutionSelection(providerId, modelId, effort, null),
+        ...writerExecutionSelection(providerId, modelId, effort, "default"),
         prompt: PROMPT,
         environment: { type: "host", hostId: config.hostId, workspace: { type: "unmanaged", path: config.writerWorkspacePath } },
         pluginMetadata: { role: "pm-reader", lanePilotRunId: runId, lanePilotTaskId: `helper-probe-${providerId}`, stageId: "pm-read", parentPmThreadId: run.pm_thread_id, helperMode: helperPolicy.mode, helperRequired: helperPolicy.policy?.required === true, helperProbe: true },
