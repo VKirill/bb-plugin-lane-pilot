@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { t } from "@lane-pilot/i18n";
+import { buildOfficeDiorama } from "./office-scene";
 import {
   assignOfficeSeats,
   chooseIdleSpot,
@@ -132,7 +133,7 @@ export function CouncilOffice({
 
       // Isometric camera setup
       const aspect = container.clientWidth / (container.clientHeight || 1);
-      const viewSize = 13;
+      const viewSize = 14.5;
       const camera = new THREE.OrthographicCamera(
         (-viewSize * aspect) / 2,
         (viewSize * aspect) / 2,
@@ -157,135 +158,25 @@ export function CouncilOffice({
         return geom;
       };
 
-      // --- Room Furniture & Architecture ---
-      // Teal tiled floor
-      const floor = new THREE.Mesh(createBoxGeom(11, 0.4, 11), createMat(0x1e3a47));
-      floor.position.set(0, -0.2, 0);
-      scene.add(floor);
+      // Crisp dark outline material for diorama props & character meshes
+      const outlineMat = new THREE.LineBasicMaterial({
+        color: 0x0f172a,
+        transparent: true,
+        opacity: 0.85,
+      });
+      disposables.push(outlineMat);
 
-      // Back-left wall (Cream)
-      const wallLeft = new THREE.Mesh(createBoxGeom(0.4, 5, 11), createMat(0xf4ede2));
-      wallLeft.position.set(-5.3, 2.3, 0);
-      scene.add(wallLeft);
+      const createCharBox = (w: number, h: number, d: number, mat: import("three").Material) => {
+        const geom = createBoxGeom(w, h, d);
+        const mesh = new THREE.Mesh(geom, mat);
+        const edges = new THREE.EdgesGeometry(geom);
+        disposables.push(edges);
+        mesh.add(new THREE.LineSegments(edges, outlineMat));
+        return mesh;
+      };
 
-      // Back-right wall (Cream)
-      const wallRight = new THREE.Mesh(createBoxGeom(11, 5, 0.4), createMat(0xf4ede2));
-      wallRight.position.set(0, 2.3, -5.3);
-      scene.add(wallRight);
-
-      // Window on back-left wall
-      const winMesh = new THREE.Mesh(createBoxGeom(0.5, 2.2, 3), createMat(0x7dd3fc));
-      winMesh.position.set(-5.28, 2.8, 0);
-      scene.add(winMesh);
-
-      // Door on back-right wall
-      const doorMesh = new THREE.Mesh(createBoxGeom(1.6, 3.4, 0.5), createMat(0x854d0e));
-      doorMesh.position.set(3, 1.5, -5.28);
-      scene.add(doorMesh);
-
-      // Bookshelf
-      const shelf = new THREE.Mesh(createBoxGeom(1.8, 3.2, 0.8), createMat(0x78350f));
-      shelf.position.set(-4.2, 1.6, -4.2);
-      scene.add(shelf);
-
-      // Central Meeting Table (Dark wood)
-      const tableTop = new THREE.Mesh(createBoxGeom(4.4, 0.25, 2.2), createMat(0x9a3412));
-      tableTop.position.set(0, 1.1, 0);
-      scene.add(tableTop);
-
-      const tableLegGeom = createBoxGeom(0.3, 1.1, 0.3);
-      const tableLegMat = createMat(0x431407);
-      const tableLegPos = [
-        [-1.9, 0.55, -0.8],
-        [1.9, 0.55, -0.8],
-        [-1.9, 0.55, 0.8],
-        [1.9, 0.55, 0.8],
-      ];
-      for (const [lx, ly, lz] of tableLegPos) {
-        const leg = new THREE.Mesh(tableLegGeom, tableLegMat);
-        leg.position.set(lx!, ly!, lz!);
-        scene.add(leg);
-      }
-
-      // Visible chairs at distinct seats around the meeting table
-      const chairWoodMat = createMat(0x603813);
-      const chairCushionMat = createMat(0x334155);
-      const chairLegMat = createMat(0x1e293b);
-
-      for (const seat of OFFICE_SEATS) {
-        const chairGroup = new THREE.Group();
-        chairGroup.position.set(seat.x, 0, seat.z);
-        chairGroup.rotation.y = seat.angle;
-
-        // Seat cushion
-        const cushion = new THREE.Mesh(createBoxGeom(0.55, 0.08, 0.55), chairCushionMat);
-        cushion.position.set(0, 0.44, 0);
-        chairGroup.add(cushion);
-
-        // Backrest
-        const backrest = new THREE.Mesh(createBoxGeom(0.55, 0.48, 0.08), chairWoodMat);
-        backrest.position.set(0, 0.72, -0.24);
-        chairGroup.add(backrest);
-
-        // Legs
-        const clegGeom = createBoxGeom(0.06, 0.44, 0.06);
-        const clegPos = [
-          [-0.22, 0.22, -0.22],
-          [0.22, 0.22, -0.22],
-          [-0.22, 0.22, 0.22],
-          [0.22, 0.22, 0.22],
-        ];
-        for (const [cx, cy, cz] of clegPos) {
-          const cleg = new THREE.Mesh(clegGeom, chairLegMat);
-          cleg.position.set(cx!, cy!, cz!);
-          chairGroup.add(cleg);
-        }
-        scene.add(chairGroup);
-      }
-
-      // Desks & CRT monitors
-      const deskLocations = [
-        { x: -3.6, z: -2.5 },
-        { x: -3.6, z: 2.5 },
-        { x: 3.6, z: -2.5 },
-      ];
-      for (const d of deskLocations) {
-        const desk = new THREE.Mesh(createBoxGeom(1.6, 1.0, 1.0), createMat(0xd97706));
-        desk.position.set(d.x, 0.5, d.z);
-        scene.add(desk);
-
-        const mon = new THREE.Mesh(createBoxGeom(0.5, 0.45, 0.45), createMat(0x0f172a));
-        mon.position.set(d.x, 1.25, d.z);
-        scene.add(mon);
-
-        const scr = new THREE.Mesh(createBoxGeom(0.05, 0.35, 0.35), createMat(0x38bdf8));
-        scr.position.set(d.x + 0.24, 1.25, d.z);
-        scene.add(scr);
-      }
-
-      // Coffee corner
-      const coffeeCounter = new THREE.Mesh(createBoxGeom(1.4, 1.2, 1.6), createMat(0x475569));
-      coffeeCounter.position.set(4.2, 0.6, 3.8);
-      scene.add(coffeeCounter);
-
-      const coffeePot = new THREE.Mesh(createBoxGeom(0.4, 0.4, 0.4), createMat(0xef4444));
-      coffeePot.position.set(4.2, 1.35, 3.8);
-      scene.add(coffeePot);
-
-      // Plants
-      const plantLocs = [
-        { x: 4.2, z: -4.2 },
-        { x: -4.2, z: 4.2 },
-      ];
-      for (const p of plantLocs) {
-        const pot = new THREE.Mesh(createBoxGeom(0.7, 0.7, 0.7), createMat(0xc2410c));
-        pot.position.set(p.x, 0.35, p.z);
-        scene.add(pot);
-
-        const leaf = new THREE.Mesh(createBoxGeom(0.9, 1.1, 0.9), createMat(0x15803d));
-        leaf.position.set(p.x, 1.1, p.z);
-        scene.add(leaf);
-      }
+      // Build bright cutaway diorama office with all props and outlines
+      buildOfficeDiorama({ THREE, scene, disposables });
 
       // --- Character Mesh Management ---
       type CharActorObj = {
@@ -330,48 +221,45 @@ export function CouncilOffice({
           const shoeMat = createMat(0x0f172a);
           const eyeMat = createMat(0x09090b);
 
-          // Head with hair and eyes
+          // Head with hair and eyes (outlined)
           const headGroup = new THREE.Group();
           headGroup.position.y = 1.35;
 
-          const headMesh = new THREE.Mesh(createBoxGeom(0.42, 0.42, 0.42), skinMat);
+          const headMesh = createCharBox(0.42, 0.42, 0.42, skinMat);
           headGroup.add(headMesh);
 
           // Eyes
-          const eyeGeom = createBoxGeom(0.06, 0.08, 0.04);
-          const leftEye = new THREE.Mesh(eyeGeom, eyeMat);
+          const leftEye = createCharBox(0.06, 0.08, 0.04, eyeMat);
           leftEye.position.set(-0.1, 0.02, 0.22);
           headGroup.add(leftEye);
 
-          const rightEye = new THREE.Mesh(eyeGeom, eyeMat);
+          const rightEye = createCharBox(0.06, 0.08, 0.04, eyeMat);
           rightEye.position.set(0.1, 0.02, 0.22);
           headGroup.add(rightEye);
 
           // Hair variation per seat
           const hairInfo = getHairProps(actor.id);
           const hairMat = createMat(hairInfo.color);
-          const hairTop = new THREE.Mesh(createBoxGeom(0.44, 0.16, 0.44), hairMat);
+          const hairTop = createCharBox(0.44, 0.16, 0.44, hairMat);
           hairTop.position.set(0, 0.16, -0.02);
           headGroup.add(hairTop);
 
           if (hairInfo.style === 1) {
-            // Front bangs
-            const bangs = new THREE.Mesh(createBoxGeom(0.44, 0.1, 0.1), hairMat);
+            const bangs = createCharBox(0.44, 0.1, 0.1, hairMat);
             bangs.position.set(0, 0.14, 0.2);
             headGroup.add(bangs);
           } else if (hairInfo.style === 2) {
-            // Side locks
-            const leftLock = new THREE.Mesh(createBoxGeom(0.08, 0.22, 0.36), hairMat);
+            const leftLock = createCharBox(0.08, 0.22, 0.36, hairMat);
             leftLock.position.set(-0.21, 0.05, 0.02);
             headGroup.add(leftLock);
-            const rightLock = new THREE.Mesh(createBoxGeom(0.08, 0.22, 0.36), hairMat);
+            const rightLock = createCharBox(0.08, 0.22, 0.36, hairMat);
             rightLock.position.set(0.21, 0.05, 0.02);
             headGroup.add(rightLock);
           }
           group.add(headGroup);
 
-          // Body / Shirt (0.5 x 0.55 x 0.32)
-          const body = new THREE.Mesh(createBoxGeom(0.5, 0.55, 0.32), charMat);
+          // Body / Shirt (0.5 x 0.55 x 0.32, outlined)
+          const body = createCharBox(0.5, 0.55, 0.32, charMat);
           body.position.y = 0.88;
           group.add(body);
 
@@ -381,12 +269,12 @@ export function CouncilOffice({
             pivot.position.set(isLeft ? -0.32 : 0.32, 1.1, 0);
 
             // Sleeve
-            const sleeve = new THREE.Mesh(createBoxGeom(0.14, 0.28, 0.14), charMat);
+            const sleeve = createCharBox(0.14, 0.28, 0.14, charMat);
             sleeve.position.set(0, -0.14, 0);
             pivot.add(sleeve);
 
             // Hand
-            const hand = new THREE.Mesh(createBoxGeom(0.12, 0.14, 0.12), skinMat);
+            const hand = createCharBox(0.12, 0.14, 0.12, skinMat);
             hand.position.set(0, -0.32, 0);
             pivot.add(hand);
 
@@ -405,12 +293,12 @@ export function CouncilOffice({
             pivot.position.set(isLeft ? -0.14 : 0.14, 0.55, 0);
 
             // Pants
-            const pants = new THREE.Mesh(createBoxGeom(0.16, 0.45, 0.18), pantsMat);
+            const pants = createCharBox(0.16, 0.45, 0.18, pantsMat);
             pants.position.set(0, -0.22, 0);
             pivot.add(pants);
 
             // Shoe
-            const shoe = new THREE.Mesh(createBoxGeom(0.18, 0.12, 0.24), shoeMat);
+            const shoe = createCharBox(0.18, 0.12, 0.24, shoeMat);
             shoe.position.set(0, -0.48, 0.03);
             pivot.add(shoe);
 
@@ -775,7 +663,7 @@ export function CouncilOffice({
   return (
     <div
       ref={containerRef}
-      className="relative flex h-full w-full min-h-[220px] select-none flex-col items-center justify-center overflow-hidden bg-[#182631] text-xs font-mono"
+      className="relative flex h-full w-full min-h-[220px] select-none flex-col items-center justify-center overflow-hidden bg-[#cbd5e1] text-xs font-mono"
       style={{
         boxShadow: "inset 0 0 0 2px #0f172a",
         imageRendering: "pixelated",
@@ -889,7 +777,7 @@ export function CouncilOffice({
 
                   {/* Character label tag */}
                   <div
-                    className={`px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white border-2 cursor-pointer transition-all ${
+                    className={`px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white border-2 cursor-pointer transition-all ${
                       isHighlighted ? "scale-110 shadow-lg ring-2 ring-white" : ""
                     }`}
                     style={{

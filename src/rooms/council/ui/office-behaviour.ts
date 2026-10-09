@@ -96,17 +96,17 @@ export const OFFICE_OBSTACLES: OfficeObstacle[] = [
 
 export const OFFICE_SEATS: OfficeSeat[] = [
   // West head (Chair)
-  { id: "seat_chair", seatId: "chair", x: -2.6, z: 0, angle: Math.PI / 2, speakX: -2.0, speakZ: -0.5 },
+  { id: "seat_chair", seatId: "chair", x: -2.6, z: 0, angle: Math.PI / 2, speakX: -2.5, speakZ: -0.6 },
   // East head (Owner)
-  { id: "seat_owner", seatId: "owner", x: 2.6, z: 0, angle: -Math.PI / 2, speakX: 2.0, speakZ: 0.5 },
+  { id: "seat_owner", seatId: "owner", x: 2.6, z: 0, angle: -Math.PI / 2, speakX: 2.5, speakZ: 0.6 },
   // North side (facing south)
-  { id: "seat_n1", seatId: "n1", x: -1.4, z: -1.6, angle: 0, speakX: -1.4, speakZ: -1.25 },
-  { id: "seat_n2", seatId: "n2", x: 0, z: -1.6, angle: 0, speakX: 0, speakZ: -1.25 },
-  { id: "seat_n3", seatId: "n3", x: 1.4, z: -1.6, angle: 0, speakX: 1.4, speakZ: -1.25 },
+  { id: "seat_n1", seatId: "n1", x: -1.4, z: -1.6, angle: 0, speakX: -1.4, speakZ: -1.35 },
+  { id: "seat_n2", seatId: "n2", x: 0, z: -1.6, angle: 0, speakX: 0, speakZ: -1.35 },
+  { id: "seat_n3", seatId: "n3", x: 1.4, z: -1.6, angle: 0, speakX: 1.4, speakZ: -1.35 },
   // South side (facing north)
-  { id: "seat_s1", seatId: "s1", x: -1.4, z: 1.6, angle: Math.PI, speakX: -1.4, speakZ: 1.25 },
-  { id: "seat_s2", seatId: "s2", x: 0, z: 1.6, angle: Math.PI, speakX: 0, speakZ: 1.25 },
-  { id: "seat_s3", seatId: "s3", x: 1.4, z: 1.6, angle: Math.PI, speakX: 1.4, speakZ: 1.25 },
+  { id: "seat_s1", seatId: "s1", x: -1.4, z: 1.6, angle: Math.PI, speakX: -1.4, speakZ: 1.35 },
+  { id: "seat_s2", seatId: "s2", x: 0, z: 1.6, angle: Math.PI, speakX: 0, speakZ: 1.35 },
+  { id: "seat_s3", seatId: "s3", x: 1.4, z: 1.6, angle: Math.PI, speakX: 1.4, speakZ: 1.35 },
 ];
 
 export const OFFICE_SPOTS: Record<string, OfficeSpot> = {
