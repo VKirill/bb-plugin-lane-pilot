@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "status": "accepted",
+  "lanePilotRunId": "lprun_3830fb02731046e89c6d9706ca217fd7",
+  "lanePilotTaskId": "native-stack-sha-bump",
+  "attemptId": "lpattempt_6643b7c0641d402587e722d94a1f63aa",
+  "pmThreadId": "thr_d6zg57egme",
+  "writerThreadId": "thr_shd6teq8gc",
+  "ownsPaths": [
+    "src/rooms/native-install/",
+    "src/rooms/native-agent/native-lane-reconcile.ts",
+    "tests/native-install-sha.test.ts"
+  ],
+  "readFirst": [
+    {
+      "path": "src/rooms/native-install/native-install-bootstrap.ts",
+      "windows": []
+    },
+    {
+      "path": "src/rooms/native-agent/native-lane-reconcile.ts",
+      "windows": []
+    }
+  ],
+  "output": "Bumped `NATIVE_STACK_SHA` to `45fa19eab528d92d8ce2744d49153ecb4133ea33` and added a regression test. Typecheck exits 0, and `tests/native-install-sha.test.ts` plus the existing `tests/native-install.test.ts` pass (15 tests).\n\nChanged paths, both inside owns_paths:\n- `src/rooms/native-install/native-install-bootstrap.ts`: the constant only.\n- `tests/native-install-sha.test.ts` (new): asserts the pinned SHA and that the old one is gone. It also checks that reconcile replaces a stale OpenCode `guard.ts` with the checkout's copy on the next run.\n\n`native-lane-reconcile.ts` needed no change. It re-copies the OpenCode files on every reconcile, not only when the SHA changes, so the new copy is picked up without touching it.\n\nFor hosts on the old checkout: `upgradeClaudeLane` sees HEAD ≠ pinned SHA, fetches origin, checks out 45fa19e, and reruns `install.sh`. I confirmed in the local Lane Stack checkout that `c3a88d0` is an ancestor of `45fa19e`, so that fast-forward path is valid. The end-to-end upgrade is not covered by an automated test: it needs a real git origin containing the pinned commit, which can't be built offline. The regression test covers the re-copy step only.\n\nI did not load the writer-practices or karpathy-guidelines skills. The change is a one-line constant plus a test in the existing style.",
+  "verification": [
+    {
+      "command": "npm run typecheck",
+      "exitCode": 0,
+      "stdout": "\r\n> bb-plugin-lane-pilot@0.1.212 typecheck\r\n> tsc --noEmit\r\n\r\n\\\u001b[1G\u001b[0K\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m New \u001b[31mmajor\u001b[39m version of npm available! \u001b[31m11.16.0\u001b[39m -> \u001b[34m12.2.0\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m Changelog: \u001b[34mhttps://github.com/npm/cli/releases/tag/v12.2.0\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m To update run: \u001b[4mnpm install -g npm@12.2.0\u001b[24m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\\\u001b[1G\u001b[0K",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "0eba5b30d0f707b6c1606d2a79c16cd49fbaba9b79c4c8bc5bfa423ab6beead5",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_6643b7c0641d402587e722d94a1f63aa/bb-plugin-lane-pilot"
+    },
+    {
+      "command": "npx vitest run tests/native-install-sha.test.ts",
+      "exitCode": 0,
+      "stdout": "\\\u001b[1G\u001b[0K\u001b[?25l\r\n\u001b[1m\u001b[30m\u001b[46m RUN \u001b[49m\u001b[39m\u001b[22m \u001b[36mv4.1.11 \u001b[39m\u001b[90m/Users/vechkasov/.lane-pilot/worktrees/lpattempt_6643b7c0641d402587e722d94a1f63aa/bb-plugin-lane-pilot\u001b[39m\r\n\r\n\u001b[?2026h\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/native-install-sha.test.ts\u001b[2m [queued]\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (0)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m15:46:42\r\n\u001b[2m   Duration \u001b[22m103ms\r\n\u001b[?2026l\u001b[?2026h\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/native-install-sha.test.ts\u001b[2m [queued]\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (0)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m15:46:42\r\n\u001b[2m   Duration \u001b[22m904ms\r\n\u001b[?2026l\u001b[?2026h\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/native-install-sha.test.ts\u001b[2m 0/2\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (2)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m15:46:42\r\n\u001b[2m   Duration \u001b[22m1.51s\r\n\u001b[?2026l\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K \u001b[32m✓\u001b[39m tests/native-install-sha.test.ts \u001b[2m(\u001b[22m\u001b[2m2 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[32m 59\u001b[2mms\u001b[22m\u001b[39m\r\n   \u001b[32m✓\u001b[39m native install pinned Lane Stack revision \u001b[2m(2)\u001b[22m\r\n     \u001b[32m✓\u001b[39m pins Lane Stack 45fa19e, the revision whose OpenCode guard allows writer-practices and karpathy-guidelines\u001b[32m 1\u001b[2mms\u001b[22m\u001b[39m\r\n     \u001b[32m✓\u001b[39m re-copies the OpenCode guard from the checkout on reconcile, replacing a stale copy\u001b[32m 57\u001b[2mms\u001b[22m\u001b[39m\r\n\r\n\u001b[2m Test Files \u001b[22m \u001b[1m\u001b[32m1 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[32m2 passed\u001b[39m\u001b[22m\u001b[90m (2)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m 15:46:42\r\n\u001b[2m   Duration \u001b[22m 1.59s\u001b[2m (transform 1.07s, setup 54ms, import 1.35s, tests 59ms, environment 0ms)\u001b[22m\r\n\r\n\u001b[?25h\\\u001b[1G\u001b[0K\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m New \u001b[31mmajor\u001b[39m version of npm available! \u001b[31m11.16.0\u001b[39m -> \u001b[34m12.2.0\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m Changelog: \u001b[34mhttps://github.com/npm/cli/releases/tag/v12.2.0\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m To update run: \u001b[4mnpm install -g npm@12.2.0\u001b[24m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\\\u001b[1G\u001b[0K",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "fed41b9c90e519cb382e8042898396de9546a0e5954a4abd46874fe95f19933e",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_6643b7c0641d402587e722d94a1f63aa/bb-plugin-lane-pilot"
+    }
+  ],
+  "runV2": {
+    "schemaVersion": 1,
+    "pools": {
+      "provider": 15,
+      "verification": 2
+    },
+    "score": 2,
+    "risk": "low",
+    "sourceRisk": "low",
+    "scoreAdapter": "task-risk-v1"
+  },
+  "reasoning": [
+    {
+      "planSha256": "e0a982f7b8851c923c80f219df9cfc0702e1fb1762396a5a5aa64e360d0c5ff2",
+      "sentPlanSha256": "e0a982f7b8851c923c80f219df9cfc0702e1fb1762396a5a5aa64e360d0c5ff2",
+      "sourceLength": 1832,
+      "sentLength": 1832,
+      "jevStatus": "ok",
+      "jevDecision": "medium",
+      "requestedReasoningLevel": "medium",
+      "effectiveReasoningLevel": "medium",
+      "fallbackReason": null,
+      "retryEffort": {
+        "enabled": true,
+        "retryIndex": 0,
+        "before": "medium",
+        "after": "medium",
+        "changed": false
+      },
+      "providerId": "claude-code",
+      "model": "claude-haiku-5-5",
+      "serviceTier": "default",
+      "requestedServiceTier": "default",
+      "runId": "lprun_3830fb02731046e89c6d9706ca217fd7",
+      "attemptId": "lpattempt_6643b7c0641d402587e722d94a1f63aa",
+      "threadId": "thr_shd6teq8gc",
+      "effortMode": "automatic",
+      "selectionSource": {
+        "providerId": "claude-code",
+        "model": "claude-haiku-5-5",
+        "reasoningLevel": "medium",
+        "serviceTier": "default",
+        "reasoningLevelSource": "client-preference"
+      },
+      "dispatchContext": {
+        "memoryText": "- Full plugin backups use a versioned JSON payload (`kind: 'bb-project-folders-backup'`, version 1) containing settings and all 11 durable tables: folders, folder_paths, thread_places, folder_rules, project_rules, project_order, execution_defaults, session_policies, preferences, item_styles, and folder_archives. Imports preserve row IDs and run in one transaction; invalid backups and imports during an active move or archive are rejected. Transient tables (exports, pending_exports, project_moves, thread_moves, section_moves) are excluded. This adds no schema changes and preserves the existing appearance-only export/import flow.\n- Execution defaults can pin a chat environment as `folder` or `worktree`. Resolve the pin nearest-first across section, ancestors, project, and global settings. A `worktree` pin preselects a managed worktree on the folder host in both New chat and the composer chip; spawn must preserve that managed-worktree selection. With no pin, keep the existing folder/section-provider behavior. Groups must never become chat environments.\n- Errand, QA, and reviewer helper threads are read-only for repository files; specialists may write under `.agents/`. Writers retain full worktree access. Wait backstops report helper edits as `repo_edited` with changed files and do not revert them.",
+        "memoryPicked": [
+          "a1e24df18c9424b7d28552a47384aeafc3bb57aef551ddef568e5654b8b2653f",
+          "39467d1db13cd0d2692a4e6c1934571d085dddc651a02deec6aeba4e0829c97b",
+          "d86da4f3ab41999c5f5c25ee3cfa928584b004ab91c199582af9cfac872e28c2"
+        ],
+        "rulesText": "- Перед ответом сверь список изменённых файлов с `owns_paths` и откати из своей задачи каждое изменение, путь которого туда не входит.\n- Перед ответом по задаче Lane Pilot сверяй каждый путь, который собираешься изменить из-за ошибки проверки, с owns_paths; если пути там нет, не меняй файл и сообщи об ошибке диспетчеру.",
+        "rulesPicked": {
+          "total": 18,
+          "picked": [
+            "rule_1014724209246da9",
+            "rule_572535fb78e20b9d"
+          ]
+        },
+        "executionPacket": "Read these before editing; they are the context for this task:\n- src/rooms/native-install/native-install-bootstrap.ts L1-L98 (sha256 ded2ddd3)\n- src/rooms/native-agent/native-lane-reconcile.ts L1-L135 (sha256 a0b02ec7)",
+        "executionPacketSha256": "3d701b4ac8e3cb3d7224ec3babdf6496253f7368bf3b04d9aab7342513ba5028",
+        "pmReadContext": "",
+        "agent": "Lane Pilot writer",
+        "promptChars": 6422,
+        "helperMode": "roles",
+        "helperRequired": false
+      }
+    }
+  ],
+  "emergencyFallback": null,
+  "turns": 1
+}

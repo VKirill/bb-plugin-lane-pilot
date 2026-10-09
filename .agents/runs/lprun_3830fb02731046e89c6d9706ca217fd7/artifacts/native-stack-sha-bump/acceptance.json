@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "native-stack-sha-bump",
+  "task_sha256": "020dd478ac595c4cc5e9b4df08a1fa90c9735f24611726c2cca3221f216eda41",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "055a8232fd2069c5e87b66ac0a9389ce30501bd0a9876c0526afa69db74a5f37",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-09T13:46:55.284Z",
+  "model": "claude-haiku-5-5"
+}
