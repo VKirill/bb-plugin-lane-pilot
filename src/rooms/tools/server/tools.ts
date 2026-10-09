@@ -106,8 +106,8 @@ export function registerTools(ctx: ServerCore, services: Services) {
   const { updateTask } = createWriterUpdateTask(ctx, services);
   registerObservedTool(bb.agents, {
     name:"lane_pilot_update_task",
-    description:"Update the contract or plan of a queued task that has not started yet in place under the same id.",
-    instructions:"Use only from a Lane Pilot PM thread to correct a task before its writer begins. Keeps the task id, queue position and depends_on edges, rewrites PLAN.md, and reruns pm-read and plan critique. If the task has already started, returns task_started (use lane_pilot_answer_writer if it stopped with a question, or cancel and redispatch). With satisfied:true (no task or plan) a BLOCKED task whose work you verified yourself counts as done for the tasks that depend on it, so they start without a dummy follow-up task; the task itself stays blocked in the record.",
+    description:"Update the contract or plan of a task in place under the same id: a queued task that has not started yet, or a blocked task whose writer stopped with a question.",
+    instructions:"Use only from a Lane Pilot PM thread to correct a task. A queued task keeps its id, queue position and depends_on edges, gets a rewritten PLAN.md, and reruns pm-read and plan critique. A blocked task whose writer stopped with a needs_human question (lane_pilot_wait_writer shows it): send the whole task with the corrected verification, acceptance, expected_outputs, owns_paths or never_touch (and plan). The same attempt reopens in the same writer thread and worktree, no attempt is charged, and the writer gets a turn naming each changed field with its old and new value. Any other field of a blocked task (id, objective, project_cwd, area, depends_on, ...) returns redispatch_required: cancel the task and dispatch it again. A running task returns task_started and is not changed. With satisfied:true (no task or plan) a BLOCKED task whose work you verified yourself counts as done for the tasks that depend on it, so they start without a dummy follow-up task; the task itself stays blocked in the record.",
     parameters:z.object({
       taskId:z.string().min(1),
       task:taskV2Schema.optional(),
@@ -162,7 +162,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   registerObservedTool(bb.agents, {
     name:"lane_pilot_answer_writer",
     description:"Answer a writer's NEEDS_HUMAN question: the same attempt continues in the same writer thread without spending one.",
-    instructions:"Use only from the matching Lane Pilot PM thread, and only when the task's latest attempt is blocked with needs_human. The answer is delivered into the writer's own thread and its normal wait → validate → accept cycle follows: poll lane_pilot_wait_writer with the same runId. Any other case returns not_answerable — dispatch the task again instead. Never use it to change the contract: redispatch for that.",
+    instructions:"Use only from the matching Lane Pilot PM thread, and only when the task's latest attempt is blocked with needs_human. The answer is delivered into the writer's own thread and its normal wait → validate → accept cycle follows: poll lane_pilot_wait_writer with the same runId. Any other case returns not_answerable — redispatch the task instead. It never changes the contract: a question about the checks, acceptance or paths is fixed with lane_pilot_update_task under the same id (the same attempt reopens in the same thread), and any other contract change needs a redispatch.",
     parameters:z.object({ taskId:z.string().min(1), answer:z.string().min(1).max(8000) }).strict(),
     execute: async (params, context) => {
       const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:context.threadId });
