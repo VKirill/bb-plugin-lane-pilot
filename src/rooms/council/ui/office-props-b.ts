@@ -531,6 +531,7 @@ export function buildPropsB(kit: PropsKit): void {
     /** Parked car; local +z is the front, `heading` turns it about Y. */
     const car = (x: number, z: number, heading: number, kind: "sedan" | "hatch" | "van", body: number, stripe?: number) => {
       const g = place(x, GY + 0.01, z, heading);
+      g.userData.boxCar = true; // hidden once the GLB cars are loaded (office-cars.ts)
       const GLASS = 0x8ec9e0;
       const L = kind === "van" ? 2.1 : kind === "hatch" ? 1.75 : 1.9;
       const W = kind === "van" ? 0.9 : 0.85;
@@ -592,8 +593,8 @@ export function buildPropsB(kit: PropsKit): void {
     // ---- Street: curb, asphalt, parking bays, lane markings, zebra, far sidewalk ----
     ob(-50, 30, GY, -0.42, 14.45, 14.6, STONE);
     flat(-50, 30, 14.6, 24.5, ASPHALT);
-    for (let x = -16.8; x <= 6.5; x += 2.8) paint(x - 0.05, x + 0.05, 14.8, 19.15, 0xf0efe8);
-    paint(-16.85, 6.55, 19.15, 19.25, 0xf0efe8);
+    for (let x = -16.8; x <= 9.4; x += 2.8) paint(x - 0.05, x + 0.05, 14.8, 19.15, 0xf0efe8);
+    paint(-16.85, 9.45, 19.15, 19.25, 0xf0efe8);
     for (let x = -34; x < 22; x += 3) if (x + 1.5 < 12.4 || x > 15.6) paint(x, x + 1.5, 21.85, 21.95, 0xf0c419);
     for (let z = 14.9; z < 24.2; z += 1) paint(12.5, 15.5, z, z + 0.5, 0xf0efe8);
     ob(-50, 30, GY, -0.42, 24.5, 24.65, STONE);

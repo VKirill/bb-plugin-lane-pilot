@@ -43,6 +43,7 @@ import {
   type OfficePeople,
   type Person,
 } from "./office-people";
+import { loadOfficeCars, type OfficeCars } from "./office-cars";
 
 export type CouncilOfficeProps = {
   detail: CouncilDetailLike;
@@ -312,6 +313,13 @@ export function CouncilOffice({
         return rig;
       };
 
+      // The GLB cars replace the box cars of the lot once parsed; the box cars stay if that fails
+      let cars: OfficeCars | null = null;
+      loadOfficeCars(THREE, scene).then((loaded) => {
+        if (disposed) loaded.dispose();
+        else cars = loaded;
+      }, () => {});
+
       // Rigged people replace the procedural ones that already stand on the floor once the GLB is parsed
       loadOfficePeople(THREE).then((loaded) => {
         if (disposed) {
@@ -558,6 +566,7 @@ export function CouncilOffice({
         lastTime = nowTime;
         const nowMs = Date.now();
         const timeSec = nowTime / 1000;
+        if (!motionReduced) cars?.update(dt);
 
         // Ease the view towards the controls' target: exponential smoothing, independent of frame rate
         const ease = motionReduced ? 1 : 1 - Math.exp(-12 * dt);
@@ -816,6 +825,7 @@ export function CouncilOffice({
         removeControls();
         for (const rig of charRigs.values()) rig.person?.dispose();
         people?.dispose();
+        cars?.dispose();
         for (const item of disposables) {
           try {
             item.dispose();
