@@ -1,7 +1,7 @@
 import { unownedExpectedOutputs } from "../../tasks";
 import { hostContract, taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { claimStageSpawn, countAttempts, getRun, getRunSettingsScopes, getTask, listLiveTasksForRun, listOpenAttempts, listStageReceipts, loadProjectSettings, openDatabase } from "../../storage";
+import { claimStageSpawn, countAttempts, getRun, getTask, listLiveTasksForRun, listOpenAttempts, listStageReceipts, openDatabase } from "../../storage";
 import { criticPairCandidates, latestWriterPair, pairApartFromWriter, sdkCriticCatalog } from "../critic-pair";
 import { bbServiceTier, writerExecutionSelection, writerServiceTier, findModelIn } from "@lane-pilot/models";
 import { qaSpawnClaimed } from "../../qa";
@@ -21,7 +21,7 @@ import { reasonForStatus } from "@lane-pilot/workflow-engine";
 import { QUALITY_MODE_SETTING, applyQualityMode, resolveQualityMode } from "../quality-mode";
 import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { MAIN_ATTEMPT_LIMIT } from "../../runs";
-import { configuredSetting } from "../../core/server";
+import { configuredSetting, stageHelperSettings } from "../../core/server";
 import { fullAccessSpawn } from "../../core/server";
 import { reviewerMemoryFor } from "../../memory/server";
 import { clearSpawnMarker } from "../../core/server";
@@ -34,7 +34,7 @@ import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";
 export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;pmThreadId:string;config:PrototypeConfig;task:TaskV2})
   :Promise<{state:"skipped"|"passed"|"failed";summary:string;reason?:string}> {
-  const settings=loadProjectSettings(input.db,input.projectId,getRunSettingsScopes(input.db,input.runId));
+  const settings=await stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
   const parsedSettings=parsePmReadSettings(Object.fromEntries([
     "pm_read.enabled","pm_read.min_lines","pm_read.provider","pm_read.model","pm_read.reasoning_effort","pm_read.service_tier",
   ].map((key)=>[key,configuredSetting(settings,key)])));
@@ -148,7 +148,7 @@ function verdictReasons(result:{status?:VerdictStatus;summary?:string;verdict?:V
 
 export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;config:PrototypeConfig;task:TaskV2;plan:string;pmReadContext?:string})
   : Promise<{allowed:boolean;reason?:string;critique?:unknown}> {
-  const projectSettings = loadProjectSettings(input.db,input.projectId,getRunSettingsScopes(input.db,input.runId));
+  const projectSettings = await stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
   // quality_mode (task, else project, else standard) decides whether this task goes through the plan critique at all.
   const qualityMode = resolveQualityMode(input.task,projectSettings[QUALITY_MODE_SETTING]);
   const settings = applyQualityMode(projectSettings,qualityMode);
@@ -306,7 +306,7 @@ export async function runCodeCritique(input:{
   bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;
   config:PrototypeConfig;task:TaskV2;evidence:CandidateEvidence;disputes?:unknown;frozenPolicy?:FrozenCritiquePolicy;
 }): Promise<{allowed:boolean;reason?:string;review:"passed"|"not_required";critique?:unknown;parsed?:ReturnType<typeof parseCodeCritique>;settings?:ReturnType<typeof parseCodeCritiqueSettings>;policy?:FrozenCritiquePolicy}> {
-  const projectSettings = loadProjectSettings(input.db,input.projectId,getRunSettingsScopes(input.db,input.runId));
+  const projectSettings = await stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
   const qualityMode = resolveQualityMode(input.task,projectSettings[QUALITY_MODE_SETTING]);
   const settings = applyQualityMode(projectSettings,qualityMode);
   const existing = listStageReceipts(input.db, input.runId, input.taskId).find((row) => row.stageId === "code-critique");
@@ -547,7 +547,7 @@ export async function runCodeCritique(input:{
 
 export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;config:PrototypeConfig;task:TaskV2;plan:string})
   : Promise<{allowed:boolean;reason?:string;review?:unknown}> {
-  const settings = loadProjectSettings(input.db,input.projectId,getRunSettingsScopes(input.db,input.runId));
+  const settings = await stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
   const policy = shouldRunSpecialist({enabled:settings["specialist.enabled"],when:settings["specialist.when"],risk:input.task.risk});
   const agent=boundedAgentName(settings["specialist.agent"],"specialist-reviewer");
   const source = `${input.plan}\n\n${JSON.stringify(input.task)}\n\nagent=${agent}`;

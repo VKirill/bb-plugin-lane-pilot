@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "stage-helpers-live-settings-v3",
+  "task_sha256": "30c32e07061d0d399cf5d628c85fda4d8da14e9ffd4298cb5a9199fb5ee205b8",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "603265d20aa9245e0b0d7fb961edba6fda7fe65cb0fa190b67e9453f9e8f9592",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-09T15:45:18.586Z",
+  "model": "claude-haiku-5-5"
+}

@@ -7,6 +7,7 @@ export { CATALOG_WAIT_MS, createModelCatalog, modelCatalogOf, pmHostOf, within }
 export type { ModelCatalogReader } from "./model-catalog-reader";
 export { bindRunChildBudget, fullAccessSpawn, pmHasGuard, pmPrompt, providerSupportsServiceTier } from "./pm-spawn";
 export { abortable, scheduleIsolated } from "./schedules";
+export { stageHelperSettings } from "./stage-settings";
 export type { Services } from "./services";
 export { clearSpawnMarker, findThreadsByMetadata, keyedSpawnSupported, spawnTextId } from "./thread-keys";
 export { ToolError, fenceOutside, registerObservedTool, registeredTools } from "./tool-result";
