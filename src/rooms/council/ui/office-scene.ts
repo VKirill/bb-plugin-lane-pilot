@@ -557,10 +557,17 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
         for (const [lx, lz] of [[minX + 0.1, minZ + 0.1], [maxX - 0.1, minZ + 0.1], [minX + 0.1, maxZ - 0.1], [maxX - 0.1, maxZ - 0.1]]) {
           box(scene, lx - 0.04, lx + 0.04, 0, 0.7, lz - 0.04, lz + 0.04, 0xb8bcc4);
         }
-        // Monitor (screen glows #77eaff), keyboard and a desk lamp
-        box(scene, cx - 0.3, cx + 0.3, 0.95, 1.25, cz - 0.4, cz - 0.35, 0x3a3d4a);
-        box(scene, cx - 0.26, cx + 0.26, 1.0, 1.2, cz - 0.35, cz - 0.34, 0x77eaff, { outline: false });
-        box(scene, cx - 0.2, cx + 0.2, 0.75, 0.78, cz - 0.05, cz + 0.1, 0xf8fafc);
+        // Monitor on the edge far from the sitter, its screen (glows #77eaff) facing him; keyboard between; desk lamp on the north edge.
+        // North-row desks (gz 3–4): sitter on the north, monitor on the south edge facing north. South-row desks: the other way round.
+        if (cz < -6) {
+          box(scene, cx - 0.3, cx + 0.3, 0.95, 1.25, cz + 0.35, cz + 0.4, 0x3a3d4a);
+          box(scene, cx - 0.26, cx + 0.26, 1.0, 1.2, cz + 0.34, cz + 0.35, 0x77eaff, { outline: false });
+          box(scene, cx - 0.2, cx + 0.2, 0.75, 0.78, cz - 0.1, cz + 0.05, 0xf8fafc);
+        } else {
+          box(scene, cx - 0.3, cx + 0.3, 0.95, 1.25, cz - 0.4, cz - 0.35, 0x3a3d4a);
+          box(scene, cx - 0.26, cx + 0.26, 1.0, 1.2, cz - 0.35, cz - 0.34, 0x77eaff, { outline: false });
+          box(scene, cx - 0.2, cx + 0.2, 0.75, 0.78, cz - 0.05, cz + 0.1, 0xf8fafc);
+        }
         box(scene, maxX - 0.25, maxX - 0.2, 0.75, 1.1, minZ + 0.1, minZ + 0.15, 0xf0d27a);
         break;
       }

@@ -358,11 +358,15 @@ export function buildPropsA(kit: PropsKit): void {
   const T = 0.755;
   DESKS.forEach((cfg, idx) => {
     const south = cfg.gz === 4;
-    // Slot helper: u across the desk (0..2), v along it (0..1)
-    const d = (u0: number, u1: number, v0: number, v1: number, y0: number, y1: number, color: number, o?: Opts) =>
-      g(cfg.gx + u0, cfg.gx + u1, cfg.gz + v0, cfg.gz + v1, y0, y1, color, o);
+    // v runs from the monitor's side to the sitter's side on the south row; the north row mirrors it (monitor on the south edge, screen facing north)
+    const fl = (v: number) => (south ? v : 1 - v);
+    // Slot helper: u across the desk (0..2), v along it (0..1); `lamp` pieces stay on the north edge on both rows
+    const d = (u0: number, u1: number, v0: number, v1: number, y0: number, y1: number, color: number, o?: Opts, lamp = false) => {
+      const a = lamp ? v0 : fl(v0), b = lamp ? v1 : fl(v1);
+      return g(cfg.gx + u0, cfg.gx + u1, cfg.gz + Math.min(a, b), cfg.gz + Math.max(a, b), y0, y1, color, o);
+    };
     const wx = (u: number) => cfg.gx + u - 20;
-    const wz = (v: number) => cfg.gz + v - 10;
+    const wz = (v: number) => cfg.gz + fl(v) - 10;
 
     // Monitor stand, so the existing monitor no longer floats
     d(0.95, 1.05, 0.105, 0.145, T + 0.02, 0.95, 0x2b2f3a, { outline: false });
@@ -370,12 +374,12 @@ export function buildPropsA(kit: PropsKit): void {
     // Mouse and mouse mat
     d(1.28, 1.38, 0.5, 0.62, T, T + 0.03, DARK, { outline: false });
     // Desk lamp head on the existing pole
-    d(1.69, 1.86, 0.06, 0.19, T, T + 0.03, 0x2b2f3a);
+    d(1.69, 1.86, 0.06, 0.19, T, T + 0.03, 0x2b2f3a, undefined, true);
     if (cfg.cone) {
-      d(1.64, 1.91, 0.02, 0.27, 1.05, 1.1, cfg.shade);
-      d(1.69, 1.86, 0.05, 0.22, 1.1, 1.15, cfg.shade);
+      d(1.64, 1.91, 0.02, 0.27, 1.05, 1.1, cfg.shade, undefined, true);
+      d(1.69, 1.86, 0.05, 0.22, 1.1, 1.15, cfg.shade, undefined, true);
     } else {
-      d(1.62, 1.93, 0.0, 0.34, 1.08, 1.14, cfg.shade);
+      d(1.62, 1.93, 0.0, 0.34, 1.08, 1.14, cfg.shade, undefined, true);
     }
     // Stickies on the monitor
     cfg.notes.forEach(([c, u, y]) => d(u, u + 0.12, 0.162, 0.172, y, y + 0.11, c, { outline: false }));
@@ -391,17 +395,12 @@ export function buildPropsA(kit: PropsKit): void {
       case "laptop":
         d(0.1, 0.62, 0.14, 0.52, T, T + 0.022, SILVER);
         d(0.14, 0.58, 0.22, 0.46, T + 0.022, T + 0.026, 0xaab4bd, { outline: false });
-        if (south) {
-          d(0.1, 0.62, 0.1, 0.14, T, T + 0.27, SILVER);
-          d(0.14, 0.58, 0.14, 0.145, T + 0.04, T + 0.25, 0x77eaff, { outline: false });
-        } else {
-          d(0.1, 0.62, 0.52, 0.56, T, T + 0.27, SILVER);
-          d(0.34, 0.38, 0.56, 0.565, T + 0.12, T + 0.16, 0xffffff, { outline: false });
-        }
+        d(0.1, 0.62, 0.1, 0.14, T, T + 0.27, SILVER);
+        d(0.14, 0.58, 0.14, 0.145, T + 0.04, T + 0.25, 0x77eaff, { outline: false });
         break;
       case "plant":
-        miniPlant(cfg.gx + 0.36, cfg.gz + 0.3, T, 0.1, idx);
-        miniPlant(cfg.gx + 0.18, cfg.gz + 0.5, T, 0.06, idx + 1);
+        miniPlant(cfg.gx + 0.36, cfg.gz + fl(0.3), T, 0.1, idx);
+        miniPlant(cfg.gx + 0.18, cfg.gz + fl(0.5), T, 0.06, idx + 1);
         break;
       case "books":
         d(0.12, 0.6, 0.12, 0.42, T, T + 0.05, 0xc3182a);
@@ -437,7 +436,7 @@ export function buildPropsA(kit: PropsKit): void {
     }
 
     // Right-back slot
-    const rbU = 1.46, rbV = 0.3;
+    const rbU = 1.46, rbV = south ? 0.3 : 0.5;
     if (cfg.rb === "plant") {
       miniPlant(wx(rbU) + 20, wz(rbV) + 10, T, 0.09, idx);
     } else if (cfg.rb === "cactus") {
