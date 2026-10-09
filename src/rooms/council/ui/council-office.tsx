@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { t } from "@lane-pilot/i18n";
 import { buildOfficeFloor } from "./office-scene";
+import { applyCharacterPose, buildCharacter, pickCharacterLook, type CharacterModel } from "./office-character";
 import {
   OFFICE_SEATS,
   OWNER_SEAT_ID,
@@ -41,10 +42,6 @@ const RIG_SCALE = 0.88;
 const LABEL_HEIGHT = 16;
 const LABEL_CHAR_WIDTH = 6.2;
 const LABEL_MAX_CHARS = 10;
-const SKIN_PALETTE = ["#f2c39b", "#c68a5e", "#8d5a3a"];
-const HAIR_PALETTE = ["#3a2a22", "#f0c060", "#6b3a1f"];
-const PANTS_COLOR = 0x3a3d4a;
-const SHOE_COLOR = 0x282a36;
 const OUTLINE_COLOR = 0x282a36;
 /** Background staff take the desks the council leaves free; the receptionist is always in. */
 const DESK_COUNT = 8;
@@ -82,14 +79,6 @@ function checkWebGLSupport(): boolean {
   }
 }
 
-function hashString(id: string): number {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) {
-    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-  }
-  return hash;
-}
-
 /** Action for the walking pose, from the interaction point the character stands on. */
 function actionForPoint(pointKind: string | undefined, pose: string | undefined): string | undefined {
   if (pose === "typing") return "typing";
@@ -103,14 +92,8 @@ function actionForPoint(pointKind: string | undefined, pose: string | undefined)
 
 type Rig = {
   group: import("three").Group;
-  body: import("three").Mesh;
+  model: CharacterModel;
   headGroup: import("three").Group;
-  leftEye: import("three").Mesh;
-  rightEye: import("three").Mesh;
-  leftArmPivot: import("three").Group;
-  rightArmPivot: import("three").Group;
-  leftLegPivot: import("three").Group;
-  rightLegPivot: import("three").Group;
   pos: { x: number; z: number };
   target: { x: number; z: number };
   path: Array<{ x: number; z: number }>;
@@ -253,99 +236,14 @@ export function CouncilOffice({
       const outlineMat = new THREE.LineBasicMaterial({ color: OUTLINE_COLOR });
       disposables.push(outlineMat);
 
-      const createMat = (color: number | string) => {
-        const mat = new THREE.MeshLambertMaterial({ color });
-        disposables.push(mat);
-        return mat;
-      };
-      const createCharBox = (w: number, h: number, d: number, mat: import("three").Material) => {
-        const geom = new THREE.BoxGeometry(w, h, d);
-        disposables.push(geom);
-        const mesh = new THREE.Mesh(geom, mat);
-        const edges = new THREE.EdgesGeometry(geom, 30);
-        disposables.push(edges);
-        mesh.add(new THREE.LineSegments(edges, outlineMat));
-        return mesh;
-      };
-
       const charRigs = new Map<string, Rig>();
-      const pantsMat = createMat(PANTS_COLOR);
-      const shoeMat = createMat(SHOE_COLOR);
-      const eyeMat = createMat(0x09090b);
+      const characterKit = { THREE, outlineMaterial: outlineMat, disposables };
 
       const buildRig = (actor: OfficeActor, seat: OfficeSeat, index: number): Rig => {
-        const group = new THREE.Group();
+        const model = buildCharacter(characterKit, pickCharacterLook(actor.id, actor.color));
+        const group = model.root;
         group.scale.setScalar(RIG_SCALE);
-        const shirtMat = createMat(actor.color);
-        const skinMat = createMat(SKIN_PALETTE[index % SKIN_PALETTE.length]!);
-        const hairMat = createMat(actor.id === OWNER_SEAT_ID ? "#18181b" : HAIR_PALETTE[hashString(actor.id) % HAIR_PALETTE.length]!);
-
-        const headGroup = new THREE.Group();
-        headGroup.position.y = 1.35;
-        headGroup.add(createCharBox(0.5, 0.48, 0.46, skinMat));
-        const leftEye = createCharBox(0.07, 0.1, 0.04, eyeMat);
-        leftEye.position.set(-0.12, 0.0, 0.24);
-        headGroup.add(leftEye);
-        const rightEye = createCharBox(0.07, 0.1, 0.04, eyeMat);
-        rightEye.position.set(0.12, 0.0, 0.24);
-        headGroup.add(rightEye);
-        // Hair: a cap with a fringe for everyone; long hair or a bun for some seats
-        const hairTop = createCharBox(0.54, 0.16, 0.5, hairMat);
-        hairTop.position.set(0, 0.2, -0.01);
-        headGroup.add(hairTop);
-        const fringe = createCharBox(0.54, 0.1, 0.08, hairMat);
-        fringe.position.set(0, 0.11, 0.22);
-        headGroup.add(fringe);
-        const hairStyle = actor.id === OWNER_SEAT_ID ? 0 : hashString(actor.id) % 3;
-        if (hairStyle === 1) {
-          const back = createCharBox(0.54, 0.5, 0.1, hairMat);
-          back.position.set(0, -0.06, -0.24);
-          headGroup.add(back);
-          for (const side of [-1, 1]) {
-            const lock = createCharBox(0.08, 0.36, 0.4, hairMat);
-            lock.position.set(side * 0.27, -0.02, -0.02);
-            headGroup.add(lock);
-          }
-        } else if (hairStyle === 2) {
-          const bun = createCharBox(0.2, 0.18, 0.2, hairMat);
-          bun.position.set(0, 0.32, -0.12);
-          headGroup.add(bun);
-        }
-        group.add(headGroup);
-
-        const body = createCharBox(0.5, 0.55, 0.32, shirtMat);
-        body.position.y = 0.88;
-        group.add(body);
-
-        const createArmPivot = (isLeft: boolean) => {
-          const pivot = new THREE.Group();
-          pivot.position.set(isLeft ? -0.32 : 0.32, 1.1, 0);
-          const sleeve = createCharBox(0.14, 0.28, 0.14, shirtMat);
-          sleeve.position.set(0, -0.14, 0);
-          pivot.add(sleeve);
-          const hand = createCharBox(0.12, 0.14, 0.12, skinMat);
-          hand.position.set(0, -0.32, 0);
-          pivot.add(hand);
-          return pivot;
-        };
-        const leftArmPivot = createArmPivot(true);
-        const rightArmPivot = createArmPivot(false);
-        group.add(leftArmPivot, rightArmPivot);
-
-        const createLegPivot = (isLeft: boolean) => {
-          const pivot = new THREE.Group();
-          pivot.position.set(isLeft ? -0.14 : 0.14, 0.55, 0);
-          const pants = createCharBox(0.16, 0.45, 0.18, pantsMat);
-          pants.position.set(0, -0.22, 0);
-          pivot.add(pants);
-          const shoe = createCharBox(0.18, 0.12, 0.24, shoeMat);
-          shoe.position.set(0, -0.48, 0.03);
-          pivot.add(shoe);
-          return pivot;
-        };
-        const leftLegPivot = createLegPivot(true);
-        const rightLegPivot = createLegPivot(false);
-        group.add(leftLegPivot, rightLegPivot);
+        const headGroup = model.headGroup;
 
         group.position.set(seat.x, 0, seat.z);
         group.rotation.y = seat.angle;
@@ -353,14 +251,8 @@ export function CouncilOffice({
 
         return {
           group,
-          body,
+          model,
           headGroup,
-          leftEye,
-          rightEye,
-          leftArmPivot,
-          rightArmPivot,
-          leftLegPivot,
-          rightLegPivot,
           pos: { x: seat.x, z: seat.z },
           target: { x: seat.x, z: seat.z },
           path: [],
@@ -563,26 +455,7 @@ export function CouncilOffice({
           action: rig.action,
         });
 
-        rig.body.position.y = pose.bodyY;
-        rig.headGroup.position.y = pose.headY;
-        rig.headGroup.rotation.x = pose.headPitch;
-        rig.headGroup.rotation.y = pose.headYaw;
-
-        // Blinking
-        const isBlink = (Math.floor((timeSec + rig.phase) * 3) % 11) === 0;
-        rig.leftEye.scale.y = isBlink ? 0.15 : 1.0;
-        rig.rightEye.scale.y = isBlink ? 0.15 : 1.0;
-
-        rig.leftArmPivot.rotation.x = pose.leftArmPitch;
-        rig.rightArmPivot.rotation.x = pose.rightArmPitch;
-        rig.leftArmPivot.rotation.y = pose.leftArmYaw;
-        rig.rightArmPivot.rotation.y = pose.rightArmYaw;
-        rig.leftArmPivot.rotation.z = pose.leftArmRoll;
-        rig.rightArmPivot.rotation.z = pose.rightArmRoll;
-
-        rig.leftLegPivot.rotation.x = pose.leftLegPitch;
-        rig.rightLegPivot.rotation.x = pose.rightLegPitch;
-
+        applyCharacterPose(rig.model, pose, timeSec + rig.phase);
       };
 
       const animate = (nowTime: number) => {
@@ -792,7 +665,7 @@ export function CouncilOffice({
           const label = actor.label.slice(0, LABEL_MAX_CHARS);
           const projPos = new THREE.Vector3(
             rig ? rig.pos.x : 0,
-            rig ? rig.headGroup.position.y * RIG_SCALE + 0.45 : 1.2,
+            rig ? rig.model.headY * RIG_SCALE + 0.45 : 1.2,
             rig ? rig.pos.z : 0
           );
           projPos.project(camera);
@@ -831,7 +704,7 @@ export function CouncilOffice({
         for (const [id, el] of staffOverlayRef.current) {
           const rig = charRigs.get(id);
           if (!rig) continue;
-          const p = new THREE.Vector3(rig.pos.x, rig.headGroup.position.y * RIG_SCALE + 0.5, rig.pos.z).project(camera);
+          const p = new THREE.Vector3(rig.pos.x, rig.model.headY * RIG_SCALE + 0.5, rig.pos.z).project(camera);
           el.style.transform = `translate3d(${Math.round(((p.x + 1) * w) / 2)}px, ${Math.round(((-p.y + 1) * h) / 2)}px, 0)`;
         }
         // Council chat glyphs ride on the council members' own overlays

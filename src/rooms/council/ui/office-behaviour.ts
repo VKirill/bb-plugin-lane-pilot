@@ -45,6 +45,19 @@ export type OfficePose = {
   headYaw: number;
   pointing: boolean;
   action?: string;
+  /** 0 standing … 1 fully seated (blends continuously with the sitting progress). */
+  sitAmount: number;
+  /** Elbow flexion in radians, 0 = straight arm, forearm swings forward. */
+  leftElbow: number;
+  rightElbow: number;
+  /** Knee flexion of the standing/walking pose in radians (the seat adds its own bend). */
+  leftKnee: number;
+  rightKnee: number;
+  /** Torso lean forward in radians and spine twist about the vertical axis. */
+  torsoLean: number;
+  spineYaw: number;
+  /** 0..1: a mug in the right hand. */
+  cup: number;
 };
 
 const SEAT_PALETTE = [
@@ -310,6 +323,13 @@ export function chooseIdleSpot(
   return available[idx] ?? null;
 }
 
+/** 0..1 hump that is zero most of the time: a hand going up to a shelf now and then. */
+function smoothReach(tick: number): number {
+  const wave = Math.sin(tick * 0.8);
+  const x = Math.max(0, (wave - 0.35) / 0.65);
+  return x * x * (3 - 2 * x);
+}
+
 /**
  * Calculates joint angles and body positioning for an actor's current activity.
  */
@@ -343,6 +363,13 @@ export function getOfficePose(
   let headPitch = 0;
   let headYaw = 0;
   let pointing = false;
+  let leftElbow = 0.15;
+  let rightElbow = 0.15;
+  let leftKnee = 0;
+  let rightKnee = 0;
+  let torsoLean = 0;
+  let spineYaw = 0;
+  let cup = 0;
 
   if (isWalking) {
     const legSwing = Math.sin(tick * 8) * 0.55;
@@ -352,6 +379,15 @@ export function getOfficePose(
     rightArmPitch = legSwing * 0.6;
     bodyY = 0.88 + Math.abs(Math.sin(tick * 8)) * 0.04;
     headY = 1.35 + Math.abs(Math.sin(tick * 8)) * 0.04;
+    // the knee folds while its leg swings forward and the arm opposite to a leg bends as it comes forward
+    const phase = Math.cos(tick * 8);
+    leftKnee = 0.12 + 0.95 * Math.max(0, -phase);
+    rightKnee = 0.12 + 0.95 * Math.max(0, phase);
+    leftElbow = 0.35 + 0.35 * Math.max(0, Math.sin(tick * 8));
+    rightElbow = 0.35 + 0.35 * Math.max(0, -Math.sin(tick * 8));
+    torsoLean = 0.07;
+    spineYaw = Math.sin(tick * 8) * 0.12;
+    headPitch = -0.04;
   } else if (activity === "speaking") {
     const gesture1 = Math.sin(tick * 4) * 0.35;
     const gesture2 = Math.cos(tick * 3) * 0.25;
@@ -362,6 +398,10 @@ export function getOfficePose(
     headPitch = Math.sin(tick * 4) * 0.08;
     bodyY = 0.88 + Math.sin(tick * 4) * 0.02;
     headY = 1.35 + Math.sin(tick * 4) * 0.03;
+    leftElbow = 1.0 + Math.sin(tick * 4 + 1) * 0.4;
+    rightElbow = 0.7 + Math.cos(tick * 3) * 0.35;
+    spineYaw = Math.sin(tick * 1.3) * 0.08;
+    torsoLean = 0.03;
   } else if (activity === "arguing") {
     pointing = true;
     rightArmPitch = -Math.PI / 2 + Math.sin(tick * 3) * 0.08;
@@ -370,19 +410,44 @@ export function getOfficePose(
     headPitch = Math.sin(tick * 5) * 0.1;
     bodyY = 0.88;
     headY = 1.35;
+    rightElbow = 0.06;
+    leftElbow = 1.25 + Math.sin(tick * 4) * 0.25;
+    leftArmRoll = 0.35;
+    torsoLean = 0.1;
+    spineYaw = 0.1;
   } else if (activity === "waiting") {
     headPitch = Math.sin(tick * 1.5) * 0.03;
-    leftArmPitch = 0.35;
-    rightArmPitch = 0.35;
+    // seated at the table: forearms resting forward on it, hands loosely together
+    leftArmPitch = -0.55;
+    rightArmPitch = -0.55;
+    leftElbow = 1.05 + Math.sin(tick * 0.9) * 0.04;
+    rightElbow = 1.05 + Math.cos(tick * 0.8) * 0.04;
+    leftArmRoll = 0.12;
+    rightArmRoll = -0.12;
+    torsoLean = 0.1;
   } else if (activity === "idle") {
     if (action === "typing") {
-      leftArmPitch = -0.55 + Math.sin(tick * 10) * 0.15;
-      rightArmPitch = -0.55 - Math.sin(tick * 10) * 0.15;
-      headPitch = 0.2;
+      // sitting, upper arms a little forward, forearms level to the keyboard, fingers moving
+      leftArmPitch = -0.5;
+      rightArmPitch = -0.5;
+      leftElbow = 1.32 + Math.sin(tick * 10) * 0.07;
+      rightElbow = 1.32 - Math.sin(tick * 10 + 0.8) * 0.07;
+      leftArmRoll = 0.1;
+      rightArmRoll = -0.1;
+      headPitch = 0.14 + Math.sin(tick * 0.5) * 0.03;
+      torsoLean = 0.14;
     } else if (action === "coffee" || action === "bar") {
-      rightArmPitch = -1.1 + Math.sin(tick * 2) * 0.06;
-      rightArmYaw = 0.45;
-      leftArmPitch = 0.1;
+      // the mug rests at chest height and goes up to the mouth now and then
+      const sip = Math.pow(Math.max(0, Math.sin(tick * 0.9)), 2);
+      rightArmPitch = -0.35 - sip * 0.5;
+      rightElbow = 1.0 + sip * 0.85;
+      rightArmYaw = 0.2;
+      rightArmRoll = -0.1;
+      leftArmPitch = 0.05;
+      leftElbow = 0.35;
+      headPitch = -sip * 0.14;
+      torsoLean = 0.02;
+      cup = 1;
     } else if (action === "chat") {
       // Talking with someone: hands move, the head nods
       leftArmPitch = -0.35 + Math.sin(tick * 3.1) * 0.3;
@@ -390,19 +455,37 @@ export function getOfficePose(
       leftArmRoll = 0.15;
       headPitch = Math.sin(tick * 2.2) * 0.08;
       headYaw = Math.sin(tick * 0.7) * 0.15;
+      leftElbow = 1.1 + Math.sin(tick * 3.1 + 1) * 0.35;
+      rightElbow = 0.9 + Math.cos(tick * 2.3) * 0.3;
+      spineYaw = Math.sin(tick * 0.7) * 0.06;
+      leftKnee = 0.05;
+      rightKnee = 0.14;
     } else if (action === "operate") {
-      // Working a machine or a shelf standing: both hands forward, one reaching
-      leftArmPitch = -0.9 + Math.sin(tick * 5) * 0.08;
-      rightArmPitch = -1.25 + Math.sin(tick * 1.6) * 0.25;
-      headPitch = 0.12;
+      // Working a machine or a shelf standing: both forearms forward at waist height, one hand reaching up now and then
+      const reach = smoothReach(tick);
+      leftArmPitch = -0.35 + Math.sin(tick * 5) * 0.03;
+      leftElbow = 1.2;
+      rightArmPitch = -0.35 - reach * 0.85;
+      rightElbow = 1.2 - reach * 0.6;
+      headPitch = 0.12 - reach * 0.12;
+      torsoLean = 0.08 + reach * 0.04;
     } else if (action === "window") {
-      leftArmPitch = 0.2;
-      rightArmPitch = 0.2;
-      leftArmYaw = -0.2;
-      rightArmYaw = 0.2;
+      // looking out, hands relaxed and loosely together in front
+      leftArmPitch = -0.1;
+      rightArmPitch = -0.1;
+      leftArmYaw = 0.0;
+      rightArmYaw = 0.0;
+      leftElbow = 0.55;
+      rightElbow = 0.55;
+      leftArmRoll = 0.2;
+      rightArmRoll = -0.2;
+      headPitch = -0.04 + Math.sin(tick * 0.4) * 0.02;
+      headYaw = Math.sin(tick * 0.25) * 0.12;
     } else {
       leftArmPitch = Math.sin(tick * 2) * 0.08;
       rightArmPitch = -Math.sin(tick * 2) * 0.08;
+      leftElbow = 0.2;
+      rightElbow = 0.2;
     }
   }
 
@@ -412,10 +495,29 @@ export function getOfficePose(
     headY = headY * (1 - sitRatio) + 1.20 * sitRatio;
     leftLegPitch = leftLegPitch * (1 - sitRatio) + (Math.PI / 2) * sitRatio;
     rightLegPitch = rightLegPitch * (1 - sitRatio) + (Math.PI / 2) * sitRatio;
+    // seated at a sofa or a stool: forearms resting on the thighs (a mug stays in the right hand)
+    if (activity === "idle" && action !== "typing") {
+      const holdsCup = action === "coffee" || action === "bar";
+      leftArmPitch = leftArmPitch * (1 - sitRatio) - 0.3 * sitRatio;
+      leftElbow = leftElbow * (1 - sitRatio) + 0.9 * sitRatio;
+      if (!holdsCup) {
+        rightArmPitch = rightArmPitch * (1 - sitRatio) - 0.3 * sitRatio;
+        rightElbow = rightElbow * (1 - sitRatio) + 0.9 * sitRatio;
+      }
+      torsoLean = torsoLean * (1 - sitRatio) + 0.05 * sitRatio;
+    }
   }
 
   return {
     sitting: sittingProgress > 0.5,
+    sitAmount: Math.max(0, Math.min(1, sittingProgress)),
+    leftElbow,
+    rightElbow,
+    leftKnee,
+    rightKnee,
+    torsoLean,
+    spineYaw,
+    cup,
     bodyY,
     headY,
     leftArmPitch,
