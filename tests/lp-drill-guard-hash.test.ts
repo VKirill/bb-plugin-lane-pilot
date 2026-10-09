@@ -20,13 +20,14 @@ const same = () => ({ "guard_shell.py": readFileSync(join(repoHooks, "guard_shel
 
 function runDrill(machines: object[], extra: string[] = []) {
   const receipts = temp();
+  const tmp = temp(); // the drill's own TMPDIR: its lock lives here, not in the global tmpdir a real drill may be using
   const res = spawnSync("python3", ["-I", drill, "--scenario", "guard_hash", ...extra], {
     encoding: "utf8", timeout: 60_000,
-    env: { ...process.env, LP_DRILL_GUARD_HOSTS: JSON.stringify(machines), LP_DRILL_RECEIPT_DIR: receipts, BB_CLI: "/nonexistent/bb", TMPDIR: temp() },
+    env: { ...process.env, LP_DRILL_GUARD_HOSTS: JSON.stringify(machines), LP_DRILL_RECEIPT_DIR: receipts, BB_CLI: "/nonexistent/bb", TMPDIR: tmp },
   });
   const file = readdirSync(receipts).find((name) => name.endsWith(".json"));
   const receipt = file ? JSON.parse(readFileSync(join(receipts, file), "utf8")) as { result: string; problems: string[]; scenarios: Array<{ machines: Array<{ machine: string; reachable: boolean; files: Record<string, { state: string }> }>; unreachable: string[] }> } : null;
-  return { res, receipt };
+  return { res, receipt, tmp };
 }
 
 describe("the drill's guard hash check", () => {
@@ -79,13 +80,13 @@ describe("the drill's guard hash check", () => {
   });
 
   it("notes a machine that cannot be reached and does not fail on it", () => {
-    const { res, receipt } = runDrill([
+    const { res, receipt, tmp } = runDrill([
       { name: "mini", kind: "local", home: machine(same()) },
       { name: "off", kind: "ssh", host: "lp-drill-host-that-does-not-exist.invalid" },
     ]);
     expect(res.status).toBe(0);
     expect(receipt!.result).toBe("pass");
     expect(receipt!.scenarios[0]!.unreachable).toEqual(["off"]);
-    expect(existsSync(join(tmpdir(), "lp-drill.lock"))).toBe(false);
+    expect(existsSync(join(tmp, "lp-drill.lock"))).toBe(false);
   });
 });
