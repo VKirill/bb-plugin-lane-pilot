@@ -198,11 +198,15 @@ export class PixelPresenter {
   private shiftY = 0;
   /** CSS pixels per render pixel (the zoom step). */
   scale = 2;
+  /** Draw calls and triangles of the last scene pass. A page may expose `globalThis.__pixelWorldStats = {}` to read them. */
+  readonly stats = { calls: 0, triangles: 0 };
 
   constructor(THREE: Three, renderer: ThreeNS.WebGLRenderer) {
     this.THREE = THREE;
     this.renderer = renderer;
     this.size = new THREE.Vector2();
+    // Draw calls are counted for the scene pass only: reset by hand before it
+    renderer.info.autoReset = false;
     this.target = this.makeTarget(2, 2);
 
     this.geometry = new THREE.BufferGeometry();
@@ -336,9 +340,15 @@ export class PixelPresenter {
   /** Draws the scene at low resolution, then the outlined nearest upscale onto the canvas. */
   render(scene: ThreeNS.Scene, camera: ThreeNS.Camera): void {
     const renderer = this.renderer;
+    renderer.info.reset();
     renderer.setRenderTarget(this.target);
     renderer.render(scene, camera);
     renderer.setRenderTarget(null);
+    this.stats.calls = renderer.info.render.calls;
+    this.stats.triangles = renderer.info.render.triangles;
+    const debug = (globalThis as { __pixelWorldStats?: Record<string, number> }).__pixelWorldStats;
+    if (debug) Object.assign(debug, this.stats);
+    renderer.info.reset();
 
     const u = this.material.uniforms;
     u.tColor!.value = this.target.texture;
