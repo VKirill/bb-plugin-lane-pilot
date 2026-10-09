@@ -219,7 +219,8 @@ describe("the spy that proves it", () => {
 // Source guard: nothing the hub's server code runs may start a process or open a file at a project's path. self-repair
 // reads the hub's own log file; every other module reaches a project only through a host call.
 describe("the plugin server never touches a project path itself", () => {
-  const ALLOWED_FS = new Set(["self-repair.ts"]);
+  // world-assets.ts serves the plugin's own GLB files from assets/world (read-only, a fixed whitelist), not a project path.
+  const ALLOWED_FS = new Set(["self-repair.ts", "world-assets.ts"]);
   const strip = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
   it("has no child_process, spawn-async or node:fs import under the server folder of any room", () => {
