@@ -2,6 +2,7 @@
 
 ## 0.1.212
 
+- **A red integration gate never asks the owner.** It opened a form «The integration gate … is red and no single task is to blame. What should the PM do?» (in English, with raw terminal colour codes) whose answer was always «investigate and fix it». The PM now gets the failing tests and the instruction to read the log and dispatch the fixes itself; a machine fault goes to the PM to fix on that host. Colour codes are stripped from what the PM reads.
 - **One thin post no longer fails the whole `insights-post` run.** The seventh live run picked a Threads post with 4 comments; `ins.post` rightly took its `blocked` branch, which emits only `status`, and the parent failed with `output field "post_folder" is missing`. `post_folder`, `summary_path`, `validator_ok` and `rejects_open` are now optional outputs of `ins.post` and of the fan-out child, so a blocked post counts as failed and the others go on. The chain simulator stubs whole subworkflows and does not check the child's `out`, so the new chains-own case documents the behaviour; the live run is the check.
 
 ## 0.1.211
