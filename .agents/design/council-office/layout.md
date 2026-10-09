@@ -50,7 +50,7 @@ No second row at any width. With the drawer docked on 1280 the bar shortens, and
 | Block width | Mode | Size | Office |
 |---|---|---|---|
 | ≥ 1100 | **docked right drawer**, open by default | 380 px wide, full height under the top bar (top 60, bottom 8, right 8) | canvas keeps `inset:0`; the camera fits into the **free area** (block width − 396), so the drawer never covers the meeting room. Pixel lever: `camera.setViewOffset` or a narrower fit width |
-| 641–1099 | **overlay right drawer**, closed by default | 340 px, same top/bottom | not refitted, the drawer covers the right part (server room / entrance). Click on the canvas closes it |
+| 641–1099 | **overlay right drawer**, closed by default | 340 px, same top/bottom | not refitted, the drawer covers the right part (director's office / entrance). Click on the canvas closes it |
 | ≤ 640 | **bottom sheet** | peek 84 px → half 55 % → full (block height − 64) | canvas fills the block above the peek. Drag the sheet or tap the peek to change state |
 
 The open/closed state is kept in `localStorage` (`lane-pilot:council:drawer`) per mode.
