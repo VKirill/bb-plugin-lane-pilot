@@ -1,22 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import { t } from "@lane-pilot/i18n";
-import { buildOfficeDiorama } from "./office-scene";
+import { buildOfficeFloor } from "./office-scene";
 import {
+  OFFICE_SEATS,
+  OWNER_SEAT_ID,
   assignOfficeSeats,
-  chooseIdleSpot,
+  createOfficeAgents,
   deriveOfficeActors,
   findOfficePath,
-  fitCamera,
+  fitOfficeCamera,
   formatBubbleText,
+  getInteractionPoint,
   getOfficePose,
   resolveLabelCollisions,
-  seatColor,
+  stepOfficeSimulation,
   walkStep,
-  OFFICE_SEATS,
-  OFFICE_SPOTS,
   type CouncilDetailLike,
   type OfficeActor,
   type OfficeSeat,
+  type OfficeSimAgent,
 } from "./office-behaviour";
 
 export type CouncilOfficeProps = {
@@ -25,6 +27,23 @@ export type CouncilOfficeProps = {
   highlightSeatId?: string | null;
   onSelectSpeaker?: (seatId: string) => void;
 };
+
+const TERMINAL_STATES = new Set(["done", "failed", "stopped"]);
+/** The owner stays at the meeting table this long after his last live message (reference.md §5). */
+const OWNER_HOLD_MS = 15000;
+const WALK_SPEED = 2.0;
+/** The owner hurries to the table; other people walk at WALK_SPEED. */
+const OWNER_WALK_SPEED = 3.5;
+/** Characters are 1.15 tiles tall: the chibi rig is built at 1.6 and scaled down. */
+const RIG_SCALE = 0.72;
+const LABEL_HEIGHT = 16;
+const LABEL_CHAR_WIDTH = 6.2;
+const LABEL_MAX_CHARS = 10;
+const SKIN_PALETTE = ["#f2c39b", "#c68a5e", "#8d5a3a"];
+const HAIR_PALETTE = ["#3a2a22", "#f0c060", "#6b3a1f"];
+const PANTS_COLOR = 0x3a3d4a;
+const SHOE_COLOR = 0x282a36;
+const OUTLINE_COLOR = 0x282a36;
 
 function checkWebGLSupport(): boolean {
   if (typeof window === "undefined" || typeof document === "undefined") return false;
@@ -39,19 +58,45 @@ function checkWebGLSupport(): boolean {
   }
 }
 
-const HAIR_PALETTE = ["#291d10", "#18181b", "#ca8a04", "#78350f", "#475569", "#b45309"];
-function getHairProps(id: string): { color: string; style: number } {
-  if (id === "chair") return { color: "#64748b", style: 0 };
-  if (id === "owner") return { color: "#18181b", style: 1 };
+function hashString(id: string): number {
   let hash = 0;
   for (let i = 0; i < id.length; i++) {
     hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
   }
-  return {
-    color: HAIR_PALETTE[hash % HAIR_PALETTE.length]!,
-    style: (hash >>> 4) % 3,
-  };
+  return hash;
 }
+
+/** Action for the walking pose, from the interaction point the character stands on. */
+function actionForPoint(pointKind: string | undefined, pose: string | undefined): string | undefined {
+  if (pose === "typing") return "typing";
+  if (pose === "window_gaze") return "window";
+  if (pose === "drinking") return pointKind === "bar" ? "bar" : "coffee";
+  return undefined;
+}
+
+type Rig = {
+  group: import("three").Group;
+  body: import("three").Mesh;
+  headGroup: import("three").Group;
+  leftEye: import("three").Mesh;
+  rightEye: import("three").Mesh;
+  leftArmPivot: import("three").Group;
+  rightArmPivot: import("three").Group;
+  leftLegPivot: import("three").Group;
+  rightLegPivot: import("three").Group;
+  pos: { x: number; z: number };
+  target: { x: number; z: number };
+  path: Array<{ x: number; z: number }>;
+  yaw: number;
+  targetYaw: number;
+  walking: boolean;
+  blockedSeconds: number;
+  walkTick: number;
+  sitProgress: number;
+  targetSit: boolean;
+  action?: string;
+  phase: number;
+};
 
 export function CouncilOffice({
   detail,
@@ -68,16 +113,17 @@ export function CouncilOffice({
   );
   const [reactionGlyphs, setReactionGlyphs] = useState<Record<string, string>>({});
 
-  // Mutable refs so animation loop never closes over stale props and does not recreate scene
+  // Mutable refs so the animation loop never closes over stale props and the scene is not recreated
   const detailRef = useRef(detail);
   const cursorRef = useRef(cursor);
-  const highlightSeatIdRef = useRef(highlightSeatId);
   detailRef.current = detail;
   cursorRef.current = cursor;
-  highlightSeatIdRef.current = highlightSeatId;
 
   const lastCursorRef = useRef<number | null>(cursor);
   const cursorSelectedTimeRef = useRef<number>(Date.now());
+  /** Set when the replay cursor jumps; the walkers then snap to their targets instead of walking. */
+  const snapRef = useRef(false);
+  const ownerHoldUntilRef = useRef(0);
 
   // DOM node references for projected HTML overlays (updated directly via ref transforms)
   const overlayMapRef = useRef(new Map<string, HTMLDivElement>());
@@ -87,7 +133,14 @@ export function CouncilOffice({
     const syncActors = () => {
       const now = Date.now();
       if (cursorRef.current !== lastCursorRef.current) {
-        lastCursorRef.current = cursorRef.current;
+        const previous = lastCursorRef.current;
+        const next = cursorRef.current;
+        const messages = detailRef.current.messages;
+        const previousIdx = previous === null ? -1 : messages.findIndex((m) => m.seq === previous);
+        const nextIdx = next === null ? -1 : messages.findIndex((m) => m.seq === next);
+        // A jump is any cursor move that is not one message forward (⏭, clicks, reset)
+        if (previous !== null && (next === null || nextIdx !== previousIdx + 1)) snapRef.current = true;
+        lastCursorRef.current = next;
         cursorSelectedTimeRef.current = now;
       }
       setActors(
@@ -127,260 +180,155 @@ export function CouncilOffice({
         renderer = new THREE.WebGLRenderer({
           canvas,
           antialias: false,
-          alpha: true,
+          alpha: false,
           powerPreference: "low-power",
         });
       } catch {
         setHasWebGL(false);
         return;
       }
+      // One render pixel per two CSS pixels: the pixel-art look (reference.md §4)
+      renderer.setPixelRatio(0.5);
 
       const scene = new THREE.Scene();
+      const disposables: Array<{ dispose: () => void }> = [];
 
-      // Flat pixel-styled ambient + directional lighting
-      const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
-      scene.add(ambientLight);
-
-      const dirLight = new THREE.DirectionalLight(0xfff5ea, 0.65);
-      dirLight.position.set(10, 15, 10);
-      scene.add(dirLight);
-
-      // Isometric camera setup
-      const aspect = container.clientWidth / (container.clientHeight || 1);
-      const viewSize = 14.5;
-      const camera = new THREE.OrthographicCamera(
-        (-viewSize * aspect) / 2,
-        (viewSize * aspect) / 2,
-        viewSize / 2,
-        -viewSize / 2,
-        0.1,
-        1000
-      );
-      camera.position.set(12, 14, 12);
+      // Camera: orthographic, azimuth 33°, elevation 30°, target = floor centre
+      const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 500);
+      camera.position.set(28.3, 30.0, 43.6);
       camera.lookAt(0, 0, 0);
 
-      const disposables: Array<{ dispose: () => void }> = [];
+      buildOfficeFloor({ THREE, scene, disposables });
+
+      const outlineMat = new THREE.LineBasicMaterial({ color: OUTLINE_COLOR });
+      disposables.push(outlineMat);
 
       const createMat = (color: number | string) => {
         const mat = new THREE.MeshLambertMaterial({ color });
         disposables.push(mat);
         return mat;
       };
-      const createBoxGeom = (w: number, h: number, d: number) => {
+      const createCharBox = (w: number, h: number, d: number, mat: import("three").Material) => {
         const geom = new THREE.BoxGeometry(w, h, d);
         disposables.push(geom);
-        return geom;
-      };
-
-      // Crisp dark outline material for diorama props & character meshes
-      const outlineMat = new THREE.LineBasicMaterial({
-        color: 0x0f172a,
-        transparent: true,
-        opacity: 0.85,
-      });
-      disposables.push(outlineMat);
-
-      const createCharBox = (w: number, h: number, d: number, mat: import("three").Material) => {
-        const geom = createBoxGeom(w, h, d);
         const mesh = new THREE.Mesh(geom, mat);
-        const edges = new THREE.EdgesGeometry(geom);
+        const edges = new THREE.EdgesGeometry(geom, 30);
         disposables.push(edges);
         mesh.add(new THREE.LineSegments(edges, outlineMat));
         return mesh;
       };
 
-      // Build bright cutaway diorama office with all props and outlines
-      buildOfficeDiorama({ THREE, scene, disposables });
+      const charRigs = new Map<string, Rig>();
+      const pantsMat = createMat(PANTS_COLOR);
+      const shoeMat = createMat(SHOE_COLOR);
+      const eyeMat = createMat(0x09090b);
 
-      // --- Character Mesh Management ---
-      type CharActorObj = {
-        group: import("three").Group;
-        body: import("three").Mesh;
-        headGroup: import("three").Group;
-        headMesh: import("three").Mesh;
-        leftEye: import("three").Mesh;
-        rightEye: import("three").Mesh;
-        leftArmPivot: import("three").Group;
-        rightArmPivot: import("three").Group;
-        leftLegPivot: import("three").Group;
-        rightLegPivot: import("three").Group;
-        currentPos: { x: number; z: number };
-        targetPos: { x: number; z: number };
-        path: Array<{ x: number; z: number }>;
-        yaw: number;
-        targetYaw: number;
-        isWalking: boolean;
-        walkTick: number;
-        sittingProgress: number;
-        targetSitting: boolean;
-        assignedSeat: OfficeSeat;
-        spotKey: string | null;
-        idleAction?: "coffee" | "window" | "typing" | "bookshelf" | "plant";
-        lastSpotChangeTime: number;
-        phase: number;
+      const buildRig = (actor: OfficeActor, seat: OfficeSeat, index: number): Rig => {
+        const group = new THREE.Group();
+        group.scale.setScalar(RIG_SCALE);
+        const shirtMat = createMat(actor.color);
+        const skinMat = createMat(SKIN_PALETTE[index % SKIN_PALETTE.length]!);
+        const hairMat = createMat(actor.id === OWNER_SEAT_ID ? "#18181b" : HAIR_PALETTE[hashString(actor.id) % HAIR_PALETTE.length]!);
+
+        const headGroup = new THREE.Group();
+        headGroup.position.y = 1.35;
+        headGroup.add(createCharBox(0.42, 0.42, 0.42, skinMat));
+        const leftEye = createCharBox(0.06, 0.08, 0.04, eyeMat);
+        leftEye.position.set(-0.1, 0.02, 0.22);
+        headGroup.add(leftEye);
+        const rightEye = createCharBox(0.06, 0.08, 0.04, eyeMat);
+        rightEye.position.set(0.1, 0.02, 0.22);
+        headGroup.add(rightEye);
+        const hairTop = createCharBox(0.44, 0.16, 0.44, hairMat);
+        hairTop.position.set(0, 0.16, -0.02);
+        headGroup.add(hairTop);
+        group.add(headGroup);
+
+        const body = createCharBox(0.5, 0.55, 0.32, shirtMat);
+        body.position.y = 0.88;
+        group.add(body);
+
+        const createArmPivot = (isLeft: boolean) => {
+          const pivot = new THREE.Group();
+          pivot.position.set(isLeft ? -0.32 : 0.32, 1.1, 0);
+          const sleeve = createCharBox(0.14, 0.28, 0.14, shirtMat);
+          sleeve.position.set(0, -0.14, 0);
+          pivot.add(sleeve);
+          const hand = createCharBox(0.12, 0.14, 0.12, skinMat);
+          hand.position.set(0, -0.32, 0);
+          pivot.add(hand);
+          return pivot;
+        };
+        const leftArmPivot = createArmPivot(true);
+        const rightArmPivot = createArmPivot(false);
+        group.add(leftArmPivot, rightArmPivot);
+
+        const createLegPivot = (isLeft: boolean) => {
+          const pivot = new THREE.Group();
+          pivot.position.set(isLeft ? -0.14 : 0.14, 0.55, 0);
+          const pants = createCharBox(0.16, 0.45, 0.18, pantsMat);
+          pants.position.set(0, -0.22, 0);
+          pivot.add(pants);
+          const shoe = createCharBox(0.18, 0.12, 0.24, shoeMat);
+          shoe.position.set(0, -0.48, 0.03);
+          pivot.add(shoe);
+          return pivot;
+        };
+        const leftLegPivot = createLegPivot(true);
+        const rightLegPivot = createLegPivot(false);
+        group.add(leftLegPivot, rightLegPivot);
+
+        group.position.set(seat.x, 0, seat.z);
+        group.rotation.y = seat.angle;
+        scene.add(group);
+
+        return {
+          group,
+          body,
+          headGroup,
+          leftEye,
+          rightEye,
+          leftArmPivot,
+          rightArmPivot,
+          leftLegPivot,
+          rightLegPivot,
+          pos: { x: seat.x, z: seat.z },
+          target: { x: seat.x, z: seat.z },
+          path: [],
+          yaw: seat.angle,
+          targetYaw: seat.angle,
+          walking: false,
+          blockedSeconds: 0,
+          walkTick: index * 1.5,
+          sitProgress: 1,
+          targetSit: true,
+          phase: index * 1.7,
+        };
       };
 
-      const charObjects = new Map<string, CharActorObj>();
-      const occupiedSpots = new Set<string>();
-
-      const getOrAddChar = (
-        actor: OfficeActor,
-        seat: OfficeSeat,
-        index: number
-      ): CharActorObj => {
-        let char = charObjects.get(actor.id);
-        if (!char) {
-          const group = new THREE.Group();
-          const charMat = createMat(actor.color);
-          const skinMat = createMat(0xfcd34d);
-          const pantsMat = createMat(0x1e293b);
-          const shoeMat = createMat(0x0f172a);
-          const eyeMat = createMat(0x09090b);
-
-          // Head with hair and eyes (outlined)
-          const headGroup = new THREE.Group();
-          headGroup.position.y = 1.35;
-
-          const headMesh = createCharBox(0.42, 0.42, 0.42, skinMat);
-          headGroup.add(headMesh);
-
-          // Eyes
-          const leftEye = createCharBox(0.06, 0.08, 0.04, eyeMat);
-          leftEye.position.set(-0.1, 0.02, 0.22);
-          headGroup.add(leftEye);
-
-          const rightEye = createCharBox(0.06, 0.08, 0.04, eyeMat);
-          rightEye.position.set(0.1, 0.02, 0.22);
-          headGroup.add(rightEye);
-
-          // Hair variation per seat
-          const hairInfo = getHairProps(actor.id);
-          const hairMat = createMat(hairInfo.color);
-          const hairTop = createCharBox(0.44, 0.16, 0.44, hairMat);
-          hairTop.position.set(0, 0.16, -0.02);
-          headGroup.add(hairTop);
-
-          if (hairInfo.style === 1) {
-            const bangs = createCharBox(0.44, 0.1, 0.1, hairMat);
-            bangs.position.set(0, 0.14, 0.2);
-            headGroup.add(bangs);
-          } else if (hairInfo.style === 2) {
-            const leftLock = createCharBox(0.08, 0.22, 0.36, hairMat);
-            leftLock.position.set(-0.21, 0.05, 0.02);
-            headGroup.add(leftLock);
-            const rightLock = createCharBox(0.08, 0.22, 0.36, hairMat);
-            rightLock.position.set(0.21, 0.05, 0.02);
-            headGroup.add(rightLock);
-          }
-          group.add(headGroup);
-
-          // Body / Shirt (0.5 x 0.55 x 0.32, outlined)
-          const body = createCharBox(0.5, 0.55, 0.32, charMat);
-          body.position.y = 0.88;
-          group.add(body);
-
-          // Arms with Shoulder Pivots
-          const createArmPivot = (isLeft: boolean) => {
-            const pivot = new THREE.Group();
-            pivot.position.set(isLeft ? -0.32 : 0.32, 1.1, 0);
-
-            // Sleeve
-            const sleeve = createCharBox(0.14, 0.28, 0.14, charMat);
-            sleeve.position.set(0, -0.14, 0);
-            pivot.add(sleeve);
-
-            // Hand
-            const hand = createCharBox(0.12, 0.14, 0.12, skinMat);
-            hand.position.set(0, -0.32, 0);
-            pivot.add(hand);
-
-            return pivot;
-          };
-
-          const leftArmPivot = createArmPivot(true);
-          group.add(leftArmPivot);
-
-          const rightArmPivot = createArmPivot(false);
-          group.add(rightArmPivot);
-
-          // Legs & Shoes with Hip Pivots
-          const createLegPivot = (isLeft: boolean) => {
-            const pivot = new THREE.Group();
-            pivot.position.set(isLeft ? -0.14 : 0.14, 0.55, 0);
-
-            // Pants
-            const pants = createCharBox(0.16, 0.45, 0.18, pantsMat);
-            pants.position.set(0, -0.22, 0);
-            pivot.add(pants);
-
-            // Shoe
-            const shoe = createCharBox(0.18, 0.12, 0.24, shoeMat);
-            shoe.position.set(0, -0.48, 0.03);
-            pivot.add(shoe);
-
-            return pivot;
-          };
-
-          const leftLegPivot = createLegPivot(true);
-          group.add(leftLegPivot);
-
-          const rightLegPivot = createLegPivot(false);
-          group.add(rightLegPivot);
-
-          // Initial spawn: sitting at its assigned chair
-          group.position.set(seat.x, 0, seat.z);
-          group.rotation.y = seat.angle;
-          scene.add(group);
-
-          char = {
-            group,
-            body,
-            headGroup,
-            headMesh,
-            leftEye,
-            rightEye,
-            leftArmPivot,
-            rightArmPivot,
-            leftLegPivot,
-            rightLegPivot,
-            currentPos: { x: seat.x, z: seat.z },
-            targetPos: { x: seat.x, z: seat.z },
-            path: [],
-            yaw: seat.angle,
-            targetYaw: seat.angle,
-            isWalking: false,
-            walkTick: index * 1.5,
-            sittingProgress: 1.0,
-            targetSitting: true,
-            assignedSeat: seat,
-            spotKey: null,
-            lastSpotChangeTime: Date.now() + index * 900,
-            phase: index * 1.7,
-          };
-          charObjects.set(actor.id, char);
+      const getOrAddRig = (actor: OfficeActor, seat: OfficeSeat, index: number): Rig => {
+        let rig = charRigs.get(actor.id);
+        if (!rig) {
+          rig = buildRig(actor, seat, index);
+          charRigs.set(actor.id, rig);
         }
-        return char;
+        return rig;
       };
+
+      // Behaviour: the same simulation the tests check, re-created when the set of actors changes
+      let simAgents: OfficeSimAgent[] = [];
+      let simIds = "";
+      const reservations = new Map<string, string>();
 
       const handleResize = () => {
-        if (!container || !renderer) return;
         const w = container.clientWidth || 320;
         const h = container.clientHeight || 240;
-        const scale = 2; // Internal render scale 1/2 for crisp pixel look
-        const pixelW = Math.max(100, Math.floor(w / scale));
-        const pixelH = Math.max(80, Math.floor(h / scale));
-
-        renderer.setSize(pixelW, pixelH, false);
-        const newAspect = w / h;
-        const { viewSize: fittedViewSize } = fitCamera(
-          { width: 10.6, depth: 10.6, height: 4.0 },
-          newAspect,
-          0.08
-        );
-        camera.left = (-fittedViewSize * newAspect) / 2;
-        camera.right = (fittedViewSize * newAspect) / 2;
-        camera.top = fittedViewSize / 2;
-        camera.bottom = -fittedViewSize / 2;
+        renderer.setSize(w, h, false);
+        const { viewWidth, viewHeight, centerY } = fitOfficeCamera(w / h);
+        camera.left = -viewWidth / 2;
+        camera.right = viewWidth / 2;
+        camera.top = viewHeight / 2 + centerY;
+        camera.bottom = -viewHeight / 2 + centerY;
         camera.updateProjectionMatrix();
       };
 
@@ -394,7 +342,6 @@ export function CouncilOffice({
 
       let lastTime = performance.now();
       let lastReactionCheck = Date.now();
-      const WALK_SPEED = 2.0;
 
       const animate = (nowTime: number) => {
         if (disposed) return;
@@ -403,19 +350,40 @@ export function CouncilOffice({
         const nowMs = Date.now();
         const timeSec = nowTime / 1000;
 
-        // Read current state through mutable refs
         const currentDetail = detailRef.current;
         const currentCursor = cursorRef.current;
-        const currentHighlight = highlightSeatIdRef.current;
         const currentActors = deriveOfficeActors(currentDetail, currentCursor, nowMs);
-
-        // Seat assignments for all actors
         const seatAssignments = assignOfficeSeats(currentActors);
 
-        // Active speaker ID (for listener attention and reactions)
-        const activeSpeaker = currentActors.find(
-          (a) => a.activity === "speaking" || a.activity === "arguing"
+        const ownerActor = currentActors.find((a) => a.id === OWNER_SEAT_ID);
+        const isTerminal = TERMINAL_STATES.has(currentDetail.state);
+        const ownerSpeaking = ownerActor?.activity === "speaking" || ownerActor?.activity === "arguing";
+        if (ownerSpeaking && currentCursor === null && !isTerminal) ownerHoldUntilRef.current = nowMs + OWNER_HOLD_MS;
+        if (isTerminal) ownerHoldUntilRef.current = 0;
+        // Replay: the table while the cursor holds him. Live: while speaking, then 15 s more.
+        const ownerWantsMeeting = currentCursor !== null
+          ? Boolean(ownerActor?.holdAtMeeting)
+          : !isTerminal && (ownerSpeaking || nowMs < ownerHoldUntilRef.current);
+
+        const councilLive = currentActors.some((a) =>
+          a.id !== OWNER_SEAT_ID && (a.activity === "waiting" || a.activity === "speaking" || a.activity === "arguing")
         );
+
+        // Sim agents follow the actor list (the same order as the seat assignment above)
+        const ids = currentActors.map((a) => a.id).join("|");
+        if (ids !== simIds) {
+          simIds = ids;
+          simAgents = createOfficeAgents(currentActors.map((a) => a.id));
+          reservations.clear();
+        }
+        // The owner pulls report visitors away from the corridor the moment he walks to the table
+        if (ownerWantsMeeting) {
+          for (const agent of simAgents) if (agent.activity === "report") agent.stateDuration = 0;
+        }
+        stepOfficeSimulation(simAgents, reservations, nowMs / 1000, dt, Math.random, councilLive);
+        const simById = new Map(simAgents.map((agent) => [agent.id, agent] as const));
+
+        const activeSpeaker = currentActors.find((a) => a.activity === "speaking" || a.activity === "arguing");
 
         // Periodic listener reaction bubble (!, ?, …, хм)
         if (activeSpeaker && nowMs - lastReactionCheck > 4500) {
@@ -434,202 +402,168 @@ export function CouncilOffice({
           }
         }
 
-        // Update each character
+        const snap = snapRef.current;
         currentActors.forEach((actor, idx) => {
           const seat = seatAssignments.get(actor.id) ?? OFFICE_SEATS[idx % OFFICE_SEATS.length]!;
-          const char = getOrAddChar(actor, seat, idx);
+          const rig = getOrAddRig(actor, seat, idx);
+          const sim = simById.get(actor.id);
 
           let desiredPos = { x: seat.x, z: seat.z };
           let desiredYaw = seat.angle;
           let shouldSit = true;
+          let speed = WALK_SPEED;
+          let action: string | undefined;
 
-          if (actor.activity === "speaking" || actor.activity === "arguing") {
-            // Stand beside chair at meeting table
+          if (actor.id === OWNER_SEAT_ID && ownerWantsMeeting) {
+            // The owner stands at his head chair and plays the speaking or arguing pose
+            desiredPos = { x: seat.x, z: seat.z };
+            desiredYaw = seat.angle;
+            shouldSit = false;
+            speed = OWNER_WALK_SPEED;
+            if (actor.facing) {
+              const opponent = charRigs.get(actor.facing);
+              if (opponent) desiredYaw = Math.atan2(opponent.pos.x - rig.pos.x, opponent.pos.z - rig.pos.z);
+            } else {
+              desiredYaw = Math.atan2(-rig.pos.x, -rig.pos.z);
+            }
+          } else if (actor.id === OWNER_SEAT_ID) {
+            // Idle: the owner's sim spot (home chair, window or bar)
+            const point = getInteractionPoint(sim?.currentPointId ?? "");
+            if (point) {
+              desiredPos = { x: point.x, z: point.z };
+              desiredYaw = point.approachAngle;
+              shouldSit = point.pose === "typing" || point.pose === "sitting_sofa";
+              action = actionForPoint(point.kind, point.pose);
+            }
+          } else if (actor.activity === "speaking" || actor.activity === "arguing") {
+            // Stand at the speaker spot, facing the seat answered or the table centre
             desiredPos = { x: seat.speakX, z: seat.speakZ };
             shouldSit = false;
-
-            // Facing logic: face opponent if arguing, else face table center
             if (actor.facing) {
-              const opponent = charObjects.get(actor.facing);
-              if (opponent) {
-                const dx = opponent.currentPos.x - char.currentPos.x;
-                const dz = opponent.currentPos.z - char.currentPos.z;
-                desiredYaw = Math.atan2(dx, dz);
-              }
+              const opponent = charRigs.get(actor.facing);
+              if (opponent) desiredYaw = Math.atan2(opponent.pos.x - rig.pos.x, opponent.pos.z - rig.pos.z);
             } else {
-              desiredYaw = Math.atan2(-char.currentPos.x, -char.currentPos.z);
-            }
-
-            // Release any previously held spot
-            if (char.spotKey) {
-              occupiedSpots.delete(char.spotKey);
-              char.spotKey = null;
+              desiredYaw = Math.atan2(-rig.pos.x, -rig.pos.z);
             }
           } else if (actor.activity === "waiting") {
-            // Sits at table seat
+            // Gathered at the meeting chair, turned towards the speaker
             desiredPos = { x: seat.x, z: seat.z };
             shouldSit = true;
-
-            // If someone is speaking or arguing, look towards the speaker!
-            if (activeSpeaker) {
-              const speakerChar = charObjects.get(activeSpeaker.id);
-              if (speakerChar) {
-                const dx = speakerChar.currentPos.x - char.currentPos.x;
-                const dz = speakerChar.currentPos.z - char.currentPos.z;
-                desiredYaw = Math.atan2(dx, dz);
-              } else {
-                desiredYaw = seat.angle;
-              }
-            } else {
-              desiredYaw = seat.angle;
-            }
-
-            if (char.spotKey) {
-              occupiedSpots.delete(char.spotKey);
-              char.spotKey = null;
-            }
-          } else if (actor.activity === "idle") {
-            // Wandering to an office spot
-            if (!motionReduced) {
-              shouldSit = false;
-              if (
-                !char.spotKey ||
-                nowMs - char.lastSpotChangeTime > 5000 + (idx % 4) * 1800
-              ) {
-                const nextSpotKey = chooseIdleSpot(occupiedSpots, Math.random, char.spotKey);
-                if (nextSpotKey && OFFICE_SPOTS[nextSpotKey]) {
-                  if (char.spotKey) occupiedSpots.delete(char.spotKey);
-                  char.spotKey = nextSpotKey;
-                  occupiedSpots.add(nextSpotKey);
-                  const spot = OFFICE_SPOTS[nextSpotKey]!;
-                  char.idleAction = spot.action;
-                  char.lastSpotChangeTime = nowMs;
-                }
-              }
-
-              if (char.spotKey && OFFICE_SPOTS[char.spotKey]) {
-                const spot = OFFICE_SPOTS[char.spotKey]!;
-                desiredPos = { x: spot.x, z: spot.z };
-                desiredYaw = spot.angle;
-              }
-            } else {
-              desiredPos = { x: seat.x, z: seat.z };
-              desiredYaw = seat.angle;
-              shouldSit = true;
+            const speakerRig = activeSpeaker ? charRigs.get(activeSpeaker.id) : undefined;
+            if (speakerRig) desiredYaw = Math.atan2(speakerRig.pos.x - rig.pos.x, speakerRig.pos.z - rig.pos.z);
+          } else if (sim) {
+            // Idle: the simulation's spot (desk, sofa, coffee, window, chat or report)
+            const point = getInteractionPoint(sim.currentPointId);
+            if (point) {
+              desiredPos = { x: point.x, z: point.z };
+              desiredYaw = point.approachAngle;
+              shouldSit = point.pose === "typing" || point.pose === "sitting_sofa";
+              action = actionForPoint(point.kind, point.pose);
             }
           }
 
-          char.targetSitting = shouldSit;
+          rig.targetSit = shouldSit;
+          rig.action = action;
 
-          // If desired destination changed significantly, re-plan path
-          const distToDesired = Math.hypot(
-            char.targetPos.x - desiredPos.x,
-            char.targetPos.z - desiredPos.z
-          );
+          const distToDesired = Math.hypot(rig.target.x - desiredPos.x, rig.target.z - desiredPos.z);
+          rig.targetYaw = desiredYaw;
           if (distToDesired > 0.15) {
-            char.targetPos = { x: desiredPos.x, z: desiredPos.z };
-            char.targetYaw = desiredYaw;
-            if (motionReduced) {
-              char.currentPos = { x: desiredPos.x, z: desiredPos.z };
-              char.path = [];
+            rig.target = { x: desiredPos.x, z: desiredPos.z };
+            if (motionReduced || snap) {
+              rig.pos = { x: desiredPos.x, z: desiredPos.z };
+              rig.path = [];
             } else {
-              char.path = findOfficePath(char.currentPos, char.targetPos);
+              rig.path = findOfficePath(rig.pos, rig.target);
             }
-          } else {
-            char.targetYaw = desiredYaw;
           }
 
-          // Walk along path at bounded speed without teleporting
-          if (char.path.length > 0 && !motionReduced) {
-            const nextWaypoint = char.path[0]!;
-            const stepResult = walkStep(char.currentPos, nextWaypoint, WALK_SPEED, dt);
-            char.currentPos = { x: stepResult.x, z: stepResult.z };
-            char.isWalking = true;
-            char.walkTick += dt * 10;
-
-            // Turn smoothly towards heading
-            const angleDiff = Math.atan2(
-              Math.sin(stepResult.heading - char.yaw),
-              Math.cos(stepResult.heading - char.yaw)
+          // Walk along the path at bounded speed. A character waits when a standing one blocks the next step.
+          if (rig.path.length > 0 && !motionReduced) {
+            const nextWaypoint = rig.path[0]!;
+            const blockedBy = [...charRigs.entries()].some(([id, other]) =>
+              id !== actor.id && !other.walking &&
+              Math.hypot(other.pos.x - nextWaypoint.x, other.pos.z - nextWaypoint.z) < 0.35
             );
-            char.yaw += Math.sign(angleDiff) * Math.min(Math.abs(angleDiff), 9.0 * dt);
-
-            if (stepResult.reached) {
-              char.path.shift();
+            if (blockedBy && rig.blockedSeconds < 2.5) {
+              rig.blockedSeconds += dt;
+              rig.walking = false;
+            } else {
+              rig.blockedSeconds = 0;
+              const stepResult = walkStep(rig.pos, nextWaypoint, speed, dt);
+              rig.pos = { x: stepResult.x, z: stepResult.z };
+              rig.walking = true;
+              rig.walkTick += dt * 10;
+              const angleDiff = Math.atan2(Math.sin(stepResult.heading - rig.yaw), Math.cos(stepResult.heading - rig.yaw));
+              rig.yaw += Math.sign(angleDiff) * Math.min(Math.abs(angleDiff), 9.0 * dt);
+              if (stepResult.reached) rig.path.shift();
             }
           } else {
-            char.isWalking = false;
-            // Smoothly turn to target orientation when stationary
-            const angleDiff = Math.atan2(
-              Math.sin(char.targetYaw - char.yaw),
-              Math.cos(char.targetYaw - char.yaw)
-            );
-            char.yaw += Math.sign(angleDiff) * Math.min(Math.abs(angleDiff), 7.0 * dt);
+            rig.walking = false;
+            const angleDiff = Math.atan2(Math.sin(rig.targetYaw - rig.yaw), Math.cos(rig.targetYaw - rig.yaw));
+            rig.yaw += Math.sign(angleDiff) * Math.min(Math.abs(angleDiff), 7.0 * dt);
           }
 
           // Sitting / standing transition
-          if (char.targetSitting && !char.isWalking) {
-            char.sittingProgress = Math.min(1, char.sittingProgress + 3.0 * dt);
+          if (rig.targetSit && !rig.walking) {
+            rig.sitProgress = Math.min(1, rig.sitProgress + 3.0 * dt);
           } else {
-            char.sittingProgress = Math.max(0, char.sittingProgress - 3.0 * dt);
+            rig.sitProgress = Math.max(0, rig.sitProgress - 3.0 * dt);
           }
 
-          char.group.position.set(char.currentPos.x, 0, char.currentPos.z);
-          char.group.rotation.y = char.yaw;
+          rig.group.position.set(rig.pos.x, 0, rig.pos.z);
+          rig.group.rotation.y = rig.yaw;
 
-          // Compute pose and apply to character limbs
           const pose = getOfficePose(actor.activity, {
-            tick: timeSec + char.phase,
-            isWalking: char.isWalking,
-            sittingProgress: char.sittingProgress,
-            action: char.idleAction,
+            tick: timeSec + rig.phase,
+            isWalking: rig.walking,
+            sittingProgress: rig.sitProgress,
+            action: rig.action,
           });
 
-          char.body.position.y = pose.bodyY;
-          char.headGroup.position.y = pose.headY;
-          char.headGroup.rotation.x = pose.headPitch;
-          char.headGroup.rotation.y = pose.headYaw;
+          rig.body.position.y = pose.bodyY;
+          rig.headGroup.position.y = pose.headY;
+          rig.headGroup.rotation.x = pose.headPitch;
+          rig.headGroup.rotation.y = pose.headYaw;
 
-          // Chibi blinking animation
-          const isBlink = (Math.floor((timeSec + char.phase) * 3) % 11) === 0;
-          char.leftEye.scale.y = isBlink ? 0.15 : 1.0;
-          char.rightEye.scale.y = isBlink ? 0.15 : 1.0;
+          // Blinking
+          const isBlink = (Math.floor((timeSec + rig.phase) * 3) % 11) === 0;
+          rig.leftEye.scale.y = isBlink ? 0.15 : 1.0;
+          rig.rightEye.scale.y = isBlink ? 0.15 : 1.0;
 
-          char.leftArmPivot.rotation.x = pose.leftArmPitch;
-          char.rightArmPivot.rotation.x = pose.rightArmPitch;
-          char.leftArmPivot.rotation.y = pose.leftArmYaw;
-          char.rightArmPivot.rotation.y = pose.rightArmYaw;
-          char.leftArmPivot.rotation.z = pose.leftArmRoll;
-          char.rightArmPivot.rotation.z = pose.rightArmRoll;
+          rig.leftArmPivot.rotation.x = pose.leftArmPitch;
+          rig.rightArmPivot.rotation.x = pose.rightArmPitch;
+          rig.leftArmPivot.rotation.y = pose.leftArmYaw;
+          rig.rightArmPivot.rotation.y = pose.rightArmYaw;
+          rig.leftArmPivot.rotation.z = pose.leftArmRoll;
+          rig.rightArmPivot.rotation.z = pose.rightArmRoll;
 
-          char.leftLegPivot.rotation.x = pose.leftLegPitch;
-          char.rightLegPivot.rotation.x = pose.rightLegPitch;
+          rig.leftLegPivot.rotation.x = pose.leftLegPitch;
+          rig.rightLegPivot.rotation.x = pose.rightLegPitch;
 
-          // If arguing, opponent turns toward speaker
+          // The character being answered turns to face the speaker
           if (actor.activity === "arguing" && actor.facing) {
-            const opp = charObjects.get(actor.facing);
-            if (opp) {
-              const dx = char.currentPos.x - opp.currentPos.x;
-              const dz = char.currentPos.z - opp.currentPos.z;
-              const oppOppAngle = Math.atan2(dx, dz);
-              opp.headGroup.rotation.y = Math.max(-0.6, Math.min(0.6, oppOppAngle - opp.yaw));
+            const opponent = charRigs.get(actor.facing);
+            if (opponent) {
+              const angleToSpeaker = Math.atan2(rig.pos.x - opponent.pos.x, rig.pos.z - opponent.pos.z);
+              opponent.headGroup.rotation.y = Math.max(-0.6, Math.min(0.6, angleToSpeaker - opponent.yaw));
             }
           }
         });
+        snapRef.current = false;
 
-        // Direct DOM transform update for overlays with collision resolution
+        // Name tags, bubbles and reactions: projected HTML overlays with collision resolution
         const w = container.clientWidth || 320;
         const h = container.clientHeight || 240;
 
         const rawLabels = currentActors.map((actor) => {
-          const char = charObjects.get(actor.id);
+          const rig = charRigs.get(actor.id);
+          const label = actor.label.slice(0, LABEL_MAX_CHARS);
           const projPos = new THREE.Vector3(
-            char ? char.currentPos.x : 0,
-            char ? char.headGroup.position.y + 0.45 : 1.8,
-            char ? char.currentPos.z : 0
+            rig ? rig.pos.x : 0,
+            rig ? rig.headGroup.position.y * RIG_SCALE + 0.45 : 1.2,
+            rig ? rig.pos.z : 0
           );
           projPos.project(camera);
-
           const screenX = Math.round(((projPos.x + 1) * w) / 2);
           const screenY = Math.round(((-projPos.y + 1) * h) / 2);
           const isSpeaker = actor.activity === "speaking" || actor.activity === "arguing";
@@ -637,8 +571,8 @@ export function CouncilOffice({
             id: actor.id,
             x: screenX,
             y: screenY,
-            width: 58,
-            height: 20,
+            width: label.length * LABEL_CHAR_WIDTH + 8,
+            height: LABEL_HEIGHT,
             isSpeaker,
           };
         });
@@ -671,13 +605,14 @@ export function CouncilOffice({
           try {
             item.dispose();
           } catch {
-            // ignore
+            // Disposing an already released resource is harmless
           }
         }
         try {
           renderer.dispose();
+          renderer.forceContextLoss();
         } catch {
-          // ignore
+          // The context may already be lost
         }
       };
     }
@@ -706,17 +641,14 @@ export function CouncilOffice({
   return (
     <div
       ref={containerRef}
-      className="relative flex h-full w-full min-h-[300px] select-none flex-col items-center justify-center overflow-hidden bg-[#cbd5e1] text-xs font-mono touch-pan-x touch-pan-y"
-      style={{
-        boxShadow: "inset 0 0 0 2px #0f172a",
-        imageRendering: "pixelated",
-      }}
+      className="absolute inset-0 select-none overflow-hidden bg-[#acddec] font-mono text-xs touch-pan-x touch-pan-y"
+      style={{ boxShadow: "inset 0 0 0 2px #0f172a", imageRendering: "pixelated" }}
       data-testid="council-office"
     >
-      {/* Wall-speaker Moderator Notice */}
+      {/* Wall-speaker Moderator Notice, under the top bar */}
       {isModeratorActive && moderatorMsg ? (
         <div
-          className="pointer-events-auto absolute top-2.5 left-1/2 -translate-x-1/2 z-20 max-w-[320px] rounded bg-slate-900/90 px-3 py-1.5 text-[11px] font-sans text-amber-300 border-2 border-amber-400 shadow-[2px_2px_0_#0f172a] animate-in fade-in"
+          className="pointer-events-auto absolute top-[60px] left-1/2 -translate-x-1/2 z-20 max-w-[360px] bg-slate-900/90 px-3 py-1.5 text-[11px] font-sans text-amber-300 border-2 border-amber-400 shadow-[2px_2px_0_#0f172a] animate-in fade-in"
           data-testid="council-moderator-notice"
         >
           <div className="font-mono text-[9px] font-bold text-amber-400 uppercase flex items-center gap-1.5 mb-0.5">
@@ -731,23 +663,17 @@ export function CouncilOffice({
 
       {!hasWebGL ? (
         <div
-          className="flex flex-col items-center justify-center gap-2 p-4 text-center text-slate-300"
+          className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#acddec] p-4 text-center text-slate-900"
           data-testid="council-office-fallback"
         >
-          <div className="text-sm font-bold tracking-wider text-amber-400">
-            [OFFICE · 8-BIT]
-          </div>
+          <div className="text-sm font-bold tracking-wider text-slate-900">[OFFICE · 8-BIT]</div>
           <div>{t("councilOfficeFallback")}</div>
           <div className="flex flex-wrap justify-center gap-2 mt-2">
             {actors.map((actor) => (
               <span
                 key={actor.id}
-                className="px-2 py-0.5 rounded border text-[11px]"
-                style={{
-                  borderColor: actor.color,
-                  backgroundColor: `${actor.color}22`,
-                  color: actor.color,
-                }}
+                className="px-2 py-0.5 border border-slate-900 bg-white/70 text-[11px]"
+                style={{ borderColor: actor.color, color: actor.color }}
               >
                 {actor.label}: {actor.activity}
               </span>
@@ -758,11 +684,11 @@ export function CouncilOffice({
         <>
           <canvas
             ref={canvasRef}
-            className="h-full w-full block"
+            className="absolute inset-0 h-full w-full block"
             style={{ imageRendering: "pixelated" }}
           />
 
-          {/* Projected HTML Overlays: Name tags, typewriter speech bubbles, listener reactions */}
+          {/* Projected HTML overlays: name tags, typewriter speech bubbles, listener reactions */}
           <div className="pointer-events-none absolute inset-0 overflow-hidden">
             {actors.map((actor) => {
               const isHighlighted = highlightSeatId === actor.id;
@@ -784,23 +710,19 @@ export function CouncilOffice({
                   style={{ transform: "translate3d(-9999px, -9999px, 0)" }}
                   onClick={() => onSelectSpeaker?.(actor.id)}
                 >
-                  {/* Listener reaction bubble */}
                   {reaction ? (
                     <div
-                      className="mb-1 rounded bg-amber-200 px-1.5 py-0.5 text-xs font-mono font-bold text-slate-900 border border-slate-900 animate-bounce"
+                      className="mb-1 bg-amber-200 px-1.5 py-0.5 text-xs font-mono font-bold text-slate-900 border border-slate-900 animate-bounce"
                       style={{ boxShadow: "1px 1px 0 #0f172a" }}
                     >
                       {reaction}
                     </div>
                   ) : null}
 
-                  {/* Speech bubble with typewriter text */}
                   {hasBubble ? (
                     <div
-                      className="mb-1 max-w-[210px] break-words rounded bg-amber-50 px-2.5 py-1.5 text-[11px] font-sans text-slate-900 border-2 border-slate-900 animate-in fade-in"
-                      style={{
-                        boxShadow: "2px 2px 0 #0f172a",
-                      }}
+                      className="mb-1 max-w-[220px] break-words bg-amber-50 px-2.5 py-1.5 text-[11px] font-sans text-slate-900 border-2 border-slate-900 animate-in fade-in"
+                      style={{ boxShadow: "2px 2px 0 #0f172a" }}
                     >
                       <div className="font-mono text-[9px] font-bold text-slate-500 uppercase flex items-center justify-between gap-1">
                         <span>{actor.label}</span>
@@ -818,22 +740,21 @@ export function CouncilOffice({
                     </div>
                   ) : null}
 
-                  {/* Character label tag */}
+                  {/* Name tag: 9 px, one line, at most ten characters; collapses to a dot when crowded */}
                   <div
-                    className={`group relative px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white border-2 cursor-pointer transition-all ${
-                      isHighlighted ? "scale-110 shadow-lg ring-2 ring-white" : ""
+                    className={`group relative px-1 py-px text-[9px] font-bold uppercase tracking-wider text-white border cursor-pointer whitespace-nowrap transition-all ${
+                      isHighlighted ? "scale-110 ring-2 ring-white" : ""
                     }`}
                     style={{
                       backgroundColor: actor.color,
-                      borderColor: "#0f172a",
-                      boxShadow: "1px 1px 0 #0f172a",
+                      borderColor: "#282a36",
                     }}
+                    title={actor.label}
                   >
                     <span className="hidden group-data-[collapsed=true]:inline font-mono">●</span>
-                    <span className="group-data-[collapsed=true]:hidden">{actor.label}</span>
-                    <div className="hidden group-hover:block absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-1.5 py-0.5 rounded text-[9px] whitespace-nowrap shadow z-30 pointer-events-none">
-                      {actor.label}
-                    </div>
+                    <span className="group-data-[collapsed=true]:hidden">
+                      {actor.label.length > LABEL_MAX_CHARS ? `${actor.label.slice(0, LABEL_MAX_CHARS - 1)}…` : actor.label}
+                    </span>
                   </div>
                 </div>
               );

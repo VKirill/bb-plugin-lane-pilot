@@ -1,4 +1,5 @@
 import type * as ThreeType from "three";
+import { OFFICE_PROPS, OFFICE_WALLS, gridRect, type PropFootprint } from "./office-layout";
 
 export type OfficeSceneOptions = {
   THREE: typeof import("three");
@@ -6,585 +7,445 @@ export type OfficeSceneOptions = {
   disposables: Array<{ dispose: () => void }>;
 };
 
+// Palette (reference.md §3)
+const OUTLINE = 0x282a36;
+const SKY = 0xacddec;
+const GRASS = 0x93c06b;
+const PAVING = 0xc1bcc0;
+const SLAB = 0x413c42;
+const WALL_CREAM = 0xf7edd2;
+const WALL_CREAM_SHADE = 0xe6cfaf;
+const WALNUT = 0x7b4a2e;
+const WALNUT_TOP = 0x8f5a38;
+const LEATHER = 0x7a3b22;
+const LEATHER_DARK = 0x6e3420;
+const BRASS = 0xd4a537;
+const TEAL = 0x3e898e;
+const TERRACOTTA = 0xce6b4e;
+const LEAF = 0x669e3b;
+const LEAF_SHADE = 0x518530;
+const CHAIR_BASE = 0x3a3d4a;
+const CHAIR_SEAT = 0x5b6070;
+const CUSHION_ORANGE = 0xcb614b;
+const CUSHION_SLATE = 0x64748b;
+const CUSHION_ROSE = 0xe11d48;
+const GLASS = 0xcdf1ff;
+
+const FLOOR_ZONES: Array<{ color: number; gx0: number; gx1: number; gz0: number; gz1: number }> = [
+  { color: 0xeab06e, gx0: 0, gx1: 12, gz0: 0, gz1: 11 },
+  { color: 0xdfb988, gx0: 12, gx1: 26, gz0: 0, gz1: 11 },
+  { color: 0xb9774a, gx0: 26, gx1: 40, gz0: 0, gz1: 11 },
+  { color: 0xbfccd4, gx0: 0, gx1: 40, gz0: 11, gz1: 13 },
+  { color: 0xe69d59, gx0: 0, gx1: 11, gz0: 13, gz1: 20 },
+  { color: 0xf0c8a2, gx0: 11, gx1: 21, gz0: 13, gz1: 20 },
+  { color: 0xc9d3d8, gx0: 21, gx1: 28, gz0: 13, gz1: 20 },
+  { color: 0xe69d59, gx0: 28, gx1: 40, gz0: 13, gz1: 20 },
+];
+
+const TREES: Array<[number, number]> = [
+  [-24, -4],
+  [-23, 6],
+  [-12, 13],
+  [10, 14],
+  [24, -4],
+  [28, 12],
+];
+
+const mid = (a: number, b: number) => (a + b) / 2;
+
 /**
- * Builds the bright isometric cutaway diorama office with pixel outlines
- * and detailed corporate clutter/props.
+ * Builds the bright isometric cutaway office floor from the layout: slab, zones, walls and doors,
+ * the furniture from `OFFICE_PROPS`, and the exterior lot. Every solid has dark pixel outlines.
  */
-export function buildOfficeDiorama({ THREE, scene, disposables }: OfficeSceneOptions): void {
-  // Outline material: crisp dark slate
-  const outlineMat = new THREE.LineBasicMaterial({
-    color: 0x0f172a,
-    transparent: true,
-    opacity: 0.85,
-  });
+export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptions): void {
+  const outlineMat = new THREE.LineBasicMaterial({ color: OUTLINE });
   disposables.push(outlineMat);
 
-  const createMat = (color: number | string, opts?: { transparent?: boolean; opacity?: number }) => {
-    const mat = new THREE.MeshLambertMaterial({
-      color,
-      transparent: opts?.transparent ?? false,
-      opacity: opts?.opacity ?? 1.0,
-    });
-    disposables.push(mat);
+  const materials = new Map<string, ThreeType.MeshLambertMaterial>();
+  const material = (color: number, opacity?: number) => {
+    const key = `${color}:${opacity ?? 1}`;
+    let mat = materials.get(key);
+    if (!mat) {
+      mat = new THREE.MeshLambertMaterial({ color, transparent: opacity !== undefined, opacity: opacity ?? 1 });
+      materials.set(key, mat);
+      disposables.push(mat);
+    }
     return mat;
   };
 
-  const createBoxGeom = (w: number, h: number, d: number) => {
-    const geom = new THREE.BoxGeometry(w, h, d);
+  /** Box from world bounds, outlined unless `outline` is false. */
+  const box = (
+    parent: ThreeType.Object3D,
+    minX: number,
+    maxX: number,
+    minY: number,
+    maxY: number,
+    minZ: number,
+    maxZ: number,
+    color: number,
+    opts?: { outline?: boolean; opacity?: number }
+  ): ThreeType.Mesh => {
+    const geom = new THREE.BoxGeometry(maxX - minX, maxY - minY, maxZ - minZ);
     disposables.push(geom);
-    return geom;
+    const mesh = new THREE.Mesh(geom, material(color, opts?.opacity));
+    mesh.position.set(mid(minX, maxX), mid(minY, maxY), mid(minZ, maxZ));
+    if (opts?.outline !== false) {
+      const edges = new THREE.EdgesGeometry(geom, 30);
+      disposables.push(edges);
+      mesh.add(new THREE.LineSegments(edges, outlineMat));
+    }
+    parent.add(mesh);
+    return mesh;
   };
 
-  /**
-   * Helper to create a mesh with dark crisp edge outlines
-   */
-  const createOutlinedBox = (
-    w: number,
-    h: number,
-    d: number,
-    mat: ThreeType.Material,
-    skipEdges = false
-  ): ThreeType.Mesh => {
-    const geom = createBoxGeom(w, h, d);
-    const mesh = new THREE.Mesh(geom, mat);
-    if (!skipEdges) {
-      const edges = new THREE.EdgesGeometry(geom);
-      disposables.push(edges);
-      const line = new THREE.LineSegments(edges, outlineMat);
-      mesh.add(line);
-    }
+  /** Box over a grid rectangle (gx0–gx1 × gz0–gz1) and a height range. */
+  const gridBox = (
+    parent: ThreeType.Object3D,
+    gx0: number,
+    gx1: number,
+    gz0: number,
+    gz1: number,
+    minY: number,
+    maxY: number,
+    color: number,
+    opts?: { outline?: boolean; opacity?: number }
+  ) => {
+    const r = gridRect(gx0, gx1, gz0, gz1);
+    return box(parent, r.minX, r.maxX, minY, maxY, r.minZ, r.maxZ, color, opts);
+  };
+
+  const cylinder = (parent: ThreeType.Object3D, x: number, z: number, radius: number, minY: number, maxY: number, color: number) => {
+    const geom = new THREE.CylinderGeometry(radius, radius, maxY - minY, 8);
+    disposables.push(geom);
+    const mesh = new THREE.Mesh(geom, material(color));
+    mesh.position.set(x, mid(minY, maxY), z);
+    parent.add(mesh);
     return mesh;
   };
 
   // ==========================================
-  // 1. DIORAMA BASE & WALLS (Cutaway slab)
+  // 1. SLAB, GROUND, PAVING AND TREES
   // ==========================================
-  // Floor slab: 10.6 x 0.6 x 10.6, top surface at y = 0
-  const slabWidth = 10.6;
-  const slabDepth = 10.6;
-  const slabHeight = 0.55;
+  scene.background = new THREE.Color(SKY);
+  box(scene, -20, 20, -0.5, 0, -10, 10, SLAB, { outline: false });
 
-  // Slab base / sides (darker diorama slab side)
-  const slabBaseMat = createMat(0x475569);
-  const slabBase = createOutlinedBox(slabWidth, slabHeight, slabDepth, slabBaseMat);
-  slabBase.position.set(0, -slabHeight / 2, 0);
-  scene.add(slabBase);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), material(GRASS));
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.5;
+  disposables.push(ground.geometry);
+  scene.add(ground);
 
-  // Top floor finish: Green carpet
-  const carpetMat = createMat(0x7d9d80); // green carpet floor
-  const carpet = createOutlinedBox(slabWidth - 0.1, 0.04, slabDepth - 0.1, carpetMat);
-  carpet.position.set(0, 0.02, 0);
-  scene.add(carpet);
+  // Paving from the entrance door and along the south edge, running out of frame
+  box(scene, 21, 70, -0.52, -0.49, 5.5, 8.5, PAVING, { outline: false });
+  box(scene, -30, 70, -0.52, -0.49, 11, 13, PAVING, { outline: false });
 
-  // Subtle floor tile / walkway accents
-  const aisleMat = createMat(0x8fae92);
-  const aisle = createOutlinedBox(3.6, 0.05, 7.8, aisleMat);
-  aisle.position.set(0, 0.025, 0);
-  scene.add(aisle);
-
-  // --- Back-Left Wall: Peach (#fde8d7) with dark baseboard stripe ---
-  const wallLeftMat = createMat(0xfde8d7); // Peach wall
-  const wallBaseboardMat = createMat(0x1e293b); // Dark slate baseboard stripe
-  const wallHeight = 4.0;
-  const wallThick = 0.45;
-
-  const wallLeftGroup = new THREE.Group();
-  wallLeftGroup.position.set(-slabWidth / 2 + wallThick / 2, 0, 0);
-
-  // Main back-left wall body
-  const wallLeft = createOutlinedBox(wallThick, wallHeight, slabDepth, wallLeftMat);
-  wallLeft.position.set(0, wallHeight / 2, 0);
-  wallLeftGroup.add(wallLeft);
-
-  // Dark baseboard stripe running along floor
-  const baseboardLeft = createOutlinedBox(wallThick + 0.02, 0.24, slabDepth, wallBaseboardMat);
-  baseboardLeft.position.set(0, 0.12, 0);
-  wallLeftGroup.add(baseboardLeft);
-
-  // Wall crown molding stripe at top
-  const crownLeft = createOutlinedBox(wallThick + 0.04, 0.15, slabDepth, createMat(0xfed7aa));
-  crownLeft.position.set(0, wallHeight - 0.075, 0);
-  wallLeftGroup.add(crownLeft);
-
-  scene.add(wallLeftGroup);
-
-  // --- Back-Right Wall: Pale Yellow (#f8f3a6) with dark baseboard stripe ---
-  const wallRightMat = createMat(0xf8f3a6); // Pale yellow wall
-  const wallRightGroup = new THREE.Group();
-  wallRightGroup.position.set(0, 0, -slabDepth / 2 + wallThick / 2);
-
-  const wallRight = createOutlinedBox(slabWidth, wallHeight, wallThick, wallRightMat);
-  wallRight.position.set(0, wallHeight / 2, 0);
-  wallRightGroup.add(wallRight);
-
-  const baseboardRight = createOutlinedBox(slabWidth, 0.24, wallThick + 0.02, wallBaseboardMat);
-  baseboardRight.position.set(0, 0.12, 0);
-  wallRightGroup.add(baseboardRight);
-
-  const crownRight = createOutlinedBox(slabWidth, 0.15, wallThick + 0.04, createMat(0xfef08a));
-  crownRight.position.set(0, wallHeight - 0.075, 0);
-  wallRightGroup.add(crownRight);
-  wallRightGroup.add(crownRight);
-
-  scene.add(wallRightGroup);
-
-  // ==========================================
-  // 2. WALL FIXTURES: WINDOW & GLASS DOUBLE DOOR
-  // ==========================================
-  // Window on back-left wall: bright sky with window panes
-  const winFrameMat = createMat(0x334155);
-  const winGlassMat = createMat(0xbae6fd); // bright sky
-  const winGroup = new THREE.Group();
-  winGroup.position.set(-slabWidth / 2 + wallThick + 0.02, 2.4, -0.6);
-
-  const winGlass = createOutlinedBox(0.06, 1.9, 2.6, winGlassMat);
-  winGroup.add(winGlass);
-
-  // Window mullions (vertical and horizontal frames)
-  const winHoriz = createOutlinedBox(0.08, 0.08, 2.6, winFrameMat);
-  winGroup.add(winHoriz);
-  const winVert = createOutlinedBox(0.08, 1.9, 0.08, winFrameMat);
-  winGroup.add(winVert);
-
-  // Window sill
-  const winSill = createOutlinedBox(0.2, 0.1, 2.8, createMat(0xf1f5f9));
-  winSill.position.set(0.06, -0.98, 0);
-  winGroup.add(winSill);
-
-  scene.add(winGroup);
-
-  // Glass double door on back-right wall
-  const doorGroup = new THREE.Group();
-  doorGroup.position.set(2.8, 0, -slabDepth / 2 + wallThick + 0.02);
-
-  const doorFrameMat = createMat(0x0f172a);
-  const doorGlassMat = createMat(0x93c5fd, { transparent: true, opacity: 0.55 });
-  const doorWidth = 1.8;
-  const doorHeight = 3.1;
-
-  // Frame outer
-  const doorFrame = createOutlinedBox(doorWidth, doorHeight, 0.08, doorFrameMat);
-  doorFrame.position.set(0, doorHeight / 2, 0);
-  doorGroup.add(doorFrame);
-
-  // Glass panels
-  const doorGlassLeft = new THREE.Mesh(createBoxGeom(0.78, doorHeight - 0.2, 0.04), doorGlassMat);
-  doorGlassLeft.position.set(-0.43, doorHeight / 2, 0);
-  doorGroup.add(doorGlassLeft);
-
-  const doorGlassRight = new THREE.Mesh(createBoxGeom(0.78, doorHeight - 0.2, 0.04), doorGlassMat);
-  doorGlassRight.position.set(0.43, doorHeight / 2, 0);
-  doorGroup.add(doorGlassRight);
-
-  // Silver handles
-  const handleMat = createMat(0xe2e8f0);
-  const handleLeft = createOutlinedBox(0.04, 0.45, 0.1, handleMat);
-  handleLeft.position.set(-0.08, 1.4, 0.04);
-  doorGroup.add(handleLeft);
-
-  const handleRight = createOutlinedBox(0.04, 0.45, 0.1, handleMat);
-  handleRight.position.set(0.08, 1.4, 0.04);
-  doorGroup.add(handleRight);
-
-  scene.add(doorGroup);
-
-  // ==========================================
-  // 3. PROJECTOR SCREEN & WHITEBOARD
-  // ==========================================
-  // Projector screen on back-left wall (wide meeting screen)
-  const projGroup = new THREE.Group();
-  projGroup.position.set(-slabWidth / 2 + wallThick + 0.02, 2.4, 2.3);
-
-  const projHousing = createOutlinedBox(0.12, 0.14, 2.7, createMat(0x0f172a));
-  projHousing.position.set(0, 1.05, 0);
-  projGroup.add(projHousing);
-
-  const projScreen = createOutlinedBox(0.05, 1.9, 2.5, createMat(0xf8fafc));
-  projGroup.add(projScreen);
-
-  // Chart diagram / slide graphics on the screen
-  const slideChartMat = createMat(0x38bdf8);
-  const slideBar1 = createOutlinedBox(0.06, 0.45, 0.25, slideChartMat);
-  slideBar1.position.set(0.01, -0.3, -0.6);
-  projGroup.add(slideBar1);
-
-  const slideBar2 = createOutlinedBox(0.06, 0.75, 0.25, createMat(0x10b981));
-  slideBar2.position.set(0.01, -0.15, -0.2);
-  projGroup.add(slideBar2);
-
-  const slideBar3 = createOutlinedBox(0.06, 1.1, 0.25, createMat(0xf59e0b));
-  slideBar3.position.set(0.01, 0.05, 0.2);
-  projGroup.add(slideBar3);
-
-  scene.add(projGroup);
-
-  // Whiteboard with scribbles on back-right wall
-  const wbGroup = new THREE.Group();
-  wbGroup.position.set(-1.8, 2.2, -slabDepth / 2 + wallThick + 0.03);
-
-  const wbFrame = createOutlinedBox(2.6, 1.6, 0.06, createMat(0x94a3b8));
-  wbGroup.add(wbFrame);
-
-  const wbBoard = createOutlinedBox(2.46, 1.46, 0.07, createMat(0xffffff));
-  wbGroup.add(wbBoard);
-
-  // Scribble blocks & flow chart sticky notes on whiteboard
-  const notePink = createOutlinedBox(0.24, 0.24, 0.08, createMat(0xf472b6));
-  notePink.position.set(-0.7, 0.3, 0);
-  wbGroup.add(notePink);
-
-  const noteYellow = createOutlinedBox(0.24, 0.24, 0.08, createMat(0xfef08a));
-  noteYellow.position.set(-0.35, 0.3, 0);
-  wbGroup.add(noteYellow);
-
-  const noteCyan = createOutlinedBox(0.24, 0.24, 0.08, createMat(0x67e8f9));
-  noteCyan.position.set(0.0, 0.3, 0);
-  wbGroup.add(noteCyan);
-
-  // Marker tray at bottom
-  const markerTray = createOutlinedBox(1.6, 0.05, 0.12, createMat(0x475569));
-  markerTray.position.set(0, -0.82, 0.04);
-  wbGroup.add(markerTray);
-
-  scene.add(wbGroup);
-
-  // ==========================================
-  // 4. CENTRAL MEETING TABLE & TABLETOP CLUTTER
-  // ==========================================
-  // Long table: 4.4 x 0.18 x 2.1 in light birch / blonde oak
-  const tableGroup = new THREE.Group();
-  const tableMat = createMat(0xd4a373); // blonde oak
-  const tableBevelMat = createMat(0xbc8a5f);
-  const tableLegMat = createMat(0x1e293b);
-
-  const tableTop = createOutlinedBox(4.4, 0.18, 2.1, tableMat);
-  tableTop.position.set(0, 0.95, 0);
-  tableGroup.add(tableTop);
-
-  const tableRim = createOutlinedBox(4.36, 0.06, 2.06, tableBevelMat);
-  tableRim.position.set(0, 0.86, 0);
-  tableGroup.add(tableRim);
-
-  // Heavy steel legs / supports
-  const legPositions = [
-    [-1.9, 0.44, -0.75],
-    [1.9, 0.44, -0.75],
-    [-1.9, 0.44, 0.75],
-    [1.9, 0.44, 0.75],
-  ];
-  for (const [lx, ly, lz] of legPositions) {
-    const leg = createOutlinedBox(0.2, 0.88, 0.2, tableLegMat);
-    leg.position.set(lx!, ly!, lz!);
-    tableGroup.add(leg);
+  for (const [x, z] of TREES) {
+    box(scene, x - 0.15, x + 0.15, -0.5, 0.5, z - 0.15, z + 0.15, 0x8a5a3c);
+    box(scene, x - 0.7, x + 0.7, 0.5, 1.9, z - 0.7, z + 0.7, 0x81b352);
   }
 
-  // --- Table Clutter: Laptops, Monitor, Coffee Cups, Paper Stacks ---
-  const laptopMat = createMat(0x334155);
-  const laptopScreenMat = createMat(0x0284c7);
-  const cupMat1 = createMat(0xef4444);
-  const cupMat2 = createMat(0x3b82f6);
-  const paperMat = createMat(0xf8fafc);
-
-  // Laptop 1 (Owner/West end)
-  const lt1Base = createOutlinedBox(0.38, 0.03, 0.26, laptopMat);
-  lt1Base.position.set(-1.2, 1.055, -0.45);
-  tableGroup.add(lt1Base);
-  const lt1Screen = createOutlinedBox(0.38, 0.24, 0.03, laptopScreenMat);
-  lt1Screen.position.set(-1.2, 1.18, -0.58);
-  lt1Screen.rotation.x = -0.15;
-  tableGroup.add(lt1Screen);
-
-  // Laptop 2 (East end)
-  const lt2Base = createOutlinedBox(0.38, 0.03, 0.26, laptopMat);
-  lt2Base.position.set(1.2, 1.055, 0.45);
-  tableGroup.add(lt2Base);
-  const lt2Screen = createOutlinedBox(0.38, 0.24, 0.03, laptopScreenMat);
-  lt2Screen.position.set(1.2, 1.18, 0.58);
-  lt2Screen.rotation.x = 0.15;
-  tableGroup.add(lt2Screen);
-
-  // Central Monitor on stand
-  const monStand = createOutlinedBox(0.25, 0.02, 0.25, tableLegMat);
-  monStand.position.set(0, 1.05, 0);
-  tableGroup.add(monStand);
-  const monPole = createOutlinedBox(0.06, 0.22, 0.06, tableLegMat);
-  monPole.position.set(0, 1.16, 0);
-  tableGroup.add(monPole);
-  const monScreen = createOutlinedBox(0.65, 0.42, 0.05, createMat(0x0f172a));
-  monScreen.position.set(0, 1.34, 0);
-  tableGroup.add(monScreen);
-  const monDisplay = createOutlinedBox(0.58, 0.36, 0.02, createMat(0x38bdf8));
-  monDisplay.position.set(0, 1.34, 0.035);
-  tableGroup.add(monDisplay);
-
-  // Coffee cups
-  const cup1 = createOutlinedBox(0.1, 0.12, 0.1, cupMat1);
-  cup1.position.set(-1.6, 1.1, -0.2);
-  tableGroup.add(cup1);
-
-  const cup2 = createOutlinedBox(0.1, 0.12, 0.1, cupMat2);
-  cup2.position.set(0.6, 1.1, -0.5);
-  tableGroup.add(cup2);
-
-  // Paper sheet stacks
-  const papers1 = createOutlinedBox(0.3, 0.03, 0.4, paperMat);
-  papers1.position.set(-0.6, 1.055, 0.4);
-  papers1.rotation.y = 0.2;
-  tableGroup.add(papers1);
-
-  const papers2 = createOutlinedBox(0.3, 0.02, 0.35, paperMat);
-  papers2.position.set(1.6, 1.055, -0.3);
-  papers2.rotation.y = -0.15;
-  tableGroup.add(papers2);
-
-  scene.add(tableGroup);
+  // Street lamp at grid (43, 21)
+  box(scene, 22.9, 23.1, -0.5, 1.8, 10.9, 11.1, 0x3a3d4a);
+  box(scene, 22.7, 23.3, 1.8, 2.0, 10.7, 11.3, 0xf9e79f);
 
   // ==========================================
-  // 5. BLACK WHEELED OFFICE CHAIRS
+  // 2. FLOOR ZONES
   // ==========================================
-  // Chair template builder: 5-prong rolling caster base, post, seat cushion, backrest
-  const chairMat = createMat(0x18181b); // dark black office mesh
-  const casterMat = createMat(0x09090b);
-  const chromeMat = createMat(0x94a3b8);
+  for (const zone of FLOOR_ZONES) {
+    gridBox(scene, zone.gx0, zone.gx1, zone.gz0, zone.gz1, -0.04, 0, zone.color, { outline: false });
+  }
 
-  const createWheeledChair = (x: number, z: number, angle: number): ThreeType.Group => {
-    const cg = new THREE.Group();
-    cg.position.set(x, 0, z);
-    cg.rotation.y = angle;
+  // ==========================================
+  // 3. WALLS, WINDOWS AND DOORS
+  // ==========================================
+  const WALL_H = 3.5;
+  // Back walls: north (gz 0) and west (gx 0), full height
+  box(scene, -20, 20, 0, WALL_H, -10.3, -10, WALL_CREAM);
+  box(scene, -20.3, -20, 0, WALL_H, -10, 10, WALL_CREAM);
+  // Front stubs (cutaway) on the south edge and the east edge, with the entrance door gap at gz 16–18
+  box(scene, -20, 20, 0, 0.35, 10, 10.3, WALL_CREAM_SHADE);
+  box(scene, 20, 20.3, 0, 0.35, -10, 6, WALL_CREAM_SHADE);
+  box(scene, 20, 20.3, 0, 0.35, 8, 10, WALL_CREAM_SHADE);
 
-    // Wheeled 5-star / cross base at floor level
-    const starBase1 = createOutlinedBox(0.54, 0.05, 0.1, casterMat);
-    starBase1.position.set(0, 0.06, 0);
-    cg.add(starBase1);
+  // Windows on the north wall (gx 13–16, 17–20, 21–24) and the west wall (meeting gz 3–7, lounge gz 15–18)
+  for (const [gx0, gx1] of [[13, 16], [17, 20], [21, 24]] as const) {
+    box(scene, gx0 - 20, gx1 - 20, 0.9, 2.9, -10, -9.95, GLASS, { outline: false, opacity: 0.55 });
+  }
+  box(scene, -20, -19.95, 0.9, 2.9, -7, -3, GLASS, { outline: false, opacity: 0.55 });
+  box(scene, -20, -19.95, 0.9, 2.9, 5, 8, GLASS, { outline: false, opacity: 0.55 });
 
-    const starBase2 = createOutlinedBox(0.1, 0.05, 0.54, casterMat);
-    starBase2.position.set(0, 0.06, 0);
-    cg.add(starBase2);
+  // Panoramic window in the director's office (gx 30.4–39.6): six panes, white mullions every 1.53
+  box(scene, 10.4, 19.6, 0.6, 3.2, -10, -9.95, GLASS, { outline: false, opacity: 0.55 });
+  for (let i = 0; i <= 6; i++) {
+    const x = 10.4 + i * (9.2 / 6);
+    box(scene, x - 0.05, x + 0.05, 0.6, 3.2, -10.02, -9.93, 0xffffff);
+  }
 
-    // Wheels / casters
-    const wheelGeom = createBoxGeom(0.08, 0.06, 0.08);
-    const wLocs = [
-      [-0.24, 0.03, 0],
-      [0.24, 0.03, 0],
-      [0, 0.03, -0.24],
-      [0, 0.03, 0.24],
-    ];
-    for (const [wx, wy, wz] of wLocs) {
-      const wh = new THREE.Mesh(wheelGeom, casterMat);
-      wh.position.set(wx!, wy!, wz!);
-      cg.add(wh);
+  // Wall screen (north wall gx 4–8, y 1.3–2.6) and the whiteboard (west wall gz 7.5–10, y 1.0–2.3)
+  box(scene, -16, -12, 1.3, 2.6, -10.1, -9.95, 0x2f3340);
+  box(scene, -15.8, -12.2, 1.45, 2.45, -9.94, -9.9, 0x2b4a6b, { outline: false });
+  box(scene, -20.1, -19.95, 1.0, 2.3, -2.5, 0, 0xffffff, { outline: false });
+  box(scene, -20.0, -19.9, 1.8, 2.0, -2.3, -2.1, 0xf472b6);
+  box(scene, -20.0, -19.9, 1.8, 2.0, -1.6, -1.4, 0xfef08a);
+  box(scene, -20.0, -19.9, 1.8, 2.0, -0.9, -0.7, 0x67e8f9);
+
+  // Interior walls from the layout: glass in the meeting room, walnut in the director's office, server grey in the server room
+  for (const wall of OFFICE_WALLS) {
+    if (wall.id.startsWith("wall_meeting")) {
+      box(scene, wall.minX, wall.maxX, 0, 2.6, wall.minZ, wall.maxZ, 0xcfe6ee, { outline: false, opacity: 0.35 });
+      box(scene, wall.minX, wall.maxX, 2.5, 2.6, wall.minZ, wall.maxZ, 0xf4f7f8);
+      continue;
     }
+    const isWalnut = wall.id.startsWith("wall_director");
+    const isServer = wall.id.startsWith("wall_server") || wall.id === "wall_kitchen_server";
+    const color = isWalnut ? WALNUT : isServer ? 0xe8eef0 : WALL_CREAM;
+    box(scene, wall.minX, wall.maxX, 0, wall.height, wall.minZ, wall.maxZ, color);
+    box(scene, wall.minX - 0.02, wall.maxX + 0.02, wall.height, wall.height + 0.04, wall.minZ - 0.02, wall.maxZ + 0.02, OUTLINE);
+    if (isWalnut) {
+      box(scene, wall.minX - 0.01, wall.maxX + 0.01, 1.3, 1.34, wall.minZ - 0.01, wall.maxZ + 0.01, BRASS, { outline: false });
+    }
+  }
 
-    // Chrome gas-lift center column
-    const column = createOutlinedBox(0.08, 0.34, 0.08, chromeMat);
-    column.position.set(0, 0.24, 0);
-    cg.add(column);
+  // Director's double door (gx 33.8–35.8, walnut leaves with brass handles, cornice over the opening)
+  box(scene, 13.8, 15.8, 0, 2.4, 0.85, 1.15, LEATHER_DARK);
+  box(scene, 13.8, 15.8, 2.4, 2.7, 0.85, 1.15, WALNUT);
+  box(scene, 14.1, 14.3, 0.8, 1.2, 0.7, 0.8, BRASS, { outline: false });
+  box(scene, 15.3, 15.5, 0.8, 1.2, 0.7, 0.8, BRASS, { outline: false });
+  // Glass double door on the east edge (gz 16–18)
+  box(scene, 19.9, 20.1, 0, 2.4, -4, -2, 0xaee1f4, { outline: false, opacity: 0.55 });
+  box(scene, 19.9, 20.1, 0, 2.4, 6.2, 6.3, 0xaee1f4, { outline: false, opacity: 0.55 });
+  box(scene, 19.9, 20.1, 0, 2.4, 7.9, 8.0, 0xaee1f4, { outline: false, opacity: 0.55 });
+  box(scene, 20, 21.2, -0.02, 0.01, 6, 8, 0x8a6a4a, { outline: false });
 
-    // Seat cushion (curved/ergonomic square)
-    const seatPad = createOutlinedBox(0.54, 0.1, 0.52, chairMat);
-    seatPad.position.set(0, 0.44, 0);
-    cg.add(seatPad);
-
-    // Ergonomic high backrest
-    const back = createOutlinedBox(0.52, 0.54, 0.08, chairMat);
-    back.position.set(0, 0.72, -0.24);
-    cg.add(back);
-
-    // Armrests
-    const armLeft = createOutlinedBox(0.06, 0.22, 0.32, chairMat);
-    armLeft.position.set(-0.28, 0.58, -0.02);
-    cg.add(armLeft);
-
-    const armRight = createOutlinedBox(0.06, 0.22, 0.32, chairMat);
-    armRight.position.set(0.28, 0.58, -0.02);
-    cg.add(armRight);
-
-    return cg;
+  // ==========================================
+  // 4. FURNITURE FROM THE LAYOUT
+  // ==========================================
+  const buildChair = (
+    x: number,
+    z: number,
+    angle: number,
+    cushion: number,
+    options?: { leather?: boolean; highBack?: boolean }
+  ) => {
+    const group = new THREE.Group();
+    group.position.set(x, 0, z);
+    group.rotation.y = angle;
+    const seatColor = options?.leather ? LEATHER : cushion;
+    box(group, -0.25, 0.25, 0.42, 0.52, -0.25, 0.25, seatColor);
+    box(group, -0.25, 0.25, 0.52, options?.highBack ? 1.35 : 0.9, -0.3, -0.22, seatColor);
+    box(group, -0.04, 0.04, 0, 0.42, -0.04, 0.04, CHAIR_BASE);
+    box(group, -0.25, 0.25, 0, 0.05, -0.25, 0.25, CHAIR_BASE, { outline: false });
+    scene.add(group);
   };
 
-  // Place 8 chairs at the official table seat coordinates
-  const chairSeats = [
-    { x: -2.6, z: 0, angle: Math.PI / 2 },
-    { x: 2.6, z: 0, angle: -Math.PI / 2 },
-    { x: -1.4, z: -1.6, angle: 0 },
-    { x: 0, z: -1.6, angle: 0 },
-    { x: 1.4, z: -1.6, angle: 0 },
-    { x: -1.4, z: 1.6, angle: Math.PI },
-    { x: 0, z: 1.6, angle: Math.PI },
-    { x: 1.4, z: 1.6, angle: Math.PI },
-  ];
-  for (const s of chairSeats) {
-    scene.add(createWheeledChair(s.x, s.z, s.angle));
+  const buildSofa = (prop: PropFootprint, color: number) => {
+    const wide = prop.maxX - prop.minX > prop.maxZ - prop.minZ;
+    box(scene, prop.minX, prop.maxX, 0, 0.42, prop.minZ, prop.maxZ, color);
+    if (wide) box(scene, prop.minX, prop.maxX, 0.42, 0.85, prop.minZ, prop.minZ + 0.25, color);
+    else box(scene, prop.minX, prop.minX + 0.25, 0.42, 0.85, prop.minZ, prop.maxZ, color);
+  };
+
+  const buildDecor = (id: string, minX: number, maxX: number, minZ: number, maxZ: number) => {
+    const cx = mid(minX, maxX);
+    const cz = mid(minZ, maxZ);
+    if (id === "prop_bust") {
+      box(scene, minX, maxX, 0, 1.0, minZ, maxZ, 0xeceae4);
+      box(scene, cx - 0.2, cx + 0.2, 1.0, 1.5, cz - 0.2, cz + 0.2, 0xeceae4);
+    } else if (id === "prop_credenza") {
+      box(scene, minX, maxX, 0, 0.75, minZ, maxZ, WALNUT);
+      box(scene, minX - 0.02, maxX + 0.02, 0.75, 0.8, minZ - 0.02, maxZ + 0.02, WALNUT_TOP);
+      box(scene, minX + 0.6, minX + 1.8, 0.8, 1.4, minZ + 0.1, minZ + 0.4, 0x9b6b3a);
+      box(scene, minX + 3.4, minX + 3.8, 0.8, 1.35, minZ + 0.2, minZ + 0.4, BRASS);
+      box(scene, minX + 4.6, minX + 5.0, 0.8, 1.0, minZ + 0.2, minZ + 0.4, 0xc3262e);
+    } else if (id.startsWith("prop_armchair")) {
+      box(scene, minX, maxX, 0, 0.85, minZ, maxZ, LEATHER);
+    } else if (id === "prop_globe") {
+      cylinder(scene, cx, cz, 0.04, 0, 0.5, 0x5c3a24);
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.4, 10, 8), material(0xc9b98a));
+      disposables.push(ball.geometry);
+      ball.position.set(cx, 0.9, cz);
+      scene.add(ball);
+    } else if (id === "prop_bar_island") {
+      box(scene, minX, maxX, 0, 0.95, minZ, maxZ, 0xf2e4c9);
+      box(scene, minX - 0.03, maxX + 0.03, 0.95, 1.0, minZ - 0.03, maxZ + 0.03, 0xe9a964);
+    } else if (id === "prop_fridge") {
+      box(scene, minX, maxX, 0, 2.0, minZ, maxZ, 0xc6d5da);
+    } else if (id === "prop_ac_unit") {
+      box(scene, minX, maxX, 0, 1.0, minZ, maxZ, 0xe8eef0);
+    } else if (id === "prop_tv_cabinet") {
+      box(scene, minX, maxX, 0, 0.5, minZ, maxZ, 0xa8693f);
+      box(scene, minX + 0.4, maxX - 0.4, 0.5, 1.2, minZ, minZ + 0.1, 0x3d363e);
+      box(scene, minX + 0.45, maxX - 0.45, 0.55, 1.15, minZ + 0.1, minZ + 0.12, 0x1f2430, { outline: false });
+    } else if (id === "prop_floor_lamp") {
+      box(scene, cx - 0.03, cx + 0.03, 0, 1.5, cz - 0.03, cz + 0.03, CHAIR_BASE);
+      box(scene, cx - 0.2, cx + 0.2, 1.4, 1.6, cz - 0.2, cz + 0.2, 0xf3e3b5);
+    } else if (id === "prop_coat_stand") {
+      box(scene, cx - 0.04, cx + 0.04, 0, 1.7, cz - 0.04, cz + 0.04, WALNUT_TOP);
+    } else if (id === "prop_bin") {
+      box(scene, minX, maxX, 0, 0.5, minZ, maxZ, 0x2563eb);
+    } else {
+      box(scene, minX, maxX, 0, 0.9, minZ, maxZ, 0xdfe6ea);
+    }
+  };
+
+  for (const furniture of OFFICE_PROPS) {
+    const { id, kind, minX, maxX, minZ, maxZ, zone } = furniture;
+    const cx = mid(minX, maxX);
+    const cz = mid(minZ, maxZ);
+
+    switch (kind) {
+      case "meeting_table": {
+        box(scene, minX, maxX, 0.85, 0.95, minZ, maxZ, 0xedb168);
+        for (const [lx, lz] of [[minX + 0.2, minZ + 0.2], [maxX - 0.2, minZ + 0.2], [minX + 0.2, maxZ - 0.2], [maxX - 0.2, maxZ - 0.2]]) {
+          box(scene, lx - 0.08, lx + 0.08, 0, 0.85, lz - 0.08, lz + 0.08, 0x8a5a3c);
+        }
+        // Laptops, papers and a mug
+        box(scene, -16.8, -16.2, 0.95, 0.98, -5.6, -5.2, 0x334155);
+        box(scene, -12.9, -12.1, 0.95, 0.98, -4.8, -4.4, 0x334155);
+        box(scene, -14.9, -14.1, 0.95, 0.97, -5.2, -4.8, 0xf8fafc, { outline: false });
+        box(scene, -11.4, -11.0, 0.95, 1.05, -5.6, -5.2, 0xef4444);
+        break;
+      }
+      case "meeting_chair": {
+        const seat = furniture.interactionPoints[0];
+        if (!seat) break;
+        const cushion = id === "prop_chair_chair_head" ? CUSHION_SLATE : id === "prop_chair_owner_head" ? CUSHION_ROSE : Math.round(seat.x + 20) % 2 === 0 ? CUSHION_ORANGE : TEAL;
+        buildChair(seat.x, seat.z, seat.approachAngle, cushion);
+        break;
+      }
+      case "workstation_desk": {
+        box(scene, minX, maxX, 0.7, 0.75, minZ, maxZ, 0xe39f60);
+        for (const [lx, lz] of [[minX + 0.1, minZ + 0.1], [maxX - 0.1, minZ + 0.1], [minX + 0.1, maxZ - 0.1], [maxX - 0.1, maxZ - 0.1]]) {
+          box(scene, lx - 0.04, lx + 0.04, 0, 0.7, lz - 0.04, lz + 0.04, 0xb8bcc4);
+        }
+        // Monitor (screen glows #77eaff), keyboard and a desk lamp
+        box(scene, cx - 0.3, cx + 0.3, 0.95, 1.25, cz - 0.4, cz - 0.35, 0x3a3d4a);
+        box(scene, cx - 0.26, cx + 0.26, 1.0, 1.2, cz - 0.35, cz - 0.34, 0x77eaff, { outline: false });
+        box(scene, cx - 0.2, cx + 0.2, 0.75, 0.78, cz - 0.05, cz + 0.1, 0xf8fafc);
+        box(scene, maxX - 0.25, maxX - 0.2, 0.75, 1.1, minZ + 0.1, minZ + 0.15, 0xf0d27a);
+        break;
+      }
+      case "workstation_chair": {
+        if (id.startsWith("prop_guest_chair")) {
+          buildChair(cx, cz, Math.PI, LEATHER, { leather: true });
+          break;
+        }
+        const seat = furniture.interactionPoints[0];
+        if (seat) buildChair(seat.x, seat.z, seat.approachAngle, CHAIR_SEAT);
+        break;
+      }
+      case "director_desk": {
+        box(scene, minX, maxX, 0.75, 0.8, minZ, maxZ, WALNUT_TOP);
+        box(scene, minX + 0.1, maxX - 0.1, 0.4, 0.75, minZ + 0.1, maxZ - 0.1, WALNUT);
+        const seat = furniture.interactionPoints[0];
+        if (seat) buildChair(seat.x, seat.z, seat.approachAngle, LEATHER_DARK, { leather: true, highBack: true });
+        // Banker's lamp, laptop, gold figurine, framed photo
+        box(scene, minX + 0.45, minX + 0.6, 0.8, 1.25, minZ + 0.45, minZ + 0.6, BRASS);
+        box(scene, minX + 0.25, minX + 0.8, 1.25, 1.4, minZ + 0.25, minZ + 0.8, 0x2f8f4e);
+        box(scene, minX + 1.75, minX + 2.25, 0.8, 1.05, minZ + 0.4, minZ + 0.7, 0xcbd5e1);
+        box(scene, minX + 1.1, minX + 1.3, 0.8, 1.02, minZ + 0.95, minZ + 1.15, BRASS);
+        box(scene, minX + 3.3, minX + 3.5, 0.8, 1.0, minZ + 0.45, minZ + 0.65, BRASS);
+        break;
+      }
+      case "bookshelf": {
+        const bodyColor = zone === "director" ? 0x6b4029 : 0x805242;
+        box(scene, minX, maxX, 0, 2.4, minZ, maxZ, bodyColor);
+        const palette = [0xc3182a, 0x3b82f6, 0x64a83b, 0xf0c419, 0xb5651d, LEATHER];
+        for (let shelf = 0; shelf < 4; shelf++) {
+          const y = 1.0 + shelf * 0.4;
+          for (let book = 0; book < 3; book++) {
+            const z0 = minZ + 0.08 + book * ((maxZ - minZ - 0.16) / 3);
+            box(scene, maxX, maxX + 0.02, y, y + 0.3, z0, z0 + 0.12, palette[(shelf + book) % palette.length]!, { outline: false });
+          }
+        }
+        break;
+      }
+      case "sofa":
+        buildSofa(furniture, zone === "director" ? LEATHER : TEAL);
+        break;
+      case "coffee_table":
+        box(scene, minX, maxX, 0.36, 0.4, minZ, maxZ, zone === "director" ? WALNUT : 0xa8693f);
+        break;
+      case "bar": {
+        box(scene, minX, maxX, 0, 1.0, minZ, maxZ, WALNUT);
+        box(scene, minX - 0.05, maxX + 0.05, 1.0, 1.05, minZ - 0.05, maxZ + 0.05, WALNUT_TOP);
+        box(scene, minX, maxX, 0.15, 0.16, maxZ, maxZ + 0.1, BRASS, { outline: false });
+        // Decanter (glass), three bottles and the espresso machine
+        box(scene, minX + 0.3, minX + 0.5, 1.05, 1.35, cz - 0.1, cz + 0.1, 0xe3f1f5);
+        box(scene, minX + 0.8, minX + 0.95, 1.05, 1.4, cz - 0.1, cz + 0.1, 0xb5651d);
+        box(scene, minX + 1.1, minX + 1.25, 1.05, 1.4, cz - 0.1, cz + 0.1, 0x3f6e3a);
+        box(scene, minX + 1.4, minX + 1.55, 1.05, 1.4, cz - 0.1, cz + 0.1, 0xb5651d);
+        box(scene, maxX - 0.7, maxX - 0.2, 1.05, 1.45, minZ + 0.1, maxZ - 0.1, 0x3d363e);
+        break;
+      }
+      case "coffee_counter": {
+        box(scene, minX, maxX, 0, 0.95, minZ, maxZ, 0xf2e4c9);
+        box(scene, minX - 0.03, maxX + 0.03, 0.95, 1.0, minZ - 0.03, maxZ + 0.03, 0xe9a964);
+        box(scene, minX + 0.3, minX + 0.7, 1.0, 1.35, minZ + 0.1, minZ + 0.4, 0x3d363e);
+        box(scene, maxX - 0.5, maxX - 0.3, 1.0, 1.1, minZ + 0.1, minZ + 0.3, 0xb8bcc4, { outline: false });
+        break;
+      }
+      case "water_cooler":
+        box(scene, minX, maxX, 0, 1.3, minZ, maxZ, 0xeef2f4);
+        cylinder(scene, cx, cz, 0.28, 1.3, 1.8, 0x4dbfe1);
+        break;
+      case "server_rack": {
+        box(scene, minX, maxX, 0, 2.2, minZ, maxZ, 0x25252d);
+        for (let y = 0.3; y < 2.1; y += 0.35) {
+          box(scene, minX + 0.05, maxX - 0.05, y, y + 0.08, maxZ, maxZ + 0.02, Math.round(y * 10) % 2 === 0 ? 0x4ade80 : 0x38bdf8, { outline: false });
+        }
+        break;
+      }
+      case "printer":
+        box(scene, minX, maxX, 0, 0.9, minZ, maxZ, 0xe8eef0);
+        box(scene, minX + 0.1, maxX - 0.1, 0.9, 0.93, minZ + 0.1, maxZ - 0.1, 0x9aa3ab);
+        break;
+      case "plant": {
+        const pot = zone === "director" ? BRASS : zone === "entrance" ? TEAL : TERRACOTTA;
+        const tall = zone === "director" ? 1.6 : 1.2;
+        const half = (maxX - minX) * 0.4;
+        box(scene, cx - half, cx + half, 0, 0.5, cz - half, cz + half, pot);
+        box(scene, cx - half - 0.25, cx + half + 0.25, 0.5, tall, cz - half - 0.25, cz + half + 0.25, LEAF);
+        box(scene, cx - 0.2, cx + 0.2, tall, tall + 0.3, cz - 0.2, cz + 0.2, LEAF_SHADE);
+        break;
+      }
+      case "reception":
+        box(scene, minX, maxX, 0, 1.0, minZ, maxZ, 0xf2e4c9);
+        box(scene, minX - 0.03, maxX + 0.03, 1.0, 1.05, minZ - 0.03, maxZ + 0.03, 0xe9a964);
+        box(scene, cx - 0.2, cx + 0.2, 1.05, 1.35, cz - 0.2, cz - 0.15, CHAIR_BASE);
+        break;
+      case "bench":
+        box(scene, minX, maxX, 0.42, 0.45, minZ, maxZ, 0xde985d);
+        for (const lx of [minX + 0.2, maxX - 0.2]) box(scene, lx - 0.04, lx + 0.04, 0, 0.42, minZ + 0.1, maxZ - 0.1, CHAIR_BASE);
+        break;
+      case "decor":
+        buildDecor(id, minX, maxX, minZ, maxZ);
+        break;
+      default:
+        // Markers only carry interaction points
+        break;
+    }
   }
 
-  // ==========================================
-  // 6. WORKSTATION DESKS & CRT / PC TOWERS & CABLES
-  // ==========================================
-  const deskLocations = [
-    { x: -3.6, z: -2.5, angle: 0 },
-    { x: -3.6, z: 2.5, angle: 0 },
-    { x: 3.6, z: -2.5, angle: 0 },
-  ];
-  const deskWoodMat = createMat(0xd4a373);
-  const pcTowerMat = createMat(0x1e293b);
-  const crtMat = createMat(0xf1f5f9);
-  const crtGlowMat = createMat(0x38bdf8);
-  const cableMat = createMat(0x09090b);
-
-  for (const dl of deskLocations) {
-    const dg = new THREE.Group();
-    dg.position.set(dl.x, 0, dl.z);
-
-    // Desk top and side panels
-    const deskMesh = createOutlinedBox(1.5, 0.88, 0.9, deskWoodMat);
-    deskMesh.position.set(0, 0.44, 0);
-    dg.add(deskMesh);
-
-    // CRT Monitor
-    const crtBody = createOutlinedBox(0.48, 0.42, 0.42, crtMat);
-    crtBody.position.set(0, 1.1, 0);
-    dg.add(crtBody);
-
-    const crtScreen = createOutlinedBox(0.4, 0.34, 0.04, crtGlowMat);
-    crtScreen.position.set(0, 1.1, 0.22);
-    dg.add(crtScreen);
-
-    // Keyboard
-    const kb = createOutlinedBox(0.4, 0.03, 0.16, crtMat);
-    kb.position.set(0, 0.895, 0.3);
-    dg.add(kb);
-
-    // PC Tower on floor beside desk
-    const tower = createOutlinedBox(0.24, 0.54, 0.48, pcTowerMat);
-    tower.position.set(-0.65, 0.27, 0);
-    dg.add(tower);
-
-    // Black cables on floor behind desk
-    const cable = createOutlinedBox(1.2, 0.02, 0.04, cableMat);
-    cable.position.set(0, 0.01, -0.38);
-    dg.add(cable);
-
-    scene.add(dg);
+  // Stools at the kitchen island (grid 14.5 / 16 / 17.5, gz 17.7)
+  for (const gx of [14.5, 16, 17.5]) {
+    cylinder(scene, gx - 20, 17.7 - 10, 0.12, 0, 0.7, 0xd98f5e);
   }
 
-  // ==========================================
-  // 7. FILING CABINET, BINS, CARDBOARD BOX, BAGS
-  // ==========================================
-  // Tall filing cabinet against back-left wall
-  const cabinetMat = createMat(0x475569);
-  const cabinet = createOutlinedBox(1.1, 2.3, 0.7, cabinetMat);
-  cabinet.position.set(-4.5, 1.15, -4.2);
-  scene.add(cabinet);
+  // Low teal dividers between the desk pairs (grid gz 4, gx 14–18 and 20–24). Desks already block walking.
+  const dividerA = gridRect(14, 18, 4, 4);
+  const dividerB = gridRect(20, 24, 4, 4);
+  box(scene, dividerA.minX, dividerA.maxX, 0.3, 1.15, -6.05, -5.95, 0x6fa8b0);
+  box(scene, dividerB.minX, dividerB.maxX, 0.3, 1.15, -6.05, -5.95, 0x6fa8b0);
 
-  // Drawer lines & silver handles on cabinet
-  for (let i = 0; i < 3; i++) {
-    const handle = createOutlinedBox(0.2, 0.04, 0.05, createMat(0xe2e8f0));
-    handle.position.set(-4.5, 0.6 + i * 0.65, -3.82);
-    scene.add(handle);
-  }
+  // Rugs: Persian under the director's desk, olive sitting corner, lounge rug
+  gridBox(scene, 31.8, 37.8, 1.6, 6.6, 0, 0.02, 0x8e2b3a, { outline: false });
+  gridBox(scene, 26.6, 31.6, 6.3, 9.8, 0, 0.02, 0x7a7046, { outline: false });
+  gridBox(scene, 2, 7, 15, 18, 0, 0.02, 0xdc9a5d, { outline: false });
 
-  // Cardboard box with packing tape stripe
-  const boxMat = createMat(0xb45309);
-  const tapeMat = createMat(0xfef08a);
-  const cardBox = createOutlinedBox(0.65, 0.55, 0.65, boxMat);
-  cardBox.position.set(-3.7, 0.275, -4.3);
-  cardBox.rotation.y = 0.25;
-  scene.add(cardBox);
-
-  const tape = createOutlinedBox(0.66, 0.08, 0.66, tapeMat);
-  tape.position.set(-3.7, 0.52, -4.3);
-  tape.rotation.y = 0.25;
-  scene.add(tape);
-
-  // Wastebasket / recycling bins (two bins as specified)
-  const binMat1 = createMat(0x0f172a); // dark bin
-  const bin1 = createOutlinedBox(0.35, 0.48, 0.35, binMat1);
-  bin1.position.set(-2.5, 0.24, -2.6);
-  scene.add(bin1);
-
-  const binMat2 = createMat(0x2563eb); // blue recycling bin
-  const bin2 = createOutlinedBox(0.35, 0.48, 0.35, binMat2);
-  bin2.position.set(4.4, 0.24, 2.3);
-  scene.add(bin2);
-
-  // Backpack leaning against desk leg
-  const backpackMat = createMat(0x0369a1);
-  const backpack = createOutlinedBox(0.35, 0.46, 0.28, backpackMat);
-  backpack.position.set(-2.7, 0.23, -2.1);
-  backpack.rotation.z = 0.15;
-  scene.add(backpack);
-
-  // Tall tote / laptop bag near meeting table
-  const toteMat = createMat(0x9a3412);
-  const tote = createOutlinedBox(0.18, 0.52, 0.38, toteMat);
-  tote.position.set(-2.2, 0.26, 0.9);
-  tote.rotation.y = 0.3;
-  scene.add(tote);
-
-  // ==========================================
-  // 8. COFFEE SPOT & COUNTER
-  // ==========================================
-  const coffeeGroup = new THREE.Group();
-  coffeeGroup.position.set(4.2, 0, 3.8);
-
-  const coffeeCounterMat = createMat(0xf1f5f9); // bright counter
-  const counterBase = createOutlinedBox(1.3, 1.05, 1.5, coffeeCounterMat);
-  counterBase.position.set(0, 0.525, 0);
-  coffeeGroup.add(counterBase);
-
-  // Countertop top surface
-  const counterTop = createOutlinedBox(1.36, 0.08, 1.56, createMat(0x1e293b));
-  counterTop.position.set(0, 1.08, 0);
-  coffeeGroup.add(counterTop);
-
-  // Coffee maker machine
-  const makerBase = createOutlinedBox(0.42, 0.5, 0.42, createMat(0x09090b));
-  makerBase.position.set(0, 1.34, 0);
-  coffeeGroup.add(makerBase);
-
-  // Glass coffee pot with brew
-  const potGlass = createOutlinedBox(0.28, 0.28, 0.28, createMat(0x78350f));
-  potGlass.position.set(0, 1.25, 0.12);
-  coffeeGroup.add(potGlass);
-
-  // Stack of clean ceramic mugs on counter
-  const mug1 = createOutlinedBox(0.12, 0.12, 0.12, createMat(0xfbbf24));
-  mug1.position.set(-0.4, 1.18, 0.2);
-  coffeeGroup.add(mug1);
-
-  const mug2 = createOutlinedBox(0.12, 0.12, 0.12, createMat(0xf87171));
-  mug2.position.set(-0.4, 1.18, -0.15);
-  coffeeGroup.add(mug2);
-
-  scene.add(coffeeGroup);
-
-  // ==========================================
-  // 9. POTTED PLANTS (Foliage & terracotta pots)
-  // ==========================================
-  const potMat = createMat(0xea580c); // terracotta
-  const leafMatDark = createMat(0x166534); // rich green
-  const leafMatLight = createMat(0x22c55e); // bright green
-
-  const plantLocs = [
-    { x: 4.2, z: -4.2 },
-    { x: -4.2, z: 4.2 },
-  ];
-  for (const pl of plantLocs) {
-    const pg = new THREE.Group();
-    pg.position.set(pl.x, 0, pl.z);
-
-    const pot = createOutlinedBox(0.7, 0.75, 0.7, potMat);
-    pot.position.set(0, 0.375, 0);
-    pg.add(pot);
-
-    const mainBush = createOutlinedBox(0.85, 0.95, 0.85, leafMatDark);
-    mainBush.position.set(0, 1.1, 0);
-    pg.add(mainBush);
-
-    const topBush = createOutlinedBox(0.65, 0.65, 0.65, leafMatLight);
-    topBush.position.set(0, 1.6, 0);
-    pg.add(topBush);
-
-    scene.add(pg);
-  }
+  // Lights: ambient plus one directional light from (1, 2, 0.35), no shadows (reference.md §4)
+  scene.add(new THREE.AmbientLight(0xffffff, 0.72));
+  const sun = new THREE.DirectionalLight(0xfff5ea, 0.45);
+  sun.position.set(1, 2, 0.35).multiplyScalar(10);
+  scene.add(sun);
 }

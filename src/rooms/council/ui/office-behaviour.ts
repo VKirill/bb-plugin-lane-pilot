@@ -1,4 +1,11 @@
 export * from "./office-layout";
+export {
+  isOfficeFloorBlocked as isFloorBlocked,
+  isOfficeSegmentBlocked as isLineSegmentBlocked,
+  findOfficeFloorPath as findOfficePath,
+} from "./office-layout";
+
+import { OFFICE_SPOTS, OWNER_SEAT_ID } from "./office-layout";
 
 export type OfficeActivity = "speaking" | "arguing" | "waiting" | "idle";
 
@@ -9,6 +16,8 @@ export type OfficeActor = {
   activity: OfficeActivity;
   bubble?: string;
   facing?: string;
+  /** Owner only, replay: the cursor is on the owner's message or on a reply to him within two messages. */
+  holdAtMeeting?: boolean;
 };
 
 export type CouncilDetailLike = {
@@ -18,32 +27,6 @@ export type CouncilDetailLike = {
   speakingSince?: number | null;
   seats: Array<{ id: string; title: string }>;
   messages: Array<{ seq: number; seatId: string; round: number; kind: string; text: string; at?: number }>;
-};
-
-export type OfficeObstacle = {
-  name: string;
-  minX: number;
-  maxX: number;
-  minZ: number;
-  maxZ: number;
-};
-
-export type OfficeSeat = {
-  id: string;
-  seatId: string;
-  x: number;
-  z: number;
-  angle: number;
-  speakX: number;
-  speakZ: number;
-};
-
-export type OfficeSpot = {
-  key: string;
-  x: number;
-  z: number;
-  angle: number;
-  action: "coffee" | "window" | "typing" | "bookshelf" | "plant";
 };
 
 export type OfficePose = {
@@ -79,48 +62,6 @@ const SEAT_PALETTE = [
 
 const TERMINAL_STATES = new Set(["done", "failed", "stopped"]);
 const IDLE_TIMEOUT_MS = 20000;
-
-export const OFFICE_OBSTACLES: OfficeObstacle[] = [
-  // Central table: 4.4 x 2.2 at (0, 0)
-  { name: "table", minX: -2.25, maxX: 2.25, minZ: -1.15, maxZ: 1.15 },
-  // Desks
-  { name: "desk1", minX: -4.45, maxX: -2.75, minZ: -3.05, maxZ: -1.95 },
-  { name: "desk2", minX: -4.45, maxX: -2.75, minZ: 1.95, maxZ: 3.05 },
-  { name: "desk3", minX: 2.75, maxX: 4.45, minZ: -3.05, maxZ: -1.95 },
-  // Coffee counter: at (4.2, 3.8), size 1.4 x 1.6 -> x: [3.5, 4.9], z: [3.0, 4.6]
-  { name: "coffee", minX: 3.45, maxX: 4.95, minZ: 2.95, maxZ: 4.65 },
-  // Bookshelf: at (-4.2, -4.2), size 1.8 x 0.8 -> x: [-5.1, -3.3], z: [-4.6, -3.8]
-  { name: "bookshelf", minX: -5.15, maxX: -3.25, minZ: -4.65, maxZ: -3.75 },
-  // Plants
-  { name: "plant1", minX: 3.7, maxX: 4.7, minZ: -4.7, maxZ: -3.7 },
-  { name: "plant2", minX: -4.7, maxX: -3.7, minZ: 3.7, maxZ: 4.7 },
-];
-
-export const OFFICE_SEATS: OfficeSeat[] = [
-  // West head (Chair)
-  { id: "seat_chair", seatId: "chair", x: -2.6, z: 0, angle: Math.PI / 2, speakX: -2.5, speakZ: -0.6 },
-  // East head (Owner)
-  { id: "seat_owner", seatId: "owner", x: 2.6, z: 0, angle: -Math.PI / 2, speakX: 2.5, speakZ: 0.6 },
-  // North side (facing south)
-  { id: "seat_n1", seatId: "n1", x: -1.4, z: -1.6, angle: 0, speakX: -1.4, speakZ: -1.35 },
-  { id: "seat_n2", seatId: "n2", x: 0, z: -1.6, angle: 0, speakX: 0, speakZ: -1.35 },
-  { id: "seat_n3", seatId: "n3", x: 1.4, z: -1.6, angle: 0, speakX: 1.4, speakZ: -1.35 },
-  // South side (facing north)
-  { id: "seat_s1", seatId: "s1", x: -1.4, z: 1.6, angle: Math.PI, speakX: -1.4, speakZ: 1.35 },
-  { id: "seat_s2", seatId: "s2", x: 0, z: 1.6, angle: Math.PI, speakX: 0, speakZ: 1.35 },
-  { id: "seat_s3", seatId: "s3", x: 1.4, z: 1.6, angle: Math.PI, speakX: 1.4, speakZ: 1.35 },
-];
-
-export const OFFICE_SPOTS: Record<string, OfficeSpot> = {
-  desk1: { key: "desk1", x: -3.6, z: -1.4, angle: -Math.PI / 2, action: "typing" },
-  desk2: { key: "desk2", x: -3.6, z: 1.4, angle: -Math.PI / 2, action: "typing" },
-  desk3: { key: "desk3", x: 3.6, z: -1.4, angle: Math.PI / 2, action: "typing" },
-  coffee: { key: "coffee", x: 2.9, z: 3.8, angle: Math.PI / 4, action: "coffee" },
-  bookshelf: { key: "bookshelf", x: -3.8, z: -3.2, angle: -Math.PI / 4, action: "bookshelf" },
-  window: { key: "window", x: -4.0, z: 0, angle: -Math.PI / 2, action: "window" },
-  plant1: { key: "plant1", x: 3.5, z: -3.5, angle: Math.PI / 4, action: "plant" },
-  plant2: { key: "plant2", x: -3.5, z: 3.5, angle: -3 * Math.PI / 4, action: "plant" },
-};
 
 export function seatColor(id: string, seatsOrIndex?: Array<{ id: string }> | number): string {
   if (id === "owner") return "#e11d48"; // rose
@@ -190,31 +131,16 @@ export function formatBubbleText(text: string, max = 80): string {
   return `${plain.slice(0, max - 1).trimEnd()}…`;
 }
 
-export type DioramaBounds = {
-  width: number;
-  depth: number;
-  height?: number;
-};
+/** Projected floor bounds of slab and back walls at the reference camera (reference.md §4). */
+export const OFFICE_FIT = { width: 44.4, height: 22.7, centerY: 1.3 };
 
-export function fitCamera(
-  bounds: DioramaBounds,
-  aspect: number,
-  margin = 0.08
-): { viewSize: number } {
-  const w = bounds.width;
-  const d = bounds.depth;
-  const h = bounds.height ?? 4.0;
-
-  // Isometric projection bounding box at 45 deg azimuth and ~35.264 deg elevation
-  const projWidth = (w + d) * Math.SQRT1_2;
-  const projHeight = (w + d) * 0.4082 + h * 0.8165;
-
-  const usableRatio = Math.max(0.1, 1 - 2 * margin);
-  const neededViewH = projWidth / (Math.max(0.01, aspect) * usableRatio);
-  const neededViewV = projHeight / usableRatio;
-
-  const viewSize = Math.max(neededViewH, neededViewV);
-  return { viewSize };
+/**
+ * Orthographic view size for a canvas of the given aspect (width / height): contain the floor with 3 % padding.
+ */
+export function fitOfficeCamera(aspect: number): { viewWidth: number; viewHeight: number; centerY: number } {
+  const safeAspect = Math.max(0.1, aspect);
+  const viewHeight = Math.max(OFFICE_FIT.height, OFFICE_FIT.width / safeAspect) * 1.03;
+  return { viewWidth: viewHeight * safeAspect, viewHeight, centerY: OFFICE_FIT.centerY };
 }
 
 export type ScreenLabel = {
@@ -232,6 +158,9 @@ export type ResolvedLabel = {
   y: number;
   collapsed: boolean;
 };
+
+/** Tags overlapping an earlier one by more than this share of the smaller box collapse to a dot. */
+const LABEL_OVERLAP_LIMIT = 0.3;
 
 export function resolveLabelCollisions(
   labels: ScreenLabel[],
@@ -258,7 +187,7 @@ export function resolveLabelCollisions(
     return minArea > 0 ? intersection / minArea : 0;
   };
 
-  // Pass 1: Collapse crowded non-speakers
+  // Pass 1: collapse crowded non-speakers
   for (let i = 0; i < result.length; i++) {
     for (let j = i + 1; j < result.length; j++) {
       const orig1 = labels[i]!;
@@ -266,20 +195,20 @@ export function resolveLabelCollisions(
       const r1 = result[i]!;
       const r2 = result[j]!;
 
-      const w1 = r1.collapsed ? 16 : orig1.width;
-      const h1 = r1.collapsed ? 16 : orig1.height;
-      const w2 = r2.collapsed ? 16 : orig2.width;
-      const h2 = r2.collapsed ? 16 : orig2.height;
+      const w1 = r1.collapsed ? 10 : orig1.width;
+      const h1 = r1.collapsed ? 10 : orig1.height;
+      const w2 = r2.collapsed ? 10 : orig2.width;
+      const h2 = r2.collapsed ? 10 : orig2.height;
 
       const overlap = calcOverlap({ x: r1.x, y: r1.y, width: w1, height: h1 }, { x: r2.x, y: r2.y, width: w2, height: h2 });
-      if (overlap > 0.10) {
+      if (overlap > LABEL_OVERLAP_LIMIT) {
         if (!orig1.isSpeaker) r1.collapsed = true;
         if (!orig2.isSpeaker) r2.collapsed = true;
       }
     }
   }
 
-  // Pass 2: Separate any remaining overlaps
+  // Pass 2: separate any remaining overlaps
   for (let pass = 0; pass < 3; pass++) {
     for (let i = 0; i < result.length; i++) {
       for (let j = i + 1; j < result.length; j++) {
@@ -288,13 +217,13 @@ export function resolveLabelCollisions(
         const r1 = result[i]!;
         const r2 = result[j]!;
 
-        const w1 = r1.collapsed ? 16 : orig1.width;
-        const h1 = r1.collapsed ? 16 : orig1.height;
-        const w2 = r2.collapsed ? 16 : orig2.width;
-        const h2 = r2.collapsed ? 16 : orig2.height;
+        const w1 = r1.collapsed ? 10 : orig1.width;
+        const h1 = r1.collapsed ? 10 : orig1.height;
+        const w2 = r2.collapsed ? 10 : orig2.width;
+        const h2 = r2.collapsed ? 10 : orig2.height;
 
         const overlap = calcOverlap({ x: r1.x, y: r1.y, width: w1, height: h1 }, { x: r2.x, y: r2.y, width: w2, height: h2 });
-        if (overlap > 0.10) {
+        if (overlap > LABEL_OVERLAP_LIMIT) {
           const dy = r2.y - r1.y;
           const shift = Math.max(2, ((h1 + h2) / 2 - Math.abs(dy)) / 2 + 2);
           if (orig1.isSpeaker) {
@@ -314,272 +243,14 @@ export function resolveLabelCollisions(
     for (let i = 0; i < result.length; i++) {
       const r = result[i]!;
       const orig = labels[i]!;
-      const w = r.collapsed ? 16 : orig.width;
-      const h = r.collapsed ? 16 : orig.height;
+      const w = r.collapsed ? 10 : orig.width;
+      const h = r.collapsed ? 10 : orig.height;
       r.x = Math.max(w / 2 + 4, Math.min(bounds.width - w / 2 - 4, r.x));
       r.y = Math.max(h / 2 + 4, Math.min(bounds.height - h / 2 - 4, r.y));
     }
   }
 
   return result;
-}
-
-export function isFloorBlocked(x: number, z: number, margin = 0): boolean {
-  if (x < -5.0 + margin || x > 5.0 - margin || z < -5.0 + margin || z > 5.0 - margin) {
-    return true;
-  }
-  for (const obs of OFFICE_OBSTACLES) {
-    if (
-      x >= obs.minX - margin &&
-      x <= obs.maxX + margin &&
-      z >= obs.minZ - margin &&
-      z <= obs.maxZ + margin
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Checks whether a direct line between two points crosses any obstacle.
- */
-export function isLineSegmentBlocked(
-  x1: number,
-  z1: number,
-  x2: number,
-  z2: number,
-  margin = 0
-): boolean {
-  const dist = Math.hypot(x2 - x1, z2 - z1);
-  const steps = Math.max(2, Math.ceil(dist / 0.1));
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    const px = x1 + (x2 - x1) * t;
-    const pz = z1 + (z2 - z1) * t;
-    if (isFloorBlocked(px, pz, margin)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
- * Coarse grid A* pathfinding on the office floor to navigate around furniture.
- */
-export function findOfficePath(
-  start: { x: number; z: number },
-  target: { x: number; z: number }
-): Array<{ x: number; z: number }> {
-  // If direct line is clear, return direct destination
-  if (!isLineSegmentBlocked(start.x, start.z, target.x, target.z)) {
-    return [{ x: target.x, z: target.z }];
-  }
-
-  // Grid bounds: -4.8 to 4.8 with 0.4 step
-  const STEP = 0.4;
-  const MIN_COORD = -4.8;
-  const MAX_COORD = 4.8;
-  const GRID_SIZE = Math.round((MAX_COORD - MIN_COORD) / STEP) + 1;
-
-  const toGridX = (x: number) =>
-    Math.max(0, Math.min(GRID_SIZE - 1, Math.round((x - MIN_COORD) / STEP)));
-  const toGridZ = (z: number) =>
-    Math.max(0, Math.min(GRID_SIZE - 1, Math.round((z - MIN_COORD) / STEP)));
-  const toWorldX = (gx: number) => MIN_COORD + gx * STEP;
-  const toWorldZ = (gz: number) => MIN_COORD + gz * STEP;
-
-  const startGx = toGridX(start.x);
-  const startGz = toGridZ(start.z);
-  const targetGx = toGridX(target.x);
-  const targetGz = toGridZ(target.z);
-
-  // If start is blocked, find nearest unblocked neighbor
-  let actualStartGx = startGx;
-  let actualStartGz = startGz;
-  if (isFloorBlocked(toWorldX(actualStartGx), toWorldZ(actualStartGz))) {
-    let bestDist = Infinity;
-    for (let dx = -2; dx <= 2; dx++) {
-      for (let dz = -2; dz <= 2; dz++) {
-        const nx = startGx + dx;
-        const nz = startGz + dz;
-        if (nx >= 0 && nx < GRID_SIZE && nz >= 0 && nz < GRID_SIZE) {
-          if (!isFloorBlocked(toWorldX(nx), toWorldZ(nz))) {
-            const d = Math.hypot(dx, dz);
-            if (d < bestDist) {
-              bestDist = d;
-              actualStartGx = nx;
-              actualStartGz = nz;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  // If target is blocked, find nearest unblocked neighbor
-  let actualTargetGx = targetGx;
-  let actualTargetGz = targetGz;
-  if (isFloorBlocked(toWorldX(actualTargetGx), toWorldZ(actualTargetGz))) {
-    let bestDist = Infinity;
-    for (let dx = -2; dx <= 2; dx++) {
-      for (let dz = -2; dz <= 2; dz++) {
-        const nx = targetGx + dx;
-        const nz = targetGz + dz;
-        if (nx >= 0 && nx < GRID_SIZE && nz >= 0 && nz < GRID_SIZE) {
-          if (!isFloorBlocked(toWorldX(nx), toWorldZ(nz))) {
-            const d = Math.hypot(dx, dz);
-            if (d < bestDist) {
-              bestDist = d;
-              actualTargetGx = nx;
-              actualTargetGz = nz;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  const key = (gx: number, gz: number) => `${gx},${gz}`;
-  const startKey = key(actualStartGx, actualStartGz);
-  const targetKey = key(actualTargetGx, actualTargetGz);
-
-  type Node = { gx: number; gz: number; g: number; f: number };
-  const openSet = new Map<string, Node>();
-  const closedSet = new Set<string>();
-  const cameFrom = new Map<string, { gx: number; gz: number }>();
-
-  const h = (gx: number, gz: number) =>
-    Math.hypot(toWorldX(gx) - toWorldX(actualTargetGx), toWorldZ(gz) - toWorldZ(actualTargetGz));
-
-  openSet.set(startKey, {
-    gx: actualStartGx,
-    gz: actualStartGz,
-    g: 0,
-    f: h(actualStartGx, actualStartGz),
-  });
-
-  const dirs = [
-    { dx: 1, dz: 0, cost: 1 },
-    { dx: -1, dz: 0, cost: 1 },
-    { dx: 0, dz: 1, cost: 1 },
-    { dx: 0, dz: -1, cost: 1 },
-    { dx: 1, dz: 1, cost: 1.414 },
-    { dx: -1, dz: 1, cost: 1.414 },
-    { dx: 1, dz: -1, cost: 1.414 },
-    { dx: -1, dz: -1, cost: 1.414 },
-  ];
-
-  let found = false;
-  let maxIters = 800;
-
-  while (openSet.size > 0 && maxIters-- > 0) {
-    let current: Node | null = null;
-    for (const node of openSet.values()) {
-      if (!current || node.f < current.f) {
-        current = node;
-      }
-    }
-    if (!current) break;
-
-    const currentKey = key(current.gx, current.gz);
-    if (currentKey === targetKey) {
-      found = true;
-      break;
-    }
-
-    openSet.delete(currentKey);
-    closedSet.add(currentKey);
-
-    for (const d of dirs) {
-      const ngx = current.gx + d.dx;
-      const ngz = current.gz + d.dz;
-      if (ngx < 0 || ngx >= GRID_SIZE || ngz < 0 || ngz >= GRID_SIZE) continue;
-
-      const nKey = key(ngx, ngz);
-      if (closedSet.has(nKey)) continue;
-
-      const wx = toWorldX(ngx);
-      const wz = toWorldZ(ngz);
-      if (isFloorBlocked(wx, wz)) continue;
-
-      // For diagonals, ensure adjacent orthogonal cells are clear
-      if (d.dx !== 0 && d.dz !== 0) {
-        if (
-          isFloorBlocked(toWorldX(current.gx + d.dx), toWorldZ(current.gz)) ||
-          isFloorBlocked(toWorldX(current.gx), toWorldZ(current.gz + d.dz))
-        ) {
-          continue;
-        }
-      }
-
-      const tentativeG = current.g + d.cost * STEP;
-      const existing = openSet.get(nKey);
-      if (!existing || tentativeG < existing.g) {
-        cameFrom.set(nKey, { gx: current.gx, gz: current.gz });
-        openSet.set(nKey, {
-          gx: ngx,
-          gz: ngz,
-          g: tentativeG,
-          f: tentativeG + h(ngx, ngz),
-        });
-      }
-    }
-  }
-
-  const rawPath: Array<{ x: number; z: number }> = [];
-  if (found) {
-    let currKey = targetKey;
-    while (currKey !== startKey) {
-      const [gxStr, gzStr] = currKey.split(",");
-      const gx = Number(gxStr);
-      const gz = Number(gzStr);
-      rawPath.push({ x: toWorldX(gx), z: toWorldZ(gz) });
-      const prev = cameFrom.get(currKey);
-      if (!prev) break;
-      currKey = key(prev.gx, prev.gz);
-    }
-    rawPath.reverse();
-  }
-
-  // Combine full path for smoothing: start -> raw grid points -> target
-  const fullPath: Array<{ x: number; z: number }> = [
-    { x: start.x, z: start.z },
-    ...rawPath,
-  ];
-  if (
-    fullPath.length === 1 ||
-    Math.hypot(
-      fullPath[fullPath.length - 1]!.x - target.x,
-      fullPath[fullPath.length - 1]!.z - target.z
-    ) > 0.05
-  ) {
-    fullPath.push({ x: target.x, z: target.z });
-  }
-
-  // String pulling / line-of-sight shortcutting
-  const smoothedPath: Array<{ x: number; z: number }> = [];
-  let currIdx = 0;
-  while (currIdx < fullPath.length - 1) {
-    let farthest = currIdx + 1;
-    for (let next = fullPath.length - 1; next > currIdx + 1; next--) {
-      if (
-        !isLineSegmentBlocked(
-          fullPath[currIdx]!.x,
-          fullPath[currIdx]!.z,
-          fullPath[next]!.x,
-          fullPath[next]!.z
-        )
-      ) {
-        farthest = next;
-        break;
-      }
-    }
-    smoothedPath.push(fullPath[farthest]!);
-    currIdx = farthest;
-  }
-
-  return smoothedPath.length > 0 ? smoothedPath : [{ x: target.x, z: target.z }];
 }
 
 /**
@@ -613,47 +284,6 @@ export function walkStep(
     reached: false,
     heading,
   };
-}
-
-/**
- * Assigns distinct chairs at the meeting table to each actor.
- * Guarantees uniqueness: no two actors share a seat.
- */
-export function assignOfficeSeats(
-  actors: Array<{ id: string }>
-): Map<string, OfficeSeat> {
-  const assignments = new Map<string, OfficeSeat>();
-  const usedSeatIndices = new Set<number>();
-
-  // Deterministically prioritize "chair" and "owner"
-  actors.forEach((actor) => {
-    let seatIdx = -1;
-    if (actor.id === "chair" && !usedSeatIndices.has(0)) {
-      seatIdx = 0;
-    } else if (actor.id === "owner" && !usedSeatIndices.has(1)) {
-      seatIdx = 1;
-    }
-
-    if (seatIdx !== -1) {
-      usedSeatIndices.add(seatIdx);
-      assignments.set(actor.id, OFFICE_SEATS[seatIdx]!);
-    }
-  });
-
-  // Assign remaining seats
-  let nextAvailable = 0;
-  actors.forEach((actor) => {
-    if (assignments.has(actor.id)) return;
-    while (usedSeatIndices.has(nextAvailable % OFFICE_SEATS.length)) {
-      nextAvailable++;
-    }
-    const idx = nextAvailable % OFFICE_SEATS.length;
-    usedSeatIndices.add(idx);
-    nextAvailable++;
-    assignments.set(actor.id, OFFICE_SEATS[idx]!);
-  });
-
-  return assignments;
 }
 
 /**
@@ -749,13 +379,10 @@ export function getOfficePose(
       leftArmPitch = -0.55 + Math.sin(tick * 10) * 0.15;
       rightArmPitch = -0.55 - Math.sin(tick * 10) * 0.15;
       headPitch = 0.2;
-    } else if (action === "coffee") {
+    } else if (action === "coffee" || action === "bar") {
       rightArmPitch = -1.1 + Math.sin(tick * 2) * 0.06;
       rightArmYaw = 0.45;
       leftArmPitch = 0.1;
-    } else if (action === "bookshelf") {
-      rightArmPitch = -1.8 + Math.sin(tick * 2) * 0.1;
-      headPitch = -0.25;
     } else if (action === "window") {
       leftArmPitch = 0.2;
       rightArmPitch = 0.2;
@@ -808,6 +435,19 @@ function truncateBubble(text: string, max = 80): string {
   return `${trimmed.slice(0, max - 1).trimEnd()}…`;
 }
 
+/** Replay: the owner holds at the meeting table while his message is current or a reply to him is within two messages. */
+function ownerHoldsMeeting(detail: CouncilDetailLike, cursor: number, activeSpeakerId: string | null): boolean {
+  if (activeSpeakerId === OWNER_SEAT_ID) return true;
+  const idx = detail.messages.findIndex((m) => m.seq === cursor);
+  if (idx < 0) return false;
+  for (let j = idx; j <= Math.min(detail.messages.length - 1, idx + 2); j++) {
+    const message = detail.messages[j]!;
+    const previous = detail.messages[j - 1];
+    if (message.kind === "reply" && previous?.seatId === OWNER_SEAT_ID) return true;
+  }
+  return false;
+}
+
 export function deriveOfficeActors(
   detail: CouncilDetailLike,
   cursor: number | null,
@@ -842,7 +482,6 @@ export function deriveOfficeActors(
       }
     }
 
-    const hasOwnerMsg = visibleMessages.some((m) => m.seatId === "owner");
     const actors: OfficeActor[] = [];
 
     // Chair
@@ -857,19 +496,18 @@ export function deriveOfficeActors(
       ...(activeSpeakerId === "chair" && activeMsg?.kind === "reply" && previousSpeakerId ? { facing: previousSpeakerId } : {}),
     });
 
-    // Owner (only if spoke up to cursor)
-    if (hasOwnerMsg) {
-      actors.push({
-        id: "owner",
-        label: "Owner",
-        color: seatColor("owner", detail.seats),
-        activity: "owner" === activeSpeakerId
-          ? (activeMsg?.kind === "reply" ? "arguing" : "speaking")
-          : nonSpeakerActivity,
-        ...(activeSpeakerId === "owner" && activeMsg ? { bubble: formatBubbleText(activeMsg.text) } : {}),
-        ...(activeSpeakerId === "owner" && activeMsg?.kind === "reply" && previousSpeakerId ? { facing: previousSpeakerId } : {}),
-      });
-    }
+    // Owner: always on the floor; he speaks only under the cursor on his own message
+    actors.push({
+      id: OWNER_SEAT_ID,
+      label: "Owner",
+      color: seatColor(OWNER_SEAT_ID, detail.seats),
+      activity: OWNER_SEAT_ID === activeSpeakerId
+        ? (activeMsg?.kind === "reply" ? "arguing" : "speaking")
+        : "idle",
+      holdAtMeeting: ownerHoldsMeeting(detail, cursor, activeSpeakerId),
+      ...(activeSpeakerId === OWNER_SEAT_ID && activeMsg ? { bubble: formatBubbleText(activeMsg.text) } : {}),
+      ...(activeSpeakerId === OWNER_SEAT_ID && activeMsg?.kind === "reply" && previousSpeakerId ? { facing: previousSpeakerId } : {}),
+    });
 
     // Regular seats
     for (const seat of detail.seats) {
@@ -899,7 +537,6 @@ export function deriveOfficeActors(
   );
   const isWandering = isTerminal || isIdleTimeout || (!liveSpeaker && !detail.speakingSince);
 
-  const hasOwnerMsg = detail.messages.some((m) => m.seatId === "owner");
   const latestMsg = detail.messages.length > 0 ? detail.messages[detail.messages.length - 1] : null;
 
   const getLiveBubble = (id: string): string => {
@@ -936,20 +573,18 @@ export function deriveOfficeActors(
     ...(chairIsSpeaking && replyFacing ? { facing: replyFacing } : {}),
   });
 
-  // Owner (only if owner sent a message)
-  if (hasOwnerMsg) {
-    const ownerIsSpeaking = liveSpeaker === "owner";
-    actors.push({
-      id: "owner",
-      label: "Owner",
-      color: seatColor("owner", detail.seats),
-      activity: ownerIsSpeaking
-        ? (latestMsg?.kind === "reply" && latestMsg.seatId === "owner" ? "arguing" : "speaking")
-        : (isWandering ? "idle" : "waiting"),
-      ...(ownerIsSpeaking ? { bubble: getLiveBubble("owner") } : {}),
-      ...(ownerIsSpeaking && replyFacing ? { facing: replyFacing } : {}),
-    });
-  }
+  // Owner: always on the floor
+  const ownerIsSpeaking = liveSpeaker === OWNER_SEAT_ID;
+  actors.push({
+    id: OWNER_SEAT_ID,
+    label: "Owner",
+    color: seatColor(OWNER_SEAT_ID, detail.seats),
+    activity: ownerIsSpeaking
+      ? (latestMsg?.kind === "reply" && latestMsg.seatId === OWNER_SEAT_ID ? "arguing" : "speaking")
+      : "idle",
+    ...(ownerIsSpeaking ? { bubble: getLiveBubble(OWNER_SEAT_ID) } : {}),
+    ...(ownerIsSpeaking && replyFacing ? { facing: replyFacing } : {}),
+  });
 
   // Seats
   for (const seat of detail.seats) {

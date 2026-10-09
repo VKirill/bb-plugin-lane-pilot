@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "council-office-desktop-floor-v2",
+  "task_sha256": "96f780c454b81e972f48f5e26d3b8af037cd03697424c3f023e3a381fff31ee5",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "cf9836100b53b321d615c8e3dd02f1327bc9296eb577fb1d84b8b66886443459",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-09T14:01:17.904Z",
+  "model": "claude-haiku-5-5"
+}
