@@ -29,7 +29,6 @@ const cases: Array<[string, boolean]> = [
   ["/home/ubuntu/.bb-machines/x/npm/lib/node_modules/bb-app/host-daemon/dist/bb thread tell thr_abc hi", true],
   ["\"$BB_CLI\" thread tell thr_abc hi", true],
   ["bb thread spawn --project p --prompt x", false],
-  ["bb thread archive thr_abc", false],
   ["bb thread update thr_abc --title x", false],
   ["bb thread fork thr_abc", false],
   ["bb thread queue delete thr_abc qmsg_1", false],
@@ -131,5 +130,44 @@ describe("BB native PM can run project node scripts", () => {
   });
   it("keeps the terminal orchestrator's bb allowlist as it was", () => {
     expect(allowed("dev-orchestrator", "bb plugin reload lane-pilot")).toBe(2);
+  });
+});
+
+// 2026-10-09: the owner asked the PM to stop a stuck writer thread and the guard refused. Stopping, archiving, unarchiving and cancelling
+// a plan are open to the Lane Pilot PM; starting a thread and changing settings are not. The terminal orchestrator's list is unchanged.
+describe("the Lane Pilot PM stops, archives and cancels threads and reads settings, and nothing more", () => {
+  const allowedForPm = [
+    "bb thread stop thr_abc",
+    "bb thread archive thr_abc",
+    "bb thread unarchive thr_abc --json",
+    "bb thread cancel-plan thr_abc",
+    "bb settings show",
+    "bb settings show --json",
+    "bb settings usage",
+    "bb settings version",
+  ];
+  const refusedForPm = [
+    "bb thread new --project p --prompt x",
+    "bb thread stop thr_abc && bb thread new --prompt x",
+    "bb settings general set theme dark",
+    "bb settings general update x 1",
+    "bb settings set theme dark",
+  ];
+  for (const command of allowedForPm) {
+    it(`lane-pilot-pm and the native PM allow: ${command}`, () => {
+      expect(allowed("lane-pilot-pm", command), command).toBe(0);
+      expect(allowedNative(command), command).toBe(0);
+    });
+  }
+  for (const command of refusedForPm) {
+    it(`lane-pilot-pm and the native PM refuse: ${command}`, () => {
+      expect(allowed("lane-pilot-pm", command), command).toBe(2);
+      expect(allowedNative(command), command).toBe(2);
+    });
+  }
+  it("the terminal orchestrator still cannot stop, archive or read settings", () => {
+    expect(allowed("dev-orchestrator", "bb thread archive thr_abc")).toBe(2);
+    expect(allowed("dev-orchestrator", "bb thread stop thr_abc")).toBe(2);
+    expect(allowed("dev-orchestrator", "bb settings show")).toBe(2);
   });
 });

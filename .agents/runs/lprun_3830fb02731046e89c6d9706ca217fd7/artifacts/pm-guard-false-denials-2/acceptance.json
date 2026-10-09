@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "pm-guard-false-denials-2",
+  "task_sha256": "cb17bc0c2bd47788d049679addb71ced1460ca669c72bd803d83cc1dccedd396",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "2f26ef35eba23b2a7838c6e51020ee307c42bdb3eceec3341992c3c31a310e4a",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-09T16:38:30.524Z",
+  "model": "claude-haiku-5-5"
+}
