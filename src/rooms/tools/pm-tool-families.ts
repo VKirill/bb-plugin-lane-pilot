@@ -50,6 +50,7 @@ export const PM_CORE_TOOLS = [
   "lane_pilot_answer_writer",
   "lane_pilot_cancel_task",
   "lane_pilot_update_task",
+  "lane_pilot_reassign_task",
   "lane_pilot_workspace_status",
   "lane_pilot_run_health",
   "lane_pilot_ask_owner",

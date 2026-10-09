@@ -88,6 +88,12 @@ export function areaHistoryText(record: AreaRecord | null): string {
   ].filter(Boolean).join("\n");
 }
 
+/** A reassigned task's writer is stopped: the area stops pointing at its thread, so the area's next task starts a writer of its own. */
+export async function retireAreaWriter(kv: Kv, projectId: string, area: string, threadId: string): Promise<void> {
+  const record = await loadArea(kv, projectId, area);
+  if (record?.threadId === threadId) await kv.set(areaKey(projectId, area), null as never);
+}
+
 /** Main moved under the task and git found conflicting lines: the writer that made the work resolves them. */
 export function resolveInSameThread(state: string, reason: string | null | undefined): boolean {
   return state === "validation_failed" && /^merge_conflict: main changed since this attempt started: \S/.test(reason ?? "");

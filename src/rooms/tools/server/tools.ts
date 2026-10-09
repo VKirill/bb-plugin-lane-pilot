@@ -22,7 +22,7 @@ import { mountToolFamilies } from "./tool-families";
 import { registerObservedTool, ToolError } from "../../core/server";
 import { compactDispatchReply, compactReceipt, stageDetail } from "../../runs/server";
 import { createWriterAnswer } from "../../writer/server";
-import { createWriterUpdateTask } from "../../writer/server";
+import { createWriterReassign, createWriterUpdateTask } from "../../writer/server";
 import { z } from "zod";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
@@ -133,6 +133,29 @@ export function registerTools(ctx: ServerCore, services: Services) {
         null,
         2,
       );
+    },
+  });
+
+  const { reassignTask } = createWriterReassign(ctx);
+  registerObservedTool(bb.agents, {
+    name:"lane_pilot_reassign_task",
+    description:"Move a running task to a fresh writer thread in the same worktree, on the requested model or the current writer settings. The task keeps its id and dependents; no attempt is spent.",
+    instructions:"Use only from a Lane Pilot PM thread, when a task's writer is stuck on a dead provider or the owner wants the task on another model. Only a running task can move: a queued one starts with the current settings, and a finished or parked one returns not_reassignable with its state. Give model (and providerId when it is another provider), or leave both out for the current writer settings. The old writer stops, its edits in the worktree carry over, and the new writer starts from a handoff brief. newThreadId null means the new writer has not started yet; it starts once the old one has stopped. reasoningEffort sets the new writer's effort; the service tier is the project's default.",
+    parameters:z.object({
+      taskId:z.string().min(1),
+      providerId:z.string().min(1).max(200).optional(),
+      model:z.string().min(1).max(200).optional(),
+      reasoningEffort:z.string().min(1).max(40).optional(),
+      reason:z.string().min(1).max(300).optional(),
+    }).strict(),
+    execute: async (params, context) => {
+      const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:context.threadId });
+      const runId = typeof (metadata as Record<string, unknown> | null)?.lanePilotRunId === "string" ? String((metadata as Record<string, unknown>).lanePilotRunId) : null;
+      if ((metadata as Record<string, unknown> | null)?.role !== "pm" || !runId) {
+        throw new ToolError("caller is not a Lane Pilot PM thread", { code: "not_pm_thread", retryable: false, sideEffects: "none" });
+      }
+      return JSON.stringify(await reassignTask({ projectId:context.projectId, runId, taskId:params.taskId, providerId:params.providerId,
+        model:params.model, reasoningEffort:params.reasoningEffort, reason:params.reason }), null, 2);
     },
   });
 

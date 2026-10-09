@@ -112,6 +112,7 @@ it("gives specialists no bb-bridge tools and keeps the folded PM list (core tool
     "mcp__bb-bridge__lane_pilot_answer_writer",
     "mcp__bb-bridge__lane_pilot_cancel_task",
     "mcp__bb-bridge__lane_pilot_update_task",
+    "mcp__bb-bridge__lane_pilot_reassign_task",
     "mcp__bb-bridge__lane_pilot_workspace_status",
     "mcp__bb-bridge__lane_pilot_run_health",
     "mcp__bb-bridge__lane_pilot_ask_owner",

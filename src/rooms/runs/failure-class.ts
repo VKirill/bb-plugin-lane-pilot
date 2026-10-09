@@ -13,8 +13,10 @@
  * - budget: a run hit run.max_*; uncharged, not parked, not retried.
  * - limit: the writer's provider takes no work now (plan, quota, credits, or its breaker is open); uncharged, the task
  *   moves down the writer chain at once.
+ * - reassign: the PM moved the task to a fresh writer thread (lane_pilot_reassign_task); its old writer's stop is not a
+ *   failure: uncharged, the new writer continues the worktree.
  */
-export type FailureClass = "task" | "provider" | "merge" | "dirty_base" | "harness" | "infra" | "contract" | "judgment" | "budget" | "limit";
+export type FailureClass = "task" | "provider" | "merge" | "dirty_base" | "harness" | "infra" | "contract" | "judgment" | "budget" | "limit" | "reassign";
 
 import { cleanCheckOutput } from "@lane-pilot/kit";
 
@@ -22,6 +24,8 @@ import { cleanCheckOutput } from "@lane-pilot/kit";
 export const NO_ANSWER_REASON = "writer returned no output";
 
 const JUDGMENT = /needs_human/i;
+/** The reason an attempt ends with when the PM reassigned its task (writer/server/reassign.ts writes it): free, see FREE_CLASSES. */
+const REASSIGNED = /^reassigned:/;
 const MERGE = /(^|: )merge_conflict/i;
 // Before 0.1.117 a merge that git refused for another reason (a stale index.lock) was called a conflict with no files. Those rows
 // are still in the database, but no code path writes that reason any more (git-integrate.ts answers `failed`, i.e. merge_failed,
@@ -82,6 +86,7 @@ const TASK_REASON = /owns_paths|outside|ownership|changed no files|no files|code
 export function classifyFailure(state:string, reason:string | null | undefined):{ cls:FailureClass; confident:boolean } {
   const text = (reason ?? "").replace(RETRY_LIMIT_WRAPPER, "");
   const sure = (cls:FailureClass) => ({ cls, confident:true });
+  if (REASSIGNED.test(text)) return sure("reassign");
   if (VERDICT_BLOCK.test(text)) return sure("contract");
   if (JUDGMENT.test(text)) return sure("judgment");
   if (BUDGET.test(text) || RETRY_BUDGET.test(text)) return sure("budget");
@@ -152,7 +157,7 @@ export const isEnvironmentCheckFailure = (check:{ stdout?:string; stderr?:string
 };
 
 /** Failures that do not spend one of the task's attempts. */
-export const FREE_CLASSES:ReadonlySet<FailureClass> = new Set(["merge", "dirty_base", "harness", "infra", "budget", "limit"]);
+export const FREE_CLASSES:ReadonlySet<FailureClass> = new Set(["merge", "dirty_base", "harness", "infra", "budget", "limit", "reassign"]);
 /** What the PM does next about a task that did not end accepted, by its failure class; shown in wait receipts. */
 export function nextStep(state:string, reason:string | null | undefined):string {
   if (["queued", "running", "spawn_requested", "validating"].includes(state)) return "wait: the writer is still on it";
@@ -164,6 +169,7 @@ export function nextStep(state:string, reason:string | null | undefined):string 
     case "judgment": return "answer_writer: answer its question with lane_pilot_answer_writer (taskId, answer); the writer continues in its thread";
     case "harness": case "infra": return "parked: restarts by itself once the fault clears; do nothing";
     case "limit": return "moves down the writer chain by itself; do nothing";
+    case "reassign": return "moved to a fresh writer thread by the PM in the same worktree; do nothing";
     case "merge": return "redone on the new main by itself; do nothing";
     case "dirty_base": return "the main checkout has uncommitted changes in files this task changes (see the reason): commit or discard them there; the task is parked and restarts by itself after a backoff (three tries), then redispatch it";
     case "contract": return "fix the contract: lane_pilot_update_task if it has not started, else dispatch it again with the changed contract";
