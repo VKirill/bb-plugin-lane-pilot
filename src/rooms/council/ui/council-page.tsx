@@ -23,8 +23,12 @@ type CouncilDetail = {
 const TERMINAL = new Set(["done", "failed", "stopped"]);
 const PROJECT_KEY = "lane-pilot:council:project";
 const DRAWER_KEY = "lane-pilot:council:drawer";
-/** Below this block width the page is the chat only (layout.md §5). */
+/** Below this window width the page is the chat only (layout.md §5). The window decides, so the office shows with the BB sidebar open. */
 const DESKTOP_MIN = 1024;
+/** Below this content block width the drawer overlays the office instead of docking beside it. */
+const DOCK_MIN = 1024;
+/** Overlay drawer top: below the 44 px top bar and its 8 px margin, so the chat toggle stays clickable. */
+const TOPBAR_OVERLAY_TOP = 56;
 const DRAWER_WIDE_MIN = 1280;
 const DRAWER_WIDE = 380;
 const DRAWER_NARROW = 340;
@@ -41,6 +45,16 @@ function speakerName(detail: CouncilDetail, seatId: string): string {
   if (seatId === "chair") return t("councilChair");
   if (seatId === "moderator") return t("councilModerator");
   return detail.seats.find((seat) => seat.id === seatId)?.title ?? seatId;
+}
+
+function useWindowWidth(): number {
+  const [width, setWidth] = useState(() => (typeof window === "undefined" ? 0 : window.innerWidth));
+  useEffect(() => {
+    const onResize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return width;
 }
 
 function readDrawerOpen(): boolean {
@@ -68,7 +82,9 @@ export function CouncilPage() {
   const feed = useRef<HTMLDivElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const width = useObservedWidth(rootRef);
-  const desktop = width >= DESKTOP_MIN;
+  const windowWidth = useWindowWidth();
+  const desktop = windowWidth >= DESKTOP_MIN;
+  const docked = width >= DOCK_MIN;
   const drawerWidth = width >= DRAWER_WIDE_MIN ? DRAWER_WIDE : DRAWER_NARROW;
 
   useEffect(() => {
@@ -257,17 +273,25 @@ export function CouncilPage() {
     </header>
   ) : null;
 
+  // Collapsed: plain text clamped to four whole lines with an ellipsis. Expanded: the full Markdown, scrollable within 40 % of the screen height.
+  const decisionText = detail ? (detail.recommendation ? stripMarkdown(detail.recommendation) : detail.reason ?? "") : "";
   const decisionPanel = detail && hasDecision ? (
     <div className={`shrink-0 min-w-0 border-2 p-2 text-sm shadow-[2px_2px_0_#0f172a] ${detail.reason ? "border-red-500 bg-red-50" : "border-emerald-700 bg-emerald-50"}`} data-testid="council-decision">
-      <div className="flex items-center justify-between gap-2">
-        <span className={`font-mono text-xs font-bold uppercase ${detail.reason ? "text-red-700" : "text-emerald-800"}`}>★ {t("councilDecision")}</span>
-        <button type="button" className="font-mono text-xs" onClick={() => setDecisionOpen((open) => !open)} aria-expanded={decisionOpen}>{decisionOpen ? "▴" : "▾"}</button>
+      <div className={`font-mono text-xs font-bold uppercase ${detail.reason ? "text-red-700" : "text-emerald-800"}`}>★ {t("councilDecision")}</div>
+      {decisionOpen ? (
+        <div className="mt-1 max-h-[40vh] min-w-0 overflow-y-auto">
+          {detail.reason ? <div className="font-mono text-xs text-red-700">{detail.reason}</div> : null}
+          {detail.recommendation ? <Markdown content={detail.recommendation} className={MARKDOWN_CLASS} /> : null}
+        </div>
+      ) : (
+        <div className="mt-1 line-clamp-4 break-words" data-testid="council-decision-clamp">{decisionText}</div>
+      )}
+      <div className="mt-1 flex items-center justify-between gap-2">
+        {detail.decisionPath ? <span className="min-w-0 truncate font-mono text-xs text-emerald-700">{detail.decisionPath}</span> : <span />}
+        <button type="button" className="shrink-0 font-mono text-xs underline" onClick={() => setDecisionOpen((open) => !open)} aria-expanded={decisionOpen}>
+          {decisionOpen ? t("councilCollapse") : t("councilExpand")}
+        </button>
       </div>
-      <div className={`mt-1 min-w-0 overflow-y-auto ${decisionOpen ? "max-h-[40%]" : "max-h-16 overflow-hidden"}`}>
-        {detail.reason ? <div className="font-mono text-xs text-red-700">{detail.reason}</div> : null}
-        {detail.recommendation ? <Markdown content={detail.recommendation} className={MARKDOWN_CLASS} /> : null}
-      </div>
-      {detail.decisionPath ? <div className="mt-1 font-mono text-xs text-emerald-700">{detail.decisionPath}</div> : null}
     </div>
   ) : null;
 
@@ -280,7 +304,7 @@ export function CouncilPage() {
           </ol>
         </Disclosure>
       ) : null}
-      <Disclosure compact summary={`${detail.seats.length}`} testId="council-seats">
+      <Disclosure compact summary={`${t("councilSeats")} (${detail.seats.length})`} testId="council-seats">
         <ul className="space-y-1 text-xs font-mono">
           {detail.seats.map((seat) => (
             <li key={seat.id}>
@@ -389,7 +413,7 @@ export function CouncilPage() {
   // ---- Desktop: the office is the page; the drawer docks on the right, the top bar floats ----
 
   const drawerPanel = detail && drawerOpen ? (
-    <section className={`absolute bottom-2 right-2 top-2 z-40 flex min-h-0 flex-col ${PIXEL_CARD}`} style={{ width: drawerWidth }} data-testid="council-drawer">
+    <section className={`absolute bottom-2 right-2 z-40 flex min-h-0 flex-col ${PIXEL_CARD}`} style={{ width: drawerWidth, top: docked ? 8 : TOPBAR_OVERLAY_TOP }} data-testid="council-drawer">
       <div className="flex shrink-0 items-start gap-2 border-b-2 border-slate-900 p-2">
         <div className="min-w-0 flex-1">{header}</div>
         <button type="button" className="pixel-btn shrink-0 bg-white px-2 py-1 font-mono text-xs font-bold" onClick={() => setDrawerOpen(false)}>✕</button>
@@ -437,10 +461,10 @@ export function CouncilPage() {
   );
 
   return (
-    <div ref={rootRef} className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden" data-testid="council-page" data-council-layout={desktop ? "desktop" : "chat"} data-bb-ru-skip>
+    <div ref={rootRef} className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden" data-testid="council-page" data-council-layout={desktop ? "desktop" : "chat"} data-drawer-mode={docked ? "dock" : "overlay"} data-bb-ru-skip>
       {desktop ? (
         <>
-          <div className="absolute inset-y-0 left-0" style={{ right: drawerOpen && detail ? drawerWidth + 16 : 0 }}>
+          <div className="absolute inset-y-0 left-0" style={{ right: drawerOpen && detail && docked ? drawerWidth + 16 : 0 }}>
             {detail ? (
               <Suspense fallback={null}>
                 <CouncilOffice
@@ -460,7 +484,7 @@ export function CouncilPage() {
               </Suspense>
             )}
           </div>
-          <div className="absolute left-2 top-2 z-30" style={{ right: drawerOpen && detail ? drawerWidth + 16 : 8 }}>
+          <div className="absolute left-2 top-2 z-30" style={{ right: drawerOpen && detail && docked ? drawerWidth + 16 : 8 }}>
             {topBar}
           </div>
           {!projects.length ? <p className="absolute left-3 top-16 z-30 bg-[var(--lp-card)] px-2 text-sm text-muted-foreground">{t("councilNoProjects")}</p> : null}
