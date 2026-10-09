@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase, createRun, createTask, createAttempt, getTask, getTaskPlan, savePrototypeConfig, listStageReceipts, saveProjectSetting, transitionAttempt } from "../src/rooms/storage/database";
+import { openDatabase, createRun, createTask, createAttempt, countAttempts, getAttempt, getTask, getTaskPlan, savePrototypeConfig, listStageReceipts, saveProjectSetting, transitionAttempt } from "../src/rooms/storage/database";
 import { createWriterUpdateTask } from "../src/rooms/writer/server/update-task";
 import type { TaskV2 } from "../src/rooms/contracts";
 import type { ServerCore } from "../src/rooms/core/server/core";
@@ -246,6 +246,140 @@ describe("lane_pilot_update_task", () => {
       const res = await update(updateTask, { title: "New" });
       expect(res.ok).toBe(true);
       expect((getTask(db, taskId)?.contract as TaskV2).title).toBe("New");
+    });
+  });
+
+  describe("a blocked task whose writer asked a question", () => {
+    const question = "Which check runs the fitness tests?";
+    const newVerification = [{ command: "npx vitest run tests/fitness/", cwd: "/ws/apps/marketing" }];
+
+    const blockedWith = (reason: string) => {
+      createTask(db, { id: taskId, runId, kind: "bb", contract: baseTask });
+      createAttempt(db, { id: "att-1", runId, taskId });
+      db.prepare("UPDATE lane_pilot_attempt SET state='blocked', reason=?, thread_id='thr-w', workspace_path='/ws/worktrees/att-1' WHERE id='att-1'").run(reason);
+    };
+
+    const setup = (options: { failSend?: boolean; busy?: boolean } = {}) => {
+      const sent: Array<{ threadId: string; input: Array<{ text: string }> }> = [];
+      const writes: Array<{ path: string; content: string }> = [];
+      const started: Array<{ runId: string; taskId: string; firstAttemptId: string; writerThreadId: string; task: TaskV2 }> = [];
+      const bbWithThreads = {
+        ...fakeBb,
+        sdk: {
+          files: {
+            read: async () => null,
+            write: async (args: { path: string; content: string }) => { writes.push(args); },
+          },
+          threads: {
+            send: async (args: { threadId: string; input: Array<{ text: string }> }) => {
+              if (options.failSend) throw new Error("thread gone");
+              sent.push(args);
+            },
+          },
+        },
+      };
+      const ctx = {
+        bb: bbWithThreads as never,
+        db,
+        host: {
+          call: async (method: string, input: { paths?: string[] }) => method === "snapshotDryRun"
+            ? { entries: (input.paths ?? []).map((path) => ({ path, kind: "missing" })) }
+            : { exitCode: 0, stdout: "", stderr: "" },
+        },
+        state: { disposed: false },
+        log: () => {},
+        getThreadBounded: async () => ({ id: "thr-w", status: "idle" }),
+        acceptedTaskWorkspace: (_runId: string, _taskId: string, _workspace: string, contract: TaskV2) =>
+          ({ task: contract, path: "/ws/worktrees/att-1", environmentId: null }),
+      } as unknown as ServerCore;
+      const services = {
+        activeWriterTasks: new Set<string>(options.busy ? [`${runId}:${taskId}`] : []),
+        stability: { loadParked: async () => [] },
+        startWriterTask: (input: (typeof started)[number]) => { started.push(input); },
+      } as unknown as Services;
+      return { updateTask: createWriterUpdateTask(ctx, services).updateTask, sent, writes, started };
+    };
+
+    it("fixes a check in place: the same attempt reopens in the same writer thread, no attempt is charged, the writer is told the change", async () => {
+      blockedWith(`needs_human: ${question}`);
+      const { updateTask, sent, writes, started } = setup();
+      const attemptsBefore = countAttempts(db, runId, taskId);
+
+      const res = await updateTask({ projectId, runId, pmThreadId, taskId, task: { ...baseTask, verification: newVerification } });
+
+      expect(res).toMatchObject({ ok: true, attemptId: "att-1", writerThreadId: "thr-w", state: "running", changed: ["verification"] });
+      expect((getTask(db, taskId)?.contract as TaskV2).verification).toMatchObject(newVerification);
+      expect(getAttempt(db, "att-1")?.state).toBe("running");
+      expect(countAttempts(db, runId, taskId)).toBe(attemptsBefore);
+
+      // The validation of the reopened attempt runs under the new contract.
+      expect(started).toHaveLength(1);
+      expect(started[0]).toMatchObject({ runId, taskId, firstAttemptId: "att-1", writerThreadId: "thr-w" });
+      expect(started[0]?.task.verification).toMatchObject(newVerification);
+
+      // The writer gets one turn in its own thread, naming the changed field with its old and new value.
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.threadId).toBe("thr-w");
+      const turn = sent[0]!.input[0]!.text;
+      expect(turn).toContain(`Your question was: ${question}`);
+      expect(turn).toMatch(/- verification: \[\{"command":"npm test".*→ \[\{"command":"npx vitest run tests\/fitness\/"/);
+      expect(turn).toContain("NEEDS_HUMAN:");
+
+      // The question and the PM's fix are kept in the task folder's Q&A.
+      const qa = writes.find((write) => write.path.endsWith("/QA.md"));
+      expect(qa?.content).toContain(`Q (writer): ${question}`);
+      expect(qa?.content).toContain("- verification:");
+    });
+
+    it("refuses to change the objective of a blocked task, with a redispatch hint, and changes nothing", async () => {
+      blockedWith(`needs_human: ${question}`);
+      const { updateTask, sent, started } = setup();
+
+      const res = await updateTask({ projectId, runId, pmThreadId, taskId, task: { ...baseTask, objective: "A different objective" } });
+
+      expect(res.error).toMatchObject({ code: "redispatch_required", retryable: false, sideEffects: "none" });
+      expect(String((res.error as { hint: string }).hint)).toContain("objective need a redispatch");
+      expect((getTask(db, taskId)?.contract as TaskV2).objective).toBe("Original objective");
+      expect(getAttempt(db, "att-1")?.state).toBe("blocked");
+      expect(sent).toEqual([]);
+      expect(started).toEqual([]);
+    });
+
+    it("a blocked task whose writer stopped on a fault, not a question, still answers task_started", async () => {
+      blockedWith("retry limit 2 exhausted");
+      const { updateTask, started } = setup();
+
+      const res = await updateTask({ projectId, runId, pmThreadId, taskId, task: { ...baseTask, verification: newVerification } });
+
+      expect(res.error).toMatchObject({ code: "task_started", retryable: false, sideEffects: "none" });
+      expect(started).toEqual([]);
+    });
+
+    it("does not touch the contract while the writer is still finishing", async () => {
+      blockedWith(`needs_human: ${question}`);
+      const { updateTask, started } = setup({ busy: true });
+
+      const res = await updateTask({ projectId, runId, pmThreadId, taskId, task: { ...baseTask, verification: newVerification } });
+
+      expect(res.error).toMatchObject({ code: "not_reopenable", retryable: false, sideEffects: "none" });
+      expect(String((res.error as { hint: string }).hint)).toContain("still finishing");
+      expect((getTask(db, taskId)?.contract as TaskV2).verification[0]?.command).toBe("npm test");
+      expect(getAttempt(db, "att-1")?.state).toBe("blocked");
+      expect(started).toEqual([]);
+    });
+
+    it("a turn that cannot be delivered puts the stored contract and plan back and leaves the attempt blocked", async () => {
+      blockedWith(`needs_human: ${question}`);
+      const { updateTask, started } = setup({ failSend: true });
+
+      const res = await updateTask({ projectId, runId, pmThreadId, taskId, task: { ...baseTask, verification: newVerification } });
+
+      expect(res.error).toMatchObject({ code: "not_reopenable", retryable: false, sideEffects: "none" });
+      expect(String((res.error as { hint: string }).hint)).toContain("could not be delivered");
+      expect((getTask(db, taskId)?.contract as TaskV2).verification[0]?.command).toBe("npm test");
+      expect(getTaskPlan(db, taskId)).toBe("Original objective");
+      expect(getAttempt(db, "att-1")?.state).toBe("blocked");
+      expect(started).toEqual([]);
     });
   });
 });

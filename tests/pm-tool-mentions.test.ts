@@ -12,6 +12,11 @@ it("names only tools the PM actually has, in its prompt and its per-run instruct
   expect(missing).toEqual([]);
 });
 
+// A monorepo check that ran from the repo root with --root read the wrong folder and pulled a whole package suite (2026-10-09).
+it("warns the PM about monorepo checks: the package folder as cwd, named test files, no --root", () => {
+  expect(LANE_PILOT_PM_SESSION).toMatch(/In a monorepo[\s\S]*package folder[\s\S]*names its test files or folder[\s\S]*avoid `--root`/);
+});
+
 it("tells the PM how to wait for quiet helpers and what to do with its own receipts", () => {
   expect(LANE_PILOT_PM_SESSION).toContain("lane_pilot_relay` with `action: \"remind\"` and their `taskIds`");
   expect(LANE_PILOT_PM_SESSION).toMatch(/## Receipts[\s\S]*needs_human[\s\S]*Lane Pilot's own fault/);
