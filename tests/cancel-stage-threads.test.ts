@@ -85,8 +85,8 @@ describe("cancel stops the task's running stage helper threads", () => {
     recordStage(w.db, { runId:"run", taskId:"t1", stageId:"pm-read", state:"pending", input:"write" });
     recordStage(w.db, { runId:"run", taskId:"t1", stageId:"pm-read", state:"running", input:"write", threadId:"pm-read-thread" });
     await w.cancel();
-    expect(() => recordStage(w.db, { runId:"run", taskId:"t1", stageId:"pm-read", state:"passed", input:"write", threadId:"pm-read-thread" }))
-      .toThrow("illegal stage transition pm-read: canceled -> passed");
+    // The late result is dropped, not thrown: a throw failed the whole dispatch of the canceled task.
+    expect(() => recordStage(w.db, { runId:"run", taskId:"t1", stageId:"pm-read", state:"passed", input:"write", threadId:"pm-read-thread" })).not.toThrow();
     expect(w.stage("pm-read")).toMatchObject({ state:"canceled" });
   });
 

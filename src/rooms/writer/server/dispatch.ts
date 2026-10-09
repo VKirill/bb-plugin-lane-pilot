@@ -21,7 +21,7 @@ import { runPlanCritique, runPmRead, runSpecialistReview } from "../../critique/
 import { closeWriterStages, recordStage } from "../../runs/server";
 import { id, stringAt, valueAt } from "../../core/server";
 import { buildTask } from "./writer-task";
-import { dispatchReply, startDispatchRun, workflowEngineEnabled } from "./dispatch-workflow";
+import { dispatchReply, endedAttemptReply, startDispatchRun, workflowEngineEnabled } from "./dispatch-workflow";
 import { countRunNudges } from "./writer-silence";
 import { isAbsolute, relative, resolve } from "node:path";
 import type { ServerCore } from "../../core/server";
@@ -169,9 +169,12 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
       recordStage(db, { runId, taskId, stageId, state:"pending", input:canonicalPlan });
     }
+    // A cancel while the stages run ends the attempt: a stage verdict after it leaves the attempt, its stages and the run alone.
+    const ended = () => endedAttemptReply(db, runId, taskId, attemptId);
     const runStages = async (): Promise<Record<string,unknown>> => {
       const pmRead=await runPmRead({bb,db,projectId:args.projectId,runId,taskId,pmThreadId:args.threadId,config:runConfig,task:valid.task});
       if(pmRead.state==="failed") {
+        { const stopped=ended(); if(stopped) return stopped; }
         const reason=`pm_read_failed:${pmRead.reason ?? "unknown"}`;
         recordStage(db,{runId,taskId,stageId:"plan-critique",state:"skipped",input:canonicalPlan,reason:"PM read stage failed"});
         recordStage(db,{runId,taskId,stageId:"specialist-review",state:"skipped",input:canonicalPlan,reason:"PM read stage failed"});
@@ -181,9 +184,11 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
         refreshRun(runId);
         return {runId,taskId,attemptId,state:"blocked",reason,stages:listStageReceipts(db,runId,taskId)};
       }
+      { const stopped=ended(); if(stopped) return stopped; }
       const critique = await runPlanCritique({ bb, db, projectId:args.projectId, runId, taskId,
         config:runConfig, task:valid.task, plan:canonicalPlan, pmReadContext:pmRead.summary || undefined });
       if (!critique.allowed) {
+        { const stopped=ended(); if(stopped) return stopped; }
         recordStage(db, { runId, taskId, stageId:"specialist-review", state:"skipped", input:canonicalPlan,
           reason:"plan-critique did not allow dispatch" });
         for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
@@ -194,9 +199,11 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
         setRunState(db, runId, "blocked");
         return { runId, taskId, attemptId, state:"blocked", reason:critique.reason, stages:listStageReceipts(db, runId, taskId) };
       }
+      { const stopped=ended(); if(stopped) return stopped; }
       const specialist = await runSpecialistReview({bb,db,projectId:args.projectId,runId,taskId,
         config:runConfig,task:valid.task,plan:canonicalPlan});
       if (!specialist.allowed) {
+        { const stopped=ended(); if(stopped) return stopped; }
         for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
           recordStage(db,{runId,taskId,stageId,state:"skipped",input:canonicalPlan,reason:"specialist review did not allow dispatch"});
         }
@@ -211,6 +218,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
         requestedHostId:config.hostId,projectCwd:workspacePath,...(args.baseRef===undefined?{}:{baseRef:args.baseRef}),
       },{hostId:config.hostId,timeoutMs:30_000});
       if(gitBase&&gitBase.status!=="ready"&&(args.baseRef!==undefined||gitBase.status!=="not-git")) {
+        { const stopped=ended(); if(stopped) return stopped; }
         const reason=`git ownership base unavailable: ${gitBase.reason??gitBase.status}`;
         recordStage(db,{runId,taskId,stageId:"run-gate",state:"blocked",input:canonicalPlan,
           result:{decision:"ownership_base_unavailable",baseRef:args.baseRef??null},reason});
@@ -225,6 +233,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       if(gitBase?.status==="ready"&&!saveTaskGitBase(db,taskId,{
         baseRef:gitBase.baseRef,baseSha:gitBase.baseSha,initialHeadSha:gitBase.headSha!,branch:gitBase.branch!,compareCommitted:gitBase.compareCommitted,
       })) {
+        { const stopped=ended(); if(stopped) return stopped; }
         const reason="could not persist immutable git ownership base snapshot";
         recordStage(db,{runId,taskId,stageId:"run-gate",state:"blocked",input:canonicalPlan,result:{decision:"ownership_base_persist_failed"},reason});
         for(const stageId of ["writer-agent","verification","acceptance-receipt"] as const) recordStage(db,{runId,taskId,stageId,state:"skipped",input:canonicalPlan,reason});
@@ -252,8 +261,8 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
         bb.log.warn(`Lane Pilot could not persist task folder for ${taskId}: ${cause instanceof Error ? cause.message : String(cause)}`);
       }
       // A cancel during the stages ends the queued attempt: the writer must not start for it.
-      const waiting = getAttempt(db, attemptId);
-      if (waiting?.state !== "queued") return { runId, taskId, attemptId, state:waiting?.state ?? "canceled", reason:waiting?.reason ?? "attempt ended before its stages finished", stages:listStageReceipts(db, runId, taskId) };
+      const stopped = ended();
+      if (stopped) return stopped;
       transitionAttempt(db, attemptId, "queued");
       services.startWriterTask({
         projectId:args.projectId, runId, taskId, firstAttemptId:attemptId,

@@ -10,6 +10,10 @@ export function recordStage(db:ReturnType<typeof openDatabase>, input:{runId:str
   /** Opens a writer stage that ended failed again, for a parked task restarting after a Lane Pilot or machine fault. */
   reopen?:boolean}): void {
   const previous = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === input.stageId);
+  // A cancel is final and wins over a stage that was still working: the result it hands in late is dropped. It used to
+  // throw, and the dispatch of a task the PM had canceled ended «dispatch_failed:illegal stage transition writer-agent:
+  // canceled -> skipped» and blocked the run (live 2026-10-09).
+  if (previous?.state === "canceled" && input.state !== "canceled") return;
   const nextInputSha = sha256(input.input);
   const replace = Boolean(input.replaceOnNewInput && previous && previous.inputSha256 !== nextInputSha
     && ["passed", "failed", "blocked", "skipped"].includes(previous.state) && input.state === "pending");
