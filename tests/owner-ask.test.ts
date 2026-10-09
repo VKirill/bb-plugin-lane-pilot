@@ -160,34 +160,22 @@ describe("lane_pilot_ask_owner (H8)", () => {
   });
 });
 
-describe("the integration gate asks the owner when no culprit can be named (H8)", () => {
-  function gate(over: { ownerAsk?: unknown } = {}) {
+describe("the integration gate tells the PM and never asks the owner (H8)", () => {
+  function gate() {
     const sent: Array<{ threadId: string; text: string }> = [];
     const send = async (input: { threadId: string; input: Array<{ text: string }> }) => { sent.push({ threadId: input.threadId, text: input.input[0]!.text }); };
     const made = createFakePluginHost({ pluginId: "lane-pilot", sdk: { threads: { send } } as never });
     const ownerAsk = createOwnerAsk(made.bb, () => undefined);
-    const ctx = { bb: { sdk: { threads: { send } } }, ownerAsk: "ownerAsk" in over ? over.ownerAsk : ownerAsk, log: () => undefined };
+    const ctx = { bb: { sdk: { threads: { send } } }, ownerAsk, log: () => undefined };
     const runner = new IntegrationGateRunner(ctx as never, {} as never);
-    const tell = (runner as unknown as { tellPm: (thread: string, text: string, ask: { question: string; detail: string; options: string[] }) => Promise<void> }).tellPm.bind(runner);
+    const tell = (runner as unknown as { tellPm: (thread: string, text: string) => Promise<void> }).tellPm.bind(runner);
     return { made, tell, sent };
   }
-  const ask = { question: "Gate `npm test` is red and no single task is to blame. What should the PM do?", detail: "log", options: ["Investigate and fix it", "Leave it, I will look myself"] };
 
-  it("opens a form in the PM chat, says so in the PM's message, and forwards the answer as a message", async () => {
+  it("sends exactly one PM message with ANSI codes stripped and opens no pending interaction", async () => {
     const { made, tell, sent } = gate();
-    await tell("thr_pm", "Lane Pilot: integration gate failed.", ask);
-    expect(made.harness.pendingInteractions).toHaveLength(1);
-    expect(made.harness.pendingInteractions[0]).toMatchObject({ threadId: "thr_pm", rendererId: "lane-pilot-ask" });
-    expect(sent).toEqual([{ threadId: "thr_pm", text: "Lane Pilot: integration gate failed. The owner was asked what to do; the answer arrives in this chat." }]);
-    made.harness.behavior.submitInteraction(made.harness.pendingInteractions[0]!.id, { choice: "1" });
-    await vi.waitFor(() => expect(sent).toHaveLength(2));
-    expect(sent[1]!.text).toContain("the owner answered");
-    expect(sent[1]!.text).toContain("Investigate and fix it");
-  });
-
-  it("falls back to the plain message when no form can open", async () => {
-    const { tell, sent } = gate({ ownerAsk: undefined });
-    await tell("thr_pm", "Lane Pilot: integration gate failed.", ask);
+    await tell("thr_pm", "\u001b[31mLane Pilot: integration gate failed.\u001b[39m");
+    expect(made.harness.pendingInteractions).toHaveLength(0);
     expect(sent).toEqual([{ threadId: "thr_pm", text: "Lane Pilot: integration gate failed." }]);
   });
 });
