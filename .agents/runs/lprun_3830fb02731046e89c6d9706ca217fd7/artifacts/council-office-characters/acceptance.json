@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "council-office-characters",
+  "task_sha256": "fe7f8d42dd1d0d7f147037542c8f86855ac3eae726537be2f0347ea310bae802",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "57fdcc34e0559b99bb318840d3719d51f8343bba11badf6a15942163416a6028",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-09T09:36:46.414Z",
+  "model": "router9/ag/gemini-3.8-flash-medium"
+}
