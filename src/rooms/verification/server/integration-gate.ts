@@ -9,6 +9,7 @@ import { saveFollowUp } from "../../writer/server/sticky";
 import { sendServiceMessage } from "../../relay/server";
 import { isEnvironmentCheckFailure } from "../../runs";
 import { gateLabel, gateResolverFor, type ResolvedGate } from "./gate-detect";
+import { continuesEpisode, fixesInFlight, type GateEpisode } from "./gate-episode";
 import { join } from "node:path";
 
 export type GateWhen = "queue_drained" | "every_n";
@@ -223,6 +224,8 @@ export class IntegrationGateRunner {
   private lastGreenCommit: string | null = null;
   private mergedTasksSinceLastGate: MergedTaskInfo[] = [];
   private drainWaiting: Parameters<IntegrationGateRunner["maybeRunGate"]>[0] | null = null;
+  /** The red-gate episode of each run: the owner is asked once per episode, see `./gate-episode`. */
+  private readonly episodes = new Map<string, GateEpisode>();
 
   constructor(
     private readonly ctx: ServerCore,
@@ -352,6 +355,7 @@ export class IntegrationGateRunner {
     }
 
     if (passed) {
+      this.episodes.delete(runId);
       this.mergesSinceLastGate = 0;
       this.mergedTasksSinceLastGate = [];
       // Save the commit the gate ran on as the last green one
@@ -364,11 +368,16 @@ export class IntegrationGateRunner {
     if (isEnvironmentCheckFailure({ stdout, stderr })) {
       const evidence = `${stderr}\n${stdout}`.split("\n").find((line) => isEnvironmentCheckFailure({ stderr: line }))?.trim().slice(0, 300) ?? "";
       this.ctx.log(`infra: integration gate \`${gateCommand}\` is red from the environment, no culprit searched: ${evidence}`);
+      const { episode, repeat } = this.enterEpisode(runId, gateCommand, ["(environment)"]);
+      if (repeat) {
+        await this.repeatRed(runId, pmThreadId, episode, [], `Lane Pilot: integration gate ${label} is still red because of the machine (${evidence}). The owner was already asked about this; fix it in ${basePath}, then the gate runs again.`);
+        return { ran: true, passed: false, culpritTaskId: null };
+      }
       await this.tellPm(pmThreadId, `Lane Pilot: integration gate ${label} is red because of the machine, not the code: ${evidence}. No culprit was searched and no fix turn was sent (a writer cannot fix file permissions). Fix it in ${basePath}, then the gate runs again.`, {
         question: `The integration gate \`${gateCommand}\` is red because of the machine, not the code. It needs a fix in ${basePath} that only you can make.`,
         detail: evidence,
         options: ["Fixed, run the gate again", "I will look later"],
-      });
+      }, episode);
       return { ran: true, passed: false, culpritTaskId: null };
     }
 
@@ -436,16 +445,22 @@ export class IntegrationGateRunner {
       return { ran: true, passed: false, culpritTaskId: culprit.taskId };
     }
 
-    // Tell PM with log; the owner is asked what to do (a form in the PM chat and a push on the phone).
+    // Tell PM with log; the owner is asked what to do (a form in the PM chat and a push on the phone), once per red-gate episode.
     const tasks = tasksToCheck.map((task) => task.taskId).join(", ");
     const why = input.live
       ? `This folder has no git, so no culprit can be searched${tasks ? ` (tasks since the last gate: ${tasks})` : ""}.`
       : "Could not unambiguously identify culprit.";
-    await this.tellPm(pmThreadId, `Lane Pilot: integration gate ${label} failed (exit ${exitCode}). ${why} Full log: ${logRelativePath}`, {
+    const failingList = failingFiles.length ? ` Failing tests: ${failingFiles.join(", ")}.` : "";
+    const { episode, repeat } = this.enterEpisode(runId, gateCommand, failingFiles);
+    if (repeat) {
+      await this.repeatRed(runId, pmThreadId, episode, failingFiles, `Lane Pilot: integration gate ${label} is still red (exit ${exitCode}), the same failing tests as before.${failingList} The owner was already asked about this red gate and is not asked again until a gate run is green. Full log: ${logRelativePath}`, tasksToCheck.map((task) => task.taskId));
+      return { ran: true, passed: false, culpritTaskId: null };
+    }
+    await this.tellPm(pmThreadId, `Lane Pilot: integration gate ${label} failed (exit ${exitCode}). ${why}${failingList} Full log: ${logRelativePath}`, {
       question: `The integration gate \`${gateCommand}\` is red and no single task is to blame. What should the PM do?`,
       detail: `Full log: ${logRelativePath}\n\n${`${stderr}\n${stdout}`.trim().slice(-1200)}`,
       options: ["Investigate and fix it", "Leave it, I will look myself"],
-    });
+    }, episode);
 
     return { ran: true, passed: false, culpritTaskId: null };
   }
@@ -455,15 +470,44 @@ export class IntegrationGateRunner {
    * (see `createOwnerAsk`); when it opened, the message says so and the answer arrives in the PM chat as a message, and
    * when it could not open (an older BB, another form already open) the message alone is the old behaviour.
    */
-  private async tellPm(pmThreadId: string, text: string, ask: { question: string; detail: string; options: string[] }): Promise<void> {
+  private async tellPm(pmThreadId: string, text: string, ask: { question: string; detail: string; options: string[] }, episode?: GateEpisode): Promise<void> {
     const TIMEOUT_MS = 60 * 60_000;
     const asked = await this.ctx.ownerAsk?.askInBackground(pmThreadId, { source: "gate", ...ask },
-      (answer) => this.ctx.ownerAsk.sendToThread(pmThreadId, this.ctx.ownerAsk.answerMessage(ask.question, answer, TIMEOUT_MS)),
+      (answer) => {
+        // One answer reaches the PM once: the episode keeps it from a second delivery.
+        if (episode) { if (episode.answered) return; episode.answered = true; }
+        return this.ctx.ownerAsk.sendToThread(pmThreadId, this.ctx.ownerAsk.answerMessage(ask.question, answer, TIMEOUT_MS));
+      },
       { timeoutMs: TIMEOUT_MS }).catch(() => false);
     await this.ctx.bb.sdk.threads.send({
       threadId: pmThreadId,
       mode: "queue-if-active",
       input: [{ type: "text", text: asked ? `${text} The owner was asked what to do; the answer arrives in this chat.` : text, mentions: [] }],
     } as never).catch(() => undefined);
+  }
+
+  /**
+   * A red run belongs to the run's current episode, or starts a new one. `repeat` is true when the episode is already known
+   * (the owner was asked for it).
+   */
+  private enterEpisode(runId: string, command: string, files: string[]): { episode: GateEpisode; repeat: boolean } {
+    const known = this.episodes.get(runId);
+    if (known && continuesEpisode(known, command, files)) {
+      known.files = [...new Set([...known.files, ...files])];
+      return { episode: known, repeat: true };
+    }
+    const episode: GateEpisode = { command, files: [...files], startedAt: Date.now(), answered: false };
+    this.episodes.set(runId, episode);
+    return { episode, repeat: false };
+  }
+
+  /** The same red gate again: no owner question; the PM hears it only when no fix task for these tests is in flight. */
+  private async repeatRed(runId: string, pmThreadId: string, episode: GateEpisode, files: string[], text: string, mergedTaskIds: string[] = []): Promise<void> {
+    const fixing = fixesInFlight(this.ctx.db, runId, files.length ? files : episode.files, episode.startedAt, mergedTaskIds);
+    if (fixing.length) {
+      this.ctx.log(`integration-gate: still red, same episode; PM fix in flight (${fixing.join(", ")}), nobody told`);
+      return;
+    }
+    await this.ctx.bb.sdk.threads.send({ threadId: pmThreadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never).catch(() => undefined);
   }
 }

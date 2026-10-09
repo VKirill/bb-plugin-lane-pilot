@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **A red integration gate asks the owner once per episode.** An episode is one gate command failing on the same test files until a gate run is green (fewer of the same files stay in it). Live 2026-10-09 the same «no single task is to blame» form reached the owner three times and his answer reached the PM twice. The first red run of an episode tells the PM the failing tests and opens the one form; the answer is handed to the PM once. A later red run of the same episode tells the PM «still red» with the list and no form, and says nothing at all while a PM fix task is in flight (an open attempt of the run whose owns_paths or expected_outputs cover a failing file, or a task dispatched after the episode began). A green run ends the episode. The episode is kept in memory: a plugin reload may ask once more.
+
 ## 0.1.204
 
 - **The PM sends work that is not code to a workflow first.** Asked to «find discussed posts on vibe coding», the PM read «tavily (web research)» right before the routing rule, searched the web itself and never called `lane_pilot_route`, so `insights-post` was not offered (thr_n6ukbhcv9t); a follow-up then ran the old BB Tasks pipeline, whose worker threads appeared visible in another project. The routing rule now opens «When to act»: posts, insights, research, reels, a cocoon, a digest or a deploy go to `lane_pilot_route` before any search, skill, errand or specialist, and `bb tasks` pipelines are not run from skills; tavily is for one quick lookup or research when no workflow fits. A test pins the rule's place.
