@@ -5,6 +5,7 @@ import { findSandboxUnsafeMissingExcludes, runnerFilterArgs, runsWholeSuite } fr
 import { parseReadFirstHints } from "../read-first";
 import { SUBJECTIVE_WORDS } from "../../critique";
 import { isOutputPath, unownedExpectedOutputs } from "../validate-output";
+import { mapVerificationCwd } from "../verification-cwd";
 import { SANDBOX_OWN_ENV } from "../../verification";
 import type { CatalogEntry, SecretCheck } from "../../secrets/server";
 import { safeRelative, validateOwnershipContract } from "../../verification";
@@ -97,7 +98,13 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
   for (const [field, patterns] of unsafe) for (const pattern of patterns) {
     if (!safeRelative(pattern)) errors.push({ code:"ownership_unsafe", message:`unsafe ownership path pattern: ${pattern} in ${field}; use a path relative to the project root, without "..", a leading "/" or backslashes` });
   }
-  if (!errors.some((error) => error.code === "ownership_unsafe")) {
+  // A check runs in a folder of the project: an absolute cwd under project_cwd, or a relative one. Anything else has no copy in the attempt's worktree.
+  for (const [index, check] of task.verification.entries()) {
+    if (mapVerificationCwd(check.cwd, task.project_cwd, task.project_cwd) === null) {
+      errors.push({ code:"verification_cwd", message:`verification[${index}] cwd ${check.cwd} is outside the project ${task.project_cwd}, so the check cannot run in the attempt's worktree; use ${task.project_cwd} or a folder under it (for example ${task.project_cwd}/apps/web, or the relative path apps/web)` });
+    }
+  }
+  if (!errors.some((error) => error.code === "ownership_unsafe" || error.code === "verification_cwd")) {
     const rest = validateOwnershipContract(task);
     if (rest) errors.push({ code:"ownership_contract", message:rest });
   }

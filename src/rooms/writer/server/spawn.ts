@@ -9,6 +9,7 @@ import { HARNESS_VERSION, endSpawnFailure, getAttempt, getReasoningTrace, getRun
 import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier, findModelIn } from "@lane-pilot/models";
 import { spawnWithSeam } from "../spawn-seam";
 import { buildExecutionPacket, renderExecutionPacket } from "../../tasks/execution-packet";
+import { retargetTask } from "../../tasks";
 import { parseMemorySettings } from "../../memory";
 import { resolveRetryEffort } from "../../critique";
 import { boundedAgentName } from "../../critique";
@@ -396,8 +397,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         throw new WriterSelectionError("attempt_workspace_cas_conflict");
       }
       setAttemptDirtBefore(db,input.attemptId,dirtBefore);
-      const attemptTask={...input.task,project_cwd:workspacePath,
-        verification:input.task.verification.map(command=>({...command,cwd:workspacePath}))};
+      const attemptTask=retargetTask(input.task,workspacePath);
       if(live) {
         // The owned files are copied aside before the writer touches them; a rejected attempt is rolled back from them.
         const saved=await liveFolder.backupLiveFolder({hostId:input.config.hostId,folder:workspacePath,backupId:input.attemptId,

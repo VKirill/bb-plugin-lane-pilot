@@ -11,7 +11,7 @@ const owner = (text: string) => ({ type: "user", message: { role: "user", conten
 const route = { type: "assistant", message: { content: [{ type: "tool_use", name: "mcp__bb-bridge__lane_pilot_route", input: {} }] } };
 const result = { type: "user", message: { content: [{ type: "tool_result", content: "no workflow fits" }] } };
 
-function verdict(tool: string, input: Record<string, unknown>, lines: unknown[] | null, agentType = "lane-pilot-pm") {
+function verdict(tool: string, input: Record<string, unknown>, lines: unknown[] | null, agentType = "lane-pilot-pm", env: Record<string, string> = {}) {
   let transcript = "/nonexistent/transcript.jsonl";
   if (lines) {
     transcript = join(mkdtempSync(join(tmpdir(), "route-first-")), "t.jsonl");
@@ -19,7 +19,7 @@ function verdict(tool: string, input: Record<string, unknown>, lines: unknown[] 
   }
   const res = spawnSync("python3", [guard], {
     input: JSON.stringify({ tool_name: tool, tool_input: input, agent_type: agentType, transcript_path: transcript, cwd: "/tmp" }),
-    encoding: "utf8", env: hookEnv({ AGENT_HOOK_CLIENT: "claude" }),
+    encoding: "utf8", env: hookEnv({ AGENT_HOOK_CLIENT: "claude", ...env }),
   });
   return res.stdout.includes("lane_pilot_route with the owner's request first") ? "deny" : "allow";
 }
@@ -28,6 +28,8 @@ it("refuses the PM a web search or tavily before lane_pilot_route in the turn, a
   expect(verdict("WebSearch", { query: "vibe coding" }, [owner("найди обсуждаемые посты")])).toBe("deny");
   expect(verdict("WebFetch", { url: "https://x" }, [owner("найди")])).toBe("deny");
   expect(verdict("mcp__bb-bridge__lane_pilot_helpers", { action: "specialist", role: "tavily" }, [owner("найди")])).toBe("deny");
+  // The BB PM is dev-orchestrator with LANE_PILOT_AGENT_TYPE set, as the hook trace of a live PM shows.
+  expect(verdict("WebSearch", {}, [owner("найди")], "dev-orchestrator", { LANE_PILOT_AGENT_TYPE: "dev-orchestrator" })).toBe("deny");
   // A route in an earlier turn does not count for the next owner message.
   expect(verdict("WebSearch", {}, [owner("a"), route, result, owner("b")])).toBe("deny");
 });
@@ -37,4 +39,5 @@ it("allows the search once the router answered, other specialists and roles, and
   expect(verdict("mcp__bb-bridge__lane_pilot_helpers", { action: "specialist", role: "copy-lead" }, [owner("найди")])).toBe("allow");
   expect(verdict("WebSearch", {}, [owner("найди")], "errand")).toBe("allow");
   expect(verdict("WebSearch", {}, null)).toBe("allow");
+  expect(verdict("WebSearch", {}, [owner("найди")], "dev-orchestrator")).toBe("allow");
 });

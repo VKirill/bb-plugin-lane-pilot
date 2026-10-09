@@ -48,6 +48,8 @@ export type RelayDeps = {
   settled(threadId:string):Promise<boolean>;
   /** The thread's last answer, used when an asked thread finishes without lane_pilot_reply. */
   output(threadId:string):Promise<string>;
+  /** The thread is in a turn (or waits on an approval): a message sent now would arrive behind it, with the text it was written with. */
+  busy?(threadId:string):Promise<boolean>;
   /** The latest attempt state of each task in the project; null when it has none. */
   taskStates(projectId:string, taskIds:string[]):Promise<Record<string, string|null>>;
   /** Returns the newest taskId and its state in the same task family (e.g. redispatch <id>.2), if any newer exists. */
@@ -189,17 +191,37 @@ export function createRelay(deps:RelayDeps) {
     return `Lane Pilot: reminder (${item.id}, ${why}):\n\n${item.note}\n\nCheck if you can continue. If you are still waiting, set a new reminder with lane_pilot_relay (action \`remind\`) with a larger interval.`;
   };
 
-  async function fire(item:RelayReminder, by:"time"|"watch"|"tasks", states?:Record<string, string|null>) {
+  /**
+   * A reminder on tasks quotes their states, and the state must hold when the PM reads it. It is read again just before the
+   * send (the PM may have answered a blocked writer since the sweep looked: the task is running again), and not sent while
+   * the PM's thread is in a turn: the text would wait in BB's queue behind that turn and arrive stale (live 2026-10-09: «blocked»
+   * eight seconds after the answer). Either way the reminder stays open and the next sweep decides again.
+   */
+  async function liveTaskStates(item:RelayReminder, seen:Record<string, string|null>|undefined):Promise<Record<string, string|null>|null> {
+    const ids = item.taskIds ?? [];
+    if (await deps.busy?.(item.threadId).catch(() => false)) return null;
+    const live = await deps.taskStates(item.projectId, ids).catch(() => seen);
+    if (!live || !ids.every((task) => TASK_DONE.has(live[task] ?? ""))) return null;
+    return live;
+  }
+
+  async function fire(item:RelayReminder, by:"time"|"watch"|"tasks", states?:Record<string, string|null>):Promise<boolean> {
+    if (by === "tasks") {
+      const live = await liveTaskStates(item, states);
+      if (!live) return false;
+      states = live;
+    }
     // An early wake takes the queued time-reminder out first. If the row is already gone, BB sent it at the due time (or the
     // owner deleted it): a second reminder now would only be stale.
     if (by !== "time" && await dropQueuedRow(item)) {
       item.firedAt = deps.now();
       item.firedBy = "time";
-      return;
+      return true;
     }
     await deps.send(item.threadId, reminderText(item, by, states), by === "watch" ? item.watchThreadId ?? undefined : undefined);
     item.firedAt = deps.now();
     item.firedBy = by;
+    return true;
   }
 
   /** BB announced a row of its queue: our reminder was sent at its time, or the owner deleted it from the card. */
@@ -273,9 +295,8 @@ export function createRelay(deps:RelayDeps) {
           }
 
           if (item.taskIds.length > 0 && item.taskIds.every((task) => TASK_DONE.has(states[task] ?? ""))) {
-            await fire(item, "tasks", states);
-            fired++;
-            continue;
+            // Not sent when the state no longer holds or the PM is in a turn: the reminder stays open (and its time still counts below).
+            if (await fire(item, "tasks", states)) { fired++; continue; }
           }
         }
         if (item.dueAt <= deps.now()) {
@@ -346,6 +367,10 @@ export function relayFor(ctx:ServerContext):Relay {
       const commands = row?.activity?.activeBackgroundCommandCount ?? backgroundCommands.get(threadId) ?? 0;
       return ["idle", "error", "stopped"].includes(thread.status ?? "") && !thread.queuedMessageCount
         && !thread.activeBackgroundAgentCount && commands === 0;
+    },
+    busy:async (threadId) => {
+      const thread = await bb.sdk.threads.get({ threadId }) as { status?:string };
+      return !["idle", "error", "stopped"].includes(thread.status ?? "");
     },
     taskStates:async (projectId, taskIds) => Object.fromEntries(taskIds.map((task) => [task, latestTaskAttemptState(ctx.db, projectId, task)])),
     latestFamilyMember:async (projectId, taskId) => {
