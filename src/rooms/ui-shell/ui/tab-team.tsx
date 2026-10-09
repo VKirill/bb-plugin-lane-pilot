@@ -9,7 +9,7 @@ import { CONTROL_H } from "@lane-pilot/ui-kit";
 import { AccessModePanel, isChanged, ORIGIN_LABEL, PmAccessNote, RoleAccessBody, roleSummary, useAccessView, type AccessApi, type RoleView } from "../../settings/ui";
 import { useRulesAnalyzer } from "../../self-repair/ui";
 import { asBoolean } from "./page-model";
-import { writerFallbackSlots } from "../../writer/writer-fallbacks";
+import { writerFallbackSlots } from "../../writer/ui";
 import { SettingField } from "../../settings/ui";
 import { BrowserDetail, CouncilDetail, WriterDetail } from "../../native-agent/ui";
 import { originOfKeys, roleKey, roleName, rolePurpose, ROLE_GROUPS, type RoleOrigin, type RoleSpec } from "../../native-agent/ui";

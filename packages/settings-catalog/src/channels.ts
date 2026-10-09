@@ -40,6 +40,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"writer.reasoning_effort", channel:"W-DIRECT", flag:"--reasoning-effort", subcommands:["run","start"] },
   { key:"writer.service_tier", channel:"W-DIRECT", flag:"--service-tier", subcommands:["run","start"] },
   { key:"writer.agent", channel:"OWN", reason:"Native Lane Pilot writer role label; bounded and included in the BB writer prompt" },
+  { key:"writer.skill_pick", channel:"OWN", reason:"Native Lane Pilot writer skill picking: Jev picks task skills before each attempt; off keeps the role skills and the task's own skills" },
   { key:"sandbox.backend", channel:"OWN", reason:"Native Lane Pilot verification selects Seatbelt on macOS or bubblewrap on Linux and fails closed when unavailable" },
   { key:"pm_read.enabled", channel:"OWN", reason:"Native Lane Pilot PM-read stage enable switch" },
   { key:"pm_read.min_lines", channel:"OWN", reason:"Native Lane Pilot PM-read minimum input size" },
