@@ -44,6 +44,18 @@ function skipWriterStages(r: DispatchRuntime, reason: string): void {
   for (const stageId of WRITER_STAGES) recordStage(r.ctx.db, { runId: r.runId, taskId: r.taskId, stageId, state: "skipped", input: r.plan, reason });
 }
 
+/**
+ * The reply for an attempt that ended while its stages ran, or null while it still waits for them. A cancel closes the
+ * attempt and its writer stages; a stage verdict that arrives later must leave both, and the run, as the cancel left them
+ * (live 2026-10-09: «illegal stage transition writer-agent: canceled -> skipped» blocked the run of a canceled task).
+ */
+export function endedAttemptReply(db: ServerCore["db"], runId: string, taskId: string, attemptId: string): Record<string, unknown> | null {
+  const attempt = getAttempt(db, attemptId);
+  if (attempt?.state === "queued") return null;
+  return { runId, taskId, attemptId, state: attempt?.state ?? "canceled", reason: attempt?.reason ?? "attempt ended before its stages finished", stages: listStageReceipts(db, runId, taskId) };
+}
+const endedReply = (r: DispatchRuntime) => endedAttemptReply(r.ctx.db, r.runId, r.taskId, r.attemptId);
+
 function blockedReply(r: DispatchRuntime, reason: string | undefined): Record<string, unknown> {
   return { runId: r.runId, taskId: r.taskId, attemptId: r.attemptId, state: "blocked", reason, stages: listStageReceipts(r.ctx.db, r.runId, r.taskId) };
 }
@@ -61,6 +73,8 @@ export function registerDispatchExecutors(engine: WorkflowEngine): void {
   });
 
   exec("lp.block-pm-read", async (r, ctx) => {
+    const ended = endedReply(r);
+    if (ended) return { reply: ended };
     const reason = `pm_read_failed:${text(ctx.input.with.reason) ?? "unknown"}`;
     const { db } = r.ctx;
     recordStage(db, { runId: r.runId, taskId: r.taskId, stageId: "plan-critique", state: "skipped", input: r.plan, reason: "PM read stage failed" });
@@ -78,12 +92,16 @@ export function registerDispatchExecutors(engine: WorkflowEngine): void {
   }, { reentrant: true });
 
   exec("lp.plan-critique", async (r, ctx) => {
+    // A canceled task starts no new helper: the block branch then answers with the ended attempt.
+    if (endedReply(r)) return { allowed: false, reason: "attempt ended before its stages finished", handoff: handoffOf("plan-critique", "skipped", "attempt ended") };
     const critique = await runPlanCritique({ bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId,
       config: r.runConfig, task: r.task, plan: r.plan, pmReadContext: text(ctx.input.with.pmReadContext) || undefined });
     return { allowed: critique.allowed, ...(critique.reason !== undefined ? { reason: critique.reason } : {}), handoff: handoffOf("plan-critique", critique.allowed ? "allowed" : "blocked", critique.reason) };
   });
 
   exec("lp.block-plan-critique", async (r, ctx) => {
+    const ended = endedReply(r);
+    if (ended) return { reply: ended };
     const reason = text(ctx.input.with.reason);
     const { db } = r.ctx;
     recordStage(db, { runId: r.runId, taskId: r.taskId, stageId: "specialist-review", state: "skipped", input: r.plan, reason: "plan-critique did not allow dispatch" });
@@ -94,11 +112,15 @@ export function registerDispatchExecutors(engine: WorkflowEngine): void {
   });
 
   exec("lp.specialist-review", async (r) => {
+    // A canceled task starts no new helper: the block branch then answers with the ended attempt.
+    if (endedReply(r)) return { allowed: false, reason: "attempt ended before its stages finished", handoff: handoffOf("specialist-review", "skipped", "attempt ended") };
     const specialist = await runSpecialistReview({ bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId, config: r.runConfig, task: r.task, plan: r.plan });
     return { allowed: specialist.allowed, ...(specialist.reason !== undefined ? { reason: specialist.reason } : {}), handoff: handoffOf("specialist-review", specialist.allowed ? "allowed" : "blocked", specialist.reason) };
   });
 
   exec("lp.block-specialist", async (r, ctx) => {
+    const ended = endedReply(r);
+    if (ended) return { reply: ended };
     const reason = text(ctx.input.with.reason);
     const { db } = r.ctx;
     skipWriterStages(r, "specialist review did not allow dispatch");
@@ -127,6 +149,8 @@ export function registerDispatchExecutors(engine: WorkflowEngine): void {
   });
 
   exec("lp.block-ownership", async (r, ctx) => {
+    const ended = endedReply(r);
+    if (ended) return { reply: ended };
     const reason = text(ctx.input.with.reason) ?? "";
     const { db } = r.ctx;
     if (ctx.input.with.kind === "persist_failed") {
@@ -178,10 +202,8 @@ export function lpTaskPipelineExecutor(engine: WorkflowEngine): NodeExecutor<Dis
       const { db } = r.ctx;
       const pmReadContext = text(ctx.input.with.pmReadContext) ?? "";
       // A cancel during the stages ends the queued attempt: the writer must not start for it.
-      const waiting = getAttempt(db, r.attemptId);
-      if (waiting?.state !== "queued") {
-        return { output: { reply: { runId: r.runId, taskId: r.taskId, attemptId: r.attemptId, state: waiting?.state ?? "canceled", reason: waiting?.reason ?? "attempt ended before its stages finished", stages: listStageReceipts(db, r.runId, r.taskId) } } };
-      }
+      const ended = endedReply(r);
+      if (ended) return { output: { reply: ended } };
       transitionAttempt(db, r.attemptId, "queued");
       r.services.startWriterTask({
         projectId: r.projectId, runId: r.runId, taskId: r.taskId, firstAttemptId: r.attemptId,

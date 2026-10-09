@@ -35,12 +35,15 @@ type Scenario = {
   finish?: boolean;
   /** What the scenario must really do, so that it is not equal merely because both paths failed the same way. */
   expect?: { state: string; reason?: RegExp };
+  /** The PM cancels the task while its PM read runs (live 2026-10-09, fallback-continues-session). */
+  cancelDuringPmRead?: boolean;
 };
 
 async function runScenario(engine: "on" | "off", scenario: Scenario) {
   const spawned: Array<Record<string, unknown>> = [];
   const meta = new Map<string, Record<string, unknown>>();
   let nextWriter = 0, porcelain = 0;
+  let runAfterCancel: string | null = null;
   // Every writer attempt of a git project works in its own worktree: the fake host makes, checks and merges them.
   const { bb, harness } = createFakeWorktreeHost({
     pluginId: "lane-pilot",
@@ -62,8 +65,14 @@ async function runScenario(engine: "on" | "off", scenario: Scenario) {
         events: { list: async ({ threadId }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }] },
         send: async () => ({}) as never,
         stop: async () => ({ ok: true }) as never,
-        output: async ({ threadId }) => threadId === "pm-read-thread" ? { output: scenario.pmRead ?? "{}" } : threadId === "critic-thread" ? { output: scenario.critique ?? approve }
-          : threadId === "code-critique-thread" ? { output: approve } : threadId === "specialist-thread" ? { output: scenario.specialist ?? '{"decision":"approve","summary":"No risk","risks":[]}' } : { output: "writer created note.txt" },
+        output: async ({ threadId }) => {
+          if (threadId === "pm-read-thread" && scenario.cancelDuringPmRead) {
+            await harness.behavior.callAgentTool("lane_pilot_cancel_task", { taskIds: [task.id] }, { threadId: pmThreadId, projectId });
+            runAfterCancel = getRun(db, runId)!.state;
+          }
+          return threadId === "pm-read-thread" ? { output: scenario.pmRead ?? "{}" } : threadId === "critic-thread" ? { output: scenario.critique ?? approve }
+          : threadId === "code-critique-thread" ? { output: approve } : threadId === "specialist-thread" ? { output: scenario.specialist ?? '{"decision":"approve","summary":"No risk","risks":[]}' } : { output: "writer created note.txt" };
+        },
         list: async () => [...meta.keys()].map((id) => ({ id })) as never,
         queue: { list: async () => [] },
         queuedMessages: { delete: async () => ({ ok: true }) },
@@ -132,7 +141,7 @@ async function runScenario(engine: "on" | "off", scenario: Scenario) {
   const out = {
     reply, waited,
     attempt: attemptId ? (({ state, reason }) => ({ state, reason }))(getAttempt(db, attemptId)!) : null,
-    run: getRun(db, runId)!.state,
+    run: getRun(db, runId)!.state, runAfterCancel,
     stages: listStageReceipts(db, runId, taskId),
     spawned: spawned.map((row) => `${String((row.pluginMetadata as Record<string, unknown>).role)}:${String((row.pluginMetadata as Record<string, unknown>).stageId ?? "")}`),
     engineRuns: (db.prepare("SELECT id, workflow_id, status FROM lane_pilot_wf_run").all() as Array<{ id: string; workflow_id: string; status: string }>),
@@ -164,6 +173,10 @@ const scenarios: Scenario[] = [
   { name: "quality_mode full on a task of its own", task: { quality_mode: "full" }, finish: true, expect: { state: "queued" } },
   { name: "plan critique asks for changes: blocked before any writer", critique: '{"decision":"changes_requested","summary":"Needs work","findings":[{"severity":"blocking","finding":"vague criterion","path":"plan"}]}', expect: { state: "blocked", reason: /critique/ } },
   { name: "PM read returns malformed output: blocked", settings: { "pm_read.enabled": true, "pm_read.min_lines": 50, "pm_read.reasoning_effort": "medium" }, task: { read_first: ["README.md"] }, pmRead: "not json at all", expect: { state: "blocked", reason: /pm_read_failed/ } },
+  { name: "a cancel during a failing PM read keeps the task canceled and the run open", settings: { "pm_read.enabled": true, "pm_read.min_lines": 50, "pm_read.reasoning_effort": "medium" }, task: { read_first: ["README.md"] },
+    pmRead: "not json at all", cancelDuringPmRead: true, expect: { state: "canceled" } },
+  { name: "a cancel during a passing PM read starts no plan critique", settings: { "pm_read.enabled": true, "pm_read.min_lines": 50, "pm_read.reasoning_effort": "medium" }, task: { read_first: ["README.md"] },
+    pmRead: '{"summary":"README names the contract","keyFacts":["Managed workspaces isolate task edits."],"openQuestions":[]}', cancelDuringPmRead: true, expect: { state: "canceled" } },
   { name: "specialist blocks a high-risk task", task: { risk: "high" }, settings: { "specialist.enabled": true, "specialist.when": "always" },
     specialist: '{"decision":"block","summary":"Unsafe","risks":[{"severity":"high","path":"note.txt","concern":"c","mitigation":"m"}]}', expect: { state: "blocked", reason: /specialist/ } },
   { name: "ownership base unavailable for an explicit base ref", baseRef: "feature", gitBase: "error", settings: { "plan_critique.enabled": false }, expect: { state: "blocked", reason: /ownership base unavailable: dirty base/ } },
@@ -185,6 +198,14 @@ describe("dispatch through the workflow engine equals the direct path", () => {
         if (scenario.expect.reason) expect(String(engine.reply.reason)).toMatch(scenario.expect.reason);
       }
       if (scenario.finish) expect((engine.waited as { state: string }).state).toBe("accepted");
+      if (scenario.cancelDuringPmRead) {
+        // The stage verdict that came after the cancel neither blocks the run nor rewrites the writer stages the cancel closed.
+        expect(engine.attempt?.state).toBe("canceled");
+        expect(engine.runAfterCancel).not.toBeNull();
+        expect(engine.run).toBe(engine.runAfterCancel);
+        expect(engine.spawned.filter((row) => !row.endsWith(":pm-read"))).toEqual([]);
+        expect(engine.stages.filter((row) => ["writer-agent", "verification", "acceptance-receipt"].includes(row.stageId)).map((row) => row.state)).toEqual(["canceled", "canceled", "canceled"]);
+      }
       // The kill switch really switches: the engine leaves a journal, the direct path none.
       expect(direct.engineRuns).toEqual([]);
       expect(engine.engineRuns.map((row) => row.workflow_id)).toEqual(scenario.runGate === "pre-merge" ? [] : ["lp-task-pipeline"]);
