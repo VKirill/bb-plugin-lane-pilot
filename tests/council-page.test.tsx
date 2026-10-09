@@ -50,4 +50,24 @@ describe("council page", () => {
     await waitFor(() => expect(said).toHaveLength(2));
     expect(said[1]).toEqual({ councilId: "cncl_1", decide: true });
   });
+
+  it("renders office fallback in jsdom without throwing alongside the log and supports replay step", async () => {
+    const said: Array<Record<string, unknown>> = [];
+    const view = await mountCouncilPage(said);
+    await waitFor(() => expect(view.getByTestId("council-messages").textContent).toContain("Убрать шаг с аккаунтом."));
+
+    // Fallback renders alongside the log
+    expect(view.getByTestId("council-office-fallback")).toBeDefined();
+    expect(view.getByTestId("council-office-fallback").textContent).toMatch(/WebGL|Office/i);
+
+    // Replay controls exist
+    const stepBtn = view.getByTestId("council-replay-step");
+    expect(stepBtn).toBeDefined();
+
+    // Clicking step highlights the first message
+    fireEvent.click(stepBtn);
+    const msg1 = view.container.querySelector('[data-seq="1"]');
+    expect(msg1).toBeDefined();
+    expect(msg1?.className).toContain("border-amber-500");
+  });
 });

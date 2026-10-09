@@ -549,4 +549,20 @@
   .lp-model-row[data-wide="1"] > [data-label]::before { display: none; }
   .lp-model-row[data-wide="1"] > [data-label]:first-child { grid-column: auto; }
   .lp-model-head { --lp-model-cols: minmax(0, 1.4fr) minmax(0, 0.8fr) minmax(0, 2.2fr) minmax(0, 1.2fr) minmax(0, 0.6fr); }
+
+  /* Retro pixel dialogue styling for Council */
+  .pixel-box {
+    box-shadow: 2px 2px 0 0 #0f172a, -2px -2px 0 0 #0f172a, 2px -2px 0 0 #0f172a, -2px 2px 0 0 #0f172a;
+    border-radius: 0;
+  }
+  .pixel-btn {
+    box-shadow: 2px 2px 0 0 #0f172a;
+    border: 2px solid #0f172a;
+    border-radius: 0;
+    transition: transform 0.05s, box-shadow 0.05s;
+  }
+  .pixel-btn:active:not(:disabled) {
+    transform: translate(1px, 1px);
+    box-shadow: 1px 1px 0 0 #0f172a;
+  }
 }
