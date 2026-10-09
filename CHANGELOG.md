@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Council office engine moved to `@lane-pilot/pixel-world`, 2 900 draw calls became 21, the GLB files left app.js.** The pixel pipeline, camera controls, props kit, nav grid with A*, GLB loader, people and vehicle helpers live in `packages/pixel-world`; the office keeps its layout, props and behaviour. After the scene is built, its ~2 900 static meshes merge into one opaque and one transparent mesh (colours baked into vertex colours, wall cut unchanged), so the office draws in 21 calls instead of 2 883. The people and cars GLB files (3 MB of base64) are no longer in `app.js` (7.5 MB to 4.5 MB): they sit in `assets/world/` and the plugin serves them at `/api/v1/plugins/lane-pilot/http/world/assets/<name>` (`src/rooms/world-assets`), with an ETag and a one-day cache. The picture is unchanged; the procedural people and box cars still stand in while the files load or if they cannot.
+
 ## 0.1.220
 
 - **Cool cars outside the council office.** The box cars are replaced by seven stylised models made from concept art with Meshy image-to-3D (`assets/office-cars.glb`, 926 KB, embedded): a red 1967 Mustang fastback with white stripes, a Ford F-150 Raptor, a yellow Porsche 911, a black G-Class, a lime supercar, a Cybertruck and a mint VW T1 bus. Five stand in the south bays and two on the east strip; the 911 and the bus drive slowly along the road (not with reduced motion). They get the scene's toon shading and pixel outlines; the box cars stay as the fallback while the model loads.
