@@ -12,8 +12,8 @@
 - [ ] Resolve the remaining owner decisions in the harness engineering gaps plan.
 
 ## Last verify
-- command: Lane Pilot acceptance for 10 tasks in `lprun_987d16c051234cf4b4be09cff5817a86`
-- result: green; all accepted tasks merged, including fixes restoring the main deploy gate
+- command: Lane Pilot acceptance for 22 tasks in `lprun_3830fb02731046e89c6d9706ca217fd7`
+- result: green; accepted changes merged, including deploy-gate fixes
 - when: 2026-10-09
 
 ## Pointers
