@@ -355,14 +355,10 @@ export class IntegrationGateRunner {
       this.ctx.log(`infra: integration gate \`${gateCommand}\` is red from the environment, no culprit searched: ${evidence}`);
       const { episode, repeat } = this.enterEpisode(runId, gateCommand, ["(environment)"]);
       if (repeat) {
-        await this.repeatRed(runId, pmThreadId, episode, [], `Lane Pilot: integration gate ${label} is still red because of the machine (${evidence}). The owner was already asked about this; fix it in ${basePath}, then the gate runs again.`);
+        await this.repeatRed(runId, pmThreadId, episode, [], `Lane Pilot: integration gate ${label} is still red because of the machine (${evidence}). Fix it in ${basePath}, then the gate runs again.`);
         return { ran: true, passed: false, culpritTaskId: null };
       }
-      await this.tellPm(pmThreadId, `Lane Pilot: integration gate ${label} is red because of the machine, not the code: ${evidence}. No culprit was searched and no fix turn was sent (a writer cannot fix file permissions). Fix it in ${basePath}, then the gate runs again.`, {
-        question: `The integration gate \`${gateCommand}\` is red because of the machine, not the code. It needs a fix in ${basePath} that only you can make.`,
-        detail: evidence,
-        options: ["Fixed, run the gate again", "I will look later"],
-      }, episode);
+      await this.tellPm(pmThreadId, `Lane Pilot: integration gate ${label} is red because of the machine, not the code: ${evidence}. No culprit was searched and no fix turn was sent to a writer. Fix the machine yourself (an errand on that host, e.g. file owners or permissions in ${basePath}), then the gate runs again on the next merge.`, episode);
       return { ran: true, passed: false, culpritTaskId: null };
     }
 
@@ -479,38 +475,23 @@ export class IntegrationGateRunner {
     const cacheSuffix = cacheNote ? ` ${cacheNote}` : "";
     const { episode, repeat } = this.enterEpisode(runId, gateCommand, failingFiles);
     if (repeat) {
-      await this.repeatRed(runId, pmThreadId, episode, failingFiles, `Lane Pilot: integration gate ${label} is still red (exit ${exitCode}), the same failing tests as before.${failingList} The owner was already asked about this red gate and is not asked again until a gate run is green. Full log: ${logRelativePath}`, tasksToCheck.map((task) => task.taskId));
+      await this.repeatRed(runId, pmThreadId, episode, failingFiles, `Lane Pilot: integration gate ${label} is still red (exit ${exitCode}), the same failing tests as before.${failingList} You were already told about this red gate; keep fixing it. Full log: ${logRelativePath}`, tasksToCheck.map((task) => task.taskId));
       return { ran: true, passed: false, culpritTaskId: null };
     }
-    await this.tellPm(pmThreadId, `Lane Pilot: integration gate ${label} failed (exit ${exitCode}). ${why}${failingList}${cacheSuffix} Full log: ${logRelativePath}`, {
-      question: allPreexisting
-        ? `The integration gate \`${gateCommand}\` is red, but its failing tests already fail without the work merged in this batch. What should the PM do?`
-        : `The integration gate \`${gateCommand}\` is red and no single task is to blame. What should the PM do?`,
-      detail: `Full log: ${logRelativePath}\n\n${`${stderr}\n${stdout}`.trim().slice(-1200)}`,
-      options: ["Investigate and fix it", "Leave it, I will look myself"],
-    }, episode);
+    await this.tellPm(pmThreadId, `Lane Pilot: integration gate ${label} failed (exit ${exitCode}). ${why}${failingList}${cacheSuffix} Full log: ${logRelativePath}. Decide and act yourself, do not ask the owner: read the log, then dispatch fix tasks for these tests (one per workspace is fine); pre-existing failures are fixed the same way.`, episode);
 
     return { ran: true, passed: false, culpritTaskId: null };
   }
 
   /**
-   * The PM gets the failure as a message. A failure only the owner can settle also opens a question form for the owner
-   * (see `createOwnerAsk`); when it opened, the message says so and the answer arrives in the PM chat as a message, and
-   * when it could not open (an older BB, another form already open) the message alone is the old behaviour.
+   * The PM gets the failure as a message and decides what to do itself. The gate used to open an owner form «What should
+   * the PM do?» whose answer was always «investigate and fix it»; the owner asked never to be asked that (2026-10-09).
    */
-  private async tellPm(pmThreadId: string, text: string, ask: { question: string; detail: string; options: string[] }, episode?: GateEpisode): Promise<void> {
-    const TIMEOUT_MS = 60 * 60_000;
-    const asked = await this.ctx.ownerAsk?.askInBackground(pmThreadId, { source: "gate", ...ask },
-      (answer) => {
-        // One answer reaches the PM once: the episode keeps it from a second delivery.
-        if (episode) { if (episode.answered) return; episode.answered = true; }
-        return this.ctx.ownerAsk.sendToThread(pmThreadId, this.ctx.ownerAsk.answerMessage(ask.question, answer, TIMEOUT_MS));
-      },
-      { timeoutMs: TIMEOUT_MS }).catch(() => false);
+  private async tellPm(pmThreadId: string, text: string, _episode?: GateEpisode): Promise<void> {
     await this.ctx.bb.sdk.threads.send({
       threadId: pmThreadId,
       mode: "queue-if-active",
-      input: [{ type: "text", text: asked ? `${text} The owner was asked what to do; the answer arrives in this chat.` : text, mentions: [] }],
+      input: [{ type: "text", text: stripAnsi(text), mentions: [] }],
     } as never).catch(() => undefined);
   }
 
@@ -536,6 +517,11 @@ export class IntegrationGateRunner {
       this.ctx.log(`integration-gate: still red, same episode; PM fix in flight (${fixing.join(", ")}), nobody told`);
       return;
     }
-    await this.ctx.bb.sdk.threads.send({ threadId: pmThreadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never).catch(() => undefined);
+    await this.ctx.bb.sdk.threads.send({ threadId: pmThreadId, mode: "queue-if-active", input: [{ type: "text", text: stripAnsi(text), mentions: [] }] } as never).catch(() => undefined);
   }
+}
+
+/** Terminal colour codes from the test runner, with or without the ESC byte (`\u001b[31m`, `[31m`). */
+function stripAnsi(text: string): string {
+  return text.replace(/\u001b\[[0-9;]*m/g, "").replace(/\[\d{1,2}(?:;\d{1,2})*m/g, "");
 }
