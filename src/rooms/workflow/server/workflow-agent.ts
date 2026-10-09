@@ -1,7 +1,7 @@
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { getRunSettingsScopes } from "../../storage";
 import { writerExecutionSelection, findModelIn } from "@lane-pilot/models";
-import { providerLimitNotice } from "../../writer/server/writer-task";
+import { providerLimitNotice } from "../../writer/server";
 import { ROLE_PROFILES } from "../../native-agent";
 import type { ExtraAccess, HelperRole } from "../../native-agent";
 import { redactKnown } from "@lane-pilot/kit";

@@ -13,4 +13,4 @@ export { createWriterUpdateTask } from "./update-task";
 export { createWriterVerify } from "./verify";
 export { createWriterHost } from "./writer-host";
 export { DEFAULT_SILENCE_NUDGE_MIN, sweepWriterSilence } from "./writer-silence";
-export { asJsonText, outputText } from "./writer-task";
+export { asJsonText, outputText, providerLimitNotice } from "./writer-task";
