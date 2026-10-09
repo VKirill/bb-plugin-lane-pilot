@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.212
+
+- **One thin post no longer fails the whole `insights-post` run.** The seventh live run picked a Threads post with 4 comments; `ins.post` rightly took its `blocked` branch, which emits only `status`, and the parent failed with `output field "post_folder" is missing`. `post_folder`, `summary_path`, `validator_ok` and `rejects_open` are now optional outputs of `ins.post` and of the fan-out child, so a blocked post counts as failed and the others go on. The chain simulator stubs whole subworkflows and does not check the child's `out`, so the new chains-own case documents the behaviour; the live run is the check.
+
 ## 0.1.211
 
 - **The Insights critic runs on GPT-6.1 Sol instead of Cursor Grok.** The owner's Cursor plan ran out, so every step on `acp-cursor` answered «Upgrade your plan to continue». The built-in preset `ins-check` («INS - проверка», the critic of `insights-post` / `ins.post`) is now codex / gpt-6.1-sol / medium, still a model family other than the Claude analysis steps. Outside the plugin the same day: the BB Tasks presets on Grok moved to codex gpt-6.1-sol, and SelfyStudio's night review moved from acp-cursor to codex gpt-6.1-sol.

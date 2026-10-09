@@ -24,10 +24,10 @@
   },
   "outputs": {
     "status": "ok|rework_failed|blocked",
-    "post_folder": "string",
-    "summary_path": "string",
-    "validator_ok": "bool",
-    "rejects_open": "int"
+    "post_folder": "string?",
+    "summary_path": "string?",
+    "validator_ok": "bool?",
+    "rejects_open": "int?"
   },
   "entry": "collect",
   "nodes": [

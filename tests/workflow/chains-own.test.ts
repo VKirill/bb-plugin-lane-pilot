@@ -56,6 +56,9 @@ describe("insights-post", () => {
   it("a post that fails its analysis is dropped; all posts failing is blocked; a dossier that is not ready ends partial", async () => {
     const partial = await runSim("insights-post", { input, stubs: { ...base(), "ins.post": [{ status: "ok", post_folder: "p1", summary_path: "s1" }, { status: "rework_failed", post_folder: "p2" }] } });
     expect(out(partial)).toMatchObject({ status: "done", posts: ["p1"] });
+    // A post with too few comments ends ins.post as blocked, with no folder: it is dropped, not the run (live run, 2026-10-09).
+    const thin = await runSim("insights-post", { input, stubs: { ...base(), "ins.post": [{ status: "ok", post_folder: "p1", summary_path: "s1" }, { status: "blocked" }] } });
+    expect(out(thin)).toMatchObject({ status: "done", posts: ["p1"] });
     expect(pathOf(await runSim("insights-post", { input, stubs: { ...base(), "ins.post": { status: "blocked" } } }))).toBe("discover pick posts blocked");
     const notReady = await runSim("insights-post", { input, stubs: { ...base(), ready_check: { ok: false } } });
     expect(pathOf(notReady)).toBe("discover pick posts aggregate enrich ready_check enrich ready_check partial");

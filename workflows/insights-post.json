@@ -192,8 +192,8 @@
         },
         "out": {
           "status": "string",
-          "post_folder": "string",
-          "summary_path": "string"
+          "post_folder": "string?",
+          "summary_path": "string?"
         }
       },
       "join": {
