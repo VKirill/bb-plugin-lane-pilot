@@ -68,28 +68,32 @@ const detail = {
 
 describe("the council page follows the server's signals (H6)", () => {
   it("shows a new message at once on a council signal for its project", async () => {
-    const state = { messages: detail.messages, detailReads: 0 };
-    const app = await loadPluginApp(() => import("../app"));
-    const panel = app.navPanels.find((item) => item.id === "lane-pilot-council")!;
-    const view = await renderSlot(panel, { subPath: "" }, {
-      context: { projectId: "proj_ui", threadId: null },
-      providers: { status: "ready", providers: [] as never },
-      rpc: {
-        get_preferences: (input: unknown) => ({ locale: (input as { suggestedLocale: "en" | "ru" }).suggestedLocale, preference: "auto", lastProjectId: null }),
-        list_projects: () => ({ projects: [{ id: "proj_ui", name: "UI" }], lastProjectId: "proj_ui" }),
-        list_councils: () => ({ councils: [{ id: "cncl_1", runId: "r", question: "Q?", state: "discussion", round: 1, maxRounds: 3, decisionPath: null, updatedAt: 1 }] }),
-        get_council: () => { state.detailReads += 1; return { ...detail, messages: state.messages }; },
-      },
-    });
-    // On a desktop window the feed lives in the drawer, which starts collapsed (see council-page.test.tsx).
-    await waitFor(() => expect(view.getByTestId("council-peek")).toBeDefined());
-    fireEvent.click(view.getByTestId("council-drawer-toggle"));
-    await waitFor(() => expect(view.getByTestId("council-messages").textContent).toContain("Q?"));
-    const before = state.detailReads;
-    state.messages = [...detail.messages, { seq: 2, seatId: "product", round: 1, kind: "position", text: "Drop the account step.", at: 2 }];
-    await view.behavior.emitRealtime("lp:proj_ui", { kind: "council" });
-    await waitFor(() => expect(view.getByTestId("council-messages").textContent).toContain("Drop the account step."));
-    expect(state.detailReads).toBeGreaterThan(before);
-    view.lifecycle.unmount();
+    // A narrow window renders the chat-only council page, where the feed is always visible.
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: 800 });
+    try {
+      const state = { messages: detail.messages, detailReads: 0 };
+      const app = await loadPluginApp(() => import("../app"));
+      const panel = app.navPanels.find((item) => item.id === "lane-pilot-council")!;
+      const view = await renderSlot(panel, { subPath: "" }, {
+        context: { projectId: "proj_ui", threadId: null },
+        providers: { status: "ready", providers: [] as never },
+        rpc: {
+          get_preferences: (input: unknown) => ({ locale: (input as { suggestedLocale: "en" | "ru" }).suggestedLocale, preference: "auto", lastProjectId: null }),
+          list_projects: () => ({ projects: [{ id: "proj_ui", name: "UI" }], lastProjectId: "proj_ui" }),
+          list_councils: () => ({ councils: [{ id: "cncl_1", runId: "r", question: "Q?", state: "discussion", round: 1, maxRounds: 3, decisionPath: null, updatedAt: 1 }] }),
+          get_council: () => { state.detailReads += 1; return { ...detail, messages: state.messages }; },
+        },
+      });
+      await waitFor(() => expect(view.getByTestId("council-messages").textContent).toContain("Q?"));
+      const before = state.detailReads;
+      state.messages = [...detail.messages, { seq: 2, seatId: "product", round: 1, kind: "position", text: "Drop the account step.", at: 2 }];
+      await view.behavior.emitRealtime("lp:proj_ui", { kind: "council" });
+      await waitFor(() => expect(view.getByTestId("council-messages").textContent).toContain("Drop the account step."));
+      expect(state.detailReads).toBeGreaterThan(before);
+      view.lifecycle.unmount();
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: originalWidth });
+    }
   });
 });
