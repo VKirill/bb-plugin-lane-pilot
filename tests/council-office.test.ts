@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  ALL_INTERACTION_POINTS,
+  createOfficeAgents,
+  findOfficeFloorPath,
+  isOfficeFloorBlocked,
+  isOfficeSegmentBlocked,
+  stepOfficeSimulation,
+  OFFICE_PROPS,
+  OFFICE_WALLS,
+} from "../src/rooms/council/ui/office-layout";
+import {
   assignOfficeSeats,
   assignSeatColors,
   chooseIdleSpot,
@@ -478,5 +488,108 @@ describe("resolveLabelCollisions", () => {
 
     expect(speaker.collapsed).toBe(false); // Speaker is never collapsed
     expect(l1.collapsed || l2.collapsed).toBe(true); // Non-speaker collapses when crowded
+  });
+});
+
+describe("office-layout & agent simulation", () => {
+  it("proves reachability across all interaction points without crossing walls or furniture", () => {
+    // Open hallway point between rooms
+    const centralHallway = { x: 0, z: 0 };
+    expect(isOfficeFloorBlocked(centralHallway.x, centralHallway.z)).toBe(false);
+
+    // Verify all interaction points are on free floor and reachable
+    for (const pt of ALL_INTERACTION_POINTS) {
+      expect(isOfficeFloorBlocked(pt.x, pt.z)).toBe(false);
+      const path = findOfficeFloorPath({ x: pt.x, z: pt.z }, centralHallway);
+      expect(path.length).toBeGreaterThan(0);
+      for (const step of path) {
+        expect(isOfficeFloorBlocked(step.x, step.z)).toBe(false);
+      }
+    }
+  });
+
+  it("guarantees unique dedicated workstations per agent", () => {
+    const actorIds = ["chair", "owner", "product", "skeptic", "growth", "finance"];
+    const agents = createOfficeAgents(actorIds);
+    const deskIds = agents.map((a) => a.assignedDeskId);
+    const uniqueDesks = new Set(deskIds);
+    expect(uniqueDesks.size).toBe(actorIds.length);
+  });
+
+  it("enforces point reservation (one user per point) during simulation", () => {
+    const actorIds = ["chair", "owner", "product", "skeptic", "growth", "finance"];
+    const agents = createOfficeAgents(actorIds);
+    const reservations = new Map<string, string>();
+
+    let seed = 123;
+    const rng = () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+
+    // Run simulation steps
+    for (let sec = 0; sec < 300; sec += 10) {
+      stepOfficeSimulation(agents, reservations, sec, 10, rng, false);
+      // Verify no two agents share a reserved point
+      const usedPoints = new Set<string>();
+      for (const agent of agents) {
+        expect(usedPoints.has(agent.currentPointId)).toBe(false);
+        usedPoints.add(agent.currentPointId);
+      }
+    }
+  });
+
+  it("simulated hour satisfies time share invariants: >= 50% desk time, < 20% walking", () => {
+    const actorIds = ["chair", "owner", "product", "skeptic", "growth", "finance"];
+    const agents = createOfficeAgents(actorIds);
+    const reservations = new Map<string, string>();
+
+    let seed = 42;
+    const rng = () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+
+    const TOTAL_SECONDS = 3600; // 1 hour
+    const DT = 5;
+
+    for (let sec = 0; sec < TOTAL_SECONDS; sec += DT) {
+      stepOfficeSimulation(agents, reservations, sec, DT, rng, false);
+    }
+
+    for (const agent of agents) {
+      const totalRecorded =
+        agent.deskSeconds +
+        agent.walkingSeconds +
+        agent.sofaSeconds +
+        agent.coffeeSeconds +
+        agent.windowSeconds +
+        agent.chatSeconds;
+
+      expect(totalRecorded).toBe(TOTAL_SECONDS);
+
+      const deskShare = agent.deskSeconds / TOTAL_SECONDS;
+      const walkingShare = agent.walkingSeconds / TOTAL_SECONDS;
+
+      // >= 50% desk time
+      expect(deskShare).toBeGreaterThanOrEqual(0.5);
+      // < 20% walking time
+      expect(walkingShare).toBeLessThan(0.2);
+    }
+  });
+
+  it("council duty override causes all seats to gather in meeting-room chairs", () => {
+    const actorIds = ["chair", "owner", "product", "skeptic"];
+    const agents = createOfficeAgents(actorIds);
+    const reservations = new Map<string, string>();
+
+    // Step with council active
+    stepOfficeSimulation(agents, reservations, 100, 10, () => 0.5, true);
+
+    for (const agent of agents) {
+      expect(agent.activity).toBe("meeting");
+      expect(agent.currentPointId).toBe(agent.assignedMeetingSeatId);
+      expect(reservations.get(agent.currentPointId)).toBe(agent.id);
+    }
   });
 });

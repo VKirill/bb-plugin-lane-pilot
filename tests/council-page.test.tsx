@@ -83,6 +83,6 @@ describe("council page", () => {
     expect(questionEl?.textContent).toContain(detail.question);
 
     const officeContainer = view.getByTestId("council-office-fallback").parentElement?.parentElement;
-    expect(officeContainer?.className).toContain("min-h-[300px]");
+    expect(officeContainer?.className).toContain("min-h-[320px]");
   });
 });

@@ -198,6 +198,8 @@ export function CouncilOffice({
         body: import("three").Mesh;
         headGroup: import("three").Group;
         headMesh: import("three").Mesh;
+        leftEye: import("three").Mesh;
+        rightEye: import("three").Mesh;
         leftArmPivot: import("three").Group;
         rightArmPivot: import("three").Group;
         leftLegPivot: import("three").Group;
@@ -335,6 +337,8 @@ export function CouncilOffice({
             body,
             headGroup,
             headMesh,
+            leftEye,
+            rightEye,
             leftArmPivot,
             rightArmPivot,
             leftLegPivot,
@@ -586,6 +590,11 @@ export function CouncilOffice({
           char.headGroup.rotation.x = pose.headPitch;
           char.headGroup.rotation.y = pose.headYaw;
 
+          // Chibi blinking animation
+          const isBlink = (Math.floor((timeSec + char.phase) * 3) % 11) === 0;
+          char.leftEye.scale.y = isBlink ? 0.15 : 1.0;
+          char.rightEye.scale.y = isBlink ? 0.15 : 1.0;
+
           char.leftArmPivot.rotation.x = pose.leftArmPitch;
           char.rightArmPivot.rotation.x = pose.rightArmPitch;
           char.leftArmPivot.rotation.y = pose.leftArmYaw;
@@ -697,7 +706,7 @@ export function CouncilOffice({
   return (
     <div
       ref={containerRef}
-      className="relative flex h-full w-full min-h-[300px] select-none flex-col items-center justify-center overflow-hidden bg-[#cbd5e1] text-xs font-mono"
+      className="relative flex h-full w-full min-h-[300px] select-none flex-col items-center justify-center overflow-hidden bg-[#cbd5e1] text-xs font-mono touch-pan-x touch-pan-y"
       style={{
         boxShadow: "inset 0 0 0 2px #0f172a",
         imageRendering: "pixelated",

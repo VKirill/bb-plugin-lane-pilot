@@ -1,3 +1,5 @@
+export * from "./office-layout";
+
 export type OfficeActivity = "speaking" | "arguing" | "waiting" | "idle";
 
 export type OfficeActor = {
