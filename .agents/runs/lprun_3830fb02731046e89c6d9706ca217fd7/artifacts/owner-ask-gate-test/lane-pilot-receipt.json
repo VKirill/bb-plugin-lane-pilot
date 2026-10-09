@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "status": "accepted",
+  "lanePilotRunId": "lprun_3830fb02731046e89c6d9706ca217fd7",
+  "lanePilotTaskId": "owner-ask-gate-test",
+  "attemptId": "lpattempt_9d5e074e207d452aaac3a0bf56807077",
+  "pmThreadId": "thr_d6zg57egme",
+  "writerThreadId": "thr_pbhaha3qmg",
+  "ownsPaths": [
+    "tests/owner-ask.test.ts"
+  ],
+  "readFirst": [
+    {
+      "path": "tests/owner-ask.test.ts",
+      "windows": []
+    },
+    {
+      "path": "src/rooms/verification/server/integration-gate.ts",
+      "windows": []
+    }
+  ],
+  "output": "Changed paths:\n- `tests/owner-ask.test.ts`\n\nVerification results:\n- `npx vitest run tests/owner-ask.test.ts` passed (18/18 tests passed, exit 0)\n- `npm run typecheck` passed (exit 0)",
+  "verification": [
+    {
+      "command": "npx vitest run tests/owner-ask.test.ts",
+      "exitCode": 0,
+      "stdout": "\u001b[?25l\r\n\u001b[1m\u001b[30m\u001b[46m RUN \u001b[49m\u001b[39m\u001b[22m \u001b[36mv4.1.11 \u001b[39m\u001b[90m/Users/vechkasov/.lane-pilot/worktrees/lpattempt_dc99c466efd64ab2897e8f4b393f31cf/bb-plugin-lane-pilot\u001b[39m\r\n\r\n\u001b[?2026h\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/owner-ask.test.ts\u001b[2m [queued]\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (0)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m13:17:05\r\n\u001b[2m   Duration \u001b[22m101ms\r\n\u001b[?2026l\u001b[?2026h\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/owner-ask.test.ts\u001b[2m [queued]\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (0)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m13:17:05\r\n\u001b[2m   Duration \u001b[22m930ms\r\n\u001b[?2026l\u001b[?2026h\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/owner-ask.test.ts\u001b[2m [queued]\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (0)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m13:17:05\r\n\u001b[2m   Duration \u001b[22m1.94s\r\n\u001b[?2026l\u001b[?2026h\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/owner-ask.test.ts\u001b[2m [queued]\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (0)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m13:17:05\r\n\u001b[2m   Duration \u001b[22m2.95s\r\n\u001b[?2026l\u001b[?2026h\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/owner-ask.test.ts\u001b[2m 0/18\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (18)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m13:17:05\r\n\u001b[2m   Duration \u001b[22m3.36s\r\n\u001b[?2026l\u001b[?2026h\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/owner-ask.test.ts\u001b[2m 1/18\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m1 passed\u001b[39m\u001b[22m\u001b[90m (18)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m13:17:05\r\n\u001b[2m   Duration \u001b[22m3.47s\r\n\u001b[?2026l\u001b[?2026h\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/owner-ask.test.ts\u001b[2m 6/18\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m6 passed\u001b[39m\u001b[22m\u001b[90m (18)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m13:17:05\r\n\u001b[2m   Duration \u001b[22m3.87s\r\n\u001b[?2026l\u001b[?2026h\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/owner-ask.test.ts\u001b[2m 7/18\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m7 passed\u001b[39m\u001b[22m\u001b[90m (18)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m13:17:05\r\n\u001b[2m   Duration \u001b[22m4.28s\r\n\u001b[?2026l\u001b[?2026h\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/owner-ask.test.ts\u001b[2m 9/18\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m9 passed\u001b[39m\u001b[22m\u001b[90m (18)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m13:17:05\r\n\u001b[2m   Duration \u001b[22m4.48s\r\n\u001b[?2026l\u001b[?2026h\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\r\n\u001b[1m\u001b[33m ❯ \u001b[39m\u001b[22mtests/owner-ask.test.ts\u001b[2m 11/18\u001b[22m\r\n\r\n\u001b[2m Test Files \u001b[22m\u001b[1m\u001b[32m0 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m\u001b[1m\u001b[32m11 passed\u001b[39m\u001b[22m\u001b[90m (18)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m13:17:05\r\n\u001b[2m   Duration \u001b[22m4.58s\r\n\u001b[?2026l\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K\u001b[1A\u001b[K \u001b[32m✓\u001b[39m tests/owner-ask.test.ts \u001b[2m(\u001b[22m\u001b[2m18 tests\u001b[22m\u001b[2m)\u001b[22m\u001b[33m 1275\u001b[2mms\u001b[22m\u001b[39m\r\n   \u001b[32m✓\u001b[39m the form's contract (H8) \u001b[2m(1)\u001b[22m\r\n     \u001b[32m✓\u001b[39m numbers the options, keeps the question as the push title and reads the answer back\u001b[32m 4\u001b[2mms\u001b[22m\u001b[39m\r\n   \u001b[32m✓\u001b[39m questions to the owner as BB pending interactions (H8) \u001b[2m(7)\u001b[22m\r\n     \u001b[32m✓\u001b[39m opens a form in the thread and returns what the owner chose and wrote\u001b[32m 3\u001b[2mms\u001b[22m\u001b[39m\r\n     \u001b[32m✓\u001b[39m reports a dismissed form, an empty answer and a timeout as cancelled\u001b[32m 2\u001b[2mms\u001b[22m\u001b[39m\r\n     \u001b[32m✓\u001b[39m opens one form per thread; a second question is «unavailable» so the caller can say it in text\u001b[32m 0\u001b[2mms\u001b[22m\u001b[39m\r\n     \u001b[32m✓\u001b[39m is unavailable on a BB without bb.ui.requestInput\u001b[32m 0\u001b[2mms\u001b[22m\u001b[39m\r\n     \u001b[33m\u001b[2m✓\u001b[22m\u001b[39m askInBackground says the form is open, then hands the answer to the callback \u001b[33m 456\u001b[2mms\u001b[22m\u001b[39m\r\n     \u001b[33m\u001b[2m✓\u001b[22m\u001b[39m askInBackground does not call back for a form lost to a withdrawal or a reload, and is false when BB refused the form \u001b[33m 426\u001b[2mms\u001b[22m\u001b[39m\r\n     \u001b[32m✓\u001b[39m a user's dismissal and a timeout are reported to the asking thread as messages\u001b[32m 0\u001b[2mms\u001b[22m\u001b[39m\r\n   \u001b[32m✓\u001b[39m lane_pilot_ask_owner (H8) \u001b[2m(3)\u001b[22m\r\n     \u001b[32m✓\u001b[39m holds a form for the owner and returns the answer to the PM\u001b[32m 111\u001b[2mms\u001b[22m\u001b[39m\r\n     \u001b[32m✓\u001b[39m tells the PM when the owner dismissed the form, and refuses a thread that is not a PM\u001b[32m 90\u001b[2mms\u001b[22m\u001b[39m\r\n     \u001b[32m✓\u001b[39m says owner_question_unavailable when a form is already open in the chat\u001b[32m 73\u001b[2mms\u001b[22m\u001b[39m\r\n   \u001b[32m✓\u001b[39m the integration gate tells the PM and never asks the owner (H8) \u001b[2m(1)\u001b[22m\r\n     \u001b[32m✓\u001b[39m sends exactly one PM message with ANSI codes stripped and opens no pending interaction\u001b[32m 0\u001b[2mms\u001b[22m\u001b[39m\r\n   \u001b[32m✓\u001b[39m a council room waiting for the owner opens a form in the PM chat (H8) \u001b[2m(2)\u001b[22m\r\n     \u001b[32m✓\u001b[39m turns a typed word into feed words and the button into a decision request\u001b[32m 103\u001b[2mms\u001b[22m\u001b[39m\r\n     \u001b[32m✓\u001b[39m withdraws the form when the wait ends another way, and does nothing without question forms\u001b[32m 1\u001b[2mms\u001b[22m\u001b[39m\r\n   \u001b[32m✓\u001b[39m thread lifecycle events do not disturb an open form (H8) \u001b[2m(1)\u001b[22m\r\n     \u001b[32m✓\u001b[39m a thread event for the asked thread leaves the form open\u001b[32m 0\u001b[2mms\u001b[22m\u001b[39m\r\n   \u001b[32m✓\u001b[39m a question lost to a reload (H8, audit B3) \u001b[2m(3)\u001b[22m\r\n     \u001b[32m✓\u001b[39m keeps the question when the reload took the form, and the next instance tells the chat\u001b[32m 1\u001b[2mms\u001b[22m\u001b[39m\r\n     \u001b[32m✓\u001b[39m forgets a question the owner dismissed, and one the chat itself ended\u001b[32m 1\u001b[2mms\u001b[22m\u001b[39m\r\n     \u001b[32m✓\u001b[39m an open form is pending while it waits\u001b[32m 0\u001b[2mms\u001b[22m\u001b[39m\r\n\r\n\u001b[2m Test Files \u001b[22m \u001b[1m\u001b[32m1 passed\u001b[39m\u001b[22m\u001b[90m (1)\u001b[39m\r\n\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[32m18 passed\u001b[39m\u001b[22m\u001b[90m (18)\u001b[39m\r\n\u001b[2m   Start at \u001b[22m 13:17:05\r\n\u001b[2m   Duration \u001b[22m 4.66s\u001b[2m (transform 2.38s, setup 19ms, import 3.18s, tests 1.28s, environment 0ms)\u001b[22m\r\n\r\n\u001b[?25h\\\u001b[1G\u001b[0K\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m New \u001b[31mmajor\u001b[39m version of npm available! \u001b[31m11.16.0\u001b[39m -> \u001b[34m12.2.0\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m Changelog: \u001b[34mhttps://github.com/npm/cli/releases/tag/v12.2.0\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m To update run: \u001b[4mnpm install -g npm@12.2.0\u001b[24m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\\\u001b[1G\u001b[0K",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "0edf67212008a01d7769413dcc5c720184b0173362eee2490f3038a91e1b27ee",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_dc99c466efd64ab2897e8f4b393f31cf/bb-plugin-lane-pilot"
+    },
+    {
+      "command": "npm run typecheck",
+      "exitCode": 0,
+      "stdout": "\r\n> bb-plugin-lane-pilot@0.1.212 typecheck\r\n> tsc --noEmit\r\n\r\n\\\u001b[1G\u001b[0K\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m New \u001b[31mmajor\u001b[39m version of npm available! \u001b[31m11.16.0\u001b[39m -> \u001b[34m12.2.0\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m Changelog: \u001b[34mhttps://github.com/npm/cli/releases/tag/v12.2.0\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m To update run: \u001b[4mnpm install -g npm@12.2.0\u001b[24m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\\\u001b[1G\u001b[0K",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "8579c3969ab787fa49b9bb2e3844df0c65f0a3636b239b5540f482e6e16948d6",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_dc99c466efd64ab2897e8f4b393f31cf/bb-plugin-lane-pilot"
+    }
+  ],
+  "runV2": {
+    "schemaVersion": 1,
+    "pools": {
+      "provider": 15,
+      "verification": 2
+    },
+    "score": 2,
+    "risk": "low",
+    "sourceRisk": "low",
+    "scoreAdapter": "task-risk-v1"
+  },
+  "reasoning": [
+    {
+      "planSha256": "fddd0f4b1806958556513d9c7ed8912974186bfaebca7cf54ad9c5e4297e33d3",
+      "sentPlanSha256": "fddd0f4b1806958556513d9c7ed8912974186bfaebca7cf54ad9c5e4297e33d3",
+      "sourceLength": 3189,
+      "sentLength": 3189,
+      "jevStatus": "ok",
+      "jevDecision": "medium",
+      "requestedReasoningLevel": "medium",
+      "effectiveReasoningLevel": "medium",
+      "fallbackReason": null,
+      "retryEffort": {
+        "enabled": true,
+        "retryIndex": 0,
+        "before": "medium",
+        "after": "medium",
+        "changed": false
+      },
+      "providerId": "acp-opencode",
+      "model": "router9/ag/gemini-3.8-flash-medium",
+      "serviceTier": "fast",
+      "requestedServiceTier": "fast",
+      "runId": "lprun_3830fb02731046e89c6d9706ca217fd7",
+      "attemptId": "lpattempt_9d5e074e207d452aaac3a0bf56807077",
+      "threadId": "thr_pbhaha3qmg",
+      "effortMode": "automatic",
+      "selectionSource": {
+        "providerId": "acp-opencode",
+        "model": "router9/ag/gemini-3.8-flash-medium",
+        "reasoningLevel": "medium",
+        "serviceTier": "fast",
+        "reasoningLevelSource": "client-preference"
+      },
+      "dispatchContext": {
+        "memoryText": "Area «feature:integration-gate»: earlier accepted tasks, newest first. Their decisions are in main; keep them unless this task changes them.\n- 2026-10-06T13:23 integration-gate-batch-tests: Focused checks per task; one full test run per batch; failures routed back to the writer that caused them. A project can set one full-suite integration gate that runs once per batch of merged tasks; tasks keep focused checks; a failing gate is traced to the merged task that caused it and sent as a fix turn into that writer's thread.\nFiles of this area: src/native-agent-overlay.ts, src/server/integration-gate.ts, src/server/writer/dispatch.ts, src/server/writer/finish.ts, src/ui/page.tsx, tests/integration-gate.test.ts, tests/verification/integration-gate-bisect.test.ts\n\n- Execution defaults can pin a chat environment as `folder` or `worktree`. Resolve the pin nearest-first across section, ancestors, project, and global settings. A `worktree` pin preselects a managed worktree on the folder host in both New chat and the composer chip; spawn must preserve that managed-worktree selection. With no pin, keep the existing folder/section-provider behavior. Groups must never become chat environments.\n- Errand, QA, and reviewer helper threads are read-only for repository files; specialists may write under `.agents/`. Writers retain full worktree access. Wait backstops report helper edits as `repo_edited` with changed files and do not revert them.\n- Full plugin backups use a versioned JSON payload (`kind: 'bb-project-folders-backup'`, version 1) containing settings and all 11 durable tables: folders, folder_paths, thread_places, folder_rules, project_rules, project_order, execution_defaults, session_policies, preferences, item_styles, and folder_archives. Imports preserve row IDs and run in one transaction; invalid backups and imports during an active move or archive are rejected. Transient tables (exports, pending_exports, project_moves, thread_moves, section_moves) are excluded. This adds no schema changes and preserves the existing appearance-only export/import flow.",
+        "memoryPicked": [
+          "39467d1db13cd0d2692a4e6c1934571d085dddc651a02deec6aeba4e0829c97b",
+          "d86da4f3ab41999c5f5c25ee3cfa928584b004ab91c199582af9cfac872e28c2",
+          "a1e24df18c9424b7d28552a47384aeafc3bb57aef551ddef568e5654b8b2653f"
+        ],
+        "rulesText": "- Перед ответом сверь список изменённых файлов с `owns_paths` и откати из своей задачи каждое изменение, путь которого туда не входит.\n- Перед ответом по задаче Lane Pilot сверяй каждый путь, который собираешься изменить из-за ошибки проверки, с owns_paths; если пути там нет, не меняй файл и сообщи об ошибке диспетчеру.",
+        "rulesPicked": {
+          "total": 18,
+          "picked": [
+            "rule_1014724209246da9",
+            "rule_572535fb78e20b9d"
+          ]
+        },
+        "executionPacket": "Read these before editing; they are the context for this task:\n- src/rooms/verification/server/integration-gate.ts L1-L528 (sha256 7fdde002)",
+        "executionPacketSha256": "59edfbe6801ab13957fd1abd9fbeadfd2506c7aae185c8527a23d2ca52647087",
+        "pmReadContext": "{\"summary\":\"The provided excerpt from src/rooms/verification/server/integration-gate.ts contains the core orchestration logic for integration testing via the IntegrationGateRunner class. Integration gates run asynchronously across project checkouts via host RPC calls (host.call('gateRun', ...)). When gateRun succeeds with exitCode === 0, the runner marks the gate green, clears red-gate episodes, resets merge counters (mergesSinceLastGate and mergedTasksSinceLastGate), updates lastGreenCommit, and records the evaluation in the database. When gateRun fails, it first checks whether the failure is an environment failure via isEnvironmentCheckFailure; if so, it notifies the PM without searching for culprits. Otherwise, it extracts failing tests from output using extractFailingTests, resolves failure attribution across merged tasks via host.call('gateAttribute') and attributeFailures, writes a log to .agents/plans/items/.../logs/integration-gate.log, and either dispatches a fix turn to a culprit task thread or notifies the PM chat. The task contract requires modifying this flow to handle load-induced timeouts: when all failing tests in a red gate run are timeouts, the runner must rerun the gate once before declaring a red batch. For vitest/jest commands, failing test files are appended to the rerun command; otherwise, the full command is rerun. A passing recheck must perform the standard green bookkeeping and record a 'rechecked: timeouts under load' note without dispatching fix turns or notifying the owner. Mixed timeout and assertion failures must not trigger a recheck, and repeated timeouts after a recheck must be reported with a note.\",\"keyFacts\":[\"src/rooms/verification/server/integration-gate.ts: IntegrationGateRunner.executeGate executes the gate command on the project host via host.call('gateRun', { requestedHostId, basePath, command: gateCommand, timeoutSec: GATE_TIMEOUT_SEC }) with GATE_TIMEOUT_SEC set to 30 minutes.\",\"src/rooms/verification/server/integration-gate.ts: When exitCode === 0, IntegrationGateRunner clears episodes for the runId, resets mergesSinceLastGate to 0, clears mergedTasksSinceLastGate, sets lastGreenCommit to ran.head, and returns { ran: true, passed: true }.\",\"src/rooms/verification/server/integration-gate.ts: Gate evaluation status ('passed' or 'failed') and receiptResult metadata are recorded in the database via recordGateEvaluation when a corresponding lane_pilot_task exists.\",\"src/rooms/verification/server/integration-gate.ts: Environment check failures are filtered using isEnvironmentCheckFailure({ stdout, stderr }); if true, culprit search, bisect, and fix turns are skipped, returning { ran: true, passed: false, culpritTaskId: null }.\",\"src/rooms/verification/server/integration-gate.ts: Failing tests are parsed from stdout and stderr using extractFailingTests(`${stderr}\\\\n${stdout}`) from ../gate-output, and failing files are derived from test file properties.\",\"src/rooms/verification/server/integration-gate.ts: Failure attribution uses host.call('gateAttribute', ...) when not running in live mode, followed by attributeFailures(failingTests, tasksToCheck, info) to identify candidate culprit tasks.\",\"src/rooms/verification/server/integration-gate.ts: If an unambiguous culprit task with a threadId is identified, formatFixTurnPrompt formats the prompt and sendServiceMessage sends a fix turn into the culprit writer thread and a notification to the PM thread.\",\"src/rooms/verification/server/integration-gate.ts: If no culprit task is resolved or failures are pre-existing, enterEpisode registers the red episode and tellPm notifies the PM thread without prompting the owner.\",\"src/rooms/verification/server/integration-gate.ts: Integration gate logs are written to .agents/plans/items/${culprit ? culprit.taskId : 'integration-gate'}/logs/integration-gate.log via bb.sdk.files.write.\",\"src/rooms/verification/server/integration-gate.ts: Concurrency is managed with an inFlight flag, queuing subsequent 'drain' triggers in drainWaiting to run sequentially once the active execution finishes.\"],\"openQuestions\":[\"src/rooms/verification/server/integration-gate.ts: The excerpt does not define allFailuresAreTimeouts or specify how to distinguish timeout failures from assertion failures across test runners like vitest and jest.\",\"src/rooms/verification/server/integration-gate.ts: The excerpt does not specify the command-parsing logic to identify whether a gate command is a vitest or jest command to append failing files vs. rerunning the entire command.\",\"src/rooms/verification/server/integration-gate.ts: The excerpt does not indicate where and how the 'rechecked: timeouts under load' note should be stored in receiptResult or recorded in recordGateEvaluation.\",\"src/rooms/verification/server/integration-gate.ts: The excerpt is truncated at line 528 inside repeatRed, so the end of repeatRed and any trailing helper methods or exports in the file are not visible.\",\"src/rooms/verification/server/gate-attribution.ts: This file is listed in read_first but was not included in the execution packet, leaving attribution structures and helper contracts unverified.\",\"tests/integration-gate.test.ts: This file is listed in read_first and expected_outputs but was omitted from the packet, leaving existing test patterns and host call mock conventions unverified.\",\"vitest.config.ts: This file is listed in read_first and expected_outputs for updating testTimeout to 15000, but was omitted from the packet.\"]}",
+        "agent": "Lane Pilot writer",
+        "promptChars": 10488,
+        "helperMode": "roles",
+        "helperRequired": false
+      }
+    }
+  ],
+  "emergencyFallback": null,
+  "turns": 1
+}
