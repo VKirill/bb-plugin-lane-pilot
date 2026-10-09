@@ -1,5 +1,7 @@
 import type * as ThreeType from "three";
 import { OFFICE_PROPS, OFFICE_WALLS, gridRect, type PropFootprint } from "./office-layout";
+import { buildPropsA } from "./office-props-a";
+import { buildPropsB } from "./office-props-b";
 
 export type OfficeSceneOptions = {
   THREE: typeof import("three");
@@ -555,10 +557,17 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
         for (const [lx, lz] of [[minX + 0.1, minZ + 0.1], [maxX - 0.1, minZ + 0.1], [minX + 0.1, maxZ - 0.1], [maxX - 0.1, maxZ - 0.1]]) {
           box(scene, lx - 0.04, lx + 0.04, 0, 0.7, lz - 0.04, lz + 0.04, 0xb8bcc4);
         }
-        // Monitor (screen glows #77eaff), keyboard and a desk lamp
-        box(scene, cx - 0.3, cx + 0.3, 0.95, 1.25, cz - 0.4, cz - 0.35, 0x3a3d4a);
-        box(scene, cx - 0.26, cx + 0.26, 1.0, 1.2, cz - 0.35, cz - 0.34, 0x77eaff, { outline: false });
-        box(scene, cx - 0.2, cx + 0.2, 0.75, 0.78, cz - 0.05, cz + 0.1, 0xf8fafc);
+        // Monitor on the edge far from the sitter, its screen (glows #77eaff) facing him; keyboard between; desk lamp on the north edge.
+        // North-row desks (gz 3–4): sitter on the north, monitor on the south edge facing north. South-row desks: the other way round.
+        if (cz < -6) {
+          box(scene, cx - 0.3, cx + 0.3, 0.95, 1.25, cz + 0.35, cz + 0.4, 0x3a3d4a);
+          box(scene, cx - 0.26, cx + 0.26, 1.0, 1.2, cz + 0.34, cz + 0.35, 0x77eaff, { outline: false });
+          box(scene, cx - 0.2, cx + 0.2, 0.75, 0.78, cz - 0.1, cz + 0.05, 0xf8fafc);
+        } else {
+          box(scene, cx - 0.3, cx + 0.3, 0.95, 1.25, cz - 0.4, cz - 0.35, 0x3a3d4a);
+          box(scene, cx - 0.26, cx + 0.26, 1.0, 1.2, cz - 0.35, cz - 0.34, 0x77eaff, { outline: false });
+          box(scene, cx - 0.2, cx + 0.2, 0.75, 0.78, cz - 0.05, cz + 0.1, 0xf8fafc);
+        }
         box(scene, maxX - 0.25, maxX - 0.2, 0.75, 1.1, minZ + 0.1, minZ + 0.15, 0xf0d27a);
         break;
       }
@@ -735,6 +744,13 @@ export function buildOfficeFloor({ THREE, scene, disposables }: OfficeSceneOptio
   box(scene, 6.62, 6.78, 1.12, 1.42, -6.45, -6.35, 0xbfe9ff, { opacity: 0.8 });
   box(scene, 6.62, 6.85, 1.62, 1.85, -5.05, -4.75, 0x4f9a7a);
   gridBox(scene, 2, 7, 15, 18, 0, 0.02, 0xdc9a5d, { outline: false });
+
+  // Extra props (two modules): desk clutter, wall decor, kitchen and lounge things, the lot outside
+  const kit = { THREE, scene, disposables, box, gridBox, blob, cylinder, material, OUTLINE, setPart: (name: string) => { part = name; } };
+  part = "props-a";
+  buildPropsA(kit);
+  part = "props-b";
+  buildPropsB(kit);
 
   // Lights: ambient plus one directional light from (1, 2, 0.35), no shadows (reference.md §4).
   // three.js lights are physical since r155: Lambert divides by π, so the intensities carry π back

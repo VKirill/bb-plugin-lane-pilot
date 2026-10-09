@@ -1,3 +1,6 @@
+import { BLOCKERS_A } from "./office-blockers-a";
+import { BLOCKERS_B } from "./office-blockers-b";
+
 // Floor geometry, props and the office behaviour engine (.agents/design/council-office/reference.md §1, §2, §5).
 // Authoring uses grid coords (gx 0–40, gz 0–20); the rest of the module works in world units (x = gx − 20, z = gz − 10).
 
@@ -370,6 +373,9 @@ export const OFFICE_PROPS: PropFootprint[] = [
 
 export const ALL_INTERACTION_POINTS: InteractionPoint[] = OFFICE_PROPS.flatMap((p) => p.interactionPoints);
 
+/** Floor-standing extra props from the prop modules: people walk around them. */
+const EXTRA_BLOCKERS = [...BLOCKERS_A, ...BLOCKERS_B];
+
 const POINTS_BY_ID = new Map(ALL_INTERACTION_POINTS.map((p) => [p.id, p] as const));
 
 /**
@@ -386,6 +392,11 @@ export function isOfficeFloorBlocked(x: number, z: number, margin = 0.15): boole
   }
   for (const w of OFFICE_WALLS) {
     if (x >= w.minX - margin && x <= w.maxX + margin && z >= w.minZ - margin && z <= w.maxZ + margin) {
+      return true;
+    }
+  }
+  for (const r of EXTRA_BLOCKERS) {
+    if (x >= r.minX - margin && x <= r.maxX + margin && z >= r.minZ - margin && z <= r.maxZ + margin) {
       return true;
     }
   }
