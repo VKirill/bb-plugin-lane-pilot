@@ -177,14 +177,17 @@ describe("Lane Pilot UI", () => {
 
   it("shows localized enum labels and stores the original codes", async () => {
     const saved: Array<{ key:string; value:unknown }> = [];
+    // Only the Team tab (the pickers) and the Work tab (the field) are read, so the other four are not warmed up.
     const slot = await mountPage({
       save_setting: (input: unknown) => {
         const row = input as { key:string; value:unknown };
         saved.push(row);
         return { ok:true, conflict:false, version:2, value:row.value };
       },
-    });
+    }, undefined, "", false);
+    openTab(slot, "team");
     await waitFor(() => expect(slot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
+    openTab(slot, "work");
     const field = slot.getByTestId("field-s040");
     expect(field.textContent).toContain(en.enumWorkspaceAuto);
     expect(field.textContent).not.toContain("in_place");
@@ -199,8 +202,10 @@ describe("Lane Pilot UI", () => {
     slot.lifecycle.unmount();
     Object.defineProperty(navigator, "language", { configurable: true, value: "ru-RU" });
     document.documentElement.lang = "ru";
-    const ruSlot = await mountPage();
+    const ruSlot = await mountPage({}, undefined, "", false);
+    openTab(ruSlot, "team");
     await waitFor(() => expect(ruSlot.container.querySelector("[data-testid='bb-provider-model-picker']")).not.toBeNull());
+    openTab(ruSlot, "work");
     expect(ruSlot.getByTestId("field-s040").textContent).toContain(ru.enumWorkspaceAuto);
     expect(ruSlot.getByTestId("field-s040").textContent).not.toContain("in_place");
     ruSlot.lifecycle.unmount();
