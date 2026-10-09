@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.208
+
+- **`insights-post`: `pick` returns post addresses as strings.** The second live run passed `init` and failed at the fan-out: `pick` answered `picked` with objects (url, author, counts) although the field is `string[]`, and the child `ins.post` got an object as `post_url`. The pick prompt now asks for each item as the post URL string. Known gap: the engine checks only that an array field is an array, not the type of its items.
+
 ## 0.1.207
 
 - **`insights-post` gets past its first post.** In the first live run (sandbox, «вайбкодинг + Claude 5.5», Threads/VK) discovery, pick and collect worked, but `ins.post` called `init_post.py` with `--post` and no `--url`, so the post folder was never created and the run failed with `output field "post_folder" is missing`. The step now passes `--posts <post.json> --url <post_url>`; the skill script (agent-skills) accepts one post.json and reads VK wall addresses. Also checked live: the PM called `lane_pilot_route` first on «найди обсуждаемые посты…», asked platform and result, and ran the chain with its steps as hidden child threads of the chat.

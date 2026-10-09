@@ -145,7 +145,7 @@
       "type": "agent",
       "role": "analyst",
       "model_preset": "cheap-fast",
-      "prompt": "Pick up to posts_count posts with the liveliest discussion and distinct angles; drop ads and posts with fewer than 20 comments unless nothing better exists.",
+      "prompt": "Pick up to posts_count posts with the liveliest discussion and distinct angles; drop ads and posts with fewer than 20 comments unless nothing better exists. Each item of picked is the post URL as a plain string (\"https://vk.com/wall-1_2\"), not an object: the next step opens it by that address.",
       "out": {
         "picked": "string[]",
         "picked_count": "int"
