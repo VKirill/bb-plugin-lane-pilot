@@ -102,6 +102,31 @@ describe("self-repair", () => {
     expect(JSON.stringify(state).length).toBeLessThan(256 * 1024);
   });
 
+  it("a state past its budget forgets the kinds seen longest ago, never repaired first", async () => {
+    const { ctx, logs, now } = setup();
+    const signatures: Record<string, unknown> = {};
+    for (let i = 0; i < 190; i++) {
+      const sample = { signature: `s${i}`, kind: "repeat", projectId: "p", runId: "r", taskId: "t", attemptId: `a${i}`, pmThreadId: null, writerThreadId: null, reason: "y".repeat(1000), at: i };
+      signatures[`s${i}`] = { firstAt: now - 190 + i, lastAt: now - 190 + i, count: 1, threadId: i === 0 ? "thr_old_repair" : null, spawnedAt: i === 0 ? 1 : null, verdict: i === 0 ? "fixed" : null, samples: [sample] };
+    }
+    await ctx.bb.storage.kv.set("self-repair:state", { cursor: 0, lastTickAt: 0, signatures, spawned: [] } as never);
+    const repair = createSelfRepair(ctx);
+    await repair.tick({ since: 0 });
+    const kept = Object.keys((await repair.state()).signatures);
+    expect(JSON.stringify(await repair.state()).length).toBeLessThan(200 * 1024);
+    expect(kept).toContain("s0");
+    expect(kept).toContain("s189");
+    expect(kept).not.toContain("s1");
+    expect(logs.some((line) => /forgot \d+ old kind/.test(line))).toBe(true);
+  });
+
+  it("samples stored with longer reasons are cut down when the state is read", async () => {
+    const { ctx } = setup();
+    const sample = { signature: "s", kind: "repeat", projectId: "p", runId: "r", taskId: "t", attemptId: "a", pmThreadId: null, writerThreadId: null, reason: "x".repeat(4000), at: 1 };
+    await ctx.bb.storage.kv.set("self-repair:state", { cursor: 0, lastTickAt: 0, signatures: { s: { firstAt: 1, lastAt: 1, count: 1, threadId: null, spawnedAt: null, samples: [sample] } }, spawned: [] } as never);
+    expect((await createSelfRepair(ctx).state()).signatures.s!.samples[0]!.reason).toHaveLength(1000);
+  });
+
   it("does not repeat a known problem, waits while a repair runs, and respects the daily limit", async () => {
     const env = setup({ thr_repair1: "running" });
     env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");

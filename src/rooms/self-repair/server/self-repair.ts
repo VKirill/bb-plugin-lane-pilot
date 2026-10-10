@@ -127,10 +127,14 @@ const LOG_TAIL_BYTES = 1_000_000;
 const REPEAT_AFTER_MS = 86_400_000;
 const FORGET_MS = 30 * 86_400_000;
 /**
- * A stored sample keeps this much of its reason. The state is one KV value (256 KB limit); a reason that listed every stray
- * file of a 48k-file folder was 4.7 MB, the write failed and the watcher made no pass (2026-10-10).
+ * A stored sample keeps this much of its reason (the repair prompt shows 600). The state is one KV value (256 KB limit);
+ * a reason that listed every stray file of a 48k-file folder was 4.7 MB, the write failed and the watcher made no pass,
+ * and with 4000 the ~165 known kinds alone took 252 KB (2026-10-10).
  */
-const SAMPLE_REASON_CHARS = 4000;
+const SAMPLE_REASON_CHARS = 1000;
+/** The stored state stays under this many bytes: past it the kinds seen longest ago are forgotten first (a kind with a repair's
+ * worktree is kept), so a busy month cannot grow it into the 256 KB KV limit. */
+const STATE_BUDGET_BYTES = 200 * 1024;
 /** A fixed repair whose branch will not merge is retried on this many passes, then left on its branch for the owner. */
 const MERGE_TRIES = 4;
 /** A repair thread that ended without a verdict for this long is abandoned: its worktree is saved as a patch and released. */
@@ -283,8 +287,24 @@ export function createSelfRepair(ctx: ServerCore) {
   async function state(): Promise<SelfRepairState> {
     const raw = await bb.storage.kv.get(STATE_KEY).catch(() => null);
     const row = raw && typeof raw === "object" ? raw as Partial<SelfRepairState> : {};
-    const signatures = Object.fromEntries(Object.entries(row.signatures ?? {}).map(([key, record]) => [key, { ...record, samples: record.samples ?? [] }]));
+    const signatures = Object.fromEntries(Object.entries(row.signatures ?? {}).map(([key, record]) => [key, { ...record, samples: (record.samples ?? []).map((sample) => ({ ...sample, reason: String(sample.reason ?? "").slice(0, SAMPLE_REASON_CHARS) })) }]));
     return { cursor: row.cursor ?? Date.now() - 3_600_000, lastTickAt: row.lastTickAt ?? null, signatures, spawned: row.spawned ?? [], aliases: row.aliases ?? {} };
+  }
+
+  /** Drops the kinds seen longest ago until the state fits STATE_BUDGET_BYTES: first those never repaired, then the rest. */
+  function fitState(current: SelfRepairState): number {
+    const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
+    let size = bytes(current);
+    const order = Object.entries(current.signatures).filter(([, record]) => !record.worktree && !record.pending)
+      .sort(([, a], [, b]) => Number(Boolean(a.threadId)) - Number(Boolean(b.threadId)) || a.lastAt - b.lastAt);
+    let dropped = 0;
+    for (const [signature, record] of order) {
+      if (size <= STATE_BUDGET_BYTES) break;
+      size -= bytes(signature) + bytes(record) + 2;
+      delete current.signatures[signature];
+      dropped++;
+    }
+    return dropped;
   }
 
   /** Failures since the cursor that look like Lane Pilot's fault, plus attempts stuck now. */
@@ -655,6 +675,8 @@ export function createSelfRepair(ctx: ServerCore) {
     if (!options.dryRun) {
       current.cursor = now;
       current.lastTickAt = now;
+      const dropped = fitState(current);
+      if (dropped) ctx.log(`self-repair: forgot ${dropped} old kind(s) to keep its state under ${STATE_BUDGET_BYTES / 1024} KB`);
       await bb.storage.kv.set(STATE_KEY, current as never);
     }
     return { incidents: incidents.length, signatures: [...groups.keys()], spawned, reason };

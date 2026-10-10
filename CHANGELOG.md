@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.227
+
+- **The self-repair state stays well under the KV limit for good.** With 0.1.226 the watcher passed again, but its state was still 252 KB of the 256 KB: kinds are kept 30 days and ~20 new ones a day arrive, so it would have overflowed again within days even without huge reasons. Now a stored sample keeps 1000 characters of its reason (the repair prompt shows 600), samples already stored are cut when the state is read, and before each save the state is held under 200 KB (`STATE_BUDGET_BYTES`, `fitState`): past it the kinds seen longest ago are forgotten, never-repaired ones first, a kind whose repair worktree exists never; the log says «self-repair: forgot N old kind(s) …». A forgotten kind that comes back is simply new again.
+  - Tests in `tests/server/self-repair.test.ts`: stored samples cut on read; a 190-kind state over the budget drops the oldest never-repaired kinds and keeps the repaired one and the newest.
+
 ## 0.1.226
 
 - **The self-repair watcher makes passes again.** Three writer attempts (jev-openlux-*, 2026-10-10) ended with a reason that listed every stray file of the 48k-file BB-сервис folder, 4.7 MB each. The watcher copied each reason whole into its samples, so its state grew to 14 MB and every pass failed on the 256 KB KV limit after the incidents were read; the failure was swallowed (a pass logs only when it has incidents), and the outside watchdog reported «no pass for 52 min». A stored sample now keeps the first 4000 characters of its reason (`SAMPLE_REASON_CHARS`), and a failed pass logs «self-repair tick failed: …».
