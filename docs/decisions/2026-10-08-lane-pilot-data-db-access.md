@@ -13,3 +13,8 @@
 _Copy kept in the Lane Pilot repository (audit 2026-10-08 round 4, item 23); the decision record of the whole BB-сервис project is `docs/decisions/2026-10-08-lane-pilot-data-db-access.md` in its root. Round 4 check: `data.db`, `-shm` and `-wal` were 0600 and the directory 0700 on the hub, and no agent process ran there; the claim holds as long as the hub host is not added as a machine, so a periodic `bb host list` belongs in the drill._
 
 _Update, later on 2026-10-08 (owner decision «убрать, держать просто»): the server caller check and the owner forms for Lane Pilot and Env Catalog RPCs were removed (`docs/rpc-callers.md`). The file permissions above and the fact that no agent runs on the hub remain the protection of `data.db`._
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Architectural decisions](../decisions.md)
