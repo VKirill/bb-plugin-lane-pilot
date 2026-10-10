@@ -22,6 +22,8 @@ export default defineConfig({
   test: {
     testTimeout: 15000,
     setupFiles: ["./tests/setup-jsdom.ts"],
+    // One temp directory per run (TMPDIR for every worker of every project), removed after it: see tests/global-setup.ts.
+    globalSetup: ["./tests/global-setup.ts"],
     projects: [
       // Node tests share one module graph per worker (no per-file re-import of the whole plugin).
       { extends: true, test: { name: "node", include: nodeTests, exclude: mocking, isolate: false } },
