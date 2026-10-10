@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { BB_SHIM_NAMES, prepareBbShim } from "../src/rooms/native-agent/bb-shim";
 import { OPENCODE_BASH_DENY } from "../src/rooms/native-install/opencode-min-config";
 import { hookEnv } from "./hook-env";
+import { useGuardPool, type Verdict } from "./guard-pool";
 
 // Audit 2026-10-08 round 4, P0-7: the ways past the shell guard (hub address in other notations, wrapper options that take a value). Since the
 // owner decision of 2026-10-08 the guard stops only what breaks the hub by mistake (plugin admin commands, ssh to the hub): schedule, anamnesis and
@@ -13,25 +14,10 @@ import { hookEnv } from "./hook-env";
 const guard = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
 const temp = () => mkdtempSync(join(tmpdir(), "guard-r4-"));
 
-type Verdict = { status: number | null; stdout: string };
 const payloadOf = (command: string, agentType: string | null) => JSON.stringify({ tool_name: "Bash", tool_input: { command }, cwd: "/tmp", ...(agentType ? { agent_type: agentType } : {}) });
 const isDenied = (verdict: Verdict) => verdict.status === 2 && /\[hub-guard\]/.test(verdict.stdout);
 
-const POOL = 8;
-async function runMany(cases: Array<{ command: string; agentType: string | null; env?: Record<string, string> }>): Promise<Verdict[]> {
-  const results: Verdict[] = new Array(cases.length);
-  let next = 0;
-  const one = (index: number) => new Promise<void>((done) => {
-    const { command, agentType, env = {} } = cases[index]!;
-    const child = spawn("python3", [guard], { env: hookEnv({ AGENT_HOOK_CLIENT: "claude", ...env }) });
-    let stdout = "";
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.on("close", (status) => { results[index] = { status, stdout }; done(); });
-    child.stdin.end(payloadOf(command, agentType));
-  });
-  await Promise.all(Array.from({ length: Math.min(POOL, cases.length) }, async () => { for (let index = next++; index < cases.length; index = next++) await one(index); }));
-  return results;
-}
+const runMany = useGuardPool(guard, payloadOf);
 
 // A command a Lane Pilot writer or helper (strict) must not run, in a form that got past the first version of the guard.
 const STRICT_DENIED: Array<[string, string]> = [
