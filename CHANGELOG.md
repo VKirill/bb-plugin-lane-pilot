@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.225
+
+- **A «Jev» block in General settings, Work tab, at the very top.** Until now the Jev provider (`jev.provider`, 0.1.222) was a plain select in the Advanced «Operations» list and its keys lived only in Env Catalog, so nobody found it. The block (`src/rooms/settings/ui/jev-provider.tsx`) has: an OpenLux / TypeSafe switch (writes `jev.provider` through the usual setting save); per provider «Key: present / missing» (Env Catalog name and model under it, the key is never read for the answer, never returned and never drawn); a password field with «Save key» that writes `OPENLUX_API_KEY` / `TYPESAFE_API_KEY` into Env Catalog (`env_save`) and forgets the 10-minute key cache at once; «Check», one real Jev request through the chosen provider with its key, answering ok or the error with model and latency (no request when the chosen provider has no key, it says which key is missing); and a warning when the chosen provider has no key: «Jev runs on TypeSafe» (the fallback of `jevEndpoint`) or «Jev is off» when neither has one, or when Env Catalog does not answer. At a project or section level the old row is replaced by a one-line note that the provider is global (the value shown is the global one).
+  - New RPCs `jev_provider_status`, `jev_provider_save_key`, `jev_provider_test` (`src/rooms/secrets/server/rpc/jev.ts`, contract in `rpc-knowledge.ts`); `createSecrets` gets `save`; the core exposes `catalogKey` and `forgetCatalogKey`. The status uses the same rule as `jevEndpoint` (chosen provider with a key, else TypeSafe, else none). Strings in `packages/i18n/src/i18n-jev.ts` (EN and RU). Checked at 375 and 1280 px, no horizontal overflow.
+  - Tests: `tests/server/jev-provider-rpc.test.ts` (status from names only, fallback, catalog down, key save and refusals, test request with the right url, key and model, 401, no key) and `tests/jev-provider-ui.test.tsx` (position, switch, warnings, key save and clear, test result, no key in the page, Russian, project note).
+
 ## 0.1.224
 
 - **The test suite costs about a quarter less CPU, and `npm run test:changed` checks an everyday edit in seconds.** Tests only; no plugin code changed. A full run on the Mac mini: CPU 524 s to 401 s, 4 190 tests in 457 files to 4 185 in 463 (wall 85 s to 82 s on a machine that was busy with other work; the node project alone 79 s to 60-64 s).

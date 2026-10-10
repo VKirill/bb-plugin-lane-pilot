@@ -14,6 +14,7 @@ export type CatalogRecord = { name:string; kind:CredentialKind; value:string | n
 type CallRpc = (args:{ pluginId:string; method:string; input?:unknown; outputSchema:z.ZodType<unknown> }) => Promise<unknown>;
 
 const listSchema = z.object({ variables:z.array(z.object({ name:z.string(), kind:z.enum(["secret", "ftp", "ssh", "login"]).catch("secret") }).passthrough()) }).passthrough();
+const saveSchema = z.object({ success:z.boolean() }).passthrough();
 const recordSchema = z.object({
   name:z.string(), kind:z.enum(["secret", "ftp", "ssh", "login"]).catch("secret"),
   value:z.string().nullable(), access:z.record(z.string(), z.unknown()).nullable().optional(),
@@ -155,7 +156,17 @@ export function createSecrets(deps:{ bb:BbPluginApi; now?:() => number }) {
     return result;
   }
 
-  return { list, record, check, resolve };
+  /** Saves one secret under its name (Env Catalog `env_save`); the value is registered for masking and never returned. Throws when the catalog refuses or cannot be asked. */
+  async function save(name:string, value:string, note:{ service?:string; description?:string } = {}):Promise<void> {
+    const call = callRpc();
+    if (!call) throw new Error("Env Catalog is not available (not installed or disabled)");
+    registerSecrets([value]);
+    const reply = saveSchema.parse(await call({ pluginId:ENV_CATALOG_PLUGIN, method:"env_save", input:{ name, kind:"secret", value, ...note }, outputSchema:saveSchema }));
+    if (!reply.success) throw new Error("Env Catalog did not save the key");
+    cached = null;
+  }
+
+  return { list, record, check, resolve, save };
 }
 
 export type Secrets = ReturnType<typeof createSecrets>;

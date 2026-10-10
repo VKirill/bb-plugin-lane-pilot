@@ -5,7 +5,7 @@ import { Switch } from "@lane-pilot/ui-kit";
 import { asBoolean, sectionKey } from "./page-model";
 import { extraSettingTab } from "./placement";
 import { CatalogField, CatalogFields } from "../../settings/ui";
-import { AdvancedRows, SettingsGroup } from "../../settings/ui";
+import { AdvancedRows, JevProviderNote, JevProviderPanel, SettingsGroup } from "../../settings/ui";
 import { HelpSup } from "@lane-pilot/ui-kit";
 import { Pill } from "./pill";
 import type { LpPage } from "./use-lp-page";
@@ -18,7 +18,7 @@ function RoleState({ page, enabledKey, fallback, teamLabel }: { page: LpPage; en
 
 /** How work runs: where the writer works, how work is checked and accepted, the limits and the contract paths. */
 export function WorkTab({ page }: { page: LpPage }) {
-  const { advanced, extrasGrouped, displayedValue, applySetting, catalogRow } = page;
+  const { advanced, extrasGrouped, displayedValue, applySetting, catalogRow, isGlobal } = page;
   const where = t("workModelInTeam");
   // One level inside the panel: a titled block with the state of the role it governs, not a card in a card.
   const group = (key: string, children: ReactNode, title: string, help: string, testId: string, enabled: { key: string; fallback: boolean }) => (
@@ -33,6 +33,7 @@ export function WorkTab({ page }: { page: LpPage }) {
   );
   return (
     <div className="space-y-6" data-testid="work-panel-body">
+      {isGlobal ? <JevProviderPanel page={page} /> : null}
       <SettingsGroup testId="settings-execution" title={t("workGroupExecution")}>
         <section className="space-y-2" data-testid="settings-group-workspace">
           <CatalogField page={page} keyName="adoc.040" />
@@ -90,7 +91,9 @@ export function WorkTab({ page }: { page: LpPage }) {
         .map(({ section, rows }) => (
           <section key={section} className="space-y-2" data-testid={`settings-group-${section}`}>
             <h3 className="text-sm font-medium">{t(sectionKey(section))}</h3>
-            <div className="space-y-2">{rows.map((row) => <CatalogField key={row.storageKey} page={page} keyName={row.storageKey} />)}</div>
+            <div className="space-y-2">{rows.map((row) => row.storageKey === "jev.provider"
+              ? (isGlobal ? null : <JevProviderNote key={row.storageKey} page={page} />)
+              : <CatalogField key={row.storageKey} page={page} keyName={row.storageKey} />)}</div>
           </section>
         ))}
     </div>

@@ -7,7 +7,7 @@ import { settingsRpc } from "../../settings/server";
 import { selectionsRpc } from "../../settings/server";
 import { stackRpc } from "../../native-install/server";
 import { insightsRpc } from "../../self-repair/server";
-import { secretsRpc } from "../../secrets/server";
+import { jevProviderRpc, secretsRpc } from "../../secrets/server";
 import { workspaceProviderRpc } from "../../native-agent/server";
 import { tokenUsageRpc } from "../../usage/server";
 import { workflowsRpc } from "../../workflow/server";
@@ -35,6 +35,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...insightsRpc(ctx, services),
     ...tokenUsageRpc(ctx),
     ...secretsRpc(ctx),
+    ...jevProviderRpc(ctx),
     ...workspaceProviderRpc(ctx),
     ...workflowsRpc(ctx, services),
     ...workflowOpsRpc(ctx, services),

@@ -68,6 +68,8 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
     jevKeyCache.set(name, { value, at: Date.now() });
     return value;
   }
+  /** A key saved or changed from the settings page counts at once, not after the cache's ten minutes. */
+  const forgetCatalogKey = (name: string): void => { jevKeyCache.delete(name); };
   let jevServing = "";
   // The provider the owner chose and its key; TypeSafe's own key when the chosen provider has none, so Jev does not go dark over a missing record.
   async function jevEndpoint(): Promise<JevEndpoint> {
@@ -374,7 +376,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
   // J-11: a second look (Jev, shadow by default) at what a helper or writer produced, before it is stored or shown.
   const outputGuard = createOutputGuard({ jev, settings: async (projectId) => (await effectiveProjectSettings(projectId)).values, kv: bb.storage.kv, log: (message) => bb.log.warn(message) });
 
-  return { bb, db, state, realtime, ownerAsk, secrets, outputGuard, isDisposed: () => state.disposed, log: (message: string) => bb.log.warn(message), host, deployDrain, nativeInstaller, nativeHost, serializedKv, ownedAgents, effectiveProjectSettings, screenWriterBinding, coexistenceInventory, coexistenceOperation, getThreadBounded, acceptedTaskWorkspace, workspaceExecutionEnvironment, refreshRun, markCanceledWriterStages, cancelQueuedAttempt, isRuntimeSettingKey, cliSettingsFor, runPolicyFor, nativeRunConfig, sectionRowSchema, listProjectSections, sectionChain, settingsAbove, scopesForWorkspace, ensureRunScopes, configForRun, writerBindingKey };
+  return { bb, db, state, realtime, ownerAsk, secrets, catalogKey, forgetCatalogKey, outputGuard, isDisposed: () => state.disposed, log: (message: string) => bb.log.warn(message), host, deployDrain, nativeInstaller, nativeHost, serializedKv, ownedAgents, effectiveProjectSettings, screenWriterBinding, coexistenceInventory, coexistenceOperation, getThreadBounded, acceptedTaskWorkspace, workspaceExecutionEnvironment, refreshRun, markCanceledWriterStages, cancelQueuedAttempt, isRuntimeSettingKey, cliSettingsFor, runPolicyFor, nativeRunConfig, sectionRowSchema, listProjectSections, sectionChain, settingsAbove, scopesForWorkspace, ensureRunScopes, configForRun, writerBindingKey };
 }
 
 export type ServerCore = ReturnType<typeof createCore>;

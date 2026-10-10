@@ -9,6 +9,7 @@ import { scheduleEn, scheduleRu } from "./i18n-schedule";
 import { anamnesisEn, anamnesisRu } from "./i18n-anamnesis";
 import { tabsEn, tabsRu } from "./i18n-tabs";
 import { ownedEn, ownedRu } from "./i18n-owned";
+import { jevEn, jevRu } from "./i18n-jev";
 
 const chromeEn = {
   panelTitle: "Lane Pilot",
@@ -2014,8 +2015,8 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   accessPurpose_specialist_tavily: "Ищет в сети и собирает отчёты с источниками.",
 };
 
-export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...anamnesisEn, ...tabsEn, ...ownedEn };
-export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...editorRu, ...opsRu, ...modelsRu, ...canvasRu, ...scheduleRu, ...anamnesisRu, ...tabsRu, ...ownedRu };
+export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...anamnesisEn, ...tabsEn, ...ownedEn, ...jevEn };
+export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...editorRu, ...opsRu, ...modelsRu, ...canvasRu, ...scheduleRu, ...anamnesisRu, ...tabsRu, ...ownedRu, ...jevRu };
 
 export type I18nKey = keyof typeof en;
 export type Locale = "en" | "ru";

@@ -3,6 +3,7 @@
 export { AccessModePanel, ORIGIN_LABEL, PmAccessNote, RoleAccessBody, isChanged, roleSummary, useAccessView } from "./agent-access";
 export type { AccessApi, RoleView } from "./agent-access";
 export { CatalogField, CatalogFields } from "./catalog-field";
+export { JevProviderNote, JevProviderPanel } from "./jev-provider";
 export { OwnedSettings } from "./owned-settings";
 export { SELECTION_SPECS, selectionKeys, selectionValue } from "./picker-selections";
 export type { SelectionId } from "./picker-selections";

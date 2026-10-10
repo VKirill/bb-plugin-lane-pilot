@@ -2,6 +2,16 @@ import { z } from "zod";
 import { anamnesisRpcMethods } from "../anamnesis";
 import { ruleProposalSchema, ruleScanSchema, rulesAnalyzerSchema } from "@lane-pilot/contracts";
 
+const jevProviderIdSchema = z.enum(["openlux", "typesafe"]);
+/** Which Jev provider is chosen, which one serves, and whether each has a key in Env Catalog (a name and a yes/no, never the key). */
+const jevProviderStatusSchema = z.object({
+  chosen: jevProviderIdSchema,
+  /** The provider that serves Jev requests now: the chosen one, TypeSafe when the chosen one has no key, null when neither has. */
+  effective: jevProviderIdSchema.nullable(),
+  catalog: z.enum(["ok", "unavailable"]),
+  providers: z.array(z.object({ id: jevProviderIdSchema, keyName: z.string(), model: z.string(), hasKey: z.boolean() }).strict()),
+}).strict();
+
 /** Councils, rules, memory, docs, token usage, secrets and the workspace provider. */
 export const rpcKnowledge = {
   list_councils: {
@@ -175,6 +185,19 @@ export const rpcKnowledge = {
         checkCommand: z.string().nullable(), secretName: z.string(), hostId: z.string().nullable(), network: z.string().nullable(),
       }).strict()),
     }).strict(),
+  },
+  // The Jev block of the global settings: key status per provider, saving a key into Env Catalog, one test request. No call returns a key.
+  jev_provider_status: {
+    input: z.object({}).strict(),
+    output: jevProviderStatusSchema,
+  },
+  jev_provider_save_key: {
+    input: z.object({ provider: jevProviderIdSchema, key: z.string().min(1).max(2000) }).strict(),
+    output: jevProviderStatusSchema,
+  },
+  jev_provider_test: {
+    input: z.object({}).strict(),
+    output: z.object({ ok: z.boolean(), provider: jevProviderIdSchema, model: z.string().nullable(), latencyMs: z.number().int(), error: z.string().nullable() }).strict(),
   },
   // Lane Pilot's worktree provider is switched off on a machine after 3 errors in a row; it is probed again after an hour, or lifted here.
   workspace_provider_status: {
