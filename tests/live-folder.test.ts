@@ -9,7 +9,7 @@ import { attemptProduced } from "../src/rooms/writer/cli-outcome";
 import { createRun, openDatabase } from "../src/rooms/storage/database";
 import {
   chunkPaths, classifyFolderProbe, liveOwnedFiles, LIVE_BACKUP_SCRIPT, LIVE_FOLDER_BIG_BYTES, LIVE_FOLDER_FILE_CAP, LIVE_SNAPSHOT_SCRIPT, LIVE_SNAPSHOT_SKIP_DIRS,
-  LIVE_SNAPSHOT_SKIP_PATHS, liveSnapshotCommand, parseLiveSnapshot, pythonCommand,
+  LIVE_SNAPSHOT_OUTPUT_BYTES, LIVE_SNAPSHOT_SKIP_PATHS, liveSnapshotCommand, parseLiveSnapshot, pythonCommand,
 } from "../src/rooms/writer/live-folder";
 import { LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/native-agent-overlay";
 import { createLiveFolder } from "../src/rooms/writer/server/live-folder";
@@ -119,7 +119,7 @@ describe("content snapshot", () => {
     put(root, "real.txt", "r");
     symlinkSync("real.txt", join(root, "link"));
     symlinkSync("missing", join(root, "dangling"));
-    const command = pythonCommand(LIVE_SNAPSHOT_SCRIPT, { skip_dirs: [], skip_paths: [], cap: 100, big: 5 });
+    const command = pythonCommand(LIVE_SNAPSHOT_SCRIPT, { skip_dirs: [], skip_paths: [], cap: 100, big: 5, max_output: LIVE_SNAPSHOT_OUTPUT_BYTES });
     const first = parseLiveSnapshot(await snapshot(root, command));
     expect(first.ok && first.snapshots.map((row) => row.path)).toEqual(["big.bin", "dangling", "link", "real.txt"]);
     utimesSync(join(root, "big.bin"), 1, 1);
@@ -137,6 +137,34 @@ describe("content snapshot", () => {
     expect(parseLiveSnapshot(ran)).toEqual({ ok: false, reason: "folder too large for no-git mode: 3 files; put it under git" });
     expect(LIVE_FOLDER_FILE_CAP).toBe(50_000);
     expect(LIVE_FOLDER_BIG_BYTES).toBe(20 * 1024 * 1024);
+  });
+
+  it("keeps the answer of a folder at the file cap under BB's 8 MiB host output limit", async () => {
+    // Live 2026-10-10: /Users/vechkasov/Documents/BB-сервис had 48 494 files (under the 50 000 cap) with ~92-character
+    // paths; the plain JSON listing was 8.9 MB and BB refused it («host output for runCommand exceeds 8388608 bytes»).
+    const root = temp("snap");
+    const files = 1500;
+    for (let index = 0; index < files; index += 1) {
+      put(root, `plugins/bb-plugin-lane-pilot/.claude/worktrees/agent-a31f5b6220de63495/src/rooms/writer/f-${String(index).padStart(5, "0")}.ts`, `export const v${index} = ${index};\n`);
+    }
+    const ran = await snapshot(root);
+    expect(ran.exitCode).toBe(0);
+    const parsed = parseLiveSnapshot(ran);
+    expect(parsed.ok && parsed.snapshots).toHaveLength(files);
+    expect(parsed.ok && parsed.snapshots.every((row) => /^[0-9a-f]{64}$/.test(row.sha256))).toBe(true);
+    // BB's host worker measures the JSON of the whole host call answer: projected to the file cap, it must stay below.
+    const perFile = Buffer.byteLength(JSON.stringify(ran), "utf8") / files;
+    expect(perFile * LIVE_FOLDER_FILE_CAP).toBeLessThan(LIVE_SNAPSHOT_OUTPUT_BYTES);
+    expect(LIVE_SNAPSHOT_OUTPUT_BYTES).toBeLessThan(8 * 1024 * 1024);
+  });
+
+  it("refuses an answer above the output budget with the reason the owner reads", async () => {
+    const root = temp("snap");
+    for (const name of ["a", "b", "c"]) put(root, name, name);
+    const command = pythonCommand(LIVE_SNAPSHOT_SCRIPT, { skip_dirs: [], skip_paths: [], cap: 100, big: 5, max_output: 10 });
+    const ran = await snapshot(root, command);
+    expect(ran.exitCode).toBe(3);
+    expect(parseLiveSnapshot(ran)).toMatchObject({ ok: false, reason: expect.stringMatching(/^folder too large for no-git mode: 3 files make a 0\.0 MB snapshot; put it under git$/) });
   });
 
   it("reports an unreadable answer instead of throwing", () => {

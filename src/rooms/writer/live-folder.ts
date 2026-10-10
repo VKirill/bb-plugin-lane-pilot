@@ -1,5 +1,6 @@
 import type { DirtSnapshot } from "./cli-outcome";
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
+import { inflateSync } from "node:zlib";
 
 /**
  * «Folder without git» mode: the owner runs the orchestrator in a plain folder and writers edit the live files. There is
@@ -19,6 +20,14 @@ export const LIVE_FOLDER_BIG_BYTES = 20 * 1024 * 1024;
 export const LIVE_BACKUP_KEEP_DAYS = 7;
 /** A task whose owned files weigh more than this cannot be backed up for a rollback. */
 export const LIVE_BACKUP_BYTES_CAP = 2 * 1024 ** 3;
+/**
+ * BB's host worker refuses a host call answer above 8 MiB (`host output for runCommand exceeds 8388608 bytes`). A plain
+ * JSON listing costs ~180 bytes a file, so a folder well under the file cap overflowed it; the listing travels zlib-
+ * compressed in base64 (~65 bytes a file) and the script refuses an answer above this budget with a reason the owner reads.
+ */
+export const LIVE_SNAPSHOT_OUTPUT_BYTES = 6 * 1024 * 1024;
+/** Prefix of a compressed snapshot answer: `z:` + base64 of the zlib-compressed JSON rows. */
+const COMPRESSED_PREFIX = "z:";
 /** One command line carries at most ~128 KB on Linux; a path list travels in chunks well below it. */
 const CHUNK_JSON_BYTES = 60_000;
 
@@ -49,7 +58,7 @@ export function pythonCommand(script: string, payload: unknown = {}): string {
 }
 
 /** Lists every regular file and symlink of the folder (cwd) with a sha256; run by python3 in the folder. */
-export const LIVE_SNAPSHOT_SCRIPT = String.raw`import hashlib, os, sys
+export const LIVE_SNAPSHOT_SCRIPT = String.raw`import hashlib, os, sys, zlib
 SKIP_DIRS = set(PAYLOAD["skip_dirs"])
 SKIP_PATHS = set(PAYLOAD["skip_paths"])
 rows = []
@@ -95,11 +104,16 @@ for rel in sorted(rows):
     except FileNotFoundError:
         continue
     out.append({"path": rel, "sha256": digest})
-print(json.dumps(out, ensure_ascii=True))
+answer = base64.b64encode(zlib.compress(json.dumps(out, ensure_ascii=True, separators=(",", ":")).encode("ascii"), 9)).decode("ascii")
+if len(answer) > PAYLOAD["max_output"]:
+    sys.stderr.write("too_large_output:%d:%d\n" % (len(out), len(answer)))
+    sys.exit(3)
+print("z:" + answer)
 `;
 
 export const liveSnapshotCommand = (cap = LIVE_FOLDER_FILE_CAP): string => pythonCommand(LIVE_SNAPSHOT_SCRIPT, {
   skip_dirs: LIVE_SNAPSHOT_SKIP_DIRS, skip_paths: LIVE_SNAPSHOT_SKIP_PATHS, cap, big: LIVE_FOLDER_BIG_BYTES,
+  max_output: LIVE_SNAPSHOT_OUTPUT_BYTES,
 });
 
 /** The snapshot command's answer as dirt snapshots, or the reason the owner reads. */
@@ -107,10 +121,14 @@ export function parseLiveSnapshot(ran: { exitCode: number; stdout: string; stder
   if (ran.exitCode === 3) {
     const count = /too_large:(\d+)/.exec(ran.stderr)?.[1];
     if (count) return { ok: false, reason: `folder too large for no-git mode: ${count} files; put it under git` };
+    const output = /too_large_output:(\d+):(\d+)/.exec(ran.stderr);
+    if (output) return { ok: false, reason: `folder too large for no-git mode: ${output[1]} files make a ${(Number(output[2]) / 1024 / 1024).toFixed(1)} MB snapshot; put it under git` };
   }
   if (ran.exitCode !== 0) return { ok: false, reason: `cannot snapshot the folder (no git): ${ran.stderr.trim() || `exit ${ran.exitCode}`}` };
   try {
-    const parsed = JSON.parse(ran.stdout) as unknown;
+    const text = ran.stdout.trim();
+    const json = text.startsWith(COMPRESSED_PREFIX) ? inflateSync(Buffer.from(text.slice(COMPRESSED_PREFIX.length), "base64")).toString("utf8") : text;
+    const parsed = JSON.parse(json) as unknown;
     if (!Array.isArray(parsed) || parsed.some((row) => !row || typeof row !== "object"
       || typeof (row as DirtSnapshot).path !== "string" || typeof (row as DirtSnapshot).sha256 !== "string")) {
       return { ok: false, reason: "cannot snapshot the folder (no git): unexpected answer" };
