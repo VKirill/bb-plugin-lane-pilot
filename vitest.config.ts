@@ -3,6 +3,9 @@ import { fileURLToPath } from "node:url";
 
 // Test files that call vi.mock/vi.doMock: a mock replaces a module for every file that shares its module cache, so they run isolated.
 const mocking = [
+  // Not mocks, but module-level state that must start empty: the bound drain; the Jev key a server test provided.
+  "tests/deploy-drain.test.ts",
+  "tests/verification/docs-jev.test.ts",
   "tests/jev-plan.test.ts",
   "tests/spawn-service-tier.test.ts",
   "tests/remote-git-detect.test.ts",
