@@ -1,4 +1,5 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
+import type { Readable, Writable } from "node:stream";
 import { join } from "node:path";
 import { afterAll } from "vitest";
 import { hookEnv } from "./hook-env";
@@ -15,7 +16,7 @@ const server = join(process.cwd(), "tests/guard-fork-server.py");
  * server is stopped after the file's last test.
  */
 export function useGuardPool(guard: string, payloadOf: (command: string, agentType: string | null) => string) {
-  let child: ChildProcessWithoutNullStreams | null = null;
+  let child: ChildProcessByStdio<Writable, Readable, null> | null = null;
   let nextId = 1;
   const waiting = new Map<number, (reply: { status: number | null; stdout: string }) => void>();
   let buffered = "";
@@ -35,10 +36,10 @@ export function useGuardPool(guard: string, payloadOf: (command: string, agentTy
     return proc;
   };
   const one = ({ command, agentType, env = {} }: GuardCase) => new Promise<Verdict>((done) => {
-    child ??= start();
+    const proc = (child ??= start());
     const id = nextId++;
     waiting.set(id, ({ status, stdout }) => done({ status, stdout }));
-    child.stdin.write(`${JSON.stringify({ id, input: payloadOf(command, agentType), env: hookEnv({ AGENT_HOOK_CLIENT: "claude", ...env }) })}\n`);
+    proc.stdin.write(`${JSON.stringify({ id, input: payloadOf(command, agentType), env: hookEnv({ AGENT_HOOK_CLIENT: "claude", ...env }) })}\n`);
   });
   afterAll(() => { child?.kill(); child = null; });
   return async function runMany(cases: GuardCase[]): Promise<Verdict[]> {

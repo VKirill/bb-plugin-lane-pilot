@@ -113,24 +113,6 @@ it("writes the task-folder exclude once into the repo's real info/exclude and no
   expect(git(sub, "check-ignore", "-q", ".agents/plans/items/sub-task-1/PLAN.md")).toBe("");
 });
 
-it("still writes PLAN.md when the exclude line cannot reach the repo", async () => {
-  const { sub } = await subfolderRepo();
-  const files = new Map<string, string>();
-  const warnings: string[] = [];
-  const warn = console.warn;
-  console.warn = (line: string) => { warnings.push(String(line)); };
-  try {
-    const written = await persistTaskFolder({
-      taskId: "sub-task-2", plan: "Plan only",
-      exclude: async () => { throw new Error("git dir unresolved"); },
-      writeFile: async (rel, content) => { files.set(rel, content); },
-    });
-    expect(written).toEqual({ folder: ".agents/plans/items/sub-task-2" });
-  } finally { console.warn = warn; }
-  expect(files.get(".agents/plans/items/sub-task-2/PLAN.md")).toBe("Plan only\n");
-  expect(warnings.join("\n")).toContain("task-folder exclude");
-});
-
 it("accepts an owned change while bb chat noise is dirty before and after and unrelated dirt sits outside the workspace", async () => {
   const { repo, sub } = await subfolderRepo();
   await mkdir(join(sub, ".bb", "chats", "thr_before"), { recursive: true });

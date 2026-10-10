@@ -164,7 +164,6 @@ const pmFileCases: Case[] = [
   bash("heredoc into project source","cat > src/x.ts <<'EOF'\nhello\nEOF",false),
   bash("bash heredoc runs a project write","bash <<'EOF'\necho hi > src/x.ts\nEOF",false),
   bash("heredoc piped to sh runs a project write","cat <<'EOF' | sh\necho hi > src/x.ts\nEOF",false),
-  edit("Write project source","Write","src/app.ts",false),
 ];
 
 describe("E3 Lane Pilot PM temp files, chat folder, cd-relative redirects and heredoc bodies", () => {

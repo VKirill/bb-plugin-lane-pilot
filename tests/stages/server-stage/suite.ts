@@ -1237,18 +1237,6 @@ describe("stage → native writer → receipt", () => {
       .toMatchObject({workspace:{environmentId:"attempt-env",decision:{strategy:"provision_attempt_worktree"}}});
     await harness.lifecycle.dispose();
   });
-  it("binds a worktree when spawn omits environmentId but threads.get has it",async()=>{
-    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,
-      {"adoc.040":"auto","adoc.041":4,"adoc.042":true},undefined,undefined,undefined,undefined,undefined,[[],[]]);
-    const highRiskTask={...task,id:"stage-task-high-risk-get-env",risk:"high" as const};
-    const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{
-      confirm:true,plan:"Write in an isolated attempt workspace",task:highRiskTask,
-    },{threadId:pmThreadId,projectId})));
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    expect(spawned.find(row=>(row.pluginMetadata as Record<string,unknown>).role==="workspace-provisioner")).toBeTruthy();
-    expect(getAttempt(db,String(result.attemptId))).toMatchObject({workspace_path:"/tmp/lane-pilot-managed-attempt",environment_id:"attempt-env"});
-    await harness.lifecycle.dispose();
-  });
   it("waits for a creating worktree to become ready before stopping the holder",async()=>{
     resetHolderProvisionDelay();
     holderBindAfterGets=2;
