@@ -16,8 +16,10 @@ const SYNC_SPAWN = /\b(?:spawnSync|execFileSync|execSync)\b/g;
 const withoutComments = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
 /** The project files host.ts loads: static and dynamic imports, workspace packages included, type-only imports left out (they load nothing). */
+// Read once for both tests: building the graph scans every project file (3 s of the 4.5 s each test took).
+let closure: string[] | null = null;
 function hostClosure(): string[] {
-  return [...runtimeClosure(buildGraph(), "host.ts")].sort();
+  return (closure ??= [...runtimeClosure(buildGraph(), "host.ts")].sort());
 }
 
 it("reaches the host handlers' code (so the scan below cannot go quiet by finding nothing)", () => {
