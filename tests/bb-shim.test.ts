@@ -9,7 +9,12 @@ import { BB_SHIM_NAMES, prepareBbShim } from "../src/rooms/native-agent/bb-shim"
 // Audit 2026-10-08 round 3, P0-2: Codex, OpenCode and Cursor writers run `bb` through guard wrappers at the front of PATH (since the owner decision of 2026-10-08 they stop only plugin admin and the hub).
 const temp = () => mkdtempSync(join(tmpdir(), "bb-shim-"));
 
-async function setup() {
+// The wrappers are written once per file: no test changes them, and a script that is new to the machine is checked by the system
+// on its first run (~0.3 s each), which 38 tests paid one by one.
+let shared: ReturnType<typeof build> | null = null;
+const setup = () => (shared ??= build());
+
+async function build() {
   const dataDir = temp();
   const real = temp();
   for (const name of BB_SHIM_NAMES) {
