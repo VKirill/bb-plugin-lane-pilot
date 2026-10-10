@@ -1,9 +1,11 @@
-import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { hookEnv } from "./hook-env";
+import { useGuardSync } from "./guard-pool";
+import { useGuardPool, type Verdict } from "./guard-pool";
 
 const guard = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
+const runGuard = useGuardSync(guard);
 
 function payloadOf(command: string, agentType: string | null) {
   const payload: Record<string, unknown> = { tool_name: "Bash", tool_input: { command }, cwd: "/tmp" };
@@ -11,32 +13,16 @@ function payloadOf(command: string, agentType: string | null) {
   return JSON.stringify(payload);
 }
 function run(command: string, agentType: string | null, env: Record<string, string> = {}) {
-  return spawnSync("python3", [guard], { input: payloadOf(command, agentType), encoding: "utf8", env: hookEnv({ AGENT_HOOK_CLIENT: "claude", ...env }) });
+  return runGuard({ input: payloadOf(command, agentType), env: hookEnv({ AGENT_HOOK_CLIENT: "claude", ...env }) });
 }
 const denied = (command: string, agentType: string | null, env: Record<string, string> = {}) => {
   const res = run(command, agentType, env);
   return res.status === 2 && /\[hub-guard\]/.test(res.stdout);
 };
 
-// One Python start costs about 30 ms, a role test starts it once per form: run one after another they took 1.7 s idle
-// and went past the 5 s limit of a test when the whole suite ran beside them (audit 2026-10-08 round 3, item 19). The cases are
-// independent, so they run a few at a time, as asynchronous children; the limit stays what it was.
-const POOL = 8;
-type Verdict = { status: number | null; stdout: string };
-async function runMany(cases: Array<{ command: string; agentType: string | null; env?: Record<string, string> }>): Promise<Verdict[]> {
-  const results: Verdict[] = new Array(cases.length);
-  let next = 0;
-  const one = (index: number) => new Promise<void>((done) => {
-    const { command, agentType, env = {} } = cases[index]!;
-    const child = spawn("python3", [guard], { env: hookEnv({ AGENT_HOOK_CLIENT: "claude", ...env }) });
-    let stdout = "";
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.on("close", (status) => { results[index] = { status, stdout }; done(); });
-    child.stdin.end(payloadOf(command, agentType));
-  });
-  await Promise.all(Array.from({ length: Math.min(POOL, cases.length) }, async () => { for (let index = next++; index < cases.length; index = next++) await one(index); }));
-  return results;
-}
+// One Python start costs about 50 ms of CPU and a role test starts it once per form (audit 2026-10-08 round 3, item 19): the cases
+// go through one warm interpreter that forks the guard per case (tests/guard-pool.ts), each case still a clean run.
+const runMany = useGuardPool(guard, payloadOf);
 const isDenied = (verdict: Verdict) => verdict.status === 2 && /\[hub-guard\]/.test(verdict.stdout);
 
 // Audit 2026-10-08 r2, N2, cut down by the owner decision of 2026-10-08: the shell is read as a shell would, but what it stops is only what breaks the
@@ -130,9 +116,8 @@ describe("Lane Pilot agents cannot break the hub from a shell by mistake", () =>
   });
 
   it("denies the same payload from a non-shell tool name spelled differently only through shell tools", () => {
-    const res = spawnSync("python3", [guard], {
-      input: JSON.stringify({ tool_name: "run_terminal_command", tool_input: { command: ADMIN }, agent_type: "errand", cwd: "/tmp" }),
-      encoding: "utf8", env: hookEnv({ AGENT_HOOK_CLIENT: "claude" }),
+    const res = runGuard({
+      input: JSON.stringify({ tool_name: "run_terminal_command", tool_input: { command: ADMIN }, agent_type: "errand", cwd: "/tmp" }), env: hookEnv({ AGENT_HOOK_CLIENT: "claude" }),
     });
     expect(res.status).toBe(2);
     expect(res.stdout).toMatch(/\[hub-guard\]/);

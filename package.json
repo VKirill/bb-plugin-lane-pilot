@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-lane-pilot",
-  "version": "0.1.223",
+  "version": "0.1.224",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || ^24.0.0 || ^26.0.0",
@@ -85,6 +85,7 @@
   },
   "scripts": {
     "test": "vitest run",
+    "test:changed": "node scripts/test-changed.mjs",
     "typecheck": "tsc --noEmit",
     "build": "bb plugin build",
     "check:composer-hook": "node scripts/check-composer-hook.mjs",

@@ -1,8 +1,12 @@
 import { defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
+import LongestFirstSequencer from "./tests/sequencer";
 
 // Test files that call vi.mock/vi.doMock: a mock replaces a module for every file that shares its module cache, so they run isolated.
 const mocking = [
+  // Not mocks, but module-level state that must start empty: the bound drain; the Jev key a server test provided.
+  "tests/deploy-drain.test.ts",
+  "tests/verification/docs-jev.test.ts",
   "tests/jev-plan.test.ts",
   "tests/spawn-service-tier.test.ts",
   "tests/remote-git-detect.test.ts",
@@ -21,12 +25,14 @@ const uiTests = ["tests/**/*.test.tsx", "src/rooms/**/tests/**/*.test.tsx"];
 export default defineConfig({
   test: {
     testTimeout: 15000,
+    // One queue for all projects, longest file first (tests/sequencer.ts).
+    ...(process.env.LP_DEFAULT_ORDER ? {} : { sequence: { sequencer: LongestFirstSequencer } }),
     setupFiles: ["./tests/setup-jsdom.ts"],
     // One temp directory per run (TMPDIR for every worker of every project), removed after it: see tests/global-setup.ts.
     globalSetup: ["./tests/global-setup.ts"],
     projects: [
       // Node tests share one module graph per worker (no per-file re-import of the whole plugin).
-      { extends: true, test: { name: "node", include: nodeTests, exclude: mocking, isolate: false } },
+      { extends: true, test: { name: "node", include: nodeTests, exclude: mocking, isolate: false, setupFiles: ["./tests/setup-jsdom.ts", "./tests/setup-shared-modules.ts"] } },
       { extends: true, test: { name: "node-isolated", include: mocking } },
       { extends: true, test: { name: "ui", include: uiTests, exclude: uiAlone, isolate: false } },
       { extends: true, test: { name: "ui-isolated", include: uiAlone } },

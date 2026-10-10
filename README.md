@@ -13,6 +13,7 @@ For local development, install dependencies and run the package check:
 ```sh
 npm install
 npm run check
+npm run test:changed  # only the tests that import files you changed; the full `npm test` is the deploy gate
 ```
 
 ## Documentation

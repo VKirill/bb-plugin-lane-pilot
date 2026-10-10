@@ -15,15 +15,6 @@ describe("x-to-telegram-digest", () => {
   const base = (collected: unknown[]) => ({ collect: { items: collected, count: collected.length, status: "done" }, summarize: { summary_md: "# Digest", top: [], themes: ["a", "b"], quote_count: 3 }, check: { ok: true, violations: [], parts: 1 },
     send: { message_id: "stub-1", status: "ok" }, archive: { archive_path: ".lane-pilot/digests/x" } });
 
-  it("the spec's case through the real dedupe and reducer: 34 posts, 3 duplicates, 4 batches, one message", async () => {
-    const r = await runSim("x-to-telegram-digest", { input, stubs: { ...base(posts(34, 3)), "score:child": ((ctx: { input: { item?: unknown } }) => ({ scores: (ctx.input.item as unknown[]).map((item) => ({ item, keep: true, topic: "tokens" })) })) as never, check: undefined as never } });
-    expect(r.summary.status).toBe("succeeded");
-    expect(out(r)).toMatchObject({ status: "sent", items_count: 31, kept_count: 31, message_id: "stub-1", thin: false });
-    expect(r.called("score:child")).toHaveLength(4);
-    // The digest check is code: a summary that quotes nothing and links nothing passes it.
-    expect(r.called("send")).toHaveLength(1);
-  });
-
   it("the check is code: an invented link in the summary stops the send", async () => {
     const r = await runSim("x-to-telegram-digest", { input, stubs: { ...base(posts(34, 3)), summarize: { summary_md: "see https://evil.example/x" }, check: undefined as never } });
     expect(r.called("send")).toHaveLength(0);

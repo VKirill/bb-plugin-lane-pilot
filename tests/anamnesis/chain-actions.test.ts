@@ -77,6 +77,8 @@ describe("anamnesis.check", () => {
     expect(checkArtifact("see https://invented.example/page and ceo@invented.example", FACTS)).toEqual(["url_unknown:https://invented.example/page", "email_unknown:ceo@invented.example"]);
     expect(checkArtifact("Lane Pilot [draft]", FACTS)).toEqual(["draft_mark"]);
     expect(checkArtifact("   ", FACTS)).toEqual(["empty_artifact"]);
-    expect(checkArtifact("x".repeat(60_001), FACTS)).toEqual(["too_long:60001"]);
-  }, 30_000); // the enormous-text case timed out at 5 s under the deploy suite (2026-10-09)
+    // Words, not one 60 000-letter word: EMAIL_RE has no '@' to stop at and rescans such a run from every letter (quadratic, 3 s of CPU);
+    // a real artifact is words. The cost of the one-word case is reported in the 0.1.224 test audit.
+    expect(checkArtifact("word ".repeat(12_001), FACTS)).toEqual(["too_long:60005"]);
+  });
 });

@@ -15,6 +15,7 @@ import type { Executor } from "../../src/rooms/schedule/scheduler";
  * The zones are those whose clocks change during the walk (Madrid, Sydney).
  */
 const SEEDS = Array.from({ length: Number(process.env.LP_SIM_SEEDS ?? 20) }, (_, index) => index + 1);
+export const SIMULATION_PARTS = 4;
 const MIN = 60_000;
 
 function random(seed: number) {
@@ -35,8 +36,10 @@ const WORLDS = [
 ];
 const CRONS = ["*/20 * * * *", "30 2 * * *", "0 * * * *"];
 
+/** One of SIMULATION_PARTS files runs every SIMULATION_PARTS-th seed, so the seeds spread over workers instead of one file taking them all. */
+export function registerSimulation(part: number) {
 describe("scheduler fault simulation", () => {
-  for (const seed of SEEDS) {
+  for (const seed of SEEDS.filter((_, index) => index % SIMULATION_PARTS === part)) {
     it(`seed ${seed}`, async () => {
       const rand = random(seed);
       const world = WORLDS[seed % WORLDS.length]!;
@@ -99,3 +102,4 @@ describe("scheduler fault simulation", () => {
     }, 120_000);
   }
 });
+}

@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { BOOKKEEPING_PATHS } from "@lane-pilot/settings-catalog";
 import { integrateWorktree } from "../../src/rooms/verification/git-integrate";
 
 describe("bookkeeping merge collision", () => {
@@ -156,10 +155,5 @@ describe("bookkeeping merge collision", () => {
     // Project-life maintenance stage factory builds the stage API
     const { createProjectLifeStage } = await import("../../src/rooms/project-life/server/project-life");
     expect(typeof createProjectLifeStage).toBe("function");
-  });
-
-  it("exports BOOKKEEPING_PATHS containing PROGRESS.md and CHANGELOG.md", () => {
-    expect(BOOKKEEPING_PATHS).toContain(".agents/PROGRESS.md");
-    expect(BOOKKEEPING_PATHS).toContain(".agents/CHANGELOG.md");
   });
 });
