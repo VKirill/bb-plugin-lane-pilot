@@ -6,3 +6,4 @@ export * from "./bounded-read";
 export * from "./jsonc";
 export * from "./paths";
 export * from "./owns-paths";
+export * from "./pace";

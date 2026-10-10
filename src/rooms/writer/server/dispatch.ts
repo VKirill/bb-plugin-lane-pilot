@@ -27,6 +27,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 import { runOnHost } from "@lane-pilot/host-calls";
+import { pollPause } from "@lane-pilot/kit";
 
 /** How long a dispatch waits for its stages before it answers «queued» and lets them go on in the background. */
 const dispatchAnswerMs = () => {
@@ -400,7 +401,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       if (state !== "running") {
         // A finished task records its stage receipts just before it leaves services.activeWriterTasks; wait for that.
         if ([...services.activeWriterTasks].some((key) => key.startsWith(`${args.runId}:`))) {
-          await new Promise((resolve) => setTimeout(resolve, 100));
+          await new Promise((resolve) => setTimeout(resolve, pollPause(100)));
           continue;
         }
         // writer.lastResult is one project-wide slot that the last accepted task overwrites; read each task's own receipt.
@@ -435,7 +436,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
           ...(next.length ? { next } : {}),
           ...(blockedBy.length ? { blockedBy } : {}) };
       }
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, pollPause(500)));
     }
     const attempts = listOpenAttempts(db).filter((attempt) => attempt.run_id === args.runId);
     const writerThreadId = attempts.at(-1)?.thread_id ?? null;

@@ -9,7 +9,7 @@ import { sha256 } from "../../tasks";
 import { parseReadFirstHints } from "../../tasks/read-first";
 import { buildRunExecutionProfile, buildRunPolicy, mapBounded } from "../../tasks";
 import { classifyWriterOutput, isOutputPath } from "../../tasks";
-import { cleanCheckOutput } from "@lane-pilot/kit";
+import { cleanCheckOutput, pollPause } from "@lane-pilot/kit";
 import { redactKnown, redactSecrets } from "@lane-pilot/kit";
 import { SecretsNotReadyError, allowedSecretNames, secretProblem } from "../../secrets/server";
 import type { VerifyResult } from "../../tasks";
@@ -81,7 +81,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       bb.log.info(`verification in terminal ${session.id} of thread ${input.writerThreadId}: ${input.command.slice(0,120)}`);
       const deadline=Date.now()+(input.timeoutSec+15)*1000;
       while (session.status!=="exited"&&session.status!=="disconnected"&&Date.now()<deadline) {
-        await new Promise((resolve)=>setTimeout(resolve,1_500));
+        await new Promise((resolve)=>setTimeout(resolve,pollPause(1_500)));
         session=await terminals.get({terminalId:session.id});
       }
       const read=await terminals.output({terminalId:session.id,tailBytes:200_000}).catch(()=>({chunks:[] as Array<{dataBase64:string}>}));

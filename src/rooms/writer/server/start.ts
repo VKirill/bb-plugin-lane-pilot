@@ -5,7 +5,7 @@ import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { providerPoolCap } from "@lane-pilot/settings-catalog";
 import { countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, transitionAttempt } from "../../storage";
 import { taskV2Schema } from "../../contracts";
-import { ownsPathsOverlap } from "@lane-pilot/kit";
+import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
 import { reconcile } from "../../stability";
 import { emergencyFallbackDecision } from "../../night";
 import { writerFallbackChain, writerFallbacks } from "../writer-fallbacks";
@@ -210,7 +210,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               reason:redo.length ? `waiting for depends_on: ${pending.join(",")} (${redo.join(", ")} ended blocked; starts once it is sent again and accepted)` : `waiting for depends_on: ${pending.join(",")}` });
           }
         }
-        await new Promise((wake) => setTimeout(wake, 10_000));
+        await new Promise((wake) => setTimeout(wake, pollPause(10_000)));
       }
     };
     /**

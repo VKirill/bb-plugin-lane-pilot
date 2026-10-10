@@ -3,6 +3,7 @@ import { stringAt } from "./values";
 import type { ServerCore } from "./core";
 import { scheduleIsolated } from "./schedules";
 import { createBbShimEnv } from "../../native-agent/server";
+import { pollPause } from "@lane-pilot/kit";
 
 /**
  * Lane Pilot's OpenCode helpers run with a minimal config (see src/opencode-min-config.ts for why and how). The OpenCode provider
@@ -84,7 +85,7 @@ export function createOpencodeMinimalEnv(ctx: Pick<ServerCore, "bb" | "host">, n
           return value;
         } catch (cause) {
           last = cause;
-          if (attempt < ATTEMPTS) await pause(RETRY_PAUSE_MS * attempt);
+          if (attempt < ATTEMPTS) await pause(pollPause(RETRY_PAUSE_MS * attempt));
         }
       }
       // A failure is not cached as an answer: the next helper asks again.

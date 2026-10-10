@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { WAITING_LIMIT_MS, type ScheduleKind, type ScheduleTask } from "./model";
 import { ACTIVE_RUN_STATUSES, createScheduleStore, taskOf, whenOf, type RunRow, type ScheduleRow, type ScheduleStore } from "./store";
 import { fireTimes } from "./time";
+import { pollPause } from "@lane-pilot/kit";
 
 /**
  * The scheduler of the schedule board. A tick (every minute, from an isolated schedule of the core) does two things:
@@ -58,7 +59,7 @@ export type TickSummary = { created: number; skipped: number; started: number; f
 
 export function createScheduler(deps: SchedulerDeps) {
   const now = deps.now ?? Date.now;
-  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((wake) => setTimeout(wake, ms)));
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((wake) => setTimeout(wake, pollPause(ms))));
   const log = deps.log ?? (() => undefined);
   const store = deps.store ?? createScheduleStore(deps.db, now);
   const { db } = deps;

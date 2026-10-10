@@ -34,6 +34,7 @@ import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../../verification/server";
 import { sendServiceMessage } from "../../relay/server";
 import { runOnHost } from "@lane-pilot/host-calls";
+import { pollPause } from "@lane-pilot/kit";
 
 const FOLLOW_UP_DELETED = "the owner deleted the queued instruction for this writer";
 
@@ -227,7 +228,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         // A run with a wall or token budget is read every 2 s, because the budget is checked here. Otherwise BB's events
         // (idle, failed, archived) wake the loop, and a read every 20 s covers a lost event.
         const pause = Math.max(0, 2_000 - (Date.now() - pollStarted));
-        if (watchBudget) await new Promise((resolve) => setTimeout(resolve, pause));
+        if (watchBudget) await new Promise((resolve) => setTimeout(resolve, pollPause(pause)));
         else await sleepUntilThreadSignal(bb, input.writerThreadId, mark, pause);
       }
       const currentAttempt = getAttempt(db, input.attemptId);

@@ -49,3 +49,5 @@ if (typeof document !== "undefined" && typeof MutationObserver !== "undefined") 
 process.env.LANE_PILOT_HOST_JOBS ??= "0";
 // Fake threads change state without BB's events, so tests watch them by polling; tests/thread-signals.test.ts switches the events on.
 process.env.LANE_PILOT_THREAD_SIGNALS ??= "0";
+// Poll and retry pauses of the code under test (packages/kit/src/pace.ts) run at a twentieth of their production length.
+process.env.LANE_PILOT_POLL_SCALE = "0.05"; // set, not ??=: a test file may change it and the worker is reused

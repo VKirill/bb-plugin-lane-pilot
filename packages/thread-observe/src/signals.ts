@@ -122,6 +122,9 @@ export function threadSignalHub(bb: unknown): ThreadSignalHub | null {
   return bb && typeof bb === "object" ? hubs.get(bb) ?? null : null;
 }
 
+/** The same LANE_PILOT_POLL_SCALE as packages/kit/src/pace.ts (a package may not depend on kit): tests shorten the no-hub poll. */
+const pollScaled = (ms: number) => { const scale = Number(process.env.LANE_PILOT_POLL_SCALE); return scale > 0 ? Math.max(1, Math.round(ms * scale)) : ms; };
+
 /**
  * One step of a watcher's loop: sleeps `pollMs` as before, or, when the plugin has the hub, until BB reports a change in
  * the thread (or the fallback poll). `mark` comes from `threadWatchMark` taken before the thread was read.
@@ -131,7 +134,7 @@ export function threadSignalHub(bb: unknown): ThreadSignalHub | null {
 export async function sleepUntilThreadSignal(bb: unknown, threadId: string, mark: number | null, pollMs: number, signal?: AbortSignal, limits: { deadlineAt?: number; maxMs?: number } = {}): Promise<void> {
   const hub = threadSignalHub(bb);
   const remaining = limits.deadlineAt === undefined || !Number.isFinite(limits.deadlineAt) ? Infinity : Math.max(0, limits.deadlineAt - Date.now());
-  if (!hub || mark === null) { await new Promise((resolve) => setTimeout(resolve, Math.min(pollMs, remaining))); return; }
+  if (!hub || mark === null) { await new Promise((resolve) => setTimeout(resolve, pollScaled(Math.min(pollMs, remaining)))); return; }
   await hub.wait(threadId, mark, Math.min(hub.fallbackMs, remaining, limits.maxMs ?? Infinity), signal);
 }
 
