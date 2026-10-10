@@ -134,7 +134,15 @@ const pollScaled = (ms: number) => { const scale = Number(process.env.LANE_PILOT
 export async function sleepUntilThreadSignal(bb: unknown, threadId: string, mark: number | null, pollMs: number, signal?: AbortSignal, limits: { deadlineAt?: number; maxMs?: number } = {}): Promise<void> {
   const hub = threadSignalHub(bb);
   const remaining = limits.deadlineAt === undefined || !Number.isFinite(limits.deadlineAt) ? Infinity : Math.max(0, limits.deadlineAt - Date.now());
-  if (!hub || mark === null) { await new Promise((resolve) => setTimeout(resolve, pollScaled(Math.min(pollMs, remaining)))); return; }
+  if (!hub || mark === null) {
+    const wait = pollScaled(Math.min(pollMs, remaining));
+    await new Promise((resolve) => setTimeout(resolve, wait));
+    // A timer can fire a few milliseconds before the clock reaches the time it was set for (the event loop's own clock lags a busy
+    // process); a sleep that was meant to end at the waiter's deadline must not hand the loop one more read before it.
+    const rest = limits.deadlineAt === undefined ? 0 : limits.deadlineAt - Date.now();
+    if (wait === remaining && rest > 0 && rest < 100) await new Promise((resolve) => setTimeout(resolve, rest + 1));
+    return;
+  }
   await hub.wait(threadId, mark, Math.min(hub.fallbackMs, remaining, limits.maxMs ?? Infinity), signal);
 }
 

@@ -1,3 +1,18 @@
+import { vi } from "vitest";
+
+// A worker that keeps its module cache between files (isolate: false) starts every file with an empty module registry: plugin
+// modules keep state at module level (a bound drain, a provided key, hooks registered by a shared helper) and files must not see
+// each other's. Packages from node_modules stay loaded, which is most of what isolation re-imported.
+vi.resetModules();
+
+// A worker that keeps its module cache between files (isolate: false) also keeps process.env: every file starts from the
+// environment the worker began with, so a knob one test switched on (or a key it stubbed) does not reach the next file.
+const startEnv = ((globalThis as { lpStartEnv?: Record<string, string | undefined> }).lpStartEnv ??= { ...process.env });
+for (const key of Object.keys(process.env)) if (!(key in startEnv)) delete process.env[key];
+for (const [key, value] of Object.entries(startEnv)) if (process.env[key] !== value) process.env[key] = value;
+const startCwd = ((globalThis as { lpStartCwd?: string }).lpStartCwd ??= process.cwd());
+if (process.cwd() !== startCwd) process.chdir(startCwd);
+
 class ResizeObserverStub {
   observe() {}
   unobserve() {}
@@ -31,7 +46,8 @@ if (typeof window !== "undefined") {
 // most of the CPU of the page tests (7.8 of 12 s in "renders every setting row", a page of several thousand nodes). The answer
 // is kept until the DOM reports a change; takeRecords() hands over pending mutations synchronously, so a marker added just
 // before the call is still seen at once.
-if (typeof document !== "undefined" && typeof MutationObserver !== "undefined") {
+// A worker that does not isolate files runs this setup again on the same document: patch once.
+if (typeof document !== "undefined" && typeof MutationObserver !== "undefined" && !(Document.prototype.querySelector as { lpMarkerCache?: true }).lpMarkerCache) {
   const footerMarker = '[data-footer-item="plugin:ru/toggle"]';
   const nativeQuery = Document.prototype.querySelector;
   let cached: Element | null | undefined;
@@ -43,6 +59,7 @@ if (typeof document !== "undefined" && typeof MutationObserver !== "undefined") 
     if (cached === undefined) cached = nativeQuery.call(this, selectors);
     return cached;
   } as Document["querySelector"];
+  (Document.prototype.querySelector as { lpMarkerCache?: true }).lpMarkerCache = true;
 }
 
 // Tests script the host call by call; the one that checks the job path switches it on (packages/host-calls/tests/host-jobs.test.ts).

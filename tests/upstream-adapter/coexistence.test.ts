@@ -8,7 +8,9 @@ import { newSnapshotId, saveSnapshot } from "../../src/rooms/native-install/owne
 import { managedEngineDir } from "@lane-pilot/kit";
 import { finalizeSnapshotAfter, rollbackSnapshot, takeSnapshot, verifyRollback } from "../../src/rooms/native-install/snapshot";
 import { detectStack, installStack } from "../../src/rooms/native-install/stack-ops";
-import { hostId, makeHome, seedCompatibleEngine, makeGitRepo, inventory, treeHash } from "./coexistence-helpers";
+import { registerHomeCleanup, hostId, makeHome, seedCompatibleEngine, makeGitRepo, inventory, treeHash } from "./coexistence-helpers";
+
+registerHomeCleanup();
 
 describe("typed coexistence operations", () => {
   it("snapshots only owned guard files without probing external operations", async () => {

@@ -5,7 +5,9 @@ import { TARGET_SHA } from "../../src/rooms/runs/constants";
 import { addOwnershipEntry, newSnapshotId, ownershipLedgerPath, readOwnershipLedger, readSnapshot, saveSnapshot } from "../../src/rooms/native-install/ownership";
 import { managedEngineDir } from "@lane-pilot/kit";
 import { installStack } from "../../src/rooms/native-install/stack-ops";
-import { hostId, makeHome, treeHash, exactDd77Fixture, incompatibleFallback, managedInstall } from "./coexistence-helpers";
+import { registerHomeCleanup, hostId, makeHome, treeHash, exactDd77Fixture, incompatibleFallback, managedInstall } from "./coexistence-helpers";
+
+registerHomeCleanup();
 
 // All tests below clone the exact dd77 fixture; without it (clean clone) they skip instead of crashing.
 describe.skipIf(!exactDd77Fixture)("managed install transaction failure integrity", () => {

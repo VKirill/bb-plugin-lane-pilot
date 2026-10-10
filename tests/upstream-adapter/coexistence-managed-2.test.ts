@@ -2,7 +2,9 @@ import { readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { sha256Buffer } from "@lane-pilot/kit";
-import { makeHome, treeHash, exactDd77Fixture, incompatibleFallback, managedInstall } from "./coexistence-helpers";
+import { registerHomeCleanup, makeHome, treeHash, exactDd77Fixture, incompatibleFallback, managedInstall } from "./coexistence-helpers";
+
+registerHomeCleanup();
 
 // All tests below clone the exact dd77 fixture; without it (clean clone) they skip instead of crashing.
 describe.skipIf(!exactDd77Fixture)("managed install transaction failure integrity", () => {

@@ -69,11 +69,14 @@ export async function treeHash(path: string): Promise<string | null> {
   try { return (await hashPath(path)).sha256; } catch { return null; }
 }
 
-afterEach(async () => {
-  if (originalHome === undefined) delete process.env.HOME;
-  else process.env.HOME = originalHome;
-  for (const home of homes.splice(0)) await rm(home, { recursive: true, force: true });
-});
+/** Each test file calls this once: a worker that keeps its module cache between files would register the hook for the first file only. */
+export function registerHomeCleanup() {
+  afterEach(async () => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    for (const home of homes.splice(0)) await rm(home, { recursive: true, force: true });
+  });
+}
 
 export const exactDd77Fixture = [
   join(process.cwd(), "../../.agency/jobs/AG-252/tmp/upstream-ref"),

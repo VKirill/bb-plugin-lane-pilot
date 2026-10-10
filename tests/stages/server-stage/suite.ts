@@ -66,7 +66,6 @@ const tasksCalls:Array<{method:string;input:Record<string,unknown>}>=[];
 /** BB's concurrency-limit plugin: the effective limit of the stage host; null is a hub without it. */
 let concurrencyPlugin:{limit:number}|null=null;
 const concurrencyCalls:string[]=[];
-afterEach(()=>{concurrencyPlugin=null;concurrencyCalls.length=0;usageReadings=null;usageCalls.length=0;queuedRetries=[];queueLog.length=0;tasksPlugin=null;tasksCalls.length=0;});
 function holdEvents(threadId:string):()=>void {
   let release=()=>{};
   heldEvents.set(threadId,new Promise<void>((resolve)=>{release=()=>{heldEvents.delete(threadId);resolve();};}));
@@ -469,6 +468,8 @@ function slicedIt(part: number): typeof vitestIt {
 }
 
 export function registerStageTests(part: number) {
+  // Registered per file, not at import: a worker that keeps its module cache between files imports this module once.
+  afterEach(()=>{concurrencyPlugin=null;concurrencyCalls.length=0;usageReadings=null;usageCalls.length=0;queuedRetries=[];queueLog.length=0;tasksPlugin=null;tasksCalls.length=0;});
 describe("stage → native writer → receipt", () => {
   const it = slicedIt(part);
   it("queues distinct task-owned outputs at provider pool size one and records both writer receipts",async()=>{

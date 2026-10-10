@@ -110,6 +110,7 @@ export function createStability(ctx:ServerCore, services:Services) {
     pendingNotes.set(pmThreadId, [...(pendingNotes.get(pmThreadId) ?? []), line]);
     flushTimer ??= setTimeout(() => {
       flushTimer = null;
+      if (ctx.isDisposed()) return;
       for (const [threadId, lines] of pendingNotes) {
         pendingNotes.delete(threadId);
         const text = `Lane Pilot (no action needed, do not redispatch these):\n${lines.map((line) => `- ${line}`).join("\n")}`;
