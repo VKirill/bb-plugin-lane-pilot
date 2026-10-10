@@ -283,7 +283,8 @@ The 366-row settings applicability matrix is in [docs/adoc-applicability.md](doc
 ## Development
 
 ```sh
-npm test            # vitest
+npm test            # vitest, the full suite: the gate for a deploy (scripts/test-full.sh writes the receipt)
+npm run test:changed  # only the tests that import a file you changed (uncommitted edits vs HEAD; clean tree: this branch vs main)
 npm run typecheck
 npm run build       # bb plugin build: server, host worker, app
 ```

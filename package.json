@@ -85,6 +85,7 @@
   },
   "scripts": {
     "test": "vitest run",
+    "test:changed": "bash scripts/test-changed.sh",
     "typecheck": "tsc --noEmit",
     "build": "bb plugin build",
     "check:composer-hook": "node scripts/check-composer-hook.mjs",
