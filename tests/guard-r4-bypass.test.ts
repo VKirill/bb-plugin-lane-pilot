@@ -230,7 +230,12 @@ describe("the shell guard against the round 4 bypasses", () => {
 // The PATH wrappers (Codex and Cursor writers, OpenCode) and the OpenCode permission rules.
 const SHELLS = ["sh", ...(spawnSync("dash", ["-c", "exit 0"]).status === 0 ? ["dash"] : [])];
 
-async function shimSetup() {
+// Written once per file: no test changes the wrappers, and a script that is new to the machine is checked by the system on its
+// first run (~0.3 s each), which every one of the ~55 shim cases paid.
+let sharedShim: ReturnType<typeof buildShim> | null = null;
+const shimSetup = () => (sharedShim ??= buildShim());
+
+async function buildShim() {
   const dataDir = temp();
   const real = temp();
   for (const name of BB_SHIM_NAMES) {
