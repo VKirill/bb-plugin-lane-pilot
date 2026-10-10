@@ -1,9 +1,9 @@
 import { join } from "node:path";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { spawnSync } from "node:child_process";
 import { afterAll, describe, expect, it } from "vitest";
 import { hookEnv } from "./hook-env";
+import { useGuardSync } from "./guard-pool";
 
 // Plugin shipping (`bb plugin reload/install/update`) is judged by the checkout folder name; pin a
 // temp bb-plugin-lane-pilot cwd so the result does not depend on what this clone directory is called.
@@ -13,6 +13,7 @@ mkdirSync(pluginCheckout, { recursive: true });
 afterAll(() => rmSync(guardHome, { recursive: true, force: true }));
 
 const guard = process.env.GUARD_UNDER_TEST ?? join(process.cwd(), "lane-stack/hooks/guard_shell.py");
+const runGuard = useGuardSync(guard);
 
 const cases: Array<[string, boolean]> = [
   ["bb status", true],
@@ -37,9 +38,8 @@ const cases: Array<[string, boolean]> = [
 ];
 
 function allowed(agentType: string, command: string): number | null {
-  return spawnSync("python3", [guard], {
+  return runGuard({
     input:JSON.stringify({ agent_type:agentType, tool_name:"Bash", tool_input:{ command }, cwd:process.cwd() }),
-    encoding:"utf8",
     env: hookEnv({ AGENT_HOOK_CLIENT:"claude" }),
   }).status;
 }
@@ -77,14 +77,13 @@ describe("dev-orchestrator env wrappers still judge the inner command", () => {
 });
 
 function allowedNative(command: string, cwd: string = process.cwd()): number | null {
-  return spawnSync("python3", [guard], {
+  return runGuard({
     input: JSON.stringify({
       agent_type: "lane-stack:dev-orchestrator",
       tool_name: "Bash",
       tool_input: { command },
       cwd,
     }),
-    encoding: "utf8",
     env: hookEnv({
       AGENT_HOOK_CLIENT: "claude",
       LANE_PILOT_AGENT_TYPE: "lane-stack:dev-orchestrator",
@@ -93,9 +92,8 @@ function allowedNative(command: string, cwd: string = process.cwd()): number | n
 }
 
 function allowedIn(cwd: string, command: string): number | null {
-  return spawnSync("python3", [guard], {
+  return runGuard({
     input:JSON.stringify({ agent_type:"dev-orchestrator", tool_name:"Bash", tool_input:{ command }, cwd }),
-    encoding:"utf8",
     env: hookEnv({ AGENT_HOOK_CLIENT:"claude", LANE_PILOT_AGENT_TYPE:"lane-stack:dev-orchestrator" }),
   }).status;
 }

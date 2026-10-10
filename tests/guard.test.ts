@@ -5,8 +5,10 @@ import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { NO_UPSTREAM, upstreamPath } from "./upstream-fixture";
 import { hookEnv } from "./hook-env";
+import { useGuardSync } from "./guard-pool";
 
 const guard = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
+const runGuard = useGuardSync(guard);
 const upstream = upstreamPath("hooks/guard_shell.py");
 const pythonProbe = spawnSync("python3", ["-c", "import sys; print(sys.executable)"], { encoding: "utf8" });
 const python = pythonProbe.status === 0 && pythonProbe.stdout.trim() ? pythonProbe.stdout.trim() : "python3";
@@ -49,16 +51,16 @@ const cases: Case[] = [
 ];
 
 function invoke(path:string, testCase:Case) {
-  return spawnSync("python3", [path], {
+  const options = {
     input:JSON.stringify({
       agent_type:"lane-pilot-pm",
       tool_name:testCase.tool,
       tool_input:testCase.input,
       cwd,
     }),
-    encoding:"utf8",
     env:hookEnv({AGENT_HOOK_CLIENT:"claude"}),
-  });
+  };
+  return path === guard ? runGuard(options) : spawnSync("python3", [path], { ...options, encoding:"utf8" });
 }
 
 describe("E2 Lane Pilot PM guard", () => {
@@ -110,9 +112,9 @@ describe("E2 Lane Pilot PM guard", () => {
       tool_input: { file_path: "src/app.ts" },
       cwd,
     });
-    const options = { encoding: "utf8" as const, env: hookEnv({ AGENT_HOOK_CLIENT: "claude" }) };
-    const a = spawnSync("python3", [guard], { ...options, input: namespaced });
-    const b = spawnSync("python3", [guard], { ...options, input: short });
+    const options = { env: hookEnv({ AGENT_HOOK_CLIENT: "claude" }) };
+    const a = runGuard({ ...options, input: namespaced });
+    const b = runGuard({ ...options, input: short });
     expect(a.status).toBe(b.status);
     expect(a.status).not.toBe(0);
   });
@@ -177,9 +179,8 @@ describe("E3 Lane Pilot PM temp files, chat folder, cd-relative redirects and he
   it("keeps the project's own files closed when the checkout itself lies under a temp folder", () => {
     const checkout = mkdtempSync(join(tmpdir(), "lp-guard-checkout-"));
     try {
-      const run = (command: string) => spawnSync("python3", [guard], {
+      const run = (command: string) => runGuard({
         input: JSON.stringify({ agent_type: "lane-pilot-pm", tool_name: "Bash", tool_input: { command }, cwd: checkout }),
-        encoding: "utf8",
         env: hookEnv({ AGENT_HOOK_CLIENT: "claude" }),
       }).status;
       expect(run("sed -i s/a/b/ src/app.ts"), "sed -i src/app.ts").toBe(2);

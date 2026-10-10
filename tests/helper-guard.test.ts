@@ -1,14 +1,14 @@
-import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { hookEnv } from "./hook-env";
+import { useGuardSync } from "./guard-pool";
 
 const guard = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
+const runGuard = useGuardSync(guard);
 
 function invoke(payload: Record<string, unknown>, env: Record<string, string> = {}) {
-  return spawnSync("python3", [guard], {
+  return runGuard({
     input: JSON.stringify(payload),
-    encoding: "utf8",
     env: hookEnv({ AGENT_HOOK_CLIENT: "claude", ...env }),
   });
 }

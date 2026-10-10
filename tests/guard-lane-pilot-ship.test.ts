@@ -1,15 +1,15 @@
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
+import { useGuardSync } from "./guard-pool";
 
 const guard = process.env.GUARD_UNDER_TEST ?? join(process.cwd(), "lane-stack/hooks/guard_shell.py");
+const runGuard = useGuardSync(guard);
 
 function run(agentType: string, toolName: string, toolInput: Record<string, string>, extraEnv: Record<string, string> = {}) {
   const env: NodeJS.ProcessEnv = { ...process.env, AGENT_HOOK_CLIENT:"claude", ...extraEnv };
   if (!extraEnv.LANE_PILOT_AGENT_TYPE) delete env.LANE_PILOT_AGENT_TYPE;
-  const result = spawnSync("python3", [guard], {
-    input:JSON.stringify({ agent_type:agentType, tool_name:toolName, tool_input:toolInput, cwd:process.cwd() }),
-    encoding:"utf8", env,
+  const result = runGuard({
+    input:JSON.stringify({ agent_type:agentType, tool_name:toolName, tool_input:toolInput, cwd:process.cwd() }), env,
   });
   return { status:result.status, out:result.stdout };
 }

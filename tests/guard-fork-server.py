@@ -5,7 +5,8 @@ script; a test that checks 100 command forms paid it 100 times. Here the interpr
 imported once and the script is compiled once; every request forks, replaces the environment and stdin, and executes the compiled
 script as `__main__` in the child, so each run still starts from a clean module state exactly like a new process would.
 
-Protocol: one JSON object per line on stdin {"id", "input", "env"}; one JSON line back {"id", "status", "stdout", "stderr"}.
+Protocol: one JSON object per line {"id", "input", "env", "cwd"?}; one JSON line back {"id", "status", "stdout", "stderr"}. On stdin and stdout, or, when
+two more arguments name a request and a reply FIFO, on those (the synchronous client of tests/guard-pool.ts).
 """
 import io
 import json
@@ -13,6 +14,8 @@ import os
 import sys
 
 guard = sys.argv[1]
+requests = open(sys.argv[2], "r", encoding="utf-8") if len(sys.argv) > 3 else sys.stdin
+replies = open(sys.argv[3], "w", encoding="utf-8") if len(sys.argv) > 3 else sys.__stdout__
 sys.path.insert(0, os.path.dirname(guard))
 import ipaddress, re, shlex, socket, threading  # noqa: E401,F401  (warm: the guard imports them)
 import lib_payload  # noqa: F401
@@ -27,6 +30,8 @@ def run_child(request, write_fd):
     try:
         os.environ.clear()
         os.environ.update(request["env"])
+        if request.get("cwd"):
+            os.chdir(request["cwd"])
         sys.stdin = io.StringIO(request["input"])
         sys.stdout, sys.stderr = stdout, stderr
         try:
@@ -40,7 +45,7 @@ def run_child(request, write_fd):
     os.write(write_fd, json.dumps({"id": request["id"], "status": status, "stdout": out, "stderr": err}).encode() + b"\n")
 
 
-for line in sys.stdin:
+for line in requests:
     if not line.strip():
         continue
     request = json.loads(line)
@@ -64,5 +69,5 @@ for line in sys.stdin:
     reply = b"".join(chunks)
     if not reply:  # the child died without a word (os._exit or a signal inside the guard)
         reply = json.dumps({"id": request["id"], "status": None, "stdout": "", "stderr": f"child ended with wait status {wait_status}"}).encode() + b"\n"
-    sys.__stdout__.write(reply.decode())
-    sys.__stdout__.flush()
+    replies.write(reply.decode())
+    replies.flush()

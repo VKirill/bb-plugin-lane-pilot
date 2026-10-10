@@ -1,14 +1,15 @@
-import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { hookEnv } from "./hook-env";
+import { useGuardSync } from "./guard-pool";
 
 const guard = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
+const runGuard = useGuardSync(guard);
 
 function run(command: string, agentType: string | null, env: Record<string, string> = {}, cwd = "/tmp") {
   const payload: Record<string, unknown> = { tool_name: "Bash", tool_input: { command }, cwd };
   if (agentType) payload.agent_type = agentType;
-  return spawnSync("python3", [guard], { input: JSON.stringify(payload), encoding: "utf8", env: hookEnv({ AGENT_HOOK_CLIENT: "claude", ...env }) });
+  return runGuard({ input: JSON.stringify(payload), env: hookEnv({ AGENT_HOOK_CLIENT: "claude", ...env }) });
 }
 const denied = (command: string, agentType: string | null, env: Record<string, string> = {}, cwd = "/tmp") => {
   const res = run(command, agentType, env, cwd);

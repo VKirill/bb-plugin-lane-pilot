@@ -1,10 +1,11 @@
-import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { hookEnv } from "./hook-env";
+import { useGuardSync } from "./guard-pool";
 import { useGuardPool, type Verdict } from "./guard-pool";
 
 const guard = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
+const runGuard = useGuardSync(guard);
 
 function payloadOf(command: string, agentType: string | null) {
   const payload: Record<string, unknown> = { tool_name: "Bash", tool_input: { command }, cwd: "/tmp" };
@@ -12,7 +13,7 @@ function payloadOf(command: string, agentType: string | null) {
   return JSON.stringify(payload);
 }
 function run(command: string, agentType: string | null, env: Record<string, string> = {}) {
-  return spawnSync("python3", [guard], { input: payloadOf(command, agentType), encoding: "utf8", env: hookEnv({ AGENT_HOOK_CLIENT: "claude", ...env }) });
+  return runGuard({ input: payloadOf(command, agentType), env: hookEnv({ AGENT_HOOK_CLIENT: "claude", ...env }) });
 }
 const denied = (command: string, agentType: string | null, env: Record<string, string> = {}) => {
   const res = run(command, agentType, env);
@@ -115,9 +116,8 @@ describe("Lane Pilot agents cannot break the hub from a shell by mistake", () =>
   });
 
   it("denies the same payload from a non-shell tool name spelled differently only through shell tools", () => {
-    const res = spawnSync("python3", [guard], {
-      input: JSON.stringify({ tool_name: "run_terminal_command", tool_input: { command: ADMIN }, agent_type: "errand", cwd: "/tmp" }),
-      encoding: "utf8", env: hookEnv({ AGENT_HOOK_CLIENT: "claude" }),
+    const res = runGuard({
+      input: JSON.stringify({ tool_name: "run_terminal_command", tool_input: { command: ADMIN }, agent_type: "errand", cwd: "/tmp" }), env: hookEnv({ AGENT_HOOK_CLIENT: "claude" }),
     });
     expect(res.status).toBe(2);
     expect(res.stdout).toMatch(/\[hub-guard\]/);

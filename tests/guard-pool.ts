@@ -1,4 +1,6 @@
-import { spawn, type ChildProcessByStdio } from "node:child_process";
+import { execFileSync, spawn, type ChildProcessByStdio } from "node:child_process";
+import { closeSync, constants, mkdtempSync, openSync, readSync, rmSync, writeSync } from "node:fs";
+import { tmpdir } from "node:os";
 import type { Readable, Writable } from "node:stream";
 import { join } from "node:path";
 import { afterAll } from "vitest";
@@ -44,5 +46,60 @@ export function useGuardPool(guard: string, payloadOf: (command: string, agentTy
   afterAll(() => { child?.kill(); child = null; });
   return async function runMany(cases: GuardCase[]): Promise<Verdict[]> {
     return Promise.all(cases.map(one));
+  };
+}
+
+export type GuardRun = { status: number | null; stdout: string; stderr: string };
+
+/**
+ * The same warm Python for tests that call the guard one case at a time and wait for the answer (a spawnSync before): requests and
+ * replies go through two FIFOs read and written with blocking file calls, so the test body stays synchronous. The options are the
+ * ones of the spawnSync it replaces: the payload in `input`, a complete environment in `env`, the working directory in `cwd`.
+ */
+export function useGuardSync(guard: string) {
+  let proc: ReturnType<typeof spawn> | null = null;
+  let requestFd = -1;
+  let replyFd = -1;
+  let dir = "";
+  let nextId = 1;
+  const start = () => {
+    dir = mkdtempSync(join(tmpdir(), "guard-sync-"));
+    const request = join(dir, "request");
+    const reply = join(dir, "reply");
+    execFileSync("mkfifo", [request, reply]);
+    proc = spawn("python3", [server, guard, request, reply], { stdio: "ignore" });
+    proc.unref();
+    // Neither open may wait for the other side: a server that failed to start would then hang the worker for good.
+    requestFd = openSync(request, constants.O_RDWR);
+    replyFd = openSync(reply, constants.O_RDONLY | constants.O_NONBLOCK);
+  };
+  const stop = () => {
+    for (const fd of [requestFd, replyFd]) if (fd >= 0) try { closeSync(fd); } catch { /* already closed */ }
+    requestFd = replyFd = -1;
+    proc?.kill();
+    proc = null;
+    if (dir) rmSync(dir, { recursive: true, force: true });
+    dir = "";
+  };
+  afterAll(stop);
+  return function run(options: { input: string; env?: NodeJS.ProcessEnv; cwd?: string }): GuardRun {
+    if (!proc) start();
+    const id = nextId++;
+    writeSync(requestFd, `${JSON.stringify({ id, input: options.input, env: options.env ?? hookEnv({}), ...(options.cwd ? { cwd: options.cwd } : {}) })}\n`);
+    let text = Buffer.alloc(0);
+    const chunk = Buffer.alloc(65536);
+    const deadline = Date.now() + 30_000;
+    while (!text.includes(10)) {
+      let read = 0;
+      try { read = readSync(replyFd, chunk, 0, chunk.length, null); } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EAGAIN") throw error;
+      }
+      if (read > 0) { text = Buffer.concat([text, chunk.subarray(0, read)]); continue; }
+      // Nothing yet (or the server has not opened its end yet): wait a moment, without the event loop.
+      if (Date.now() > deadline) throw new Error("the guard server did not answer within 30 s");
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1);
+    }
+    const answer = JSON.parse(text.toString("utf8")) as { id: number; status: number | null; stdout: string; stderr: string };
+    return { status: answer.status, stdout: answer.stdout, stderr: answer.stderr };
   };
 }

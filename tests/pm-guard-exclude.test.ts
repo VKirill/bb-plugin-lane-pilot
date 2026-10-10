@@ -1,17 +1,17 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
 import { expect, it } from "vitest";
 import { hookEnv } from "./hook-env";
+import { useGuardSync } from "./guard-pool";
 
 const guard = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
+const runGuard = useGuardSync(guard);
 const cwd = await mkdtemp(join(tmpdir(), "lp-pm-guard-exclude-"));
 
 function invoke(tool: string, input: Record<string, unknown>) {
-  return spawnSync("python3", [guard], {
+  return runGuard({
     input: JSON.stringify({ agent_type: "lane-pilot-pm", tool_name: tool, tool_input: input, cwd }),
-    encoding: "utf8",
     env: hookEnv({ AGENT_HOOK_CLIENT: "claude" }),
   });
 }
