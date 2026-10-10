@@ -1,15 +1,32 @@
+---
+title: Schedule board: Lane Pilot's own scheduler
+type: component
+created: 2026-10-08
+updated: 2026-10-10
+status: active
+confidence: medium
+tags: [schedule, automation, component]
+sources:
+  - src/rooms/schedule/scheduler.ts
+  - src/rooms/schedule/store.ts
+  - src/rooms/storage/database.ts
+  - server.ts
+  - src/rooms/schedule/server/index.ts
+---
+
 # Schedule board: Lane Pilot's own scheduler
+
+TL;DR: A core scheduler materializes workflow, agent-errand, and host-script runs from persisted schedule definitions, then supervises them across ticks.
 
 Lane Pilot runs scheduled work itself: a workflow, an agent errand, or a script on a chosen machine, once or on a cron. It does not need
 the official Automations plugin (that one stays on until every automation has moved and run seven days clean; `workflow-triggers.ts` still
 creates its automations for the schedule triggers of workflows, see [workflow-triggers.md](workflow-triggers.md)).
 
-Code: `src/schedule/` (pure: time, model, store, scheduler, board views, RPC contract), `src/server/schedule-*.ts` (executors, service,
-PM tool, approvals, CLI), `src/script-run.ts` and `src/jobs.ts` (the script on a host). Tests: `tests/schedule/`.
+Code: `src/rooms/schedule/` owns time, model, store and scheduler; `src/rooms/schedule/server/` owns executors, service, CLI and RPC (`src/rooms/schedule/server/index.ts:1-7`). The scheduler materializes due rows and supervises active runs (`src/rooms/schedule/scheduler.ts:8-16`).
 
-## How a tick works
+## How it works
 
-Every minute the core runs the isolated schedule `schedule-board-tick` (`scheduleIsolated`, overlap `skip`, 2 minute limit):
+Every minute the core runs the isolated schedule `schedule-board-tick` (`scheduleIsolated`, overlap `skip`, 2 minute limit). A tick materializes due work, dispatches queued runs, then polls active rows; a concurrent supervise call joins the in-flight loop (`src/rooms/schedule/scheduler.ts:8-16`, `:241-259`):
 
 1. **Materialise.** For each active schedule the fire times in `(cursor, now]` become rows of `lane_pilot_schedule_run`, and the cursor moves,
    in one transaction. The row's `run_key` is `<schedule id>:<scheduled time in ms>` and is UNIQUE (`INSERT OR IGNORE`): a tick that runs twice,
@@ -27,7 +44,7 @@ finished while the hub was off is taken as it ended, not timed out. A host that 
 | Table | Holds |
 | --- | --- |
 | `lane_pilot_schedule` | the definition (task JSON, trigger, policies), `state` (active, paused, done), `consecutive_failures`, `cursor_at` |
-| `lane_pilot_schedule_run` | one row per tick: `status` (queued, running, waiting, succeeded, failed, timed_out, skipped, canceled), `reason`, `ref_kind/ref_id` (workflow run, thread, host job), `exit_code`, `output` (cut to 64 KB), `error`; the newest 200 per schedule are kept |
+| `lane_pilot_schedule_run` | one row per scheduled or manual execution: `status` (queued, running, waiting, succeeded, failed, timed_out, skipped, canceled), `reason`, `ref_kind/ref_id` (workflow run, thread, host job), `exit_code`, `output` (cut to 64 KB), `error`; the newest 200 terminal rows per schedule are kept (`src/rooms/schedule/store.ts:153-160`, `:176-179`) |
 
 ## Time
 

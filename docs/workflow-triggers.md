@@ -51,3 +51,8 @@ bb.sdk.plugins.callRpc({ pluginId: "lane-pilot", method: "workflow_run", input: 
 ```
 
 and answers the owner with the run id or the `message` of a refusal.
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Schedule board: Lane Pilot's own scheduler](schedule-board.md)
