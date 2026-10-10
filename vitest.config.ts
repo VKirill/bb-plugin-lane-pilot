@@ -1,5 +1,6 @@
 import { defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
+import LongestFirstSequencer from "./tests/sequencer";
 
 // Test files that call vi.mock/vi.doMock: a mock replaces a module for every file that shares its module cache, so they run isolated.
 const mocking = [
@@ -24,6 +25,8 @@ const uiTests = ["tests/**/*.test.tsx", "src/rooms/**/tests/**/*.test.tsx"];
 export default defineConfig({
   test: {
     testTimeout: 15000,
+    // One queue for all projects, longest file first (tests/sequencer.ts).
+    ...(process.env.LP_DEFAULT_ORDER ? {} : { sequence: { sequencer: LongestFirstSequencer } }),
     setupFiles: ["./tests/setup-jsdom.ts"],
     // One temp directory per run (TMPDIR for every worker of every project), removed after it: see tests/global-setup.ts.
     globalSetup: ["./tests/global-setup.ts"],
