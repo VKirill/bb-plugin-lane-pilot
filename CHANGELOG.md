@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.226
+
+- **The self-repair watcher makes passes again.** Three writer attempts (jev-openlux-*, 2026-10-10) ended with a reason that listed every stray file of the 48k-file BB-сервис folder, 4.7 MB each. The watcher copied each reason whole into its samples, so its state grew to 14 MB and every pass failed on the 256 KB KV limit after the incidents were read; the failure was swallowed (a pass logs only when it has incidents), and the outside watchdog reported «no pass for 52 min». A stored sample now keeps the first 4000 characters of its reason (`SAMPLE_REASON_CHARS`), and a failed pass logs «self-repair tick failed: …».
+  - Test: `tests/server/self-repair.test.ts` «a reason listing thousands of files does not overflow the stored state» (fails on 0.1.225 with the hub's error).
+
 ## 0.1.225
 
 - **A «Jev» block in General settings, Work tab, at the very top.** Until now the Jev provider (`jev.provider`, 0.1.222) was a plain select in the Advanced «Operations» list and its keys lived only in Env Catalog, so nobody found it. The block (`src/rooms/settings/ui/jev-provider.tsx`) has: an OpenLux / TypeSafe switch (writes `jev.provider` through the usual setting save); per provider «Key: present / missing» (Env Catalog name and model under it, the key is never read for the answer, never returned and never drawn); a password field with «Save key» that writes `OPENLUX_API_KEY` / `TYPESAFE_API_KEY` into Env Catalog (`env_save`) and forgets the 10-minute key cache at once; «Check», one real Jev request through the chosen provider with its key, answering ok or the error with model and latency (no request when the chosen provider has no key, it says which key is missing); and a warning when the chosen provider has no key: «Jev runs on TypeSafe» (the fallback of `jevEndpoint`) or «Jev is off» when neither has one, or when Env Catalog does not answer. At a project or section level the old row is replaced by a one-line note that the provider is global (the value shown is the global one).

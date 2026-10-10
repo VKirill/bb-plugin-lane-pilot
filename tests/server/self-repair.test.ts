@@ -90,6 +90,18 @@ describe("self-repair", () => {
     expect(String(spawns[0]!.prompt)).toContain("host plugin calls are unavailable");
   });
 
+  it("a reason listing thousands of files does not overflow the stored state", async () => {
+    const { ctx, attempt } = setup({ thr_repair1: "running" });
+    const huge = `writer changed paths outside owns_paths or inside never_touch: ${Array.from({ length: 50_000 }, (_, i) => `docs/folder/file-${i}.md`).join(", ")}`;
+    for (const id of ["lpattempt_1", "lpattempt_2", "lpattempt_3"]) attempt(id, "lprun_a", "validation_failed", huge);
+    const repair = createSelfRepair(ctx);
+    const result = await repair.tick({ since: 0 });
+    expect(result.incidents).toBe(3);
+    const state = await repair.state();
+    expect(state.lastTickAt).not.toBeNull();
+    expect(JSON.stringify(state).length).toBeLessThan(256 * 1024);
+  });
+
   it("does not repeat a known problem, waits while a repair runs, and respects the daily limit", async () => {
     const env = setup({ thr_repair1: "running" });
     env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");

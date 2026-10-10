@@ -126,6 +126,11 @@ const LOG_NOT_OURS = /^self-repair|writer attempt \S+ failed|writer spawn for \S
 const LOG_TAIL_BYTES = 1_000_000;
 const REPEAT_AFTER_MS = 86_400_000;
 const FORGET_MS = 30 * 86_400_000;
+/**
+ * A stored sample keeps this much of its reason. The state is one KV value (256 KB limit); a reason that listed every stray
+ * file of a 48k-file folder was 4.7 MB, the write failed and the watcher made no pass (2026-10-10).
+ */
+const SAMPLE_REASON_CHARS = 4000;
 /** A fixed repair whose branch will not merge is retried on this many passes, then left on its branch for the owner. */
 const MERGE_TRIES = 4;
 /** A repair thread that ended without a verdict for this long is abandoned: its worktree is saved as a patch and released. */
@@ -556,7 +561,7 @@ export function createSelfRepair(ctx: ServerCore) {
     for (const [signature, rows] of groups) {
       const record = current.signatures[signature] ?? { firstAt: now, lastAt: now, count: 0, threadId: null, spawnedAt: null, samples: [] };
       const fresh = rows.filter((row) => !record.samples.some((seen) => seen.attemptId === row.attemptId))
-        .map((row) => ({ ...row, version: row.at >= LOADED_AT ? VERSION : null }));
+        .map((row) => ({ ...row, reason: row.reason.slice(0, SAMPLE_REASON_CHARS), version: row.at >= LOADED_AT ? VERSION : null }));
       if (fresh.length) record.lastAt = now;
       record.count += fresh.length;
       record.samples = [...record.samples, ...fresh].slice(-6);
@@ -707,7 +712,10 @@ export function mountSelfRepair(ctx: ServerCore): SelfRepair {
   // Isolated where the core allows: a long schedule of its own or of another plugin must not hold the watcher back.
   scheduleIsolated(ctx.bb, "self-repair", "*/15 * * * *", async (signal) => {
     if (ctx.isDisposed()) return;
-    const result = await repair.tick({ signal }).catch((cause) => ({ incidents: 0, signatures: [], spawned: null, reason: String(cause) }));
+    const result = await repair.tick({ signal }).catch((cause) => {
+      if (!ctx.isDisposed()) ctx.log(`self-repair tick failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+      return { incidents: 0, signatures: [], spawned: null, reason: String(cause) };
+    });
     if (result.incidents) ctx.log(`self-repair tick: ${result.incidents} incident(s), ${result.signatures.length} kind(s): ${result.reason}`);
   }, { timeoutMs: 20 * 60_000 });
   return repair;
