@@ -275,13 +275,30 @@ export function nightlyDocsPrompt(input:{since:DocsSince; hasDocs:boolean; chang
   ].join("\n");
 }
 
-/** One repair round: the checks the pages failed, to fix without touching anything else. */
+const DOCS_REPAIR_LINES = 80;
+
+/**
+ * One repair round: the checks the pages failed, to fix without touching anything else. The listed lines take one
+ * finding of every page and rule before a second of any, so one page with many findings cannot push the other pages'
+ * out of the list; what does not fit is still named by page and rule, since the agent fixes only what it is shown.
+ */
 export function docsRepairPrompt(findings:Array<{ path:string; rule:string; detail:string }>):string {
+  const groups = new Map<string, Array<{ path:string; rule:string; detail:string }>>();
+  for (const finding of findings) {
+    const key = `${finding.path} [${finding.rule}]`;
+    groups.set(key, [...groups.get(key) ?? [], finding]);
+  }
+  const listed:Array<{ path:string; rule:string; detail:string }> = [];
+  for (let round = 0; listed.length < DOCS_REPAIR_LINES && listed.length < findings.length; round++) {
+    for (const group of groups.values()) if (round < group.length && listed.length < DOCS_REPAIR_LINES) listed.push(group[round]!);
+  }
+  const shown = new Set(listed);
+  const hidden = [...groups].map(([key, group]) => [key, group.filter((finding) => !shown.has(finding)).length] as const).filter(([, count]) => count > 0);
   return [
     "Lane Pilot checked the docs and found these problems. Fix exactly these, following the same method; change nothing else.",
     "Keep every page under 30000 bytes: a page over 40000 bytes fails the checks again and this is the only round. When a fix would add to a page near that size, put the new content on a linked page of its own and keep only the link and a line on the page.",
-    ...findings.slice(0, 80).map((finding) => `- ${finding.path} [${finding.rule}]: ${finding.detail}`),
-    ...(findings.length > 80 ? [`- …and ${findings.length - 80} more of the same kinds`] : []),
+    ...listed.map((finding) => `- ${finding.path} [${finding.rule}]: ${finding.detail}`),
+    ...(hidden.length ? [`- …and ${findings.length - listed.length} more like the lines above, fix them too: ${hidden.map(([key, count]) => `${key} ×${count}`).join(", ")}`] : []),
   ].join("\n");
 }
 
