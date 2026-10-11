@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **The docs repair round names every failing page.** treba, 2026-10-11: the first check found 131 problems, 75 of them bad citations on `docs/api.md`. The repair prompt listed the first 80 and hid the rest behind «…and 51 more of the same kinds», though those were frontmatter and structure findings on 16 other pages; told to «fix exactly these», the agent fixed the four API pages and the same 22 findings failed the pass. `docsRepairPrompt` (`src/rooms/docs/docs.ts`) now lists one finding of every page and rule before a second of any, keeps the 80-line cap, and names what does not fit by page, rule and count, asking to fix those too.
+  - Test: `tests/stages/docs.test.ts` «names every failing page and rule in the repair round, however many findings one page has» (fails on 0.1.227).
+
 ## 0.1.227
 
 - **The self-repair state stays well under the KV limit for good.** With 0.1.226 the watcher passed again, but its state was still 252 KB of the 256 KB: kinds are kept 30 days and ~20 new ones a day arrive, so it would have overflowed again within days even without huge reasons. Now a stored sample keeps 1000 characters of its reason (the repair prompt shows 600), samples already stored are cut when the state is read, and before each save the state is held under 200 KB (`STATE_BUDGET_BYTES`, `fitState`): past it the kinds seen longest ago are forgotten, never-repaired ones first, a kind whose repair worktree exists never; the log says «self-repair: forgot N old kind(s) …». A forgotten kind that comes back is simply new again.

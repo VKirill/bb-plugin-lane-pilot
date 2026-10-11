@@ -98,3 +98,36 @@ it("reminds the one repair round of the page size limit", () => {
   expect(prompt).toContain("under 30000 bytes");
   expect(prompt).toContain("linked page of its own");
 });
+
+// treba, 2026-10-11: 75 bad citations on docs/api.md filled the first 80 lines of the repair round; the 22 frontmatter
+// and structure findings on 16 other pages hid behind «…and 51 more of the same kinds», the agent was told to fix
+// exactly the listed ones, and the same 22 failed the pass.
+it("names every failing page and rule in the repair round, however many findings one page has", () => {
+  const structure = "a component or flow page needs a '## How it works' section";
+  const findings = [
+    ...["docs/api/analytics.md", "docs/api/dashboard.md", "docs/api/tracking-direct.md", "docs/api.md"].map((path) => ({ path, rule:"structure", detail:structure })),
+    ...Array.from({ length:75 }, (_, index) => ({ path:"docs/api.md", rule:"evidence", detail:`cites ../server/api/route-${index}.get.ts, which does not exist` })),
+    { path:"docs/architecture.md", rule:"frontmatter", detail:"missing sources" },
+    ...["app", "cluster-61", "cluster-95", "server", "tracking-attribution", "yandex-direct"].flatMap((name) => [
+      { path:`docs/components/${name}.md`, rule:"frontmatter", detail:"missing tags" },
+      { path:`docs/components/${name}.md`, rule:"frontmatter", detail:"missing sources" },
+    ]),
+    { path:"docs/components/app.md", rule:"structure", detail:structure },
+    { path:"docs/components/server.md", rule:"structure", detail:structure },
+    { path:"docs/data-model.md", rule:"frontmatter", detail:"missing tags" },
+    { path:"docs/data-model.md", rule:"frontmatter", detail:"missing sources" },
+    { path:"docs/decisions.md", rule:"frontmatter", detail:"missing sources" },
+    { path:"docs/glossary.md", rule:"frontmatter", detail:"missing tags" },
+    { path:"docs/gotchas.md", rule:"frontmatter", detail:"missing tags" },
+    { path:"docs/gotchas.md", rule:"frontmatter", detail:"missing sources" },
+    { path:"docs/overview.md", rule:"frontmatter", detail:"missing sources" },
+  ];
+  const prompt = docsRepairPrompt(findings);
+  for (const finding of findings.filter((item) => item.rule !== "evidence")) {
+    expect(prompt).toContain(`- ${finding.path} [${finding.rule}]: ${finding.detail}`);
+  }
+  expect(prompt).toContain("- docs/api.md [evidence]: cites ../server/api/route-0.get.ts, which does not exist");
+  expect(prompt).not.toContain("of the same kinds");
+  expect(prompt).toMatch(/docs\/api\.md \[evidence\] ×\d+/);
+  expect(prompt.split("\n").filter((line) => line.startsWith("- ")).length).toBeLessThanOrEqual(81);
+});
