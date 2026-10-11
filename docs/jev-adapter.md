@@ -2,9 +2,9 @@
 title: Jev adapter for native writer reasoning
 type: component
 created: 2026-09-23
-updated: 2026-10-10
+updated: 2026-10-11
 status: active
-confidence: high
+confidence: medium
 tags: [jev, reasoning, native-writer]
 sources:
   - src/rooms/core/server/core.ts
@@ -15,6 +15,10 @@ sources:
   - packages/models/src/jev-reasoning.ts
   - packages/models/src/picker-compat.ts
   - src/rooms/contracts/rpc-runs.ts
+  - src/rooms/contracts/rpc-knowledge.ts
+  - src/rooms/secrets/server/rpc/jev.ts
+  - src/rooms/settings/ui/jev-provider.tsx
+  - src/rooms/ui-shell/ui/tab-work.tsx
 ---
 
 # Jev adapter for native writer reasoning
@@ -52,6 +56,8 @@ Jev's deterministic fallback remains the effective result when it is off, shadow
 ## Public API or commands
 
 The package exposes `judge`, `judgeMany`, `judgeBundle`, `outcome`, and `enabled` (`packages/jev/src/run.ts:35-42`). Native writer selection is visible in the `lastWriterTrace` fields of the runs RPC response (`src/rooms/contracts/rpc-runs.ts:116-133`).
+
+The global Work settings page renders the Jev provider panel; project and section settings show a note that the provider is global (`src/rooms/ui-shell/ui/tab-work.tsx:34-37`, `:89-97`, `src/rooms/settings/ui/jev-provider.tsx:22-26`, `:130-131`). The panel lets the owner select OpenLux or TypeSafe, see key presence without reading the key, save a key to Env Catalog, and send a test request (`src/rooms/settings/ui/jev-provider.tsx:40-70`). Its RPC methods return provider status, save a single-line key, and test the selected provider with a 15-second timeout; status and test results never include a key (`src/rooms/secrets/server/rpc/jev.ts:8-14`, `:19-50`, `src/rooms/contracts/rpc-knowledge.ts:189-200`).
 
 ## Gotchas
 

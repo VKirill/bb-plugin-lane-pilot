@@ -1,11 +1,13 @@
 ---
 title: Lane Pilot project facts
-updated: 2026-10-10
+updated: 2026-10-11
 sources:
   - package.json
   - server.ts
   - src/rooms/core/server/core.ts
   - src/rooms/core/server/rpc.ts
+  - src/rooms/contracts/rpc-ops.ts
+  - scripts/test-changed.mjs
   - src/rooms/storage/database.ts
   - src/rooms/writer/server/dispatch.ts
   - src/rooms/writer/server/start.ts
@@ -32,6 +34,7 @@ sources:
 - Host worker: [`host.ts`](host.ts).
 - BB app: [`app.tsx`](app.tsx).
 - Plugin RPC contract: [`src/rooms/contracts/index.ts`](src/rooms/contracts/index.ts).
+- Operations RPC routes: [`src/rooms/contracts/rpc-ops.ts`](src/rooms/contracts/rpc-ops.ts), registered by [`src/rooms/core/server/rpc.ts`](src/rooms/core/server/rpc.ts).
 - Workspace package contracts: [`docs/packages.md`](docs/packages.md).
 
 ## Critical invariants
@@ -56,6 +59,7 @@ sources:
 ## Useful commands
 
 - `npm test`
+- Focused test selection → [build and deployment](docs/deployment.md#configuration-and-runtime)
 - `npm run typecheck`
 - `npm run build`
 - `npm run test:layout`

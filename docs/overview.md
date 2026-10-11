@@ -2,9 +2,9 @@
 title: Lane Pilot overview
 type: overview
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-11
 status: active
-confidence: medium
+confidence: low
 tags: [overview, bb-plugin, orchestration]
 sources:
   - package.json
@@ -20,6 +20,7 @@ sources:
   - src/rooms/schedule/scheduler.ts
   - src/rooms/anamnesis/collect.ts
   - src/rooms/council/ui/council-page.tsx
+  - src/rooms/council/ui/office-scene.ts
   - src/rooms/memory/server/memory.ts
   - src/rooms/core/server/lifecycle-events.ts
   - src/rooms/anamnesis/pii.ts
@@ -45,7 +46,7 @@ The PM sends work through Lane Pilot tools. The writer dispatcher resolves task 
 - **Settings and integrations:** typed RPC endpoints expose project settings, provider selection, workflows, schedules, council, memory, and knowledge to the UI (`src/rooms/core/server/rpc.ts:26-50`). The surface is declared in [RPC contracts](rpc-callers.md).
 - **Project knowledge:** memory RPCs create and retrieve project-scoped agent records; the UI displays the records and their lifecycle (`src/rooms/memory/server/memory.ts:19-78`, `src/rooms/memory/ui/memory-records.tsx:13-64`).
 - **Owner profile:** Anamnesis collects enabled sources, masks detected personal data, stores evidence-backed records, and can render an annual review (`src/rooms/anamnesis/collect.ts:29-63`, `src/rooms/anamnesis/pii.ts:41-72`, `src/rooms/anamnesis/year-review.ts:13-72`).
-- **Council and world view:** `CouncilPage` renders the council session UI, and the optional Pixel World service is mounted with the plugin (`src/rooms/council/ui/council-page.tsx:65-124`, `server.ts:97-105`).
+- **Council and world view:** `CouncilPage` renders the council session UI; on desktop its office view builds an isometric cutaway floor with exterior ground, paving, trees and bushes, then floor zones, walls, doors and layout furniture. The Pixel World service is also mounted with the plugin (`src/rooms/council/ui/council-page.tsx:64-65`, `src/rooms/council/ui/office-scene.ts:59-69`, `:90-136`, `:166-185`, `:300-303`, `server.ts:97-105`).
 
 ## Workspaces
 
