@@ -108,6 +108,10 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
   const [selectedBinding, setSelectedBinding] = useState<{ hostId: string; path: string } | null>(null);
   const [writerRejected, setWriterRejected] = useState(false);
   const writerSaveTail = useRef(Promise.resolve());
+  // What the other role pickers show while their saves are on the way (the writer's picker has writerDraft), and the queue of each.
+  const [pickerDrafts, setPickerDrafts] = useState<Record<string, ExperimentalProviderModelPickerValue>>({});
+  const pickerDraftsRef = useRef<Record<string, ExperimentalProviderModelPickerValue>>({});
+  const pickerQueues = useRef<Record<string, { ticket: number; tail: Promise<unknown> }>>({});
   const projectCache = useRef(new Map<string, { data: ScreenPayload; drafts: Record<string, unknown>; writer: ExperimentalProviderModelPickerValue | null }>());
   const loadGeneration = useRef(0);
 
@@ -170,6 +174,8 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
   const load = useCallback(async () => {
     if (!projectId) return;
     const generation = ++loadGeneration.current;
+    pickerDraftsRef.current = {};
+    setPickerDrafts({});
     const cached = projectCache.current.get(cacheKey(projectId, selectedSectionId));
     if (cached) { setData(cached.data); dataRef.current = cached.data; setDrafts(cached.drafts); draftsRef.current = cached.drafts; setWriterDraft(cached.writer); writerDraftRef.current = cached.writer; return; }
     setError(null);
@@ -486,61 +492,87 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
       .then(() => undefined, () => undefined);
   };
 
+  /**
+   * A role picker saves as the writer's does: it shows its latest choice at once and its saves go one after another, each on the versions
+   * the one before left. The host's picker reports the provider and then the model within moments; two saves on one read of the versions
+   * lost the race, reloaded the whole screen (every picker read «loading» meanwhile) and dropped the second choice.
+   */
+  const queueSelection = (id: string, selection: ExperimentalProviderModelPickerValue | null, persist: () => Promise<boolean>) => {
+    const queue = pickerQueues.current[id] ?? { ticket: 0, tail: Promise.resolve() };
+    pickerQueues.current[id] = queue;
+    const ticket = ++queue.ticket;
+    const setDraft = (next: ExperimentalProviderModelPickerValue | null) => {
+      const { [id]: _replaced, ...rest } = pickerDraftsRef.current;
+      pickerDraftsRef.current = next ? { ...rest, [id]: next } : rest;
+      setPickerDrafts(pickerDraftsRef.current);
+    };
+    if (selection) setDraft(selection);
+    const run = queue.tail.then(async () => {
+      if (queue.ticket !== ticket) return false; // a later choice replaces this one
+      try { return await persist(); } finally { if (queue.ticket === ticket) setDraft(null); }
+    });
+    queue.tail = run.catch(() => undefined);
+    return run.catch(() => false);
+  };
+  /** The screen the saves read their versions from, as long as it is still the one the choice was made on. */
+  const heldScreen = () => {
+    const held = dataRef.current;
+    return held && held.projectId === projectId && (held.sectionId ?? null) === selectedSectionId ? held : null;
+  };
+  /** What a picker's save answered: a refusal says why; a lost race keeps the answer's current values and versions instead of reloading the screen. */
+  const settleSelection = (result: {
+    ok: boolean; conflict: boolean; values: Record<string, unknown>; versions: Record<string, number>;
+    validation?: { code: Extract<NonNullable<typeof saveError>, { kind: "validation" }>["code"]; params: string[] };
+  }) => {
+    if (result.ok) setSaveError(null);
+    else if (!result.conflict && result.validation) setSaveError({ kind: "validation", code: result.validation.code, params: result.validation.params });
+    else setSaveError({ kind: "cas" });
+    const current = dataRef.current;
+    if (current && (result.ok || result.conflict)) {
+      // A key without a row at this level answers null: what it inherits stays on show.
+      const stored = Object.fromEntries(Object.entries(result.values).filter(([, value]) => value !== null));
+      const next = {
+        ...current,
+        values: { ...current.values, ...stored },
+        versions: { ...current.versions, ...result.versions },
+        explicitKeys: result.ok ? [...new Set([...current.explicitKeys, ...Object.keys(stored)])] : current.explicitKeys,
+      };
+      dataRef.current = next;
+      setData(next);
+    }
+    return result.ok;
+  };
+
   /** One picker-saved role (memory, night review, docs, project log, PM reads, passport, critics, specialist): the same CAS tuple through its own RPC. */
-  const saveSelection = async (id: SelectionId, selection: ExperimentalProviderModelPickerValue) => {
-    if (!projectId || !data) return false;
+  const saveSelection = (id: SelectionId, selection: ExperimentalProviderModelPickerValue) => queueSelection(id, selection, async () => {
+    const snapshot = heldScreen();
+    if (!projectId || !snapshot) return false;
     const spec = SELECTION_SPECS[id];
     const keys = Object.values(selectionKeys(id));
-    const result = await (rpc.call as unknown as (name: string, input: unknown) => Promise<{
-      ok: boolean; conflict: boolean; values: Record<string, unknown>; versions: Record<string, number>;
-      validation?: { code: Extract<NonNullable<typeof saveError>, { kind: "validation" }>["code"]; params: string[] };
-    }>)(spec.rpc, { ...scoped,
+    return settleSelection(await (rpc.call as unknown as (name: string, input: unknown) => Promise<Parameters<typeof settleSelection>[0]>)(spec.rpc, { ...scoped,
       projectId, providerId: selection.providerId, model: selection.model, reasoningLevel: selection.reasoningLevel, serviceTier: selection.serviceTier ?? null,
-      expectedVersions: Object.fromEntries(keys.map((key) => [key, data.versions[key] ?? 0])),
-    });
-    const merge = () => setData((current) => current ? { ...current, values: { ...current.values, ...result.values }, versions: { ...current.versions, ...result.versions } } : current);
-    if (result.conflict) {
-      setSaveError({ kind: "cas" });
-      if (spec.conflict === "merge") merge(); else await load();
-      return false;
-    }
-    if (!result.ok) {
-      if (result.validation) setSaveError({ kind: "validation", code: result.validation.code, params: result.validation.params });
-      else setSaveError({ kind: "cas" });
-      return false;
-    }
-    setSaveError(null);
-    merge();
-    return true;
-  };
+      expectedVersions: Object.fromEntries(keys.map((key) => [key, snapshot.versions[key] ?? 0])),
+    }));
+  });
 
-
-  const saveCouncilSeatSelection = async (seat:(typeof COUNCIL_SEATS)[number], selection:ExperimentalProviderModelPickerValue)=>{
-    if(!projectId||!data)return false;
-    const keys=[`council.${seat}.provider`,`council.${seat}.model`,`council.${seat}.reasoning_effort`];
-    const result=await rpc.call("save_council_seat_selection", { ...scoped,
-      projectId,seat,providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel,
-      expectedVersions:Object.fromEntries(keys.map((key)=>[key,data.versions[key]??0])),
-    });
-    if(result.conflict){setSaveError({kind:"cas"});await load();return false;}
-    if(!result.ok){if(result.validation)setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});else setSaveError({kind:"cas"});return false;}
-    setSaveError(null);
-    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
-    return true;
-  };
-  const saveWriterFallback = async (slot:WriterFallbackSlot, selection:ExperimentalProviderModelPickerValue|null)=>{
-    if(!projectId||!data)return false;
-    const keys=writerFallbackKeys(slot);
-    const result=await rpc.call("save_writer_fallback_selection", { ...scoped, projectId, slot,
-      ...(selection?{providerId:selection.providerId,model:selection.model,reasoningLevel:selection.reasoningLevel}:{off:true}),
-      expectedVersions:Object.fromEntries(Object.values(keys).map((key)=>[key,data.versions[key]??0])),
-    });
-    if(result.conflict){setSaveError({kind:"cas"});await load();return false;}
-    if(!result.ok){if(result.validation)setSaveError({kind:"validation",code:result.validation.code,params:result.validation.params});else setSaveError({kind:"cas"});return false;}
-    setSaveError(null);
-    setData((current)=>current?{...current,values:{...current.values,...result.values},versions:{...current.versions,...result.versions}}:current);
-    return true;
-  };
+  const saveCouncilSeatSelection = (seat: (typeof COUNCIL_SEATS)[number], selection: ExperimentalProviderModelPickerValue) => queueSelection(`council.${seat}`, selection, async () => {
+    const snapshot = heldScreen();
+    if (!projectId || !snapshot) return false;
+    const keys = [`council.${seat}.provider`, `council.${seat}.model`, `council.${seat}.reasoning_effort`];
+    return settleSelection(await rpc.call("save_council_seat_selection", { ...scoped,
+      projectId, seat, providerId: selection.providerId, model: selection.model, reasoningLevel: selection.reasoningLevel,
+      expectedVersions: Object.fromEntries(keys.map((key) => [key, snapshot.versions[key] ?? 0])),
+    }));
+  });
+  const saveWriterFallback = (slot: WriterFallbackSlot, selection: ExperimentalProviderModelPickerValue | null) => queueSelection(`writer.fallback${slot}`, selection, async () => {
+    const snapshot = heldScreen();
+    if (!projectId || !snapshot) return false;
+    const keys = writerFallbackKeys(slot);
+    return settleSelection(await rpc.call("save_writer_fallback_selection", { ...scoped, projectId, slot,
+      ...(selection ? { providerId: selection.providerId, model: selection.model, reasoningLevel: selection.reasoningLevel } : { off: true }),
+      expectedVersions: Object.fromEntries(Object.values(keys).map((key) => [key, snapshot.versions[key] ?? 0])),
+    }));
+  });
   const councilSeatPickerValue=(seat:(typeof COUNCIL_SEATS)[number]):ExperimentalProviderModelPickerValue=>({
     providerId:String(data?.values[`council.${seat}.provider`]??""),
     model:String(data?.values[`council.${seat}.model`]??""),
@@ -559,7 +591,7 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
 
   /** Every picker-saved role: what its picker shows and how a choice is saved. */
   const pickers = Object.fromEntries((Object.keys(SELECTION_SPECS) as SelectionId[]).map((id) => [id, {
-    value: selectionValue(id, data?.values, providers),
+    value: pickerDrafts[id] ?? selectionValue(id, data?.values, providers),
     save: (selection: ExperimentalProviderModelPickerValue) => saveSelection(id, selection),
   }])) as Record<SelectionId, { value: ExperimentalProviderModelPickerValue; save: (selection: ExperimentalProviderModelPickerValue) => Promise<boolean> }>;
 
@@ -569,7 +601,7 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
   const routing = hostId ? { kind: "host" as const, hostId } : undefined;
   const modelPicker = (value: ExperimentalProviderModelPickerValue, onChange: (next: ExperimentalProviderModelPickerValue) => void) => (
     // Before the screen loads the picker would fill in the catalog's first model and report it as a choice.
-    !data ? <p className="text-sm text-muted-foreground">{t("writerCatalogLoading")}</p>
+    !data ? <p className="text-sm text-muted-foreground">{t("overviewLoading")}</p>
     : value.providerId || (providers.providers?.length ?? 0) > 0
       ? <ProviderModelPicker value={value.providerId ? value : { providerId: providers.providers?.[0]?.id ?? "none", model: "", reasoningLevel: "none" }} routing={routing} onChange={onChange} />
       : <p className="text-sm text-muted-foreground">{providers.status === "loading" ? t("writerCatalogLoading") : t("writerCatalogUnavailable")}</p>
@@ -690,7 +722,7 @@ export function useLanePilotPage({ subPath = "", scope = "projects" }: { subPath
     loadGeneration, chooseLocale, load, mergeRuns, loadMoreRuns, refreshRuns,
     runsPollMs, runsVisible, level, segmentOf, setSegment, goTo, diagnosticsGrouped, extrasGrouped, chooseProject,
     writeDraft, save, saveKey, applySetting, resetInherited, displayedValue,
-    persistWriterSelection, saveWriterSelection, saveCouncilSeatSelection, saveWriterFallback,
+    persistWriterSelection, saveWriterSelection, saveCouncilSeatSelection, saveWriterFallback, pickerDrafts,
     councilSeatPickerValue, savedPickerValue, pickerValue, catalogRow,
     hostId, routing, modelPicker, inheritReset, runStack, finishRuns,
     jevRows, selectedProjectName, selectedSectionName, mobileNavValue, flatSections, walkSections,

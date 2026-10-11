@@ -16,7 +16,7 @@ const FALLBACK_TITLES: Record<WriterFallbackSlot, I18nKey> = { 1: "writerFallbac
 
 /** The writer's own settings: the three fallbacks, how the reasoning effort is picked, the agent profile and what the runs say about the pair. */
 export function WriterDetail({ page }: { page: LpPage }) {
-  const { data, modelPicker, saveWriterFallback, fallbackTouched, writerRejected, saveError, advanced, jevRows, displayedValue, applySetting } = page;
+  const { data, modelPicker, saveWriterFallback, pickerDrafts, fallbackTouched, writerRejected, saveError, advanced, jevRows, displayedValue, applySetting } = page;
   const effortRow = jevRows.find((row) => row.storageKey === "jev.LANE_JEV_EFFORT");
   const automaticEffort = asBoolean(displayedValue("jev.LANE_JEV_EFFORT"), true);
   const slotRows = writerFallbackSlots(data?.values ?? {});
@@ -34,9 +34,9 @@ export function WriterDetail({ page }: { page: LpPage }) {
           // A slot turned back on stores its default: it still reads as the default.
           const configured = typeof stored === "string" && stored !== ""
             && !(fallback && stored === fallback.providerId && data?.values[keys.model] === fallback.model && data?.values[keys.effort] === fallback.reasoningLevel);
-          const value: ExperimentalProviderModelPickerValue = configured
+          const value: ExperimentalProviderModelPickerValue = pickerDrafts[`writer.fallback${slot}`] ?? (configured
             ? { providerId: String(stored), model: String(data?.values[keys.model] ?? ""), reasoningLevel: (String(data?.values[keys.effort] ?? "high") || "high") as ExperimentalProviderModelPickerValue["reasoningLevel"] }
-            : { providerId: seed.providerId, model: seed.model, reasoningLevel: seed.reasoningLevel as ExperimentalProviderModelPickerValue["reasoningLevel"] };
+            : { providerId: seed.providerId, model: seed.model, reasoningLevel: seed.reasoningLevel as ExperimentalProviderModelPickerValue["reasoningLevel"] });
           const touch = () => { fallbackTouched.current.add(slot); };
           return (
             <div key={slot} className="space-y-1.5" data-testid={`writer-fallback-${slot}`}>
@@ -88,7 +88,7 @@ export function WriterDetail({ page }: { page: LpPage }) {
 
 /** The seven seats of the directors' council, each with its own model; a seat without a pair of its own follows the stage models. */
 export function CouncilDetail({ page }: { page: LpPage }) {
-  const { data, councilDefaults, councilSeatsTouched, councilSeatPickerValue, saveCouncilSeatSelection, resetInherited, modelPicker } = page;
+  const { data, councilDefaults, councilSeatsTouched, councilSeatPickerValue, saveCouncilSeatSelection, pickerDrafts, resetInherited, modelPicker } = page;
   return (
     <div className="space-y-3" data-testid="council-seats">
       <p className="max-w-xl text-xs text-muted-foreground">{t("councilSettingsHelp")}</p>
@@ -96,8 +96,8 @@ export function CouncilDetail({ page }: { page: LpPage }) {
         const fallback = councilDefaults.find((row) => row.id === seat);
         const configured = Boolean(data?.values[`council.${seat}.provider`] && data?.values[`council.${seat}.model`]);
         const keys = [`council.${seat}.provider`, `council.${seat}.model`, `council.${seat}.reasoning_effort`];
-        const value: ExperimentalProviderModelPickerValue = configured ? councilSeatPickerValue(seat)
-          : { providerId: fallback?.providerId ?? "", model: fallback?.model ?? "", reasoningLevel: "high" };
+        const value: ExperimentalProviderModelPickerValue = pickerDrafts[`council.${seat}`] ?? (configured ? councilSeatPickerValue(seat)
+          : { providerId: fallback?.providerId ?? "", model: fallback?.model ?? "", reasoningLevel: "high" });
         const touch = () => { councilSeatsTouched.current.add(seat); };
         return (
           <div key={seat} className="space-y-1.5" data-testid={`council-seat-${seat}`}>
