@@ -1,6 +1,6 @@
 import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { getAttempt, getReasoningTrace, getRun, saveReasoningTrace, setAttemptDirtBefore, setAttemptWorkspace, transitionAttempt } from "../../storage";
+import { getAttempt, getReasoningTrace, getRun, saveReasoningTrace, setAttemptDirtBefore, setAttemptWorkspace, transitionAttempt, taskBasePath } from "../../storage";
 import { SESSION_MAX_TURNS, failureClass } from "../../runs";
 import { stringAt } from "../../core/server";
 import { sleepUntilThreadSignal, threadWatchMark } from "@lane-pilot/thread-observe";
@@ -214,7 +214,8 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
     prompt: string | ((conflicts: string[]) => string); kind: "next-task" | "retry" | "merge"; dirtBefore?: DirtSnapshot[];
   }): Promise<{ ok: true; workspacePath: string; dirtBefore: DirtSnapshot[] } | { ok: false; reason: string; bound: boolean }> {
     const { writer } = input;
-    const base = getRun(db, input.runId)?.writer_workspace_path;
+    // The task's checkout: a writer of another repository of the same folder cannot sync into it, and a fresh writer starts.
+    const base = taskBasePath(db, input.runId, input.taskId);
     if (!base) return { ok:false, reason:"run has no workspace", bound:false };
     try {
       transitionAttempt(db, input.attemptId, "spawn_requested");

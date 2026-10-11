@@ -1,4 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { isAbsolute, relative, resolve } from "node:path";
 import { FREE_CLASSES, failureClass, isWaitingSecret, isWriterSilent } from "../runs";
 import { handoffMigrations } from "@lane-pilot/handoff";
 import { councilMigrations } from "@lane-pilot/council";
@@ -497,6 +498,18 @@ export function getTask(db: LanePilotDatabase, taskId: string): {
   const row = db.prepare("SELECT id,run_id,kind,contract_json FROM lane_pilot_task WHERE id=?").get(taskId) as
     {id:string; run_id:string; kind:"bb"|"cli"; contract_json:string}|undefined;
   return row ? { id:row.id, run_id:row.run_id, kind:row.kind, contract:JSON.parse(row.contract_json) } : undefined;
+}
+
+/**
+ * The checkout a task works in: its contract's project_cwd when that is the run's folder or a folder inside it (a task
+ * dispatch moved into a git repository of a run folder without git), else the run's folder.
+ */
+export function taskBasePath(db: LanePilotDatabase, runId: string, taskId: string): string | null {
+  const runPath = getRun(db, runId)?.writer_workspace_path ?? null;
+  const cwd = (getTask(db, taskId)?.contract as { project_cwd?: unknown } | undefined)?.project_cwd;
+  if (!runPath || typeof cwd !== "string") return runPath;
+  const rel = relative(resolve(runPath), resolve(cwd));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel)) ? cwd : runPath;
 }
 
 export function saveTaskGitBase(db:LanePilotDatabase,taskId:string,base:{baseRef:string|null;baseSha:string|null;initialHeadSha:string;branch:string;compareCommitted:boolean}):boolean {

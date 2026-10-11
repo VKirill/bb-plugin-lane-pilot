@@ -15,7 +15,7 @@ import { writerServiceTier } from "@lane-pilot/models";
 import { GLOBAL_SETTINGS_PROJECT_ID, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { createNativeInstaller } from "../../native-install";
 import type { WriterBindingResolution } from "../../native-agent";
-import { parseRunPolicy, retargetTask } from "../../tasks";
+import { isTaskBase, parseRunPolicy, retargetTask } from "../../tasks";
 import type { AttemptState } from "../../runs";
 import { cancelRejection } from "../../runs/server";
 import { recordStage } from "../../runs/server";
@@ -194,7 +194,9 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
   function acceptedTaskWorkspace(runId:string, taskId:string, runWorkspacePath:string, contractTask:TaskV2, attemptId?:string):{
     task:TaskV2; path:string; environmentId:string|null;
   } {
-    if (contractTask.project_cwd !== runWorkspacePath) throw new Error("task contract no longer matches the immutable run workspace");
+    if (!isTaskBase(runWorkspacePath, contractTask.project_cwd)) throw new Error("task contract no longer matches the immutable run workspace");
+    // The task's own checkout: the run's folder, or the repository inside it the task was moved into at dispatch.
+    const basePath = contractTask.project_cwd;
     const selected=attemptId?getAttempt(db,attemptId):null;
     if(attemptId&&(!selected||selected.run_id!==runId||selected.task_id!==taskId)) throw new Error("attempt workspace binding does not belong to this task");
     const acceptedId=attemptId?null:[...listAttemptsForTask(db,runId,taskId)].reverse().find((attempt)=>attempt.state==="accepted")?.id;
@@ -208,8 +210,8 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
     // An accepted attempt's work is merged into the run workspace; its BB worktree may stay for the area's next task,
     // and a stage writing there (PROGRESS.md after acceptance) slipped into that task's merge (SelfyStudio 2026-10-05).
     // A caller naming the attempt (workspace status, reconcile) still gets that attempt's own worktree.
-    const merged=!attemptId&&binding?.state==="accepted"&&Boolean(binding.workspace_path)&&binding.workspace_path!==runWorkspacePath;
-    const path=ownWorktree||merged?runWorkspacePath:(binding?.workspace_path??runWorkspacePath);
+    const merged=!attemptId&&binding?.state==="accepted"&&Boolean(binding.workspace_path)&&binding.workspace_path!==basePath;
+    const path=ownWorktree||merged?basePath:(binding?.workspace_path??basePath);
     return {path,environmentId:merged?getRun(db,runId)?.writer_environment_id??null:binding?.environment_id??null,
       task:retargetTask(contractTask,path)};
   }

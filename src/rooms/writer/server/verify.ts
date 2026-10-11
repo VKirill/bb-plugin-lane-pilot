@@ -1,9 +1,9 @@
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 import { acceptanceArtifactDir, bbWriterReportMarkdown, buildAcceptanceV2, validateAcceptanceV2 } from "../../tasks";
 import { attemptProduced } from "../cli-outcome";
 import { taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { recordCheckDuration, recordSecretIssuance, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskGitBase, listTasksForRun, loadProjectSettings, saveProjectSetting } from "../../storage";
+import { recordCheckDuration, recordSecretIssuance, getAttempt, getReasoningTrace, getRunSettingsScopes, getTaskGitBase, listTasksForRun, loadProjectSettings, saveProjectSetting, taskBasePath } from "../../storage";
 import { checkTimeoutSec } from "../check-timing";
 import { sha256 } from "../../tasks";
 import { parseReadFirstHints } from "../../tasks/read-first";
@@ -297,10 +297,15 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       // A file another task of the run owns was made by that task's writer, in this folder while this attempt waited for
       // it; a file name alone in this writer's thread («README.md», «settings.ts») does not make it this writer's. Only
       // its full path does (BB-сервис 2026-10-10: lane-stack was blamed for the agency, content-factory and computer-use files).
+      // A sibling moved into a repository inside this folder owns its paths from there: they are read from this folder.
+      const ownBase = taskBasePath(db, input.runId, input.taskId) ?? input.task.project_cwd;
       const siblingOwns = listTasksForRun(db, input.runId).flatMap((row) => {
         if (row.id === input.taskId) return [];
         const parsed = taskV2Schema.safeParse(row.contract);
-        return parsed.success ? [parsed.data.owns_paths] : [];
+        if (!parsed.success) return [];
+        const inside = relative(resolve(ownBase), resolve(parsed.data.project_cwd)).split("\\").join("/");
+        if (inside.startsWith("..") || isAbsolute(inside)) return [];
+        return [inside ? parsed.data.owns_paths.map((pattern) => `${inside}/${pattern}`) : parsed.data.owns_paths];
       });
       const foreign = produced.filter((path) => !fileAllowedByOwns(path, input.task.owns_paths) && (siblingOwns.some((owns) => fileAllowedByOwns(path, owns))
         ? !trace?.includes(path)
@@ -323,12 +328,12 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       const parsed = taskV2Schema.safeParse(row.contract);
       return parsed.success && parsed.data.id === row.id ? [{ ...parsed.data }] : [];
     });
-    const persistedRun = getRun(db,input.runId);
     const persistedAttempt = getAttempt(db,input.attemptId);
     // In the attempt's own worktree, work may already sit in a commit: the writer committed it, or Lane Pilot
     // committed it on the way to main and was cut off mid-merge (a host restart) before this re-check. Those
     // files count too; otherwise a finished task reads as «writer changed no files» and never reaches main.
-    const basePath = persistedRun?.writer_workspace_path;
+    // The task's own checkout: the run's folder, or the repository inside it the task works in.
+    const basePath = taskBasePath(db, input.runId, input.taskId);
     if (basePath && resolve(basePath) !== resolve(input.task.project_cwd)) {
       const base = await host.call("gitOwnershipBase",{requestedHostId:input.config.hostId,projectCwd:basePath},
         {hostId:input.config.hostId,timeoutMs:30_000}).catch(()=>null);
@@ -340,12 +345,13 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     // Task-v2 contracts stay bound to the run's configured project workspace. A
     // risk-routed attempt may execute in its own managed worktree, so validate that
     // separate CAS binding instead of requiring the task contract cwd to equal it.
-    const contractWorkspace = persistedRun?.writer_workspace_path ?? runOwnershipTasks[0]?.project_cwd;
+    const contractWorkspace = basePath ?? runOwnershipTasks[0]?.project_cwd;
     const attemptWorkspaceMatches = persistedAttempt?.run_id === input.runId
       && persistedAttempt.task_id === input.taskId
       && persistedAttempt.workspace_path === input.task.project_cwd;
     const ownershipScope = runTasks.length === runOwnershipTasks.length && contractWorkspace && attemptWorkspaceMatches
-      ? resolveRunOwnershipScope(runOwnershipTasks,input.taskId,contractWorkspace)
+      // Tasks of another checkout (another repository of the same folder) are not in this one's scope.
+      ? resolveRunOwnershipScope(runOwnershipTasks.filter((task) => task.project_cwd === contractWorkspace),input.taskId,contractWorkspace)
       : { ok:false as const, reason:"run scope contains a non-BB or invalid task contract" };
     if (!ownershipScope.ok) {
       recordGateEvaluation(db,{...input,gate:"owns-paths",status:"failed",input:JSON.stringify(input.task),summary:{reason:"run_scope_invalid"}});

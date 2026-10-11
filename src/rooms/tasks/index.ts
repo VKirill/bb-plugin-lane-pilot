@@ -9,3 +9,4 @@ export { taskStem } from "./task-stem";
 export { mapVerificationCwd, retargetTask } from "./verification-cwd";
 export { classifyWriterOutput, isMainfixTask, isOutputPath, unownedExpectedOutputs } from "./validate-output";
 export type { VerifyResult } from "./validate-output";
+export { commonTaskFolder, isTaskBase, ownsFromOuterBase, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask } from "./task-base";

@@ -140,6 +140,38 @@ it("queues a task behind the one running in the same folder without git, even wh
   await env.harness.lifecycle.dispose();
 });
 
+it("queues a live-folder task behind a task of a repository inside the folder only when they own the same files (BB-сервис 2026-10-11)", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout"] });
+  const env = setup();
+  // R1 was moved into the repository plugins/p of the folder: its own checkout, its paths relative to it.
+  createTask(env.db, { id: "R1", runId: "run1", kind: "bb", contract: { ...contract("R1"), project_cwd: `${WORKSPACE}/plugins/p`, owns_paths: ["src/**"], expected_outputs: ["src/a.ts"] } });
+  createAttempt(env.db, { id: "r1-a", runId: "run1", taskId: "R1" });
+  transitionAttempt(env.db, "r1-a", "spawn_requested");
+  transitionAttempt(env.db, "r1-a", "running", { threadId: "thr_r" });
+  const disjoint = services(env, [{ accept: true }], true);
+  start(env, disjoint.all, "notes");
+  await vi.advanceTimersByTimeAsync(50);
+  vi.useRealTimers();
+  await vi.waitFor(() => expect(disjoint.spawned).toEqual(["notes-a1"]));
+  vi.useFakeTimers({ toFake: ["setTimeout"] });
+  const overlapping = services(env, [{ accept: true }], true);
+  const task = { ...contract("T2"), owns_paths: ["plugins/p/src/**"], expected_outputs: ["plugins/p/src/b.ts"] };
+  createTask(env.db, { id: "T2", runId: "run1", kind: "bb", contract: task });
+  saveTaskPlan(env.db, "T2", "Plan for T2");
+  for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) recordStage(env.db, { runId: "run1", taskId: "T2", stageId, state: "pending", input: "Plan for T2" });
+  createAttempt(env.db, { id: "T2-a1", runId: "run1", taskId: "T2" });
+  Object.assign(overlapping.all, createWriterStart(env.ctx, overlapping.all));
+  overlapping.all.startWriterTask({ projectId: "proj1", runId: "run1", taskId: "T2", firstAttemptId: "T2-a1", pmThreadId: "thr_pm", config, task, plan: "Plan for T2" });
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(overlapping.spawned).toEqual([]);
+  expect(writerStage(env.db, "T2")).toMatchObject({ state: "pending", reason: expect.stringContaining("waiting for R1") });
+  transitionAttempt(env.db, "r1-a", "accepted");
+  await vi.advanceTimersByTimeAsync(10_000);
+  vi.useRealTimers();
+  await vi.waitFor(() => expect(overlapping.spawned).toEqual(["T2-a1"]));
+  await env.harness.lifecycle.dispose();
+});
+
 it("lets disjoint tasks of a git folder run side by side, as before", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout"] });
   const env = setup();

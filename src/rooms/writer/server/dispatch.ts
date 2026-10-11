@@ -12,7 +12,7 @@ import { QUALITY_MODE_SETTING, browserQaRequired, resolveQualityMode } from "../
 import { setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, recordFinishedAttempt, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../storage";
 import { sha256 } from "../../tasks";
 import { liveFolderLockNote, nextStep, taskFamily } from "../../runs";
-import { isMainfixTask } from "../../tasks";
+import { commonTaskFolder, isMainfixTask, isTaskBase, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask } from "../../tasks";
 import { validateTaskV2 } from "../../tasks/task-v2";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification";
 import { lintReply } from "../../tasks/server";
@@ -104,6 +104,28 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
 
   const lintTask = createTaskLinter(ctx, services);
 
+  /**
+   * Where a task works. The run's folder as before; a git repository inside it the PM named as project_cwd; or, in a run
+   * folder without git (BB-сервис holds 41 plugin repositories), the repository every path of the task lies in: the task
+   * moves into it (paths relative to it) and gets a worktree, a git diff and a merge there instead of the live folder.
+   */
+  async function placeTask(runId:string, hostId:string, runFolder:string, task:TaskV2, plan:string):Promise<{ task:TaskV2; plan:string; movedInto?:string } | { rejected:string }> {
+    const repoOf = async (folder:string) => parseRepoTop(await runOnHost(host, { hostId, cwd:runFolder, command:repoTopCommand(folder, runFolder), timeoutSec:20, timeoutMs:25_000 }).catch(() => null));
+    if (resolve(task.project_cwd) !== resolve(runFolder)) {
+      const named = relative(resolve(runFolder), resolve(task.project_cwd)).split("\\").join("/");
+      if (isTaskBase(runFolder, task.project_cwd) && await repoOf(task.project_cwd) === named) return { task:{ ...task, project_cwd:resolve(task.project_cwd) }, plan };
+      return { rejected:`task.project_cwd must equal the configured writerWorkspacePath (${runFolder}) or a git repository inside it` };
+    }
+    const fixed = { ...task, project_cwd:runFolder };
+    const folder = commonTaskFolder(fixed);
+    if (!folder || !await services.isLiveFolder(runId, hostId, runFolder)) return { task:fixed, plan };
+    const repo = await repoOf(resolve(runFolder, folder));
+    const moved = repo ? rerootTask(fixed, repo) : null;
+    if (!repo || !moved) return { task:fixed, plan };
+    ctx.log(`Lane Pilot: task ${task.id} works in the repository ${repo} of ${runFolder} (its own worktree and merge, not the folder without git)`);
+    return { task:moved.task, plan:planWithOutsideReads(plan, moved.outsideReads), movedInto:repo };
+  }
+
   async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2; plan?:string; baseRef?:string; objective?:string}): Promise<Record<string,unknown>> {
     const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
     if (valueAt(metadata, "role") !== "pm") throw new Error("caller is not a Lane Pilot PM thread");
@@ -127,17 +149,20 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     }
     const taskId = args.task ? freeTaskId(db, args.task.id) : id("lptask");
     const prepared = args.task ? { ...args.task, id:taskId } : buildTask(runConfig, taskId);
-    const canonicalPlan = args.plan ?? prepared.objective;
+    let canonicalPlan = args.plan ?? prepared.objective;
     if (canonicalPlan.trim().length === 0) throw new Error("canonical plan must be non-empty");
     const valid = validateTaskV2(prepared);
     if (!valid.ok) throw new Error(`task-v2 invalid: ${valid.errors.join("; ")}`);
-    if (resolve(valid.task.project_cwd) !== resolve(workspacePath)) {
-      const reason = `task.project_cwd must equal the configured writerWorkspacePath (${workspacePath})`;
-      return { runId, state:"rejected", reason, unapplied:[{ key:"task.project_cwd", reason }] };
-    }
-    valid.task.project_cwd = workspacePath;
+    const placed = await placeTask(runId, config.hostId, workspacePath, valid.task, canonicalPlan);
+    if ("rejected" in placed) return { runId, state:"rejected", reason:placed.rejected, unapplied:[{ key:"task.project_cwd", reason:placed.rejected }] };
+    const task = placed.task;
+    canonicalPlan = placed.plan;
+    // The checkout this task works in: the run's folder, or the git repository inside it the task moved into.
+    const taskBase = task.project_cwd;
+    const taskConfig = { ...runConfig, writerWorkspacePath:taskBase };
+    const movedNote = placed.movedInto ? `mode repository: every path of this task is inside the git repository ${placed.movedInto}, so the task works there: its paths are now relative to ${taskBase}, the writer gets its own worktree of that repository, and accepted work is merged into its main as a commit (not the live folder).` : null;
     // The PM sending the same task again (its call ended «terminated» while the stages went on) gets the task it already has.
-    const duplicate = args.task ? findLiveDuplicate(runId, args.task.id, valid.task, canonicalPlan) : null;
+    const duplicate = args.task ? findLiveDuplicate(runId, args.task.id, task, canonicalPlan) : null;
     if (duplicate) return duplicate;
     // A task is one writer session that restarts itself after a machinery fault: sending another member of its family
     // (`<id>.N`) while one runs or is parked would start a second writer on the same work.
@@ -148,9 +173,9 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     }
     // Contract lint: every contract mistake a helper or writer would only trip over later goes back to the PM now,
     // in one message with the fix, before a task or an attempt exists.
-    const lint = await lintTask(args.projectId, runId, valid.task, workspacePath, config.hostId);
+    const lint = await lintTask(args.projectId, runId, task, taskBase, config.hostId);
     if (lint.errors.length) return lintReply(runId, lint.errors);
-    createTask(db, { id:taskId, runId, kind:"bb", contract:valid.task });
+    createTask(db, { id:taskId, runId, kind:"bb", contract:task });
     saveTaskPlan(db, taskId, canonicalPlan);
     if (run.run_gate === "pre-merge") {
       const reason = "explicit_review_gate_requires_operator";
@@ -173,7 +198,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     // A cancel while the stages run ends the attempt: a stage verdict after it leaves the attempt, its stages and the run alone.
     const ended = () => endedAttemptReply(db, runId, taskId, attemptId);
     const runStages = async (): Promise<Record<string,unknown>> => {
-      const pmRead=await runPmRead({bb,db,projectId:args.projectId,runId,taskId,pmThreadId:args.threadId,config:runConfig,task:valid.task});
+      const pmRead=await runPmRead({bb,db,projectId:args.projectId,runId,taskId,pmThreadId:args.threadId,config:taskConfig,task:task});
       if(pmRead.state==="failed") {
         { const stopped=ended(); if(stopped) return stopped; }
         const reason=`pm_read_failed:${pmRead.reason ?? "unknown"}`;
@@ -187,7 +212,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       }
       { const stopped=ended(); if(stopped) return stopped; }
       const critique = await runPlanCritique({ bb, db, projectId:args.projectId, runId, taskId,
-        config:runConfig, task:valid.task, plan:canonicalPlan, pmReadContext:pmRead.summary || undefined });
+        config:taskConfig, task:task, plan:canonicalPlan, pmReadContext:pmRead.summary || undefined });
       if (!critique.allowed) {
         { const stopped=ended(); if(stopped) return stopped; }
         recordStage(db, { runId, taskId, stageId:"specialist-review", state:"skipped", input:canonicalPlan,
@@ -202,7 +227,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       }
       { const stopped=ended(); if(stopped) return stopped; }
       const specialist = await runSpecialistReview({bb,db,projectId:args.projectId,runId,taskId,
-        config:runConfig,task:valid.task,plan:canonicalPlan});
+        config:taskConfig,task:task,plan:canonicalPlan});
       if (!specialist.allowed) {
         { const stopped=ended(); if(stopped) return stopped; }
         for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
@@ -214,9 +239,9 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       }
       // A folder without git has no base commit to measure ownership against: the writer's work is the difference of
       // two content snapshots of the folder.
-      const live=await services.isLiveFolder(runId,config.hostId,workspacePath);
+      const live=await services.isLiveFolder(runId,config.hostId,taskBase);
       const gitBase=live?null:await host.call("gitOwnershipBase",{
-        requestedHostId:config.hostId,projectCwd:workspacePath,...(args.baseRef===undefined?{}:{baseRef:args.baseRef}),
+        requestedHostId:config.hostId,projectCwd:taskBase,...(args.baseRef===undefined?{}:{baseRef:args.baseRef}),
       },{hostId:config.hostId,timeoutMs:30_000});
       if(gitBase&&gitBase.status!=="ready"&&(args.baseRef!==undefined||gitBase.status!=="not-git")) {
         { const stopped=ended(); if(stopped) return stopped; }
@@ -248,12 +273,12 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
           // The line goes into the repository's real info/exclude, resolved by git on the workspace's own host —
           // never into a stray `.git` of a subfolder workspace (OVH 2026-10-06). PLAN.md is written regardless.
           exclude: live ? undefined : async (line) => {
-            const ran=await runOnHost(host, { hostId: config.hostId, cwd: workspacePath, command: appendExcludeCommand(line), timeoutSec: 30, timeoutMs: 30_000 });
+            const ran=await runOnHost(host, { hostId: config.hostId, cwd: taskBase, command: appendExcludeCommand(line), timeoutSec: 30, timeoutMs: 30_000 });
             if(ran.exitCode!==0) throw new Error(ran.stderr.trim()||`git exited ${ran.exitCode}`);
           },
           writeFile: async (rel, content) => {
             await bb.sdk.files.write({
-              hostId:config.hostId, rootPath:workspacePath, path:`${workspacePath}/${rel}`,
+              hostId:config.hostId, rootPath:taskBase, path:`${taskBase}/${rel}`,
               content, contentEncoding:"utf8", createParents:true, expectedSha256:null,
             });
           },
@@ -267,11 +292,11 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       transitionAttempt(db, attemptId, "queued");
       services.startWriterTask({
         projectId:args.projectId, runId, taskId, firstAttemptId:attemptId,
-        pmThreadId:args.threadId, config:runConfig, task:valid.task, plan:canonicalPlan, pmReadContext:pmRead.summary || undefined,
+        pmThreadId:args.threadId, config:taskConfig, task:task, plan:canonicalPlan, pmReadContext:pmRead.summary || undefined,
       });
       // The writer's brief carries the read stage's facts, not its open questions: those are the PM's to settle.
       const openQuestions = pmRead.summary ? pmReadBrief(pmRead.summary).openQuestions : [];
-      const warnings: string[] = lint.warnings.map((warning) => warning.message);
+      const warnings: string[] = [...lint.warnings.map((warning) => warning.message), ...(movedNote ? [movedNote] : [])];
       if (live) warnings.push("mode live-folder: this folder has no git. The writer edits the live files in place; nothing is committed or merged, so there is no ship step. One writer at a time works in the folder, later tasks queue. A task that is not accepted is rolled back from a backup of its owns_paths (~/.lane-pilot/live-backups, kept 7 days); files outside owns_paths are not rolled back.");
       return { runId, taskId, attemptId, writerThreadId:null, state:"queued", stages:listStageReceipts(db, runId, taskId),
         ...(warnings.length ? { warnings } : {}),
@@ -286,7 +311,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       let started: ReturnType<typeof startDispatchRun>;
       try {
         started = startDispatchRun(services.workflowEngine, { ctx, services, threadId:args.threadId, projectId:args.projectId, baseRef:args.baseRef, runId, taskId, attemptId,
-          config, runConfig, workspacePath, task:valid.task, plan:canonicalPlan, lintWarnings:lint.warnings.map((warning) => warning.message) });
+          config, runConfig:taskConfig, workspacePath:taskBase, task, plan:canonicalPlan, lintWarnings:[...lint.warnings.map((warning) => warning.message), ...(movedNote ? [movedNote] : [])] });
       } catch (cause) {
         bb.log.warn(`Lane Pilot workflow engine could not start the dispatch of ${taskId}, running it directly: ${cause instanceof Error ? cause.message : String(cause)}`);
         return runStages();

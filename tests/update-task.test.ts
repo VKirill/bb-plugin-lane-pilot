@@ -132,6 +132,25 @@ describe("lane_pilot_update_task", () => {
     expect(receipts.some((r) => r.stageId === "plan-critique")).toBe(true);
   });
 
+  it("moves the PM's contract into the repository its task works in, and refuses one that leaves it (BB-сервис 2026-10-11)", async () => {
+    // The task was moved at dispatch into the repository plugins/p of the run folder /ws.
+    const moved: TaskV2 = { ...baseTask, project_cwd: "/ws/plugins/p", owns_paths: ["src/**"], expected_outputs: ["out.txt"], verification: [{ command: "npm test", cwd: "/ws/plugins/p" }] };
+    createTask(db, { id: taskId, runId, kind: "bb", contract: moved });
+    createAttempt(db, { id: "att-1", runId, taskId });
+    const ctx = { bb: fakeBb as never, db, state: { disposed: false }, log: () => {} } as unknown as ServerCore;
+    const services = { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
+    const { updateTask } = createWriterUpdateTask(ctx, services);
+    // The PM sends it as it wrote it: from the run folder, with a reference file of another plugin.
+    const asWritten: TaskV2 = { ...baseTask, title: "Updated title", owns_paths: ["plugins/p/src/**"], expected_outputs: ["plugins/p/out.txt"],
+      read_first: ["plugins/q/x.ts"], verification: [{ command: "npm test", cwd: "/ws/plugins/p" }] };
+    const res = await updateTask({ projectId, runId, pmThreadId, taskId, task: asWritten, plan: "Updated plan" });
+    expect(res.ok).toBe(true);
+    expect(getTask(db, taskId)?.contract).toMatchObject({ title: "Updated title", project_cwd: "/ws/plugins/p", owns_paths: ["src/**"], expected_outputs: ["out.txt"], read_first: [] });
+    expect(getTaskPlan(db, taskId)).toContain("- /ws/plugins/q/x.ts");
+    const leaves = await updateTask({ projectId, runId, pmThreadId, taskId, task: { ...asWritten, owns_paths: ["plugins/p/src/**", "plugins/q/**"] }, plan: "Updated plan" });
+    expect(leaves).toMatchObject({ ok: false, error: { code: "validation_failed", hint: expect.stringContaining("/ws/plugins/p, the repository this task works in") } });
+  });
+
   it("returns task_started if the task already started", async () => {
     createTask(db, { id: taskId, runId, kind: "bb", contract: baseTask });
     createAttempt(db, { id: "att-1", runId, taskId });

@@ -3,7 +3,7 @@ import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop,
 import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { providerPoolCap } from "@lane-pilot/settings-catalog";
-import { countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, transitionAttempt } from "../../storage";
+import { countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, transitionAttempt, taskBasePath } from "../../storage";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
 import { reconcile } from "../../stability";
@@ -15,7 +15,7 @@ import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../runs";
 import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, isWaitingSecret, isWriterSilent, repeatedFailureReason, taskFamily, turnFailureKey } from "../../runs";
 import { isTaskSatisfied } from "../../runs/server";
 import { previousAttemptBrief, stickyTurnPrompt } from "./writer-task";
-import { isMainfixTask, retargetTask } from "../../tasks";
+import { isMainfixTask, ownsFromOuterBase, retargetTask } from "../../tasks";
 import { openDatabase } from "../../storage";
 import { createWriterSticky } from "./sticky";
 import { failureClass, type FailureClass } from "../../runs";
@@ -119,7 +119,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     // An attempt resumed after a reload arrives bound to its own worktree. Every new attempt starts from the run's
     // workspace instead: that worktree is removed when the attempt fails, and a retry snapshotted inside it failed
     // with «spawnSync /bin/bash ENOENT» (project-folders, 2026-10-02).
-    let { task:freshTask, config:freshConfig } = freshAttemptStart(input.task, input.config, getRun(db, input.runId)?.writer_workspace_path ?? null);
+    let { task:freshTask, config:freshConfig } = freshAttemptStart(input.task, input.config, taskBasePath(db, input.runId, input.taskId));
     let activeConfig = input.config;
     let activeTask = input.task;
     // An attempt that never reached a writer has no baseline: its stored [] is the column's default. Taken as the folder's
@@ -159,7 +159,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       // A writer's question is a pause, not a rejection: its answer continues the same attempt on the files as it left them.
       if (failureClass(String(last.status), typeof last.reason === "string" ? last.reason : null) === "judgment") return;
       liveBackupId = null;
-      const folder = getRun(db,input.runId)?.writer_workspace_path ?? input.task.project_cwd;
+      const folder = taskBasePath(db, input.runId, input.taskId) ?? input.task.project_cwd;
       const rolled = await services.restoreLiveFolder({ hostId:input.config.hostId, folder, backupId, task:freshTask })
         .catch((cause:unknown) => ({ ok:false as const, reason:cause instanceof Error ? cause.message : String(cause) }));
       if (rolled.ok && !rolled.failed.length) {
@@ -249,12 +249,13 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       }
     };
     const waitForOverlappingTasks = async (shouldStop?:()=>string|null) => {
-      const base = getRun(db,input.runId)?.writer_workspace_path;
+      // Tasks queue behind each other in the same checkout only: another repository of the same folder is another checkout.
+      const base = taskBasePath(db, input.runId, input.taskId);
       /** Another task of this folder that ended with a question nobody has answered; a halted run (the owner stopped it) holds nothing. */
       const unansweredQuestionHolder = async () => {
         for (const row of listUnansweredWriterQuestions(db)) {
           if (row.task_id === input.taskId || row.project_id !== input.projectId) continue;
-          if (base && getRun(db,row.run_id)?.writer_workspace_path !== base) continue;
+          if (base && taskBasePath(db, row.run_id, row.task_id) !== base) continue;
           if (await isRunHalted(bb.storage.kv as never, row.run_id)) continue;
           return row;
         }
@@ -270,7 +271,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         if (mine < 0) return;
         const blocker = open.slice(0, mine).find((row) => {
           if (row.task_id === input.taskId || row.project_id !== input.projectId) return false;
-          if (base && getRun(db,row.run_id)?.writer_workspace_path !== base) return false;
+          const rowBase = taskBasePath(db, row.run_id, row.task_id);
           const parsed = taskV2Schema.safeParse(getTask(db,row.task_id)?.contract);
           // A task that depends on this one waits for it anyway; waiting for it back is a deadlock
           // (live 2026-10-03: price-watermark.5 depends_on how.5, how.5 queued behind price-watermark.5).
@@ -279,6 +280,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           // chain (A waits on B's area, B depends on C, C on A) it was a deadlock of a whole run (BB-сервис 2026-10-05).
           if (row.state === "queued" && parsed.success && (parsed.data.depends_on ?? [])
             .some((dep) => dep !== row.task_id && latestTaskAttemptState(db, row.project_id, dep) !== "accepted")) return false;
+          // A task of a repository inside this folder (or of the folder around this repository) is another checkout: it
+          // waits only when the two own the same files, read from the outer folder.
+          if (base && rowBase !== base) {
+            const pair = rowBase && parsed.success ? ownsFromOuterBase(base, input.task.owns_paths, rowBase, parsed.data.owns_paths) : null;
+            return Boolean(pair && ownsPathsOverlap(pair[0], pair[1]));
+          }
           // One writer at a time per area: the next task of a page continues in its writer's thread once it is free.
           if (liveFolder) return true;
           if (parsed.success && sameArea(parsed.data.area, input.task.area)) return true;
@@ -311,7 +318,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     };
     /** Removes a failed attempt's own worktree; a worktree that is the run folder, or a BB environment, is left alone. */
     const removeWorktreeOf = async (failed:ReturnType<typeof getAttempt>) => {
-      const failedBase=getRun(db,input.runId)?.writer_workspace_path;
+      const failedBase=taskBasePath(db, input.runId, input.taskId);
       if(failed?.workspace_path&&failed.environment_id===null&&failedBase&&shouldMergeAttemptWorktree(failed.workspace_path,failedBase)) {
         await host.call("gitRemoveWorktree",{requestedHostId:input.config.hostId,basePath:failedBase,worktreePath:failed.workspace_path},
           {hostId:input.config.hostId,timeoutMs:60_000}).catch((cause)=>bb.log.warn(`Lane Pilot could not remove worktree of ${failed.id}: ${cause instanceof Error?cause.message:String(cause)}`));
@@ -331,7 +338,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       };
       // Tasks run side by side only when they cannot touch the same files: one whose owns_paths overlap an
       // earlier open task's (in any run on the same checkout) waits for it, instead of conflicting at the merge.
-      const runFolder = getRun(db,input.runId)?.writer_workspace_path ?? input.task.project_cwd;
+      const runFolder = taskBasePath(db, input.runId, input.taskId) ?? input.task.project_cwd;
       liveFolder = await services.isLiveFolder(input.runId, input.config.hostId, runFolder);
       // An attempt resumed on its writer's thread (the PM's answer, a reload) goes on under the backup it began with.
       if (liveFolder && writerThreadId) {
@@ -358,7 +365,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         if (ctx.isDisposed()) return;
         const budgetStop = wallOrTokenStop();
         if (budgetStop) { blockBeforeWriter(budgetStop); return; }
-        const base = getRun(db, input.runId)?.writer_workspace_path;
+        const base = taskBasePath(db, input.runId, input.taskId);
         const held = services.stability.breakerHolds(input.projectId)
           ?? (base ? await services.stability.diskHolds(input.config.hostId, base) : null);
         if (!held) break;
@@ -406,7 +413,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         input.task={...storedTask.data,project_cwd:input.task.project_cwd};
         if(storedPlan&&storedPlan.trim()) input.plan=storedPlan;
         activeTask=input.task;
-        ({ task:freshTask, config:freshConfig } = freshAttemptStart(input.task, input.config, getRun(db, input.runId)?.writer_workspace_path ?? null));
+        ({ task:freshTask, config:freshConfig } = freshAttemptStart(input.task, input.config, taskBasePath(db, input.runId, input.taskId)));
       }
       recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"running",
         input:input.plan, attempt:countAttempts(db, input.runId, input.taskId) });

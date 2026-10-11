@@ -19,6 +19,8 @@ Scenarios (each writes its verdict into the receipt, .agents/runs/drills/<date>.
   provider       one task: its attempt runs on a BB environment of Lane Pilot's own worktree provider (environment_id set, no
                  holder thread, own worktree). A silent fallback to the old path fails it: a broken provider must not ship
   nogit          a project whose folder is not a git repo (live-folder mode): accepted, file in the folder, no .git created
+  nogit_repo     a task over one git repository inside that folder (repo-a): it moves into the repository, works in its own
+                 worktree and is merged into its main as a commit; the folder still has no .git
 
 Usage: scripts/lp-drill.sh [--quick] [--scenario a,b] [--dry-run] [--repair-guard]
   --quick      the scenarios marked [--quick] (what bb-plugin-push runs before a deploy)
@@ -60,12 +62,12 @@ OPEN_STATES = ("queued", "spawn_requested", "spawn_unknown", "running")
 TERMINAL = ("accepted", "blocked", "canceled")
 STAMP = time.strftime("%Y%m%d-%H%M%S")
 DATE = time.strftime("%Y-%m-%d")
-ALL = ["guard_hash", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit"]
+ALL = ["guard_hash", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit", "nogit_repo"]
 QUICK = ["guard_hash", "helper_providers", "parallel3"]
 # What a provider runs when no setting of the sandbox project names a model for it.
 PROVIDER_FALLBACK_MODEL = {"claude-code": "claude-sonnet-5-5", "codex": "gpt-6-luna", "acp-opencode": "zai-coding-plan/glm-5.3-flash"}
 # Scenarios that need no PM and no run of their own: they run before the PM starts (guard_hash) or on a project of their own (nogit).
-STANDALONE = ("guard_hash", "nogit")
+STANDALONE = ("guard_hash", "nogit", "nogit_repo")
 
 
 def log(message: str) -> None:
@@ -335,6 +337,14 @@ def task_reload(cwd: str) -> dict:
 
 def task_nogit(cwd: str) -> dict:
     return note_task(f"drill-{STAMP}-nogit", f"drill-{STAMP}-nogit.md", f"Drill {STAMP} nogit", cwd) | {"risk": "low"}
+
+
+NOGIT_REPO = "repo-a"
+
+
+def task_nogit_repo(cwd: str) -> dict:
+    # Written from the folder without git, as the BB-сервис PM writes a plugin task.
+    return note_task(f"drill-{STAMP}-nogit-repo", f"{NOGIT_REPO}/notes/drill-{STAMP}.md", f"Drill {STAMP} nogit repo", cwd) | {"risk": "low"}
 
 
 def scenario_parallel3(ctx: Context) -> dict:
@@ -727,6 +737,57 @@ def scenario_nogit(tmp: Path) -> dict:
     return verdict("nogit", problems, tasks=[row] if row else [], project=NOGIT["project"], runId=ctx.run_id or None, configuredByDrill=configured)
 
 
+def scenario_nogit_repo(tmp: Path) -> dict:
+    cwd = NOGIT["cwd"]
+    if not Path(cwd).is_dir():
+        return {"name": "nogit_repo", "result": "skipped", "problems": [], "note": f"no folder {cwd}"}
+    if (Path(cwd) / ".git").exists():
+        return verdict("nogit_repo", [f"{cwd} is a git repo: this scenario needs a folder without git"])
+    repo = Path(cwd) / NOGIT_REPO
+    if not (repo / ".git").exists():
+        repo.mkdir(parents=True, exist_ok=True)
+        (repo / "README.md").write_text("A git repository inside the drill's folder without git (scenario nogit_repo).\n")
+        git(str(repo), "init", "-q", "-b", "main")
+        git(str(repo), "add", "README.md")
+        git(str(repo), "-c", "user.name=Lane Pilot drill", "-c", "user.email=drill@local.invalid", "commit", "-q", "-m", "drill repository")
+    ctx = Context(NOGIT, tmp)
+    spec = task_nogit_repo(cwd)
+    out = spec["expected_outputs"][0]
+    inside = out.removeprefix(f"{NOGIT_REPO}/")
+    problems: list[str] = []
+    row: dict = {}
+    configured = False
+    try:
+        configured = ensure_prototype_config(NOGIT)
+        ctx.start()
+        if not ctx.dispatch(spec):
+            problems.append("dispatch-bb exited with an error")
+        rows = ctx.wait_ended([spec["id"]])
+        row = summarize(rows, spec["id"], cwd, out)
+        if row["state"] != "accepted":
+            problems.append(f"the task was not accepted: {row['states']} {row['reason']}")
+        if not row["fileInSandbox"]:
+            problems.append(f"{out} is not in the repository's checkout")
+        if row["workspace"] and Path(row["workspace"]).resolve() in (Path(cwd).resolve(), repo.resolve()):
+            problems.append(f"the writer worked in {row['workspace']}, not in a worktree of the repository")
+        if inside not in git(str(repo), "log", "-1", "--name-only", "--format="):
+            problems.append(f"the last commit of {NOGIT_REPO} does not hold {inside}: the work was not merged into its main")
+        if git(str(repo), "status", "--porcelain", "--", inside):
+            problems.append(f"{inside} is uncommitted in {NOGIT_REPO}")
+        if (Path(cwd) / ".git").exists():
+            problems.append("Lane Pilot created .git in a folder that had none")
+    except RuntimeError as cause:
+        problems.append(str(cause))
+    finally:
+        if ctx.run_id:
+            ctx.quiet()
+        problems += ctx.finish()
+        if (repo / inside).exists():
+            git(str(repo), "rm", "-q", "--", inside)
+            git(str(repo), "-c", "user.name=Lane Pilot drill", "-c", "user.email=drill@local.invalid", "commit", "-q", "-m", f"drill {STAMP}: clean up")
+    return verdict("nogit_repo", problems, tasks=[row] if row else [], project=NOGIT["project"], runId=ctx.run_id or None, configuredByDrill=configured)
+
+
 # --- main ---------------------------------------------------------------------------------------------------------------
 
 def dry_run(names: list[str]) -> None:
@@ -735,7 +796,7 @@ def dry_run(names: list[str]) -> None:
         for spec in tasks_parallel3(SANDBOX["cwd"]):
             print(json.dumps(spec))
     cwd = SANDBOX["cwd"]
-    documents = {"conflict": tasks_conflict(cwd), "main_moved": [task_moved(cwd)], "provider": [task_provider(cwd)], "provider_limit": [task_limit(cwd)], "reload": [task_reload(cwd)], "nogit": [task_nogit(NOGIT["cwd"])]}
+    documents = {"conflict": tasks_conflict(cwd), "main_moved": [task_moved(cwd)], "provider": [task_provider(cwd)], "provider_limit": [task_limit(cwd)], "reload": [task_reload(cwd)], "nogit": [task_nogit(NOGIT["cwd"])], "nogit_repo": [task_nogit_repo(NOGIT["cwd"])]}
     for name in names:
         for spec in documents.get(name, []):
             print(f"scenario {name}: {json.dumps(spec)}")
@@ -823,6 +884,13 @@ def main() -> int:
             except Exception as cause:
                 scenarios.append(verdict("nogit", [f"scenario raised: {cause}"]))
             log(f"scenario nogit: {scenarios[-1]['result']} {scenarios[-1]['problems']}")
+        if "nogit_repo" in names and not problems:
+            log("scenario nogit_repo")
+            try:
+                scenarios.append(scenario_nogit_repo(tmp))
+            except Exception as cause:
+                scenarios.append(verdict("nogit_repo", [f"scenario raised: {cause}"]))
+            log(f"scenario nogit_repo: {scenarios[-1]['result']} {scenarios[-1]['problems']}")
         if ctx and ctx.run_id:
             problems += ctx.finish()
     finally:

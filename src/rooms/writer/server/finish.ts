@@ -1,6 +1,6 @@
 import { breakerKey, runningWriterBudgetStop, tokenUsageFromEvent } from "@lane-pilot/resilience";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { countAttempts, countThreadTurns, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt } from "../../storage";
+import { countAttempts, countThreadTurns, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt, taskBasePath } from "../../storage";
 import { saveBlockedBy, type BlockedBy } from "../../runs/server";
 import { relayFor } from "../../relay/server";
 import type { HelperPolicySnapshot } from "../../native-agent";
@@ -609,7 +609,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       // Work in the attempt's own worktree counts only once it is in the run's base checkout (main).
       // A conflict fails the attempt, so the retry redoes the task on a fresh worktree of the new main.
       const bound = getAttempt(db, input.attemptId);
-      const basePath = getRun(db, input.runId)?.writer_workspace_path;
+      // The task's own checkout: the run's folder, or the repository inside it the task works in (its main is the merge target).
+      const basePath = taskBasePath(db, input.runId, input.taskId);
       let integration: { status:string; commit:string|null; conflicts:string[]; rebased?:boolean } | null = null;
       if (bound?.workspace_path && basePath && shouldMergeAttemptWorktree(bound.workspace_path, basePath)) {
         const checkSettings = loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId));

@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { relative, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { DISPATCH_STAGES_PENDING } from "../../runs";
 import { taskV2Schema } from "../../contracts";
@@ -23,6 +23,7 @@ import { markTaskSatisfied } from "../../runs/server";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 import { validateTaskV2 } from "../../tasks/task-v2";
+import { planWithOutsideReads, rerootTask } from "../../tasks";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { awaitsWriterAnswer, contractFixRecord, contractFixTurnPrompt, createAttemptReopen, writerQuestion } from "./reopen-attempt";
@@ -159,7 +160,7 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
     const oldContract = taskV2Schema.parse(row.contract);
     const updatedContract = input.task ? { ...input.task, id: input.taskId } : oldContract;
     const oldPlan = getTaskPlan(db, input.taskId) ?? oldContract.objective;
-    const canonicalPlan = input.plan ?? (input.task ? updatedContract.objective : oldPlan);
+    let canonicalPlan = input.plan ?? (input.task ? updatedContract.objective : oldPlan);
 
     if (canonicalPlan.trim().length === 0) {
       return {
@@ -175,13 +176,22 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
         error: { code: "validation_failed", retryable: false, sideEffects: "none", hint: `task-v2 invalid: ${valid.errors.join("; ")}` },
       };
     }
-    if (resolve(valid.task.project_cwd) !== resolve(workspacePath)) {
-      return {
-        ok: false,
-        error: { code: "validation_failed", retryable: false, sideEffects: "none", hint: `task.project_cwd must equal the configured writerWorkspacePath (${workspacePath})` },
-      };
+    // The task keeps the checkout it was dispatched into: the run's folder, or the git repository inside it the task moved
+    // into. The PM may send the contract as it wrote it (paths from the run's folder); it moves the same way again.
+    const taskBase = oldContract.project_cwd;
+    if (resolve(valid.task.project_cwd) === resolve(taskBase)) valid.task.project_cwd = taskBase;
+    else {
+      const moved = resolve(valid.task.project_cwd) === resolve(workspacePath) && resolve(taskBase) !== resolve(workspacePath)
+        ? rerootTask({ ...valid.task, project_cwd: workspacePath }, relative(workspacePath, taskBase).split("\\").join("/")) : null;
+      if (!moved) {
+        const hint = resolve(taskBase) === resolve(workspacePath) ? `task.project_cwd must equal the configured writerWorkspacePath (${workspacePath})`
+          : `task.project_cwd must equal ${taskBase}, the repository this task works in, or ${workspacePath} with every owned path, expected output and check inside that repository`;
+        return { ok: false, error: { code: "validation_failed", retryable: false, sideEffects: "none", hint } };
+      }
+      valid.task = moved.task;
+      canonicalPlan = planWithOutsideReads(canonicalPlan, moved.outsideReads);
     }
-    valid.task.project_cwd = workspacePath;
+    const taskConfig = { ...runConfig, writerWorkspacePath: taskBase };
 
     const changes = changedFields(oldContract, valid.task);
     if (canonicalPlan !== oldPlan) changes.push({ field: "plan", from: oldPlan, to: canonicalPlan });
@@ -204,7 +214,7 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
     }
 
     // The same contract lint as dispatch: every contract mistake goes back to the PM in one message, before the stored task changes.
-    const lint = await lintTask(input.projectId, input.runId, valid.task, workspacePath, config.hostId);
+    const lint = await lintTask(input.projectId, input.runId, valid.task, taskBase, config.hostId);
     if (lint.errors.length) {
       const { runId: _runId, state: _state, reason: _reason, ...rest } = lintReply(input.runId, lint.errors);
       const hint = `contract lint: the task was not changed. Fix and send the update again:\n${lint.errors.map((error) => `- ${error.message}`).join("\n")}`;
@@ -218,7 +228,7 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
       // Stored and written before the writer restarts, as for a queued task.
       updateTaskContract(db, input.taskId, valid.task);
       saveTaskPlan(db, input.taskId, canonicalPlan);
-      await persistPlan(config.hostId, workspacePath, input.taskId, canonicalPlan);
+      await persistPlan(config.hostId, taskBase, input.taskId, canonicalPlan);
       const reopened = await reopen.reopenAttempt({
         projectId: input.projectId, runId: input.runId, taskId: input.taskId, pmThreadId: input.pmThreadId,
         attempt: blocked, threadId: ready.threadId, workspacePath: ready.workspacePath, config, contract: valid.task,
@@ -230,7 +240,7 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
         // Nothing reached the writer: the stored task and its PLAN.md go back as they were.
         updateTaskContract(db, input.taskId, row.contract);
         saveTaskPlan(db, input.taskId, oldPlan);
-        await persistPlan(config.hostId, workspacePath, input.taskId, oldPlan);
+        await persistPlan(config.hostId, taskBase, input.taskId, oldPlan);
         return { ok: false, error: { code: "not_reopenable", retryable: false, sideEffects: "none", hint: reopened.hint } };
       }
       log(`writer ${input.taskId}: contract fixed in place (${changes.map((change) => change.field).join(", ")}); attempt ${blocked.id} continues`);
@@ -244,7 +254,7 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
     saveTaskPlan(db, input.taskId, canonicalPlan);
 
     // Persist PLAN.md to task folder
-    await persistPlan(config.hostId, workspacePath, input.taskId, canonicalPlan);
+    await persistPlan(config.hostId, taskBase, input.taskId, canonicalPlan);
 
     // Rerun pmRead and plan critique
     const pmRead = await runPmRead({
@@ -254,7 +264,7 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
       runId: input.runId,
       taskId: input.taskId,
       pmThreadId: input.pmThreadId,
-      config: runConfig,
+      config: taskConfig,
       task: valid.task,
     });
 
@@ -264,7 +274,7 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
       projectId: input.projectId,
       runId: input.runId,
       taskId: input.taskId,
-      config: runConfig,
+      config: taskConfig,
       task: valid.task,
       plan: canonicalPlan,
       pmReadContext: pmRead.summary || undefined,

@@ -5,7 +5,7 @@ import { parseDirtSnapshots } from "../cli-outcome";
 import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { acceptedRules, pickRelevantRules, ruleRelevanceQuestions, ruleRelevanceState } from "@lane-pilot/run-insights";
-import { HARNESS_VERSION, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, saveReasoningTrace, setAttemptDirtBefore, setAttemptEnvironment, setAttemptHolderThread, setAttemptWorkspace, setReasoningThread, transitionAttempt } from "../../storage";
+import { HARNESS_VERSION, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, saveReasoningTrace, setAttemptDirtBefore, setAttemptEnvironment, setAttemptHolderThread, setAttemptWorkspace, setReasoningThread, transitionAttempt, taskBasePath } from "../../storage";
 import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier, findModelIn } from "@lane-pilot/models";
 import { spawnWithSeam } from "../spawn-seam";
 import { buildExecutionPacket, renderExecutionPacket } from "../../tasks/execution-packet";
@@ -159,7 +159,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       const routed = resolveAttemptWorkspace({mode:workspaceMode,risk:input.task.risk,
         expectedOutputCount:input.task.expected_outputs.length,minScore,multiWriteEnabled});
       // A folder without git has no worktree to give: the writer edits the live files in the run's folder.
-      const live = await liveFolder.isLiveFolder(input.runId,input.config.hostId,getRun(db,input.runId)?.writer_workspace_path ?? input.task.project_cwd);
+      const live = await liveFolder.isLiveFolder(input.runId,input.config.hostId,taskBasePath(db,input.runId,input.taskId) ?? input.task.project_cwd);
       const workspaceDecision = live ? {...routed,strategy:"inherit_run" as const,reason:LIVE_FOLDER_REASON as typeof routed.reason} : routed;
       const sourcePreflight=await workspaceDirt(input.config,input.task.project_cwd,input.runId);
       if(!sourcePreflight.ok) throw new WriterSelectionError(`attempt_workspace_snapshot_failed:${sourcePreflight.reason}`);
@@ -280,8 +280,12 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       lastExecution = { reasoningLevel:effective, serviceTier:effectiveServiceTier, selectionSource };
       const run = getRun(db, input.runId);
       if (!run?.writer_workspace_path) throw new Error("writer run has no immutable workspace binding");
-      let workspacePath = run.writer_workspace_path;
-      let environment:{type:"reuse";environmentId:string}|{type:"host";hostId:string;workspace:{type:"unmanaged";path:string}} = run.writer_environment_id
+      // The task's checkout: the run's folder, or a git repository inside it the task was moved into at dispatch. Such a
+      // repository is not the BB project's root source and not the run's environment: Lane Pilot's own worktree of it.
+      const base = taskBasePath(db,input.runId,input.taskId) ?? run.writer_workspace_path;
+      const nestedBase = resolve(base) !== resolve(run.writer_workspace_path);
+      let workspacePath = base;
+      let environment:{type:"reuse";environmentId:string}|{type:"host";hostId:string;workspace:{type:"unmanaged";path:string}} = run.writer_environment_id && !nestedBase
         ? { type:"reuse" as const, environmentId:run.writer_environment_id }
         : { type:"host" as const, hostId:input.config.hostId, workspace:{ type:"unmanaged" as const, path:input.task.project_cwd } };
       // Set when the attempt's worktree is a BB environment of Lane Pilot's own provider; `environment` is then the old
@@ -299,7 +303,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       } else if (workspaceDecision.strategy === "provision_attempt_worktree") {
         const bound=getAttempt(db,input.attemptId);
         const onProvider=bound?.workspace_path&&bound.environment_id ? null
-          : await prepareProviderWorktree(input,settings,bound,run.writer_workspace_path,workspaceDecision);
+          : await prepareProviderWorktree(input,settings,bound,base,workspaceDecision);
         if (bound?.workspace_path && bound.environment_id) {
           workspacePath=bound.workspace_path;
           environment={type:"reuse",environmentId:bound.environment_id};
@@ -307,11 +311,11 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
           workspacePath=onProvider.path;
           if(onProvider.dirtBefore) dirtBefore=onProvider.dirtBefore;
           providerEnvironment={type:"provider",environmentProviderId:LANE_WORKTREE_PROVIDER_ID,machine:{type:"existing",hostId:input.config.hostId},
-            inputs:{basePath:run.writer_workspace_path,name:input.attemptId,path:workspacePath}};
+            inputs:{basePath:base,name:input.attemptId,path:workspacePath}};
           environment=inPlaceEnvironment(input.config.hostId,workspacePath,null);
         // BB's managed worktree forks the project's root source; a run folder that is not it (a section with its own
         // repo inside a non-git project, live sandbox 2026-10-07: «no usable git branch») needs Lane Pilot's own.
-        } else if ((nativeRun ? !await isProjectRootCheckout(bb, input.projectId, input.config.hostId, run.writer_workspace_path)
+        } else if (nestedBase || (nativeRun ? !await isProjectRootCheckout(bb, input.projectId, input.config.hostId, run.writer_workspace_path)
             : await hasOtherRootSource(bb, input.projectId, input.config.hostId, run.writer_workspace_path))
           // BB's managed worktree starts the writer at the repo root; a folder nested in a larger repo needs the same
           // subfolder inside the worktree, which only Lane Pilot's own worktree gives (OVH live check 2026-10-07).
@@ -323,11 +327,11 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
             workspacePath=bound.workspace_path;
             environment=inPlaceEnvironment(input.config.hostId,workspacePath,bound.environment_id);
           } else {
-            const created=await host.call("gitCreateWorktree",{requestedHostId:input.config.hostId,basePath:run.writer_workspace_path,name:input.attemptId},
+            const created=await host.call("gitCreateWorktree",{requestedHostId:input.config.hostId,basePath:base,name:input.attemptId},
               {hostId:input.config.hostId,timeoutMs:60_000});
             if(created.status==="ready"&&created.path) {
               workspacePath=created.path;
-              await host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath:run.writer_workspace_path,worktreePath:workspacePath},
+              await host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath:base,worktreePath:workspacePath},
                 {hostId:input.config.hostId,timeoutMs:600_000}).catch(()=>undefined);
               const prepared=await workspaceDirt(input.config,workspacePath,input.runId);
               if(!prepared.ok) throw new WriterSelectionError(`attempt_worktree_baseline_failed:${prepared.reason}`);
@@ -399,9 +403,8 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         if(holderStatus!=="idle"&&holderStatus!=="error") throw new WriterSelectionError(`attempt_worktree_provisioner_not_stopped:${holderStatus??"unknown"}`);
         const managed=resolveManagedWorkspace(await bb.sdk.environments.get({environmentId}),input.config.hostId);
         workspacePath=managed.path;
-        const basePath=getRun(db,input.runId)?.writer_workspace_path;
         // Linking dependencies helps the writer's checks; a host without it still gets a clean worktree.
-        if(basePath) await host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath,worktreePath:workspacePath},{hostId:input.config.hostId,timeoutMs:600_000}).catch(()=>undefined);
+        await host.call("gitPrepareWorktree",{requestedHostId:input.config.hostId,basePath:base,worktreePath:workspacePath},{hostId:input.config.hostId,timeoutMs:600_000}).catch(()=>undefined);
         const prepared=await workspaceDirt(input.config,workspacePath,input.runId);
         if(!prepared.ok) throw new WriterSelectionError(`attempt_worktree_baseline_failed:${prepared.reason}`);
         if(prepared.snapshots.length) throw new WriterSelectionError(`attempt_worktree_not_clean:${prepared.snapshots.map(row=>row.path).join(",")}`);
@@ -411,7 +414,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         }
         environment={type:"reuse",environmentId:managed.environmentId};
         }
-      } else if (!setAttemptWorkspace(db,input.attemptId,{path:workspacePath,environmentId:run.writer_environment_id,decision:workspaceDecision})) {
+      } else if (!setAttemptWorkspace(db,input.attemptId,{path:workspacePath,environmentId:nestedBase ? null : run.writer_environment_id,decision:workspaceDecision})) {
         throw new WriterSelectionError("attempt_workspace_cas_conflict");
       }
       setAttemptDirtBefore(db,input.attemptId,dirtBefore);
