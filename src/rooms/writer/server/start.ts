@@ -122,9 +122,13 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     let { task:freshTask, config:freshConfig } = freshAttemptStart(input.task, input.config, getRun(db, input.runId)?.writer_workspace_path ?? null);
     let activeConfig = input.config;
     let activeTask = input.task;
-    let dirtBefore = input.dirtBefore ?? [];
-    let baselineDirtBefore:DirtSnapshot[]|null=input.dirtBefore?[...input.dirtBefore]:null;
-    let baselineWorkspacePath:string|null=input.dirtBefore?input.task.project_cwd:null;
+    // An attempt that never reached a writer has no baseline: its stored [] is the column's default. Taken as the folder's
+    // state, a parked task restarted on a new attempt counted every file of a folder without git as its writer's change
+    // (BB-сервис 2026-10-10: 49 434 paths, three tasks failed as Lane Pilot's fault).
+    const resumedDirt = getAttempt(db, input.firstAttemptId)?.thread_id ? input.dirtBefore : undefined;
+    let dirtBefore = resumedDirt ?? [];
+    let baselineDirtBefore:DirtSnapshot[]|null=resumedDirt?[...resumedDirt]:null;
+    let baselineWorkspacePath:string|null=resumedDirt?input.task.project_cwd:null;
     let executionPacketSha256:string|null = null;
     let last: Record<string, unknown> = {};
     // The class Jev (J-4, active) or the rules gave the last failure: parking reads the same one, not its own recount.

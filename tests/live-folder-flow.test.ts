@@ -8,7 +8,7 @@ import { runCommandOnHost } from "../src/rooms/writer/cli-run";
 import { snapshotDryRun } from "../src/rooms/host-worker/host-handlers";
 import type { TaskV2 } from "../src/rooms/contracts";
 import {
-  createRun, getAttempt, listAttemptsForTask, listStageReceipts, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread,
+  createRun, createTask, getAttempt, listAttemptsForTask, listStageReceipts, loadProjectSettings, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread,
 } from "../src/rooms/storage/database";
 
 const projectId = "project-live";
@@ -132,7 +132,7 @@ async function setup(writerEdits: (folder: string) => string, feedback: (folder:
     }
     throw new Error("the task never finished");
   };
-  return { db, harness, folder, home, dispatch, finished, hostCalls, commands, writes, threadSpawns, feedbackSeen, extraItems };
+  return { db, harness, folder, home, task, dispatch, finished, hostCalls, commands, writes, threadSpawns, feedbackSeen, extraItems };
 }
 
 beforeEach(() => { process.env.LANE_PILOT_DISPATCH_ANSWER_MS = "5000"; });
@@ -186,6 +186,23 @@ describe("a plain folder without git, end to end", () => {
     const attempt = await env.finished();
     expect(attempt.state).toBe("accepted");
     expect(readFileSync(join(env.folder, "notes-by-pm.md"), "utf8")).toBe("the PM was here\n");
+    await env.harness.lifecycle.dispose();
+  });
+
+  it("leaves a file another task of the run owns to that task, even when this writer's thread names a file of the same name (BB-сервис 2026-10-10)", async () => {
+    const env = await setup((folder) => {
+      write(folder, "hello.txt", "hello\n");
+      write(folder, "src/README.md", "this task's readme\n");
+      // The sibling's writer works on its own files in the shared folder meanwhile; this writer's thread never names them.
+      mkdirSync(join(folder, "sibling"), { recursive: true });
+      writeFileSync(join(folder, "sibling", "README.md"), "the sibling's readme\n");
+      return "Changed hello.txt and src/README.md";
+    });
+    createTask(env.db, { id: "sibling-task", runId, kind: "bb", contract: { ...env.task, id: "sibling-task", owns_paths: ["sibling/**"], expected_outputs: ["sibling/README.md"] } });
+    await env.dispatch();
+    const attempt = await env.finished();
+    expect(getAttempt(env.db, attempt.id)?.reason ?? null).toBeNull();
+    expect(attempt.state).toBe("accepted");
     await env.harness.lifecycle.dispose();
   });
 

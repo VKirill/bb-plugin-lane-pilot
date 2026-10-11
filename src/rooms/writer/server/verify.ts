@@ -294,12 +294,20 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     // folder during a writer's attempt and the writer was blamed for it (live sandbox 2026-10-07, 0.1.178).
     if (liveFolder) {
       const trace = await writerTrace(input.writerThreadId);
-      if (trace !== null) {
-        const foreign = produced.filter((path) => !fileAllowedByOwns(path, input.task.owns_paths) && !trace.includes(path) && !trace.includes(path.split("/").pop() ?? path));
-        if (foreign.length) {
-          ctx.log(`Lane Pilot: ${foreign.join(", ")} changed in the live folder during ${input.taskId}, not by its writer; left out of its check`);
-          produced = produced.filter((path) => !foreign.includes(path));
-        }
+      // A file another task of the run owns was made by that task's writer, in this folder while this attempt waited for
+      // it; a file name alone in this writer's thread («README.md», «settings.ts») does not make it this writer's. Only
+      // its full path does (BB-сервис 2026-10-10: lane-stack was blamed for the agency, content-factory and computer-use files).
+      const siblingOwns = listTasksForRun(db, input.runId).flatMap((row) => {
+        if (row.id === input.taskId) return [];
+        const parsed = taskV2Schema.safeParse(row.contract);
+        return parsed.success ? [parsed.data.owns_paths] : [];
+      });
+      const foreign = produced.filter((path) => !fileAllowedByOwns(path, input.task.owns_paths) && (siblingOwns.some((owns) => fileAllowedByOwns(path, owns))
+        ? !trace?.includes(path)
+        : trace !== null && !trace.includes(path) && !trace.includes(path.split("/").pop() ?? path)));
+      if (foreign.length) {
+        ctx.log(`Lane Pilot: ${foreign.join(", ")} changed in the live folder during ${input.taskId}, not by its writer; left out of its check`);
+        produced = produced.filter((path) => !foreign.includes(path));
       }
     }
     const diffKey = sha256(produced.map((path) => `${path}:${dirt.snapshots.find((row) => row.path === path)?.sha256 ?? ""}`).join("\n"));

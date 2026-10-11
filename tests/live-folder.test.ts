@@ -8,7 +8,7 @@ import { runCommandOnHost } from "../src/rooms/writer/cli-run";
 import { attemptProduced } from "../src/rooms/writer/cli-outcome";
 import { createRun, openDatabase } from "../src/rooms/storage/database";
 import {
-  chunkPaths, classifyFolderProbe, liveOwnedFiles, LIVE_BACKUP_SCRIPT, LIVE_FOLDER_BIG_BYTES, LIVE_FOLDER_FILE_CAP, LIVE_SNAPSHOT_SCRIPT, LIVE_SNAPSHOT_SKIP_DIRS,
+  chunkPaths, classifyFolderProbe, liveOwnedFiles, liveOwnedRoots, LIVE_BACKUP_SCRIPT, LIVE_DELETED_SHA, LIVE_FOLDER_BIG_BYTES, LIVE_FOLDER_FILE_CAP, LIVE_SNAPSHOT_SCRIPT, LIVE_SNAPSHOT_SKIP_DIRS,
   LIVE_SNAPSHOT_OUTPUT_BYTES, LIVE_SNAPSHOT_SKIP_PATHS, liveSnapshotCommand, parseLiveSnapshot, pythonCommand,
 } from "../src/rooms/writer/live-folder";
 import { LANE_PILOT_PM_SESSION } from "../src/rooms/native-agent/native-agent-overlay";
@@ -375,5 +375,68 @@ describe("what the writer and the PM are told", () => {
     expect(LANE_PILOT_PM_SESSION).toContain("A folder without git");
     expect(LANE_PILOT_PM_SESSION).toContain("workspace: \"live-folder\"");
     expect(LANE_PILOT_PM_SESSION).toContain("one writer at a time per folder");
+  });
+});
+
+describe("a nested git repository inside the folder (BB-сервис 2026-10-10)", () => {
+  const git = (cwd: string, ...args: string[]) => {
+    const ran = spawnSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", ...args], { cwd, encoding: "utf8" });
+    if (ran.status !== 0) throw new Error(ran.stderr);
+  };
+  /** An umbrella folder without git that holds one plugin repository with committed files, as BB-сервис holds 41. */
+  function umbrella() {
+    const root = temp("umbrella");
+    put(root, "notes.md", "notes\n");
+    for (const name of ["clean.ts", "edit.ts", "gone.ts", "other.ts"]) put(root, `plugins/p/${name}`, `${name}\n`);
+    git(join(root, "plugins", "p"), "init", "-q");
+    git(join(root, "plugins", "p"), "add", "-A");
+    git(join(root, "plugins", "p"), "commit", "-q", "-m", "init");
+    return root;
+  }
+  const rows = async (root: string) => {
+    const parsed = parseLiveSnapshot(await snapshot(root));
+    if (!parsed.ok) throw new Error(parsed.reason);
+    return parsed.snapshots;
+  };
+
+  it("lists only the changed, untracked and deleted files of the repository, and every file outside it", async () => {
+    const root = umbrella();
+    put(root, "plugins/p/edit.ts", "edited\n");
+    rmSync(join(root, "plugins", "p", "gone.ts"));
+    put(root, "plugins/p/new.ts", "new\n");
+    put(root, "plugins/p/node_modules/dep.js", "dep\n");
+    const listed = await rows(root);
+    expect(listed.map((row) => row.path)).toEqual(["notes.md", "plugins/p/edit.ts", "plugins/p/gone.ts", "plugins/p/new.ts"]);
+    expect(listed.find((row) => row.path === "plugins/p/gone.ts")?.sha256).toBe(LIVE_DELETED_SHA);
+  });
+
+  it("still sees a writer's edit, deletion and new file in the repository as produced", async () => {
+    const root = umbrella();
+    const before = await rows(root);
+    put(root, "plugins/p/clean.ts", "changed by the writer\n");
+    rmSync(join(root, "plugins", "p", "other.ts"));
+    put(root, "plugins/p/added.ts", "added\n");
+    expect(attemptProduced(await rows(root), before).sort()).toEqual(["plugins/p/added.ts", "plugins/p/clean.ts", "plugins/p/other.ts"]);
+  });
+
+  it("backs up the clean owned files too and rolls a rejected attempt back without removing any of them", async () => {
+    const e = env();
+    const folder = umbrella();
+    const task = { owns_paths: ["plugins/p/"], never_touch: ["plugins/p/other.ts"] };
+    const owned = await e.live.liveOwnedList("h", folder, task);
+    expect(owned).toEqual({ ok: true, paths: ["plugins/p/clean.ts", "plugins/p/edit.ts", "plugins/p/gone.ts"] });
+    if (!owned.ok) return;
+    expect(await e.live.backupLiveFolder({ hostId: "h", folder, backupId: "lpattempt_nested", files: owned.paths })).toEqual({ ok: true, count: 3 });
+    put(folder, "plugins/p/clean.ts", "changed by the writer\n");
+    put(folder, "plugins/p/created.ts", "created\n");
+    const rolled = await e.live.restoreLiveFolder({ hostId: "h", folder, backupId: "lpattempt_nested", task });
+    expect(rolled).toEqual({ ok: true, restored: ["plugins/p/clean.ts"], removed: ["plugins/p/created.ts"], failed: [] });
+    expect(readFileSync(join(folder, "plugins", "p", "clean.ts"), "utf8")).toBe("clean.ts\n");
+    for (const name of ["edit.ts", "gone.ts", "other.ts"]) expect(readFileSync(join(folder, "plugins", "p", name), "utf8")).toBe(`${name}\n`);
+  });
+
+  it("reaches each owned pattern from its part before the first wildcard", () => {
+    expect(liveOwnedRoots(["plugins/x/src/", "src/**", "README.md", "./src/a/*.ts"])).toEqual(["README.md", "plugins/x/src", "src", "src/a"]);
+    expect(liveOwnedRoots(["src/**", "**/*.md"])).toEqual([""]);
   });
 });

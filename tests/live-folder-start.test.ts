@@ -229,6 +229,22 @@ it("measures every attempt of a task against the folder as the first one found i
   await git.harness.lifecycle.dispose();
 });
 
+it("takes no baseline from an attempt that never reached a writer: a restarted parked task snapshots the folder anew (BB-сервис 2026-10-10)", async () => {
+  const env = setup();
+  const { all, dirtSeen } = services(env, [{ accept: true }], true);
+  const task = contract("T1");
+  createTask(env.db, { id: "T1", runId: "run1", kind: "bb", contract: task });
+  saveTaskPlan(env.db, "T1", "Plan for T1");
+  for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) recordStage(env.db, { runId: "run1", taskId: "T1", stageId, state: "pending", input: "Plan for T1" });
+  createAttempt(env.db, { id: "T1-a1", runId: "run1", taskId: "T1" });
+  Object.assign(all, createWriterStart(env.ctx, all));
+  // The parked-task sweep passes the new attempt's stored dirt_before, the column's default [].
+  all.startWriterTask({ projectId: "proj1", runId: "run1", taskId: "T1", firstAttemptId: "T1-a1", pmThreadId: "thr_pm", config, task, plan: "Plan for T1", dirtBefore: [] });
+  await vi.waitFor(() => expect(writerStage(env.db).state).toBe("passed"));
+  expect(dirtSeen).toEqual(["snapshot-1"]);
+  await env.harness.lifecycle.dispose();
+});
+
 it("keeps the folder without git locked while a writer's question is unanswered: other tasks queue, the PM is told", async () => {
   vi.useFakeTimers({ toFake: ["setTimeout"] });
   const env = setup();

@@ -14,7 +14,7 @@ import { parseMemorySettings } from "../../memory";
 import { resolveRetryEffort } from "../../critique";
 import { boundedAgentName } from "../../critique";
 import { WORKSPACE_DIRT_COMMAND } from "../../verification";
-import { LIVE_FOLDER_REASON, liveOwnedFiles } from "../live-folder";
+import { LIVE_FOLDER_REASON } from "../live-folder";
 import { createLiveFolder } from "./live-folder";
 import { createWriterSkillPick } from "./skill-pick";
 import { createSkillMaterializer } from "./skill-materialize";
@@ -417,9 +417,11 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       setAttemptDirtBefore(db,input.attemptId,dirtBefore);
       const attemptTask=retargetTask(input.task,workspacePath);
       if(live) {
-        // The owned files are copied aside before the writer touches them; a rejected attempt is rolled back from them.
-        const saved=await liveFolder.backupLiveFolder({hostId:input.config.hostId,folder:workspacePath,backupId:input.attemptId,
-          files:liveOwnedFiles(dirtBefore.map(row=>row.path),input.task)});
+        // The owned files are copied aside before the writer touches them; a rejected attempt is rolled back from them. They are
+        // listed apart from the snapshot, which names only the changed files of a nested repository.
+        const owned=await liveFolder.liveOwnedList(input.config.hostId,workspacePath,input.task);
+        if(!owned.ok) throw new WriterSelectionError(`attempt_workspace_backup_failed:${owned.reason}`);
+        const saved=await liveFolder.backupLiveFolder({hostId:input.config.hostId,folder:workspacePath,backupId:input.attemptId,files:owned.paths});
         if(!saved.ok) throw new WriterSelectionError(`attempt_workspace_backup_failed:${saved.reason}`);
       }
       let executionPacket:string;

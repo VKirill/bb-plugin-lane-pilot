@@ -57,37 +57,92 @@ export function pythonCommand(script: string, payload: unknown = {}): string {
   return `python3 - <<'PY'\nimport base64, json\nPAYLOAD = json.loads(base64.b64decode("${encoded}").decode("utf-8"))\n${script}PY`;
 }
 
-/** Lists every regular file and symlink of the folder (cwd) with a sha256; run by python3 in the folder. */
-export const LIVE_SNAPSHOT_SCRIPT = String.raw`import hashlib, os, sys, zlib
+/** A tracked file `git status` reports deleted inside a nested repository: it is listed so its removal reads as a change. */
+export const LIVE_DELETED_SHA = "deleted";
+
+/**
+ * Lists every regular file and symlink of the folder (cwd) with a sha256; run by python3 in the folder. A nested git
+ * repository (a folder with its own `.git`) is listed by `git status` only, its changed, untracked and deleted files:
+ * its clean files are in its own git, and walked one by one an umbrella of 41 plugin repositories went past the file
+ * cap (BB-сервис 2026-10-10: 51 467 files, of them ~1 700 changed). A repository git cannot read is walked like a folder.
+ */
+export const LIVE_SNAPSHOT_SCRIPT = String.raw`import hashlib, os, subprocess, sys, zlib
 SKIP_DIRS = set(PAYLOAD["skip_dirs"])
 SKIP_PATHS = set(PAYLOAD["skip_paths"])
 rows = []
-for dirpath, dirnames, filenames in os.walk(".", followlinks=False):
-    rel_dir = os.path.relpath(dirpath, ".").replace(os.sep, "/")
-    if rel_dir == ".":
-        rel_dir = ""
-    keep = []
-    for name in sorted(dirnames):
-        rel = rel_dir + "/" + name if rel_dir else name
-        if name in SKIP_DIRS or rel in SKIP_PATHS:
+gone = set()
+def is_repo(rel):
+    return os.path.lexists(os.path.join(".", rel, ".git"))
+def repo_changes(rel):
+    try:
+        ran = subprocess.run(["git", "-C", os.path.join(".", rel), "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=all"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if ran.returncode != 0:
+        return None
+    parts = ran.stdout.split(b"\0")
+    found = []
+    index = 0
+    while index < len(parts):
+        entry = parts[index]
+        index += 1
+        if len(entry) < 4:
             continue
-        if os.path.islink(os.path.join(dirpath, name)):
-            rows.append(rel)
+        code = entry[:2].decode("ascii", "replace")
+        found.append(os.fsdecode(entry[3:]))
+        if "R" in code or "C" in code:
+            if index < len(parts) and parts[index]:
+                found.append(os.fsdecode(parts[index]))
+            index += 1
+    return found
+def add_repo(rel):
+    changes = repo_changes(rel)
+    if changes is None:
+        return False
+    for path in changes:
+        full_rel = rel + "/" + path.rstrip("/")
+        if any(part in SKIP_DIRS for part in full_rel.split("/")):
+            continue
+        if path.endswith("/"):
+            if not (is_repo(full_rel) and add_repo(full_rel)):
+                walk(full_rel)
         else:
-            keep.append(name)
-    dirnames[:] = keep
-    for name in filenames:
-        if name == ".git":
-            continue
-        full = os.path.join(dirpath, name)
-        if os.path.islink(full) or os.path.isfile(full):
-            rows.append(rel_dir + "/" + name if rel_dir else name)
+            rows.append(full_rel)
+            gone.add(full_rel)
+    return True
+def walk(root):
+    for dirpath, dirnames, filenames in os.walk(os.path.join(".", root) if root else ".", followlinks=False):
+        rel_dir = os.path.relpath(dirpath, ".").replace(os.sep, "/")
+        if rel_dir == ".":
+            rel_dir = ""
+        keep = []
+        for name in sorted(dirnames):
+            rel = rel_dir + "/" + name if rel_dir else name
+            if name in SKIP_DIRS or rel in SKIP_PATHS:
+                continue
+            if os.path.islink(os.path.join(dirpath, name)):
+                rows.append(rel)
+            elif not (is_repo(rel) and add_repo(rel)):
+                keep.append(name)
+        dirnames[:] = keep
+        for name in filenames:
+            if name == ".git":
+                continue
+            full = os.path.join(dirpath, name)
+            if os.path.islink(full) or os.path.isfile(full):
+                rows.append(rel_dir + "/" + name if rel_dir else name)
+walk("")
+rows = sorted(set(rows))
 if len(rows) > PAYLOAD["cap"]:
     sys.stderr.write("too_large:%d\n" % len(rows))
     sys.exit(3)
 out = []
-for rel in sorted(rows):
+for rel in rows:
     full = os.path.join(".", rel)
+    if rel in gone and not os.path.lexists(full):
+        out.append({"path": rel, "sha256": PAYLOAD["deleted"]})
+        continue
     try:
         if os.path.islink(full):
             digest = hashlib.sha256(b"symlink:" + os.fsencode(os.readlink(full))).hexdigest()
@@ -101,7 +156,7 @@ for rel in sorted(rows):
                     for chunk in iter(lambda: stream.read(1 << 20), b""):
                         hasher.update(chunk)
                 digest = hasher.hexdigest()
-    except FileNotFoundError:
+    except (FileNotFoundError, IsADirectoryError, NotADirectoryError):
         continue
     out.append({"path": rel, "sha256": digest})
 answer = base64.b64encode(zlib.compress(json.dumps(out, ensure_ascii=True, separators=(",", ":")).encode("ascii"), 9)).decode("ascii")
@@ -113,7 +168,7 @@ print("z:" + answer)
 
 export const liveSnapshotCommand = (cap = LIVE_FOLDER_FILE_CAP): string => pythonCommand(LIVE_SNAPSHOT_SCRIPT, {
   skip_dirs: LIVE_SNAPSHOT_SKIP_DIRS, skip_paths: LIVE_SNAPSHOT_SKIP_PATHS, cap, big: LIVE_FOLDER_BIG_BYTES,
-  max_output: LIVE_SNAPSHOT_OUTPUT_BYTES,
+  max_output: LIVE_SNAPSHOT_OUTPUT_BYTES, deleted: LIVE_DELETED_SHA,
 });
 
 /** The snapshot command's answer as dirt snapshots, or the reason the owner reads. */
@@ -142,6 +197,79 @@ export function parseLiveSnapshot(ran: { exitCode: number; stdout: string; stder
 /** The files of a snapshot a task may change: matching owns_paths and not never_touch. */
 export function liveOwnedFiles(paths: readonly string[], task: { owns_paths: string[]; never_touch: string[] }): string[] {
   return paths.filter((path) => fileAllowedByOwns(path, task.owns_paths) && !fileBlockedByNeverTouch(path, task.never_touch));
+}
+
+/** The folders (or files) owns_paths can reach: each pattern up to its first wildcard; "" is the whole folder. */
+export function liveOwnedRoots(ownsPaths: readonly string[]): string[] {
+  const roots = ownsPaths.map((pattern) => {
+    const parts: string[] = [];
+    for (const part of pattern.replaceAll("\\", "/").replace(/^\.\//, "").split("/")) {
+      if (/[*?\[]/.test(part)) break;
+      parts.push(part);
+    }
+    return parts.filter(Boolean).join("/");
+  });
+  return roots.includes("") ? [""] : [...new Set(roots)].sort();
+}
+
+/**
+ * Every file and symlink under the task's owned roots, nested repositories included: the backup and the rollback need
+ * the clean files too, which the snapshot leaves out of a nested repository. Paths only, no hashes.
+ */
+export const LIVE_OWNED_LIST_SCRIPT = String.raw`import os, sys, zlib
+SKIP_DIRS = set(PAYLOAD["skip_dirs"])
+SKIP_PATHS = set(PAYLOAD["skip_paths"])
+rows = set()
+for root in PAYLOAD["roots"]:
+    if root and (os.path.isabs(root) or ".." in root.split("/")):
+        continue
+    top = os.path.join(".", root) if root else "."
+    if os.path.islink(top) or os.path.isfile(top):
+        rows.add(root)
+        continue
+    for dirpath, dirnames, filenames in os.walk(top, followlinks=False):
+        rel_dir = os.path.relpath(dirpath, ".").replace(os.sep, "/")
+        if rel_dir == ".":
+            rel_dir = ""
+        keep = []
+        for name in sorted(dirnames):
+            rel = rel_dir + "/" + name if rel_dir else name
+            if name in SKIP_DIRS or rel in SKIP_PATHS:
+                continue
+            if os.path.islink(os.path.join(dirpath, name)):
+                rows.add(rel)
+            else:
+                keep.append(name)
+        dirnames[:] = keep
+        for name in filenames:
+            if name == ".git":
+                continue
+            full = os.path.join(dirpath, name)
+            if os.path.islink(full) or os.path.isfile(full):
+                rows.add(rel_dir + "/" + name if rel_dir else name)
+    if len(rows) > PAYLOAD["cap"]:
+        sys.stderr.write("too_large:%d\n" % len(rows))
+        sys.exit(3)
+print("z:" + base64.b64encode(zlib.compress(json.dumps(sorted(rows), ensure_ascii=True, separators=(",", ":")).encode("ascii"), 9)).decode("ascii"))
+`;
+
+export const liveOwnedListCommand = (ownsPaths: readonly string[], cap = LIVE_FOLDER_FILE_CAP): string => pythonCommand(LIVE_OWNED_LIST_SCRIPT, {
+  roots: liveOwnedRoots(ownsPaths), skip_dirs: LIVE_SNAPSHOT_SKIP_DIRS, skip_paths: LIVE_SNAPSHOT_SKIP_PATHS, cap,
+});
+
+/** The owned-files listing as paths, or the reason the owner reads. */
+export function parseLiveOwnedList(ran: { exitCode: number; stdout: string; stderr: string }): { ok: true; paths: string[] } | { ok: false; reason: string } {
+  const count = ran.exitCode === 3 ? /too_large:(\d+)/.exec(ran.stderr)?.[1] : undefined;
+  if (count) return { ok: false, reason: `owned files too many for no-git mode: ${count} files; narrow owns_paths` };
+  if (ran.exitCode !== 0) return { ok: false, reason: `cannot list the owned files (no git): ${ran.stderr.trim() || `exit ${ran.exitCode}`}` };
+  try {
+    const text = ran.stdout.trim();
+    const parsed = JSON.parse(text.startsWith(COMPRESSED_PREFIX) ? inflateSync(Buffer.from(text.slice(COMPRESSED_PREFIX.length), "base64")).toString("utf8") : text) as unknown;
+    if (!Array.isArray(parsed) || parsed.some((path) => typeof path !== "string")) return { ok: false, reason: "cannot list the owned files (no git): unexpected answer" };
+    return { ok: true, paths: parsed as string[] };
+  } catch {
+    return { ok: false, reason: "cannot list the owned files (no git): invalid answer" };
+  }
 }
 
 /** Splits a path list so each part fits one command line. */

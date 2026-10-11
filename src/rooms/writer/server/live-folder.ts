@@ -1,8 +1,8 @@
 import type { DirtSnapshot } from "../cli-outcome";
 import { getRun } from "../../storage";
 import {
-  chunkPaths, classifyFolderProbe, liveBackupCommand, liveOwnedFiles, liveRestoreCommand, liveSnapshotCommand, liveTrashCommand,
-  LIVE_FOLDER_PROBE_COMMAND, parseBackupFailure, parseLiveSnapshot,
+  chunkPaths, classifyFolderProbe, liveBackupCommand, liveOwnedFiles, liveOwnedListCommand, liveRestoreCommand, liveSnapshotCommand, liveTrashCommand,
+  LIVE_FOLDER_PROBE_COMMAND, parseBackupFailure, parseLiveOwnedList, parseLiveSnapshot,
 } from "../live-folder";
 import { resolve } from "node:path";
 import type { ServerCore } from "../../core/server";
@@ -44,6 +44,12 @@ export function createLiveFolder(ctx: ServerCore) {
     return parsed.ok ? { ok: true, paths: parsed.snapshots.map((row) => row.path), snapshots: parsed.snapshots } : parsed;
   }
 
+  /** The files the task may change as they are now, clean files of a nested repository included (the snapshot leaves those out). */
+  async function liveOwnedList(hostId: string, folder: string, task: { owns_paths: string[]; never_touch: string[] }): Promise<{ ok: true; paths: string[] } | { ok: false; reason: string }> {
+    const parsed = parseLiveOwnedList(await run(hostId, folder, liveOwnedListCommand(task.owns_paths), 300));
+    return parsed.ok ? { ok: true, paths: liveOwnedFiles(parsed.paths, task) } : parsed;
+  }
+
   /** Copies the files the task owns aside before its attempt, so a rejection can put them back. */
   async function backupLiveFolder(input: { hostId: string; folder: string; backupId: string; files: string[] }): Promise<{ ok: true; count: number } | { ok: false; reason: string }> {
     const chunks = chunkPaths(input.files);
@@ -73,11 +79,11 @@ export function createLiveFolder(ctx: ServerCore) {
     if (restoredRan.exitCode !== 0) return { ok: false, reason: `cannot restore the owned files (no git): ${restoredRan.stderr.trim() || `exit ${restoredRan.exitCode}`}` };
     let restored: { files: string[]; restored: string[]; failed: string[] };
     try { restored = JSON.parse(restoredRan.stdout); } catch { return { ok: false, reason: "cannot restore the owned files (no git): invalid answer" }; }
-    const now = await liveSnapshot(input.hostId, input.folder);
+    const now = await liveOwnedList(input.hostId, input.folder, input.task);
     if (!now.ok) return { ok: false, reason: `files restored, created files not removed: ${now.reason}` };
     const backedUp = new Set(restored.files);
     // Lane Pilot's own files (a failed check's log the retry reads) are not the writer's creation, even inside owns_paths.
-    const created = liveOwnedFiles(now.paths, input.task).filter((path) => !backedUp.has(path) && !path.startsWith(".agents/") && !path.startsWith(".bb/"));
+    const created = now.paths.filter((path) => !backedUp.has(path) && !path.startsWith(".agents/") && !path.startsWith(".bb/"));
     const removed: string[] = [];
     for (const chunk of chunkPaths(created)) {
       const ran = await run(input.hostId, input.folder, liveTrashCommand(input.backupId, chunk), 300);
@@ -87,5 +93,5 @@ export function createLiveFolder(ctx: ServerCore) {
     return { ok: true, restored: restored.restored, removed, failed: restored.failed };
   }
 
-  return { isLiveFolder, liveSnapshot, backupLiveFolder, restoreLiveFolder };
+  return { isLiveFolder, liveSnapshot, liveOwnedList, backupLiveFolder, restoreLiveFolder };
 }
