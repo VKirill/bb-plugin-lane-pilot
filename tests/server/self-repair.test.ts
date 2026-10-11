@@ -291,6 +291,16 @@ describe("self-repair", () => {
     expect((await createSelfRepair(two.ctx).collect(0, await createSelfRepair(two.ctx).config())).filter((row) => row.kind === "repeat")).toEqual([]);
   });
 
+  it("a writer pair skipped on its spent usage window in three tasks is not a pattern", async () => {
+    const env = setup();
+    // proj_acpiaqf4wq 2026-10-11: each skip was followed by an accepted attempt on the next model of the chain.
+    const reason = "writer_provider_unavailable:usage_window:acp-cursor/grok-4.6: Plan usage at 100%, resets 2026-10-19T10:30:34.000Z";
+    for (const n of [1, 2, 3]) env.attempt(`lpattempt_${n}`, "lprun_a", "blocked", reason, env.now, null as never);
+    for (const n of [4, 5, 6]) env.attempt(`lpattempt_${n}`, "lprun_a", "blocked", "writer_provider_unavailable:breaker_open:acp-cursor/grok-4.6 failed 3 times");
+    const rows = await createSelfRepair(env.ctx).collect(0, await createSelfRepair(env.ctx).config());
+    expect(rows.filter((row) => row.kind === "repeat")).toEqual([]);
+  });
+
   it("sees a task queued for hours while nothing runs, and a stage nobody will finish", async () => {
     const env = setup();
     const hours = (n: number) => env.now - n * 3_600_000;
