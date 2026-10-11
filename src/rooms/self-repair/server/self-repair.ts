@@ -1,4 +1,5 @@
 import { writerReuseStats } from "../../writer";
+import { failureClass } from "../../runs";
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
@@ -410,12 +411,16 @@ export function createSelfRepair(ctx: ServerCore) {
         attemptId: `hook:${row.hook}:${row.at}`, pmThreadId: null, writerThreadId: row.threadId, version: VERSION,
         reason: `Lane Pilot hook ${row.hook} did not answer in ${row.timeoutMs} ms: ${effect}`, at: row.at });
     }
-    // The same unfamiliar reason in several tasks within a day is a pattern, not one writer's mistake.
+    // The same unfamiliar reason in several tasks within a day is a pattern, not one writer's mistake. A provider's limit
+    // (a spent usage window, an open breaker, the provider's own limit) is a known reason, not an unfamiliar one: the task
+    // moved down the writer chain by design (proj_acpiaqf4wq 2026-10-11: three grok-4.6 «Plan usage at 100%» hand-offs,
+    // each followed by an accepted fallback attempt, raised a repair).
     const recent = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.thread_id, a.reason, a.updated_at, r.project_id FROM lane_pilot_attempt a
       JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state IN (${FAILED_STATES}) AND a.updated_at > ?`).all(now - 86_400_000) as Array<{ id: string; run_id: string; task_id: string; thread_id: string | null; reason: string | null; updated_at: number; project_id: string }>;
     const patterns = new Map<string, typeof recent>();
     for (const row of recent) {
-      if (ignored.has(row.project_id) || !row.reason || SYSTEM_REASON.test(row.reason) || NOT_A_FAULT.test(row.reason)) continue;
+      if (ignored.has(row.project_id) || !row.reason || SYSTEM_REASON.test(row.reason) || NOT_A_FAULT.test(row.reason)
+        || failureClass("blocked", row.reason) === "limit") continue;
       const key = reasonSignature("repeat", row.reason);
       patterns.set(key, [...(patterns.get(key) ?? []), row]);
     }

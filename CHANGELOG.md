@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **A writer pair skipped on its spent usage window no longer raises a self-repair.** proj_acpiaqf4wq, 2026-10-11: `acp-cursor/grok-4.6` was at «Plan usage at 100%» until 2026-10-19, so three tasks each got the designed hand-off: a `blocked` attempt with `writer_provider_unavailable:usage_window:…`, then an accepted attempt on the next model of the chain (triage: `environment`). The watcher's «same unfamiliar reason in three tasks» detector (`collect`, `src/rooms/self-repair/server/self-repair.ts`) skipped only `needs_human`/`depends_on`-style reasons and opened a repair thread for it. It now also skips every reason `failureClass` reads as a provider limit (`usage_window`, `breaker_open`, `writer_provider_limit:`); an open breaker still has its own incident kind.
+  - Test: `tests/server/self-repair.test.ts` «a writer pair skipped on its spent usage window in three tasks is not a pattern» (fails on 0.1.228).
+
 ## 0.1.228
 
 - **Choosing a provider and then a model in «Roles and models» sticks, and the screen no longer reloads under the picker.** The host picker reports the provider and then the model within moments; every role picker except the writer's own sent the second save on the versions read before the first answered, the server answered with a conflict, and the page called `load()`, which blanked every picker (`setData(null)`) and closed the popover; the first choice stayed. The role pickers (`saveSelection`), the writer's fallbacks (`saveWriterFallback`) and the council seats (`saveCouncilSeatSelection`) in `src/rooms/ui-shell/ui/use-lp-page.tsx`, `team-details.tsx` and `picker-selections.ts` now queue their saves as the writer's picker already did: a picker shows its latest choice at once, saves run one after another on the versions the previous one left, and a lost race merges the answer instead of reloading. A saved pick marks its keys explicit, so the origin pill and «Return the inherited one» update without a reload. While the screen loads, the picker says «Loading the project…» instead of «Loading the provider catalog…», which was never the catalog.
