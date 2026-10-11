@@ -770,8 +770,9 @@ def scenario_nogit_repo(tmp: Path) -> dict:
             problems.append(f"{out} is not in the repository's checkout")
         if row["workspace"] and Path(row["workspace"]).resolve() in (Path(cwd).resolve(), repo.resolve()):
             problems.append(f"the writer worked in {row['workspace']}, not in a worktree of the repository")
-        if inside not in git(str(repo), "log", "-1", "--name-only", "--format="):
-            problems.append(f"the last commit of {NOGIT_REPO} does not hold {inside}: the work was not merged into its main")
+        # Lane Pilot merges with a merge commit, whose own file list is empty: the file must be tracked on main.
+        if not git(str(repo), "ls-files", "--", inside):
+            problems.append(f"{inside} is not tracked on the main of {NOGIT_REPO}: the work was not merged into it")
         if git(str(repo), "status", "--porcelain", "--", inside):
             problems.append(f"{inside} is uncommitted in {NOGIT_REPO}")
         if (Path(cwd) / ".git").exists():
