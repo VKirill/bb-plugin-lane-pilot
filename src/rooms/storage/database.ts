@@ -1285,12 +1285,19 @@ export type RunHistoryRow = {
   attempts: Array<{ id:string; state:string; attempt_no:number; thread_id:string|null; reason:string|null; task_id:string }>;
 };
 
+/** How much of an attempt's reason the run list carries; the full reason stays in the database. */
+export const SCREEN_REASON_CHARS = 4000;
+
 /** A page of a project's runs, newest first, with their attempts; `pinOpen` adds the runs that are still open beyond the page. */
 export function listRunsPage(db: LanePilotDatabase, projectId: string, page: { limit:number; offset:number; pinOpen?:boolean }): { runs:RunHistoryRow[]; total:number } {
   const rows = db.prepare(`SELECT id,state,kind,created_at,updated_at,closed_at,pm_thread_id FROM lane_pilot_run
     WHERE project_id=? ORDER BY created_at DESC`).all(projectId) as Array<Omit<RunHistoryRow,"attempts">>;
   const picked = rows.filter((run, index) => (index >= page.offset && index < page.offset + page.limit) || (page.pinOpen && !run.closed_at));
-  const attempts = db.prepare(`SELECT id,state,attempt_no,thread_id,reason,task_id FROM lane_pilot_attempt WHERE run_id=? ORDER BY attempt_no`);
+  // The screen shows a reason, it does not process it: three reasons listing 49 434 stray paths (4.7 MB each, BB-сервис
+  // 2026-10-10) made every load of the project 14 MB and left the role pickers on «loading» for seconds.
+  const attempts = db.prepare(`SELECT id,state,attempt_no,thread_id,CASE WHEN length(reason)>${SCREEN_REASON_CHARS}
+    THEN substr(reason,1,${SCREEN_REASON_CHARS})||' … ('||(length(reason)-${SCREEN_REASON_CHARS})||' more characters)' ELSE reason END AS reason,task_id
+    FROM lane_pilot_attempt WHERE run_id=? ORDER BY attempt_no`);
   return {
     total: rows.length,
     runs: picked.map((run) => ({ ...run, attempts: attempts.all(run.id) as RunHistoryRow["attempts"] })),

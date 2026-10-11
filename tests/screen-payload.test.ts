@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
-import { createRun, createTask, openDatabase, saveStageReceipt } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, openDatabase, saveStageReceipt, transitionAttempt } from "../src/rooms/storage/database";
 
 const SHA = "a".repeat(64);
 
@@ -24,7 +24,7 @@ async function seeded(runs: number, stagesPerRun: number, bodyBytes: number) {
     }
   }
   await plugin(bb);
-  return { harness, projectId };
+  return { harness, db, projectId };
 }
 
 describe("get_screen payload", () => {
@@ -43,6 +43,21 @@ describe("get_screen payload", () => {
       expect(stage).not.toHaveProperty("result");
       expect(stage.hasResult).toBe(true);
     }
+    await harness.lifecycle.dispose();
+  });
+
+  it("carries the first 4000 characters of a huge attempt reason, not all of it (BB-сервис 2026-10-10: 4.7 MB each)", async () => {
+    const { harness, db, projectId } = await seeded(1, 0, 0);
+    const paths = Array.from({ length: 49_434 }, (_, index) => `plugins/p/file-${index}.ts`).join(", ");
+    createAttempt(db, { id: "lpattempt_huge", runId: "lprun_000", taskId: "task-0" });
+    transitionAttempt(db, "lpattempt_huge", "spawn_requested");
+    transitionAttempt(db, "lpattempt_huge", "running", { threadId: "thr_w" });
+    transitionAttempt(db, "lpattempt_huge", "validation_failed", { reason: `writer changed paths outside owns_paths or inside never_touch: ${paths}` });
+    const raw = await harness.behavior.callRpc("get_screen", { projectId });
+    expect(JSON.stringify(raw).length).toBeLessThan(200_000);
+    const reason = (raw as { runs: Array<{ attempts: Array<{ id: string; reason: string }> }> }).runs[0]!.attempts.find((row) => row.id === "lpattempt_huge")!.reason;
+    expect(reason.startsWith("writer changed paths outside owns_paths or inside never_touch: plugins/p/file-0.ts")).toBe(true);
+    expect(reason).toMatch(/… \(\d+ more characters\)$/);
     await harness.lifecycle.dispose();
   });
 
