@@ -6,7 +6,7 @@ import { Icon } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
 import { Switch } from "@lane-pilot/ui-kit";
 import { CONTROL_H } from "@lane-pilot/ui-kit";
-import { AccessModePanel, isChanged, ORIGIN_LABEL, PmAccessNote, RoleAccessBody, roleSummary, useAccessView, type AccessApi, type RoleView } from "../../settings/ui";
+import { AccessModePanel, isChanged, ModelOverridesPanel, ORIGIN_LABEL, PmAccessNote, RoleAccessBody, roleSummary, useAccessView, type AccessApi, type RoleView } from "../../settings/ui";
 import { useRulesAnalyzer } from "../../self-repair/ui";
 import { asBoolean } from "./page-model";
 import { writerFallbackSlots } from "../../writer/ui";
@@ -249,6 +249,7 @@ export function TeamTab({ page }: { page: LpPage }) {
           </div>
         </SurfaceBody>
       </Surface>
+      {isGlobal ? <ModelOverridesPanel page={page} /> : null}
       <AccessModePanel api={access} modeControl={modeControl} />
     </div>
   );

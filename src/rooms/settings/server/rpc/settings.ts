@@ -4,7 +4,8 @@ import { ACCESS_GROUPS, ACCESS_SWITCHES, CORE_PROVIDER_GROUPS, HELPER_ROLES, MAN
 import { detectCompiledMainAgentCapability } from "../../../native-agent";
 import { buildCliInvocation } from "../../../writer";
 import { cliReceiptAttemptKey, cliReceiptRunKey } from "../../../runs";
-import { casResetSettings, casUpsertSetting, casUpsertSettings, getReasoningTrace, countStageReceipts, getSettingVersions, getStageReceiptResult, listRunsPage, listSettingRows, listStageReceiptSummaries, loadProjectSettings, loadPrototypeConfig, sectionBindingId } from "../../../storage";
+import { casResetSettings, casUpsertSetting, casUpsertSettings, getReasoningTrace, countStageReceipts, getSettingVersions, getStageReceiptResult, listOwnSettingLevels, listRunsPage, listSettingRows, listStageReceiptSummaries, loadProjectSettings, loadPrototypeConfig, removeOwnSettings, sectionBindingId } from "../../../storage";
+import { isModelSettingKey } from "../../model-keys";
 import type { RunHistoryRow } from "../../../storage";
 import { writerServiceTier, findModelIn } from "@lane-pilot/models";
 import { LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
@@ -294,9 +295,9 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
       const bindingId = sectionId ? sectionBindingId(sectionId) : "";
       const reject = (key: string, message: string) => ({ ok: false, conflict: false, values: {}, versions: {}, validation: { code: "incompatible_setting" as const, key, params: [key, message] } });
       const editable = new Set(VISIBLE_CATALOG.filter((row) => row.uiStatus === "editable").map((row) => row.storageKey));
-      // Per-role access rows (helper.access.<role>) and the schedule board's errand default are not catalog settings; dropping the row lets the level below show through.
+      // Per-role access rows (helper.access.<role>), the schedule board's errand default and the writer's fallback models are not catalog settings; dropping the row lets the level below show through.
       const roleAccessKeys = new Set(HELPER_ROLES.map(roleAccessKey));
-      const invalid = keys.find((key) => !(editable.has(key) || roleAccessKeys.has(key) || key === SCHEDULE_ERRAND_DEFAULT_KEY) || expectedVersions[key] === undefined);
+      const invalid = keys.find((key) => !(editable.has(key) || roleAccessKeys.has(key) || key === SCHEDULE_ERRAND_DEFAULT_KEY || isModelSettingKey(key)) || expectedVersions[key] === undefined);
       if (invalid) return reject(invalid, "unknown or noneditable setting / missing CAS version");
       const groups = ["writer", "memory", "night_review", "docs", "project_life", "onboarding", "pm_read", "plan_critique", "code_critique", "specialist"].map((prefix) => ["provider", "model", "reasoning_effort", "service_tier"].map((suffix) => `${prefix}.${suffix}`));
       const affected = groups.filter((group) => group.some((key) => keys.includes(key)));
@@ -327,6 +328,18 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
       }
       return casResetSettings(db, { projectId, bindingId, keys, expectedVersions, validationKeys: [...new Set([...keys, ...affected.flat()])], validatedRows: rows });
     }),
+    list_model_overrides: async () => {
+      const levels = listOwnSettingLevels(db, isModelSettingKey);
+      // Names are a courtesy: a project the host no longer lists is shown by its id.
+      const projectNames = new Map<string, string>();
+      try { for (const project of await bb.sdk.projects.list({ includePersonal: true })) projectNames.set(project.id, project.name); } catch { /* ids only */ }
+      const sectionNames = new Map<string, string>();
+      for (const projectId of new Set(levels.filter((level) => level.sectionId).map((level) => level.projectId))) {
+        for (const section of await listProjectSections(projectId)) sectionNames.set(section.id, section.name);
+      }
+      return { levels: levels.map((level) => ({ ...level, projectName: projectNames.get(level.projectId) ?? null, sectionName: level.sectionId ? sectionNames.get(level.sectionId) ?? null : null })) };
+    },
+    reset_model_overrides: ({ levels }) => ({ ok: true, levels: levels.length, removed: removeOwnSettings(db, levels, isModelSettingKey) }),
     save_settings: ({ projectId, sectionId, changes }) => {
       const bindingId = sectionId ? sectionBindingId(sectionId) : "";
       const memoryKey=changes.find(({key})=>NATIVE_MEMORY_KEYS.has(key))?.key;
@@ -355,5 +368,5 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
       await bb.storage.kv.set(writerBindingKey(projectId), { hostId, path });
       return { ok: true };
     },
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "helper_access_view" | "get_screen" | "list_runs" | "list_run_stages" | "get_stage_result" | "save_setting" | "reset_project_settings" | "save_settings" | "save_writer_binding">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "helper_access_view" | "get_screen" | "list_runs" | "list_run_stages" | "get_stage_result" | "save_setting" | "reset_project_settings" | "list_model_overrides" | "reset_model_overrides" | "save_settings" | "save_writer_binding">;
 }

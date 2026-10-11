@@ -4,6 +4,7 @@ export { AccessModePanel, ORIGIN_LABEL, PmAccessNote, RoleAccessBody, isChanged,
 export type { AccessApi, RoleView } from "./agent-access";
 export { CatalogField, CatalogFields } from "./catalog-field";
 export { JevProviderNote, JevProviderPanel } from "./jev-provider";
+export { ModelOverridesPanel } from "./model-overrides";
 export { OwnedSettings } from "./owned-settings";
 export { SELECTION_SPECS, selectionKeys, selectionValue } from "./picker-selections";
 export type { SelectionId } from "./picker-selections";

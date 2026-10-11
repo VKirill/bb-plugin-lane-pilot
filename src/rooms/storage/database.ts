@@ -1343,6 +1343,39 @@ export function casResetSettings(
   })();
 }
 
+/** The settings a project or a section keeps for itself among those `isOverride` accepts: where a level overrides what it inherits. The global level is never listed. */
+export function listOwnSettingLevels(db: LanePilotDatabase, isOverride: (key: string) => boolean): Array<{ projectId: string; sectionId: string | null; keys: string[] }> {
+  const rows = db.prepare("SELECT project_id,binding_id,key FROM lane_pilot_project_settings WHERE project_id<>? ORDER BY project_id,binding_id,key")
+    .all(GLOBAL_SETTINGS_PROJECT_ID) as Array<{ project_id: string; binding_id: string; key: string }>;
+  const levels = new Map<string, { projectId: string; sectionId: string | null; keys: string[] }>();
+  for (const row of rows.filter((item) => isOverride(item.key))) {
+    const id = `${row.project_id}\0${row.binding_id}`;
+    const level = levels.get(id) ?? { projectId: row.project_id, sectionId: row.binding_id.startsWith("section:") ? row.binding_id.slice("section:".length) : null, keys: [] };
+    level.keys.push(row.key);
+    levels.set(id, level);
+  }
+  return [...levels.values()];
+}
+
+/** Removes the accepted rows of the given levels in one transaction, as a reset does: the generations move on, so a save made on an older read conflicts. Returns how many rows went. */
+export function removeOwnSettings(db: LanePilotDatabase, levels: ReadonlyArray<{ projectId: string; sectionId: string | null }>, isOverride: (key: string) => boolean): number {
+  return db.transaction((): number => {
+    let removed = 0;
+    for (const { projectId, sectionId } of levels) {
+      if (projectId === GLOBAL_SETTINGS_PROJECT_ID) continue;
+      const bindingId = sectionId ? sectionBindingId(sectionId) : "";
+      const keys = listSettingRows(db, projectId, bindingId).map((row) => row.key).filter(isOverride);
+      const versions = getSettingVersions(db, projectId, keys, bindingId);
+      for (const key of keys) {
+        db.prepare("DELETE FROM lane_pilot_project_settings WHERE project_id=? AND binding_id=? AND key=?").run(projectId, bindingId, key);
+        bumpSettingGeneration(db, projectId, key, versions[key]! + 1, bindingId);
+        removed += 1;
+      }
+    }
+    return removed;
+  })();
+}
+
 const CHECK_DURATION_KEPT = 100;
 
 export type SecretIssuance = {

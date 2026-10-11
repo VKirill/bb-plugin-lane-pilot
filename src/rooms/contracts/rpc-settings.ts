@@ -32,6 +32,24 @@ export const rpcSettings = {
       validation: settingValidationSchema.optional(),
     }).strict(),
   },
+  /** Every project and section that keeps its own role models, providers, efforts or writer fallbacks over the global ones. */
+  list_model_overrides: {
+    input: z.object({}).strict(),
+    output: z.object({
+      levels: z.array(z.object({
+        projectId: z.string(), projectName: z.string().nullable(),
+        sectionId: z.string().nullable(), sectionName: z.string().nullable(),
+        keys: z.array(z.string()),
+      }).strict()),
+    }).strict(),
+  },
+  /** Gives the listed projects and sections back the global role models: removes only those model rows. */
+  reset_model_overrides: {
+    input: z.object({
+      levels: z.array(z.object({ projectId: z.string().min(1), sectionId: z.string().min(1).nullable() }).strict()).min(1).max(1000),
+    }).strict(),
+    output: z.object({ ok: z.boolean(), levels: z.number().int(), removed: z.number().int() }).strict(),
+  },
   save_settings: {
     input: z.object({
       projectId: z.string().min(1),
