@@ -8,21 +8,19 @@ export type SelectionId = "memory" | "night" | "docs" | "projectLife" | "pmRead"
 export const SELECTION_SPECS: Record<SelectionId, {
   prefix: string;
   rpc: "save_memory_selection" | "save_night_review_selection" | "save_docs_selection" | "save_project_life_selection" | "save_pm_read_selection" | "save_onboarding_selection" | "save_plan_critique_selection" | "save_code_critique_selection" | "save_specialist_selection";
-  /** A lost race re-reads the values from the answer ("merge") instead of reloading the whole screen ("reload"). */
-  conflict: "reload" | "merge";
   /** The effort when the role has none (and the writer's does not apply). */
   effort: string;
   effortFromWriter?: boolean;
 }> = {
-  memory: { prefix: "memory", rpc: "save_memory_selection", conflict: "reload", effort: "none", effortFromWriter: true },
-  night: { prefix: "night_review", rpc: "save_night_review_selection", conflict: "reload", effort: "high" },
-  docs: { prefix: "docs", rpc: "save_docs_selection", conflict: "reload", effort: DOCS_DEFAULT_SELECTION.reasoningLevel },
-  projectLife: { prefix: "project_life", rpc: "save_project_life_selection", conflict: "reload", effort: "high" },
-  pmRead: { prefix: "pm_read", rpc: "save_pm_read_selection", conflict: "merge", effort: "low" },
-  onboarding: { prefix: "onboarding", rpc: "save_onboarding_selection", conflict: "reload", effort: "medium" },
-  planCritique: { prefix: "plan_critique", rpc: "save_plan_critique_selection", conflict: "reload", effort: "medium", effortFromWriter: true },
-  codeCritique: { prefix: "code_critique", rpc: "save_code_critique_selection", conflict: "reload", effort: "medium", effortFromWriter: true },
-  specialist: { prefix: "specialist", rpc: "save_specialist_selection", conflict: "reload", effort: "high" },
+  memory: { prefix: "memory", rpc: "save_memory_selection", effort: "none", effortFromWriter: true },
+  night: { prefix: "night_review", rpc: "save_night_review_selection", effort: "high" },
+  docs: { prefix: "docs", rpc: "save_docs_selection", effort: DOCS_DEFAULT_SELECTION.reasoningLevel },
+  projectLife: { prefix: "project_life", rpc: "save_project_life_selection", effort: "high" },
+  pmRead: { prefix: "pm_read", rpc: "save_pm_read_selection", effort: "low" },
+  onboarding: { prefix: "onboarding", rpc: "save_onboarding_selection", effort: "medium" },
+  planCritique: { prefix: "plan_critique", rpc: "save_plan_critique_selection", effort: "medium", effortFromWriter: true },
+  codeCritique: { prefix: "code_critique", rpc: "save_code_critique_selection", effort: "medium", effortFromWriter: true },
+  specialist: { prefix: "specialist", rpc: "save_specialist_selection", effort: "high" },
 };
 
 export function selectionKeys(id: SelectionId) {

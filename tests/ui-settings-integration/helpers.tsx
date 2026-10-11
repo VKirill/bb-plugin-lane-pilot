@@ -92,7 +92,7 @@ export const cursorGrokModel = {
 export type RuleRow = { id:string; rule:string; author:"sweep"|"pm"|"owner"|"model"; state:"proposed"|"accepted"|"rejected"|"revoked"; occurrences:number; taskCount:number; examples:string[]; evidence:Array<{runId:string;taskId:string;attemptId:string;reason:string}>; lastSeenAt:number; decidedAt:number|null;
   decidedBy?:"owner"|"auto"|null; trialState?:"trial"|"confirmed"|null; revision?:number; retiredReason?:string|null; trial?:{applied:number;appliedAccepted:number;recurrences:number}|null; scope?:string[]; scopeLabel?:string };
 
-export async function mountWithBackend(options?:{ delayWriterSave?:(input:{providerId:string;model:string;reasoningLevel:string})=>Promise<void>; rules?:RuleRow[]; ruleCalls?:Array<Record<string, unknown>> }) {
+export async function mountWithBackend(options?:{ delayWriterSave?:(input:{providerId:string;model:string;reasoningLevel:string})=>Promise<void>; delayRpc?:(method:string, input:unknown)=>Promise<void>; rules?:RuleRow[]; ruleCalls?:Array<Record<string, unknown>> }) {
   const { bb, harness } = createFakePluginHost({
     pluginId:"lane-pilot",
     sdk:{ providers:{
@@ -124,6 +124,8 @@ export async function mountWithBackend(options?:{ delayWriterSave?:(input:{provi
   const docsSaveCalls: Array<{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;expectedVersions:Record<string,number>}> = [];
   const onboardingSaveCalls: Array<{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;expectedVersions:Record<string,number>}> = [];
   const singleSaveCalls: Array<{ key:string; value:unknown; expectedVersion:number }> = [];
+  const fallbackSaveCalls: Array<{ slot:number; providerId?:string; model?:string; off?:boolean; expectedVersions:Record<string,number> }> = [];
+  const screenCalls: unknown[] = [];
   installPickerTestDriver();
   const appModule = await import("../../app");
   const app = await loadPluginApp(appModule);
@@ -135,7 +137,7 @@ export async function mountWithBackend(options?:{ delayWriterSave?:(input:{provi
       set_locale:(input) => harness.behavior.callRpc("set_locale", input) as Promise<unknown>,
       remember_project:(input) => harness.behavior.callRpc("remember_project", input) as Promise<unknown>,
       list_projects:() => ({ projects:[{ id:projectId, name:"Settings fixture" }], lastProjectId:projectId }),
-      get_screen:(input) => harness.behavior.callRpc("get_screen", input) as Promise<unknown>,
+      get_screen:(input) => { screenCalls.push(input); return harness.behavior.callRpc("get_screen", input) as Promise<unknown>; },
       save_writer_selection:async (input) => {
         saveCalls.push(input as typeof saveCalls[number]);
         if (options?.delayWriterSave) await options.delayWriterSave(input as {providerId:string;model:string;reasoningLevel:string});
@@ -145,9 +147,18 @@ export async function mountWithBackend(options?:{ delayWriterSave?:(input:{provi
         memorySaveCalls.push(input as typeof memorySaveCalls[number]);
         return harness.behavior.callRpc("save_memory_selection", input) as Promise<unknown>;
       },
-      save_night_review_selection:(input)=>{
+      save_night_review_selection:async (input)=>{
         nightSaveCalls.push(input as typeof nightSaveCalls[number]);
-        return harness.behavior.callRpc("save_night_review_selection",input) as Promise<unknown>;
+        // The answer is held back, as a slow hub does: the save has already happened there when the next choice goes out.
+        const answer = await harness.behavior.callRpc("save_night_review_selection",input);
+        await options?.delayRpc?.("save_night_review_selection", input);
+        return answer;
+      },
+      save_writer_fallback_selection:async (input)=>{
+        fallbackSaveCalls.push(input as typeof fallbackSaveCalls[number]);
+        const answer = await harness.behavior.callRpc("save_writer_fallback_selection",input);
+        await options?.delayRpc?.("save_writer_fallback_selection", input);
+        return answer;
       },
       save_docs_selection:(input)=>{
         docsSaveCalls.push(input as typeof docsSaveCalls[number]);
@@ -183,7 +194,7 @@ export async function mountWithBackend(options?:{ delayWriterSave?:(input:{provi
     expect(picker.getAttribute("data-provider")).toBe("codex");
     expect(picker.getAttribute("data-effort")).toBe("medium");
   });
-  return { harness, slot, saveCalls, memorySaveCalls, nightSaveCalls, docsSaveCalls, onboardingSaveCalls, singleSaveCalls };
+  return { harness, slot, saveCalls, memorySaveCalls, nightSaveCalls, docsSaveCalls, onboardingSaveCalls, singleSaveCalls, fallbackSaveCalls, screenCalls };
 }
 
 export function writerPicker(slot: RenderedSlot) {
