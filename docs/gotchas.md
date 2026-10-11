@@ -2,9 +2,9 @@
 title: Cross-cutting gotchas
 type: gotchas
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-11
 status: active
-confidence: high
+confidence: medium
 tags: [gotchas, runtime, failure-modes]
 sources:
   - src/rooms/writer/live-folder.ts
@@ -13,6 +13,7 @@ sources:
   - src/rooms/writer/server/verify.ts
   - src/rooms/writer/server/finish.ts
   - src/rooms/stability/server/stability.ts
+  - src/rooms/self-repair/server/self-repair.ts
   - src/rooms/core/server/opencode-minimal.ts
   - src/rooms/core/server/lifecycle-events.ts
   - packages/thread-observe/src/signals.ts
@@ -54,6 +55,8 @@ Lifecycle-event registration is best-effort: BB versions that do not recognize a
 Stability breakers are persisted across plugin reloads and restored only for the same Lane Pilot version (`src/rooms/stability/server/stability.ts:62-82`). A version change discards a prior open breaker because the fault may have shipped fixed (`src/rooms/stability/server/stability.ts:67-80`).
 
 The OpenCode minimal-config environment hook has a four-second total budget. It uses prewarmed state; when preparation is still pending or fails, the helper is refused rather than started with the full host config (`src/rooms/core/server/opencode-minimal.ts:9-20`, `:27-37`).
+
+Before saving a non-dry-run tick, self-repair drops the oldest eligible signatures while its serialized state exceeds 200 KiB; it does not prune signatures with a worktree or pending spawn. Loading state truncates each stored incident reason to 1,000 characters (`src/rooms/self-repair/server/self-repair.ts:127-141`, `:287-307`, `:675-680`).
 
 ## Test isolation
 
