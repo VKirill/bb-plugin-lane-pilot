@@ -535,7 +535,8 @@ export function listTasksForRun(db:LanePilotDatabase, runId:string):Array<{
   return rows.map((row) => ({ id:row.id, run_id:row.run_id, kind:row.kind, contract:JSON.parse(row.contract_json) }));
 }
 
-const HOLDING_ATTEMPT_STATES = ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"];
+/** Attempt states still at work: queued, being spawned, running or being canceled. */
+export const HOLDING_ATTEMPT_STATES = ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"];
 
 /** Tasks that still hold their owned paths: one with an attempt at work, or one still in preflight.
  * Accepted work is already in the run's base checkout, and a task whose attempts ended or whose

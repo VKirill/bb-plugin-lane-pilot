@@ -318,6 +318,20 @@ describe("self-repair", () => {
     expect((await createSelfRepair(busy.ctx).collect(0, await createSelfRepair(busy.ctx).config())).filter((row) => row.kind === "queued")).toEqual([]);
   });
 
+  it("a stage whose task's attempt is being spawned or canceled is not left open", async () => {
+    // proj_a35nni238u 2026-10-12: ck-09 queued 81 min with its stages pending, then went queued → spawn_requested
+    // 1.8 s before the watcher's pass, which counted only running/queued as live and reported both stages.
+    for (const state of ["spawn_requested", "spawn_unknown", "cancel_requested"]) {
+      const env = setup();
+      env.attempt("lpattempt_s", "lprun_a", state, null, env.now - 2_000);
+      env.db.prepare("INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES ('task-lpattempt_s','lprun_a','bb','{}',?)").run(env.now - 82 * 60_000);
+      for (const stage of ["verification", "acceptance-receipt"]) env.db.prepare(`INSERT INTO lane_pilot_stage_receipt (run_id, task_id, stage_id, contract_version, state, input_sha256, attempt, updated_at)
+        VALUES ('lprun_a','task-lpattempt_s',?,1,'pending','x',0,?)`).run(stage, env.now - 81 * 60_000);
+      const rows = await createSelfRepair(env.ctx).collect(0, await createSelfRepair(env.ctx).config());
+      expect(rows.filter((row) => row.kind === "stage"), state).toEqual([]);
+    }
+  });
+
   it("the prompt keeps the repair in its worktree: commit on the branch, never deploy, report to the PM", () => {
     const workspace = { path: "/wt/self-repair-1/lane-pilot", branch: "lane/self-repair-1", basePath: "/repo/lane-pilot" };
     const text = repairPrompt([{ signature: "s", kind: "blocked", projectId: "p", runId: "r", taskId: "t", attemptId: "a", pmThreadId: "thr_pm", writerThreadId: null, reason: "x", at: 0 }], "blocked:abc:x", workspace);
