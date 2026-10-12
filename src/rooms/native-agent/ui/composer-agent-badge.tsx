@@ -29,7 +29,9 @@ function AgentNameBadge(agent: { agentId: string; description: string; helpers?:
     };
     sync();
     const observer = new MutationObserver(sync);
-    observer.observe(document.body, { childList: true, subtree: true });
+    // BB collapses the box by flipping data-promptbox-compact on the same form (no node added or removed); the compact box
+    // clips its overflow, so the badge has to move out on that flip alone.
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-promptbox-compact"] });
     return () => observer.disconnect();
   }, []);
 

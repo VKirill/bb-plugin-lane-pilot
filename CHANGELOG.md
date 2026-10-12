@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.233
+
+- **The agent badge no longer loses its top half when BB collapses the prompt box.** BB 0.46 collapses the box (the chevron, or while an agent works) by setting `data-promptbox-compact` on the same form, which then clips its overflow (`overflow-hidden`). The badge moves out of a compact box onto its parent, but it re-checked the box only when nodes were added or removed, so after a bare attribute flip it stayed inside and was cut along the box's top border (owner's screenshot, 2026-10-12). The badge's observer now also watches that attribute (`composer-agent-badge.tsx`).
+  - Test: `tests/composer-agent-badge.test.tsx` «moves the badge out of the box when only the compact attribute flips» (fails on 0.1.232).
+
 ## 0.1.232
 
 - **Lane Pilot tells a PM the results of its tasks by itself, one message per batch; the PM no longer sets a reminder per batch.** Writers are quiet (0.1.100), so the PM learned a task's end only from its own reminder with `taskIds`, which its prompt required before every turn that ended with tasks in flight. On the hub that was 37 task reminders on 2026-10-12 alone, each a full PM turn (in Клиенты, thr_k3ry5we546: ~520k tokens of context per model call, 3 to 28 calls a wake). One, rem_29e94487a49e4d07, was set at 13:17 on ck-05c and ck-13; ck-13 waited 4 hours in the queue for its retry, the PM did the work itself meanwhile, and the reminder still woke it at 18:13 with an 5-hour-old note. Delivery was never late (median 18 s after the tasks ended); the wakes were the cost.

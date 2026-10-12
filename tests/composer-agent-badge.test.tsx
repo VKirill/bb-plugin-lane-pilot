@@ -164,6 +164,36 @@ describe("Lane Pilot composer agent badge", () => {
     slot.lifecycle.unmount();
   });
 
+  // 2026-10-12 (owner's screenshot): BB 0.46 collapses the prompt box by flipping data-promptbox-compact on the same form, which then
+  // clips its overflow; with no node added or removed the badge stayed inside and lost its top half.
+  it("moves the badge out of the box when only the compact attribute flips", async () => {
+    const slot = await mountBadge({
+      scope: { kind: "thread", threadId: "thr_copy" },
+      nativeThread: { token: "11111111-1111-1111-1111-111111111111", agentId: "copy-lead", agentType: "copy-lead", projectId: "proj_a", description: "Lane Pilot copy lead" },
+    });
+    const marker = await waitFor(() => {
+      const node = document.querySelector("[data-lane-pilot-agent-marker]");
+      if (!node) throw new Error("missing marker");
+      return node;
+    });
+    const shell = document.createElement("div");
+    shell.setAttribute("data-promptbox-shell", "");
+    const box = document.createElement("form");
+    box.setAttribute("data-promptbox", "");
+    const root = marker.parentElement!;
+    root.parentElement?.insertBefore(shell, root);
+    shell.append(root, box);
+    await waitFor(() => expect(box.querySelector("[aria-label='Lane Pilot agent']")).toBeTruthy());
+
+    box.setAttribute("data-promptbox-compact", "");
+    await waitFor(() => expect(box.querySelector("[aria-label='Lane Pilot agent']")).toBeNull());
+    expect(shell.querySelector(":scope > [style*='translateY'] [aria-label='Lane Pilot agent']")).toBeTruthy();
+
+    box.removeAttribute("data-promptbox-compact");
+    await waitFor(() => expect(box.querySelector("[aria-label='Lane Pilot agent']")).toBeTruthy());
+    slot.lifecycle.unmount();
+  });
+
   it("shows a square per working helper next to the agent and opens it in the side panel", async () => {
     const opened: unknown[] = [];
     const slot = await mountBadge({
