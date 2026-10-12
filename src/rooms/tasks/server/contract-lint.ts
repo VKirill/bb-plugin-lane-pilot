@@ -66,11 +66,38 @@ export function subjectiveWordIn(text:string):string | null {
 const folderFilters = (task:TaskV2) => task.verification.flatMap((check, index) =>
   runnerFilterArgs(check.command).filter((arg) => !arg.endsWith("/")).map((arg) => ({ index, command:check.command, arg, path:resolve(check.cwd, arg) })));
 
-/** Absolute paths whose kind the workspace's machine must report: the read_first files and the bare words of check filters. */
+const TS_SOURCE = /\.(?:ts|tsx|vue)$/, JS_SOURCE = /\.(?:js|jsx|mjs|cjs)$/, TEST_FILE = /(^|\/)(?:__tests__|tests?)\/|\.(?:test|spec)\.[A-Za-z]+$/;
+
+/**
+ * The tests that may sit next to an owned code file («composables/useHreflang.ts» → «composables/__tests__/useHreflang.test.ts»,
+ * «composables/useHreflang.test.ts»), and the «__tests__» folder next to a file-name glob («composables/useGreetingCard*»).
+ * A writer updates the tests of the code it changes; when owns_paths leaves them out the attempt is rejected for it.
+ */
+export function siblingTestCandidates(task:Pick<TaskV2, "owns_paths">):Array<{ owned:string; test:string; folder?:string }> {
+  const found:Array<{ owned:string; test:string; folder?:string }> = [];
+  for (const raw of task.owns_paths) {
+    const owned = raw.replace(/^\.\//, "");
+    const slash = owned.lastIndexOf("/");
+    const dir = slash < 0 ? "" : owned.slice(0, slash + 1), name = owned.slice(slash + 1);
+    if (!name || /[*?[]/.test(dir) || TEST_FILE.test(owned)) continue;
+    if (/[*?[]/.test(name)) {
+      if (name !== "*" && name !== "**") found.push({ owned, test:`${dir}__tests__/${name}`, folder:`${dir}__tests__` });
+      continue;
+    }
+    const exts = TS_SOURCE.test(name) ? [".test.ts", ".spec.ts", ".test.tsx"] : JS_SOURCE.test(name) ? [".test.js", ".spec.js", ".test.mjs"] : [];
+    const stem = name.replace(/\.[^.]+$/, "");
+    if (stem === "index") continue;
+    for (const where of [dir, `${dir}__tests__/`]) for (const ext of exts) found.push({ owned, test:`${where}${stem}${ext}` });
+  }
+  return found;
+}
+
+/** Absolute paths whose kind the workspace's machine must report: the read_first files, the bare words of check filters, the tests next to owned files. */
 export function lintProbePaths(task:TaskV2, workspacePath:string):string[] {
   let hints:string[] = [];
   try { hints = parseReadFirstHints(task.read_first).map((hint) => resolve(workspacePath, hint.path)); } catch { /* reported by lintContract */ }
-  return [...new Set([...hints, ...folderFilters(task).map((filter) => filter.path)])].slice(0, MAX_PROBES);
+  const tests = siblingTestCandidates(task).map((candidate) => resolve(workspacePath, candidate.folder ?? candidate.test));
+  return [...new Set([...hints, ...folderFilters(task).map((filter) => filter.path), ...tests])].slice(0, MAX_PROBES);
 }
 
 /** Everything a task contract gets wrong before any helper or writer runs; errors send the task back to the PM, warnings go along with the answer. */
@@ -133,6 +160,18 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
     if (!safeRelative(path)) errors.push({ code:"files_unsafe", message:`files[${index}] path ${file.path} must be relative to the project root, without "..", a leading "/" or backslashes` });
     else if (!fileAllowedByOwns(path, task.owns_paths)) errors.push({ code:"files_unowned", message:`files[${index}] ${path} is outside owns_paths, so the writer may not change it; add it (or its folder) to owns_paths, or drop it from files` });
     else if (fileBlockedByNeverTouch(path, task.never_touch)) errors.push({ code:"files_never_touch", message:`files[${index}] ${path} is inside never_touch, so the writer may not change it; drop it from files or narrow never_touch` });
+  }
+
+  // An owned code file's own test is the task's too: the writer updates it with the code, and an edit outside owns_paths
+  // rejects the attempt (SelfyStudio cards-postpay-bind-v2, greeting-card-pages-en, en-hreflang-sitemap-fix, 2026-10-11…12:
+  // each owned «x.ts» or «useGreetingCard*», not «__tests__/x.test.ts», and lost an attempt to it). never_touch says «leave it».
+  const flagged = new Set<string>();
+  for (const candidate of siblingTestCandidates(task)) {
+    const present = candidate.folder ? kindOf(resolve(input.workspacePath, candidate.folder)) === "directory" : kindOf(resolve(input.workspacePath, candidate.test)) === "file";
+    if (!present || flagged.has(candidate.test) || flagged.size >= 5) continue;
+    if (fileAllowedByOwns(candidate.test, task.owns_paths) || fileBlockedByNeverTouch(candidate.test, task.never_touch)) continue;
+    flagged.add(candidate.test);
+    errors.push({ code:"test_unowned", message:`owns_paths ${candidate.owned} has ${candidate.folder ? "tests in" : "its test"} ${candidate.folder ?? candidate.test} outside owns_paths; the writer updates the tests of the code it changes and an edit there rejects the attempt, so add ${candidate.test} to owns_paths, or to never_touch if the writer must leave it as it is` });
   }
 
   // Checks: a folder filter ends in «/», and a whole-suite vitest run excludes what the sandbox cannot run.

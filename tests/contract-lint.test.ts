@@ -83,6 +83,40 @@ describe("contract lint rules", () => {
     });
   });
 
+  describe("tests next to owned files", () => {
+    // owns_paths of the SelfyStudio contracts each rejected for its own test (2026-10-11…12), and the test files that were already there.
+    const live = {
+      "cards-postpay-bind-v2":{ owns:["apps/marketing/app/components/greeting-cards/", "apps/marketing/app/utils/greeting-card-analytics.ts", "apps/marketing/i18n/locales/"],
+        kinds:{ "apps/marketing/app/utils/__tests__/greeting-card-analytics.test.ts":"file" as const }, test:"apps/marketing/app/utils/__tests__/greeting-card-analytics.test.ts" },
+      "greeting-card-pages-en":{ owns:["apps/worker/src/processors/localization.ts", "apps/worker/src/processors/__tests__/", "apps/marketing/app/composables/useGreetingCard*", "apps/marketing/app/components/greeting-cards/"],
+        kinds:{ "apps/marketing/app/composables/__tests__":"directory" as const }, test:"apps/marketing/app/composables/__tests__/useGreetingCard*" },
+      "en-hreflang-sitemap-fix":{ owns:["apps/api/src/routes/v1/public-pages.ts", "apps/api/src/routes/v1/__tests__/", "apps/marketing/server/", "apps/marketing/app/composables/useHreflang.ts", "apps/marketing/tests/"],
+        kinds:{ "apps/marketing/app/composables/__tests__/useHreflang.test.ts":"file" as const, "apps/api/src/routes/v1/__tests__/public-pages.test.ts":"file" as const }, test:"apps/marketing/app/composables/__tests__/useHreflang.test.ts" },
+    };
+    const task = (owns:string[]) => ({ owns_paths:owns, expected_outputs:[], read_first:[] });
+    it("sends back each live contract whose owned file has an unowned test next to it, naming the test to add", () => {
+      for (const [id, { owns, kinds, test }] of Object.entries(live)) {
+        const { errors } = lint(task(owns), {}, kinds);
+        expect(codes({ errors, warnings:[] }), id).toEqual(["test_unowned"]);
+        expect(errors[0]!.message, id).toContain(`add ${test} to owns_paths, or to never_touch`);
+        for (const path of Object.keys(kinds)) expect(lintProbePaths({ ...baseTask, ...task(owns) }, root), id).toContain(`${root}/${path}`);
+      }
+    });
+    it("takes the contract once the test is owned or left to never_touch, and says nothing about a test that is not there", () => {
+      for (const [id, { owns, kinds, test }] of Object.entries(live)) {
+        expect(codes(lint(task([...owns, test]), {}, kinds)), id).toEqual([]);
+        expect(codes(lint({ ...task(owns), never_touch:[test] }, {}, kinds)), id).toEqual([]);
+        expect(codes(lint(task(owns), {}, {})), id).toEqual([]);
+        expect(codes(lint(task(owns), {}, null)), id).toEqual([]);
+      }
+    });
+    it("looks next to the file and in __tests__, but not for a test, an index or a folder", () => {
+      expect(codes(lint(task(["src/a.ts"]), {}, { "src/a.test.ts":"file" }))).toEqual(["test_unowned"]);
+      expect(codes(lint(task(["lib/a.mjs"]), {}, { "lib/__tests__/a.test.mjs":"file" }))).toEqual(["test_unowned"]);
+      expect(codes(lint(task(["src/a.test.ts", "src/index.ts", "src/"]), {}, { "src/__tests__/a.test.test.ts":"file", "src/__tests__/index.test.ts":"file", "src/__tests__":"directory" }))).toEqual([]);
+    });
+  });
+
   describe("check filters", () => {
     const folder = { "src/a.ts":"file" as const, "tests/server":"directory" as const };
     it("finds the folder words of vitest, jest and npm script filters", () => {
