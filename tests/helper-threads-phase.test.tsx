@@ -119,4 +119,33 @@ describe("Helper chips & panel phase rendering", () => {
     expect(slot.getByTestId("helper-panel-queue").textContent).toContain("task-queued-1");
     slot.lifecycle.unmount();
   });
+
+  it("draws the run's tasks as steps with arrows instead of the flat queue", async () => {
+    const app = await loadPluginApp(() => import("../app"));
+    const panelAction = app.threadPanelActions.find((a) => a.id === "lane-helper-thread");
+    if (!panelAction) throw new Error("missing panel action");
+    const slot = renderSlot(panelAction, { threadId: "thr_pm", params: {} }, {
+      context: { projectId: "proj_1", threadId: "thr_pm" },
+      rpc: {
+        list_helper_threads: () => ({
+          threads: [],
+          queued: ["b", "c"],
+          graph: {
+            nodes: [
+              { id: "a", title: "Foundation", state: "running", threadId: "thr_a" },
+              { id: "b", title: "Blocks", state: "waiting", threadId: null },
+              { id: "c", title: "Forms", state: "waiting", threadId: null },
+            ],
+            edges: [{ from: "a", to: "b", kind: "depends" }, { from: "a", to: "c", kind: "files" }],
+          },
+        }),
+      },
+    });
+    await waitFor(() => expect(slot.getByTestId("task-graph")).toBeTruthy());
+    expect(slot.getByTestId("task-step-0").textContent).toContain("a");
+    expect(slot.getByTestId("task-step-1").textContent).toMatch(/параллельно[\s\S]*b[\s\S]*c/);
+    expect(slot.queryByTestId("helper-panel-queue")).toBeNull();
+    expect(slot.getByTestId("task-graph-legend").textContent).toContain("те же файлы");
+    slot.lifecycle.unmount();
+  });
 });

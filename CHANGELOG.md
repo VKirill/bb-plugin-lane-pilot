@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.234
+
+- **The PM chat's «Lane Pilot helpers» panel shows the run's tasks as a graph: what runs now, what goes side by side, what waits for what.** It listed the queue as a flat line of ids (owner's screenshot, 2026-10-12, Клиенты: «В очереди: 8», ck-21 … ck-28), so the order and the parallel parts could not be seen. `list_helper_threads` now also returns `graph` (`buildTaskGraph`, `src/rooms/runs/server/task-graph.ts`): the open run's unfinished tasks (running, waiting, queued; a blocked task only when a shown one waits for it) and edges from each task's depends_on (a name follows its redispatch, `P1` → `P1.2`, as the writer's wait does) and from the writer-agent stage's wait reason (same files or area, one writer in a folder without git, an unanswered writer question). The panel (`TaskGraphView`) puts the tasks on steps by the longest wait chain, marks steps that run in parallel, draws an arrow per wait, coloured by its reason, with a legend; a running task opens its chat. Without a graph (an older server) the flat queue stays.
+  - Tests: `tests/task-graph.test.ts` (the live cakekeeper chain laid out as five steps; queue waits on files and folder; a blocked dependency shown), `tests/helper-threads-phase.test.tsx` «draws the run's tasks as steps with arrows instead of the flat queue».
+
 ## 0.1.233
 
 - **The agent badge no longer loses its top half when BB collapses the prompt box.** BB 0.46 collapses the box (the chevron, or while an agent works) by setting `data-promptbox-compact` on the same form, which then clips its overflow (`overflow-hidden`). The badge moves out of a compact box onto its parent, but it re-checked the box only when nodes were added or removed, so after a bare attribute flip it stayed inside and was cut along the box's top border (owner's screenshot, 2026-10-12). The badge's observer now also watches that attribute (`composer-agent-badge.tsx`).

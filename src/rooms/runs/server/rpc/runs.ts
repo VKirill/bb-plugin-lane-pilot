@@ -11,6 +11,7 @@ import { userVisibleProjects } from "../../../native-agent";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../state-machine";
 import type { AttemptState } from "../../state-machine";
 import { finishRunSafely } from "../run-finish";
+import { buildTaskGraph } from "../task-graph";
 import { cancelAttemptById } from "../cancel";
 import { id, stringAt, valueAt } from "../../../core/server";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
@@ -162,6 +163,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       return {
         threads: threads.filter((row) => row.role !== "workspace-provisioner"),
         queued: queuedTaskIds,
+        ...(openRun ? { graph: buildTaskGraph(db, openRun.id) } : {}),
       };
     },
     get_run_card: ({ runId }) => {

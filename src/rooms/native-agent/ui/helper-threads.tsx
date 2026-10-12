@@ -4,6 +4,7 @@ import { useLpRealtime } from "../../ui-shell/ui";
 import type { rpcContract } from "../../contracts";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Icon, type IconName } from "@lane-pilot/ui-kit";
+import { TaskGraphView, type TaskGraphData } from "./task-graph-view";
 
 export const HELPER_PANEL_ACTION = "lane-helper-thread";
 
@@ -19,6 +20,8 @@ export type HelperThread = {
 export type HelperThreadsResult = {
   threads: HelperThread[];
   queued: string[];
+  /** The open run's unfinished tasks and what each waits for; absent from an older server. */
+  graph?: TaskGraphData;
 };
 
 const ROLES: Record<string, { icon: IconName; label: I18nKey }> = {
@@ -71,7 +74,7 @@ export function useHelperThreads(threadId: string | null): HelperThreadsResult {
       if (inflight) { again = true; return; }
       inflight = true;
       void rpc.call("list_helper_threads", { threadId }).then((result) => {
-        if (alive) setData({ threads: result.threads, queued: result.queued ?? [] });
+        if (alive) setData({ threads: result.threads, queued: result.queued ?? [], ...(result.graph ? { graph: result.graph } : {}) });
       }).catch(() => undefined).finally(() => {
         inflight = false;
         if (alive && again) { again = false; read(); }
@@ -161,12 +164,17 @@ export function HelperChips({ threads, queued, frame }: { threads: HelperThread[
 export function HelperThreadPanel({ threadId, params }: { threadId: string; params: unknown }) {
   const target = params && typeof params === "object" && typeof (params as { threadId?: unknown }).threadId === "string"
     ? (params as { threadId: string }).threadId : null;
-  const { threads: helpers, queued } = useHelperThreads(target ? null : threadId);
+  const { threads: helpers, queued, graph } = useHelperThreads(target ? null : threadId);
   const open = useOpenHelper();
   if (target) return <ThreadChat threadId={target} variant="compact" />;
+  // With the run's task graph the queue reads as steps (what runs side by side, what waits for what); the flat list is the fallback.
+  const showGraph = Boolean(graph?.nodes.length);
   return (
     <div className="space-y-1 p-3" data-bb-plugin="lane-pilot" data-testid="helper-panel-list">
-      {queued.length > 0 ? (
+      {showGraph ? (
+        <TaskGraphView graph={graph!} onOpen={(node) => node.threadId && open({ id: node.threadId, title: node.id, status: "active", role: "writer", detail: null })} />
+      ) : null}
+      {!showGraph && queued.length > 0 ? (
         <div className="mb-2 rounded border border-[var(--lp-hairline)] bg-[var(--lp-well)] p-2 text-xs text-muted-foreground" data-testid="helper-panel-queue">
           <div className="font-semibold text-foreground">В очереди: {queued.length}</div>
           <div className="mt-1">{queued.join(", ")}</div>
