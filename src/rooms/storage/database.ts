@@ -319,6 +319,13 @@ export const migrations = [
   ...learningMigrations,
   // The Pixel World: the one saved world (src/rooms/world).
   ...worldMigrations,
+  // 0.1.232: the task results Lane Pilot told a PM (src/rooms/relay), one row per reported attempt transition.
+  `CREATE TABLE lane_pilot_pm_notice (
+    transition_id INTEGER PRIMARY KEY,
+    attempt_id TEXT NOT NULL,
+    pm_thread_id TEXT NOT NULL,
+    sent_at INTEGER NOT NULL
+  )`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
@@ -829,6 +836,40 @@ export function latestTaskAttemptState(db: LanePilotDatabase, projectId: string,
     ORDER BY a.created_at DESC, a.attempt_no DESC`).all(projectId, taskId, `${base.replace(/[\\%_]/g, "\\$&")}.%`) as Array<{ task_id:string; state:string }>;
   const member = (id:string) => id === taskId || (id.startsWith(`${base}.`) && /^(\.\d+)+$/.test(id.slice(base.length)));
   return rows.find((row) => member(row.task_id))?.state ?? null;
+}
+
+/** A task result the PM has not been told: the latest attempt of a task of a PM's run ended accepted, blocked or canceled. */
+export type TaskOutcome = { transitionId:number; attemptId:string; projectId:string; pmThreadId:string; taskId:string; state:string; reason:string|null; at:number };
+
+/**
+ * Task results not yet told to their PM, ended at `since` or later. Only the latest attempt of a task counts (an attempt
+ * followed by a retry is not a result), only while it still holds that state (a blocked task the PM answered runs again),
+ * and not a task the PM sent again as «<id>.N».
+ */
+export function listUnreportedTaskOutcomes(db: LanePilotDatabase, since: number): TaskOutcome[] {
+  return db.prepare(`SELECT t.rowid AS transitionId, a.id AS attemptId, r.project_id AS projectId, r.pm_thread_id AS pmThreadId,
+      a.task_id AS taskId, a.state, a.reason, t.at
+    FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+    JOIN lane_pilot_attempt_transition t ON t.rowid=(SELECT t2.rowid FROM lane_pilot_attempt_transition t2
+      WHERE t2.attempt_id=a.id AND t2.refused=0 AND t2.to_state=a.state ORDER BY t2.at DESC, t2.rowid DESC LIMIT 1)
+    WHERE a.state IN ('accepted','blocked','canceled') AND r.pm_thread_id IS NOT NULL AND a.updated_at>=? AND t.at>=?
+      AND a.attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)
+      AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt c JOIN lane_pilot_run rc ON rc.id=c.run_id
+        WHERE rc.project_id=r.project_id AND c.created_at>=a.created_at AND substr(c.task_id,1,length(a.task_id)+1)=a.task_id || '.')
+      AND NOT EXISTS (SELECT 1 FROM lane_pilot_pm_notice n WHERE n.transition_id=t.rowid)
+    ORDER BY t.at`).all(since, since) as TaskOutcome[];
+}
+
+/** Whether any task of the PM's runs is still at work (queued, being spawned, running or being canceled). */
+export function pmHasTasksAtWork(db: LanePilotDatabase, pmThreadId: string): string[] {
+  return (db.prepare(`SELECT DISTINCT a.task_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+    WHERE r.pm_thread_id=? AND a.state IN (${HOLDING_ATTEMPT_STATES.map(() => "?").join(",")}) ORDER BY a.created_at`)
+    .all(pmThreadId, ...HOLDING_ATTEMPT_STATES) as Array<{ task_id:string }>).map((row) => row.task_id);
+}
+
+export function markTaskOutcomesReported(db: LanePilotDatabase, rows: Array<Pick<TaskOutcome, "transitionId" | "attemptId" | "pmThreadId">>, at: number): void {
+  const insert = db.prepare("INSERT OR IGNORE INTO lane_pilot_pm_notice(transition_id,attempt_id,pm_thread_id,sent_at) VALUES(?,?,?,?)");
+  db.transaction(() => { for (const row of rows) insert.run(row.transitionId, row.attemptId, row.pmThreadId, at); })();
 }
 
 export function listOpenAttempts(db: LanePilotDatabase): Array<{

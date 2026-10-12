@@ -1,4 +1,4 @@
-import { latestTaskAttemptState } from "../../storage";
+import { latestTaskAttemptState, listUnreportedTaskOutcomes, markTaskOutcomesReported, pmHasTasksAtWork, type TaskOutcome } from "../../storage";
 import { taskFamily } from "../../runs";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -54,6 +54,14 @@ export type RelayDeps = {
   taskStates(projectId:string, taskIds:string[]):Promise<Record<string, string|null>>;
   /** Returns the newest taskId and its state in the same task family (e.g. redispatch <id>.2), if any newer exists. */
   latestFamilyMember?(projectId:string, taskId:string):Promise<{ taskId:string; state:string|null } | null>;
+  /**
+   * Task results not yet told to their PM (src/rooms/storage listUnreportedTaskOutcomes). Absent: only reminders tell a PM
+   * that its tasks ended, as before 0.1.232.
+   */
+  taskOutcomes?():Promise<TaskOutcome[]>;
+  /** The PM's tasks still at work (queued, being spawned, running, being canceled). */
+  tasksAtWork?(pmThreadId:string):Promise<string[]>;
+  markReported?(rows:TaskOutcome[]):Promise<void>;
   now():number;
   log(message:string):void;
   /** Puts the text into BB's queue for `sendAt`; the queued row's id, or null when it could not be queued (the sweep then sends). */
@@ -66,6 +74,14 @@ export type RelayDeps = {
 
 /** A task is finished when its latest attempt is accepted (merged), blocked after its retries, or canceled. */
 const TASK_DONE = new Set(["accepted", "blocked", "canceled"]);
+
+/**
+ * When Lane Pilot tells a PM its task results (one message for all of them, so one turn instead of a reminder each):
+ * a blocked task needs the PM, so it goes once no other result came in the last minute (at most 5 minutes after it);
+ * accepted and canceled ones go once none of the PM's tasks is still at work, or after 30 minutes of a long queue.
+ * Results older than a day were never deliverable (the PM thread is gone): they are dropped.
+ */
+export const TASK_NOTICE = { settleMs:60_000, urgentMaxMs:5 * 60_000, quietMs:30_000, maxWaitMs:30 * 60_000, dropAfterMs:86_400_000 };
 
 const id = (prefix:string) => `${prefix}_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
 
@@ -322,11 +338,68 @@ export function createRelay(deps:RelayDeps) {
     });
   }
 
+  const clock = (ms:number) => `${new Date(ms).toISOString().slice(11, 16)} UTC`;
+
+  /** One message with the PM's task results and the notes of its reminders they satisfy; null when nothing is due yet. */
+  function noticeText(rows:TaskOutcome[], atWork:string[], notes:RelayReminder[]):string {
+    const lines = rows.map((row) => `- ${row.taskId} — ${row.state}${row.state === "accepted" ? "" : row.reason ? `: ${row.reason.replace(/\s+/g, " ").slice(0, 300)}` : ""}`);
+    const work = atWork.length ? `Still at work: ${atWork.length} (${atWork.slice(0, 8).join(", ")}${atWork.length > 8 ? ", …" : ""}).` : "None of your tasks is at work now.";
+    const noted = notes.map((item) => `- (${clock(item.createdAt)}) ${item.note}`);
+    return [
+      "Lane Pilot: results of your tasks (states as they are now):", ...lines, "", work,
+      ...(noted.length ? ["", "Your reminder notes on these tasks (written earlier; skip what is already done):", ...noted] : []),
+      "", "Act only on what needs you. No reply is needed; results of your other tasks come here by themselves.",
+    ].join("\n");
+  }
+
+  /**
+   * Tells each PM the results of its tasks in one message (TASK_NOTICE), so a PM does not need a reminder per batch and
+   * is not woken once per task. Open reminders of that PM on tasks that have all finished go in the same message and close.
+   * Not sent while the PM is in a turn: the message would wait behind it with old states.
+   */
+  async function taskNotices(items:RelayItem[]):Promise<number> {
+    if (!deps.taskOutcomes) return 0;
+    const now = deps.now();
+    const outcomes = await deps.taskOutcomes().catch((cause:unknown) => { deps.log(`relay: task results unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return [] as TaskOutcome[]; });
+    const stale = outcomes.filter((row) => now - row.at > TASK_NOTICE.dropAfterMs);
+    if (stale.length) await deps.markReported?.(stale);
+    const byThread = new Map<string, TaskOutcome[]>();
+    for (const row of outcomes) if (now - row.at <= TASK_NOTICE.dropAfterMs) byThread.set(row.pmThreadId, [...(byThread.get(row.pmThreadId) ?? []), row]);
+    let sent = 0;
+    for (const [threadId, rows] of byThread) {
+      const reminders = items.filter((row):row is RelayReminder => row.kind === "remind" && !row.firedAt && row.threadId === threadId && !!row.taskIds?.length);
+      const satisfied:RelayReminder[] = [];
+      for (const item of reminders) {
+        const states = await deps.taskStates(item.projectId, item.taskIds ?? []).catch(() => null);
+        if (states && (item.taskIds ?? []).every((task) => TASK_DONE.has(states[task] ?? ""))) satisfied.push(item);
+      }
+      const newest = Math.max(...rows.map((row) => row.at)), oldest = Math.min(...rows.map((row) => row.at));
+      const urgent = rows.some((row) => row.state === "blocked");
+      const atWork = await deps.tasksAtWork?.(threadId).catch(() => [] as string[]) ?? [];
+      const due = satisfied.length > 0
+        || (urgent && (now - newest >= TASK_NOTICE.settleMs || now - oldest >= TASK_NOTICE.urgentMaxMs))
+        || (!atWork.length && now - newest >= TASK_NOTICE.quietMs)
+        || now - oldest >= TASK_NOTICE.maxWaitMs;
+      if (!due || await deps.busy?.(threadId).catch(() => true)) continue;
+      try {
+        await deps.send(threadId, noticeText(rows, atWork, satisfied));
+      } catch (cause) {
+        deps.log(`relay: could not tell ${threadId} its task results: ${cause instanceof Error ? cause.message : String(cause)}`);
+        continue;
+      }
+      await deps.markReported?.(rows);
+      for (const item of satisfied) { item.firedAt = now; item.firedBy = "tasks"; await dropQueuedRow(item); }
+      deps.log(`relay: told ${threadId} ${rows.length} task result(s)${satisfied.length ? `, closed ${satisfied.length} reminder(s)` : ""}`);
+      sent++;
+    }
+    return sent;
+  }
+
   /** Fires due reminders and catches settled threads whose event was missed (a reload, a dropped stream). */
   async function sweep() {
     const watched = new Set<string>();
     const due = await update(async (items) => {
-      let fired = 0;
+      let fired = await taskNotices(items);
       for (const item of items) {
         if (item.kind !== "remind" || item.firedAt) continue;
         if (item.taskIds?.length) {
@@ -359,7 +432,13 @@ export function createRelay(deps:RelayDeps) {
 
           if (item.taskIds.length > 0 && item.taskIds.every((task) => TASK_DONE.has(states[task] ?? ""))) {
             // Not sent when the state no longer holds or the PM is in a turn: the reminder stays open (and its time still counts below).
-            if (await fire(item, "tasks", states)) { fired++; continue; }
+            if (await fire(item, "tasks", states)) {
+              // The reminder quoted these results: the PM is not told them a second time.
+              const told = new Set(item.taskIds);
+              const rows = (await deps.taskOutcomes?.().catch(() => [] as TaskOutcome[]) ?? []).filter((row) => row.pmThreadId === item.threadId && told.has(row.taskId));
+              if (rows.length) await deps.markReported?.(rows);
+              fired++; continue;
+            }
           }
         }
         if (item.dueAt <= deps.now()) {
@@ -401,6 +480,7 @@ export function createRelay(deps:RelayDeps) {
 export type Relay = ReturnType<typeof createRelay>;
 
 const KEY = "relay:items";
+const NOTICE_SINCE_KEY = "relay:task-notices-since";
 
 const relays = new WeakMap<object, Relay>();
 /** Background commands per thread, from the last thread:changed event; threads.get does not report them. */
@@ -469,6 +549,14 @@ export function relayFor(ctx:ServerContext):Relay {
         } catch (cause) { return /\b404\b|not found/i.test(cause instanceof Error ? cause.message : String(cause)) ? "gone" as const : "unknown" as const; }
       },
     }),
+    // Results that ended before this version ran were reported by the PM's own reminders: start from the first sweep.
+    taskOutcomes:async () => {
+      const since = await bb.storage.kv.get(NOTICE_SINCE_KEY);
+      if (typeof since !== "number") { await bb.storage.kv.set(NOTICE_SINCE_KEY, Date.now() as never); return []; }
+      return listUnreportedTaskOutcomes(ctx.db, since);
+    },
+    tasksAtWork:async (pmThreadId) => pmHasTasksAtWork(ctx.db, pmThreadId),
+    markReported:async (rows) => markTaskOutcomesReported(ctx.db, rows, Date.now()),
     now:() => Date.now(),
     log:ctx.log,
   });
@@ -541,7 +629,7 @@ export function mountRelay(ctx:ServerContext):Relay {
       "Use instead of waiting for the owner whenever work is blocked on time or on another thread. Then end your turn; the reminder wakes you.",
       "Back off: 5, then 10, then 20 minutes for the same block; after three reminders without progress, tell the owner what you tried and what to decide.",
       "Pass watchThreadId to be woken as soon as that thread settles (for example blockedBy.holderThreadId).",
-      "Waiting for your own tasks to be accepted or blocked (\"when X is merged, ship\")? Pass taskIds: you are woken the moment all of them finish, with their states, so you never poll and never get a stale reminder. inMinutes is then only the fallback.",
+      "Results of your own Lane Pilot tasks come into this chat by themselves («Lane Pilot: results of your tasks»): do not set a reminder just to learn them. Pass taskIds only for a plan that waits on them (\"when X is merged, ship\"): the note comes in that results message once all of them finish. inMinutes is then only the fallback.",
     ].join("\n"),
     parameters:z.object({
       inMinutes:z.number().int().min(1).max(24 * 60),
