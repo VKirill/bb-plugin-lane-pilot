@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { openDatabase } from "../../../src/rooms/storage/database";
 import { createCore } from "../../../src/rooms/core/server/core";
 import { createHostJobs } from "@lane-pilot/host-calls";
+import { hostContract } from "../../../src/rooms/contracts/host";
 
 type Reply = { state:"running" | "succeeded" | "failed" | "cancelled" | "lost"; result?:unknown; error:string | null; progress:{ updatedAt:number } };
 
@@ -125,6 +126,20 @@ describe("host calls as background jobs", () => {
     const t = setup([reply("running")]);
     await expect(t.jobs.run("runBrowserQa", {}, { hostId:"h", timeoutMs:100_000 }, never)).rejects.toThrow(/timed out after 160 s/);
     expect(t.calls.at(-1)).toMatchObject({ method:"jobCancel", input:{ jobId:"job_abcdefghij1" } });
+  });
+
+  it("starts a job the host accepts when the caller's wait is longer than a job may live (six 900 s checks replayed before a merge)", async () => {
+    // lpattempt_9be4e750: gitIntegrate waited 180 s + 2 x 6 x 900 s = 10 980 s, and jobStart was asked for 11 010 s (host limit 10 800).
+    const t = setup([reply("running"), reply("succeeded", { result:{ status:"merged" } })]);
+    expect(await t.jobs.run("gitIntegrate", { m:1 }, { hostId:"h", timeoutMs:180_000 + 2 * 6 * 900_000 }, never)).toEqual({ status:"merged" });
+    const start = t.calls.find((call) => call.method === "jobStart")!;
+    expect(hostContract.jobStart.input.safeParse(start.input).success).toBe(true);
+    expect(start.input.timeoutSec).toBe(10_800);
+  });
+
+  it("stops waiting for a capped job no later than the host ends it", async () => {
+    const t = setup([reply("running")]);
+    await expect(t.jobs.run("gitIntegrate", {}, { hostId:"h", timeoutMs:20_000_000 }, never)).rejects.toThrow(/timed out after 10770 s/);
   });
 
   it("falls back to the ordinary call on a host that has no jobs yet", async () => {

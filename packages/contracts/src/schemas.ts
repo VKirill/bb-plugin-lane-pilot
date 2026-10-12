@@ -124,6 +124,8 @@ export type TaskV2 = z.infer<typeof taskV2Schema>;
  */
 export const HOST_JOB_KINDS = ["detect", "install", "rollback", "snapshot", "importConfig", "connectOpencode", "coexistenceOperation", "coexistenceInventory", "gitIntegrate", "gitPrepareWorktree", "runSandboxedCommand", "runBrowserQa", "gateRun", "gateBisect", "gateAttribute", "runScript"] as const;
 export type HostJobKind = (typeof HOST_JOB_KINDS)[number];
+/** The longest a host job may live (jobStart's `timeoutSec`): a caller that would wait longer is waited for this long. */
+export const HOST_JOB_MAX_SEC = 10_800;
 export const hostJobId = z.string().regex(/^job_[a-z0-9]{10,40}$/);
 export const hostJobRef = z.object({ requestedHostId:z.string().min(1), jobId:hostJobId }).strict();
 
