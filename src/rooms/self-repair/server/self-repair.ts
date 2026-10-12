@@ -23,6 +23,7 @@ import { GUARD_BLOCKED_KEY, type GuardBlock } from "@lane-pilot/jev";
 import { FRUSTRATION_KEY, frustrationReason, type FrustrationRecord } from "../../learning";
 import { MAX_CANDIDATES, repairGroup } from "@lane-pilot/jev/judgments/repair-group";
 import { sha256Hex } from "@lane-pilot/kit";
+import { HOLDING_ATTEMPT_STATES } from "../../storage";
 
 /**
  * Self-repair: every 15 minutes Lane Pilot looks for failures that are its own fault (triage origin
@@ -350,10 +351,11 @@ export function createSelfRepair(ctx: ServerCore) {
         runId: row.run_id, taskId: row.task_id, attemptId: row.id, pmThreadId: runPm(row.run_id), writerThreadId: null,
         reason: `attempt queued ${Math.round((now - row.updated_at) / 60_000)} min while nothing runs in its run`, at: now });
     }
-    // A stage still pending or running an hour after its task's last attempt ended: nobody will finish it.
+    // A stage still pending or running an hour after its task's last attempt ended: nobody will finish it. An attempt
+    // being spawned or canceled has not ended: its stages waited in the queue with it.
     const stages = db.prepare(`SELECT s.run_id, s.task_id, s.stage_id, s.state, s.updated_at, r.project_id FROM lane_pilot_stage_receipt s JOIN lane_pilot_run r ON r.id=s.run_id
       WHERE s.state IN ('pending','running') AND s.updated_at < ? AND r.state='running'
-        AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt a WHERE a.run_id=s.run_id AND a.task_id=s.task_id AND a.state IN ('running','queued'))
+        AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt a WHERE a.run_id=s.run_id AND a.task_id=s.task_id AND a.state IN (${HOLDING_ATTEMPT_STATES.map((state) => `'${state}'`).join(",")}))
         AND EXISTS (SELECT 1 FROM lane_pilot_attempt a WHERE a.run_id=s.run_id AND a.task_id=s.task_id)`).all(now - STAGE_MS) as Array<{ run_id: string; task_id: string; stage_id: string; state: string; updated_at: number; project_id: string }>;
     for (const row of stages) {
       if (ignored.has(row.project_id)) continue;
