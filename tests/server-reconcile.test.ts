@@ -268,7 +268,7 @@ describe("production spawn_unknown reconciliation", () => {
 
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, plan:"Canonical live reconciliation plan" },
+      { confirm:true, plan:"Canonical live reconciliation plan", objective:"Сверка записанных писателей" },
       { threadId:pmThreadId, projectId },
     )));
     const waiting = JSON.parse(String(await harness.behavior.callAgentTool(

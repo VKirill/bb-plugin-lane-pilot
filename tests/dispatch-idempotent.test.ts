@@ -16,7 +16,7 @@ const config = {
   pmProviderId:"claude-code", pmModel:"claude-test", writerProviderId:"codex", writerModel:"codex-test",
 };
 const task: TaskV2 = {
-  schema_version:2, id:"suite-green", title:"Idempotent dispatch", risk:"low", lane:"writer", project_cwd:config.writerWorkspacePath,
+  schema_version:2, display_title: "Тестовая задача", kind: "feature", area: "feature:suite-green", id:"suite-green", title:"Idempotent dispatch", risk:"low", lane:"writer", project_cwd:config.writerWorkspacePath,
   read_first:["README.md"], interfaces:["i"], invariants:["inv"], out_of_scope:["out"], expected_outputs:["hello.txt"],
   owns_paths:["hello.txt"], never_touch:[".git/**"], depends_on:[], objective:"create hello", acceptance:["never"],
   verify:"none", verification:[],
@@ -66,7 +66,7 @@ async function setup(options:{ failBase?:boolean } = {}) {
   setRunThread(db, runId, pmThreadId);
   await plugin(bb);
   const dispatch = async (next:Partial<TaskV2> = {}, plan = "Plan for the idempotent dispatch") => JSON.parse(String(await harness.behavior.callAgentTool(
-    "lane_pilot_dispatch_writer", { confirm:true, plan, task:{ ...task, ...next } }, { threadId:pmThreadId, projectId },
+    "lane_pilot_dispatch_writer", { confirm: true, objective: "Проверка диспетча", plan, task:{ ...task, ...next } }, { threadId:pmThreadId, projectId },
   ))) as Record<string, unknown>;
   return { db, harness, dispatch, releaseBase, baseCalls: () => baseCalls };
 }

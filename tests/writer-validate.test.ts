@@ -76,6 +76,7 @@ function noGitOwnershipBase(method:string) {
 
 const task: TaskV2 = {
   schema_version:2,
+  display_title: "Тестовая задача", kind: "feature", area: "feature:two-verify",
   id:"two-verify",
   title:"Two verification commands",
   risk:"low",
@@ -174,7 +175,7 @@ describe("BB writer validation on the server path", () => {
     const beforeRejected = db.prepare("SELECT COUNT(*) count FROM lane_pilot_attempt WHERE run_id='run-delayed'").get() as {count:number};
     const rejected = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, plan:"Canonical plan for workspace rejection", task:{ ...task, id:"wrong-workspace", project_cwd:"/tmp/ag235-writer-fixture" } },
+      { confirm: true, objective: "Проверка диспетча", plan:"Canonical plan for workspace rejection", task:{ ...task, id:"wrong-workspace", project_cwd:"/tmp/ag235-writer-fixture" } },
       { threadId:pmThreadId, projectId },
     )));
     expect(rejected).toMatchObject({ state:"rejected", unapplied:[{ key:"task.project_cwd" }] });
@@ -184,7 +185,7 @@ describe("BB writer validation on the server path", () => {
     const startedAt = Date.now();
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, plan:"Canonical delayed writer plan. Keep all Unicode 🧭 and newline. CRITICAL_TAIL", task:{ ...task, id:"delayed-task", verify:"none", verification:[] } },
+      { confirm: true, objective: "Проверка диспетча", plan:"Canonical delayed writer plan. Keep all Unicode 🧭 and newline. CRITICAL_TAIL", task:{ ...task, id:"delayed-task", verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     )));
     expect(Date.now() - startedAt).toBeLessThan(5_000);
@@ -258,7 +259,7 @@ describe("BB writer validation on the server path", () => {
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, plan:"Complete plan for RPC fallback test", task:{ ...task, id:"rpc-fallback-task", verify:"none", verification:[] } },
+      { confirm: true, objective: "Проверка диспетча", plan:"Complete plan for RPC fallback test", task:{ ...task, id:"rpc-fallback-task", verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     )));
     expect(dispatched.state).toBe("queued");
@@ -313,7 +314,7 @@ describe("BB writer validation on the server path", () => {
     await plugin(bb);
     await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, plan:"Complete plan for resumed receipt test", task:{ ...task, id:"resumed-task", verify:"none", verification:[] } },
+      { confirm: true, objective: "Проверка диспетча", plan:"Complete plan for resumed receipt test", task:{ ...task, id:"resumed-task", verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     );
     const result = JSON.parse(String(await harness.behavior.callAgentTool(
@@ -353,7 +354,7 @@ describe("BB writer validation on the server path", () => {
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, plan:"Plan that waits for dep-task", task:{ ...task, id:"dependent", depends_on:["dep-task"], verify:"none", verification:[] } },
+      { confirm: true, objective: "Проверка диспетча", plan:"Plan that waits for dep-task", task:{ ...task, id:"dependent", depends_on:["dep-task"], verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     )));
     // The contract lint sends the PM back to replan: no task, no attempt, no cascade of blocked receipts.
@@ -402,7 +403,7 @@ describe("BB writer validation on the server path", () => {
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, plan:"Complete plan for the needs-human test", task:{ ...task, id:"needs-human-task", verify:"none", verification:[] } },
+      { confirm: true, objective: "Проверка диспетча", plan:"Complete plan for the needs-human test", task:{ ...task, id:"needs-human-task", verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     )));
     expect(dispatched.state).toBe("queued");
@@ -480,7 +481,7 @@ describe("BB writer validation on the server path", () => {
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, plan:"Plan for the rules test", task:{ ...task, id:`rules-task-${jev}`, verify:"none", verification:[] } },
+      { confirm: true, objective: "Проверка диспетча", plan:"Plan for the rules test", task:{ ...task, id:`rules-task-${jev}`, verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     )));
     await harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId:"run-rules", timeoutSec:2 }, { threadId:pmThreadId, projectId });
@@ -531,7 +532,7 @@ describe("BB writer validation on the server path", () => {
     setRunThread(db,"run-effort-retry",pmThreadId);
     await plugin(bb);
     const dispatched=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
-      {confirm:true,plan:"Retry effort escalation fixture",task:{...task,id:"effort-retry-task",verify:"none",verification:[]}},
+      {confirm:true,objective:"Проверка диспетча",plan:"Retry effort escalation fixture",task:{...task,id:"effort-retry-task",verify:"none",verification:[]}},
       {threadId:pmThreadId,projectId}))) as {runId:string;attemptId:string};
     const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",
       {runId:dispatched.runId,timeoutSec:3},{threadId:pmThreadId,projectId})));
@@ -585,7 +586,7 @@ describe("BB writer validation on the server path", () => {
     setRunThread(db,"run-manual-high",pmThreadId);
     await plugin(bb);
     const dispatched=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
-      {confirm:true,plan:"Manual high must survive a low classifier answer",task:{...task,id:"manual-high-task",verify:"none",verification:[]}},
+      {confirm:true,objective:"Проверка диспетча",plan:"Manual high must survive a low classifier answer",task:{...task,id:"manual-high-task",verify:"none",verification:[]}},
       {threadId:pmThreadId,projectId}))) as {attemptId:string};
     await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"run-manual-high",timeoutSec:3},{threadId:pmThreadId,projectId});
     expect(classifyCalls).toBe(0);
@@ -636,7 +637,7 @@ describe("BB writer validation on the server path", () => {
     setRunThread(db,"run-auto-low",pmThreadId);
     await plugin(bb);
     const dispatched=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
-      {confirm:true,plan:"Automatic mode may choose a cheaper level",task:{...task,id:"auto-low-task",verify:"none",verification:[]}},
+      {confirm:true,objective:"Проверка диспетча",plan:"Automatic mode may choose a cheaper level",task:{...task,id:"auto-low-task",verify:"none",verification:[]}},
       {threadId:pmThreadId,projectId}))) as {attemptId:string};
     await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"run-auto-low",timeoutSec:3},{threadId:pmThreadId,projectId});
     expect(spawnedInput).toMatchObject({reasoningLevel:"medium",executionInputSources:{reasoningLevel:"client-preference"}});
@@ -762,7 +763,7 @@ describe("BB writer validation on the server path", () => {
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, plan:"Canonical accepted writer plan", task:{ ...task, id:"accepted-task", verify:"none", verification:[] } },
+      { confirm: true, objective: "Проверка диспетча", plan:"Canonical accepted writer plan", task:{ ...task, id:"accepted-task", verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     )));
     expect(dispatched).toMatchObject({ runId:"run-accepted", state:"queued", attemptId:expect.any(String), writerThreadId:null });
@@ -783,7 +784,7 @@ describe("BB writer validation on the server path", () => {
     // A second task in the same run must not replace the first task's receipt in the PM's answer.
     await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, plan:"Second accepted writer plan", task:{ ...task, id:"accepted-task-2", verify:"none", verification:[] } },
+      { confirm: true, objective: "Проверка диспетча", plan:"Second accepted writer plan", task:{ ...task, id:"accepted-task-2", verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     );
     const both = JSON.parse(String(await harness.behavior.callAgentTool(
@@ -855,7 +856,7 @@ describe("BB writer validation on the server path", () => {
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, plan:"Canonical verification plan", task },
+      { confirm: true, objective: "Проверка диспетча", plan:"Canonical verification plan", task },
       { threadId:pmThreadId, projectId },
     )));
     const result = JSON.parse(String(await harness.behavior.callAgentTool(
@@ -935,7 +936,7 @@ describe("BB writer validation on the server path", () => {
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, plan:"Canonical verification plan", task },
+      { confirm: true, objective: "Проверка диспетча", plan:"Canonical verification plan", task },
       { threadId:pmThreadId, projectId },
     )));
     const result = JSON.parse(String(await harness.behavior.callAgentTool(
@@ -998,7 +999,7 @@ describe("BB writer validation on the server path", () => {
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, plan:"Canonical retry plan", task:{ ...task, id:"error-retry", verify:"none", verification:[] } },
+      { confirm: true, objective: "Проверка диспетча", plan:"Canonical retry plan", task:{ ...task, id:"error-retry", verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     )));
     const result = JSON.parse(String(await harness.behavior.callAgentTool(
@@ -1046,7 +1047,7 @@ describe("BB writer validation on the server path", () => {
 
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, plan:"Canonical background error plan", task:{ ...task, id:"background-error-task", verify:"none", verification:[] } },
+      { confirm: true, objective: "Проверка диспетча", plan:"Canonical background error plan", task:{ ...task, id:"background-error-task", verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     )));
     expect(dispatched.state).toBe("queued");
@@ -1214,7 +1215,7 @@ describe("BB writer validation on the server path", () => {
     await plugin(bb);
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool(
       "lane_pilot_dispatch_writer",
-      { confirm:true, plan:"Canonical dirty workspace plan", task:{ ...task, id:"dirt-fail", verify:"none", verification:[] } },
+      { confirm: true, objective: "Проверка диспетча", plan:"Canonical dirty workspace plan", task:{ ...task, id:"dirt-fail", verify:"none", verification:[] } },
       { threadId:pmThreadId, projectId },
     )));
     const result = JSON.parse(String(await harness.behavior.callAgentTool(

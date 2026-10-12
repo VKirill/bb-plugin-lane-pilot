@@ -7,7 +7,7 @@ import { lintContract, subjectiveWordIn } from "../src/rooms/tasks/server/contra
 
 const root = "/tmp/writer";
 const base: TaskV2 = {
-  schema_version:2, id:"c", title:"C", risk:"low", lane:"writer", project_cwd:root, read_first:[], interfaces:["i"], invariants:["x"], out_of_scope:["o"],
+  schema_version:2, display_title: "Тестовая задача", kind: "feature", area: "feature:c", id:"c", title:"C", risk:"low", lane:"writer", project_cwd:root, read_first:[], interfaces:["i"], invariants:["x"], out_of_scope:["o"],
   expected_outputs:["src/b.ts"], owns_paths:["src/**", "tests/**"], never_touch:["src/secret/**"], depends_on:[], objective:"x", acceptance:["done"], verify:"tests",
   verification:[{ command:"npx vitest run tests/b.test.ts", cwd:root }],
 };

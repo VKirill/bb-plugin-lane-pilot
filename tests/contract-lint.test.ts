@@ -5,11 +5,12 @@ import type { TaskV2 } from "../src/rooms/contracts";
 import {
   createAttempt, createRun, createTask, listAttemptsForTask, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread, transitionAttempt,
 } from "../src/rooms/storage/database";
+import { postMergeRepair } from "../src/rooms/writer/server/finish";
 import { lintContract, lintProbePaths, lintReply, runnerFilterArgs, type LintInput, type PathKind } from "../src/rooms/tasks/server/contract-lint";
 
 const root = "/tmp/writer";
 const baseTask: TaskV2 = {
-  schema_version:2, id:"lint-task", title:"Lint", risk:"low", lane:"writer", project_cwd:root,
+  schema_version:2, display_title: "Тестовая задача", kind: "feature", area: "feature:lint-task", id:"lint-task", title:"Lint", risk:"low", lane:"writer", project_cwd:root,
   read_first:["src/a.ts"], interfaces:["i"], invariants:["inv"], out_of_scope:["out"], expected_outputs:["src/b.ts"],
   owns_paths:["src/"], never_touch:[".git/**"], depends_on:[], objective:"change a", acceptance:["done"],
   verify:"tests", verification:[{ command:"npx vitest run tests/a.test.ts", cwd:root }],
@@ -22,6 +23,31 @@ const codes = (result:ReturnType<typeof lint>) => result.errors.map((error) => e
 describe("contract lint rules", () => {
   it("passes a sound contract", () => {
     expect(lint({}, {}, { "src/a.ts":"file" })).toEqual({ errors:[], warnings:[] });
+  });
+
+  describe("task standard (the Tasks board)", () => {
+    const standard = (task:Partial<TaskV2>) => lint(task, {}, { "src/a.ts":"file" }).errors.filter((error) => /^(display_title|kind|area)_/.test(error.code));
+    it("asks for a card title, a kind and an area, each with the fix", () => {
+      const missing = standard({ display_title:undefined, kind:undefined, area:undefined });
+      expect(missing.map((error) => error.code)).toEqual(["display_title_missing", "kind_missing", "area_missing"]);
+      expect(missing[0]!.message).toContain("at most 60 characters");
+      expect(missing[1]!.message).toContain("feature, fix, check, docs, refactor, research, chore");
+      expect(missing[2]!.message).toContain("page:/tools/cards");
+    });
+    it("treats a blank title or area as missing and a kind outside the list as missing", () => {
+      expect(standard({ display_title:"  ", area:" ", kind:"bug" as never }).map((error) => error.code)).toEqual(["display_title_missing", "kind_missing", "area_missing"]);
+    });
+    it("refuses a title over 60 characters and takes exactly 60", () => {
+      expect(standard({ display_title:"я".repeat(61) }).map((error) => error.code)).toEqual(["display_title_too_long"]);
+      expect(standard({ display_title:"я".repeat(60) })).toEqual([]);
+    });
+    it("accepts a Lane Pilot mainfix task, which fills the three itself", () => {
+      const fix = postMergeRepair({ ...baseTask, id:"x".repeat(100), area:undefined }, [{ command:"npm test", exitCode:1 }]).fix;
+      expect(fix).toMatchObject({ kind:"fix", area:"maintenance" });
+      expect(fix.display_title).toMatch(/^Починка main после /);
+      expect(standard(fix)).toEqual([]);
+      expect(postMergeRepair({ ...baseTask, area:"page:/cards" }, [{ command:"npm test", exitCode:1 }]).fix.area).toBe("page:/cards");
+    });
   });
 
   describe("read_first", () => {
@@ -243,7 +269,7 @@ async function setup(kinds:Record<string, PathKind> | null, targets:Record<strin
   setRunThread(db, runId, pmThreadId);
   await plugin(bb);
   const dispatch = async (next:Partial<TaskV2> = {}) => JSON.parse(String(await harness.behavior.callAgentTool(
-    "lane_pilot_dispatch_writer", { confirm:true, plan:"Plan for the lint", task:{ ...baseTask, ...next } }, { threadId:pmThreadId, projectId },
+    "lane_pilot_dispatch_writer", { confirm: true, objective: "Проверка диспетча", plan:"Plan for the lint", task:{ ...baseTask, ...next } }, { threadId:pmThreadId, projectId },
   ))) as Record<string, unknown>;
   return { db, harness, dispatch };
 }
@@ -296,6 +322,31 @@ describe("contract lint at dispatch", () => {
     expect(taskCount(db)).toBe(0);
     saveProjectSetting(db, projectId, "integration.gate_command", "off");
     expect(await dispatch({ verification:[{ command:"npx vitest run", cwd:root }] })).toMatchObject({ taskId:"lint-task", state:"queued" });
+    await harness.lifecycle.dispose();
+  });
+
+  it("sends a task without the standard back before any task exists", async () => {
+    const { db, harness, dispatch } = await setup({ "src/a.ts":"file" });
+    const reply = await dispatch({ display_title:undefined, kind:undefined, area:undefined });
+    expect(reply).toMatchObject({ runId, state:"validation_failed" });
+    expect((reply.findings as Array<{ code:string }>).map((finding) => finding.code)).toEqual(["display_title_missing", "kind_missing", "area_missing"]);
+    expect(taskCount(db)).toBe(0);
+    await harness.lifecycle.dispose();
+  });
+
+  it("asks for the run objective on the first dispatch only", async () => {
+    const { db, harness } = await setup({ "src/a.ts":"file" });
+    const send = async (params:Record<string, unknown>) => JSON.parse(String(await harness.behavior.callAgentTool(
+      "lane_pilot_dispatch_writer", { confirm:true, plan:"Plan for the lint", task:baseTask, ...params }, { threadId:pmThreadId, projectId },
+    ))) as Record<string, unknown>;
+    const refused = await send({});
+    expect(refused).toMatchObject({ runId, state:"validation_failed" });
+    expect((refused.findings as Array<{ code:string }>).map((finding) => finding.code)).toEqual(["objective_missing"]);
+    expect(String(refused.reason)).toContain("add objective to this first dispatch");
+    expect(taskCount(db)).toBe(0);
+    expect(await send({ objective:"Привести заказы в порядок" })).toMatchObject({ taskId:"lint-task", state:"queued" });
+    // The run keeps its objective, so a later dispatch may leave it out.
+    expect(await send({ task:{ ...baseTask, id:"lint-task-2", owns_paths:["docs/"], expected_outputs:["docs/x.md"], read_first:[] } })).toMatchObject({ taskId:"lint-task-2" });
     await harness.lifecycle.dispose();
   });
 

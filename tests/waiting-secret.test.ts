@@ -79,7 +79,7 @@ const pmThreadId = "pm-thread";
 const worktreeHost = (options:NonNullable<Parameters<typeof createFakePluginHost>[0]>) => createFakeWorktreeHost(options, "host-test");
 const config = { projectId, hostId:"host-test", pmWorkspacePath:"/tmp/pm", writerWorkspacePath:"/tmp/writer", pmProviderId:"claude-code", pmModel:"claude-test", writerProviderId:"codex", writerModel:"codex-test" };
 const task:TaskV2 = {
-  schema_version:2, id:"needs-secret", title:"Needs a secret", risk:"low", lane:"writer", project_cwd:config.writerWorkspacePath, read_first:["README.md"],
+  schema_version:2, display_title: "Тестовая задача", kind: "feature", area: "feature:needs-secret", id:"needs-secret", title:"Needs a secret", risk:"low", lane:"writer", project_cwd:config.writerWorkspacePath, read_first:["README.md"],
   interfaces:["i"], invariants:["inv"], out_of_scope:["out"], expected_outputs:["hello.txt"], owns_paths:["hello.txt"], never_touch:[".git/**"], depends_on:[],
   objective:"create hello", acceptance:["done"], verify:"tests",
   verification:[{ command:"node e2e.js", cwd:config.writerWorkspacePath, timeout_sec:5, secrets:["WAIT_KEY"] }],
@@ -158,7 +158,7 @@ describe("dispatch of a task whose check needs a secret", () => {
     await plugin(bb);
 
     const dispatched = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
-      { confirm:true, plan:"Plan", task }, { threadId:pmThreadId, projectId })));
+      { confirm: true, objective: "Проверка диспетча", plan:"Plan", task }, { threadId:pmThreadId, projectId })));
     expect(dispatched.state).toBe("queued");
     if (options.saved) {
       await new Promise((wake) => setTimeout(wake, 400));

@@ -15,7 +15,7 @@ const pmThreadId = "eq-pm";
 const runId = "eq-run";
 const config = { projectId, hostId: "eq-host", pmWorkspacePath: "/tmp/eq-pm", writerWorkspacePath: "/tmp/eq-writer", pmProviderId: "codex", pmModel: "gpt-6-luna", writerProviderId: "codex", writerModel: "gpt-6-luna" };
 const task: TaskV2 = {
-  schema_version: 2, id: "eq-task", title: "Write a fixture", risk: "low", lane: "writer", project_cwd: config.writerWorkspacePath, read_first: ["README.md L1-L2"],
+  schema_version: 2, display_title: "Тестовая задача", kind: "feature", area: "feature:eq-task", id: "eq-task", title: "Write a fixture", risk: "low", lane: "writer", project_cwd: config.writerWorkspacePath, read_first: ["README.md L1-L2"],
   interfaces: ["note.txt exists"], invariants: ["Only write note.txt"], out_of_scope: ["Plugin source"], expected_outputs: ["note.txt"], owns_paths: ["note.txt"],
   never_touch: [".git/**"], depends_on: [], objective: "Write note.txt", acceptance: ["note.txt is present"], verify: "tests",
   verification: [{ command: "test -f note.txt", cwd: config.writerWorkspacePath, timeout_sec: 30 }],
@@ -132,7 +132,7 @@ async function runScenario(engine: "on" | "off", scenario: Scenario) {
   let reply: Record<string, unknown>;
   try {
     reply = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
-      { confirm: true, plan: "Write the fixture", task: { ...task, ...scenario.task }, ...(scenario.baseRef ? { baseRef: scenario.baseRef } : {}) }, { threadId: pmThreadId, projectId })));
+      { confirm: true, objective: "Проверка диспетча", plan: "Write the fixture", task: { ...task, ...scenario.task }, ...(scenario.baseRef ? { baseRef: scenario.baseRef } : {}) }, { threadId: pmThreadId, projectId })));
   } finally { if (previous === undefined) delete process.env.LANE_PILOT_WORKFLOW_ENGINE; else process.env.LANE_PILOT_WORKFLOW_ENGINE = previous; }
   let waited: Record<string, unknown> | null = null;
   if (scenario.finish) waited = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId, timeoutSec: 10 }, { threadId: pmThreadId, projectId })));

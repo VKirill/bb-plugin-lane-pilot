@@ -116,7 +116,8 @@ def thread_status(thread: str) -> str:
 
 def task(task_id: str, title: str, outputs: list[str], objective: str, acceptance: list[str], cwd: str, risk: str = "high", read_first: list[str] | None = None) -> dict:
     return {
-        "schema_version": 2, "id": task_id, "title": title, "risk": risk, "lane": "writer", "project_cwd": cwd,
+        # The task standard (the Tasks board). One area per task: tasks of one area run one at a time, and the drills run side by side.
+        "schema_version": 2, "id": task_id, "title": title, "display_title": f"Учение: {title}"[:60], "kind": "chore", "area": f"drill:{task_id}", "risk": risk, "lane": "writer", "project_cwd": cwd,
         "read_first": read_first or [], "interfaces": [], "invariants": ["Touch no file except the ones in expected_outputs."],
         "out_of_scope": ["Every other file of the project."], "expected_outputs": outputs, "owns_paths": outputs,
         "never_touch": ["src/**", "tests/**", "package.json"], "depends_on": [], "objective": objective, "acceptance": acceptance,

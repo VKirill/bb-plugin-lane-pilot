@@ -58,6 +58,8 @@ export function postMergeRepair(onMain:TaskV2, red:Array<{ command:string; exitC
   const logName = (command:string, index:number) =>
     `${String(index + 1).padStart(2, "0")}-${command.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "check"}.log`;
   const fix:TaskV2 = { ...onMain, id:`${onMain.id}-mainfix`.slice(0, 128), title:`Make main green after ${onMain.id}`.slice(0, 200),
+    // The task standard (the Tasks board): Lane Pilot's own task fills it, so the contract lint never sends it back.
+    display_title:`Починка main после ${onMain.id}`.slice(0, 60), kind:"fix", area:onMain.area ?? "maintenance",
     depends_on:[], risk:onMain.risk === "low" ? "medium" : onMain.risk, expected_outputs:red.map((check) => check.command),
     objective:`Main is red after merging ${onMain.id} (${onMain.title}): these checks fail on main while they passed in the task's own worktree, so the merged work clashes with what landed meanwhile. Make each of them pass on main, keeping what ${onMain.id} and the work merged before it intended; change the least code that does it. Failing now:\n${red.map((check) => `\`${check.command}\` (exit ${check.exitCode}) output tail:\n${tail(check)}`).join("\n\n")}`,
     acceptance:[...red.map((check) => `\`${check.command}\` passes on main`), `${onMain.id}'s acceptance still holds: ${onMain.acceptance.join("; ")}`.slice(0, 600)] };

@@ -66,6 +66,9 @@ export const rulesAnalyzerSchema = z.object({
 /** An environment variable name, as the sandbox passes it; Env Catalog names follow the same rule. */
 export const secretNameSchema = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/);
 
+/** The kinds of work a task standard names; the task board shows one badge per kind. */
+export const TASK_KINDS = ["feature", "fix", "check", "docs", "refactor", "research", "chore"] as const;
+
 export const taskV2Schema = z.object({
   schema_version: z.literal(2),
   id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),
@@ -92,6 +95,10 @@ export const taskV2Schema = z.object({
     /** Env Catalog names this check needs (kind secret or login): the server passes their values to the check as environment variables, by name; the writer never sees them. */
     secrets: z.array(secretNameSchema).max(16).optional(),
   }).strict()),
+  /** What changes for a person, in the language the owner writes in, up to 60 characters, no ids or paths: the task board's card title. Optional in the schema so stored contracts parse; the contract lint requires it on a dispatch. */
+  display_title: z.string().trim().describe("Card title in the language the owner writes in, at most 60 characters: what changes for a person, no ids or paths (Russian owner: «Страница заказов в кабинете»).").optional(),
+  /** What kind of work it is (the board's badge and colour). Optional in the schema; the contract lint requires it on a dispatch. */
+  kind: z.enum(TASK_KINDS).describe("feature, fix, check, docs, refactor, research or chore.").optional(),
   /** The page or feature the task belongs to («page:/tools/cards»): one writer at a time per area, and the area's writer continues its next task. */
   area: z.string().trim().min(1).max(120).optional(),
   /** PM hints: skill names the writer gets on top of its role, whatever Jev picks (only names the skill catalog lists are added). */
