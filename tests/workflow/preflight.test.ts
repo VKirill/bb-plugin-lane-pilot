@@ -180,7 +180,8 @@ describe("the plugins the shipped chains require are real BB plugin ids", () => 
     for (const found of builtinWorkflows()) for (const name of effectiveRequires(found).plugins) named.push(`${found.id}:${name}`);
     expect(named.length).toBeGreaterThan(20);
     expect(named.filter((entry) => !REAL_PLUGIN_IDS.has(entry.slice(entry.indexOf(":") + 1)))).toEqual([]);
-    expect(named.filter((entry) => entry.endsWith(":tasks")).map((entry) => entry.split(":")[0]).sort()).toEqual(["issue-discover", "issue-full", "issue-quick"]);
+    // The Tasks plugin is retired (owner 2026-10-12): no shipped chain requires it.
+    expect(named.filter((entry) => entry.endsWith(":tasks"))).toEqual([]);
   });
 
   it("an older file's `bb-tasks` is read as `tasks`", async () => {

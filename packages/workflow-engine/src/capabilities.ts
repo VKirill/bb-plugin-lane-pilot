@@ -128,7 +128,7 @@ export const WORKFLOW_REFERENCE = {
   actions: {
     code: "items.dedupe, dag.validate, digest.check, citations.check, verdict.aggregate, lp.propose_workflow; `emit` ends the chain",
     "plugin state and checkout": "lp.state_probe, lp.run_status, lp.run_close, lp.lint_contract, lp.integration_gate_status (answers skipped today), fs.write, git.diff_files",
-    "run in an errand helper with its skills and accounts": "telegram.send_rich, shell.skill_script, shell.repo_script, deploy.post_check, lp.preflight, lp.project_checks, bb.tasks.get, bb.tasks.update, bb.tasks.create; the node takes `model_preset` and `params.skill`",
+    "run in an errand helper with its skills and accounts": "telegram.send_rich, shell.skill_script, shell.repo_script, deploy.post_check, lp.preflight, lp.project_checks; the node takes `model_preset` and `params.skill`",
     note: "an action name outside these lists has no executor: it runs on stubs in the test and a live run stops there",
   },
   triggers: "`triggers: [{type: chat|manual|schedule|telegram}]`. chat: the PM routes a request to a published chain; the router reads description, examples and not_for. manual: Run in the Workflows tab. schedule {cron (5 fields), timezone (IANA), projectId, inputs}: publishing a chain that has one creates a BB automation; a scheduled run starts only while the chain is published and the project has an open Lane Pilot chat, else the automation shows a failed run, and it gets only the trigger's inputs (a required input needs a value there or a default). telegram: declared only; no bot command starts a chain yet",

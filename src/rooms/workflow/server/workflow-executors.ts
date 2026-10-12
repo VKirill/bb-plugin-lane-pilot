@@ -426,9 +426,6 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     "deploy.post_check": { role: "errand", skills: ["browser-automation"], how: "Check that the deployment works as the rule says and report ok with details (what you ran and saw)." },
     "lp.preflight": { role: "errand", skills: [], how: "Check the repository state the rule lists with read-only commands and report each field as you found it. Change nothing." },
     "lp.project_checks": { role: "errand", skills: [], how: "Run the project's own check commands (its test script and linter, as the project documents them; the gate detection notes of the project if there are any) and report the counts. Change nothing." },
-    "bb.tasks.get": { role: "errand", skills: [], how: "Read the BB Tasks card named by `ref` with the BB tasks tools you have and report the fields; found is false when there is no such card." },
-    "bb.tasks.update": { role: "errand", skills: [], how: "Update the BB Tasks card named by `ref` with the values in `set`, with the BB tasks tools you have, and report the card's status after the update." },
-    "bb.tasks.create": { role: "errand", skills: [], how: "Create BB Tasks cards from the findings (severity to priority as the mapping says); when dry_run is true create nothing and report the ids that would be created as an empty list." },
   };
   for (const [key, spec] of Object.entries(DELEGATED)) {
     engine.register<ChainRuntime>(key, {
@@ -440,7 +437,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
         const params = rec(c.template(node.params));
         const reads = Object.fromEntries(list(rec(node).reads).map(String).map((ref) => [ref, c.resolve(ref)]));
         const title = `${key}${node.title ? `: ${node.title.en}` : ""}`;
-        const prompt = agentPrompt({ workflow: c.workflow.id, node: node.id, title, role: "errand", mode: c.mode, readOnly: key === "lp.preflight" || key === "bb.tasks.get",
+        const prompt = agentPrompt({ workflow: c.workflow.id, node: node.id, title, role: "errand", mode: c.mode, readOnly: key === "lp.preflight",
           task: `${spec.how}\n\nAction: ${key}\nParameters: ${redactKnown(JSON.stringify(params))}`, inputs: { ...c.input.with, ...reads }, contract: outputContract(fields),
           skills: [...spec.skills, ...stringList(params.skill)] });
         const result = await agents.run(await withResolvedModel({ rt, workflowRunId: c.runId, workflowId: c.workflow.id, stepKey: c.stepKey, nodeId: node.id, spawnKey: c.spawnKey, role: spec.role, title, prompt, fields, ...(node.model_preset ? { preset: node.model_preset } : {}), skills: [...spec.skills, ...stringList(params.skill)], signal: c.signal }));

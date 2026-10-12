@@ -5,21 +5,21 @@
     "ru": "Найти проблемы"
   },
   "description": {
-    "en": "Eight read-only perspectives (security, performance, reliability, maintainability, scalability, ux, accessibility, compliance) scan an area in two batches of four; findings are deduplicated and registered as open cards in BB Tasks.",
-    "ru": "Восемь перспектив только на чтение (безопасность, производительность, надёжность, сопровождаемость, масштабируемость, UX, доступность, соответствие) проходят область двумя пачками по четыре; находки дедуплицируются и заводятся открытыми карточками в BB Tasks."
+    "en": "Eight read-only perspectives (security, performance, reliability, maintainability, scalability, ux, accessibility, compliance) scan an area in two batches of four; findings are deduplicated and returned as the run's list, with file:line and a severity.",
+    "ru": "Восемь перспектив только на чтение (безопасность, производительность, надёжность, сопровождаемость, масштабируемость, UX, доступность, соответствие) проходят область двумя пачками по четыре; находки дедуплицируются и возвращаются списком в итоге запуска, с file:line и важностью."
   },
   "examples": {
     "ru": [
-      "Найди проблемы в модуле заказов и заведи карточки",
+      "Найди проблемы в модуле заказов и дай список",
       "Просканируй проект глазами безопасности, производительности и доступности",
       "Ночной обход: что нужно починить в репозитории",
-      "Составь список проблем по сервису уведомлений в трекере"
+      "Составь список проблем по сервису уведомлений"
     ],
     "en": [
-      "Find problems in the orders module and file cards for them",
+      "Find problems in the orders module and list them",
       "Scan the project through security, performance and accessibility eyes",
       "Night sweep: what needs fixing in the repository",
-      "Build a list of problems for the notifications service in the tracker"
+      "Build a list of problems for the notifications service"
     ]
   },
   "not_for": [
@@ -48,16 +48,12 @@
         "accessibility",
         "compliance"
       ]
-    },
-    "dry_run": {
-      "type": "bool",
-      "default": false
     }
   },
   "outputs": {
     "status": "done|blocked",
     "found": "int",
-    "created_ids": "string[]",
+    "findings": "Finding[]",
     "duplicates_merged": "int"
   },
   "quality_mode": {
@@ -66,8 +62,7 @@
   },
   "requires": {
     "plugins": [
-      "lane-pilot",
-      "tasks"
+      "lane-pilot"
     ],
     "project": {
       "git": true
@@ -118,26 +113,13 @@
       }
     },
     {
-      "id": "create",
-      "type": "action",
-      "action": "bb.tasks.create",
-      "dry_run": "{{$inputs.dry_run}}",
-      "map": "severity to priority: critical 1, high 2, medium 3, low 4; status open; source discovery",
-      "reads": [
-        "dedupe.findings"
-      ],
-      "out": {
-        "created_ids": "string[]"
-      }
-    },
-    {
       "id": "done",
       "type": "action",
       "action": "emit",
       "map": {
         "status": "done",
         "found": "scan.count",
-        "created_ids": "create.created_ids",
+        "findings": "dedupe.findings",
         "duplicates_merged": "dedupe.merged"
       }
     }
@@ -150,11 +132,6 @@
     },
     {
       "from": "dedupe",
-      "to": "create",
-      "pass": "artifact"
-    },
-    {
-      "from": "create",
       "to": "done",
       "pass": "artifact"
     }
@@ -163,8 +140,7 @@
     "id": "id-1",
     "sim": {
       "input": {
-        "scope": "src/orders",
-        "dry_run": true
+        "scope": "src/orders"
       },
       "stubs": {
         "scan:child": {
@@ -183,15 +159,11 @@
               "description": "problem in b.ts"
             }
           ]
-        },
-        "create": {
-          "created_ids": []
         }
       },
       "expect_path": [
         "scan",
         "dedupe",
-        "create",
         "done"
       ],
       "expect_outputs": [
@@ -199,6 +171,6 @@
         "duplicates_merged >= 1"
       ]
     },
-    "live": "тестовый проект BB Tasks; карточки с file:line и priority по шкале"
+    "live": "тестовый проект; список находок с file:line и важностью"
   }
 }

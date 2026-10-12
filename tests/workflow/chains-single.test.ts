@@ -112,19 +112,18 @@ describe("security-audit", () => {
 
 describe("issue-discover", () => {
   const perspectives = ["security", "performance", "reliability", "maintainability"];
-  it("the spec's case: perspectives scanned in parallel, duplicates merged by code, cards created (dry run)", async () => {
+  it("the spec's case: perspectives scanned in parallel, duplicates merged by code, the findings returned as the run's list", async () => {
     const dup = (file: string, line: number, severity: string) => ({ file, line, severity, description: `problem in ${file}` });
     const per = ((ctx: { input: { item?: unknown } }) => ({ perspective: String(ctx.input.item), findings: ctx.input.item === "security" ? [dup("a.ts", 1, "high"), dup("b.ts", 2, "low")] : ctx.input.item === "reliability" ? [dup("a.ts", 1, "critical")] : [] })) as never;
-    const r = await runSim("issue-discover", { input: { scope: "src/orders", perspectives, dry_run: true }, stubs: { "scan:child": per, create: { created_ids: [] } } });
-    expect(pathOf(r)).toBe("scan dedupe create done");
-    expect(out(r)).toMatchObject({ status: "done", found: 3, duplicates_merged: 1, created_ids: [] });
+    const r = await runSim("issue-discover", { input: { scope: "src/orders", perspectives }, stubs: { "scan:child": per } });
+    expect(pathOf(r)).toBe("scan dedupe done");
+    expect(out(r)).toMatchObject({ status: "done", found: 3, duplicates_merged: 1, findings: [expect.objectContaining({ file: "a.ts", severity: "critical" }), expect.objectContaining({ file: "b.ts", severity: "low" })] });
     const merged = r.db.prepare("SELECT output_json FROM lane_pilot_wf_step WHERE run_id=? AND node_id='dedupe'").get(r.summary.runId) as { output_json: string };
     expect(JSON.parse(merged.output_json).findings.map((f: { file: string; severity: string }) => [f.file, f.severity])).toEqual([["a.ts", "critical"], ["b.ts", "low"]]);
-    expect(firstInput(r, "create")).toBeDefined();
   });
 
   it("the default is all 8 perspectives", async () => {
-    const r = await runSim("issue-discover", { input: {}, stubs: { create: { created_ids: [] } } });
+    const r = await runSim("issue-discover", { input: {} });
     expect(r.called("scan:child")).toHaveLength(8);
   });
 });

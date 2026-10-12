@@ -104,9 +104,6 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     const key = `${input.runId}:${input.taskId}`;
     if (services.activeWriterTasks.has(key)) return;
     services.activeWriterTasks.add(key);
-    // BB Tasks copy of the task (I3): a no-op unless the project turned tasks.mirror on and the Tasks plugin is there.
-    const mirror = services.tasksMirror.open({ projectId:input.projectId, runId:input.runId, taskId:input.taskId,
-      title:input.task.title, objective:input.task.objective, acceptance:input.task.acceptance });
     let attemptId = input.firstAttemptId;
     let writerThreadId = input.writerThreadId;
     let writerSelection:{providerId:string;model:string;reasoningLevel?:string;serviceTier?:"default"|"fast"|null;selectionSource?:{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;reasoningLevelSource:"explicit"|"client-preference"}}|undefined;
@@ -417,7 +414,6 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       }
       recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"running",
         input:input.plan, attempt:countAttempts(db, input.runId, input.taskId) });
-      mirror.running();
       // A merge conflict or a fault of Lane Pilot or the machine does not spend an attempt; free retries are capped too.
       // Free retries are counted within this start: a task restarted after a Lane Pilot fix gets its full share,
       // while attempts burned on the fault before it stay out of the count (BB-сервис 2026-10-05: five fault attempts
@@ -548,7 +544,6 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             last = { status:spawned.status, reason:spawned.reason, attemptId:spawned.attemptId };
           } else {
             writerThreadId = spawned.threadId;
-            mirror.thread(spawned.threadId, `Writer ${spawned.providerId ?? "?"}/${spawned.model ?? "?"} started (attempt ${attemptId}).`);
             if (liveFolder) { liveBackupId = attemptId; await bindLiveBackup(); }
             writerSelection=spawned.providerId&&spawned.model?{
               providerId:spawned.providerId,model:spawned.model,
@@ -789,9 +784,6 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               continue;
             } else {
               writerThreadId=spawned.threadId;
-              mirror.thread(spawned.threadId, continuation
-                ? `Fallback writer ${spawned.providerId ?? "?"}/${spawned.model ?? "?"} continues @thread:${continuation.fromThreadId} (${decision.reason}).`
-                : `Fallback writer ${spawned.providerId ?? "?"}/${spawned.model ?? "?"} started (${decision.reason}).`);
               // The fallback owns the continued worktree now; the next fallback, if this one fails, continues from here.
               if (continuation) unremovedWorktree=undefined;
               continueFrom=getAttempt(db,emergencyAttemptId);
@@ -833,9 +825,6 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       if (turns) last = { ...last, turns };
       const accepted = last.status === "accepted";
       const reason = accepted ? undefined : String(last.reason ?? last.status ?? "writer_failed");
-      mirror.finish(accepted ? "accepted" : last.status === "canceled" ? "canceled" : "blocked",
-        accepted ? `Accepted by Lane Pilot${Array.isArray(last.produced) && last.produced.length ? `. Files: ${(last.produced as unknown[]).slice(0, 20).join(", ")}` : ""}.`
-          : last.status === "canceled" ? "Canceled." : `Not accepted: ${String(reason).slice(0, 600)}`);
       // A writer's question would wait unseen: writers are quiet children and do not wake the PM.
       if (!accepted && reason && failureClass(String(last.status), reason) === "judgment" && input.pmThreadId) {
         void sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:writerThreadId || undefined,
@@ -897,7 +886,6 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         }
         void services.stability.onTaskFailed({ projectId:input.projectId, runId:input.runId, taskId:input.taskId,
           pmThreadId:input.pmThreadId, state:"blocked", reason }).catch(() => false);
-        mirror.finish("blocked", `Not accepted: ${reason.slice(0, 600)}`);
         for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
           const current = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === stageId);
           if (!current || current.state === "passed" || current.state === "failed" || current.state === "skipped") continue;

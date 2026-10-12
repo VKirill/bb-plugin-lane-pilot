@@ -21,7 +21,7 @@ export type Stub = Row | Row[] | ((ctx: StepContext) => Row);
 export type Sim = {
   input: Row;
   mode?: QualityMode;
-  /** By node id (`score:child` for the child of a fan-out), by the id of a workflow a subworkflow node calls, by the action key (`bb.tasks.get`) or by node type (`lp-task`). */
+  /** By node id (`score:child` for the child of a fan-out), by the id of a workflow a subworkflow node calls, by the action key (`lp.preflight`) or by node type (`lp-task`). */
   stubs?: Record<string, Stub>;
   /** Answers of `human` nodes by node id: the output fields, or a list of them, one per visit. */
   humans?: Record<string, Row | Row[]>;
