@@ -53,6 +53,24 @@ describe("Helper chips & panel phase rendering", () => {
     slot.lifecycle.unmount();
   });
 
+  // 2026-10-12: the chips live in BB's prompt box, where only BB's Tailwind applies; BB 0.46 has no `-top-0.5`, so the dot sat
+  // in the middle of the right edge. Its corner must not depend on a host class.
+  it("pins the status dot to the chip's top-right corner with inline offsets", async () => {
+    const slot = await mountBadge({
+      helpers: [
+        { id: "thr_1", title: "Task 1", status: "active", role: "specialist", detail: null, phase: "работает" },
+        { id: "thr_2", title: "Task 2", status: "active", role: "writer", detail: null, phase: "проверка" },
+      ],
+    });
+    await slot.findByTestId("helper-chip-thr_2");
+    for (const dot of [slot.getByTestId("active-dot"), slot.getByTestId("verifying-dot")]) {
+      expect(dot.style.top).toBe("-0.125rem");
+      expect(dot.style.right).toBe("-0.125rem");
+      expect(dot.className).not.toMatch(/-top-|-right-/);
+    }
+    slot.lifecycle.unmount();
+  });
+
   it("renders verifying writer with distinct dot (no pulse, emerald)", async () => {
     const slot = await mountBadge({
       helpers: [

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **A working helper's dot sits on its chip's top-right corner again.** The helper chips beside the agent badge are portaled into BB's prompt box, outside Lane Pilot's scoped CSS, so only BB's own Tailwind classes apply there. BB 0.46 dropped `-top-0.5`, and the pulsing dot fell to the middle of the chip's right edge, which looked like a stray dot beside it (owner's screenshot, 2026-10-12, thr_k3ry5we546). The corner offsets are now inline (`HelperChips`, `src/rooms/native-agent/ui/helper-threads.tsx`). Checked live on bb.vechkasov.pro: the dot's centre moved from 10 px to 2 px below the chip's top, and it still pulses.
+  - Test: `tests/helper-threads-phase.test.tsx` «pins the status dot to the chip's top-right corner with inline offsets» (fails on 0.1.230).
+
 ## 0.1.230
 
 - **The PM's guard tells how a plugin reaches the hub and lets it read plugin sources.** From thr_zh5pvz36p7 (2026-10-12, pokecut-theme checkout): `bb plugin source`, `outdated`, `install-jobs` and `update-jobs` were refused although plugin listings are open; they are reads and pass now. After `bb plugin reload` the hub still showed pokecut-theme 0.5.4: a path plugin runs from the hub's own copy of its folder, and reload re-reads that copy, while the PM had rebuilt 0.5.5 on the Mac mini. The guard's denial now says so and names `bb-plugin-push <id>` (BB-сервис/infrastructure/plugin-deploy), which copies the code to the hub and reloads. `bb plugin install`/`update` from an agent session were refused by the hub since core 0.46.0-vk.1 (the archived owner-auth gate came back with the upgrade); core 0.46.0-vk.2 opens plugin and host-file routes to agent sessions again, so the guard's «builds, reloads, installs or updates plugins» is true.

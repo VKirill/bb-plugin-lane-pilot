@@ -109,6 +109,9 @@ export function HelperChips({ threads, queued, frame }: { threads: HelperThread[
   return (
     <span className="pointer-events-auto flex items-center gap-1" data-testid="helper-chips">
       {shown.map((row) => {
+        // The chips are portaled into BB's prompt box, outside this plugin's CSS, so only BB's own Tailwind classes apply there;
+        // BB 0.46 has no `-top-0.5` and the dot fell to the middle of the right edge. The corner offsets are inline.
+        const corner = { top: "-0.125rem", right: "-0.125rem" };
         const isVerifying = row.phase === "проверка" || row.phase === "приёмка" || row.phase === "ждёт слияния";
         return (
           <button
@@ -123,9 +126,9 @@ export function HelperChips({ threads, queued, frame }: { threads: HelperThread[
           >
             <Icon name={roleOf(row).icon} className="size-3" />
             {isVerifying ? (
-              <span className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-success" data-testid="verifying-dot" aria-hidden />
+              <span className="absolute size-1.5 rounded-full bg-success" style={corner} data-testid="verifying-dot" aria-hidden />
             ) : (
-              <span className="absolute -right-0.5 -top-0.5 size-1.5 animate-pulse rounded-full bg-primary" data-testid="active-dot" aria-hidden />
+              <span className="absolute size-1.5 animate-pulse rounded-full bg-primary" style={corner} data-testid="active-dot" aria-hidden />
             )}
           </button>
         );
