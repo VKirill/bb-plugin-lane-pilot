@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { finding, firstInput, modeOf, out, pathOf, task } from "./chain-helpers";
-import { runSim } from "./chain-harness";
+import { chainStore, runSim } from "./chain-harness";
 
 /** Built-in chains that change code: full-lifecycle, refactor, review-fix, quality-loop, issue-full, issue-quick. */
 
@@ -164,51 +164,65 @@ describe("quality-loop", () => {
 });
 
 describe("issue-full", () => {
-  const card = { found: true, title: "Wrong cart total", severity: "high", description: "total is off by one cent" };
-  const stubs = () => ({ "bb.tasks.get": card, "lp.plan": { status: "ok", tasks: [task("i1")] }, "lp.build": { status: "done", merged_commits: ["i1"] }, "lp.review": { status: "pass" }, close_card: { card_status: "done" } });
+  const input = { title: "Wrong cart total", text: "total is off by one cent", context: "src/cart.ts" };
+  const stubs = () => ({ triage: { clear: true, severity: "high" }, "lp.plan": { status: "ok", tasks: [task("i1")] }, "lp.build": { status: "done", merged_commits: ["i1"] }, "lp.review": { status: "pass" } });
 
-  it("the spec's case: load, root cause, start, plan, build, review, close the card, memory, closed", async () => {
-    const r = await runSim("issue-full", { input: { task_ref: "LP-142" }, stubs: stubs() });
-    expect(pathOf(r)).toBe("load root_cause start plan build review close_card memory closed");
-    expect(out(r)).toMatchObject({ status: "closed", card_status: "done", review_status: "pass", merged_commits: ["i1"] });
+  it("the spec's case: triage, root cause, plan, build, review, memory, closed - the results are the run's output", async () => {
+    const r = await runSim("issue-full", { input, stubs: stubs() });
+    expect(pathOf(r)).toBe("triage root_cause plan build review memory closed");
+    expect(out(r)).toMatchObject({ status: "closed", resolution: "fixed", severity: "high", review_status: "pass", merged_commits: ["i1"] });
     expect(firstInput(r, "plan")).toMatchObject({ goal: "Wrong cart total", mode: "gaps" });
+    // The issue reaches the root cause step as its inputs: no tracker card in between.
+    expect(firstInput(r, "root_cause")).toMatchObject({ title: "Wrong cart total", text: "total is off by one cent", context: "src/cart.ts" });
   });
 
-  it("an unknown card is blocked before any work", async () => {
-    const r = await runSim("issue-full", { input: { task_ref: "NOPE-1" }, stubs: { "bb.tasks.get": { found: false } } });
-    expect(pathOf(r)).toBe("load not_found");
-    expect(out(r)).toMatchObject({ status: "blocked" });
+  it("an issue too vague to act on is blocked before any work; no tracker action exists in the chain", async () => {
+    const r = await runSim("issue-full", { input: { title: "it broke", text: "?" }, stubs: { triage: { clear: false } } });
+    expect(pathOf(r)).toBe("triage not_clear");
+    expect(out(r)).toMatchObject({ status: "blocked", resolution: "open" });
+    const store = await chainStore();
+    for (const id of ["issue-full", "issue-quick", "issue-discover"]) {
+      const text = JSON.stringify(store.get(id)!.workflow);
+      expect(text).not.toContain("bb.tasks");
+      expect(store.get(id)!.workflow.requires?.plugins ?? []).not.toContain("tasks");
+    }
   });
 
-  it("a review rework replans once; a second failure leaves the card open", async () => {
-    const once = await runSim("issue-full", { input: { task_ref: "LP-142" }, stubs: { ...stubs(), "lp.review": [{ status: "rework", findings: [finding("high")] }, { status: "pass" }], replan: { status: "ok", tasks: [task("i2")] } } });
-    expect(pathOf(once)).toBe("load root_cause start plan build review replan build review close_card memory closed");
-    const twice = await runSim("issue-full", { input: { task_ref: "LP-142" }, stubs: { ...stubs(), "lp.review": { status: "rework", findings: [finding("high")] }, replan: { status: "ok", tasks: [task("i2")] }, leave_open: { card_status: "open" } } });
-    expect(pathOf(twice)).toBe("load root_cause start plan build review replan build review leave_open partial");
-    expect(out(twice)).toMatchObject({ status: "partial", card_status: "open" });
+  it("a review rework replans once; a second failure reports the issue open", async () => {
+    const once = await runSim("issue-full", { input, stubs: { ...stubs(), "lp.review": [{ status: "rework", findings: [finding("high")] }, { status: "pass" }], replan: { status: "ok", tasks: [task("i2")] } } });
+    expect(pathOf(once)).toBe("triage root_cause plan build review replan build review memory closed");
+    const twice = await runSim("issue-full", { input, stubs: { ...stubs(), "lp.review": { status: "rework", findings: [finding("high")] }, replan: { status: "ok", tasks: [task("i2")] } } });
+    expect(pathOf(twice)).toBe("triage root_cause plan build review replan build review partial");
+    expect(out(twice)).toMatchObject({ status: "partial", resolution: "open", review_status: "rework" });
   });
 });
 
 describe("issue-quick", () => {
-  const stubs = (severity: string) => ({ "bb.tasks.get": { found: true, title: "Typo in button label", severity, description: "d" }, "lp.plan": { status: "ok", task_count: 1, tasks: [task("q1")] }, "lp.build": { status: "done", merged_commits: ["q1"] }, close_card: { card_status: "done" } });
+  const input = { title: "Typo in button label", text: "The Send button says 'Sned'." };
+  const stubs = (severity: string) => ({ triage: { clear: true, severity }, "lp.plan": { status: "ok", task_count: 1, tasks: [task("q1")] }, "lp.build": { status: "done", merged_commits: ["q1"] } });
 
-  it("the spec's case: a low-severity card goes load, plan, build, close", async () => {
-    const r = await runSim("issue-quick", { input: { task_ref: "LP-143" }, stubs: stubs("low") });
-    expect(pathOf(r)).toBe("load plan build close_card closed");
-    expect(out(r)).toMatchObject({ status: "closed", card_status: "done", merged_commits: ["q1"] });
+  it("the spec's case: a low-severity issue goes triage, plan, build, closed", async () => {
+    const r = await runSim("issue-quick", { input, stubs: stubs("low") });
+    expect(pathOf(r)).toBe("triage plan build closed");
+    expect(out(r)).toMatchObject({ status: "closed", resolution: "fixed", severity: "low", merged_commits: ["q1"] });
     expect(modeOf(r)).toBe("quick");
+    expect(firstInput(r, "plan")).toMatchObject({ goal: "Typo in button label", gaps: "The Send button says 'Sned'." });
   });
 
-  it("a critical or high card is proposed to issue-full instead", async () => {
-    const r = await runSim("issue-quick", { input: { task_ref: "LP-1" }, stubs: stubs("critical") });
-    expect(pathOf(r)).toBe("load escalate proposed");
-    expect(out(r)).toMatchObject({ status: "proposed", proposed_workflow: "issue-full" });
+  it("a critical or high issue is proposed to issue-full, with the same issue as its inputs", async () => {
+    const r = await runSim("issue-quick", { input: { ...input, context: "app.tsx" }, stubs: stubs("critical") });
+    expect(pathOf(r)).toBe("triage escalate proposed");
+    expect(out(r)).toMatchObject({ status: "proposed", proposed_workflow: "issue-full", severity: "critical" });
+    const step = r.db.prepare("SELECT receipt_json FROM lane_pilot_wf_step WHERE run_id=? AND node_id='escalate'").get(r.summary.runId) as { receipt_json: string };
+    const proposal = (JSON.parse(step.receipt_json) as { detail?: { proposed?: string; inputs?: Record<string, unknown> } }).detail;
+    expect(proposal?.inputs).toMatchObject({ title: "Typo in button label", text: "The Send button says 'Sned'.", context: "app.tsx", severity: "critical" });
   });
 
-  it("the mode is quick whatever is asked; an unknown card is blocked; a failed build leaves the card open", async () => {
-    expect(modeOf(await runSim("issue-quick", { input: { task_ref: "x" }, mode: "full", stubs: stubs("low") }))).toBe("quick");
-    expect(pathOf(await runSim("issue-quick", { input: { task_ref: "x" }, stubs: { "bb.tasks.get": { found: false } } }))).toBe("load blocked");
-    const r = await runSim("issue-quick", { input: { task_ref: "x" }, stubs: { ...stubs("low"), "lp.build": { status: "partial" }, leave_open: { card_status: "open" } } });
-    expect(pathOf(r)).toBe("load plan build leave_open partial");
+  it("the mode is quick whatever is asked; a vague issue is blocked; a failed build reports the issue open", async () => {
+    expect(modeOf(await runSim("issue-quick", { input, mode: "full", stubs: stubs("low") }))).toBe("quick");
+    expect(pathOf(await runSim("issue-quick", { input, stubs: { triage: { clear: false } } }))).toBe("triage blocked");
+    const r = await runSim("issue-quick", { input, stubs: { ...stubs("low"), "lp.build": { status: "partial" } } });
+    expect(pathOf(r)).toBe("triage plan build partial");
+    expect(out(r)).toMatchObject({ status: "partial", resolution: "open" });
   });
 });

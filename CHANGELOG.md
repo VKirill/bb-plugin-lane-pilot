@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Lane Pilot no longer depends on the BB Tasks plugin (retired for good, owner 2026-10-12).** With Tasks off, the three chains that called it would have been stopped at start by `requirements_missing`, and the run mirror would have written into a plugin that is gone.
+  - `issue-quick` and `issue-full` take the issue as the run's input (`title`, `text`, optional `context` with paths or URLs, optional `severity`, optional `task_ref` kept only as a label) instead of a Tasks card. A read-only `triage` analyst step replaces `bb.tasks.get`: it judges whether the issue is clear enough to act on (not clear: `blocked`) and its severity (the requester's wins unless the text contradicts it); `issue-quick` still proposes `issue-full` for critical and high, now with the same issue as the proposal's inputs. `bb.tasks.update` (start, close, leave open) is gone: the results (`status`, `severity`, `resolution` fixed or open, `comment`, `root_cause`, `merged_commits`, `review_status`) are the run's output and its report. Every analysis, plan, build, review and memory step is unchanged.
+  - `issue-discover` returns its deduplicated findings as the run's `findings` list (file:line, severity) instead of creating Tasks cards; the `dry_run` input and `created_ids` output went with the cards.
+  - `tasks` is no longer in `requires.plugins` of any shipped chain. The `bb.tasks.get|update|create` action executors and their entries in the capabilities reference are removed: no chain in the repo, in `~/.lane-pilot` or under `~/Documents` used them any more.
+  - The Tasks mirror is removed (`src/rooms/runs/server/tasks-mirror.ts`, its call in `startWriterTask`, the `tasksMirror` service) together with its setting `tasks.mirror` (catalog row s421, channel, labels, applicability table: 453 rows). A saved `tasks.mirror` value is simply ignored.
+  - The PM prompt no longer says «Do not run `bb tasks` pipelines from a skill».
+  - Tests: `tests/workflow/chains-code.test.ts` (the new input shape of `issue-full` and `issue-quick`, the vague-issue branch, the proposal's inputs, no `bb.tasks` and no `tasks` requirement in the three chains), `tests/workflow/chains-single.test.ts` (`issue-discover` returns the list), `tests/workflow/preflight.test.ts`, `tests/workflow/router.test.ts`, `tests/workflow/router-tools.test.ts`, `tests/applicability.test.ts`, `tests/catalog-extra-settings.test.ts`; `tests/server/tasks-mirror.test.ts` and the two mirror cases of the server-stage suite are deleted with the mirror.
+
 ## 0.1.233
 
 - **The agent badge no longer loses its top half when BB collapses the prompt box.** BB 0.46 collapses the box (the chevron, or while an agent works) by setting `data-promptbox-compact` on the same form, which then clips its overflow (`overflow-hidden`). The badge moves out of a compact box onto its parent, but it re-checked the box only when nodes were added or removed, so after a bare attribute flip it stayed inside and was cut along the box's top border (owner's screenshot, 2026-10-12). The badge's observer now also watches that attribute (`composer-agent-badge.tsx`).

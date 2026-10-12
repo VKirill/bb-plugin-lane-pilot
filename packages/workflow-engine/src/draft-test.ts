@@ -19,7 +19,7 @@ export type DraftTestCase = {
   input: Record<string, unknown>;
   /**
    * What a stub gives, by node id (or the id of a lowered node such as `score:child`), by the id of the workflow a subworkflow node calls, by the
-   * action key (`bb.tasks.get`) or by node type (`lp-task`). A list is one answer per visit, the last one repeats.
+   * action key (`lp.preflight`) or by node type (`lp-task`). A list is one answer per visit, the last one repeats.
    */
   stubs: Record<string, Record<string, unknown> | Array<Record<string, unknown>>>;
   /** Human node id to its answer: an object (the node's output) or the text of `answer_kind`. */

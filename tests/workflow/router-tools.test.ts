@@ -80,8 +80,8 @@ describe("lane_pilot_run_workflow", () => {
     const { db } = setup();
     const { engine, started } = fakeEngine();
     const answer = parse(await runWorkflowTool(depsOf(db, publishedStore, engine), { workflowId: "issue-full", inputs: {} }, ctx));
-    expect(answer).toMatchObject({ status: "refused", required: [expect.objectContaining({ name: "task_ref" })] });
-    expect(answer.reason).toContain("missing_inputs: task_ref");
+    expect(answer).toMatchObject({ status: "refused", required: [expect.objectContaining({ name: "title" }), expect.objectContaining({ name: "text" })] });
+    expect(answer.reason).toContain("missing_inputs: title, text");
     expect(started).toEqual([]);
   });
 
@@ -89,15 +89,15 @@ describe("lane_pilot_run_workflow", () => {
     const { db } = setup();
     const { engine, started } = fakeEngine();
     const deps = depsOf(db, publishedStore, engine);
-    const answer = parse(await runWorkflowTool(deps, { workflowId: "issue-full", inputs: { task_ref: "LP-210", quality_mode: "full" } }, ctx));
+    const answer = parse(await runWorkflowTool(deps, { workflowId: "issue-full", inputs: { title: "Wrong total", text: "t", quality_mode: "full" } }, ctx));
     expect(answer).toMatchObject({ workflowRunId: "wfrun_1", status: "running", workflow: "issue-full" });
     expect(answer.note).toContain("lane_pilot_workflow_status");
     expect(started).toHaveLength(1);
-    expect(started[0]).toMatchObject({ workflow: "issue-full", inputs: { task_ref: "LP-210", quality_mode: "full" }, link: { projectId: PROJECT, runId: RUN }, runtime: { pmThreadId: PM, projectId: PROJECT, runId: RUN } });
+    expect(started[0]).toMatchObject({ workflow: "issue-full", inputs: { title: "Wrong total", text: "t", quality_mode: "full" }, link: { projectId: PROJECT, runId: RUN }, runtime: { pmThreadId: PM, projectId: PROJECT, runId: RUN } });
     expect(started[0]!.key).toMatch(new RegExp(`^wf:${RUN}:issue-full:[0-9a-f]{16}$`));
     // The key does not depend on the order of the inputs and does depend on their values.
-    await runWorkflowTool(deps, { workflowId: "issue-full", inputs: { quality_mode: "full", task_ref: "LP-210" } }, ctx);
-    await runWorkflowTool(deps, { workflowId: "issue-full", inputs: { task_ref: "LP-211", quality_mode: "full" } }, ctx);
+    await runWorkflowTool(deps, { workflowId: "issue-full", inputs: { quality_mode: "full", title: "Wrong total", text: "t" } }, ctx);
+    await runWorkflowTool(deps, { workflowId: "issue-full", inputs: { title: "Other total", text: "t", quality_mode: "full" } }, ctx);
     expect(started[1]!.key).toBe(started[0]!.key);
     expect(started[2]!.key).not.toBe(started[0]!.key);
   });

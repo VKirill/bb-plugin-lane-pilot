@@ -2,9 +2,7 @@ import { createProviderBreaker, createRunBudget, parseRunBudgetLimits, type RunB
 import { RunWriterPool } from "../../tasks";
 import { createProviderUsage } from "../../usage/server";
 import { createProviderRetryGuard } from "../../stability/server";
-import { createTasksMirror } from "../../runs/server";
 import { createConcurrencyLimit } from "./concurrency-limit";
-import { getRunSettingsScopes } from "../../storage";
 import type { ServerCore } from "../../core/server";
 
 /** State shared by the writer modules: the live task set, the provider pool, the provider breaker and one budget per run. */
@@ -21,9 +19,6 @@ export function createWriterState(ctx: ServerCore) {
 
   /** Cancels the retry BB's provider-retry queued in a writer thread once the task moved on to another writer. */
   const providerRetry = createProviderRetryGuard(ctx.bb);
-
-  /** Copies a project's tasks into BB Tasks when the project turns `tasks.mirror` on; writes only, never read back. */
-  const tasksMirror = createTasksMirror(ctx.bb, async (projectId, runId) => (await ctx.effectiveProjectSettings(projectId, getRunSettingsScopes(ctx.db, runId))).values);
 
   /** BB's concurrency-limit plugin: how many writers a host may run; null without the plugin. */
   const concurrencyLimit = createConcurrencyLimit(ctx.bb);
@@ -42,5 +37,5 @@ export function createWriterState(ctx: ServerCore) {
     return budget;
   }
 
-  return { activeWriterTasks, runWriterPool, providerBreaker, providerUsage, providerRetry, tasksMirror, concurrencyLimit, runBudgets, runBudgetFor };
+  return { activeWriterTasks, runWriterPool, providerBreaker, providerUsage, providerRetry, concurrencyLimit, runBudgets, runBudgetFor };
 }

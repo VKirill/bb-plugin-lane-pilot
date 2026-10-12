@@ -129,7 +129,8 @@ describe("the decision", () => {
   it("reads tracker ids, files and links from the request and marks the text-derived inputs as guesses", async () => {
     const issue = await route("Take ticket LP-210 and resolve it, with a proper review");
     expect(issue.inputs).toEqual({ task_ref: "LP-210" });
-    expect(issue.missingInputs).toEqual([]);
+    // The issue's own text is not in a tracker the router can read: the title and the text are still to be given.
+    expect(issue.missingInputs).toEqual(["title", "text"]);
     const research = await route("Какие бывают подходы к ценообразованию SaaS? Нужен обзор с источниками");
     expect(research.inputs.question).toContain("ценообразованию");
     expect(research.guessedInputs).toContain("question");
@@ -138,7 +139,7 @@ describe("the decision", () => {
   it("lists required inputs the request does not fill", async () => {
     const result = await route("Take the next ticket from the tracker and resolve it, with a proper review", { model: async ({ candidates }) => ({ choice: candidates.find((c) => c.id === "issue-full")!.id, confidence: 90, pattern: "tracker work", rejected: [], questions: [] }) });
     expect(result.workflowId).toBe("issue-full");
-    expect(result.missingInputs).toEqual(["task_ref"]);
+    expect(result.missingInputs).toEqual(["title", "text"]);
   });
 
   it("warns before closing a milestone while tasks are open", async () => {
@@ -165,7 +166,7 @@ describe("state checks", () => {
 
   it("checks plugins, secrets and project facts; optional secrets and prose machines never exclude", () => {
     const find = (id: string) => catalog.find((workflow) => workflow.id === id)!;
-    expect(stateProblem(find("issue-full"), { plugin: (name) => (name === "tasks" ? false : undefined) })).toBe("plugin tasks is not available");
+    expect(stateProblem(find("invoice-send"), { plugin: (name) => (name === "browser-automation" ? false : undefined) })).toBe("plugin browser-automation is not available");
     expect(stateProblem(find("web-research"), { secret: (name) => (name === "TAVILY_API_KEY" ? false : undefined) })).toBe("secret TAVILY_API_KEY is not set");
     expect(stateProblem(find("code-review"), { project: (key) => (key === "git" ? false : undefined) })).toBe("the project has no git");
     expect(stateProblem(find("brainstorm-driven"), { secret: () => false, machine: () => false })).toBeNull();

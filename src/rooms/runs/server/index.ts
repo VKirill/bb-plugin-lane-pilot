@@ -12,4 +12,3 @@ export { isRunHalted, setRunHalted } from "./runs-halt";
 export { compactDispatchReply, compactReceipt, stageDetail } from "./stage-brief";
 export { closeWriterStages, recordGateEvaluation, recordStage, reopenWriterStages } from "./stage-records";
 export { createTaskReconcile } from "./task-reconcile";
-export { createTasksMirror } from "./tasks-mirror";

@@ -34,7 +34,7 @@ const text = (value: unknown): string | null => (typeof value === "string" && va
 /**
  * The actions that run in an errand helper thread (see DELEGATED in workflow-executors.ts; a test keeps the two lists equal).
  */
-export const DELEGATED_ACTIONS = ["telegram.send_rich", "shell.skill_script", "shell.repo_script", "deploy.post_check", "lp.preflight", "lp.project_checks", "bb.tasks.get", "bb.tasks.update", "bb.tasks.create"] as const;
+export const DELEGATED_ACTIONS = ["telegram.send_rich", "shell.skill_script", "shell.repo_script", "deploy.post_check", "lp.preflight", "lp.project_checks"] as const;
 
 type StageDef = {
   /** The settings prefix: `<stage>.provider`, `<stage>.model`, `<stage>.reasoning_effort`, `<stage>.service_tier`. */
