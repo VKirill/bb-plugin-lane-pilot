@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { createAttempt, createRun, createTask, openDatabase, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
 import { recordStage } from "../src/rooms/runs/server/stage-records";
-import { buildTaskBoard, readTaskCard } from "../src/rooms/runs/server/task-board";
+import { buildTaskBoard, inferTaskKind, readTaskCard } from "../src/rooms/runs/server/task-board";
 
 /** 2026-10-12: with the BB Tasks plugin off, the owner asked for its board: all tasks of every chat by status, a card per task. */
 function world() {
@@ -70,6 +70,11 @@ describe("buildTaskBoard", () => {
       title:"Страница заказов", techTitle:"Title of ck-24-ui-pages-orders.2", taskKind:"feature", area:"page:orders",
       objective:"Cakekeeper UI on the design canon", phase:"waiting", waitingFor:["ck-23-ui-catalog-shell.2"],
     });
+    // A started attempt whose writer waits for another task's files is in the queue, not «writing».
+    w.task("ck-26"); w.attempt("a26", "ck-26", "run", "spawn_requested", "running");
+    w.stage("ck-26", "writer-agent", "pending");
+    w.db.prepare("UPDATE lane_pilot_stage_receipt SET reason=? WHERE task_id='ck-26'").run("waiting for ck-23-mainfix (thread thr_x): same area or owns_paths overlap");
+    expect(Object.fromEntries(buildTaskBoard(w.db, { doneSince:0 }).map((item) => [item.taskId, item]))["ck-26"]).toMatchObject({ column:"queued", phase:"waiting", waitingFor:["ck-23-mainfix"] });
     // A task older than the standard: its technical title, a kind read from its id and title.
     expect(board["old-fix-login"]).toMatchObject({ title:"Title of old-fix-login", techTitle:null, taskKind:"fix" });
   });
@@ -83,5 +88,10 @@ describe("buildTaskBoard", () => {
     expect(card.contract).toMatchObject({ objective:"do it", acceptance:["works"], ownsPaths:["a.ts"], checks:["npm test"] });
     expect(card.attempts.map((attempt) => attempt.state)).toEqual(["blocked"]);
     expect(card.roots).toEqual([{ id:"thr_critic", role:"plan-critique" }]);
+  });
+  it("reads a kind from words, not parts of words («checkout» is not a check)", () => {
+    expect(inferTaskKind("ck-28-pricing", "Launch pricing with period choice at checkout")).toBe("feature");
+    expect(inferTaskKind("ck-27-ui-canon-check", "UI unification gate: screenshots, e2e")).toBe("check");
+    expect(inferTaskKind("x-mainfix", "Make main green")).toBe("fix");
   });
 });

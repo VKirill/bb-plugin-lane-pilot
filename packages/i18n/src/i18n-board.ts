@@ -102,6 +102,17 @@ export const boardEn = {
   role_pm: "PM",
   role_writer: "Writer · attempt {n}",
   role_subagent: "Sub-agent",
+  reason_disabled_by_setting: "turned off in the project's settings",
+  attempt_accepted: "accepted",
+  attempt_blocked: "blocked",
+  attempt_canceled: "canceled",
+  attempt_queued: "in queue",
+  attempt_running: "running",
+  attempt_validation_failed: "checks failed",
+  attempt_provider_error: "provider error",
+  attempt_empty_output: "no result",
+  attempt_spawn_rejected: "did not start",
+  attempt_internal_error: "Lane Pilot error",
 };
 
 export const boardRu: { [K in keyof typeof boardEn]: string } = {
@@ -207,4 +218,15 @@ export const boardRu: { [K in keyof typeof boardEn]: string } = {
   role_pm: "PM",
   role_writer: "Исполнитель · попытка {n}",
   role_subagent: "Субагент",
+  reason_disabled_by_setting: "выключено в настройках проекта",
+  attempt_accepted: "принята",
+  attempt_blocked: "заблокирована",
+  attempt_canceled: "отменена",
+  attempt_queued: "в очереди",
+  attempt_running: "идёт",
+  attempt_validation_failed: "проверки не прошли",
+  attempt_provider_error: "ошибка провайдера",
+  attempt_empty_output: "без результата",
+  attempt_spawn_rejected: "не запустилась",
+  attempt_internal_error: "ошибка Lane Pilot",
 };

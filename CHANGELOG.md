@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.240
+
+- **Tasks screen, after the live look at 0.1.239:** a task whose attempt started but whose writer waits for another task's files or folder (a mainfix, a sibling of its area) sits in «Queue» with «waits for …», not «At work · writing» (ck-26.2 on the hub waited behind `ck-23-…-mainfix`). The task page lists stages in the pipeline's order (Reading the project … Writer … Checks … Acceptance) instead of by their last change, and reads Lane Pilot's codes as words (attempt states such as «checks failed», «turned off in the project's settings»). The kind read from an older task's id and title matches whole words, so «checkout» is no longer a check. Filters take the full width on phones.
+  - Tests: `tests/task-board.test.ts` (a started attempt waiting for a mainfix is queued; kind from words).
+
 ## 0.1.239
 
 - **The Tasks screen is built after the BB Tasks plugin the owner liked: a board of fixed columns, a grouped list, and a task page.** The 0.1.238 board wrapped its columns onto a second row, gave empty columns the same width as full ones, and showed the technical id and an English title on every card (owner, 2026-10-12: «надо привести в единый стандарт»; spec in `.bb/chats/thr_48zykw67gm/artifacts/tasks-board-spec.md`).

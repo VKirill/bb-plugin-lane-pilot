@@ -29,6 +29,9 @@ const KIND_COLOR: Record<NonNullable<Item["taskKind"]>, string> = {
 const fill = (key: I18nKey, values: Record<string, string | number>) => Object.entries(values).reduce((text, [name, value]) => text.replace(`{${name}}`, String(value)), t(key));
 const stageName = (id: string) => { const key = `stage_${id.replace(/-/g, "_")}` as I18nKey; const text = t(key); return text === key ? id : text; };
 const stageState = (state: string) => { const key = `stage_state_${state}` as I18nKey; const text = t(key); return text === key ? state : text; };
+const attemptState = (state: string) => { const key = `attempt_${state}` as I18nKey; const text = t(key); return text === key ? state : text; };
+/** Reasons Lane Pilot writes as codes read as words; anything else (a check's output, a writer's question) stays as written. */
+const reasonText = (reason: string | null) => reason === "disabled_by_project_setting" ? t("reason_disabled_by_setting") : reason;
 const roleName = (role: string) => role === "PM" ? t("role_pm") : role === "sub-agent" ? t("role_subagent")
   : role.startsWith("writer#") ? fill("role_writer", { n: role.slice(7) }) : stageName(role);
 /** `ck-24-ui-pages-orders.2` reads as `ck-24.2`, like a tracker key; the full id is in the tooltip. */
@@ -165,14 +168,14 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Select value={projectId} onValueChange={setProjectId}>
-          <SelectTrigger className="h-8 w-48" data-testid="board-project"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="h-8 w-full sm:w-48" data-testid="board-project"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t("boardAllProjects")}</SelectItem>
             {projects.map((project) => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={kind} onValueChange={(next) => setKind(next as typeof kind)}>
-          <SelectTrigger className="h-8 w-40" data-testid="board-kind"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="h-8 w-full sm:w-40" data-testid="board-kind"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t("boardAllKinds")}</SelectItem>
             <SelectItem value="task">{t("boardKindTasks")}</SelectItem>
@@ -181,7 +184,7 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
         </Select>
         {view === "list" ? (
           <Select value={groupBy} onValueChange={(next) => setGroupBy(next as GroupBy)}>
-            <SelectTrigger className="h-8 w-36" data-testid="board-group"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-8 w-full sm:w-36" data-testid="board-group"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="goal">{t("boardGroupGoal")}</SelectItem>
               <SelectItem value="chat">{t("boardGroupChat")}</SelectItem>
@@ -192,13 +195,13 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
           </Select>
         ) : null}
         <Select value={String(doneHours)} onValueChange={(next) => setDoneHours(Number(next))}>
-          <SelectTrigger className="h-8 w-52" data-testid="board-done"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="h-8 w-full sm:w-52" data-testid="board-done"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="24">{t("boardDone24")}</SelectItem>
             <SelectItem value="168">{t("boardDone7")}</SelectItem>
           </SelectContent>
         </Select>
-        <Input className="h-8 w-52" placeholder={t("boardSearch")} value={query} onChange={(event) => setQuery(event.target.value)} data-testid="board-search" />
+        <Input className="h-8 w-full sm:w-52" placeholder={t("boardSearch")} value={query} onChange={(event) => setQuery(event.target.value)} data-testid="board-search" />
         {showProject ? (
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <Switch checked={drills} onCheckedChange={setDrills} data-testid="board-drills" />{t("boardShowDrills")}
@@ -394,7 +397,7 @@ function TaskPage({ item, locale, projectName, onBack }: { item: Item; locale: s
                           {stage.model ? <span className="text-xs text-muted-foreground">{shortModel(stage.model)}</span> : null}
                           {stage.updatedAt ? <span className="text-xs text-muted-foreground">{ago(stage.updatedAt, locale)}</span> : null}
                         </div>
-                        {stage.reason ? <div className="mt-0.5 break-words text-xs text-muted-foreground">{stage.reason}</div> : null}
+                        {stage.reason ? <div className="mt-0.5 break-words text-xs text-muted-foreground">{reasonText(stage.reason)}</div> : null}
                       </li>
                     ))}
                   </ol>
@@ -406,7 +409,7 @@ function TaskPage({ item, locale, projectName, onBack }: { item: Item; locale: s
                     {card.attempts.map((attempt) => (
                       <div key={attempt.id} className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-sm">
                         <span className="tabular-nums text-muted-foreground">#{attempt.no}</span>
-                        <span>{attempt.state}</span>
+                        <span>{attemptState(attempt.state)}</span>
                         <span className="text-xs text-muted-foreground">{ago(attempt.updatedAt, locale)}</span>
                         {attempt.reason ? <span className="w-full break-words text-xs text-muted-foreground">{attempt.reason}</span> : null}
                       </div>

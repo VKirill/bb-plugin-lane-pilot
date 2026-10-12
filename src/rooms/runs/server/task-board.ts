@@ -30,6 +30,8 @@ const RETRY_GRACE_MS = 30 * 60_000;
 /** Stages after the writer: while one runs, or once the writer's stage passed, the task is in checks. */
 const CHECK_STAGES = new Set(["verification", "code-critique", "acceptance-receipt", "browser-qa", "docs-maintenance"]);
 const PLAN_STAGES = new Set(["pm-read", "plan-critique", "specialist-review", "run-gate"]);
+const PIPELINE = ["pm-read", "plan-critique", "run-gate", "specialist-review", "writer-agent", "verification", "code-critique", "acceptance-receipt", "browser-qa", "docs-maintenance", "project-life", "memory-maintenance"];
+const stageOrder = (id: string) => { const index = PIPELINE.indexOf(id); return index < 0 ? PIPELINE.length : index; };
 const KINDS = new Set<TaskKind>(["feature", "fix", "check", "docs", "refactor", "research", "chore"]);
 
 const clip = (text: string | null | undefined, max = 240) => (text ? text.replace(/\s+/g, " ").trim().slice(0, max) : null);
@@ -42,7 +44,7 @@ const nameOf = (value: unknown, fallback: string) => text(value) ?? (value && ty
 export function inferTaskKind(id: string, title: string): TaskKind {
   const words = `${id} ${title}`.toLowerCase();
   if (/mainfix|\bfix|repair|bug|broken|regress|исправ|почин|ошибк/.test(words)) return "fix";
-  if (/\btest|check|drill|verify|smoke|e2e|audit|провер|тест/.test(words)) return "check";
+  if (/\btests?\b|\bchecks?\b|\bgate\b|drill|verify|smoke|\be2e\b|audit|провер|тест/.test(words)) return "check";
   if (/readme|docs?\b|changelog|guide|документ/.test(words)) return "docs";
   if (/refactor|cleanup|rename|split|рефактор/.test(words)) return "refactor";
   if (/research|investigat|spike|исследов/.test(words)) return "research";
@@ -97,6 +99,9 @@ export function buildTaskBoard(db: LanePilotDatabase, input: { projectId?: strin
       phase = planning ? "planning" : waitingFor.length ? "waiting" : "queued";
       at = planning;
       detail = waitingFor.length ? null : clip(writer?.state === "pending" ? writer.reason : null, 160);
+    } else if (open && LIVE.has(row.state) && writer?.state === "pending" && waitsFor(writer.reason).length) {
+      // The attempt started, but its writer waits for the files or folder another task holds (a mainfix, a sibling of the area).
+      column = "queued"; phase = "waiting"; waitingFor = waitsFor(writer.reason);
     } else if (open && LIVE.has(row.state)) {
       if (checking || writer?.state === "passed") { column = "checking"; phase = "checking"; at = checking; }
       else { column = "running"; phase = "writing"; at = writer; }
@@ -177,7 +182,9 @@ export function readTaskCard(db: LanePilotDatabase, input: { runId: string; task
   const plan = db.prepare("SELECT plan FROM lane_pilot_task_plan WHERE task_id=?").get(input.taskId) as { plan?: string } | undefined;
   const stages = (db.prepare("SELECT stage_id, state, reason, thread_id, model, updated_at FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? ORDER BY updated_at").all(input.runId, input.taskId) as
     Array<{ stage_id: string; state: string; reason: string | null; thread_id: string | null; model: string | null; updated_at: number }>)
-    .map((row) => ({ id: row.stage_id, state: row.state, reason: clip(row.reason, 600), threadId: row.thread_id, model: row.model, updatedAt: row.updated_at }));
+    .map((row) => ({ id: row.stage_id, state: row.state, reason: clip(row.reason, 600), threadId: row.thread_id, model: row.model, updatedAt: row.updated_at }))
+    // The pipeline's order (pm-read … acceptance-receipt), not the order of their last change: a reopened check is not «after» the writer.
+    .sort((a, b) => stageOrder(a.id) - stageOrder(b.id));
   const attempts = (db.prepare("SELECT id, attempt_no, state, reason, thread_id, created_at, updated_at FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY attempt_no").all(input.runId, input.taskId) as
     Array<{ id: string; attempt_no: number; state: string; reason: string | null; thread_id: string | null; created_at: number; updated_at: number }>)
     .map((row) => ({ id: row.id, no: row.attempt_no, state: row.state, reason: clip(row.reason, 600), threadId: row.thread_id, createdAt: row.created_at, updatedAt: row.updated_at }));
