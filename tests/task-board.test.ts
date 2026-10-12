@@ -38,6 +38,25 @@ describe("buildTaskBoard", () => {
     expect(board.find((item) => item.taskId === "b")).toMatchObject({ title:"Title of b", detail:"needs_human: may I?", pmThreadId:"thr_pm" });
     expect(buildTaskBoard(w.db, { projectId:"P", doneSince:Date.now() + 1000 }).some((item) => item.taskId === "d")).toBe(false);
     expect(buildTaskBoard(w.db, { doneSince:0 }).some((item) => item.taskId === "x")).toBe(true);
+    // A blocked task leaves the board after the period; work in progress stays whatever its age.
+    const later = buildTaskBoard(w.db, { projectId:"P", doneSince:Date.now() + 1000 }).map((item) => item.taskId);
+    expect(later).not.toContain("b");
+    expect(later).toEqual(expect.arrayContaining(["q", "w", "c"]));
+  });
+
+  it("does not keep a failed attempt no retry followed, or a task of a closed run, «at work»", () => {
+    const w = world();
+    w.task("f"); w.attempt("af", "f", "run", "spawn_requested", "running", "validation_failed");
+    w.db.prepare("UPDATE lane_pilot_attempt SET updated_at=? WHERE id='af'").run(Date.now() - 2 * 3_600_000);
+    w.task("fresh"); w.attempt("afr", "fresh", "run", "spawn_requested", "running", "validation_failed");
+    w.task("z", "other"); w.attempt("az", "z", "other", "spawn_requested", "running");
+    w.db.prepare("UPDATE lane_pilot_run SET closed_at=? WHERE id='other'").run(Date.now());
+    const board = Object.fromEntries(buildTaskBoard(w.db, { doneSince:0 }).map((item) => [item.taskId, item]));
+    expect(board.f).toMatchObject({ column:"blocked" });
+    expect(board.f!.detail).toMatch(/^stuck \(validation_failed\)/);
+    expect(board.fresh).toMatchObject({ column:"running" });
+    expect(board.z).toMatchObject({ column:"blocked" });
+    expect(board.z!.detail).toMatch(/^run closed/);
   });
 
   it("opens a card with the contract, stages, attempts and the threads that worked on it", () => {

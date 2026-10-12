@@ -3,6 +3,8 @@ import type { LanePilotDatabase } from "../../storage";
 /**
  * The «Tasks» board: every Lane Pilot task and workflow run of one project or of all of them, in the columns the BB Tasks
  * board had (queue, at work, checks, blocked, done), so the owner sees all work without the Tasks plugin (retired 2026-10-12).
+ * Work in progress of open runs is always shown; blocked, stuck and done tasks only for the chosen period, or the board fills
+ * with weeks of tasks no one will send again (hub, 2026-10-12: 340 such latest attempts).
  */
 export type BoardColumn = "queued" | "running" | "checking" | "blocked" | "done";
 export type BoardItem = {
@@ -11,7 +13,9 @@ export type BoardItem = {
   attemptId: string | null; updatedAt: number;
 };
 
-const AT_WORK = new Set(["spawn_requested", "spawn_unknown", "running", "cancel_requested", "validation_failed"]);
+const LIVE = new Set(["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"]);
+/** A failed attempt is followed by its retry within moments; one that stays the latest longer than this got none and is stuck. */
+const RETRY_GRACE_MS = 30 * 60_000;
 /** Stages after the writer: while one runs, or once the writer's stage passed, the task is in checks. */
 const CHECK_STAGES = new Set(["verification", "code-critique", "acceptance-receipt", "browser-qa", "docs-maintenance"]);
 const PLAN_STAGE_LABEL: Record<string, string> = { "pm-read": "reading the project", "plan-critique": "plan critique", "specialist-review": "specialist review", "run-gate": "run gate" };
@@ -26,17 +30,18 @@ export function buildTaskBoard(db: LanePilotDatabase, input: { projectId?: strin
   const scope = input.projectId ? "AND r.project_id=?" : "";
   const args = input.projectId ? [input.projectId] : [];
   const tasks = db.prepare(`SELECT a.id AS attempt_id, a.run_id, a.task_id, a.state, a.reason, a.thread_id, a.attempt_no, a.updated_at,
-      t.contract_json, r.project_id, r.pm_thread_id
+      t.contract_json, r.project_id, r.pm_thread_id, r.closed_at
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     LEFT JOIN lane_pilot_task t ON t.id=a.task_id
     WHERE a.attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)
-      AND (a.state NOT IN ('accepted','canceled') OR a.updated_at>=?) ${scope}
+      AND ((a.state IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested') AND r.closed_at IS NULL) OR a.updated_at>=?) ${scope}
       AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt c JOIN lane_pilot_run rc ON rc.id=c.run_id
         WHERE rc.project_id=r.project_id AND c.created_at>=a.created_at AND substr(c.task_id,1,length(a.task_id)+1)=a.task_id || '.')
     ORDER BY a.updated_at DESC LIMIT ?`).all(input.doneSince, ...args, limit) as Array<{
     attempt_id: string; run_id: string; task_id: string; state: string; reason: string | null; thread_id: string | null; attempt_no: number;
-    updated_at: number; contract_json: string | null; project_id: string; pm_thread_id: string | null;
+    updated_at: number; contract_json: string | null; project_id: string; pm_thread_id: string | null; closed_at: number | null;
   }>;
+  const now = Date.now();
   const stagesOf = db.prepare("SELECT stage_id, state, reason FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=?");
   const items: BoardItem[] = tasks.map((row) => {
     const stages = stagesOf.all(row.run_id, row.task_id) as Array<{ stage_id: string; state: string; reason: string | null }>;
@@ -45,13 +50,20 @@ export function buildTaskBoard(db: LanePilotDatabase, input: { projectId?: strin
     const planning = stages.find((stage) => PLAN_STAGE_LABEL[stage.stage_id] && stage.state === "running");
     let column: BoardColumn;
     let detail: string | null = null;
+    const open = row.closed_at === null;
     if (row.state === "accepted" || row.state === "canceled") column = "done";
-    else if (row.state === "blocked") { column = "blocked"; detail = clip(row.reason); }
-    else if (row.state === "queued") {
+    else if (open && row.state === "queued") {
       column = "queued";
       detail = planning ? PLAN_STAGE_LABEL[planning.stage_id]! : writer?.state === "pending" ? clip(writer.reason, 160) : null;
-    } else if (AT_WORK.has(row.state) && (checking || writer?.state === "passed")) { column = "checking"; detail = checking?.stage_id ?? "acceptance"; }
-    else { column = "running"; detail = row.state === "validation_failed" ? clip(`retry: ${row.reason ?? ""}`, 160) : null; }
+    } else if (open && LIVE.has(row.state)) {
+      if (checking || writer?.state === "passed") { column = "checking"; detail = checking?.stage_id ?? "acceptance"; }
+      else column = "running";
+    } else if (open && row.state !== "blocked" && now - row.updated_at < RETRY_GRACE_MS) { column = "running"; detail = clip(`retry: ${row.reason ?? row.state}`, 160); }
+    else {
+      // Blocked; a failed attempt no retry followed; or a task its run was closed under.
+      column = "blocked";
+      detail = clip(`${!open ? "run closed · " : row.state !== "blocked" ? `stuck (${row.state}) · ` : ""}${row.reason ?? ""}`);
+    }
     return {
       kind: "task", key: `task:${row.run_id}:${row.task_id}`, runId: row.run_id, taskId: row.task_id,
       title: row.contract_json ? titleOf(row.contract_json, row.task_id) : row.task_id, projectId: row.project_id, pmThreadId: row.pm_thread_id,
