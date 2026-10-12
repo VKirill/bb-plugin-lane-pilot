@@ -63,8 +63,14 @@ const asFault = (row: Row): boolean => row.state !== "accepted" && failureClass(
  */
 const asBudgetFault = (row: Row): boolean => row.state !== "accepted" && ["harness", "dirty_base"].includes(failureClass(row.state, row.reason));
 
+/**
+ * The head of a reason is all `failureClass` needs. Whole reasons ran up to 4.7 MB (a stray-path list of thousands of files) and
+ * classifying a week of them three times blocked BB's event loop for 5 s every 10 min: Caddy answered 502 meanwhile (hub 2026-10-12).
+ */
+export const REASON_SCAN_CHARS = 4000;
+
 function selectFinished(db: LanePilotDatabase, where: string, args: unknown[], sandboxProjects: ReadonlySet<string> = new Set()): Row[] {
-  return (db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, r.project_id, r.pm_thread_id FROM lane_pilot_attempt a
+  return (db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, substr(a.reason, 1, ${REASON_SCAN_CHARS}) AS reason, r.project_id, r.pm_thread_id FROM lane_pilot_attempt a
     JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state IN ('accepted',${FAILED_STATES.map(() => "?").join(",")}) AND ${where} ORDER BY a.created_at`)
     .all(...FAILED_STATES, ...args) as Row[])
     .filter((row) => row.project_id !== SANDBOX_PROJECT_ID && !sandboxProjects.has(row.project_id) && !isDrillTask(row.task_id));

@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import packageJson from "../../package.json";
 import { createAttempt, createRun, openDatabase } from "../../src/rooms/storage/database";
-import { CANARY_MAX_ATTEMPTS, canaryAlertText, canaryReport, createCanary, rollbackCommand } from "../../src/rooms/stability/server/canary";
+import { CANARY_MAX_ATTEMPTS, REASON_SCAN_CHARS, canaryAlertText, canaryReport, createCanary, rollbackCommand } from "../../src/rooms/stability/server/canary";
 
 const VERSION: string = packageJson.version;
 const DAY = 86_400_000;
@@ -54,6 +54,17 @@ describe("canaryReport on reasons from the hub", () => {
     attempt("blocked", "attempt_worktree_holder_ambiguous:page_cap");
     const report = canaryReport(db, { version: VERSION, since: Date.now() - 3600_000, now: Date.now() });
     expect(report.budget).toMatchObject({ attempts: 20, faults: 1, exhausted: false });
+  });
+
+  it("reads only the head of a reason: a 4.7 MB stray-path list stalled BB for 5 s every 10 min (hub 2026-10-12)", () => {
+    const { db, attempt } = setup();
+    // A path deep in the list that reads like a Lane Pilot marker (`reconcile_`) is the task's stray file, not a fault.
+    const paths = [...Array.from({ length: 60_000 }, (_, i) => `.agency/inputs/art_${i}/v1`), "scripts/reconcile_tmp.ts"].join(", ");
+    attempt("validation_failed", `writer changed paths outside owns_paths or inside never_touch: ${paths}`);
+    attempt("blocked", `internal_error: ${"x".repeat(2 * REASON_SCAN_CHARS)}`);
+    const report = canaryReport(db, { version: VERSION, since: Date.now() - 3600_000, now: Date.now() });
+    expect(report).toMatchObject({ faults: 1, budget: { attempts: 2, faults: 1 } });
+    expect(report.samples[0]!.reason.length).toBeLessThanOrEqual(200);
   });
 });
 
