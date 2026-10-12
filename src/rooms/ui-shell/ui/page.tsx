@@ -52,7 +52,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               {activeScope === "tokens" ? <TokenUsage projects={projects} /> : null}
               {activeScope === "workflows" ? <WorkflowsScreen locale={locale} projectId={null} architectProjectId={selectedProjectId ?? routeProjectId ?? (subPath || null)} /> : null}
               {activeScope === "schedule" ? <ScheduleBoard projectId={null} projects={projects} locale={locale} /> : null}
-              {activeScope === "tasks" ? <TaskBoard projects={projects} initialProjectId={selectedProjectId ?? null} locale={locale} /> : null}
+              {activeScope === "tasks" ? <TaskBoard projects={projects} serviceProjectIds={page.projectGroups.service.map((project) => project.id)} initialProjectId={selectedProjectId ?? null} locale={locale} /> : null}
               <main hidden={otherScope} className="min-w-0 max-w-full space-y-6" data-testid="project-settings">
                 {!projectId ? <p className="text-sm text-muted-foreground" data-testid="project-settings-empty">{t("noProjectSelected")}</p> : <>
                   <ProjectHeader page={page} />

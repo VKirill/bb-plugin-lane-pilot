@@ -52,11 +52,26 @@ describe("buildTaskBoard", () => {
     w.task("z", "other"); w.attempt("az", "z", "other", "spawn_requested", "running");
     w.db.prepare("UPDATE lane_pilot_run SET closed_at=? WHERE id='other'").run(Date.now());
     const board = Object.fromEntries(buildTaskBoard(w.db, { doneSince:0 }).map((item) => [item.taskId, item]));
-    expect(board.f).toMatchObject({ column:"blocked" });
-    expect(board.f!.detail).toMatch(/^stuck \(validation_failed\)/);
-    expect(board.fresh).toMatchObject({ column:"running" });
-    expect(board.z).toMatchObject({ column:"blocked" });
-    expect(board.z!.detail).toMatch(/^run closed/);
+    expect(board.f).toMatchObject({ column:"blocked", phase:"stuck" });
+    expect(board.fresh).toMatchObject({ column:"running", phase:"retrying" });
+    expect(board.z).toMatchObject({ column:"blocked", phase:"closed" });
+  });
+
+  it("reads the task standard: owner title, kind, area, the run's goal, and what a waiting task waits for", () => {
+    const w = world();
+    w.db.prepare("UPDATE lane_pilot_run SET objective=? WHERE id='run'").run("Cakekeeper UI on the design canon");
+    w.task("ck-24-ui-pages-orders.2", "run", { display_title:"Страница заказов", kind:"feature", area:"page:orders", depends_on:["ck-23"] });
+    w.attempt("a24", "ck-24-ui-pages-orders.2");
+    w.stage("ck-24-ui-pages-orders.2", "writer-agent", "pending");
+    w.db.prepare("UPDATE lane_pilot_stage_receipt SET reason=? WHERE task_id=?").run("waiting for depends_on: ck-23-ui-catalog-shell.2", "ck-24-ui-pages-orders.2");
+    w.task("old-fix-login"); w.attempt("al", "old-fix-login");
+    const board = Object.fromEntries(buildTaskBoard(w.db, { doneSince:0 }).map((item) => [item.taskId, item]));
+    expect(board["ck-24-ui-pages-orders.2"]).toMatchObject({
+      title:"Страница заказов", techTitle:"Title of ck-24-ui-pages-orders.2", taskKind:"feature", area:"page:orders",
+      objective:"Cakekeeper UI on the design canon", phase:"waiting", waitingFor:["ck-23-ui-catalog-shell.2"],
+    });
+    // A task older than the standard: its technical title, a kind read from its id and title.
+    expect(board["old-fix-login"]).toMatchObject({ title:"Title of old-fix-login", techTitle:null, taskKind:"fix" });
   });
 
   it("opens a card with the contract, stages, attempts and the threads that worked on it", () => {

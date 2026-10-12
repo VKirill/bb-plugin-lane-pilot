@@ -10,8 +10,12 @@ export const rpcRuns = {
   task_board: {
     input: z.object({ projectId: z.string().min(1).optional(), doneHours: z.number().int().min(1).max(24 * 30).default(24) }).strict(),
     output: z.object({ items: z.array(z.object({
-      kind: z.enum(["task", "workflow"]), key: z.string(), runId: z.string(), taskId: z.string().nullable(), title: z.string(), projectId: z.string().nullable(),
-      pmThreadId: z.string().nullable(), column: z.enum(["queued", "running", "checking", "blocked", "done"]), state: z.string(), detail: z.string().nullable(),
+      kind: z.enum(["task", "workflow"]), key: z.string(), runId: z.string(), taskId: z.string().nullable(), title: z.string(), techTitle: z.string().nullable(),
+      taskKind: z.enum(["feature", "fix", "check", "docs", "refactor", "research", "chore"]).nullable(), area: z.string().nullable(), objective: z.string().nullable(),
+      projectId: z.string().nullable(), pmThreadId: z.string().nullable(), pmThreadTitle: z.string().nullable(),
+      column: z.enum(["queued", "running", "checking", "blocked", "done"]), state: z.string(),
+      phase: z.enum(["queued", "planning", "waiting", "writing", "checking", "retrying", "blocked", "stuck", "closed", "accepted", "canceled", "chain"]),
+      stage: z.string().nullable(), model: z.string().nullable(), since: z.number().nullable(), waitingFor: z.array(z.string()), detail: z.string().nullable(),
       attemptNo: z.number().int(), threadId: z.string().nullable(), attemptId: z.string().nullable(), updatedAt: z.number(),
     }).strict()) }).strict(),
   },
@@ -19,7 +23,9 @@ export const rpcRuns = {
   task_card: {
     input: z.object({ runId: z.string().min(1), taskId: z.string().min(1).nullable() }).strict(),
     output: z.object({
-      kind: z.enum(["task", "workflow"]), title: z.string(), id: z.string(), projectId: z.string().nullable(), state: z.string(), reason: z.string().nullable(),
+      kind: z.enum(["task", "workflow"]), title: z.string(), techTitle: z.string().nullable(),
+      taskKind: z.enum(["feature", "fix", "check", "docs", "refactor", "research", "chore"]).nullable(), area: z.string().nullable(), objective: z.string().nullable(),
+      pmThreadId: z.string().nullable(), id: z.string(), projectId: z.string().nullable(), state: z.string(), reason: z.string().nullable(),
       contract: z.object({ objective: z.string().nullable(), acceptance: z.array(z.string()), ownsPaths: z.array(z.string()), expectedOutputs: z.array(z.string()),
         dependsOn: z.array(z.string()), checks: z.array(z.string()) }).strict().nullable(),
       plan: z.string().nullable(),

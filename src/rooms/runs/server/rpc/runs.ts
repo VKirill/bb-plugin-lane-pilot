@@ -23,6 +23,7 @@ import type { Services } from "../../../core/server";
 export function runsRpc(ctx: ServerCore, services: Services) {
   const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, nativeInstaller, ownedAgents } = ctx;
   let lastListErrorLogAt = 0;
+  const pmTitles = new Map<string, { title: string | null; at: number }>();
   const handlers = {
     finish_run: async ({ projectId, runId }) => {
       await finishRunSafely(bb, db, projectId, runId, "rpc");
@@ -167,11 +168,22 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         ...(openRun ? { graph: buildTaskGraph(db, openRun.id) } : {}),
       };
     },
-    task_board: ({ projectId, doneHours }) => ({ items: buildTaskBoard(db, { projectId: projectId ?? null, doneSince: Date.now() - doneHours * 3_600_000 }) }),
+    task_board: async ({ projectId, doneHours }) => {
+      const items = buildTaskBoard(db, { projectId: projectId ?? null, doneSince: Date.now() - doneHours * 3_600_000 });
+      // The PM chat's title groups the board «by chat»; titles change rarely, so each is read at most every five minutes.
+      const now = Date.now();
+      const ids = [...new Set(items.flatMap((item) => (item.pmThreadId ? [item.pmThreadId] : [])))];
+      await Promise.all(ids.filter((id) => (pmTitles.get(id)?.at ?? 0) < now - 300_000).slice(0, 40).map(async (id) => {
+        const row = await bb.sdk.threads.get({ threadId: id }).catch(() => null) as Record<string, unknown> | null;
+        pmTitles.set(id, { title: stringAt(row, "title") ?? null, at: now });
+      }));
+      return { items: items.map((item) => ({ ...item, pmThreadTitle: item.pmThreadId ? pmTitles.get(item.pmThreadId)?.title ?? null : null })) };
+    },
     task_card: async ({ runId, taskId }) => {
       const card = readTaskCard(db, { runId, taskId });
       if (!card) return null;
-      const { pmThreadId, roots, ...rest } = card;
+      const { roots, ...rest } = card;
+      const pmThreadId = card.pmThreadId;
       // The threads that worked on it (writer per attempt, a helper per stage) under the PM chat, each with the BB child
       // threads it started (sub-agents); archived ones too, since a finished task's helpers are archived.
       const describe = async (id: string, role: string): Promise<CardThread> => {
