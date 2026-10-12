@@ -11,6 +11,7 @@ import { InheritanceContext } from "../../settings/ui";
 import { TokenUsage } from "../../usage/ui";
 import { WorkflowsScreen } from "../../workflow/ui/workflows";
 import { ScheduleBoard } from "../../schedule/ui";
+import { TaskBoard } from "../../runs/ui";
 import { MobileScopeSelect, ScopeRail } from "./project-nav";
 import { ProjectHeader } from "./project-header";
 import { TAB_IDS, TAB_LABELS, type TabId } from "./tabs-model";
@@ -22,13 +23,13 @@ import { AutomationTab } from "./tab-automation";
 import { RunsTab } from "./tab-runs";
 import { useLanePilotPage } from "./use-lp-page";
 
-export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: string; scope?: "projects" | "globals" | "agents" | "tokens" | "workflows" | "schedule" }) {
+export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: string; scope?: "projects" | "globals" | "agents" | "tokens" | "workflows" | "schedule" | "tasks" }) {
   const page = useLanePilotPage({ subPath, scope });
   const {
     activeScope, projectId, projects, locale, shellRef, contentRef, compactChrome, stackControls, data, resetInherited, error, saveError, load,
     tab, goTo, visited, tabSelect, selectedProjectId, routeProjectId,
   } = page;
-  const otherScope = activeScope === "agents" || activeScope === "tokens" || activeScope === "workflows" || activeScope === "schedule";
+  const otherScope = activeScope === "agents" || activeScope === "tokens" || activeScope === "workflows" || activeScope === "schedule" || activeScope === "tasks";
   const panels: Record<TabId, () => ReactNode> = {
     overview: () => <OverviewTab page={page} />,
     team: () => (projectId ? <TeamTab page={page} /> : null),
@@ -51,6 +52,7 @@ export function LanePilotPage({ subPath = "", scope = "projects" }: { subPath?: 
               {activeScope === "tokens" ? <TokenUsage projects={projects} /> : null}
               {activeScope === "workflows" ? <WorkflowsScreen locale={locale} projectId={null} architectProjectId={selectedProjectId ?? routeProjectId ?? (subPath || null)} /> : null}
               {activeScope === "schedule" ? <ScheduleBoard projectId={null} projects={projects} locale={locale} /> : null}
+              {activeScope === "tasks" ? <TaskBoard projects={projects} initialProjectId={selectedProjectId ?? null} locale={locale} /> : null}
               <main hidden={otherScope} className="min-w-0 max-w-full space-y-6" data-testid="project-settings">
                 {!projectId ? <p className="text-sm text-muted-foreground" data-testid="project-settings-empty">{t("noProjectSelected")}</p> : <>
                   <ProjectHeader page={page} />

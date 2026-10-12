@@ -5,3 +5,4 @@ export { RUN_CARD_DIRECTIVE, RunCardDirective } from "./run-card";
 export { RunStages } from "./run-parts";
 export { ServiceSegment } from "./runs-service";
 export { readRunsWindow } from "./runs-window";
+export { TaskBoard } from "./task-board";

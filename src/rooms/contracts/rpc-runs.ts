@@ -2,7 +2,32 @@ import { z } from "zod";
 import { runViewSchema, stageSummarySchema } from "@lane-pilot/contracts";
 
 /** Run cards, stages, helper access and the screen snapshot. */
+const cardThreadSchema: z.ZodType<{ id: string; role: string; title: string | null; status: string | null; children: unknown[] }> = z.lazy(() =>
+  z.object({ id: z.string(), role: z.string(), title: z.string().nullable(), status: z.string().nullable(), children: z.array(cardThreadSchema) }).strict());
+
 export const rpcRuns = {
+  /** The «Tasks» board: tasks and workflow runs of one project or of all, by column (src/rooms/runs/server/task-board.ts). */
+  task_board: {
+    input: z.object({ projectId: z.string().min(1).optional(), doneHours: z.number().int().min(1).max(24 * 30).default(24) }).strict(),
+    output: z.object({ items: z.array(z.object({
+      kind: z.enum(["task", "workflow"]), key: z.string(), runId: z.string(), taskId: z.string().nullable(), title: z.string(), projectId: z.string().nullable(),
+      pmThreadId: z.string().nullable(), column: z.enum(["queued", "running", "checking", "blocked", "done"]), state: z.string(), detail: z.string().nullable(),
+      attemptNo: z.number().int(), threadId: z.string().nullable(), attemptId: z.string().nullable(), updatedAt: z.number(),
+    }).strict()) }).strict(),
+  },
+  /** One board card opened: contract, plan, stages, attempts and the tree of threads that worked on it. */
+  task_card: {
+    input: z.object({ runId: z.string().min(1), taskId: z.string().min(1).nullable() }).strict(),
+    output: z.object({
+      kind: z.enum(["task", "workflow"]), title: z.string(), id: z.string(), projectId: z.string().nullable(), state: z.string(), reason: z.string().nullable(),
+      contract: z.object({ objective: z.string().nullable(), acceptance: z.array(z.string()), ownsPaths: z.array(z.string()), expectedOutputs: z.array(z.string()),
+        dependsOn: z.array(z.string()), checks: z.array(z.string()) }).strict().nullable(),
+      plan: z.string().nullable(),
+      stages: z.array(z.object({ id: z.string(), state: z.string(), reason: z.string().nullable(), threadId: z.string().nullable(), model: z.string().nullable(), updatedAt: z.number() }).strict()),
+      attempts: z.array(z.object({ id: z.string(), no: z.number().int(), state: z.string(), reason: z.string().nullable(), threadId: z.string().nullable(), createdAt: z.number(), updatedAt: z.number() }).strict()),
+      threads: cardThreadSchema.nullable(),
+    }).strict().nullable(),
+  },
   // The run card a PM message shows for its `::lane-run{id="…"}` directive: the run's tasks with their latest state.
   get_run_card: {
     input: z.object({ runId: z.string().min(1) }).strict(),

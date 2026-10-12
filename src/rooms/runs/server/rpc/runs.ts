@@ -12,6 +12,7 @@ import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../state-machine";
 import type { AttemptState } from "../../state-machine";
 import { finishRunSafely } from "../run-finish";
 import { buildTaskGraph } from "../task-graph";
+import { buildTaskBoard, readTaskCard, type CardThread } from "../task-board";
 import { cancelAttemptById } from "../cancel";
 import { id, stringAt, valueAt } from "../../../core/server";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
@@ -166,6 +167,27 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         ...(openRun ? { graph: buildTaskGraph(db, openRun.id) } : {}),
       };
     },
+    task_board: ({ projectId, doneHours }) => ({ items: buildTaskBoard(db, { projectId: projectId ?? null, doneSince: Date.now() - doneHours * 3_600_000 }) }),
+    task_card: async ({ runId, taskId }) => {
+      const card = readTaskCard(db, { runId, taskId });
+      if (!card) return null;
+      const { pmThreadId, roots, ...rest } = card;
+      // The threads that worked on it (writer per attempt, a helper per stage) under the PM chat, each with the BB child
+      // threads it started (sub-agents); archived ones too, since a finished task's helpers are archived.
+      const describe = async (id: string, role: string): Promise<CardThread> => {
+        const row = await bb.sdk.threads.get({ threadId: id }).catch(() => null) as Record<string, unknown> | null;
+        return { id, role, title: stringAt(row, "title") ?? null, status: stringAt(row, "status") ?? null, children: [] };
+      };
+      const childrenOf = async (id: string): Promise<CardThread[]> => {
+        const listed = await (bb.sdk.threads.list({ parentThreadId: id, includeHidden: true, limit: 30 } as never) as Promise<unknown>).catch(() => []);
+        return (Array.isArray(listed) ? listed as Array<Record<string, unknown>> : []).filter((row) => typeof row.id === "string").map((row) => ({
+          id: String(row.id), role: "sub-agent", title: stringAt(row, "title") ?? null, status: stringAt(row, "status") ?? null, children: [],
+        }));
+      };
+      const workers = await Promise.all(roots.slice(0, 24).map(async (root) => ({ ...(await describe(root.id, root.role)), children: await childrenOf(root.id) })));
+      const threads = pmThreadId ? { ...(await describe(pmThreadId, "PM")), children: workers } : workers.length ? { id: "", role: "run", title: null, status: null, children: workers } : null;
+      return { ...rest, threads };
+    },
     get_run_card: ({ runId }) => {
       const run = db.prepare("SELECT id, state, closed_at, writer_host_id FROM lane_pilot_run WHERE id=?")
         .get(runId) as { id: string; state: string; closed_at: number | null; writer_host_id: string | null } | undefined;
@@ -297,6 +319,6 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       return { ok: true, state: "queued", attemptId: nextId, reason: null };
     },
     resume_runs: ({ projectId }) => services.resumeOrphans(projectId),
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "native_install_status" | "prepare_native_session" | "list_helper_threads" | "get_run_card" | "native_thread" | "activation_context" | "cancel_attempt" | "halt_run" | "retry_attempt" | "resume_runs">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "native_install_status" | "prepare_native_session" | "list_helper_threads" | "task_board" | "task_card" | "get_run_card" | "native_thread" | "activation_context" | "cancel_attempt" | "halt_run" | "retry_attempt" | "resume_runs">;
   return handlers;
 }

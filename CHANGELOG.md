@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.237
+
+- **A «Tasks» screen in Lane Pilot: every task and chain of every chat on one board by status, with a card per task.** With the BB Tasks plugin off (0.1.236) the owner asked where its board went (2026-10-12): the «Runs» tab showed one project's runs, the helpers panel one chat's tasks. The new system page «Tasks» (left rail, next to Automation) reads `task_board` (`buildTaskBoard`, `src/rooms/runs/server/task-board.ts`): the latest attempt of each task of one project or of all (a task sent again as `<id>.N` replaces its earlier one) and the workflow runs started from chats (insights, research, reels), in five columns: queue (with the stage it waits in or the task it waits for), at work, checks (the writer is done, verification, critique or acceptance runs), blocked (with the reason), done (last 24 hours or 7 days). Filters: project, code tasks or chains, search by id or title. A card (`task_card`) shows the contract (objective, acceptance, owned files, expected outputs, depends_on, checks), the plan, every stage with its state, model and reason, every attempt, and the tree of threads that worked on the task: the PM chat, the writer of each attempt and the helper of each stage, each with the BB threads it started; a click opens the thread. Cancel and Retry act on the task from the card.
+  - Tests: `tests/task-board.test.ts` (columns from real attempts and stages, the done window, a redispatch replacing its task, the card's contract, attempts and thread roots), `tests/task-board-ui.test.tsx` (columns, a chain card, the card with the sub-agent tree, Retry, back, filters).
+
 ## 0.1.236
 
 - **Lane Pilot no longer depends on the BB Tasks plugin (retired for good, owner 2026-10-12).** With Tasks off, the three chains that called it would have been stopped at start by `requirements_missing`, and the run mirror would have written into a plugin that is gone.

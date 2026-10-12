@@ -5,13 +5,14 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 import { CONTROL_H } from "@lane-pilot/ui-kit";
 import type { LpPage } from "./use-lp-page";
 
-type Scope = "projects" | "globals" | "agents" | "tokens" | "workflows" | "schedule";
-const SYSTEM_PAGES: Array<{ scope: Exclude<Scope, "projects">; label: "navGlobals" | "navAgents" | "tabTokens" | "navWorkflows" | "navSchedule"; testId?: string }> = [
+type Scope = "projects" | "globals" | "agents" | "tokens" | "workflows" | "schedule" | "tasks";
+const SYSTEM_PAGES: Array<{ scope: Exclude<Scope, "projects">; label: "navGlobals" | "navAgents" | "tabTokens" | "navWorkflows" | "navSchedule" | "navTasks"; testId?: string }> = [
   { scope: "globals", label: "navGlobals" },
   { scope: "agents", label: "navAgents" },
   { scope: "tokens", label: "tabTokens", testId: "scope-nav-tokens" },
   { scope: "workflows", label: "navWorkflows", testId: "scope-nav-workflows" },
   { scope: "schedule", label: "navSchedule", testId: "scope-nav-schedule" },
+  { scope: "tasks", label: "navTasks", testId: "scope-nav-tasks" },
 ];
 
 /** Phones: one select with the system pages, the projects (the open one with its sections) and the service projects. */
