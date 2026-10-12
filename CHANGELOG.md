@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.231
 
 - **A working helper's dot sits on its chip's top-right corner again.** The helper chips beside the agent badge are portaled into BB's prompt box, outside Lane Pilot's scoped CSS, so only BB's own Tailwind classes apply there. BB 0.46 dropped `-top-0.5`, and the pulsing dot fell to the middle of the chip's right edge, which looked like a stray dot beside it (owner's screenshot, 2026-10-12, thr_k3ry5we546). The corner offsets are now inline (`HelperChips`, `src/rooms/native-agent/ui/helper-threads.tsx`). Checked live on bb.vechkasov.pro: the dot's centre moved from 10 px to 2 px below the chip's top, and it still pulses.
   - Test: `tests/helper-threads-phase.test.tsx` «pins the status dot to the chip's top-right corner with inline offsets» (fails on 0.1.230).
