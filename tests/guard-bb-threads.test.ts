@@ -107,7 +107,8 @@ describe("BB native PM can run project node scripts", () => {
   });
   // The owner's PM ships plugins itself (2026-10-03): BB reads and plugin reload/install pass; thread control stays closed.
   it("reads BB state and reloads plugins, but does not start or archive threads", () => {
-    for (const command of ["bb plugin list", "bb plugin logs project-folders", "bb environment providers", "bb memory catalog --scope all"]) {
+    for (const command of ["bb plugin list", "bb plugin logs project-folders", "bb environment providers", "bb memory catalog --scope all",
+      "bb plugin source pokecut-theme", "bb plugin outdated", "bb plugin install-jobs", "bb plugin update-jobs"]) {
       expect(allowedNative(command)).toBe(0);
       expect(allowed("lane-pilot-pm", command)).toBe(0);
     }
@@ -117,6 +118,12 @@ describe("BB native PM can run project node scripts", () => {
       expect(allowedIn("/srv/apps/selfystudio", command)).toBe(2);
     }
     for (const command of ["bb thread create --prompt x", "bb plugin rpc call x y"]) expect(allowedNative(command)).toBe(2);
+  });
+  // thr_zh5pvz36p7 (2026-10-12): reload of a path plugin re-read the hub's old copy; the denial names the push script that ships it.
+  it("a denial tells the PM how a path plugin reaches the hub", () => {
+    const result = runGuard({ input:JSON.stringify({ agent_type:"dev-orchestrator", tool_name:"Bash", tool_input:{ command:"bb thread create --prompt x" },
+      cwd:pluginCheckout }), env:hookEnv({ AGENT_HOOK_CLIENT:"claude", LANE_PILOT_AGENT_TYPE:"dev-orchestrator" }) });
+    expect(result.stdout).toContain("bb-plugin-push <id>");
   });
   // Owner decision 2026-10-08: Env Catalog and Lane Pilot's own CLI and RPC are the PM's to use.
   it("lets the PM use Env Catalog and Lane Pilot's CLI and RPC", () => {
