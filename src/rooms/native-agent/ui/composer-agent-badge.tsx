@@ -29,9 +29,9 @@ function AgentNameBadge(agent: { agentId: string; description: string; helpers?:
     };
     sync();
     const observer = new MutationObserver(sync);
-    // BB collapses the box by flipping data-promptbox-compact on the same form (no node added or removed); the compact box
-    // clips its overflow, so the badge has to move out on that flip alone.
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-promptbox-compact"] });
+    // BB collapses the box by flipping data-promptbox-compact on the same form (no node added or removed); a theme may clip it
+    // while a run goes (Pokecut keys on the submit button's «Stop run» label). Either way the badge has to move out.
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-promptbox-compact", "aria-label"] });
     return () => observer.disconnect();
   }, []);
 
@@ -48,7 +48,9 @@ function AgentNameBadge(agent: { agentId: string; description: string; helpers?:
 
   // The compact prompt box clips its overflow, so there the chip sits on the
   // box's top border from the parent instead of inside, over the placeholder.
-  const compact = host?.hasAttribute("data-promptbox-compact") ?? false;
+  // Any box that clips its overflow cuts the chip in half: BB's compact box, or a theme's one-line box while a run goes (2026-10-12).
+  const clips = (box: HTMLElement) => { const style = getComputedStyle(box); return [style.overflow, style.overflowY].some((value) => value && value !== "visible"); };
+  const compact = host ? host.hasAttribute("data-promptbox-compact") || clips(host) : false;
   const target = host && compact ? host.parentElement : host;
   const label = (
     <span

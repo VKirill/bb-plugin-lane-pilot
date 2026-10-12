@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.235
+
+- **The agent badge also leaves a prompt box a theme clips.** While a run goes, the Pokecut theme (0.5.x, 2026-10-12) folds the box to one line with `overflow: hidden`, keyed on the submit button's «Stop run» label, without BB's `data-promptbox-compact`; the badge stayed inside and lost its top half again (owner's screenshot). The badge now moves out of any box whose overflow is not visible, and its observer also watches `aria-label`, so the swap of the submit button re-checks the box (`composer-agent-badge.tsx`).
+  - Test: `tests/composer-agent-badge.test.tsx` «moves the badge out of a box that clips: BB's compact flip, or a theme's one-line box while a run goes».
+
 ## 0.1.234
 
 - **The PM chat's «Lane Pilot helpers» panel shows the run's tasks as a graph: what runs now, what goes side by side, what waits for what.** It listed the queue as a flat line of ids (owner's screenshot, 2026-10-12, Клиенты: «В очереди: 8», ck-21 … ck-28), so the order and the parallel parts could not be seen. `list_helper_threads` now also returns `graph` (`buildTaskGraph`, `src/rooms/runs/server/task-graph.ts`): the open run's unfinished tasks (running, waiting, queued; a blocked task only when a shown one waits for it) and edges from each task's depends_on (a name follows its redispatch, `P1` → `P1.2`, as the writer's wait does) and from the writer-agent stage's wait reason (same files or area, one writer in a folder without git, an unanswered writer question). The panel (`TaskGraphView`) puts the tasks on steps by the longest wait chain, marks steps that run in parallel, draws an arrow per wait, coloured by its reason, with a legend; a running task opens its chat. Without a graph (an older server) the flat queue stays.

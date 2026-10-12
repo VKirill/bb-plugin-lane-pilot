@@ -166,7 +166,7 @@ describe("Lane Pilot composer agent badge", () => {
 
   // 2026-10-12 (owner's screenshot): BB 0.46 collapses the prompt box by flipping data-promptbox-compact on the same form, which then
   // clips its overflow; with no node added or removed the badge stayed inside and lost its top half.
-  it("moves the badge out of the box when only the compact attribute flips", async () => {
+  it("moves the badge out of a box that clips: BB's compact flip, or a theme's one-line box while a run goes", async () => {
     const slot = await mountBadge({
       scope: { kind: "thread", threadId: "thr_copy" },
       nativeThread: { token: "11111111-1111-1111-1111-111111111111", agentId: "copy-lead", agentType: "copy-lead", projectId: "proj_a", description: "Lane Pilot copy lead" },
@@ -190,6 +190,16 @@ describe("Lane Pilot composer agent badge", () => {
     expect(shell.querySelector(":scope > [style*='translateY'] [aria-label='Lane Pilot agent']")).toBeTruthy();
 
     box.removeAttribute("data-promptbox-compact");
+    await waitFor(() => expect(box.querySelector("[aria-label='Lane Pilot agent']")).toBeTruthy());
+
+    // The Pokecut theme clips the box while a run goes, keyed on the submit button's label, without BB's attribute.
+    const submit = document.createElement("button");
+    box.append(submit);
+    box.style.overflow = "hidden";
+    submit.setAttribute("aria-label", "Stop run");
+    await waitFor(() => expect(box.querySelector("[aria-label='Lane Pilot agent']")).toBeNull());
+    box.style.overflow = "";
+    submit.setAttribute("aria-label", "Send");
     await waitFor(() => expect(box.querySelector("[aria-label='Lane Pilot agent']")).toBeTruthy());
     slot.lifecycle.unmount();
   });
