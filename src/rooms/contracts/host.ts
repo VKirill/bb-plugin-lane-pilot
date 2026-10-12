@@ -1,7 +1,7 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { anamnesisHostMethods } from "../anamnesis";
-import { HOST_JOB_KINDS, coexistenceInventory, coexistenceManager, coexistenceOperation, coexistenceOperationResult, hostBaseFields, hostBaseInput, hostJobId, hostJobRef, installReceiptSchema, secretNameSchema } from "@lane-pilot/contracts";
+import { HOST_JOB_KINDS, HOST_JOB_MAX_SEC, coexistenceInventory, coexistenceManager, coexistenceOperation, coexistenceOperationResult, hostBaseFields, hostBaseInput, hostJobId, hostJobRef, installReceiptSchema, secretNameSchema } from "@lane-pilot/contracts";
 
 export const hostContract = defineRpcContract({
   nativeInstall: {
@@ -30,7 +30,7 @@ export const hostContract = defineRpcContract({
   },
   jobStart: {
     // `key`: one logical job; a second start with the same key returns the first job (additive; an older host ignores it).
-    input: z.object({ requestedHostId:z.string().min(1), kind:z.enum(HOST_JOB_KINDS), input:z.record(z.string(), z.unknown()), timeoutSec:z.number().int().min(10).max(10_800), key:z.string().min(1).max(200).optional() }).strict(),
+    input: z.object({ requestedHostId:z.string().min(1), kind:z.enum(HOST_JOB_KINDS), input:z.record(z.string(), z.unknown()), timeoutSec:z.number().int().min(10).max(HOST_JOB_MAX_SEC), key:z.string().min(1).max(200).optional() }).strict(),
     output: z.object({ hostId:z.string(), jobId:hostJobId }).strict(),
   },
   jobStatus: {

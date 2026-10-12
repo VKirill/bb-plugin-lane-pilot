@@ -1,4 +1,4 @@
-import { HOST_JOB_KINDS, type HostJobKind } from "@lane-pilot/contracts";
+import { HOST_JOB_KINDS, HOST_JOB_MAX_SEC, type HostJobKind } from "@lane-pilot/contracts";
 import { sha256Hex } from "@lane-pilot/kit";
 
 type RawCall = (method: string, input: unknown, options: { hostId: string; timeoutMs?: number; signal?: AbortSignal }) => Promise<unknown>;
@@ -19,6 +19,8 @@ const START_SLACK_MS = 60_000;
 const REUSE_FINISHED_MS = 10 * 60_000;
 const POLL_FIRST_MS = 500;
 const POLL_MAX_MS = 10_000;
+/** The host is asked to keep a job this much longer than the poll waits for it. */
+const JOB_SLACK_SEC = 30;
 
 /**
  * A host call run as a background job: jobStart returns at once, jobStatus is polled with backoff, and the job's id
@@ -42,7 +44,9 @@ export function createHostJobs(deps: {
       // a reload), never by a later call whose input happens to be identical (a second merge's post-merge check).
       const takeFinished = kind !== "runSandboxedCommand" || Boolean(jobKey);
       const minWait = MIN_WAIT_MS[kind] ?? 0;
-      const waitMs = Math.max(options.timeoutMs ?? 0, minWait) + (minWait ? 0 : START_SLACK_MS);
+      // A job lives at most HOST_JOB_MAX_SEC (the jobStart schema): a longer wait (a merge replaying many slow checks) is cut to
+      // it, so jobStart is not refused and the poll gives up no later than the host ends the job.
+      const waitMs = Math.min(Math.max(options.timeoutMs ?? 0, minWait) + (minWait ? 0 : START_SLACK_MS), (HOST_JOB_MAX_SEC - JOB_SLACK_SEC) * 1000);
       let entry = await deps.kv.get<JobEntry>(key);
       let last: JobStatusReply | null = null;
       if (entry) {
@@ -55,7 +59,7 @@ export function createHostJobs(deps: {
       if (!entry) {
         let jobId: string;
         try {
-          ({ jobId } = await deps.call("jobStart", { requestedHostId: hostId, kind, input, timeoutSec: Math.ceil(waitMs / 1000) + 30 }, { hostId, timeoutMs: 30_000 }) as { jobId: string });
+          ({ jobId } = await deps.call("jobStart", { requestedHostId: hostId, kind, input, timeoutSec: Math.ceil(waitMs / 1000) + JOB_SLACK_SEC }, { hostId, timeoutMs: 30_000 }) as { jobId: string });
         } catch (cause) {
           if (/unknown host method/i.test(cause instanceof Error ? cause.message : String(cause))) return await directCall();
           throw cause;
