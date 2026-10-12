@@ -2,4 +2,5 @@
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { compactAcceptedResult } from "./accepted-compact";
 export { lintReply } from "./contract-lint";
+export type { LintFinding } from "./contract-lint";
 export { createTaskLinter } from "./lint-task";

@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import type { TaskV2 } from "../../contracts";
+import { TASK_KINDS, type TaskV2 } from "../../contracts";
 import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOverlap } from "@lane-pilot/kit";
 import { findSandboxUnsafeMissingExcludes, runnerFilterArgs, runsWholeSuite } from "../../critique";
 import { parseReadFirstHints } from "../read-first";
@@ -100,11 +100,29 @@ export function lintProbePaths(task:TaskV2, workspacePath:string):string[] {
   return [...new Set([...hints, ...folderFilters(task).map((filter) => filter.path), ...tests])].slice(0, MAX_PROBES);
 }
 
+export const DISPLAY_TITLE_MAX = 60;
+
+/**
+ * The task standard the Tasks board shows from: a card title in the owner's language, a kind and an area. Lane Pilot's own tasks
+ * (mainfix, workflow chains) fill the three themselves, so only a PM's contract is ever refused here.
+ */
+export function taskStandardFindings(task:Pick<TaskV2, "display_title" | "kind" | "area">):LintFinding[] {
+  const found:LintFinding[] = [];
+  const title = task.display_title?.trim() ?? "";
+  if (!title) found.push({ code:"display_title_missing", message:"display_title is missing: add the card title for the Tasks board, in the language the owner writes in, at most 60 characters, what changes for a person, no ids or paths (for a Russian-speaking owner: \"Страница заказов в кабинете\")" });
+  else if ([...title].length > DISPLAY_TITLE_MAX) found.push({ code:"display_title_too_long", message:`display_title is ${[...title].length} characters, the limit is ${DISPLAY_TITLE_MAX}; shorten it to what changes for a person (for a Russian-speaking owner: "Страница заказов в кабинете")` });
+  if (!task.kind || !(TASK_KINDS as readonly string[]).includes(task.kind)) found.push({ code:"kind_missing", message:`kind is missing or not one of ${TASK_KINDS.join(", ")}: add the one that fits (a new capability is "feature", a bug is "fix", a verification-only task is "check")` });
+  if (!task.area?.trim()) found.push({ code:"area_missing", message:"area is missing: add the page or feature the task belongs to, one per task (\"page:/tools/cards\", \"feature:checkout\"); tasks of one area run one at a time in the same writer thread" });
+  return found;
+}
+
 /** Everything a task contract gets wrong before any helper or writer runs; errors send the task back to the PM, warnings go along with the answer. */
 export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:LintFinding[] } {
   const { task, kinds } = input;
   const errors:LintFinding[] = [], warnings:LintFinding[] = [];
   const kindOf = (path:string) => kinds?.get(path);
+
+  errors.push(...taskStandardFindings(task));
 
   // read_first: a project-relative path that exists on the writer's machine and is a file.
   try {

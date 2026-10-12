@@ -128,6 +128,10 @@ export function humanOutput(node: Extract<GraphNode, { type: "human" }>, answer:
 const TERMINAL_ATTEMPT = ["accepted", "blocked", "canceled"];
 const safeId = (text: string) => text.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "task";
 
+/** The task standard (the Tasks board): a workflow's own task fills what its contract leaves out, so the contract lint never refuses it. */
+const withTaskStandard = (contract: Row, key: string): Row => ({ ...contract,
+  display_title: str(contract.display_title).trim() || str(contract.title).slice(0, 60), kind: str(contract.kind) || "feature", area: str(contract.area).trim() || `workflow:${safeId(key)}` });
+
 type HelperUsage = { tokens: number; costUsd: number; unknown?: true };
 type LpTaskNode = Extract<GraphNode, { type: "lp-task" }>;
 
@@ -234,7 +238,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const run = getRun(db, rt.runId);
       if (!run?.writer_workspace_path) throw new Error("the run has no workspace to build in");
       const stem = sha256Hex(`${c.runId}|${c.stepKey}`).slice(0, 8);
-      const task = { ...contract, id: `w${stem}-${safeId(str(contract.id) || node.id)}`, project_cwd: run.writer_workspace_path, ...(node.quality_mode && node.quality_mode !== "{{$mode}}" ? { quality_mode: node.quality_mode } : { quality_mode: c.mode }) };
+      const task = { ...withTaskStandard(contract, node.id), id: `w${stem}-${safeId(str(contract.id) || node.id)}`, project_cwd: run.writer_workspace_path, ...(node.quality_mode && node.quality_mode !== "{{$mode}}" ? { quality_mode: node.quality_mode } : { quality_mode: c.mode }) };
       const valid = validateTaskV2(task);
       if (!valid.ok) return { output: failedTask("failed", `task-v2 invalid: ${valid.errors.join("; ")}`) };
       const hostId = getRunWriterHost(db, rt.runId) ?? "";
@@ -397,7 +401,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const errors: string[] = [];
     const parsed: TaskV2[] = [];
     for (const [at, raw] of tasks.entries()) {
-      const valid = validateTaskV2({ ...rec(raw), project_cwd: run?.writer_workspace_path ?? str(rec(raw).project_cwd) });
+      const valid = validateTaskV2({ ...withTaskStandard(rec(raw), str(rec(raw).id) || `task-${at + 1}`), project_cwd: run?.writer_workspace_path ?? str(rec(raw).project_cwd) });
       if (!valid.ok) { errors.push(`task #${at + 1} (${str(rec(raw).id) || "no id"}): ${valid.errors.join("; ")}`); continue; }
       parsed.push(valid.task);
       if (run?.writer_workspace_path) {

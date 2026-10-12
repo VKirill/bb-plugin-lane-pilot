@@ -437,6 +437,12 @@ export function setRunObjective(db: LanePilotDatabase, runId: string, objective:
   return db.prepare("UPDATE lane_pilot_run SET objective=?, updated_at=? WHERE id=? AND objective IS NULL").run(text, Date.now(), runId).changes === 1;
 }
 
+/** The run's objective, or null while no dispatch has named one. */
+export function getRunObjective(db: LanePilotDatabase, runId: string): string | null {
+  const row = db.prepare("SELECT objective FROM lane_pilot_run WHERE id=?").get(runId) as {objective:string|null}|undefined;
+  return row?.objective?.trim() || null;
+}
+
 export function getRunWriterHost(db: LanePilotDatabase, runId: string): string | null {
   const row = db.prepare("SELECT writer_host_id FROM lane_pilot_run WHERE id=?").get(runId) as {writer_host_id:string|null}|undefined;
   const hostId = row?.writer_host_id?.trim();

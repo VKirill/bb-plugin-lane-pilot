@@ -30,7 +30,7 @@ import { awaitsWriterAnswer, contractFixRecord, contractFixTurnPrompt, createAtt
 import type { FieldChange } from "./reopen-attempt";
 
 /** What a PM may change on a task its writer is waiting on a question about; any other field needs a redispatch. */
-const IN_PLACE_FIELDS: readonly string[] = ["verification", "acceptance", "expected_outputs", "owns_paths", "never_touch", "plan"];
+const IN_PLACE_FIELDS: readonly string[] = ["verification", "acceptance", "expected_outputs", "owns_paths", "never_touch", "plan", "display_title", "kind"];
 
 /** The top-level fields whose values differ between two contracts. */
 function changedFields(before: TaskV2, after: TaskV2): FieldChange[] {
@@ -214,7 +214,9 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
     }
 
     // The same contract lint as dispatch: every contract mistake goes back to the PM in one message, before the stored task changes.
-    const lint = await lintTask(input.projectId, input.runId, valid.task, taskBase, config.hostId);
+    const linted = await lintTask(input.projectId, input.runId, valid.task, taskBase, config.hostId);
+    // A blocked task keeps its area (a change needs a redispatch), so one dispatched before the task standard is not refused for lacking it.
+    const lint = { ...linted, errors: blocked && !oldContract.area ? linted.errors.filter((error) => error.code !== "area_missing") : linted.errors };
     if (lint.errors.length) {
       const { runId: _runId, state: _state, reason: _reason, ...rest } = lintReply(input.runId, lint.errors);
       const hint = `contract lint: the task was not changed. Fix and send the update again:\n${lint.errors.map((error) => `- ${error.message}`).join("\n")}`;

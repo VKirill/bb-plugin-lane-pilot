@@ -7,7 +7,7 @@ import type { SecretCheck } from "../src/rooms/secrets/server/secrets";
 
 const root = "/tmp/writer";
 const base: TaskV2 = {
-  schema_version:2, id:"s", title:"S", risk:"low", lane:"writer", project_cwd:root, read_first:[], interfaces:["i"], invariants:["x"], out_of_scope:["o"],
+  schema_version:2, display_title: "Тестовая задача", kind: "feature", area: "feature:s", id:"s", title:"S", risk:"low", lane:"writer", project_cwd:root, read_first:[], interfaces:["i"], invariants:["x"], out_of_scope:["o"],
   expected_outputs:["src/b.ts"], owns_paths:["src/"], never_touch:[".git/**"], depends_on:[], objective:"x", acceptance:["done"], verify:"tests",
   verification:[{ command:"node e2e.js", cwd:root, secrets:["STRIPE_TEST_KEY"] }],
 };

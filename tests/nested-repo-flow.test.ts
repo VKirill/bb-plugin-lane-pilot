@@ -45,7 +45,7 @@ async function setup(writerEdits: (workspace: string) => string) {
   };
   // As the PM wrote it on 2026-10-10: from the umbrella folder, with a reference file of another plugin to read.
   const task: TaskV2 = {
-    schema_version: 2, id: "p-hello", title: "Say hello in plugin p", risk: "low", lane: "writer", project_cwd: folder,
+    schema_version: 2, display_title: "Тестовая задача", kind: "feature", area: "feature:p-hello", id: "p-hello", title: "Say hello in plugin p", risk: "low", lane: "writer", project_cwd: folder,
     read_first: ["plugins/p/README.md", "plugins/q/src/other.ts"], interfaces: ["i"], invariants: ["inv"], out_of_scope: ["out"],
     expected_outputs: ["plugins/p/src/hello.ts"], owns_paths: ["plugins/p/src/"], never_touch: ["plugins/q/"], depends_on: [],
     objective: "say hello", acceptance: ["hello.ts says hello"], verify: "none", verification: [],
@@ -108,7 +108,7 @@ async function setup(writerEdits: (workspace: string) => string) {
   setRunThread(db, runId, pmThreadId);
   await plugin(bb);
   const dispatch = async (patch: Partial<TaskV2> = {}) => JSON.parse(String(await harness.behavior.callAgentTool(
-    "lane_pilot_dispatch_writer", { confirm: true, plan: "Make hello.ts say hello", task: { ...task, ...patch } }, { threadId: pmThreadId, projectId },
+    "lane_pilot_dispatch_writer", { confirm: true, objective: "Проверка диспетча", plan: "Make hello.ts say hello", task: { ...task, ...patch } }, { threadId: pmThreadId, projectId },
   ))) as Record<string, unknown>;
   const finished = async (taskId = "p-hello") => {
     for (let i = 0; i < 600; i++) {

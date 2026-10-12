@@ -9,13 +9,14 @@ import { cliReceiptAttemptKey, cliReceiptRunKey, DISPATCH_IDEMPOTENT_WINDOW_MS, 
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
 import { QUALITY_MODE_SETTING, browserQaRequired, resolveQualityMode } from "../../critique";
-import { setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, recordFinishedAttempt, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../storage";
+import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, recordFinishedAttempt, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../storage";
 import { sha256 } from "../../tasks";
 import { liveFolderLockNote, nextStep, taskFamily } from "../../runs";
 import { commonTaskFolder, isMainfixTask, isTaskBase, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask } from "../../tasks";
 import { validateTaskV2 } from "../../tasks/task-v2";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification";
 import { lintReply } from "../../tasks/server";
+import type { LintFinding } from "../../tasks/server";
 import { createTaskLinter } from "../../tasks/server";
 import { runPlanCritique, runPmRead, runSpecialistReview } from "../../critique/server";
 import { closeWriterStages, recordStage } from "../../runs/server";
@@ -126,7 +127,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     return { task:moved.task, plan:planWithOutsideReads(plan, moved.outsideReads), movedInto:repo };
   }
 
-  async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2; plan?:string; baseRef?:string; objective?:string}): Promise<Record<string,unknown>> {
+  async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2; plan?:string; baseRef?:string; objective?:string; requireObjective?:boolean}): Promise<Record<string,unknown>> {
     const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
     if (valueAt(metadata, "role") !== "pm") throw new Error("caller is not a Lane Pilot PM thread");
     const runId = stringAt(metadata, "lanePilotRunId");
@@ -174,7 +175,10 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     // Contract lint: every contract mistake a helper or writer would only trip over later goes back to the PM now,
     // in one message with the fix, before a task or an attempt exists.
     const lint = await lintTask(args.projectId, runId, task, taskBase, config.hostId);
-    if (lint.errors.length) return lintReply(runId, lint.errors);
+    // The run's objective (the Tasks board groups by it) comes with the PM's first dispatch; Lane Pilot's own dispatches (mainfix, workflows) need none.
+    const noObjective:LintFinding[] = args.requireObjective && !getRunObjective(db, runId)
+      ? [{ code:"objective_missing", message:"objective is missing: this run has none yet; add objective to this first dispatch, one phrase in the language the owner writes in saying what the whole batch is for (later dispatches may leave it out)" }] : [];
+    if (lint.errors.length || noObjective.length) return lintReply(runId, [...lint.errors, ...noObjective]);
     createTask(db, { id:taskId, runId, kind:"bb", contract:task });
     saveTaskPlan(db, taskId, canonicalPlan);
     if (run.run_gate === "pre-merge") {

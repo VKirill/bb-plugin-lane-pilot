@@ -67,7 +67,7 @@ const defs: ArtifactDef[] = [
     required: ["schema_version", "id", "title", "risk", "lane", "project_cwd", "read_first", "interfaces", "invariants", "out_of_scope", "expected_outputs", "owns_paths", "never_touch", "depends_on", "objective", "acceptance", "verify", "verification"],
     schema: taskV2Schema,
     example: {
-      schema_version: 2, id: "T1", title: "Add the limiter", risk: "medium", lane: "writer", project_cwd: "/work/project",
+      schema_version: 2, id: "T1", title: "Add the limiter", display_title: "Лимит запросов на выгрузку", kind: "feature", area: "feature:export", risk: "medium", lane: "writer", project_cwd: "/work/project",
       read_first: ["src/export/handler.ts:1-60"], interfaces: [], invariants: ["The response shape does not change."], out_of_scope: ["The import endpoint."],
       expected_outputs: ["src/export/limiter.ts"], owns_paths: ["src/export/**", "tests/export/**"], never_touch: [], depends_on: [],
       objective: "Reject the 11th export request of a minute with 429.",

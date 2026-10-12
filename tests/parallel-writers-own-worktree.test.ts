@@ -18,7 +18,7 @@ const config = {
 };
 
 const taskFor = (id: string): TaskV2 => ({
-  schema_version: 2, id, title: `Write ${id}`, risk: "low", lane: "writer", project_cwd: folder,
+  schema_version: 2, display_title: "Тестовая задача", kind: "feature", area: `feature:${id}`, id, title: `Write ${id}`, risk: "low", lane: "writer", project_cwd: folder,
   read_first: [], interfaces: ["file exists"], invariants: ["only its own file"], out_of_scope: ["other files"],
   expected_outputs: [`${id}.txt`], owns_paths: [`${id}.txt`], never_touch: [".git/**"], depends_on: [],
   objective: `Write ${id}.txt`, acceptance: ["file is present"], verify: "none", verification: [],
@@ -93,7 +93,7 @@ describe("parallel low-risk writers in one git folder", () => {
     for (const id of ids) {
       dispatched.push(JSON.parse(String(await harness.behavior.callAgentTool(
         "lane_pilot_dispatch_writer",
-        { confirm: true, plan: `Write ${id}.txt and nothing else`, task: taskFor(id) },
+        { confirm: true, objective: "Проверка диспетча", plan: `Write ${id}.txt and nothing else`, task: taskFor(id) },
         { threadId: pmThreadId, projectId },
       ))) as { attemptId: string });
     }

@@ -47,7 +47,7 @@ async function setup(writerEdits: (folder: string) => string, feedback: (folder:
     pmProviderId: "claude-code", pmModel: "claude-test", writerProviderId: "codex", writerModel: "codex-test",
   };
   const task: TaskV2 = {
-    schema_version: 2, id: "live-task", title: "Edit the live files", risk: "low", lane: "writer", project_cwd: folder,
+    schema_version: 2, display_title: "Тестовая задача", kind: "feature", area: "feature:live-task", id: "live-task", title: "Edit the live files", risk: "low", lane: "writer", project_cwd: folder,
     read_first: [], interfaces: ["i"], invariants: ["inv"], out_of_scope: ["out"], expected_outputs: ["hello.txt"],
     owns_paths: ["hello.txt", "src/**"], never_touch: [], depends_on: [], objective: "greet", acceptance: ["hello.txt says hello"],
     verify: "none", verification: [],
@@ -121,7 +121,7 @@ async function setup(writerEdits: (folder: string) => string, feedback: (folder:
   setRunThread(db, runId, pmThreadId);
   await plugin(bb);
   const dispatch = async (patch: Partial<TaskV2> = {}) => JSON.parse(String(await harness.behavior.callAgentTool(
-    "lane_pilot_dispatch_writer", { confirm: true, plan: "Make hello.txt say hello", task: { ...task, ...patch } }, { threadId: pmThreadId, projectId },
+    "lane_pilot_dispatch_writer", { confirm: true, objective: "Проверка диспетча", plan: "Make hello.txt say hello", task: { ...task, ...patch } }, { threadId: pmThreadId, projectId },
   ))) as Record<string, unknown>;
   const finished = async () => {
     for (let i = 0; i < 400; i++) {

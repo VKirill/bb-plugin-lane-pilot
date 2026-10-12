@@ -497,6 +497,7 @@ describe("files, diffs and the plugin's own state", () => {
     const summary = await t.start(workflow).done;
     const errors = (summary.output!.errors as string[]).join(" | ");
     expect(errors).toContain("task #3 (broken)");
+    expect(errors).not.toMatch(/display_title|kind_missing|area_missing/);
     expect(errors).toContain("t1 and t2 run in the same wave but both own src");
   });
 });
@@ -522,7 +523,7 @@ describe("a code task of a chain", () => {
     expect(first.status).toBe("waiting");
     expect(t.dispatched).toHaveLength(1);
     const dispatched = t.dispatched[0]!.task as Row;
-    expect(dispatched).toMatchObject({ project_cwd: t.checkout, title: "Write a note" });
+    expect(dispatched).toMatchObject({ project_cwd: t.checkout, title: "Write a note", display_title: "Write a note", kind: "feature", area: "workflow:build" });
     expect(String(dispatched.id)).toMatch(/^w[0-9a-f]{8}-c1$/);
     // The attempt is accepted and its merge commit carries the attempt trailer.
     createTask(t.db, { id: String(dispatched.id), runId: RUN, kind: "bb", contract: dispatched });

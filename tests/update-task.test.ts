@@ -41,6 +41,9 @@ describe("lane_pilot_update_task", () => {
   const baseTask: TaskV2 = {
     schema_version: 2,
     id: taskId,
+    display_title: "Тестовая задача",
+    kind: "feature",
+    area: "feature:update-task",
     title: "Original title",
     risk: "low",
     lane: "core",
@@ -226,6 +229,18 @@ describe("lane_pilot_update_task", () => {
       unchanged();
     });
 
+    it("sends the task standard back too: a title missing, too long, no kind, no area", async () => {
+      const { updateTask } = setup();
+      const res = await update(updateTask, { title: "New", display_title: "x".repeat(61), kind: undefined, area: undefined });
+      expect(res.ok).toBe(false);
+      expect(res.error).toMatchObject({ code: "validation_failed", findings: expect.arrayContaining([
+        expect.objectContaining({ code: "display_title_too_long" }), expect.objectContaining({ code: "kind_missing" }), expect.objectContaining({ code: "area_missing" })]) });
+      expect(hintOf(res)).toContain("the task was not changed");
+      unchanged();
+      const none = await update(updateTask, { title: "New", display_title: undefined });
+      expect(hintOf(none)).toContain("display_title is missing");
+    });
+
     it("rejects a read_first file that does not exist on the writer's machine", async () => {
       const { updateTask } = setup({});
       const res = await update(updateTask, { title: "New", read_first: ["src/gone.ts"] });
@@ -318,6 +333,17 @@ describe("lane_pilot_update_task", () => {
       } as unknown as Services;
       return { updateTask: createWriterUpdateTask(ctx, services).updateTask, sent, writes, started };
     };
+
+    it("fixes a blocked task dispatched before the task standard: the title and kind come in place, an area it never had is not demanded", async () => {
+      const { display_title: _title, kind: _kind, area: _area, ...old } = baseTask;
+      createTask(db, { id: taskId, runId, kind: "bb", contract: old });
+      createAttempt(db, { id: "att-1", runId, taskId });
+      db.prepare("UPDATE lane_pilot_attempt SET state='blocked', reason=?, thread_id='thr-w', workspace_path='/ws/worktrees/att-1' WHERE id='att-1'").run(`needs_human: ${question}`);
+      const { updateTask } = setup();
+      const res = await updateTask({ projectId, runId, pmThreadId, taskId, task: { ...old, display_title: "Правка проверки", kind: "fix", verification: newVerification } });
+      expect(res).toMatchObject({ ok: true, state: "running" });
+      expect(res.changed).toEqual(expect.arrayContaining(["verification", "display_title", "kind"]));
+    });
 
     it("fixes a check in place: the same attempt reopens in the same writer thread, no attempt is charged, the writer is told the change", async () => {
       blockedWith(`needs_human: ${question}`);
