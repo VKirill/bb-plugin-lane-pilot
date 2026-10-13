@@ -64,3 +64,11 @@ The repository root application imports this package from its workflow, storage,
 - [UI projections and schedule helpers](features/ui-projections.md)
 - [Data model overview](data-model.md)
 - [Gotchas](gotchas.md)
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Lane Pilot architecture](../../../docs/architecture.md)
+- [Lane Pilot overview](../../../docs/overview.md)
+- [Shared packages](../../../docs/packages.md)
+- [Workflow engine integration](../../../docs/workflow-engine.md)

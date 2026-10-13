@@ -2,7 +2,7 @@
 title: Workflow UI Projections and Schedule Helpers
 type: component
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-13
 status: active
 confidence: high
 tags: [workflow-engine, ui, schedules]
@@ -10,6 +10,8 @@ sources:
   - packages/workflow-engine/src/view.ts
   - packages/workflow-engine/src/draft-view.ts
   - packages/workflow-engine/src/view-core.ts
+  - packages/workflow-engine/src/capabilities.ts
+  - packages/workflow-engine/src/index.ts
   - packages/workflow-engine/src/edge-label.ts
   - packages/workflow-engine/src/cron.ts
   - packages/workflow-engine/src/ui.ts
@@ -54,6 +56,7 @@ TL;DR: Browser-facing helpers turn validated workflows and incomplete drafts int
 | `@lane-pilot/workflow-engine/ui`: `cronProblem`, `timezoneProblem`, `localTimezone` | Schedule validation and default zone (`packages/workflow-engine/src/ui.ts:1`, `packages/workflow-engine/src/cron.ts:8-31`). |
 | `@lane-pilot/workflow-engine/ui`: `draftView`, `draftChanges` | Partial draft display and diff (`packages/workflow-engine/src/ui.ts:2`, `packages/workflow-engine/src/draft-view.ts:63-102`). |
 | `@lane-pilot/workflow-engine/ui`: `humanCondition`, `edgeCaption`, `OTHERWISE`, `LabelLang`, `NameOf` | Localized edge labels (`packages/workflow-engine/src/ui.ts:3`, `packages/workflow-engine/src/edge-label.ts:7-9`, `packages/workflow-engine/src/edge-label.ts:153-168`). |
+| `@lane-pilot/workflow-engine`: `modelsSection`, `collectCapabilities` | Build the model catalog projection and collect queried capability sections (`packages/workflow-engine/src/index.ts:4`, `packages/workflow-engine/src/capabilities.ts:38-67`, `packages/workflow-engine/src/capabilities.ts:140-179`). |
 
 ## Package shape
 
@@ -63,9 +66,15 @@ TL;DR: Browser-facing helpers turn validated workflows and incomplete drafts int
 
 The complete view deliberately follows the lowered graph rather than the source graph, keeping displayed step IDs and edge indexes aligned with runtime. The draft view instead favors partial display over strict validation while a person edits a workflow (`packages/workflow-engine/src/view.ts:46-55`, `packages/workflow-engine/src/draft-view.ts:3-8`).
 
+### Model capability projection
+
+`modelsSection` turns the supplied model catalog and settings into names a workflow author can use. It omits providers and models with no host IDs. A query matching a provider ID keeps that provider's models; otherwise its models are filtered by model ID or display name. The result includes at most 40 models per provider with a `moreModels` count, each model's supported node efforts, and host availability (`packages/workflow-engine/src/capabilities.ts:29-31`, `packages/workflow-engine/src/capabilities.ts:38-54`).
+
+The result also lists connected-state host names, provider service tiers when supported, and each preset's resolved provider/model/reasoning choice and whether the run host offers that pair. It adds `notOnThisMachine` to model rows that are unavailable on the run host; the note describes preset and model fallback behavior (`packages/workflow-engine/src/capabilities.ts:38-67`). `collectCapabilities` returns models as unavailable when the port is absent, returns no catalog, or supplies no providers; a thrown model read becomes an error result (`packages/workflow-engine/src/capabilities.ts:168-175`).
+
 ## Dependencies
 
-These helpers use workflow lowering, display types, and built-in JavaScript `Intl` time-zone validation; the `/ui` export contains no Node-only imports (`packages/workflow-engine/src/view.ts:1-3`, `packages/workflow-engine/src/cron.ts:26-31`, `packages/workflow-engine/src/ui.ts:1-4`).
+The graph projections use workflow lowering and display types; the schedule helpers use built-in JavaScript `Intl` time-zone validation, and the `/ui` export contains no Node-only imports (`packages/workflow-engine/src/view.ts:1-3`, `packages/workflow-engine/src/cron.ts:26-31`, `packages/workflow-engine/src/ui.ts:1-4`). Model capability projection depends on the models catalog package and receives settings through its caller-provided catalog and settings arguments (`packages/workflow-engine/src/capabilities.ts:1-4`, `packages/workflow-engine/src/capabilities.ts:38-59`).
 
 ## Gotchas
 
