@@ -21,7 +21,7 @@ import { runBrowserQaOnHost } from "../qa";
 import { cancelHostJob, hostJobStatus, startHostJob } from "./jobs";
 import { scanCritiqueCoverage } from "../critique";
 import { prepareSandboxedCommandLine, releaseSandboxedCommandLine, runSandboxedCommandOnHost } from "../verification";
-import { gitOwnershipChangedPaths, resolveGitOwnershipBase } from "../verification";
+import { gitOwnershipChangedPaths, resolveGitOwnershipBase, undoCheckWrites } from "../verification";
 import { runCliOnHost, runCommandOnHost, writePmSettingsOnHost } from "../writer";
 import { runScriptOnHost } from "./script-run";
 import { probeOpenCodeLimit } from "./opencode-limit-log";
@@ -190,6 +190,11 @@ export const docsWorthinessFacts: ExperimentalHostRpcHandlers<typeof hostContrac
 
 export const gitRevertPaths: ExperimentalHostRpcHandlers<typeof hostContract>["gitRevertPaths"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId, ...await revertPaths({projectCwd:input.projectCwd,paths:input.paths}),
+});
+
+export const gitUndoCheckWrites: ExperimentalHostRpcHandlers<typeof hostContract>["gitUndoCheckWrites"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  ...await undoCheckWrites({projectCwd:input.projectCwd,keep:input.keep,ownsPaths:input.ownsPaths,neverTouch:input.neverTouch,bookkeeping:input.bookkeeping}),
 });
 
 export const docsAnchors: ExperimentalHostRpcHandlers<typeof hostContract>["docsAnchors"] = async (input) => ({
