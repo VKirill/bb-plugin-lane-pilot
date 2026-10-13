@@ -220,6 +220,8 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
   ownsPaths?:string[];
   /** Run once the attempt was replayed on a moved main, before the merge (a semantic clash shows only there). */
   replayCheck?:()=>Promise<ReplayCheckOutcome>;
+  /** How long a merge stopped by another git's fresh index.lock in the base waits for that lock to go before it gives up. */
+  indexLockWaitMs?:number;
   /** How long machine-written files staged in the base's index (a stage between `git add` and `git commit`) get to be committed by their stager; then they are committed here. */
   stagedWaitMs?:number}):Promise<GitIntegration> {
   const fail=(reason:string):GitIntegration=>({status:"failed",commit:null,conflicts:[],reason});
@@ -258,7 +260,7 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
           return {status:"conflict",commit:null,conflicts:[],reason:`${REPLAY_CHECK_FAILED}: verification failed (${replay.failed.map((check)=>check.command).join(", ")})`,checks:replay.failed};
         }
       }
-      const merged=await merge(input.basePath,rebased??sha,input.message,input.bookkeeping,input.ownsPaths);
+      const merged=await merge(input.basePath,rebased??sha,input.message,input.bookkeeping,input.ownsPaths,input.indexLockWaitMs);
       if(rebased&&merged.status==="merged") merged.rebased=true;
       if(merged.status==="merged"&&before) merged.rebuilt=await rebuildChangedPackages(input.basePath,before);
       return merged;
@@ -434,12 +436,39 @@ async function resolveBookkeepingToMain(basePath:string, sha:string, extra:reado
   }
 }
 
-async function merge(basePath:string,sha:string,message:string,bookkeeping:readonly string[]=[],ownsPaths:readonly string[]=[]):Promise<GitIntegration> {
+/** git's words for a command that found <git-dir>/index.lock taken (withIndexLockNote adds the lock where git names none). */
+const INDEX_LOCKED=/index\.lock|unable to write (new )?index/i;
+
+/** Waits until nobody holds <git-dir>/index.lock; false when it still stands at the deadline. */
+async function indexLockGone(cwd:string,waitMs:number):Promise<boolean> {
+  const dir=await git(cwd,["rev-parse","--absolute-git-dir"]);
+  if(!dir.ok||!dir.stdout.trim()) return false;
+  const lock=join(dir.stdout.trim(),"index.lock");
+  const deadline=Date.now()+waitMs;
+  while(existsSync(lock)) {
+    if(Date.now()>deadline) return false;
+    await new Promise((resolve)=>setTimeout(resolve,200));
+  }
+  return true;
+}
+
+async function merge(basePath:string,sha:string,message:string,bookkeeping:readonly string[]=[],ownsPaths:readonly string[]=[],lockWaitMs=20_000):Promise<GitIntegration> {
   const targetSha = await resolveBookkeepingToMain(basePath, sha, bookkeeping, ownsPaths);
   if((await git(basePath,["merge-base","--is-ancestor",targetSha,"HEAD"])).ok) {
     return {status:"up-to-date",commit:(await git(basePath,["rev-parse","HEAD"])).stdout.trim()||null,conflicts:[],reason:null};
   }
-  const merged=await git(basePath,[...await identity(basePath),"merge","--no-ff","--no-edit","-m",`Merge writer work: ${message}`,targetSha]);
+  const runMerge=async()=>git(basePath,[...await identity(basePath),"merge","--no-ff","--no-edit","-m",`Merge writer work: ${message}`,targetSha]);
+  let merged=await runMerge();
+  // The base is shared: BB, the PM and other tools run git there, and a `git status` holds index.lock for a moment. git
+  // 2.37+ merges start with `git stash create`, which does not wait for that lock (OVH 2026-10-13: «fatal: stash failed»,
+  // nothing changed); on a clean tree the merge stops on «Unable to write index» with MERGE_HEAD left. Once the lock
+  // is gone, the unfinished merge is undone and the merge runs again.
+  const deadline=Date.now()+lockWaitMs;
+  while(!merged.ok&&INDEX_LOCKED.test(merged.reason)&&Date.now()<deadline&&await indexLockGone(basePath,deadline-Date.now())) {
+    const gitDir=(await git(basePath,["rev-parse","--absolute-git-dir"])).stdout.trim();
+    if(gitDir&&existsSync(join(gitDir,"MERGE_HEAD"))) await git(basePath,["merge","--abort"]);
+    merged=await runMerge();
+  }
   if(merged.ok) return {status:"merged",commit:(await git(basePath,["rev-parse","HEAD"])).stdout.trim()||null,conflicts:[],reason:null};
   const unmerged=await git(basePath,["diff","--name-only","--diff-filter=U"]);
   const conflicts=unmerged.ok?unmerged.stdout.split("\n").map((line)=>line.trim()).filter(Boolean):[];
