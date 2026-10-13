@@ -135,6 +135,9 @@ export function createOpencodeMinimalEnv(ctx: Pick<ServerCore, "bb" | "host">, n
       return [];
     }
     if (!stringAt(metadata, "role")) return [];
+    // Lane Pilot compacts a sticky writer's thread itself (`compactIfFull`); OpenCode's own auto-compaction stays off on its threads,
+    // while the machine's config keeps OpenCode's default for the owner's sessions (Lane Stack 1.65.1 no longer turns it off there).
+    const autocompact: ExperimentalPluginProviderEnvEntry = { name: "OPENCODE_DISABLE_AUTOCOMPACT", value: "1", reason: "Lane Pilot compacts its own threads" };
     // The model only picks which provider's plugin is kept (all auth plugins are): without it the helper still starts.
     const options = await within(left(THREAD_CALL_MS), "defaultExecutionOptions", Promise.resolve(bb.sdk.threads.defaultExecutionOptions({ threadId: context.threadId }))).catch(() => null);
     const model = stringAt(options, "model") ?? null;
@@ -160,11 +163,11 @@ export function createOpencodeMinimalEnv(ctx: Pick<ServerCore, "bb" | "host">, n
         throw new Error(reason);
       } finally { clearTimeout(timer); }
     }
-    if (!prepared) return [];
+    if (!prepared) return [autocompact];
     return [{
       name: "XDG_CONFIG_HOME", value: prepared.configHome,
       reason: `Lane Pilot: OpenCode helper with a minimal config (kept ${prepared.kept.join(", ") || "nothing"}; left out ${prepared.left.join(", ")})`.slice(0, 500),
-    }];
+    }, autocompact];
   };
 
   return Object.assign(hook, { warm, warmConnected });

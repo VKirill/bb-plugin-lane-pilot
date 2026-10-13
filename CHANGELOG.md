@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.244
+
+- **OpenCode's auto-compaction is off on Lane Pilot's OpenCode threads by their own env (`OPENCODE_DISABLE_AUTOCOMPACT=1`), not by the machine's config.** Lane Stack 1.65.1 stops turning compaction off in the global OpenCode config, so the owner's own OpenCode sessions get OpenCode's default (summarise when the context fills) instead of running into the model's limit. Lane Pilot compacts a sticky writer's thread itself (`compactIfFull`), so its threads keep OpenCode's own auto-compaction off; the variable goes out with the minimal config and the role marker, also when the machine builds no minimal config.
+  - Tests: `tests/server/opencode-minimal.test.ts`, `tests/server/helper-bb-shim.test.ts`.
+
 ## 0.1.243
 
 - **Lane Pilot marks its Codex, OpenCode and Cursor threads with `LANE_PILOT_ROLE`, so the machine's lane plugins leave the owner's own sessions alone.** Lane Stack installs its OpenCode plugin `opencode-lane` into the machine's global OpenCode config, and its writer guard ran in every OpenCode session: a session the owner started by hand, with no Lane Pilot in it, was refused `pokecut-theme` and `bb-plugin-authoring` («[opencode-lane guard] skill blocked …»), as well as MCP servers other than gitnexus/agentmemory and `git checkout`. The thread's env now carries the thread's role next to the guard wrappers' PATH (also when the machine does not know the wrappers yet), and Lane Stack 1.65.1 runs the guard, writer notes and sticky contract only where `LANE_PILOT_ROLE`, `LANE_PROMPT_FILE` or `LANE_TASK_FILE` is set.

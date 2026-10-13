@@ -86,7 +86,8 @@ describe("the minimal OpenCode config of a helper", () => {
 
   it("leaves the machine's config alone when the machine says there is nothing to leave out, and for threads that are not Lane Pilot's", async () => {
     const nothing = setup(async () => ({ result: null }));
-    expect(await nothing.contribute({ threadId: "thr_1", hostId: "ovh" })).toEqual([]);
+    // OpenCode's own auto-compaction stays off on a Lane Pilot thread: Lane Pilot compacts it itself.
+    expect(await nothing.contribute({ threadId: "thr_1", hostId: "ovh" })).toEqual([expect.objectContaining({ name: "OPENCODE_DISABLE_AUTOCOMPACT", value: "1" })]);
     const owners = setup(async () => ({ result: PREPARED }), { role: null });
     expect(await owners.contribute({ threadId: "thr_own", hostId: "ovh" })).toEqual([]);
     expect(owners.host.call).not.toHaveBeenCalled();

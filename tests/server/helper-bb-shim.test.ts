@@ -101,7 +101,7 @@ describe("which providers get the wrappers", () => {
     const { registered, host } = mounted(mountOpencodeMinimal);
     expect([...registered.keys()]).toEqual(["acp-opencode"]);
     const entries = await registered.get("acp-opencode")!({ threadId: "thr_1", hostId: "ovh" }) as Array<{ name: string; value: string }>;
-    expect(entries.map((entry) => entry.name).sort()).toEqual(["LANE_PILOT_ROLE", "PATH", "XDG_CONFIG_HOME"]);
+    expect(entries.map((entry) => entry.name).sort()).toEqual(["LANE_PILOT_ROLE", "OPENCODE_DISABLE_AUTOCOMPACT", "PATH", "XDG_CONFIG_HOME"]);
     expect(entries.find((entry) => entry.name === "PATH")!.value).toBe(SHIM.path);
     expect(host.call.mock.calls.map((call) => call[0]).sort()).toEqual(["prepareBbShim", "prepareOpencodeMinimal"]);
   });
