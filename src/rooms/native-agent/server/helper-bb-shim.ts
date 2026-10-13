@@ -8,7 +8,9 @@ import type { ServerCore } from "../../core/server";
  * writes the wrappers and says the PATH (host call `prepareBbShim`); the thread's own PATH is not readable from here, so the
  * host worker's is used, which is the one BB's daemon hands its threads.
  *
- * Only threads Lane Pilot started carry a `role`; the owner's own chats keep their PATH. The PM (role `pm`) is on Claude Code and
+ * Only threads Lane Pilot started carry a `role`; the owner's own chats keep their PATH. The same threads get `LANE_PILOT_ROLE`, the
+ * marker lane plugins installed for the whole machine check (opencode-lane's guard refused skills in the owner's own OpenCode chats
+ * before it did, 2026-10-13). The PM (role `pm`) is on Claude Code and
  * reloads its own plugin, so it is left out. A host that does not know the call yet (older install) is not a reason to stop a
  * helper: it starts without the wrappers and the log says so; any other failure refuses the start, like the OpenCode config does.
  */
@@ -65,9 +67,11 @@ export function createBbShimEnv(ctx: Pick<ServerCore, "bb" | "host">, now: () =>
     }
     const role = stringAt(metadata, "role");
     if (!role || role === "pm") return [];
+    // The marker the machine's lane plugins and hooks (opencode-lane guard) check: without it they leave the owner's own sessions alone.
+    const mark = { name: "LANE_PILOT_ROLE", value: role, reason: `Lane Pilot: ${role} thread; lane plugins and hooks on the machine act only where this is set`.slice(0, 500) };
     const shim = await prepare(context.hostId);
-    if (!shim) return [];
-    return [{ name: "PATH", value: shim.path, reason: `Lane Pilot: ${role} thread runs bb, ssh, scp and sftp through the guard wrappers in ${shim.dir}`.slice(0, 500) }];
+    if (!shim) return [mark];
+    return [mark, { name: "PATH", value: shim.path, reason: `Lane Pilot: ${role} thread runs bb, ssh, scp and sftp through the guard wrappers in ${shim.dir}`.slice(0, 500) }];
   };
 }
 

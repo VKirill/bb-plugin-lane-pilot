@@ -24,8 +24,8 @@ describe("the bb guard wrappers of a Codex, OpenCode or Cursor thread", () => {
     for (const role of ["writer", "pm-reader", "plan-critic", "code-critic", "specialist", "self-repair", "docs-nightly"]) {
       const { contribute, host } = setup(undefined, { role });
       const entries = await contribute({ threadId: "thr_1", hostId: "ovh" });
-      expect(entries).toEqual([expect.objectContaining({ name: "PATH", value: SHIM.path })]);
-      expect(entries[0]!.reason).toContain(role);
+      expect(entries).toEqual([expect.objectContaining({ name: "LANE_PILOT_ROLE", value: role }), expect.objectContaining({ name: "PATH", value: SHIM.path })]);
+      expect(entries[1]!.reason).toContain(role);
       expect(host.call).toHaveBeenCalledWith("prepareBbShim", { requestedHostId: "ovh" }, expect.objectContaining({ hostId: "ovh" }));
     }
   });
@@ -57,12 +57,13 @@ describe("the bb guard wrappers of a Codex, OpenCode or Cursor thread", () => {
     const { contribute } = setup(async () => { if (!healthy) throw new Error("EACCES: permission denied, mkdir"); return SHIM; });
     await expect(contribute({ threadId: "thr_1", hostId: "ovh" })).rejects.toThrow(/bb_shim_failed:ovh: EACCES/);
     healthy = true;
-    expect((await contribute({ threadId: "thr_2", hostId: "ovh" }))[0]?.value).toBe(SHIM.path);
+    expect((await contribute({ threadId: "thr_2", hostId: "ovh" }))[1]?.value).toBe(SHIM.path);
   });
 
   it("lets a thread on a host that does not know the call yet start, and logs it", async () => {
     const { contribute, warns } = setup(async () => { throw new Error("unknown host method prepareBbShim"); });
-    expect(await contribute({ threadId: "thr_1", hostId: "old" })).toEqual([]);
+    // The lane marker still goes out: the machine's lane plugins must know it is a Lane Pilot thread.
+    expect(await contribute({ threadId: "thr_1", hostId: "old" })).toEqual([expect.objectContaining({ name: "LANE_PILOT_ROLE", value: "writer" })]);
     expect(warns.join("\n")).toContain("does not know prepareBbShim");
   });
 
@@ -93,14 +94,14 @@ describe("which providers get the wrappers", () => {
     const { registered } = mounted(mountBbShim);
     expect([...registered.keys()].sort()).toEqual([...BB_SHIM_PROVIDER_IDS].sort());
     expect(BB_SHIM_PROVIDER_IDS).toEqual(expect.arrayContaining(["codex", "acp-cursor"]));
-    expect(await registered.get("codex")!({ threadId: "thr_1", hostId: "ovh" })).toEqual([expect.objectContaining({ name: "PATH", value: SHIM.path })]);
+    expect(await registered.get("codex")!({ threadId: "thr_1", hostId: "ovh" })).toEqual([expect.objectContaining({ name: "LANE_PILOT_ROLE", value: "writer" }), expect.objectContaining({ name: "PATH", value: SHIM.path })]);
   });
 
   it("OpenCode through the one resolver it has, next to its minimal config", async () => {
     const { registered, host } = mounted(mountOpencodeMinimal);
     expect([...registered.keys()]).toEqual(["acp-opencode"]);
     const entries = await registered.get("acp-opencode")!({ threadId: "thr_1", hostId: "ovh" }) as Array<{ name: string; value: string }>;
-    expect(entries.map((entry) => entry.name).sort()).toEqual(["PATH", "XDG_CONFIG_HOME"]);
+    expect(entries.map((entry) => entry.name).sort()).toEqual(["LANE_PILOT_ROLE", "PATH", "XDG_CONFIG_HOME"]);
     expect(entries.find((entry) => entry.name === "PATH")!.value).toBe(SHIM.path);
     expect(host.call.mock.calls.map((call) => call[0]).sort()).toEqual(["prepareBbShim", "prepareOpencodeMinimal"]);
   });

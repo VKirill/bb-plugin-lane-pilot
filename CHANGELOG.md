@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.243
+
+- **Lane Pilot marks its Codex, OpenCode and Cursor threads with `LANE_PILOT_ROLE`, so the machine's lane plugins leave the owner's own sessions alone.** Lane Stack installs its OpenCode plugin `opencode-lane` into the machine's global OpenCode config, and its writer guard ran in every OpenCode session: a session the owner started by hand, with no Lane Pilot in it, was refused `pokecut-theme` and `bb-plugin-authoring` («[opencode-lane guard] skill blocked …»), as well as MCP servers other than gitnexus/agentmemory and `git checkout`. The thread's env now carries the thread's role next to the guard wrappers' PATH (also when the machine does not know the wrappers yet), and Lane Stack 1.65.1 runs the guard, writer notes and sticky contract only where `LANE_PILOT_ROLE`, `LANE_PROMPT_FILE` or `LANE_TASK_FILE` is set.
+  - Tests: `tests/server/helper-bb-shim.test.ts` (every Lane Pilot role gets the marker, the owner's chats and the PM do not, a machine without the wrappers still gets it, OpenCode gets it next to its minimal config).
 
 From a self-repair of «missing expected_outputs: <path>» (cakekeeper, SelfyStudio; 2026-10-12):
 - **A turn the provider cut off is continued, not checked against the contract.** acp-cursor ends a turn whose model stream broke off as «completed», with only the provider's error as the answer (`Error: RetriableError: [resource_exhausted] Error`, `[unavailable]`, `[canceled] http/2 stream closed …`). Lane Pilot checked the half-done work: cakekeeper ck-18 and ck-25 failed «missing expected_outputs» for the stage note the writer had not reached yet, and ck-21 was blocked with «no progress» after a second cut 8 s later. Such an answer (`providerStreamError`, at most 400 characters) now ends the attempt `provider_error: writer_stream_error: …`; the same writer continues in its thread with its edits and a brief that says the provider cut it off. A second cut in a row hands the task to the writer chain in the same worktree (with the handoff), instead of a third turn or a `repeated_failure` block. The self-repair watcher does not count these as a Lane Pilot pattern.
