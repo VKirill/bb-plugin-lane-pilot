@@ -1,5 +1,5 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { mkdtemp, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -91,7 +91,7 @@ describe("a merge blocked by a lock", () => {
     await writeFile(join(path, "new.ts"), "x\n");
     await writeFile(lockOf(base), "");
     await aged(lockOf(base), 5); // fresh: recovery leaves it, so git refuses
-    const result = await integrateWorktree({ basePath:base, worktreePath:path, message:"t" });
+    const result = await integrateWorktree({ basePath:base, worktreePath:path, message:"t", indexLockWaitMs:500 });
     expect(result.status).toBe("failed");
     expect(result.conflicts).toEqual([]);
     expect(result.reason).toMatch(/git merge failed: .*index\.lock/s);
@@ -104,6 +104,33 @@ describe("a merge blocked by a lock", () => {
     await writeFile(lockOf(base), "");
     await aged(lockOf(base), 3600);
     expect((await integrateWorktree({ basePath:base, worktreePath:path, message:"t" })).status).toBe("merged");
+  });
+});
+
+describe("a merge that meets another git's fresh lock", () => {
+  // SelfyStudio on OVH 2026-10-13: git 2.43 merges call `git stash create`, which does not wait for index.lock; another
+  // git process in the shared base held it for a moment and the merge died «fatal: stash failed», the task parked.
+  const releasedSoon = (base: string) => { writeFileSync(lockOf(base), ""); setTimeout(() => rmSync(lockOf(base), { force: true }), 1_500); };
+
+  it("waits for the lock to go and merges over the base's own uncommitted edits", async () => {
+    const { base, worktree } = await repo();
+    await writeFile(join(base, "server.ts"), "line1\nprogress note\n"); // PROGRESS.md-like edit left in main
+    const path = await worktree("w4");
+    await writeFile(join(path, "new.ts"), "x\n");
+    releasedSoon(base);
+    const result = await integrateWorktree({ basePath:base, worktreePath:path, message:"t" });
+    expect(result.status, result.reason ?? "").toBe("merged");
+    expect(git(base, "show", "HEAD:new.ts")).toBe("x\n");
+    expect(git(base, "status", "--porcelain")).toBe(" M server.ts\n");
+  });
+
+  it("merges on a clean base whose first try left an unfinished merge", async () => {
+    const { base, worktree } = await repo();
+    const path = await worktree("w5");
+    await writeFile(join(path, "new.ts"), "x\n");
+    releasedSoon(base);
+    expect((await integrateWorktree({ basePath:base, worktreePath:path, message:"t" })).status).toBe("merged");
+    expect(existsSync(join(base, ".git", "MERGE_HEAD"))).toBe(false);
   });
 });
 
