@@ -2,7 +2,7 @@
 title: Build and deploy Lane Pilot
 type: deployment
 created: 2026-10-10
-updated: 2026-10-11
+updated: 2026-10-13
 status: active
 confidence: medium
 tags: [deployment, build, configuration]
@@ -46,7 +46,7 @@ TL;DR: Lane Pilot's root package manifest declares its server, host, and app ent
 
 ## Build
 
-The package manifest maps BB's server, host-worker, and app bundles to `server.ts`, `host.ts`, and `app.tsx` (`package.json:10-18`). The npm workspace pattern is `packages/*` (`package.json:96-98`). `npm run build` invokes `bb plugin build` (`package.json:86-91`). The aggregate `check` script runs `npm test`, typecheck, plugin build, and layout tests in sequence (`package.json:86-95`). The root package owns these commands; the contracts, workflow-engine, and world-sim package manifests contain no package-specific scripts (`packages/contracts/package.json:1-13`, `packages/workflow-engine/package.json:1-14`, `packages/world-sim/package.json:1-15`).
+The package manifest maps BB's server, host-worker, and app bundles to `server.ts`, `host.ts`, and `app.tsx` (`package.json:10-18`). The npm workspace pattern is `packages/*` (`package.json:96-98`). `npm run build` invokes `bb plugin build` (`package.json:86-91`). The aggregate `check` script runs `npm test`, typecheck, plugin build, and layout tests in sequence (`package.json:86-95`). These root commands live in the root manifest. The contracts, workflow-engine, and world-sim manifests declare package entry points and no `scripts` key; world-sim also exports its protocol subpath (`packages/contracts/package.json:8-12`, `packages/workflow-engine/package.json:8-13`, `packages/world-sim/package.json:8-14`).
 
 The server opens plugin SQLite and applies the migration list as part of plugin startup (`src/rooms/storage/database.ts:323-327`). The plugin uses Node 22.19+, 24, or 26 and BB version `>=0.43.3`; the SDK engine requirement is `>=0.4.104` (`package.json:3-7`).
 

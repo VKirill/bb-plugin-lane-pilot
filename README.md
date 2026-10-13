@@ -2,7 +2,7 @@
 
 ![Lane Pilot: a captain crab plans, writer crabs dig their own branches, checks in a sandbox, merges into main](docs/images/hero.jpg)
 
-Lane Pilot is a BB plugin that coordinates coding work from a project chat. It creates writer tasks, tracks checks and review, and provides project settings, memory, workflows, schedules, and maintenance tools.
+Lane Pilot is a BB plugin that coordinates coding work from a project chat. It creates writer tasks, tracks checks and review, and provides project settings, memory, workflows, schedules, a Tasks board, and maintenance tools.
 
 ## Quick start
 
@@ -25,4 +25,5 @@ For focused test selection, see [build and deployment](docs/deployment.md#config
 - [Cross-cutting gotchas](docs/gotchas.md)
 - [Data model](docs/data-model.md)
 - [Shared packages](docs/packages.md)
+- [Tasks board and work graph](docs/task-board.md)
 - [Architectural decisions](docs/decisions.md)

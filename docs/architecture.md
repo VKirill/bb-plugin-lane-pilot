@@ -2,12 +2,14 @@
 title: Lane Pilot architecture
 type: architecture
 created: 2026-09-30
-updated: 2026-10-11
+updated: 2026-10-13
 status: active
 confidence: medium
 tags: [architecture, runtime, monorepo]
 sources:
   - server.ts
+  - app.tsx
+  - host.ts
   - package.json
   - src/rooms/core/server/core.ts
   - src/rooms/core/server/services.ts
@@ -22,12 +24,15 @@ sources:
   - src/rooms/contracts/rpc-ops.ts
   - src/rooms/contracts/rpc-knowledge.ts
   - src/rooms/contracts/rpc-workflow.ts
+  - src/rooms/contracts/rpc-native.ts
+  - src/rooms/runs/server/rpc/runs.ts
+  - src/rooms/runs/server/task-board.ts
+  - src/rooms/runs/server/task-graph.ts
   - src/rooms/storage/database.ts
   - packages/jev/src/run.ts
   - packages/host-calls/src/run-on-host.ts
   - packages/thread-observe/src/completion.ts
   - packages/handoff/src/messages.ts
-  - app.tsx
 ---
 
 # Lane Pilot architecture
@@ -54,6 +59,29 @@ C4Container
 
 The UI and server entries are declared by the package's BB manifest (`package.json:8-18`). The server uses BB's plugin storage database and runs migrations during startup (`src/rooms/storage/database.ts:323-327`). The UI receives methods from the assembled `rpcContract`, while host calls use `hostContract` (`src/rooms/contracts/index.ts:1-26`, `src/rooms/contracts/host.ts:6-15`).
 
+## Application and package dependencies
+
+```mermaid
+flowchart LR
+  app[BB app entry]
+  server[BB server entry]
+  host[Host worker entry]
+  rooms[Room UI and server modules]
+  ui[ui-kit]
+  shared[contracts, i18n, models, kit]
+  domains[council, handoff, host-calls, Jev, memory-core, resilience, run-insights, settings-catalog, thread-observe]
+  engines[workflow-engine, world-sim, pixel-world]
+  app --> rooms
+  host --> rooms
+  rooms --> ui
+  rooms --> shared
+  server --> rooms
+  rooms --> domains
+  rooms --> engines
+```
+
+The root package declares workspace dependencies and the three BB entries; `server.ts`, `app.tsx`, and `host.ts` import their room-facing implementations (`package.json:8-18`, `package.json:20-54`, `server.ts:1-48`, `app.tsx:1-50`, `host.ts:1-30`). The diagram groups small workspaces by their use from the app, room server, and host entry. Package API ownership is listed in [shared packages](packages.md); UI kit, workflow engine, and world simulation internals are documented in their [workspace pages](../packages/ui-kit/docs/overview.md), [workflow engine overview](../packages/workflow-engine/docs/overview.md), and [world simulation overview](../packages/world-sim/docs/overview.md).
+
 ## Startup and service composition
 
 1. BB calls `plugin(bb)`. The entry opens SQLite and installs thread signals, then creates the shared core (`server.ts:55-60`).
@@ -72,11 +100,11 @@ The test's deep-import baseline is recorded in `tests/architecture/deep-imports.
 
 ## RPC composition and event wiring
 
-`rpcContract` combines shell, native-agent, runs, settings, operations, knowledge, workflow, and world schemas (`src/rooms/contracts/index.ts:17-26`). `registerRpc` combines handlers from each room and installs one timed BB RPC registration (`src/rooms/core/server/rpc.ts:26-50`). Contracts use strict Zod input/output shapes; for example, run-list requests carry project, offset, limit and optional section (`src/rooms/contracts/rpc-runs.ts:33-40`), and the workflow contract describes drafts, tests and publication operations (`src/rooms/contracts/rpc-workflow.ts:5-90`). The operations contract and its route groups are detailed in [RPC and host-call contracts](rpc-callers.md#how-it-works).
+`rpcContract` combines shell, native-agent, runs, settings, operations, knowledge, workflow, and world schemas (`src/rooms/contracts/index.ts:17-26`). `registerRpc` combines domain handler maps, wraps them with timing, and registers the result against that contract (`src/rooms/core/server/rpc.ts:27-51`). The runs handlers expose the Tasks board and card; the native helper-thread response can include the open run's dependency graph (`src/rooms/runs/server/rpc/runs.ts:46-50`, `:165-202`, `src/rooms/contracts/rpc-native.ts:127-144`). See [RPC and host-call contracts](rpc-callers.md#how-it-works) and [Tasks board](task-board.md).
 
 `mountNativeWiring` registers the mention provider, `message.dispatch` handler, Claude environment contribution, OpenCode shim, BB shim, and retry handling for dropped provider streams (`src/rooms/core/server/native-wiring.ts:10-58`). `mountLifecycleEvents` adds event listeners only when the BB event API exists and `LANE_PILOT_THREAD_SIGNALS` is not `0`; missing event names are logged and periodic sweeps remain the fallback (`src/rooms/core/server/lifecycle-events.ts:22-37`). It closes runs when their PM thread is archived or deleted and notifies PMs when an attempt is waiting on an owner interaction (`src/rooms/core/server/lifecycle-events.ts:39-72`).
 
-The host contract declares plugin-to-host operations including native install, git ownership and host jobs (`src/rooms/contracts/host.ts:6-25`). `runOnHost` is a typed convenience wrapper for `runCommand`; it passes the same host id in the call input and call options and defaults the transport wait to command timeout plus five seconds (`packages/host-calls/src/run-on-host.ts:8-31`).
+Host methods include native install, Git ownership and worktree operations, long-running host jobs, stability drills, Anamnesis procedures, disk-space queries, OpenCode telemetry, docs/workflow file operations, and coexistence operations (`src/rooms/contracts/host.ts:6-90`, `:114-205`, `:207-260`, `:261-410`). `runOnHost` is a typed convenience wrapper for `runCommand`; it passes the same host id in the call input and call options and defaults the transport wait to command timeout plus five seconds (`packages/host-calls/src/run-on-host.ts:8-31`).
 
 ## Data ownership
 

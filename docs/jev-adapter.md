@@ -2,12 +2,13 @@
 title: Jev adapter for native writer reasoning
 type: component
 created: 2026-09-23
-updated: 2026-10-11
+updated: 2026-10-13
 status: active
 confidence: medium
 tags: [jev, reasoning, native-writer]
 sources:
   - src/rooms/core/server/core.ts
+  - src/rooms/writer/server/spawn.ts
   - src/rooms/writer/server/dispatch.ts
   - packages/jev/src/run.ts
   - packages/jev/src/provider.ts
@@ -27,7 +28,7 @@ TL;DR: Jev classifies the dispatched task plan and Lane Pilot uses its effort on
 
 ## Purpose
 
-Choose a reasoning effort for native writer dispatch using the task plan and the selected provider/model catalog (`src/rooms/writer/server/dispatch.ts:107-120`, `packages/models/src/jev-reasoning.ts:4-26`). The ordinary terminal Lane Stack routing path is separate from this BB adapter.
+Choose a reasoning effort for native writer spawning using the task plan and selected provider/model catalog (`src/rooms/writer/server/spawn.ts:220-264`, `packages/models/src/jev-reasoning.ts:4-26`). The ordinary terminal Lane Stack routing path is separate from this BB adapter.
 
 ## How it works
 
@@ -36,7 +37,7 @@ Choose a reasoning effort for native writer dispatch using the task plan and the
 3. `createJev` builds the judgment runner; it redacts the judgment state, collects questions and resolves mode and thresholds (`packages/jev/src/run.ts:56-64`).
 4. Requests with the same state and model are grouped; question and state limits split larger groups into multiple calls (`packages/jev/src/run.ts:99-117`).
 5. Failed calls, invalid answers, and decision exceptions return the judgment's deterministic fallback; shadow mode records the model's decision but returns fallback (`packages/jev/src/run.ts:82-96`).
-6. The writer dispatch path resolves the model's advertised reasoning levels and maps the Jev choice to a compatible level; if selection is unavailable or incompatible, it retains the configured manual fallback and records the trace (`packages/models/src/jev-reasoning.ts:4-26`, `packages/models/src/picker-compat.ts:1-12`).
+6. The writer spawn path asks the host to classify the plan when automatic effort routing is enabled, checks the returned plan proof, resolves the Jev choice against the selected model's advertised reasoning levels, and records the requested and effective levels in the run trace (`src/rooms/writer/server/spawn.ts:220-264`, `packages/models/src/jev-reasoning.ts:4-26`). If the catalog is unavailable or the requested level is unsupported, `resolveJevReasoning` selects the configured manual effort (`packages/models/src/jev-reasoning.ts:10-24`).
 
 ## Modes and states
 
@@ -47,15 +48,15 @@ Choose a reasoning effort for native writer dispatch using the task plan and the
 | Active decision | Returns `by: jev` when the decision rule resolves without escalation (`packages/jev/src/run.ts:93-97`). |
 | Escalation | Returns the escalation target when the judgment's decision rule requests a stronger judge (`packages/jev/src/run.ts:93-96`). |
 | Call or answer failure | Returns fallback with a failure status; receipt insertion failure is logged and does not replace the verdict (`packages/jev/src/run.ts:66-79`, `:82-91`). |
-| Unsupported model effort | Keeps configured writer effort and records a compatibility/fallback reason (`packages/models/src/jev-reasoning.ts:4-26`, `packages/models/src/picker-compat.ts:1-12`). |
+| Unsupported Jev effort | Uses the configured manual effort and records a fallback reason (`packages/models/src/jev-reasoning.ts:10-24`). |
 
 ## Business rules
 
-Jev's deterministic fallback remains the effective result when it is off, shadowed, missing usable answers, or cannot decide (`packages/jev/src/run.ts:82-97`). The model catalog controls whether an automatic reasoning choice is eligible; Lane Pilot does not send unsupported reasoning levels (`packages/models/src/jev-reasoning.ts:4-26`).
+Jev's deterministic classification fallback remains the effective result when classification is off, shadowed, missing usable answers, or cannot decide (`packages/jev/src/run.ts:82-97`). A Jev-selected effort is accepted only if the selected model advertises it; otherwise the configured manual effort is used and an unsupported manual effort is recorded in the trace (`packages/models/src/jev-reasoning.ts:10-24`, `src/rooms/writer/server/spawn.ts:241-264`).
 
 ## Public API or commands
 
-The package exposes `judge`, `judgeMany`, `judgeBundle`, `outcome`, and `enabled` (`packages/jev/src/run.ts:35-42`). Native writer selection is visible in the `lastWriterTrace` fields of the runs RPC response (`src/rooms/contracts/rpc-runs.ts:116-133`).
+The package exposes `judge`, `judgeMany`, `judgeBundle`, `outcome`, and `enabled` (`packages/jev/src/run.ts:35-42`). Native writer selection is visible in the nullable `lastWriterTrace` field of the `get_screen` output, including requested and effective reasoning levels and the Jev status (`src/rooms/contracts/rpc-runs.ts:98-100`, `:147-163`).
 
 The global Work settings page renders the Jev provider panel; project and section settings show a note that the provider is global (`src/rooms/ui-shell/ui/tab-work.tsx:34-37`, `:89-97`, `src/rooms/settings/ui/jev-provider.tsx:22-26`, `:130-131`). The panel lets the owner select OpenLux or TypeSafe, see key presence without reading the key, save a key to Env Catalog, and send a test request (`src/rooms/settings/ui/jev-provider.tsx:40-70`). Its RPC methods return provider status, save a single-line key, and test the selected provider with a 15-second timeout; status and test results never include a key (`src/rooms/secrets/server/rpc/jev.ts:8-14`, `:19-50`, `src/rooms/contracts/rpc-knowledge.ts:189-200`).
 

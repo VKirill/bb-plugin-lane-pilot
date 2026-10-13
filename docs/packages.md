@@ -2,16 +2,19 @@
 title: Shared packages
 type: component
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-13
 status: active
 confidence: medium
 tags: [packages, api, monorepo]
 sources:
   - packages/contracts/src/index.ts
+  - packages/contracts/src/schemas.ts
   - packages/council/src/index.ts
   - packages/handoff/src/index.ts
   - packages/host-calls/src/index.ts
   - packages/i18n/src/index.ts
+  - packages/i18n/src/i18n.ts
+  - packages/i18n/src/i18n-board.ts
   - packages/jev/src/index.ts
   - packages/kit/src/index.ts
   - packages/memory-core/src/index.ts
@@ -38,6 +41,10 @@ sources:
   - src/rooms/package.json
   - src/rooms/core/server/services.ts
   - src/rooms/core/server/rpc.ts
+  - src/rooms/core/server/rpc-timing.ts
+  - src/rooms/contracts/index.ts
+  - src/rooms/contracts/rpc-runs.ts
+  - src/rooms/memory/server/session-memory.ts
   - server.ts
   - package.json
 ---
@@ -50,11 +57,11 @@ TL;DR: Small workspaces hold reusable contracts and services shared by Lane Pilo
 
 | Package | Purpose and public surface | Used by |
 |---|---|---|
-| `@lane-pilot/contracts` | Shared Zod schemas and types for tasks, stage receipts, workflow views, install receipts, and host-job kinds (`packages/contracts/src/index.ts:1-2`). | Room contracts, writer, workflow, host-worker. |
+| `@lane-pilot/contracts` | Shared Zod schemas and types, including the versioned TaskV2 contract and its work-kind values, stage receipts, workflow views, install receipts, and host-job kinds (`packages/contracts/src/index.ts:1-2`, `packages/contracts/src/schemas.ts:65-114`, `:131-139`). | Room contracts, writer, workflow, host-worker. |
 | `@lane-pilot/council` | Council roles, run protocol, moderator, renderer and SQLite migrations (`packages/council/src/index.ts:1-2`). | Council room and storage migration assembly (`src/rooms/storage/database.ts:3-5`). |
 | `@lane-pilot/handoff` | Handoff card contracts, state transitions, storage, message formatting, receipt parsing and capability registry (`packages/handoff/src/index.ts:1-2`). `handoffMessage` includes objective, acceptance lines, inputs, budget and a fenced receipt format (`packages/handoff/src/messages.ts:12-37`). | Relay and task handoff services. |
 | `@lane-pilot/host-calls` | Host job client plus `runOnHost`, a typed `runCommand` wrapper that sends host id in both payload and options (`packages/host-calls/src/run-on-host.ts:8-31`). | Writer, verification, scheduling and host-worker rooms. |
-| `@lane-pilot/i18n` | Locale selection, `t()` and translated dictionaries (`packages/i18n/src/index.ts:1`). | Room UI and plugin app. |
+| `@lane-pilot/i18n` | Locale selection, `t()`, and typed English and Russian dictionaries, including the Tasks board strings (`packages/i18n/src/i18n.ts:2047-2052`, `:2064-2079`, `:2117-2119`, `packages/i18n/src/i18n-board.ts:1-4`). | Room UI and plugin app. |
 | `@lane-pilot/jev` | Typed Jev client, judgment registry, thresholds, batch runner and receipts; importing a judgment module registers it (`packages/jev/src/index.ts:1-9`, `packages/jev/src/run.ts:56-63`). | Core and judgment-owning rooms. See [Jev adapter](jev-adapter.md). |
 | `@lane-pilot/kit` | Node helpers for hashing, redaction, process spawning, bounded reads and JSONC patching, with a browser-safe `owns-paths` subpath (`packages/kit/src/index.ts:1-9`, `packages/kit/package.json:1-15`). | Server rooms and selected UI modules. |
 | `@lane-pilot/memory-core` | Project memory records, audiences, retrieval, budgets, file import/export and SQLite helpers (`packages/memory-core/src/index.ts:1-23`). | Memory, writer context and run-insights. |
@@ -71,7 +78,7 @@ The small packages provide reusable contracts and utilities to root rooms; the w
 
 ## How it works
 
-1. A room imports a package by its `@lane-pilot/*` name through the package entry point (`packages/contracts/src/index.ts:1-2`, `packages/memory-core/src/index.ts:1-23`).
+1. Room modules import package APIs by their workspace specifiers; for example, the runs contract imports `@lane-pilot/contracts` and session memory imports `@lane-pilot/memory-core` (`src/rooms/contracts/rpc-runs.ts:1-2`, `src/rooms/memory/server/session-memory.ts:1-10`).
 2. The package exposes domain functions and types; the consuming room supplies BB, SQLite, or host dependencies where required (`packages/jev/src/run.ts:56-63`, `packages/host-calls/src/run-on-host.ts:8-31`).
 3. The room composes those exports into server RPCs, UI behavior, and scheduled work (`src/rooms/core/server/rpc.ts:26-50`, `src/rooms/storage/database.ts:230-320`).
 
@@ -88,6 +95,71 @@ The small packages provide reusable contracts and utilities to root rooms; the w
 
 - Packages do not import from `src/`; rooms enter other rooms through public indices (`package.json:55-60`, `src/rooms/core/server/services.ts:1-20`).
 - Domain packages expose public APIs from `src/index.ts`; a name is usable outside the package only when that entry exports it (`packages/council/src/index.ts:1-32`, `packages/handoff/src/index.ts:1-48`).
+
+## Root RPC registration
+
+1. `registerRpc(ctx, services)` builds the RPC handler map by calling each room factory with its declared dependencies. Most factories receive both values; stack, token usage, secrets, Jev provider, workspace provider, and self-repair receive only `ctx`; council receives `ctx.db` and its service; canary and world receive their service (`src/rooms/core/server/rpc.ts:27-50`).
+2. It spreads the returned maps into one object, passes the object and a debug logger callback to `timeRpcHandlers`, then registers the wrapped handlers against `rpcContract` (`src/rooms/core/server/rpc.ts:29-51`).
+3. Registration happens once per call to `registerRpc`; the function returns the result of `ctx.bb.rpc.register` and does not catch a registration rejection (`src/rooms/core/server/rpc.ts:27-51`).
+
+| Branch | Dependency and outcome | Failure behavior |
+|---|---|---|
+| Standard room factory | Receives `ctx` and `services`, then returns a map keyed by its contract methods. | A factory exception aborts map construction before registration. |
+| Narrow dependency factory | Receives `ctx`, `ctx.db` plus council service, or a single service as listed above. | Missing dependencies or factory errors propagate; there is no local recovery branch. |
+| Timed registration | Every assembled handler is timed before `ctx.bb.rpc.register` receives it. | Handler rejection propagates after timing logs; logging and serialization failures are swallowed by the timing wrapper (`src/rooms/core/server/rpc-timing.ts:12-40`). |
+
+The contract and handlers are separate inputs: `rpcContract` supplies method validation, while the composed map supplies implementations (`src/rooms/contracts/index.ts:17-26`, `src/rooms/core/server/rpc.ts:27-51`).
+
+## Package operations
+
+### Static pixel-world batching
+
+1. `batchStatic(THREE, root, options)` updates world matrices, creates shared opaque and transparent toon materials, and traverses visible descendants. `options.isolate` can start a separate merge target at a group so that group remains independently movable or hideable (`packages/pixel-world/src/batch.ts:10-16`, `:45-65`).
+2. Eligible meshes are copied into target-local geometry with transformed positions/normals, generated indices or normals when absent, baked material color, and alpha for transparent meshes. Mirrored transforms have triangle winding reversed (`packages/pixel-world/src/batch.ts:67-106`).
+3. Each target's opaque and glass geometries are merged separately. Source meshes are detached and empty intermediate groups removed; successful merges are added as static meshes and included in the returned mesh and source-count fields (`packages/pixel-world/src/batch.ts:108-130`).
+4. The returned `dispose` releases the batcher's owned materials and merged geometries (`packages/pixel-world/src/batch.ts:48-52`, `:119-137`).
+
+| Mesh branch | Condition | Outcome |
+|---|---|---|
+| Included | Visible, unskinned, non-instanced mesh with one untextured `MeshToonMaterial`, no emissive map/glow, front side, no vertex colors, no children, and no `noBatch` flag. | Baked into the opaque or transparent merge according to material transparency. |
+| Excluded | Any eligibility condition fails, or traversal reaches an invisible or `noBatch` object. | Left in the scene; traversal skips descendants of invisible or `noBatch` objects. |
+| Merge unavailable | `mergeGeometries` returns `null` for a group. | The original source meshes were already detached, no replacement mesh is added for that group, and the function returns its accumulated result. |
+
+Unexpected exceptions are not caught and can leave source meshes detached after processing has begun. The operation detaches included source meshes during processing, so callers should run it once after static scene construction and before adding dynamic objects (`packages/pixel-world/src/batch.ts:37-45`, `:108-137`).
+
+### Host command wrapper
+
+1. `runOnHost(host, args)` accepts host id, working directory, command and command timeout, with an optional transport timeout (`packages/host-calls/src/run-on-host.ts:17-24`).
+2. It calls `runCommand` with the host id in both the request and call options, forwarding command, cwd and command timeout (`packages/host-calls/src/run-on-host.ts:26-31`).
+3. An explicit transport timeout is forwarded; otherwise it uses the command timeout plus five seconds in milliseconds. The host result promise is returned directly (`packages/host-calls/src/run-on-host.ts:26-31`).
+
+| Branch | Result or failure |
+|---|---|
+| Explicit `timeoutMs` | The caller's transport deadline is used. |
+| Omitted `timeoutMs` | Transport deadline is `(timeoutSec + 5) * 1000`. |
+| Host call rejects | The rejection propagates; the wrapper does not catch or translate it. |
+
+### Handoff message formatting
+
+1. `handoffMessage(card)` formats identity/title, objective, numbered acceptance criteria, inputs, budget, and a fixed fenced JSON receipt instruction in that order (`packages/handoff/src/messages.ts:12-37`).
+2. Empty inputs render as `- none`; budget includes each truthy minutes, turns, token, and deadline field, or `none stated` if no budget fields are present (`packages/handoff/src/messages.ts:3-10`, `:13-29`).
+3. `extractHandoffReceiptBlock(output, handoffId)` scans fenced JSON blocks from newest to oldest, skips malformed JSON, returns the matching receipt without its `handoff` property, and returns `null` when none matches (`packages/handoff/src/messages.ts:40-55`).
+
+The formatter returns a string and declares no error result; JSON parse failures are handled only by receipt extraction, where they skip that block (`packages/handoff/src/messages.ts:12-16`, `:40-55`).
+
+### Thread completion decision
+
+1. `decideThreadCompletion` first turns top-level `error` status into an error decision. Otherwise it filters malformed events and sub-agent events, retaining valid sequenced thread turn events (`packages/thread-observe/src/completion.ts:30-53`, `:77-86`).
+2. For a follow-up with `requestedAfter`, it finds the newest request. A missing/old request is incomplete; if no new turn start exists, an accepted input plus a later completion can finish the follow-up, otherwise failure evidence is checked and the decision remains incomplete (`packages/thread-observe/src/completion.ts:87-105`).
+3. For the current spawned turn, it orders valid events, selects the latest start and matches completion by request id when available. A completed status succeeds; failed, interrupted or error statuses are canceled; missing start, completion, status, or an unrecognized status remains incomplete (`packages/thread-observe/src/completion.ts:55-75`).
+4. If the turn is incomplete, detected provider/system errors, interrupted threads, rejected requests, failed provisioning, or a request with no session past the start limit become an error decision; otherwise the result includes thread status, queued-work state and turn detail (`packages/thread-observe/src/completion.ts:107-116`, `:145-173`).
+
+| Decision | Condition | Outcome |
+|---|---|---|
+| Completed | Matching completion status is `completed`. | `{ok:true, via:"turn_completed"}`. |
+| Canceled | Matching completion status is `failed`, `interrupted`, or `error`. | `{ok:false, via:"canceled"}` with turn detail. |
+| Error | Thread status is `error` or incomplete turn evidence contains a detected thread failure. | `{ok:false, via:"error"}` with failure detail. |
+| Incomplete | Request or turn evidence is absent, malformed, or has an unrecognized state without detected failure. | `{ok:false, via:"incomplete"}` with a diagnostic detail. |
 
 ## Public API or commands
 
@@ -106,4 +178,5 @@ The Jev package registers judgments on import, the UI bundle cannot import Node 
 <!-- lane-pilot:backlinks -->
 ## Referenced by
 
+- [Lane Pilot architecture](architecture.md)
 - [Lane Pilot overview](overview.md)

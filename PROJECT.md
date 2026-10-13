@@ -1,6 +1,6 @@
 ---
 title: Lane Pilot project facts
-updated: 2026-10-11
+updated: 2026-10-13
 sources:
   - package.json
   - server.ts
@@ -14,6 +14,10 @@ sources:
   - src/rooms/writer/server/verify.ts
   - src/rooms/writer/server/finish.ts
   - docs/overview.md
+  - docs/task-board.md
+  - src/rooms/runs/server/task-board.ts
+  - src/rooms/runs/server/task-graph.ts
+  - src/rooms/runs/server/rpc/runs.ts
   - docs/architecture.md
   - docs/gotchas.md
   - docs/deployment.md
@@ -41,6 +45,7 @@ sources:
 
 - Startup opens plugin SQLite before composing room services ([`src/rooms/storage/database.ts`](src/rooms/storage/database.ts), [`server.ts`](server.ts)).
 - UI RPC schemas and host call schemas are separate ([`docs/rpc-callers.md`](docs/rpc-callers.md)).
+- Tasks board state is derived from stored latest task attempts, stage receipts, and top-level workflow runs ([`docs/task-board.md`](docs/task-board.md)).
 - Writer workspace branches and no-Git rollback mode are documented in [ADR 1](docs/decisions.md#adr-1-isolate-writer-workspaces) and [gotchas](docs/gotchas.md).
 - Workflow, UI-kit, and world-simulation internals belong to their [workspace docs](docs/overview.md#workspaces).
 
@@ -49,6 +54,7 @@ sources:
 - Server implementation belongs in a room server module or package; `server.ts` assembles modules ([architecture](docs/architecture.md#startup-and-service-composition)).
 - Cross-room imports use room public indices; packages do not import `src/` ([architecture](docs/architecture.md#dependency-boundaries)).
 - Contracts and methods are documented in [RPC and host-call contracts](docs/rpc-callers.md).
+- Tasks board and helper-thread graph behavior is documented in [Tasks board](docs/task-board.md).
 
 ## Common gotchas
 
@@ -74,4 +80,5 @@ See [deployment](docs/deployment.md#build) for command ownership and manifest in
 - [Deployment](docs/deployment.md)
 - [Data model](docs/data-model.md)
 - [Shared packages](docs/packages.md)
+- [Tasks board](docs/task-board.md)
 - [Decisions](docs/decisions.md)

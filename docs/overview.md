@@ -2,7 +2,7 @@
 title: Lane Pilot overview
 type: overview
 created: 2026-10-10
-updated: 2026-10-11
+updated: 2026-10-13
 status: active
 confidence: low
 tags: [overview, bb-plugin, orchestration]
@@ -26,6 +26,10 @@ sources:
   - src/rooms/anamnesis/pii.ts
   - src/rooms/anamnesis/year-review.ts
   - src/rooms/memory/ui/memory-records.tsx
+  - src/rooms/runs/server/task-board.ts
+  - src/rooms/runs/server/task-graph.ts
+  - src/rooms/runs/server/rpc/runs.ts
+  - src/rooms/runs/ui/task-board.tsx
 ---
 
 # Lane Pilot overview
@@ -43,6 +47,7 @@ The PM sends work through Lane Pilot tools. The writer dispatcher resolves task 
 ## Main areas
 
 - **Project orchestration:** runs, tasks, attempts, stage receipts, checks, and merge coordination are stored in plugin SQLite (`src/rooms/storage/database.ts:30-70`, `:128-156`). See [architecture](architecture.md) and [data model](data-model.md).
+- **Tasks screen:** the app shows task attempts and top-level workflow runs in a board or grouped list, with a detail page for contract, stage, attempt, and worker-thread data (`src/rooms/runs/ui/task-board.tsx:121-150`, `src/rooms/runs/server/task-board.ts:63-78`, `:147-209`). See [Tasks board](task-board.md).
 - **Settings and integrations:** typed RPC endpoints expose project settings, provider selection, workflows, schedules, council, memory, and knowledge to the UI (`src/rooms/core/server/rpc.ts:26-50`). The surface is declared in [RPC contracts](rpc-callers.md).
 - **Project knowledge:** memory RPCs create and retrieve project-scoped agent records; the UI displays the records and their lifecycle (`src/rooms/memory/server/memory.ts:19-78`, `src/rooms/memory/ui/memory-records.tsx:13-64`).
 - **Owner profile:** Anamnesis collects enabled sources, masks detected personal data, stores evidence-backed records, and can render an annual review (`src/rooms/anamnesis/collect.ts:29-63`, `src/rooms/anamnesis/pii.ts:41-72`, `src/rooms/anamnesis/year-review.ts:13-72`).
