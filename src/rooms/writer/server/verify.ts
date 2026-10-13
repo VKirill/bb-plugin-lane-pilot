@@ -409,6 +409,19 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     }
     recordGateEvaluation(db,{...input,gate:"verification",status:verifies.length===0?"skipped":verifies.every((row)=>row.exitCode===0)?"passed":"failed",
       input:JSON.stringify(input.task),summary:{commandCount:verifies.length,failedCount:verifies.filter((row)=>row.exitCode!==0).length}});
+    // What the checks themselves wrote outside owns_paths is no one's work: `next build` rewrites next-env.d.ts, a
+    // screenshot run regenerates every page's PNG. Left in the attempt's worktree, the same-thread retry counted it as
+    // the writer's («owns_paths rejected …/next-env.d.ts», cakekeeper ck-26.2 and ck-31, 2026-10-12) and an accepted
+    // attempt's `git add -A` merged it into main. Only in the attempt's own worktree, and only files that were clean
+    // before the checks, so HEAD is exactly their state before them; a shared checkout may hold others' work.
+    if (verifies.length && basePath && resolve(basePath) !== resolve(input.task.project_cwd) && !liveFolder) {
+      const undone = await host.call("gitUndoCheckWrites", { requestedHostId:input.config.hostId, projectCwd:input.task.project_cwd,
+        keep:dirt.snapshots.map((row) => row.path), ownsPaths:input.task.owns_paths, neverTouch:input.task.never_touch, bookkeeping },
+      { hostId:input.config.hostId, timeoutMs:120_000 }).catch(() => null);
+      if (undone && (undone.reverted.length || undone.failed.length)) {
+        ctx.log(`Lane Pilot: the checks of ${input.taskId} wrote outside owns_paths; put back ${undone.reverted.join(", ") || "nothing"}${undone.failed.length ? `, could not: ${undone.failed.join(", ")}` : ""}`);
+      }
+    }
     // A failing check's full output goes under the task folder logs/, so the retry reads it instead of rerunning blind.
     const failedVerify = verifies.find((row) => row.exitCode !== 0);
     let checkLogPath:string|undefined;

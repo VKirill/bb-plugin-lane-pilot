@@ -1,7 +1,8 @@
 import { lstat, realpath } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { filterOwnershipNoise } from "@lane-pilot/settings-catalog";
-import { spawnAsync } from "@lane-pilot/kit";
+import { fileAllowedByOwns, fileBlockedByNeverTouch, spawnAsync } from "@lane-pilot/kit";
+import { revertPaths } from "./git-docs";
 
 export type GitOwnershipBase = {
   status:"ready"|"not-git"|"invalid-ref"|"failed";
@@ -128,4 +129,17 @@ export async function gitOwnershipChangedPaths(input:{projectCwd:string;baseSha:
   if(!diff.ok) return {status:"failed",headSha,paths:[],reason:"could not compute committed ownership diff"};
   const paths=cwdRelativePaths(diff.stdout);
   return {status:"ready",headSha,paths:input.unfiltered?[...new Set(paths)].sort():filterOwnershipNoise(paths,input.bookkeeping),reason:null};
+}
+
+/**
+ * Puts back what a task's checks wrote outside its owns_paths in the attempt's own worktree: files changed now that
+ * were clean before the checks (`keep` is the dirt before them), so HEAD is exactly their state before the checks.
+ */
+export async function undoCheckWrites(input:{projectCwd:string;keep:string[];ownsPaths:string[];neverTouch:string[];bookkeeping?:string[]}):Promise<{reverted:string[];failed:string[]}> {
+  const cwd=await checkedRoot(input.projectCwd);
+  if(!cwd) return {reverted:[],failed:[]};
+  const keep=new Set(input.keep);
+  const written=filterOwnershipNoise(await workingTreeRelative(cwd),input.bookkeeping)
+    .filter((path)=>!keep.has(path)&&(fileBlockedByNeverTouch(path,input.neverTouch)||!fileAllowedByOwns(path,input.ownsPaths)));
+  return written.length?revertPaths({projectCwd:cwd,paths:written.sort()}):{reverted:[],failed:[]};
 }
