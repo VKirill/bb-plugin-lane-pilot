@@ -42,4 +42,6 @@ The storage room appends these migrations to the host database migration list; t
 <!-- lane-pilot:backlinks -->
 ## Referenced by
 
+- [Lane Pilot data model overview](../../../docs/data-model.md)
+- [Workflow engine integration](../../../docs/workflow-engine.md)
 - [Workflow Engine — Overview](overview.md)

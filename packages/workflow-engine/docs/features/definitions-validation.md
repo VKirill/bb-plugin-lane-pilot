@@ -2,7 +2,7 @@
 title: Workflow Definitions and Validation
 type: component
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-13
 status: active
 confidence: high
 tags: [workflow-engine, schema, validation]
@@ -52,9 +52,10 @@ This capability defines the JSONC workflow format, its typed nodes and edges, th
 | Import | Purpose |
 |---|---|
 | `workflowSchema`, `parseWorkflowObject`, `Workflow`, node and edge types | Definition format and normalization (`packages/workflow-engine/src/schema.ts:1-8`, `packages/workflow-engine/src/schema.ts:223-237`). |
+| `consumesSchema`, `producesSchema` | Validate the declared artifact input/output contract shapes (`packages/workflow-engine/src/schema.ts:71-84`). |
 | `loadWorkflow`, `parseWorkflow`, `validateWorkflow`, `WorkflowError` | Parse definitions and return or throw structured validation problems (`packages/workflow-engine/src/validate.ts:22-29`, `packages/workflow-engine/src/validate.ts:67-126`, `packages/workflow-engine/src/validate.ts:459-482`). |
 | `loadWorkflowStore`, `definitionSha256`, `globalWorkflowDir`, `projectWorkflowDir` | Merge workflow sources, resolve definitions, and calculate content identity (`packages/workflow-engine/src/store.ts:24-43`, `packages/workflow-engine/src/store.ts:50-104`). |
-| `parseExpr`, `evalExpr`, `evalCondition`, `renderValue` | Parse and evaluate workflow expressions and templates (`packages/workflow-engine/src/expr.ts:72-131`, `packages/workflow-engine/src/expr.ts:280-340`). |
+| `refOf`, `parseExpr`, `conditionToExpr`, `toExpr`, `evalExpr`, `evalCondition`, `renderValue` | Resolve references, normalize conditions, and evaluate expressions and templates (`packages/workflow-engine/src/expr.ts:57-155`, `packages/workflow-engine/src/expr.ts:280-362`). |
 
 ## Package shape
 
@@ -97,6 +98,12 @@ The function does not catch errors from a supplied resolver. Invalid generated g
 `nodeSchema` dispatches on the required `type` discriminator to one of nine strict schemas: agent, lp-task, action, decision, human, parallel, join, subworkflow, or note. The selected node schema enforces its required fields, defaults, and type-specific constraints; a missing/unknown discriminator, wrong field type, or unknown property fails parsing (`packages/workflow-engine/src/schema.ts:223-227`, `packages/workflow-engine/src/schema.ts:180-221`).
 
 `edgeSchema` requires nonempty `from` and `to` strings no longer than 48 characters; `when` is optional; `label` is optional and capped at 80 characters; `with` maps strings to strings; `pass` defaults to `artifact` and accepts the pass-mode enum. The object is strict, so extra fields fail schema parsing (`packages/workflow-engine/src/schema.ts:229-238`).
+
+`consumesSchema` accepts a strict object with a lowercase artifact kind, version 1–99, `required` defaulting to true, optional nonempty `from` string up to 48 characters, and optional `as` field name. It validates this declaration's shape; graph validation checks that the source node declares the consumed artifact (`packages/workflow-engine/src/schema.ts:64-76`, `packages/workflow-engine/src/validate.ts:304-330`).
+
+`refOf` maps `$inputs` and `input` to workflow inputs, `$mode` to run mode, `ctx` to context, `item` and `index` to loop values, and bare names in item scope to fields on the current item. Other names become node references with the remaining dotted path (`packages/workflow-engine/src/expr.ts:57-69`).
+
+`conditionToExpr` recursively turns `all`, `any`, and `not` conditions into boolean expression nodes. A leaf condition reads its field from the supplied source node and maps comparison operators directly; `exists: false` becomes a negated null comparison, while `exists: true` becomes a non-null comparison. `toExpr` parses string conditions, forwarding `itemScope`, and converts structured conditions through `conditionToExpr` (`packages/workflow-engine/src/expr.ts:133-155`).
 
 ### Expression type checking
 

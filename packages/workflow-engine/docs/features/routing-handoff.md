@@ -2,7 +2,7 @@
 title: Workflow Routing and Handoff
 type: component
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-13
 status: active
 confidence: high
 tags: [workflow-engine, routing, handoff]
@@ -10,6 +10,7 @@ sources:
   - packages/workflow-engine/src/router.ts
   - packages/workflow-engine/src/handoff.ts
   - packages/workflow-engine/src/capabilities.ts
+  - packages/workflow-engine/src/expr.ts
   - packages/workflow-engine/src/goals.ts
   - packages/workflow-engine/src/engine.ts
   - packages/workflow-engine/src/preflight.ts
@@ -67,6 +68,8 @@ Routing scores eligible workflow cards against a request, filters candidates aga
 ## Internal model
 
 The router takes ports and data as input instead of querying the host directly. `RouterState` answers whether named capabilities are available, while `RouterModel` receives a bounded candidate list. This keeps catalog selection separate from machine integrations (`packages/workflow-engine/src/router.ts:1-70`, `packages/workflow-engine/src/router.ts:346-358`).
+
+`stem` keeps digit-only tokens intact, trims one matching suffix from Cyrillic words only when at least three characters remain, then limits them to six characters. For Latin tokens it removes selected `es`, plural `s`, or `-ations`/`-ation`/`-ings`/`-ing`/`-ers`/`-er`/`-ed`/`-ly` endings while retaining at least three characters before the suffix (`packages/workflow-engine/src/router.ts:86-107`).
 
 Run goals are structured as `id`, `done_when`, `evidence`, with optional inferred `guess`; the engine stores them with the run and exposes them in step context (`packages/workflow-engine/src/goals.ts:4-15`, `packages/workflow-engine/src/engine.ts:42-53`).
 
