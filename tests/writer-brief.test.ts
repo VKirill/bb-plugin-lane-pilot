@@ -262,5 +262,12 @@ describe("the NEEDS_HUMAN marker", () => {
     expect(brief).toContain("answer with the first line `NEEDS_HUMAN: needs secret <NAME>`");
     expect(needsHumanQuestion("NEEDS_HUMAN: which port?\nnothing changed")).toBe("which port?");
     expect(needsHumanQuestion("Checked it.\nNEEDS_HUMAN: which port?")).toBeNull();
+    // SelfyStudio fix-en-routes-empty-group (2026-10-12): the writer copied the brief's backticks around the marker.
+    expect(needsHumanQuestion("`NEEDS_HUMAN: en-photoshoot-urls.test.ts and en-cards-urls.test.ts (not in owns_paths) pin i18n paths to `:slug()` / `:pageSlug()`, which is the empty-group bug; may I update those assertions to `:slug` / `:pageSlug` so `nuxt prepare` and `tests/` both pass?`"))
+      .toBe("en-photoshoot-urls.test.ts and en-cards-urls.test.ts (not in owns_paths) pin i18n paths to `:slug()` / `:pageSlug()`, which is the empty-group bug; may I update those assertions to `:slug` / `:pageSlug` so `nuxt prepare` and `tests/` both pass?");
+    expect(needsHumanQuestion("**NEEDS_HUMAN:** which port?")).toBe("which port?");
+    expect(needsHumanQuestion("> NEEDS_HUMAN: which port?")).toBe("which port?");
+    expect(needsHumanQuestion("NEEDS_HUMAN: may I edit `a.ts`")).toBe("may I edit `a.ts`");
+    expect(needsHumanQuestion("`npm test` passed; no NEEDS_HUMAN: needed")).toBeNull();
   });
 });

@@ -13,7 +13,7 @@ import { fullAccessSpawn } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { closeWriterStages, recordGateEvaluation, recordStage } from "../../runs/server";
 import { stringAt } from "../../core/server";
-import { needsHumanQuestion, outputText, providerLimitNotice, writerContextBlocks, writerSetupLines } from "./writer-task";
+import { needsHumanQuestion, outputText, providerLimitNotice, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines } from "./writer-task";
 import { isLiveDecision } from "../live-folder";
 import { isMainfixTask } from "../../tasks";
 import { IntegrationGateRunner, parseIntegrationGateSettings } from "../../verification/server";
@@ -246,6 +246,9 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const reason = `writer_provider_limit: ${limit}`;
         return providerFailed(reason);
       }
+      // The provider cut the turn off mid-work: no answer to check yet; the same writer continues in place (sticky.ts).
+      const dropped = providerStreamError(answer);
+      if (dropped) return providerFailed(`${WRITER_STREAM_ERROR}: ${dropped}`);
       const question = needsHumanQuestion(answer);
       if (question) {
         const reason = `needs_human: ${question}`;

@@ -114,8 +114,8 @@ const FAILED_STATES = "'blocked','validation_failed','spawn_rejected','provider_
 const MUTE_MS = 7 * 86_400_000;
 /** How long a worktree waits for a spawn of unknown outcome to settle before it is released. */
 const PENDING_MS = 30 * 60_000;
-/** Stops by design: a question for the PM or a dependency that ended blocked. */
-const NOT_A_FAULT = /needs_human|depends_on|workspace_not_repo_root/i;
+/** Stops by design: a question for the PM, a dependency that ended blocked, or a turn the provider cut off (writer_stream_error). */
+const NOT_A_FAULT = /needs_human|depends_on|workspace_not_repo_root|writer_stream_error/i;
 export const VERSION: string = packageJson.version;
 /** When this code was loaded: a failure before it may be what this release fixed. */
 const LOADED_AT = Date.now();
