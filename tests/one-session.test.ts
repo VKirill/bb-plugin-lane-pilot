@@ -26,7 +26,7 @@ const config: PrototypeConfig = { projectId:"proj1", hostId:"h1", pmWorkspacePat
   pmProviderId:"p", pmModel:"pm", writerProviderId:"p", writerModel:"wm" };
 
 type Send = { threadId:string; input:Array<{ text:string }> };
-type Step = { accept?:true; reason?:string; diff?:string; advanceMs?:number };
+type Step = { accept?:true; reason?:string; diff?:string; advanceMs?:number; providerError?:string };
 
 function setup() {
   const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot" });
@@ -71,6 +71,11 @@ function services(db:ReturnType<typeof openDatabase>, script:Step[]) {
       const step = script[turn++] ?? { reason:"verification failed (npm test): boom", diff:`d${turn}` };
       if (step.advanceMs) clock += step.advanceMs;
       if (step.accept) { transitionAttempt(db, input.attemptId, "accepted"); return { status:"accepted", produced:["a.txt"], verification:[] }; }
+      // finish.ts providerFailed: no check ran, so no diff key.
+      if (step.providerError) {
+        transitionAttempt(db, input.attemptId, "provider_error", { reason:step.providerError });
+        return { status:"provider_error", reason:step.providerError, attemptId:input.attemptId, writerThreadId:input.writerThreadId };
+      }
       const reason = step.reason ?? "verification failed (npm test): boom";
       transitionAttempt(db, input.attemptId, "validation_failed", { reason });
       return { status:"validation_failed", reason, produced:["a.txt"], attemptId:input.attemptId, writerThreadId:input.writerThreadId,
@@ -171,6 +176,49 @@ it("moves to a new writer only for a provider or limit fault, never for the task
   expect(retryInSameThread("empty_output", "writer returned no output")).toBe(false);
   expect(failureClass("empty_output", "writer returned no output")).toBe("provider");
   expect(failureClass("spawn_rejected", "writer_provider_limit: Upgrade your plan to continue")).toBe("limit");
+});
+
+// The acp-cursor answers of cakekeeper ck-18 / ck-21 / ck-25 (2026-10-12): the turn «completed» with only the provider's error.
+const CUT = "writer_stream_error: Error: RetriableError: [resource_exhausted] Error";
+const CUT_AGAIN = "writer_stream_error: Error: RetriableError: [unavailable] Error";
+
+it("continues a turn the provider cut off in the same thread, with the writer's edits, and never reads it as missing outputs", async () => {
+  const env = setup();
+  const { all, spawned } = services(env.db, [{ providerError:CUT }, { accept:true }]);
+  start(env, all);
+  await vi.waitFor(() => expect(writerStage(env.db).state).toBe("passed"));
+  expect(spawned).toEqual(["T1-a1"]);
+  expect(env.sends.map((send) => send.threadId)).toEqual(["thr_w"]);
+  const turn = env.sends[0]!.input[0]!.text;
+  expect(turn).toContain(`Result: provider_error: ${CUT}`);
+  expect(turn).toContain("the model provider cut your turn off before you finished");
+  expect(turn).not.toContain("missing expected_outputs");
+  await env.harness.lifecycle.dispose();
+});
+
+it("hands a writer cut off twice in a row to the writer chain instead of a third turn or a repeated_failure block", async () => {
+  const env = setup();
+  const { all, spawned } = services(env.db, [{ providerError:CUT }, { providerError:CUT_AGAIN }, { accept:true }]);
+  start(env, all);
+  await vi.waitFor(() => expect(writerStage(env.db).state).not.toBe("pending"));
+  await vi.waitFor(() => expect(getAttempt(env.db, "T1-a1")?.state).toBe("provider_error"));
+  // One continue in the thread; the second cut ends the session without another turn there.
+  expect(env.sends.filter((send) => send.threadId === "thr_w")).toHaveLength(1);
+  const rows = env.db.prepare("SELECT state, reason FROM lane_pilot_attempt WHERE task_id='T1' ORDER BY created_at, rowid").all() as Array<{ state:string; reason:string|null }>;
+  expect(rows.map((row) => row.reason ?? "").some((reason) => reason.startsWith("repeated_failure"))).toBe(false);
+  expect(rows.some((row) => row.state === "blocked" && row.reason === CUT_AGAIN)).toBe(true);
+  // The chain's next model (here the PM's) is a new writer, and it finishes the task.
+  expect(spawned).toHaveLength(2);
+  expect(spawned[0]).toBe("T1-a1");
+  await vi.waitFor(() => expect(writerStage(env.db).state).toBe("passed"));
+  await env.harness.lifecycle.dispose();
+});
+
+it("lets only a provider cut, not any provider error, continue in the thread", () => {
+  expect(retryInSameThread("provider_error", CUT)).toBe(true);
+  expect(retryInSameThread("provider_error", "writer thread status error")).toBe(false);
+  expect(retryInSameThread("provider_error", "writer_provider_limit: Upgrade your plan to continue")).toBe(false);
+  expect(failureClass("provider_error", CUT)).toBe("provider");
 });
 
 // 2. A missing expected output with green checks is a warning.

@@ -60,10 +60,36 @@ export const NEEDS_HUMAN_MARKER = "NEEDS_HUMAN:";
 
 /** The writer's question when it stopped instead of guessing; null when it answered normally. */
 export function needsHumanQuestion(output: string): string | null {
-  const first = output.trimStart().split("\n", 1)[0] ?? "";
+  // The brief shows the marker in backticks, and a writer copies them: SelfyStudio fix-en-routes-empty-group (2026-10-12)
+  // answered «`NEEDS_HUMAN: … may I update those assertions?`», was checked as a report and failed «missing expected_outputs»,
+  // and its retry, told to produce the output, edited two test files it did not own.
+  const line = output.trimStart().split("\n", 1)[0] ?? "";
+  const wrapper = /^(?:[`*_>]+\s*)*/.exec(line)?.[0] ?? "";
+  const first = line.slice(wrapper.length);
   if (!first.toUpperCase().startsWith(NEEDS_HUMAN_MARKER)) return null;
-  const question = first.slice(NEEDS_HUMAN_MARKER.length).replace(/\s+/g, " ").trim().slice(0, 600);
+  // Only the wrapper's own closing marks go: a question may end in a code span of its own («may I edit `a.ts`»).
+  const marks = wrapper.replace(/[\s>]/g, "");
+  const body = first.slice(NEEDS_HUMAN_MARKER.length).replace(/^[*_]+/, "");
+  const question = (marks ? body.replace(new RegExp(`[${marks}]+\\s*$`), "") : body).replace(/\s+/g, " ").trim().slice(0, 600);
   return question || "the writer stopped without a question";
+}
+
+/** The reason of an attempt whose turn the provider cut off (providerStreamError); the same writer continues in place. */
+export const WRITER_STREAM_ERROR = "writer_stream_error";
+export const isWriterStreamError = (reason: string | null | undefined): boolean => (reason ?? "").startsWith(`${WRITER_STREAM_ERROR}:`);
+
+// The ACP provider (acp-cursor) ends a turn the model's stream broke off as «completed», with the error as the whole answer.
+const PROVIDER_STREAM_ERROR = /^(?:Error:\s*)?RetriableError:\s*\[[a-z_]+\]/i;
+
+/**
+ * The provider's stream error when that is all the writer answered; null for a real report. The turn stopped mid-work
+ * (cakekeeper ck-18, ck-21, ck-25 on 2026-10-12: «[resource_exhausted]», «[unavailable]», «[canceled] http/2 stream
+ * closed»), so its half-written files are no answer to check against the contract.
+ */
+export function providerStreamError(output: string): string | null {
+  const text = output.trim();
+  if (!text || text.length > 400 || !PROVIDER_STREAM_ERROR.test(text)) return null;
+  return text.replace(/\s+/g, " ").slice(0, 200);
 }
 
 // A provider that refuses work for the plan, quota or credits answers with its own notice instead of the writer's
@@ -214,6 +240,9 @@ export function previousAttemptBrief(last:Record<string, unknown> | null | undef
       ? `${clean.join(", ")} did not exist before your attempt → delete ${clean.length > 1 ? "any of them" : "it"} you created`
       : `${clean.join(", ")} had no uncommitted changes before your attempt → delete ${clean.length > 1 ? "any of them" : "it"} you created, and restore any you changed with \`git checkout -- <file>\``);
     bullets.push(`if the task cannot be done without changing ${files.length > 1 ? "them" : "it"}, undo your edits there and answer \`${NEEDS_HUMAN_MARKER} the task needs ${files.join(", ")} changed (<why>); add ${files.length > 1 ? "them" : "it"} to owns_paths\``);
+  }
+  if (isWriterStreamError(reason)) {
+    bullets.push("the model provider cut your turn off before you finished; nothing was checked → continue the task from where you stopped (your edits are still here), then answer with the changed paths");
   }
   if (/changed no files|returned no (answer|output)/.test(reason)) {
     bullets.push(`it ${/returned no (answer|output)/.test(reason) ? "gave no answer" : "answered without changing files"} → change the files the contract's expected_outputs name, then answer with the changed paths`);

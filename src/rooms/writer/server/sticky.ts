@@ -8,6 +8,7 @@ import { resolve } from "node:path";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 import { sendServiceMessage } from "../../relay/server";
+import { isWriterStreamError } from "./writer-task";
 
 /**
  * Sticky writers: an area's writer thread takes the area's next task, and a task-side failure is redone in the thread
@@ -101,6 +102,9 @@ export function resolveInSameThread(state: string, reason: string | null | undef
 
 /** A failure the same writer can fix in place: its own work, not git, Lane Pilot, the machine, a question or its provider. */
 export function retryInSameThread(state: string, reason: string | null | undefined): boolean {
+  // A turn the provider cut off mid-work: the writer's edits are in its worktree, and the same thread continues them
+  // (ck-18 and ck-25 were accepted on that turn); a fresh writer would start over from main.
+  if (state === "provider_error" && isWriterStreamError(reason)) return true;
   if (state !== "validation_failed" && state !== "empty_output") return false;
   return ["task", "contract"].includes(failureClass(state, reason));
 }

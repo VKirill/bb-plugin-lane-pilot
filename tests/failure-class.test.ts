@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { FREE_CLASSES, PARKED_CLASSES, failureClass, isEnvironmentCheckFailure, nextStep, repeatedFailureReason, taskFamily } from "../src/rooms/runs/failure-class";
 import { classifyWriterOutput } from "../src/rooms/tasks/validate-output";
 import type { TaskV2 } from "../src/rooms/contracts";
-import { providerLimitNotice } from "../src/rooms/writer/server/writer-task";
+import { providerLimitNotice, providerStreamError } from "../src/rooms/writer/server/writer-task";
 
 describe("failure classes", () => {
   it("keeps provider, limit and catalog faults on the provider path for the writer chain", () => {
@@ -128,6 +128,19 @@ describe("task families", () => {
     expect(failureClass("spawn_rejected", "writer_provider_unavailable:breaker_open:acp-cursor/grok-4.6: 1 provider failures in 10 min")).toBe("limit");
     for (const text of ["You've hit your usage limit. Try again in 3 hours.", "Error: quota exceeded for this month", "429 Too Many Requests",
       "You are out of credits.", "Your credit balance is too low to access the API"]) expect(providerLimitNotice(text)).not.toBeNull();
+  });
+
+  // The whole answers of the acp-cursor writers of cakekeeper ck-18, ck-21 and ck-25 (2026-10-12): read as reports, they
+  // failed «missing expected_outputs» for a stage note the cut-off turn had not written yet.
+  it("reads a provider's stream error as the whole answer as a cut-off turn, not a report", () => {
+    for (const answer of ["\n\nError: RetriableError: [resource_exhausted] Error", "\n\nError: RetriableError: [unavailable] Error",
+      "\n\nError: RetriableError: [canceled] http/2 stream closed with error code CANCEL (0x8)"]) {
+      expect(providerStreamError(answer)).toBe(answer.trim());
+      expect(providerLimitNotice(answer)).toBeNull();
+    }
+    expect(providerStreamError("Fixed the retry: a RetriableError: [unavailable] from the API is now retried twice.\nChanged api/retry.ts")).toBeNull();
+    expect(providerStreamError(`Error: RetriableError: [unavailable] Error\n${"Changed paths: a.ts. ".repeat(30)}`)).toBeNull();
+    expect(providerStreamError("")).toBeNull();
   });
 
   it("keeps a real writer report about rate limits a report", () => {

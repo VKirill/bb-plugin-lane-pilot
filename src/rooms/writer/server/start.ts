@@ -14,7 +14,7 @@ import { usageHoldReason, usageSkipPercent } from "../../usage/server";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../runs";
 import { FREE_RETRY_LIMIT, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, isWaitingSecret, isWriterSilent, repeatedFailureReason, taskFamily, turnFailureKey } from "../../runs";
 import { isTaskSatisfied } from "../../runs/server";
-import { previousAttemptBrief, stickyTurnPrompt } from "./writer-task";
+import { isWriterStreamError, previousAttemptBrief, stickyTurnPrompt } from "./writer-task";
 import { isMainfixTask, ownsFromOuterBase, retargetTask } from "../../tasks";
 import { openDatabase } from "../../storage";
 import { createWriterSticky } from "./sticky";
@@ -428,7 +428,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       // Only a provider or limit fault, or a thread that cannot take the turn, starts another writer.
       let inSession = false;
       let sessionStartedAt = Date.now();
-      let previousTurn:{ failure:string; diff:string|null } | null = null;
+      let previousTurn:{ failure:string; diff:string|null; streamError?:boolean } | null = null;
       /** Another attempt follows this failure: the same conditions the loop checks below before it creates one. */
       const attemptsLeftAfter = (binding:ReturnType<typeof getAttempt>) => Boolean(binding?.thread_id)
         && RETRY_ELIGIBLE.includes(String(last.status) as AttemptState)
@@ -594,12 +594,18 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         const moreAttempts = attemptsLeftAfter(failedBinding);
         let sessionEnd = moreAttempts ? sticky.sessionLimit(attemptId) : null;
         let redo = moreAttempts && !sessionEnd ? await sticky.retryWriter(attemptId, input.runId) : null;
-        const turn = { failure:turnFailureKey(last), diff:typeof last.diffKey === "string" ? last.diffKey : null };
+        const turn = { failure:turnFailureKey(last), diff:typeof last.diffKey === "string" ? last.diffKey : null,
+          streamError:isWriterStreamError(typeof last.reason === "string" ? last.reason : null) };
         if (redo && Date.now() - sessionStartedAt >= SESSION_MAX_MS) sessionEnd = `wall limit ${SESSION_MAX_MS / 60_000} min reached`;
         else if (redo && previousTurn && turn.diff && previousTurn.diff === turn.diff && previousTurn.failure === turn.failure) {
           sessionEnd = "no progress: the same failure and the same diff in two turns in a row";
         }
         if (sessionEnd) redo = null;
+        // A provider cut is continued in its thread once. Cut again right away (ck-21 on 2026-10-12, «[unavailable]» twice
+        // within 8 s), the provider is down: the writer chain below takes the task over in this worktree, with its edits,
+        // instead of up to five empty turns or a «repeated_failure» block.
+        if (redo && turn.streamError && previousTurn?.streamError) redo = null;
+        const streamHandOff = turn.streamError && !redo;
         previousTurn = turn;
         // A failed attempt's own worktree is never merged; the next attempt starts from a fresh one.
         const removeFailedWorktree = () => removeWorktreeOf(failedBinding);
@@ -646,7 +652,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // A provider that takes no work fails every retry the same way: the writer chain below takes the task now.
         // The attempt ends blocked with its limit reason (uncharged); primaryFailure keeps the state the chain reads.
         // A writer that stayed silent through its nudges is handed on the same way: its session hung, not the task.
-        if (failedClass === "limit" || isWriterSilent(typeof last.reason === "string" ? last.reason : null)) {
+        if (failedClass === "limit" || isWriterSilent(typeof last.reason === "string" ? last.reason : null) || streamHandOff) {
           const latest = getAttempt(db, attemptId);
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:String(last.reason ?? last.status) });
           last = { ...last, status:"blocked" };
