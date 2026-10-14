@@ -2,7 +2,7 @@
 title: Shared packages
 type: component
 created: 2026-10-10
-updated: 2026-10-13
+updated: 2026-10-14
 status: active
 confidence: medium
 tags: [packages, api, monorepo]
@@ -26,6 +26,7 @@ sources:
   - packages/thread-observe/src/index.ts
   - packages/thread-observe/src/completion.ts
   - packages/pixel-world/src/batch.ts
+  - packages/pixel-world/src/nav.ts
   - packages/handoff/src/messages.ts
   - packages/host-calls/src/run-on-host.ts
   - packages/jev/src/run.ts
@@ -66,7 +67,7 @@ TL;DR: Small workspaces hold reusable contracts and services shared by Lane Pilo
 | `@lane-pilot/kit` | Node helpers for hashing, redaction, process spawning, bounded reads and JSONC patching, with a browser-safe `owns-paths` subpath (`packages/kit/src/index.ts:1-9`, `packages/kit/package.json:1-15`). | Server rooms and selected UI modules. |
 | `@lane-pilot/memory-core` | Project memory records, audiences, retrieval, budgets, file import/export and SQLite helpers (`packages/memory-core/src/index.ts:1-23`). | Memory, writer context and run-insights. |
 | `@lane-pilot/models` | Provider/model catalog normalization, reasoning compatibility, presets and model pricing (`packages/models/src/index.ts:1-5`). | Native-agent, settings, Jev selection and usage rooms. |
-| `@lane-pilot/pixel-world` | Three.js scene primitives, assets, people, vehicles, navigation and static mesh batching. `batchStatic` merges eligible static meshes by transparency and leaves excluded mesh classes out (`packages/pixel-world/src/batch.ts:45-104`). | World UI. |
+| `@lane-pilot/pixel-world` | Three.js scene primitives, assets, people, vehicles, navigation and static mesh batching. `batchStatic` merges eligible static meshes by transparency and leaves excluded mesh classes out (`packages/pixel-world/src/batch.ts:45-104`). The root entry exports `createNavGrid` for obstacle-aware point checks and pathfinding (`packages/pixel-world/src/index.ts:1-8`, `packages/pixel-world/src/nav.ts:34-38`). | World UI. |
 | `@lane-pilot/resilience` | Provider/model circuit breaker and per-run token, time and attempt budgets (`packages/resilience/src/index.ts:1-25`). | Writer dispatch and stability. |
 | `@lane-pilot/run-insights` | Acceptance statistics, failure triage, rule proposals, lesson sourcing and golden memory cases (`packages/run-insights/src/index.ts:1-2`). | Runs, learning, memory and self-repair rooms. |
 | `@lane-pilot/settings-catalog` | Setting keys, defaults, UI catalog, provider pool parsing and bookkeeping path rules (`packages/settings-catalog/src/index.ts:1-5`). | Settings, writer and verification rooms. |
@@ -112,20 +113,7 @@ The contract and handlers are separate inputs: `rpcContract` supplies method val
 
 ## Package operations
 
-### Static pixel-world batching
-
-1. `batchStatic(THREE, root, options)` updates world matrices, creates shared opaque and transparent toon materials, and traverses visible descendants. `options.isolate` can start a separate merge target at a group so that group remains independently movable or hideable (`packages/pixel-world/src/batch.ts:10-16`, `:45-65`).
-2. Eligible meshes are copied into target-local geometry with transformed positions/normals, generated indices or normals when absent, baked material color, and alpha for transparent meshes. Mirrored transforms have triangle winding reversed (`packages/pixel-world/src/batch.ts:67-106`).
-3. Each target's opaque and glass geometries are merged separately. Source meshes are detached and empty intermediate groups removed; successful merges are added as static meshes and included in the returned mesh and source-count fields (`packages/pixel-world/src/batch.ts:108-130`).
-4. The returned `dispose` releases the batcher's owned materials and merged geometries (`packages/pixel-world/src/batch.ts:48-52`, `:119-137`).
-
-| Mesh branch | Condition | Outcome |
-|---|---|---|
-| Included | Visible, unskinned, non-instanced mesh with one untextured `MeshToonMaterial`, no emissive map/glow, front side, no vertex colors, no children, and no `noBatch` flag. | Baked into the opaque or transparent merge according to material transparency. |
-| Excluded | Any eligibility condition fails, or traversal reaches an invisible or `noBatch` object. | Left in the scene; traversal skips descendants of invisible or `noBatch` objects. |
-| Merge unavailable | `mergeGeometries` returns `null` for a group. | The original source meshes were already detached, no replacement mesh is added for that group, and the function returns its accumulated result. |
-
-Unexpected exceptions are not caught and can leave source meshes detached after processing has begun. The operation detaches included source meshes during processing, so callers should run it once after static scene construction and before adding dynamic objects (`packages/pixel-world/src/batch.ts:37-45`, `:108-137`).
+Pixel-world batching and navigation internals, including their branch and failure behavior, are documented in [Package operations](package-operations.md).
 
 ### Host command wrapper
 
@@ -180,3 +168,4 @@ The Jev package registers judgments on import, the UI bundle cannot import Node 
 
 - [Lane Pilot architecture](architecture.md)
 - [Lane Pilot overview](overview.md)
+- [Package operation details](package-operations.md)
