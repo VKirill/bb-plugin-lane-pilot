@@ -35,6 +35,7 @@ import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from ".
 import { outputText } from "../../writer/server";
 import { stringAt } from "../../core/server";
 import { fenceOutside, registerObservedTool } from "../../core/server";
+import { councilDecisionText, councilEndedText, sendCouncilNotice } from "./pm-notice";
 
 export const COUNCIL_TOOLS = ["lane_pilot_council_start", "lane_pilot_council_status", "lane_pilot_council_stop"] as const;
 
@@ -258,7 +259,7 @@ export function createCouncil(ctx: ServerCore) {
     throw new Error(`council seat ${input.seat?.id ?? "chair"} did not finish within ${TURN_LIMIT_MS / 60_000} minutes`);
   }
 
-  /** The whole session in the background; the PM polls with lane_pilot_council_status. */
+  /** The whole session in the background; a notice lands in the PM chat when it ends. */
   function runInBackground(session: CouncilSession, input: { pmThreadId: string; place: { hostId: string; workspace: string }; chair: { providerId: string; model: string }; materials: string[]; mode: "room" | "rounds"; judge: boolean }): void {
     void (async () => {
       const io = {
@@ -288,8 +289,16 @@ export function createCouncil(ctx: ServerCore) {
       stopRequested.delete(session.id);
       decideRequested.delete(session.id);
       presence.delete(session.id);
-      if (!decision) return;
-      const final = getCouncilSession(db, session.id)!;
+      const ended = getCouncilSession(db, session.id);
+      if (!decision) {
+        await sendCouncilNotice({
+          bb, pmThreadId: input.pmThreadId, councilId: session.id, state: ended?.state ?? "failed",
+          text: councilEndedText({ id: session.id, question: session.question, state: ended?.state ?? "failed", reason: ended?.reason ?? null }),
+          log: (message) => ctx.log(message),
+        });
+        return;
+      }
+      const final = ended ?? session;
       const feed = listCouncilMessages(db, session.id);
       const path = decisionFileName(final);
       try {
@@ -308,6 +317,11 @@ export function createCouncil(ctx: ServerCore) {
           ctx.log(`Lane Pilot council ${session.id}: handoff for "${task.title}" not created: ${cause instanceof Error ? cause.message : String(cause)}`);
         }
       }
+      await sendCouncilNotice({
+        bb, pmThreadId: input.pmThreadId, councilId: session.id, state: "done",
+        text: councilDecisionText({ id: session.id, question: session.question, decisionPath: path, nextTasks: decision.nextTasks }),
+        log: (message) => ctx.log(message),
+      });
     })().catch((cause: unknown) => ctx.log(`Lane Pilot council ${session.id} crashed: ${cause instanceof Error ? cause.message : String(cause)}`));
   }
 
@@ -364,6 +378,15 @@ export function createCouncil(ctx: ServerCore) {
     for (const row of stale) {
       setCouncilState(db, row.id, { state: "failed", reason: "interrupted by a plugin reload; convene the council again" });
       addCouncilMessage(db, { councilId: row.id, seatId: "moderator", round: 0, kind: "status", text: "Interrupted by a plugin reload. Convene the council again." });
+      const session = getCouncilSession(db, row.id);
+      const pmThreadId = session ? getRun(db, session.runId)?.pm_thread_id : null;
+      if (session && pmThreadId) {
+        void sendCouncilNotice({
+          bb, pmThreadId, councilId: session.id, state: "failed",
+          text: councilEndedText({ id: session.id, question: session.question, state: "failed", reason: session.reason }),
+          log: (message) => ctx.log(message),
+        });
+      }
     }
     return stale.map((row) => row.id);
   }
@@ -408,7 +431,7 @@ export function mountCouncilTools(ctx: ServerCore, council: CouncilApi): void {
   registerObservedTool(bb.agents, {
     name: "lane_pilot_council_start",
     description: "Convene a council of directors on a product or business question: role-bound seats on different models argue it through evidence and rounds; the chair writes a decision page under docs/decisions and hands next tasks over.",
-    instructions: "Use from the active Lane Pilot PM thread when the owner asks for a council, or a product question the owner delegated to you is open (how to raise repeat purchases, which features the collected requests ask for). Put exports and notes into the workspace and name them in `materials`. Default mode is `room`: seats speak when they have something to add and the owner may join at any time with lane_pilot_council_say; `rounds` is a fixed-round debate. `judge` (default on) asks Jev whether a seat wants the floor and whether the room is done; off means the built-in rule. A session takes tens of minutes: end your turn and, when you are next in this chat, read lane_pilot_council_status; then dispatch the tasks its decision names or report the decision to the owner.",
+    instructions: "Use from the active Lane Pilot PM thread when the owner asks for a council, or a product question the owner delegated to you is open (how to raise repeat purchases, which features the collected requests ask for). Put exports and notes into the workspace and name them in `materials`. Default mode is `room`: seats speak when they have something to add and the owner may join at any time with lane_pilot_council_say; `rounds` is a fixed-round debate. `judge` (default on) asks Jev whether a seat wants the floor and whether the room is done; off means the built-in rule. A session takes tens of minutes: end the turn after starting; the council reports its end to this chat itself. Then dispatch the tasks its decision names or report the decision to the owner.",
     parameters: z.object({
       runId: z.string().min(1),
       question: z.string().trim().min(8).max(2000),

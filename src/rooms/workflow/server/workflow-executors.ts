@@ -15,7 +15,7 @@ import type { DispatchRuntime } from "../../writer/server";
 import { keyedSpawnSupported } from "../../core/server";
 import { threadUsage } from "../../usage/server";
 import { stringAt } from "../../core/server";
-import { SCHEDULE_RUN_KEY_PREFIX, type ChainRuntime } from "./workflow-runtime";
+import { startedBySchedule, type ChainRuntime } from "./workflow-runtime";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 import { runOnHost } from "@lane-pilot/host-calls";
@@ -37,20 +37,8 @@ export function chainRuntimeFor(ctx: ServerCore, services: Services) {
     if (!run.project_id || !run.link_run_id) return undefined;
     const linked = getRun(ctx.db, run.link_run_id);
     if (!linked?.pm_thread_id) return undefined;
-    return { ctx, services, pmThreadId: linked.pm_thread_id, projectId: run.project_id, runId: run.link_run_id, ...(startedBySchedule(ctx, run) ? { origin: "schedule" as const } : {}) };
+    return { ctx, services, pmThreadId: linked.pm_thread_id, projectId: run.project_id, runId: run.link_run_id, ...(startedBySchedule(ctx.db, run) ? { origin: "schedule" as const } : {}) };
   };
-}
-
-/** Whether a schedule started the run, or the run it is a subworkflow of (a few levels up). */
-function startedBySchedule(ctx: ServerCore, run: RunRow): boolean {
-  let current: Pick<RunRow, "idem_key" | "parent_run_id"> | undefined = run;
-  for (let hop = 0; current && hop < 8; hop += 1) {
-    if (current.idem_key?.startsWith(SCHEDULE_RUN_KEY_PREFIX)) return true;
-    current = current.parent_run_id
-      ? ctx.db.prepare("SELECT idem_key, parent_run_id FROM lane_pilot_wf_run WHERE id=?").get(current.parent_run_id) as Pick<RunRow, "idem_key" | "parent_run_id"> | undefined
-      : undefined;
-  }
-  return false;
 }
 
 const need = (c: StepContext<ChainRuntime>): ChainRuntime => {
