@@ -2,7 +2,7 @@
 title: Lane Pilot architecture
 type: architecture
 created: 2026-09-30
-updated: 2026-10-13
+updated: 2026-10-14
 status: active
 confidence: medium
 tags: [architecture, runtime, monorepo]
@@ -16,6 +16,8 @@ sources:
   - src/rooms/core/server/rpc.ts
   - src/rooms/core/server/native-wiring.ts
   - src/rooms/core/server/lifecycle-events.ts
+  - src/rooms/stability/server/deploy-drain.ts
+  - src/rooms/native-install/native-install-lifecycle.ts
   - tests/architecture/boundaries.test.ts
   - src/rooms/contracts/index.ts
   - src/rooms/contracts/host.ts
@@ -33,6 +35,7 @@ sources:
   - packages/host-calls/src/run-on-host.ts
   - packages/thread-observe/src/completion.ts
   - packages/handoff/src/messages.ts
+  - src/rooms/host-worker/host-handlers.ts
 ---
 
 # Lane Pilot architecture
@@ -57,7 +60,7 @@ C4Container
   Rel(server, db, "Reads and writes")
 ```
 
-The UI and server entries are declared by the package's BB manifest (`package.json:8-18`). The server uses BB's plugin storage database and runs migrations during startup (`src/rooms/storage/database.ts:323-327`). The UI receives methods from the assembled `rpcContract`, while host calls use `hostContract` (`src/rooms/contracts/index.ts:1-26`, `src/rooms/contracts/host.ts:6-15`).
+The UI and server entries are declared by the package's BB manifest (`package.json:8-18`). The server uses BB's plugin storage database and runs migrations during startup (`src/rooms/storage/database.ts:323-327`). The UI receives methods from the assembled `rpcContract`, while host calls use `hostContract` (`src/rooms/contracts/index.ts:1-26`, `src/rooms/contracts/host.ts:6-15`). The host client wraps checkout-writing calls and acceptance checks with a drain gate (`src/rooms/core/server/core.ts:91-100`, `src/rooms/stability/server/deploy-drain.ts:1-6`).
 
 ## Application and package dependencies
 
@@ -89,6 +92,7 @@ The root package declares workspace dependencies and the three BB entries; `serv
 3. The entry mounts native message dispatch and environment hooks, then fills a shared `Services` object with room-owned factories for writer, workflow, QA, docs, memory, council, world, stability, and scheduling (`server.ts:61-91`, `src/rooms/core/server/native-wiring.ts:10-34`).
 4. Lifecycle events, RPC, tools, CLI, world assets, Anamnesis, and the native worktree provider are registered after services exist (`server.ts:92-110`).
 5. The entry schedules run reconciliation, silent-writer checks, and worktree cleanup (`server.ts:111-139`).
+6. On reload or shutdown, the lifecycle handler enables the checkout drain, waits for in-flight calls until its deadline or abort, and stores a drain snapshot in BB KV (`src/rooms/native-install/native-install-lifecycle.ts:15-20`, `src/rooms/stability/server/deploy-drain.ts:59-79`). Startup skips immediate periodic scans only after a clean reload drain (`src/rooms/stability/server/deploy-drain.ts:82-89`, `server.ts:174-188`).
 
 `createCore` wraps the host client with job handling and the active schedule abort signal; calls made inside an isolated schedule run carry that signal (`src/rooms/core/server/core.ts:91-100`). The service bag's shared types are defined in `src/rooms/core/server/services.ts`.
 
@@ -104,7 +108,7 @@ The test's deep-import baseline is recorded in `tests/architecture/deep-imports.
 
 `mountNativeWiring` registers the mention provider, `message.dispatch` handler, Claude environment contribution, OpenCode shim, BB shim, and retry handling for dropped provider streams (`src/rooms/core/server/native-wiring.ts:10-58`). `mountLifecycleEvents` adds event listeners only when the BB event API exists and `LANE_PILOT_THREAD_SIGNALS` is not `0`; missing event names are logged and periodic sweeps remain the fallback (`src/rooms/core/server/lifecycle-events.ts:22-37`). It closes runs when their PM thread is archived or deleted and notifies PMs when an attempt is waiting on an owner interaction (`src/rooms/core/server/lifecycle-events.ts:39-72`).
 
-Host methods include native install, Git ownership and worktree operations, long-running host jobs, stability drills, Anamnesis procedures, disk-space queries, OpenCode telemetry, docs/workflow file operations, and coexistence operations (`src/rooms/contracts/host.ts:6-90`, `:114-205`, `:207-260`, `:261-410`). `runOnHost` is a typed convenience wrapper for `runCommand`; it passes the same host id in the call input and call options and defaults the transport wait to command timeout plus five seconds (`packages/host-calls/src/run-on-host.ts:8-31`).
+Host methods include native install, Git ownership and worktree operations, long-running host jobs, stability drills, Anamnesis procedures, disk-space queries, OpenCode telemetry, docs/workflow file operations, and coexistence operations (`src/rooms/contracts/host.ts:6-90`, `:114-205`, `:207-260`, `:261-410`). `gitIntegrate` accepts ownership patterns and replay checks for an attempt rebased onto a moved base (`src/rooms/contracts/host.ts:61-71`, `src/rooms/host-worker/host-handlers.ts:75-101`). `runOnHost` is a typed convenience wrapper for `runCommand`; it passes the same host id in the call input and call options and defaults the transport wait to command timeout plus five seconds (`packages/host-calls/src/run-on-host.ts:8-31`).
 
 ## Data ownership
 

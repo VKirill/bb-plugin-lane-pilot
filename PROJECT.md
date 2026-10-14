@@ -1,6 +1,6 @@
 ---
 title: Lane Pilot project facts
-updated: 2026-10-13
+updated: 2026-10-14
 sources:
   - package.json
   - server.ts
@@ -13,6 +13,10 @@ sources:
   - src/rooms/writer/server/start.ts
   - src/rooms/writer/server/verify.ts
   - src/rooms/writer/server/finish.ts
+  - src/rooms/critique/server/critique-runs.ts
+  - src/rooms/stability/server/deploy-drain.ts
+  - src/rooms/verification/git-integrate.ts
+  - packages/kit/src/owns-paths.ts
   - docs/overview.md
   - docs/task-board.md
   - src/rooms/runs/server/task-board.ts
@@ -47,6 +51,8 @@ sources:
 - UI RPC schemas and host call schemas are separate ([`docs/rpc-callers.md`](docs/rpc-callers.md)).
 - Tasks board state is derived from stored latest task attempts, stage receipts, and top-level workflow runs ([`docs/task-board.md`](docs/task-board.md)).
 - Writer workspace branches and no-Git rollback mode are documented in [ADR 1](docs/decisions.md#adr-1-isolate-writer-workspaces) and [gotchas](docs/gotchas.md).
+- Moved-main replay checks and path ownership outcomes are documented in [validator decisions](docs/validator-decisions.md).
+- Host checkout writes and acceptance checks participate in the reload drain ([deployment](docs/deployment.md#configuration-and-runtime)).
 - Workflow, UI-kit, and world-simulation internals belong to their [workspace docs](docs/overview.md#workspaces).
 
 ## Conventions
@@ -60,6 +66,7 @@ sources:
 
 - Thread events wake watchers; fresh reads decide completion, with a fallback poll ([gotchas](docs/gotchas.md#event-and-polling-behavior)).
 - OpenCode minimal config can block helper startup while host preparation is pending ([gotchas](docs/gotchas.md#stability-and-local-provider-setup)).
+- Host-prepared BB guard wrappers differ for new helpers, owner threads, and older hosts ([native agent](docs/native-agent.md#public-api-or-commands)).
 - Live-folder mode has explicit caps and rollback limits ([gotchas](docs/gotchas.md#writer-workspace-modes)).
 
 ## Useful commands

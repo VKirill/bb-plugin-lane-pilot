@@ -2,7 +2,7 @@
 title: Lane Pilot overview
 type: overview
 created: 2026-10-10
-updated: 2026-10-13
+updated: 2026-10-14
 status: active
 confidence: low
 tags: [overview, bb-plugin, orchestration]
@@ -16,6 +16,8 @@ sources:
   - src/rooms/writer/server/start.ts
   - src/rooms/writer/server/verify.ts
   - src/rooms/writer/server/finish.ts
+  - src/rooms/critique/server/critique-runs.ts
+  - src/rooms/critique/pm-read.ts
   - src/rooms/storage/database.ts
   - src/rooms/schedule/scheduler.ts
   - src/rooms/anamnesis/collect.ts
@@ -42,7 +44,7 @@ The plugin is registered by BB from the `bb.server` entry in `package.json`; the
 
 A user enables Lane Pilot for a new project chat through the composer. The UI gets activation context, requires a selected project and a resolvable writer binding, then sets a dispatch token and native agent selection (`src/rooms/native-agent/ui/composer-enable.tsx:49-60`, `:71-94`, `:96-123`).
 
-The PM sends work through Lane Pilot tools. The writer dispatcher resolves task ownership and starts writer attempts; attempts use an isolated workspace, then verification and finish stages produce receipts and merge accepted work (`src/rooms/writer/server/dispatch.ts:1-80`, `src/rooms/writer/server/start.ts:1-80`, `src/rooms/writer/server/verify.ts:1-80`, `src/rooms/writer/server/finish.ts:1-80`).
+The PM sends work through Lane Pilot tools. The writer dispatcher resolves task ownership and starts writer attempts; attempts use an isolated workspace, then verification and finish stages produce receipts and merge accepted work (`src/rooms/writer/server/dispatch.ts:1-80`, `src/rooms/writer/server/start.ts:1-80`, `src/rooms/writer/server/verify.ts:1-80`, `src/rooms/writer/server/finish.ts:1-80`). When PM read is enabled, `runPmRead` reads the task's `read_first` excerpts into a bounded execution packet and asks a helper for a JSON summary, key facts, and open questions (`src/rooms/critique/server/critique-runs.ts:35-45`, `:61-105`, `src/rooms/critique/pm-read.ts:27-41`). The minimum line setting defaults to 350 and must be an integer from 50 to 5,000; selected excerpts below it skip the helper call, and provider/model settings fall back to the writer selection (`src/rooms/critique/pm-read.ts:13-25`, `src/rooms/critique/server/critique-runs.ts:37-44`, `:67-71`). An existing `pm-read` receipt is returned without another helper call; disabled PM read is recorded as skipped, while provider, model, reasoning, output, and spawn errors are recorded as failed (`src/rooms/critique/server/critique-runs.ts:46-59`, `:74-114`).
 
 ## Main areas
 

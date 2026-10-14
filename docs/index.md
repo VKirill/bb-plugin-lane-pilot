@@ -11,7 +11,7 @@ Built by Lane Pilot from page frontmatter.
 | Page | Type | Status | Updated |
 |---|---|---|---|
 | [Anamnesis and owner profile](anamnesis.md) | component | active | 2026-10-10 |
-| [Lane Pilot architecture](architecture.md) | architecture | active | 2026-10-13 |
+| [Lane Pilot architecture](architecture.md) | architecture | active | 2026-10-14 |
 | [Lane Pilot data model overview](data-model.md) | data-model | active | 2026-10-10 |
 | [Schedules and Pixel World persistence](data-model/automation.md) | data-model | active | 2026-10-10 |
 | [Council, handoff, Jev and run-insight data](data-model/governance.md) | data-model | active | 2026-10-10 |
@@ -19,20 +19,22 @@ Built by Lane Pilot from page frontmatter.
 | [Orchestration and execution data](data-model/orchestration.md) | data-model | active | 2026-10-10 |
 | [Architectural decisions](decisions.md) | decisions | active | 2026-10-10 |
 | [docs/decisions/2026-10-08-lane-pilot-data-db-access.md](decisions/2026-10-08-lane-pilot-data-db-access.md) | — | — | — |
-| [Build and deploy Lane Pilot](deployment.md) | deployment | active | 2026-10-13 |
-| [Cross-cutting gotchas](gotchas.md) | gotchas | active | 2026-10-11 |
+| [Build and deploy Lane Pilot](deployment.md) | deployment | active | 2026-10-14 |
+| [Cross-cutting gotchas](gotchas.md) | gotchas | active | 2026-10-14 |
 | [docs/invoice-send.md](invoice-send.md) | — | — | — |
 | [Jev adapter for native writer reasoning](jev-adapter.md) | component | active | 2026-10-13 |
 | [docs/jev-judgments.md](jev-judgments.md) | — | — | — |
 | [docs/learning.md](learning.md) | — | — | — |
 | [Project memory](memory.md) | component | active | 2026-10-11 |
-| [Native agent activation and dispatch](native-agent.md) | component | active | 2026-10-11 |
-| [Lane Pilot overview](overview.md) | overview | active | 2026-10-13 |
-| [Shared packages](packages.md) | component | active | 2026-10-13 |
-| [RPC and host-call contracts](rpc-callers.md) | component | active | 2026-10-13 |
+| [Native agent activation and dispatch](native-agent.md) | component | active | 2026-10-14 |
+| [Lane Pilot overview](overview.md) | overview | active | 2026-10-14 |
+| [Package operation details](package-operations.md) | component | active | 2026-10-14 |
+| [Shared packages](packages.md) | component | active | 2026-10-14 |
+| [RPC and host-call contracts](rpc-callers.md) | component | active | 2026-10-14 |
+| [RPC route execution details](rpc-details.md) | component | active | 2026-10-14 |
 | [Schedule board: Lane Pilot's own scheduler](schedule-board.md) | component | active | 2026-10-10 |
 | [Tasks board and work graph](task-board.md) | component | active | 2026-10-13 |
-| [Решения валидатора результата BB writer](validator-decisions.md) | — | active | 2026-09-23 |
+| [Writer validation decisions](validator-decisions.md) | decisions | active | 2026-10-14 |
 | [Workflow engine integration](workflow-engine.md) | overview | active | 2026-10-10 |
 | [docs/workflow-router.md](workflow-router.md) | — | — | — |
 | [docs/workflow-triggers.md](workflow-triggers.md) | — | — | — |

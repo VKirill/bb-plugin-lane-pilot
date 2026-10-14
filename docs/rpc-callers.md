@@ -2,7 +2,7 @@
 title: RPC and host-call contracts
 type: component
 created: 2026-09-30
-updated: 2026-10-13
+updated: 2026-10-14
 status: active
 confidence: medium
 tags: [rpc, contracts, host-api]
@@ -12,6 +12,7 @@ sources:
   - src/rooms/contracts/index.ts
   - src/rooms/contracts/host.ts
   - src/rooms/contracts/rpc-shell.ts
+  - src/rooms/settings/server/rpc/preferences.ts
   - src/rooms/contracts/rpc-runs.ts
   - src/rooms/contracts/rpc-native.ts
   - src/rooms/runs/server/rpc/runs.ts
@@ -30,6 +31,8 @@ sources:
   - src/rooms/memory/server/memory.ts
   - host.ts
   - packages/contracts/src/schemas.ts
+  - src/rooms/host-worker/host-handlers.ts
+  - src/rooms/anamnesis/contract.ts
 ---
 
 # RPC and host-call contracts
@@ -49,9 +52,9 @@ Keep BB app-to-server calls and plugin-server-to-host calls typed independently.
 ### Route-family behavior
 
 - `rpcShell` adds schedule contract methods first, then declares locale/preferences, project and section lookup, global settings, agent inventory and profile writes. Locale accepts `auto`, `en`, or `ru`; saving globals carries an expected revision; profile writes validate IDs, prompt length, resource limits and an expected source hash (`src/rooms/contracts/rpc-shell.ts:1-18`, `:20-73`, `:74-109`). These contracts declare input/output shapes; handlers decide conflict outcomes.
-- `rpcRuns` declares task board and card results; `get_run_card` is nullable, while `get_stage_result` returns `found` plus a nullable result. `list_runs` requires an offset and caps the integer limit at 200; `get_screen` accepts an optional run limit capped at 200 and has five writer-binding states (`src/rooms/contracts/rpc-runs.ts:8-35`, `:37-75`, `:98-117`). `task_card` is also nullable when its run or task is absent (`src/rooms/contracts/rpc-runs.ts:22-35`, `src/rooms/runs/server/rpc/runs.ts:182-184`).
-- `rpcKnowledge` groups council reads and owner messages, rule and memory operations, docs status, usage synchronization/rebuild, secret issuance, Jev provider settings, and workspace-provider status/reset. Docs status allows `auto|on|off` and `nightly|weekly|paused`; usage accepts `7d|14d|30d|month`; rebuild returns either a started record with backup and clearing counts or `{started:false}` (`src/rooms/contracts/rpc-knowledge.ts:103-114`, `:133-137`, `:167-177`).
-- `rpcWorkflow` distinguishes manual and Telegram starts, exposes explicit not-found and preflight result shapes, and separates stubbed dry runs and test runs from live runs. Draft creation selects `edit` or `duplicate`; patch and restore accept optional expected versions; architect start returns whether it reused a living thread (`src/rooms/contracts/rpc-workflow.ts:39-62`, `:75-82`, `:92-104`).
+- `rpcRuns` declares task board and card results; `get_run_card` is nullable, while `get_stage_result` returns `found` plus a nullable result (`src/rooms/contracts/rpc-runs.ts:22-43`, `:68-75`). `list_runs` requires a nonnegative integer offset and an integer limit from 1 through 200; `get_screen` accepts an optional run limit from 1 through 200 and has five writer-binding states (`src/rooms/contracts/rpc-runs.ts:64-67`, `:98-117`). `task_card` is also nullable when its run or task is absent (`src/rooms/contracts/rpc-runs.ts:22-35`, `src/rooms/runs/server/rpc/runs.ts:182-184`). See [RPC route details](rpc-details.md) for request steps, branches, outputs, and failures.
+- `rpcKnowledge` defines council reads and messages, routing hints, rule proposals/scans, session memory, memory-record operations, documentation status, token usage, secret-issuance history, Jev provider settings, and worktree-provider status/reset; it also spreads in the Anamnesis contract methods (`src/rooms/contracts/rpc-knowledge.ts:2`, `:16-62`, `:63-101`, `:103-131`, `:133-210`). Its route execution and failure behavior are documented in [RPC route details](rpc-details.md).
+- `rpcWorkflow` distinguishes manual and Telegram starts, exposes not-found and preflight result shapes, and separates stubbed dry/test runs from live runs (`src/rooms/contracts/rpc-workflow.ts:29-62`). Draft creation selects `edit` or `duplicate`; patch/restore accept optional expected versions; architect start reports whether it reused a living thread (`src/rooms/contracts/rpc-workflow.ts:74-105`). See [RPC route details](rpc-details.md) for the full route behavior.
 - `rpcNative` exposes `list_helper_threads`; when an open run exists, its response can include task nodes and `depends`, `files`, `folder`, or `question` edges (`src/rooms/contracts/rpc-native.ts:127-144`, `src/rooms/runs/server/rpc/runs.ts:46-50`, `:165-169`). The Tasks board and detail card are described in [Tasks board](task-board.md).
 - `rpcOps` groups run controls, statistics, deployment drain, self-repair, canary, and stack management. Stack install/connect require `confirmExternalOps`; rollback accepts an optional absolute snapshot path. Several operation outputs are `unknown` at the shared contract, so their success and refusal shapes belong to the implementing room (`src/rooms/contracts/rpc-ops.ts:5-109`).
 
@@ -65,19 +68,34 @@ Keep BB app-to-server calls and plugin-server-to-host calls typed independently.
 | Procedure family | Branches and outcomes | Evidence |
 |---|---|---|
 | Native install and setup | `nativeInstall` accepts install, enable, disable, remove, or status; its output distinguishes absent, prepared, enabled, and disabled. Snapshot/install/import/rollback/connect procedures return an install receipt. | `src/rooms/contracts/host.ts:7-10`, `:233-259` |
-| Git ownership and worktrees | Ownership base and changes distinguish ready, not-git, and failed; worktree create distinguishes ready/failed; sync and integrate distinguish synced, up-to-date, dirty, conflict, failed, and busy. Conflict names and reasons are explicit output fields. | `src/rooms/contracts/host.ts:11-29`, `:57-71`, `:126-129` |
+| Git ownership and worktrees | Ownership base and changes distinguish ready, not-git, invalid-ref, and failed; worktree create distinguishes ready/failed; sync and integrate distinguish synced, up-to-date, dirty, conflict, failed, and busy. Integrate can accept ownership patterns and sandboxed replay checks (`src/rooms/contracts/host.ts:11-29`, `:57-71`, `:126-129`). | `src/rooms/contracts/host.ts:11-29`, `:57-71`, `:126-129` |
 | Background jobs | `jobStart` selects a declared host-job kind, timeout, and optional idempotency key. Status returns running, succeeded, failed, cancelled, or lost; cancellation reports a boolean. | `src/rooms/contracts/host.ts:31-46` |
 | Docs and workflow files | Docs reads report ready/not-git/failed or oversized files; writes report applied/conflict/blocked per file. Workflow-file writes use a nullable expected hash and return applied/conflict. | `src/rooms/contracts/host.ts:73-112`, `:163-193` |
 | Diagnostics and integrations | Stability drills return checks; disk calls return free/total bytes; OpenCode probes distinguish a limit from no limit and telemetry reads return bounded content with a hash; coexistence operations take a manager and operation and return the typed operation result. Anamnesis methods are spread into the contract from its domain module. | `src/rooms/contracts/host.ts:48-55`, `:130-136`, `:195-205`, `:52` |
 
 Strict object schemas reject undeclared input keys and values outside enums or numeric/string bounds before the host implementation runs (`src/rooms/contracts/host.ts:7-35`, `:61-71`). BB transport errors and handler rejections remain errors at the calling room; each method's result enum is the domain-level outcome channel (`src/rooms/core/server/core.ts:93-105`, `src/rooms/contracts/host.ts:11-29`).
 
+### `rpcKnowledge` contract flow
+
+The route families, input validation, result variants, and failure behavior are documented in [RPC route details](rpc-details.md).
+
 ### `rpcShell` contract flow
 
-1. The map begins with schedule methods, then defines preferences, locale, remembered project, sections, projects, globals, inventory, and agent-profile methods (`src/rooms/contracts/rpc-shell.ts:1-8`, `:12-32`, `:33-72`, `:74-109`).
-2. Preference reads pair the detected locale with the saved `auto|en|ru` preference; locale writes accept those three values and a suggested English/Russian locale (`src/rooms/contracts/rpc-shell.ts:8-15`).
-3. Read calls return project/section collections, global defaults and revision, and inventory groups whose status is ready, unavailable, or error (`src/rooms/contracts/rpc-shell.ts:20-72`, `packages/contracts/src/schemas.ts:152-156`).
-4. Global writes carry `expectedRevision`; profile writes carry an id, prompt, expected source hash, and optional resource lists/modes. The schema returns `ok` plus the resulting revision or source hash; handlers determine revision/hash conflicts (`src/rooms/contracts/rpc-shell.ts:74-109`).
+1. The map spreads schedule methods first, then declares preferences, locale, remembered project, sections, projects, globals, inventory, and agent-profile methods; each object is strict (`src/rooms/contracts/rpc-shell.ts:1-8`, `:12-32`, `:33-72`, `:74-109`).
+2. `get_preferences` normalizes unknown saved locale values to `auto`, resolves that value with the UI's suggested locale, and returns last project or null. `set_locale` stores `auto|en|ru`; auto uses the suggested `en|ru` value (`src/rooms/contracts/rpc-shell.ts:8-15`, `src/rooms/settings/server/rpc/preferences.ts:15-26`).
+3. Project and section reads return lists; section listing delegates to the shared Project Folders helper. Global reads parse stored defaults and revision, list profiles, and attach host data; host-list failure becomes an empty host list (`src/rooms/contracts/rpc-shell.ts:20-60`, `src/rooms/settings/server/rpc/preferences.ts:32-61`).
+4. `get_agent_inventory` uses explicit project/host ids when given, otherwise falls back to remembered/first visible project and connected/first host. It asks the catalogs for skills and host MCP servers where those ids resolve; inventory groups preserve ready, unavailable, or error status (`src/rooms/contracts/rpc-shell.ts:62-72`, `src/rooms/settings/server/rpc/preferences.ts:63-101`, `packages/contracts/src/schemas.ts:152-156`).
+5. `save_globals` runs through serialized KV access and compares `expectedRevision`. A mismatch returns `ok:false` with current revision/defaults; a match parses, stores, and returns the next revision (`src/rooms/contracts/rpc-shell.ts:74-89`, `src/rooms/settings/server/rpc/preferences.ts:103-113`).
+6. `save_agent_profile` checks the current source hash, rejects corrupt profiles or hash mismatches with `ok:false`, applies each resource mode, compiles the profile, then stores the override and returns its new hash. Compile failures also return `ok:false` (`src/rooms/contracts/rpc-shell.ts:91-109`, `src/rooms/settings/server/rpc/preferences.ts:114-143`).
+
+| Route branch | Inputs and limits | Result or failure |
+|---|---|---|
+| Locale | Preference `auto|en|ru`; suggested locale `en|ru`. | Returns resolved locale and preference; extra fields or invalid enums fail strict validation. |
+| Inventory | Nullable project/host ids; resource mode `inherit`, `none`, or `selected`. | Each group is `ready`, `unavailable`, or `error`, keeping catalog failure distinct from empty results (`packages/contracts/src/schemas.ts:152-156`). |
+| Global defaults | Strict defaults object plus nonnegative `expectedRevision`. | Revision conflict returns `ok:false` with the current snapshot; success increments revision. |
+| Agent profile | Lowercase id pattern, prompt 1–32,000 characters, description up to 400, lists up to 64, expected source hash, optional resource modes. | Hash/corrupt/compile failures return `ok:false`; success returns source hash. |
+
+Project and section list errors can reject the handler call; global host-list errors are caught and produce an empty host list. Inventory catalog outcomes are returned as group statuses, and write conflicts are values rather than transport errors (`src/rooms/settings/server/rpc/preferences.ts:32-61`, `:63-101`, `:103-143`).
 
 | Variant | Input branch | Result or failure shape |
 |---|---|---|
@@ -89,50 +107,15 @@ These distinctions are declared by the schemas; they do not themselves authorize
 
 ### `rpcWorkflow` contract flow
 
-1. Read routes list/get workflows, snapshots, and paged run history; a missing workflow or snapshot is nullable. History takes a cursor and a 1–50 limit, defaulting to 20 (`src/rooms/contracts/rpc-workflow.ts:6-28`).
-2. A node rerun takes a run/node id and returns `ok` plus optional reason, step key, and removed-step count. Live run starts accept manual or Telegram source, inputs, and optional live-trial acknowledgment; preflight reports missing/unverified requirements and named secret requests (`src/rooms/contracts/rpc-workflow.ts:29-52`).
-3. Dry runs and test runs use stubs and return trial cases; draft operations list/get, patch, restore, test, publish, or create an edit/duplicate draft (`src/rooms/contracts/rpc-workflow.ts:54-95`).
-4. Architect start accepts optional project, section, and draft ids, and reports its thread/project and `reused` flag. Executor, model-override, model-catalog, and capability routes expose or update per-step configuration (`src/rooms/contracts/rpc-workflow.ts:97-130`).
-
-| Mode | Difference and outcomes | Evidence |
-|---|---|---|
-| Live run | `manual` or `telegram`; Telegram must match a workflow trigger. Result includes success/run fields or a reason, missing inputs, requirement issues, and secret requests. | `src/rooms/contracts/rpc-workflow.ts:34-52` |
-| Dry/test run | Dry run stubs external actions and returns one trial case; tests return all cases and a green flag. | `src/rooms/contracts/rpc-workflow.ts:54-62` |
-| Draft | `edit` or `duplicate`; patch/restore may include an expected version; publish/test have their own result schemas. | `src/rooms/contracts/rpc-workflow.ts:74-95` |
-| Architect | Existing living chat for the same project/draft can be reused; otherwise response identifies the started thread. | `src/rooms/contracts/rpc-workflow.ts:97-104` |
-
-All objects are strict. Unknown ids and preflight/start refusals appear as nullable records, `found`/`ok` flags, or optional reason fields according to the route; transport and handler exceptions are not translated by these schemas (`src/rooms/contracts/rpc-workflow.ts:6-18`, `:39-62`, `:75-105`).
+See [RPC route details](rpc-details.md) for the ordered route steps, modes, outputs, and failures.
 
 ### `rpcRuns` contract flow
 
-1. `task_board` returns task and workflow rows with a five-column state and a phase; `task_card` accepts either a task id or null for a workflow card and may return null (`src/rooms/contracts/rpc-runs.ts:8-35`).
-2. Run-card lookup may return null for an unknown run. Stage summaries omit result bodies; `get_stage_result` instead returns `found` and a nullable result (`src/rooms/contracts/rpc-runs.ts:37-75`).
-3. `list_runs` takes project, optional section, required offset, and limit 1–200. `get_screen` takes project and optional section/run limit; its optional writer binding reports resolved, ambiguous, setup-required, offline, or catalog-unavailable state (`src/rooms/contracts/rpc-runs.ts:64-117`).
-4. The `get_screen` output includes a nullable `lastWriterTrace`; when present it records requested/effective reasoning levels, provider/model, Jev status, and fallback reason (`src/rooms/contracts/rpc-runs.ts:147-163`).
-
-Strict schemas reject malformed ids and out-of-range paging values. Nullable run/card records and `found: false` stage results represent absent data; the writer-binding enum represents resolution outcomes, not RPC failure (`src/rooms/contracts/rpc-runs.ts:37-75`, `:98-117`).
-
-| Route branch | Input or condition | Outcome/failure |
-|---|---|---|
-| Task card | `taskId` is a task id or null for a workflow card. | Returns a card or null when the run/card cannot be found. |
-| Run and stage lookup | Run card can be absent; stage result is fetched separately. | Nullable run card; stage route returns `found` and nullable result. |
-| Paging and screen | `list_runs` requires offset and limit 1–200; screen's optional run limit is 1–200. | Out-of-range paging fails schema validation; binding states describe resolution outcomes. |
-
-Evidence: `src/rooms/contracts/rpc-runs.ts:22-35`, `:37-75`, `:98-117`; task-card absence handling: `src/rooms/runs/server/rpc/runs.ts:182-184`.
+See [RPC route details](rpc-details.md) for run list, screen, card, stage, mode, and failure behavior.
 
 ### Memory routes and accepted-task maintenance
 
-`sessionMemoryRpc` exposes project lookup, session writes/search/core reads, and lesson proposals (`src/rooms/memory/server/session-memory.ts:15-67`). Its request path is: resolve the requested host/path to a project; for writes, check the memory setting, parse a candidate and store observed memory for the `subagent` audience; for reads, apply project settings and audience; for lessons, upsert and optionally adopt a proposal (`src/rooms/memory/server/session-memory.ts:18-67`).
-
-| Branch | Condition | Outcome/failure |
-|---|---|---|
-| Project lookup | Host/path matches one or more docs places. | Chooses the deepest matching place; catalog/project lookup errors resolve to no match. |
-| Session write | Memory disabled, candidate invalid, or storage accepts it. | Returns `memory_disabled`; parse/storage exceptions return `stored:false` with a reason; accepted records report inserted, corroborated, or duplicate. |
-| Search/core read | Search applies configured audience; core read selects active, unexpired core records. | Returns filtered records; database read errors reject the handler. |
-| Lesson | Proposal is submitted for upsert and may be adopted. | Returns the upsert/adoption result from memory-core. |
-| Uncaught database error | A search, core read, or lesson operation fails. | The handler has no catch on these routes, so the rejection propagates. |
-
-Evidence: `src/rooms/memory/server/session-memory.ts:18-67`.
+`sessionMemoryRpc` behavior is documented in [RPC route details](rpc-details.md).
 
 `createMemoryStage` runs maintenance after an accepted task or when called explicitly. It checks that the caller is the run's PM and that the task belongs to the project/run, then requires a passed acceptance receipt before examining memory settings (`src/rooms/memory/server/memory.ts:26-47`). Existing terminal receipts are returned unchanged; disabled memory or maintenance records a skipped receipt unless a child already exists (`src/rooms/memory/server/memory.ts:61-70`). Otherwise it recovers a child, records a snapshot and spawn claim, validates provider/model/effort/tier, applies helper policy and placement, then spawns the maintainer and observes it (`src/rooms/memory/server/memory.ts:128-182`).
 
@@ -178,3 +161,4 @@ The RPC contract is a shape contract; authorization and ownership checks remain 
 
 - [Lane Pilot architecture](architecture.md)
 - [Lane Pilot overview](overview.md)
+- [RPC route execution details](rpc-details.md)
