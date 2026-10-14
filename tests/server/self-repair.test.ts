@@ -266,7 +266,7 @@ describe("self-repair", () => {
     expect(form.harness.pendingInteractions).toHaveLength(1);
     const asked = form.harness.pendingInteractions[0]!;
     expect(asked).toMatchObject({ threadId: "thr_repair1", rendererId: "lane-pilot-ask" });
-    expect(asked.title).toContain("Self-repair");
+    expect(asked.title).toContain("Самоисправление");
     expect((asked.payload as { detail: string }).detail).toContain("чинить в Lane Stack или в ядре");
     expect((asked.payload as { detail: string }).detail).not.toContain("SELF-REPAIR-VERDICT");
     form.harness.behavior.submitInteraction(asked.id, { choice: "1", text: "в ядре" });
@@ -278,6 +278,21 @@ describe("self-repair", () => {
     // The verdict is read once: a later pass does not ask again.
     await repair.tick();
     expect(form.harness.pendingInteractions).toHaveLength(0);
+  });
+
+  it("a repair that ends needs-owner uses the English form title when locale is en (H8)", async () => {
+    const env = setup({}, { thr_repair1: "Нужен выбор: чинить в Lane Stack или в ядре?\nSELF-REPAIR-VERDICT: needs-owner" });
+    await env.ctx.bb.storage.kv.set("preferences:locale", "en");
+    const form = createFakePluginHost({ pluginId: "lane-pilot" });
+    const { createOwnerAsk } = await import("../../src/rooms/relay/server");
+    const real = createOwnerAsk(form.bb, () => undefined);
+    Object.assign(env.ctx, { ownerAsk: { ...real, sendToThread: async () => {} } });
+    env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+    const repair = createSelfRepair(env.ctx);
+    expect((await repair.tick({ since: 0 })).spawned).toBe("thr_repair1");
+    await repair.tick();
+    expect(form.harness.pendingInteractions).toHaveLength(1);
+    expect(form.harness.pendingInteractions[0]!.title).toContain("Self-repair");
   });
 
   it("an unfamiliar reason in three tasks within a day is a pattern", async () => {
