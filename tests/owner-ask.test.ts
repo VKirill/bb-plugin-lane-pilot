@@ -5,6 +5,8 @@ import { createOwnerAsk, OWNER_ASK_OPEN_GRACE_MS } from "../src/rooms/relay/serv
 import { buildOwnerAskPayload, ownerAnswerText, ownerAskPayloadSchema, ownerAskTitle, resolveOwnerResponse } from "../src/rooms/relay/owner-ask";
 import { IntegrationGateRunner } from "../src/rooms/verification/server/integration-gate";
 import { askOwnerToJoin } from "../src/rooms/council/server/council";
+import { councilOwnerForm } from "../src/rooms/relay/server/owner-locale";
+import { repairAnswerForThread } from "../src/rooms/self-repair/server/self-repair";
 
 afterEach(() => { vi.useRealTimers(); });
 
@@ -184,10 +186,35 @@ describe("a council room waiting for the owner opens a form in the PM chat (H8)"
   const room = (ownerAsk: ReturnType<typeof createOwnerAsk> | undefined) => {
     const words: string[] = [];
     let decided = 0;
-    const withdraw = askOwnerToJoin(ownerAsk, { pmThreadId: "thr_pm", question: "The council «Q» waits for you.", detail: "product: hi", timeoutMs: 600_000,
+    const withdraw = askOwnerToJoin(ownerAsk, { pmThreadId: "thr_pm", question: "The council «Q» waits for you.", detail: "product: hi",
+      decideLabel: "Let the chair decide", timeoutMs: 600_000,
       onWords: (text) => words.push(text), onDecide: () => { decided += 1; } });
     return { words, decided: () => decided, withdraw };
   };
+
+  it("shows the Russian council form and still decides on the localized option", async () => {
+    const { harness, ownerAsk } = host();
+    const form = councilOwnerForm("ru", "Q");
+    let decided = 0;
+    askOwnerToJoin(ownerAsk, { pmThreadId: "thr_pm", question: form.question, detail: "product: hi", decideLabel: form.decideLabel, timeoutMs: 600_000,
+      onWords: () => undefined, onDecide: () => { decided += 1; } });
+    await vi.waitFor(() => expect(harness.pendingInteractions).toHaveLength(1));
+    expect(harness.pendingInteractions[0]!.title).toBe("Совет «Q» ждёт вас. Добавьте свой довод или позвольте председателю решить.");
+    expect((harness.pendingInteractions[0]!.payload as { options: Array<{ label: string }> }).options).toEqual([{ id: "1", label: "Пусть решит председатель" }]);
+    harness.behavior.submitInteraction(harness.pendingInteractions[0]!.id, { choice: "1" });
+    await vi.waitFor(() => expect(decided).toBe(1));
+  });
+
+  it("keeps the English council form when the locale is en", async () => {
+    const { harness, ownerAsk } = host();
+    const form = councilOwnerForm("en", "Q");
+    askOwnerToJoin(ownerAsk, { pmThreadId: "thr_pm", question: form.question, detail: "product: hi", decideLabel: form.decideLabel, timeoutMs: 600_000,
+      onWords: () => undefined, onDecide: () => undefined });
+    await vi.waitFor(() => expect(harness.pendingInteractions).toHaveLength(1));
+    expect(harness.pendingInteractions[0]!.title).toBe("The council «Q» waits for you. Add a point, or let the chair decide.");
+    expect((harness.pendingInteractions[0]!.payload as { options: Array<{ label: string }> }).options[0]?.label).toBe("Let the chair decide");
+    harness.behavior.cancelInteraction(harness.pendingInteractions[0]!.id);
+  });
 
   it("turns a typed word into feed words and the button into a decision request", async () => {
     const { harness, ownerAsk } = host();
@@ -212,6 +239,19 @@ describe("a council room waiting for the owner opens a form in the PM chat (H8)"
     await vi.waitFor(() => expect(harness.pendingInteractions).toHaveLength(0));
     expect(open.words).toEqual([]);
     expect(() => room(undefined).withdraw()).not.toThrow();
+  });
+});
+
+describe("self-repair maps the localized go-ahead option to English for the repair thread", () => {
+  it("rewrites the Russian go-ahead and leave labels by option id", () => {
+    const go = repairAnswerForThread({
+      outcome: "answered", choice: { id: "1", label: "Делать, как предлагает отчёт" }, text: "в ядре", line: "Делать, как предлагает отчёт — в ядре",
+    });
+    expect(go).toMatchObject({ choice: { id: "1", label: "Go ahead as the report proposes" }, line: "Go ahead as the report proposes — в ядре" });
+    const leave = repairAnswerForThread({
+      outcome: "answered", choice: { id: "2", label: "Оставить как есть" }, text: "", line: "Оставить как есть",
+    });
+    expect(leave).toMatchObject({ choice: { id: "2", label: "Leave it" }, line: "Leave it" });
   });
 });
 

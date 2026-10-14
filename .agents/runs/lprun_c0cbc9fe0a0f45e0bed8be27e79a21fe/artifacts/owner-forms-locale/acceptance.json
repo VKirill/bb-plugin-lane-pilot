@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "owner-forms-locale",
+  "task_sha256": "bd5704652a858dc14bca956287df8b464ffb9daf23ae616ccf8813314c421562",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "e7a4817d479ff85d91e05aa9f67ddf6fcf55a001c29fe15ac0d9eba8259077ac",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-14T17:27:34.275Z",
+  "model": "grok-4.6"
+}

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import plugin from "../../server";
 import { createRun, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../../src/rooms/storage/database";
 import { listHandoffs } from "@lane-pilot/handoff";
+import { councilOwnerForm } from "../../src/rooms/relay/server/owner-locale";
 
 const projectId = "council-project";
 const pmThreadId = "council-pm";
@@ -21,6 +22,13 @@ const decisionJson = JSON.stringify({
 
 let dispose: (() => Promise<void> | void) | null = null;
 afterEach(async () => { await dispose?.(); dispose = null; });
+
+describe("council owner form locale", () => {
+  it("uses Russian copy by default and English when asked", () => {
+    expect(councilOwnerForm("ru", "Q").decideLabel).toBe("Пусть решит председатель");
+    expect(councilOwnerForm("en", "Q").question).toContain("The council «Q» waits for you");
+  });
+});
 
 describe("council tools", () => {
   it("runs a council on hidden seat threads, writes the decision page and hands next tasks over", async () => {
