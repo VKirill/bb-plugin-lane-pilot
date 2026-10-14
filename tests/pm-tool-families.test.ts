@@ -54,12 +54,15 @@ describe("the PM's folded tool list", () => {
       expect(schema.type, name).toBe("object");
       expect(schema.oneOf, name).toBeUndefined();
       expect(schema.anyOf, name).toBeUndefined();
-      expect(schema.properties.action.enum, name).toEqual(Object.keys(family.actions));
+      expect(schema.properties.action.enum, name).toEqual(
+        name === "lane_pilot_relay" ? ["ask", "reply", "list", "remind"] : Object.keys(family.actions),
+      );
     }
     const helpers = harness.registrations.agentTools.find((row) => row.name === "lane_pilot_helpers")!.inputSchema as Record<string, any>;
     expect(Object.keys(helpers.properties)).toEqual(expect.arrayContaining(["runId", "envClass", "cases", "url"]));
     const relay = harness.registrations.agentTools.find((row) => row.name === "lane_pilot_relay")!.inputSchema as Record<string, any>;
-    expect(Object.keys(relay.properties)).toEqual(expect.arrayContaining(["note", "taskIds", "inMinutes"]));
+    expect(Object.keys(relay.properties)).toEqual(expect.arrayContaining(["threadId", "question", "askId", "answer", "cancelReminderId"]));
+    expect(relay.properties.inMinutes).toBeUndefined();
   });
 
   it("lists each action's required arguments in the family instructions, generated from the schema", async () => {
@@ -86,7 +89,7 @@ describe("the PM's folded tool list", () => {
   it("names the action that owns an argument sent to another action", async () => {
     const harness = await start();
     const call = (name: string, args: Record<string, unknown>) => harness.behavior.callAgentTool(name, args, ctx);
-    await expect(call("lane_pilot_relay", { action: "list", inMinutes: 5 })).rejects.toThrow("lane_pilot_relay list does not take inMinutes (an argument of remind)");
+    await expect(call("lane_pilot_relay", { action: "list", inMinutes: 5 })).rejects.toThrow('Unrecognized key: "inMinutes"');
     await expect(call("lane_pilot_memory", { action: "context", query: "x", inMinutes: 5 })).rejects.toThrow('Unrecognized key: "inMinutes"');
   });
 
@@ -107,16 +110,11 @@ describe("the PM's folded tool list", () => {
     expect(await call("lane_pilot_relay", { action: "list" })).toBe(await call("lane_pilot_relay_list", {}));
   });
 
-  it("takes a number or a list sent as text (the live PM sent inMinutes:\"45\" and taskIds:\"[...]\" on 2026-10-08)", async () => {
+  it("refuses the retired remind action and names what wakes the PM instead", async () => {
     const harness = await start();
-    const outcome = async (args: Record<string, unknown>) => {
-      try { return String(await harness.behavior.callAgentTool("lane_pilot_relay", args, ctx)); } catch (cause) { return String(cause); }
-    };
-    const asText = await outcome({ action: "remind", inMinutes: "45", note: "check the task", taskIds: '["metrika-fix"]' });
-    expect(asText).not.toMatch(/expected number|expected array|Invalid arguments/i);
-    expect(asText).toBe(await outcome({ action: "remind", inMinutes: 45, note: "check the task", taskIds: ["metrika-fix"] }));
-    // Text that is not the field's type is still refused.
-    expect(await outcome({ action: "remind", inMinutes: "soon", note: "x" })).toMatch(/invalid/i);
+    const call = (args: Record<string, unknown>) => harness.behavior.callAgentTool("lane_pilot_relay", args, ctx);
+    await expect(call({ action: "remind", inMinutes: 5, note: "check later" }))
+      .rejects.toThrow(/has no remind action: results of your tasks, answers to asks/);
   });
 
   it("refuses an unknown action and an argument that belongs to another action, as the old tools refused unknown arguments", async () => {
@@ -124,29 +122,32 @@ describe("the PM's folded tool list", () => {
     const call = (name: string, args: Record<string, unknown>) => harness.behavior.callAgentTool(name, args, ctx);
     await expect(call("lane_pilot_relay", { action: "nope" })).rejects.toThrow(/invalid/);
     await expect(call("lane_pilot_relay", { action: "list", inMinutes: 5 })).rejects.toThrow(/invalid/);
-    await expect(call("lane_pilot_relay", { action: "remind", inMinutes: 5 })).rejects.toThrow(/invalid/);
+    await expect(call("lane_pilot_relay", { action: "remind", inMinutes: 5 })).rejects.toThrow(/has no remind action/);
   });
 
   it("finds a capability by words and by an old tool name, with its family, action and argument schema", async () => {
     const harness = await start();
     const search = async (query: string) => JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_tool_search", { query }, ctx))) as { matches: Array<{ tool: string; action?: string; formerName?: string; arguments: { properties?: Record<string, unknown> } }> };
-    const remind = await search("set a reminder for later");
-    expect(remind.matches[0]).toMatchObject({ tool: "lane_pilot_relay", action: "remind", formerName: "lane_pilot_remind" });
-    expect(Object.keys(remind.matches[0]!.arguments.properties!)).toEqual(expect.arrayContaining(["inMinutes", "note", "taskIds"]));
+    const ask = await search("ask another thread");
+    expect(ask.matches[0]).toMatchObject({ tool: "lane_pilot_relay", action: "ask", formerName: "lane_pilot_ask" });
+    const leftover = await search("set a reminder for later");
+    expect(leftover.matches.some((match) => match.action === "remind" || match.formerName === "lane_pilot_remind")).toBe(false);
     const lesson = await search("mcp__bb-bridge__lane_pilot_lesson");
     expect(lesson.matches[0]).toMatchObject({ tool: "lane_pilot_memory", action: "lesson" });
     expect((await search("council")).matches.map((match) => match.tool)).toContain("lane_pilot_council");
     expect((await search("dispatch")).matches[0]).toMatchObject({ tool: "lane_pilot_dispatch_writer" });
     const none = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_tool_search", { query: "zzzqqq" }, ctx))) as { matches: unknown[]; available: string[] };
     expect(none.matches).toEqual([]);
-    expect(none.available).toContain("lane_pilot_relay:remind");
+    expect(none.available).toContain("lane_pilot_relay:ask");
+    expect(none.available).not.toContain("lane_pilot_relay:remind");
   });
 
   it("tells where an old name lives and rewrites old names in a text", () => {
     expect(foldedToolHome("lane_pilot_council_say")).toEqual({ tool: "lane_pilot_council", action: "say" });
     expect(foldedToolHome("lane_pilot_dispatch_writer")).toBeUndefined();
-    expect(foldedToolCall("lane_pilot_remind")).toBe('lane_pilot_relay {action:"remind"}');
-    expect(rewriteFoldedToolNames("set lane_pilot_remind, then lane_pilot_wait_writer, see lane_pilot_workflow_draft_* tools"))
-      .toBe('set lane_pilot_relay {action:"remind"}, then lane_pilot_wait_writer, see lane_pilot_workflow_draft tools');
+    expect(foldedToolCall("lane_pilot_remind")).toBeUndefined();
+    expect(foldedToolCall("lane_pilot_ask")).toBe('lane_pilot_relay {action:"ask"}');
+    expect(rewriteFoldedToolNames("set lane_pilot_ask, then lane_pilot_wait_writer, see lane_pilot_workflow_draft_* tools"))
+      .toBe('set lane_pilot_relay {action:"ask"}, then lane_pilot_wait_writer, see lane_pilot_workflow_draft tools');
   });
 });

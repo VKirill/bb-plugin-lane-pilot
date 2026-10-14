@@ -56,7 +56,6 @@ export const TOOL_PRESENTATION: Record<string, Entry> = {
   lane_pilot_memory_export: row("Exporting memory", "Exported memory", "Экспортирую память", "Память экспортирована"),
   lane_pilot_ask: row("Asking another chat", "Asked another chat", "Спрашиваю другой чат", "Вопрос другому чату отправлен"),
   lane_pilot_reply: row("Answering another chat", "Answered another chat", "Отвечаю другому чату", "Ответ другому чату отправлен"),
-  lane_pilot_remind: row("Setting a reminder", "Set a reminder", "Ставлю напоминание", "Напоминание поставлено", true),
   lane_pilot_relay_list: row("Listing relay items", "Listed relay items", "Смотрю вопросы и напоминания", "Вопросы и напоминания получены", true),
   lane_pilot_route: row("Choosing a workflow", "Chose a workflow", "Подбираю цепочку", "Цепочка подобрана"),
   lane_pilot_run_workflow: row("Starting a workflow", "Started a workflow", "Запускаю цепочку", "Цепочка запущена"),
@@ -73,7 +72,7 @@ export const TOOL_PRESENTATION: Record<string, Entry> = {
   // The PM's folded tools (src/pm-tool-families.ts): one row per family, BB cannot label by action.
   lane_pilot_helpers: row("Calling a helper", "Called a helper", "Зову помощника", "Помощник отработал"),
   lane_pilot_council: row("Working with the council", "Worked with the council", "Работаю с советом", "С советом поработал"),
-  lane_pilot_relay: row("Writing to another chat or setting a reminder", "Wrote to another chat or set a reminder", "Пишу в другой чат или ставлю напоминание", "Другой чат или напоминание готово"),
+  lane_pilot_relay: row("Writing to another chat", "Wrote to another chat", "Пишу в другой чат", "Другой чат получил сообщение"),
   lane_pilot_memory: row("Working with project memory and lessons", "Worked with project memory and lessons", "Работаю с памятью и уроками", "С памятью и уроками поработал"),
   lane_pilot_workflow_draft: row("Working on a workflow draft", "Worked on a workflow draft", "Работаю над черновиком цепочки", "Над черновиком цепочки поработал"),
   lane_pilot_tool_search: row("Looking for a Lane Pilot tool", "Looked for a Lane Pilot tool", "Ищу инструмент Lane Pilot", "Инструмент Lane Pilot найден", true),

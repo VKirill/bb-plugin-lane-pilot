@@ -54,7 +54,6 @@ export const NATIVE_LP_BRIDGE_TOOLS = [
   "lane_pilot_wait_errand",
   "lane_pilot_ask",
   "lane_pilot_reply",
-  "lane_pilot_remind",
   "lane_pilot_relay_list",
   "lane_pilot_workflow_draft_create",
   "lane_pilot_workflow_draft_patch",

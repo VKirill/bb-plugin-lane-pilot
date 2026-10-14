@@ -42,6 +42,8 @@ function lenientShape(tool: ObservedTool): z.ZodRawShape {
 
 /** BB caps a tool's static instructions; a family that does not fit says only what each action's instructions say. */
 const INSTRUCTIONS_MAX = 4000;
+/** A PM that still calls the removed remind action is told what already wakes it. */
+const RELAY_REMIND_GONE = "lane_pilot_relay has no remind action: results of your tasks, answers to asks, and the holder of a merge-block reach this chat by themselves — end your turn.";
 
 /** One action of a family: the old tool it runs, the arguments that old tool takes and the ones it must get. */
 type Member = {
@@ -147,6 +149,9 @@ function mountFamily(ctx: ServerCore, name: string, family: ToolFamily): void {
   });
   const byAction = new Map(members.map((member) => [member.action, member]));
   const actionList = members.map((member) => member.action).join(", ");
+  const actionValues = (name === "lane_pilot_relay"
+    ? [...members.map((member) => member.action), "remind"]
+    : members.map((member) => member.action)) as [string, ...string[]];
   registerObservedTool(ctx.bb.agents, {
     name,
     description: `${family.summary} Pick one action (${actionList}) and give its arguments next to it.`,
@@ -154,10 +159,14 @@ function mountFamily(ctx: ServerCore, name: string, family: ToolFamily): void {
     // BB keeps only `type: object` of a top-level union, so the family publishes one flat object. Its superRefine runs the
     // action's checks at parse time, where a refusal reaches the caller as an invalid-arguments error.
     parameters: z.object({
-      action: z.enum(members.map((member) => member.action) as [string, ...string[]]).describe(`The action to run: ${actionList}.`),
+      action: z.enum(actionValues).describe(`The action to run: ${actionList}.`),
       ...flatShape(members),
     }).strict().superRefine((input, issues) => {
       const { action, ...args } = input as { action: string } & Record<string, unknown>;
+      if (name === "lane_pilot_relay" && action === "remind") {
+        issues.addIssue({ code: "custom", message: RELAY_REMIND_GONE });
+        return;
+      }
       const member = byAction.get(action);
       if (!member) return;
       const checked = checkArguments(name, members, member, args);
@@ -165,6 +174,7 @@ function mountFamily(ctx: ServerCore, name: string, family: ToolFamily): void {
     }),
     execute: async (input, context) => {
       const { action, ...args } = input as { action: string } & Record<string, unknown>;
+      if (name === "lane_pilot_relay" && action === "remind") throw new Error(RELAY_REMIND_GONE);
       const member = byAction.get(action)!;
       // The old handler gets exactly what the old tool parses: its own schema, strictness and defaults included.
       const checked = checkArguments(name, members, member, args);
@@ -210,7 +220,7 @@ function mountToolSearch(ctx: ServerCore): void {
   registerObservedTool(ctx.bb.agents, {
     name: LANE_PILOT_TOOL_SEARCH_NAME,
     description: "Find a Lane Pilot capability by words (or by an old tool name) and get how to call it: the tool, its action and the argument schema.",
-    instructions: "Use when you need a Lane Pilot capability that is not a tool of its own in your list (council, reminders and questions to other threads, specialists, the owner's browser, memory and lessons, workflow drafts), or when a text names a tool you do not have: search its name or a few words. Each hit says `tool` and `action` to call (for example tool `lane_pilot_relay`, action `remind`), the former name, a description and the JSON schema of the arguments (without `action`).",
+    instructions: "Use when you need a Lane Pilot capability that is not a tool of its own in your list (council, questions to other threads, specialists, the owner's browser, memory and lessons, workflow drafts), or when a text names a tool you do not have: search its name or a few words. Each hit says `tool` and `action` to call (for example tool `lane_pilot_relay`, action `ask`), the former name, a description and the JSON schema of the arguments (without `action`).",
     parameters: z.object({ query: z.string().trim().min(1).max(200), limit: z.number().int().min(1).max(10).default(4) }).strict(),
     execute: async (params) => {
       const queryWords = words(params.query);
