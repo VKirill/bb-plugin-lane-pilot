@@ -1,6 +1,6 @@
 ## Now
 - PM chats plan task contracts, dispatch writers into isolated BB threads and worktrees, and can reassign an open task to a fresh writer thread and model in the same worktree; Lane Pilot checks, reviews, and merges accepted changes.
-- Runs coordinate parallel work, blocked-thread handoffs, bounded reminders/asks (time-only reminders cap at two hours and at two rapid chain links), recovery, and self-repair; retries give writers actionable failure feedback, stop on repeated failures, and handle green-main fixes before redispatch. Provider-limit failures can continue in the interrupted workspace, including silent OpenCode quota failures; stage helpers resolve current effective settings at spawn time, helper spawns use best-effort explicit service tiers, and timeout-only integration gate failures get one recheck before escalation.
+- Runs coordinate parallel work, blocked-thread handoffs, asks, recovery, and self-repair; PMs receive council decision and workflow completion notices, while internal reminders remain available and time-only reminders cap at two hours and two rapid chain links. Retries give writers actionable failure feedback, stop on repeated failures, and handle green-main fixes before redispatch. Provider-limit failures can continue in the interrupted workspace, including silent OpenCode quota failures; stage helpers resolve current effective settings at spawn time, helper spawns use best-effort explicit service tiers, and timeout-only integration gate failures get one recheck before escalation.
 - Browser QA and specialist agents support product checks and decisions; the Council page has a responsive desktop office floor, an always-on detailed pixel-art scene with walking, seated, talking characters, live message updates, linked history and replay, and a chat-only layout below 1024 px.
 - Project memory, learned rules, documentation maintenance, and project-life snapshots support ongoing work.
 - Settings and CLI manage projects, writer and verification settings, enrolled hosts, installs, run health, and diagnostics; writers can receive Jev-picked task-relevant skills, OpenCode worktrees materialize them, and native installs use the current Lane Stack guard with Lane Pilot's bundled hooks. PM family tools publish flat argument schemas with per-action validation. The standalone Tokens view shows global spend by model and project with date ranges, monthly views, merged context-window variants, provider-correct cache accounting, and estimated API list-price costs.
@@ -12,7 +12,7 @@
 - [ ] Resolve the remaining owner decisions in the harness engineering gaps plan.
 
 ## Last verify
-- command: Lane Pilot acceptance for `relay-reminder-chain-cap`; merged commit `4a825750`
+- command: Lane Pilot acceptance for `pm-council-workflow-notices`, `pm-remind-tool-removal`, and `relay-reminder-chain-cap`; merged commit `3752bda3`
 - result: green; accepted changes merged
 - when: 2026-10-14
 
