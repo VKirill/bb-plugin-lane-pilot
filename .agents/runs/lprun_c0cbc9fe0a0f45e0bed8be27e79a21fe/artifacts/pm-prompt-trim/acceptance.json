@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "pm-prompt-trim",
+  "task_sha256": "037d9c256ec03d23708cd91bcfda6a9eeb3e69e9b028f073a9a185b799389c07",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "de97db1b875834fb7e8964cf6f82ac5387e31cc5c039a59c42916e001aa5a3c6",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-14T14:50:33.302Z",
+  "model": "grok-4.6"
+}
