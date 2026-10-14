@@ -33,12 +33,20 @@ export function fnmatch(path: string, pattern: string): boolean {
   return globRegex(pattern).test(normalize(path));
 }
 
+/** Whether the path or one of the folders it lies in matches the glob. */
+function underMatch(path: string, glob: string): boolean {
+  const parts = path.split("/");
+  for (let k = 1; k <= parts.length; k++) if (fnmatch(parts.slice(0, k).join("/"), glob)) return true;
+  return false;
+}
+
 /**
  * Whether a changed file falls under an owns_paths / never_touch pattern:
  * - a plain path (no wildcard) names that file or everything under it, with or without a trailing slash;
  * - a pattern ending in a double-star segment is everything under any folder matching the rest
  *   (e.g. «*_cards_core» or «packages, *, .vite» followed by a double star);
- * - any other pattern is a glob (single star within a folder, double star across folders).
+ * - any other pattern is a glob (single star within a folder, double star across folders) that names the files
+ *   it matches and everything inside the folders it matches, as a plain path and .gitignore do.
  */
 export function matchOwnsPath(file: string, pattern: string): boolean {
   const path = normalize(file);
@@ -47,11 +55,12 @@ export function matchOwnsPath(file: string, pattern: string): boolean {
   if (pat.endsWith("/**")) {
     const base = pat.slice(0, -3);
     if (!/[*?\[]/.test(base)) return path === base || path.startsWith(`${base}/`);
-    const parts = path.split("/");
-    for (let k = 1; k <= parts.length; k++) if (fnmatch(parts.slice(0, k).join("/"), base)) return true;
-    return false;
+    return underMatch(path, base);
   }
-  return fnmatch(path, pat);
+  // A folder named by a wildcard is owned with what is in it: SelfyStudio «executors/cocoon-write*» rejected
+  // cocoon-write/cocoon-write-executor.test.ts and «src/**/__tests__/» every test inside (2026-10-12/13), while
+  // ownsPathsOverlap already held other tasks back from those folders.
+  return underMatch(path, pat);
 }
 
 export function fileAllowedByOwns(file: string, ownsPaths: string[]): boolean {
