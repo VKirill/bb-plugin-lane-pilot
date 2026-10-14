@@ -1,7 +1,7 @@
 /**
  * The PM's tool list is folded: a compiled Claude Code agent profile holds at most 64 tools and the PM had 39 Lane Pilot tools
  * next to 24 stock ones. The tools the PM uses in every turn stay as they are; the rest are actions of a few family tools
- * (`lane_pilot_relay` with `action: "remind"`) that run the old handlers unchanged. `lane_pilot_tool_search` finds a capability by
+ * (`lane_pilot_relay` with `action: "ask"`) that run the old handlers unchanged. `lane_pilot_tool_search` finds a capability by
  * words (or by an old tool name) and returns its family, action and argument schema. The old tools stay registered for the roles that
  * still name them (the Workflow architect); only the PM's allow-list (native-session-hooks.ts) stops listing them.
  */
@@ -24,8 +24,8 @@ export const PM_TOOL_FAMILIES = {
     actions: { start: "lane_pilot_council_start", status: "lane_pilot_council_status", say: "lane_pilot_council_say", stop: "lane_pilot_council_stop" },
   },
   lane_pilot_relay: {
-    summary: "Other threads and time: ask another thread, answer a question you were asked, set or list reminders.",
-    actions: { ask: "lane_pilot_ask", reply: "lane_pilot_reply", remind: "lane_pilot_remind", list: "lane_pilot_relay_list" },
+    summary: "Other threads: ask another thread, answer a question you were asked, list this chat's asks and open waits.",
+    actions: { ask: "lane_pilot_ask", reply: "lane_pilot_reply", list: "lane_pilot_relay_list" },
   },
   lane_pilot_memory: {
     summary: "Project memory and learning: search memory, routing statistics, repeated lessons, rule proposals, recording a lesson, what was learned from the owner's messages.",
@@ -65,7 +65,7 @@ export const PM_CORE_TOOLS = [
 /** Families that were a tool of their own before (lane_pilot_schedule is one tool with actions from the start). */
 export const PM_FAMILY_TOOLS = [...Object.keys(PM_TOOL_FAMILIES), "lane_pilot_schedule"] as string[];
 
-/** Where an old tool name lives now: `{ tool: "lane_pilot_relay", action: "remind" }`; undefined for a tool that kept its name. */
+/** Where an old tool name lives now: `{ tool: "lane_pilot_relay", action: "ask" }`; undefined for a tool that kept its name. */
 export function foldedToolHome(oldName: string): { tool: string; action: string } | undefined {
   for (const [tool, family] of Object.entries(PM_TOOL_FAMILIES) as Array<[string, ToolFamily]>) {
     for (const [action, name] of Object.entries(family.actions)) if (name === oldName) return { tool, action };
@@ -73,7 +73,7 @@ export function foldedToolHome(oldName: string): { tool: string; action: string 
   return undefined;
 }
 
-/** How the PM is told to call a folded tool, for descriptions and hints: `lane_pilot_relay {action:"remind"}`. */
+/** How the PM is told to call a folded tool, for descriptions and hints: `lane_pilot_relay {action:"ask"}`. */
 export function foldedToolCall(oldName: string): string | undefined {
   const home = foldedToolHome(oldName);
   return home ? `${home.tool} {action:"${home.action}"}` : undefined;

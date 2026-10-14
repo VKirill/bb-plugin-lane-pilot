@@ -7,9 +7,10 @@ import { sendServiceMessage } from "./service-message";
 import { registerObservedTool } from "../../core/server";
 
 /**
- * Lane Pilot's relay: agents ask other threads, answer back and set themselves reminders, and the plugin server
- * wakes them, so a blocked agent does not wait for the owner. The server runs all the time; agents only get
- * messages. A reminder fires when it is due, or earlier when the thread it watches finishes its turn.
+ * Lane Pilot's relay: agents ask other threads and answer back; the plugin server also wakes a PM with internal
+ * reminders (a merge-block holder, an owner-requested date), so a blocked agent does not wait for the owner.
+ * The server runs all the time; agents only get messages. A reminder fires when it is due, or earlier when the
+ * thread it watches finishes its turn.
  */
 
 export type RelayAsk = {
@@ -198,7 +199,7 @@ export function createRelay(deps:RelayDeps) {
       const recent = items.filter((item) => item.kind === "ask" && item.createdAt > hourAgo
         && [item.fromThreadId, item.toThreadId].sort().join() === [input.fromThreadId, input.toThreadId].sort().join());
       if (recent.length >= RELAY_LIMITS.asksPerPairPerHour) {
-        throw new Error(`relay limit: ${RELAY_LIMITS.asksPerPairPerHour} questions an hour between these two threads; set a reminder or escalate to the owner`);
+        throw new Error(`relay limit: ${RELAY_LIMITS.asksPerPairPerHour} questions an hour between these two threads; escalate to the owner`);
       }
       const item:RelayAsk = { kind:"ask", id:id("ask"), ...input, createdAt:deps.now(), answeredAt:null };
       await deps.send(input.toThreadId, [
@@ -283,7 +284,7 @@ export function createRelay(deps:RelayDeps) {
     const why = by === "watch" ? `thread @thread:${item.watchThreadId} finished its turn`
       : by === "tasks" ? `tasks completed: ${Object.entries(states ?? {}).map(([task, state]) => `${task} — ${state}`).join(", ")}`
       : "time reached";
-    return `Lane Pilot: reminder (${item.id}, ${why}):\n\n${item.note}\n\nCheck if you can continue. If you are still waiting, set a new reminder with lane_pilot_relay (action \`remind\`). A time-only reminder cannot exceed 2 hours; a longer wait means tell the owner what you wait for, or use lane_pilot_schedule.`;
+    return `Lane Pilot: reminder (${item.id}, ${why}):\n\n${item.note}\n\nCheck if you can continue.`;
   };
 
   /**
@@ -620,8 +621,8 @@ export function mountRelay(ctx:ServerContext):Relay {
     instructions:[
       "Use when you wait on another thread: the holder of a blocked task (blockedBy.holderThreadId), a writer, a specialist.",
       "The question is queued into that thread without interrupting its work. Its answer, or its last message if it ends the turn without answering, arrives in this chat.",
-      "Then set a reminder with lane_pilot_remind (watchThreadId = that thread) and end your turn; do not ask the owner to tell you when it is free.",
-      "If the result has alreadyWaiting, your earlier question is still queued there: do not ask again, the answer comes when that thread finishes its turn. A reminder watching that thread closes itself once it answers.",
+      "Then end your turn; do not ask the owner to tell you when it is free.",
+      "If the result has alreadyWaiting, your earlier question is still queued there: do not ask again, the answer comes when that thread finishes its turn.",
       `At most ${RELAY_LIMITS.asksPerPairPerHour} questions an hour between two threads.`,
     ].join("\n"),
     parameters:z.object({ threadId:z.string().min(1), question:z.string().trim().min(1).max(4000) }).strict(),
@@ -636,28 +637,6 @@ export function mountRelay(ctx:ServerContext):Relay {
     instructions:"Use only for a question that reached this thread with an askId. Answer briefly and concretely, then continue your own work.",
     parameters:z.object({ askId:z.string().min(1), answer:z.string().trim().min(1).max(8000) }).strict(),
     execute:async (params, context) => JSON.stringify(refreshAfter(await relay.reply({ askId:params.askId, fromThreadId:context.threadId, answer:params.answer })), null, 2),
-  });
-
-  registerObservedTool(bb.agents, {
-    name:"lane_pilot_remind",
-    description:"Set yourself a reminder: Lane Pilot writes into this chat after the given minutes, or earlier when a watched thread finishes its turn.",
-    instructions:[
-      "Use instead of waiting for the owner whenever work is blocked on time or on another thread. Then end your turn; the reminder wakes you.",
-      "Back off: 5, then 10, then 20 minutes for the same block; after three reminders without progress, tell the owner what you tried and what to decide.",
-      "A time-only reminder (no watchThreadId, no taskIds) cannot exceed 2 hours: tell the owner what you wait for and end the turn, or use lane_pilot_schedule for a recurring check.",
-      "Pass watchThreadId to be woken as soon as that thread settles (for example blockedBy.holderThreadId).",
-      "Results of your own Lane Pilot tasks come into this chat by themselves («Lane Pilot: results of your tasks»): do not set a reminder just to learn them. Pass taskIds only for a plan that waits on them (\"when X is merged, ship\"): the note comes in that results message once all of them finish. inMinutes is then only the fallback.",
-    ].join("\n"),
-    parameters:z.object({
-      inMinutes:z.number().int().min(1).max(24 * 60),
-      note:z.string().trim().min(1).max(2000),
-      watchThreadId:z.string().min(1).optional(),
-      taskIds:z.array(z.string().min(1)).max(20).optional(),
-    }).strict(),
-    execute:async (params, context) => JSON.stringify(refreshAfter(await relay.remind({
-      projectId:context.projectId, threadId:context.threadId, note:params.note, inMinutes:params.inMinutes, watchThreadId:params.watchThreadId,
-      taskIds:params.taskIds,
-    })), null, 2),
   });
 
   registerObservedTool(bb.agents, {

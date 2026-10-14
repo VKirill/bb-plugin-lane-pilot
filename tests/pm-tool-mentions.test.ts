@@ -18,9 +18,9 @@ it("warns the PM about monorepo checks: the package folder as cwd, named test fi
 });
 
 it("tells the PM how to wait for quiet helpers and what to do with its own receipts", () => {
-  expect(LANE_PILOT_PM_SESSION).toContain("lane_pilot_relay` with `action: \"remind\"` and their `taskIds`");
-  // 2026-10-12: results of the PM's tasks come by themselves; a reminder per batch woke the PM after it had moved on.
-  expect(LANE_PILOT_PM_SESSION).toContain("do not set reminders for your tasks");
+  expect(LANE_PILOT_PM_SESSION).toContain("Lane Pilot wakes you when the holder frees the merge");
+  expect(LANE_PILOT_PM_SESSION).toContain("results come by themselves");
+  expect(LANE_PILOT_PM_SESSION).not.toContain('action: "remind"');
   expect(LANE_PILOT_PM_SESSION).toMatch(/## Receipts[\s\S]*needs_human[\s\S]*Lane Pilot's own fault/);
   expect(LANE_PILOT_PM_SESSION).toContain("data from outside");
   expect(LANE_PILOT_PM_SESSION).not.toMatch(/run-controller|lane_pilot_memory_maintain|onboarding_apply|LESSONS\.md line/);

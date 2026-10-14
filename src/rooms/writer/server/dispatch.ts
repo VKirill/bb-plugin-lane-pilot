@@ -106,7 +106,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       : db.prepare("SELECT 1 FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND state IN ('blocked','failed') LIMIT 1").get(runId, requestedId)) return null;
     return { runId, taskId:requestedId, attemptId:latest?.id ?? null, writerThreadId:latest?.thread_id ?? null, state:latest?.state ?? "queued", deduplicated:true,
       stages:listStageReceipts(db, runId, requestedId),
-      note:"This task id with the same contract and plan was already dispatched in the last 30 minutes; this is that task, nothing new was created. Poll lane_pilot_wait_writer or end your turn with lane_pilot_relay {action:\"remind\"} on the task id." };
+      note:"This task id with the same contract and plan was already dispatched in the last 30 minutes; this is that task, nothing new was created. Poll lane_pilot_wait_writer or end your turn; Lane Pilot sends you the results." };
   }
 
   /** A member of the task's family («P1», «P1.2») with an open attempt or parked for a restart, in this project; mainfixes are their own work. */
@@ -324,7 +324,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
           pmReadNote:"The writer does not see these questions. If one changes what the writer should do, wait for this attempt's receipt and, if it is not accepted, dispatch again with the answer in the plan; otherwise the writer decides from the code." } : {}) };
     };
     const pendingReply = (): Record<string,unknown> => ({ runId, taskId, attemptId, writerThreadId:null, state:"queued", stagesPending:true, stages:listStageReceipts(db, runId, taskId),
-      note:"pm-read and plan critique are still running; the writer starts by itself once they pass. Poll lane_pilot_wait_writer or end your turn with lane_pilot_relay {action:\"remind\"} on the task id. Do not send the task again: the same id and contract returns this task." });
+      note:"pm-read and plan critique are still running; the writer starts by itself once they pass. Poll lane_pilot_wait_writer or end your turn; Lane Pilot sends you the results. Do not send the task again: the same id and contract returns this task." });
     // The same pipeline as a workflow run (workflows/lp-task-pipeline.json, executors in dispatch-workflow.ts). The direct
     // `runStages` above stays as the path for LANE_PILOT_WORKFLOW_ENGINE=0 and for an engine that cannot start the run.
     const runViaEngine = async (): Promise<Record<string,unknown>> => {
@@ -457,7 +457,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
         });
         const receipt = taskReceipts.length > 1 ? { lanePilotRunId:args.runId, tasks:taskReceipts } : taskReceipts[0] ?? null;
         const reasons = [...latestByTask.values()].map((attempt) => attempt.reason).filter((reason): reason is string => Boolean(reason));
-        // A blocked task says who holds it and when to look again, so the PM can ask the holder or set a reminder.
+        // A blocked task says who holds it and when to look again, so the PM can ask the holder.
         const blockedBy = (await Promise.all([...latestByTask.values()].filter((attempt) => attempt.state === "blocked")
           .map(async (attempt) => { const found = await loadBlockedBy(bb.storage.kv, attempt.id); return found ? { taskId:attempt.task_id, ...found } : null; })))
           .filter((row) => row !== null);
