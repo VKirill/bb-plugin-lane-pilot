@@ -2,6 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../server";
 import { DISPATCH_STAGES_PENDING } from "../src/rooms/runs/constants";
+import { recordStage } from "../src/rooms/runs/server/stage-records";
 import type { TaskV2 } from "../src/rooms/contracts";
 import {
   createAttempt, createRun, createTask, getAttempt, listAttemptsForTask, listStageReceipts, openDatabase,
@@ -27,6 +28,7 @@ async function setup(options:{ failBase?:boolean } = {}) {
   let releaseBase!: () => void;
   const baseHeld = new Promise<void>((resolve) => { releaseBase = resolve; });
   let baseCalls = 0;
+  const stopped: string[] = [];
   const { bb, harness } = createFakePluginHost({
     pluginId:"lane-pilot",
     sdk:{ threads:{
@@ -36,6 +38,7 @@ async function setup(options:{ failBase?:boolean } = {}) {
       get: async ({ threadId }) => threadId === pmThreadId ? { id:pmThreadId, status:"idle", projectId } as never : { id:threadId, status:"active" } as never,
       output: async () => ({ text:"" }),
       list: async () => [] as never,
+      stop: async ({ threadId }) => { stopped.push(threadId); return {} as never; },
     }, providers:{
       list: async () => [{ id:"codex", available:true, capabilities:{ supportsServiceTier:true }, serviceTiers:[{ id:"default", label:"Default" }] }] as never,
       models: async () => ({ models:[{ id:"codex-test", model:"codex-test",
@@ -68,7 +71,7 @@ async function setup(options:{ failBase?:boolean } = {}) {
   const dispatch = async (next:Partial<TaskV2> = {}, plan = "Plan for the idempotent dispatch") => JSON.parse(String(await harness.behavior.callAgentTool(
     "lane_pilot_dispatch_writer", { confirm: true, objective: "Проверка диспетча", plan, task:{ ...task, ...next } }, { threadId:pmThreadId, projectId },
   ))) as Record<string, unknown>;
-  return { db, harness, dispatch, releaseBase, baseCalls: () => baseCalls };
+  return { db, harness, dispatch, releaseBase, baseCalls: () => baseCalls, stopped };
 }
 
 const taskCount = (db:ReturnType<typeof openDatabase>) => (db.prepare("SELECT COUNT(*) count FROM lane_pilot_task WHERE run_id=?").get(runId) as { count:number }).count;
@@ -161,6 +164,26 @@ describe("dispatch answers early and is idempotent", () => {
     db.prepare("UPDATE lane_pilot_attempt SET reason=? WHERE id='attempt-orphan'").run(DISPATCH_STAGES_PENDING);
     await harness.behavior.callRpc("resume_runs", { projectId });
     expect(getAttempt(db, "attempt-orphan")).toMatchObject({ state:"blocked", reason:expect.stringContaining("send the task again") });
+    await harness.lifecycle.dispose();
+  });
+
+  // Live: SelfyStudio cabinet-hide-analyzing-line (2026-10-12) and duo-low-balance-paywall (2026-10-13). A reload came
+  // while pm-read's helper ran; the attempt was blocked and the writer stages failed, but pm-read stayed «running» for good.
+  it("closes and stops the helper stages of a dispatch a reload interrupted", async () => {
+    const { db, harness, stopped } = await setup();
+    createTask(db, { id:"orphan", runId, kind:"bb", contract:task });
+    createAttempt(db, { id:"attempt-orphan", runId, taskId:"orphan" });
+    db.prepare("UPDATE lane_pilot_attempt SET state='queued', reason=? WHERE id='attempt-orphan'").run(DISPATCH_STAGES_PENDING);
+    recordStage(db, { runId, taskId:"orphan", stageId:"pm-read", state:"pending", input:"plan" });
+    recordStage(db, { runId, taskId:"orphan", stageId:"pm-read", state:"running", input:"plan", threadId:"thr-pm-read" });
+    recordStage(db, { runId, taskId:"orphan", stageId:"plan-critique", state:"pending", input:"plan" });
+    for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) recordStage(db, { runId, taskId:"orphan", stageId, state:"pending", input:"plan" });
+    await harness.behavior.callRpc("resume_runs", { projectId });
+    const stages = Object.fromEntries(listStageReceipts(db, runId, "orphan").map((row) => [row.stageId, row]));
+    expect(stages["pm-read"]).toMatchObject({ state:"blocked", threadId:"thr-pm-read", reason:expect.stringContaining("send the task again") });
+    expect(stages["plan-critique"]).toMatchObject({ state:"blocked" });
+    expect(stopped).toEqual(["thr-pm-read"]);
+    expect(Object.values(stages).filter((row) => row.state === "pending" || row.state === "running")).toEqual([]);
     await harness.lifecycle.dispose();
   });
 });

@@ -1,7 +1,7 @@
 import { DISPATCH_STAGES_PENDING } from "../../runs";
 import { taskV2Schema } from "../../contracts";
 import { countAttempts, countChargedAttempts, createAttempt, endSpawnFailure, getAttempt, getRun, getTask, getTaskPlan, listOpenAttempts, setAttemptHolderThread, transitionAttempt } from "../../storage";
-import { closeWriterStages } from "../../runs/server/stage-records";
+import { closeHelperStages, closeWriterStages } from "../../runs/server/stage-records";
 import { FREE_RETRY_LIMIT } from "../../runs";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, type AttemptState } from "../../runs";
 import { randomUUID } from "node:crypto";
@@ -181,7 +181,15 @@ export function createReconcile(ctx: ServerCore, services: Services) {
       try {
         // A dispatch whose pm-read / plan critique died with the reload never passed its gate: the writer must not start.
         if (attempt.state === "queued" && !attempt.thread_id && attempt.reason === DISPATCH_STAGES_PENDING) {
-          transitionAttempt(db, attempt.id, "blocked", { reason:"dispatch interrupted by a reload before pm-read and plan critique finished; send the task again" });
+          const reason = "dispatch interrupted by a reload before pm-read and plan critique finished; send the task again";
+          transitionAttempt(db, attempt.id, "blocked", { reason });
+          // The dispatch that waited for its helpers died too: nobody else records their end, and pm-read stayed
+          // «running» for good (SelfyStudio, 2026-10-12/13). Its helper threads would only work for nobody.
+          const plan = getTaskPlan(db, attempt.task_id) ?? "";
+          await closeHelperStages(db, (threadId) => bb.sdk.threads.stop({ threadId }), { runId:attempt.run_id, taskId:attempt.task_id, plan,
+            attempt:attempt.attempt_no, state:"blocked", reason });
+          closeWriterStages(db, { runId:attempt.run_id, taskId:attempt.task_id, plan, terminal:"failed",
+            attempt:countAttempts(db, attempt.run_id, attempt.task_id), reason });
           refreshRun(attempt.run_id);
           skipped.push(row.id);
           continue;
