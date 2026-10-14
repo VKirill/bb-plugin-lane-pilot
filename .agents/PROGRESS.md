@@ -12,11 +12,11 @@
 - [ ] Resolve the remaining owner decisions in the harness engineering gaps plan.
 
 ## Last verify
-- command: Lane Pilot acceptance for `owner-forms-locale`, `pm-council-workflow-notices`, `pm-prompt-trim`, `pm-remind-tool-removal`, and `relay-reminder-chain-cap`; accepted commits recorded in git log
+- command: Lane Pilot acceptance for `owner-forms-locale`, `owner-forms-locale-gate`, `pm-council-workflow-notices`, `pm-prompt-trim`, `pm-remind-tool-removal`, and `relay-reminder-chain-cap`; accepted commits recorded in git log
 - result: green; accepted changes merged
 - when: 2026-10-14
 
 ## Pointers
 - Open todos: none (`.agents/todos/INDEX.md`)
-- Active plans: `2026-10-05-harness-engineering-gaps.md` — awaiting owner decisions; `2026-10-07-lane-pilot-handoff.md` — §2–§8 open; `items/writer-task-folder/PLAN.md` — dispatched
+- Active plans: `2026-10-05-harness-engineering-gaps.md` — awaiting owner decisions; `2026-10-07-lane-pilot-handoff.md` — §2–§8 open
 - Changelog: `.agents/CHANGELOG.md`
