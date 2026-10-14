@@ -45,6 +45,10 @@ it("tells the PM that councils and workflow runs report their end to the chat by
   expect(LANE_PILOT_PM_SESSION).toContain("End the turn after starting");
 });
 
+it("tells the PM that a council question and ask_owner text are in the owner's language", () => {
+  expect(LANE_PILOT_PM_SESSION).toContain("A council question and any `lane_pilot_ask_owner` text are written in the owner's language; they are shown to the owner.");
+});
+
 it("tells the PM to retry a tool only when retryable is true and sideEffects is none", () => {
   expect(LANE_PILOT_PM_SESSION).toContain("{ok:false,error:{code,retryable,sideEffects}}");
   expect(LANE_PILOT_PM_SESSION).toContain("retry only when retryable is true and sideEffects is \"none\"");

@@ -18,6 +18,8 @@ import type { VerdictStatus } from "../../critique";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import type { rpcContract } from "../../contracts";
 import type { ServerCore } from "../../core/server";
+import type { OwnerAnswer } from "../../relay/server/owner-ask";
+import { englishSelfRepairChoice, ownerLocale, selfRepairOwnerForm } from "../../relay/server/owner-locale";
 import { jev } from "@lane-pilot/jev";
 import { GUARD_BLOCKED_KEY, type GuardBlock } from "@lane-pilot/jev";
 import { FRUSTRATION_KEY, frustrationReason, type FrustrationRecord } from "../../learning";
@@ -82,6 +84,15 @@ export type Incident = {
 
 export const VERDICTS = ["fixed", "already-fixed", "not-lane-pilot", "needs-owner"] as const;
 export type Verdict = (typeof VERDICTS)[number];
+
+/** Maps the owner's form choice onto the English option the repair thread reads. */
+export function repairAnswerForThread(answer: OwnerAnswer): OwnerAnswer {
+  if (answer.outcome !== "answered" || !answer.choice) return answer;
+  const label = englishSelfRepairChoice(answer.choice.id);
+  if (!label) return answer;
+  const choice = { id: answer.choice.id, label };
+  return { ...answer, choice, line: [label, answer.text].filter(Boolean).join(" — ") };
+}
 /** The repair thread's own git worktree on lane/self-repair-…, forked from the shared checkout's HEAD (E2). */
 export type RepairWorktree = { hostId: string; basePath: string; path: string; branch: string; mergeTries?: number };
 type SignatureRecord = {
@@ -516,10 +527,11 @@ export function createSelfRepair(ctx: ServerCore) {
   async function askOwnerAboutRepair(threadId: string, signature: string, report: string): Promise<void> {
     const title = signature.split(":").slice(2).join(":").slice(0, 100);
     const body = report.replace(/SELF-REPAIR-VERDICT:.*$/im, "").trim();
-    const question = `Self-repair of «${title}» needs your decision. Open the repair thread for its report.`;
+    const form = selfRepairOwnerForm(await ownerLocale(ctx.bb), title);
+    const englishQuestion = selfRepairOwnerForm("en", title).question;
     const TIMEOUT_MS = 60 * 60_000;
-    const opened = await ctx.ownerAsk?.askInBackground(threadId, { source: "repair", question, detail: body.slice(-3000), options: ["Go ahead as the report proposes", "Leave it"] },
-      (answer) => ctx.ownerAsk.sendToThread(threadId, ctx.ownerAsk.answerMessage(question, answer, TIMEOUT_MS)), { timeoutMs: TIMEOUT_MS }).catch(() => false);
+    const opened = await ctx.ownerAsk?.askInBackground(threadId, { source: "repair", question: form.question, detail: body.slice(-3000), options: form.options },
+      (answer) => ctx.ownerAsk.sendToThread(threadId, ctx.ownerAsk.answerMessage(englishQuestion, repairAnswerForThread(answer), TIMEOUT_MS)), { timeoutMs: TIMEOUT_MS }).catch(() => false);
     if (opened) ctx.log(`self-repair: asked the owner about @thread:${threadId} (needs-owner)`);
   }
 

@@ -30,6 +30,7 @@ import { configuredSetting, requirePmRun } from "../../core/server";
 import type { ServerCore } from "../../core/server";
 import { memorySettingsFor } from "../../self-repair/server";
 import type { OwnerAsk } from "../../relay/server";
+import { councilOwnerForm, ownerLocale } from "../../relay/server/owner-locale";
 import { fullAccessSpawn } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { outputText } from "../../writer/server";
@@ -93,10 +94,10 @@ export function seatsFor(roles: readonly string[] | undefined, pairs: Array<{ pr
  * (an older BB, another form open in the PM chat) nothing opens and the council page remains the only way in.
  */
 export function askOwnerToJoin(ownerAsk: OwnerAsk | undefined, input: {
-  pmThreadId: string; question: string; detail: string; timeoutMs: number; onWords: (text: string) => void; onDecide: () => void;
+  pmThreadId: string; question: string; detail: string; decideLabel: string; timeoutMs: number; onWords: (text: string) => void; onDecide: () => void;
 }): () => void {
   const withdraw = new AbortController();
-  void ownerAsk?.askInBackground(input.pmThreadId, { source: "council", question: input.question, detail: input.detail, options: ["Let the chair decide"] }, (answer) => {
+  void ownerAsk?.askInBackground(input.pmThreadId, { source: "council", question: input.question, detail: input.detail, options: [input.decideLabel] }, (answer) => {
     if (answer.outcome !== "answered") return;
     if (answer.text) input.onWords(answer.text);
     if (answer.choice) input.onDecide();
@@ -164,8 +165,9 @@ export function createCouncil(ctx: ServerCore) {
   async function waitForOwner(councilId: string, afterSeq: number, pmThreadId: string): Promise<CouncilMessage | null> {
     const deadline = Date.now() + OWNER_WAIT_MS;
     const session = getCouncilSession(db, councilId);
+    const form = councilOwnerForm(await ownerLocale(bb), session?.question ?? "");
     const withdraw = askOwnerToJoin(ctx.ownerAsk, {
-      pmThreadId, question: `The council «${(session?.question ?? "").replace(/\s+/g, " ").slice(0, 160)}» waits for you. Add a point, or let the chair decide.`,
+      pmThreadId, question: form.question, decideLabel: form.decideLabel,
       detail: lastCouncilWords(councilId), timeoutMs: OWNER_WAIT_MS,
       onWords: (text) => { say(councilId, text); }, onDecide: () => { requestDecision(councilId); },
     });

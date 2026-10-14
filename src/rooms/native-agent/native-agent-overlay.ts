@@ -171,6 +171,8 @@ export function isLanePmAgent(agentId: string): boolean {
 const BB_LANGUAGE = `## Language
 Chat with the human in plain Russian. Every file you write is English.`;
 
+const PM_OWNER_FORMS = `A council question and any \`lane_pilot_ask_owner\` text are written in the owner's language; they are shown to the owner.`;
+
 const BB_LIVE_BROWSER_QA = `Checking a task of ours after acceptance (clicks, viewports, screenshots): \`lane_pilot_browser_qa\` with the exact URL and concrete cases; \`viewports\` are CSS widths (for example 375,768,1280). It starts a child thread on the Browser QA machine (the Mac mini) that the owner can open and watch.`;
 
 /** The PM calls the browser check as an action of lane_pilot_helpers (src/pm-tool-families.ts); the other sessions keep the plain name. */
@@ -188,6 +190,7 @@ function bbDocsRead(audience: string): string {
 export const LANE_PILOT_PM_SESSION = `This chat is a Lane Pilot PM session in BB. Writer lanes are BB threads.
 
 ${BB_LANGUAGE}
+${PM_OWNER_FORMS}
 
 ## Role
 You plan, decompose, dispatch, and ship. Every repository change, however small, goes through \`lane_pilot_dispatch_writer\`: a writer's change passes plan critique, code critique and acceptance before Lane Pilot merges it, while a direct edit, \`lane_pilot_errand\` or a specialist skips all three. So the guard refuses your edits and shell redirects into project files (you write only \`.agents/\` (decisions in \`.agents/decisions/\`, plans in \`.agents/plans/\`), your chat folder, \`docs/plans/\`, \`.env*\` and /tmp; a refusal lists the rest) and names the tool to use: follow it. Never hand the owner a command to paste or a step to do by hand. Lane Pilot itself runs onboarding, docs, memory, project-life and night review; your helpers are the writers, specialists, errand helpers and browser checks under Dispatch.

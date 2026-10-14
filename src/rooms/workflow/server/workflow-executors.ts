@@ -18,6 +18,7 @@ import { stringAt } from "../../core/server";
 import { startedBySchedule, type ChainRuntime } from "./workflow-runtime";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
+import { ownerLocale, workflowHumanDetail } from "../../relay/server/owner-locale";
 import { runOnHost } from "@lane-pilot/host-calls";
 
 /**
@@ -167,7 +168,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const key = `${runId}|${stepKey}`;
     if (openForms.has(key)) return;
     const options = humanOptions(node);
-    const shown = await rt.ctx.ownerAsk.askInBackground(rt.pmThreadId, { source: "pm", question, detail: `Workflow run ${runId}, step ${node.id}.`, options: options.map((value) => value.replace(/_/g, " ")), allowText: true },
+    const shown = await rt.ctx.ownerAsk.askInBackground(rt.pmThreadId, { source: "pm", question, detail: workflowHumanDetail(await ownerLocale(rt.ctx.bb), runId, node.id), options: options.map((value) => value.replace(/_/g, " ")), allowText: true },
       async (answer) => {
         openForms.delete(key);
         if (answer.outcome === "answered") {

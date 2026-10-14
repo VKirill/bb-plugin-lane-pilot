@@ -8,6 +8,7 @@ import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../core/server";
 import type { Services } from "../../../core/server";
+import { recordResolvedLocale } from "../../../relay/server/owner-locale";
 
 export function preferencesRpc(ctx: ServerCore, services: Services) {
   const { bb, host, listProjectSections, ownedAgents, serializedKv } = ctx;
@@ -18,11 +19,13 @@ export function preferencesRpc(ctx: ServerCore, services: Services) {
       const preference: "auto" | "en" | "ru" = storedLocale === "ru" || storedLocale === "en" ? storedLocale : "auto";
       const resolvedLocale: "en" | "ru" = preference === "auto" ? suggestedLocale : preference;
       if (storedLocale !== preference) await bb.storage.kv.set("preferences:locale", preference);
+      await recordResolvedLocale(bb, resolvedLocale);
       return { locale: resolvedLocale, preference, lastProjectId: lastProjectId ?? null };
     },
     set_locale: async ({ locale: preference, suggestedLocale }) => {
       await bb.storage.kv.set("preferences:locale", preference);
       const locale = preference === "auto" ? suggestedLocale : preference;
+      await recordResolvedLocale(bb, locale);
       return { locale, preference };
     },
     remember_project: async ({ projectId }) => {
