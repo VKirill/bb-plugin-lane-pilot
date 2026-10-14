@@ -1,0 +1,4 @@
+- [x] Measure LANE_PILOT_PM_SESSION length.
+- [x] In native-agent-overlay.ts shorten wordy passages (duplicate explanations, long examples) by ~500 chars without dropping any rule; keep the newest additions about council/workflow notices and the removed reminder tool to one short sentence each.
+- [x] Mirror the text into bundled-agents.json exactly as tests/pm-instructions.test.ts requires.
+- [x] Run verification.
