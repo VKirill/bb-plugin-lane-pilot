@@ -180,8 +180,14 @@ export function createReconcile(ctx: ServerCore, services: Services) {
       if (!attempt) continue;
       try {
         // A dispatch whose pm-read / plan critique died with the reload never passed its gate: the writer must not start.
+        // Its stages start again for the same attempt; only one that cannot (see resumeDispatch) is blocked for the PM.
         if (attempt.state === "queued" && !attempt.thread_id && attempt.reason === DISPATCH_STAGES_PENDING) {
-          const reason = "dispatch interrupted by a reload before pm-read and plan critique finished; send the task again";
+          const again = await services.resumeDispatch(attempt.id);
+          if (again.resumed) {
+            resumed.push(row.id);
+            continue;
+          }
+          const reason = `dispatch interrupted by a reload before pm-read and plan critique finished (${again.why}); send the task again`;
           transitionAttempt(db, attempt.id, "blocked", { reason });
           // The dispatch that waited for its helpers died too: nobody else records their end, and pm-read stayed
           // «running» for good (SelfyStudio, 2026-10-12/13). Its helper threads would only work for nobody.

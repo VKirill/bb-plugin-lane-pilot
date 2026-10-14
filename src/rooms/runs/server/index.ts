@@ -10,5 +10,5 @@ export { cancelRejection, cleanupFinishedAttemptEnvironments, cleanupStickyLaneW
 export { CRITIC_OUTCOME_UNKNOWN, NATIVE_CODE_CRITIQUE_KEYS, NATIVE_DOCS_KEYS, NATIVE_MEMORY_KEYS, NATIVE_NIGHT_REVIEW_KEYS, NATIVE_ONBOARDING_KEYS, NATIVE_PLAN_CRITIQUE_KEYS, NATIVE_PM_READ_KEYS, NATIVE_PROJECT_LIFE_KEYS, NATIVE_SPECIALIST_KEYS, NATIVE_WRITER_KEYS, WriterSelectionError, criticReconcilePort, freezeRunRouting, helperChildPlacement, inheritedProjectSettings, projectRoleField, requireHelperSpawn, requiredPolicyField } from "./run-routing";
 export { isRunHalted, setRunHalted } from "./runs-halt";
 export { compactDispatchReply, compactReceipt, stageDetail } from "./stage-brief";
-export { closeWriterStages, recordGateEvaluation, recordStage, reopenWriterStages } from "./stage-records";
+export { closeWriterStages, recordGateEvaluation, recordStage, reopenWriterStages, resetHelperStages } from "./stage-records";
 export { createTaskReconcile } from "./task-reconcile";

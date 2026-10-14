@@ -6,7 +6,7 @@ import { recordStage } from "../src/rooms/runs/server/stage-records";
 import type { TaskV2 } from "../src/rooms/contracts";
 import {
   createAttempt, createRun, createTask, getAttempt, listAttemptsForTask, listStageReceipts, openDatabase,
-  saveProjectSetting, savePrototypeConfig, setRunThread,
+  saveProjectSetting, savePrototypeConfig, saveTaskPlan, setRunThread,
 } from "../src/rooms/storage/database";
 
 const projectId = "project-test";
@@ -157,7 +157,7 @@ describe("dispatch answers early and is idempotent", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("blocks a queued attempt whose stages died with a reload instead of starting its writer", async () => {
+  it("blocks a queued attempt whose stages died with a reload and left no pipeline record instead of starting its writer", async () => {
     const { db, harness } = await setup();
     createTask(db, { id:"orphan", runId, kind:"bb", contract:task });
     createAttempt(db, { id:"attempt-orphan", runId, taskId:"orphan" });
@@ -184,6 +184,67 @@ describe("dispatch answers early and is idempotent", () => {
     expect(stages["plan-critique"]).toMatchObject({ state:"blocked" });
     expect(stopped).toEqual(["thr-pm-read"]);
     expect(Object.values(stages).filter((row) => row.state === "pending" || row.state === "running")).toEqual([]);
+    await harness.lifecycle.dispose();
+  });
+
+  /** The state a Lane Pilot deploy left (duo-low-balance-paywall, 2026-10-13 17:05): the dispatch's pipeline run, pm-read on its helper. */
+  function interruptedDispatch(db:ReturnType<typeof openDatabase>, pipelines = 1) {
+    createTask(db, { id:"orphan", runId, kind:"bb", contract:task });
+    saveTaskPlan(db, "orphan", "Plan for the interrupted dispatch");
+    createAttempt(db, { id:"attempt-orphan", runId, taskId:"orphan" });
+    db.prepare("UPDATE lane_pilot_attempt SET state='queued', reason=? WHERE id='attempt-orphan'").run(DISPATCH_STAGES_PENDING);
+    recordStage(db, { runId, taskId:"orphan", stageId:"pm-read", state:"pending", input:"plan" });
+    recordStage(db, { runId, taskId:"orphan", stageId:"pm-read", state:"running", input:"plan", threadId:"thr-pm-read" });
+    for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) recordStage(db, { runId, taskId:"orphan", stageId, state:"pending", input:"plan" });
+    for (let i = 0; i < pipelines; i++) {
+      db.prepare(`INSERT INTO lane_pilot_wf_run(id,idem_key,workflow_id,workflow_version,workflow_sha256,definition_json,project_id,link_run_id,link_task_id,link_attempt_id,
+        status,reason,inputs_json,created_at,updated_at) VALUES(?,?,'lp-task-pipeline',1,'x','{}',?,?,'orphan','attempt-orphan','interrupted','interrupted_by_reload',?,?,?)`)
+        .run(`wfrun_old${i}`, i ? `lp-task:attempt-orphan:resume-${i}` : "lp-task:attempt-orphan", projectId, runId,
+          JSON.stringify({ taskId:"orphan", attemptId:"attempt-orphan" }), Date.now() + i, Date.now() + i);
+    }
+  }
+  const pipelineKeys = (db:ReturnType<typeof openDatabase>) => (db.prepare("SELECT idem_key FROM lane_pilot_wf_run WHERE link_attempt_id='attempt-orphan' ORDER BY created_at").all() as Array<{ idem_key:string }>).map((row) => row.idem_key);
+
+  // Live: SelfyStudio analytics-product-names (2026-10-08), cabinet-hide-analyzing-line (2026-10-12) and duo-low-balance-paywall
+  // (2026-10-13), each dispatched 8-30 s before a release reloaded Lane Pilot. The attempt was blocked «send the task again».
+  it("starts the stages of a dispatch a reload interrupted again, and its writer once they pass", async () => {
+    const { db, harness, stopped, releaseBase } = await setup();
+    interruptedDispatch(db);
+    const resumed = await harness.behavior.callRpc("resume_runs", { projectId }) as { resumed:string[] };
+    expect(resumed.resumed).toContain("attempt-orphan");
+    expect(stopped).toEqual(["thr-pm-read"]);
+    expect(getAttempt(db, "attempt-orphan")).toMatchObject({ state:"queued", reason:DISPATCH_STAGES_PENDING });
+    expect(pipelineKeys(db)).toEqual(["lp-task:attempt-orphan", "lp-task:attempt-orphan:resume-1"]);
+    for (let i = 0; i < 200 && listStageReceipts(db, runId, "orphan").find((row) => row.stageId === "pm-read")?.threadId === "thr-pm-read"; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+    // pm-read ran again from nothing (one line of read_first is below the threshold here), not from the dead helper.
+    expect(listStageReceipts(db, runId, "orphan").find((row) => row.stageId === "pm-read")).toMatchObject({ state:"skipped", threadId:null });
+    releaseBase();
+    for (let i = 0; i < 200 && getAttempt(db, "attempt-orphan")?.state === "queued"; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(getAttempt(db, "attempt-orphan")?.state).not.toBe("queued");
+    expect(getAttempt(db, "attempt-orphan")?.reason).not.toContain("send the task again");
+    expect(listAttemptsForTask(db, runId, "orphan")).toHaveLength(1);
+    await harness.lifecycle.dispose();
+  });
+
+  it("blocks a dispatch reloads interrupted three times for the PM instead of starting it a fourth time", async () => {
+    const { db, harness } = await setup();
+    interruptedDispatch(db, 3);
+    await harness.behavior.callRpc("resume_runs", { projectId });
+    expect(getAttempt(db, "attempt-orphan")).toMatchObject({ state:"blocked", reason:expect.stringContaining("reloads interrupted it 3 times") });
+    expect(pipelineKeys(db)).toHaveLength(3);
+    await harness.lifecycle.dispose();
+  });
+
+  it("leaves a dispatch this instance is running alone when recovery runs meanwhile", async () => {
+    const { db, harness, dispatch, releaseBase } = await setup();
+    const first = await dispatch();
+    expect(first).toMatchObject({ state:"queued", stagesPending:true });
+    await harness.behavior.callRpc("resume_runs", { projectId });
+    expect(getAttempt(db, String(first.attemptId))).toMatchObject({ state:"queued", reason:DISPATCH_STAGES_PENDING });
+    releaseBase();
+    for (let i = 0; i < 200 && getAttempt(db, String(first.attemptId))?.state === "queued"; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(getAttempt(db, String(first.attemptId))?.state).not.toBe("queued");
+    expect((db.prepare("SELECT COUNT(*) n FROM lane_pilot_wf_run WHERE link_attempt_id=?").get(String(first.attemptId)) as { n:number }).n).toBe(1);
     await harness.lifecycle.dispose();
   });
 });

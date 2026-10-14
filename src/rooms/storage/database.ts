@@ -639,6 +639,11 @@ export function saveStageReceipt(db: LanePilotDatabase, row:StageReceiptRow): vo
   }).immediate();
 }
 
+/** Removes a stage's current receipt so the stage runs again from nothing; its events stay in lane_pilot_stage_event. */
+export function deleteStageReceipt(db: LanePilotDatabase, runId:string, taskId:string, stageId:StageId): boolean {
+  return db.prepare("DELETE FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND stage_id=?").run(runId, taskId, stageId).changes > 0;
+}
+
 export type StageEventRow = {
   id:number; projectId:string; runId:string; taskId:string; stageId:StageId; state:StageState;
   inputSha256:string; outputSha256:string|null; attempt:number; occurredAt:number;

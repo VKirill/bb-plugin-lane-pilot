@@ -9,7 +9,7 @@ import { cliReceiptAttemptKey, cliReceiptRunKey, DISPATCH_IDEMPOTENT_WINDOW_MS, 
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
 import { QUALITY_MODE_SETTING, browserQaRequired, resolveQualityMode } from "../../critique";
-import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, recordFinishedAttempt, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../storage";
+import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskGitBase, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, recordFinishedAttempt, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../storage";
 import { sha256 } from "../../tasks";
 import { liveFolderLockNote, nextStep, taskFamily } from "../../runs";
 import { commonTaskFolder, isMainfixTask, isTaskBase, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask } from "../../tasks";
@@ -19,10 +19,10 @@ import { lintReply } from "../../tasks/server";
 import type { LintFinding } from "../../tasks/server";
 import { createTaskLinter } from "../../tasks/server";
 import { runPlanCritique, runPmRead, runSpecialistReview } from "../../critique/server";
-import { closeWriterStages, recordStage } from "../../runs/server";
+import { closeWriterStages, recordStage, resetHelperStages } from "../../runs/server";
 import { id, stringAt, valueAt } from "../../core/server";
 import { buildTask } from "./writer-task";
-import { dispatchReply, endedAttemptReply, startDispatchRun, workflowEngineEnabled } from "./dispatch-workflow";
+import { dispatchReply, dispatchRunKey, endedAttemptReply, startDispatchRun, workflowEngineEnabled } from "./dispatch-workflow";
 import { countRunNudges } from "./writer-silence";
 import { isAbsolute, relative, resolve } from "node:path";
 import type { ServerCore } from "../../core/server";
@@ -36,6 +36,9 @@ const dispatchAnswerMs = () => {
   return process.env.LANE_PILOT_DISPATCH_ANSWER_MS && Number.isFinite(set) && set >= 0 ? set : 15_000;
 };
 
+/** How often a dispatch starts again after reloads before its attempt is blocked and the PM sends the task again. */
+export const MAX_DISPATCH_RESUMES = 2;
+
 function canonicalJson(value:unknown): string {
   const sorted = (item:unknown): unknown => Array.isArray(item) ? item.map(sorted)
     : item && typeof item === "object" ? Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => a < b ? -1 : 1).map(([k, v]) => [k, sorted(v)]))
@@ -45,6 +48,19 @@ function canonicalJson(value:unknown): string {
 
 export function createWriterDispatch(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, cliSettingsFor, configForRun, db, ensureRunScopes, getThreadBounded, host, refreshRun } = ctx;
+  /** Attempts whose pm-read / plan critique this instance is running now: start-up recovery leaves them alone. */
+  const liveDispatches = new Set<string>();
+
+  /** A dispatch whose stages threw: the attempt is blocked and its writer stages fail. */
+  function failDispatch(runId:string, taskId:string, attemptId:string, plan:string, cause:unknown): Record<string,unknown> {
+    const reason = `dispatch_failed:${cause instanceof Error ? cause.message : String(cause)}`;
+    bb.log.warn(`Lane Pilot dispatch of ${taskId} failed: ${reason}`);
+    transitionAttempt(db, attemptId, "blocked", { reason });
+    closeWriterStages(db, { runId, taskId, plan, terminal:"failed", attempt:0, reason });
+    setRunState(db, runId, "blocked");
+    refreshRun(runId);
+    return { runId, taskId, attemptId, state:"blocked", reason, stages:listStageReceipts(db, runId, taskId) };
+  }
 
   async function readWriterWorkspaceFile(args:{
     threadId:string; projectId:string; path:string; offset:number; maxLines:number;
@@ -322,15 +338,10 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       }
       return dispatchReply(await started.done) ?? pendingReply();
     };
-    const work = (workflowEngineEnabled() && services.workflowEngine ? runViaEngine() : runStages()).catch((cause): Record<string,unknown> => {
-      const reason = `dispatch_failed:${cause instanceof Error ? cause.message : String(cause)}`;
-      bb.log.warn(`Lane Pilot dispatch of ${taskId} failed: ${reason}`);
-      transitionAttempt(db, attemptId, "blocked", { reason });
-      closeWriterStages(db, { runId, taskId, plan:canonicalPlan, terminal:"failed", attempt:0, reason });
-      setRunState(db, runId, "blocked");
-      refreshRun(runId);
-      return { runId, taskId, attemptId, state:"blocked", reason, stages:listStageReceipts(db, runId, taskId) };
-    });
+    liveDispatches.add(attemptId);
+    const work = (workflowEngineEnabled() && services.workflowEngine ? runViaEngine() : runStages())
+      .catch((cause): Record<string,unknown> => failDispatch(runId, taskId, attemptId, canonicalPlan, cause))
+      .finally(() => liveDispatches.delete(attemptId));
     // Stages that finish within the budget answer as before; slower ones go on in the background and the PM polls.
     let timer: ReturnType<typeof setTimeout> | undefined;
     const early = await Promise.race([work, new Promise<null>((done) => { timer = setTimeout(() => done(null), dispatchAnswerMs()); })]);
@@ -590,5 +601,54 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     return receipt;
   }
 
-  return { readWriterWorkspaceFile, dispatchWriter, waitWriter, dispatchCli };
+  /**
+   * Starts again the stages of a dispatch a reload interrupted, for the same task and attempt. A Lane Pilot deploy reloads
+   * the plugin, and the dispatch pipeline lives in memory: a reload during pm-read (minutes of a helper turn) ended the
+   * dispatch, and start-up recovery blocked the attempt «send the task again» (SelfyStudio 2026-10-08/12/13, each within
+   * 40 s of a release). Everything a dispatch needs is stored when its attempt exists: the placed contract, the plan, the
+   * run's PM thread and workspace, and the PM's baseRef in the pipeline run's inputs. The helper stages start from
+   * nothing (a passed pm-read is kept) under a new pipeline key. `live`: this instance runs the dispatch itself.
+   */
+  async function resumeDispatch(attemptId:string): Promise<{ resumed:true; live?:true } | { resumed:false; why:string }> {
+    if (liveDispatches.has(attemptId)) return { resumed:true, live:true };
+    const engine = services.workflowEngine;
+    if (!workflowEngineEnabled() || !engine) return { resumed:false, why:"the workflow engine is off" };
+    const attempt = getAttempt(db, attemptId);
+    if (!attempt || attempt.state !== "queued" || attempt.thread_id || attempt.reason !== DISPATCH_STAGES_PENDING) return { resumed:false, why:"the attempt no longer waits for its stages" };
+    const key = dispatchRunKey(attemptId);
+    const pipelines = db.prepare("SELECT inputs_json FROM lane_pilot_wf_run WHERE idem_key=? OR idem_key LIKE ? ORDER BY created_at")
+      .all(key, `${key}:resume-%`) as Array<{ inputs_json:string }>;
+    // The direct path (LANE_PILOT_WORKFLOW_ENGINE=0) keeps no record, so a baseRef the PM gave is not known.
+    if (!pipelines.length) return { resumed:false, why:"its dispatch left no pipeline record" };
+    if (pipelines.length > MAX_DISPATCH_RESUMES) return { resumed:false, why:`reloads interrupted it ${pipelines.length} times` };
+    // The base is taken once per task; one already taken means the stages were past it, a moment before the writer.
+    if (getTaskGitBase(db, attempt.task_id)) return { resumed:false, why:"its ownership base was already taken" };
+    const run = getRun(db, attempt.run_id);
+    const stored = getTask(db, attempt.task_id);
+    const parsed = stored?.kind === "bb" ? taskV2Schema.safeParse(stored.contract) : null;
+    const plan = getTaskPlan(db, attempt.task_id);
+    const config = run ? await configForRun(run.project_id, run) : null;
+    if (!run?.pm_thread_id || !run.writer_workspace_path || !parsed?.success || !plan || !config) return { resumed:false, why:"its run or task can no longer be read" };
+    let inputs: Record<string, unknown> = {};
+    try { inputs = JSON.parse(pipelines.at(-1)!.inputs_json || "{}") as Record<string, unknown>; } catch { /* no baseRef */ }
+    const task = parsed.data;
+    const taskConfig = { ...config, writerWorkspacePath:task.project_cwd };
+    await resetHelperStages(db, (threadId) => bb.sdk.threads.stop({ threadId }), { runId:run.id, taskId:attempt.task_id });
+    let started: ReturnType<typeof startDispatchRun>;
+    try {
+      started = startDispatchRun(engine, { ctx, services, threadId:run.pm_thread_id, projectId:run.project_id,
+        ...(typeof inputs.baseRef === "string" ? { baseRef:inputs.baseRef } : {}), runId:run.id, taskId:attempt.task_id, attemptId,
+        config, runConfig:taskConfig, workspacePath:task.project_cwd, task, plan, lintWarnings:[] }, pipelines.length);
+    } catch (cause) {
+      return { resumed:false, why:`the workflow engine could not start it: ${cause instanceof Error ? cause.message : String(cause)}` };
+    }
+    liveDispatches.add(attemptId);
+    void started.done.then(dispatchReply)
+      .catch((cause) => { if (!ctx.isDisposed()) failDispatch(run.id, attempt.task_id, attemptId, plan, cause); })
+      .finally(() => liveDispatches.delete(attemptId));
+    bb.log.info(`Lane Pilot started the dispatch of ${attempt.task_id} again after a reload (${pipelines.length} of ${MAX_DISPATCH_RESUMES})`);
+    return { resumed:true };
+  }
+
+  return { readWriterWorkspaceFile, dispatchWriter, waitWriter, dispatchCli, resumeDispatch };
 }
