@@ -34,3 +34,38 @@ it("uses the same matcher for the run's ownership check", async () => {
   expect(findUnownedChanges(["apps/api/src/routes/greeting-cards.ts", "packages/db/prisma/migrations/20261002_greeting_cards_core/migration.sql"], task)).toEqual([]);
   expect(findUnownedChanges(["apps/api/src/routes/other.ts"], task)).toEqual(["apps/api/src/routes/other.ts"]);
 });
+
+it("gives a wildcard pattern that names a folder what is in that folder, as a plain path and the overlap check do", async () => {
+  const { matchOwnsPath: m, ownsPathsOverlap: overlap } = await import("@lane-pilot/kit");
+  const { classifyWriterOutput } = await import("../src/rooms/tasks/validate-output");
+  const { findUnownedChanges } = await import("../src/rooms/verification/ownership");
+  // SelfyStudio drop-fotosessii-theme-v1 (2026-10-13): «cocoon-write*» was meant for the executor's test folder; the
+  // writer's needed edit there was rejected, and the retry put back a test that still expects the removed scenario.
+  const cocoon = "apps/scenario-runner/src/__tests__/executors/cocoon-write*";
+  const cocoonTest = "apps/scenario-runner/src/__tests__/executors/cocoon-write/cocoon-write-executor.test.ts";
+  expect(m(cocoonTest, cocoon)).toBe(true);
+  expect(m("apps/scenario-runner/src/__tests__/executors/cocoon-write.test.ts", cocoon)).toBe(true);
+  expect(m("apps/scenario-runner/src/__tests__/executors/cocoon-read/x.test.ts", cocoon)).toBe(false);
+  expect(overlap([cocoon], [cocoonTest])).toBe(true);
+  // SelfyStudio api-tests-order-pollution (2026-10-12): a folder with a trailing slash and a double star.
+  expect(m("apps/api/src/routes/v1/__tests__/referral.test.ts", "apps/api/src/**/__tests__/")).toBe(true);
+  expect(m("apps/api/src/lib/__tests__/token-revocation.test.ts", "apps/api/src/**/__tests__/")).toBe(true);
+  expect(m("apps/api/src/lib/token-revocation.ts", "apps/api/src/**/__tests__/")).toBe(false);
+  // SelfyStudio gc-s2a-persistence (2026-10-02): «**greeting-card*» and the folder greeting-card/.
+  expect(m("packages/infrastructure/persistence-prisma/src/greeting-card/index.ts", "packages/infrastructure/persistence-prisma/src/**greeting-card*")).toBe(true);
+  // A wildcard on the file name still does not reach into folders that do not match it.
+  expect(m("src/sub/a.ts", "src/*.ts")).toBe(false);
+  expect(m("packages/a/b/.vite/x", "packages/*/.vite/**")).toBe(false);
+  // never_touch reads the same way: a folder it names by wildcard is barred as a whole.
+  expect(m("packages/ui/dist/index.js", "packages/*/dist")).toBe(true);
+
+  const task = { schema_version:2, id:"drop-fotosessii-theme-v1", title:"t", risk:"medium", lane:"api", project_cwd:"/p",
+    read_first:[], interfaces:[], invariants:[], out_of_scope:[], expected_outputs:["packages/agent-runtime/src/agent-task-policy.ts"],
+    owns_paths:["apps/scenario-runner/src/executors/cocoon-write/**", cocoon, "packages/agent-runtime/src/agent-task-policy.ts"],
+    never_touch:[], depends_on:[], verify:"tests",
+    verification:[{ command:"npx tsc --noEmit", cwd:"/p/apps/scenario-runner" }] } as never;
+  const produced = ["packages/agent-runtime/src/agent-task-policy.ts", "apps/scenario-runner/src/executors/cocoon-write/cocoon-write-executor.ts", cocoonTest];
+  expect(classifyWriterOutput({ task, produced, contents:{ "packages/agent-runtime/src/agent-task-policy.ts":"x" },
+    verifies:[{ command:"npx tsc --noEmit", exitCode:0, stdout:"", stderr:"" }] }).ok).toBe(true);
+  expect(findUnownedChanges(produced, task)).toEqual([]);
+});

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+From a self-repair of «owns_paths rejected <path>» (SelfyStudio, cakekeeper; 2026-10-12/13):
+- **A wildcard pattern in owns_paths or never_touch that names a folder now covers what is in it, like a plain path and like `.gitignore`.** SelfyStudio `drop-fotosessii-theme-v1` owned `apps/scenario-runner/src/__tests__/executors/cocoon-write*` for the executor's tests, which live in the folder `cocoon-write/`; the writer's needed edit of `cocoon-write/cocoon-write-executor.test.ts` was rejected «owns_paths rejected …», and the retry put the file back, so a test that still expects the removed scenario went to main. The hub has the same mechanism behind `api-tests-order-pollution` (`apps/api/src/**/__tests__/`, 8 tests rejected, 2026-10-12) and `gc-s2a-persistence` (`src/**greeting-card*` and the folder `greeting-card/`, 2026-10-02, blocked). `matchOwnsPath` (`packages/kit/src/owns-paths.ts`) matched such a pattern only against the whole file path, while a plain path covered its folder and `ownsPathsOverlap` already held other tasks back from that folder; it now also accepts a file whose folder matches the pattern. `src/*.ts` still does not reach into `src/sub/`. Of the hub's 173 ownership rejections of the last 30 days only those 13 paths change; no never_touch pattern of the period names a folder by wildcard.
+  - Not changed: cakekeeper `next-env.d.ts` / `docs/screens/clients/*.png` (put back by the 0.1.243 check-writes fix), ck-y04 `registry/index.ts` and SelfyStudio `trial-promo-ui` `BillingPanel.email-guard.test.ts` (the writer's own edits outside a contract that did not own them).
+  - Tests: `tests/owns-overlap.test.ts` (the three hub patterns, the drop-fotosessii contract through `classifyWriterOutput` and `findUnownedChanges`; without the fix the folder files are rejected).
+
 ## 0.1.244
 
 - **OpenCode's auto-compaction is off on Lane Pilot's OpenCode threads by their own env (`OPENCODE_DISABLE_AUTOCOMPACT=1`), not by the machine's config.** Lane Stack 1.65.1 stops turning compaction off in the global OpenCode config, so the owner's own OpenCode sessions get OpenCode's default (summarise when the context fills) instead of running into the model's limit. Lane Pilot compacts a sticky writer's thread itself (`compactIfFull`), so its threads keep OpenCode's own auto-compaction off; the variable goes out with the minimal config and the role marker, also when the machine builds no minimal config.
