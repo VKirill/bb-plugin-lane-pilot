@@ -27,6 +27,8 @@ export type RelayReminder = {
    * deletes the row first. Absent: the sweep sends the reminder when it is due, as before.
    */
   queuedMessageId?:string|null;
+  /** Consecutive time-only reminders of this thread; 1 is a new chain. */
+  chainDepth?:number;
 };
 export type RelayItem = RelayAsk | RelayReminder;
 
@@ -34,7 +36,7 @@ export type RelayItem = RelayAsk | RelayReminder;
 export const DUPLICATE_REMINDER_MS = 60_000;
 /** Guards against two agents talking in circles or an agent snoozing for ever. */
 // A PM watching a day-long run sets a reminder per batch; 30 a day ran out on SelfyStudio (2026-10-04).
-export const RELAY_LIMITS = { asksPerPairPerHour:6, openRemindersPerThread:20, remindersPerThreadPerDay:150, keepMs:7 * 86_400_000, maxStoredBytes:200_000 };
+export const RELAY_LIMITS = { asksPerPairPerHour:6, openRemindersPerThread:20, remindersPerThreadPerDay:150, keepMs:7 * 86_400_000, maxStoredBytes:200_000, timeOnlyMaxMinutes:120, chainWindowMs:15 * 60_000, chainMax:2 };
 
 export type RelayDeps = {
   load():Promise<RelayItem[]>;
@@ -240,9 +242,23 @@ export function createRelay(deps:RelayDeps) {
       const twin = mine.find((row) => !row.firedAt && row.note.trim().toLowerCase() === input.note.trim().toLowerCase() && (row.watchThreadId ?? null) === (input.watchThreadId ?? null)
         && sameTasks(row) && Math.abs(row.dueAt - dueAt) <= DUPLICATE_REMINDER_MS);
       if (twin) return twin;
+      const timeOnly = !input.watchThreadId && !input.taskIds?.length;
+      if (timeOnly && input.inMinutes > RELAY_LIMITS.timeOnlyMaxMinutes) {
+        throw new Error("relay limit: a wait longer than 2 hours on nothing Lane Pilot can see — tell the owner what you wait for and end the turn, or use lane_pilot_schedule for a recurring check.");
+      }
+      let chainDepth:number | undefined;
+      if (timeOnly) {
+        const prev = mine.filter((row) => row.firedBy === "time" && row.firedAt && !row.watchThreadId && !row.taskIds?.length)
+          .reduce<RelayReminder | undefined>((latest, row) => !latest || row.firedAt! > latest.firedAt! ? row : latest, undefined);
+        chainDepth = prev && deps.now() - prev.firedAt! <= RELAY_LIMITS.chainWindowMs ? (prev.chainDepth ?? 1) + 1 : 1;
+        if (chainDepth > RELAY_LIMITS.chainMax) {
+          throw new Error("relay limit: three reminders in a row without progress — tell the owner what you tried and what to decide.");
+        }
+      }
       const item:RelayReminder = { kind:"remind", id:id("rem"), projectId:input.projectId, threadId:input.threadId, note:input.note,
         dueAt, watchThreadId:input.watchThreadId ?? null, createdAt:deps.now(), firedAt:null, firedBy:null,
-        ...(input.taskIds?.length ? { taskIds:[...new Set(input.taskIds)] } : {}) };
+        ...(input.taskIds?.length ? { taskIds:[...new Set(input.taskIds)] } : {}),
+        ...(chainDepth ? { chainDepth } : {}) };
       // BB's queue keeps the time: the reminder is a card in the chat, due at `dueAt`, and survives a reload of this plugin.
       if (deps.scheduleQueued) {
         item.queuedMessageId = await deps.scheduleQueued(item.threadId, reminderText(item, "time"), item.dueAt)
@@ -267,7 +283,7 @@ export function createRelay(deps:RelayDeps) {
     const why = by === "watch" ? `thread @thread:${item.watchThreadId} finished its turn`
       : by === "tasks" ? `tasks completed: ${Object.entries(states ?? {}).map(([task, state]) => `${task} — ${state}`).join(", ")}`
       : "time reached";
-    return `Lane Pilot: reminder (${item.id}, ${why}):\n\n${item.note}\n\nCheck if you can continue. If you are still waiting, set a new reminder with lane_pilot_relay (action \`remind\`) with a larger interval.`;
+    return `Lane Pilot: reminder (${item.id}, ${why}):\n\n${item.note}\n\nCheck if you can continue. If you are still waiting, set a new reminder with lane_pilot_relay (action \`remind\`). A time-only reminder cannot exceed 2 hours; a longer wait means tell the owner what you wait for, or use lane_pilot_schedule.`;
   };
 
   /**
@@ -628,6 +644,7 @@ export function mountRelay(ctx:ServerContext):Relay {
     instructions:[
       "Use instead of waiting for the owner whenever work is blocked on time or on another thread. Then end your turn; the reminder wakes you.",
       "Back off: 5, then 10, then 20 minutes for the same block; after three reminders without progress, tell the owner what you tried and what to decide.",
+      "A time-only reminder (no watchThreadId, no taskIds) cannot exceed 2 hours: tell the owner what you wait for and end the turn, or use lane_pilot_schedule for a recurring check.",
       "Pass watchThreadId to be woken as soon as that thread settles (for example blockedBy.holderThreadId).",
       "Results of your own Lane Pilot tasks come into this chat by themselves («Lane Pilot: results of your tasks»): do not set a reminder just to learn them. Pass taskIds only for a plan that waits on them (\"when X is merged, ship\"): the note comes in that results message once all of them finish. inMinutes is then only the fallback.",
     ].join("\n"),
