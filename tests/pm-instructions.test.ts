@@ -40,6 +40,11 @@ it("keeps the bundled copy byte-identical to the overlay", () => {
   }
 });
 
+it("tells the PM that councils and workflow runs report their end to the chat by themselves", () => {
+  expect(LANE_PILOT_PM_SESSION).toContain("Councils and workflow runs report their end to the chat by themselves");
+  expect(LANE_PILOT_PM_SESSION).toContain("End the turn after starting");
+});
+
 it("tells the PM to retry a tool only when retryable is true and sideEffects is none", () => {
   expect(LANE_PILOT_PM_SESSION).toContain("{ok:false,error:{code,retryable,sideEffects}}");
   expect(LANE_PILOT_PM_SESSION).toContain("retry only when retryable is true and sideEffects is \"none\"");

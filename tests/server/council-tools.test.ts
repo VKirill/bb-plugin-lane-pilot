@@ -49,6 +49,7 @@ describe("council tools", () => {
             return { output: m.seatId === "skeptic" ? "The saved-projects evidence is thin." : "PASS" };
           },
           stop: async () => ({ ok: true }) as never,
+          send: async () => undefined,
           list: async () => [...meta.keys()].map((id) => ({ id })) as never,
         },
         providers: {
@@ -132,6 +133,7 @@ describe("council tools", () => {
             return { output: "PASS" };
           },
           stop: async () => ({ ok: true }) as never,
+          send: async () => undefined,
           list: async () => [...meta.keys()].map((id) => ({ id })) as never,
         },
         providers: { list: async () => [] as never, models: async () => ({ models: [] }) as never },

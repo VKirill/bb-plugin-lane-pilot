@@ -3,12 +3,14 @@ import { LP_ALL_PROJECTS } from "@lane-pilot/ui-kit/realtime-channel";
 import { BUILTIN_SOURCES, LP_TASK_PIPELINE, builtinWorkflow } from "../builtin";
 import { createWorkflowCatalog } from "@lane-pilot/workflow-engine";
 import { ENGINE_COMPAT_VERSION, WorkflowEngine } from "@lane-pilot/workflow-engine";
+import type { RunRow } from "../../storage";
 import { createStatusResolver } from "../../storage";
 import { registerPureActions } from "@lane-pilot/workflow-engine";
 import { registerReducers } from "@lane-pilot/workflow-engine";
 import { createWorkflowAgents } from "./workflow-agent";
 import { createGoalAuditor } from "./workflow-goal-audit";
 import { chainRuntimeFor, registerChainExecutors } from "./workflow-executors";
+import { notifyWorkflowIfEnded } from "./pm-notice";
 import { registerDispatchExecutors } from "../../writer/server";
 import { registerInvoiceActions } from "./workflow-invoice";
 import { registerAnamnesisActions } from "../../anamnesis";
@@ -25,12 +27,19 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
   const { bb, db } = ctx;
   // Open Workflows screens re-read a run when one of its steps moves: the project's channel and the global library's.
   const projectOf = new Map<string, string | null>();
+  const engineRef: { current: WorkflowEngine | null } = { current: null };
   const onEvent = (runId: string) => {
     if (projectOf.size > 500) projectOf.clear();
     if (!projectOf.has(runId)) projectOf.set(runId, (db.prepare("SELECT project_id FROM lane_pilot_wf_run WHERE id=?").get(runId) as { project_id: string | null } | undefined)?.project_id ?? null);
     const project = projectOf.get(runId);
     if (project) ctx.realtime.notify(project, "workflow", undefined, runId);
     ctx.realtime.notify(LP_ALL_PROJECTS, "workflow", undefined, runId);
+    const run = db.prepare("SELECT * FROM lane_pilot_wf_run WHERE id=?").get(runId) as RunRow | undefined;
+    if (!run) return;
+    const unmet = engineRef.current?.lastAudit(runId)?.unmet.map((entry) => entry.id);
+    void notifyWorkflowIfEnded({ bb: ctx.bb, db, log: (message) => ctx.log(message), run, unmetGoalIds: unmet }).catch((cause: unknown) => {
+      ctx.log(`Lane Pilot workflow ${runId}: PM notice failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+    });
   };
   const statuses = createStatusResolver(db);
   const workflowCatalog = createWorkflowCatalog({ builtin: BUILTIN_SOURCES, log: (message) => bb.log.warn(`Lane Pilot ${message}`), resolveStatus: statuses.resolve });
@@ -49,6 +58,7 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
     // A reload ends a dispatch that was between its stages, as it always did: the attempt is blocked and the PM sends the task again.
     resumePolicy: (run) => (run.workflow_id === LP_TASK_PIPELINE || run.idem_key?.startsWith("lp-task:") ? "interrupt" : "continue"),
   });
+  engineRef.current = engine;
   registerDispatchExecutors(engine);
   // The chains of workflows/: the code-only actions and the joins' reducers, then the executors that need the host (agents, the owner, code tasks, files).
   registerPureActions(engine);
