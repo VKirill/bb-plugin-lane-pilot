@@ -8,7 +8,7 @@ import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
 import type { ServerCore } from "../../../core/server";
 import type { Services } from "../../../core/server";
-import { recordResolvedLocale } from "../../../relay/server/owner-locale";
+import { recordResolvedLocale } from "../../../relay/server";
 
 export function preferencesRpc(ctx: ServerCore, services: Services) {
   const { bb, host, listProjectSections, ownedAgents, serializedKv } = ctx;

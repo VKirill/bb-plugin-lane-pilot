@@ -18,7 +18,7 @@ import { stringAt } from "../../core/server";
 import { startedBySchedule, type ChainRuntime } from "./workflow-runtime";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
-import { ownerLocale, workflowHumanDetail } from "../../relay/server/owner-locale";
+import { ownerLocale, workflowHumanDetail } from "../../relay/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 
 /**

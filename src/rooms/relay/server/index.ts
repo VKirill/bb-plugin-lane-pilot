@@ -2,6 +2,14 @@
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { mountHandoff } from "./handoff";
 export { createOwnerAsk, threadPendingInteractions } from "./owner-ask";
-export type { OwnerAsk } from "./owner-ask";
+export type { OwnerAsk, OwnerAnswer } from "./owner-ask";
+export {
+  councilOwnerForm,
+  englishSelfRepairChoice,
+  ownerLocale,
+  recordResolvedLocale,
+  selfRepairOwnerForm,
+  workflowHumanDetail,
+} from "./owner-locale";
 export { mountRelay, relayFor } from "./relay";
 export { sendServiceMessage } from "./service-message";

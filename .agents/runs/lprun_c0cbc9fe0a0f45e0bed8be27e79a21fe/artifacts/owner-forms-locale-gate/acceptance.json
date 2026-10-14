@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "owner-forms-locale-gate",
+  "task_sha256": "6d6e2e85dbfe8b0f99ab6c9136317f362282874418a22c3c6d44b4aadf9448a7",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "b4398d0fe3ff3e2ff60492aea417db36abbbaf06229a830be16b6e13ec273f35",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-14T17:33:27.802Z",
+  "model": "grok-4.6"
+}
