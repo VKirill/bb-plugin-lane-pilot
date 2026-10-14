@@ -71,6 +71,25 @@ export function closeWriterStages(db:ReturnType<typeof openDatabase>, input:{run
   return closed;
 }
 
+const HELPER_STAGES = ["pm-read", "plan-critique", "specialist-review"] as const;
+
+/**
+ * Stops the task's helper threads still running (pm-read, plan critique, specialist review) and closes their receipts
+ * with `state`, so an ended task leaves no helper running. A stop that fails is ignored; a late stage result cannot
+ * reopen a canceled or blocked receipt (stageTransition has no way out of either).
+ */
+export async function closeHelperStages(db:ReturnType<typeof openDatabase>, stop:(threadId:string) => Promise<unknown>, input:{runId:string;taskId:string;
+  plan:string;attempt:number;state:"canceled"|"blocked";reason:string}): Promise<void> {
+  for (const row of listStageReceipts(db, input.runId, input.taskId)) {
+    if (!(HELPER_STAGES as readonly string[]).includes(row.stageId) || (row.state !== "pending" && row.state !== "running")) continue;
+    if (row.threadId) {
+      try { await stop(row.threadId); } catch { /* an idle or missing helper thread: nothing to stop */ }
+    }
+    recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:row.stageId, state:input.state, input:input.plan,
+      attempt:input.attempt, threadId:row.threadId, reason:input.reason });
+  }
+}
+
 /**
  * Writer stages left pending or running although the task's latest attempt has finished and nothing works on it:
  * closed from that attempt's state. Runs after start-up recovery, which resumes the attempts still in flight, and
