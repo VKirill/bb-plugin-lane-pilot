@@ -18,7 +18,7 @@ import { runOnHost } from "@lane-pilot/host-calls";
  * compares the receipts of both paths.
  */
 
-/** What the executors need from the dispatch that started the run. It lives in memory: a reload ends this pipeline (see `resumePolicy`). */
+/** What the executors need from the dispatch that started the run. It lives in memory: a reload ends this pipeline (see `resumePolicy`) and start-up recovery starts it again from the stored task (`resumeDispatch`). */
 export type DispatchRuntime = {
   ctx: ServerCore; services: Services;
   threadId: string; projectId: string; baseRef?: string;
@@ -236,12 +236,19 @@ function pollAttempt(engine: WorkflowEngine, runId: string, taskId: string) {
   return { output: { reply: { runId, taskId, attemptId: latest.id, state: latest.state, ...(latest.reason ? { reason: latest.reason } : {}) } } };
 }
 
-/** Starts the dispatch pipeline as a workflow run keyed by the attempt; throws when the engine cannot start it. */
-export function startDispatchRun(engine: WorkflowEngine, runtime: DispatchRuntime): { runId: string; done: Promise<RunSummary> } {
+/** The engine key of an attempt's dispatch run; a restart after a reload is a run of its own (`:resume-N`). */
+export const dispatchRunKey = (attemptId: string, resume = 0): string => `lp-task:${attemptId}${resume ? `:resume-${resume}` : ""}`;
+
+/**
+ * Starts the dispatch pipeline as a workflow run keyed by the attempt; throws when the engine cannot start it. The PM's
+ * baseRef goes into the run's inputs: it is the one dispatch argument nothing else stores, and a restart needs it.
+ */
+export function startDispatchRun(engine: WorkflowEngine, runtime: DispatchRuntime, resume = 0): { runId: string; done: Promise<RunSummary> } {
   const workflow = builtinWorkflow(LP_TASK_PIPELINE);
   if (!workflow) throw new Error(`built-in workflow ${LP_TASK_PIPELINE} is not loaded`);
   return engine.start({
-    workflow, inputs: { taskId: runtime.taskId, attemptId: runtime.attemptId }, key: `lp-task:${runtime.attemptId}`, runtime,
+    workflow, inputs: { taskId: runtime.taskId, attemptId: runtime.attemptId, ...(runtime.baseRef === undefined ? {} : { baseRef: runtime.baseRef }) },
+    key: dispatchRunKey(runtime.attemptId, resume), runtime,
     link: { projectId: runtime.projectId, runId: runtime.runId, taskId: runtime.taskId, attemptId: runtime.attemptId },
   });
 }

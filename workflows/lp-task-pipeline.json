@@ -24,6 +24,12 @@
     {
       "name": "attemptId",
       "type": "string"
+    },
+    {
+      "name": "baseRef",
+      "type": "string",
+      "required": false,
+      "description": "The PM's baseRef, kept so a dispatch a reload interrupted starts again the same."
     }
   ],
   "outputs": [

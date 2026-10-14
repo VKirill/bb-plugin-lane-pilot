@@ -76,6 +76,7 @@ export interface Services {
   assertComposerEnvironment: ActivationApi["assertComposerEnvironment"];
   dispatchCli: WriterDispatchApi["dispatchCli"];
   dispatchWriter: WriterDispatchApi["dispatchWriter"];
+  resumeDispatch: WriterDispatchApi["resumeDispatch"];
   docsPassesRunning: DocsNightlyApi["docsPassesRunning"];
   docsSpawnGate: DocsNightlyApi["docsSpawnGate"];
   docsUnitRecordKey: DocsNightlyApi["docsUnitRecordKey"];
