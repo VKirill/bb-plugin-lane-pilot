@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/rooms/storage/database";
-import { createSelfRepair, firstSeenOnRunningVersion, isDue, logIncidents, parseVerdict, reasonSignature, repairPriority, repairPrompt, repairStatus, VERSION } from "../../src/rooms/self-repair/server/self-repair";
+import { createSelfRepair, firstSeenOnRunningVersion, isDue, lastPmOwnerMessageAt, logIncidents, parseVerdict, reasonSignature, repairPriority, repairPrompt, repairStatus, VERSION } from "../../src/rooms/self-repair/server/self-repair";
 import { createJev } from "@lane-pilot/jev";
 import { setJevForTests } from "@lane-pilot/jev";
 import type { JevClient } from "@lane-pilot/jev";
@@ -9,7 +9,7 @@ import type { ServerCore } from "../../src/rooms/core/server/core";
 
 type HostCall = { method: string; input: Record<string, unknown> };
 
-function setup(threadStatus: Record<string, string> = {}, outputs: Record<string, string> = {}, hostResults: Record<string, unknown> = {}) {
+function setup(threadStatus: Record<string, string> = {}, outputs: Record<string, string> = {}, hostResults: Record<string, unknown> = {}, ownerTurns: Record<string, number | null> = {}) {
   const spawns: Array<Record<string, unknown>> = [];
   const hostCalls: HostCall[] = [];
   const placed: unknown[] = [];
@@ -22,6 +22,13 @@ function setup(threadStatus: Record<string, string> = {}, outputs: Record<string
       threads: {
         output: async ({ threadId }: { threadId: string }) => ({ output: outputs[threadId] ?? "" }) as never,
         get: async ({ threadId }: { threadId: string }) => ({ id: threadId, status: threadStatus[threadId] ?? "idle" }) as never,
+        events: {
+          list: async ({ threadId }: { threadId: string }) => {
+            const at = ownerTurns[threadId];
+            if (at == null) return [];
+            return [{ seq: 1, createdAt: at, data: { initiator: "user" } }];
+          },
+        },
         spawn: async (input: unknown) => {
           if (hostResults.spawn instanceof Error) throw hostResults.spawn;
           spawns.push(input as Record<string, unknown>);
@@ -360,6 +367,57 @@ describe("self-repair", () => {
     expect(text).toMatch(/already fixed/);
     expect(text.trim().split("\n").at(-3)).toMatch(/SELF-REPAIR-VERDICT: fixed \| already-fixed \| not-lane-pilot \| needs-owner/);
     expect(text).toContain("bb thread tell");
+    expect(text).toContain("Tell a PM thread only when that PM has to do something now");
+    expect(text).toMatch(/Never send an informational note: already-fixed, false alarm, «was not stuck», «for the record»/);
+  });
+
+  it("step 6 marks an idle PM do-not-message with hours, and a live PM keeps the tell", () => {
+    const workspace = { path: "/wt/r/lane-pilot", branch: "lane/r", basePath: "/repo/lane-pilot" };
+    const now = Date.parse("2026-10-15T10:00:00.000Z");
+    const sample = (pmThreadId: string) => ({
+      signature: "s", kind: "blocked" as const, projectId: "p", runId: "r", taskId: "t", attemptId: `a-${pmThreadId}`,
+      pmThreadId, writerThreadId: null, reason: "x", at: 0,
+    });
+    const idle = repairPrompt([sample("thr_idle")], "blocked:abc:x", workspace, undefined, {
+      now, lastOwnerAt: { thr_idle: now - 36 * 3_600_000 },
+    });
+    expect(idle).toMatch(/@thread:thr_idle — idle \(36 hours since the owner's last message\)/);
+    expect(idle).toContain("Do not message it; put what that PM should do into the report for the owner.");
+    expect(idle).not.toMatch(/bb thread tell thr_idle/);
+    expect(idle).toContain("Never send an informational note");
+
+    const live = repairPrompt([sample("thr_live")], "blocked:abc:x", workspace, undefined, {
+      now, lastOwnerAt: { thr_live: now - 3_600_000 },
+    });
+    expect(live).toContain("@thread:thr_live — live (owner wrote within 24h)");
+    expect(live).toContain('bb thread tell thr_live "…"');
+    expect(live).not.toContain("Do not message it");
+
+    const unread = repairPrompt([sample("thr_unread")], "blocked:abc:x", workspace, undefined, {
+      now, lastOwnerAt: { thr_unread: null },
+    });
+    expect(unread).toContain("@thread:thr_unread — live (owner wrote within 24h)");
+    expect(unread).toContain('bb thread tell thr_unread "…"');
+  });
+
+  it("treats a PM as live when the last owner message time cannot be read", async () => {
+    expect(await lastPmOwnerMessageAt(async () => { throw new Error("sdk down"); }, "thr_pm")).toBeNull();
+    expect(await lastPmOwnerMessageAt(async () => [], "thr_pm")).toBeNull();
+    const at = Date.parse("2026-10-14T00:00:00.000Z");
+    expect(await lastPmOwnerMessageAt(async () => [
+      { seq: 9, createdAt: at + 1, data: { initiator: "agent" } },
+      { seq: 8, createdAt: at, data: { initiator: "user" } },
+    ], "thr_pm")).toBe(at);
+  });
+
+  it("the spawned repair brief uses the PM's last owner turn from the SDK", async () => {
+    const env = setup({}, {}, {}, { thr_pm: Date.now() - 40 * 3_600_000 });
+    env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
+    await createSelfRepair(env.ctx).tick({ since: 0 });
+    const prompt = String(env.spawns[0]!.prompt);
+    expect(prompt).toMatch(/@thread:thr_pm — idle \(40 hours since the owner's last message\)/);
+    expect(prompt).toContain("Do not message it");
+    expect(prompt).not.toMatch(/bb thread tell thr_pm/);
   });
 
   it("tells the repair where the hub's run data is from the configuration, with today's values as the default", async () => {
