@@ -3,7 +3,7 @@ import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop,
 import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { providerPoolCap } from "@lane-pilot/settings-catalog";
-import { countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, transitionAttempt, taskBasePath } from "../../storage";
+import { DEPENDENCY_REDO_WAIT_MS, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, transitionAttempt, taskBasePath } from "../../storage";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
 import { reconcile } from "../../stability";
@@ -25,7 +25,6 @@ import { isRunHalted } from "../../runs/server";
 import { allowedSecretNames, secretProblem, waitingSecretNote, waitingSecretReason } from "../../secrets/server";
 
 /** How long a task waits for a blocked dependency to be sent again and accepted. */
-const DEPENDENCY_REDO_WAIT_MS = 6 * 3600_000;
 /** How long a task waits for an Env Catalog secret, and how often it asks the catalog (BB sends no server-side event when it changes). */
 const SECRET_WAIT_MS = 12 * 3600_000;
 const secretPollMs = () => Number(process.env.LANE_PILOT_SECRET_POLL_MS) || 20_000;
@@ -749,6 +748,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         // The writer the next fallback continues: the failed attempt that kept its worktree (worktree mode only), then each
         // fallback that started. Its thread and workspace are read when a fallback starts.
         let continueFrom:ReturnType<typeof getAttempt>=!liveFolder&&unremovedWorktree?.id===primaryAttemptId ? unremovedWorktree : undefined;
+        /** The last fallback writer that ran: its failure is the task's result once the chain has ended. */
+        let lastFallbackAttemptId:string|null=null;
         if (!chain.length) last={...last,emergencyFallback:{state:"skipped",
           reason:primaryClass === "provider" || primaryClass === "limit" ? "configured_pm_selection_matches_primary" : `failure is not a provider fault (${primaryClass})`}};
         for (const fallback of chain) {
@@ -797,6 +798,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               last={status:"blocked",reason:fallbackFailureReason,attemptId:emergencyAttemptId,
                 emergencyFallback:{state:"failed",reason:spawned.reason,trigger:decision.reason,attemptId:emergencyAttemptId,providerId:fallback.providerId,model:fallback.model}};
               writerThreadId=undefined;
+              lastFallbackAttemptId=null;
               // A fallback that cannot start (its own limit, not in this host's catalog) hands over to the next one.
               failure={status:"spawn_rejected",reason:spawned.reason};
               continue;
@@ -828,8 +830,18 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
                 ...(isLiveDecision(workspaceBinding.workspace_decision)?{mode:LIVE_FOLDER_RECEIPT}:{})}};
               await noteAttemptOutcome({ budget, writerThreadId, writerSelection, status:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
               if (last.status === "accepted") { acceptedAttemptId=emergencyAttemptId; break; }
+              lastFallbackAttemptId=emergencyAttemptId;
               failure=last;
             }
+        }
+        // The chain ended without a writer that got through: the task ends blocked with the last fallback's reason, as
+        // every exit of the loop above does. Left «validation_failed» it read as still at work: the PM was never told, and
+        // a task that depends on it waited with no limit (SelfyStudio 2026-10-15, chat-free-muse-trial-api: 6.5 hours).
+        const endedFallback=lastFallbackAttemptId && last.status !== "accepted" ? getAttempt(db,lastFallbackAttemptId) : undefined;
+        if (endedFallback && RETRY_ELIGIBLE.includes(endedFallback.state as AttemptState)) {
+          const endedReason=typeof last.reason === "string" && last.reason ? last.reason : String(last.status);
+          transitionAttempt(db,endedFallback.id,"blocked",{reason:endedReason});
+          last={...last,status:"blocked",reason:endedReason};
         }
       }
       // A worktree kept for a fallback that did not continue in it (no chain, a guard stopped it) is removed as any failed one.

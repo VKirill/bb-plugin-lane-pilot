@@ -340,6 +340,42 @@ describe("self-repair", () => {
     expect((await createSelfRepair(busy.ctx).collect(0, await createSelfRepair(busy.ctx).config())).filter((row) => row.kind === "queued")).toEqual([]);
   });
 
+  it("a queued task is not reported while an attempt of its run is being spawned or canceled", async () => {
+    // proj_a35nni238u 2026-10-12: ck-13-deploy-prep-v2 waited on ck-14's owned paths while ck-14 sat 30 min in cancel_requested.
+    for (const state of ["spawn_requested", "spawn_unknown", "cancel_requested"]) {
+      const env = setup();
+      env.attempt("lpattempt_q", "lprun_a", "queued", null, env.now - 156 * 60_000);
+      env.attempt("lpattempt_h", "lprun_a", state, null, env.now - 4 * 60_000);
+      const rows = await createSelfRepair(env.ctx).collect(0, await createSelfRepair(env.ctx).config());
+      expect(rows.filter((row) => row.kind === "queued"), state).toEqual([]);
+    }
+  });
+
+  it("a queued task waiting for a blocked depends_on is the PM's move until the redo wait has passed", async () => {
+    // proj_a35nni238u 2026-10-12: ck-13/ck-05c/ck-14 depend on ck-12-e2e-v2, which blocked at 06:04; the watcher reported
+    // them at 06:15, and they ran within a minute of the PM's ck-12-e2e-v2.2 being accepted at 10:57.
+    const queuedWith = (blockedAgo: number) => {
+      const env = setup();
+      env.attempt("lpattempt_dep", "lprun_a", "blocked", "turn limit 5 reached: verification failed", env.now - blockedAgo);
+      env.attempt("lpattempt_q", "lprun_a", "queued", null, env.now - 215 * 60_000);
+      env.db.prepare("INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES ('task-lpattempt_q','lprun_a','bb',?,?)")
+        .run(JSON.stringify({ depends_on: ["task-lpattempt_dep"] }), env.now - 215 * 60_000);
+      return env;
+    };
+    const fresh = queuedWith(11 * 60_000);
+    expect((await createSelfRepair(fresh.ctx).collect(0, await createSelfRepair(fresh.ctx).config())).filter((row) => row.kind === "queued")).toEqual([]);
+    // Past the six-hour wait (and a pass of slack) the dependent should have ended blocked itself: still queued is a fault.
+    // A chain is reported at its head only: ck-14 waited for ck-05c, itself queued behind the blocked ck-12.
+    const chain = queuedWith(11 * 60_000);
+    chain.attempt("lpattempt_q2", "lprun_a", "queued", null, chain.now - 124 * 60_000);
+    chain.db.prepare("INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES ('task-lpattempt_q2','lprun_a','bb',?,?)")
+      .run(JSON.stringify({ depends_on: ["task-lpattempt_q"] }), chain.now - 124 * 60_000);
+    expect((await createSelfRepair(chain.ctx).collect(0, await createSelfRepair(chain.ctx).config())).filter((row) => row.kind === "queued")).toEqual([]);
+    const stale = queuedWith(9 * 3_600_000);
+    expect((await createSelfRepair(stale.ctx).collect(0, await createSelfRepair(stale.ctx).config())).filter((row) => row.kind === "queued")
+      .map((row) => row.attemptId)).toEqual(["lpattempt_q"]);
+  });
+
   it("a stage whose task's attempt is being spawned or canceled is not left open", async () => {
     // proj_a35nni238u 2026-10-12: ck-09 queued 81 min with its stages pending, then went queued → spawn_requested
     // 1.8 s before the watcher's pass, which counted only running/queued as live and reported both stages.

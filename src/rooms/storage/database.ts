@@ -840,13 +840,22 @@ export function listTaskTerminalStates(db: LanePilotDatabase, runId: string): st
  * (live 2026-10-03: P3 depends_on P1, P1 was blocked by the plan check and sent again as P1.2).
  */
 export function latestTaskAttemptState(db: LanePilotDatabase, projectId: string, taskId: string): string | null {
+  return latestTaskAttempt(db, projectId, taskId)?.state ?? null;
+}
+
+/** How long a task waits for a depends_on that ended blocked to be sent again (`<id>.2`) before it gives up. */
+export const DEPENDENCY_REDO_WAIT_MS = 6 * 3_600_000;
+
+/** The latest attempt of a task or of its redispatches, with when it got its state. */
+export function latestTaskAttempt(db: LanePilotDatabase, projectId: string, taskId: string): { state:string; updated_at:number } | null {
   // Naming «P1.2» also follows its later redispatches («P1.3», «P1.2.2»): the family is the id without its numeric suffixes.
   const base = taskId.replace(/(\.\d+)+$/, "") || taskId;
-  const rows = db.prepare(`SELECT a.task_id, a.state FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+  const rows = db.prepare(`SELECT a.task_id, a.state, a.updated_at FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     WHERE r.project_id=? AND (a.task_id=? OR a.task_id LIKE ? ESCAPE '\\')
-    ORDER BY a.created_at DESC, a.attempt_no DESC`).all(projectId, taskId, `${base.replace(/[\\%_]/g, "\\$&")}.%`) as Array<{ task_id:string; state:string }>;
+    ORDER BY a.created_at DESC, a.attempt_no DESC`).all(projectId, taskId, `${base.replace(/[\\%_]/g, "\\$&")}.%`) as Array<{ task_id:string; state:string; updated_at:number }>;
   const member = (id:string) => id === taskId || (id.startsWith(`${base}.`) && /^(\.\d+)+$/.test(id.slice(base.length)));
-  return rows.find((row) => member(row.task_id))?.state ?? null;
+  const row = rows.find((candidate) => member(candidate.task_id));
+  return row ? { state:row.state, updated_at:row.updated_at } : null;
 }
 
 /** A task result the PM has not been told: the latest attempt of a task of a PM's run ended accepted, blocked or canceled. */

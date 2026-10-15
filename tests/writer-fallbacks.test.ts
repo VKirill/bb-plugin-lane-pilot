@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { noOptionalPlugins } from "./optional-plugin-stubs";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { WRITER_FALLBACK_DEFAULTS, writerFallbackChain, writerFallbackSlots, writerFallbacks } from "../src/rooms/writer/writer-fallbacks";
-import { createAttempt, createRun, createTask, listStageReceipts, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptDirtBefore, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
+import { createAttempt, createRun, createTask, getAttempt, latestTaskAttemptState, listStageReceipts, listUnreportedTaskOutcomes, openDatabase, savePrototypeConfig, saveTaskPlan, setAttemptDirtBefore, setAttemptWorkspace, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../src/rooms/core/server/services";
 import { recordStage } from "../src/rooms/runs/server/stage-records";
@@ -54,7 +54,7 @@ const contract = (id: string): TaskV2 => ({
   objective: `Make ${id}`, acceptance: ["done"], verify: "tests", verification: [{ command: "npm test", cwd: WORKSPACE }],
 });
 
-type Step = { accept?: true; limit?: true; invalid?: true };
+type Step = { accept?: true; limit?: true; invalid?: true; conflict?: true };
 type Spawn = { attemptId: string; emergency?: unknown; continuation?: { workspacePath: string; environmentId: string | null; dirtBefore: unknown; fromThreadId: string; brief: string } };
 
 /** A writer in a folder with git: each attempt works in its own worktree; the host calls are recorded. `script` ends each finished attempt. */
@@ -118,7 +118,8 @@ function harness(script: Step[], refuseFallbacks = false) {
         transitionAttempt(db, input.attemptId, "provider_error", { reason });
         return { status: "provider_error", reason, attemptId: input.attemptId, writerThreadId: input.writerThreadId };
       }
-      const reason = "verification failed (npm test): boom";
+      const reason = step.conflict ? "merge_conflict: main changed since this attempt started: apps/api/src/routes/v1/chat-sessions/messages.routes.ts"
+        : "verification failed (npm test): boom";
       transitionAttempt(db, input.attemptId, "validation_failed", { reason });
       return { status: "validation_failed", reason, produced: ["a.txt"], attemptId: input.attemptId, writerThreadId: input.writerThreadId,
         verification: [{ command: "npm test", exitCode: 1, stdout: "", stderr: "AssertionError: boom" }], diffKey: `d${turn}` };
@@ -180,6 +181,20 @@ describe("fallback writer continues the interrupted session", () => {
     await vi.waitFor(() => expect(removals(env)).toHaveLength(1));
     expect(removals(env)[0]!.args).toEqual({ requestedHostId: "h1", basePath: WORKSPACE, worktreePath: WORKTREE });
     expect(env.spawns.slice(1).every((spawn) => spawn.continuation?.workspacePath === WORKTREE)).toBe(true);
+    await env.harness.lifecycle.dispose();
+  });
+
+  it("a fallback that fails ends the task blocked with its reason, so the PM is told and dependents stop waiting", async () => {
+    // SelfyStudio 2026-10-15: the fallback's merge_conflict left the task «validation_failed»; the relay reported it as
+    // still at work, and chat-free-muse-trial-cabinet (depends_on it) stayed queued 6.5 hours until the owner asked.
+    const env = harness([{ limit: true }, { conflict: true }]);
+    start(env);
+    await vi.waitFor(() => expect(writerStage(env.db).state).toBe("failed"));
+    const lastAttempt = getAttempt(env.db, env.spawns[1]!.attemptId)!;
+    expect(lastAttempt.state).toBe("blocked");
+    expect(lastAttempt.reason).toMatch(/^merge_conflict: main changed since this attempt started/);
+    expect(latestTaskAttemptState(env.db, "proj1", "T1")).toBe("blocked");
+    expect(listUnreportedTaskOutcomes(env.db, 0).map((row) => [row.taskId, row.state])).toEqual([["T1", "blocked"]]);
     await env.harness.lifecycle.dispose();
   });
 
