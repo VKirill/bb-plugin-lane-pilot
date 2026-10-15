@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "self-repair-quiet-pm",
+  "task_sha256": "c1cda17d03ad421572cab4d9a384e5d885cebe28d9310f5887490377308bd053",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "36f52e4dc3ece7c9ed94193ba5fc32eea694e1ffe9d8d97d7afcd26e66c71a27",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-10-15T08:48:44.929Z",
+  "model": "grok-4.6"
+}

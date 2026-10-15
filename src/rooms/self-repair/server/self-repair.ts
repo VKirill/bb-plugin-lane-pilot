@@ -118,6 +118,9 @@ const STATE_KEY = "self-repair:state";
 const SYSTEM_REASON = /internal_error|merge_failed|merge_queue_timeout|ownership run scope invalid|spawn failed|thread_provisioning_failed|EROFS|execution_packet_failed|snapshot_failed|helper_context|workspace path is inside|stale API handle|ownership git base|cannot compare pre-existing/i;
 const STUCK_MS = 45 * 60_000;
 const QUEUED_MS = 2 * 3_600_000;
+const PM_IDLE_MS = 86_400_000;
+const OWNER_TURN = "client/turn/requested" as const;
+const PM_TELL_RULE = "Tell a PM thread only when that PM has to do something now (dispatch again, accept leftover work, change a contract). Never send an informational note: already-fixed, false alarm, «was not stuck», «for the record», or a fix that restarts the task by itself go only into the report.";
 const STAGE_MS = 3_600_000;
 const REPEAT_TASKS = 3;
 const FAILED_STATES = "'blocked','validation_failed','spawn_rejected','provider_error','empty_output'";
@@ -248,11 +251,71 @@ function readTail(path: string, bytes: number): string {
   } finally { closeSync(fd); }
 }
 
-export function repairPrompt(incidents: Incident[], signature: string, workspace: { path: string; branch: string; basePath: string }, hub: Pick<SelfRepairConfig, "hubSsh" | "hubDb" | "hubLog"> = SELF_REPAIR_DEFAULTS): string {
+/** Last owner (user-initiated) message time per PM thread; missing or null is unread and treated as live. */
+export type PmLastOwnerAt = Record<string, number | null>;
+
+function isOwnerInitiated(data: Record<string, unknown>): boolean {
+  const systemNotice = data.systemMessageKind != null && data.systemMessageKind !== "unlabeled";
+  return data.initiator === "user" && !data.senderThreadId && !systemNotice && !data.retryOfRequestId;
+}
+
+/** Newest owner turn on a PM thread, or null when the time cannot be read. */
+export async function lastPmOwnerMessageAt(
+  listEvents: (query: { threadId: string; types: [typeof OWNER_TURN]; order: "desc"; limit: string; beforeSeq?: string }) => Promise<unknown>,
+  threadId: string,
+): Promise<number | null> {
+  try {
+    let beforeSeq: string | undefined;
+    for (let page = 0; page < 10; page++) {
+      const listed = await listEvents({
+        threadId, types: [OWNER_TURN], order: "desc", limit: "50", ...(beforeSeq ? { beforeSeq } : {}),
+      });
+      if (!Array.isArray(listed) || listed.length === 0) return null;
+      for (const row of listed) {
+        if (!row || typeof row !== "object") continue;
+        const event = row as { createdAt?: unknown; data?: unknown; seq?: unknown };
+        const data = event.data && typeof event.data === "object" ? event.data as Record<string, unknown> : {};
+        if (!isOwnerInitiated(data) || typeof event.createdAt !== "number") continue;
+        return event.createdAt;
+      }
+      const seqs = listed.map((row) => Number((row as { seq?: unknown }).seq)).filter((seq) => Number.isFinite(seq));
+      const next = Math.min(...seqs);
+      if (!Number.isFinite(next) || listed.length < 50) return null;
+      if (beforeSeq !== undefined && next >= Number(beforeSeq)) return null;
+      beforeSeq = String(next);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function repairPrompt(
+  incidents: Incident[],
+  signature: string,
+  workspace: { path: string; branch: string; basePath: string },
+  hub: Pick<SelfRepairConfig, "hubSsh" | "hubDb" | "hubLog"> = SELF_REPAIR_DEFAULTS,
+  activity: { now?: number; lastOwnerAt?: PmLastOwnerAt } = {},
+): string {
   const lines = incidents.slice(0, 6).map((row) =>
     `- ${row.kind} · ${new Date(row.at).toISOString()} · project ${row.projectId} · run ${row.runId} · task ${row.taskId} · attempt ${row.attemptId}` +
     `${row.pmThreadId ? ` · PM @thread:${row.pmThreadId}` : ""}${row.writerThreadId ? ` · writer @thread:${row.writerThreadId}` : ""}\n  reason: ${row.reason.slice(0, 600)}`);
   const pms = [...new Set(incidents.map((row) => row.pmThreadId).filter((id): id is string => Boolean(id)))];
+  const now = activity.now ?? Date.now();
+  const pmStep = pms.length === 0
+    ? [`6. No affected PM thread is known.`, PM_TELL_RULE]
+    : [
+      `6. Affected PM thread${pms.length > 1 ? "s" : ""}:`,
+      ...pms.map((id) => {
+        const last = activity.lastOwnerAt?.[id];
+        if (last == null || now - last < PM_IDLE_MS) {
+          return `- @thread:${id} — live (owner wrote within 24h). Tell it only when that PM has to do something now: bb thread tell ${id} "…".`;
+        }
+        const hours = Math.floor((now - last) / 3_600_000);
+        return `- @thread:${id} — idle (${hours} hours since the owner's last message). Do not message it; put what that PM should do into the report for the owner.`;
+      }),
+      PM_TELL_RULE,
+    ];
   return [
     "You are the Lane Pilot self-repair engineer. Lane Pilot's watcher found a failure that looks like Lane Pilot's own fault; your job is to remove its cause so it does not happen again, without involving the owner.",
     "",
@@ -273,9 +336,9 @@ export function repairPrompt(incidents: Incident[], signature: string, workspace
     "3. Decide whose fault it is. If it is not Lane Pilot's (writer mistake, wrong task contract, the project's own code or machine), change no code, because a code change here would hide a problem that belongs to the PM; go to step 6 and tell the PM what to do differently.",
     "4. If it is Lane Pilot's (this repository, including the guard in lane-stack/hooks/; the claude-lane-stack copy of the guard and the VK core are not, see the last paragraph), fix the cause, not the symptom. Follow AGENTS.md and CLAUDE.md here (GitNexus impact before edits, detect-changes before commit) and add a test that fails without the fix. Verify against the real case, because unit tests here have missed real failures before: build the test from the failing data you pulled in step 1 and run what you can from your worktree. The code you commit runs nowhere until the release train deploys it, so name in the report what must be checked live after that deploy (scripts/lp-drill.sh runs the sandbox drills).",
     `5. Commit, do not ship. Your workspace ${workspace.path} is your own git worktree on branch ${workspace.branch}, forked from the shared checkout ${workspace.basePath}; the owner and other sessions work in that checkout, so never edit files there. Run the full suite (npx vitest run) first and continue only when it is green. Commit the fix and its test on your branch (git add <paths>, never git add -A) and add a CHANGELOG entry under a «## Unreleased» heading. Do NOT deploy, bump the version, push, merge or create a release: bb-plugin-push is the release train (one deploy a day, from a clean pushed tree, on a green suite) and it is not yours to run. When you finish with the verdict fixed, Lane Pilot merges your branch into the shared checkout itself; with any other verdict it releases your worktree, so commit only a change you want merged.`,
-    `6. Tell the affected PM thread${pms.length > 1 ? "s" : ""} (${pms.map((id) => `@thread:${id}`).join(", ") || "none known"}) what happened and what to do next (dispatch again, accept leftover work, change the contract): bb thread tell <id> "…".`,
+    ...pmStep,
     "",
-    "Done when: the cause is named with evidence, and it is either fixed and committed on your branch (with the commit) or shown to be already fixed or not Lane Pilot's; the PM is told.",
+    "Done when: the cause is named with evidence, and it is either fixed and committed on your branch (with the commit) or shown to be already fixed or not Lane Pilot's; a live PM that must act now is told, and what an idle PM should do is in the report.",
     "Finish with a short report in Russian for the owner: cause, what you changed (or why nothing), how you verified it, the commit.",
     "The verdict is one of the unified statuses: fixed and already-fixed are a pass, not-lane-pilot a rework (the PM changes something), needs-owner a block.",
     "The very last line of your final message is the verdict, for the watcher that reads it to decide whether this kind of problem needs another repair: SELF-REPAIR-VERDICT: fixed | already-fixed | not-lane-pilot | needs-owner",
@@ -650,11 +713,16 @@ export function createSelfRepair(ctx: ServerCore) {
         // No worktree, no repair: the shared checkout is not a fallback (that is the fault E2 removes); the kind stays due.
         worktree = record.pending?.worktree ?? await createRepairWorktree(cfg, signature, now);
         spawnCalled = true;
+        const pmIds = [...new Set(record.samples.map((sample) => sample.pmThreadId).filter((id): id is string => Boolean(id)))];
+        const lastOwnerAt: PmLastOwnerAt = {};
+        for (const id of pmIds) {
+          lastOwnerAt[id] = await lastPmOwnerMessageAt((query) => bb.sdk.threads.events.list(query), id);
+        }
         const result = await fullAccessSpawn(bb, {
           projectId: cfg.projectId,
           environment: { type: "host", hostId: worktree.hostId, workspace: { type: "unmanaged", path: worktree.path } },
           title: `Lane Pilot self-repair: ${signature.split(":").slice(2).join(":").slice(0, 70)}`,
-          prompt: repairPrompt(record.samples, signature, worktree, cfg),
+          prompt: repairPrompt(record.samples, signature, worktree, cfg, { now, lastOwnerAt }),
           ...writerExecutionSelection(cfg.providerId, cfg.model, cfg.reasoningLevel, "default"),
           pluginMetadata: { role: "self-repair", signature, spawnId, repairBranch: worktree.branch },
         } as Parameters<typeof fullAccessSpawn>[1]);
