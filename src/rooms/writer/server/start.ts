@@ -100,6 +100,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
   function startWriterTask(input:{
     projectId:string; runId:string; taskId:string; firstAttemptId:string; pmThreadId:string;
     config:PrototypeConfig; task:TaskV2; plan:string; writerThreadId?:string; dirtBefore?:DirtSnapshot[]; pmReadContext?:string;
+    /** The writer already has its turn in writerThreadId (the PM reopened the attempt): it is checked once the turn ends, without the waits. */
+    turnSent?:boolean;
   }): void {
     const key = `${input.runId}:${input.taskId}`;
     if (services.activeWriterTasks.has(key)) return;
@@ -342,58 +344,68 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         const saved = await bb.storage.kv.get(liveBackupKey(attemptId)).catch(() => null);
         if (typeof saved === "string") liveBackupId = saved;
       }
-      const dependency = await waitForDependencies(wallOrTokenStop);
-      if (dependency) {
-        blockBeforeWriter(dependency);
-        return;
-      }
-      const overlapStop = await waitForOverlappingTasks(wallOrTokenStop);
-      if (overlapStop) {
-        blockBeforeWriter(overlapStop);
-        return;
-      }
-      const secretStop = await waitForSecrets(wallOrTokenStop);
-      if (secretStop) {
-        blockBeforeWriter(secretStop);
-        return;
-      }
-      // Several tasks failed on the same Lane Pilot fault just now, or the disk is nearly full: starting more only burns them too.
-      for (let noted = ""; ;) {
-        if (ctx.isDisposed()) return;
-        const budgetStop = wallOrTokenStop();
-        if (budgetStop) { blockBeforeWriter(budgetStop); return; }
-        const base = taskBasePath(db, input.runId, input.taskId);
-        const held = services.stability.breakerHolds(input.projectId)
-          ?? (base ? await services.stability.diskHolds(input.config.hostId, base) : null);
-        if (!held) break;
-        if (noted !== held) {
-          noted = held;
-          ctx.log(`writer ${input.taskId} waits: ${held}`);
-          recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
-            reason:`waiting: ${held}; starts by itself once it clears` });
+      /** The waits a task passes before its writer gets a turn: depends_on, overlapping tasks, secrets, the breaker and the pools. */
+      const waitForAdmission = async (): Promise<boolean> => {
+        const dependency = await waitForDependencies(wallOrTokenStop);
+        if (dependency) {
+          blockBeforeWriter(dependency);
+          return false;
         }
-        await new Promise((wake) => setTimeout(wake, 30_000));
-      }
-      releaseWriterSlot=liveFolder
-        ? await services.runWriterPool.acquire(`live-folder:${input.config.hostId}:${resolve(runFolder)}`,1)
-        : await services.runWriterPool.acquire(input.runId,policy.pools.provider);
-      // BB's concurrency-limit plugin caps the threads a host runs at once: writers beyond it would only wait in BB's queue,
-      // so they wait here, before their attempt starts (no pool slot is held by a writer that cannot run). No plugin, no cap.
-      const hostCap = await services.concurrencyLimit.hostCap(input.config.hostId);
-      if (hostCap !== null && !liveFolder) {
-        const releaseRunSlot = releaseWriterSlot;
-        const releaseHostSlot = await services.runWriterPool.acquire(`concurrency-limit:${input.config.hostId}`, Math.min(hostCap, 15));
-        releaseWriterSlot = () => { releaseHostSlot(); releaseRunSlot?.(); };
-      }
-      // G9: a cap on simultaneous writers of one provider (ops.provider_pool); a task over it waits here, queued, not failed.
-      // It counts the task's writer provider; a fallback of the chain is not counted. No entry, no cap.
-      const poolProvider = typeof runSettings["writer.provider"] === "string" && runSettings["writer.provider"] ? runSettings["writer.provider"] as string : input.config.writerProviderId;
-      const providerCap = providerPoolCap(runSettings, poolProvider);
-      if (providerCap !== null && !liveFolder) {
-        const releaseHeld = releaseWriterSlot;
-        const releaseProviderSlot = await services.runWriterPool.acquire(`provider-pool:${poolProvider}`, providerCap);
-        releaseWriterSlot = () => { releaseProviderSlot(); releaseHeld?.(); };
-      }
+        const overlapStop = await waitForOverlappingTasks(wallOrTokenStop);
+        if (overlapStop) {
+          blockBeforeWriter(overlapStop);
+          return false;
+        }
+        const secretStop = await waitForSecrets(wallOrTokenStop);
+        if (secretStop) {
+          blockBeforeWriter(secretStop);
+          return false;
+        }
+        // Several tasks failed on the same Lane Pilot fault just now, or the disk is nearly full: starting more only burns them too.
+        for (let noted = ""; ;) {
+          if (ctx.isDisposed()) return false;
+          const budgetStop = wallOrTokenStop();
+          if (budgetStop) { blockBeforeWriter(budgetStop); return false; }
+          const base = taskBasePath(db, input.runId, input.taskId);
+          const held = services.stability.breakerHolds(input.projectId)
+            ?? (base ? await services.stability.diskHolds(input.config.hostId, base) : null);
+          if (!held) break;
+          if (noted !== held) {
+            noted = held;
+            ctx.log(`writer ${input.taskId} waits: ${held}`);
+            recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
+              reason:`waiting: ${held}; starts by itself once it clears` });
+          }
+          await new Promise((wake) => setTimeout(wake, 30_000));
+        }
+        releaseWriterSlot=liveFolder
+          ? await services.runWriterPool.acquire(`live-folder:${input.config.hostId}:${resolve(runFolder)}`,1)
+          : await services.runWriterPool.acquire(input.runId,policy.pools.provider);
+        // BB's concurrency-limit plugin caps the threads a host runs at once: writers beyond it would only wait in BB's queue,
+        // so they wait here, before their attempt starts (no pool slot is held by a writer that cannot run). No plugin, no cap.
+        const hostCap = await services.concurrencyLimit.hostCap(input.config.hostId);
+        if (hostCap !== null && !liveFolder) {
+          const releaseRunSlot = releaseWriterSlot;
+          const releaseHostSlot = await services.runWriterPool.acquire(`concurrency-limit:${input.config.hostId}`, Math.min(hostCap, 15));
+          releaseWriterSlot = () => { releaseHostSlot(); releaseRunSlot?.(); };
+        }
+        // G9: a cap on simultaneous writers of one provider (ops.provider_pool); a task over it waits here, queued, not failed.
+        // It counts the task's writer provider; a fallback of the chain is not counted. No entry, no cap.
+        const poolProvider = typeof runSettings["writer.provider"] === "string" && runSettings["writer.provider"] ? runSettings["writer.provider"] as string : input.config.writerProviderId;
+        const providerCap = providerPoolCap(runSettings, poolProvider);
+        if (providerCap !== null && !liveFolder) {
+          const releaseHeld = releaseWriterSlot;
+          const releaseProviderSlot = await services.runWriterPool.acquire(`provider-pool:${poolProvider}`, providerCap);
+          releaseWriterSlot = () => { releaseProviderSlot(); releaseHeld?.(); };
+        }
+        return true;
+      };
+      // An attempt the PM reopened (an answer to the writer's question, a contract fix) passed these waits when it first
+      // started, and its turn is already in the writer's thread: the writer works whatever Lane Pilot waits for here.
+      // Waiting again only held back its checks: a reopened attempt is created as a retry, later than the siblings queued
+      // behind it, so it queued behind them while its writer had long finished (SelfyStudio 2026-10-15: stickers-landing-
+      // showcase and webapp-ideas-home «running» about an hour with an idle writer).
+      if (!input.turnSent && !await waitForAdmission()) return;
       const latestAttempt=getAttempt(db,attemptId);
       if(!latestAttempt||["canceled","blocked","accepted"].includes(latestAttempt.state)){
         if(latestAttempt?.state==="canceled"){

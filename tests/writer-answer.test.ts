@@ -140,6 +140,33 @@ it("the PM's answer continues the same attempt in the same thread to acceptance,
   await harness.lifecycle.dispose();
 });
 
+it("the PM's answer is checked once the writer's turn ends, not after the siblings that queued behind the task", async () => {
+  // SelfyStudio 2026-10-15 (stickers-landing-showcase, webapp-ideas-home): the attempt that asked was a same-thread retry, created
+  // later than a sibling with overlapping owns_paths that queued behind the task's first attempt. Reopened, it queued behind
+  // that sibling while its writer had the answer and finished: «running» about an hour with an idle writer.
+  const { db, ctx, harness } = harnessFor();
+  createTask(db, { id:"T0", runId:"run1", kind:"bb", contract:{ ...contract(), id:"T0", title:"Sibling on a.txt", objective:"Edit a.txt too" } });
+  createAttempt(db, { id:"a0", runId:"run1", taskId:"T0" });
+  blockedQuestionAttempt(db);
+  db.prepare("UPDATE lane_pilot_attempt SET created_at=created_at-60000 WHERE id='a0'").run();
+  const finished:string[] = [];
+  const services = fakeServices(db, async (input) => {
+    finished.push(input.attemptId);
+    transitionAttempt(db, input.attemptId, "accepted");
+    return { status:"accepted", produced:["a.txt"], verification:[] };
+  });
+  Object.assign(services, createWriterStart(ctx, services));
+  const answer = createWriterAnswer(ctx, services).answerWriter;
+
+  const result = await answer({ projectId:"proj1", runId:"run1", pmThreadId:"thr_pm", taskId:"T1", answer:"Use package X." });
+  expect(result).toMatchObject({ ok:true, attemptId:"a1", state:"running" });
+  await vi.waitFor(() => expect(getAttempt(db, "a1")?.state).toBe("accepted"), { timeout:3000 });
+  expect(finished).toEqual(["a1"]);
+  // The sibling still waits for its own turn; nothing was done to it.
+  expect(getAttempt(db, "a0")?.state).toBe("queued");
+  await harness.lifecycle.dispose();
+});
+
 it("a task whose latest attempt is not blocked with a question is not answerable, and nothing moves", async () => {
   const { db, ctx, harness, sends, writes } = harnessFor();
   createAttempt(db, { id:"a1", runId:"run1", taskId:"T1" });
