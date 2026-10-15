@@ -21,6 +21,17 @@ describe("spawnAsync", () => {
     expect(ran.error?.code).toBe("ENOBUFS");
   });
 
+  it("with keepEnds, lets a command that prints a lot finish and keeps its beginning and end", async () => {
+    // SelfyStudio's green API vitest printed 2.5 MB of request logs; a 1 MB cap killed it and the replay read exit 1.
+    const ran = await spawnAsync("/bin/bash", ["-c", "echo first; head -c 2500000 /dev/zero | tr '\\0' x; echo; echo ' Test Files  248 passed (248)'; exit 0"], { keepEnds:200_000, timeout:20_000 });
+    expect(ran.error).toBeUndefined();
+    expect(ran.status).toBe(0);
+    expect(ran.stdout.startsWith("first\n")).toBe(true);
+    expect(ran.stdout).toContain("Test Files  248 passed (248)");
+    expect(ran.stdout).toMatch(/\[\.\.\. \d+ bytes cut \.\.\.\]/);
+    expect(ran.stdout.length).toBeLessThan(201_000);
+  });
+
   it("reports a missing binary as a launch error", async () => {
     const ran = await spawnAsync("/nonexistent/lane-pilot-binary", []);
     expect(ran.status).toBeNull();

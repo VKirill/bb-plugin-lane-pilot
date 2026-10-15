@@ -2,7 +2,7 @@ import { accessSync, constants as fsConstants } from "node:fs";
 import { access, lstat, mkdir, mkdtemp, realpath, rm, rmdir } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { redactSecrets, sha256Hex } from "@lane-pilot/kit";
+import { createCapture, redactSecrets, sha256Hex } from "@lane-pilot/kit";
 import { spawnAsync } from "@lane-pilot/kit";
 
 export type SandboxedCommandInput = {
@@ -17,7 +17,20 @@ export type SandboxedCommandResult = {
 
 const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
 export const SANDBOX_OWN_ENV=new Set(["PATH","HOME","TMPDIR","TMP","TEMP","LANG","LC_ALL"]);
-const MAX_OUTPUT = 1_000_000;
+/**
+ * What a check keeps of its output: the beginning and the end of each stream. The command is never stopped for printing
+ * more: a 1 MB cap killed SelfyStudio's green API vitest (2.5 MB of request logs) and read the kill as exit 1, so every
+ * replay before a merge was «red» (2026-10-14/15). The end holds the failures and the summary.
+ */
+const KEEP_STDOUT = 200_000;
+const KEEP_STDERR = 24_000;
+
+/** The beginning and the end of `text`, at most `cap` bytes. */
+function keepEnds(text:string, cap:number):string {
+  const capture=createCapture(cap);
+  capture.push(Buffer.from(text,"utf8"));
+  return capture.text();
+}
 const MAX_TIMEOUT_MS = 7_200_000;
 const BWRAP_CANDIDATES = ["/usr/bin/bwrap","/bin/bwrap"] as const;
 
@@ -195,13 +208,13 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
       const args=buildBubblewrapArgs({workspacePath,cwd,tempPath,guardPaths});
       const policySha256=sha256Hex(JSON.stringify(args));
       const child=await spawnAsync(bubblewrapPath!,[...(Object.keys(secrets).length?args.filter((arg)=>arg!=="--clearenv"):args),input.command],{
-        cwd,env:secrets,timeout:Math.min(timeoutSec * 1000,MAX_TIMEOUT_MS),maxBuffer:MAX_OUTPUT,
+        cwd,env:secrets,timeout:Math.min(timeoutSec * 1000,MAX_TIMEOUT_MS),keepEnds:KEEP_STDOUT,
       });
       if (child.error && ["EPERM","EACCES","ENOENT"].includes(String((child.error as NodeJS.ErrnoException).code))) {
         throw new Error("sandbox_backend_unavailable: bubblewrap launch was denied or executable is missing");
       }
       return {hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,exitCode:child.status ?? (timedOut(child) ? 124 : 1),
-        policySha256,stdout:maskSecrets((child.stdout ?? "").slice(0,200_000),secrets),stderr:maskSecrets((child.stderr ?? child.error?.message ?? "").slice(0,12_000),secrets)};
+        policySha256,stdout:maskSecrets(child.stdout ?? "",secrets),stderr:maskSecrets(keepEnds(child.stderr ?? child.error?.message ?? "",KEEP_STDERR),secrets)};
     }
     const profile = buildSeatbeltProfile(workspacePath,tempPath);
     const policySha256 = sha256Hex(profile);
@@ -215,7 +228,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
         HOME:tempPath,TMPDIR:tempPath,TMP:tempPath,TEMP:tempPath,BB_DATA_DIR:bbDataDir(),
         LANG:"C",LC_ALL:"C",
       },
-      timeout:Math.min(timeoutSec * 1000,MAX_TIMEOUT_MS),maxBuffer:MAX_OUTPUT,
+      timeout:Math.min(timeoutSec * 1000,MAX_TIMEOUT_MS),keepEnds:KEEP_STDOUT,
     });
     if (child.error && ["EPERM","EACCES","ENOENT"].includes(String((child.error as NodeJS.ErrnoException).code))) {
       throw new Error("sandbox_backend_unavailable: Seatbelt launch was denied by the host");
@@ -226,7 +239,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
     return {
       hostId:process.env.BB_HOST_ID ?? input.requestedHostId,backend,workspacePath,cwd,
       exitCode:child.status ?? (timedOut(child) ? 124 : 1),policySha256,
-      stdout:maskSecrets((child.stdout ?? "").slice(0,200_000),seatbeltSecrets),stderr:maskSecrets((child.stderr ?? child.error?.message ?? "").slice(0,12_000),seatbeltSecrets),
+      stdout:maskSecrets(child.stdout ?? "",seatbeltSecrets),stderr:maskSecrets(keepEnds(child.stderr ?? child.error?.message ?? "",KEEP_STDERR),seatbeltSecrets),
     };
   } finally {
     await releaseGuards();
