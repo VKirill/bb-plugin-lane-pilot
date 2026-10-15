@@ -106,7 +106,7 @@ export function createAttemptReopen(ctx: ServerCore, services: Services) {
       projectId: input.projectId, runId, taskId, firstAttemptId: attempt.id,
       pmThreadId: input.pmThreadId, writerThreadId: threadId,
       config: { ...config, writerWorkspacePath: workspace.path }, task: workspace.task,
-      plan: getTaskPlan(db, taskId) ?? input.contract.objective, dirtBefore: attempt.dirt_before,
+      plan: getTaskPlan(db, taskId) ?? input.contract.objective, dirtBefore: attempt.dirt_before, turnSent: true,
     });
     log(`writer ${taskId}: attempt ${attempt.id} reopened in thread ${threadId} (${input.reason})`);
     return { ok: true };
