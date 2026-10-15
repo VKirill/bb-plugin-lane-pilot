@@ -79,7 +79,9 @@ export const WRITER_STREAM_ERROR = "writer_stream_error";
 export const isWriterStreamError = (reason: string | null | undefined): boolean => (reason ?? "").startsWith(`${WRITER_STREAM_ERROR}:`);
 
 // The ACP provider (acp-cursor) ends a turn the model's stream broke off as «completed», with the error as the whole answer.
-const PROVIDER_STREAM_ERROR = /^(?:Error:\s*)?RetriableError:\s*\[[a-z_]+\]/i;
+// A 503 comes as NonRetriableError with no bracketed code (cakekeeper ck-y19-screens-canon.2, 2026-10-13: «Service
+// Unavailable» four turns in a row, each checked as a report), yet the next turn in the same thread went through.
+const PROVIDER_STREAM_ERROR = /^(?:Error:\s*)?(?:RetriableError:\s*\[[a-z_]+\]|NonRetriableError:\s*\S)/i;
 
 /**
  * The provider's stream error when that is all the writer answered; null for a real report. The turn stopped mid-work

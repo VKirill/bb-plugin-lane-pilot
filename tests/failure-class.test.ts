@@ -143,6 +143,17 @@ describe("task families", () => {
     expect(providerStreamError("")).toBeNull();
   });
 
+  // The same provider ends a turn on a 503 as NonRetriableError without a bracketed code: cakekeeper ck-y19-screens-canon.2
+  // (2026-10-13, four turns in a row) and SelfyStudio admin-seo-clusters-tree-ui failed «missing expected_outputs» for them.
+  it("reads a provider's NonRetriableError as the whole answer as a cut-off turn", () => {
+    for (const answer of ["\n\nError: NonRetriableError: Service Unavailable Service Unavailable",
+      "\n\nError: NonRetriableError: Provider Error We're having trouble connecting to the model provider. This might be temporary - please try again in a moment."]) {
+      expect(providerStreamError(answer)).toBe(answer.trim());
+      expect(providerLimitNotice(answer)).toBeNull();
+    }
+    expect(providerStreamError("Handled NonRetriableError: Service Unavailable in api/client.ts; changed api/client.ts")).toBeNull();
+  });
+
   it("keeps a real writer report about rate limits a report", () => {
     expect(providerLimitNotice("Added a token bucket to api/limiter.ts.")).toBeNull();
     expect(providerLimitNotice(`Changed api/limiter.ts: requests over the rate limit reached now get 429.\n${"Checks: npm test passed. ".repeat(20)}`)).toBeNull();
