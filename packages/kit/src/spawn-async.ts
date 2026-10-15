@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createCapture } from "./output-capture";
 
 export type SpawnResult = {
   pid:number|undefined; status:number|null; signal:NodeJS.Signals|null; stdout:string; stderr:string; error?:NodeJS.ErrnoException;
@@ -10,11 +11,14 @@ export type SpawnResult = {
  * worker, the check with it (OVH, 2026-10-05: 15 times; every SelfyStudio «main is red» that day was that kill).
  * Like spawnSync: a time limit or an overfull stream (`maxBuffer`, per stream) sends SIGTERM and sets `error.code`
  * ETIMEDOUT / ENOBUFS; a failed launch sets `error` with no status.
+ * `keepEnds` instead keeps each stream's beginning and end, up to that many bytes, and never stops the command for its
+ * output: a check's verdict is its exit code, and a green test run that logs a lot is still green.
  */
-export function spawnAsync(file:string,args:readonly string[],options:{cwd?:string;env?:NodeJS.ProcessEnv;timeout?:number;maxBuffer?:number;input?:string}={}):Promise<SpawnResult> {
+export function spawnAsync(file:string,args:readonly string[],options:{cwd?:string;env?:NodeJS.ProcessEnv;timeout?:number;maxBuffer?:number;input?:string;keepEnds?:number}={}):Promise<SpawnResult> {
   return new Promise((resolve)=>{
     const maxBuffer=options.maxBuffer??1024*1024;
     const out:Buffer[]=[]; const err:Buffer[]=[]; const size={out:0,err:0};
+    const ends=options.keepEnds?{out:createCapture(options.keepEnds),err:createCapture(options.keepEnds)}:null;
     let error:NodeJS.ErrnoException|undefined;
     let settled=false;
     let timer:NodeJS.Timeout|null=null;
@@ -24,7 +28,7 @@ export function spawnAsync(file:string,args:readonly string[],options:{cwd?:stri
       settled=true;
       if(timer) clearTimeout(timer);
       if(grace) clearTimeout(grace);
-      resolve({pid:child.pid,status,signal,stdout:Buffer.concat(out).toString("utf8"),stderr:Buffer.concat(err).toString("utf8"),...(error?{error}:{})});
+      resolve({pid:child.pid,status,signal,stdout:ends?ends.out.text():Buffer.concat(out).toString("utf8"),stderr:ends?ends.err.text():Buffer.concat(err).toString("utf8"),...(error?{error}:{})});
     };
     const child=spawn(file,[...args],{cwd:options.cwd,env:options.env,stdio:[options.input===undefined?"ignore":"pipe","pipe","pipe"],windowsHide:true});
     if(options.input!==undefined) child.stdin!.end(options.input);
@@ -34,6 +38,7 @@ export function spawnAsync(file:string,args:readonly string[],options:{cwd?:stri
     };
     if(options.timeout) timer=setTimeout(()=>stop("ETIMEDOUT"),options.timeout);
     const take=(chunks:Buffer[],key:"out"|"err")=>(chunk:Buffer)=>{
+      if(ends) return ends[key].push(chunk);
       size[key]+=chunk.length;
       if(size[key]>maxBuffer) return stop("ENOBUFS");
       chunks.push(chunk);

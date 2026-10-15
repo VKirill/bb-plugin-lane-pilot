@@ -1,6 +1,7 @@
 export * from "./hash";
 export * from "./redact";
 export * from "./spawn-async";
+export * from "./output-capture";
 export * from "./output-excerpt";
 export * from "./bounded-read";
 export * from "./jsonc";
