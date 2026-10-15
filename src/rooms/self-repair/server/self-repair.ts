@@ -24,7 +24,7 @@ import { GUARD_BLOCKED_KEY, type GuardBlock } from "@lane-pilot/jev";
 import { FRUSTRATION_KEY, frustrationReason, type FrustrationRecord } from "../../learning";
 import { MAX_CANDIDATES, repairGroup } from "@lane-pilot/jev/judgments/repair-group";
 import { sha256Hex } from "@lane-pilot/kit";
-import { HOLDING_ATTEMPT_STATES } from "../../storage";
+import { DEPENDENCY_REDO_WAIT_MS, HOLDING_ATTEMPT_STATES, latestTaskAttempt } from "../../storage";
 
 /**
  * Self-repair: every 15 minutes Lane Pilot looks for failures that are its own fault (triage origin
@@ -123,6 +123,8 @@ const OWNER_TURN = "client/turn/requested" as const;
 const PM_TELL_RULE = "Tell a PM thread only when that PM has to do something now (dispatch again, accept leftover work, change a contract). Never send an informational note: already-fixed, false alarm, «was not stuck», «for the record», or a fix that restarts the task by itself go only into the report.";
 const STAGE_MS = 3_600_000;
 const REPEAT_TASKS = 3;
+/** An attempt at work for the queued-attempt check: every holding state but a queued one. */
+const WORKING_ATTEMPT_STATES = HOLDING_ATTEMPT_STATES.filter((state) => state !== "queued").map((state) => `'${state}'`).join(",");
 const FAILED_STATES = "'blocked','validation_failed','spawn_rejected','provider_error','empty_output'";
 const MUTE_MS = 7 * 86_400_000;
 /** How long a worktree waits for a spawn of unknown outcome to settle before it is released. */
@@ -382,6 +384,22 @@ export function createSelfRepair(ctx: ServerCore) {
     return dropped;
   }
 
+  /**
+   * A queued task that waits for a depends_on: one still queued or at work (checked on its own, so a chain is reported once,
+   * at its head), or one that ended blocked less than the redo wait (plus a pass of slack) ago, which is the PM's move.
+   */
+  function waitsForDependency(projectId: string, taskId: string, contractJson: string | null, now: number): boolean {
+    let deps: unknown = [];
+    try { deps = contractJson ? (JSON.parse(contractJson) as { depends_on?: unknown }).depends_on : []; } catch { return false; }
+    if (!Array.isArray(deps)) return false;
+    return deps.some((dep) => {
+      if (typeof dep !== "string" || !dep || dep === taskId) return false;
+      const latest = latestTaskAttempt(db, projectId, dep);
+      if (!latest) return false;
+      return HOLDING_ATTEMPT_STATES.includes(latest.state) || (latest.state === "blocked" && now - latest.updated_at < DEPENDENCY_REDO_WAIT_MS + QUEUED_MS);
+    });
+  }
+
   /** Failures since the cursor that look like Lane Pilot's fault, plus attempts stuck now. */
   async function collect(since: number, cfg: SelfRepairConfig): Promise<Incident[]> {
     const ignored = new Set(cfg.ignoreProjects);
@@ -414,12 +432,18 @@ export function createSelfRepair(ctx: ServerCore) {
       out.push({ signature: reasonSignature("stuck", `attempt running while its writer is ${status}`), kind: "stuck", projectId: row.project_id, runId: row.run_id,
         taskId: row.task_id, attemptId: row.id, pmThreadId: runPm(row.run_id), writerThreadId: row.thread_id, reason, at: now });
     }
-    // Queued for hours in a run where nothing runs: whatever it waits for will never come.
-    const queued = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.updated_at, r.project_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+    // Queued for hours in a run where nothing runs: whatever it waits for will never come. An attempt being spawned or
+    // canceled is at work too (proj_a35nni238u 2026-10-12: ck-13 queued behind ck-14's 30-minute cancel was reported).
+    const queued = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.updated_at, r.project_id, t.contract_json FROM lane_pilot_attempt a
+      JOIN lane_pilot_run r ON r.id=a.run_id LEFT JOIN lane_pilot_task t ON t.id=a.task_id
       WHERE a.state='queued' AND a.updated_at < ? AND r.state='running'
-        AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.state='running')`).all(now - QUEUED_MS) as Array<{ id: string; run_id: string; task_id: string; updated_at: number; project_id: string }>;
+        AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.state IN (${WORKING_ATTEMPT_STATES}))`).all(now - QUEUED_MS) as Array<{ id: string; run_id: string; task_id: string; updated_at: number; project_id: string; contract_json: string | null }>;
     for (const row of queued) {
       if (ignored.has(row.project_id)) continue;
+      // A task that waits for a depends_on that ended blocked waits for the PM to send it again, by design up to six hours
+      // (the PM was told it ended); the wait ends by itself after that, so only a wait past it is Lane Pilot's (ck-12 → ck-13/ck-05c,
+      // and ck-14 behind ck-05c, on 2026-10-12 were reported 11 minutes after ck-12 blocked and ran once ck-12.2 was accepted).
+      if (waitsForDependency(row.project_id, row.task_id, row.contract_json, now)) continue;
       out.push({ signature: reasonSignature("queued", "attempt queued for hours while nothing runs in its run"), kind: "queued", projectId: row.project_id,
         runId: row.run_id, taskId: row.task_id, attemptId: row.id, pmThreadId: runPm(row.run_id), writerThreadId: null,
         reason: `attempt queued ${Math.round((now - row.updated_at) / 60_000)} min while nothing runs in its run`, at: now });
