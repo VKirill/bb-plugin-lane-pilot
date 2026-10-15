@@ -81,7 +81,8 @@ const TASK_DONE = new Set(["accepted", "blocked", "canceled"]);
 /**
  * When Lane Pilot tells a PM its task results (one message for all of them, so one turn instead of a reminder each):
  * a blocked task needs the PM, so it goes once no other result came in the last minute (at most 5 minutes after it);
- * accepted and canceled ones go once none of the PM's tasks is still at work, or after 30 minutes of a long queue.
+ * accepted ones go once none of the PM's tasks is still at work, or after 30 minutes of a long queue.
+ * Canceled-only batches are marked reported with no message (the PM canceled them itself); a mixed batch sums them as a count.
  * Results older than a day were never deliverable (the PM thread is gone): they are dropped.
  */
 export const TASK_NOTICE = { settleMs:60_000, urgentMaxMs:5 * 60_000, quietMs:30_000, maxWaitMs:30 * 60_000, dropAfterMs:86_400_000 };
@@ -359,7 +360,9 @@ export function createRelay(deps:RelayDeps) {
 
   /** One message with the PM's task results and the notes of its reminders they satisfy; null when nothing is due yet. */
   function noticeText(rows:TaskOutcome[], atWork:string[], notes:RelayReminder[]):string {
-    const lines = rows.map((row) => `- ${row.taskId} — ${row.state}${row.state === "accepted" ? "" : row.reason ? `: ${row.reason.replace(/\s+/g, " ").slice(0, 300)}` : ""}`);
+    const canceled = rows.filter((row) => row.state === "canceled").length;
+    const lines = rows.filter((row) => row.state !== "canceled").map((row) => `- ${row.taskId} — ${row.state}${row.state === "accepted" ? "" : row.reason ? `: ${row.reason.replace(/\s+/g, " ").slice(0, 300)}` : ""}`);
+    if (canceled) lines.push(`- ${canceled} canceled`);
     const work = atWork.length ? `Still at work: ${atWork.length} (${atWork.slice(0, 8).join(", ")}${atWork.length > 8 ? ", …" : ""}).` : "None of your tasks is at work now.";
     const noted = notes.map((item) => `- (${clock(item.createdAt)}) ${item.note}`);
     return [
@@ -384,6 +387,10 @@ export function createRelay(deps:RelayDeps) {
     for (const row of outcomes) if (now - row.at <= TASK_NOTICE.dropAfterMs) byThread.set(row.pmThreadId, [...(byThread.get(row.pmThreadId) ?? []), row]);
     let sent = 0;
     for (const [threadId, rows] of byThread) {
+      if (rows.every((row) => row.state === "canceled")) {
+        await deps.markReported?.(rows);
+        continue;
+      }
       const reminders = items.filter((row):row is RelayReminder => row.kind === "remind" && !row.firedAt && row.threadId === threadId && !!row.taskIds?.length);
       const satisfied:RelayReminder[] = [];
       for (const item of reminders) {

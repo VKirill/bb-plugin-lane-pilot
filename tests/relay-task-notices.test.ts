@@ -137,6 +137,29 @@ describe("Lane Pilot tells a PM its task results by itself", () => {
     expect(h.sent).toHaveLength(1);
   });
 
+  it("canceled tasks alone do not wake the PM; they are marked reported", async () => {
+    const h = harness();
+    h.end("a", "canceled", "handover");
+    h.end("b", "canceled");
+    await h.relay.sweep();
+    expect(h.sent).toEqual([]);
+    expect(h.reported.map((row) => row.taskId).sort()).toEqual(["a", "b"]);
+  });
+
+  it("a message with an accepted task sums canceled ones into a count", async () => {
+    const h = harness();
+    h.end("keep", "accepted");
+    h.end("drop-1", "canceled");
+    h.end("drop-2", "canceled");
+    h.tick(TASK_NOTICE.quietMs);
+    await h.relay.sweep();
+    expect(h.sent).toHaveLength(1);
+    expect(h.sent[0]!.text).toContain("- keep — accepted");
+    expect(h.sent[0]!.text).toContain("2 canceled");
+    expect(h.sent[0]!.text).not.toContain("drop-1");
+    expect(h.sent[0]!.text).not.toContain("drop-2");
+  });
+
   it("drops results it could not deliver for a day instead of trying for ever", async () => {
     let busy = true;
     const h = harness({ busy:() => busy });
