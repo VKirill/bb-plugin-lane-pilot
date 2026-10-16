@@ -1,6 +1,6 @@
 ---
 title: Lane Pilot project facts
-updated: 2026-10-14
+updated: 2026-10-16
 sources:
   - package.json
   - server.ts
@@ -11,6 +11,10 @@ sources:
   - src/rooms/storage/database.ts
   - src/rooms/writer/server/dispatch.ts
   - src/rooms/writer/server/start.ts
+  - src/rooms/writer/server/reopen-attempt.ts
+  - src/rooms/self-repair/server/self-repair.ts
+  - src/rooms/relay/server/relay.ts
+  - src/rooms/verification/sandbox.ts
   - src/rooms/writer/server/verify.ts
   - src/rooms/writer/server/finish.ts
   - src/rooms/critique/server/critique-runs.ts
@@ -53,6 +57,8 @@ sources:
 - Writer workspace branches and no-Git rollback mode are documented in [ADR 1](docs/decisions.md#adr-1-isolate-writer-workspaces) and [gotchas](docs/gotchas.md).
 - Moved-main replay checks and path ownership outcomes are documented in [validator decisions](docs/validator-decisions.md).
 - Host checkout writes and acceptance checks participate in the reload drain ([deployment](docs/deployment.md#configuration-and-runtime)).
+- Self-repair and task-result notice behavior is summarized in [cross-cutting gotchas](docs/gotchas.md).
+- Verification output capture limits are documented in [cross-cutting gotchas](docs/gotchas.md).
 - Workflow, UI-kit, and world-simulation internals belong to their [workspace docs](docs/overview.md#workspaces).
 
 ## Conventions

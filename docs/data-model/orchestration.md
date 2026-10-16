@@ -2,14 +2,14 @@
 title: Orchestration and execution data
 type: data-model
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-16
 status: active
 confidence: medium
 tags: [data-model, orchestration, execution]
 sources:
   - src/rooms/storage/database.ts
+  - src/rooms/relay/server/relay.ts
   - src/rooms/runs/server/stage-records.ts
-  - src/rooms/storage/database.ts
   - src/rooms/writer/server/dispatch.ts
   - src/rooms/writer/server/finish.ts
   - src/rooms/usage/server/token-usage.ts
@@ -52,7 +52,8 @@ Tables are created or extended in the ordered plugin migration list (`src/rooms/
 | `lane_pilot_stage_event` | Event id; project/run/task/stage; state; input/output hashes; attempt; occurrence time. | Append-only trigger rejects updates and deletes; state and attempt values match stage receipt (`src/rooms/storage/database.ts:172-186`). | Stage transition recorder writes; analytics reads. |
 | `lane_pilot_gate_event` | Event id; project/run/task; gate; status; hashes; attempt; occurrence time. | Gates are `owns-paths`, `validate`, `accept`, `verification`; statuses are `passed`, `rejected`, `failed`, `skipped`; append-only trigger blocks mutation (`src/rooms/storage/database.ts:187-201`). | Ownership, validation, acceptance and verification code write; monitor/analytics read. |
 | `lane_pilot_task_git_base` | Task id; base ref and SHA; initial head SHA; branch; committed-diff flag; capture time. | One row per task; `compare_committed` is 0 or 1 (`src/rooms/storage/database.ts:202-210`). | Workspace setup writes; ownership and acceptance compare against it. |
-| `lane_pilot_attempt_transition` | Attempt id; previous and next state; reason; refused flag; timestamp. | Transition history is append-only by usage; refusal flag defaults to 0 (`src/rooms/storage/database.ts:955-985`). | Attempt transition helper writes; run diagnostics reads. |
+| `lane_pilot_attempt_transition` | Attempt id; previous and next state; reason; refused flag; timestamp. | Transition history records accepted and refused moves; refusal flag defaults to 0 (`src/rooms/storage/database.ts:241-244`, `:1021-1054`). | Attempt transition helper writes; run diagnostics and task-notice lookup read. |
+| `lane_pilot_pm_notice` | `transition_id` identifies a terminal attempt transition; `attempt_id` identifies its attempt; `pm_thread_id` identifies the recipient; `sent_at` is epoch milliseconds. | Primary key on `transition_id` prevents handling the same transition twice (`src/rooms/storage/database.ts:322-330`, `:890-892`). | Relay records handled outcomes; outcome lookup excludes recorded transitions (`src/rooms/relay/server/relay.ts:380-415`, `src/rooms/storage/database.ts:869-892`). Delivery and suppression rules are in [cross-cutting gotchas](../gotchas.md#stability-and-local-provider-setup). No cleanup job deletes these rows. |
 | `lane_pilot_token_daily` | UTC day; project/provider/model; input, output, cached, total, uncached, cache-read and cache-write token counts. | Composite primary key `(day,project_id,provider_id,model)`; counts are token units (`src/rooms/storage/database.ts:245-270`). | Usage importer aggregates; usage screens and Pixel World inputs read. |
 | `lane_pilot_token_cursor` | Thread id; project/provider; last sequence and event JSON; cumulative JSON; last model/provider/turn; update time. | One cursor row per thread (`src/rooms/storage/database.ts:256-267`). | Usage event ingestion writes; replay/recovery reads. |
 | `lane_pilot_check_duration` | Project id; normalized command key; duration milliseconds; exit code; event time. | Rows record observed command runs; duration unit is milliseconds (`src/rooms/storage/database.ts:275-277`). | Verification writes; adaptive timeout selection reads. |
@@ -62,13 +63,14 @@ Tables are created or extended in the ordered plugin migration list (`src/rooms/
 
 | From | To | Writer and condition |
 |---|---|---|
-| Attempt state | Next attempted state | `transitionAttempt` checks legal moves and records each accepted or refused transition (`src/rooms/storage/database.ts:955-985`; `src/rooms/writer/server/dispatch.ts:12`). |
+| Attempt state | Next attempted state | `transitionAttempt` checks legal moves and records each accepted or refused transition (`src/rooms/storage/database.ts:1021-1054`; `src/rooms/writer/server/dispatch.ts:12`). |
+| Terminal attempt outcome | Reported or suppressed | Relay records a handled outcome; see [cross-cutting gotchas](../gotchas.md#stability-and-local-provider-setup) for delivery conditions (`src/rooms/relay/server/relay.ts:380-415`). |
 | Stage receipt state | `pending` → `running` → terminal | Stage runners write a unique `(run, task, stage)` receipt; stage events preserve change history (`src/rooms/storage/database.ts:138-186`). |
 | Run state | `pending` → `running` → `accepted` or `blocked`; then `closed` | Run state transitions and abandonment handling use run storage helpers (`src/rooms/storage/database.ts:40-47`, `:78-94`). |
 
 ## Retention and cleanup
 
-This migration file defines cleanup for obsolete in-memory lesson rows and orphaned FTS entries, not a general TTL for orchestration rows (`src/rooms/storage/database.ts:235-238`). Finished attempt workspaces and sticky lane worktrees are cleaned by scheduled jobs in the plugin entry (`server.ts:111-125`).
+This migration file defines cleanup for obsolete in-memory lesson rows and orphaned FTS entries, not a general TTL for orchestration or PM-notice rows (`src/rooms/storage/database.ts:235-238`, `:322-330`). Finished attempt workspaces and sticky lane worktrees are cleaned by scheduled jobs in the plugin entry (`server.ts:111-125`).
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by
