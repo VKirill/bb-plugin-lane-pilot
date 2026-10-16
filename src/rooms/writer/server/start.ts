@@ -60,9 +60,14 @@ export function familyFailureRecord(db:ReturnType<typeof openDatabase>, runId:st
   return last ? { state:last.state, reason:last.reason } : null;
 }
 
+/** The tasks whose writer passed admission, per plugin instance: the files they own are theirs until their last attempt ends. */
+const admittedByCore = new WeakMap<object, Map<string, { runId:string; taskId:string; projectId:string }>>();
+
 export function createWriterStart(ctx: ServerCore, services: Services) {
   const { bb, db, effectiveProjectSettings, host, markCanceledWriterStages, refreshRun, runPolicyFor } = ctx;
   const sticky = createWriterSticky(ctx, services);
+  const admitted = admittedByCore.get(ctx) ?? new Map<string, { runId:string; taskId:string; projectId:string }>();
+  admittedByCore.set(ctx, admitted);
 
   /** The breaker learns from provider trouble only; the budget learns the thread's token total. */
   async function noteAttemptOutcome(input:{ budget:RunBudget; writerThreadId:string; writerSelection?:{providerId:string;model:string}; status:string; reason:string|null }): Promise<void> {
@@ -267,7 +272,17 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         const open = listOpenAttempts(db);
         const mine = open.findIndex((row) => row.id === attemptId);
         if (mine < 0) return;
-        const blocker = open.slice(0, mine).find((row) => {
+        const ahead = open.slice(0, mine);
+        // A task whose writer already started keeps its files through its redos. A redo is a new attempt row, later than the
+        // tasks queued behind the first one, and between two attempts the task has no open row at all: read by row order
+        // alone, those tasks started beside the redo and one of the two met a merge_conflict (SelfyStudio 2026-10-14/15:
+        // chat-free-muse-trial-api started 12 s after chat-limits-truthful's replay went red, pricing-ladder-v2 likewise).
+        for (const held of admitted.values()) {
+          if (held.taskId === input.taskId || ahead.some((row) => row.run_id === held.runId && row.task_id === held.taskId)) continue;
+          ahead.push(open.find((row) => row.run_id === held.runId && row.task_id === held.taskId)
+            ?? { id:`${held.runId}:${held.taskId}`, run_id:held.runId, task_id:held.taskId, thread_id:null, state:"running", project_id:held.projectId });
+        }
+        const blocker = ahead.find((row) => {
           if (row.task_id === input.taskId || row.project_id !== input.projectId) return false;
           const rowBase = taskBasePath(db, row.run_id, row.task_id);
           const parsed = taskV2Schema.safeParse(getTask(db,row.task_id)?.contract);
@@ -405,6 +420,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       // behind it, so it queued behind them while its writer had long finished (SelfyStudio 2026-10-15: stickers-landing-
       // showcase and webapp-ideas-home «running» about an hour with an idle writer).
       if (!input.turnSent && !await waitForAdmission()) return;
+      admitted.set(key, { runId:input.runId, taskId:input.taskId, projectId:input.projectId });
       const latestAttempt=getAttempt(db,attemptId);
       if(!latestAttempt||["canceled","blocked","accepted"].includes(latestAttempt.state)){
         if(latestAttempt?.state==="canceled"){
@@ -937,6 +953,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       }
     }).finally(() => {
       releaseWriterSlot?.();
+      admitted.delete(key);
       services.activeWriterTasks.delete(key);
     });
   }
