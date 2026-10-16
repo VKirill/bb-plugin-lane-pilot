@@ -349,3 +349,47 @@ it("takes no provider slot when ops.provider_pool lists another provider or is u
   expect(acquired.map((row) => row.key)).toEqual(["run1"]);
   await env.harness.lifecycle.dispose();
 });
+
+it("keeps a task with overlapping owns_paths queued while the running task is redone on a new attempt (SelfyStudio 2026-10-14/15 merge_conflict)", async () => {
+  const env = setup();
+  const shared = (id: string): TaskV2 => ({ ...contract(id), owns_paths: ["apps/api/src/routes/v1/chat-sessions/"], expected_outputs: [`apps/api/src/routes/v1/chat-sessions/${id}.ts`] });
+  const begin = (svc: Services, task: TaskV2) => {
+    createTask(env.db, { id: task.id, runId: "run1", kind: "bb", contract: task });
+    saveTaskPlan(env.db, task.id, `Plan for ${task.id}`);
+    for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) recordStage(env.db, { runId: "run1", taskId: task.id, stageId, state: "pending", input: `Plan for ${task.id}` });
+    createAttempt(env.db, { id: `${task.id}-a1`, runId: "run1", taskId: task.id });
+    Object.assign(svc, createWriterStart(env.ctx, svc));
+    svc.startWriterTask({ projectId: "proj1", runId: "run1", taskId: task.id, firstAttemptId: `${task.id}-a1`, pmThreadId: "thr_pm", config, task, plan: `Plan for ${task.id}` });
+  };
+  // chat-limits-truthful: its first attempt's checks go red after the replay on main, the same writer redoes it.
+  const t1 = services(env, [{ diff: "d1" }, { accept: true }], false);
+  const gate = () => { let resolve = () => undefined as void; const promise = new Promise<void>((done) => { resolve = done; }); return { promise, resolve }; };
+  const gates = [gate(), gate()];
+  let finishes = 0;
+  const finish = t1.all.finishWriterAttempt;
+  t1.all.finishWriterAttempt = (async (input: never) => { await gates[finishes++]!.promise; return finish(input); }) as never;
+  begin(t1.all, shared("T1"));
+  await vi.waitFor(() => expect(finishes).toBe(1));
+  // chat-free-muse-trial-api is dispatched while T1 runs: it owns the same folder, so it queues behind T1.
+  await new Promise((wake) => setTimeout(wake, 5));
+  vi.useFakeTimers({ toFake: ["setTimeout"] });
+  const t2 = services(env, [{ accept: true }], false);
+  begin(t2.all, shared("T2"));
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(t2.spawned).toEqual([]);
+  // T1's first attempt fails; its redo is a new attempt row, created after T2's queued one.
+  gates[0]!.resolve();
+  for (let i = 0; i < 50 && finishes < 2; i++) await vi.advanceTimersByTimeAsync(1_000);
+  expect(finishes).toBe(2);
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(t2.spawned).toEqual([]);
+  expect(writerStage(env.db, "T2")).toMatchObject({ state: "pending", reason: expect.stringContaining("waiting for T1") });
+  // T1 is accepted and its writer loop ends: T2 starts now, on a main that has T1's work.
+  gates[1]!.resolve();
+  for (let i = 0; i < 50 && t1.all.activeWriterTasks.size; i++) await vi.advanceTimersByTimeAsync(1_000);
+  expect(t1.all.activeWriterTasks.size).toBe(0);
+  await vi.advanceTimersByTimeAsync(10_000);
+  vi.useRealTimers();
+  await vi.waitFor(() => expect(t2.spawned).toEqual(["T2-a1"]));
+  await env.harness.lifecycle.dispose();
+}, 30_000);
