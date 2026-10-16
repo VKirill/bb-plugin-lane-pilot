@@ -2,7 +2,7 @@
 title: Cross-cutting gotchas
 type: gotchas
 created: 2026-10-10
-updated: 2026-10-14
+updated: 2026-10-16
 status: active
 confidence: medium
 tags: [gotchas, runtime, failure-modes]
@@ -10,10 +10,15 @@ sources:
   - src/rooms/writer/live-folder.ts
   - src/rooms/writer/server/dispatch.ts
   - src/rooms/writer/server/start.ts
+  - src/rooms/writer/server/reopen-attempt.ts
   - src/rooms/writer/server/verify.ts
   - src/rooms/writer/server/finish.ts
   - src/rooms/stability/server/stability.ts
   - src/rooms/self-repair/server/self-repair.ts
+  - src/rooms/relay/server/relay.ts
+  - src/rooms/verification/sandbox.ts
+  - packages/kit/src/spawn-async.ts
+  - packages/kit/src/output-capture.ts
   - src/rooms/core/server/opencode-minimal.ts
   - src/rooms/native-agent/server/helper-bb-shim.ts
   - src/rooms/stability/server/deploy-drain.ts
@@ -46,6 +51,8 @@ A repeat dispatch of the same task id, contract, and plan within 30 minutes retu
 
 A run with a pre-merge gate records a blocked run-gate receipt, records the PM-read, plan-critique, specialist-review, writer-agent, verification, and acceptance-receipt stages as skipped, sets the run to blocked, and returns before creating an attempt (`src/rooms/writer/server/dispatch.ts:184-193`).
 
+If a reload interrupts dispatch before the ownership base is taken, recovery restarts its stored stages for the same attempt when the workflow engine has a pipeline record; helper stages restart except a passed PM-read. It blocks with a reason when the engine is off, no pipeline record exists, the base was taken, or the resume limit was exceeded (`src/rooms/writer/server/dispatch.ts:604-641`). A writer reopened after a PM answer or contract fix is sent directly back into its existing thread and skips admission waits it already passed on the first start (`src/rooms/writer/server/reopen-attempt.ts:77-111`, `src/rooms/writer/server/start.ts:402-407`).
+
 ## Event and polling behavior
 
 BB thread lifecycle events wake watchers, but the thread's final status comes from a fresh read and a 20-second fallback poll covers missed events (`packages/thread-observe/src/signals.ts:3-10`). `LANE_PILOT_THREAD_SIGNALS=0` disables signal subscriptions; it also leaves polling as the watcher path (`packages/thread-observe/src/signals.ts:84-99`, `src/rooms/core/server/lifecycle-events.ts:22-37`). Poll pauses can be scaled for test environments by `LANE_PILOT_POLL_SCALE` (`packages/kit/src/pace.ts:1-8`).
@@ -64,6 +71,12 @@ Reload drain covers checkout-writing host methods and `runSandboxedCommand` acce
 
 Before saving a non-dry-run tick, self-repair drops the oldest eligible signatures while its serialized state exceeds 200 KiB; it does not prune signatures with a worktree or pending spawn. Loading state truncates each stored incident reason to 1,000 characters (`src/rooms/self-repair/server/self-repair.ts:127-141`, `:287-307`, `:675-680`).
 
+The self-repair prompt tells its agent to contact a live PM only when that PM must act; for an idle PM it puts the next action in the repair report (`src/rooms/self-repair/server/self-repair.ts:307-319`). The queued-task watcher ignores a task while a dependency is queued, being spawned, running, or being canceled, and waits through the blocked-dependency redo window; a fallback chain that ends without acceptance transitions its last retry-eligible attempt to `blocked` (`src/rooms/self-repair/server/self-repair.ts:388-399`, `:437-449`, `src/rooms/writer/server/start.ts:837-844`).
+
+Relay groups task outcomes for a PM. A canceled-only group is recorded as reported without sending a message; a mixed group includes canceled tasks as a count. A task-result message is held while the PM thread is busy (`src/rooms/relay/server/relay.ts:361-372`, `:380-415`).
+
+Sandboxed checks use `spawnAsync` with `keepEnds`, so excess stdout/stderr is truncated to head-and-tail captures instead of terminating the check; stderr is capped separately after process completion (`src/rooms/verification/sandbox.ts:20-30`, `:210-217`, `:222-242`). `spawnAsync` without `keepEnds` still enforces its 1 MiB per-stream `maxBuffer` default (`packages/kit/src/spawn-async.ts:17-21`, `:40-45`).
+
 ## Test isolation
 
 Vitest assigns one scratch directory per run to `TMPDIR`, `TEMP`, and `TMP`; teardown removes it, and a later run sweeps directories left by dead processes (`tests/global-setup.ts:9-35`, `tests/tmpdir-isolation.test.ts:7-17`). Node files that mock modules and selected UI files run in isolated Vitest projects; the shared UI matrix gets a 60-second test timeout and empties the DOM before and after each test (`vitest.config.ts:4-32`, `tests/ui-matrix/helpers.tsx:6-26`).
@@ -73,4 +86,5 @@ Vitest assigns one scratch directory per run to `TMPDIR`, `TEMP`, and `TMP`; tea
 <!-- lane-pilot:backlinks -->
 ## Referenced by
 
+- [Orchestration and execution data](data-model/orchestration.md)
 - [Lane Pilot overview](overview.md)
