@@ -2,7 +2,7 @@
 title: Server core construction
 type: component
 created: 2026-10-16
-updated: 2026-10-16
+updated: 2026-10-17
 status: active
 confidence: medium
 tags: [server, core, host-calls]
@@ -11,6 +11,7 @@ sources:
   - src/rooms/core/server/rpc.ts
   - src/rooms/core/server/services.ts
   - packages/host-calls/src/host-jobs.ts
+  - packages/thread-observe/src/signals.ts
   - server.ts
 ---
 
@@ -27,13 +28,28 @@ TL;DR: `createCore` builds the shared server context, host client wrappers, sett
 1. It creates disposal state, registers a hook to mark the core disposed, wraps available logger methods with secret redaction on a best-effort basis, installs illegal-transition logging, mounts realtime/helper signals, and creates owner-ask support (`src/rooms/core/server/core.ts:31-47`). A frozen logger remains unchanged.
 2. It creates the raw host client from `hostContract`, then prepares a cached Jev endpoint. The selected provider key is read from Env Catalog, trimmed and cached for ten minutes; lookup failure becomes no key. If the chosen non-TypeSafe provider has no key, core tries the TypeSafe key (`src/rooms/core/server/core.ts:48-90`).
 3. It creates deploy drain and wraps the raw host call. The wrapper supplies the active schedule signal when none was provided, removes internal job options, and places every request inside deploy-drain tracking (`src/rooms/core/server/core.ts:91-117`).
-4. Before a direct Jev method call, it resolves provider credentials and adds them to the input only when a key is available. Calls that meet the host-job predicate go through `createHostJobs`; sandboxed commands require an explicit `job:true`, and `LANE_PILOT_HOST_JOBS=0` forces direct calls (`src/rooms/core/server/core.ts:50-53`, `:109-117`).
+4. Before a direct Jev method call, it resolves provider credentials and adds them to the input only when a key is available. Calls that meet the host-job predicate go through `createHostJobs`; sandboxed commands require an explicit `job:true`, and `LANE_PILOT_HOST_JOBS=0` forces direct calls (`src/rooms/core/server/core.ts:109-117`).
 5. It builds native installation support using BB's lifecycle capability. Its native host wrapper calls `nativeInstaller.ensure(hostId)` before `prepareNativeClaude`, then forwards the host request (`src/rooms/core/server/core.ts:122-134`).
 6. It defines serialized KV operations that continue after a previous operation rejects, settings inheritance, and context helpers for bindings, workspace execution and run state. It returns those helpers with the SDK, database, host clients, secrets, realtime, owner ask, output guard and deploy drain (`src/rooms/core/server/core.ts:136-153`, `:155-217`, `:377-384`).
 
+### Plugin factory
+
+1. `plugin(bb)` opens the database, installs thread signals, builds the core, binds the tool locale, and creates the shared services bag (`server.ts:55-62`).
+2. It constructs room services in dependency order, mounts lifecycle forwarding, registers RPC and world/canary/learning integrations, then registers tools, CLI, assets, anamnesis and the optional Lane worktree provider (`server.ts:63-110`).
+3. It defines isolated scheduled sweeps and a background startup recovery service. Startup recovery resumes helper stages, restores breakers, records canary start, reconciles tasks, and then adopts waiting rules and recovers owner questions and browser checks (`server.ts:111-154`, `:155-214`).
+4. Workflow schedule sync, run sweep, and schedule-board tick are registered after recovery (`server.ts:215-221`).
+
+| Factory branch | Condition | Result or failure |
+|---|---|---|
+| Thread wakeups | BB accepts thread lifecycle subscriptions. | Events wake watchers; without support the watcher polling path remains (`server.ts:57-58`, `packages/thread-observe/src/signals.ts:84-99`). |
+| Worktree provider | BB exposes the provider API. | Provider registers; otherwise no provider is registered and attempts use the existing worktree path (`server.ts:108-110`). |
+| Clean prior drain | Startup recovery finds a clean drain snapshot. | Redundant startup run, worktree and parked-task scans are left to their periodic schedules (`server.ts:173-185`, `:198-201`). |
+| Initialization and registration | A synchronous constructor or registration call throws. | `plugin` has no outer catch, so its factory promise rejects (`server.ts:55-110`). |
+| Scheduled or recovery work | A sweep or startup step fails. | Scheduled callbacks log and settle their local error path; startup `step` logs a failure and proceeds to the next step (`server.ts:111-133`, `:163-166`, `:215-221`). |
+
 | Branch | Condition | Result or failure |
 |---|---|---|
-| Jev credential lookup | Env Catalog returns a nonblank key, returns no value, or throws. | Trimmed key is cached; missing or failed lookup caches undefined. A missing key for a selected non-TypeSafe provider triggers a TypeSafe-key fallback (`src/rooms/core/server/core.ts:55-69`, `:74-87`). |
+| Jev credential lookup | Env Catalog returns a nonblank key, returns no value, or throws. | The trimmed catalog result is cached for ten minutes; missing values and lookup failures cache as undefined (`src/rooms/core/server/core.ts:55-69`). If the selected provider is not TypeSafe and has no key, core checks the TypeSafe key and switches the endpoint only when that key exists; otherwise the selected endpoint remains without a key (`src/rooms/core/server/core.ts:74-87`). |
 | Background host job | Environment permits jobs and method is a job kind; sandboxed command additionally has `job:true`. | Job wrapper returns host result or rejects on job error, abort, disposal or timeout (`src/rooms/core/server/core.ts:114-117`, `packages/host-calls/src/host-jobs.ts:73-88`). |
 | Native prepare | Method name is `prepareNativeClaude`. | Installer ensure runs first; ensure errors prevent the host call (`src/rooms/core/server/core.ts:129-133`). |
 | Logger wrapping | Logger method exists and assignment is permitted. | Redaction wrapper is assigned; frozen logger assignment failure is swallowed (`src/rooms/core/server/core.ts:35-39`). |

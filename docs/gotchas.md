@@ -2,7 +2,7 @@
 title: Cross-cutting gotchas
 type: gotchas
 created: 2026-10-10
-updated: 2026-10-16
+updated: 2026-10-17
 status: active
 confidence: medium
 tags: [gotchas, runtime, failure-modes]
@@ -25,6 +25,7 @@ sources:
   - src/rooms/core/server/lifecycle-events.ts
   - packages/thread-observe/src/signals.ts
   - packages/thread-observe/src/completion.ts
+  - src/rooms/writer/server/start.ts
   - packages/kit/src/pace.ts
   - scripts/record_and_guard.py
   - scripts/test-full.sh
@@ -47,15 +48,17 @@ TL;DR: Workspace mode, host capabilities, event delivery, and isolated test setu
 
 ## Dispatch and retries
 
-A repeat dispatch of the same task id, contract, and plan within 30 minutes returns the existing task when the latest attempt is not blocked or canceled; it creates no second task (`src/rooms/writer/server/dispatch.ts:79-93`, `:139-141`). A task from the same task-id family is rejected while a sibling attempt is open or parked, except `mainfix` tasks (`src/rooms/writer/server/dispatch.ts:95-103`, `:142-148`).
+A repeat dispatch of the same task id, contract, and plan within 30 minutes returns the existing task when its latest attempt is neither blocked nor canceled; before an attempt exists, it returns the existing task only if no stage receipt is blocked or failed (`src/rooms/writer/server/dispatch.ts:96-109`, `:181-183`). A task from the same task-id family is rejected while a sibling attempt is open or parked, except `mainfix` tasks (`src/rooms/writer/server/dispatch.ts:112-120`, `:184-189`).
 
-A run with a pre-merge gate records a blocked run-gate receipt, records the PM-read, plan-critique, specialist-review, writer-agent, verification, and acceptance-receipt stages as skipped, sets the run to blocked, and returns before creating an attempt (`src/rooms/writer/server/dispatch.ts:184-193`).
+A run with a pre-merge gate records a blocked run-gate receipt, records the PM-read, plan-critique, specialist-review, writer-agent, verification, and acceptance-receipt stages as skipped, sets the run to blocked, and returns before creating an attempt (`src/rooms/writer/server/dispatch.ts:198-208`).
 
-If a reload interrupts dispatch before the ownership base is taken, recovery restarts its stored stages for the same attempt when the workflow engine has a pipeline record; helper stages restart except a passed PM-read. It blocks with a reason when the engine is off, no pipeline record exists, the base was taken, or the resume limit was exceeded (`src/rooms/writer/server/dispatch.ts:604-641`). A writer reopened after a PM answer or contract fix is sent directly back into its existing thread and skips admission waits it already passed on the first start (`src/rooms/writer/server/reopen-attempt.ts:77-111`, `src/rooms/writer/server/start.ts:402-407`).
+If a reload interrupts dispatch before the ownership base is taken, recovery restarts its stored stages for the same attempt when the workflow engine has a pipeline record; helper stages restart except a passed PM-read. It blocks with a reason when the engine is off, no pipeline record exists, the base was taken, or the resume limit was exceeded (`src/rooms/writer/server/dispatch.ts:604-641`). A writer reopened after a PM answer or contract fix is sent directly back into its existing thread and skips admission waits it already passed on the first start (`src/rooms/writer/server/reopen-attempt.ts:77-111`, `src/rooms/writer/server/start.ts:417-423`).
+
+After a task passes writer admission, it holds its ownership paths through its redo and fallback attempts. A queued task in the same project and checkout waits when its `owns_paths` overlap or its area matches; the hold is in memory and is released when the writer loop finishes (`src/rooms/writer/server/start.ts:63-70`, `:254-305`, `:422-423`, `:954-958`).
 
 ## Event and polling behavior
 
-BB thread lifecycle events wake watchers, but the thread's final status comes from a fresh read and a 20-second fallback poll covers missed events (`packages/thread-observe/src/signals.ts:3-10`). `LANE_PILOT_THREAD_SIGNALS=0` disables signal subscriptions; it also leaves polling as the watcher path (`packages/thread-observe/src/signals.ts:84-99`, `src/rooms/core/server/lifecycle-events.ts:22-37`). Poll pauses can be scaled for test environments by `LANE_PILOT_POLL_SCALE` (`packages/kit/src/pace.ts:1-8`).
+BB thread lifecycle events wake watchers, but the thread's final status comes from a fresh read and a 20-second fallback poll covers missed events (`packages/thread-observe/src/signals.ts:3-10`). For a thread whose status is `error`, the completion detail appends a detected thread failure cause to `thread_status_error:`; without a detected cause it remains `thread_status_error` (`packages/thread-observe/src/completion.ts:86-90`, `:150-178`). `LANE_PILOT_THREAD_SIGNALS=0` disables signal subscriptions; it also leaves polling as the watcher path (`packages/thread-observe/src/signals.ts:84-99`, `src/rooms/core/server/lifecycle-events.ts:22-37`). Poll pauses can be scaled for test environments by `LANE_PILOT_POLL_SCALE` (`packages/kit/src/pace.ts:1-8`).
 
 Lifecycle-event registration is best-effort: BB versions that do not recognize an event produce a log entry while scheduled sweeps remain the recovery mechanism (`src/rooms/core/server/lifecycle-events.ts:26-37`). Archived or deleted PM threads close abandoned runs only when the run has no open attempt (`src/rooms/core/server/lifecycle-events.ts:39-48`).
 
@@ -69,11 +72,11 @@ Codex and Cursor helpers use the BB shim contributor; OpenCode uses it alongside
 
 Reload drain covers checkout-writing host methods and `runSandboxedCommand` acceptance checks. Other host calls bypass the drain; an active drain blocks new covered calls while existing calls finish, and an expired drain stops blocking after 20 minutes (`src/rooms/stability/server/deploy-drain.ts:1-25`). A lifecycle drain can reach its deadline with calls still in flight and records `clean: false` with their method names and ages (`src/rooms/stability/server/deploy-drain.ts:65-79`).
 
-Before saving a non-dry-run tick, self-repair drops the oldest eligible signatures while its serialized state exceeds 200 KiB; it does not prune signatures with a worktree or pending spawn. Loading state truncates each stored incident reason to 1,000 characters (`src/rooms/self-repair/server/self-repair.ts:127-141`, `:287-307`, `:675-680`).
+Before saving a non-dry-run tick, self-repair drops the oldest eligible signatures while its serialized state exceeds 200 KiB; it does not prune signatures with a worktree or pending spawn. Loading state truncates each stored sample reason to 1,000 characters (`src/rooms/self-repair/server/self-repair.ts:151`, `:364-368`); the repair prompt separately clips displayed reasons to 600 characters (`:302-304`).
 
 The self-repair prompt tells its agent to contact a live PM only when that PM must act; for an idle PM it puts the next action in the repair report (`src/rooms/self-repair/server/self-repair.ts:307-319`). The queued-task watcher ignores a task while a dependency is queued, being spawned, running, or being canceled, and waits through the blocked-dependency redo window; a fallback chain that ends without acceptance transitions its last retry-eligible attempt to `blocked` (`src/rooms/self-repair/server/self-repair.ts:388-399`, `:437-449`, `src/rooms/writer/server/start.ts:837-844`).
 
-Relay groups task outcomes for a PM. A canceled-only group is recorded as reported without sending a message; a mixed group includes canceled tasks as a count. A task-result message is held while the PM thread is busy (`src/rooms/relay/server/relay.ts:361-372`, `:380-415`).
+Relay groups task outcomes for a PM. A canceled-only group is recorded as reported without sending a message; a mixed group includes canceled tasks as a count. Within the 24-hour notice window, a due group stays unreported when the PM thread is busy, the busy check fails, or sending fails, so a later sweep can retry it. Outcomes older than the window are marked reported without a notice. The background relay sweep runs every 30 seconds (`src/rooms/relay/server/relay.ts:88`, `:380-419`, `:614-620`).
 
 Sandboxed checks use `spawnAsync` with `keepEnds`, so excess stdout/stderr is truncated to head-and-tail captures instead of terminating the check; stderr is capped separately after process completion (`src/rooms/verification/sandbox.ts:20-30`, `:210-217`, `:222-242`). `spawnAsync` without `keepEnds` still enforces its 1 MiB per-stream `maxBuffer` default (`packages/kit/src/spawn-async.ts:17-21`, `:40-45`).
 

@@ -2,9 +2,9 @@
 title: Shared packages
 type: component
 created: 2026-10-10
-updated: 2026-10-14
+updated: 2026-10-17
 status: active
-confidence: medium
+confidence: low
 tags: [packages, api, monorepo]
 sources:
   - packages/contracts/src/index.ts
@@ -30,6 +30,9 @@ sources:
   - packages/handoff/src/messages.ts
   - packages/host-calls/src/run-on-host.ts
   - packages/jev/src/run.ts
+  - packages/jev/src/client.ts
+  - packages/jev/src/registry.ts
+  - packages/jev/src/thresholds.ts
   - packages/kit/package.json
   - packages/thread-observe/src/signals.ts
   - src/rooms/storage/database.ts
@@ -45,9 +48,11 @@ sources:
   - src/rooms/core/server/rpc-timing.ts
   - src/rooms/contracts/index.ts
   - src/rooms/contracts/rpc-runs.ts
+  - src/rooms/contracts/rpc-ops.ts
   - src/rooms/memory/server/session-memory.ts
   - server.ts
   - package.json
+  - src/rooms/contracts/rpc-shell.ts
 ---
 
 # Shared packages
@@ -63,15 +68,15 @@ TL;DR: Small workspaces hold reusable contracts and services shared by Lane Pilo
 | `@lane-pilot/handoff` | Handoff card contracts, state transitions, storage, message formatting, receipt parsing and capability registry (`packages/handoff/src/index.ts:1-2`). `handoffMessage` includes objective, acceptance lines, inputs, budget and a fenced receipt format (`packages/handoff/src/messages.ts:12-37`). | Relay and task handoff services. |
 | `@lane-pilot/host-calls` | Host job client plus `runOnHost`, a typed `runCommand` wrapper that sends host id in both payload and options (`packages/host-calls/src/run-on-host.ts:8-31`). | Writer, verification, scheduling and host-worker rooms. |
 | `@lane-pilot/i18n` | Locale selection, `t()`, and typed English and Russian dictionaries, including the Tasks board strings (`packages/i18n/src/i18n.ts:2047-2052`, `:2064-2079`, `:2117-2119`, `packages/i18n/src/i18n-board.ts:1-4`). | Room UI and plugin app. |
-| `@lane-pilot/jev` | Typed Jev client, judgment registry, thresholds, batch runner and receipts; importing a judgment module registers it (`packages/jev/src/index.ts:1-9`, `packages/jev/src/run.ts:56-63`). | Core and judgment-owning rooms. See [Jev adapter](jev-adapter.md). |
+| `@lane-pilot/jev` | See the ordered `createJev` execution steps, modes and failures under [Package operations](#package-operations). Importing a judgment module registers it (`packages/jev/src/index.ts:1-9`). | Core and judgment-owning rooms. See [Jev adapter](jev-adapter.md) and [Jev run details](package-operations.md#jev-run). |
 | `@lane-pilot/kit` | Node helpers for hashing, redaction, process spawning, bounded reads and JSONC patching, with a browser-safe `owns-paths` subpath (`packages/kit/src/index.ts:1-9`, `packages/kit/package.json:1-15`). | Server rooms and selected UI modules. |
 | `@lane-pilot/memory-core` | Project memory records, audiences, retrieval, budgets, file import/export and SQLite helpers (`packages/memory-core/src/index.ts:1-23`). | Memory, writer context and run-insights. |
 | `@lane-pilot/models` | Provider/model catalog normalization, reasoning compatibility, presets and model pricing (`packages/models/src/index.ts:1-5`). | Native-agent, settings, Jev selection and usage rooms. |
-| `@lane-pilot/pixel-world` | Three.js scene primitives, assets, people, vehicles, navigation and static mesh batching. `batchStatic` merges eligible static meshes by transparency and leaves excluded mesh classes out (`packages/pixel-world/src/batch.ts:45-104`). The root entry exports `createNavGrid` for obstacle-aware point checks and pathfinding (`packages/pixel-world/src/index.ts:1-8`, `packages/pixel-world/src/nav.ts:34-38`). | World UI. |
+| `@lane-pilot/pixel-world` | Three.js scene primitives, assets, people, vehicles, navigation and static mesh batching. See ordered `batchStatic` and `createNavGrid` steps, branch outcomes and failures under [Package operations](#package-operations). | World UI. |
 | `@lane-pilot/resilience` | Provider/model circuit breaker and per-run token, time and attempt budgets (`packages/resilience/src/index.ts:1-25`). | Writer dispatch and stability. |
 | `@lane-pilot/run-insights` | Acceptance statistics, failure triage, rule proposals, lesson sourcing and golden memory cases (`packages/run-insights/src/index.ts:1-2`). | Runs, learning, memory and self-repair rooms. |
 | `@lane-pilot/settings-catalog` | Setting keys, defaults, UI catalog, provider pool parsing and bookkeeping path rules (`packages/settings-catalog/src/index.ts:1-5`). | Settings, writer and verification rooms. |
-| `@lane-pilot/thread-observe` | BB thread signal subscription plus completion classification and waiting. `decideThreadCompletion` classifies fresh thread reads; events only wake the watcher (`packages/thread-observe/src/completion.ts:77-119`, `packages/thread-observe/src/signals.ts:3-7`). | Writer, relay and helper-thread watchers. |
+| `@lane-pilot/thread-observe` | BB thread signal subscription plus completion classification and waiting. `decideThreadCompletion` classifies fresh thread reads; events only wake the watcher. A top-level `error` status includes a detected BB failure cause after `thread_status_error:` in the decision detail (`packages/thread-observe/src/completion.ts:77-90`, `:150-178`, `packages/thread-observe/src/signals.ts:3-7`). | Writer, relay and helper-thread watchers. |
 
 ## Purpose
 
@@ -109,11 +114,38 @@ The small packages provide reusable contracts and utilities to root rooms; the w
 | Narrow dependency factory | Receives `ctx`, `ctx.db` plus council service, or a single service as listed above. | Missing dependencies or factory errors propagate; there is no local recovery branch. |
 | Timed registration | Every assembled handler is timed before `ctx.bb.rpc.register` receives it. | Handler rejection propagates after timing logs; logging and serialization failures are swallowed by the timing wrapper (`src/rooms/core/server/rpc-timing.ts:12-40`). |
 
-The contract and handlers are separate inputs: `rpcContract` supplies method validation, while the composed map supplies implementations (`src/rooms/contracts/index.ts:17-26`, `src/rooms/core/server/rpc.ts:27-51`).
+The contract and handlers are separate inputs: `rpcContract` spreads eight route maps into one `defineRpcContract` call. Routes declare input and output schemas; strict object schemas reject undeclared fields, while routes using `z.unknown()` leave the output shape to the handler (`src/rooms/contracts/index.ts:17-26`, `src/rooms/contracts/rpc-shell.ts:8-18`, `src/rooms/contracts/rpc-ops.ts:56-109`). The composed map supplies implementations (`src/rooms/core/server/rpc.ts:27-51`). See [RPC contract composition steps and validation boundaries](package-operations.md#rpccontract).
 
 ## Package operations
 
-Pixel-world batching and navigation internals, including their branch and failure behavior, are documented in [Package operations](package-operations.md).
+### `createJev`
+
+1. For each judgment, it redacts built state, gets questions, resolves mode and thresholds, and throws if the judgment exceeds the 48-question cap (`packages/jev/src/run.ts:59-64`, `packages/jev/src/registry.ts:11-12`, `packages/jev/src/thresholds.ts:42-46`).
+2. It skips receipt writes without a database or in off mode; otherwise it records call, decision and usage details, with insert errors logged and converted to a null receipt id (`packages/jev/src/run.ts:66-80`).
+3. It returns fallback for off mode; batches other entries that share model and serialized state, splitting when a batch would exceed the question count or the serialized-question character bound; then sends namespaced questions to the client with the maximum member timeout and shared budget/signal (`packages/jev/src/run.ts:99-129`, `packages/jev/src/client.ts:21-24`).
+4. A failed call, missing answers, or thrown decision function returns fallback; shadow mode returns fallback plus the shadow decision; an escalation decision returns its target; otherwise the Jev decision and answers are returned (`packages/jev/src/run.ts:82-97`).
+
+| Mode or failure | Outcome |
+|---|---|
+| `off` / `shadow` / `active` | Off calls no client and returns fallback; shadow calls Jev but keeps fallback as the decision; active uses the Jev decision or declared escalation (`packages/jev/src/run.ts:94-105`, `packages/jev/src/registry.ts:12`). |
+| Preparation or rejected client promise | Question overflow throws before execution; rejected `client.call` rejects the batch promise (`packages/jev/src/run.ts:59-64`, `:118-129`). |
+| Jev call or decision failure | Returns deterministic judgment fallback, with failure status recorded when a database is available (`packages/jev/src/run.ts:82-92`). |
+
+### `batchStatic`
+
+1. It updates world transforms, creates shared opaque/glass materials, and walks visible descendants. `noBatch` skips a node and its descendants; `isolate` starts a separate target (`packages/pixel-world/src/batch.ts:45-65`).
+2. It accepts only visible static single-material toon meshes without textures, glow, vertex colors or children; ineligible objects remain in the scene (`packages/pixel-world/src/batch.ts:27-35`).
+3. It clones geometry, transforms it into target space, fixes mirrored winding, bakes color/alpha, detaches source meshes, then merges opaque and transparent groups separately (`packages/pixel-world/src/batch.ts:67-131`).
+4. It returns created meshes, source counts, and a disposer for owned resources (`packages/pixel-world/src/batch.ts:48-52`, `:134-137`). A null merge leaves already detached sources without a replacement; unexpected processing exceptions propagate (`packages/pixel-world/src/batch.ts:119-137`).
+
+### `createNavGrid`
+
+1. It captures bounds and obstacle rectangles, applies default step and margins, then indexes obstacles in spatial buckets (`packages/pixel-world/src/nav.ts:34-50`).
+2. Point checks reject margin-adjusted out-of-bounds positions, then test nearby obstacle buckets; segment checks sample the line (`packages/pixel-world/src/nav.ts:53-75`).
+3. `findPath` returns the exact target when its segment is clear. Otherwise it lazily caches blocked grid cells, snaps blocked endpoints toward a free cell within radius three, and runs eight-direction A* with diagonal corner checks and an 8,000-iteration cap (`packages/pixel-world/src/nav.ts:84-93`, `:107-180`).
+4. A found route is converted to world points and smoothed by skipping visible waypoints. If no route is found, the API still returns a waypoint list ending at the requested target; it has no separate failure status (`packages/pixel-world/src/nav.ts:185-212`).
+
+See [Package operation details](package-operations.md) for full limits, branch tables and gotchas.
 
 ### Host command wrapper
 
@@ -137,7 +169,7 @@ The formatter returns a string and declares no error result; JSON parse failures
 
 ### Thread completion decision
 
-1. `decideThreadCompletion` first turns top-level `error` status into an error decision. Otherwise it filters malformed events and sub-agent events, retaining valid sequenced thread turn events (`packages/thread-observe/src/completion.ts:30-53`, `:77-86`).
+1. `decideThreadCompletion` turns top-level `error` status into an error decision whose detail includes the latest request's detected failure cause when present; with no detected cause the detail stays `thread_status_error`. Otherwise it filters malformed events and sub-agent events, retaining valid sequenced thread turn events (`packages/thread-observe/src/completion.ts:30-53`, `:77-90`, `:150-178`).
 2. For a follow-up with `requestedAfter`, it finds the newest request. A missing/old request is incomplete; if no new turn start exists, an accepted input plus a later completion can finish the follow-up, otherwise failure evidence is checked and the decision remains incomplete (`packages/thread-observe/src/completion.ts:87-105`).
 3. For the current spawned turn, it orders valid events, selects the latest start and matches completion by request id when available. A completed status succeeds; failed, interrupted or error statuses are canceled; missing start, completion, status, or an unrecognized status remains incomplete (`packages/thread-observe/src/completion.ts:55-75`).
 4. If the turn is incomplete, detected provider/system errors, interrupted threads, rejected requests, failed provisioning, or a request with no session past the start limit become an error decision; otherwise the result includes thread status, queued-work state and turn detail (`packages/thread-observe/src/completion.ts:107-116`, `:145-173`).

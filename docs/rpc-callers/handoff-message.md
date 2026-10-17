@@ -2,7 +2,7 @@
 title: Handoff message
 type: component
 created: 2026-10-16
-updated: 2026-10-16
+updated: 2026-10-17
 status: active
 confidence: medium
 tags: [handoff, messages, agents]
@@ -24,7 +24,7 @@ The formatter turns a stored `HandoffCard` into the exact text that a recipient 
 
 ## How it works
 
-1. The caller validates create-tool input, verifies that the active PM run owns the run/project/thread, and chooses the explicitly named agent or the capability-registry match. No registry match throws an error asking for an explicit recipient (`src/rooms/relay/server/handoff.ts:46-58`, `:78-87`).
+1. The caller validates create-tool input, verifies that the active PM run owns the run/project/thread, and chooses the explicitly named agent or the capability-registry match. If `toAgent` is absent and the registry has no match, it throws `no agent matches the request; name toAgent explicitly` (`src/rooms/relay/server/handoff.ts:78-85`).
 2. It creates a stored handoff card with an id, project/run/thread identity, provided draft fields and optional deadline. `handoffMessage` receives the resulting typed card (`src/rooms/relay/server/handoff.ts:88-100`, `packages/handoff/src/contract.ts:43-69`).
 3. The formatter builds inputs as `kind: ref` lines with optional note, or `- none` when there are no inputs. It builds the budget from truthy minute, turn and token limits plus an ISO deadline; with no parts it writes `none stated` (`packages/handoff/src/messages.ts:3-16`).
 4. It joins the card heading, objective, numbered acceptance criteria, input list, budget and answer instructions in that order. The final fenced JSON block contains the handoff id, `done|blocked|rejected`, summary, outputs and evidence; the text explains when to choose blocked or rejected (`packages/handoff/src/messages.ts:17-37`).

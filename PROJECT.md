@@ -1,6 +1,6 @@
 ---
 title: Lane Pilot project facts
-updated: 2026-10-16
+updated: 2026-10-17
 sources:
   - package.json
   - server.ts
@@ -21,6 +21,7 @@ sources:
   - src/rooms/stability/server/deploy-drain.ts
   - src/rooms/verification/git-integrate.ts
   - packages/kit/src/owns-paths.ts
+  - packages/thread-observe/src/completion.ts
   - docs/overview.md
   - docs/task-board.md
   - src/rooms/runs/server/task-board.ts
@@ -70,7 +71,8 @@ sources:
 
 ## Common gotchas
 
-- Thread events wake watchers; fresh reads decide completion, with a fallback poll ([gotchas](docs/gotchas.md#event-and-polling-behavior)).
+- Thread events wake watchers; fresh reads decide completion, with a fallback poll. Error-status decisions retain a detected BB failure cause ([gotchas](docs/gotchas.md#event-and-polling-behavior)).
+- An admitted writer task holds overlapping ownership paths through redos and fallbacks until its writer loop ends ([gotchas](docs/gotchas.md#dispatch-and-retries)).
 - OpenCode minimal config can block helper startup while host preparation is pending ([gotchas](docs/gotchas.md#stability-and-local-provider-setup)).
 - Host-prepared BB guard wrappers differ for new helpers, owner threads, and older hosts ([native agent](docs/native-agent.md#public-api-or-commands)).
 - Live-folder mode has explicit caps and rollback limits ([gotchas](docs/gotchas.md#writer-workspace-modes)).

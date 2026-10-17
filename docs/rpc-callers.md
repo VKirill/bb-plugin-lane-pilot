@@ -2,7 +2,7 @@
 title: RPC and host-call contracts
 type: component
 created: 2026-09-30
-updated: 2026-10-16
+updated: 2026-10-17
 status: active
 confidence: medium
 tags: [rpc, contracts, host-api]
@@ -13,6 +13,7 @@ sources:
   - src/rooms/contracts/host.ts
   - src/rooms/contracts/rpc-shell.ts
   - src/rooms/settings/server/rpc/preferences.ts
+  - src/rooms/native-agent/agent-inventory.ts
   - src/rooms/relay/server/owner-locale.ts
   - src/rooms/council/server/council.ts
   - src/rooms/workflow/server/workflow-executors.ts
@@ -62,6 +63,33 @@ Keep BB app-to-server calls and plugin-server-to-host calls typed independently.
 - `rpcNative` exposes `list_helper_threads`; when an open run exists, its response can include task nodes and `depends`, `files`, `folder`, or `question` edges (`src/rooms/contracts/rpc-native.ts:127-144`, `src/rooms/runs/server/rpc/runs.ts:46-50`, `:165-169`). The Tasks board and detail card are described in [Tasks board](task-board.md).
 - `rpcOps` groups run controls, statistics, deployment drain, self-repair, canary, and stack management. Stack install/connect require `confirmExternalOps`; rollback accepts an optional absolute snapshot path. Several operation outputs are `unknown` at the shared contract, so their success and refusal shapes belong to the implementing room (`src/rooms/contracts/rpc-ops.ts:5-109`).
 
+#### `rpcOps` request and result map
+
+The map uses strict input objects. Declared business refusals are output fields where the schema defines them; `unknown` outputs are intentionally owned by their implementing rooms (`src/rooms/contracts/rpc-ops.ts:5-109`).
+
+| Procedure family | Inputs and outcomes |
+|---|---|
+| Run controls | `halt_run` takes run id and returns canceled/left attempt ids; `cancel_attempt` and `retry_attempt` take attempt id and return ok/state/reason, with retry also returning attempt id; `resume_runs` takes project id and returns resumed, skipped and finished ids (`src/rooms/contracts/rpc-ops.ts:6-25`). |
+| Statistics | Writer brief takes project id and integer `since` plus optional `until`, returning unknown. Critic and reuse stats take project id and 1–90 days defaulting to 7; acceptance stats takes 1–90 days defaulting to 28 and optional project id (`src/rooms/contracts/rpc-ops.ts:27-55`). |
+| Deploy and self-repair | `deploy_drain` takes boolean `on`; status calls take empty objects. Self-repair configure accepts optional settings including `maxPerDay` 0–20; tick defaults `dryRun` to true and accepts optional integer `since`. Outputs are unknown at this contract (`src/rooms/contracts/rpc-ops.ts:56-93`). |
+| Canary and stack | Canary status takes an empty object. Stack detect/install/connect require project id; install/connect also require `confirmExternalOps`. Rollback takes project id and optional absolute snapshot path. Outputs are unknown (`src/rooms/contracts/rpc-ops.ts:86-109`). |
+
+Extra fields, malformed ids, invalid bounds, or a missing required confirmation field fail strict validation. Handler/transport rejections remain rejections; unknown output shapes are validated only as unknown (`src/rooms/contracts/rpc-ops.ts:5-109`).
+
+#### `rpcRuns` request and result map
+
+`rpcRuns` declares strict request/result schemas for task board and detail data, run summaries, stage results, helper access and the screen snapshot (`src/rooms/contracts/rpc-runs.ts:8-115`).
+
+| Procedure | Input branch and result |
+|---|---|
+| `task_board`, `task_card` | Board optionally filters project, defaults `doneHours` to 24 (range 1–720), and returns typed board items; task card takes run id plus nullable task id and returns nullable contract, plan, stages, attempts and thread tree (`src/rooms/contracts/rpc-runs.ts:8-35`). |
+| `get_run_card`, `native_thread` | Run card takes run id and returns nullable run/task state with optional check-log location; native thread takes thread id and returns nullable token/agent/project metadata (`src/rooms/contracts/rpc-runs.ts:37-62`). |
+| Run and stage lists | `list_runs` requires project, optional section, offset ≥0, limit 1–200 and optional `pinOpen`; `list_run_stages` takes run id. Results are run views/count or stage summaries (`src/rooms/contracts/rpc-runs.ts:64-70`). |
+| Stage result and helper view | Stage result takes run/task/stage ids and returns `found` plus nullable unknown result. Helper view takes project and optional section and returns mode/origin, roles, catalogs, mandatory entries and providers (`src/rooms/contracts/rpc-runs.ts:72-97`). |
+| `get_screen` | Takes project, optional section and optional run limit 1–200; result includes project/host/workspace, settings values and versions, import source, runs, unapplied settings, CLI preview, snapshot/receipt/writer outputs, QA hosts, and nullable writer trace (`src/rooms/contracts/rpc-runs.ts:98-164`). |
+
+Strict validation rejects extra fields and invalid bounds; nullable and `found` fields represent missing records in the contract, while uncaught handler failures reject the RPC (`src/rooms/contracts/rpc-runs.ts:8-115`). See [Run RPC contract](rpc-callers/rpc-runs.md) for execution steps and handler outcomes.
+
 ### `rpcKnowledge` contract flow
 
 The route families, input validation, result variants, and failure behavior are documented in [RPC route details](rpc-details.md).
@@ -82,7 +110,7 @@ The route families, input validation, result variants, and failure behavior are 
 | Global defaults | Strict defaults object plus nonnegative `expectedRevision`. | Revision conflict returns `ok:false` with the current snapshot; success increments revision. |
 | Agent profile | Lowercase id pattern, prompt 1–32,000 characters, description up to 400, lists up to 64, expected source hash, optional resource modes. | Hash/corrupt/compile failures return `ok:false`; success returns source hash. |
 
-Project and section list errors can reject the handler call; global host-list errors are caught and produce an empty host list. Inventory catalog outcomes are returned as group statuses, and write conflicts are values rather than transport errors (`src/rooms/settings/server/rpc/preferences.ts:35-64`, `:66-104`, `:106-145`).
+Project and section list errors can reject the handler call; global host-list errors are caught and produce an empty host list (`src/rooms/settings/server/rpc/preferences.ts:35-64`). Inventory groups return `ready`, `unavailable`, or `error`, while global-default revision conflicts and agent-profile hash/compile failures return `ok:false` values (`src/rooms/native-agent/agent-inventory.ts:1-4`, `:33-63`, `src/rooms/settings/server/rpc/preferences.ts:106-145`).
 
 | Variant | Input branch | Result or failure shape |
 |---|---|---|

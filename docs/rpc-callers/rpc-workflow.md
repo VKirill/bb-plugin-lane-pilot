@@ -2,9 +2,9 @@
 title: Workflow RPC contract
 type: component
 created: 2026-10-16
-updated: 2026-10-16
+updated: 2026-10-17
 status: active
-confidence: medium
+confidence: high
 tags: [rpc, workflows, contracts]
 sources:
   - src/rooms/contracts/rpc-workflow.ts
@@ -29,12 +29,23 @@ TL;DR: `rpcWorkflow` exposes workflow library reads, run operations, preflight a
 
 1. BB validates each request against a strict object schema. The covered methods accept workflow ids, optional project ids, bounded page limits (workflow history defaults to 20), run/node ids, manual or Telegram source, and input records (`src/rooms/contracts/rpc-workflow.ts:6-62`).
 2. Library methods load built-in and global workflow sources. When a project is requested, the library resolves its project location and reads project workflow files through the host; no location returns `no_machine`, and host/read failure is logged and becomes `unavailable` with an empty project source (`src/rooms/workflow/server/workflow-library.ts:46-67`).
-3. `workflow_list` returns summaries, parse problems, and project source state. `workflow_get` returns `workflow: null` when the id is absent, otherwise details and recent runs; `workflow_run_snapshot` returns `snapshot: null` when the engine has no snapshot (`src/rooms/workflow/server/workflow-library.ts:90-99`, `:111-137`, `:139-167`).
+3. `workflow_list` returns summaries, parse problems, and project source state (`src/rooms/workflow/server/workflow-library.ts:93-99`). `workflow_get` returns `workflow: null` when the id is absent, otherwise details and recent runs (`src/rooms/workflow/server/workflow-library.ts:111-137`); `workflow_run_snapshot` returns `snapshot: null` when the engine has no snapshot (`src/rooms/workflow/server/workflow-library.ts:139-166`).
 4. `workflow_runs` queries newest-first history, optionally narrows by project and `before`, fetches one extra row, and returns `hasMore`. `workflow_rerun_node` refuses the built-in `lp-task-pipeline` run; other cases delegate to the engine and return its `ok`, reason, step key, and removed count (`src/rooms/workflow/server/workflow-ops.ts:30-52`).
 5. `workflow_preflight` returns `found: false` for a missing id; without both a preflight checker and project id, a found workflow returns `ok: true` with empty checks. Otherwise it returns the preflight issues, env requests, and checked requirements (`src/rooms/workflow/server/workflow-ops.ts:54-60`).
 6. `workflow_dry_run` chooses the first declared test case, overlays supplied inputs, runs it with external actions stubbed, and returns its trial result and stub list. A missing workflow returns `found: false`, null result, and no stubs (`src/rooms/workflow/server/workflow-ops.ts:62-70`).
 7. `workflow_run_tests` executes every test case with stubs. It is green only when there is at least one case and every case passes; it records the test receipt, invalidates the workflow catalog, syncs project schedules when a project is given, then returns the refreshed status (`src/rooms/workflow/server/workflow-ops.ts:73-89`).
 8. `workflow_run` calls the shared trigger service and maps success to run id, created flag, status and `notChecked`; a refusal becomes `ok: false` with reason, message and any missing inputs, issues or env requests. Synchronous start errors become `cannot_start`; a later run rejection is logged with the run id (`src/rooms/workflow/server/rpc/workflow-ops.ts:17-24`, `src/rooms/workflow/server/workflow-triggers.ts:143-149`).
+
+The `rpcWorkflow` contract is an unconditional map of strict methods; omitted defaults are applied by Zod, nullable results represent absent data, and run refusals are output values (`src/rooms/contracts/rpc-workflow.ts:5-62`).
+
+| Procedure | Request branch and declared response |
+|---|---|
+| `workflow_list`, `workflow_get`, `workflow_run_snapshot` | List optionally scopes to a project and returns workflows, parse problems and project-source state; get optionally scopes and returns nullable detail; snapshot takes a run id and returns nullable snapshot (`src/rooms/contracts/rpc-workflow.ts:6-22`). |
+| `workflow_runs`, `workflow_rerun_node` | History takes id, optional project, limit 1–50 default 20 and optional cursor, returning rows plus `hasMore`; node rerun takes run id and node id up to 80 characters and returns `ok` with optional reason, step key and removal count (`src/rooms/contracts/rpc-workflow.ts:24-32`). |
+| `workflow_run` | Requires workflow and project ids; inputs default to `{}`, source to manual, and optional `liveTrial` enables tested workflow trial. Response carries success/run fields or refusal reason/message and optional missing inputs, issues and secret requests (`src/rooms/contracts/rpc-workflow.ts:34-44`). |
+| `workflow_preflight`, `workflow_dry_run`, `workflow_run_tests` | Preflight returns found/ok plus issues, secret requests and checked requirements; dry run defaults input to `{}` and returns nullable trial result and stub list; tests returns found, green, cases and nullable status (`src/rooms/contracts/rpc-workflow.ts:46-62`). |
+
+Strict object validation rejects undeclared fields, invalid ids, and out-of-range history limits before handler execution (`src/rooms/contracts/rpc-workflow.ts:6-62`).
 
 | Mode or branch | Condition | Result or failure |
 |---|---|---|
