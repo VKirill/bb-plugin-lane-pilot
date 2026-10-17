@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { BACKLINKS_MARK, blockingDocsFindings, buildBacklinks, expandCitationLists, pageCitations, uncataloguedPages, unlinkedPages, buildDocsIndex, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "../../src/rooms/docs/docs-lint";
+import { BACKLINKS_MARK, blockingDocsFindings, parseFrontmatter, buildBacklinks, expandCitationLists, pageCitations, uncataloguedPages, unlinkedPages, buildDocsIndex, docsCompletenessGaps, lintDocsPages, pagesToRefresh, withCitedSources, withVerifiedConfidence } from "../../src/rooms/docs/docs-lint";
 import { commitDocs } from "../../src/rooms/verification/git-docs";
 
 const page = (fields: Record<string, string>, body: string) => [
@@ -200,4 +200,43 @@ it("counts links on the area pages a catalogue links", () => {
   const orphan = { path:"docs/capabilities/orphan.md", content:"# Orphan\n\n- [Runtime](../../apps/worker/docs/features/runtime.md)\n" };
   expect(unlinkedPages(catalogue, features)).toEqual(["apps/admin/docs/features/analytics.md", "apps/api/docs/features/admin-challenges.md", "apps/worker/docs/features/runtime.md"]);
   expect(uncataloguedPages(catalogue, [catalogue, operators, orphan], features)).toEqual(["apps/api/docs/features/admin-challenges.md", "apps/worker/docs/features/runtime.md"]);
+});
+
+// treba, 2026-10-17: docs/components/tracking-attribution.md as the docs agent left it after the repair round. Its lists
+// sit at the key's own indent, which YAML allows; the lint read them as empty and failed the pass three times that night.
+const TREBA_TRACKING = `---
+title: Tracking and order attribution
+type: component
+created: 2026-09-11
+updated: 2026-10-17
+status: active
+confidence: high
+tags:
+- tracking
+- attribution
+sources:
+- server/utils/attribution.ts
+- server/utils/sync-orders.ts
+---
+# Tracking and order attribution
+
+## How it works
+
+Visits are matched to orders (server/utils/attribution.ts:10-20), synced orders carry the click ids (server/utils/sync-orders.ts:5)
+and the tracker posts them (public/t.js:1-3).
+`;
+
+it("reads frontmatter lists written at the key's own indent", () => {
+  expect(parseFrontmatter(TREBA_TRACKING)?.data).toMatchObject({ tags:["tracking", "attribution"], sources:["server/utils/attribution.ts", "server/utils/sync-orders.ts"] });
+  const findings = lintDocsPages([{ path:"docs/components/tracking-attribution.md", content:TREBA_TRACKING }],
+    { "server/utils/attribution.ts":100, "server/utils/sync-orders.ts":50, "public/t.js":10 });
+  expect(findings.filter((finding) => finding.rule === "frontmatter")).toEqual([]);
+});
+
+it("adds cited sources at the indent of the list already there", () => {
+  const sourced = withCitedSources(TREBA_TRACKING);
+  expect(sourced).toContain("sources:\n- server/utils/attribution.ts\n- server/utils/sync-orders.ts\n- public/t.js\n---");
+  expect(parseFrontmatter(sourced)?.data.sources).toEqual(["server/utils/attribution.ts", "server/utils/sync-orders.ts", "public/t.js"]);
+  const indented = TREBA_TRACKING.replace(/^- server/gm, "  - server");
+  expect(withCitedSources(indented)).toContain("  - server/utils/sync-orders.ts\n  - public/t.js\n---");
 });

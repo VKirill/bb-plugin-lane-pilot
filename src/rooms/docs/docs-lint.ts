@@ -34,14 +34,18 @@ export type Frontmatter = Record<string, string | string[]>;
 /** `target` names the page a finding is about when that is another page: a link's target. */
 export type DocsFinding = { path:string; rule:string; detail:string; target?:string };
 
-/** The YAML subset the contract uses: scalars, `[a, b]` lists and `- item` lists. */
+/**
+ * The YAML subset the contract uses: scalars, `[a, b]` lists and `- item` lists, indented or not. YAML allows a list
+ * under a key at the key's own indent (PyYAML writes it so); read as empty, such a page was "missing tags" every night
+ * while the agent's YAML parser saw them, so the pass never landed (treba, 2026-10-15..17).
+ */
 export function parseFrontmatter(content:string): { data:Frontmatter; body:string } | null {
   const match = /^---\n([\s\S]*?)\n---\n?/.exec(content);
   if (!match) return null;
   const data:Frontmatter = {};
   let listKey:string | null = null;
   for (const raw of match[1]!.split("\n")) {
-    const item = /^\s+-\s+(.*)$/.exec(raw);
+    const item = /^[ \t]*-[ \t]+(.*)$/.exec(raw);
     if (item && listKey) { (data[listKey] as string[]).push(unquote(item[1]!)); continue; }
     const field = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(raw);
     if (!field) continue;
@@ -286,5 +290,9 @@ export function withCitedSources(content:string):string {
   const listed = new Set((Array.isArray(parsed.data.sources) ? parsed.data.sources : []).map((source) => source.replace(/:\d+(-\d+)?$/, "")));
   const missing = [...new Set(pageCitations(withoutBacklinks(parsed.body)).map((citation) => citation.file))].filter((file) => !listed.has(file));
   if (!missing.length) return content;
-  return content.replace(/^(---\n[\s\S]*?^sources:[^\n]*\n(?:\s+-\s+[^\n]*\n)*)/m, (block) => `${block}${missing.map((file) => `  - ${file}\n`).join("")}`);
+  // New entries take the indent of the list already there, so the list stays one YAML sequence.
+  return content.replace(/^(---\n[\s\S]*?^sources:[^\n]*\n)((?:[ \t]*-[ \t]+[^\n]*\n)*)/m, (_, head:string, items:string) => {
+    const indent = /^([ \t]*)-/.exec(items)?.[1] ?? "  ";
+    return `${head}${items}${missing.map((file) => `${indent}- ${file}\n`).join("")}`;
+  });
 }

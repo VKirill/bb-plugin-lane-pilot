@@ -627,7 +627,8 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
         docsWritten:checked.touched.filter(writable),commit,...(merged?{merged}:{}),...(reverted.length?{reverted}:{}),...(warnings.length?{warnings}:{}),...(failure?{reason:failure,findings:checked.findings.slice(0,30)}:{})});
       await bb.storage.kv.set(record.kvKey,{...row,at:Date.now()});
       await dropDocsUnitRecord(record);
-      bb.log.info(`Lane Pilot nightly docs ${row.state} for ${record.basePath??place.path} ${label}${merged?` (merge ${merged})`:""}`);
+      // A failed unit names why, so the line the watcher reads carries the cause; the findings are in the unit's KV row.
+      bb.log.info(`Lane Pilot nightly docs ${row.state} for ${record.basePath??place.path} ${label}${merged?` (merge ${merged})`:""}${failure?`: ${failure}`:""}`);
       return row;
     }catch(cause){
       // The agent's thread failed or its work cannot be checked: the unit is done for tonight, its pages stay pending.
