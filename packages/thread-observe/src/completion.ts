@@ -83,7 +83,12 @@ export function decideThreadCompletion(input: {
   /** After sending a follow-up, only a turn requested at or after this time counts; the previous one is already done. */
   requestedAfter?:number;
 }): ThreadCompletionDecision {
-  if ((input.status ?? "") === "error") return { ok:false, via:"error", detail:"thread_status_error" };
+  // BB's events say why the thread is in error («host daemon disconnected»); alone, «thread_status_error» read as Lane
+  // Pilot's own fault and raised a self-repair for a host daemon restart (pm-reader thr_pchcvfzutr, 2026-10-16).
+  if ((input.status ?? "") === "error") {
+    const cause = threadFailure(input.events, input.now);
+    return { ok:false, via:"error", detail:cause ? `thread_status_error:${cause}` : "thread_status_error" };
+  }
   if (input.requestedAfter !== undefined) {
     const rows = input.events.map(readWatched).filter((row): row is NonNullable<typeof row> => row !== null);
     const request = rows.filter((row) => row.type === "client/turn/requested").sort((a, b) => b.seq - a.seq)[0];

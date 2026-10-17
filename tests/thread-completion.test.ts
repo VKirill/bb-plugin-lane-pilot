@@ -106,6 +106,26 @@ describe("decideThreadCompletion", () => {
     })).toEqual({ ok:false, via:"canceled", detail:"turn_interrupted" });
   });
 
+  it("names BB's cause of a thread in status error (live pm-reader thr_pchcvfzutr, 2026-10-16)", () => {
+    // The host daemon of host_rwrxyi39aw was down 15:16-16:07 UTC; on its restart BB interrupted the helper. The bare
+    // «thread_status_error» read as Lane Pilot's fault (triage orchestrator 0.97) and raised a self-repair.
+    const t = "thr_pchcvfzutr", turn = { kind:"turn", turnId:"da9e003827-t4" }, providerThreadId = "06d78289-f0f8-42a5-9e33-b570e621ee3e";
+    const events = [
+      { id:"evt_tf2jq5hdc8", scope:{ kind:"thread" }, threadId:t, seq:1, createdAt:1792164326123, type:"client/turn/requested", data:{ direction:"outbound", requestId:"creq_9u7k25922u", source:"spawn" } },
+      { id:"evt_pvc3x3h3im", scope:{ kind:"thread" }, threadId:t, seq:3, createdAt:1792164328131, type:"thread/identity", data:{ providerThreadId } },
+      { id:"evt_f3qf4u3ekb", scope:turn, threadId:t, seq:6, createdAt:1792164328131, type:"turn/started", data:{ providerThreadId } },
+      { id:"evt_a3bgavubms", scope:turn, threadId:t, seq:7, createdAt:1792164328131, type:"turn/input/accepted", data:{ providerThreadId, clientRequestId:"creq_9u7k25922u" } },
+      { id:"evt_88qahfgpx2", scope:turn, threadId:t, seq:8, createdAt:1792166841153, type:"turn/completed", data:{ providerThreadId, status:"interrupted" } },
+      { id:"evt_5etwtgpexg", scope:turn, threadId:t, seq:9, createdAt:1792166841153, type:"system/error", data:{ code:"thread_command_failed", message:"Thread interrupted because the host daemon disconnected", detail:"Please retry the thread to continue." } },
+      { id:"evt_9bgmcqvnta", scope:{ kind:"thread" }, threadId:t, seq:10, createdAt:1792166841153, type:"system/thread/interrupted", data:{ reason:"host-daemon-restarted" } },
+    ];
+    expect(decideThreadCompletion({ threadId:t, status:"error", queuedWork:"none", events, now:1792166841516 })).toEqual({ ok:false, via:"error",
+      detail:"thread_status_error:system_error:thread_command_failed:Thread interrupted because the host daemon disconnected" });
+    // Only the interruption itself, no system/error: its reason is named.
+    expect(decideThreadCompletion({ threadId:t, status:"error", events:events.filter((row) => row.type !== "system/error") }).detail)
+      .toBe("thread_status_error:thread_interrupted:host-daemon-restarted");
+  });
+
   it("does not end on a sub-agent's interrupted turn (live docs agent thr_vpv6743wkq, 2026-10-03)", () => {
     const t = "thr_vpv6743wkq";
     const ev = (seq:number, type:string, data:Record<string, unknown> = {}, createdAt = 1790994000000 + seq) => ({ threadId:t, seq, createdAt, type, data:{ providerThreadId:"p", ...data } });
