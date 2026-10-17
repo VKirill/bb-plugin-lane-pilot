@@ -2,7 +2,7 @@
 title: Package operation details
 type: component
 created: 2026-10-14
-updated: 2026-10-14
+updated: 2026-10-17
 status: active
 confidence: medium
 tags: [jev, pixel-world, batching, navigation]
@@ -37,7 +37,7 @@ Describe the execution and failure behavior of selected package APIs summarized 
 1. `createJev` receives a client and optional database/logger. Before a request it runs the judgment state builder through deep redaction, gets its questions, rejects judgments over the question cap, resolves mode and thresholds from context settings, and serializes state (`packages/jev/src/run.ts:56-64`).
 2. Receipt writing is skipped when there is no database or the mode is `off`. Otherwise it records judgment/version, hashed state, question/batch counts, call status, token/latency data, decision and thresholds; insertion errors are logged and become a null receipt id (`packages/jev/src/run.ts:66-80`).
 3. A client failure or missing/invalid answer set calls the judgment fallback. A decision exception is logged and also falls back with `invalid` status. In shadow mode the production fallback remains the decision while the Jev decision is attached as `shadow`; explicit escalation returns `by:"escalate"`; otherwise the Jev decision is returned (`packages/jev/src/run.ts:82-97`).
-4. `run` immediately returns fallback verdicts for `off` entries. Other entries with identical model and serialized state are grouped, then split at 48 questions or about 80,000 state characters (`packages/jev/src/run.ts:99-117`, `packages/jev/src/registry.ts:11`, `packages/jev/src/client.ts:22`).
+4. `run` immediately returns fallback verdicts for `off` entries. Other entries with identical model and serialized state are grouped, then split when adding an entry would exceed 48 questions or the 80,000-character bound applied to serialized questions (`packages/jev/src/run.ts:99-117`, `packages/jev/src/registry.ts:11`, `packages/jev/src/client.ts:22`).
 5. Each request namespaces question ids with the original entry index, calls the client with the shared state, selected model, maximum member timeout, and context budget/signal, then extracts each judgment's answer subset and resolves its verdict (`packages/jev/src/run.ts:118-129`).
 6. The returned API supports one judgment, many inputs for one judgment, and a bundle of different judgments. `outcome` ignores null receipts/no database and swallows receipt-labeling errors (`packages/jev/src/run.ts:132-140`).
 

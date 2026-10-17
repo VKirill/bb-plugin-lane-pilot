@@ -2,12 +2,13 @@
 title: Orchestration and execution data
 type: data-model
 created: 2026-10-10
-updated: 2026-10-16
+updated: 2026-10-17
 status: active
 confidence: medium
 tags: [data-model, orchestration, execution]
 sources:
   - src/rooms/storage/database.ts
+  - packages/thread-observe/src/completion.ts
   - src/rooms/relay/server/relay.ts
   - src/rooms/runs/server/stage-records.ts
   - src/rooms/writer/server/dispatch.ts
@@ -44,7 +45,7 @@ Tables are created or extended in the ordered plugin migration list (`src/rooms/
 | `lane_pilot_setting_generation` | `project_id`, `binding_id`, `key` identify a setting; `version` is its generation counter. | Composite primary key; initialized from existing settings versions (`src/rooms/storage/database.ts:219-227`). | Settings mutation code writes; version-aware UI/RPC reads. |
 | `lane_pilot_run` | `id`; `project_id`; `pm_thread_id`; `state`; creation/update times; `kind` (`bb`/`cli`); `closed_at`, `closed_by`; writer workspace/environment/host; run policy and gate; helper policy; settings scopes; objective. | States: `pending`, `running`, `accepted`, `blocked`, `closed`; migration rebuild maps a non-null `closed_at` to `closed` (`src/rooms/storage/database.ts:40-47`, `:78-94`, `:211-229`). | Activation and run transitions write; runs UI, reconciler and scheduler read. |
 | `lane_pilot_task` | `id`; parent `run_id`; `kind` (`bb`/`cli`); serialized task-v2 `contract_json`; `created_at`. | `run_id` references run; task id is the stable task key (`src/rooms/storage/database.ts:60-67`). | Writer dispatch writes; runs, reconciliation, acceptance and memory stages read. |
-| `lane_pilot_attempt` | `id`, `run_id`, `task_id`, writer `thread_id`, `state`, `reason`, creation/update times, attempt number, pre-attempt dirt JSON, workspace/environment/decision JSON, holder thread, harness version. | `run_id` references a run. `attempt_no` defaults to 1; current state transitions are separately recorded (`src/rooms/storage/database.ts:48-59`, `:75-77`, `:169-171`, `:216-217`, `:273`). | Dispatch and reconciliation write; writer, run UI, stability and acceptance read. |
+| `lane_pilot_attempt` | `id`, `run_id`, `task_id`, writer `thread_id`, `state`, `reason`, creation/update times, attempt number, pre-attempt dirt JSON, workspace/environment/decision JSON, holder thread, harness version. | `attempt_no` is added with default 1 (`src/rooms/storage/database.ts:75-77`); each accepted or refused state change is recorded in `lane_pilot_attempt_transition` (`src/rooms/storage/database.ts:241-244`, `:1030-1054`). | Dispatch and reconciliation write; writer, run UI, stability and acceptance read. |
 | `lane_pilot_activation` | `project_id`; PM thread; run id; claim time. | One active activation claim per project by primary key (`src/rooms/storage/database.ts:68-73`). | Activation writes; activation reconciliation reads. |
 | `lane_pilot_attempt_reasoning` | `attempt_id`; `trace_json` for provider/model/reasoning decision trace. | Attempt foreign key cascades on deletion (`src/rooms/storage/database.ts:128-132`). | Writer selection writes; run receipts and UI read. |
 | `lane_pilot_task_plan` | `task_id`; canonical plan text. | Task foreign key cascades on deletion (`src/rooms/storage/database.ts:133-137`). | Dispatch writes; retry and Jev adapter read. |

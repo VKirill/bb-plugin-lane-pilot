@@ -2,7 +2,7 @@
 title: Lane Pilot data model overview
 type: data-model
 created: 2026-10-10
-updated: 2026-10-16
+updated: 2026-10-17
 status: active
 confidence: medium
 tags: [data-model, sqlite, entities]
@@ -46,7 +46,7 @@ The project-scoped settings table keys values by project, optional binding, and 
 The root plugin workspace owns the following schema families:
 
 - [Orchestration and execution](data-model/orchestration.md) — project settings, runs, tasks, attempts, receipts, gates, task-notice receipts, tokens, verification timing and secret issuance (`src/rooms/storage/database.ts:30-329`).
-- [Owner profile and learning](data-model/knowledge.md) — Anamnesis record/evidence history, automatic-learning observations, items and signals (`src/rooms/anamnesis/store.ts:53-71`, `src/rooms/learning/migrations.ts:11-82`).
+- [Owner profile and learning](data-model/knowledge.md) — Anamnesis record/evidence history in its separate SQLite store and automatic-learning observations, items and signals in the plugin database (`src/rooms/anamnesis/store.ts:52-72`, `src/rooms/learning/migrations.ts:1-10`, `:11-82`).
 - [Schedules and world](data-model/automation.md) — scheduled jobs, scheduled runs, and the saved Pixel World (`src/rooms/schedule/store.ts:15-63`, `src/rooms/world/migrations.ts:1-13`).
 
 Workspace packages document their own schema tables and columns:

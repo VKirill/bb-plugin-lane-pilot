@@ -2,7 +2,7 @@
 title: Session memory RPC
 type: component
 created: 2026-10-16
-updated: 2026-10-16
+updated: 2026-10-17
 status: active
 confidence: medium
 tags: [rpc, memory, sessions]
@@ -13,6 +13,8 @@ sources:
   - packages/memory-core/src/candidates.ts
   - packages/memory-core/src/store.ts
   - packages/run-insights/src/rules.ts
+  - src/rooms/contracts/index.ts
+  - src/rooms/core/server/rpc-timing.ts
 ---
 
 # Session memory RPC
@@ -22,6 +24,23 @@ TL;DR: Session memory RPC resolves a workspace to its project, stores subagent-a
 ## Purpose
 
 `sessionMemoryRpc` gives sessions on a machine access to the project memory stored by the plugin server. The RPC contract defines five strict procedures and `registerRpc` installs their handler map (`src/rooms/contracts/rpc-knowledge.ts:63-85`, `src/rooms/core/server/rpc.ts:46-47`).
+
+## `rpcKnowledge` contract map
+
+`rpcKnowledge` is a strict method map spread into the app-facing `rpcContract`; methods validate request and response shapes, while handlers own storage, authorization and domain behavior (`src/rooms/contracts/rpc-knowledge.ts:16-85`, `src/rooms/contracts/index.ts:17-26`). The session-memory procedures are detailed below; the other methods in this file have these inputs and outputs:
+
+1. The contracts room composes `rpcKnowledge` with shell, native, runs, settings, operations, workflow and world maps (`src/rooms/contracts/index.ts:17-26`).
+2. Each caller request is checked against that procedure's strict input schema, then dispatched to the corresponding handler factory registered by `registerRpc` (`src/rooms/core/server/rpc.ts:27-50`).
+3. The declared output schema shapes the response. Typed nullable fields and status values represent absent/domain outcomes; malformed requests and uncaught handler errors remain failures (`src/rooms/contracts/rpc-knowledge.ts:16-85`, `src/rooms/core/server/rpc-timing.ts:12-40`).
+
+| Procedure family | Inputs, branches and outcomes |
+|---|---|
+| Council reads and controls | `list_councils` and `get_council_defaults` take project id; `get_council` and `council_stop` take council id; `council_say` takes council id, optional trimmed 1–4,000 character text and optional decide flag. Results are council/default records, sequence and decide-requested, or stop-requested (`src/rooms/contracts/rpc-knowledge.ts:17-41`). |
+| Routing and rule proposals | Routing hint takes project id and optional 1–365 day window, returning nullable current provider/model, hints and stats. Rule proposal listing takes project id and returns proposals, memory/triage/scan/analyzer state and events (`src/rooms/contracts/rpc-knowledge.ts:43-60`). |
+| Session memory | Project resolution, write, search, core listing and lesson proposal use their declared strict request/result shapes; see the step list and failure table below (`src/rooms/contracts/rpc-knowledge.ts:63-85`). |
+| Rule and memory management | Rule audience writes carry project/rule ids and audience/always values; memory record list/get, documentation status, token usage, secret issuance, Jev provider, and worktree provider methods each declare strict inputs and typed or unknown outputs (`src/rooms/contracts/rpc-knowledge.ts:86-210`). |
+
+Malformed payloads fail validation before a handler runs. Database, host and service failures follow each handler's catch or rejection behavior; the contract does not convert those failures (`src/rooms/contracts/rpc-knowledge.ts:16-85`).
 
 ## How it works
 
@@ -37,8 +56,8 @@ TL;DR: Session memory RPC resolves a workspace to its project, stores subagent-a
 | `session_memory_project` | Matching host/path returns deepest project place; no match returns null project and empty scopes. | Project and docs-place listing failures are swallowed and treated as no match (`src/rooms/memory/server/session-memory.ts:18-31`). |
 | `session_memory_write` | Disabled, parsed-and-stored, corroborated, or duplicate. Contract caps content at 8,000 characters, concepts at 24 items of up to 100 characters, and source at 300 (`src/rooms/contracts/rpc-knowledge.ts:67-70`). | Parse and store exceptions become `{stored:false,id:null,reason}`; memory settings/database setup failures before those `try` blocks reject (`src/rooms/memory/server/session-memory.ts:32-48`). |
 | `session_memory_search` | Returns projected search records; omitted limit is eight and schema allows 1–50 when supplied. | Search/database errors are not caught in this handler and reject the call (`src/rooms/contracts/rpc-knowledge.ts:72-75`, `src/rooms/memory/server/session-memory.ts:50-53`). |
-| `session_memory_core` | Returns active, unexpired subagent core records. | Database errors reject; invalid rows are not converted to a fallback result (`src/rooms/memory/server/session-memory.ts:55-59`). |
-| `session_lesson` | New proposal may be adopted; repeat returns existing proposal status and `adopted:false`. | Upsert or adoption errors reject the call (`src/rooms/memory/server/session-memory.ts:60-66`). |
+| `session_memory_core` | Returns active, unexpired subagent core records from the query result. | The handler returns the database rows directly; it has no local catch or row-validation fallback (`src/rooms/memory/server/session-memory.ts:55-59`). |
+| `session_lesson` | New proposal may be adopted; repeat returns existing proposal status and `adopted:false`. | The handler does not catch errors from proposal upsert or adoption (`src/rooms/memory/server/session-memory.ts:60-66`). |
 
 ## Business rules
 
@@ -51,7 +70,7 @@ Procedures are `session_memory_project`, `session_memory_write`, `session_memory
 ## Gotchas
 
 - Writes parse with very large temporary budgets, then `storeMemoryRecords` applies the configured budgets. The parse step therefore validates the candidate but does not itself enforce the project's retained-memory budget (`src/rooms/memory/server/session-memory.ts:35-43`).
-- Only project/path discovery catches lookup failures. Search, core-list and lesson operations can reject to the RPC caller (`src/rooms/memory/server/session-memory.ts:18-31`, `:50-66`).
+- Only project/path discovery catches lookup failures. Search, core-list and lesson handlers have no local catch around their database operations, so those errors reject to the RPC caller (`src/rooms/memory/server/session-memory.ts:18-31`, `:50-66`).
 - `session_lesson` can return `state: "proposed"` when the proposal lookup after upsert returns no row (`src/rooms/memory/server/session-memory.ts:61-65`).
 
 See [RPC and host-call contracts](../rpc-callers.md).

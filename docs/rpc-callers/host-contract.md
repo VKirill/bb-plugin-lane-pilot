@@ -2,7 +2,7 @@
 title: Host RPC contract
 type: component
 created: 2026-10-16
-updated: 2026-10-16
+updated: 2026-10-17
 status: active
 confidence: medium
 tags: [rpc, host, contracts]
@@ -28,7 +28,7 @@ The host contract is the typed boundary between the plugin server and a BB-conne
 
 1. The contract declares each host procedure using strict Zod input and output objects. Requests identify the target with `requestedHostId`; BB call options separately carry `hostId` (`src/rooms/contracts/host.ts:6-15`, `packages/host-calls/src/run-on-host.ts:1-14`).
 2. The root host entry registers method handlers against the same contract. Jev-sensitive handlers are wrapped to take the provider and key from the request before calling the implementation (`host.ts:72-87`).
-3. `createCore` creates the typed host client and wraps its `call` method. It adds the current schedule abort signal when the caller supplied none, then runs the call inside deploy-drain tracking (`src/rooms/core/server/core.ts:48-49`, `:93-117`).
+3. `createCore` creates the typed host client and wraps its `call` method. It adds the current schedule abort signal when the caller supplied none, then runs the call inside deploy-drain tracking (`src/rooms/core/server/core.ts:98-117`).
 4. Core removes its private `job` and `jobKey` options before sending the request. It attaches cached Jev provider credentials only for methods in `JEV_METHODS`; a missing credential leaves the input unchanged (`src/rooms/core/server/core.ts:50-53`, `:109-116`).
 5. Core chooses background-job mode when `LANE_PILOT_HOST_JOBS` is not `0` and the method is a declared host job kind. `runSandboxedCommand` is an exception: it uses a job only when the caller sets `job: true`; all other calls use the direct host call (`src/rooms/core/server/core.ts:114-117`).
 6. The job wrapper reuses a stored job that is still running, or a recent succeeded/failed result where the method permits reusing completed work. Otherwise it removes the old key and starts a job, then polls until the host returns a terminal state (`packages/host-calls/src/host-jobs.ts:40-69`, `:76-91`).
@@ -40,13 +40,16 @@ The host contract is the typed boundary between the plugin server and a BB-conne
 | Older host | `jobStart` rejects with an “unknown host method” error. | Wrapper falls back to the direct call; other `jobStart` errors propagate (`packages/host-calls/src/host-jobs.ts:59-66`). |
 | Job not reusable | Stored job is no longer running and is not a recent reusable completed result. | The wrapper deletes its KV key and starts a new job (`packages/host-calls/src/host-jobs.ts:50-68`). |
 
-| Contract procedure | Branches and declared results |
+| Contract procedure | Inputs, branches and declared results |
 |---|---|
-| `nativeInstall` | Selects install, enable, disable, remove, or status; output status is absent, prepared, enabled, or disabled (`src/rooms/contracts/host.ts:7-10`). |
-| Git ownership and worktree methods | Ownership base returns ready, not-git, invalid-ref, or failed; prepare returns linked files; snapshot returns clean, saved, missing, or failed; remove returns a boolean; sync returns synced, up-to-date, dirty, conflict, or failed; create returns ready or failed (`src/rooms/contracts/host.ts:11-29`, `:57-59`). |
-| Job procedures | `jobStart` accepts a declared job kind and bounded timeout; status is running, succeeded, failed, cancelled, or lost; cancel returns a boolean (`src/rooms/contracts/host.ts:31-46`). |
-| Host checks and information | `stabilityDrill` returns named checks with booleans and nullable detail; `diskFree` reports free and total bytes. The spread `anamnesis` procedure accepts an Anamnesis request and returns an unknown response (`src/rooms/contracts/host.ts:48-55`, `src/rooms/anamnesis/contract.ts:11-16`). |
-| `gitIntegrate` | Returns merged, up-to-date, conflict, failed, or busy and can include replay check and rebuild results. Replay checks select auto, macOS Seatbelt, or Linux bubblewrap and take 1–20 commands (`src/rooms/contracts/host.ts:61-71`). |
+| `nativeInstall` | Input selects install, enable, disable, remove, or status. Output carries absent, prepared, enabled, or disabled plus source hash and owned/preserved file counts (`src/rooms/contracts/host.ts:7-10`). |
+| `gitOwnershipBase` | Input requires absolute project cwd and optional 1–240 character base ref. Output is ready, not-git, invalid-ref, or failed with nullable branch/head/base hashes and reason (`src/rooms/contracts/host.ts:11-14`). |
+| Worktree prepare, snapshot, remove, sync, create | Inputs require absolute paths; snapshot/create names match the ASCII 1–120 character pattern; sync optionally keeps conflicts. Outputs include linked files, clean/saved/missing/failed snapshot, remove boolean, synced/up-to-date/dirty/conflict/failed sync, or ready/failed create (`src/rooms/contracts/host.ts:15-29`, `:57-59`). |
+| `jobStart`, `jobStatus`, `jobCancel` | Start accepts a declared job kind, timeout from 10 seconds through `HOST_JOB_MAX_SEC`, and optional 1–200 character key. Status returns running, succeeded, failed, cancelled, or lost with progress and optional result; cancel returns a boolean (`src/rooms/contracts/host.ts:31-46`). |
+| `stabilityDrill`, `anamnesis`, `diskFree` | Drill returns named checks with booleans and nullable detail; Anamnesis uses its request schema and unknown response; disk free requires an absolute path and returns nonnegative byte counts (`src/rooms/contracts/host.ts:48-55`, `src/rooms/anamnesis/contract.ts:11-16`). |
+| `gitIntegrate` | Requires absolute base/worktree paths and a 1–500 character message. Optional replay checks choose auto, macOS Seatbelt, or Linux bubblewrap and contain 1–20 commands with 1–7,200 second timeouts. Output is merged, up-to-date, conflict, failed, or busy and may include check/rebuild results (`src/rooms/contracts/host.ts:61-71`). |
+
+Procedures use strict input objects and strict output objects where a structured result is declared; the spread Anamnesis response is `unknown`. Malformed declared shapes fail contract validation, while domain outcomes listed above are returned in the declared result (`src/rooms/contracts/host.ts:6-71`, `src/rooms/anamnesis/contract.ts:11-16`).
 
 ## Business rules
 
