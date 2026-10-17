@@ -60,7 +60,8 @@ describe("strict stage parsers tolerate a fence or a preamble and clip overlong 
   it("pm-read", () => {
     const raw = JSON.stringify({ summary: long, keyFacts: ["f"], openQuestions: [] });
     expect(parsePmReadResult(fenced(raw)).keyFacts).toEqual(["f"]);
-    expect(() => parsePmReadResult(fenced('{"summary":"s","keyFacts":[],"openQuestions":[],"x":1}'))).toThrow();
+    expect(parsePmReadResult(fenced('{"summary":"s","keyFacts":[],"openQuestions":[],"x":1}'))).toEqual({ summary: "s", keyFacts: [], openQuestions: [] });
+    expect(() => parsePmReadResult(fenced('{"summary":"s","keyFacts":[{"f":1}],"openQuestions":[]}'))).toThrow();
   });
   it("night review", () => {
     const raw = JSON.stringify({ decision: "findings", summary: long, findings: [{ severity: "warning", path: "a.ts", finding: "f", suggestedFix: "x" }] });
