@@ -18,7 +18,7 @@ Built by Lane Pilot from page frontmatter.
 | [Owner profile and learning data](data-model/knowledge.md) | data-model | active | 2026-10-10 |
 | [Orchestration and execution data](data-model/orchestration.md) | data-model | active | 2026-10-17 |
 | [Architectural decisions](decisions.md) | decisions | active | 2026-10-17 |
-| [docs/decisions/2026-10-08-lane-pilot-data-db-access.md](decisions/2026-10-08-lane-pilot-data-db-access.md) | — | — | — |
+| [Protecting Lane Pilot database access](decisions/2026-10-08-lane-pilot-data-db-access.md) | decisions | active | 2026-10-18 |
 | [Build and deploy Lane Pilot](deployment.md) | deployment | active | 2026-10-14 |
 | [Cross-cutting gotchas](gotchas.md) | gotchas | active | 2026-10-17 |
 | [docs/invoice-send.md](invoice-send.md) | — | — | — |
@@ -27,7 +27,7 @@ Built by Lane Pilot from page frontmatter.
 | [docs/learning.md](learning.md) | — | — | — |
 | [Project memory](memory.md) | component | active | 2026-10-11 |
 | [Native agent activation and dispatch](native-agent.md) | component | active | 2026-10-14 |
-| [Lane Pilot overview](overview.md) | overview | active | 2026-10-14 |
+| [Lane Pilot overview](overview.md) | overview | active | 2026-10-18 |
 | [Package operation details](package-operations.md) | component | active | 2026-10-17 |
 | [Shared packages](packages.md) | component | active | 2026-10-17 |
 | [RPC and host-call contracts](rpc-callers.md) | component | active | 2026-10-17 |
