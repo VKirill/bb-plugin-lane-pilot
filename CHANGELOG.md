@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.249
+
+- **The editor reads the writers' trajectories.** The first full live round (`feature:office-studio-prototype`, 4 Opus sessions, candidate `hrn_9ac0bb7924759a6f` with one check and one memory note now on trial) worked from the briefs, answers and verification only: every `trajectory.md` said «no renderable events». The events reader passed a type filter and page of 200 and swallowed its error; it now reads every event of the thread in pages of 100 and logs a failure. A sticky writer's thread holds several tasks, so the events are cut to the attempt's own turns (`sliceAttemptEvents`: from the request that names the task to the next task's request). `bb lane-pilot harness-trajectory <thread-id> [task-id]` prints what the editor would read.
+
 ## 0.1.248
 
 - **The harness editor works in the key's own folder.** The first live run (`bb lane-pilot harness-edit proj_ejbam66722 feature:office-studio-prototype`) failed with «spawn /bin/bash ENOENT»: the project binding of BB-сервис is the global override with no folder, so the evidence was written to an empty cwd. `place()` (`src/rooms/harness/server/harness.ts`) now takes the newest run of the key (its `writer_host_id` and `writer_workspace_path`), then any run of the project, then the binding, and checks with `test -d` on the host that the folder exists before anything is written there.

@@ -166,3 +166,21 @@ describe("writeFilesCommand", () => {
     }
   });
 });
+
+describe("sliceAttemptEvents", () => {
+  const request = (seq: number, text: string) => ({ type: "client/turn/requested", seq, data: { input: [{ type: "text", text }] } });
+  const item = (seq: number, text: string) => ({ type: "item/completed", seq, data: { item: { type: "agentMessage", id: `a${seq}`, text } } });
+  it("cuts a sticky writer's thread to the turns of one task", async () => {
+    const { sliceAttemptEvents } = await import("../../src/rooms/harness/server/evidence");
+    const events = [
+      request(1, "Lane Pilot task alpha-1: first"), item(2, "did alpha"),
+      request(3, "Lane Pilot task beta-2: second"), item(4, "did beta"),
+      request(5, "fix the check please"), item(6, "fixed beta"),
+      request(7, "Lane Pilot task gamma-3: third"), item(8, "did gamma"),
+    ];
+    expect(sliceAttemptEvents(events, "beta-2").map((e) => e.seq)).toEqual([3, 4, 5, 6]);
+    expect(sliceAttemptEvents(events, "alpha-1").map((e) => e.seq)).toEqual([1, 2]);
+    expect(sliceAttemptEvents(events, "gamma-3").map((e) => e.seq)).toEqual([7, 8]);
+    expect(sliceAttemptEvents(events, "unknown").map((e) => e.seq)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  });
+});

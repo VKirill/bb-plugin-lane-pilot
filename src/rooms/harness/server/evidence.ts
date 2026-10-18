@@ -163,6 +163,31 @@ export function parseHarvest(stdout: string): Tree {
 
 export const shellQuote = (text: string): string => `'${text.replace(/'/g, "'\\''")}'`;
 
+const requestText = (event: ThreadEventLike): string => {
+  const data = (event.data && typeof event.data === "object" ? event.data : {}) as { input?: unknown; text?: unknown };
+  const parts = Array.isArray(data.input) ? data.input as Array<{ text?: unknown }> : [];
+  return [typeof data.text === "string" ? data.text : "", ...parts.map((part) => (typeof part?.text === "string" ? part.text : ""))].join("\n");
+};
+
+/**
+ * Sticky writers take several tasks in one thread: the attempt's own turns start at the request that names its task
+ * («Lane Pilot task <id>: …») and end before the request of the next task. Without such a request the whole thread is
+ * returned, which is what a single-task thread is.
+ */
+export function sliceAttemptEvents(events: readonly ThreadEventLike[], taskId: string): ThreadEventLike[] {
+  const ordered = [...events].sort((a, b) => Number(a.seq ?? 0) - Number(b.seq ?? 0));
+  const isRequest = (event: ThreadEventLike) => event.type === "client/turn/requested";
+  const names = (event: ThreadEventLike, id: string) => requestText(event).includes(`Lane Pilot task ${id}`) || requestText(event).includes(`task ${id}:`);
+  const start = ordered.findIndex((event) => isRequest(event) && names(event, taskId));
+  if (start < 0) return ordered;
+  let end = ordered.length;
+  for (let i = start + 1; i < ordered.length; i++) {
+    const event = ordered[i]!;
+    if (isRequest(event) && /Lane Pilot task [\w.-]+:/.test(requestText(event)) && !names(event, taskId)) { end = i; break; }
+  }
+  return ordered.slice(start, end);
+}
+
 /** A shell command that writes `files` under `dir` (paths relative), creating folders; content travels as base64. */
 export function writeFilesCommand(dir: string, files: Record<string, string>): string {
   const lines = [`mkdir -p ${shellQuote(dir)} || exit 1`, `cd ${shellQuote(dir)} || exit 1`];

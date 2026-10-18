@@ -4,13 +4,13 @@ import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { upsertLessonProposal, type RuleForm } from "@lane-pilot/run-insights";
 import {
   HarnessValidationError, LANE_PILOT_SURFACE, alwaysOnText, checkNames, composePrompt, experienceIsSupported, experiencePrompt, inventory, isBase, missionPointer,
-  parseEdits, parseExperience, parseNotes, proposePrompt, renderExperienceMarkdown, skillNames, validate, type Tree,
+  parseEdits, parseExperience, parseNotes, proposePrompt, renderExperienceMarkdown, renderThreadEvents, skillNames, validate, type ThreadEventLike, type Tree,
 } from "@lane-pilot/harness-core";
 import { fullAccessSpawn, scheduleIsolated, stringAt, type ServerCore, type Services } from "../../core/server";
 import { SANDBOX_PROJECT_ID, isSandboxProjectName } from "../../stability/server";
 import { ensureExcludeLinesCommand, EXCLUDE_NOT_GIT } from "../../verification";
 import { getAttempt } from "../../storage";
-import { evidenceFiles, evidenceLayout, harvestCommand, parseHarvest, shellQuote, treeDiff, writeFilesCommand, type AttemptEvidence, type LibraryEntry, type PoolCandidate } from "./evidence";
+import { evidenceFiles, evidenceLayout, harvestCommand, parseHarvest, shellQuote, sliceAttemptEvents, treeDiff, writeFilesCommand, type AttemptEvidence, type LibraryEntry, type PoolCandidate } from "./evidence";
 import {
   ANY_WRITER, activeHarness, assignAttemptHarness, getHarness, insertHarness, listExperiences, listHarnesses, saveExperience, setHarnessState, teachingKeys, trialAttempts, trialHarness,
   type HarnessRow,
@@ -47,8 +47,8 @@ const CONFIG_KEY = (projectId: string) => `harness:config:${projectId}`;
 const LAST_EDIT_KEY = (projectId: string, area: string, writerKey: string) => `harness:last-edit:${projectId}:${area}:${writerKey}`;
 export const HARNESS_DIR = ".lane-pilot/harness";
 const EXCLUDE_LINES = [".lane-pilot/", ".opencode/skills/", ".claude/skills/"];
-const EVENT_TYPES = ["item/completed", "turn/completed", "provider/error", "system/error"];
-const EVENT_PAGE = 200;
+const EVENT_PAGE = 100;
+const EVENT_PAGES_MAX = 60;
 const TRAJECTORY_MAX_CHARS = 120_000;
 const COMMAND_BUDGET = 400_000;
 
@@ -158,18 +158,33 @@ export function createHarness(ctx: ServerCore, services: Services) {
     return attempt ? checksForAttempt(attempt.id) : [];
   }
 
+  /** Every event of a thread, oldest first; a failure is logged once and gives what was read so far. */
   async function listThreadEvents(threadId: string): Promise<unknown[]> {
     const events: unknown[] = [];
     let cursor = 0;
-    for (let pages = 0; pages < 50; pages++) {
-      const listed = await bb.sdk.threads.events.list({ threadId, order: "asc", limit: String(EVENT_PAGE), ...(cursor > 0 ? { afterSeq: String(cursor) } : {}), types: EVENT_TYPES } as never).catch(() => null);
-      if (!Array.isArray(listed) || listed.length === 0) break;
+    for (let pages = 0; pages < EVENT_PAGES_MAX; pages++) {
+      let listed: unknown;
+      try {
+        listed = await bb.sdk.threads.events.list({ threadId, order: "asc", limit: String(EVENT_PAGE), ...(cursor > 0 ? { afterSeq: String(cursor) } : {}) } as never);
+      } catch (cause) {
+        ctx.log(`harness: events of ${threadId} could not be read after ${events.length}: ${cause instanceof Error ? cause.message : String(cause)}`);
+        break;
+      }
+      if (!Array.isArray(listed)) { ctx.log(`harness: events of ${threadId} came back as ${listed === null ? "null" : typeof listed}`); break; }
+      if (listed.length === 0) break;
       events.push(...listed);
       const last = Number((listed[listed.length - 1] as { seq?: unknown })?.seq ?? 0);
       if (!Number.isFinite(last) || last <= cursor || listed.length < EVENT_PAGE) break;
       cursor = last;
     }
     return events;
+  }
+
+  /** The rendered trajectory of one thread, cut to one task's turns when a task id is given (sticky writers share a thread). */
+  async function trajectory(threadId: string, taskId?: string): Promise<{ events: number; sliced: number; text: string }> {
+    const events = await listThreadEvents(threadId);
+    const sliced = taskId ? sliceAttemptEvents(events as ThreadEventLike[], taskId) : events as ThreadEventLike[];
+    return { events: events.length, sliced: sliced.length, text: renderThreadEvents(sliced, { maxChars: TRAJECTORY_MAX_CHARS }) };
   }
 
   /** The area's recent finished attempts with everything the editor may cite. */
@@ -192,7 +207,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
       const acceptance = parse((receipt.get(row.runId, row.taskId, "acceptance-receipt") as { result_json: string | null } | undefined)?.result_json);
       const verification = parse((receipt.get(row.runId, row.taskId, "verification") as { result_json: string | null } | undefined)?.result_json);
       const critique = parse((receipt.get(row.runId, row.taskId, "code-critique") as { result_json: string | null } | undefined)?.result_json);
-      const events = row.threadId ? await listThreadEvents(row.threadId).catch(() => null) : null;
+      const events = row.threadId ? sliceAttemptEvents(await listThreadEvents(row.threadId) as ThreadEventLike[], row.taskId) : null;
       out.push({
         attemptId: row.id, taskId: row.taskId, attemptNo: row.attemptNo, state: row.state, reason: row.reason, createdAt: row.createdAt,
         contract: parse(row.contract) ?? {},
@@ -489,7 +504,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
     }
   }, { timeoutMs: 5 * 3_600_000 });
 
-  return { config, setConfig, forAttempt, materialize, checksForAttempt, checksForWriterThread, runEditor, evaluateTrials, reflect, tick, status };
+  return { config, setConfig, forAttempt, materialize, checksForAttempt, checksForWriterThread, runEditor, evaluateTrials, reflect, tick, status, trajectory };
 }
 
 export type HarnessApi = ReturnType<typeof createHarness>;
