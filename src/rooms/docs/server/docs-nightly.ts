@@ -6,7 +6,7 @@ import { docsRepairPrompt, docsSelection, docsScheduleDue, docsSinceEpoch, flowD
 import type { DocsUnit } from "../docs";
 import { cadenceAllowsToday, codeDocsVerdict, docsCadence, docsFactsKey, docsWorthinessState, DOCS_WORTHINESS_QUESTION, fallbackDocsVerdict } from "../docs-worthiness";
 import type { DocsCadence, DocsVerdict, DocsWorthinessFacts } from "../docs-worthiness";
-import { blockingDocsFindings, buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDesignCanon, isDocsIndex, lintDocsPages, pagesToRefresh, uncataloguedPages, withCitedSources, withVerifiedConfidence } from "../docs-lint";
+import { blockingDocsFindings, buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDesignCanon, isDocsIndex, lintDocsPages, oversizedPageFindings, pagesToRefresh, uncataloguedPages, withCitedSources, withVerifiedConfidence } from "../docs-lint";
 import { configuredSetting } from "../../core/server";
 import { fullAccessSpawn } from "../../core/server";
 import { stringAt, valueAt } from "../../core/server";
@@ -174,7 +174,9 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     basePath?:string;label:string;unit:DocsUnit;threadId:string;phase:"writing"|"repairing";sentAt?:number;
     beforeDirty:string[];localDate:string;since:ReturnType<typeof parseDocsSettings>["since"];roots:string[];workspaces:Array<{path:string;name:string;docsDir:string|null}>;
     hasDocs:boolean;changedCount:number;refresh:string[];gaps:{missingPages:string[];uncoveredCore:string[]};anchors:{count:number;jev:string}|null;
-    core:Array<{name:string;file:string;line:number;endLine:number}>;kvKey:string};
+    core:Array<{name:string;file:string;line:number;endLine:number}>;kvKey:string;
+    /** Pages of the place already over the size limit when the agent started (absent in records saved by older versions). */
+    oversizedAtStart?:string[]};
 
   /** What one docs unit may write: a flow its page, the root its docs/ outside docs/flows when flows exist, a workspace its folder. */
   function unitWritable(unit:DocsUnit):(path:string)=>boolean {
@@ -441,7 +443,9 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     // From here on the unit's progress is saved, so a plugin reload picks the same agent thread up again.
     const record:DocsUnitRecord={version:1,projectId:ctx.projectId,place,...(ctx.basePath&&ctx.basePath!==place.path?{basePath:ctx.basePath}:{}),label,unit,threadId,phase:"writing",beforeDirty:before.dirty,localDate:before.localDate,
       since:docs.since,roots:ctx.roots,workspaces:ctx.workspaces,hasDocs,changedCount:changed.length,refresh,gaps,
-      anchors:anchors?{count:anchors.anchors,jev:anchors.jev}:null,core:core.slice(0,2000),kvKey};
+      anchors:anchors?{count:anchors.anchors,jev:anchors.jev}:null,core:core.slice(0,2000),kvKey,
+      // Pages an earlier failed pass left oversized are this unit's work, not the base's.
+      oversizedAtStart:oversized.filter((path)=>!before.dirty.includes(path))};
     await saveDocsUnitRecord(record);
     return finishDocsUnit(record,ctx.othersWritable);
   }
@@ -542,14 +546,16 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
         const docsDirty=after.dirty.filter(writable);
         // Pages too large to read still exist: links to them resolve, the size check reports them.
         // Only what this pass wrote, or a link to a page it removed, blocks it: untouched pages are on main as they are.
-        const findings:Array<{path:string;rule:string;detail:string}>=blockingDocsFindings([...oversized.filter(writable).map((path)=>({path,rule:"size",detail:"page is over 40000 bytes; split it into pages under 30000 bytes (a large data model into data-model/<area>.md pages) and link them"})),
+        // A page already oversized when the agent started is reported, not split now: its unread content would block.
+        const sized=oversizedPageFindings(oversized.filter(writable),record.oversizedAtStart??[]);
+        const findings:Array<{path:string;rule:string;detail:string}>=blockingDocsFindings([...sized.blocking,
           ...lintDocsPages(pages,counts,oversized).filter((finding)=>writable(finding.path))],docsDirty);
         // The capabilities catalogue covers every capability the apps document, not only the ones inside a flow.
         const catalogue=unit.flows?.length?pages.find((page)=>page.path===`${d}/capabilities.md`):undefined;
         if(catalogue){
           const features=pages.map((page)=>page.path).filter((path)=>/^apps\/[^/]+\/docs\/features\/[^/]+\.md$/.test(path));
           // A link on an area page the catalogue links (docs/capabilities/<area>.md) counts: the size limit splits it.
-          for(const path of uncataloguedPages(catalogue,pages,features)) findings.push({path:catalogue.path,rule:"coverage",detail:`does not link ${path}: add the capability that page describes, with its conditions and where it is available, and link it from ${d}/capabilities.md or an area page it links under ${d}/capabilities/ (operator tools under operator capabilities); keep the links already there`});
+          for(const path of uncataloguedPages(catalogue,pages,features)) findings.push({path:catalogue.path,rule:"coverage",detail:`does not link ${path}: add the capability that page describes, with its conditions and where it is available, citing the code that page cites (never the page itself), and link it from ${d}/capabilities.md or an area page it links under ${d}/capabilities/ (operator tools under operator capabilities); keep the links already there`});
         }
         let pageStats:Array<{path:string;checked:number;supported:number;partial:number}>=[];
         // Structure first; once it holds, Jev checks each claim against its cited lines on the pages written now,
@@ -568,7 +574,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
             pages:explaining.slice(0,500),core:core.slice(0,2000)},{hostId:place.hostId,timeoutMs:900_000}).catch(()=>null):null;
           findings.push(...(depth?.findings??[]));
         }
-        return {touched,docsDirty,pageStats,findings};
+        return {touched,docsDirty,pageStats,findings,kept:blockingDocsFindings(sized.kept,docsDirty)};
       };
       let checked=await inspect();
       if(record.phase==="writing"&&checked.findings.length){
@@ -582,7 +588,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       // A Jev judgment is a signal, not a verdict: once the agent has rechecked it in the repair round,
       // what Jev alone still doubts goes to the report as a warning; the deterministic checks keep blocking.
       const judged=(finding:{rule:string})=>finding.rule==="evidence-check"||finding.rule==="contradiction"||finding.rule==="depth"||finding.rule==="links-external";
-      const warnings=checked.findings.filter(judged);
+      const warnings=[...checked.findings.filter(judged),...checked.kept];
       checked={...checked,findings:checked.findings.filter((finding)=>!judged(finding))};
       let commit:string|null=null, merged:string|null=null;
       // Every page this pass wrote passed the checks, pages an earlier pass left uncommitted included, so they go in; code never does.

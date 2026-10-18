@@ -168,6 +168,21 @@ export function blockingDocsFindings<T extends DocsFinding>(findings:T[], writte
   return findings.filter((finding) => mine.has(finding.path) || (finding.target !== undefined && mine.has(finding.target)));
 }
 
+/**
+ * Size findings for the oversized pages a unit may write. A page this pass made oversized blocks it; a page already
+ * over the limit before the agent started is only reported. The lint never reads an oversized page, so the split the
+ * repair round asked for exposed its whole content to a final check with no round left: Lane Pilot's 129 KB adoc
+ * matrix, one row edited, became 786 findings (2026-10-18).
+ */
+export function oversizedPageFindings(oversized:string[], oversizedAtStart:string[]): { blocking:DocsFinding[]; kept:DocsFinding[] } {
+  const before = new Set(oversizedAtStart);
+  const finding = (path:string, detail:string):DocsFinding => ({ path, rule:"size", detail });
+  return {
+    blocking:oversized.filter((path) => !before.has(path)).map((path) => finding(path, "page is over 40000 bytes; split it into pages under 30000 bytes (a large data model into data-model/<area>.md pages) and link them")),
+    kept:oversized.filter((path) => before.has(path)).map((path) => finding(path, "page was over 40000 bytes before this pass; the lint cannot read it, so split it in a pass of its own")),
+  };
+}
+
 /** Files cited anywhere in the pages, for the line-count lookup the lint needs. */
 export function citedFiles(pages:DocPage[]):string[] {
   return [...new Set(pages.flatMap((page) => pageCitations(page.content).map((citation) => citation.file)))].sort();
