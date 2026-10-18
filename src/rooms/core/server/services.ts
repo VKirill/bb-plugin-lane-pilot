@@ -2,6 +2,7 @@ import type { CouncilApi } from "../../council/server";
 import type { ErrandsApi } from "../../qa/server";
 import type { ScheduleService } from "../../schedule/server";
 import type { RuleScanApi } from "../../self-repair/server";
+import type { HarnessApi } from "../../harness/server";
 import type { WorldApi } from "../../world/server";
 import type { Canary } from "../../stability/server";
 import type { createActivation } from "../../native-agent/server";
@@ -54,6 +55,7 @@ export interface Services {
   world: WorldApi;
   canary: Canary;
   ruleScan: RuleScanApi;
+  harness: HarnessApi;
   DOCS_NIGHT_ATTEMPTS: DocsNightlyApi["DOCS_NIGHT_ATTEMPTS"];
   DOCS_OPEN_KEY: DocsNightlyApi["DOCS_OPEN_KEY"];
   DOCS_TOOLING: DocsNightlyApi["DOCS_TOOLING"];

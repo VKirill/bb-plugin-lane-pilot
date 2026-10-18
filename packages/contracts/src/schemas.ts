@@ -50,6 +50,10 @@ export const ruleProposalSchema = z.object({
   scopeLabel: z.string(),
   audience: z.enum(["writer", "pm", "both"]),
   always: z.boolean(),
+  /** 0.1.247: the lesson's form (always-on line, skill, check, hook, memory note), the situation it fires on, its confidence. */
+  form: z.enum(["always", "skill", "check", "hook", "memory"]).nullable().optional(),
+  cue: z.string().nullable().optional(),
+  confidence: z.string().nullable().optional(),
 }).strict();
 
 export const ruleScanSchema = z.object({

@@ -5,6 +5,7 @@ import {
   ruleAudienceMigrations,
   setRuleAudience,
   upsertLessonProposal,
+  ruleFormMigrations,
   acceptedRules, collectLessonSources, decideRuleProposal, getRuleProposal, lessonSignature, listRuleProposals,
   normalizeLessonText, repeatedLessons, reviseRuleProposal, ruleMigrations, ruleProposalId, upsertRuleProposals,
   type LessonSource,
@@ -19,7 +20,7 @@ function openDb() {
       provider_id TEXT, model TEXT, result_json TEXT, reason TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY(run_id, task_id, stage_id));
     CREATE TABLE lane_pilot_memory (id TEXT NOT NULL, project_id TEXT NOT NULL, UNIQUE(project_id,id));
   `);
-  for (const statement of [...ruleMigrations, ...ruleTrialMigrations, ...ruleAudienceMigrations]) db.exec(statement);
+  for (const statement of [...ruleMigrations, ...ruleTrialMigrations, ...ruleAudienceMigrations, ...ruleFormMigrations]) db.exec(statement);
   return db;
 }
 
@@ -132,6 +133,15 @@ describe("rule audience", () => {
     expect(setRuleAudience(db, "p", old.id, "writer", true)).toBe(true);
     expect(listRuleProposals(db, "p").find((row) => row.id === old.id)).toMatchObject({ audience: "writer", always: true });
     expect(setRuleAudience(db, "p", "missing", "pm", false)).toBe(false);
+  });
+
+  it("keeps a lesson's form, cue and confidence (the Harness² reflection writes them); an unknown form is dropped", () => {
+    const db = openDb();
+    const check = upsertLessonProposal(db, "p", { rule: "Add a check that fails when a changed composable has no spec in the diff.", audience: "writer", form: "check", cue: "a composable ships without its colocated spec", confidence: "medium" }, 1);
+    const plain = upsertLessonProposal(db, "p", { rule: "Reconcile names before joining two records.", form: "weird" as never }, 2);
+    const byId = Object.fromEntries(listRuleProposals(db, "p").map((row) => [row.id, row]));
+    expect(byId[check.id]).toMatchObject({ form: "check", cue: "a composable ships without its colocated spec", confidence: "medium" });
+    expect(byId[plain.id]).toMatchObject({ form: null, cue: null, confidence: null });
   });
 });
 

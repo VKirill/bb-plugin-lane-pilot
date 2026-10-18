@@ -3,7 +3,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import { FREE_CLASSES, failureClass, isWaitingSecret, isWriterSilent } from "../runs";
 import { handoffMigrations } from "@lane-pilot/handoff";
 import { councilMigrations } from "@lane-pilot/council";
-import { ruleAudienceMigrations, ruleMigrations, ruleTrialMigrations, triageMigrations } from "@lane-pilot/run-insights";
+import { ruleAudienceMigrations, ruleFormMigrations, ruleMigrations, ruleTrialMigrations, triageMigrations } from "@lane-pilot/run-insights";
 import type Database from "better-sqlite3";
 import type { PrototypeConfig } from "../contracts";
 import type { StageId, StageState } from "../tasks";
@@ -21,6 +21,7 @@ import { jevMigrations } from "@lane-pilot/jev";
 import { learningMigrations } from "../learning/migrations";
 import { scheduleMigrations } from "../schedule";
 import { worldMigrations } from "../world";
+import { harnessMigrations } from "../harness";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
 export type LanePilotDatabase = Database.Database;
@@ -326,6 +327,10 @@ export const migrations = [
     pm_thread_id TEXT NOT NULL,
     sent_at INTEGER NOT NULL
   )`,
+  // 0.1.247: a lesson's form (always | skill | check | hook | memory), its cue and confidence (the Harness² port).
+  ...ruleFormMigrations,
+  // 0.1.247: the writer harness that learns (src/rooms/harness): trees, trials, experience; the tree and arm on each attempt.
+  ...harnessMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

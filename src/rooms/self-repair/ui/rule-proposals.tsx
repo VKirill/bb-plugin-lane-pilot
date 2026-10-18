@@ -16,6 +16,7 @@ type Proposal = {
   trial: { applied: number; appliedAccepted: number; recurrences: number } | null;
   scope: string[]; scopeLabel: string;
   audience: "writer" | "pm" | "both"; always: boolean;
+  form?: "always" | "skill" | "check" | "hook" | "memory" | null; cue?: string | null; confidence?: string | null;
 };
 type Scan = { state: "idle" | "running" | "done" | "failed"; startedAt: number | null; finishedAt: number | null; triaged: number; groups: number; proposals: number; reason: string | null;
   adopted?: number; confirmed?: number; revised?: number; retired?: number };
@@ -166,6 +167,14 @@ export function RuleProposals({ projectId }: { projectId: string }) {
   );
   const ruleText = (id: string) => proposals.find((row) => row.id === id)?.rule ?? id;
 
+  const lessonShape = (proposal: Proposal) => (proposal.cue || proposal.form) ? (
+    <p className="text-xs text-muted-foreground" data-testid={`rule-shape-${proposal.id}`}>
+      {proposal.form ? <span className="mr-2 rounded border border-input px-1 font-mono">{proposal.form}</span> : null}
+      {proposal.cue ? <span>{t("rulesCue")}: {proposal.cue}</span> : null}
+      {proposal.confidence ? <span className="ml-2">({proposal.confidence})</span> : null}
+    </p>
+  ) : null;
+
   const evidence = (proposal: Proposal) => proposal.evidence.length > 0 ? (
     <Disclosure compact summary={`${t("rulesEvidence")} (${proposal.evidence.length})`}>
       <ul className="space-y-1 text-xs text-muted-foreground" style={{ overflowWrap: "anywhere" }} data-testid={`rule-evidence-${proposal.id}`}>
@@ -221,6 +230,7 @@ export function RuleProposals({ projectId }: { projectId: string }) {
         {pending.map((proposal) => (
           <div key={proposal.id} className="lp-card max-w-xl space-y-2 p-3" data-testid={`rule-${proposal.id}`}>
             {meta(proposal)}
+            {lessonShape(proposal)}
             {audienceControls(proposal)}
             <textarea aria-label={t("rulesTitle")} className="min-h-20 w-full rounded-lg border border-[var(--lp-outline)] bg-[var(--lp-card)] p-2 text-sm"
               style={{ overflowWrap: "anywhere" }} maxLength={600} value={drafts[proposal.id] ?? proposal.rule}
@@ -240,7 +250,8 @@ export function RuleProposals({ projectId }: { projectId: string }) {
             <div className="min-w-0 space-y-1">
               <p className="text-sm" style={{ overflowWrap: "anywhere" }}>{proposal.rule}</p>
               {meta(proposal)}
-              {audienceControls(proposal)}
+              {lessonShape(proposal)}
+            {audienceControls(proposal)}
               {evidence(proposal)}
             </div>
             <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void decide(proposal, "revoke")}>{t("rulesRevoke")}</Button>

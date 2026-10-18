@@ -447,11 +447,22 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       // An OpenCode writer's guard reads its skills from the worktree: the picked ones are linked there before it starts.
       const materialized = await skillMaterial.materialize({ attemptId:input.attemptId, hostId:input.config.hostId, workspacePath, live,
         providerId:writerProviderId, skills:writerSkills.skills, sources:writerSkills.sources });
+      // The area's harness tree (src/rooms/harness): a candidate on trial or the adopted one adds its always-on lines,
+      // memory notes, skills and checks on top of everything above; the base tree is empty and changes nothing.
+      const writerKey=`${writerProviderId}/${writerModel}`;
+      const harness=await services.harness?.forAttempt({ projectId:input.projectId, area:input.task.area, writerKey, attemptId:input.attemptId }).catch((cause:unknown)=>{
+        bb.log.warn(`Lane Pilot harness for ${input.attemptId} skipped: ${cause instanceof Error?cause.message:String(cause)}`); return null; }) ?? null;
+      const harnessFiles=harness&&(harness.skillNames.length||harness.checkNames.length)
+        ? await services.harness.materialize({ attemptId:input.attemptId, hostId:input.config.hostId, workspacePath, live, parts:harness }).catch(()=>({ written:[] as string[], reason:"error" }))
+        : { written:[] as string[], reason:null as string|null };
+      const harnessSkills=harnessFiles.written.length?harness!.skillNames:[];
+      const briefRulesText=[rulesText, harness?.alwaysOn ?? ""].filter(Boolean).join("\n");
+      const briefMemoryText=[relevantMemory.text, harness?.memory ?? ""].filter(Boolean).join("\n");
       const writerAgent = boundedAgentName(settings["writer.agent"],"Lane Pilot writer");
       const taskFolder = await listTaskFolder(bb, input.config.hostId, workspacePath, input.taskId);
-      const contextSegments = writerBriefSegments(attemptTask,relevantMemory.text,executionPacket,input.emergency&&!input.continuation
+      const contextSegments = writerBriefSegments(attemptTask,briefMemoryText,executionPacket,input.emergency&&!input.continuation
         ? "fallback"  // the reason stays in the trace; the writer is only told it is the fallback
-        : undefined,writerAgent,input.pmReadContext ?? "",rulesText,input.previousAttempt ?? "",taskFolder,live);
+        : undefined,writerAgent,input.pmReadContext ?? "",briefRulesText,input.previousAttempt ?? "",taskFolder,live);
       // A fallback that continues the interrupted session reads its handoff right after its role line.
       const briefSegments = input.continuation
         ? [contextSegments[0]!,{text:input.continuation.brief,hidden:true},...contextSegments.slice(1)]
@@ -474,7 +485,9 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
           promptChars:writerBrief.length,
           helperMode:helperSnapshot?.mode ?? "inherit",
           helperRequired:helperSnapshot?.policy?.required === true,
-          skillPick:{...writerSkills, materialized:materialized.linked},
+          skillPick:{...writerSkills, skills:[...writerSkills.skills, ...harnessSkills], materialized:[...materialized.linked, ...harnessSkills]},
+          writerKey,
+          harness:harness ? { id:harness.harnessId, arm:harness.arm, alwaysOnChars:harness.alwaysOn.length, skills:harnessSkills, checks:harnessFiles.written.length?harness.checkNames:[], materialize:harnessFiles.reason } : null,
         };
         saveReasoningTrace(db, { ...existingTrace, dispatchContext });
       }
@@ -485,7 +498,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       });
       const launchArgs = {
         ...placement,
-        ...requiredPolicyField(bb, helperSnapshot, writerProviderId, "writer", { skills:writerSkills.skills }),
+        ...requiredPolicyField(bb, helperSnapshot, writerProviderId, "writer", { skills:[...writerSkills.skills, ...harnessSkills] }),
         ...execution,
         input: writerBriefInput(attemptTask, briefSegments, writerProviderId),
         pluginMetadata:{

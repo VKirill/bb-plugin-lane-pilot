@@ -57,6 +57,9 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"state", summary:"Inspect persisted stage-0 state", usage:"bb lane-pilot state <project-id>" },
       { name:"budget", summary:"Set or show the run budget of a project (attempts, wall minutes, tokens, child threads; empty value clears)", usage:"bb lane-pilot budget <project-id> [run.max_attempts=N] [run.max_wall_minutes=N] [run.max_tokens=N] [run.max_children=N]" },
       { name:"health", summary:"Provider breaker state and the budgets of open runs", usage:"bb lane-pilot health [run-id]" },
+      { name:"harness", summary:"The writer harness that learns: active trees, trials and their arms, keys with enough attempts", usage:"bb lane-pilot harness <project-id>" },
+      { name:"harness-edit", summary:"Run the harness editor now for one key (two editors, one composer; the result goes on trial)", usage:"bb lane-pilot harness-edit <project-id> [area] [writer-key] [wait=1]" },
+      { name:"harness-tick", summary:"Judge the project's trials and start the night's editors (dry=1 only reports)", usage:"bb lane-pilot harness-tick <project-id> [dry=1]" },
       { name:"council", summary:"Convene a council of directors on a question in an open PM run", usage:"bb lane-pilot council <run-id> <question> [roles=product,skeptic] [rounds=N] [mode=room|rounds] [judge=on|off] [materials=a.md,b.csv]" },
       { name:"council-say", summary:"Say something to a running council as the owner, or decide=1 to ask for the decision", usage:"bb lane-pilot council-say <council-id> [text] [decide=1]" },
       { name:"council-status", summary:"A council session and its feed", usage:"bb lane-pilot council-status <council-id> [after-seq]" },
@@ -155,6 +158,19 @@ export function registerCli(ctx: ServerCore, services: Services) {
           const found = getCouncilSession(db, args[0]!);
           if (!found) throw new Error("council not found");
           return { exitCode:0, stdout:JSON.stringify(services.council.councilView(found, args[1] ? Number(args[1]) : 0), null, 2) };
+        }
+        if (command === "harness" && args.length === 1) {
+          return { exitCode:0, stdout:JSON.stringify(await services.harness.status(args[0]!), null, 2) };
+        }
+        if (command === "harness-edit" && args.length >= 1 && args.length <= 4) {
+          const wait = args.includes("wait=1");
+          const plain = args.filter((arg) => arg !== "wait=1");
+          const run = services.harness.runEditor({ projectId:plain[0]!, area:plain[1] ?? "", writerKey:plain[2] ?? "*", reason:"cli" });
+          if (!wait) { void run.catch(() => undefined); return { exitCode:0, stdout:JSON.stringify({ status:"started", detail:"running in the background; bb lane-pilot harness <project-id> shows the trial when it lands" }, null, 2) }; }
+          return { exitCode:0, stdout:JSON.stringify(await run, null, 2) };
+        }
+        if (command === "harness-tick" && args.length >= 1 && args.length <= 2) {
+          return { exitCode:0, stdout:JSON.stringify(await services.harness.tick(args[0]!, { dryRun:args[1] === "dry=1" }), null, 2) };
         }
         if (command === "health" && args.length <= 1) {
           const runIds = args[0] ? [args[0]] : [...services.runBudgets.keys()];

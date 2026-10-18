@@ -86,6 +86,19 @@ export const ruleAudienceMigrations: readonly string[] = [
 ];
 
 /** writer — the agent that edits code for one task; pm — planning, contracts, reviews, merges, deploys; both. */
+/**
+ * 0.1.247 (the Harness² port): a lesson names the FORM it should take. Always-on text is the expensive one (read on every
+ * task); a check, a skill, a hook or a memory note costs nothing until it applies. The cue is the shape of situation the
+ * lesson fires on, the confidence what the reflection gave it.
+ */
+export const ruleFormMigrations: readonly string[] = [
+  `ALTER TABLE lane_pilot_rule_proposal ADD COLUMN form TEXT`,
+  `ALTER TABLE lane_pilot_rule_proposal ADD COLUMN cue TEXT`,
+  `ALTER TABLE lane_pilot_rule_proposal ADD COLUMN confidence TEXT`,
+];
+export type RuleForm = "always" | "skill" | "check" | "hook" | "memory";
+export const RULE_FORMS: readonly RuleForm[] = ["always", "skill", "check", "hook", "memory"];
+
 export type RuleAudience = "writer" | "pm" | "both";
 export const RULE_AUDIENCES: readonly RuleAudience[] = ["writer", "pm", "both"];
 
@@ -128,6 +141,9 @@ export type RuleProposal = {
   /** Section chain the rule applies to, outermost first; empty for the whole project. */
   scope: string[];
   audience: RuleAudience;
+  form: RuleForm | null;
+  cue: string | null;
+  confidence: string | null;
   /** Given to every writer task without asking System One. */
   always: boolean;
 };
@@ -227,7 +243,7 @@ type Row = {
   first_seen_at: number; last_seen_at: number; updated_at: number; decided_at: number | null;
   decided_by: "owner" | "auto" | null; trial_state: "trial" | "confirmed" | null; revision: number; revision_started_at: number | null; retired_reason: string | null;
   scope_json?: string;
-  audience?: RuleAudience; always_on?: number;
+  audience?: RuleAudience; always_on?: number; form?: RuleForm | null; cue?: string | null; confidence?: string | null;
 };
 
 function fromRow(row: Row): RuleProposal {
@@ -239,7 +255,7 @@ function fromRow(row: Row): RuleProposal {
     decidedBy: row.decided_by ?? null, trialState: row.trial_state ?? null, revision: row.revision ?? 1,
     revisionStartedAt: row.revision_started_at ?? null, retiredReason: row.retired_reason ?? null,
     scope: parseScope(row.scope_json),
-    audience: row.audience ?? "writer", always: row.always_on === 1,
+    audience: row.audience ?? "writer", always: row.always_on === 1, form: row.form ?? null, cue: row.cue ?? null, confidence: row.confidence ?? null,
   };
 }
 
@@ -311,7 +327,7 @@ export const LESSON_PROPOSALS_MAX = 30;
  * instead of a line in .agents/LESSONS.md, which grew without bound (≈150 entries in SelfyStudio, 2026-10-03).
  * A lesson close to a proposed or accepted rule counts as a repeat of it.
  */
-export function upsertLessonProposal(db: RulesDatabase, projectId: string, input: { rule: string; evidence?: string; scope?: readonly string[]; audience?: RuleAudience; always?: boolean }, now = Date.now()):
+export function upsertLessonProposal(db: RulesDatabase, projectId: string, input: { rule: string; evidence?: string; scope?: readonly string[]; audience?: RuleAudience; always?: boolean; form?: RuleForm | null; cue?: string | null; confidence?: string | null }, now = Date.now()):
   { id: string; created: boolean; repeatOf: string | null } {
   const rule = clip(input.rule, 600);
   const words = ruleWords(rule);
@@ -326,10 +342,11 @@ export function upsertLessonProposal(db: RulesDatabase, projectId: string, input
   const id = ruleProposalId(signature);
   const examples = input.evidence ? [clip(input.evidence, 300)] : [];
   db.prepare(`INSERT INTO lane_pilot_rule_proposal
-    (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,evidence_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at,scope_json,audience,always_on)
-    VALUES (?,?,?,?,'pm','proposed',1,0,?,'[]',NULL,?,?,?,NULL,?,?,?)
+    (id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,evidence_json,memory_id,first_seen_at,last_seen_at,updated_at,decided_at,scope_json,audience,always_on,form,cue,confidence)
+    VALUES (?,?,?,?,'pm','proposed',1,0,?,'[]',NULL,?,?,?,NULL,?,?,?,?,?,?)
     ON CONFLICT(project_id,id) DO UPDATE SET occurrences=occurrences+1, last_seen_at=excluded.last_seen_at, updated_at=excluded.updated_at`)
-    .run(id, projectId, signature, rule, JSON.stringify(examples), now, now, now, JSON.stringify(scope), input.audience ?? "both", input.always ? 1 : 0);
+    .run(id, projectId, signature, rule, JSON.stringify(examples), now, now, now, JSON.stringify(scope), input.audience ?? "both", input.always ? 1 : 0,
+      input.form && RULE_FORMS.includes(input.form) ? input.form : null, input.cue ? clip(input.cue, 300) : null, input.confidence ? clip(input.confidence, 40) : null);
   const waiting = db.prepare("SELECT id FROM lane_pilot_rule_proposal WHERE project_id=? AND state='proposed' AND signature LIKE 'lesson:%' ORDER BY last_seen_at DESC").all(projectId) as Array<{ id: string }>;
   for (const old of waiting.slice(LESSON_PROPOSALS_MAX)) {
     db.prepare("UPDATE lane_pilot_rule_proposal SET state='rejected', updated_at=?, decided_at=? WHERE project_id=? AND id=? AND state='proposed'").run(now, now, projectId, old.id);

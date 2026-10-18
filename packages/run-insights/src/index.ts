@@ -21,7 +21,7 @@ export {
   reviseRuleProposal,
   ruleMigrations,
   ruleTrialMigrations,
-  ruleAudienceMigrations,
+  ruleAudienceMigrations, ruleFormMigrations, RULE_FORMS, type RuleForm,
   setRuleAudience,
   RULE_AUDIENCES,
   type RuleAudience,

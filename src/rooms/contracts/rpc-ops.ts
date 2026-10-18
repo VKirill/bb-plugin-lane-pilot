@@ -107,4 +107,25 @@ export const rpcOps = {
     input: z.object({ projectId: z.string().min(1), snapshotPath: z.string().startsWith("/").optional() }).strict(),
     output: z.unknown(),
   },
+  /** The writer harness that learns (src/rooms/harness): trees per area and writer, trials, the nightly editor. */
+  harness_status: {
+    input: z.object({ projectId: z.string().min(1) }).strict(),
+    output: z.unknown(),
+  },
+  harness_configure: {
+    input: z.object({ projectId: z.string().min(1), patch: z.record(z.string(), z.unknown()) }).strict(),
+    output: z.unknown(),
+  },
+  harness_edit: {
+    input: z.object({ projectId: z.string().min(1), area: z.string().max(120).optional(), writerKey: z.string().max(200).optional(), wait: z.boolean().default(false) }).strict(),
+    output: z.unknown(),
+  },
+  harness_tick: {
+    input: z.object({ projectId: z.string().min(1), dryRun: z.boolean().default(true) }).strict(),
+    output: z.unknown(),
+  },
+  harness_reflect: {
+    input: z.object({ harnessId: z.string().min(1) }).strict(),
+    output: z.unknown(),
+  },
 };

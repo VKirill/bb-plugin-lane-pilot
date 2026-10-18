@@ -110,7 +110,11 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     const declaredSecrets=[...new Set(task.verification.flatMap((command)=>command.secrets??[]))];
     const secrets=declaredSecrets.length?await ctx.secrets.resolve({declared:declaredSecrets,allowed:allowedSecretNames(loadProjectSettings(db,config.projectId,verificationScopes))}):null;
     if(secrets&&secretProblem(secrets).length) throw new SecretsNotReadyError(secretProblem(secrets));
-    return mapBounded(task.verification,policy.pools.verification,async(command)=>{
+    // The attempt's harness tree (src/rooms/harness) adds its checks: they were written into the worktree at spawn, so only a
+    // live attempt (its writer thread known) runs them; the post-merge check on main has no such files.
+    const harnessChecks=runId&&writerThreadId ? services.harness?.checksForWriterThread(runId, task.id, writerThreadId) ?? [] : [];
+    const commands:TaskV2["verification"]=harnessChecks.length ? [...task.verification, ...harnessChecks.map((check)=>({ command:check.command, cwd:task.project_cwd, timeout_sec:check.timeout_sec }))] : task.verification;
+    return mapBounded(commands,policy.pools.verification,async(command)=>{
       const release=await services.runWriterPool.acquire(`verification:${runId??config.projectId}`,policy.pools.verification);
       try {
       return await runWithFlakyRerun(command.command,async()=>{

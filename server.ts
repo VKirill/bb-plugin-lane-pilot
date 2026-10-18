@@ -13,6 +13,7 @@ import { createReconcile } from "./src/rooms/stability/server";
 import { createStability } from "./src/rooms/stability/server";
 import { adoptWaitingRules } from "./src/rooms/self-repair/server";
 import { createRuleScan } from "./src/rooms/self-repair/server";
+import { createHarness } from "./src/rooms/harness/server";
 import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, pluginStopped } from "./src/rooms/runs/server";
 import { registerRpc } from "./src/rooms/core/server/rpc";
 import { mountAnamnesis } from "./src/rooms/anamnesis";
@@ -86,6 +87,7 @@ export default async function plugin(bb: BbPluginApi) {
     { world: createWorldService(ctx, { projectName: (projectId) => bb.sdk.projects.get({ projectId }).then((p) => (typeof p?.name === "string" ? p.name : null), () => null) }) },
     { canary: createCanary(ctx) },
     { ruleScan: createRuleScan(ctx, services) },
+    { harness: createHarness(ctx, services) },
     createStability(ctx, services),
     createScheduleService(ctx, services),
   );
