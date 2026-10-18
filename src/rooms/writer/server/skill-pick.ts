@@ -23,7 +23,7 @@ export function recordedWriterSkills(dispatchContext: unknown): string[] {
 
 /** What the writer of one attempt gets: the picked names with their p(yes), kept in the attempt's dispatch for the code-repair. */
 export type WriterSkillPick = {
-  enabled: boolean; skills: string[]; picked: Array<{ name: string; p: number }>; projectFolder: string[]; hints: string[];
+  enabled: boolean; skills: string[]; picked: Array<{ name: string; p: number }>; craft: Array<{ name: string; p: number }>; projectFolder: string[]; hints: string[];
   /** The folder of each skill in `skills` the BB list gives one for; a skill without a folder is not materialized. */
   sources: Record<string, string>;
   /** Why the pick gave no picks: a timeout or an error (the writer keeps its role skills); null when the pick ran. */
@@ -39,7 +39,7 @@ const pickTask = (task: TaskV2): PickTaskInput => ({
   acceptance: task.acceptance, verification_commands: task.verification.map((check) => check.command),
 });
 
-const noPick = (enabled: boolean, reason: string): WriterSkillPick => ({ enabled, skills: [], picked: [], projectFolder: [], hints: [], sources: {}, reason });
+const noPick = (enabled: boolean, reason: string): WriterSkillPick => ({ enabled, skills: [], picked: [], craft: [], projectFolder: [], hints: [], sources: {}, reason });
 
 /** The description of a skill in its SKILL.md frontmatter, for a skill the BB list gives without one. */
 async function frontmatterDescription(bb: ServerCore["bb"], hostId: string, skillFile: string): Promise<string | null> {
@@ -143,8 +143,8 @@ export function createWriterSkillPick(ctx: Pick<ServerCore, "bb" | "host">, opti
     }
     const { result, folders } = outcome.done;
     const sources = Object.fromEntries(result.skills.flatMap((name) => (folders.has(name) ? [[name, folders.get(name)!] as const] : [])));
-    log(`Lane Pilot writer skill pick ${JSON.stringify({ attemptId: input.attemptId, enabled, catalog: result.catalog, kept: result.kept, unanswered: result.unanswered, picked: result.picked, projectFolder: result.projectFolder, hints: result.hints })}`);
-    return { enabled, skills: result.skills, picked: result.picked, projectFolder: result.projectFolder, hints: result.hints, sources, reason: null };
+    log(`Lane Pilot writer skill pick ${JSON.stringify({ attemptId: input.attemptId, enabled, catalog: result.catalog, kept: result.kept, craftKept: result.craftKept, unanswered: result.unanswered, picked: result.picked, craft: result.craft, projectFolder: result.projectFolder, hints: result.hints })}`);
+    return { enabled, skills: result.skills, picked: result.picked, craft: result.craft, projectFolder: result.projectFolder, hints: result.hints, sources, reason: null };
   }
 
   return { pick };

@@ -12,8 +12,11 @@ function memoryCache(): KindCache & { values: Map<string, number> } {
   return { values, get: async (key) => values.get(key), set: async (key, p) => { values.set(key, p); } };
 }
 
-/** A System One stand-in: `kinds` gives each skill its «domain» probability, `relevant` its «yes» for the task (default 0.05). */
-function fakeJev(options: { kinds?: Record<string, number>; relevant?: Record<string, number> } = {}) {
+/**
+ * A System One stand-in: `kinds` gives each skill its «domain» probability, `crafts` its «craft» probability (default 0: not a craft),
+ * `relevant` its «yes» for the technology question and `judged` its «yes» for the craft question (default 0.05).
+ */
+function fakeJev(options: { kinds?: Record<string, number>; crafts?: Record<string, number>; relevant?: Record<string, number>; judged?: Record<string, number> } = {}) {
   const calls: Array<{ state: unknown; questions: Record<string, SkillQuestion> }> = [];
   const ask: SkillAsk = async (state, questions) => {
     calls.push({ state, questions });
@@ -23,6 +26,12 @@ function fakeJev(options: { kinds?: Record<string, number>; relevant?: Record<st
       if ("domain" in question.criteria) {
         const domain = options.kinds?.[name] ?? 0.9;
         answers[id] = { domain, agent_ops: 1 - domain };
+      } else if ("craft" in question.criteria) {
+        const craft = options.crafts?.[name] ?? 0;
+        answers[id] = { craft, product: 1 - craft };
+      } else if (/judged by/.test(question.instructions)) {
+        const yes = options.judged?.[name] ?? 0.05;
+        answers[id] = { yes, no: 1 - yes };
       } else {
         const yes = options.relevant?.[name] ?? 0.05;
         answers[id] = { yes, no: 1 - yes };
@@ -30,7 +39,8 @@ function fakeJev(options: { kinds?: Record<string, number>; relevant?: Record<st
     }
     return answers;
   };
-  return { ask, calls, kindCalls: () => calls.filter((call) => "domain" in Object.values(call.questions)[0]!.criteria).length };
+  const kindCalls = (criterion: string) => calls.filter((call) => criterion in Object.values(call.questions)[0]!.criteria).length;
+  return { ask, calls, kindCalls: () => kindCalls("domain"), craftKindCalls: () => kindCalls("craft") };
 }
 
 const pickInput = (overrides: Partial<Parameters<typeof pickWriterSkills>[0]>) => ({
@@ -105,13 +115,38 @@ describe("skill pick", () => {
     await pickWriterSkills(pickInput({ catalog: [entry("x")], ask: second.ask, kindCache: cache }));
     expect(first.kindCalls()).toBe(1);
     expect(second.kindCalls()).toBe(0);
+    expect(first.craftKindCalls()).toBe(1);
+    expect(second.craftKindCalls()).toBe(0);
+  });
+
+  it("adds a craft skill the task's result is judged by, after the technology picks, at 0.6 or more and at most three", async () => {
+    const catalog = ["vue-lib", "design-taste", "impeccable-ui", "ui-review", "web-design", "copywriter"].map((name) => entry(name));
+    const crafts = { "design-taste": 0.9, "impeccable-ui": 0.9, "ui-review": 0.9, "web-design": 0.9, copywriter: 0.9 };
+    const judged = { "design-taste": 0.95, "impeccable-ui": 0.9, "ui-review": 0.8, "web-design": 0.7, copywriter: 0.59 };
+    const jev = fakeJev({ crafts, relevant: { "vue-lib": 0.8 }, judged });
+    const pick = await pickWriterSkills(pickInput({ catalog, ask: jev.ask }));
+    expect(pick.picked).toEqual([{ name: "vue-lib", p: 0.8 }]);
+    expect(pick.craft).toEqual([{ name: "design-taste", p: 0.95 }, { name: "impeccable-ui", p: 0.9 }, { name: "ui-review", p: 0.8 }]);
+    expect(pick.skills).toEqual(["vue-lib", "design-taste", "impeccable-ui", "ui-review"]);
+    expect(pick.craftKept).toBe(5);
+  });
+
+  it("asks the craft question only to craft skills, and a skill picked for its technology is not repeated as a craft", async () => {
+    const jev = fakeJev({ crafts: { "ui-ux-pro-max": 0.9, "vue-lib": 0.1 }, relevant: { "ui-ux-pro-max": 0.5 }, judged: { "ui-ux-pro-max": 0.9, "vue-lib": 0.9 } });
+    const pick = await pickWriterSkills(pickInput({ catalog: [entry("vue-lib"), entry("ui-ux-pro-max")], ask: jev.ask }));
+    const craftAsks = jev.calls.filter((call) => /judged by/.test(Object.values(call.questions)[0]!.instructions));
+    expect(craftAsks.map((call) => Object.values(call.questions).map((q) => /^Skill — (.+?): /.exec(q.instructions)![1]))).toEqual([["ui-ux-pro-max"]]);
+    expect(pick.picked).toEqual([{ name: "ui-ux-pro-max", p: 0.5 }]);
+    expect(pick.craft).toEqual([]);
+    expect(pick.skills).toEqual(["ui-ux-pro-max"]);
   });
 
   it("asks at most eight questions in one call", async () => {
     const catalog = Array.from({ length: 17 }, (_, index) => entry(`skill-${index}`));
     const jev = fakeJev();
     await pickWriterSkills(pickInput({ catalog, ask: jev.ask }));
-    expect(jev.calls.map((call) => Object.keys(call.questions).length)).toEqual([8, 8, 1, 8, 8, 1]);
+    // The kind, the craft kind and the technology question; no skill is a craft, so the craft question is not asked.
+    expect(jev.calls.map((call) => Object.keys(call.questions).length)).toEqual([8, 8, 1, 8, 8, 1, 8, 8, 1]);
   });
 
   it("keeps only the PM's hints that name a skill of the catalog", async () => {
@@ -134,6 +169,7 @@ describe("skill pick", () => {
     }));
     expect(pick.picked).toEqual([]);
     expect(pick.skills).toEqual(["tavily"]);
+    // Two skills nobody judged the kind of; nothing was kept, so no further question was asked.
     expect(pick.unanswered).toBe(2);
   });
 

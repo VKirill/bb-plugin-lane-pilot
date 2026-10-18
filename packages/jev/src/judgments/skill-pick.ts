@@ -6,12 +6,25 @@ import { sha256Hex } from "@lane-pilot/kit";
  * once per skill and cached by its text; then whether the skill teaches the product or technology this task edits, asked per task
  * with the task's plan in the state. The plan is required: without it three.js skills ranked 115–165 for three.js tasks.
  *
+ * The technology question says no to a craft (visual design, layout, accessibility, copy, SEO): on 18 real UI tasks of the hub
+ * (2026-10-18, the same 28 plus 20 newer ones) design-taste and impeccable-ui scored 0.00–0.03, so a writer laid out pages with no
+ * design skill at all. A third question asks whether the task's result will be judged by the craft the skill teaches. It goes only
+ * to the skills whose kind is «craft» (asked once per skill and cached like the kind: 32 of 158), with a higher bar (0.6, at most
+ * three): the family of UI skills then reaches 18 of 18 UI tasks and 0 of 28 tasks without a screen, while a widened single
+ * question gave 0.90 wrong extras per task. Routing notes in a description (SKIP, «routes to design-lead») are about which agent
+ * gets a request; the questions say so, or the craft skills answer no for the writer.
+ *
  * This module holds the catalog, the questions and the pick. The caller brings the Jev call (`ask`) and the cache of the kinds.
  */
 export const SKILL_PICK_THRESHOLD = 0.3;
 export const SKILL_PICK_TOP = 5;
 /** A skill whose probability of «domain» is below this is not a skill a task can be about. */
 export const SKILL_KIND_THRESHOLD = 0.2;
+/** A skill whose probability of «craft» is below this is not asked whether the task's result is judged by its craft. */
+export const SKILL_CRAFT_KIND_THRESHOLD = 0.5;
+/** The craft question's bar and cap: a craft skill is added only when the task is plainly judged by it. */
+export const SKILL_CRAFT_THRESHOLD = 0.6;
+export const SKILL_CRAFT_TOP = 3;
 export const SKILL_QUESTION_CHUNK = 8;
 export const SKILL_DESCRIPTION_CHARS = 420;
 export const SKILL_HINT_LIMIT = 8;
@@ -37,10 +50,10 @@ export type SkillPickInput = {
   enabled: boolean; catalog: CatalogEntry[]; hints: string[]; task: PickTaskInput; plan: string; projectCwd: string;
   ask: SkillAsk; kindCache: KindCache; threshold?: number; top?: number;
 };
-/** `skills` is what the writer gets on top of its role: the project-folder skills, the picks and the hints, each once. */
+/** `skills` is what the writer gets on top of its role: the project-folder skills, the picks, the craft picks and the hints, each once. */
 export type SkillPick = {
-  skills: string[]; picked: Array<{ name: string; p: number }>; projectFolder: string[]; hints: string[];
-  catalog: number; kept: number; unanswered: number;
+  skills: string[]; picked: Array<{ name: string; p: number }>; craft: Array<{ name: string; p: number }>; projectFolder: string[]; hints: string[];
+  catalog: number; kept: number; craftKept: number; unanswered: number;
 };
 
 /**
@@ -67,6 +80,11 @@ export function kindCacheKey(entry: CatalogEntry): string {
   return sha256Hex(`${entry.name}\n${entry.description}`);
 }
 
+/** The craft verdict is kept beside the kind verdict, under its own key. */
+export function craftKindCacheKey(entry: CatalogEntry): string {
+  return `craft:${kindCacheKey(entry)}`;
+}
+
 const clipDescription = (entry: CatalogEntry) => entry.description.slice(0, SKILL_DESCRIPTION_CHARS);
 
 export function kindQuestion(entry: CatalogEntry): SkillQuestion {
@@ -75,6 +93,26 @@ export function kindQuestion(entry: CatalogEntry): SkillQuestion {
     criteria: {
       domain: "doing real work in a product, codebase, framework, technology, platform, API or content field (for example a specific app, a library, design, SEO, a cloud, a payment API)",
       agent_ops: "how AI agents themselves are run or organised: orchestration, task contracts, lanes, memory, sessions, skills authoring, prompts, BB/agent configuration, sign-in of tools",
+    },
+  };
+}
+
+export function craftKindQuestion(entry: CatalogEntry): SkillQuestion {
+  return {
+    instructions: `Skill — ${entry.name}: ${clipDescription(entry)}\nIs this skill mainly about a craft by which the result of work is judged, rather than about one product, library, platform or API? Crafts: visual design and layout, typography, responsiveness, accessibility, copywriting and text quality, SEO, motion. Routing notes (SKIP, which agent runs it) do not matter.`,
+    criteria: {
+      craft: "craft: how good a result looks, reads or ranks",
+      product: "a specific product, codebase, library, platform, API or tool",
+    },
+  };
+}
+
+export function craftQuestion(entry: CatalogEntry): SkillQuestion {
+  return {
+    instructions: `Skill — ${entry.name}: ${clipDescription(entry)}\nThe agent will edit code for this task. Does this skill teach the craft the task's result will be judged by: visual design, layout, typography, responsiveness and accessibility when the task changes what a person sees on a screen; copy quality when it writes text people read; SEO when it affects search? A skill about a product, framework, library or technology is no here, even if the task uses it. Skills about running agents, orchestration, memory, planning or skill authoring are no. Routing notes in the description (SKIP, «routes to», which agent or run should receive a request) are about who gets the request, not whether the knowledge applies here: do not say no because of them.`,
+    criteria: {
+      yes: "yes: the task's result will be judged by this craft and the skill teaches it",
+      no: "no",
     },
   };
 }
@@ -123,25 +161,29 @@ async function answerChunks(chunks: Chunk[], state: unknown, ask: SkillAsk): Pro
   return { answered: results.flatMap((result) => result.answered), unanswered: results.reduce((sum, result) => sum + result.unanswered, 0) };
 }
 
-/** The skills whose kind is «domain» at or above the kind threshold; a skill nobody answered for is not kept. */
-async function keptByKind(catalog: CatalogEntry[], ask: SkillAsk, cache: KindCache): Promise<{ kept: CatalogEntry[]; unanswered: number }> {
-  const domainOf = new Map<CatalogEntry, number>();
+type KindVerdict = { question: (entry: CatalogEntry) => SkillQuestion; criterion: string; key: (entry: CatalogEntry) => string; threshold: number };
+const DOMAIN_KIND: KindVerdict = { question: kindQuestion, criterion: "domain", key: kindCacheKey, threshold: SKILL_KIND_THRESHOLD };
+const CRAFT_KIND: KindVerdict = { question: craftKindQuestion, criterion: "craft", key: craftKindCacheKey, threshold: SKILL_CRAFT_KIND_THRESHOLD };
+
+/** The skills whose verdict (asked once per skill, cached by its text) reaches the threshold; a skill nobody answered for is not kept. */
+async function keptByKind(catalog: CatalogEntry[], ask: SkillAsk, cache: KindCache, verdict: KindVerdict = DOMAIN_KIND): Promise<{ kept: CatalogEntry[]; unanswered: number }> {
+  const pOf = new Map<CatalogEntry, number>();
   const unknown: CatalogEntry[] = [];
-  const cached = await Promise.all(catalog.map((entry) => cache.get(kindCacheKey(entry)).catch(() => undefined)));
+  const cached = await Promise.all(catalog.map((entry) => cache.get(verdict.key(entry)).catch(() => undefined)));
   catalog.forEach((entry, index) => {
     const p = cached[index];
-    if (typeof p === "number") domainOf.set(entry, p);
+    if (typeof p === "number") pOf.set(entry, p);
     else unknown.push(entry);
   });
-  const { answered, unanswered } = await answerChunks(chunksOf(unknown, kindQuestion), { catalog: "skills an agent can load" }, ask);
+  const { answered, unanswered } = await answerChunks(chunksOf(unknown, verdict.question), { catalog: "skills an agent can load" }, ask);
   for (const { entry, probabilities } of answered) {
-    const p = probabilities.domain;
+    const p = probabilities[verdict.criterion];
     if (typeof p !== "number") continue;
-    domainOf.set(entry, p);
+    pOf.set(entry, p);
     // A cache that cannot be written only costs the next pick its Jev call.
-    await cache.set(kindCacheKey(entry), p).catch(() => undefined);
+    await cache.set(verdict.key(entry), p).catch(() => undefined);
   }
-  return { kept: catalog.filter((entry) => (domainOf.get(entry) ?? 0) >= SKILL_KIND_THRESHOLD), unanswered };
+  return { kept: catalog.filter((entry) => (pOf.get(entry) ?? 0) >= verdict.threshold), unanswered };
 }
 
 /** The skills whose «yes» reaches the threshold, the most probable first, at most `top`. */
@@ -172,13 +214,19 @@ export function hintedSkills(catalog: CatalogEntry[], hints: string[]): string[]
  */
 export async function pickWriterSkills(input: SkillPickInput): Promise<SkillPick> {
   const hints = hintedSkills(input.catalog, input.hints);
-  const base = { catalog: input.catalog.length, picked: [], projectFolder: [], hints, unanswered: 0 };
-  if (!input.enabled) return { ...base, skills: hints, kept: 0 };
+  const base = { catalog: input.catalog.length, picked: [], craft: [], projectFolder: [], hints, unanswered: 0 };
+  if (!input.enabled) return { ...base, skills: hints, kept: 0, craftKept: 0 };
   const { kept, unanswered: kindMissed } = await keptByKind(input.catalog, input.ask, input.kindCache);
+  const { kept: craftKept, unanswered: craftKindMissed } = await keptByKind(kept, input.ask, input.kindCache, CRAFT_KIND);
   const state = skillPickState(input.task, input.plan, input.projectCwd);
-  const { answered, unanswered } = await answerChunks(chunksOf(kept, taskQuestion), state, input.ask);
-  const picked = pickByYes(answered, input.threshold ?? SKILL_PICK_THRESHOLD, input.top ?? SKILL_PICK_TOP);
+  const [technology, craftwork] = await Promise.all([
+    answerChunks(chunksOf(kept, taskQuestion), state, input.ask),
+    answerChunks(chunksOf(craftKept, craftQuestion), state, input.ask),
+  ]);
+  const picked = pickByYes(technology.answered, input.threshold ?? SKILL_PICK_THRESHOLD, input.top ?? SKILL_PICK_TOP);
+  const craft = pickByYes(craftwork.answered, SKILL_CRAFT_THRESHOLD, SKILL_CRAFT_TOP).filter((pick) => !picked.some((item) => item.name === pick.name));
   const projectFolder = projectFolderSkills(input.projectCwd, input.catalog);
-  const skills = [...new Set([...projectFolder, ...picked.map((pick) => pick.name), ...hints])];
-  return { ...base, skills, picked, projectFolder, kept: kept.length, unanswered: kindMissed + unanswered };
+  const skills = [...new Set([...projectFolder, ...picked.map((pick) => pick.name), ...craft.map((pick) => pick.name), ...hints])];
+  return { ...base, skills, picked, craft, projectFolder, kept: kept.length, craftKept: craftKept.length,
+    unanswered: kindMissed + craftKindMissed + technology.unanswered + craftwork.unanswered };
 }
