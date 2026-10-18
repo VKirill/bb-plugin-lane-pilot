@@ -213,9 +213,28 @@ export function createHarness(ctx: ServerCore, services: Services) {
     }));
   }
 
-  async function place(projectId: string): Promise<{ hostId: string; path: string } | null> {
+  /**
+   * Where the editor works: the folder the key's writers ran in (the newest run's host and workspace), so the evidence and
+   * the sessions sit next to the repository they describe. The project binding is the fallback; a binding without a
+   * folder (the global override) is no place at all, and a folder that is gone from the host is refused before anything
+   * is written there (the first live run failed on `spawn /bin/bash ENOENT`: a missing cwd, 2026-10-18).
+   */
+  async function place(projectId: string, area = ""): Promise<{ hostId: string; path: string } | null> {
+    const candidates: Array<{ hostId: string | null; path: string | null }> = [
+      db.prepare(`SELECT r.writer_host_id AS hostId, r.writer_workspace_path AS path FROM lane_pilot_run r JOIN lane_pilot_task t ON t.run_id=r.id
+        WHERE r.project_id=? AND r.writer_workspace_path IS NOT NULL AND r.writer_host_id IS NOT NULL AND COALESCE(json_extract(t.contract_json,'$.area'),'')=?
+        ORDER BY r.updated_at DESC LIMIT 1`).get(projectId, area) as { hostId: string | null; path: string | null } | undefined ?? { hostId: null, path: null },
+      db.prepare("SELECT writer_host_id AS hostId, writer_workspace_path AS path FROM lane_pilot_run WHERE project_id=? AND writer_workspace_path IS NOT NULL AND writer_host_id IS NOT NULL ORDER BY updated_at DESC LIMIT 1")
+        .get(projectId) as { hostId: string | null; path: string | null } | undefined ?? { hostId: null, path: null },
+    ];
     const resolved = await services.resolveProjectWriterHost({ projectId }).catch(() => null);
-    return resolved && resolved.status === "resolved" && resolved.hostId ? { hostId: resolved.hostId, path: resolved.path } : null;
+    if (resolved && resolved.status === "resolved" && resolved.hostId && resolved.path) candidates.push({ hostId: resolved.hostId, path: resolved.path });
+    for (const candidate of candidates) {
+      if (!candidate.hostId || !candidate.path) continue;
+      const exists = await runOnHost(host, { hostId: candidate.hostId, cwd: "/", command: `test -d ${shellQuote(candidate.path)} && echo @@DIR`, timeoutSec: 15 }).catch(() => null);
+      if (exists?.stdout.includes("@@DIR")) return { hostId: candidate.hostId, path: candidate.path };
+    }
+    return null;
   }
 
   /** Writes files in commands under the shell's argument budget: trajectories are long. */
@@ -298,8 +317,8 @@ export function createHarness(ctx: ServerCore, services: Services) {
     const cfg = await config(input.projectId);
     if (!cfg.enabled) return { status: "skipped", detail: "harness editing is off for this project", threadIds: [] };
     if (trialHarness(db, input.projectId, area, writerKey)) return { status: "skipped", detail: "a candidate is already on trial for this key", threadIds: [] };
-    const where = await place(input.projectId);
-    if (!where) return { status: "failed", detail: "the project's writer host is not resolvable", threadIds: [] };
+    const where = await place(input.projectId, area);
+    if (!where) return { status: "failed", detail: "no reachable folder for the editor: the key's runs name no host and workspace, and the project binding has no folder", threadIds: [] };
     running.add(key);
     const threadIds: string[] = [];
     try {
@@ -382,8 +401,8 @@ export function createHarness(ctx: ServerCore, services: Services) {
     const trial = getHarness(db, trialId);
     if (!trial || !["adopted", "retired"].includes(trial.state)) return { status: "skipped", detail: "the trial has not decided" };
     const cfg = await config(trial.projectId);
-    const where = await place(trial.projectId);
-    if (!where) return { status: "failed", detail: "no host" };
+    const where = await place(trial.projectId, trial.area);
+    if (!where) return { status: "failed", detail: "no reachable folder for the reflection" };
     const parent = trial.parentId ? getHarness(db, trial.parentId) : null;
     const rows = trialAttempts(db, trial);
     const pick = (arm: "new" | "old") => rows.filter((row) => row.arm === arm).slice(-3).map((row) => row.attemptId);

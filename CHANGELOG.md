@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.248
+
+- **The harness editor works in the key's own folder.** The first live run (`bb lane-pilot harness-edit proj_ejbam66722 feature:office-studio-prototype`) failed with «spawn /bin/bash ENOENT»: the project binding of BB-сервис is the global override with no folder, so the evidence was written to an empty cwd. `place()` (`src/rooms/harness/server/harness.ts`) now takes the newest run of the key (its `writer_host_id` and `writer_workspace_path`), then any run of the project, then the binding, and checks with `test -d` on the host that the folder exists before anything is written there.
+
 ## 0.1.247
 
 The writer harness that learns: phases 1–5 of the Harness² port (design in `.bb/chats/thr_xt2vhcuesc/artifacts/harness2-port-design.md`). Nothing a writer gets today is taken away; the harness tree adds on top of the fixed brief, the rules, the memory and the picked skills, and only after a trial proves it.
