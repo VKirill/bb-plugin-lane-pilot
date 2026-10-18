@@ -27,6 +27,16 @@ Lane Pilot obtains its database from `bb.storage.database()`, enables foreign ke
 - Do not treat Lane Pilot RPC caller identity checks as the database protection. The BB shell guard explicitly leaves Lane Pilot and Env Catalog CLI calls available to PM agents (`lane-stack/hooks/guard_shell.py:54-66`).
 - Keep any agent process that can access the host filesystem outside the database directory's permission boundary. The guard allows read-only shell tools to PM readers and Lane Pilot PM agents, while mutating operations are handled by separate policy branches (`lane-stack/hooks/guard_shell.py:31-53`, `:203-215`).
 
+## Owner decision (2026-10-08)
+
+These are host facts, not code: the repository cannot cite them, so keep them as written.
+
+- `data.db`, `data.db-shm` and `data.db-wal` on the hub are 0600, and `~/.bb/plugins/lane-pilot` is 0700 (set on 2026-10-08, confirmed in audit round 4).
+- No agent process (Claude Code, Codex, OpenCode, Cursor) runs on the hub; threads run on Mac mini, MacBook and OVH. This holds while the hub is not added as a machine, so a periodic `bb host list` belongs in the drill.
+- The server caller check and the owner forms for Lane Pilot and Env Catalog RPCs were removed later that day (owner decision «убрать, держать просто», see [RPC callers](../rpc-callers.md)). The file permissions and the absence of agents on the hub are the protection of `data.db`.
+
+**Остающийся риск (принят).** Процесс BB-сервера и всё, что запущено на хабе от `ubuntu`, по-прежнему может писать в БД. Если когда-нибудь агенты будут запускаться на хабе — только под отдельным пользователем без доступа к `~/.bb`.
+
 ## Status
 
 Active. This record describes the code boundary and the chosen host-permission control; verify deployed file ownership and modes through the host operations procedure.
