@@ -12,6 +12,7 @@ import { fullAccessSpawn } from "../../core/server";
 import { spawnTextId } from "../../core/server";
 import { scheduleIsolated } from "../../core/server";
 import { stringAt } from "../../core/server";
+import { SANDBOX_PROJECT_ID, isSandboxProjectName } from "../../stability/server";
 import { outputText } from "../../writer/server/writer-task";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
@@ -145,6 +146,22 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     const key = `${run.project_id}\u0000${run.writer_workspace_path}`;
     if (!cache.has(key)) cache.set(key, await ctx.scopesForWorkspace(run.project_id, run.writer_workspace_path).catch(() => []));
     return cache.get(key)!;
+  }
+
+  /**
+   * Sandbox projects («LP sandbox …», «LP native …», the drill's own) fail on purpose: their failures taught the
+   * sandbox rules «for D3 lint probe tasks rewrite notes/lpv/d3.md» and spent the analyzer on them (hub, 2026-10-18).
+   * The same scope rule as the canary (stability/server/canary.ts).
+   */
+  async function teachingProjects(projectIds: readonly string[]): Promise<string[]> {
+    const kept: string[] = [];
+    for (const projectId of projectIds) {
+      if (projectId === SANDBOX_PROJECT_ID) continue;
+      const project = await bb.sdk.projects.get({ projectId }).catch(() => null) as { name?: string } | null;
+      if (isSandboxProjectName(project?.name)) continue;
+      kept.push(projectId);
+    }
+    return kept;
   }
 
   async function projectChains(projectId: string): Promise<Map<string, string[]>> {
@@ -380,9 +397,13 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
           for (const id of written) if (getRuleProposal(db, projectId, id)?.state === "proposed" && adoptRuleProposal(db, projectId, id)) adopted++;
           await setScan(projectId, { proposals, adopted });
         }
-        // Proposals written earlier (by the analyzer or the PM) that waited for a slot join the trial too.
-        for (const row of listRuleProposals(db, projectId, { state: "proposed", limit: 100 })) {
-          if (adoptRuleProposal(db, projectId, row.id)) adopted++;
+        // Proposals written earlier (by the analyzer or the PM) that waited for a slot join the trial too. Shortest
+        // first, and the first one that finds no room ends the pass: a longer one cannot fit where a shorter one did
+        // not, and trying all of them wrote 939 «cap_reached» events in a month for three projects (hub, 2026-10-18).
+        const waiting = listRuleProposals(db, projectId, { state: "proposed", limit: 100 }).sort((a, b) => a.rule.length - b.rule.length);
+        for (const row of waiting) {
+          if (!adoptRuleProposal(db, projectId, row.id)) break;
+          adopted++;
         }
         await setScan(projectId, { adopted });
         const trial = await evaluateRules(projectId, place, analyzer, locale);
@@ -405,7 +426,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
   scheduleIsolated(bb, "rules-nightly", "30 3 * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
     const since = Date.now() - RULE_SCAN_WINDOW_MS;
-    const projects = (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_run WHERE updated_at>=?").all(since) as Array<{ project_id: string }>).map((row) => row.project_id);
+    const projects = await teachingProjects((db.prepare("SELECT DISTINCT project_id FROM lane_pilot_run WHERE updated_at>=?").all(since) as Array<{ project_id: string }>).map((row) => row.project_id));
     for (const projectId of projects) {
       if (ctx.isDisposed() || signal?.aborted) return;
       const stored = await bb.storage.kv.get<string>(LOCALE_KEY(projectId));
@@ -420,7 +441,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
   scheduleIsolated(bb, "rules-triage", "6,21,36,51 * * * *", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
     const since = Date.now() - 86_400_000;
-    const projects = (db.prepare("SELECT DISTINCT project_id FROM lane_pilot_run WHERE updated_at>=?").all(since) as Array<{ project_id: string }>).map((row) => row.project_id);
+    const projects = await teachingProjects((db.prepare("SELECT DISTINCT project_id FROM lane_pilot_run WHERE updated_at>=?").all(since) as Array<{ project_id: string }>).map((row) => row.project_id));
     for (const projectId of projects) {
       if (ctx.isDisposed() || signal?.aborted) return;
       if (running.has(projectId)) continue;

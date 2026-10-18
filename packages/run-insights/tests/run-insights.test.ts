@@ -58,6 +58,10 @@ describe("lessons", () => {
     db.prepare("INSERT INTO lane_pilot_stage_receipt(run_id,task_id,stage_id,state,attempt,reason,updated_at) VALUES('r1','t1','acceptance-receipt','failed',0,'expected_outputs missing: docs/orders.md',1500)").run();
     db.prepare("INSERT INTO lane_pilot_stage_receipt(run_id,task_id,stage_id,state,attempt,reason,updated_at) VALUES('r1','t1','verification','failed',0,'retry limit 2 exhausted',1600)").run();
     db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,reason,updated_at) VALUES('a1','r1','t1','blocked','owns_paths rejected apps/web/src/App.vue',1700)").run();
+    // A drill task fails on purpose: neither its receipt nor its attempt is a lesson for the project.
+    db.prepare("INSERT INTO lane_pilot_task(id,run_id,contract_json) VALUES('drill-20261007-1','r1','{}')").run();
+    db.prepare("INSERT INTO lane_pilot_stage_receipt(run_id,task_id,stage_id,state,attempt,reason,updated_at) VALUES('r1','drill-20261007-1','verification','failed',0,'missing expected_outputs: notes/lpv/d3.md',1800)").run();
+    db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,reason,updated_at) VALUES('a-drill','r1','drill-20261007-1','validation_failed','missing expected_outputs: notes/lpv/d3.md',1800)").run();
 
     const sources = collectLessonSources(db, { projectId: "p", since: 0 });
     expect(sources.map((source) => source.kind)).toEqual(["night_finding", "night_finding", "attempt_failure", "rejection"]);

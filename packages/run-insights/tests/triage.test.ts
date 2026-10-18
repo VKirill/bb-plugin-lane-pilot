@@ -58,6 +58,8 @@ describe("triage store", () => {
     seed(db, "t2", "blocked", "retry limit 2 exhausted");
     seed(db, "t3", "blocked", "needs_human: which plan?");
     seed(db, "t4", "accepted", "fine");
+    // A drill task (scripts/lp-drill.sh) fails on purpose: it never reaches System One or the analyzer.
+    seed(db, "drill-20261007-nogit", "validation_failed", "writer changed paths outside owns_paths: notes/other.md");
     const [first, ...rest] = untriagedAttempts(db, "p", 0);
     expect(rest).toEqual([]);
     expect(first).toMatchObject({ taskId: "t1", threadId: "thr-t1" });

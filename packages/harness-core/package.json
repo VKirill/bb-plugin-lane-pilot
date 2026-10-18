@@ -1,0 +1,14 @@
+{
+  "name": "@lane-pilot/harness-core",
+  "version": "0.1.0",
+  "description": "The writer harness as an object: the editable tree (always-on text, skills, checks, hooks, memory) with its validation, diff and fingerprint; writer thread events rendered as a trajectory; the editor, composer and reflection prompts; the parsers of their replies. The method of Harness² (arXiv 2610.14224) without its benchmark runtime.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "sideEffects": false,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

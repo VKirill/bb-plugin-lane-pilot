@@ -26,16 +26,16 @@ function nightFindings(row: ReceiptRow): LessonSource[] {
   }
 }
 
-/** Receipts and attempt reasons a project can learn from, newest first. */
+/** Receipts and attempt reasons a project can learn from, newest first. Drill tasks (`drill-*`, scripts/lp-drill.sh) fail on purpose and teach nothing. */
 export function collectLessonSources(db: InsightsDatabase, filter: { projectId: string; since: number; limit?: number }): LessonSource[] {
   const limit = Math.min(Math.max(filter.limit ?? 200, 1), 2000);
   const receipts = db.prepare(`SELECT s.run_id, s.task_id, s.stage_id, s.state, s.result_json, s.reason, s.updated_at
     FROM lane_pilot_stage_receipt s JOIN lane_pilot_run r ON r.id=s.run_id
-    WHERE r.project_id=? AND s.updated_at>=? AND s.stage_id IN (${LESSON_STAGES.map(() => "?").join(",")})
+    WHERE r.project_id=? AND s.updated_at>=? AND s.stage_id IN (${LESSON_STAGES.map(() => "?").join(",")}) AND s.task_id NOT LIKE 'drill-%'
     ORDER BY s.updated_at DESC LIMIT ?`).all(filter.projectId, filter.since, ...LESSON_STAGES, limit) as ReceiptRow[];
   const attempts = db.prepare(`SELECT a.run_id, a.task_id, a.reason, a.updated_at
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-    WHERE r.project_id=? AND a.updated_at>=? AND a.state IN ('failed','blocked','rejected','validation_failed') AND a.reason IS NOT NULL
+    WHERE r.project_id=? AND a.updated_at>=? AND a.state IN ('failed','blocked','rejected','validation_failed') AND a.reason IS NOT NULL AND a.task_id NOT LIKE 'drill-%'
     ORDER BY a.updated_at DESC LIMIT ?`).all(filter.projectId, filter.since, limit) as AttemptRow[];
   const sources: LessonSource[] = [];
   for (const row of receipts) {

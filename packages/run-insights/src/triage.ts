@@ -151,7 +151,7 @@ export function untriagedAttempts(db: TriageDatabase, projectId: string, since: 
     LEFT JOIN lane_pilot_failure_triage f ON f.project_id=r.project_id AND f.attempt_id=a.id AND f.status='ok'
     WHERE r.project_id=? AND a.updated_at>=? AND a.reason IS NOT NULL
       AND a.state IN ('validation_failed','empty_output','blocked','failed','rejected')
-      AND a.reason NOT LIKE 'retry limit%' AND a.reason NOT LIKE 'needs_human:%'
+      AND a.reason NOT LIKE 'retry limit%' AND a.reason NOT LIKE 'needs_human:%' AND a.task_id NOT LIKE 'drill-%'
     ORDER BY a.updated_at`).all(projectId, since) as Array<FailedAttempt & { known: string | null }>;
   return rows.filter((row) => row.known !== sha(row.reason)).slice(0, Math.max(1, limit)).map(({ known: _known, ...row }) => row);
 }

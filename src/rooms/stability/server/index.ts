@@ -1,6 +1,6 @@
 // Public API of stability/server: what other rooms import. Everything else in this room is private.
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
-export { canaryRpc, createCanary, mountCanary } from "./canary";
+export { SANDBOX_PROJECT_ID, canaryRpc, createCanary, isDrillTask, isSandboxProjectName, mountCanary } from "./canary";
 export type { Canary } from "./canary";
 export { DRAIN_SNAPSHOT_KEY, bindDrainTarget, createDeployDrain, drainForLifecycle, skipRedundantStartupScans } from "./deploy-drain";
 export { RUN_BUDGET_SETTINGS, mountHealth, runHealth } from "./health";
