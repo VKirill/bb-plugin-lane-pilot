@@ -177,13 +177,17 @@ const requestText = (event: ThreadEventLike): string => {
 export function sliceAttemptEvents(events: readonly ThreadEventLike[], taskId: string): ThreadEventLike[] {
   const ordered = [...events].sort((a, b) => Number(a.seq ?? 0) - Number(b.seq ?? 0));
   const isRequest = (event: ThreadEventLike) => event.type === "client/turn/requested";
-  const names = (event: ThreadEventLike, id: string) => requestText(event).includes(`Lane Pilot task ${id}`) || requestText(event).includes(`task ${id}:`);
-  const start = ordered.findIndex((event) => isRequest(event) && names(event, taskId));
+  // A task starts with the first brief («Lane Pilot task <id>: …») or a sticky writer's next-task turn, whose contract names the id.
+  const startsTask = (text: string) => /Lane Pilot task [\w.-]+:/.test(text) || text.includes("Next task for you in the same area");
+  const names = (text: string, id: string) => text.includes(`Lane Pilot task ${id}:`) || text.includes(`"id": "${id}"`) || text.includes(`"id":"${id}"`);
+  const start = ordered.findIndex((event) => isRequest(event) && names(requestText(event), taskId));
   if (start < 0) return ordered;
   let end = ordered.length;
   for (let i = start + 1; i < ordered.length; i++) {
     const event = ordered[i]!;
-    if (isRequest(event) && /Lane Pilot task [\w.-]+:/.test(requestText(event)) && !names(event, taskId)) { end = i; break; }
+    if (!isRequest(event)) continue;
+    const text = requestText(event);
+    if (startsTask(text) && !names(text, taskId)) { end = i; break; }
   }
   return ordered.slice(start, end);
 }
