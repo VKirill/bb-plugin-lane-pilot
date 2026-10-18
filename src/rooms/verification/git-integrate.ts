@@ -590,6 +590,13 @@ const NODE_MODULES_CACHE_DIRS = new Set([".vite-temp", ".vite", ".vitest", ".cac
  * into the base checkout, which the sandbox mounts read-only: EROFS (SelfyStudio persistence-prisma typecheck).
  */
 const NODE_MODULES_WRITABLE_COPIES = new Set([".prisma", "@prisma/client"]);
+/**
+ * What npm itself rewrites on every `npm install`: the bin links and its hidden lockfile. Linked, both sat in the base
+ * checkout, which the verification sandbox does not let a check write: `npm install` in a fresh worktree died with
+ * «EPERM symlink … node_modules/.bin/…», exit 255 (office-viewer studio-slides, 2026-10-17). `.bin` gets its own folder of
+ * the base's links, kept verbatim (`../pkg/bin.js` then resolves in the worktree), and the lockfile its own copy.
+ */
+const NODE_MODULES_NPM_STATE = new Set([".bin", ".package-lock.json"]);
 
 async function mirrorNodeModules(input:{baseReal:string;worktreePath:string;dir:string}):Promise<boolean> {
   const base=join(input.baseReal,input.dir,"node_modules"), target=join(input.worktreePath,input.dir,"node_modules");
@@ -613,6 +620,10 @@ async function mirrorNodeModules(input:{baseReal:string;worktreePath:string;dir:
   };
   for(const name of await readdir(base)) {
     if(NODE_MODULES_CACHE_DIRS.has(name)) { await mkdir(join(target,name)); continue; }
+    if(NODE_MODULES_NPM_STATE.has(name)&&!(await lstat(join(base,name))).isSymbolicLink()) {
+      await cp(join(base,name),join(target,name),{recursive:true,dereference:false,verbatimSymlinks:true,errorOnExist:false});
+      continue;
+    }
     if(name.startsWith("@")&&!(await lstat(join(base,name))).isSymbolicLink()&&(await stat(join(base,name))).isDirectory()) {
       await mkdir(join(target,name));
       for(const child of await readdir(join(base,name))) await linkEntry([name,child]);

@@ -59,9 +59,36 @@ it("gives tool caches in node_modules their own folder so checks never write int
   const a = await worktree("cache");
   await prepareWorktree({ basePath: base, worktreePath: a });
   expect((await lstat(join(a, "node_modules", ".vite-temp"))).isSymbolicLink()).toBe(false);
-  expect((await lstat(join(a, "node_modules", ".bin"))).isSymbolicLink()).toBe(true);
+  expect((await lstat(join(a, "node_modules", "vitest"))).isSymbolicLink()).toBe(true);
   await writeFile(join(a, "node_modules", ".vite-temp", "config.mjs"), "x");
   await expect(lstat(join(base, "node_modules", ".vite-temp", "config.mjs"))).rejects.toThrow();
+});
+
+// office-viewer studio-slides (2026-10-17): a check `npm install && tsc` in a fresh worktree failed twice with
+// «EPERM symlink '../image-size/bin/image-size.js' -> '<worktree>/node_modules/.bin/.image-size-…'», exit 255: the
+// worktree's .bin was a link into the base checkout, which the verification sandbox does not let a check write.
+it("gives npm's own state in node_modules (.bin, .package-lock.json) to the worktree so npm install can run there", async () => {
+  const { prepareWorktree } = await import("../../src/rooms/verification/git-integrate");
+  const { mkdir, lstat, readlink, realpath, symlink } = await import("node:fs/promises");
+  const { base, worktree } = await repo();
+  await mkdir(join(base, "node_modules", "image-size", "bin"), { recursive: true });
+  await writeFile(join(base, "node_modules", "image-size", "bin", "image-size.js"), "#!/usr/bin/env node\n");
+  await mkdir(join(base, "node_modules", ".bin"), { recursive: true });
+  await symlink("../image-size/bin/image-size.js", join(base, "node_modules", ".bin", "image-size"));
+  await writeFile(join(base, "node_modules", ".package-lock.json"), "{\"lockfileVersion\":3}\n");
+  const a = await worktree("npm-state");
+  await prepareWorktree({ basePath: base, worktreePath: a });
+  expect((await lstat(join(a, "node_modules", ".bin"))).isSymbolicLink()).toBe(false);
+  expect((await lstat(join(a, "node_modules", ".package-lock.json"))).isSymbolicLink()).toBe(false);
+  expect(await readFile(join(a, "node_modules", ".package-lock.json"), "utf8")).toBe("{\"lockfileVersion\":3}\n");
+  // The bin link stays relative, so it runs the worktree's package (a workspace package is the writer's copy).
+  expect(await readlink(join(a, "node_modules", ".bin", "image-size"))).toBe("../image-size/bin/image-size.js");
+  expect(await realpath(join(a, "node_modules", ".bin", "image-size"))).toBe(await realpath(join(base, "node_modules", "image-size", "bin", "image-size.js")));
+  // What npm does there (a new bin link, a rewritten lockfile) stays in the worktree.
+  await symlink("../x/bin.js", join(a, "node_modules", ".bin", "x"));
+  await writeFile(join(a, "node_modules", ".package-lock.json"), "{}\n");
+  await expect(lstat(join(base, "node_modules", ".bin", "x"))).rejects.toThrow();
+  expect(await readFile(join(base, "node_modules", ".package-lock.json"), "utf8")).toBe("{\"lockfileVersion\":3}\n");
 });
 
 it("installs dependencies from the lockfile before the first writer so nobody runs npm install", async () => {

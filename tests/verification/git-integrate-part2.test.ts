@@ -38,7 +38,7 @@ it("removes only Lane Pilot's own worktree of a failed attempt", async () => {
 
 it("re-points workspace package links at the worktree so checks import the writer's edits", async () => {
   const { prepareWorktree } = await import("../../src/rooms/verification/git-integrate");
-  const { mkdir, lstat, readlink, realpath } = await import("node:fs/promises");
+  const { mkdir, lstat, realpath } = await import("node:fs/promises");
   const { base, worktree } = await repo();
   await writeFile(join(base, "package.json"), JSON.stringify({ name: "mono", workspaces: ["packages/*", "apps/api"] }) + "\n");
   await mkdir(join(base, "packages", "contracts"), { recursive: true });
@@ -70,7 +70,7 @@ it("re-points workspace package links at the worktree so checks import the write
   expect(await readFile(join(a, "packages", "contracts", "dist", "index.d.ts"), "utf8")).toBe("export {};\n");
   expect(await realpath(join(a, "node_modules", "vitest"))).toBe(await realpath(join(base, "node_modules", "vitest")));
   expect(await realpath(join(a, "node_modules", "@mono", "contracts"))).toBe(await realpath(join(a, "packages", "contracts")));
-  expect(await readlink(join(a, "node_modules", ".package-lock.json"))).toBe(join(await realpath(base), "node_modules", ".package-lock.json"));
+  expect(await readFile(join(a, "node_modules", ".package-lock.json"), "utf8")).toBe("{}\n");
   expect(await realpath(join(a, "apps", "api", "node_modules", "left-pad"))).toBe(await realpath(join(base, "apps", "api", "node_modules", "left-pad")));
   await writeFile(join(a, "packages", "contracts", "index.js"), "module.exports = 'worktree';\n");
   const { execFileSync: run } = await import("node:child_process");
