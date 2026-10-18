@@ -7,8 +7,9 @@ import {
   docsInputHash, docsScheduleDue, docsSinceEpoch, parseDocsSettings,
   selectDocsPages, validateDocsEdits,
   type DocsPage,
-  docsSelection, docsRepairPrompt,
+  docsSelection, docsRepairPrompt, nightlyDocsPrompt,
 } from "../../src/rooms/docs/docs";
+import { lintDocsPages } from "../../src/rooms/docs/docs-lint";
 
 const now = new Date(2026, 8, 23, 5, 0, 0);
 const page = (path:string, modifiedAt:number, content="# Docs"):DocsPage => ({
@@ -97,6 +98,27 @@ it("reminds the one repair round of the page size limit", () => {
   const prompt = docsRepairPrompt([{ path:"docs/capabilities.md", rule:"coverage", detail:"does not link apps/api/docs/features/x.md" }]);
   expect(prompt).toContain("under 30000 bytes");
   expect(prompt).toContain("linked page of its own");
+});
+
+// SelfyStudio, 2026-10-18 (thr_4kk3pkhbfg): the only first-check finding on docs/flows/chat.md was a Jev contradiction
+// with docs/DESIGN.md. In the repair round the agent cited `docs/DESIGN.md:723`, a rule nothing it was given states,
+// and the pass failed on that one evidence finding.
+it("tells the agent, first brief and repair round, that only code may be cited", () => {
+  const contradiction = { path:"docs/flows/chat.md", rule:"contradiction",
+    detail:"\"If access lookup errors, Cabinet treats access as paid for presentation\" contradicts docs/DESIGN.md: \"cabinet access loading stays neutral\" (Jev 75%)" };
+  const rule = /a file:line citation of a \.md page \(a docs page, DESIGN\.md, README\.md or PROJECT\.md\) fails the checks/;
+  expect(docsRepairPrompt([contradiction])).toMatch(rule);
+  expect(docsRepairPrompt([contradiction])).toContain("cite the code it cites and link that page");
+  expect(nightlyDocsPrompt({ since:"yesterday", hasDocs:true, changed:["apps/api/src/x.ts"] })).toMatch(rule);
+  // The rule the text describes: the agent's own sentence from that round is blocked, the same claim citing code is not.
+  const page = (citation:string) => ({ path:"docs/flows/chat.md", content:[
+    "---", "title: Chat", "type: component", "created: 2026-09-27", "updated: 2026-10-18", "status: active", "confidence: low",
+    "tags: [chat]", "sources:", "  - apps/cabinet/app/entities/wallet/use-chat-access.ts", "---", "# Chat", "TL;DR.", "## How it works",
+    `During initial loading the gate stays neutral (\`apps/cabinet/app/entities/wallet/use-chat-access.ts:4-8,38-50\`; \`${citation}\`), see the [design canon](../DESIGN.md).`,
+    "Refs `apps/cabinet/app/pages/generate-from-scratch.vue:7-25`.", ""].join("\n") });
+  const evidence = (citation:string) => lintDocsPages([page(citation)], {}, ["docs/DESIGN.md"]).filter((finding) => finding.rule === "evidence").map((finding) => finding.detail);
+  expect(evidence("docs/DESIGN.md:723")).toContain("cites docs/DESIGN.md; cite the code itself and link docs pages instead");
+  expect(evidence("apps/api/src/routes/v1/chat-sessions/chat-message-charge.ts:30-45")).toEqual([]);
 });
 
 // treba, 2026-10-11: 75 bad citations on docs/api.md filled the first 80 lines of the repair round; the 22 frontmatter
