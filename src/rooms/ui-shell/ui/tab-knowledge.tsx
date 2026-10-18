@@ -2,6 +2,7 @@ import { t } from "@lane-pilot/i18n";
 import { AnamnesisTab } from "../../anamnesis/ui";
 import { DocsPlaces } from "../../docs/ui";
 import { MemoryRecords } from "../../memory/ui";
+import { HarnessCard } from "../../harness/ui";
 import { RuleProposals } from "../../self-repair/ui";
 import { asBoolean } from "./page-model";
 import { CatalogField, CatalogFields } from "../../settings/ui";
@@ -59,7 +60,7 @@ export function KnowledgeTab({ page }: { page: LpPage }) {
         </SettingsGroup>
       ) : null}
       {segment === "rules" && !isGlobal && projectId ? (
-        <div data-testid="rules-panel"><RuleProposals projectId={projectId} /></div>
+        <div className="space-y-6" data-testid="rules-panel"><RuleProposals projectId={projectId} /><HarnessCard projectId={projectId} /></div>
       ) : null}
       {segment === "anamnesis" ? <div data-testid="anamnesis-panel"><AnamnesisTab /></div> : null}
     </div>

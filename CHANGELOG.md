@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.251
+
+- **A tree's hooks.json reaches Claude Code writers.** `materialize` writes it as the worktree's `.claude/settings.local.json` (git-excluded) for a writer on the `claude-code` provider; other runtimes ignore it, and the editor's surface table now says so and asks for a check alongside. `hooksSettings` keeps only the `hooks` key.
+- **The harness card on the Knowledge tab** (`src/rooms/harness/ui/harness-card.tsx`, under the rule proposals): config line with the enabled switch, the trials with their arms and decision, the active trees file by file, the keys with enough attempts and a «Run editor» button per key, «Judge trials». Written by a Sonnet subagent; `tests/harness-ui.test.tsx`.
+- **A sticky writer's next task gets the tree too.** The live check in the sandbox (`.bb/chats/thr_xt2vhcuesc/tmp/harness-live-writer.py`: two one-note tasks under a seeded trial tree) showed the first task with the tree's always-on line in its brief, `checks/drill-echo.sh` materialized and run in verification (exit 0, «harness-check-ok» quoted by the writer), and the second task of the same writer thread with no tree and no check: `continueInThread` (`src/rooms/writer/server/sticky.ts`) bypasses the spawn. It now assigns the tree for the new attempt, refreshes its files in the same worktree, appends the always-on lines and memory notes to the turn's message and records the tree on the attempt's trace.
+- **Evidence files travel in pieces.** `bb lane-pilot harness-tick` run by hand on 2026-10-19: BB-сервис `release` → KEEP_BASE, `feature:office-studio` → trial (2 skills, memory, 369 always-on tokens); SelfyStudio's two keys died on `spawn E2BIG`, whole trajectories in one printf argument on a Linux host (128 KB per argument). `writeFilesCommand` now appends base64 pieces of 48 KB; the batch budget counts them.
+
 ## 0.1.250
 
 - **The trajectory slice knows a sticky writer's next-task turn.** On the hub the second and later tasks of a writer thread arrive as «Next task for you in the same area» with the contract JSON, not as «Lane Pilot task <id>: …», so `bb lane-pilot harness-trajectory thr_fbtsx8gvkd studio-publish-export` returned the whole thread (2478 events). `sliceAttemptEvents` now treats that turn as a task start and finds the task by the contract's `"id"`.

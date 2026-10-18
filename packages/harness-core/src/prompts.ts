@@ -61,7 +61,7 @@ The harness is a tree of components in \`context/harness/\`. Each has a differen
 | \`always-on.md\` | lines the writer reads after the fixed brief | ALWAYS ON: every token is read on every task of the area and competes with the writer's own work; capped at ${surface.alwaysOnMaxTokens} tokens |
 | \`${surface.skillDir}/<name>/SKILL.md\` (+ \`scripts/*\`) | a reusable workflow | loaded ON DEMAND, only when its trigger line in always-on.md matches |
 | \`${surface.checksDir}/<name>.sh\` (or .py, .mjs) | a deterministic check | run by Lane Pilot with the task's verification; the writer cannot skip it |
-| \`${surface.hooksFile}\` | Claude Code hook schema (PreToolUse, PostToolUse, SessionStart, UserPromptSubmit, Stop; type "command") | fires INSIDE the tool loop on every matching call; the one lever prose cannot stop reading |
+| \`${surface.hooksFile}\` | Claude Code hook schema (PreToolUse, PostToolUse, SessionStart, UserPromptSubmit, Stop; type "command") | fires INSIDE the tool loop on every matching call of a Claude Code writer (installed as the worktree's .claude/settings.local.json); writers on other runtimes ignore it, so pair it with a check when the area's writers are not Claude Code |
 | \`${surface.memoryFile}\` | at most ${surface.memoryMaxNotes} notes for the area (a path, a decision, a fact of this workspace) | served as project memory to the writer |
 
 ALWAYS-ON PROSE IS THE EXPENSIVE OPTION. Prefer, in this order:

@@ -452,8 +452,8 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       const writerKey=`${writerProviderId}/${writerModel}`;
       const harness=await services.harness?.forAttempt({ projectId:input.projectId, area:input.task.area, writerKey, attemptId:input.attemptId }).catch((cause:unknown)=>{
         bb.log.warn(`Lane Pilot harness for ${input.attemptId} skipped: ${cause instanceof Error?cause.message:String(cause)}`); return null; }) ?? null;
-      const harnessFiles=harness&&(harness.skillNames.length||harness.checkNames.length)
-        ? await services.harness.materialize({ attemptId:input.attemptId, hostId:input.config.hostId, workspacePath, live, parts:harness }).catch(()=>({ written:[] as string[], reason:"error" }))
+      const harnessFiles=harness&&(harness.skillNames.length||harness.checkNames.length||"hooks.json" in harness.tree)
+        ? await services.harness.materialize({ attemptId:input.attemptId, hostId:input.config.hostId, workspacePath, live, providerId:writerProviderId, parts:harness }).catch(()=>({ written:[] as string[], reason:"error" }))
         : { written:[] as string[], reason:null as string|null };
       const harnessSkills=harnessFiles.written.length?harness!.skillNames:[];
       const briefRulesText=[rulesText, harness?.alwaysOn ?? ""].filter(Boolean).join("\n");

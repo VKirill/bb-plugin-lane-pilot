@@ -10,7 +10,7 @@ import { fullAccessSpawn, scheduleIsolated, stringAt, type ServerCore, type Serv
 import { SANDBOX_PROJECT_ID, isSandboxProjectName } from "../../stability/server";
 import { ensureExcludeLinesCommand, EXCLUDE_NOT_GIT } from "../../verification";
 import { getAttempt } from "../../storage";
-import { evidenceFiles, evidenceLayout, harvestCommand, parseHarvest, shellQuote, sliceAttemptEvents, treeDiff, writeFilesCommand, type AttemptEvidence, type LibraryEntry, type PoolCandidate } from "./evidence";
+import { commandCost, evidenceFiles, evidenceLayout, harvestCommand, parseHarvest, shellQuote, sliceAttemptEvents, treeDiff, writeFilesCommand, type AttemptEvidence, type LibraryEntry, type PoolCandidate } from "./evidence";
 import {
   ANY_WRITER, activeHarness, assignAttemptHarness, getHarness, insertHarness, listExperiences, listHarnesses, saveExperience, setHarnessState, teachingKeys, trialAttempts, trialHarness,
   type HarnessRow,
@@ -50,7 +50,8 @@ const EXCLUDE_LINES = [".lane-pilot/", ".opencode/skills/", ".claude/skills/"];
 const EVENT_PAGE = 100;
 const EVENT_PAGES_MAX = 60;
 const TRAJECTORY_MAX_CHARS = 120_000;
-const COMMAND_BUDGET = 400_000;
+/** Bytes of one write command: well under the smallest shell argument limits of the hosts (Linux 128 KB per argument, 2 MB total). */
+const COMMAND_BUDGET = 700_000;
 
 export type BriefParts = { harnessId: string; arm: "new" | "old" | null; alwaysOn: string; memory: string; skillNames: string[]; checkNames: string[]; tree: Tree };
 
@@ -71,6 +72,14 @@ export function checkCommands(tree: Tree): Array<{ command: string; timeout_sec:
 }
 
 /** The lesson's form from the component it names; the rules UI and the writer brief route on it. */
+/** The settings file a Claude Code writer reads its hooks from: the tree's hooks.json as written, under the one `hooks` key. */
+export function hooksSettings(hooksJson: string): string {
+  try {
+    const parsed = JSON.parse(hooksJson) as { hooks?: unknown };
+    return JSON.stringify({ hooks: parsed.hooks ?? {} }, null, 2);
+  } catch { return JSON.stringify({ hooks: {} }); }
+}
+
 export function inferForm(lesson: string): RuleForm {
   const text = lesson.toLowerCase();
   if (/\bchecks?\b|verification|\.sh\b|\.py\b|\.mjs\b/.test(text)) return "check";
@@ -124,10 +133,10 @@ export function createHarness(ctx: ServerCore, services: Services) {
   }
 
   /** Writes a tree's skills and checks into the worktree (git-excluded) and links the skills where the writer's runtime looks. */
-  async function materialize(input: { attemptId: string; hostId: string; workspacePath: string; live: boolean; parts: BriefParts }): Promise<{ written: string[]; reason: string | null }> {
+  async function materialize(input: { attemptId: string; hostId: string; workspacePath: string; live: boolean; providerId?: string; parts: BriefParts }): Promise<{ written: string[]; reason: string | null }> {
     const { tree } = input.parts;
     const files = Object.fromEntries(Object.entries(tree).filter(([rel]) => rel.startsWith(`${LANE_PILOT_SURFACE.skillDir}/`) || rel.startsWith(`${LANE_PILOT_SURFACE.checksDir}/`)));
-    if (Object.keys(files).length === 0) return { written: [], reason: null };
+    if (Object.keys(files).length === 0 && !(LANE_PILOT_SURFACE.hooksFile in tree)) return { written: [], reason: null };
     if (input.live) return { written: [], reason: "live_folder" };
     const excluded = await runOnHost(host, { hostId: input.hostId, cwd: input.workspacePath, command: ensureExcludeLinesCommand(EXCLUDE_LINES), timeoutSec: 30 })
       .catch((cause: unknown) => ({ exitCode: 1, stdout: "", stderr: cause instanceof Error ? cause.message : String(cause), hostId: input.hostId }));
@@ -141,8 +150,12 @@ export function createHarness(ctx: ServerCore, services: Services) {
     const links = input.parts.skillNames.flatMap((name) => [".opencode/skills", ".claude/skills"].map((dir) =>
       `mkdir -p ${shellQuote(dir)} && ln -sfn ${shellQuote(`../../${HARNESS_DIR}/skills/${name}`)} ${shellQuote(`${dir}/${name}`)}`));
     const chmod = input.parts.checkNames.map((rel) => `chmod +x ${shellQuote(`${HARNESS_DIR}/${rel}`)}`);
-    if (links.length || chmod.length) await runOnHost(host, { hostId: input.hostId, cwd: input.workspacePath, command: [...links, ...chmod, "true"].join("\n"), timeoutSec: 30 }).catch(() => undefined);
-    return { written: Object.keys(files), reason: null };
+    // hooks.json fires only where the writer's runtime reads Claude Code hooks: a Claude Code writer gets it as the
+    // worktree's .claude/settings.local.json (git-excluded); other runtimes ignore the file, as the surface table says.
+    const hooks = tree[LANE_PILOT_SURFACE.hooksFile];
+    const hookLines = hooks && input.providerId === "claude-code" ? [`mkdir -p .claude && printf '%s' ${shellQuote(hooksSettings(hooks))} > .claude/settings.local.json`] : [];
+    if (links.length || chmod.length || hookLines.length) await runOnHost(host, { hostId: input.hostId, cwd: input.workspacePath, command: [...links, ...chmod, ...hookLines, "true"].join("\n"), timeoutSec: 30 }).catch(() => undefined);
+    return { written: [...Object.keys(files), ...(hookLines.length ? [LANE_PILOT_SURFACE.hooksFile] : [])], reason: null };
   }
 
   /** The checks the attempt's tree adds to its verification; empty for an attempt without a tree or with a live folder. */
@@ -262,7 +275,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
       batch = {}; size = 0;
     };
     for (const [rel, content] of Object.entries(files)) {
-      const encoded = Math.ceil(Buffer.byteLength(content, "utf8") * 1.4) + rel.length + 80;
+      const encoded = commandCost(rel, content);
       if (size + encoded > COMMAND_BUDGET && Object.keys(batch).length) await flush();
       batch[rel] = content; size += encoded;
     }

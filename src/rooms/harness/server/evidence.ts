@@ -192,15 +192,29 @@ export function sliceAttemptEvents(events: readonly ThreadEventLike[], taskId: s
   return ordered.slice(start, end);
 }
 
-/** A shell command that writes `files` under `dir` (paths relative), creating folders; content travels as base64. */
+/**
+ * A shell command that writes `files` under `dir` (paths relative), creating folders; content travels as base64 in
+ * pieces of at most `CHUNK_BYTES`, each its own argument: Linux caps one argument at 128 KB (MAX_ARG_STRLEN), and the
+ * first SelfyStudio editors died on `spawn E2BIG` with whole trajectories in one printf (2026-10-19).
+ */
+export const CHUNK_BYTES = 48_000;
+
 export function writeFilesCommand(dir: string, files: Record<string, string>): string {
   const lines = [`mkdir -p ${shellQuote(dir)} || exit 1`, `cd ${shellQuote(dir)} || exit 1`];
   for (const [rel, content] of Object.entries(files)) {
     const safe = rel.replace(/\\/g, "/");
     if (safe.startsWith("/") || safe.split("/").includes("..")) continue;
     const parent = safe.includes("/") ? safe.slice(0, safe.lastIndexOf("/")) : ".";
-    lines.push(`mkdir -p ${shellQuote(parent)} && printf '%s' ${shellQuote(Buffer.from(content, "utf8").toString("base64"))} | base64 -d > ${shellQuote(safe)} || exit 1`);
+    const bytes = Buffer.from(content, "utf8");
+    lines.push(`mkdir -p ${shellQuote(parent)} && : > ${shellQuote(safe)} || exit 1`);
+    if (bytes.length === 0) continue;
+    for (let offset = 0; offset < bytes.length; offset += CHUNK_BYTES) {
+      lines.push(`printf '%s' ${shellQuote(bytes.subarray(offset, offset + CHUNK_BYTES).toString("base64"))} | base64 -d >> ${shellQuote(safe)} || exit 1`);
+    }
   }
   lines.push("echo @@WRITTEN");
   return lines.join("\n");
 }
+
+/** How many bytes of command one file costs, for the caller's batching. */
+export const commandCost = (rel: string, content: string): number => Math.ceil(Buffer.byteLength(content, "utf8") * 1.37) + (Math.ceil(Buffer.byteLength(content, "utf8") / CHUNK_BYTES) + 1) * (rel.length + 60);

@@ -184,3 +184,23 @@ describe("sliceAttemptEvents", () => {
     expect(sliceAttemptEvents(events, "unknown").map((e) => e.seq)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
   });
 });
+
+describe("writeFilesCommand chunks", () => {
+  it("writes a file larger than one shell argument allows in pieces and the harvest reads it back whole", async () => {
+    const { execSync } = await import("node:child_process");
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { CHUNK_BYTES, harvestCommand, parseHarvest, writeFilesCommand } = await import("../../src/rooms/harness/server/evidence");
+    const big = Array.from({ length: 4000 }, (_, i) => `line ${i} ${"трасса ".repeat(10)}`).join("\n");
+    expect(Buffer.byteLength(big)).toBeGreaterThan(CHUNK_BYTES * 3);
+    const dir = mkdtempSync(join(tmpdir(), "harness-chunks-"));
+    const command = writeFilesCommand("context/harness", { "always-on.md": big, "memory.md": "" });
+    for (const line of command.split("\n")) expect(line.length).toBeLessThan(CHUNK_BYTES * 1.4 + 200);
+    const out = execSync(command, { cwd: dir, shell: "/bin/bash", encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    expect(out).toContain("@@WRITTEN");
+    const back = parseHarvest(execSync(harvestCommand("context/harness"), { cwd: dir, shell: "/bin/bash", encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }));
+    expect(back["always-on.md"]).toBe(big);
+    expect(back["memory.md"]).toBe("");
+  });
+});

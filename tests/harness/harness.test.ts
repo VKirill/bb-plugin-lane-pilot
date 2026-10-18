@@ -191,3 +191,12 @@ describe("createHarness", () => {
     expect(listHarnesses(db, "proj")).toHaveLength(2);
   });
 });
+
+describe("hooksSettings", () => {
+  it("writes the tree's hooks under the one key a Claude Code worktree settings file reads, and survives bad JSON", async () => {
+    const { hooksSettings } = await import("../../src/rooms/harness/server/harness");
+    const hooks = JSON.stringify({ hooks: { PostToolUse: [{ matcher: "Edit", hooks: [{ type: "command", command: "bash .lane-pilot/harness/checks/x.sh" }] }] } });
+    expect(JSON.parse(hooksSettings(hooks))).toEqual({ hooks: { PostToolUse: [{ matcher: "Edit", hooks: [{ type: "command", command: "bash .lane-pilot/harness/checks/x.sh" }] }] } });
+    expect(JSON.parse(hooksSettings("not json"))).toEqual({ hooks: {} });
+  });
+});

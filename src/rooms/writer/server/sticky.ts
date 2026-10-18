@@ -245,13 +245,30 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
       }
       setAttemptDirtBefore(db, input.attemptId, dirtBefore);
       const trace = getReasoningTrace(db, writer.attemptId);
-      if (trace) saveReasoningTrace(db, { ...trace, attemptId:input.attemptId, runId:input.runId, threadId:writer.threadId });
+      // The area's harness tree for this attempt (src/rooms/harness): a sticky turn bypasses the spawn, so the tree is
+      // assigned here, its files are refreshed in the same worktree and its lines travel with the turn's message. The live
+      // check of 2026-10-19 found the second task of a writer thread without a tree and without the tree's check.
+      const previousDispatch = (trace?.dispatchContext ?? null) as { writerKey?:string; harness?:unknown } | null;
+      const projectId = getRun(db, input.runId)?.project_id ?? "";
+      const contract = db.prepare("SELECT contract_json FROM lane_pilot_task WHERE id=?").get(input.taskId) as { contract_json?:string } | undefined;
+      let area:string|null = null;
+      try { area = (JSON.parse(contract?.contract_json ?? "{}") as { area?:unknown }).area as string | null ?? null; } catch { area = null; }
+      const writerKey = previousDispatch?.writerKey ?? `${input.config.writerProviderId}/${input.config.writerModel}`;
+      const harness = projectId && services.harness ? await services.harness.forAttempt({ projectId, area, writerKey, attemptId:input.attemptId }).catch(() => null) : null;
+      const harnessFiles = harness && (harness.skillNames.length || harness.checkNames.length || "hooks.json" in harness.tree)
+        ? await services.harness.materialize({ attemptId:input.attemptId, hostId:input.config.hostId, workspacePath:writer.workspacePath, live:resolve(writer.workspacePath) === resolve(base), providerId:writerKey.split("/")[0], parts:harness }).catch(() => ({ written:[] as string[], reason:"error" }))
+        : { written:[] as string[], reason:null as string|null };
+      const harnessLines = harness && (harness.alwaysOn || harness.memory)
+        ? ["The area's harness for this task (data from earlier tasks of the area; the contract and owns_paths win):", ...[harness.alwaysOn, harness.memory].filter(Boolean)]
+        : [];
+      if (trace) saveReasoningTrace(db, { ...trace, attemptId:input.attemptId, runId:input.runId, threadId:writer.threadId,
+        dispatchContext:{ ...(trace.dispatchContext ?? {}), writerKey, harness:harness ? { id:harness.harnessId, arm:harness.arm, alwaysOnChars:harness.alwaysOn.length, skills:harnessFiles.written.length ? harness.skillNames : [], checks:harnessFiles.written.length ? harness.checkNames : [], materialize:harnessFiles.reason } : null } as typeof trace.dispatchContext });
       await bb.sdk.threads.updatePluginMetadata({ threadId:writer.threadId, pluginId:"lane-pilot",
         set:{ lanePilotRunId:input.runId, lanePilotTaskId:input.taskId, attemptId:input.attemptId } } as never).catch(() => undefined);
       const since = Date.now();
       await saveFollowUp(bb.storage.kv, input.attemptId, since);
       try {
-        const text = typeof input.prompt === "function" ? input.prompt(conflicts) : input.prompt;
+        const text = [typeof input.prompt === "function" ? input.prompt(conflicts) : input.prompt, ...harnessLines].join("\n\n");
         await sendServiceMessage(bb, { threadId:writer.threadId, text, senderThreadId:getRun(db, input.runId)?.pm_thread_id });
       } catch (cause) {
         return { ok:false, reason:`sticky_send_failed:${cause instanceof Error ? cause.message : String(cause)}`, bound:true };
