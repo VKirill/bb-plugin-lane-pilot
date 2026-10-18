@@ -165,12 +165,20 @@ export type DocsUnit = {
 /** A flow's own page and the part pages it splits into. */
 export const flowDocsWritable = (slug:string) => (path:string):boolean => path === `docs/flows/${slug}.md` || path.startsWith(`docs/flows/${slug}/`);
 
+/**
+ * The lint fails a file:line citation of a docs page (docs-lint.ts, rule evidence), and the brief never said so: in the
+ * only repair round SelfyStudio's chat flow agent resolved a contradiction with docs/DESIGN.md by citing
+ * `docs/DESIGN.md:723`, and the pass failed on that one citation (2026-10-18).
+ */
+const DOCS_CITE_CODE_ONLY = "- Cite only code: a file:line citation of a .md page (a docs page, DESIGN.md, README.md or PROJECT.md) fails the checks. When another page states the same thing, cite the code it cites and link that page.";
+
 const METHODOLOGY = [
   "Method (read the docs-methodology skill, ~/.agents/skills/docs-methodology/SKILL.md and its references/, first if the file exists; where it and this brief differ, this brief wins, because Lane Pilot's checks enforce it):",
   "- Every docs page starts with YAML frontmatter: title, type, created, updated (YYYY-MM-DD), status (draft|active|stale|deprecated), confidence (high|medium|low, honest: low under 5 sources, medium 5-15, high over 15), tags (kebab-case list), sources (list of files actually read, most relevant first).",
   "- type is one of overview, architecture, data-model, decisions, deployment, gotchas, gaps, active-areas, active-tasks, component, flow, capabilities, audience. One H1 equal to title, then a one-line TL;DR.",
   "- Write so an agent can learn how the product works from the docs alone, without opening the code. A component page has: Purpose; How it works - the steps in order as a numbered list, a table of the modes, variants or states it branches on (what differs between them: inputs, limits, prices, outputs), and what happens on each failure; Business rules; Public API or commands; Gotchas. A flow page (docs/flows/) has: Trigger; How it works - each step across apps and packages in order, naming the app, the call and the state it changes; Modes; Failures and compensation; Related pages. Depth follows the code: a large capability gets a long page or several pages, not a summary.",
   "- Every non-trivial claim cites file:line or file:start-end that exists; at least 3 citations per page, and at least 15 on the main page of a business flow (docs/flows/<slug>.md). No hedges (typically, usually, should) without a citation, no marketing words (powerful, seamless, robust, comprehensive, intuitive, leverage), no dates in prose.",
+  DOCS_CITE_CODE_ONLY,
   "- data-model pages explain the data, they do not copy the schema: one page per domain area (not per schema file) with a mermaid erDiagram of its tables and keys; per table its purpose, a field table with a Meaning column (what the field means, allowed values and where they come from, units such as credits, kopecks or milliseconds - the type is secondary), the lifecycle of each status-like field as a table of transitions (from, to, which function at file:line, when), its invariants, and who writes and reads it by use case, retention and cleanup jobs included. Use the Data map of the code map when there is one.",
   "- Keep each page under 30000 bytes: split a large subject into linked pages (a data model with many tables into data-model/<area>.md, one page per area, with data-model.md as the overview).",
   "- DESIGN.md files are the design canon the design lead keeps: read and link them, never edit them.",
@@ -297,6 +305,7 @@ export function docsRepairPrompt(findings:Array<{ path:string; rule:string; deta
   return [
     "Lane Pilot checked the docs and found these problems. Fix exactly these, following the same method; change nothing else.",
     "Keep every page under 30000 bytes: a page over 40000 bytes fails the checks again and this is the only round. When a fix would add to a page near that size, put the new content on a linked page of its own and keep only the link and a line on the page.",
+    DOCS_CITE_CODE_ONLY.slice(2),
     ...listed.map((finding) => `- ${finding.path} [${finding.rule}]: ${finding.detail}`),
     ...(hidden.length ? [`- …and ${findings.length - listed.length} more like the lines above, fix them too: ${hidden.map(([key, count]) => `${key} ×${count}`).join(", ")}`] : []),
   ].join("\n");
