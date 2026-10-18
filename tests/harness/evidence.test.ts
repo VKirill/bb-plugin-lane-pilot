@@ -204,3 +204,24 @@ describe("writeFilesCommand chunks", () => {
     expect(back["memory.md"]).toBe("");
   });
 });
+
+describe("writeFileCommands", () => {
+  it("keeps every command under the budget, splits a big file across commands, and the pieces add up", async () => {
+    const { execSync } = await import("node:child_process");
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { COMMAND_BUDGET, harvestCommand, parseHarvest, writeFileCommands } = await import("../../src/rooms/harness/server/evidence");
+    const big = Array.from({ length: 6000 }, (_, i) => `line ${i} ${"evidence ".repeat(8)}`).join("\n");
+    const files = { "context/attempts/a/trajectory.md": big, "context/task.md": "# task", "context/harness/always-on.md": "" };
+    const commands = writeFileCommands(".", files);
+    expect(commands.length).toBeGreaterThan(2);
+    for (const command of commands) { expect(command.length).toBeLessThanOrEqual(COMMAND_BUDGET + 200); expect(command.endsWith("echo @@WRITTEN")).toBe(true); }
+    const dir = mkdtempSync(join(tmpdir(), "harness-cmds-"));
+    for (const command of commands) expect(execSync(command, { cwd: dir, shell: "/bin/bash", encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })).toContain("@@WRITTEN");
+    const back = parseHarvest(execSync(harvestCommand("context"), { cwd: dir, shell: "/bin/bash", encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }));
+    expect(back["attempts/a/trajectory.md"]).toBe(big);
+    expect(back["task.md"]).toBe("# task");
+    expect(back["harness/always-on.md"]).toBe("");
+  });
+});

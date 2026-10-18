@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.252
+
+- **One host command stays under 100 KB.** SelfyStudio's editors (OVH, Linux) still died on `spawn E2BIG` after 0.1.251: the pieces were 48 KB, but the whole write script travels as one `bash -c` argument, and Linux caps an argument at 128 KB. `writeFileCommands` (`src/rooms/harness/server/evidence.ts`) now emits as many commands as the budget needs, splitting a long file across them; the tree materialization uses the same helper. Test: a 400 KB trajectory written in several commands and harvested back whole.
+
 ## 0.1.251
 
 - **A tree's hooks.json reaches Claude Code writers.** `materialize` writes it as the worktree's `.claude/settings.local.json` (git-excluded) for a writer on the `claude-code` provider; other runtimes ignore it, and the editor's surface table now says so and asks for a check alongside. `hooksSettings` keeps only the `hooks` key.

@@ -10,7 +10,7 @@ import { fullAccessSpawn, scheduleIsolated, stringAt, type ServerCore, type Serv
 import { SANDBOX_PROJECT_ID, isSandboxProjectName } from "../../stability/server";
 import { ensureExcludeLinesCommand, EXCLUDE_NOT_GIT } from "../../verification";
 import { getAttempt } from "../../storage";
-import { commandCost, evidenceFiles, evidenceLayout, harvestCommand, parseHarvest, shellQuote, sliceAttemptEvents, treeDiff, writeFilesCommand, type AttemptEvidence, type LibraryEntry, type PoolCandidate } from "./evidence";
+import { evidenceFiles, evidenceLayout, harvestCommand, parseHarvest, shellQuote, sliceAttemptEvents, treeDiff, writeFileCommands, type AttemptEvidence, type LibraryEntry, type PoolCandidate } from "./evidence";
 import {
   ANY_WRITER, activeHarness, assignAttemptHarness, getHarness, insertHarness, listExperiences, listHarnesses, saveExperience, setHarnessState, teachingKeys, trialAttempts, trialHarness,
   type HarnessRow,
@@ -50,8 +50,6 @@ const EXCLUDE_LINES = [".lane-pilot/", ".opencode/skills/", ".claude/skills/"];
 const EVENT_PAGE = 100;
 const EVENT_PAGES_MAX = 60;
 const TRAJECTORY_MAX_CHARS = 120_000;
-/** Bytes of one write command: well under the smallest shell argument limits of the hosts (Linux 128 KB per argument, 2 MB total). */
-const COMMAND_BUDGET = 700_000;
 
 export type BriefParts = { harnessId: string; arm: "new" | "old" | null; alwaysOn: string; memory: string; skillNames: string[]; checkNames: string[]; tree: Tree };
 
@@ -141,11 +139,13 @@ export function createHarness(ctx: ServerCore, services: Services) {
     const excluded = await runOnHost(host, { hostId: input.hostId, cwd: input.workspacePath, command: ensureExcludeLinesCommand(EXCLUDE_LINES), timeoutSec: 30 })
       .catch((cause: unknown) => ({ exitCode: 1, stdout: "", stderr: cause instanceof Error ? cause.message : String(cause), hostId: input.hostId }));
     if (excluded.exitCode !== 0 || excluded.stdout.includes(EXCLUDE_NOT_GIT)) return { written: [], reason: excluded.exitCode !== 0 ? "exclude_failed" : "not_git" };
-    const wrote = await runOnHost(host, { hostId: input.hostId, cwd: input.workspacePath, command: writeFilesCommand(HARNESS_DIR, files), timeoutSec: 60 })
-      .catch((cause: unknown) => ({ exitCode: 1, stdout: "", stderr: cause instanceof Error ? cause.message : String(cause), hostId: input.hostId }));
-    if (wrote.exitCode !== 0 || !wrote.stdout.includes("@@WRITTEN")) {
-      ctx.log(`harness ${input.attemptId}: tree not materialized: ${wrote.stderr.trim() || `exit ${wrote.exitCode}`}`);
-      return { written: [], reason: "write_failed" };
+    for (const command of writeFileCommands(HARNESS_DIR, files)) {
+      const wrote = await runOnHost(host, { hostId: input.hostId, cwd: input.workspacePath, command, timeoutSec: 60 })
+        .catch((cause: unknown) => ({ exitCode: 1, stdout: "", stderr: cause instanceof Error ? cause.message : String(cause), hostId: input.hostId }));
+      if (wrote.exitCode !== 0 || !wrote.stdout.includes("@@WRITTEN")) {
+        ctx.log(`harness ${input.attemptId}: tree not materialized: ${wrote.stderr.trim() || `exit ${wrote.exitCode}`}`);
+        return { written: [], reason: "write_failed" };
+      }
     }
     const links = input.parts.skillNames.flatMap((name) => [".opencode/skills", ".claude/skills"].map((dir) =>
       `mkdir -p ${shellQuote(dir)} && ln -sfn ${shellQuote(`../../${HARNESS_DIR}/skills/${name}`)} ${shellQuote(`${dir}/${name}`)}`));
@@ -265,21 +265,12 @@ export function createHarness(ctx: ServerCore, services: Services) {
     return null;
   }
 
-  /** Writes files in commands under the shell's argument budget: trajectories are long. */
+  /** Writes files in commands under the host shell's argument limit (`writeFileCommands`): trajectories are long. */
   async function writeFiles(where: { hostId: string; path: string }, dir: string, files: Record<string, string>): Promise<void> {
-    let batch: Record<string, string> = {}, size = 0;
-    const flush = async () => {
-      if (!Object.keys(batch).length) return;
-      const ran = await runOnHost(host, { hostId: where.hostId, cwd: where.path, command: writeFilesCommand(dir, batch), timeoutSec: 120 });
+    for (const command of writeFileCommands(dir, files)) {
+      const ran = await runOnHost(host, { hostId: where.hostId, cwd: where.path, command, timeoutSec: 120 });
       if (ran.exitCode !== 0 || !ran.stdout.includes("@@WRITTEN")) throw new Error(`could not write the evidence under ${dir}: ${ran.stderr.trim() || `exit ${ran.exitCode}`}`);
-      batch = {}; size = 0;
-    };
-    for (const [rel, content] of Object.entries(files)) {
-      const encoded = commandCost(rel, content);
-      if (size + encoded > COMMAND_BUDGET && Object.keys(batch).length) await flush();
-      batch[rel] = content; size += encoded;
     }
-    await flush();
   }
 
   type Session = { threadId: string | null; text: string; tree: Tree | null; error: string | null };

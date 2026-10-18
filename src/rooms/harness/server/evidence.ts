@@ -216,5 +216,34 @@ export function writeFilesCommand(dir: string, files: Record<string, string>): s
   return lines.join("\n");
 }
 
-/** How many bytes of command one file costs, for the caller's batching. */
+/** How many bytes of command one file costs, for the batching. */
 export const commandCost = (rel: string, content: string): number => Math.ceil(Buffer.byteLength(content, "utf8") * 1.37) + (Math.ceil(Buffer.byteLength(content, "utf8") / CHUNK_BYTES) + 1) * (rel.length + 60);
+
+/**
+ * The whole write command is ONE argument of `bash -c` on the host, and Linux allows 128 KB per argument
+ * (MAX_ARG_STRLEN): SelfyStudio's editors on the OVH host died on `spawn E2BIG` twice (2026-10-19), the second time
+ * with 48 KB pieces inside a 700 KB command. So a command carries at most `COMMAND_BUDGET` bytes, and a file larger
+ * than that is split across commands by appending its pieces.
+ */
+export const COMMAND_BUDGET = 100_000;
+
+export function writeFileCommands(dir: string, files: Record<string, string>, budget = COMMAND_BUDGET): string[] {
+  const commands: string[] = [];
+  let lines: string[] = [];
+  let size = 0;
+  const head = () => [`mkdir -p ${shellQuote(dir)} || exit 1`, `cd ${shellQuote(dir)} || exit 1`];
+  const flush = () => { if (lines.length) commands.push([...head(), ...lines, "echo @@WRITTEN"].join("\n")); lines = []; size = 0; };
+  const push = (line: string) => { if (size + line.length + 1 > budget && lines.length) flush(); lines.push(line); size += line.length + 1; };
+  for (const [rel, content] of Object.entries(files)) {
+    const safe = rel.replace(/\\/g, "/");
+    if (safe.startsWith("/") || safe.split("/").includes("..")) continue;
+    const parent = safe.includes("/") ? safe.slice(0, safe.lastIndexOf("/")) : ".";
+    const bytes = Buffer.from(content, "utf8");
+    push(`mkdir -p ${shellQuote(parent)} && : > ${shellQuote(safe)} || exit 1`);
+    for (let offset = 0; offset < bytes.length; offset += CHUNK_BYTES) {
+      push(`printf '%s' ${shellQuote(bytes.subarray(offset, offset + CHUNK_BYTES).toString("base64"))} | base64 -d >> ${shellQuote(safe)} || exit 1`);
+    }
+  }
+  flush();
+  return commands;
+}
