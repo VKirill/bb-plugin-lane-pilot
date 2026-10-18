@@ -162,6 +162,7 @@ The RPC contract is a shape contract; authorization and ownership checks remain 
 ## Referenced by
 
 - [Lane Pilot architecture](architecture.md)
+- [Protecting Lane Pilot database access](decisions/2026-10-08-lane-pilot-data-db-access.md)
 - [Lane Pilot overview](overview.md)
 - [Server core construction](rpc-callers/create-core.md)
 - [Handoff message](rpc-callers/handoff-message.md)
