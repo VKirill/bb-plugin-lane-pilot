@@ -255,6 +255,12 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
       // main moved and the attempt was replayed on it: the replayed result has not been run anywhere yet, and two tasks
       // that merge cleanly can still break each other. Red, nothing merges: the writer gets the output as a free redo.
       if(rebased&&input.replayCheck) {
+        // The replay brought main's package sources into the worktree, but their dist/ is still the copy taken when the
+        // attempt started: a new export another task merged was «missing» and the check went red (SelfyStudio, 2026-10-14
+        // public-from-scratch-prices and 2026-10-19 v2-blog-archive, TS2305 from @selfystudio/contracts).
+        for(const build of await rebuildChangedPackages(input.worktreePath,sha,rebased)) {
+          if(!build.ok) console.warn(`lane-pilot: rebuilding ${build.dir} in ${input.worktreePath} after the replay failed: ${build.detail??""}`);
+        }
         const replay=await input.replayCheck();
         if(!replay.ok) {
           return {status:"conflict",commit:null,conflicts:[],reason:`${REPLAY_CHECK_FAILED}: verification failed (${replay.failed.map((check)=>check.command).join(", ")})`,checks:replay.failed};
@@ -262,7 +268,7 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
       }
       const merged=await merge(input.basePath,rebased??sha,input.message,input.bookkeeping,input.ownsPaths,input.indexLockWaitMs);
       if(rebased&&merged.status==="merged") merged.rebased=true;
-      if(merged.status==="merged"&&before) merged.rebuilt=await rebuildChangedPackages(input.basePath,before);
+      if(merged.status==="merged"&&before) merged.rebuilt=await rebuildChangedPackages(input.basePath,before,"HEAD");
       return merged;
     },input.message,input.lockWaitMs);
   }
@@ -534,12 +540,13 @@ async function installBaseDependencies(basePath:string):Promise<void> {
 }
 
 /**
- * Rebuilds, in the base checkout, the workspace packages this merge changed that are consumed through their
- * build output (they have dist/ and a build script). A writer's worktree copies dist/ from here; left stale,
- * the next writer's typecheck failed until someone rebuilt main by hand (SelfyStudio, 2026-10-02).
+ * Rebuilds, in a checkout, the workspace packages changed between two commits that are consumed through their
+ * build output (they have dist/ and a build script). In the base checkout after a merge: a writer's worktree copies
+ * dist/ from there; left stale, the next writer's typecheck failed until someone rebuilt main by hand (SelfyStudio,
+ * 2026-10-02). In a worktree after the replay on main: its dist/ is its own copy and does not follow the replayed sources.
  */
-async function rebuildChangedPackages(basePath:string,before:string):Promise<Array<{dir:string;ok:boolean;detail:string|null}>> {
-  const diff=await git(basePath,["diff","--name-only",`${before}..HEAD`]);
+async function rebuildChangedPackages(basePath:string,before:string,after:string):Promise<Array<{dir:string;ok:boolean;detail:string|null}>> {
+  const diff=await git(basePath,["diff","--name-only",`${before}..${after}`]);
   if(!diff.ok) return [];
   const changed=diff.stdout.split("\n").map((line)=>line.trim()).filter(Boolean);
   const out:Array<{dir:string;ok:boolean;detail:string|null}>=[];
