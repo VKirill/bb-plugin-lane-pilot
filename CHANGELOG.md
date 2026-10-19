@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.253
+
+- **The harness editors run on Gemini 3.8 Flash (high) through OpenCode's Antigravity route by default** (`acp-opencode`, `router9/ag/gemini-3.8-flash-high`, effort `medium`: the route offers one effort and carries «high» in the model name), per the owner's choice on 2026-10-19; Opus stays available through `harness_configure {editor}`. The config of BB-сервис and SelfyStudio was switched on the hub the same night.
+- **A finished harness session leaves the thread list.** The editor, composer and reflection threads are archived once their reply and tree are read; the owner saw a dozen «Lane Pilot harness editor …» rows after the first rounds. The notes, the tree and the decision live on the hub (`lane_pilot_harness`).
+
 ## 0.1.252
 
 - **One host command stays under 100 KB.** SelfyStudio's editors (OVH, Linux) still died on `spawn E2BIG` after 0.1.251: the pieces were 48 KB, but the whole write script travels as one `bash -c` argument, and Linux caps an argument at 128 KB. `writeFileCommands` (`src/rooms/harness/server/evidence.ts`) now emits as many commands as the budget needs, splitting a long file across them; the tree materialization uses the same helper. Test: a 400 KB trajectory written in several commands and harvested back whole.

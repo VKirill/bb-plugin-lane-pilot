@@ -40,7 +40,10 @@ export type HarnessConfig = {
 
 export const HARNESS_DEFAULTS: HarnessConfig = {
   enabled: true, minAttempts: 5, windowDays: 7, maxKeysPerNight: 2, attemptsPerEvidence: 8,
-  editor: { providerId: "claude-code", model: "claude-opus-5-5", reasoningLevel: "high" }, waitMinutes: 40, trial: TRIAL_DEFAULTS,
+  // Owner's choice 2026-10-19: the editors run on Gemini 3.8 Flash (high) through OpenCode's Antigravity route
+  // (`router9/ag/gemini-3.8-flash-high`; the catalog offers it with one effort, «medium», the «high» is in the name),
+  // not on Opus: three sessions a key a night must stay cheap, and the trial, not the editor, decides what ships.
+  editor: { providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoningLevel: "medium" }, waitMinutes: 40, trial: TRIAL_DEFAULTS,
 };
 
 const CONFIG_KEY = (projectId: string) => `harness:config:${projectId}`;
@@ -299,6 +302,10 @@ export function createHarness(ctx: ServerCore, services: Services) {
       return { threadId, text: output, tree, error: null };
     } catch (cause) {
       return { threadId, text: "", tree: null, error: cause instanceof Error ? cause.message : String(cause) };
+    } finally {
+      // A finished session is a record, not a conversation: it leaves the project's thread list (the owner saw a dozen
+      // «Lane Pilot harness editor …» rows on 2026-10-19). The notes, the tree and the decision are stored on the hub.
+      if (threadId) await bb.sdk.threads.archive({ threadId }).catch(() => undefined);
     }
   }
 
