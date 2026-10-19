@@ -69,3 +69,10 @@ The app imports the root entry from workflow UI and the realtime subpath from UI
 - [Responsive Layout](features/responsive-layout.md) — measured panel layout and media-query helpers.
 - [Realtime Signals](features/realtime-signals.md) — channel naming and signal parsing.
 - [Gotchas](gotchas.md) — runtime and integration edge cases.
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Lane Pilot architecture](../../../docs/architecture.md)
+- [Lane Pilot overview](../../../docs/overview.md)
+- [Shared packages](../../../docs/packages.md)
