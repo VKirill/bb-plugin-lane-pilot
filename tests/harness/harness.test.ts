@@ -200,3 +200,14 @@ describe("hooksSettings", () => {
     expect(JSON.parse(hooksSettings("not json"))).toEqual({ hooks: {} });
   });
 });
+
+describe("role models", () => {
+  it("falls back to the editor's model, takes a role's own one, and a null patch returns the role to the editor", async () => {
+    const { HARNESS_DEFAULTS, roleSelection } = await import("../../src/rooms/harness/server/harness");
+    const cfg = { editor: { providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoningLevel: "medium" }, roles: { compose: { providerId: "codex", model: "gpt-6-luna", reasoningLevel: "" }, reflect: null } };
+    expect(roleSelection(cfg, "inv")).toEqual(cfg.editor);
+    expect(roleSelection(cfg, "compose")).toEqual({ providerId: "codex", model: "gpt-6-luna", reasoningLevel: "medium" });
+    expect(roleSelection(cfg, "reflect")).toEqual(cfg.editor);
+    expect(roleSelection(HARNESS_DEFAULTS, "dom")).toEqual(HARNESS_DEFAULTS.editor);
+  });
+});

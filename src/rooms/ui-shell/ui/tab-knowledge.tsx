@@ -60,7 +60,7 @@ export function KnowledgeTab({ page }: { page: LpPage }) {
         </SettingsGroup>
       ) : null}
       {segment === "rules" && !isGlobal && projectId ? (
-        <div className="space-y-6" data-testid="rules-panel"><RuleProposals projectId={projectId} /><HarnessCard projectId={projectId} /></div>
+        <div className="space-y-6" data-testid="rules-panel"><RuleProposals projectId={projectId} /><HarnessCard projectId={projectId} hostId={page.hostId} /></div>
       ) : null}
       {segment === "anamnesis" ? <div data-testid="anamnesis-panel"><AnamnesisTab /></div> : null}
     </div>

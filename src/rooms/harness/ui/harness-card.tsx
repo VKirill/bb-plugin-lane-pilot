@@ -1,5 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
-import { useRpc } from "@get-bb/plugin-sdk/app";
+import { Component, useCallback, useEffect, useState, type ReactNode } from "react";
+import {
+  experimental_ProviderModelPicker as ProviderModelPicker,
+  experimental_useProviders as useProviders,
+  useRpc,
+  type ExperimentalProviderModelPickerValue,
+} from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { rpcContract } from "../../contracts";
 import { t, type I18nKey } from "@lane-pilot/i18n";
@@ -10,8 +15,15 @@ import { Switch } from "@lane-pilot/ui-kit";
 import { useLpRealtime } from "../../ui-shell/ui";
 
 type Arm = { attempts: number; acceptanceRate: number };
+type Selection = { providerId: string; model: string; reasoningLevel: string };
+type Role = "inv" | "dom" | "compose" | "reflect";
+const ROLES: Array<{ role: Role; label: I18nKey }> = [
+  { role: "inv", label: "harnessRole_inv" }, { role: "dom", label: "harnessRole_dom" },
+  { role: "compose", label: "harnessRole_compose" }, { role: "reflect", label: "harnessRole_reflect" },
+];
 type Status = {
-  config: { enabled: boolean; minAttempts: number; windowDays: number; maxKeysPerNight: number; editor: { providerId: string; model: string; reasoningLevel: string } };
+  config: { enabled: boolean; minAttempts: number; windowDays: number; maxKeysPerNight: number; editor: Selection; roles?: Partial<Record<Role, Selection | null>> };
+  roleModels?: Record<Role, Selection>;
   keys: Array<{ area: string; writerKey: string; attempts: number }>;
   active: Array<{ id: string; area: string; writerKey: string; state: "base" | "adopted"; version: number; inventory: string; tree: Record<string, string> }>;
   trials: Array<{ id: string; area: string; writerKey: string; since: number | null; decision: { action: string; reason: string; arms: { new: Arm; old: Arm } } }>;
@@ -22,9 +34,20 @@ type Status = {
 const message = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
 const pct = (rate: number) => `${Math.round(rate * 100)}%`;
 
+/** A broken picker must not take the card down: it falls back to the plain text of the model. */
+class PickerBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() { return this.state.failed ? this.props.fallback : this.props.children; }
+}
+
+const sameSelection = (a: Selection, b: Selection) => a.providerId === b.providerId && a.model === b.model && a.reasoningLevel === b.reasoningLevel;
+const selectionText = (value: Selection) => `${value.model} (${value.reasoningLevel})`;
+
 /** The writer harness that learns, for one project: trials, trees in force, keys with attempts; run the editor, judge trials, switch editing on or off. */
-export function HarnessCard({ projectId }: { projectId: string }) {
+export function HarnessCard({ projectId, hostId }: { projectId: string; hostId?: string | null }) {
   const rpc = useRpc<typeof rpcContract>();
+  const providers = useProviders();
   const [status, setStatus] = useState<Status | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -59,6 +82,30 @@ export function HarnessCard({ projectId }: { projectId: string }) {
     await load();
   });
 
+  /** `target` is `editor` for the default, else a role; `next` null returns a role to the default. */
+  const saveModel = (target: "editor" | Role, next: Selection | null) => act(`model:${target}`, async () => {
+    await rpc.call("harness_configure", { projectId, patch: target === "editor" ? { editor: next } : { roles: { [target]: next } } });
+    await load();
+  });
+  const modelPicker = (target: "editor" | Role, value: Selection) => {
+    const text = <span className="font-mono" style={{ overflowWrap: "anywhere" }}>{selectionText(value)}</span>;
+    if (!hostId || (providers.providers?.length ?? 0) === 0) return text;
+    return (
+      <PickerBoundary fallback={text}>
+        <ProviderModelPicker
+          value={{ providerId: value.providerId, model: value.model, reasoningLevel: value.reasoningLevel as ExperimentalProviderModelPickerValue["reasoningLevel"] }}
+          routing={{ kind: "host", hostId }}
+          disabled={busy !== null}
+          // The picker reports a normalized value on mount; only a real change is saved.
+          onChange={(next: ExperimentalProviderModelPickerValue) => {
+            const chosen = { providerId: next.providerId, model: next.model, reasoningLevel: next.reasoningLevel };
+            if (!sameSelection(chosen, value)) void saveModel(target, chosen);
+          }}
+        />
+      </PickerBoundary>
+    );
+  };
+
   const areaLabel = (area: string) => area || t("harnessWholeProject");
   const cfg = status?.config;
   const arm = (label: I18nKey, value: Arm) => `${t(label)} ${value.attempts} ${t("harnessAttempts")}, ${t("harnessAccepted")} ${pct(value.acceptanceRate)}`;
@@ -82,7 +129,27 @@ export function HarnessCard({ projectId }: { projectId: string }) {
             <span>{t("harnessMinAttempts")}: {cfg.minAttempts}</span>
             <span>{t("harnessWindowDays")}: {cfg.windowDays}</span>
             <span>{t("harnessMaxKeys")}: {cfg.maxKeysPerNight}</span>
-            <span>{t("harnessEditorModel")}: {cfg.editor.model} ({cfg.editor.reasoningLevel})</span>
+          </div>
+          <div className="space-y-2" data-testid="harness-models">
+            <div className="text-xs font-medium">{t("harnessModels")}</div>
+            {!hostId ? <p className="text-xs text-muted-foreground" data-testid="harness-no-host">{t("harnessNoHost")}</p> : null}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" data-testid="harness-model-editor">
+              <span className="min-w-0 font-medium">{t("harnessModelDefault")}</span>
+              {modelPicker("editor", cfg.editor)}
+            </div>
+            {ROLES.map(({ role, label }) => {
+              const own = Boolean(cfg.roles?.[role]);
+              const value = status?.roleModels?.[role] ?? cfg.editor;
+              return (
+                <div key={role} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" data-testid={`harness-model-${role}`}>
+                  <span className="min-w-0">{t(label)}</span>
+                  {modelPicker(role, value)}
+                  {own
+                    ? <Button size="sm" variant="ghost" className="h-7 px-2" disabled={busy !== null} onClick={() => void saveModel(role, null)}>{t("harnessResetRole")}</Button>
+                    : <span className="text-muted-foreground" data-testid={`harness-model-${role}-default`}>{t("harnessAsDefault")}</span>}
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : null}

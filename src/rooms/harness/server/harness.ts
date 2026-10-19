@@ -33,17 +33,29 @@ export type HarnessConfig = {
   maxKeysPerNight: number;
   /** Attempts the editor reads, newest first. */
   attemptsPerEvidence: number;
-  editor: { providerId: string; model: string; reasoningLevel: string };
+  editor: ModelSelection;
+  /** A role's own model when it differs from `editor`: the two editors, the composer and the reflection can spread the spend. */
+  roles: Partial<Record<HarnessRole, ModelSelection | null>>;
   waitMinutes: number;
   trial: TrialConfig;
 };
+
+export type ModelSelection = { providerId: string; model: string; reasoningLevel: string };
+export type HarnessRole = "inv" | "dom" | "compose" | "reflect";
+export const HARNESS_ROLES: readonly HarnessRole[] = ["inv", "dom", "compose", "reflect"];
+
+/** The model a role runs on: its own selection when complete, else the editor's. */
+export function roleSelection(cfg: Pick<HarnessConfig, "editor" | "roles">, role: HarnessRole): ModelSelection {
+  const own = cfg.roles?.[role];
+  return own && own.providerId && own.model ? { ...own, reasoningLevel: own.reasoningLevel || cfg.editor.reasoningLevel } : cfg.editor;
+}
 
 export const HARNESS_DEFAULTS: HarnessConfig = {
   enabled: true, minAttempts: 5, windowDays: 7, maxKeysPerNight: 2, attemptsPerEvidence: 8,
   // Owner's choice 2026-10-19: the editors run on Gemini 3.8 Flash (high) through OpenCode's Antigravity route
   // (`router9/ag/gemini-3.8-flash-high`; the catalog offers it with one effort, «medium», the «high» is in the name),
   // not on Opus: three sessions a key a night must stay cheap, and the trial, not the editor, decides what ships.
-  editor: { providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoningLevel: "medium" }, waitMinutes: 40, trial: TRIAL_DEFAULTS,
+  editor: { providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoningLevel: "medium" }, roles: {}, waitMinutes: 40, trial: TRIAL_DEFAULTS,
 };
 
 const CONFIG_KEY = (projectId: string) => `harness:config:${projectId}`;
@@ -53,6 +65,8 @@ const EXCLUDE_LINES = [".lane-pilot/", ".opencode/skills/", ".claude/skills/"];
 const EVENT_PAGE = 100;
 const EVENT_PAGES_MAX = 60;
 const TRAJECTORY_MAX_CHARS = 120_000;
+/** The second editor of a round starts this much later than the first (OpenCode startup holds its database). */
+const EDITOR_STAGGER_MS = 15_000;
 
 export type BriefParts = { harnessId: string; arm: "new" | "old" | null; alwaysOn: string; memory: string; skillNames: string[]; checkNames: string[]; tree: Tree };
 
@@ -150,11 +164,18 @@ export function createHarness(ctx: ServerCore, services: Services) {
 
   async function config(projectId: string): Promise<HarnessConfig> {
     const raw = await bb.storage.kv.get(CONFIG_KEY(projectId)).catch(() => null) as Partial<HarnessConfig> | null;
-    return { ...HARNESS_DEFAULTS, ...(raw ?? {}), editor: { ...HARNESS_DEFAULTS.editor, ...(raw?.editor ?? {}) }, trial: { ...TRIAL_DEFAULTS, ...(raw?.trial ?? {}) } };
+    return { ...HARNESS_DEFAULTS, ...(raw ?? {}), editor: { ...HARNESS_DEFAULTS.editor, ...(raw?.editor ?? {}) }, roles: { ...(raw?.roles ?? {}) }, trial: { ...TRIAL_DEFAULTS, ...(raw?.trial ?? {}) } };
   }
 
+  /** A patch merges a level deep; a role set to null goes back to the editor's model. */
   async function setConfig(projectId: string, patch: Partial<HarnessConfig>): Promise<HarnessConfig> {
-    const next = { ...(await config(projectId)), ...patch, editor: { ...(await config(projectId)).editor, ...(patch.editor ?? {}) }, trial: { ...(await config(projectId)).trial, ...(patch.trial ?? {}) } };
+    const current = await config(projectId);
+    const roles = { ...current.roles };
+    for (const [role, value] of Object.entries(patch.roles ?? {})) {
+      if (!HARNESS_ROLES.includes(role as HarnessRole)) continue;
+      if (value === null) delete roles[role as HarnessRole]; else roles[role as HarnessRole] = { ...(roles[role as HarnessRole] ?? current.editor), ...value };
+    }
+    const next: HarnessConfig = { ...current, ...patch, editor: { ...current.editor, ...(patch.editor ?? {}) }, roles, trial: { ...current.trial, ...(patch.trial ?? {}) } };
     await bb.storage.kv.set(CONFIG_KEY(projectId), next as never);
     return next;
   }
@@ -333,7 +354,8 @@ export function createHarness(ctx: ServerCore, services: Services) {
   type Session = StageSession;
 
   /** One agentic session over a folder: spawn, wait until idle, read the reply and harvest `context/harness/`. */
-  async function session(input: { projectId: string; where: { hostId: string; path: string }; folder: string; title: string; mission: string; role: string; cfg: HarnessConfig; harvest: boolean }): Promise<Session> {
+  async function session(input: { projectId: string; where: { hostId: string; path: string }; folder: string; title: string; mission: string; role: string; cfg: HarnessConfig; harvest: boolean; model?: HarnessRole }): Promise<Session> {
+    const selection = roleSelection(input.cfg, input.model ?? "inv");
     const cwd = `${input.where.path}/${input.folder}`;
     let threadId: string | null = null;
     try {
@@ -341,8 +363,8 @@ export function createHarness(ctx: ServerCore, services: Services) {
         projectId: input.projectId,
         environment: { type: "host", hostId: input.where.hostId, workspace: { type: "unmanaged", path: cwd } },
         title: input.title, prompt: input.mission,
-        ...writerExecutionSelection(input.cfg.editor.providerId, input.cfg.editor.model, input.cfg.editor.reasoningLevel, "default"),
-        pluginMetadata: { role: input.role, lanePilotProjectId: input.projectId, harnessFolder: input.folder },
+        ...writerExecutionSelection(selection.providerId, selection.model, selection.reasoningLevel, "default"),
+        pluginMetadata: { role: input.role, lanePilotProjectId: input.projectId, harnessFolder: input.folder, model: `${selection.providerId}/${selection.model}` },
       } as Parameters<typeof fullAccessSpawn>[1]);
       threadId = stringAt(spawned, "id") ?? null;
       if (!threadId) return { threadId, text: "", tree: null, error: "spawn returned no thread id" };
@@ -396,11 +418,14 @@ export function createHarness(ctx: ServerCore, services: Services) {
       const promptCtx = { area: area || "(whole project)", writerKey };
       await Promise.all(["inv", "dom"].map((label) => writeFiles(where, `${round}/${label}`, base)));
       const layout = evidenceLayout(base);
-      const [inv, dom] = await Promise.all((["INV", "DOM"] as const).map((dim) => stage({
+      // The two editors run side by side, the second one started a little later: two OpenCode processes starting on the
+      // same host within two seconds collided on OpenCode's database («thread.start failed … database is locked»,
+      // BB-сервис feature:shell, 2026-10-19 04:10 UTC). The self-repair's second session covers the rest.
+      const [inv, dom] = await Promise.all((["INV", "DOM"] as const).map(async (dim, index) => { if (index > 0) await new Promise((resolve) => setTimeout(resolve, EDITOR_STAGGER_MS)); return stage({
         projectId: input.projectId, where, folder: `${round}/${dim.toLowerCase()}`, cfg, fallback: active.tree,
-        title: `Lane Pilot harness editor (${dim}): ${area || "project"} / ${writerKey}`, role: "harness-editor",
+        title: `Lane Pilot harness editor (${dim}): ${area || "project"} / ${writerKey}`, role: "harness-editor", model: dim === "INV" ? "inv" : "dom",
         mission: missionPointer(proposePrompt(dim, promptCtx), layout),
-      })));
+      }); }));
       threadIds.push(...inv.threadIds, ...dom.threadIds);
       for (const [label, result] of [["inv", inv], ["dom", dom]] as const) if (result.error) ctx.log(`harness ${key}: ${label} editor failed: ${result.error}`);
       // Two failed editors kept nothing: the nightly line said «keep_base: both editors kept the current harness» for a
@@ -415,7 +440,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
       await writeFiles(where, `${round}/compose`, composeFiles);
       const composed = await stage({
         projectId: input.projectId, where, folder: `${round}/compose`, cfg, fallback: active.tree,
-        title: `Lane Pilot harness composer: ${area || "project"} / ${writerKey}`, role: "harness-composer",
+        title: `Lane Pilot harness composer: ${area || "project"} / ${writerKey}`, role: "harness-composer", model: "compose",
         mission: missionPointer(composePrompt(promptCtx, 2), evidenceLayout(composeFiles)),
       });
       threadIds.push(...composed.threadIds);
@@ -481,7 +506,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
     });
     const folder = `${HARNESS_DIR}-edit/${slug(trial.area || "project")}__${slug(trial.writerKey)}/reflect-${trial.id}`;
     await writeFiles(where, folder, files);
-    const result = await session({ projectId: trial.projectId, where, folder, cfg, harvest: false, role: "harness-reflection",
+    const result = await session({ projectId: trial.projectId, where, folder, cfg, harvest: false, role: "harness-reflection", model: "reflect",
       title: `Lane Pilot harness reflection: ${trial.area || "project"} / ${trial.writerKey}`,
       mission: missionPointer(`${experiencePrompt({ area: trial.area || "(whole project)", writerKey: trial.writerKey })}\n\n# WHAT HAPPENED\n\nThe candidate (context/pool/candidate/, also context/harness/) was ${trial.state}: ${trial.reason ?? ""}. Attempts of both arms are under context/attempts/ (brief.md names the tree and arm). Compare context/harness/ with context/base_harness/.`, evidenceLayout(files)) });
     if (result.error) return { status: "failed", detail: result.error };
@@ -539,6 +564,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
     const recent = listHarnesses(db, projectId, { states: ["retired"] }).slice(0, 10).map((row) => ({ id: row.id, area: row.area, writerKey: row.writerKey, reason: row.reason, decidedAt: row.decidedAt }));
     return {
       config: cfg,
+      roleModels: Object.fromEntries(HARNESS_ROLES.map((role) => [role, roleSelection(cfg, role)])) as Record<HarnessRole, ModelSelection>,
       keys: teachingKeys(db, projectId, Date.now() - cfg.windowDays * 86_400_000, 1),
       active: trees.filter((row) => row.state !== "trial").map((row) => ({ id: row.id, area: row.area, writerKey: row.writerKey, state: row.state, version: row.version, inventory: inventory(row.tree), tree: row.tree })),
       trials, retired: recent,
