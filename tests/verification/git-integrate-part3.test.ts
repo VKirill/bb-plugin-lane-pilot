@@ -90,6 +90,37 @@ it("rebuilds in main a workspace package the merge changed", async () => {
   expect(await readFile(join(base, "packages", "lib", "dist", "built.txt"), "utf8")).toBe("yes");
 });
 
+it("rebuilds in the worktree a package the replay on main changed, before the replay check runs", async () => {
+  // SelfyStudio 2026-10-19 v2-blog-archive: v2-docs-photo.2 merged DOCS_PHOTO_PRICE_RUB into packages/contracts/src; the
+  // replay brought that source and its consumers into the worktree, but dist/ was the copy taken at the attempt's start.
+  const { base, worktree } = await repo();
+  await mkdir(join(base, "packages", "lib", "src"), { recursive: true });
+  await mkdir(join(base, "packages", "lib", "dist"), { recursive: true });
+  await writeFile(join(base, "package.json"), JSON.stringify({ name: "root", private: true, workspaces: ["packages/*"] }));
+  await writeFile(join(base, "packages", "lib", "package.json"), JSON.stringify({ name: "lib", scripts: { build: "node -e \"const fs=require('fs');fs.writeFileSync('dist/index.d.ts',fs.readFileSync('src/index.ts','utf8'))\"" } }));
+  await writeFile(join(base, ".gitignore"), "dist/\nnode_modules/\n");
+  await writeFile(join(base, "packages", "lib", "src", "index.ts"), "export const OLD = 1;\n");
+  git(base, "add", "-A"); git(base, "commit", "-qm", "lib");
+  const a = await worktree("a");
+  // The attempt's worktree got main's dist/ when it started.
+  await mkdir(join(a, "packages", "lib", "dist"), { recursive: true });
+  await writeFile(join(a, "packages", "lib", "dist", "index.d.ts"), "export const OLD = 1;\n");
+  // Another task merges a new export (and a consumer) into main while the writer works.
+  await writeFile(join(base, "packages", "lib", "src", "index.ts"), "export const OLD = 1;\nexport const PRICE = 500;\n");
+  await writeFile(join(base, "consumer.ts"), "import { PRICE } from 'lib';\n");
+  git(base, "add", "-A"); git(base, "commit", "-qm", "price");
+  await writeFile(join(a, "blog.ts"), "blog\n");
+  let seen = "";
+  const merged = await integrateWorktree({ basePath: base, worktreePath: a, message: "blog", replayCheck: async () => {
+    seen = await readFile(join(a, "packages", "lib", "dist", "index.d.ts"), "utf8");
+    return seen.includes("PRICE") ? { ok: true } : { ok: false, failed: [{ command: "npm run typecheck", exitCode: 1, stdout: "TS2305: no exported member 'PRICE'", stderr: "" }] };
+  } });
+  expect(seen).toContain("PRICE");
+  expect(merged.status).toBe("merged");
+  expect(merged.rebased).toBe(true);
+  expect(git(a, "status", "--porcelain").trim()).toBe("");
+});
+
 it("copies Prisma's generated client into a worktree as real, writable folders; other packages stay links", async () => {
   const { base, worktree } = await repo();
   await writeFile(join(base, ".gitignore"), "node_modules/\n"); git(base, "add", "-A"); git(base, "commit", "-qm", "ignore");
