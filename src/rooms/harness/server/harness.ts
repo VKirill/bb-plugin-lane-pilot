@@ -414,7 +414,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
       const stamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15);
       const round = `${HARNESS_DIR}-edit/${slug(area || "project")}__${slug(writerKey)}/${stamp}`;
       await runOnHost(host, { hostId: where.hostId, cwd: where.path, command: ensureExcludeLinesCommand([".lane-pilot/"]), timeoutSec: 30 }).catch(() => undefined);
-      const base = evidenceFiles({ area, writerKey, attempts, harness: active.tree, library });
+      const base = evidenceFiles({ area, writerKey, attempts, harness: active.tree, library, repoPath: where.path });
       const promptCtx = { area: area || "(whole project)", writerKey };
       await Promise.all(["inv", "dom"].map((label) => writeFiles(where, `${round}/${label}`, base)));
       const layout = evidenceLayout(base);
@@ -436,7 +436,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
         return { status: "keep_base", detail: "both editors kept the current harness", threadIds };
       }
       const pool: PoolCandidate[] = [{ label: "inv", tree: inv.tree, diff: treeDiff(active.tree, inv.tree), notes: inv.notes }, { label: "dom", tree: dom.tree, diff: treeDiff(active.tree, dom.tree), notes: dom.notes }];
-      const composeFiles = evidenceFiles({ area, writerKey, attempts, harness: active.tree, library, pool, decisions: { inv: inv.notes || inv.error || "", dom: dom.notes || dom.error || "" } });
+      const composeFiles = evidenceFiles({ area, writerKey, attempts, harness: active.tree, library, pool, decisions: { inv: inv.notes || inv.error || "", dom: dom.notes || dom.error || "" }, repoPath: where.path });
       await writeFiles(where, `${round}/compose`, composeFiles);
       const composed = await stage({
         projectId: input.projectId, where, folder: `${round}/compose`, cfg, fallback: active.tree,

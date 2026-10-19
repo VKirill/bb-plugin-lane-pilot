@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.256
+
+- **Editors check workspace facts against the repository as it is now.** The owner's audit of the ten trial trees (2026-10-19) ran every check script in its real repository (all green: office-viewer studio tests 25/25 and 6/6, cakekeeper calendar conventions, five SelfyStudio gates) and verified the memory notes file by file; one rule was wrong: the cakekeeper `feature:e2e` candidate demanded `reuseExistingServer: true` in both Playwright configs, learned from the ck-27 trajectory, while ck-32 had set it back to `false` and ck-36 moved to random free ports. That candidate is retired on the hub. `context/task.md` now names the repository path and tells the editor that a trajectory shows what WAS true and the repository what IS true, and the GENERALIZE block requires opening the file before writing a fact, a file name or a setting into any component.
+
 ## 0.1.255
 
 - **A scheduled errand no longer wakes a stale chat.** The weekly «Слой vk ядра BB» check ran as a child of «the project's open PM chat» (`pmOf`: the newest unclosed PM run, and runs are never closed), so its end was posted into a two-day-old chat about links and that chat's agent answered the report (owner's screenshot, 2026-10-19). `startErrand` takes `detached: true` from the schedule executor: the helper is a hidden thread of the project in the PM chat's section, with no `parentThreadId`, no `lifecycleOwnerThreadId` and no `parentPmThreadId` metadata, so nothing is delivered to any chat when it ends; the schedule board keeps the run's report as before. Test: `tests/schedule/executors.test.ts`.

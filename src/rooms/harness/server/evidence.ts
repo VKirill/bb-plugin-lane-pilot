@@ -36,6 +36,8 @@ const clip = (text: string | null | undefined, n: number): string => {
 export function evidenceFiles(input: {
   area: string; writerKey: string; attempts: readonly AttemptEvidence[]; harness: Tree; library: readonly LibraryEntry[];
   pool?: readonly PoolCandidate[]; decisions?: Record<string, string>; baseHarness?: Tree;
+  /** The repository the attempts changed, as it is now on this host: where a workspace fact is checked before it is written. */
+  repoPath?: string;
 }): Record<string, string> {
   const files: Record<string, string> = {};
   const areaName = input.area || "(whole project)";
@@ -43,6 +45,10 @@ export function evidenceFiles(input: {
     `# Area «${areaName}», writers on ${input.writerKey === "*" ? "any model" : input.writerKey}`,
     "",
     `${input.attempts.length} recent attempts of this area are under context/attempts/, newest first. Each has the brief the writer got, its full trajectory and its outcome.`,
+    ...(input.repoPath ? [
+      "",
+      `The repository these attempts changed is at \`${input.repoPath}\` (read it, never edit it). A trajectory shows what WAS true when its attempt ran; the repository shows what IS true. Before you write a workspace fact or a rule that names a file, a value or a setting, check it there: a later task may have changed it. On 2026-10-19 an editor wrote «both Playwright configs must keep reuseExistingServer: true» from a trajectory, two later commits had set it to false and moved to random ports, and the rule would have made the next writer reintroduce a reverted change.`,
+    ] : []),
     "",
     "| attempt | task | try | outcome | blocking findings | prompt chars |",
     "|---|---|---|---|---|---|",

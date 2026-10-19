@@ -117,7 +117,11 @@ check names a file outside owns_paths, undo only your own edits there and report
 
 \`context/library/\` holds the harnesses adopted earlier for this area and the notes on why. They are examples to read,
 not part of the tree you edit: copy a component across if it fits, and re-verify its workspace facts against the
-evidence in front of you.`;
+evidence in front of you.
+
+A workspace fact is true only if the repository holds it NOW. \`context/task.md\` names the repository's path on this
+host: before you write "in this repo X is Y", a file name, a setting or a value into any component, open the file
+there and confirm it. A trajectory proves what a writer saw then; the repository proves what the next writer will see.`;
 }
 
 export function proposePrompt(dim: "INV" | "DOM", ctx: PromptContext): string {

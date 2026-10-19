@@ -225,3 +225,13 @@ describe("writeFileCommands", () => {
     expect(back["harness/always-on.md"]).toBe("");
   });
 });
+
+describe("evidenceFiles repository pointer", () => {
+  it("names the repository path and tells the editor to check facts there", async () => {
+    const { evidenceFiles } = await import("../../src/rooms/harness/server/evidence");
+    const files = evidenceFiles({ area: "a", writerKey: "*", attempts: [], harness: {}, library: [], repoPath: "/srv/repo" });
+    expect(files["context/task.md"]).toContain("`/srv/repo`");
+    expect(files["context/task.md"]).toContain("the repository shows what IS true");
+    expect(evidenceFiles({ area: "a", writerKey: "*", attempts: [], harness: {}, library: [] })["context/task.md"]).not.toContain("IS true");
+  });
+});
