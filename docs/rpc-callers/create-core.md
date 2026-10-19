@@ -2,7 +2,7 @@
 title: Server core construction
 type: component
 created: 2026-10-16
-updated: 2026-10-17
+updated: 2026-10-19
 status: active
 confidence: medium
 tags: [server, core, host-calls]
@@ -10,6 +10,7 @@ sources:
   - src/rooms/core/server/core.ts
   - src/rooms/core/server/rpc.ts
   - src/rooms/core/server/services.ts
+  - src/rooms/harness/server/index.ts
   - packages/host-calls/src/host-jobs.ts
   - packages/thread-observe/src/signals.ts
   - server.ts
@@ -60,7 +61,7 @@ The core host wrapper attaches the current schedule abort signal only if the cal
 
 ## Public API or commands
 
-The returned object is the inferred `ServerCore` API. It groups BB and DB access; runtime state and disposal; realtime, owner asks, logging and secrets; host, native installer, deploy drain and Jev helpers; KV/settings helpers; writer binding and workspace/run helpers (`src/rooms/core/server/core.ts:377-384`). Handler registration consumes this object together with the separately composed `Services` interface (`src/rooms/core/server/rpc.ts:27-50`, `src/rooms/core/server/services.ts:50-80`).
+The returned object is the inferred `ServerCore` API. It groups BB and DB access; runtime state and disposal; realtime, owner asks, logging and secrets; host, native installer, deploy drain and Jev helpers; KV/settings helpers; writer binding and workspace/run helpers (`src/rooms/core/server/core.ts:377-384`). Handler registration consumes this object together with the separately composed `Services` interface, which includes the `HarnessApi` (`src/rooms/core/server/rpc.ts:27-50`, `src/rooms/core/server/services.ts:50-80`).
 
 ## Gotchas
 

@@ -2,13 +2,19 @@
 title: Shared packages
 type: component
 created: 2026-10-10
-updated: 2026-10-17
+updated: 2026-10-19
 status: active
-confidence: low
+confidence: medium
 tags: [packages, api, monorepo]
 sources:
   - packages/contracts/src/index.ts
   - packages/contracts/src/schemas.ts
+  - packages/harness-core/src/index.ts
+  - packages/harness-core/src/tree.ts
+  - packages/harness-core/src/trajectory.ts
+  - packages/harness-core/src/experience.ts
+  - src/rooms/harness/server/harness.ts
+  - src/rooms/harness/migrations.ts
   - packages/council/src/index.ts
   - packages/handoff/src/index.ts
   - packages/host-calls/src/index.ts
@@ -66,6 +72,7 @@ TL;DR: Small workspaces hold reusable contracts and services shared by Lane Pilo
 | `@lane-pilot/contracts` | Shared Zod schemas and types, including the versioned TaskV2 contract and its work-kind values, stage receipts, workflow views, install receipts, and host-job kinds (`packages/contracts/src/index.ts:1-2`, `packages/contracts/src/schemas.ts:65-114`, `:131-139`). | Room contracts, writer, workflow, host-worker. |
 | `@lane-pilot/council` | Council roles, run protocol, moderator, renderer and SQLite migrations (`packages/council/src/index.ts:1-2`). | Council room and storage migration assembly (`src/rooms/storage/database.ts:3-5`). |
 | `@lane-pilot/handoff` | Handoff card contracts, state transitions, storage, message formatting, receipt parsing and capability registry (`packages/handoff/src/index.ts:1-2`). `handoffMessage` includes objective, acceptance lines, inputs, budget and a fenced receipt format (`packages/handoff/src/messages.ts:12-37`). | Relay and task handoff services. |
+| `@lane-pilot/harness-core` | Writer-harness tree validation, fingerprinting and diff summaries; writer-event trajectory rendering; editor prompt construction; and parsing/rendering of edit verdicts and transferable experience (`packages/harness-core/src/index.ts:1-14`). | Harness server uses it to validate candidate trees, render attempt evidence and parse editor/reflection replies; writer attempts receive its materialized tree through the harness room (`src/rooms/harness/server/harness.ts:1-8`, `:155-168`, `:312-332`). See [writer harness](harness.md) for the end-to-end capability. |
 | `@lane-pilot/host-calls` | Host job client plus `runOnHost`, a typed `runCommand` wrapper that sends host id in both payload and options (`packages/host-calls/src/run-on-host.ts:8-31`). | Writer, verification, scheduling and host-worker rooms. |
 | `@lane-pilot/i18n` | Locale selection, `t()`, and typed English and Russian dictionaries, including the Tasks board strings (`packages/i18n/src/i18n.ts:2047-2052`, `:2064-2079`, `:2117-2119`, `packages/i18n/src/i18n-board.ts:1-4`). | Room UI and plugin app. |
 | `@lane-pilot/jev` | See the ordered `createJev` execution steps, modes and failures under [Package operations](#package-operations). Importing a judgment module registers it (`packages/jev/src/index.ts:1-9`). | Core and judgment-owning rooms. See [Jev adapter](jev-adapter.md) and [Jev run details](package-operations.md#jev-run). |
@@ -74,7 +81,7 @@ TL;DR: Small workspaces hold reusable contracts and services shared by Lane Pilo
 | `@lane-pilot/models` | Provider/model catalog normalization, reasoning compatibility, presets and model pricing (`packages/models/src/index.ts:1-5`). | Native-agent, settings, Jev selection and usage rooms. |
 | `@lane-pilot/pixel-world` | Three.js scene primitives, assets, people, vehicles, navigation and static mesh batching. See ordered `batchStatic` and `createNavGrid` steps, branch outcomes and failures under [Package operations](#package-operations). | World UI. |
 | `@lane-pilot/resilience` | Provider/model circuit breaker and per-run token, time and attempt budgets (`packages/resilience/src/index.ts:1-25`). | Writer dispatch and stability. |
-| `@lane-pilot/run-insights` | Acceptance statistics, failure triage, rule proposals, lesson sourcing and golden memory cases (`packages/run-insights/src/index.ts:1-2`). | Runs, learning, memory and self-repair rooms. |
+| `@lane-pilot/run-insights` | Acceptance statistics, failure triage, rule proposals with writer/PM audience and always-on options, typed lesson forms, lesson sourcing and golden memory cases (`packages/run-insights/src/index.ts:1-2`, `:11-42`). | Runs, learning, memory and self-repair rooms. |
 | `@lane-pilot/settings-catalog` | Setting keys, defaults, UI catalog, provider pool parsing and bookkeeping path rules (`packages/settings-catalog/src/index.ts:1-5`). | Settings, writer and verification rooms. |
 | `@lane-pilot/thread-observe` | BB thread signal subscription plus completion classification and waiting. `decideThreadCompletion` classifies fresh thread reads; events only wake the watcher. A top-level `error` status includes a detected BB failure cause after `thread_status_error:` in the decision detail (`packages/thread-observe/src/completion.ts:77-90`, `:150-178`, `packages/thread-observe/src/signals.ts:3-7`). | Writer, relay and helper-thread watchers. |
 
@@ -85,8 +92,8 @@ The small packages provide reusable contracts and utilities to root rooms; the w
 ## How it works
 
 1. Room modules import package APIs by their workspace specifiers; for example, the runs contract imports `@lane-pilot/contracts` and session memory imports `@lane-pilot/memory-core` (`src/rooms/contracts/rpc-runs.ts:1-2`, `src/rooms/memory/server/session-memory.ts:1-10`).
-2. The package exposes domain functions and types; the consuming room supplies BB, SQLite, or host dependencies where required (`packages/jev/src/run.ts:56-63`, `packages/host-calls/src/run-on-host.ts:8-31`).
-3. The room composes those exports into server RPCs, UI behavior, and scheduled work (`src/rooms/core/server/rpc.ts:26-50`, `src/rooms/storage/database.ts:230-320`).
+2. The package exposes domain functions and types; the consuming room supplies BB, SQLite, or host dependencies where required (`packages/jev/src/run.ts:56-63`, `packages/host-calls/src/run-on-host.ts:8-31`). Harness-core itself is pure parsing, rendering and tree logic; `src/rooms/harness` owns host, thread, KV and SQLite effects (`packages/harness-core/src/index.ts:1-14`, `src/rooms/harness/server/harness.ts:93-99`).
+3. The room composes those exports into server RPCs, UI behavior, and scheduled work (`src/rooms/core/server/rpc.ts:26-50`, `src/rooms/storage/database.ts:230-333`).
 
 ## Modes and package variants
 
@@ -95,7 +102,7 @@ The small packages provide reusable contracts and utilities to root rooms; the w
 | Node-oriented helpers | `@lane-pilot/kit` root includes Node-based helpers; `owns-paths` is a browser-safe subpath (`packages/kit/package.json:1-15`, `packages/kit/src/index.ts:1-9`). | UI code that reaches Node imports cannot use the root entry. |
 | Side-effect registration | Jev judgment modules register when imported; the plugin's room metadata lists side-effect files (`packages/jev/src/run.ts:56-63`, `src/rooms/package.json:1-14`). | A tree-shaken or omitted side-effect import leaves that judgment unregistered. |
 | Server and UI package entries | UI kit exposes its component entry and a realtime-channel subpath, while workflow engine exposes a separate `./ui` entry (`packages/ui-kit/package.json:14-17`, `packages/ui-kit/src/index.ts:1-32`, `packages/workflow-engine/package.json:7-13`, `packages/workflow-engine/src/ui.ts:1-4`). See the [UI kit overview](../packages/ui-kit/docs/overview.md) and [workflow engine overview](../packages/workflow-engine/docs/overview.md) for package-owned details. | Workspace-specific APIs and gotchas are owned by those linked docs. |
-| Domain package with database migrations | Council, handoff, Jev, and run-insights export migrations consumed by the root storage migration list (`packages/council/src/index.ts:19-30`, `packages/handoff/src/index.ts:21-38`, `src/rooms/storage/database.ts:230-320`). | Migration ownership stays with the package that defines each table. |
+| Domain package with database migrations | Council, handoff, Jev, and run-insights export migrations consumed by the root storage migration list (`packages/council/src/index.ts:19-30`, `packages/handoff/src/index.ts:21-38`, `src/rooms/storage/database.ts:230-333`). | Migration ownership stays with the package that defines each table. |
 
 ## Business rules
 
@@ -199,5 +206,6 @@ The Jev package registers judgments on import, the UI bundle cannot import Node 
 ## Referenced by
 
 - [Lane Pilot architecture](architecture.md)
+- [Writer harness](harness.md)
 - [Lane Pilot overview](overview.md)
 - [Package operation details](package-operations.md)

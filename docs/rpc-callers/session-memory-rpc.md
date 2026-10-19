@@ -2,7 +2,7 @@
 title: Session memory RPC
 type: component
 created: 2026-10-16
-updated: 2026-10-17
+updated: 2026-10-19
 status: active
 confidence: medium
 tags: [rpc, memory, sessions]
@@ -23,7 +23,7 @@ TL;DR: Session memory RPC resolves a workspace to its project, stores subagent-a
 
 ## Purpose
 
-`sessionMemoryRpc` gives sessions on a machine access to the project memory stored by the plugin server. The RPC contract defines five strict procedures and `registerRpc` installs their handler map (`src/rooms/contracts/rpc-knowledge.ts:63-85`, `src/rooms/core/server/rpc.ts:46-47`).
+`sessionMemoryRpc` gives sessions on a machine access to the project memory stored by the plugin server. The RPC contract defines five strict procedures and `registerRpc` installs their handler map (`src/rooms/contracts/rpc-knowledge.ts:63-85`, `src/rooms/core/server/rpc.ts:47-48`).
 
 ## `rpcKnowledge` contract map
 

@@ -2,9 +2,9 @@
 title: Protecting Lane Pilot database access
 type: decisions
 created: 2026-10-08
-updated: 2026-10-18
+updated: 2026-10-19
 status: active
-confidence: medium
+confidence: low
 tags: [database, access-control, operations]
 sources:
   - src/rooms/storage/database.ts
@@ -27,15 +27,15 @@ Lane Pilot obtains its database from `bb.storage.database()`, enables foreign ke
 - Do not treat Lane Pilot RPC caller identity checks as the database protection. The BB shell guard explicitly leaves Lane Pilot and Env Catalog CLI calls available to PM agents (`lane-stack/hooks/guard_shell.py:54-66`).
 - Keep any agent process that can access the host filesystem outside the database directory's permission boundary. The guard allows read-only shell tools to PM readers and Lane Pilot PM agents, while mutating operations are handled by separate policy branches (`lane-stack/hooks/guard_shell.py:31-53`, `:203-215`).
 
-## Owner decision (2026-10-08)
+## Owner decision
 
 These are host facts, not code: the repository cannot cite them, so keep them as written.
 
 - `data.db`, `data.db-shm` and `data.db-wal` on the hub are 0600, and `~/.bb/plugins/lane-pilot` is 0700 (set on 2026-10-08, confirmed in audit round 4).
 - No agent process (Claude Code, Codex, OpenCode, Cursor) runs on the hub; threads run on Mac mini, MacBook and OVH. This holds while the hub is not added as a machine, so a periodic `bb host list` belongs in the drill.
-- The server caller check and the owner forms for Lane Pilot and Env Catalog RPCs were removed later that day (owner decision «убрать, держать просто», see [RPC callers](../rpc-callers.md)). The file permissions and the absence of agents on the hub are the protection of `data.db`.
+- The server caller check and owner forms for Lane Pilot and Env Catalog RPCs were removed; the owner decision was to keep the access path simple (see [RPC callers](../rpc-callers.md)). The file permissions and the absence of agents on the hub are the protection of `data.db`.
 
-**Остающийся риск (принят).** Процесс BB-сервера и всё, что запущено на хабе от `ubuntu`, по-прежнему может писать в БД. Если когда-нибудь агенты будут запускаться на хабе — только под отдельным пользователем без доступа к `~/.bb`.
+**Accepted residual risk.** The BB server and any process running on the hub as `ubuntu` can still write to the database. If agents run on the hub, they must use a separate account without access to `~/.bb`.
 
 ## Status
 
@@ -44,7 +44,7 @@ Active. This record describes the code boundary and the chosen host-permission c
 ## Consequences
 
 - RPC validation remains a contract check and does not stop a process with direct filesystem access from changing SQLite data (`src/rooms/contracts/index.ts:17-26`, `src/rooms/core/server/rpc.ts:27-29`; see [RPC and host-call contracts](../rpc-callers.md)).
-- Changes to which processes run on a host or to the database directory's ownership require an operational access review (`src/rooms/storage/database.ts:331-336`).
+- The repository does not define an operational review procedure for host process placement or database-directory ownership; `openDatabase` only obtains BB storage, enables foreign keys, and applies migrations (`src/rooms/storage/database.ts:336-340`).
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by

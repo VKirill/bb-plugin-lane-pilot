@@ -2,12 +2,14 @@
 title: Orchestration and execution data
 type: data-model
 created: 2026-10-10
-updated: 2026-10-17
+updated: 2026-10-19
 status: active
 confidence: medium
 tags: [data-model, orchestration, execution]
 sources:
   - src/rooms/storage/database.ts
+  - src/rooms/harness/migrations.ts
+  - src/rooms/harness/server/store.ts
   - packages/thread-observe/src/completion.ts
   - src/rooms/relay/server/relay.ts
   - src/rooms/runs/server/stage-records.ts
@@ -15,6 +17,7 @@ sources:
   - src/rooms/writer/server/finish.ts
   - src/rooms/usage/server/token-usage.ts
   - server.ts
+  - src/rooms/harness/server/harness.ts
 ---
 
 # Orchestration and execution data
@@ -32,10 +35,13 @@ erDiagram
   RUN ||--o{ STAGE_RECEIPT : records
   TASK ||--o{ STAGE_RECEIPT : records
   TASK ||--|| TASK_PLAN : has
+  PROJECT ||--o{ HARNESS : scopes
+  HARNESS ||--o| HARNESS_EXPERIENCE : records
+  ATTEMPT }o--|| HARNESS : used_by
   TASK ||--o| TASK_GIT_BASE : captures
 ```
 
-Tables are created or extended in the ordered plugin migration list (`src/rooms/storage/database.ts:30-156`, `:169-229`).
+Tables are created or extended in the ordered plugin migration list; the harness migration is appended after the other domain migrations (`src/rooms/storage/database.ts:30-156`, `:169-229`, `:330-334`).
 
 ## Table meanings
 
@@ -45,8 +51,11 @@ Tables are created or extended in the ordered plugin migration list (`src/rooms/
 | `lane_pilot_setting_generation` | `project_id`, `binding_id`, `key` identify a setting; `version` is its generation counter. | Composite primary key; initialized from existing settings versions (`src/rooms/storage/database.ts:219-227`). | Settings mutation code writes; version-aware UI/RPC reads. |
 | `lane_pilot_run` | `id`; `project_id`; `pm_thread_id`; `state`; creation/update times; `kind` (`bb`/`cli`); `closed_at`, `closed_by`; writer workspace/environment/host; run policy and gate; helper policy; settings scopes; objective. | States: `pending`, `running`, `accepted`, `blocked`, `closed`; migration rebuild maps a non-null `closed_at` to `closed` (`src/rooms/storage/database.ts:40-47`, `:78-94`, `:211-229`). | Activation and run transitions write; runs UI, reconciler and scheduler read. |
 | `lane_pilot_task` | `id`; parent `run_id`; `kind` (`bb`/`cli`); serialized task-v2 `contract_json`; `created_at`. | `run_id` references run; task id is the stable task key (`src/rooms/storage/database.ts:60-67`). | Writer dispatch writes; runs, reconciliation, acceptance and memory stages read. |
-| `lane_pilot_attempt` | `id`, `run_id`, `task_id`, writer `thread_id`, `state`, `reason`, creation/update times, attempt number, pre-attempt dirt JSON, workspace/environment/decision JSON, holder thread, harness version. | `attempt_no` is added with default 1 (`src/rooms/storage/database.ts:75-77`); each accepted or refused state change is recorded in `lane_pilot_attempt_transition` (`src/rooms/storage/database.ts:241-244`, `:1030-1054`). | Dispatch and reconciliation write; writer, run UI, stability and acceptance read. |
+| `lane_pilot_attempt` | `id`, `run_id`, `task_id`, writer `thread_id`, `state`, `reason`, creation/update times, attempt number, pre-attempt dirt JSON, workspace/environment/decision JSON, holder thread, harness version, selected harness tree id and optional `new`/`old` trial arm. | `attempt_no` is added with default 1 (`src/rooms/storage/database.ts:75-77`); each accepted or refused state change is recorded in `lane_pilot_attempt_transition` (`src/rooms/storage/database.ts:241-244`, `:1030-1054`). | Dispatch and reconciliation write; writer, run UI, stability and acceptance read. |
 | `lane_pilot_activation` | `project_id`; PM thread; run id; claim time. | One active activation claim per project by primary key (`src/rooms/storage/database.ts:68-73`). | Activation writes; activation reconciliation reads. |
+| `lane_pilot_harness` | `id`; project, area and writer key; version and parent tree; serialized tree and fingerprint; state; creator, notes and reason; creation, trial-start and decision times. | Schema permits `base`, `candidate`, `trial`, `adopted` and `retired`; editor code inserts candidates as `trial` and evaluation moves them to `adopted` or `retired`; writer key is `provider/model` or `*` (`src/rooms/harness/migrations.ts:7-24`, `src/rooms/harness/server/store.ts:20-25`). | Harness server creates the empty base and editor candidate; trial decisions update candidate state; attempt assignment selects an adopted or base tree (`src/rooms/harness/server/store.ts:58-97`, `src/rooms/harness/server/harness.ts:387-389`). |
+| `lane_pilot_harness_experience` | `harness_id`; rendered edit verdicts; optional cue, lesson, evidence, confidence and rule id; creation time. | One reflection record per harness id; upsert replaces reflection fields (`src/rooms/harness/migrations.ts:25-34`, `src/rooms/harness/server/store.ts:122-127`). | Reflection writes; harness status and experience views read (`src/rooms/harness/server/store.ts:124-134`). |
+| `lane_pilot_attempt.harness_tree_id`, `harness_arm` | Tree id and optional trial arm (`new` or `old`) assigned to an attempt. | Added to attempts with an index by tree and creation time (`src/rooms/harness/migrations.ts:35-37`). | Harness assigns before writer materialization; trial evaluation reads these assignments (`src/rooms/harness/server/store.ts:95-118`). |
 | `lane_pilot_attempt_reasoning` | `attempt_id`; `trace_json` for provider/model/reasoning decision trace. | Attempt foreign key cascades on deletion (`src/rooms/storage/database.ts:128-132`). | Writer selection writes; run receipts and UI read. |
 | `lane_pilot_task_plan` | `task_id`; canonical plan text. | Task foreign key cascades on deletion (`src/rooms/storage/database.ts:133-137`). | Dispatch writes; retry and Jev adapter read. |
 | `lane_pilot_stage_receipt` | `run_id`, `task_id`, `stage_id`; contract version; state; input/output SHA-256; attempt index; provider/model/thread; result JSON, reason, update time. | State set: `pending`, `running`, `passed`, `failed`, `blocked`, `skipped`, `canceled`; attempt is 0–2; composite key identifies a stage per task (`src/rooms/storage/database.ts:138-156`). | Stage runner writes; run monitor, retry, memory and acceptance read. |
@@ -66,6 +75,7 @@ Tables are created or extended in the ordered plugin migration list (`src/rooms/
 |---|---|---|
 | Attempt state | Next attempted state | `transitionAttempt` checks legal moves and records each accepted or refused transition (`src/rooms/storage/database.ts:1021-1054`; `src/rooms/writer/server/dispatch.ts:12`). |
 | Terminal attempt outcome | Reported or suppressed | Relay records a handled outcome; see [cross-cutting gotchas](../gotchas.md#stability-and-local-provider-setup) for delivery conditions (`src/rooms/relay/server/relay.ts:380-415`). |
+| Harness state | `insertHarness` creates `base` or `trial`; editor candidates enter `trial`, then evaluation changes them to `adopted` or `retired` (`src/rooms/harness/server/store.ts:74-92`, `src/rooms/harness/server/harness.ts:387-389`, `:405-420`). |
 | Stage receipt state | `pending` → `running` → terminal | Stage runners write a unique `(run, task, stage)` receipt; stage events preserve change history (`src/rooms/storage/database.ts:138-186`). |
 | Run state | `pending` → `running` → `accepted` or `blocked`; then `closed` | Run state transitions and abandonment handling use run storage helpers (`src/rooms/storage/database.ts:40-47`, `:78-94`). |
 
@@ -77,3 +87,4 @@ This migration file defines cleanup for obsolete in-memory lesson rows and orpha
 ## Referenced by
 
 - [Lane Pilot data model overview](../data-model.md)
+- [Writer harness](../harness.md)
