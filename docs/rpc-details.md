@@ -2,7 +2,7 @@
 title: RPC route execution details
 type: component
 created: 2026-10-14
-updated: 2026-10-14
+updated: 2026-10-19
 status: active
 confidence: medium
 tags: [rpc, routes, failures]
@@ -15,6 +15,8 @@ sources:
   - src/rooms/anamnesis/contract.ts
   - src/rooms/contracts/index.ts
   - src/rooms/core/server/rpc.ts
+  - src/rooms/contracts/rpc-ops.ts
+  - src/rooms/harness/server/rpc.ts
 ---
 
 # RPC route execution details
@@ -40,6 +42,10 @@ Explain how the route families described in [RPC and host-call contracts](rpc-ca
 | Council, routing, rules, memory, docs | Declared collections and records; optional or nullable fields represent missing domain data. | Strict input validation rejects extra keys and values outside declared bounds or enums. |
 | Token usage | Query, sync, and rebuild results; rebuild carries backup and row-clear metadata when it starts. | A concurrent rebuild is represented by `{started:false}`. |
 | Provider and secret | Provider identity and key presence, issuance metadata, test result, or breaker state. | No route returns a provider key; invalid provider ids or malformed inputs fail schema validation. |
+
+### Writer harness operations
+
+The harness routes are registered from the harness room. Status and configuration are project-scoped; edit can run in the background unless `wait` is true; tick accepts a dry-run flag; reflection is keyed by harness id. The contract leaves all five outputs unknown, so result shapes are owned by the harness implementation (`src/rooms/contracts/rpc-ops.ts:110-129`, `src/rooms/harness/server/rpc.ts:7-17`, `src/rooms/core/server/rpc.ts:46-48`).
 
 ### `rpcWorkflow`
 

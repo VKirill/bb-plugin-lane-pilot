@@ -2,7 +2,7 @@
 title: RPC and host-call contracts
 type: component
 created: 2026-09-30
-updated: 2026-10-17
+updated: 2026-10-19
 status: active
 confidence: medium
 tags: [rpc, contracts, host-api]
@@ -51,7 +51,7 @@ Keep BB app-to-server calls and plugin-server-to-host calls typed independently.
 ## How it works
 
 1. `rpcContract` imports the shell, native, runs, settings, operations, knowledge, workflow, and world maps, spreads them into one `defineRpcContract` call, and exports that value as the room's public RPC contract (`src/rooms/contracts/index.ts:1-26`). Composition is unconditional; optional inputs, enums, bounds, and nullable results are declared on each method. For example, shell methods and run-list requests use strict input objects, so undeclared keys and values outside those schemas fail contract validation (`src/rooms/contracts/rpc-shell.ts:8-18`, `src/rooms/contracts/rpc-runs.ts:33-43`).
-2. `registerRpc` calls each handler factory with its declared dependencies: most receive `ctx` and `services`; `stackRpc`, `secretsRpc`, `jevProviderRpc`, `workspaceProviderRpc`, `tokenUsageRpc`, and `selfRepairRpc` receive only `ctx`; council receives `ctx.db` and `services.council`; canary and world receive their respective service (`src/rooms/core/server/rpc.ts:27-50`).
+2. `registerRpc` calls each handler factory with its declared dependencies: most receive `ctx` and `services`; `stackRpc`, `secretsRpc`, `jevProviderRpc`, `workspaceProviderRpc`, `tokenUsageRpc`, and `selfRepairRpc` receive only `ctx`; council receives `ctx.db` and `services.council`; canary and world receive their respective service; harness receives `services.harness` (`src/rooms/core/server/rpc.ts:27-53`).
 3. It spreads those maps into one handler object, wraps every handler with `timeRpcHandlers`, and calls `ctx.bb.rpc.register(rpcContract, ...)` once (`src/rooms/core/server/rpc.ts:26-51`). It has no feature-gate branch or local catch around registration; a registration error propagates to the caller (`src/rooms/core/server/rpc.ts:27-51`).
 4. The timing wrapper awaits each handler and returns its answer unchanged. Rejections are rethrown; `finally` logs elapsed time and distinguishes a refused error from other failures. For successful calls lasting at least 250 ms it also attempts to log serialized answer size; serialization and logging errors are swallowed so they do not change the RPC result (`src/rooms/core/server/rpc-timing.ts:1-2`, `:12-40`).
 ### Route-family behavior
@@ -61,20 +61,21 @@ Keep BB app-to-server calls and plugin-server-to-host calls typed independently.
 - `rpcKnowledge` defines council reads and messages, routing hints, rule proposals/scans, [session memory](rpc-callers/session-memory-rpc.md), memory-record operations, documentation status, token usage, secret-issuance history, Jev provider settings, and worktree-provider status/reset; it also spreads in the Anamnesis contract methods (`src/rooms/contracts/rpc-knowledge.ts:2`, `:16-62`, `:63-101`, `:103-131`, `:133-210`). Other route execution and failure behavior is documented in [RPC route details](rpc-details.md).
 - `rpcWorkflow` request steps, branches, outputs, and failures are documented in [Workflow RPC contract](rpc-callers/rpc-workflow.md).
 - `rpcNative` exposes `list_helper_threads`; when an open run exists, its response can include task nodes and `depends`, `files`, `folder`, or `question` edges (`src/rooms/contracts/rpc-native.ts:127-144`, `src/rooms/runs/server/rpc/runs.ts:46-50`, `:165-169`). The Tasks board and detail card are described in [Tasks board](task-board.md).
-- `rpcOps` groups run controls, statistics, deployment drain, self-repair, canary, and stack management. Stack install/connect require `confirmExternalOps`; rollback accepts an optional absolute snapshot path. Several operation outputs are `unknown` at the shared contract, so their success and refusal shapes belong to the implementing room (`src/rooms/contracts/rpc-ops.ts:5-109`).
+- `rpcOps` groups run controls, statistics, deployment drain, self-repair, canary, stack management and writer-harness control. Stack install/connect require `confirmExternalOps`; rollback accepts an optional absolute snapshot path. Several operation outputs are `unknown` at the shared contract, so their success and refusal shapes belong to the implementing room (`src/rooms/contracts/rpc-ops.ts:5-129`).
 
 #### `rpcOps` request and result map
 
-The map uses strict input objects. Declared business refusals are output fields where the schema defines them; `unknown` outputs are intentionally owned by their implementing rooms (`src/rooms/contracts/rpc-ops.ts:5-109`).
+The map uses strict input objects. Declared business refusals are output fields where the schema defines them; `unknown` outputs are intentionally owned by their implementing rooms (`src/rooms/contracts/rpc-ops.ts:5-129`).
 
 | Procedure family | Inputs and outcomes |
 |---|---|
 | Run controls | `halt_run` takes run id and returns canceled/left attempt ids; `cancel_attempt` and `retry_attempt` take attempt id and return ok/state/reason, with retry also returning attempt id; `resume_runs` takes project id and returns resumed, skipped and finished ids (`src/rooms/contracts/rpc-ops.ts:6-25`). |
 | Statistics | Writer brief takes project id and integer `since` plus optional `until`, returning unknown. Critic and reuse stats take project id and 1–90 days defaulting to 7; acceptance stats takes 1–90 days defaulting to 28 and optional project id (`src/rooms/contracts/rpc-ops.ts:27-55`). |
 | Deploy and self-repair | `deploy_drain` takes boolean `on`; status calls take empty objects. Self-repair configure accepts optional settings including `maxPerDay` 0–20; tick defaults `dryRun` to true and accepts optional integer `since`. Outputs are unknown at this contract (`src/rooms/contracts/rpc-ops.ts:56-93`). |
+| Harness | `harness_status` and `harness_configure` take a project id (configure also takes a patch); `harness_edit` takes project plus optional area/writer and defaults `wait` to false; `harness_tick` defaults `dryRun` to true; `harness_reflect` takes a harness id. Outputs are `unknown` at this contract (`src/rooms/contracts/rpc-ops.ts:110-129`). |
 | Canary and stack | Canary status takes an empty object. Stack detect/install/connect require project id; install/connect also require `confirmExternalOps`. Rollback takes project id and optional absolute snapshot path. Outputs are unknown (`src/rooms/contracts/rpc-ops.ts:86-109`). |
 
-Extra fields, malformed ids, invalid bounds, or a missing required confirmation field fail strict validation. Handler/transport rejections remain rejections; unknown output shapes are validated only as unknown (`src/rooms/contracts/rpc-ops.ts:5-109`).
+Extra fields, malformed ids, invalid bounds, or a missing required confirmation field fail strict validation. Handler/transport rejections remain rejections; unknown output shapes are validated only as unknown (`src/rooms/contracts/rpc-ops.ts:5-129`).
 
 #### `rpcRuns` request and result map
 
@@ -137,12 +138,12 @@ The spawn claim and terminal receipt make maintenance idempotent; a second call 
 
 | Contract | Inputs and result | Failure handling |
 |---|---|---|
-| App RPC | Strict Zod schemas; method input and output shape are declared in each `rpc-*` module (`src/rooms/contracts/rpc-shell.ts:8-18`, `src/rooms/contracts/rpc-runs.ts:33-43`, `src/rooms/contracts/rpc-ops.ts:5-109`). | Invalid payloads fail contract validation before the handler result reaches the UI. |
+| App RPC | Strict Zod schemas; method input and output shape are declared in each `rpc-*` module (`src/rooms/contracts/rpc-shell.ts:8-18`, `src/rooms/contracts/rpc-runs.ts:33-43`, `src/rooms/contracts/rpc-ops.ts:5-129`). | Invalid payloads fail contract validation before the handler result reaches the UI. |
 | Jev provider settings | Status by provider, save a key, and test the configured provider (`src/rooms/contracts/rpc-knowledge.ts:189-200`). | Status returns key presence only; saving rejects empty or whitespace-containing keys and test returns a structured failure when no key is available (`src/rooms/secrets/server/rpc/jev.ts:19-48`). |
 
 ## Business rules
 
-RPC schemas use strict object validation at method boundaries (`src/rooms/contracts/rpc-shell.ts:8-18`, `src/rooms/contracts/rpc-runs.ts:7-21`, `src/rooms/contracts/rpc-ops.ts:5-109`). The run card's stage and task state values are summarized for UI display; receipt details are fetched through a separate method (`src/rooms/contracts/rpc-runs.ts:7-43`). Jev provider configuration is global, and saving a new key clears the core's cached key so the next Jev call can use it immediately (`src/rooms/secrets/server/rpc/jev.ts:31-38`, `src/rooms/core/server/core.ts:71-72`).
+RPC schemas use strict object validation at method boundaries (`src/rooms/contracts/rpc-shell.ts:8-18`, `src/rooms/contracts/rpc-runs.ts:7-21`, `src/rooms/contracts/rpc-ops.ts:5-129`). The run card's stage and task state values are summarized for UI display; receipt details are fetched through a separate method (`src/rooms/contracts/rpc-runs.ts:7-43`). Jev provider configuration is global, and saving a new key clears the core's cached key so the next Jev call can use it immediately (`src/rooms/secrets/server/rpc/jev.ts:31-38`, `src/rooms/core/server/core.ts:71-72`).
 
 ## Public API or commands
 

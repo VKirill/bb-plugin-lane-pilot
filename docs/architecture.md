@@ -2,7 +2,7 @@
 title: Lane Pilot architecture
 type: architecture
 created: 2026-09-30
-updated: 2026-10-14
+updated: 2026-10-19
 status: active
 confidence: medium
 tags: [architecture, runtime, monorepo]
@@ -31,8 +31,13 @@ sources:
   - src/rooms/runs/server/task-board.ts
   - src/rooms/runs/server/task-graph.ts
   - src/rooms/storage/database.ts
+  - src/rooms/harness/index.ts
+  - src/rooms/harness/server/harness.ts
+  - src/rooms/harness/migrations.ts
   - packages/jev/src/run.ts
   - packages/host-calls/src/run-on-host.ts
+  - packages/harness-core/src/index.ts
+  - packages/harness-core/package.json
   - packages/thread-observe/src/completion.ts
   - packages/handoff/src/messages.ts
   - src/rooms/host-worker/host-handlers.ts
@@ -60,7 +65,7 @@ C4Container
   Rel(server, db, "Reads and writes")
 ```
 
-The UI and server entries are declared by the package's BB manifest (`package.json:8-18`). The server uses BB's plugin storage database and runs migrations during startup (`src/rooms/storage/database.ts:323-327`). The UI receives methods from the assembled `rpcContract`, while host calls use `hostContract` (`src/rooms/contracts/index.ts:1-26`, `src/rooms/contracts/host.ts:6-15`). The host client wraps checkout-writing calls and acceptance checks with a drain gate (`src/rooms/core/server/core.ts:91-100`, `src/rooms/stability/server/deploy-drain.ts:1-6`).
+The UI and server entries are declared by the package's BB manifest (`package.json:8-18`). The server uses BB's plugin storage database and runs migrations during startup (`src/rooms/storage/database.ts:336-340`). The UI receives methods from the assembled `rpcContract`, while host calls use `hostContract` (`src/rooms/contracts/index.ts:1-26`, `src/rooms/contracts/host.ts:6-15`). The host client wraps checkout-writing calls and acceptance checks with a drain gate (`src/rooms/core/server/core.ts:91-100`, `src/rooms/stability/server/deploy-drain.ts:1-6`).
 
 ## Application and package dependencies
 
@@ -72,7 +77,7 @@ flowchart LR
   rooms[Room UI and server modules]
   ui[ui-kit]
   shared[contracts, i18n, models, kit]
-  domains[council, handoff, host-calls, Jev, memory-core, resilience, run-insights, settings-catalog, thread-observe]
+  domains[council, handoff, harness-core, host-calls, Jev, memory-core, resilience, run-insights, settings-catalog, thread-observe]
   engines[workflow-engine, world-sim, pixel-world]
   app --> rooms
   host --> rooms
@@ -112,7 +117,7 @@ Host methods include native install, Git ownership and worktree operations, long
 
 ## Data ownership
 
-The shared SQLite migration array includes stores exported by Jev, council, handoff, run-insights, workflow engine, schedule, learning, and world domains (`src/rooms/storage/database.ts:1-22`, `:230-320`). The [data model overview](data-model.md) links to domain tables. Workspace-specific tables belong to their owning package documentation, including [workflow engine](../packages/workflow-engine/docs/overview.md).
+The shared SQLite migration array includes stores exported by Jev, council, handoff, run-insights, workflow engine, schedule, learning, world, and the harness room (`src/rooms/storage/database.ts:1-22`, `:319-333`). The [data model overview](data-model.md) links to domain tables. Workspace-specific tables belong to their owning package documentation, including [workflow engine](../packages/workflow-engine/docs/overview.md).
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by

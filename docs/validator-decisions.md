@@ -2,7 +2,7 @@
 title: Writer validation decisions
 type: decisions
 created: 2026-09-23
-updated: 2026-10-14
+updated: 2026-10-19
 status: active
 confidence: medium
 tags: [writer, validation, ownership]
@@ -18,7 +18,7 @@ sources:
 
 # Writer validation decisions
 
-TL;DR: A writer attempt is accepted only when its changed paths satisfy task and run ownership, its checks pass, and its acceptance receipt validates against the upstream schema. (`src/rooms/writer/server/verify.ts:177-216`, `:350-384`).
+TL;DR: A writer attempt is accepted only when its changed paths satisfy task and run ownership, its checks pass, and its acceptance receipt validates against the upstream schema. (`src/rooms/writer/server/verify.ts:181-220`, `:350-384`).
 
 | Input or condition | Decision | Code evidence |
 |---|---|---|

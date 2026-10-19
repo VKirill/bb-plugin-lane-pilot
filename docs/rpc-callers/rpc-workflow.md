@@ -2,7 +2,7 @@
 title: Workflow RPC contract
 type: component
 created: 2026-10-16
-updated: 2026-10-17
+updated: 2026-10-19
 status: active
 confidence: high
 tags: [rpc, workflows, contracts]
@@ -23,7 +23,7 @@ TL;DR: `rpcWorkflow` exposes workflow library reads, run operations, preflight a
 
 ## Purpose
 
-`rpcWorkflow` defines strict app RPC schemas for reading workflows and starting or inspecting their runs. The contract is assembled into `rpcContract`, and `registerRpc` combines workflow handler factories with the other RPC handlers (`src/rooms/contracts/rpc-workflow.ts:4-6`, `src/rooms/contracts/index.ts:17-26`, `src/rooms/core/server/rpc.ts:27-50`).
+`rpcWorkflow` defines strict app RPC schemas for reading workflows and starting or inspecting their runs. The contract is assembled into `rpcContract`, and `registerRpc` combines workflow handler factories with the other RPC handlers (`src/rooms/contracts/rpc-workflow.ts:4-6`, `src/rooms/contracts/index.ts:17-26`, `src/rooms/core/server/rpc.ts:27-53`).
 
 ## How it works
 

@@ -2,7 +2,7 @@
 title: Council, handoff, Jev and run-insight data
 type: data-model
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-19
 status: active
 confidence: medium
 tags: [data-model, council, handoff, jev]
@@ -12,6 +12,7 @@ sources:
   - packages/jev/src/receipts.ts
   - packages/run-insights/src/rules.ts
   - packages/run-insights/src/triage.ts
+  - packages/harness-core/src/experience.ts
   - packages/council/src/contract.ts
   - packages/handoff/src/contract.ts
   - packages/jev/src/run.ts
@@ -70,7 +71,7 @@ erDiagram
 | Table | Meaning | Lifecycle |
 |---|---|---|
 | `lane_pilot_failure_triage` | `project_id` and `attempt_id` identify the project failure; `run_id` and `task_id` locate its work; `reason_sha256` and `reason` preserve a normalized failure; `origin` and `category` use the triage vocabularies, with confidence probabilities; `same_rule_id` identifies a matching rule; `status` is `ok` or `error`; `detail` explains a triage error; `failed_at` and `triaged_at` are epoch milliseconds. | Status: `ok` or `error`; one row per `(project_id,attempt_id)` (`packages/run-insights/src/triage.ts:8-25`). |
-| `lane_pilot_rule_proposal` | `project_id`, `id`, and `signature` identify the proposal; `rule` is its instruction; `author` is `sweep`, `pm`, `owner`, or `model`; `state` is `proposed`, `accepted`, `rejected`, or `revoked`; `occurrences` and `task_count` count supporting failures; `examples_json` and `evidence_json` carry examples and task references; `memory_id` links optional memory; `first_seen_at`, `last_seen_at`, `updated_at`, `decided_at`, and `revision_started_at` are epoch milliseconds; `trial_state`, `revision`, and `retired_reason` track trials; `scope_json` records section scope; `audience` is `writer`, `pm`, or `both`; `always_on` is a boolean integer. | States: `proposed`, `accepted`, `rejected`, `revoked`; author is `sweep`, `pm`, `owner`, or `model` in the current definition (`packages/run-insights/src/rules.ts:9-24`, `:27-50`, `:60-85`). |
+| `lane_pilot_rule_proposal` | `project_id`, `id`, and `signature` identify the proposal; `rule` is its instruction; `author` is `sweep`, `pm`, `owner`, or `model`; `state` is `proposed`, `accepted`, `rejected`, or `revoked`; `occurrences` and `task_count` count supporting failures; `examples_json` and `evidence_json` carry examples and task references; `memory_id` links optional memory; timestamps are epoch milliseconds; `trial_state`, `revision`, `retired_reason` and `decided_by` track trial/decision outcomes; `scope_json` records section scope; `audience` is `writer`, `pm`, or `both`; `always_on` is a boolean integer; Harness² adds `form` (`always`, `skill`, `check`, `hook`, `memory`), situation `cue` and reflection `confidence`. | States: `proposed`, `accepted`, `rejected`, `revoked`; form, cue and confidence are added by rule-form migrations (`packages/run-insights/src/rules.ts:9-24`, `:27-50`, `:57-98`). |
 | `lane_pilot_rule_event` | `id` is the event key; `project_id` and `rule_id` identify the proposal; `action` names the event; `detail` carries optional event data; `at` is epoch milliseconds. | Append event on proposal, trial and owner action (`packages/run-insights/src/rules.ts:65-73`). |
 
 ## Writers, readers and retention
