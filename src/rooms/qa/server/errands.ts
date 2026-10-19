@@ -91,6 +91,12 @@ export type ErrandStart = {
   providerId?: string | undefined; model?: string | undefined; reasoning?: string | undefined; serviceTier?: "default" | "fast" | undefined;
   /** Names this one spawn: the same id repeated returns the same thread. Default: derived from the task. */
   spawnId?: string | undefined;
+  /**
+   * No parent chat: the thread is the project's own, hidden, filed where the PM chat is. A scheduled errand runs this way:
+   * as a child of «the project's open PM chat» its end woke whichever chat that happened to be (the owner saw the weekly
+   * vk-core report answered in a two-day-old chat about links, 2026-10-19). The schedule board keeps the report.
+   */
+  detached?: boolean | undefined;
   /** More plugin metadata on the thread (a scheduled errand marks its origin here). */
   metadata?: Record<string, unknown> | undefined;
 };
@@ -180,7 +186,11 @@ export function mountErrands(ctx: ServerCore) {
     const beforeStatus = checkoutPath && checkoutHostId ? await gitRepoStatus(host, checkoutHostId, checkoutPath) : null;
     const setup = browserSetup(input.projectId, input.runId);
     const helperPolicy = requireHelperSpawn({ bb, db, projectId: input.projectId, runId: input.runId });
-    const placement = await helperChildPlacement({ bb, db, projectId: input.projectId, runId: input.runId, role: "errand", taskTitle: input.title ?? input.task.slice(0, 60) });
+    const title = input.title ?? input.task.slice(0, 60);
+    const pmSection = stringAt(pm, "sectionId");
+    const placement = input.detached
+      ? { visibility: "hidden" as const, projectId: input.projectId, title: `Lane Pilot errand: ${title}`.slice(0, 120), ...(pmSection ? { sectionId: pmSection } : {}) }
+      : await helperChildPlacement({ bb, db, projectId: input.projectId, runId: input.runId, role: "errand", taskTitle: title });
     const providerId = input.providerId ?? ERRAND_BUILTIN.providerId;
     const spawned = await fullAccessSpawn(bb, {
       ...placement,
@@ -188,7 +198,7 @@ export function mountErrands(ctx: ServerCore) {
       ...writerExecutionSelection(providerId, input.model ?? ERRAND_BUILTIN.model, input.reasoning ?? ERRAND_BUILTIN.reasoningEffort, input.serviceTier ?? "default"),
       prompt: errandPrompt({ task: input.task, browserHostId: setup.hostId, authorized: input.authorized, accounts: [...input.accounts] }),
       environment: { type: "reuse", environmentId },
-      pluginMetadata: { role: "errand", spawnId: input.spawnId ?? `${input.runId}:${spawnTextId(input.task)}`, lanePilotRunId: input.runId, parentPmThreadId: input.pmThreadId, helperMode: helperPolicy.mode, ...input.metadata },
+      pluginMetadata: { role: "errand", spawnId: input.spawnId ?? `${input.runId}:${spawnTextId(input.task)}`, lanePilotRunId: input.runId, ...(input.detached ? {} : { parentPmThreadId: input.pmThreadId }), helperMode: helperPolicy.mode, ...input.metadata },
     } as Parameters<typeof fullAccessSpawn>[1]);
     const threadId = stringAt(spawned, "id");
     if (!threadId) throw new Error("errand_thread_id_missing");

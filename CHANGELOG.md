@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.255
+
+- **A scheduled errand no longer wakes a stale chat.** The weekly «Слой vk ядра BB» check ran as a child of «the project's open PM chat» (`pmOf`: the newest unclosed PM run, and runs are never closed), so its end was posted into a two-day-old chat about links and that chat's agent answered the report (owner's screenshot, 2026-10-19). `startErrand` takes `detached: true` from the schedule executor: the helper is a hidden thread of the project in the PM chat's section, with no `parentThreadId`, no `lifecycleOwnerThreadId` and no `parentPmThreadId` metadata, so nothing is delivered to any chat when it ends; the schedule board keeps the run's report as before. Test: `tests/schedule/executors.test.ts`.
+
 ## 0.1.254
 
 - **The night's first editor round on Gemini (feature:shell, 04:10 UTC) lost both editors in 48 seconds**: the INV editor got «Agent stopped the turn: refusal» from the model, and the DOM editor, started two seconds later on the same Mac, died on OpenCode's «thread.start failed … database is locked» while the first process was still starting. Self-repair (`42c7045d`) gave a stage one more session after an early end (never after a timeout), with a 20 s pause, and a round whose editors both failed now reports `failed` instead of `keep_base`; `decideThreadCompletion` names a failed turn's error. This release adds the other half: the second editor of a round starts 15 s after the first, so the two OpenCode processes no longer collide at startup.

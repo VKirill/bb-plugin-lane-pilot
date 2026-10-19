@@ -65,6 +65,8 @@ export function createScheduleExecutors(ctx: ServerCore, services: Services): Re
       const started = await services.errands.startErrand({
         projectId: schedule.project_id, runId: pm.runId, pmThreadId: pm.pmThreadId, task: brief, title: task.title ?? schedule.name, authorized: task.authorized,
         accounts: resolved.accounts, providerId: model.providerId, model: model.model, reasoning: model.reasoningEffort, serviceTier: model.serviceTier ?? undefined, spawnId: `schedule:${run.run_key}`,
+        // Nobody is watching: the thread has no parent chat, so its end wakes no one; the board keeps the report.
+        detached: true,
         // A thread that carries this origin cannot create or change schedules (schedule-tools.ts).
         metadata: { origin: "schedule", scheduleId: schedule.id, scheduleRunKey: run.run_key },
       });

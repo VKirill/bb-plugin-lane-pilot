@@ -77,14 +77,14 @@ describe("the workflow executor", () => {
 describe("the errand executor", () => {
   const task = { kind: "errand" as const, task: "Check the open invoices in Elba and report the total.", authorized: false, accounts: ["ELBA_LOGIN"], model: "claude-opus-5-5", reasoning: "high" as const };
 
-  it("starts a helper thread under the project's PM chat, marked as started by a schedule, with an idempotent spawn id", async () => {
+  it("starts a detached helper thread (no parent chat to wake), marked as started by a schedule, with an idempotent spawn id", async () => {
     const { executors, calls } = world();
     const ref = await executors.errand.start(input(task));
     expect(ref).toEqual({ refKind: "thread", refId: "thr_errand", hostId: "mini" });
     expect(calls.resolve[0]).toMatchObject({ projectId: "p1", runId: "lprun_1", pmThreadId: "thr_pm", names: ["ELBA_LOGIN"] });
     const started = calls.errandStart[0]!;
     expect(started).toMatchObject({ projectId: "p1", runId: "lprun_1", pmThreadId: "thr_pm", authorized: false, providerId: "claude-code", model: "claude-opus-5-5", reasoning: "high",
-      spawnId: "schedule:sch_1:1790000000000", metadata: { origin: "schedule", scheduleId: "sch_1", scheduleRunKey: "sch_1:1790000000000" } });
+      spawnId: "schedule:sch_1:1790000000000", detached: true, metadata: { origin: "schedule", scheduleId: "sch_1", scheduleRunKey: "sch_1:1790000000000" } });
     expect(started.task).toContain("This is a scheduled run of «Nightly check»");
     expect(started.task).toContain("ERRAND: blocked");
     expect(started.task).toContain("Check the open invoices in Elba");
