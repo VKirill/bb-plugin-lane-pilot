@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+From a self-repair of «Lane Pilot nightly docs failed for <path> docs: <n> docs checks still fail after one repair round» (treba root docs, 2026-10-19 02:21 UTC; the SelfyStudio and Lane Pilot occurrences of 2026-10-18 were fixed in 0.1.246):
+- **The brief names every section the lint requires on a flow page.** The method line listed a flow page's sections as Trigger, How it works, Modes, Failures and compensation, Related pages. The lint (`docs-lint.ts`) also requires `## Capabilities` on a main flow page (`docs/flows/<slug>.md`). Only a flow unit's own onboarding task named it. In its only repair round treba's root pass (`thr_w5rqy2puij`) followed the repair prompt's advice for a page near the size limit and moved the attribution steps from `docs/components/tracking-attribution.md` to a new `docs/flows/tracking-attribution.md`, with exactly the five listed sections. The final check had one finding, the missing Capabilities section, so the pass failed and none of its 15 pages were committed. The method line (`METHODOLOGY`, `src/rooms/docs/docs.ts`) now lists Capabilities with what it holds, for the root, workspace and flow passes alike.
+  - Verified on the real case: the agent's page from that thread (`tests/fixtures/docs/treba-tracking-attribution-flow.md`) gives exactly that one structure finding with the lint.
+  - Test: `tests/stages/docs-flow-sections.test.ts` builds a flow page and a component page from the sections each brief lists and lints them; before the fix the flow page fails on Capabilities.
+
 ## 0.1.253
 
 - **The harness editors run on Gemini 3.8 Flash (high) through OpenCode's Antigravity route by default** (`acp-opencode`, `router9/ag/gemini-3.8-flash-high`, effort `medium`: the route offers one effort and carries «high» in the model name), per the owner's choice on 2026-10-19; Opus stays available through `harness_configure {editor}`. The config of BB-сервис and SelfyStudio was switched on the hub the same night.
