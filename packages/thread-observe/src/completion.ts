@@ -86,7 +86,7 @@ export function decideThreadCompletion(input: {
   // BB's events say why the thread is in error («host daemon disconnected»); alone, «thread_status_error» read as Lane
   // Pilot's own fault and raised a self-repair for a host daemon restart (pm-reader thr_pchcvfzutr, 2026-10-16).
   if ((input.status ?? "") === "error") {
-    const cause = threadFailure(input.events, input.now);
+    const cause = threadFailure(input.events, input.now) ?? failedTurn(input.events);
     return { ok:false, via:"error", detail:cause ? `thread_status_error:${cause}` : "thread_status_error" };
   }
   if (input.requestedAfter !== undefined) {
@@ -141,6 +141,21 @@ function readWatched(event: unknown): WatchedEvent | null {
 }
 
 const clip = (text: string | null) => (text ?? "").replace(/\s+/g, " ").slice(0, 200);
+
+/**
+ * The error a failed turn of the latest request carries. A provider that refuses the turn reports nothing else: an
+ * OpenCode harness editor on Gemini ended with only `turn/completed {status:"failed", error:{message:"Agent stopped the
+ * turn: refusal"}}`, and the bare «thread_status_error» read as Lane Pilot's fault (BB-сервис thr_we3abcuabe, 2026-10-19).
+ */
+function failedTurn(events: unknown[]): string | null {
+  const rows = events.map(readWatched).filter((row): row is WatchedEvent => row !== null).sort((a, b) => a.seq - b.seq);
+  const request = [...rows].reverse().find((row) => row.type === "client/turn/requested");
+  const turn = [...rows].reverse().find((row) => row.type === "turn/completed" && (!request || row.seq > request.seq)
+    && ["failed", "error"].includes(stringField(row.data, "status") ?? ""));
+  if (!turn) return null;
+  const message = stringField(Reflect.get(turn.data as object ?? {}, "error"), "message");
+  return message ? `turn_failed:${clip(message)}` : null;
+}
 
 /**
  * Reads BB's own verdict on the latest request instead of a stopwatch: a terminal provider or system

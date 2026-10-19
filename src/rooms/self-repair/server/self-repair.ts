@@ -139,7 +139,7 @@ const LOADED_AT = Date.now();
  * browser check's verdict on the project («adopted after a reload: failed» is the product failing its check).
  */
 const LOG_FAILURE = /\bfailed\b|stale API handle|is retired|unhandled|uncaught/i;
-const LOG_NOT_OURS = /^self-repair|writer attempt \S+ failed|writer spawn for \S+ failed|Host is not connected|Timed out waiting for command result|native-trace|reasoning trace|waits for|browser check \S+ adopted after a reload/i;
+const LOG_NOT_OURS = /^self-repair|writer attempt \S+ failed|writer spawn for \S+ failed|Host is not connected|Timed out waiting for command result|native-trace|reasoning trace|waits for|browser check \S+ adopted after a reload|ended early, starting one more session/i;
 const LOG_TAIL_BYTES = 1_000_000;
 const REPEAT_AFTER_MS = 86_400_000;
 const FORGET_MS = 30 * 86_400_000;
