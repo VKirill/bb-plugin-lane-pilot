@@ -2,7 +2,7 @@
 title: Shared packages
 type: component
 created: 2026-10-10
-updated: 2026-10-19
+updated: 2026-10-20
 status: active
 confidence: medium
 tags: [packages, api, monorepo]
@@ -22,6 +22,8 @@ sources:
   - packages/i18n/src/i18n.ts
   - packages/i18n/src/i18n-board.ts
   - packages/jev/src/index.ts
+  - packages/jev/src/registry.ts
+  - packages/jev/src/judgments/output-guard.ts
   - packages/kit/src/index.ts
   - packages/memory-core/src/index.ts
   - packages/models/src/index.ts
@@ -72,10 +74,10 @@ TL;DR: Small workspaces hold reusable contracts and services shared by Lane Pilo
 | `@lane-pilot/contracts` | Shared Zod schemas and types, including the versioned TaskV2 contract and its work-kind values, stage receipts, workflow views, install receipts, and host-job kinds (`packages/contracts/src/index.ts:1-2`, `packages/contracts/src/schemas.ts:65-114`, `:131-139`). | Room contracts, writer, workflow, host-worker. |
 | `@lane-pilot/council` | Council roles, run protocol, moderator, renderer and SQLite migrations (`packages/council/src/index.ts:1-2`). | Council room and storage migration assembly (`src/rooms/storage/database.ts:3-5`). |
 | `@lane-pilot/handoff` | Handoff card contracts, state transitions, storage, message formatting, receipt parsing and capability registry (`packages/handoff/src/index.ts:1-2`). `handoffMessage` includes objective, acceptance lines, inputs, budget and a fenced receipt format (`packages/handoff/src/messages.ts:12-37`). | Relay and task handoff services. |
-| `@lane-pilot/harness-core` | Writer-harness tree validation, fingerprinting and diff summaries; writer-event trajectory rendering; editor prompt construction; and parsing/rendering of edit verdicts and transferable experience (`packages/harness-core/src/index.ts:1-14`). | Harness server uses it to validate candidate trees, render attempt evidence and parse editor/reflection replies; writer attempts receive its materialized tree through the harness room (`src/rooms/harness/server/harness.ts:1-8`, `:155-168`, `:312-332`). See [writer harness](harness.md) for the end-to-end capability. |
+| `@lane-pilot/harness-core` | Writer-harness tree validation, fingerprinting and diff summaries; writer-event trajectory rendering; editor prompt construction; and parsing/rendering of edit verdicts and transferable experience (`packages/harness-core/src/index.ts:1-14`). | Harness server uses it to validate candidate trees, render attempt evidence and parse editor/reflection replies; writer attempts receive its materialized tree through the harness room (`src/rooms/harness/server/harness.ts:1-8`, `:211-250`, `:281-313`). See [writer harness](harness.md) for the end-to-end capability. |
 | `@lane-pilot/host-calls` | Host job client plus `runOnHost`, a typed `runCommand` wrapper that sends host id in both payload and options (`packages/host-calls/src/run-on-host.ts:8-31`). | Writer, verification, scheduling and host-worker rooms. |
-| `@lane-pilot/i18n` | Locale selection, `t()`, and typed English and Russian dictionaries, including the Tasks board strings (`packages/i18n/src/i18n.ts:2047-2052`, `:2064-2079`, `:2117-2119`, `packages/i18n/src/i18n-board.ts:1-4`). | Room UI and plugin app. |
-| `@lane-pilot/jev` | See the ordered `createJev` execution steps, modes and failures under [Package operations](#package-operations). Importing a judgment module registers it (`packages/jev/src/index.ts:1-9`). | Core and judgment-owning rooms. See [Jev adapter](jev-adapter.md) and [Jev run details](package-operations.md#jev-run). |
+| `@lane-pilot/i18n` | Locale selection, `t()`, and typed English and Russian dictionaries, including Harness model and role labels (`packages/i18n/src/i18n.ts:325-339`, `:1382-1396`, `:2129-2134`) and Tasks board strings (`packages/i18n/src/i18n-board.ts:1-4`). | Room UI and plugin app. |
+| `@lane-pilot/jev` | See the ordered `createJev` execution steps, modes and failures under [Package operations](#package-operations). Judgment definitions register themselves through `defineJudgment` when their own modules evaluate; the package root entry only re-exports shared APIs (`packages/jev/src/registry.ts:41-48`, `packages/jev/src/judgments/output-guard.ts:22-28`, `packages/jev/src/index.ts:1-9`). | Core and judgment-owning rooms. See [Jev adapter](jev-adapter.md) and [Jev run details](package-operations.md#jev-run). |
 | `@lane-pilot/kit` | Node helpers for hashing, redaction, process spawning, bounded reads and JSONC patching, with a browser-safe `owns-paths` subpath (`packages/kit/src/index.ts:1-9`, `packages/kit/package.json:1-15`). | Server rooms and selected UI modules. |
 | `@lane-pilot/memory-core` | Project memory records, audiences, retrieval, budgets, file import/export and SQLite helpers (`packages/memory-core/src/index.ts:1-23`). | Memory, writer context and run-insights. |
 | `@lane-pilot/models` | Provider/model catalog normalization, reasoning compatibility, presets and model pricing (`packages/models/src/index.ts:1-5`). | Native-agent, settings, Jev selection and usage rooms. |
@@ -92,7 +94,7 @@ The small packages provide reusable contracts and utilities to root rooms; the w
 ## How it works
 
 1. Room modules import package APIs by their workspace specifiers; for example, the runs contract imports `@lane-pilot/contracts` and session memory imports `@lane-pilot/memory-core` (`src/rooms/contracts/rpc-runs.ts:1-2`, `src/rooms/memory/server/session-memory.ts:1-10`).
-2. The package exposes domain functions and types; the consuming room supplies BB, SQLite, or host dependencies where required (`packages/jev/src/run.ts:56-63`, `packages/host-calls/src/run-on-host.ts:8-31`). Harness-core itself is pure parsing, rendering and tree logic; `src/rooms/harness` owns host, thread, KV and SQLite effects (`packages/harness-core/src/index.ts:1-14`, `src/rooms/harness/server/harness.ts:93-99`).
+2. The package exposes domain functions and types; the consuming room supplies BB, SQLite, or host dependencies where required (`packages/jev/src/run.ts:56-63`, `packages/host-calls/src/run-on-host.ts:8-31`). Harness-core itself is pure parsing, rendering and tree logic; `src/rooms/harness` owns host, thread, KV and SQLite effects (`packages/harness-core/src/index.ts:1-14`, `src/rooms/harness/server/harness.ts:161-179`, `:211-250`).
 3. The room composes those exports into server RPCs, UI behavior, and scheduled work (`src/rooms/core/server/rpc.ts:26-50`, `src/rooms/storage/database.ts:230-333`).
 
 ## Modes and package variants
@@ -100,7 +102,7 @@ The small packages provide reusable contracts and utilities to root rooms; the w
 | Variant | What differs | Failure or boundary |
 |---|---|---|
 | Node-oriented helpers | `@lane-pilot/kit` root includes Node-based helpers; `owns-paths` is a browser-safe subpath (`packages/kit/package.json:1-15`, `packages/kit/src/index.ts:1-9`). | UI code that reaches Node imports cannot use the root entry. |
-| Side-effect registration | Jev judgment modules register when imported; the plugin's room metadata lists side-effect files (`packages/jev/src/run.ts:56-63`, `src/rooms/package.json:1-14`). | A tree-shaken or omitted side-effect import leaves that judgment unregistered. |
+| Judgment registration | Each judgment module calls `defineJudgment`; the registry stores it by id and rejects a different judgment with the same id (`packages/jev/src/registry.ts:41-48`, `packages/jev/src/judgments/output-guard.ts:22-28`). | A judgment is absent from the registry until its defining module is imported; the package root does not import the judgment catalog (`packages/jev/src/index.ts:1-9`). |
 | Server and UI package entries | UI kit exposes its component entry and a realtime-channel subpath, while workflow engine exposes a separate `./ui` entry (`packages/ui-kit/package.json:14-17`, `packages/ui-kit/src/index.ts:1-32`, `packages/workflow-engine/package.json:7-13`, `packages/workflow-engine/src/ui.ts:1-4`). See the [UI kit overview](../packages/ui-kit/docs/overview.md) and [workflow engine overview](../packages/workflow-engine/docs/overview.md) for package-owned details. | Workspace-specific APIs and gotchas are owned by those linked docs. |
 | Domain package with database migrations | Council, handoff, Jev, and run-insights export migrations consumed by the root storage migration list (`packages/council/src/index.ts:19-30`, `packages/handoff/src/index.ts:21-38`, `src/rooms/storage/database.ts:230-333`). | Migration ownership stays with the package that defines each table. |
 
@@ -111,17 +113,7 @@ The small packages provide reusable contracts and utilities to root rooms; the w
 
 ## Root RPC registration
 
-1. `registerRpc(ctx, services)` builds the RPC handler map by calling each room factory with its declared dependencies. Most factories receive both values; stack, token usage, secrets, Jev provider, workspace provider, and self-repair receive only `ctx`; council receives `ctx.db` and its service; canary and world receive their service (`src/rooms/core/server/rpc.ts:27-50`).
-2. It spreads the returned maps into one object, passes the object and a debug logger callback to `timeRpcHandlers`, then registers the wrapped handlers against `rpcContract` (`src/rooms/core/server/rpc.ts:29-51`).
-3. Registration happens once per call to `registerRpc`; the function returns the result of `ctx.bb.rpc.register` and does not catch a registration rejection (`src/rooms/core/server/rpc.ts:27-51`).
-
-| Branch | Dependency and outcome | Failure behavior |
-|---|---|---|
-| Standard room factory | Receives `ctx` and `services`, then returns a map keyed by its contract methods. | A factory exception aborts map construction before registration. |
-| Narrow dependency factory | Receives `ctx`, `ctx.db` plus council service, or a single service as listed above. | Missing dependencies or factory errors propagate; there is no local recovery branch. |
-| Timed registration | Every assembled handler is timed before `ctx.bb.rpc.register` receives it. | Handler rejection propagates after timing logs; logging and serialization failures are swallowed by the timing wrapper (`src/rooms/core/server/rpc-timing.ts:12-40`). |
-
-The contract and handlers are separate inputs: `rpcContract` spreads eight route maps into one `defineRpcContract` call. Routes declare input and output schemas; strict object schemas reject undeclared fields, while routes using `z.unknown()` leave the output shape to the handler (`src/rooms/contracts/index.ts:17-26`, `src/rooms/contracts/rpc-shell.ts:8-18`, `src/rooms/contracts/rpc-ops.ts:56-109`). The composed map supplies implementations (`src/rooms/core/server/rpc.ts:27-51`). See [RPC contract composition steps and validation boundaries](package-operations.md#rpccontract).
+See [RPC contract composition and route families](rpc-callers/contract-map.md) for how `rpcContract`, `rpcShell`, and `rpcOps` compose, validate and report their outcomes (`src/rooms/contracts/index.ts:17-26`, `src/rooms/contracts/rpc-shell.ts:1-109`, `src/rooms/contracts/rpc-ops.ts:5-64`).
 
 ## Package operations
 

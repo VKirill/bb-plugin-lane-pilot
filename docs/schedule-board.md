@@ -2,7 +2,7 @@
 title: Schedule board: Lane Pilot's own scheduler
 type: component
 created: 2026-10-08
-updated: 2026-10-10
+updated: 2026-10-20
 status: active
 confidence: medium
 tags: [schedule, automation, component]
@@ -12,6 +12,8 @@ sources:
   - src/rooms/storage/database.ts
   - server.ts
   - src/rooms/schedule/server/index.ts
+  - src/rooms/schedule/server/schedule-executors.ts
+  - src/rooms/qa/server/errands.ts
 ---
 
 # Schedule board: Lane Pilot's own scheduler
@@ -78,7 +80,7 @@ are in `tests/schedule/time.test.ts`. A one-time task takes `runAt` (ms) or `del
 | `task.kind` | Fields | Runs as |
 | --- | --- | --- |
 | `workflow` | `workflowId`, `inputs` | a workflow run of the engine, started like the Run button (published, inputs whole, requirements met, a PM chat of the project). A `tested` workflow is refused until its first live run (Workflows tab, Run for real). Output: the run's output JSON |
-| `errand` | `task` (text), `title`, `authorized`, `accounts` (Env Catalog names), `providerId`, `model`, `reasoning`, `serviceTier`, `preset` (who runs it, see below) | a helper thread under the project's PM chat, as `lane_pilot_errand` starts it (same brief, same account gate, same repository-edit check), plus a note that nobody is watching and the metadata `origin: "schedule"`. Output: the helper's report; `ERRAND: blocked` fails the run |
+| `errand` | `task` (text), `title`, `authorized`, `accounts` (Env Catalog names), `providerId`, `model`, `reasoning`, `serviceTier`, `preset` (who runs it, see below) | a hidden, detached helper thread filed with the PM project and section; it reuses the PM environment, resolves named accounts, and receives a scheduled-run brief that says nobody is watching and to return `ERRAND: blocked` when it needs a decision, approval or access. The thread carries `origin: "schedule"`. Its report is redacted and checked by the output guard; only a final `ERRAND: done` counts as success (`src/rooms/schedule/server/schedule-executors.ts:54-73`, `src/rooms/qa/server/errands.ts:80-85`, `:188-224`) |
 | `script` | `hostId`, `command`, `cwd`, `env` (Env Catalog names), `maxOutputBytes` | the host job `runScript` (`bash -lc`, own process group, killed at the timeout) on that machine. The secrets are resolved by the hub (allowed for the project, or the owner is asked), reach the script as environment variables only, are masked on the host and again on the hub; the host deletes `input.json` once the job has read it. stdout and stderr are kept head and tail up to the cap; exit code 0 is success |
 
 The hosts need the Lane Pilot host build with `runScript` and `jobStart.key`; an older host answers that it does not know the method, and the run fails with that.

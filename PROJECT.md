@@ -1,6 +1,6 @@
 ---
 title: Lane Pilot project facts
-updated: 2026-10-18
+updated: 2026-10-20
 sources:
   - package.json
   - server.ts
@@ -76,7 +76,7 @@ sources:
 - OpenCode minimal config can block helper startup while host preparation is pending ([gotchas](docs/gotchas.md#stability-and-local-provider-setup)).
 - Host-prepared BB guard wrappers differ for new helpers, owner threads, and older hosts ([native agent](docs/native-agent.md#public-api-or-commands)).
 - Live-folder mode has explicit caps and rollback limits ([gotchas](docs/gotchas.md#writer-workspace-modes)).
-- Verification worktrees get their own copies of npm state (`node_modules/.bin` and `.package-lock.json`) so `npm install` writes inside the worktree (`src/rooms/verification/git-integrate.ts:594-624`).
+- Verification worktrees copy `node_modules/.bin` and `.package-lock.json` into the worktree so `npm install` writes inside it (`src/rooms/verification/git-integrate.ts:601-632`).
 
 ## Useful commands
 
