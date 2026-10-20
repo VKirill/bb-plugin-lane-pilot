@@ -2,7 +2,7 @@
 title: Writer validation decisions
 type: decisions
 created: 2026-09-23
-updated: 2026-10-19
+updated: 2026-10-20
 status: active
 confidence: medium
 tags: [writer, validation, ownership]
@@ -29,9 +29,9 @@ TL;DR: A writer attempt is accepted only when its changed paths satisfy task and
 | A verification command exits nonzero once, then passes on its second run | Keep the passing result and mark it flaky; do not rerun exit code 0 or timeout code 124 (`src/rooms/writer/server/verify.ts:28-40`). | `src/rooms/writer/server/verify.ts:113-124` |
 | The main checkout moved and the attempt rebased onto it | Run the task's replay checks before merging. If a check remains red, return `conflict` with the failed checks; do not merge (`src/rooms/verification/git-integrate.ts:251-263`). | `src/rooms/host-worker/host-handlers.ts:82-101` |
 | Replay check cannot run, or reports a host environment failure | Do not block integration on that check; post-merge verification still runs (`src/rooms/host-worker/host-handlers.ts:82-101`). | `src/rooms/verification/git-integrate.ts:255-263` |
-| An attempt owns a bookkeeping file ignored by Git | Force-stage that owned file so it enters the attempt commit; machine-written bookkeeping not owned by the task resolves to the base checkout's version (`src/rooms/verification/git-integrate.ts:348-366`, `:399-419`). | `src/rooms/verification/git-integrate.ts:214-239` |
+| An attempt owns a bookkeeping file ignored by Git | Force-stage that owned file so it enters the attempt commit; machine-written bookkeeping not owned by the task resolves to the base checkout's version (`src/rooms/verification/git-integrate.ts:354-371`, `:405-424`). | `src/rooms/verification/git-integrate.ts:214-239` |
 | Generated acceptance JSON fails upstream validation | Throw before acceptance artifacts are written (`src/rooms/writer/server/verify.ts:187-216`). | `src/rooms/writer/server/verify.ts:193-216` |
 
 The ownership comparison uses normalized project-relative paths and rejects unsafe patterns, absolute paths, and verification working directories outside the task workspace (`src/rooms/verification/ownership.ts:17-43`). When the run scope cannot be built because a task id, project path, contract, or requested task is invalid, scope resolution returns a failure instead of an empty ownership set (`src/rooms/verification/ownership.ts:46-83`).
 
-A failed replay check is reported as a conflict without conflict filenames; the host contract carries the check command, exit code, stdout, and stderr in the result (`src/rooms/verification/git-integrate.ts:257-261`, `src/rooms/contracts/host.ts:61-71`). A successful merged commit is followed by rebuild results for changed workspace packages (`src/rooms/verification/git-integrate.ts:263-266`).
+A failed replay check is reported as a conflict without conflict filenames; the host contract carries the check command, exit code, stdout, and stderr in the result (`src/rooms/verification/git-integrate.ts:264-267`, `src/rooms/contracts/host.ts:61-71`). A successful merged commit is followed by rebuild results for changed workspace packages (`src/rooms/verification/git-integrate.ts:269-271`).

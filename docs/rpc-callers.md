@@ -2,7 +2,7 @@
 title: RPC and host-call contracts
 type: component
 created: 2026-09-30
-updated: 2026-10-19
+updated: 2026-10-20
 status: active
 confidence: medium
 tags: [rpc, contracts, host-api]
@@ -21,6 +21,9 @@ sources:
   - src/rooms/contracts/rpc-runs.ts
   - src/rooms/contracts/rpc-native.ts
   - src/rooms/runs/server/rpc/runs.ts
+  - src/rooms/runs/server/run-finish.ts
+  - src/rooms/native-agent/server/native-profile.ts
+  - src/rooms/native-install/native-install-lifecycle.ts
   - src/rooms/runs/server/task-board.ts
   - src/rooms/runs/server/task-graph.ts
   - src/rooms/contracts/rpc-knowledge.ts
@@ -56,40 +59,12 @@ Keep BB app-to-server calls and plugin-server-to-host calls typed independently.
 4. The timing wrapper awaits each handler and returns its answer unchanged. Rejections are rethrown; `finally` logs elapsed time and distinguishes a refused error from other failures. For successful calls lasting at least 250 ms it also attempts to log serialized answer size; serialization and logging errors are swallowed so they do not change the RPC result (`src/rooms/core/server/rpc-timing.ts:1-2`, `:12-40`).
 ### Route-family behavior
 
-- `rpcShell` adds schedule contract methods first, then declares locale/preferences, project and section lookup, global settings, agent inventory and profile writes. Locale accepts `auto`, `en`, or `ru`; saving globals carries an expected revision; profile writes validate IDs, prompt length, resource limits and an expected source hash (`src/rooms/contracts/rpc-shell.ts:1-18`, `:20-73`, `:74-109`). These contracts declare input/output shapes; handlers decide conflict outcomes.
-- `rpcRuns` request steps, branches, outputs, and failures are documented in [Run RPC contract](rpc-callers/rpc-runs.md).
-- `rpcKnowledge` defines council reads and messages, routing hints, rule proposals/scans, [session memory](rpc-callers/session-memory-rpc.md), memory-record operations, documentation status, token usage, secret-issuance history, Jev provider settings, and worktree-provider status/reset; it also spreads in the Anamnesis contract methods (`src/rooms/contracts/rpc-knowledge.ts:2`, `:16-62`, `:63-101`, `:103-131`, `:133-210`). Other route execution and failure behavior is documented in [RPC route details](rpc-details.md).
-- `rpcWorkflow` request steps, branches, outputs, and failures are documented in [Workflow RPC contract](rpc-callers/rpc-workflow.md).
-- `rpcNative` exposes `list_helper_threads`; when an open run exists, its response can include task nodes and `depends`, `files`, `folder`, or `question` edges (`src/rooms/contracts/rpc-native.ts:127-144`, `src/rooms/runs/server/rpc/runs.ts:46-50`, `:165-169`). The Tasks board and detail card are described in [Tasks board](task-board.md).
-- `rpcOps` groups run controls, statistics, deployment drain, self-repair, canary, stack management and writer-harness control. Stack install/connect require `confirmExternalOps`; rollback accepts an optional absolute snapshot path. Several operation outputs are `unknown` at the shared contract, so their success and refusal shapes belong to the implementing room (`src/rooms/contracts/rpc-ops.ts:5-129`).
-
-#### `rpcOps` request and result map
-
-The map uses strict input objects. Declared business refusals are output fields where the schema defines them; `unknown` outputs are intentionally owned by their implementing rooms (`src/rooms/contracts/rpc-ops.ts:5-129`).
-
-| Procedure family | Inputs and outcomes |
-|---|---|
-| Run controls | `halt_run` takes run id and returns canceled/left attempt ids; `cancel_attempt` and `retry_attempt` take attempt id and return ok/state/reason, with retry also returning attempt id; `resume_runs` takes project id and returns resumed, skipped and finished ids (`src/rooms/contracts/rpc-ops.ts:6-25`). |
-| Statistics | Writer brief takes project id and integer `since` plus optional `until`, returning unknown. Critic and reuse stats take project id and 1–90 days defaulting to 7; acceptance stats takes 1–90 days defaulting to 28 and optional project id (`src/rooms/contracts/rpc-ops.ts:27-55`). |
-| Deploy and self-repair | `deploy_drain` takes boolean `on`; status calls take empty objects. Self-repair configure accepts optional settings including `maxPerDay` 0–20; tick defaults `dryRun` to true and accepts optional integer `since`. Outputs are unknown at this contract (`src/rooms/contracts/rpc-ops.ts:56-93`). |
-| Harness | `harness_status` and `harness_configure` take a project id (configure also takes a patch); `harness_edit` takes project plus optional area/writer and defaults `wait` to false; `harness_tick` defaults `dryRun` to true; `harness_reflect` takes a harness id. Outputs are `unknown` at this contract (`src/rooms/contracts/rpc-ops.ts:110-129`). |
-| Canary and stack | Canary status takes an empty object. Stack detect/install/connect require project id; install/connect also require `confirmExternalOps`. Rollback takes project id and optional absolute snapshot path. Outputs are unknown (`src/rooms/contracts/rpc-ops.ts:86-109`). |
-
-Extra fields, malformed ids, invalid bounds, or a missing required confirmation field fail strict validation. Handler/transport rejections remain rejections; unknown output shapes are validated only as unknown (`src/rooms/contracts/rpc-ops.ts:5-129`).
-
-#### `rpcRuns` request and result map
-
-`rpcRuns` declares strict request/result schemas for task board and detail data, run summaries, stage results, helper access and the screen snapshot (`src/rooms/contracts/rpc-runs.ts:8-115`).
-
-| Procedure | Input branch and result |
-|---|---|
-| `task_board`, `task_card` | Board optionally filters project, defaults `doneHours` to 24 (range 1–720), and returns typed board items; task card takes run id plus nullable task id and returns nullable contract, plan, stages, attempts and thread tree (`src/rooms/contracts/rpc-runs.ts:8-35`). |
-| `get_run_card`, `native_thread` | Run card takes run id and returns nullable run/task state with optional check-log location; native thread takes thread id and returns nullable token/agent/project metadata (`src/rooms/contracts/rpc-runs.ts:37-62`). |
-| Run and stage lists | `list_runs` requires project, optional section, offset ≥0, limit 1–200 and optional `pinOpen`; `list_run_stages` takes run id. Results are run views/count or stage summaries (`src/rooms/contracts/rpc-runs.ts:64-70`). |
-| Stage result and helper view | Stage result takes run/task/stage ids and returns `found` plus nullable unknown result. Helper view takes project and optional section and returns mode/origin, roles, catalogs, mandatory entries and providers (`src/rooms/contracts/rpc-runs.ts:72-97`). |
-| `get_screen` | Takes project, optional section and optional run limit 1–200; result includes project/host/workspace, settings values and versions, import source, runs, unapplied settings, CLI preview, snapshot/receipt/writer outputs, QA hosts, and nullable writer trace (`src/rooms/contracts/rpc-runs.ts:98-164`). |
-
-Strict validation rejects extra fields and invalid bounds; nullable and `found` fields represent missing records in the contract, while uncaught handler failures reject the RPC (`src/rooms/contracts/rpc-runs.ts:8-115`). See [Run RPC contract](rpc-callers/rpc-runs.md) for execution steps and handler outcomes.
+- [RPC contract composition and route families](rpc-callers/contract-map.md) explains `rpcShell` and `rpcOps`, including their validation, handler branches and failure results (`src/rooms/contracts/rpc-shell.ts:1-109`, `src/rooms/contracts/rpc-ops.ts:5-64`).
+- [Run RPC contract](rpc-callers/rpc-runs.md) describes `rpcRuns` request validation, handler steps, missing-record outcomes and failures (`src/rooms/contracts/rpc-runs.ts:8-75`).
+- `rpcKnowledge` includes council, routing, rule, memory, documentation, usage, secret, Jev and workspace-provider routes, plus Anamnesis; see [Session memory RPC](rpc-callers/session-memory-rpc.md) for `rpcKnowledge` composition and session-memory handling, and [RPC route details](rpc-details.md) for the other execution details (`src/rooms/contracts/rpc-knowledge.ts:16-210`).
+- [Workflow RPC contract](rpc-callers/rpc-workflow.md) describes workflow routes; [RPC route details](rpc-details.md) records the contract execution modes and result branches (`src/rooms/contracts/rpc-workflow.ts:5-64`).
+- [Native session and activation RPC](rpc-callers/native-session-rpc.md) explains `rpcNative`, `storeNativeSelection`, their branches and failures (`src/rooms/contracts/rpc-native.ts:4-63`, `src/rooms/native-agent/server/native-profile.ts:12-30`). The Tasks board and detail card are described in [Tasks board](task-board.md).
+- [Server core construction](rpc-callers/create-core.md) owns the construction sequence and host/credential execution modes for `createCore` (`src/rooms/core/server/core.ts:31-90`).
 
 ### `rpcKnowledge` contract flow
 
@@ -165,9 +140,11 @@ The RPC contract is a shape contract; authorization and ownership checks remain 
 - [Lane Pilot architecture](architecture.md)
 - [Protecting Lane Pilot database access](decisions/2026-10-08-lane-pilot-data-db-access.md)
 - [Lane Pilot overview](overview.md)
+- [RPC contract composition and route families](rpc-callers/contract-map.md)
 - [Server core construction](rpc-callers/create-core.md)
 - [Handoff message](rpc-callers/handoff-message.md)
 - [Host RPC contract](rpc-callers/host-contract.md)
+- [Native session and activation RPC](rpc-callers/native-session-rpc.md)
 - [Run RPC contract](rpc-callers/rpc-runs.md)
 - [Workflow RPC contract](rpc-callers/rpc-workflow.md)
 - [Session memory RPC](rpc-callers/session-memory-rpc.md)

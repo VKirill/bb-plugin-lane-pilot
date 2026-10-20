@@ -2,7 +2,7 @@
 title: Session memory RPC
 type: component
 created: 2026-10-16
-updated: 2026-10-19
+updated: 2026-10-20
 status: active
 confidence: medium
 tags: [rpc, memory, sessions]
@@ -29,9 +29,11 @@ TL;DR: Session memory RPC resolves a workspace to its project, stores subagent-a
 
 `rpcKnowledge` is a strict method map spread into the app-facing `rpcContract`; methods validate request and response shapes, while handlers own storage, authorization and domain behavior (`src/rooms/contracts/rpc-knowledge.ts:16-85`, `src/rooms/contracts/index.ts:17-26`). The session-memory procedures are detailed below; the other methods in this file have these inputs and outputs:
 
-1. The contracts room composes `rpcKnowledge` with shell, native, runs, settings, operations, workflow and world maps (`src/rooms/contracts/index.ts:17-26`).
-2. Each caller request is checked against that procedure's strict input schema, then dispatched to the corresponding handler factory registered by `registerRpc` (`src/rooms/core/server/rpc.ts:27-50`).
-3. The declared output schema shapes the response. Typed nullable fields and status values represent absent/domain outcomes; malformed requests and uncaught handler errors remain failures (`src/rooms/contracts/rpc-knowledge.ts:16-85`, `src/rooms/core/server/rpc-timing.ts:12-40`).
+1. The contracts map declares five council methods, `get_routing_hint` and `list_rule_proposals`, then spreads the Anamnesis methods before declaring session-memory methods. The whole map is later spread into `rpcContract` alongside the other seven route families (`src/rooms/contracts/rpc-knowledge.ts:16-63`, `src/rooms/contracts/index.ts:17-26`).
+2. Council list/default/get methods take project or council ids; `council_say` also accepts optional trimmed text and a decide flag, while `council_stop` returns whether a stop was requested (`src/rooms/contracts/rpc-knowledge.ts:17-41`).
+3. Routing hints take a project and optional 1–365 day window, returning nullable current provider/model plus hints and counts. Rule proposal listing returns proposals, memory enable/inject state, triage counts, scan/analyzer state and events (`src/rooms/contracts/rpc-knowledge.ts:43-60`).
+4. The Anamnesis spread contributes its own methods between rule proposals and session-memory declarations. Session memory then declares path resolution, write, search, core-list and lesson-proposal procedures (`src/rooms/contracts/rpc-knowledge.ts:62-85`).
+5. BB validates each input before the handler map installed by `registerRpc` is called; output schemas define result shape. Nullable values and declared booleans/states are domain results, while schema errors and uncaught handler errors remain failures (`src/rooms/core/server/rpc.ts:27-50`, `src/rooms/core/server/rpc-timing.ts:12-40`).
 
 | Procedure family | Inputs, branches and outcomes |
 |---|---|
@@ -40,7 +42,15 @@ TL;DR: Session memory RPC resolves a workspace to its project, stores subagent-a
 | Session memory | Project resolution, write, search, core listing and lesson proposal use their declared strict request/result shapes; see the step list and failure table below (`src/rooms/contracts/rpc-knowledge.ts:63-85`). |
 | Rule and memory management | Rule audience writes carry project/rule ids and audience/always values; memory record list/get, documentation status, token usage, secret issuance, Jev provider, and worktree provider methods each declare strict inputs and typed or unknown outputs (`src/rooms/contracts/rpc-knowledge.ts:86-210`). |
 
-Malformed payloads fail validation before a handler runs. Database, host and service failures follow each handler's catch or rejection behavior; the contract does not convert those failures (`src/rooms/contracts/rpc-knowledge.ts:16-85`).
+Malformed payloads fail schema validation before a handler runs; `timeRpcHandlers` rethrows handler failures after recording timing, and the session-memory handlers catch only the failures described below (`src/rooms/core/server/rpc-timing.ts:12-40`, `src/rooms/memory/server/session-memory.ts:18-67`).
+
+| Session-memory route | Contract branch and declared outcome |
+|---|---|
+| `session_memory_project` | Requires host id and absolute path; returns nullable project id and matching scopes (`src/rooms/contracts/rpc-knowledge.ts:63-66`). |
+| `session_memory_write` | Requires project, `core|note`, content 1–8,000 chars and at most 24 concepts; returns stored flag, nullable record id and nullable reason (`src/rooms/contracts/rpc-knowledge.ts:67-70`). |
+| `session_memory_search` | Requires project and query 1–2,000 chars; optional limit 1–50; returns projected records (`src/rooms/contracts/rpc-knowledge.ts:72-75`). |
+| `session_memory_core` | Requires project id and returns core record ids/content (`src/rooms/contracts/rpc-knowledge.ts:76-79`). |
+| `session_lesson` | Requires rule 8–600 chars; optional evidence up to 1,000, up to eight scopes, writer/PM/both audience and `always`; returns proposal/repeat ids, state and adoption flag (`src/rooms/contracts/rpc-knowledge.ts:80-85`). |
 
 ## How it works
 
