@@ -11,7 +11,7 @@ import {
  * on the hub, each a full Opus turn over a ~520k context. One reminder arrived after the PM had done the work itself. Lane Pilot
  * now tells the PM the results by itself, one message for a batch, and closes the reminders they satisfy in the same message.
  */
-function harness(options:{ busy?:() => boolean } = {}) {
+function harness(options:{ busy?:() => boolean; send?:(threadId:string, text:string) => Promise<void> } = {}) {
   let items:RelayItem[] = [];
   let now = 10_000_000;
   let outcomes:TaskOutcome[] = [];
@@ -23,7 +23,7 @@ function harness(options:{ busy?:() => boolean } = {}) {
   const relay = createRelay({
     load:async () => structuredClone(items),
     save:async (next) => { items = structuredClone(next); },
-    send:async (threadId, text) => { sent.push({ threadId, text }); },
+    send:async (threadId, text) => { if (options.send) await options.send(threadId, text); sent.push({ threadId, text }); },
     settled:async () => false,
     output:async () => "",
     busy:async () => options.busy?.() ?? false,
@@ -158,6 +158,31 @@ describe("Lane Pilot tells a PM its task results by itself", () => {
     expect(h.sent[0]!.text).toContain("2 canceled");
     expect(h.sent[0]!.text).not.toContain("drop-1");
     expect(h.sent[0]!.text).not.toContain("drop-2");
+  });
+
+  it("drops the results of an archived PM chat at once instead of trying for a day", async () => {
+    let tries = 0;
+    const h = harness({ send:async () => { tries++; throw new Error("HTTP 409: Thread is archived"); } });
+    h.end("a", "accepted");
+    h.tick(TASK_NOTICE.quietMs);
+    await h.relay.sweep();
+    expect(tries).toBe(1);
+    expect(h.reported.map((row) => row.taskId)).toEqual(["a"]);
+    h.tick(60_000);
+    await h.relay.sweep();
+    expect(tries).toBe(1);
+  });
+
+  it("keeps trying a PM chat that failed for another reason", async () => {
+    let tries = 0;
+    const h = harness({ send:async () => { tries++; throw new Error("HTTP 503"); } });
+    h.end("a", "accepted");
+    h.tick(TASK_NOTICE.quietMs);
+    await h.relay.sweep();
+    h.tick(60_000);
+    await h.relay.sweep();
+    expect(tries).toBe(2);
+    expect(h.reported).toEqual([]);
   });
 
   it("drops results it could not deliver for a day instead of trying for ever", async () => {

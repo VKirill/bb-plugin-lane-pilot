@@ -408,7 +408,15 @@ export function createRelay(deps:RelayDeps) {
       try {
         await deps.send(threadId, noticeText(rows, atWork, satisfied));
       } catch (cause) {
-        deps.log(`relay: could not tell ${threadId} its task results: ${cause instanceof Error ? cause.message : String(cause)}`);
+        const message = cause instanceof Error ? cause.message : String(cause);
+        // An archived PM chat never reads its results, and BB answers 409 to every try: the results are dropped at once.
+        // Before, each such chat was tried every 30 s for a day (about 2 850 warnings per chat on the hub, 2026-10-13..20).
+        if (/archived/i.test(message)) {
+          await deps.markReported?.(rows);
+          deps.log(`relay: ${threadId} is archived; its ${rows.length} task result(s) are dropped`);
+          continue;
+        }
+        deps.log(`relay: could not tell ${threadId} its task results: ${message}`);
         continue;
       }
       await deps.markReported?.(rows);
