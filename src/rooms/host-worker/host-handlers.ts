@@ -637,7 +637,7 @@ export const councilJudge: ExperimentalHostRpcHandlers<typeof hostContract>["cou
       method:"POST",
       headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
       body:JSON.stringify({ model:provider.model, state, questions }),
-      signal:AbortSignal.timeout(4000 + provider.timeoutPadMs),
+      signal:AbortSignal.timeout((input.timeoutMs ?? 4000) + provider.timeoutPadMs),
     });
     if (!response.ok) return { hostId, status:"error", answers:{}, reason:`http_${response.status}` };
     const value: unknown = await response.json();

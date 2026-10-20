@@ -107,5 +107,8 @@ describe("Lane Pilot Jev complete-plan adapter", () => {
     expect(await councilJudge({ requestedHostId:"host-a", state:"{}", questions }, {} as never)).toMatchObject({ status:"ok", answers:{ pick:"a" } });
     expect(seen.map((call) => [call.url, call.auth, call.body.model])).toEqual(Array(2).fill(["https://api.openlux.ai/v1/systemone", "Bearer openlux-key", "jev-1.14.0:stable"]));
     expect(timeouts).toEqual([4_000, 5_500]);
+    // A caller that can wait longer (the writer skill pick under a queued provider) names its own wait; the pad is still added.
+    expect(await councilJudge({ requestedHostId:"host-a", state:"{}", questions, timeoutMs:12_000 }, {} as never)).toMatchObject({ status:"ok" });
+    expect(timeouts).toEqual([4_000, 5_500, 13_500]);
   });
 });

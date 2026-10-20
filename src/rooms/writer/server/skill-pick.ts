@@ -3,11 +3,18 @@ import { pickWriterSkills, skillCatalog, type CatalogEntry, type KindCache, type
 import type { TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../core/server";
 
-/** A writer spawn never waits longer than this for the pick; a pick that runs out gives the writer its role skills only. */
-export const SKILL_PICK_DEADLINE_MS = 15_000;
+/**
+ * A writer spawn never waits longer than this for the pick; a pick that runs out gives the writer its role skills only.
+ * 45 s, not 15: OpenLux answers a chunk in 0.6 s alone but queues bursts, and the three drill writers that start together on one
+ * host (33 chunks each, six in flight across them) ran past 15 s on 2026-10-20 and got no skill. A writer runs for an hour or more;
+ * the spawn can wait.
+ */
+export const SKILL_PICK_DEADLINE_MS = 45_000;
 /** BB's skill list changes rarely: a list is reused for this long per project. */
 export const SKILL_LIST_TTL_MS = 10 * 60_000;
-const JUDGE_TIMEOUT_MS = 10_000;
+/** One chunk's wait at System One (sent to the host), and the host call around it. A request a queue holds for 6 s still answers. */
+const JUDGE_FETCH_TIMEOUT_MS = 12_000;
+const JUDGE_TIMEOUT_MS = 20_000;
 const KIND_KEY_PREFIX = "writer-skill-kind:";
 
 /** `writer.skill_pick` is on unless the owner set it to off, in the same words the other switches read as off. */
@@ -96,7 +103,7 @@ export function createWriterSkillPick(ctx: Pick<ServerCore, "bb" | "host">, opti
   /** One councilJudge call (System One, 8 questions at most); the answers are null when the host did not judge. */
   const askJev = (hostId: string): SkillAsk => async (state, questions) => {
     const judged = await host.call("councilJudge", {
-      requestedHostId: hostId, state: JSON.stringify(state).slice(0, 60_000), questions,
+      requestedHostId: hostId, state: JSON.stringify(state).slice(0, 60_000), questions, timeoutMs: JUDGE_FETCH_TIMEOUT_MS,
     }, { hostId, timeoutMs: JUDGE_TIMEOUT_MS });
     return judged.status === "ok" ? judged.probabilities ?? null : null;
   };

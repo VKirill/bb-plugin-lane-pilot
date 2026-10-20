@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.260
+
+- **The skill pick waits for a queued System One instead of giving up.** After 0.1.259 the three drill writers of the deploy still got no skill: not the channel (33 chunks answer in 1–2 s from the hub, OVH and the Mac mini alone) but OpenLux's queue when several writers and other callers share the key at once; a chunk then takes 3–10 s, past the handler's 4 s fetch (5.5 s with OpenLux's pad), and the pick's 15 s deadline. Now `councilJudge` takes an optional `timeoutMs` (contract `src/rooms/contracts/host.ts`, handler `src/rooms/host-worker/host-handlers.ts`; the other callers keep 4 s), the pick sends 12 s per chunk with a 20 s host call, and `SKILL_PICK_DEADLINE_MS` is 45 s: a writer runs for an hour or more, so its spawn can wait. The six-in-flight gate of 0.1.259 stays.
+  - Tests: `tests/jev-plan.test.ts` (the handler honours `timeoutMs`), `tests/writer-skill-pick.test.ts` (the pick sends 12 s).
+
 ## 0.1.259
 
 - **The skill pick's Jev calls go six at a time, process-wide.** `answerChunks` (`packages/jev/src/judgments/skill-pick.ts`) sent every chunk at once: 28 technology chunks and 5 craft chunks per writer. OpenLux answers one 8-question chunk in 0.55 s but queues a burst: 33 at once measured p50 10 s and up to 19 s on 2026-10-20, past the host's 5.5 s call timeout. The three drill writers that start in the same second on the Mac mini (catalog 275, 261 questions each) got 189–261 of them unanswered and no skill at all, at 10:16 and 12:35 UTC, both deploy drills of the day; the single writers on OVH answered everything. A gate of `SKILL_ASK_CONCURRENCY` = 6 slots is shared by every pick of the process, so one pick takes about 4 s and three at once about 12 s, inside the 15 s pick deadline. Same on jev-1.13 and 1.14 (1.14 was 2 of 33 slower still).

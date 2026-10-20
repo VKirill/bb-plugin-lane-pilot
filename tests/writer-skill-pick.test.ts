@@ -102,6 +102,13 @@ describe("writer skill pick", () => {
     expect(Date.now() - started).toBeLessThan(2_000);
   });
 
+  it("gives each chunk 12 s at System One, so a queued provider still answers", async () => {
+    const env = world();
+    await env.run();
+    expect(env.judged.length).toBeGreaterThan(0);
+    expect(env.judged.every((call) => call.timeoutMs === 12_000)).toBe(true);
+  });
+
   it("lists the skills once for ten minutes", async () => {
     const env = world();
     await env.run();
