@@ -323,6 +323,35 @@ describe("self-repair", () => {
     expect(rows.filter((row) => row.kind === "repeat")).toEqual([]);
   });
 
+  it("a writer's own stray files in three tasks are not a pattern; a gate that rejects owned or bookkeeping files still is", async () => {
+    // proj_acpiaqf4wq 2026-10-19/20: three writers edited files outside their owns_paths, each was told and accepted on the redo.
+    const cases: Array<[string, string, string[]]> = [
+      ["lpattempt_1", "owns_paths rejected apps/site/i18n/locales/areas/home/en.json, apps/site/i18n/locales/areas/home/ru.json",
+        ["apps/site/app/pages/share/", "apps/site/i18n/locales/areas/share/", "apps/site/i18n/locales/areas/tools-hubs/"]],
+      ["lpattempt_2", "owns_paths rejected apps/site/app/pages/en/ai-cards/[pageSlug].vue, apps/site/app/pages/en/ai-cards/index.vue",
+        ["apps/site/app/pages/tools/otkrytki-po-foto/", "apps/site/app/pages/en/tools/", "apps/site/app/components/blocks/cards/"]],
+      ["lpattempt_7", "retry limit 2 exhausted: owns_paths rejected scripts/__tests__/release-services.test.mjs, scripts/x.mjs", ["deploy/"]],
+      ["lpattempt_3", "owns_paths rejected apps/site/app/content/blocks/14-sticky-cta.html, apps/site/server/__tests__/use-site-login-region.test.ts",
+        ["apps/site/app/app.vue", "apps/site/app/layouts/", "apps/site/app/components/", "apps/site/app/composables/", "apps/site/tests/"]],
+    ];
+    const contract = (owns: string[]) => JSON.stringify({ owns_paths: owns, never_touch: ["apps/marketing/"] });
+    const env = setup();
+    for (const [id, reason, owns] of cases) {
+      env.attempt(id, "lprun_a", "validation_failed", reason);
+      env.db.prepare("INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES (?,'lprun_a','bb',?,?)").run(`task-${id}`, contract(owns), env.now);
+    }
+    expect((await createSelfRepair(env.ctx).collect(0, await createSelfRepair(env.ctx).config())).filter((row) => row.kind === "repeat")).toEqual([]);
+    // The gate's own fault keeps the pattern: an owned file rejected, bookkeeping only, or a task with no contract to judge by.
+    const gate = setup();
+    gate.attempt("lpattempt_4", "lprun_a", "validation_failed", "owns_paths rejected src/a.ts, src/b.ts");
+    gate.db.prepare("INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES ('task-lpattempt_4','lprun_a','bb',?,?)").run(contract(["src/"]), gate.now);
+    gate.attempt("lpattempt_5", "lprun_a", "validation_failed", "owns_paths rejected .agents/PROGRESS.md, .bb/chats/x.md");
+    gate.db.prepare("INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES ('task-lpattempt_5','lprun_a','bb',?,?)").run(contract(["src/"]), gate.now);
+    gate.attempt("lpattempt_6", "lprun_a", "validation_failed", "owns_paths rejected lib/c.ts, lib/d.ts");
+    const rows = await createSelfRepair(gate.ctx).collect(0, await createSelfRepair(gate.ctx).config());
+    expect(rows.filter((row) => row.kind === "repeat").map((row) => row.attemptId).sort()).toEqual(["lpattempt_4", "lpattempt_5", "lpattempt_6"]);
+  });
+
   it("sees a task queued for hours while nothing runs, and a stage nobody will finish", async () => {
     const env = setup();
     const hours = (n: number) => env.now - n * 3_600_000;
