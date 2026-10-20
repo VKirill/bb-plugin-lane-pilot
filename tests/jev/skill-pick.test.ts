@@ -149,6 +149,19 @@ describe("skill pick", () => {
     expect(jev.calls.map((call) => Object.keys(call.questions).length)).toEqual([8, 8, 1, 8, 8, 1, 8, 8, 1]);
   });
 
+  it("keeps at most six Jev calls in flight across picks, so a burst of writers does not queue at the provider", async () => {
+    let inFlight = 0, peak = 0;
+    const slow: SkillAsk = async (state, questions) => {
+      inFlight++; peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      inFlight--;
+      return fakeJev().ask(state, questions);
+    };
+    const catalog = Array.from({ length: 80 }, (_, index) => entry(`skill-${index}`));
+    await Promise.all([1, 2, 3].map(() => pickWriterSkills(pickInput({ catalog, ask: slow }))));
+    expect(peak).toBe(6);
+  });
+
   it("keeps only the PM's hints that name a skill of the catalog", async () => {
     const pick = await pickWriterSkills(pickInput({ catalog: [entry("tavily")], hints: ["tavily", "not-listed"] }));
     expect(pick.hints).toEqual(["tavily"]);

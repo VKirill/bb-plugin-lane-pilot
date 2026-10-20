@@ -32,6 +32,12 @@ export const SKILL_CRAFT_KIND_THRESHOLD = 0.5;
 export const SKILL_CRAFT_THRESHOLD = 0.6;
 export const SKILL_CRAFT_TOP = 3;
 export const SKILL_QUESTION_CHUNK = 8;
+/**
+ * Chunks in flight at once, shared by every pick of the process. OpenLux answers one 8-question chunk in 0.55 s but queues a burst:
+ * 33 at once took p50 10 s and up to 19 s (2026-10-20), past the host's 5.5 s call timeout, so three drill writers that started in
+ * the same second got 189–261 of their 261 questions unanswered and no skill at all. Six at a time keeps one pick near 4 s.
+ */
+export const SKILL_ASK_CONCURRENCY = 6;
 export const SKILL_DESCRIPTION_CHARS = 420;
 export const SKILL_HINT_LIMIT = 8;
 export const SKILL_PLAN_CHARS = 4000;
@@ -154,10 +160,19 @@ function chunksOf(entries: CatalogEntry[], question: (entry: CatalogEntry) => Sk
   return chunks;
 }
 
-/** Asks every chunk at once. A chunk that fails, or a question it did not answer, leaves its entries unanswered. */
+/** A gate of SKILL_ASK_CONCURRENCY slots for the Jev calls of every pick in the process. */
+let inFlight = 0;
+const waiting: Array<() => void> = [];
+async function withSlot<T>(work: () => Promise<T>): Promise<T> {
+  if (inFlight >= SKILL_ASK_CONCURRENCY) await new Promise<void>((resolve) => { waiting.push(resolve); });
+  inFlight++;
+  try { return await work(); } finally { inFlight--; waiting.shift()?.(); }
+}
+
+/** Asks every chunk, at most SKILL_ASK_CONCURRENCY at once. A chunk that fails, or a question it did not answer, leaves its entries unanswered. */
 async function answerChunks(chunks: Chunk[], state: unknown, ask: SkillAsk): Promise<{ answered: Answered[]; unanswered: number }> {
   const results = await Promise.all(chunks.map(async (chunk) => {
-    const answers = await Promise.resolve().then(() => ask(state, chunk.questions)).catch(() => null);
+    const answers = await withSlot(() => Promise.resolve().then(() => ask(state, chunk.questions))).catch(() => null);
     const answered = chunk.entries.flatMap((entry, index) => {
       const probabilities = answers?.[`q${index}`];
       return probabilities && typeof probabilities === "object" ? [{ entry, probabilities }] : [];

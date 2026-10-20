@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.259
+
+- **The skill pick's Jev calls go six at a time, process-wide.** `answerChunks` (`packages/jev/src/judgments/skill-pick.ts`) sent every chunk at once: 28 technology chunks and 5 craft chunks per writer. OpenLux answers one 8-question chunk in 0.55 s but queues a burst: 33 at once measured p50 10 s and up to 19 s on 2026-10-20, past the host's 5.5 s call timeout. The three drill writers that start in the same second on the Mac mini (catalog 275, 261 questions each) got 189–261 of them unanswered and no skill at all, at 10:16 and 12:35 UTC, both deploy drills of the day; the single writers on OVH answered everything. A gate of `SKILL_ASK_CONCURRENCY` = 6 slots is shared by every pick of the process, so one pick takes about 4 s and three at once about 12 s, inside the 15 s pick deadline. Same on jev-1.13 and 1.14 (1.14 was 2 of 33 slower still).
+  - Test: `tests/jev/skill-pick.test.ts` «keeps at most six Jev calls in flight across picks».
+
 ## 0.1.258
 
 - **Jev on OpenLux moves to jev-1.14.0.** `JEV_PROVIDERS.openlux.model` (`packages/jev/src/provider.ts`) is `jev-1.14.0:stable` (was `jev-1.13.0:stable`); the TypeSafe route still sends `jev-latest`, which TypeSafe moves to 1.14 around 2026-10-21 by itself. 1.14 is TypeSafe's «small improvements everywhere, most in other languages» release of 2026-10-14; same price (OpenLux ratio 0.021 for both). The OpenLux token «bb» had model limits that named only 1.13.0; 1.14.0 was added to it (the account's group jev-1 already allowed it).
