@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+From a self-repair of «owns_paths rejected <path>, <path>» (SelfyStudio: site2-share-hubs, site2-cards.2, site2-hydration-zero on 2026-10-19/20):
+- **A writer's own stray files in three tasks no longer open a self-repair.** The repeat detector (`collect` in `src/rooms/self-repair/server/self-repair.ts`) read the same reason in three tasks within a day as a pattern of Lane Pilot's. `reasonSignature` turns each path into `<path>` but keeps how many there are. So writers who put files outside owns_paths raised one repair per path count: «owns_paths rejected <path>» was already answered not-lane-pilot on 2026-10-19, then «<path>, <path>» was raised again. In all three cases the writer really edited those files (its thread shows the edits), was told, and was accepted on the redo 1–3 minutes later. An `owns_paths rejected` reason is now skipped when the task's contract shows every named file is neither owned nor bookkeeping. This is `writerStrayFiles`, and it uses the same `splitRejectedPaths`/`codeVerdict` as triage. A gate that rejects an owned file or only bookkeeping, or a task with no contract, still counts.
+  - Checked on the hub: all 27 `owns_paths rejected` reasons of the last 7 days were run through it. 26 are skipped (one of them inside a «retry limit 2 exhausted:» wrapper). One is still counted: it also names `never_touch matched`.
+  - Test: `tests/server/self-repair.test.ts` «a writer's own stray files in three tasks are not a pattern; a gate that rejects owned or bookkeeping files still is» (the three hub reasons and contracts; it fails without the fix, raising signature `repeat:74c392a67ec4b55e`).
+
 ## 0.1.257
 
 From the night audit of 2026-10-19/20 (SelfyStudio site v2 port, 118 attempts):

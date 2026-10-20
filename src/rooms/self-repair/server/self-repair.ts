@@ -23,7 +23,8 @@ import { jev } from "@lane-pilot/jev";
 import { GUARD_BLOCKED_KEY, type GuardBlock } from "@lane-pilot/jev";
 import { FRUSTRATION_KEY, frustrationReason, type FrustrationRecord } from "../../learning";
 import { MAX_CANDIDATES, repairGroup } from "@lane-pilot/jev/judgments/repair-group";
-import { sha256Hex } from "@lane-pilot/kit";
+import { fileAllowedByOwns, fileBlockedByNeverTouch, sha256Hex } from "@lane-pilot/kit";
+import { codeVerdict, splitRejectedPaths } from "@lane-pilot/run-insights";
 import { DEPENDENCY_REDO_WAIT_MS, HOLDING_ATTEMPT_STATES, latestTaskAttempt } from "../../storage";
 
 /**
@@ -131,6 +132,26 @@ const MUTE_MS = 7 * 86_400_000;
 const PENDING_MS = 30 * 60_000;
 /** Stops by design: a question for the PM, a dependency that ended blocked, or a turn the provider cut off (writer_stream_error). */
 const NOT_A_FAULT = /needs_human|depends_on|workspace_not_repo_root|writer_stream_error/i;
+
+/**
+ * An ownership rejection of files the writer put outside its task: every named file is neither owned by the contract nor
+ * bookkeeping, so the gate was right, the writer is told in its thread and redoes the task there. Several such tasks in a
+ * day are writers' mistakes, not a pattern of Lane Pilot's; a gate that rejected an owned or a bookkeeping file is still one
+ * (codeVerdict, as in triage). The reason's path count is part of the repeat signature, so each count used to open a repair
+ * of its own (proj_acpiaqf4wq 2026-10-19/20: «<path>» answered not-lane-pilot, then «<path>, <path>» was raised again).
+ */
+export function writerStrayFiles(reason: string, contractJson: string | null | undefined): boolean {
+  const text = reason.replace(/^retry limit \d+ exhausted:\s*/i, "").trim();
+  if (!/^owns_paths rejected [^;]+$/.test(text) || !contractJson) return false;
+  let contract: { owns_paths?: unknown; never_touch?: unknown };
+  try { contract = JSON.parse(contractJson) as typeof contract; } catch { return false; }
+  if (!Array.isArray(contract.owns_paths)) return false;
+  const strings = (value: unknown) => (Array.isArray(value) ? value : []).filter((item): item is string => typeof item === "string");
+  const owns = strings(contract.owns_paths);
+  const never = strings(contract.never_touch);
+  const split = splitRejectedPaths(text, (path) => fileAllowedByOwns(path, owns) && !fileBlockedByNeverTouch(path, never));
+  return split.outside.length > 0 && split.bookkeeping.length === 0 && codeVerdict(split) === null;
+}
 export const VERSION: string = packageJson.version;
 /** When this code was loaded: a failure before it may be what this release fixed. */
 const LOADED_AT = Date.now();
@@ -514,12 +535,13 @@ export function createSelfRepair(ctx: ServerCore) {
     // (a spent usage window, an open breaker, the provider's own limit) is a known reason, not an unfamiliar one: the task
     // moved down the writer chain by design (proj_acpiaqf4wq 2026-10-11: three grok-4.6 «Plan usage at 100%» hand-offs,
     // each followed by an accepted fallback attempt, raised a repair).
-    const recent = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.thread_id, a.reason, a.updated_at, r.project_id FROM lane_pilot_attempt a
-      JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state IN (${FAILED_STATES}) AND a.updated_at > ?`).all(now - 86_400_000) as Array<{ id: string; run_id: string; task_id: string; thread_id: string | null; reason: string | null; updated_at: number; project_id: string }>;
+    // A writer's own stray files are its mistake, told in its thread (writerStrayFiles).
+    const recent = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.thread_id, a.reason, a.updated_at, r.project_id, t.contract_json FROM lane_pilot_attempt a
+      JOIN lane_pilot_run r ON r.id=a.run_id LEFT JOIN lane_pilot_task t ON t.id=a.task_id WHERE a.state IN (${FAILED_STATES}) AND a.updated_at > ?`).all(now - 86_400_000) as Array<{ id: string; run_id: string; task_id: string; thread_id: string | null; reason: string | null; updated_at: number; project_id: string; contract_json: string | null }>;
     const patterns = new Map<string, typeof recent>();
     for (const row of recent) {
       if (ignored.has(row.project_id) || !row.reason || SYSTEM_REASON.test(row.reason) || NOT_A_FAULT.test(row.reason)
-        || failureClass("blocked", row.reason) === "limit") continue;
+        || failureClass("blocked", row.reason) === "limit" || writerStrayFiles(row.reason, row.contract_json)) continue;
       const key = reasonSignature("repeat", row.reason);
       patterns.set(key, [...(patterns.get(key) ?? []), row]);
     }
