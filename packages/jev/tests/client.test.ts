@@ -107,7 +107,7 @@ describe("jev providers", () => {
     const { client, calls } = clientWith([{ status: 200, body: { ...OK_BODY, model: "jev-1.13.0" } }], { provider: JEV_PROVIDERS.openlux });
     const result = await client.call({ state: "payouts failing", questions: QUESTIONS });
     expect(result).toMatchObject({ ok: true, model: "jev-1.13.0" });
-    expect(calls[0]).toMatchObject({ url: "https://api.openlux.ai/v1/systemone", auth: "Bearer k-secret", body: { model: "jev-1.13.0:stable" } });
+    expect(calls[0]).toMatchObject({ url: "https://api.openlux.ai/v1/systemone", auth: "Bearer k-secret", body: { model: "jev-1.14.0:stable" } });
   });
 
   it("adds the provider's headroom to every timeout, the caller's own included", async () => {

@@ -20,7 +20,7 @@ function jevRpc(state: { chosen: Id; keys: Record<Id, boolean> }) {
     catalog: "ok",
     providers: [
       { id: "typesafe", keyName: "TYPESAFE_API_KEY", model: "jev-latest", hasKey: state.keys.typesafe },
-      { id: "openlux", keyName: "OPENLUX_API_KEY", model: "jev-1.13.0:stable", hasKey: state.keys.openlux },
+      { id: "openlux", keyName: "OPENLUX_API_KEY", model: "jev-1.14.0:stable", hasKey: state.keys.openlux },
     ],
   });
   return {
@@ -44,7 +44,7 @@ function jevRpc(state: { chosen: Id; keys: Record<Id, boolean> }) {
       jev_provider_test: () => {
         calls.push({ method: "jev_provider_test", input: {} });
         return state.chosen === "openlux"
-          ? { ok: true, provider: "openlux", model: "jev-1.13.0:stable", latencyMs: 812, error: null }
+          ? { ok: true, provider: "openlux", model: "jev-1.14.0:stable", latencyMs: 812, error: null }
           : { ok: false, provider: "typesafe", model: null, latencyMs: 40, error: "http 401" };
       },
     },
@@ -141,7 +141,7 @@ describe("Jev block of the global settings", () => {
     await waitFor(() => expect(slot.getByTestId("jev-key-state-openlux")).toBeTruthy());
     fireEvent.click(slot.getByTestId("jev-test"));
     const ok = await slot.findByTestId("jev-test-result");
-    expect(ok.textContent).toBe("Works: OpenLux, model jev-1.13.0:stable, 812 ms");
+    expect(ok.textContent).toBe("Works: OpenLux, model jev-1.14.0:stable, 812 ms");
     expect(ok.getAttribute("data-ok")).toBe("true");
     fireEvent.click(slot.getByTestId("jev-choose-typesafe"));
     await waitFor(() => expect(state.chosen).toBe("typesafe"));

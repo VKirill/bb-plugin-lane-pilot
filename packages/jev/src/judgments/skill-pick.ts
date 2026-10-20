@@ -16,7 +16,13 @@ import { sha256Hex } from "@lane-pilot/kit";
  *
  * This module holds the catalog, the questions and the pick. The caller brings the Jev call (`ask`) and the cache of the kinds.
  */
-export const SKILL_PICK_THRESHOLD = 0.3;
+/**
+ * jev-1.14.0 (OpenLux, 2026-10-20) answers the technology question about 0.1 higher than 1.13 did: at the old bar of 0.3 the 48
+ * calibration tasks got 0.29 wrong extras each (gitnexus-exploring and the project's own skill on tasks of other projects) against
+ * 0.13 on 1.13; at 0.4 the picks match 1.13's (0.17 extras, the same recall, 25 of 48 pick sets identical, the rest differ in one
+ * extra). No needed technology skill sat between 0.3 and 0.5 on either model. The craft bars did not move.
+ */
+export const SKILL_PICK_THRESHOLD = 0.4;
 export const SKILL_PICK_TOP = 5;
 /** A skill whose probability of «domain» is below this is not a skill a task can be about. */
 export const SKILL_KIND_THRESHOLD = 0.2;

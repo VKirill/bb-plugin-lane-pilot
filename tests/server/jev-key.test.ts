@@ -88,7 +88,7 @@ describe("Jev key on the machine", () => {
       expect(jevProviderOfKey("catalog-key").id).toBe("typesafe");
       provideJevKey("openlux-key", "openlux");
       expect(await jevApiKey()).toBe("openlux-key");
-      expect(jevProviderOfKey("openlux-key")).toMatchObject({ id:"openlux", url:"https://api.openlux.ai/v1/systemone", model:"jev-1.13.0:stable" });
+      expect(jevProviderOfKey("openlux-key")).toMatchObject({ id:"openlux", url:"https://api.openlux.ai/v1/systemone", model:"jev-1.14.0:stable" });
       expect(jevProviderOfKey("machine-key").id).toBe("typesafe");
     } finally {
       if (before === undefined) delete process.env.TYPESAFE_API_KEY; else process.env.TYPESAFE_API_KEY = before;

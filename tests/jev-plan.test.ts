@@ -105,7 +105,7 @@ describe("Lane Pilot Jev complete-plan adapter", () => {
     expect(await classifyPlan({ requestedHostId:"host-a", plan:"Full plan" }, {} as never)).toMatchObject({ status:"ok", effort:"low" });
     const questions = { pick:{ instructions:"Pick", criteria:{ a:"first", b:"second" } } };
     expect(await councilJudge({ requestedHostId:"host-a", state:"{}", questions }, {} as never)).toMatchObject({ status:"ok", answers:{ pick:"a" } });
-    expect(seen.map((call) => [call.url, call.auth, call.body.model])).toEqual(Array(2).fill(["https://api.openlux.ai/v1/systemone", "Bearer openlux-key", "jev-1.13.0:stable"]));
+    expect(seen.map((call) => [call.url, call.auth, call.body.model])).toEqual(Array(2).fill(["https://api.openlux.ai/v1/systemone", "Bearer openlux-key", "jev-1.14.0:stable"]));
     expect(timeouts).toEqual([4_000, 5_500]);
   });
 });

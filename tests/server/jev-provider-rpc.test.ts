@@ -44,7 +44,7 @@ describe("Jev provider status", () => {
       chosen: "openlux", effective: "openlux", catalog: "ok",
       providers: [
         { id: "typesafe", keyName: "TYPESAFE_API_KEY", model: "jev-latest", hasKey: true },
-        { id: "openlux", keyName: "OPENLUX_API_KEY", model: "jev-1.13.0:stable", hasKey: true },
+        { id: "openlux", keyName: "OPENLUX_API_KEY", model: "jev-1.14.0:stable", hasKey: true },
       ],
     });
     expect(JSON.stringify(status)).not.toContain("secret");

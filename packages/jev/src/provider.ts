@@ -12,7 +12,7 @@ export type JevProvider = { id: JevProviderId; url: string; model: string; keyNa
 
 export const JEV_PROVIDERS: Record<JevProviderId, JevProvider> = {
   typesafe: { id: "typesafe", url: "https://api.typesafe.ai/v1/systemone", model: "jev-latest", keyName: "TYPESAFE_API_KEY", timeoutPadMs: 0 },
-  openlux: { id: "openlux", url: "https://api.openlux.ai/v1/systemone", model: "jev-1.13.0:stable", keyName: "OPENLUX_API_KEY", timeoutPadMs: 1_500 },
+  openlux: { id: "openlux", url: "https://api.openlux.ai/v1/systemone", model: "jev-1.14.0:stable", keyName: "OPENLUX_API_KEY", timeoutPadMs: 1_500 },
 };
 export const DEFAULT_JEV_PROVIDER: JevProviderId = "openlux";
 export const JEV_PROVIDER_IDS = Object.keys(JEV_PROVIDERS) as JevProviderId[];

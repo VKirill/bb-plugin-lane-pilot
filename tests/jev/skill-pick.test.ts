@@ -74,10 +74,10 @@ describe("skill pick", () => {
     expect(pick.skills).toEqual(["a"]);
   });
 
-  it("picks a skill at p(yes) 0.3 or more and not one below it", async () => {
-    const jev = fakeJev({ relevant: { x: 0.3, y: 0.29 } });
+  it("picks a skill at p(yes) 0.4 or more and not one below it", async () => {
+    const jev = fakeJev({ relevant: { x: 0.4, y: 0.39 } });
     const pick = await pickWriterSkills(pickInput({ catalog: [entry("x"), entry("y")], ask: jev.ask }));
-    expect(pick.picked).toEqual([{ name: "x", p: 0.3 }]);
+    expect(pick.picked).toEqual([{ name: "x", p: 0.4 }]);
   });
 
   it("picks at most five skills, the most probable first", async () => {
