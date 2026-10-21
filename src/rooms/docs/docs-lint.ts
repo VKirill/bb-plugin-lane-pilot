@@ -62,6 +62,20 @@ function unquote(value:string):string {
   return value.replace(/^["']|["']$/g, "");
 }
 
+/**
+ * The body with the lines of fenced code blocks emptied: a `# HELP` line of a Prometheus sample or a shell comment
+ * inside ``` is code, not a heading (treba, 2026-10-20: «exactly one H1, found 2» on a page whose second H1 was a sample).
+ */
+export function withoutCodeBlocks(body:string):string {
+  let fence:string | null = null;
+  return body.split("\n").map((line) => {
+    const mark = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (fence === null) { if (mark) fence = mark; return line; }
+    if (mark && mark[0] === fence[0] && mark.length >= fence.length && !line.trim().slice(mark.length).trim()) fence = null;
+    return "";
+  }).join("\n");
+}
+
 /** `file.ts:10-12,40-44` names two ranges of one file; written out, each is its own citation. */
 export function expandCitationLists(text:string):string {
   return text.replace(/([A-Za-z0-9_@.\/\[\]-]+\.[A-Za-z0-9]+):(\d+(?:-\d+)?)((?:,\s*\d+(?:-\d+)?(?![\w.:\/-]))+)/g,
@@ -98,7 +112,7 @@ export function lintDocsPages(pages:DocPage[], lineCounts:Record<string, number 
     if (typeof data.type === "string" && !(DOC_PAGE_TYPES as readonly string[]).includes(data.type)) add("frontmatter", `type must be one of ${DOC_PAGE_TYPES.join(", ")}`);
     if (typeof data.status === "string" && !STATUSES.includes(data.status)) add("frontmatter", `status must be one of ${STATUSES.join(", ")}`);
     if (typeof data.confidence === "string" && !CONFIDENCE.includes(data.confidence)) add("frontmatter", `confidence must be one of ${CONFIDENCE.join(", ")}`);
-    const h1 = body.split("\n").filter((line) => /^# /.test(line));
+    const h1 = withoutCodeBlocks(body).split("\n").filter((line) => /^# /.test(line));
     if (h1.length !== 1) add("structure", `page needs exactly one H1, found ${h1.length}`);
     else if (typeof data.title === "string" && h1[0]!.slice(2).trim() !== data.title) add("structure", "H1 must match the frontmatter title");
     // A component page covering several operations may give each its own '### How it works'; a flow's steps stay one section.
@@ -149,14 +163,21 @@ export function unlinkedPages(from:DocPage, targets:string[]):string[] {
 }
 
 /**
- * The targets a catalogue does not link, counting the area pages it links under its own folder
- * (docs/capabilities.md and the docs/capabilities/<area>.md pages it links): a catalogue split to stay
- * under the size limit still covers what its area pages link.
+ * The targets a catalogue does not link, counting the area pages under its own folder that it reaches by links
+ * (docs/capabilities.md → docs/capabilities/<area>.md → docs/capabilities/<area>/<part>.md): a catalogue split to stay
+ * under the size limit still covers what its area pages link, and so does an area page split again for the same reason.
  */
 export function uncataloguedPages(catalogue:DocPage, pages:DocPage[], targets:string[]):string[] {
   const folder = `${catalogue.path.replace(/\.md$/, "")}/`;
-  const areas = pages.filter((page) => page.path.startsWith(folder) && !unlinkedPages(catalogue, [page.path]).length);
-  return areas.reduce((left, area) => unlinkedPages(area, left), unlinkedPages(catalogue, targets));
+  let unreached = pages.filter((page) => page.path.startsWith(folder));
+  let left = unlinkedPages(catalogue, targets);
+  for (let linking = [catalogue]; linking.length && left.length;) {
+    const areas = unreached.filter((page) => linking.some((from) => !unlinkedPages(from, [page.path]).length));
+    unreached = unreached.filter((page) => !areas.includes(page));
+    left = areas.reduce((rest, area) => unlinkedPages(area, rest), left);
+    linking = areas;
+  }
+  return left;
 }
 
 /**

@@ -255,3 +255,29 @@ it("accepts a component page that gives each operation its own '### How it works
   const flow = page({ type:"flow" }, "# Checks\n\n## Alerts\n\n### How it works\n\nA (src/check.ts:1).\n");
   expect(lintDocsPages([{ path:"docs/flows/checks.md", content:flow }], { "src/check.ts":9 }).map((f) => f.detail)).toContainEqual(expect.stringContaining("'## How it works'"));
 });
+
+// SelfyStudio, 2026-10-21: docs/capabilities/operators.md was 29967 bytes, so the repair round, as its prompt says, put the
+// three missing capabilities on a linked page of their own, docs/capabilities/operators/scenario-runner.md. The coverage
+// check counted only area pages the catalogue links directly, so the same 3 findings failed the pass and none of the
+// 13 pages written that night was committed. These are the agent's real pages.
+it("counts links on a page an area page links under the catalogue's folder", async () => {
+  const dir = join(__dirname, "../fixtures/docs/selfystudio-capabilities");
+  const read = async (path:string) => ({ path:`docs/${path}`, content:await readFile(join(dir, path), "utf8") });
+  const [catalogue, operators, runner] = await Promise.all(["capabilities.md", "capabilities/operators.md", "capabilities/operators/scenario-runner.md"].map(read));
+  const missing = ["apps/admin/docs/features/scenario-cluster-source.md", "apps/scenario-runner/docs/features/content-publishing-step-details.md", "apps/scenario-runner/docs/features/media-execution-details.md"];
+  const features = [...missing, "apps/worker/docs/features/never-linked.md"];
+  expect(uncataloguedPages(catalogue!, [catalogue!, operators!, runner!], features)).toEqual(["apps/worker/docs/features/never-linked.md"]);
+  // Without the area page in between, the nested page is not part of the catalogue.
+  expect(uncataloguedPages(catalogue!, [catalogue!, runner!], features)).toEqual(features);
+});
+
+// treba, 2026-10-20: docs/api/chat-and-dashboard.md showed the metrics response as a ```text sample starting with
+// '# HELP ...'; the H1 check read that line as a second heading, and the agent deleted the sample to pass.
+it("does not count a '# ' line inside a code block as a heading", () => {
+  const sample = good.replace("## How it works", "**Response:**\n```text\n# HELP ...\n# TYPE x counter\n```\n\n~~~bash\n# comment\n~~~\n\n## How it works");
+  const structure = (content:string) => lintDocsPages([{ path:"docs/features/checks.md", content }], { "src/check.ts":9 }).filter((f) => f.rule === "structure").map((f) => f.detail);
+  expect(structure(page({}, sample))).toEqual([]);
+  // A real second H1 after the block still fails.
+  const twice = page({}, `${sample}\n# Second\n`);
+  expect(structure(twice)).toEqual(["page needs exactly one H1, found 2"]);
+});
