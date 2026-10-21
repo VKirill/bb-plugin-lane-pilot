@@ -281,3 +281,21 @@ it("does not count a '# ' line inside a code block as a heading", () => {
   const twice = page({}, `${sample}\n# Second\n`);
   expect(structure(twice)).toEqual(["page needs exactly one H1, found 2"]);
 });
+
+it("reads Expo Router paths: a (group) folder and a +api file", () => {
+  // Murdoku 2026-10-21: `mobile/src/app/(tabs)/_layout.tsx:21-48` was read as `/_layout.tsx` and
+  // `mobile/src/app/api/ask+api.ts:9-18` as `api.ts`, both «does not exist»; the agent's repair cited the five
+  // `(tabs)/*.tsx` route files instead and failed the unit with 10 such findings.
+  const body = "Tabs (`mobile/src/app/(tabs)/_layout.tsx:21-47`), home (mobile/src/app/(tabs)/index.tsx:5-8), ask (`mobile/src/app/api/ask+api.ts:9-18`), not found (src/app/+not-found.tsx:3).";
+  expect(pageCitations(body)).toEqual([
+    { file:"mobile/src/app/(tabs)/_layout.tsx", start:21, end:47 },
+    { file:"mobile/src/app/(tabs)/index.tsx", start:5, end:8 },
+    { file:"mobile/src/app/api/ask+api.ts", start:9, end:18 },
+    { file:"src/app/+not-found.tsx", start:3, end:3 },
+  ]);
+  expect(expandCitationLists("(`mobile/src/app/(tabs)/index.tsx:5-8,12`)")).toBe("(`mobile/src/app/(tabs)/index.tsx:5-8, mobile/src/app/(tabs)/index.tsx:12`)");
+  // A citation in parentheses keeps the parenthesis out of its path.
+  expect(pageCitations("Order (src/a.ts:1) and (src/b.ts:2-3).").map((c) => c.file)).toEqual(["src/a.ts", "src/b.ts"]);
+  const cited = page({}, "# Checks\n\n## How it works\n\nA (mobile/src/app/(tabs)/index.tsx:1). B (mobile/src/app/api/ask+api.ts:2). C (src/check.ts:3).\n");
+  expect(lintDocsPages([{ path:"mobile/docs/api.md", content:cited }], { "mobile/src/app/(tabs)/index.tsx":8, "mobile/src/app/api/ask+api.ts":18, "src/check.ts":9 })).toEqual([]);
+});

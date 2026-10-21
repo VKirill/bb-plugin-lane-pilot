@@ -1,8 +1,9 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { boundJevState, jevAsk, pageClaims, renderAnchorBrief, scanDeclarations, spreadAnchors, verifyDocsCitations, type Anchor } from "../../src/rooms/verification/docs-jev";
+import { docsLineCounts } from "../../src/rooms/verification/git-docs";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
@@ -101,4 +102,21 @@ it("keeps at most 48 Jev requests in flight on the machine", async () => {
   const answers = await Promise.all(Array.from({ length:100 }, () => jevAsk("k", {}, { q:{ type:"noul", instructions:"?" } })));
   expect(answers.every((answer) => answer?.q?.noul === 1)).toBe(true);
   expect(peak).toBe(48);
+});
+
+it("ends the last declaration of a file on its last line, not on the empty element after its final newline", async () => {
+  // Murdoku 2026-10-21: the code map gave `crashRoute (server/src/crash.ts:31-59)` for a 58-line file, the agent
+  // cited it, and the citation check (which counts the file's real lines) failed the nightly docs unit.
+  const code = ["import { send } from './route-helpers.ts';", "", "export async function crashRoute(ip, read) {", "  const b = await read();", "  return { status: 200, body: { ok: true } };", "}", ""].join("\n");
+  const [anchor] = scanDeclarations("server/src/crash.ts", code);
+  expect([anchor!.name, anchor!.line, anchor!.endLine]).toEqual(["crashRoute", 3, 6]);
+  const dir = await mkdtemp(join(tmpdir(), "lp-anchor-eof-"));
+  try {
+    await mkdir(join(dir, "server/src"), { recursive:true });
+    await writeFile(join(dir, "server/src/crash.ts"), code);
+    const counts = await docsLineCounts({ projectCwd:dir, files:["server/src/crash.ts"] });
+    expect(counts["server/src/crash.ts"]).toBe(anchor!.endLine);
+  } finally { await rm(dir, { recursive:true, force:true }); }
+  // Without a final newline the last line is still the end.
+  expect(scanDeclarations("a.ts", "export const A = 1;\nexport const B = 2;").map((item) => item.endLine)).toEqual([1, 2]);
 });
