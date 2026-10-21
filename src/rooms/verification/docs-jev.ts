@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { extractRoutes, type RouteRef } from "./docs-routes";
 import { parsePrisma, prismaAccess, renderDataMap } from "./docs-data";
-import { expandCitationLists } from "../docs";
+import { CITATION_SOURCE, expandCitationLists } from "../docs";
 import { promisify } from "node:util";
 import { JEV_PROVIDERS, jevProviderOfHostCall, type JevProvider } from "@lane-pilot/jev/provider";
 
@@ -168,9 +168,12 @@ export function scanDeclarations(file:string, text:string):Anchor[] {
     const table = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[`"]?([A-Za-z_]\w*)/i.exec(line);
     if (table?.[1]) starts.push({ line:index + 1, name:table[1], kind:"table", exported:true });
   });
+  // A file ending in a newline splits into one empty element past its last line; the citation check counts the
+  // file's real lines, so an anchor of the last declaration would end one line past the end of the file.
+  const lineCount = lines.length - (text.endsWith("\n") ? 1 : 0);
   return starts.map((start, index) => {
-    const nextStart = starts.slice(index + 1).find((other) => (other.kind !== "table" || file.endsWith(".prisma")) && other.kind !== "component" && other.line > start.line)?.line ?? lines.length + 1;
-    const endLine = Math.min(nextStart - 1, start.line + SNIPPET_LINES - 1, lines.length);
+    const nextStart = starts.slice(index + 1).find((other) => (other.kind !== "table" || file.endsWith(".prisma")) && other.kind !== "component" && other.line > start.line)?.line ?? lineCount + 1;
+    const endLine = Math.min(nextStart - 1, start.line + SNIPPET_LINES - 1, lineCount);
     return { name:start.name, kind:start.kind, exported:start.exported, file, line:start.line, endLine,
       snippet:lines.slice(start.line - 1, endLine).join("\n").slice(0, 4000) };
   });
@@ -362,7 +365,7 @@ export function renderAnchorBrief(anchors:Anchor[], tests:string[], deps:string[
 // ---- citation check -----------------------------------------------------------------------
 
 /** file:line or file:start-end; paths may hold Nuxt route brackets such as server/api/[slug].get.ts. */
-const CITATION = /([A-Za-z0-9_@.\/\[\]-]+\.[A-Za-z][A-Za-z0-9]*):(\d+)(?:-(\d+))?/g;
+const CITATION = new RegExp(CITATION_SOURCE, "g");
 
 export type ClaimRef = { file:string; start:number; end:number };
 

@@ -17,8 +17,14 @@ const MIN_FLOW_CITATIONS = 15;
 /** English marketing words the methodology forbids in wiki pages. */
 const MARKETING = ["leverage", "leverages", "powerful", "seamless", "seamlessly", "robust", "comprehensive", "intuitive",
   "cutting-edge", "state-of-the-art", "enterprise-grade"];
-/** file:line or file:start-end; paths may hold Nuxt route brackets such as server/api/[slug].get.ts. */
-const CITATION = /([A-Za-z0-9_@.\/\[\]-]+\.[A-Za-z][A-Za-z0-9]*):(\d+)(?:-(\d+))?/g;
+/**
+ * A cited path: letters, digits and `_@.[]+-` in a name (Nuxt's `[slug].get.ts`, Expo's `ask+api.ts`), and a route group
+ * `(tabs)` only as a whole folder followed by `/`, so a citation in parentheses keeps its own `(`.
+ */
+const CITATION_PATH = String.raw`(?:[A-Za-z0-9_@.\/\[\]+-]|\([A-Za-z0-9_@.\[\]+-]+\)(?=\/))+\.[A-Za-z][A-Za-z0-9]*`;
+/** `path:line` or `path:start-end`; groups: the path, the first line, the last line. */
+export const CITATION_SOURCE = String.raw`(${CITATION_PATH}):(\d+)(?:-(\d+))?`;
+const CITATION = new RegExp(CITATION_SOURCE, "g");
 
 export type DocPage = { path:string; content:string };
 
@@ -78,7 +84,7 @@ export function withoutCodeBlocks(body:string):string {
 
 /** `file.ts:10-12,40-44` names two ranges of one file; written out, each is its own citation. */
 export function expandCitationLists(text:string):string {
-  return text.replace(/([A-Za-z0-9_@.\/\[\]-]+\.[A-Za-z0-9]+):(\d+(?:-\d+)?)((?:,\s*\d+(?:-\d+)?(?![\w.:\/-]))+)/g,
+  return text.replace(new RegExp(String.raw`(${CITATION_PATH}):(\d+(?:-\d+)?)((?:,\s*\d+(?:-\d+)?(?![\w.:\/-]))+)`, "g"),
     (_, file:string, first:string, rest:string) => [`${file}:${first}`, ...rest.split(",").map((part) => part.trim()).filter(Boolean).map((range) => `${file}:${range}`)].join(", "));
 }
 

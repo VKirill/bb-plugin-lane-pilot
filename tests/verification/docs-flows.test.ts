@@ -54,7 +54,7 @@ it("traces entries in the apps to the business modules of the shared packages", 
     expect(brief).toContain("apps/api/src/routes/pay.ts - POST /v1/pay (line 2)");
     expect(brief).toContain("chain: apps/api/src/routes/pay.ts -> packages/app/src/billing/index.ts");
     expect(brief).toContain("calls: charge (packages/app/src/billing/charge.ts:1)");
-    expect(result.flows.find((flow) => flow.slug === "billing")!.calls).toEqual([{ name:"charge", file:"packages/app/src/billing/charge.ts", line:1, endLine:2 }]);
+    expect(result.flows.find((flow) => flow.slug === "billing")!.calls).toEqual([{ name:"charge", file:"packages/app/src/billing/charge.ts", line:1, endLine:1 }]);
     expect(brief).toContain("chain: apps/web/pages/checkout.vue -> (HTTP POST /v1/pay) apps/api/src/routes/pay.ts -> packages/app/src/billing/index.ts");
   } finally { await rm(root, { recursive:true, force:true }); }
 });
