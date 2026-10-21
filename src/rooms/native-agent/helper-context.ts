@@ -44,6 +44,12 @@ const { opencode2: _switchesV2, ...PRE_OPENCODE2_SWITCHES } = CORE_INSTRUCTION_S
 const ADVERTISED_GROUPS: ReadonlyArray<Record<string, readonly string[]>> = [CORE_PROVIDER_GROUPS, PRE_OPENCODE2_GROUPS]
   .flatMap((groups) => [groups, { ...groups, "acp-cursor": LEGACY_CURSOR_GROUPS }]);
 const ADVERTISED_SWITCHES: ReadonlyArray<Record<string, readonly string[]>> = [CORE_INSTRUCTION_SWITCHES, PRE_OPENCODE2_SWITCHES];
+/**
+ * Providers the hub's core advertises but the machines' host daemons still refuse a required policy for: the daemon checks the
+ * provider bridge's handshake (`vk_required_session_policy_bridge_unsupported`), the opencode2 bridge has none, and the 0.46.1-vk.2
+ * daemon that waives it for opencode2 is not on the machines yet. Their helpers run with BB's ordinary context, as on an older core.
+ */
+const POLICY_REFUSED_BY_HOSTS = new Set(["opencode2"]);
 export type RequiredSessionAdvertisement = {
   version: 1;
   persist: true;
@@ -370,6 +376,7 @@ export function requiredSessionPolicySpawnBinding(input: {
     // By role is a default, not a demand: a core without required policies, an unknown role or provider
     // runs the helper with BB's ordinary context instead of refusing it.
     if (!input.role || input.capability !== "required" || !input.advertised || !input.providerId) return {};
+    if (POLICY_REFUSED_BY_HOSTS.has(input.providerId)) return {};
     const groups = input.advertised.providerGroups[input.providerId as keyof typeof CORE_PROVIDER_GROUPS];
     const switches = input.advertised.instructionSwitches[input.providerId as keyof typeof CORE_INSTRUCTION_SWITCHES];
     if (!groups || !switches) return {};
@@ -379,6 +386,7 @@ export function requiredSessionPolicySpawnBinding(input: {
     throw new Error("helper_context_required_api_unavailable");
   }
   if (!input.providerId) throw new Error("helper_context_provider_required");
+  if (POLICY_REFUSED_BY_HOSTS.has(input.providerId)) throw new Error(`helper_context_unsupported_provider:${input.providerId}`);
   const groups = input.advertised.providerGroups[input.providerId as keyof typeof CORE_PROVIDER_GROUPS];
   const switches = input.advertised.instructionSwitches[input.providerId as keyof typeof CORE_INSTRUCTION_SWITCHES];
   if (!groups || !switches) throw new Error(`helper_context_unsupported_provider:${input.providerId}`);

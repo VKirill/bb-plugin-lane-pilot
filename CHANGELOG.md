@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.262
+
+- **opencode2 helpers start again on the 0.46.1-vk.2 core.** The hub's core now advertises a session policy for `opencode2`, but the machines' host daemons (still the 0.46.1 build of 2026-10-16) refuse any required policy on a provider bridge without the handshake (`vk_required_session_policy_bridge_unsupported`), so every opencode2 helper failed at `thread.start` (deploy drill 2026-10-21 19:00). Until the vk.2 daemon is on the machines, Lane Pilot sends no policy for `opencode2` (`POLICY_REFUSED_BY_HOSTS` in `helper-context.ts`): its helpers run with BB's ordinary context, as on an older core; an explicit «selected» context refuses them. Test: `helper-context.test.ts`.
+
 ## 0.1.261
 
 **OpenCode v1 is gone: every OpenCode thread runs on OpenCode v2 (BB provider `opencode2`).** Owner's decision of 2026-10-21: native v2 only, no changes to the opencode2 provider plugin; what it lacks is left out here.
