@@ -232,8 +232,10 @@ describe("role profiles", () => {
     expect(qa.bbPlugins.names).toContain("browser-automation");
   });
 
-  it("runs an opencode2 helper with BB's context on any core while the machines' daemons refuse its policy", () => {
-    expect(bind("writer", "opencode2")).toEqual({});
+  it("narrows an opencode2 writer's BB plugins, skills and MCP on a vk.3 core, and runs it with BB's context on a core that lacks opencode2", () => {
+    const policy = (bind("writer", "opencode2") as { experimental_vkRequiredSessionPolicy: { policy: Record<string, unknown> } }).experimental_vkRequiredSessionPolicy.policy;
+    expect(Object.keys(policy).filter((key) => ["bbPlugins", "skills", "mcpServers", "nativePlugins"].includes(key)).sort()).toEqual(["bbPlugins", "mcpServers", "skills"]);
+    expect(policy.projectInstructions).toBeUndefined();
     const { opencode2: _groups, ...oldGroups } = advertised.providerGroups;
     const { opencode2: _switches, ...oldSwitches } = advertised.instructionSwitches;
     expect(bind("writer", "opencode2", { ...advertised, providerGroups: oldGroups, instructionSwitches: oldSwitches } as never)).toEqual({});

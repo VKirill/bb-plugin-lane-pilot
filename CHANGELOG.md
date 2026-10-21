@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.264
+
+- **opencode2 threads get the session policy again, now with skills and MCP.** The machines' host daemons carry the 0.46.1-vk.3 build (rolled out by hand on 2026-10-22: a daemon updates itself only on a protocol bump), and the opencode2 bridge 1.1.0-vk.3 declares the handshake and applies the policy as OpenCode permission rules: a denied skill leaves the model's prompt (108 KB → 7.6 KB with one allowed skill on the mock test), a denied MCP server's tools answer «Unknown tool». `POLICY_REFUSED_BY_HOSTS` is removed. Test: `helper-context.test.ts`.
+
 ## 0.1.263
 
 - **The session-policy matrix accepts the 0.46.1-vk.3 core**, which narrows skills and MCP servers for `opencode2` too (the opencode2 bridge 1.1.0-vk.3 turns them into the session's permission rules). The vk.1 and vk.2 matrices are still accepted. opencode2 helpers keep running without a policy until the machines' host daemons carry vk.3 (`POLICY_REFUSED_BY_HOSTS`). The access tab now lists OpenCode with Cursor («everything except CLI plugins»). Test: `helper-context.test.ts`.
