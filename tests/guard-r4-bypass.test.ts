@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { BB_SHIM_NAMES, prepareBbShim } from "../src/rooms/native-agent/bb-shim";
-import { OPENCODE_BASH_DENY } from "../src/rooms/native-install/opencode-min-config";
 import { hookEnv } from "./hook-env";
 import { useGuardPool, type Verdict } from "./guard-pool";
 
@@ -321,51 +320,14 @@ describe("the PATH wrappers against the round 4 bypasses", () => {
   }
 });
 
-// OpenCode matches a glob against the whole command line.
-const globMatches = (pattern: string, command: string) => new RegExp(`^${pattern.split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`, "s").test(command);
-const openCodeDenies = (command: string) => OPENCODE_BASH_DENY.some((pattern) => globMatches(pattern, command));
-
-describe("the OpenCode bash deny list against the round 4 bypasses", () => {
-  const DENIED = [
-    "$BB_CLI plugin config lane-pilot",
-    "/opt/homebrew/bin/bb plugin remove lane-pilot",
-    "ssh ubuntu@10.8.1",
-    "ssh ubuntu@0x0a080001 id",
-    "ssh 168296449",
-    "ssh 012.010.0.1",
-    "ssh ::ffff:10.8.0.1",
-    "ssh ubuntu@::ffff:a08:1",
-    "scp ubuntu@0x0A080001:/x /tmp",
-    "rsync -a ubuntu@168296449:/home /tmp",
-    "sftp ubuntu@908427673",
-    "ssh rescue-vps",
-  ];
-  for (const command of DENIED) it(`denies ${command}`, () => expect(openCodeDenies(command)).toBe(true));
-
-  for (const command of [
-    "bb lane-pilot schedule list --json",
-    "bb lane-pilot schedule create '{}'",
-    "bb lane-pilot anamnesis forget --all --yes",
-    "bb plugin rpc call lane-pilot schedule_upsert --input '{}'",
-    "bb plugin rpc call lane-pilot save_setting --input '{}'",
-    "bb env-catalog set A B",
-    "bb env-catalog get MY_KEY --raw",
-    "bb env-catalog list",
-    "ssh vast nvidia-smi",
-    "ssh 10.9.0.1",
-    "git status",
-  ]) it(`lets through ${command}`, () => expect(openCodeDenies(command)).toBe(false));
-});
-
-describe("the three lists carry the same plugin admin entries", () => {
-  it("guard, wrapper and OpenCode all refuse every plugin admin command", async () => {
+describe("the two lists carry the same plugin admin entries", () => {
+  it("guard and wrapper both refuse every plugin admin command", async () => {
     const run = await shimSetup();
     const commands = ["config", "token", "disable", "enable", "reload", "remove", "safe-mode"].map((sub) => ({ line: `bb plugin ${sub} x`, program: "bb", args: ["plugin", sub, "x"] }));
     const verdicts = await runMany(commands.map(({ line }) => ({ command: line, agentType: "writer" })));
     commands.forEach(({ line, program, args }, index) => {
       expect(isDenied(verdicts[index]!), `guard: ${line}`).toBe(true);
       expect(run("sh", program, ...args).status, `wrapper: ${line}`).toBe(126);
-      expect(openCodeDenies(line), `OpenCode: ${line}`).toBe(true);
     });
   });
 });

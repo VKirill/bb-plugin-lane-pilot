@@ -19,7 +19,6 @@ sources:
   - src/rooms/verification/sandbox.ts
   - packages/kit/src/spawn-async.ts
   - packages/kit/src/output-capture.ts
-  - src/rooms/core/server/opencode-minimal.ts
   - src/rooms/native-agent/server/helper-bb-shim.ts
   - src/rooms/stability/server/deploy-drain.ts
   - src/rooms/core/server/lifecycle-events.ts
@@ -66,9 +65,9 @@ Lifecycle-event registration is best-effort: BB versions that do not recognize a
 
 Stability breakers are persisted across plugin reloads and restored only for the same Lane Pilot version (`src/rooms/stability/server/stability.ts:62-82`). A version change discards a prior open breaker because the fault may have shipped fixed (`src/rooms/stability/server/stability.ts:67-80`).
 
-The OpenCode minimal-config environment hook has a four-second total budget. It uses prewarmed state; when preparation is still pending or fails, the helper is refused rather than started with the full host config (`src/rooms/core/server/opencode-minimal.ts:9-20`, `:27-37`). The same contributor combines the minimal config and BB guard environment under that budget (`src/rooms/core/server/opencode-minimal.ts:176-188`).
+OpenCode v2 runs every session in one shared service per host, so a thread's process environment cannot change its config. Lane Pilot's OpenCode writers get `agent=lane-pilot` (the lane hooks act only under a `lane-` agent) and a git-excluded `.opencode/opencode.jsonc` that turns OpenCode's own compaction off; a project's own config is kept (`src/rooms/core/server/pm-spawn.ts:88-124`, `src/rooms/writer/server/skill-materialize.ts:13-21`).
 
-Codex and Cursor helpers use the BB shim contributor; OpenCode uses it alongside its minimal-config contributor. Only Lane Pilot threads with role metadata receive `LANE_PILOT_ROLE` and a host-prepared wrapper `PATH`; PM and owner threads are left alone (`src/rooms/native-agent/server/helper-bb-shim.ts:5-15`, `:62-80`, `src/rooms/core/server/opencode-minimal.ts:176-182`). A host that reports an unknown `prepareBbShim` call is allowed to start without wrappers, but other preparation failures reject the helper start. If thread metadata cannot be read, the helper starts without wrappers (`src/rooms/native-agent/server/helper-bb-shim.ts:44-75`).
+Codex, OpenCode (`opencode2`, which sets them as the session's shell environment) and Cursor helpers use the BB shim contributor. Only Lane Pilot threads with role metadata receive `LANE_PILOT_ROLE` and a host-prepared wrapper `PATH`; PM and owner threads are left alone (`src/rooms/native-agent/server/helper-bb-shim.ts:5-18`, `:63-82`). A host that reports an unknown `prepareBbShim` call is allowed to start without wrappers, but other preparation failures reject the helper start. If thread metadata cannot be read, the helper starts without wrappers (`src/rooms/native-agent/server/helper-bb-shim.ts:45-76`).
 
 Reload drain covers checkout-writing host methods and `runSandboxedCommand` acceptance checks. Other host calls bypass the drain; an active drain blocks new covered calls while existing calls finish, and an expired drain stops blocking after 20 minutes (`src/rooms/stability/server/deploy-drain.ts:1-25`). A lifecycle drain can reach its deadline with calls still in flight and records `clean: false` with their method names and ages (`src/rooms/stability/server/deploy-drain.ts:65-79`).
 

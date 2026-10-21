@@ -10,10 +10,15 @@ import { ownershipLedgerPath } from "../src/rooms/native-install/ownership";
 import { installStack } from "../src/rooms/native-install/stack-ops";
 
 const homes: string[] = [];
+const hasTarget = (root: string): boolean => {
+  try { execFileSync("git", ["-C", root, "cat-file", "-e", `${TARGET_SHA}^{commit}`], { stdio: "ignore" }); return true; } catch { return false; }
+};
+/** A Lane Stack checkout that has the managed engine's commit: the job fixture, or the sibling source repository. */
 const UPSTREAM_FIXTURE = [
   join(process.cwd(), "../../.agency/jobs/AG-252/tmp/upstream-ref"),
   join(process.cwd(), "../upstream-ref"),
-].find(existsSync);
+  join(process.cwd(), "../claude-lane-stack"),
+].find((root) => existsSync(root) && hasTarget(root));
 const GUARD = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
 
 async function makeHome(): Promise<string> {
@@ -23,12 +28,13 @@ async function makeHome(): Promise<string> {
 }
 
 async function makeIncompatibleFallback(home: string): Promise<string> {
-  if (!UPSTREAM_FIXTURE) throw new Error("Exact dd77 test fixture is unavailable.");
+  if (!UPSTREAM_FIXTURE) throw new Error("A Lane Stack fixture with the target commit is unavailable.");
   const fallback = join(home, "dirty-source");
   execFileSync("git", ["clone", "--local", "--quiet", UPSTREAM_FIXTURE, fallback]);
-  const hook = join(fallback, "profiles/opencode/opencode-lane/index.ts");
+  execFileSync("git", ["-C", fallback, "checkout", "--quiet", "--detach", TARGET_SHA]);
+  const hook = join(fallback, "profiles/opencode/opencode-lane/v2.ts");
   const contents = await readFile(hook, "utf8");
-  await writeFile(hook, contents.replace('"tool.execute.after"', '"tool.execute.missing"'));
+  await writeFile(hook, contents.replaceAll('"execute.after"', '"execute.missing"'));
   return fallback;
 }
 
@@ -40,7 +46,7 @@ afterEach(async () => {
   for (const home of homes.splice(0)) await rm(home, { recursive: true, force: true });
 });
 
-// Needs the exact dd77 fixture; on a clean clone it skips instead of crashing in makeIncompatibleFallback.
+// Needs a Lane Stack fixture with the target commit; on a clean clone it skips instead of crashing in makeIncompatibleFallback.
 describe.skipIf(!UPSTREAM_FIXTURE)("managed install metadata preflight", () => {
   it("rejects malformed ownership before rename and reports the unchanged write set", async () => {
     const home = await makeHome();

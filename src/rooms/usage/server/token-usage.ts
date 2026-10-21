@@ -603,7 +603,7 @@ export type ThreadUsage = { tokens: number; costUsd: number; known: boolean; unk
  * deltas as the daily sync (`thread/tokenUsage/updated` with the model of the turn that asked), read for this thread alone, so a workflow's
  * budget (`maxTokens`, `maxCostUsd`) counts what the Usage tab counts. A model the price table does not know is priced at the dearest
  * known rate: a budget that cannot see a cost must err on the cautious side. Never throws. A thread that cannot be read, or that has no
- * `thread/tokenUsage/updated` event at all (BB records none for ACP providers such as acp-opencode: only the context window), comes back
+ * `thread/tokenUsage/updated` event at all (BB records none for ACP providers such as acp-cursor: only the context window), comes back
  * with `known: false` and `unknown: true` and zeros, so a budget never takes it for a free step.
  */
 export async function threadUsage(bb: BbPluginApi, threadId: string, options: { since?: number; fallbackModel?: string } = {}): Promise<ThreadUsage> {

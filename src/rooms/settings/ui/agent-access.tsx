@@ -54,7 +54,7 @@ const SWITCH_LABEL: Record<AccessSwitch, { label: I18nKey; hint: I18nKey }> = {
   projectInstructions: { label: "accessProjectInstructions", hint: "accessProjectInstructionsHint" },
 };
 const PROVIDER_LABEL: Record<string, I18nKey> = {
-  "claude-code": "accessProviderClaudeCode", codex: "accessProviderCodex", "acp-opencode": "accessProviderOpencode", "acp-cursor": "accessProviderCursor",
+  "claude-code": "accessProviderClaudeCode", codex: "accessProviderCodex", opencode2: "accessProviderOpencode", "acp-cursor": "accessProviderCursor",
 };
 export const ORIGIN_LABEL: Record<"role" | Origin, I18nKey> = {
   role: "accessOrigin_role", global: "accessOrigin_global", project: "accessOrigin_project", section: "accessOrigin_section",

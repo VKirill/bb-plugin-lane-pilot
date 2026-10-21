@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { BB_SHIM_PROVIDER_IDS, createBbShimEnv, mountBbShim } from "../../src/rooms/native-agent/server/helper-bb-shim";
-import { mountOpencodeMinimal } from "../../src/rooms/core/server/opencode-minimal";
 
 // Audit 2026-10-08 round 3, P0-2: Codex, OpenCode and Cursor threads of Lane Pilot get the bb guard wrappers first on PATH.
 const SHIM = { dir: "/data/bb-shim", path: "/data/bb-shim:/usr/local/bin:/usr/bin" };
@@ -85,24 +84,15 @@ describe("which providers get the wrappers", () => {
       background: { schedule: () => undefined },
       onDispose: () => undefined,
     };
-    const host = { call: vi.fn(async (method: string) => method === "prepareBbShim" ? SHIM : { result: { configHome: "/data/opencode-min/abc", kept: [], left: [] } }) };
+        const host = { call: vi.fn(async () => SHIM) };
     mount({ bb, host } as never);
     return { registered, host };
   }
 
-  it("Codex and Cursor through their own resolver", async () => {
+  it("Codex, OpenCode and Cursor through their own resolver", async () => {
     const { registered } = mounted(mountBbShim);
     expect([...registered.keys()].sort()).toEqual([...BB_SHIM_PROVIDER_IDS].sort());
-    expect(BB_SHIM_PROVIDER_IDS).toEqual(expect.arrayContaining(["codex", "acp-cursor"]));
+    expect(BB_SHIM_PROVIDER_IDS).toEqual(expect.arrayContaining(["codex", "opencode2", "acp-cursor"]));
     expect(await registered.get("codex")!({ threadId: "thr_1", hostId: "ovh" })).toEqual([expect.objectContaining({ name: "LANE_PILOT_ROLE", value: "writer" }), expect.objectContaining({ name: "PATH", value: SHIM.path })]);
-  });
-
-  it("OpenCode through the one resolver it has, next to its minimal config", async () => {
-    const { registered, host } = mounted(mountOpencodeMinimal);
-    expect([...registered.keys()]).toEqual(["acp-opencode"]);
-    const entries = await registered.get("acp-opencode")!({ threadId: "thr_1", hostId: "ovh" }) as Array<{ name: string; value: string }>;
-    expect(entries.map((entry) => entry.name).sort()).toEqual(["LANE_PILOT_ROLE", "OPENCODE_DISABLE_AUTOCOMPACT", "PATH", "XDG_CONFIG_HOME"]);
-    expect(entries.find((entry) => entry.name === "PATH")!.value).toBe(SHIM.path);
-    expect(host.call.mock.calls.map((call) => call[0]).sort()).toEqual(["prepareBbShim", "prepareOpencodeMinimal"]);
   });
 });

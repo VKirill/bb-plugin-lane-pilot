@@ -194,6 +194,18 @@ it("accepts the VK core's metadata markers and the archived protocol-216 core, a
   expect(parse({ experimental_vkRequiredSessionPolicy: () => ({ ...archived, hostDaemonProtocolVersion: 215 }) })).toBeNull();
 });
 
+it("accepts a core with and without opencode2 in its matrix, and no other change", async () => {
+  const { coreRequiredSessionAdvertisement: advertised, parseRequiredSessionPolicyCapability: parse } = await import("../src/rooms/native-agent/helper-context");
+  const vk = advertised();
+  const { opencode2: _groups, ...oldGroups } = vk.providerGroups;
+  const { opencode2: _switches, ...oldSwitches } = vk.instructionSwitches;
+  const before = { ...vk, providerGroups: oldGroups, instructionSwitches: oldSwitches };
+  expect(parse({ experimental_vkRequiredSessionPolicy: () => before })).not.toBeNull();
+  expect(parse({ experimental_vkRequiredSessionPolicy: () => ({ ...before, providerGroups: { ...oldGroups, "acp-cursor": ["bbPlugins", "mcpServers"] } }) })).not.toBeNull();
+  expect(parse({ experimental_vkRequiredSessionPolicy: () => ({ ...vk, providerGroups: { ...vk.providerGroups, opencode2: ["bbPlugins", "skills"] } }) })).toBeNull();
+  expect(parse({ experimental_vkRequiredSessionPolicy: () => ({ ...vk, instructionSwitches: oldSwitches }) })).not.toBeNull();
+});
+
 describe("role profiles", () => {
   const snapshot = { schemaVersion: 1 as const, mode: "roles" as const, settings: { mode: "roles" as const, skills: [], mcpServers: [], bbPlugins: [], nativePlugins: [] }, parentRequired: false, parentPolicy: null, policy: null };
   const advertised = coreRequiredSessionAdvertisement();
@@ -215,6 +227,15 @@ describe("role profiles", () => {
     expect(docs.mcpServers.names).toEqual(["bb-bridge", "gitnexus"]);
     const qa = (bind("browser-qa", "claude-code") as unknown as { experimental_vkRequiredSessionPolicy: { policy: Record<string, { names: string[] }> } }).experimental_vkRequiredSessionPolicy.policy;
     expect(qa.bbPlugins.names).toContain("browser-automation");
+  });
+
+  it("narrows an opencode2 writer to BB plugins and user instructions, and runs it with BB's context on a core that lacks it", () => {
+    const policy = (bind("writer", "opencode2") as { experimental_vkRequiredSessionPolicy: { policy: Record<string, unknown> } }).experimental_vkRequiredSessionPolicy.policy;
+    expect(Object.keys(policy).filter((key) => ["bbPlugins", "skills", "mcpServers", "nativePlugins"].includes(key))).toEqual(["bbPlugins"]);
+    expect(policy.projectInstructions).toBeUndefined();
+    const { opencode2: _groups, ...oldGroups } = advertised.providerGroups;
+    const { opencode2: _switches, ...oldSwitches } = advertised.instructionSwitches;
+    expect(bind("writer", "opencode2", { ...advertised, providerGroups: oldGroups, instructionSwitches: oldSwitches } as never)).toEqual({});
   });
 
   it("narrows Grok's BB skills on a new core and leaves them out on an old one instead of refusing", () => {

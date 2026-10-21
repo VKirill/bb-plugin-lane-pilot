@@ -16,7 +16,6 @@ sources:
   - src/rooms/native-agent/composer-selection.ts
   - src/rooms/native-agent/server/native-profile.ts
   - src/rooms/native-agent/server/helper-bb-shim.ts
-  - src/rooms/core/server/opencode-minimal.ts
   - src/rooms/host-worker/host-handlers.ts
   - src/rooms/anamnesis/contract.ts
   - src/rooms/core/server/core.ts
@@ -41,10 +40,10 @@ Enable a new BB composer thread as a Lane Pilot PM session and route its first d
 6. `storeNativeSelection` compiles the requested owned or stock profile, rejects corrupt or unknown profiles, prepares an installed or session-override record, optionally attaches its parent run, and stores it in BB KV under the generated selection token (`src/rooms/native-agent/server/native-profile.ts:12-30`).
 7. `mountNativeWiring` registers BB hooks and providers, then installs the stream retry watcher using the shared `bb`, database and native host from `ServerCore` (`src/rooms/core/server/native-wiring.ts:10-12`).
 8. Its mention provider looks up `native-selection:<token>` in BB KV, logs and throws a reselect message when no row exists, parses a found row with `nativeSelectionSchema`, then returns `mentionContext(parsed)` (`src/rooms/core/server/native-wiring.ts:13-26`).
-9. It routes `message.dispatch` to `handleNativeDispatch`, contributes the native environment to Claude Code, and mounts the OpenCode-minimal and BB shims (`src/rooms/core/server/native-wiring.ts:29-34`). These registrations are unconditional within this mount function.
+9. It routes `message.dispatch` to `handleNativeDispatch`, contributes the native environment to Claude Code, and mounts the BB shims (`src/rooms/core/server/native-wiring.ts:28-31`). These registrations are unconditional within this mount function.
 10. It attaches stream retry with event access, thread retry, disposed-state check and warning logger. Failure detail reads the latest 50 thread-watch events and returns `null` if event listing fails (`src/rooms/core/server/native-wiring.ts:35-45`).
 11. The retry watcher considers a thread unowned when its attempt is already cancel-requested or canceled; otherwise role/run metadata marks it owned, with `native-thread:<threadId>` KV as fallback (`src/rooms/core/server/native-wiring.ts:46-57`).
-12. Provider environment contributors prepare BB guard wrappers for supported helper threads. `mountBbShim` registers Codex and Cursor; OpenCode registers the same resolver alongside its minimal-config resolver (`src/rooms/native-agent/server/helper-bb-shim.ts:17`, `:78-81`, `src/rooms/core/server/opencode-minimal.ts:176-182`).
+12. Provider environment contributors prepare BB guard wrappers for supported helper threads. `mountBbShim` registers Codex, OpenCode v2 (`opencode2`) and Cursor (`src/rooms/native-agent/server/helper-bb-shim.ts:18`, `:79-82`).
 
 ## Modes and branches
 
@@ -64,8 +63,8 @@ The helper environment branch also depends on the provider and thread role:
 | Provider thread | Environment added | Failure behavior |
 |---|---|---|
 | Codex or Cursor helper with role metadata other than `pm` | Add `LANE_PILOT_ROLE`; host-prepared `PATH` puts `bb`, `ssh`, `scp`, and `sftp` behind guard wrappers (`src/rooms/native-agent/server/helper-bb-shim.ts:62-80`). | An unknown `prepareBbShim` host method logs a warning and starts with the role marker but no wrappers; another host error rejects contribution (`src/rooms/native-agent/server/helper-bb-shim.ts:44-56`). |
-| OpenCode helper | The same marker and wrapper path are returned with `XDG_CONFIG_HOME` and `OPENCODE_DISABLE_AUTOCOMPACT` (`src/rooms/core/server/opencode-minimal.ts:166-170`, `:176-182`). | The combined contributor is bounded by four seconds; minimal-config preparation can refuse startup, and a wrapper preparation error also rejects contribution (`src/rooms/core/server/opencode-minimal.ts:176-182`, `src/rooms/native-agent/server/helper-bb-shim.ts:50-56`). |
-| PM or owner thread | No BB shim variables are contributed (`src/rooms/native-agent/server/helper-bb-shim.ts:62-74`, `src/rooms/core/server/opencode-minimal.ts:131-137`). | If plugin role metadata cannot be read, the contributor logs and returns no variables (`src/rooms/native-agent/server/helper-bb-shim.ts:63-67`). |
+| OpenCode helper | The same marker and wrapper path; the `opencode2` provider sets them as the session's shell environment, since one OpenCode v2 service serves every session (`src/rooms/native-agent/server/helper-bb-shim.ts:5-18`). | A wrapper preparation error rejects contribution (`src/rooms/native-agent/server/helper-bb-shim.ts:51-57`). |
+| PM or owner thread | No BB shim variables are contributed (`src/rooms/native-agent/server/helper-bb-shim.ts:63-75`). | If plugin role metadata cannot be read, the contributor logs and returns no variables (`src/rooms/native-agent/server/helper-bb-shim.ts:64-68`). |
 
 ## Business rules
 

@@ -110,13 +110,14 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     emergencyFallback?:{reason:string;primaryAttemptId:string;providerId:string;model:string};
   };
 
-  /** The attempt's end, whatever its outcome: the skill links an OpenCode writer got leave its worktree. */
+  /** The attempt's end, whatever its outcome: the skill links and the compaction config an OpenCode writer got leave its worktree. */
   async function finishWriterAttempt(input: FinishInput): Promise<Record<string,unknown>> {
     try { return await finishWriterAttemptBody(input); }
     finally {
       await skillMaterial.remove({ attemptId:input.attemptId, hostId:input.config.hostId,
         workspacePath:getAttempt(db, input.attemptId)?.workspace_path ?? null,
-        names:recordedMaterializedSkills(getReasoningTrace(db, input.attemptId)?.dispatchContext) });
+        names:recordedMaterializedSkills(getReasoningTrace(db, input.attemptId)?.dispatchContext),
+        providerId:getReasoningTrace(db, input.attemptId)?.providerId ?? null });
     }
   }
 

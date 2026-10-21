@@ -1,49 +1,49 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "baseline": {
-    "version": "dd77",
-    "sourceSha": "dd77b26792eca15e8bde03fd26754922ea7ab4f0",
+    "version": "1.66.0",
+    "sourceSha": "370cb263466f07f2afb979b1ca55ffbe012af56b",
     "capabilities": [
       "opencode.plugin.default_export",
-      "opencode.hook.event",
-      "opencode.hook.chat_message",
-      "opencode.hook.chat_params",
+      "opencode.hook.event_subscribe",
+      "opencode.hook.session_prompt",
+      "opencode.hook.session_context",
+      "opencode.hook.tool_execute_before",
       "opencode.hook.tool_execute_after",
-      "opencode.hook.messages_transform",
+      "opencode.hook.permission_evaluate",
       "opencode.telemetry.session_compacted",
       "opencode.sticky.contract_recovery",
       "opencode.sticky.dumped_tool_recovery",
-      "opencode.native_tool_route",
       "execution_packet.line_windows"
     ]
   },
   "sources": [
     {
-      "label": "v1.38.0",
-      "version": "1.38.0",
-      "sourceSha": "747a9ff9b2fa4ffdcf5c65c8d07eff2b9386a821",
+      "label": "v1.65",
+      "version": "1.65.4",
+      "sourceSha": "9134e30b801584b6ef45bd3556195ca5dd4dc9e6",
       "capabilities": [
-        "opencode.plugin.default_export",
-        "opencode.hook.chat_message",
-        "opencode.hook.chat_params",
-        "opencode.hook.tool_execute_after",
-        "opencode.hook.messages_transform",
-        "opencode.sticky.contract_recovery"
+        "opencode.telemetry.session_compacted",
+        "opencode.sticky.contract_recovery",
+        "opencode.sticky.dumped_tool_recovery",
+        "execution_packet.line_windows"
       ]
     },
     {
-      "label": "v1.39.0",
-      "version": "1.39.0",
-      "sourceSha": "3822dbcf0f48d75f43b07ec574e49899a5c54163",
+      "label": "v1.66.0-no-windows",
+      "version": "1.66.0",
+      "sourceSha": "370cb263466f07f2afb979b1ca55ffbe012af56b",
       "capabilities": [
         "opencode.plugin.default_export",
-        "opencode.hook.event",
-        "opencode.hook.chat_message",
-        "opencode.hook.chat_params",
+        "opencode.hook.event_subscribe",
+        "opencode.hook.session_prompt",
+        "opencode.hook.session_context",
+        "opencode.hook.tool_execute_before",
         "opencode.hook.tool_execute_after",
-        "opencode.hook.messages_transform",
+        "opencode.hook.permission_evaluate",
         "opencode.telemetry.session_compacted",
-        "opencode.sticky.contract_recovery"
+        "opencode.sticky.contract_recovery",
+        "opencode.sticky.dumped_tool_recovery"
       ]
     },
     {
@@ -53,15 +53,15 @@
       "modified": true,
       "capabilities": [
         "opencode.plugin.default_export",
-        "opencode.hook.event",
-        "opencode.hook.chat_message",
-        "opencode.hook.chat_params",
+        "opencode.hook.event_subscribe",
+        "opencode.hook.session_prompt",
+        "opencode.hook.session_context",
+        "opencode.hook.tool_execute_before",
         "opencode.hook.tool_execute_after",
-        "opencode.hook.messages_transform",
+        "opencode.hook.permission_evaluate",
         "opencode.telemetry.session_compacted",
         "opencode.sticky.contract_recovery",
         "opencode.sticky.dumped_tool_recovery",
-        "opencode.native_tool_route",
         "execution_packet.line_windows",
         "custom.user_hook"
       ]
@@ -72,14 +72,14 @@
       "sourceSha": "different-sha",
       "capabilities": [
         "opencode.plugin.default_export",
-        "opencode.hook.event",
-        "opencode.hook.chat_message",
-        "opencode.hook.chat_params",
-        "opencode.hook.messages_transform",
+        "opencode.hook.event_subscribe",
+        "opencode.hook.session_prompt",
+        "opencode.hook.session_context",
+        "opencode.hook.tool_execute_before",
+        "opencode.hook.permission_evaluate",
         "opencode.telemetry.session_compacted",
         "opencode.sticky.contract_recovery",
         "opencode.sticky.dumped_tool_recovery",
-        "opencode.native_tool_route",
         "execution_packet.line_windows"
       ]
     }

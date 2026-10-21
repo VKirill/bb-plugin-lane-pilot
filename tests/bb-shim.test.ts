@@ -3,7 +3,6 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { OPENCODE_BASH_DENY, withBashDeny } from "../src/rooms/native-install/opencode-min-config";
 import { BB_SHIM_NAMES, prepareBbShim } from "../src/rooms/native-agent/bb-shim";
 
 // Audit 2026-10-08 round 3, P0-2: Codex, OpenCode and Cursor writers run `bb` through guard wrappers at the front of PATH (since the owner decision of 2026-10-08 they stop only plugin admin and the hub).
@@ -108,43 +107,5 @@ describe("the PATH wrappers of a Codex, OpenCode or Cursor helper", () => {
     const res = spawnSync(join(shim.dir, "bb"), ["plugin", "list"], { encoding: "utf8", env: { PATH: `${shim.dir}::${odd}:${real}` } });
     expect(res.status).toBe(0);
     expect(res.stdout).toContain("REAL bb plugin list");
-  });
-});
-
-describe("the OpenCode bash permission rules", () => {
-  it("add the deny list after what the machine's config allows", () => {
-    const merged = withBashDeny({ bash: { "git push*": "ask", "*": "allow" }, edit: "allow" }) as { bash: Record<string, string>; edit: string };
-    expect(merged.edit).toBe("allow");
-    expect(merged.bash["git push*"]).toBe("ask");
-    const keys = Object.keys(merged.bash);
-    expect(merged.bash["*bb plugin reload*"]).toBe("deny");
-    expect(merged.bash["*ssh *ovh-main*"]).toBe("deny");
-    // Env Catalog and Lane Pilot's own commands are not fenced any more (owner decision 2026-10-08).
-    expect(OPENCODE_BASH_DENY.filter((pattern) => /env-catalog|lane-pilot|rpc/.test(pattern))).toEqual([]);
-    // last match wins in OpenCode: every deny stands after the machine's own catch-all
-    expect(keys.indexOf("*bb plugin reload*")).toBeGreaterThan(keys.indexOf("*"));
-    expect(OPENCODE_BASH_DENY.every((pattern) => merged.bash[pattern] === "deny")).toBe(true);
-  });
-
-  it("copes with a string rule, a global string and no permission at all", () => {
-    expect((withBashDeny({ bash: "allow" }) as { bash: Record<string, string> }).bash["*"]).toBe("allow");
-    const globalString = withBashDeny("allow") as unknown as Record<string, unknown>;
-    expect(globalString["*"]).toBe("allow");
-    expect((globalString.bash as Record<string, string>)["*bb plugin token*"]).toBe("deny");
-    expect((withBashDeny(undefined) as { bash: Record<string, string> }).bash["*bb plugin config*"]).toBe("deny");
-  });
-
-  it("are written into the minimal config home", async () => {
-    const { prepareOpencodeMinimal } = await import("../src/rooms/native-install/opencode-min-config");
-    const home = temp();
-    const real = join(home, ".config", "opencode");
-    mkdirSync(join(real, "plugins"), { recursive: true });
-    writeFileSync(join(real, "opencode.json"), JSON.stringify({ plugin: ["cursor-acp", "./plugins/opencode-lane.ts"], agent: { x: {} }, permission: { bash: { "*": "allow" } } }));
-    writeFileSync(join(real, "plugins", "opencode-lane.ts"), "export default {}");
-    const result = await prepareOpencodeMinimal({ home, dataDir: temp(), model: null, env: {} });
-    expect(result).not.toBeNull();
-    const config = JSON.parse(readFileSync(join(result!.configHome, "opencode", "opencode.json"), "utf8")) as { permission: { bash: Record<string, string> } };
-    expect(config.permission.bash["*"]).toBe("allow");
-    expect(config.permission.bash["*bb plugin remove*"]).toBe("deny");
   });
 });

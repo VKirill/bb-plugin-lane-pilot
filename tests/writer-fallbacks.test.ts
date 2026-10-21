@@ -19,7 +19,7 @@ describe("writer fallbacks", () => {
 
   it("ends with the PM's model and never repeats the writer's or another link", () => {
     const pm = { providerId:"claude-code", model:"claude-opus-5-5" };
-    const chain = writerFallbackChain({ providerId:"acp-opencode", model:"zai-coding-plan/glm-5.3-flash" }, writerFallbacks({}), pm);
+    const chain = writerFallbackChain({ providerId:"opencode2", model:"zai-coding-plan/glm-5.3-flash" }, writerFallbacks({}), pm);
     expect(chain.map((row) => [row.model, row.pm])).toEqual([["router9/ag/gemini-3.8-flash-high", false], ["claude-opus-5-5", true]]);
     expect(writerFallbackChain(pm, [], pm)).toEqual([]);
   });
@@ -30,7 +30,7 @@ describe("writer fallbacks", () => {
     const settings = { "writer.fallback3.provider":"codex", "writer.fallback3.model":"gpt-6", "writer.fallback3.reasoning_effort":"high" };
     expect(writerFallbacks(settings).map((row) => row.model)).toEqual(["zai-coding-plan/glm-5.3-flash", "router9/ag/gemini-3.8-flash-high", "gpt-6"]);
     const pm = { providerId:"claude-code", model:"claude-opus-5-5" };
-    const chain = writerFallbackChain({ providerId:"acp-opencode", model:"zai-coding-plan/glm-5.3-flash" }, writerFallbacks(settings), pm);
+    const chain = writerFallbackChain({ providerId:"opencode2", model:"zai-coding-plan/glm-5.3-flash" }, writerFallbacks(settings), pm);
     expect(chain.map((row) => [row.model, row.pm])).toEqual([["router9/ag/gemini-3.8-flash-high", false], ["gpt-6", false], ["claude-opus-5-5", true]]);
   });
 

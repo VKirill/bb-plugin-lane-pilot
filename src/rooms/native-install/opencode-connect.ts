@@ -19,8 +19,9 @@ export type ConnectOpencodeResult = {
   version: string | null;
 };
 
+/** OpenCode v2 (`opencode2`): Lane Pilot's threads run only on it; v1's `opencode` is not a target. */
 async function opencodeVersion(): Promise<string | null> {
-  const ran = await spawnAsync("opencode", ["--version"], { timeout: 5000 });
+  const ran = await spawnAsync("opencode2", ["--version"], { timeout: 5000 });
   return ran.error || ran.status !== 0 ? null : ran.stdout.trim();
 }
 
@@ -48,7 +49,7 @@ export async function connectOpencode(homeDir?: string): Promise<ConnectOpencode
     return {
       skipped: true,
       conflict: false,
-      reason: "opencode --version failed; S5 refused to patch",
+      reason: "opencode2 --version failed; S5 refused to patch",
       files: [],
       version: null,
     };

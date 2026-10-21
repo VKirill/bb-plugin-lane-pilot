@@ -1,31 +1,18 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { adaptOpenCodePluginHooks, opencodeNativeToolEnvironment } from "./capabilities";
 
 export const MANAGED_OPENCODE_PLUGIN_MARKER = "/* Lane Pilot managed OpenCode adapter; generated from a capability-compatible source. */";
 
-export function createOpenCodePluginShim(engineRoot: string, adapters: readonly string[] = []): string {
+/**
+ * The managed `~/.config/opencode/plugins/opencode-lane.ts`: the engine's own OpenCode v2 definition `{ id, setup }`, re-exported.
+ * The v1 adapter that wrapped the plugin's hooks is gone: OpenCode v2 loads only a definition object, and the engine (Lane Stack
+ * 1.66+) does what the adapter added. LANE_STACK_ROOT tells the engine where its checkout is (it reads it when it runs, not on import).
+ */
+export function createOpenCodePluginShim(engineRoot: string): string {
   const entry = pathToFileURL(join(engineRoot, "profiles/opencode/opencode-lane/index.ts")).href;
-  const safeRoot = JSON.stringify(engineRoot);
-  const safeEntry = JSON.stringify(entry);
-  const safeAdapters = JSON.stringify(adapters);
-  const environment = adapters.includes("opencode.native_tool_route") ? opencodeNativeToolEnvironment() : {};
-  const safeEnvironment = JSON.stringify(environment);
-  const adapterFunction = adaptOpenCodePluginHooks.toString();
   return `${MANAGED_OPENCODE_PLUGIN_MARKER}\n` +
-    `const laneStackRoot = ${safeRoot};\n` +
-    `const lanePluginUrl = ${safeEntry};\n` +
-    `const lanePilotAdapters = ${safeAdapters};\n` +
-    `const lanePilotEnvironment = ${safeEnvironment};\n` +
-    `${adapterFunction};\n` +
-    `export default async function lanePilotOpenCodePlugin(context) {\n` +
-    `  if (!process.env.LANE_STACK_ROOT) process.env.LANE_STACK_ROOT = laneStackRoot;\n` +
-    `  for (const [key, value] of Object.entries(lanePilotEnvironment)) { if (process.env[key] === undefined) process.env[key] = value; }\n` +
-    `  const loaded = await import(lanePluginUrl);\n` +
-    `  if (typeof loaded.default !== "function") throw new Error("Lane Stack OpenCode plugin has no default function export");\n` +
-    `  const hooks = await loaded.default(context);\n` +
-    `  return adaptOpenCodePluginHooks(hooks, lanePilotAdapters);\n` +
-    `}\n`;
+    `if (!process.env.LANE_STACK_ROOT) process.env.LANE_STACK_ROOT = ${JSON.stringify(engineRoot)};\n` +
+    `export { default } from ${JSON.stringify(entry)};\n`;
 }
 
 export function isManagedOpenCodePlugin(text: string): boolean {

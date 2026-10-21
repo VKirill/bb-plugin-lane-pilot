@@ -3,7 +3,6 @@ import { handleNativeDispatch, mentionContext, nativeContributedEnv } from "../.
 import { NATIVE_MENTION_PROVIDER, nativeSelectionSchema } from "../../native-agent";
 import { attachStreamRetry, droppedStreamDetail } from "../../writer";
 import { mountBbShim } from "../../native-agent/server";
-import { mountOpencodeMinimal } from "./opencode-minimal";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import type { ServerCore } from "./core";
 
@@ -29,7 +28,6 @@ export function mountNativeWiring(ctx: ServerCore) {
   bb.experimental_hooks.on("message.dispatch", (ctx) => handleNativeDispatch(bb, nativeHost, ctx, db));
 
   bb.providers.experimental_contributeEnv("claude-code", (ctx) => nativeContributedEnv(bb, nativeHost, ctx));
-  mountOpencodeMinimal(ctx);
   mountBbShim(ctx);
 
   attachStreamRetry({

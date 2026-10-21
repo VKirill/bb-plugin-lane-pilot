@@ -60,7 +60,10 @@ export async function sessionInventory(input: z.infer<typeof sessionInventoryInp
   for (const file of ["opencode.json", "opencode.jsonc"]) {
     const text = await readText(path.join(configHome, "opencode", file));
     const config = parseLoose(text);
-    for (const name of Object.keys(asObject(config.mcp))) add(mcp, name, "opencode");
+    // OpenCode v2 keeps servers under `mcp.servers`; a v1-shaped file lists them right under `mcp` (v2 reads both).
+    const servers = asObject(asObject(config.mcp).servers);
+    const v2 = Object.keys(servers).length > 0;
+    for (const name of Object.keys(v2 ? servers : asObject(config.mcp))) add(mcp, name, "opencode");
   }
 
   const list = (map: Map<string, Set<Source>>) =>

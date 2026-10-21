@@ -52,7 +52,7 @@ export type LaneReconcileReport = { claudePlugin: "fresh" | "refreshed"; codexHo
 /**
  * Brings an existing Claude Lane install to a working state that its own install.sh leaves behind:
  * a Claude plugin cache matching the checkout (same version, newer files), trusted Codex Lane hooks,
- * and the OpenCode Lane plugin also when the user's config is opencode.jsonc.
+ * and the OpenCode v2 Lane plugin also when the user's config is opencode.jsonc.
  */
 export async function reconcileClaudeLane(input: { home: string; source: string; env: NodeJS.ProcessEnv; signal?: AbortSignal }): Promise<LaneReconcileReport> {
   const { home, source, env, signal } = input;
@@ -105,14 +105,22 @@ export async function reconcileClaudeLane(input: { home: string; source: string;
   const profile = join(source, "profiles/opencode");
   const config = await exists(join(openCodeDir, "opencode.jsonc")) ? join(openCodeDir, "opencode.jsonc")
     : await exists(join(openCodeDir, "opencode.json")) ? join(openCodeDir, "opencode.json") : null;
-  if (config && await which("opencode", env) && await exists(join(profile, "opencode-lane.ts"))) {
-    await mkdir(join(openCodeDir, "plugins/opencode-lane"), { recursive: true });
+  // Lane Stack 1.66 layout for OpenCode v2 (`opencode2`): the modules in opencode-lane/ next to plugins/, the entry in plugins/ with
+  // its import one level up. v2 loads every folder under plugins/ as a plugin, so the v1-era plugins/opencode-lane/ goes.
+  if (config && await which("opencode2", env) && await exists(join(profile, "opencode-lane.ts"))) {
+    await rm(join(openCodeDir, "plugins/opencode-lane"), { recursive: true, force: true });
+    await mkdir(join(openCodeDir, "plugins"), { recursive: true });
+    await mkdir(join(openCodeDir, "opencode-lane"), { recursive: true });
     await mkdir(join(openCodeDir, "commands"), { recursive: true });
     await mkdir(join(openCodeDir, "agents"), { recursive: true });
-    await copyFile(join(profile, "opencode-lane.ts"), join(openCodeDir, "plugins/opencode-lane.ts"));
-    for (const name of await readdir(join(profile, "opencode-lane"))) {
-      if (name.endsWith(".ts")) await copyFile(join(profile, "opencode-lane", name), join(openCodeDir, "plugins/opencode-lane", name));
+    for (const name of await readdir(join(openCodeDir, "opencode-lane"))) {
+      if (name.endsWith(".ts")) await rm(join(openCodeDir, "opencode-lane", name), { force: true });
     }
+    for (const name of await readdir(join(profile, "opencode-lane"))) {
+      if (name.endsWith(".ts")) await copyFile(join(profile, "opencode-lane", name), join(openCodeDir, "opencode-lane", name));
+    }
+    const entry = (await readFile(join(profile, "opencode-lane.ts"), "utf8")).replaceAll('"./opencode-lane/', '"../opencode-lane/');
+    await atomicText(join(openCodeDir, "plugins/opencode-lane.ts"), entry);
     await copyFile(join(profile, "commands/opencode-lane.md"), join(openCodeDir, "commands/opencode-lane.md"));
     for (const name of await readdir(join(profile, "agents")).catch(() => [] as string[])) {
       if (name.endsWith(".md")) await copyFile(join(profile, "agents", name), join(openCodeDir, "agents", name));

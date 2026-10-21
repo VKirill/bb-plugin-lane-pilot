@@ -24,10 +24,9 @@ import { prepareSandboxedCommandLine, releaseSandboxedCommandLine, runSandboxedC
 import { gitOwnershipChangedPaths, resolveGitOwnershipBase, undoCheckWrites } from "../verification";
 import { runCliOnHost, runCommandOnHost, writePmSettingsOnHost } from "../writer";
 import { runScriptOnHost } from "./script-run";
-import { probeOpenCodeLimit } from "./opencode-limit-log";
+import { probeOpenCodeLimit } from "./opencode-limit";
 import { execFile } from "node:child_process";
 import { discoverClaudeAgents, prepareNativeClaude } from "../native-agent";
-import { prepareOpencodeMinimal } from "../native-install";
 import { prepareBbShim } from "../native-agent";
 import {
   connectOpencodeStack,
@@ -139,7 +138,7 @@ export const stabilityDrill: ExperimentalHostRpcHandlers<typeof hostContract>["s
   checks:await runStabilityDrill(),
 });
 
-/** The writer host reads its OpenCode log for a silent writer's session (writer-silence.ts asks only for acp-opencode writers). */
+/** The writer host asks its OpenCode v2 service about a silent writer's session (writer-silence.ts asks only for opencode2 writers). */
 export const openCodeLimitProbe: ExperimentalHostRpcHandlers<typeof hostContract>["openCodeLimitProbe"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
   ...await probeOpenCodeLimit({sessionId:input.sessionId,sinceMs:input.sinceMs}),
@@ -686,10 +685,6 @@ export const prepareNativeClaudeHost: ExperimentalHostRpcHandlers<typeof hostCon
     signal: context.signal,
   })
 );
-
-export const prepareOpencodeMinimalHost: ExperimentalHostRpcHandlers<typeof hostContract>["prepareOpencodeMinimal"] = async (input, context) => ({
-  result: await prepareOpencodeMinimal({ dataDir: context.experimental_paths.dataDir, model: input.model }),
-});
 
 export const prepareBbShimHost: ExperimentalHostRpcHandlers<typeof hostContract>["prepareBbShim"] = async (_input, context) => (
   prepareBbShim({ dataDir: context.experimental_paths.dataDir })

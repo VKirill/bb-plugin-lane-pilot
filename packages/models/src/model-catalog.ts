@@ -2,7 +2,7 @@ import { priceFor } from "./model-prices";
 
 /**
  * The hub's catalog of agent providers and their models, as the Workflows tab needs it: every provider BB knows (codex, claude-code,
- * acp-opencode with its Gemini and DeepSeek models, router9 ...), the machines each one is available on, and what each model supports
+ * opencode2 with its Gemini and DeepSeek models, router9 ...), the machines each one is available on, and what each model supports
  * (reasoning efforts). Pure: the server fills it from `bb.sdk.providers`, the browser only reads it, and a choice is checked here
  * before it becomes a draft patch, so a model no machine has never reaches a node.
  */

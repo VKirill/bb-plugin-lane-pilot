@@ -2,42 +2,44 @@ import { lstat, readFile, realpath } from "node:fs/promises";
 import { stripTypeScriptTypes } from "node:module";
 import { isAbsolute, resolve, sep } from "node:path";
 
+// OpenCode v2 contract of Lane Stack's opencode-lane plugin (1.66+): a definition `{ id, setup }` whose setup registers the
+// v2 hooks. The v1 hook names (event, chat.message, chat.params, tool.execute.after, messages.transform) and the Cursor ACP
+// tool route of v1 lane-session are no longer checked: Lane Pilot's threads run on OpenCode v2 only.
 export const REQUIRED_CAPABILITIES = [
   "opencode.plugin.default_export",
-  "opencode.hook.event",
-  "opencode.hook.chat_message",
-  "opencode.hook.chat_params",
+  "opencode.hook.event_subscribe",
+  "opencode.hook.session_prompt",
+  "opencode.hook.session_context",
+  "opencode.hook.tool_execute_before",
   "opencode.hook.tool_execute_after",
-  "opencode.hook.messages_transform",
+  "opencode.hook.permission_evaluate",
   "opencode.telemetry.session_compacted",
   "opencode.sticky.contract_recovery",
   "opencode.sticky.dumped_tool_recovery",
-  "opencode.native_tool_route",
   "execution_packet.line_windows",
 ] as const;
 
 export type RequiredCapability = (typeof REQUIRED_CAPABILITIES)[number];
 export type EngineCapability = RequiredCapability | (string & {});
 
+/** What Lane Pilot does itself when the engine lacks it (read-first line windows: tasks/read-first.ts). */
 export const ADAPTER_CAPABILITIES = [
-  "opencode.sticky.dumped_tool_recovery",
-  "opencode.native_tool_route",
   "execution_packet.line_windows",
 ] as const satisfies readonly RequiredCapability[];
 
 const ADAPTABLE = new Set<string>(ADAPTER_CAPABILITIES);
 
 export const IMPACTED_FUNCTIONS: Record<RequiredCapability, string> = {
-  "opencode.plugin.default_export": "OpenCode plugin module loading",
-  "opencode.hook.event": "OpenCode session lifecycle and compaction event handling",
-  "opencode.hook.chat_message": "OpenCode prompt routing and sticky task context",
-  "opencode.hook.chat_params": "OpenCode model/parameter routing",
+  "opencode.plugin.default_export": "OpenCode v2 plugin module loading (a default { id, setup } definition)",
+  "opencode.hook.event_subscribe": "OpenCode session lifecycle and compaction event telemetry",
+  "opencode.hook.session_prompt": "OpenCode prompt state and sticky task contract",
+  "opencode.hook.session_context": "OpenCode sticky task/evidence message recovery",
+  "opencode.hook.tool_execute_before": "OpenCode lane writer guard",
   "opencode.hook.tool_execute_after": "OpenCode tool evidence, budget, and winnow result handling",
-  "opencode.hook.messages_transform": "OpenCode sticky task/evidence message recovery",
+  "opencode.hook.permission_evaluate": "OpenCode lane agent rules and hub command guard",
   "opencode.telemetry.session_compacted": "OpenCode compacted-session telemetry and recovery",
   "opencode.sticky.contract_recovery": "OpenCode lane contract recovery after compaction",
   "opencode.sticky.dumped_tool_recovery": "OpenCode correction when a provider prints tool JSON instead of calling tools",
-  "opencode.native_tool_route": "OpenCode native read/edit/write/bash tool routing",
   "execution_packet.line_windows": "execution packet read_first line-window selection",
 };
 
@@ -128,81 +130,21 @@ export function parseExecutionLineWindows(raw: string): PathWindows {
   return { path: path.replace(/[,:;]+$/, ""), windows };
 }
 
-export function opencodeNativeToolEnvironment(): Record<string, string> {
-  return {
-    CURSOR_ACP_FORWARD_TOOL_CALLS: "false",
-    CURSOR_ACP_TOOL_LOOP_MODE: "opencode",
-    CURSOR_ACP_MCP_BRIDGE: "false",
-  };
-}
-
-const DUMPED_TOOL_NAME = /"name"\s*:\s*"(?:bash|shell|read|edit|write|grep|glob|str_replace|Shell|Read|Write|Grep|Glob)"/i;
-const DEAD_CURSOR_ROUTE = /Cursor tools.{0,40}unavail|MCP-сервер(?:ы)? не подключен/i;
-
-export function dumpedOpenCodeToolRecovery(text: string): string {
-  if (!text || (!DUMPED_TOOL_NAME.test(text) && !DEAD_CURSOR_ROUTE.test(text))) return "";
-  return "[opencode-lane tools] JSON-in-chat is ignored. Call OpenCode read/edit/write/bash/grep. Cursor/MCP ACP tools do not exist here. If done or blocked, emit LANE_REPORT now.";
-}
-
-export function adaptOpenCodePluginHooks(plugin: unknown, adapters: readonly string[]): unknown {
-  if (!plugin || typeof plugin !== "object") return plugin;
-  const hooks = { ...(plugin as Record<string, unknown>) };
-  if (!adapters.includes("opencode.sticky.dumped_tool_recovery")) return hooks;
-  const key = "experimental.chat.messages.transform";
-  const original = hooks[key];
-  if (typeof original !== "function") return hooks;
-  hooks[key] = async function (this: unknown, ...args: unknown[]): Promise<unknown> {
-    const result = await original.apply(this, args);
-    const output = args[1] && typeof args[1] === "object" ? args[1] as { messages?: unknown[] } : null;
-    const messages = output?.messages;
-    if (!messages) return result;
-    const texts: string[] = [];
-    for (const message of messages) {
-      if (!message || typeof message !== "object") continue;
-      const item = message as { info?: { role?: string }; parts?: Array<{ type?: string; text?: string }> };
-      if (item.info?.role !== "assistant") continue;
-      for (const part of item.parts ?? []) if (part.type === "text" && typeof part.text === "string") texts.push(part.text);
-    }
-    const body = texts.join("\n");
-    const hasToolJson = /"name"\s*:\s*"(?:bash|shell|read|edit|write|grep|glob|str_replace|Shell|Read|Write|Grep|Glob)"/i.test(body)
-      || /Cursor tools.{0,40}unavail|MCP-сервер(?:ы)? не подключен/i.test(body);
-    const notePrefix = "[opencode-lane tools]";
-    for (const message of messages) {
-      if (!message || typeof message !== "object") continue;
-      const item = message as { parts?: Array<{ synthetic?: boolean; text?: string }> };
-      item.parts = (item.parts ?? []).filter((part) => !(part.synthetic && part.text?.startsWith(notePrefix)));
-    }
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const message = messages[index] as { parts?: unknown[] } | undefined;
-      if (message && message.parts?.length === 0) messages.splice(index, 1);
-    }
-    if (hasToolJson) {
-      messages.push({
-        info: { role: "user" },
-        parts: [{
-          type: "text",
-          text: `${notePrefix} JSON-in-chat is ignored. Call OpenCode read/edit/write/bash/grep. Cursor/MCP ACP tools do not exist here. If done or blocked, emit LANE_REPORT now.`,
-          synthetic: true,
-        }],
-      });
-    }
-    return result;
-  };
-  return hooks;
-}
-
 const MAX_SOURCE_BYTES = 512 * 1024;
 const OPEN_CODE_ENTRY = "profiles/opencode/opencode-lane.ts";
 const OPEN_CODE_INDEX = "profiles/opencode/opencode-lane/index.ts";
+const OPEN_CODE_V2 = "profiles/opencode/opencode-lane/v2.ts";
 const TELEMETRY_SOURCE = "profiles/opencode/opencode-lane/telemetry.ts";
 const STICKY_SOURCE = "profiles/opencode/opencode-lane/sticky.ts";
+/** The v2 registrations laneSetup must make: `ctx.<target>.<method>("<name>", …)` (`event.subscribe` takes no name). */
 const HOOK_CAPABILITIES = [
-  ["opencode.hook.event", "event"],
-  ["opencode.hook.chat_message", "chat.message"],
-  ["opencode.hook.chat_params", "chat.params"],
-  ["opencode.hook.tool_execute_after", "tool.execute.after"],
-  ["opencode.hook.messages_transform", "experimental.chat.messages.transform"],
-] as const satisfies ReadonlyArray<readonly [RequiredCapability, string]>;
+  ["opencode.hook.event_subscribe", ["event", ".", "subscribe", "("]],
+  ["opencode.hook.session_prompt", ["session", ".", "hook", "(", "prompt"]],
+  ["opencode.hook.session_context", ["session", ".", "hook", "(", "context"]],
+  ["opencode.hook.tool_execute_before", ["tool", ".", "hook", "(", "execute.before"]],
+  ["opencode.hook.tool_execute_after", ["tool", ".", "hook", "(", "execute.after"]],
+  ["opencode.hook.permission_evaluate", ["permission", ".", "hook", "(", "evaluate"]],
+] as const satisfies ReadonlyArray<readonly [RequiredCapability, readonly string[]]>;
 
 type ContractDiagnostic = { capability: RequiredCapability; path: string; detail: string };
 type Token = { kind: "id" | "string" | "punct"; value: string };
@@ -425,25 +367,72 @@ function exportedFunction(tokens: Token[], name: string): { body: Token[]; calla
   return null;
 }
 
-function defaultExportIsCallable(tokens: Token[]): boolean {
+/** Where a top-level `const <name> = { … }` (exported or not) opens its object, or -1. */
+function constObjectStart(tokens: Token[], name: string): number {
+  for (const index of topLevelIndices(tokens)) {
+    const cursor = tokens[index]?.value === "export" ? index + 1 : index;
+    if (["const", "let", "var"].includes(tokens[cursor]?.value ?? "") && tokens[cursor + 1]?.value === name
+      && tokens[cursor + 2]?.value === "=" && tokens[cursor + 3]?.value === "{") return cursor + 3;
+  }
+  return -1;
+}
+
+/** An object literal's keys and the first token of each value; `...Name` of a top-level const object adds its keys. */
+function definitionKeys(tokens: Token[], objectStart: number, depth = 0): Map<string, Token | undefined> {
+  const keys = new Map<string, Token | undefined>();
+  const objectEnd = matching(tokens, objectStart, "{", "}");
+  if (objectEnd < 0 || depth > 3) return keys;
+  let cursor = objectStart + 1;
+  while (cursor < objectEnd) {
+    let nested = 0;
+    let end = cursor;
+    for (; end < objectEnd; end += 1) {
+      const value = tokens[end]!.value;
+      if (nested === 0 && value === ",") break;
+      if (["{", "(", "["].includes(value)) nested += 1;
+      else if (["}", ")", "]"].includes(value)) nested -= 1;
+    }
+    const first = tokens[cursor];
+    if (first?.value === "..." && tokens[cursor + 1]?.kind === "id") {
+      const spread = constObjectStart(tokens, tokens[cursor + 1]!.value);
+      if (spread >= 0) for (const [key, value] of definitionKeys(tokens, spread, depth + 1)) keys.set(key, value);
+    } else if (first && (first.kind === "id" || first.kind === "string")) {
+      keys.set(first.value, tokens[cursor + 1]?.value === ":" ? tokens[cursor + 2] : first);
+    }
+    cursor = end + 1;
+  }
+  return keys;
+}
+
+/**
+ * The name of the setup function an OpenCode v2 plugin module's default export names: `export default { id, setup, … }`
+ * (or a const object of that shape, or one spread into it), null when the default is not such a definition.
+ */
+function defaultDefinitionSetup(tokens: Token[]): string | null {
   for (const index of topLevelIndices(tokens)) {
     if (tokens[index]?.value !== "export" || tokens[index + 1]?.value !== "default") continue;
-    let cursor = index + 2;
-    if (tokens[cursor]?.value === "async") cursor += 1;
-    if (tokens[cursor]?.value === "function") {
-      const params = tokens.findIndex((token, at) => at > cursor && token.value === "(");
-      const paramsEnd = params < 0 ? -1 : matching(tokens, params, "(", ")");
-      const bodyStart = paramsEnd < 0 ? -1 : tokens.findIndex((token, at) => at > paramsEnd && token.value === "{");
-      return bodyStart >= 0 && matching(tokens, bodyStart, "{", "}") > bodyStart;
-    }
-    if (tokens[cursor]?.kind === "id") {
-      const declaration = exportedFunction(tokens, tokens[cursor]!.value);
-      return declaration?.callable === true;
-    }
-    if (tokens[cursor]?.value === "(") return tokens.slice(cursor).some((token) => token.value === "=>");
+    const value = tokens[index + 2];
+    const start = value?.value === "{" ? index + 2 : value?.kind === "id" ? constObjectStart(tokens, value.value) : -1;
+    if (start < 0) return null;
+    const keys = definitionKeys(tokens, start);
+    const setup = keys.get("setup");
+    return keys.has("id") && setup?.kind === "id" ? setup.value : null;
   }
-  return false;
+  return null;
 }
+
+/** Whether the module imports `name` from `from` at top level (`import { …, name, … } from "from"`). */
+function importsFrom(tokens: Token[], name: string, from: string): boolean {
+  return topLevelIndices(tokens).some((index) => {
+    if (tokens[index]?.value !== "import" || tokens[index + 1]?.value !== "{") return false;
+    const close = matching(tokens, index + 1, "{", "}");
+    return close > 0 && tokens[close + 1]?.value === "from" && tokens[close + 2]?.value === from
+      && tokens.slice(index + 2, close).some((token) => token.value === name);
+  });
+}
+
+const hasSequence = (tokens: readonly Token[], values: readonly string[]): boolean =>
+  tokens.some((_, index) => values.every((value, offset) => tokens[index + offset]?.value === value));
 
 function callableValue(tokens: Token[], start: number, end: number): boolean {
   let cursor = start;
@@ -559,44 +548,21 @@ export async function inspectEngineCapabilitiesDetailed(root: string): Promise<D
   };
   entryTokens = parseSource(entry, OPEN_CODE_ENTRY, ["opencode.plugin.default_export"]);
   indexTokens = parseSource(index, OPEN_CODE_INDEX, ["opencode.plugin.default_export", ...HOOK_CAPABILITIES.map(([capability]) => capability)]);
-  const defaultContract = Boolean(entryTokens && indexTokens && defaultReexportsExpectedModule(entryTokens) && defaultExportIsCallable(indexTokens));
-  if (defaultContract) found.push("opencode.plugin.default_export");
-  else if (entryTokens && indexTokens) diagnostics.push(diagnostic("opencode.plugin.default_export", OPEN_CODE_ENTRY, "Expected a default re-export of ./opencode-lane/index.ts whose module has a callable default export."));
+  const setupName = indexTokens ? defaultDefinitionSetup(indexTokens) : null;
+  // The setup lives in v2.ts (Lane Stack 1.66): a local function of index.ts is accepted too.
+  const setupFromV2 = Boolean(setupName && indexTokens && importsFrom(indexTokens, setupName, "./v2.ts"));
+  if (entryTokens && defaultReexportsExpectedModule(entryTokens) && setupName) found.push("opencode.plugin.default_export");
+  else if (entryTokens && indexTokens) diagnostics.push(diagnostic("opencode.plugin.default_export", OPEN_CODE_ENTRY, "Expected a default re-export of ./opencode-lane/index.ts whose default export is an OpenCode v2 definition { id, setup }."));
 
-  if (indexTokens) {
-    const callablePlugin = defaultExportIsCallable(indexTokens);
-    let properties: Array<{ key: string; start: number; end: number }> = [];
-    let propertiesTokens = indexTokens;
-    if (callablePlugin) {
-      const exported = exportedFunction(indexTokens, "OpenCodeLanePlugin");
-      const body = exported?.body ?? [];
-      const object = returnedObject(body);
-      if (object) {
-        properties = objectProperties(object.tokens, object.start);
-        propertiesTokens = object.tokens;
-      }
-      else {
-        const defaultIndex = topLevelIndices(indexTokens).find((at) => indexTokens[at]?.value === "export" && indexTokens[at + 1]?.value === "default");
-        if (defaultIndex !== undefined && indexTokens[defaultIndex + 2]?.value === "function") {
-          const bodyStart = indexTokens.findIndex((token, at) => at > defaultIndex + 2 && token.value === "{");
-          const bodyEnd = bodyStart < 0 ? -1 : matching(indexTokens, bodyStart, "{", "}");
-          const objectFromFunction = bodyEnd > bodyStart ? returnedObject(indexTokens.slice(bodyStart + 1, bodyEnd)) : null;
-          if (objectFromFunction) {
-            properties = objectProperties(objectFromFunction.tokens, objectFromFunction.start);
-            propertiesTokens = objectFromFunction.tokens;
-          }
-        }
-      }
-    }
-    for (const [capability, hook] of HOOK_CAPABILITIES) {
-      const property = properties.find((item) => item.key === hook);
-      const method = property && property.start < 0 && property.end > 0
-        && (propertiesTokens[property.end - 1]?.value === "}" || propertiesTokens[property.end - 1]?.value === ")");
-      const callable = Boolean(property && (property.start >= 0
-        ? callableValue(propertiesTokens, property.start, property.end)
-        : method));
-      if (callable) found.push(capability);
-      else if (index.text) diagnostics.push(diagnostic(capability, OPEN_CODE_INDEX, `Hook ${hook} is absent, indirect, or not a direct callable function value.`));
+  const hookPath = setupFromV2 ? OPEN_CODE_V2 : OPEN_CODE_INDEX;
+  const hookTokens = setupFromV2
+    ? parseSource(await readBoundedSource(root, OPEN_CODE_V2), OPEN_CODE_V2, HOOK_CAPABILITIES.map(([capability]) => capability))
+    : indexTokens;
+  const setup = hookTokens && setupName ? exportedFunction(hookTokens, setupName) : null;
+  if (hookTokens) {
+    for (const [capability, sequence] of HOOK_CAPABILITIES) {
+      if (setup?.callable && hasSequence(setup.body, sequence)) found.push(capability);
+      else diagnostics.push(diagnostic(capability, hookPath, `The v2 setup ${setupName ?? "(none)"} does not register ${sequence.filter((part) => ![".", "("].includes(part)).join(" ")}.`));
     }
   }
 
@@ -630,7 +596,6 @@ export async function inspectEngineCapabilitiesDetailed(root: string): Promise<D
   }
 
   for (const { capability, file, pattern } of [
-    { capability: "opencode.native_tool_route" as const, file: "bin/lane-session", pattern: /^export\s+CURSOR_ACP_FORWARD_TOOL_CALLS=(?:"false"|'false'|false)\s*$/m },
     { capability: "execution_packet.line_windows" as const, file: "bin/execution_packet.py", pattern: /^\s*_WINDOW_RE\s*=|^\s*def\s+.*line_window/m },
   ]) {
     const source = await readBoundedSource(root, file);

@@ -15,7 +15,7 @@ const catalog: ModelCatalog = {
   providers: [
     { id: "codex", displayName: "Codex", logoUrl: null, family: null, supportsServiceTier: true, serviceTiers: ["default", "fast"], hostIds: ["mac", "ovh"],
       models: [{ id: "gpt-6-luna", model: "gpt-6-luna", displayName: "GPT-6 Luna", efforts: ["low", "medium", "high"], defaultEffort: "medium", isDefault: false, hostIds: ["mac", "ovh"] }] },
-    { id: "acp-opencode", displayName: "OpenCode", logoUrl: null, family: null, supportsServiceTier: false, serviceTiers: [], hostIds: ["mac"],
+    { id: "opencode2", displayName: "OpenCode", logoUrl: null, family: null, supportsServiceTier: false, serviceTiers: [], hostIds: ["mac"],
       models: [{ id: "router9/ag/gemini-3.8-flash-high", model: "router9/ag/gemini-3.8-flash-high", displayName: "Gemini 3.8 Flash", efforts: ["medium", "high"], defaultEffort: "high", isDefault: false, hostIds: ["mac"] },
         { id: "deepseek/v4", model: "deepseek/v4", displayName: "DeepSeek V4", efforts: ["high"], defaultEffort: "high", isDefault: false, hostIds: [] }] },
     { id: "router9", displayName: "router9", logoUrl: null, family: null, supportsServiceTier: false, serviceTiers: [], hostIds: [], models: [] },
@@ -32,16 +32,16 @@ describe("step executors by node type", () => {
   });
 
   it("an agent node takes the role's stage selection, then the generic workflow agent, from Settings", () => {
-    expect(one({ id: "a", type: "agent", role: "analyst" }, { ...writer, "pm_read.provider": "acp-opencode", "pm_read.model": "router9/ag/gemini-3.8-flash-high" }))
-      .toMatchObject({ providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "low", source: "stage", sourceKey: "pm_read.model", inherited: true, costTier: "low" });
+    expect(one({ id: "a", type: "agent", role: "analyst" }, { ...writer, "pm_read.provider": "opencode2", "pm_read.model": "router9/ag/gemini-3.8-flash-high" }))
+      .toMatchObject({ providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "low", source: "stage", sourceKey: "pm_read.model", inherited: true, costTier: "low" });
     expect(one({ id: "a", type: "agent", role: "worker" }, { ...writer, "workflow.agent.provider": "codex", "workflow.agent.model": "gpt-6-luna", "workflow.agent.reasoning_effort": "medium" }))
       .toMatchObject({ providerId: "codex", model: "gpt-6-luna", reasoningEffort: "medium", source: "agent", sourceKey: "workflow.agent.model" });
   });
 
   it("node fields beat a preset, and a preset beats the default; an unknown preset is flagged and the step goes to the next level", () => {
     expect(one({ id: "a", type: "agent", role: "analyst", model_preset: "cheap-fast" })).toMatchObject({ model: "claude-haiku-5-5", reasoningEffort: "low", source: "preset", sourceKey: "cheap-fast", inherited: true });
-    expect(one({ id: "a", type: "agent", role: "analyst", model_preset: "cheap-fast", provider: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoning: "medium" }))
-      .toMatchObject({ providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "medium", source: "node", inherited: false, costTier: "low" });
+    expect(one({ id: "a", type: "agent", role: "analyst", model_preset: "cheap-fast", provider: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoning: "medium" }))
+      .toMatchObject({ providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "medium", source: "node", inherited: false, costTier: "low" });
     expect(one({ id: "a", type: "agent", role: "analyst", model_preset: "strong" })).toMatchObject({ model: "claude-opus-5-5", reasoningEffort: "high", source: "preset", sourceKey: "strong", issues: [] });
     expect(one({ id: "a", type: "agent", role: "analyst", model_preset: "no-such-preset" })).toMatchObject({ model: "claude-opus-5-5", source: "pm", issues: ["unknown_preset"] });
   });
@@ -70,8 +70,8 @@ describe("step executors by node type", () => {
     const task = one({ id: "w", type: "lp-task", stages: ["writer-agent", "verification", "code-critique"] }, writer);
     expect(task).toMatchObject({ mode: "chain", providerId: "codex", model: "gpt-6-luna", reasoningEffort: "high", serviceTier: "fast", source: "writer", settingsKey: "writer", overridable: false, costTier: "low" });
     expect(task.fallbacks).toEqual([
-      { providerId: "acp-opencode", model: "zai-coding-plan/glm-5.3-flash", reasoningEffort: "high", pm: false },
-      { providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "medium", pm: false },
+      { providerId: "opencode2", model: "zai-coding-plan/glm-5.3-flash", reasoningEffort: "high", pm: false },
+      { providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "medium", pm: false },
       { providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: null, pm: true },
     ]);
     expect(task.parts).toEqual([{ stage: "code-critique", providerId: "codex", model: "gpt-6-luna", reasoningEffort: "high", serviceTier: "fast", source: "writer", sourceKey: "writer.model" }]);
@@ -80,7 +80,7 @@ describe("step executors by node type", () => {
   it("the chain follows the configured fallbacks, drops an off slot and a repeat of the writer, and leaves the PM open when it is unknown", () => {
     const configured = { ...writer, "writer.fallback1.provider": "", "writer.fallback2.provider": "codex", "writer.fallback2.model": "gpt-6-luna" };
     expect(one({ id: "w", type: "lp-task" }, configured, { pm: null }).fallbacks).toEqual([{ providerId: null, model: null, reasoningEffort: null, pm: true }]);
-    const own = { ...writer, "writer.fallback1.provider": "acp-opencode", "writer.fallback1.model": "deepseek/v4", "writer.fallback1.reasoning_effort": "high", "writer.fallback2.provider": "" };
+    const own = { ...writer, "writer.fallback1.provider": "opencode2", "writer.fallback1.model": "deepseek/v4", "writer.fallback1.reasoning_effort": "high", "writer.fallback2.provider": "" };
     expect(one({ id: "w", type: "lp-task" }, own).fallbacks.map((row) => row.model)).toEqual(["deepseek/v4", "claude-opus-5-5"]);
   });
 
@@ -126,7 +126,7 @@ describe("step executors by node type", () => {
   it("flags a step whose provider or model no machine offers", () => {
     const steps = run([
       { id: "ok", type: "agent", role: "analyst", provider: "codex", model: "gpt-6-luna", reasoning: "medium" },
-      { id: "nomodel", type: "agent", role: "analyst", provider: "acp-opencode", model: "deepseek/v4", reasoning: "high" },
+      { id: "nomodel", type: "agent", role: "analyst", provider: "opencode2", model: "deepseek/v4", reasoning: "high" },
       { id: "noprov", type: "agent", role: "analyst", provider: "router9", model: "x" },
       { id: "gone", type: "agent", role: "analyst", provider: "nope", model: "x" },
       { id: "effort", type: "agent", role: "analyst", provider: "codex", model: "gpt-6-luna", reasoning: "max" },
@@ -145,16 +145,16 @@ describe("step executors by node type", () => {
 describe("the model catalog", () => {
   it("accepts a combination the catalog supports", () => {
     expect(validateChoice(catalog, { providerId: "codex", model: "gpt-6-luna", effort: "high", serviceTier: "fast" })).toEqual({ ok: true });
-    expect(validateChoice(catalog, { providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", effort: "medium" })).toEqual({ ok: true });
+    expect(validateChoice(catalog, { providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", effort: "medium" })).toEqual({ ok: true });
   });
 
   it("rejects a model no machine offers, a provider with no machine, an unknown id, and an effort or tier the model lacks", () => {
-    expect(validateChoice(catalog, { providerId: "acp-opencode", model: "deepseek/v4" })).toMatchObject({ ok: false, code: "model_unavailable" });
+    expect(validateChoice(catalog, { providerId: "opencode2", model: "deepseek/v4" })).toMatchObject({ ok: false, code: "model_unavailable" });
     expect(validateChoice(catalog, { providerId: "router9", model: "x" })).toMatchObject({ ok: false, code: "provider_unavailable" });
     expect(validateChoice(catalog, { providerId: "nope", model: "x" })).toMatchObject({ ok: false, code: "provider_unknown" });
     expect(validateChoice(catalog, { providerId: "codex", model: "gpt-9" })).toMatchObject({ ok: false, code: "model_unknown" });
     expect(validateChoice(catalog, { providerId: "codex", model: "gpt-6-luna", effort: "max" })).toMatchObject({ ok: false, code: "effort_unsupported" });
-    expect(validateChoice(catalog, { providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", serviceTier: "fast" })).toMatchObject({ ok: false, code: "tier_unsupported" });
+    expect(validateChoice(catalog, { providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", serviceTier: "fast" })).toMatchObject({ ok: false, code: "tier_unsupported" });
   });
 
   it("offers a node only the efforts both the model and the node schema know", () => {

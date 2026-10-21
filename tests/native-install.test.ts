@@ -139,7 +139,7 @@ describe("Claude Lane on the host", () => {
     await mkdir(join(home, ".config/opencode"), { recursive: true });
     await writeFile(join(home, ".config/opencode/opencode.jsonc"), '{\n  // mine\n  "plugin": ["./plugins/other.ts"]\n}\n');
     const env = { ...claudeLaneEnv(home), PATH: `${join(home, "bin")}:/usr/bin:/bin` };
-    await mkdir(join(home, "bin")); await writeFile(join(home, "bin/opencode"), "#!/bin/sh\n", { mode: 0o755 });
+    await mkdir(join(home, "bin")); await writeFile(join(home, "bin/opencode2"), "#!/bin/sh\n", { mode: 0o755 });
     expect((await reconcileClaudeLane({ home, source, env })).openCode).toBe("newly-registered");
     const text = await readFile(join(home, ".config/opencode/opencode.jsonc"), "utf8");
     expect(text).toContain("// mine"); expect(text).toContain("./plugins/other.ts"); expect(text).toContain("./plugins/opencode-lane.ts");

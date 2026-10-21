@@ -2,10 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   assessEngineCapabilities,
-  adaptOpenCodePluginHooks,
   decideEngine,
-  dumpedOpenCodeToolRecovery,
-  opencodeNativeToolEnvironment,
   parseExecutionLineWindows,
 } from "../../src/rooms/native-install/capabilities";
 import { createOpenCodePluginShim } from "../../src/rooms/native-install/opencode-plugin";
@@ -24,24 +21,21 @@ const byLabel = (label: string) => {
 };
 
 describe("upstream capability compatibility", () => {
-  it("uses the same required-interface fixture for 1.38, 1.39 and dd77", () => {
-    const old = assessEngineCapabilities(byLabel("v1.38.0").capabilities);
-    const release = assessEngineCapabilities(byLabel("v1.39.0").capabilities);
+  it("refuses the v1 plugin of Lane Stack 1.65 and takes 1.66, adapting only line windows", () => {
+    const old = assessEngineCapabilities(byLabel("v1.65").capabilities);
+    const release = assessEngineCapabilities(byLabel("v1.66.0-no-windows").capabilities);
     const baseline = assessEngineCapabilities(fixtures.baseline.capabilities);
-    expect(old.missingCapabilities).toContain("opencode.hook.event");
-    expect(old.diagnostics[0]?.impactedFunction).toContain("session lifecycle");
+    expect(old.compatible).toBe(false);
+    expect(old.missingCapabilities).toEqual(expect.arrayContaining(["opencode.plugin.default_export", "opencode.hook.session_prompt", "opencode.hook.permission_evaluate"]));
+    expect(old.diagnostics[0]?.impactedFunction).toContain("OpenCode v2 plugin module loading");
     expect(release.compatible).toBe(true);
-    expect(release.adaptedCapabilities).toEqual(expect.arrayContaining([
-      "opencode.sticky.dumped_tool_recovery",
-      "opencode.native_tool_route",
-      "execution_packet.line_windows",
-    ]));
+    expect(release.adaptedCapabilities).toEqual(["execution_packet.line_windows"]);
     expect(baseline.compatible).toBe(true);
-    expect(fixtures.baseline.sourceSha).toBe("dd77b26792eca15e8bde03fd26754922ea7ab4f0");
+    expect(baseline.adaptedCapabilities).toEqual([]);
   });
 
   it("reuses a newer compatible engine with an empty write plan", () => {
-    const fixture = byLabel("v1.39.0");
+    const fixture = byLabel("v1.66.0-no-windows");
     const decision = decideEngine(assessEngineCapabilities(fixture.capabilities), {
       installed: true,
       owner: "upstream",
@@ -72,36 +66,18 @@ describe("upstream capability compatibility", () => {
     expect(decideEngine(assessment, { installed: true, owner: "user", modified: true }).writes).toEqual([]);
   });
 
-  it("adapts packet line windows and native OpenCode routing through local interfaces", () => {
+  it("adapts packet line windows through a local interface", () => {
     expect(parseExecutionLineWindows("src/app.ts L12-L25 and L30-L31")).toEqual({
       path: "src/app.ts",
       windows: [{ startLine: 12, endLine: 25 }, { startLine: 30, endLine: 31 }],
     });
-    expect(Object.values(opencodeNativeToolEnvironment())).toEqual(["false", "opencode", "false"]);
-    expect(dumpedOpenCodeToolRecovery('{"name":"bash","arguments":{"cmd":"pwd"}}')).toContain("OpenCode read/edit/write/bash/grep");
-    expect(dumpedOpenCodeToolRecovery("plain result")).toBe("");
   });
 
-  it("applies native route and dumped-tool adapters in the generated OpenCode shim", async () => {
-    const adapterIds = ["opencode.native_tool_route", "opencode.sticky.dumped_tool_recovery"];
-    const source = createOpenCodePluginShim("/tmp/managed-engine", adapterIds);
-    expect(source).toContain('"CURSOR_ACP_FORWARD_TOOL_CALLS":"false"');
-    expect(source).toContain("adaptOpenCodePluginHooks(hooks, lanePilotAdapters)");
-    expect(() => new Function(source
-      .replace("export default async function lanePilotOpenCodePlugin", "async function lanePilotOpenCodePlugin")
-      .concat("\nreturn lanePilotOpenCodePlugin;"))).not.toThrow();
-    const hooks = adaptOpenCodePluginHooks({
-      "experimental.chat.messages.transform": async () => undefined,
-    }, adapterIds) as Record<string, (input: unknown, output: { messages: Array<Record<string, unknown>> }) => Promise<unknown>>;
-    const messages: Array<Record<string, unknown>> = [{
-      info: { role: "assistant" },
-      parts: [{ type: "text", text: '{"name":"bash","arguments":{"cmd":"pwd"}}' }],
-    }];
-    await hooks["experimental.chat.messages.transform"]({}, { messages });
-    expect(messages.at(-1)).toMatchObject({
-      info: { role: "user" },
-      parts: [{ synthetic: true, text: expect.stringContaining("OpenCode read/edit/write/bash/grep") }],
-    });
+  it("generates an OpenCode v2 shim that re-exports the engine's definition", () => {
+    const source = createOpenCodePluginShim("/tmp/managed-engine");
+    expect(source).toContain('export { default } from "file:///tmp/managed-engine/profiles/opencode/opencode-lane/index.ts";');
+    expect(source).toContain('process.env.LANE_STACK_ROOT = "/tmp/managed-engine"');
+    expect(source).not.toContain("export default async function");
   });
 });
 

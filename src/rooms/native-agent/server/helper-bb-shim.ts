@@ -6,15 +6,16 @@ import type { ServerCore } from "../../core/server";
  * Codex, OpenCode and Cursor threads Lane Pilot starts get the guard wrappers (src/bb-shim.ts) at the front of their PATH, so a
  * writer or helper on them meets the same refusals as on Claude Code (audit 2026-10-08 round 3, P0-2). The machine of the thread
  * writes the wrappers and says the PATH (host call `prepareBbShim`); the thread's own PATH is not readable from here, so the
- * host worker's is used, which is the one BB's daemon hands its threads.
+ * host worker's is used, which is the one BB's daemon hands its threads. OpenCode v2 runs every session in one shared service:
+ * its provider sets these variables as the session's shell environment, so they reach the writer's shells, not the service.
  *
  * Only threads Lane Pilot started carry a `role`; the owner's own chats keep their PATH. The same threads get `LANE_PILOT_ROLE`, the
  * marker lane plugins installed for the whole machine check (opencode-lane's guard refused skills in the owner's own OpenCode chats
  * before it did, 2026-10-13). The PM (role `pm`) is on Claude Code and
  * reloads its own plugin, so it is left out. A host that does not know the call yet (older install) is not a reason to stop a
- * helper: it starts without the wrappers and the log says so; any other failure refuses the start, like the OpenCode config does.
+ * helper: it starts without the wrappers and the log says so; any other failure refuses the start.
  */
-export const BB_SHIM_PROVIDER_IDS = ["codex", "acp-cursor"] as const;
+export const BB_SHIM_PROVIDER_IDS = ["codex", "opencode2", "acp-cursor"] as const;
 const CACHE_MS = 60_000;
 const CALL_MS = 4_000;
 const UNKNOWN_CALL = /unknown|not found|no such|not implemented|unsupported|not a function|unrecognized/i;

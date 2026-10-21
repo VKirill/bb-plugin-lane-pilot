@@ -31,7 +31,7 @@ describe("writer brief as BB input parts", () => {
   });
 
   it("opens the visible contract with a line break, so the chat does not run the title into «Task contract:» (H4)", () => {
-    for (const providerId of ["claude-code", "codex", "acp-opencode"]) {
+    for (const providerId of ["claude-code", "codex", "opencode2", "acp-cursor"]) {
       const parts = writerBriefInput(task, writerBriefSegments(...args), providerId);
       const visible = parts.filter((part) => !part.visibility);
       expect(visible[0]!.text).toBe("Lane Pilot task t-1: Add the footer");
@@ -42,7 +42,7 @@ describe("writer brief as BB input parts", () => {
   });
 
   it("never opens with an agent-only part (BB reads such a message as a seed)", () => {
-    for (const providerId of ["claude-code", "codex", "acp-opencode"]) expect(writerBriefInput(task, writerBriefSegments(...args), providerId)[0]!.visibility).toBeUndefined();
+    for (const providerId of ["claude-code", "codex", "opencode2", "acp-cursor"]) expect(writerBriefInput(task, writerBriefSegments(...args), providerId)[0]!.visibility).toBeUndefined();
   });
 
   it("sends the whole brief visible to a provider not known to forward agent-only parts", () => {
@@ -51,3 +51,4 @@ describe("writer brief as BB input parts", () => {
     expect(parts).toEqual([{ type: "text", text: writerPrompt(...args), mentions: [] }]);
   });
 });
+

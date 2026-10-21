@@ -40,11 +40,11 @@ const bb = {
   sdk: {
     hosts: { list: async () => [{ id: "mac", name: "Mac mini", status: "connected" }, { id: "ovh", name: "OVH", status: "connected" }] },
     providers: {
-      list: async ({ hostId }: { hostId: string }) => (hostId === "mac" ? [info("claude-code", "Claude Code"), info("codex", "Codex"), info("acp-opencode", "OpenCode"), info("router9", "router9", false)] : [info("codex", "Codex")]),
+      list: async ({ hostId }: { hostId: string }) => (hostId === "mac" ? [info("claude-code", "Claude Code"), info("codex", "Codex"), info("opencode2", "OpenCode"), info("router9", "router9", false)] : [info("codex", "Codex")]),
       models: async ({ providerId, hostId }: { providerId: string; hostId: string }) => ({
         models: providerId === "claude-code" ? [model("claude-opus-5-5", "Opus 5.5", ["low", "medium", "high", "xhigh"], true), model("claude-sonnet-5-5", "Sonnet 5.5", ["low", "medium", "high"])]
           : providerId === "codex" ? [model("gpt-6-luna", "GPT-6 Luna", ["low", "medium", "high"], true)]
-            : providerId === "acp-opencode" && hostId === "mac" ? [model("router9/ag/gemini-3.8-flash-high", "Gemini 3.8 Flash", ["medium", "high"], true), model("deepseek/v4", "DeepSeek V4", ["high"])] : [],
+            : providerId === "opencode2" && hostId === "mac" ? [model("router9/ag/gemini-3.8-flash-high", "Gemini 3.8 Flash", ["medium", "high"], true), model("deepseek/v4", "DeepSeek V4", ["high"])] : [],
       }),
     },
   },
@@ -173,10 +173,10 @@ describe("the Models table of a draft", () => {
 
   it("choosing in BB's window writes a draft patch (provider, model, effort, fast mode), and the window follows", async () => {
     const { slot, calls } = await openDraft();
-    await choose(slot, "wf-model-picker-search", { providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoningLevel: "high" });
+    await choose(slot, "wf-model-picker-search", { providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningLevel: "high" });
     await waitFor(() => expect(patches(calls)).toHaveLength(1));
-    expect(patches(calls)[0]!.ops).toEqual([{ op: "update_node", id: "search", set: { provider: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoning: "high", service_tier: null } }]);
-    await waitFor(() => expect(shownFor(slot, "search")).toBe("acp-opencode|router9/ag/gemini-3.8-flash-high|high|none"));
+    expect(patches(calls)[0]!.ops).toEqual([{ op: "update_node", id: "search", set: { provider: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoning: "high", service_tier: null } }]);
+    await waitFor(() => expect(shownFor(slot, "search")).toBe("opencode2|router9/ag/gemini-3.8-flash-high|high|none"));
     expect(slot.getByTestId("wf-model-row-search").getAttribute("data-inherited")).toBe("0");
     expect(slot.getByTestId("wf-model-source-search").textContent).toContain("this step");
     expect(slot.getByTestId("wf-model-cost-search").textContent).toBe("Low");
@@ -209,9 +209,9 @@ describe("the Models table of a draft", () => {
     expect((await slot.findByTestId("wf-model-error-search")).textContent).toContain("Not applied");
     expect(patches(calls)).toHaveLength(0);
     // OpenCode is on the Mac mini only: every provider the hub offers can be picked, DeepSeek included.
-    await choose(slot, "wf-model-picker-search", { providerId: "acp-opencode", model: "deepseek/v4", reasoningLevel: "high" });
+    await choose(slot, "wf-model-picker-search", { providerId: "opencode2", model: "deepseek/v4", reasoningLevel: "high" });
     await waitFor(() => expect(patches(calls)).toHaveLength(1));
-    expect(patches(calls)[0]!.ops[0]!.set).toMatchObject({ provider: "acp-opencode", model: "deepseek/v4", reasoning: "high" });
+    expect(patches(calls)[0]!.ops[0]!.set).toMatchObject({ provider: "opencode2", model: "deepseek/v4", reasoning: "high" });
     expect(slot.queryByTestId("wf-model-error-search")).toBeNull();
   });
 
@@ -237,7 +237,7 @@ describe("the Models table of a draft", () => {
     expect(card.textContent).toContain("codex · gpt-6-luna · high");
     expect((await slot.findByTestId("wf-chain-build")).textContent).toBe("→ glm-5.3-flash → gemini-3.8-flash-high → PM model");
     const chain = slot.getByTestId("wf-model-chain-build").textContent!;
-    expect(chain).toContain("opencode · gemini-3.8-flash-high · medium");
+    expect(chain).toContain("opencode2 · gemini-3.8-flash-high · medium");
     expect(chain).toContain("Code critic: codex · gpt-6-luna · high");
     const stage = slot.getByTestId("wf-model-row-plan-check");
     expect(stage.textContent).toContain("Set in Settings: plan_critique");
@@ -266,9 +266,9 @@ describe("the model picker of the node panel", () => {
     await choose(slot, "wf-edit-model-picker", { providerId: "router9", model: "x", reasoningLevel: "high" });
     expect((await slot.findByTestId("wf-edit-model-refused")).textContent).toContain("Not applied");
     expect(patches(calls)).toHaveLength(0);
-    await choose(slot, "wf-edit-model-picker", { providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoningLevel: "medium" });
+    await choose(slot, "wf-edit-model-picker", { providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningLevel: "medium" });
     await waitFor(() => expect(patches(calls)).toHaveLength(1));
-    expect(patches(calls)[0]!.ops).toEqual([{ op: "update_node", id: "search", set: { provider: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoning: "medium", service_tier: null } }]);
+    expect(patches(calls)[0]!.ops).toEqual([{ op: "update_node", id: "search", set: { provider: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoning: "medium", service_tier: null } }]);
     expect(slot.queryByTestId("wf-edit-model-refused")).toBeNull();
     fireEvent.click(await slot.findByTestId("wf-edit-model-default"));
     await waitFor(() => expect(patches(calls)).toHaveLength(2));
@@ -312,9 +312,9 @@ describe("the Models table of a library workflow", () => {
     expect(slot.queryByTestId("wf-card-model-investigate")).toBeNull();
     const before = card.querySelector("[data-testid='bb-provider-model-picker']") as PickerNode;
     expect(before.getAttribute("data-model")).toBe("claude-opus-5-5");
-    before.__onChange!({ ...before.__value!, providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoningLevel: "high" });
+    before.__onChange!({ ...before.__value!, providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningLevel: "high" });
     await waitFor(() => expect(calls.filter((call) => call.method === "workflow_model_override")).toHaveLength(1));
-    expect(calls.find((call) => call.method === "workflow_model_override")!.input).toMatchObject({ projectId, scope: "project", workflowId: "debug", nodeId: "investigate", choice: { providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", effort: "high" } });
+    expect(calls.find((call) => call.method === "workflow_model_override")!.input).toMatchObject({ projectId, scope: "project", workflowId: "debug", nodeId: "investigate", choice: { providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", effort: "high" } });
     await waitFor(() => expect(slot.getByTestId("wf-override-card-investigate").getAttribute("data-active")).toBe("project"));
     expect(slot.getByTestId("wf-override-card-investigate").querySelector("[data-testid='bb-provider-model-picker']")!.getAttribute("data-model")).toBe("router9/ag/gemini-3.8-flash-high");
     expect(slot.getByTestId("wf-model-source-investigate").textContent).toContain("overridden for this project");
@@ -346,10 +346,10 @@ describe("the Models table of a library workflow", () => {
     await choose(slot, "wf-model-picker-search", { providerId: "router9", model: "gemini-9", reasoningLevel: "high" });
     expect((await slot.findByTestId("wf-model-error-search")).textContent).toContain("Not applied");
     expect(calls.filter((call) => call.method === "workflow_draft_create")).toHaveLength(0);
-    await choose(slot, "wf-model-picker-search", { providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoningLevel: "high" });
+    await choose(slot, "wf-model-picker-search", { providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningLevel: "high" });
     await waitFor(() => expect(opened).toHaveLength(1));
     expect(calls.filter((call) => call.method === "workflow_draft_create")).toHaveLength(1);
-    expect(patches(calls)[0]!.ops).toEqual([{ op: "update_node", id: "search", set: { provider: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", reasoning: "high", service_tier: null } }]);
+    expect(patches(calls)[0]!.ops).toEqual([{ op: "update_node", id: "search", set: { provider: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoning: "high", service_tier: null } }]);
   });
 
   it("a workflow whose agents live in a called workflow lists them under that workflow, keyed <workflow>/<node>, and the override is set from the parent's view", async () => {

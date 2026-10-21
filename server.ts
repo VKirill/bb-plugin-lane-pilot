@@ -137,7 +137,7 @@ export default async function plugin(bb: BbPluginApi) {
     bb, signal, getThread:(threadId) => ctx.getThreadBounded(threadId), isDisposed:ctx.isDisposed, log:(line) => bb.log.info(line),
     waitingForOwner:async (threadId) => await ctx.ownerAsk.pending(threadId) || (await threadPendingInteractions(bb, threadId)) > 0,
     openAttempts:() => listOpenAttempts(db),
-    // Only an acp-opencode writer's provider log is read (the OpenCode host of its project holds it); other writers are nudged as before.
+    // Only an opencode2 writer's session is read (from the OpenCode service on the host of its project); other writers are nudged as before.
     limitProbe:async (attempt, sessionId, sinceMs) => {
       const hostId = loadPrototypeConfig(db, attempt.project_id)?.hostId;
       if (!hostId || getReasoningTrace(db, attempt.id)?.providerId !== OPENCODE_WRITER_PROVIDER) return null;

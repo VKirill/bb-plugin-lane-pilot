@@ -676,7 +676,7 @@ export async function runCoexistenceOperationAtHome(
     }
     const moduleSource = join(selected.root, "profiles/opencode/opencode-lane/index.ts");
     if (!await exists(moduleSource)) return resultOf(input, { status: "blocked", owner: row.owner, beforeSha256: null, afterSha256: null, reason: "Compatible engine does not contain profiles/opencode/opencode-lane/index.ts; impacted function: OpenCode plugin module loading." });
-    const shim = createOpenCodePluginShim(selected.root, selected.assessment.adaptedCapabilities);
+    const shim = createOpenCodePluginShim(selected.root);
     const write = await compareAndSwapText(input.path, null, shim);
     if (write.status !== "ok" || !write.afterSha256) return resultOf(input, { status: write.status, owner: row.owner, beforeSha256: write.beforeSha256, afterSha256: write.afterSha256, reason: write.reason });
     const sourceSha = await sourceShaOf(selected.root);

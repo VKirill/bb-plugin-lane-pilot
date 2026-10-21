@@ -1,4 +1,5 @@
-export const TARGET_SHA = "dd77b26792eca15e8bde03fd26754922ea7ab4f0";
+/** The managed Lane Stack engine: 1.66.1, the OpenCode v2 opencode-lane plugin with the lane-pilot agent (1.65 and older are v1-only). */
+export const TARGET_SHA = "370cb263466f07f2afb979b1ca55ffbe012af56b";
 export const UPSTREAM_REPO = "https://github.com/VKirill/claude-lane-stack";
 export const OPENCODE_PLUGIN = "./plugins/opencode-lane.ts";
 export const OPENCODE_OLD_PLUGIN = "./plugins/lane-context.ts";

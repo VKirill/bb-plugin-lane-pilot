@@ -23,8 +23,11 @@ export const REQUIRED_SESSION_COMPONENTS = [...MANDATORY_BB_PLUGINS, ...MANDATOR
 export const CORE_PROVIDER_GROUPS = {
   "claude-code": ["bbPlugins", "skills", "mcpServers", "nativePlugins"],
   codex: ["bbPlugins", "skills", "mcpServers", "nativePlugins"],
+  // Lane Pilot no longer starts OpenCode v1 threads; the core still advertises the provider, and the match below is exact.
   "acp-opencode": ["bbPlugins", "skills", "mcpServers"],
   "acp-cursor": ["bbPlugins", "skills", "mcpServers"],
+  // OpenCode v2 runs one shared service per machine: the core narrows only the BB plugins and BB's user instructions it sends.
+  opencode2: ["bbPlugins"],
 } as const;
 /** Cores before 0.44.0-vk.15 could not narrow BB skills for Cursor. */
 const LEGACY_CURSOR_GROUPS = ["bbPlugins", "mcpServers"] as const;
@@ -33,7 +36,14 @@ export const CORE_INSTRUCTION_SWITCHES = {
   codex: ["userInstructions", "projectInstructions"],
   "acp-opencode": ["userInstructions", "projectInstructions"],
   "acp-cursor": ["userInstructions"],
+  opencode2: ["userInstructions"],
 } as const;
+/** Cores before 0.46.1-vk.2 do not advertise opencode2: their helpers on it run with BB's ordinary context. */
+const { opencode2: _groupsV2, ...PRE_OPENCODE2_GROUPS } = CORE_PROVIDER_GROUPS;
+const { opencode2: _switchesV2, ...PRE_OPENCODE2_SWITCHES } = CORE_INSTRUCTION_SWITCHES;
+const ADVERTISED_GROUPS: ReadonlyArray<Record<string, readonly string[]>> = [CORE_PROVIDER_GROUPS, PRE_OPENCODE2_GROUPS]
+  .flatMap((groups) => [groups, { ...groups, "acp-cursor": LEGACY_CURSOR_GROUPS }]);
+const ADVERTISED_SWITCHES: ReadonlyArray<Record<string, readonly string[]>> = [CORE_INSTRUCTION_SWITCHES, PRE_OPENCODE2_SWITCHES];
 export type RequiredSessionAdvertisement = {
   version: 1;
   persist: true;
@@ -309,9 +319,8 @@ export function parseRequiredSessionPolicyCapability(agents: {
     || row.parentCeiling !== true
     || row.bridgeHandshakeVersion !== REQUIRED_SESSION_HANDSHAKE_VERSION
     || (row.hostDaemonProtocolVersion !== REQUIRED_SESSION_HOST_DAEMON_PROTOCOL && row.markerStorage !== "thread-plugin-metadata")
-    || !(advertisedMatrixMatch(row.providerGroups, CORE_PROVIDER_GROUPS)
-      || advertisedMatrixMatch(row.providerGroups, { ...CORE_PROVIDER_GROUPS, "acp-cursor": LEGACY_CURSOR_GROUPS }))
-    || !advertisedMatrixMatch(row.instructionSwitches, CORE_INSTRUCTION_SWITCHES)
+    || !ADVERTISED_GROUPS.some((groups) => advertisedMatrixMatch(row.providerGroups, groups))
+    || !ADVERTISED_SWITCHES.some((switches) => advertisedMatrixMatch(row.instructionSwitches, switches))
     || !isStringArray(row.mandatoryBbPlugins)
     || !MANDATORY_BB_PLUGINS.every((name) => (row.mandatoryBbPlugins as string[]).includes(name))
     || !isStringArray(row.mandatoryMcpServers)

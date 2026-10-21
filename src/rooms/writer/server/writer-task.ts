@@ -279,8 +279,8 @@ export function writerPrompt(...args: Parameters<typeof writerBriefSegments>): s
   return writerBriefSegments(...args).map((segment) => segment.text).join("\n\n");
 }
 
-/** Providers whose bridge forwards every text part of a message, agent-only ones included (claude-code, codex, every ACP agent). */
-export const providerForwardsAgentOnly = (providerId: string): boolean => providerId === "claude-code" || providerId === "codex" || providerId.startsWith("acp-");
+/** Providers whose bridge forwards every text part of a message, agent-only ones included (claude-code, codex, opencode2, every ACP agent). */
+export const providerForwardsAgentOnly = (providerId: string): boolean => providerId === "claude-code" || providerId === "codex" || providerId === "opencode2" || providerId.startsWith("acp-");
 
 /**
  * The writer's first message as BB input parts: a one-line task header and the contract stay in the chat, the rest is

@@ -17,81 +17,73 @@ async function makeEngine(files: Record<string, string>): Promise<string> {
   return root;
 }
 
-function supportingFiles(index: string, telemetry = `export function createTelemetry() {
-  return { event: async () => { if ("session.compacted") return; }, after: async () => ({}) };
-}\n`, sticky = `export function ensureStickyMessages(messages: unknown[], block: string) { if (block) messages.push(block); }
-export function dumpedToolNote(text: string) { return text ? "note" : ""; }\n`): Record<string, string> {
+const V2_HOOKS = `export async function laneSetup(ctx: any) {
+  ctx.event.subscribe({});
+  await ctx.session.hook("prompt", async () => {});
+  await ctx.session.hook("context", async () => {});
+  await ctx.tool.hook("execute.before", async () => {});
+  await ctx.tool.hook(
+    "execute.after",
+    async () => {},
+  );
+  await ctx.permission.hook("evaluate", async () => {});
+}\n`;
+
+function supportingFiles(index: string, v2 = V2_HOOKS): Record<string, string> {
   return {
     "profiles/opencode/opencode-lane.ts": `export { default } from "./opencode-lane/index.ts";\n`,
     "profiles/opencode/opencode-lane/index.ts": index,
-    "profiles/opencode/opencode-lane/telemetry.ts": telemetry,
-    "profiles/opencode/opencode-lane/sticky.ts": sticky,
-    "bin/lane-session": `#!/bin/sh\nexport CURSOR_ACP_FORWARD_TOOL_CALLS="false"\n`,
+    "profiles/opencode/opencode-lane/v2.ts": v2,
+    "profiles/opencode/opencode-lane/telemetry.ts": `export function createTelemetry() {
+  return { event: async () => { if ("session.compacted") return; }, after: async () => ({}) };
+}\n`,
+    "profiles/opencode/opencode-lane/sticky.ts": `export function ensureStickyMessages(messages: unknown[], block: string) { if (block) messages.push(block); }
+export function dumpedToolNote(text: string) { return text ? "note" : ""; }\n`,
     "bin/execution_packet.py": `import re\n_WINDOW_RE = re.compile(r"L?(\\d+)-L?(\\d+)")\n`,
   };
 }
+
+const DEFINITION = `import { OpenCodeLanePlugin } from "./v1.ts";
+import { laneSetup } from "./v2.ts";
+export const OpenCodeLaneDefinition = { id: "opencode-lane", setup: laneSetup };
+export default { ...OpenCodeLaneDefinition, server: OpenCodeLanePlugin };\n`;
 
 afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 
-describe("bounded OpenCode executable contract inspection", () => {
-  it("rejects marker text inside invalid TypeScript and reports the failed interface", async () => {
-    const root = await makeEngine(supportingFiles(`export default async function {
-  return { event: async () => {}, "chat.message": async () => {}, "tool.execute.after": async () => {} };
-}\n`));
-
+describe("bounded OpenCode v2 executable contract inspection", () => {
+  it("rejects marker text inside invalid TypeScript and reports the failed interfaces", async () => {
+    const root = await makeEngine(supportingFiles(`export default { id: "opencode-lane", setup: laneSetup, "tool.hook(\n`));
     const inspected = await inspectEngineCapabilitiesDetailed(root);
-    const assessed = assessEngineCapabilities(inspected.capabilities);
-
-    expect(inspected.capabilities).not.toContain("opencode.hook.tool_execute_after");
-    expect(assessed.missingCapabilities).toContain("opencode.hook.tool_execute_after");
+    expect(assessEngineCapabilities(inspected.capabilities).missingCapabilities).toEqual(expect.arrayContaining(["opencode.plugin.default_export", "opencode.hook.tool_execute_after"]));
     expect(inspected.diagnostics).toContainEqual(expect.objectContaining({
       capability: "opencode.hook.tool_execute_after",
       path: "profiles/opencode/opencode-lane/index.ts",
-      detail: expect.stringContaining("TypeScript parse failed"),
     }));
   });
 
-  it("requires a valid default export and callable hook values, not property-name markers", async () => {
-    const root = await makeEngine(supportingFiles(`export const OpenCodeLanePlugin = async () => ({
-  event: {},
-  "chat.message": async () => {},
-  "chat.params": async () => {},
-  "tool.execute.after": "async () => {}",
-  "experimental.chat.messages.transform": async () => {},
-});
+  it("refuses a v1 plugin function as the default export, and hook names that are not registrations", async () => {
+    const v1 = await makeEngine(supportingFiles(`export const OpenCodeLanePlugin = async () => ({ "tool.execute.after": async () => {} });
 export default OpenCodeLanePlugin;\n`));
+    expect(assessEngineCapabilities((await inspectEngineCapabilitiesDetailed(v1)).capabilities).missingCapabilities).toContain("opencode.plugin.default_export");
 
-    const inspected = await inspectEngineCapabilitiesDetailed(root);
-    const assessed = assessEngineCapabilities(inspected.capabilities);
-
-    expect(assessed.compatible).toBe(false);
-    expect(assessed.missingCapabilities).toEqual(expect.arrayContaining([
-      "opencode.hook.event",
-      "opencode.hook.tool_execute_after",
-    ]));
-    expect(assessed.missingCapabilities).not.toContain("opencode.hook.chat_message");
-    expect(inspected.diagnostics.map((item) => item.capability)).toEqual(expect.arrayContaining([
-      "opencode.hook.event",
-      "opencode.hook.tool_execute_after",
-    ]));
+    const named = await makeEngine(supportingFiles(DEFINITION, `export async function laneSetup(ctx: any) {
+  const names = ["prompt", "context", "execute.before", "execute.after", "evaluate"];
+  ctx.event.subscribe({});
+  return names;
+}\n`));
+    const inspected = await inspectEngineCapabilitiesDetailed(named);
+    expect(assessEngineCapabilities(inspected.capabilities).missingCapabilities).toEqual([
+      "opencode.hook.session_prompt", "opencode.hook.session_context", "opencode.hook.tool_execute_before",
+      "opencode.hook.tool_execute_after", "opencode.hook.permission_evaluate",
+    ]);
+    expect(inspected.diagnostics.every((item) => item.path === "profiles/opencode/opencode-lane/v2.ts")).toBe(true);
   });
 
-  it("accepts a syntactically valid exported function with callable required hooks", async () => {
-    const root = await makeEngine(supportingFiles(`export const OpenCodeLanePlugin = async () => {
-  return {
-    event: async () => {},
-    "chat.message": async () => {},
-    "chat.params": async () => {},
-    "tool.execute.after": async () => {},
-    "experimental.chat.messages.transform": async () => {},
-  };
-};
-export default OpenCodeLanePlugin;\n`));
-
+  it("accepts a dual-export definition whose v2 setup registers every hook", async () => {
+    const root = await makeEngine(supportingFiles(DEFINITION));
     const inspected = await inspectEngineCapabilitiesDetailed(root);
-
     expect(assessEngineCapabilities(inspected.capabilities).compatible).toBe(true);
     expect(inspected.diagnostics).toEqual([]);
   });

@@ -447,6 +447,8 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       // An OpenCode writer's guard reads its skills from the worktree: the picked ones are linked there before it starts.
       const materialized = await skillMaterial.materialize({ attemptId:input.attemptId, hostId:input.config.hostId, workspacePath, live,
         providerId:writerProviderId, skills:writerSkills.skills, sources:writerSkills.sources });
+      // OpenCode v2 compacts only by folder config; Lane Pilot compacts its writers itself.
+      await skillMaterial.compactionOff({ attemptId:input.attemptId, hostId:input.config.hostId, workspacePath, live, providerId:writerProviderId });
       // The area's harness tree (src/rooms/harness): a candidate on trial or the adopted one adds its always-on lines,
       // memory notes, skills and checks on top of everything above; the base tree is empty and changes nothing.
       const writerKey=`${writerProviderId}/${writerModel}`;

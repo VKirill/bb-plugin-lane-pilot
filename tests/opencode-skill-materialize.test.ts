@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  createSkillMaterializer, OPENCODE_SKILLS_EXCLUDE, parseMaterialized, recordedMaterializedSkills,
+  COMPACTION_OFF_CONFIG, createSkillMaterializer, OPENCODE_SKILLS_EXCLUDE, parseMaterialized, recordedMaterializedSkills,
 } from "../src/rooms/writer/server/skill-materialize";
 import { WORKSPACE_DIRT_COMMAND } from "../src/rooms/verification/workspace-dirt";
 
@@ -43,7 +43,7 @@ afterEach(() => {
   rmSync(base, { recursive: true, force: true });
 });
 
-const picked = { attemptId: "a1", hostId: "h", workspacePath: "", live: false, providerId: "acp-opencode", skills: ["tavily"], sources: {} as Record<string, string> };
+const picked = { attemptId: "a1", hostId: "h", workspacePath: "", live: false, providerId: "opencode2", skills: ["tavily"], sources: {} as Record<string, string> };
 
 describe("OpenCode writer skills", () => {
   it("links the picked skills under .opencode/skills before the writer starts, excluded from git", async () => {
@@ -167,3 +167,43 @@ describe("OpenCode writer skills", () => {
     expect(parseMaterialized("lp:linked tavily\nlp:kept own\nlp:missing bare\n")).toEqual({ linked: ["tavily"], kept: ["own"], missing: ["bare"] });
   });
 });
+
+describe("OpenCode writer compaction", () => {
+  const input = () => ({ attemptId: "a1", hostId: "h", workspacePath: worktree, live: false, providerId: "opencode2" });
+  const config = () => join(worktree, ".opencode", "opencode.jsonc");
+  const dirt = () => spawnSync("sh", ["-c", WORKSPACE_DIRT_COMMAND], { cwd: worktree, encoding: "utf8" }).stdout;
+
+  it("turns OpenCode's own compaction off in the worktree, unseen by git, and takes it away at the end", async () => {
+    const before = dirt();
+    const material = createSkillMaterializer({ host: localHost() } as never, () => undefined);
+    expect(await material.compactionOff(input())).toBe(true);
+    expect(readFileSync(config(), "utf8")).toBe(COMPACTION_OFF_CONFIG);
+    expect(JSON.parse(COMPACTION_OFF_CONFIG.split("\n").slice(1).join("\n"))).toEqual({ compaction: { auto: false } });
+    expect(dirt()).toBe(before);
+    await material.remove({ attemptId: "a1", hostId: "h", workspacePath: worktree, names: [], providerId: "opencode2" });
+    expect(existsSync(join(worktree, ".opencode"))).toBe(false);
+  });
+
+  it("keeps the project's own config, and a config the writer changed, and does nothing for another provider or a live folder", async () => {
+    const logs: string[] = [];
+    const material = createSkillMaterializer({ host: localHost() } as never, (line) => logs.push(line));
+    mkdirSync(join(worktree, ".opencode"));
+    writeFileSync(join(worktree, ".opencode", "opencode.json"), "{}");
+    expect(await material.compactionOff(input())).toBe(false);
+    expect(existsSync(config())).toBe(false);
+    expect(logs.at(-1)).toContain("has an OpenCode config of its own");
+    rmSync(join(worktree, ".opencode"), { recursive: true });
+
+    expect(await material.compactionOff(input())).toBe(true);
+    writeFileSync(config(), COMPACTION_OFF_CONFIG + "// changed\n");
+    await material.remove({ attemptId: "a1", hostId: "h", workspacePath: worktree, names: [], providerId: "opencode2" });
+    expect(existsSync(config())).toBe(true);
+
+    const calls: Call[] = [];
+    const quiet = createSkillMaterializer({ host: localHost(calls) } as never, () => undefined);
+    expect(await quiet.compactionOff({ ...input(), providerId: "codex" })).toBe(false);
+    expect(await quiet.compactionOff({ ...input(), live: true })).toBe(false);
+    expect(calls).toEqual([]);
+  });
+});
+

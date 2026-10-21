@@ -61,7 +61,7 @@ async function mount(options: { mode?: string; modeOrigin?: Origin | null; prese
         skills: [{ name: "ru-text", description: "Russian text quality" }, { name: "tavily", description: "Web search" }, { name: "writer-practices", description: "Writing habits" }],
       },
       mandatory: { bbPlugins: [...MANDATORY_BB_PLUGINS], mcpServers: [...MANDATORY_MCP_SERVERS] },
-      providers: Object.fromEntries(Object.entries(CORE_PROVIDER_GROUPS).map(([id, groups]) => [id, [...groups]])),
+      providers: Object.fromEntries(Object.entries(CORE_PROVIDER_GROUPS).filter(([id]) => id !== "acp-opencode").map(([id, groups]) => [id, [...groups]])),
     };
   };
   const ownRows = (pid: string, sectionId?: string) => rows[levelsOf(pid, sectionId).at(-1)![0]]!;
@@ -146,7 +146,7 @@ describe("Agent access tab", () => {
       // A role nobody changed has no badge in its row; the origin shows in the drawer.
       expect(slot.queryByTestId("access-badge-writer")).toBeNull();
       expect(slot.getByTestId("access-providers").textContent).toContain("Claude Code and Codex: everything.");
-      expect(slot.getByTestId("access-providers").textContent).toContain("OpenCode: everything except CLI plugins.");
+      expect(slot.getByTestId("access-providers").textContent).toContain("OpenCode: BB plugins; project instructions cannot be turned off.");
       expect(slot.getByTestId("access-providers").textContent).toContain("Grok (Cursor): everything except CLI plugins; Cursor's own skills cannot be turned off; project instructions cannot be turned off.");
       expect(slot.queryByTestId("access-writer-skills")).toBeNull();
       expect(slot.queryByTestId("role-drawer-writer")).toBeNull();

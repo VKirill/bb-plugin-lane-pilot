@@ -331,6 +331,10 @@ export const migrations = [
   ...ruleFormMigrations,
   // 0.1.247: the writer harness that learns (src/rooms/harness): trees, trials, experience; the tree and arm on each attempt.
   ...harnessMigrations,
+  // 0.1.261: OpenCode v1 (`acp-opencode`) is gone; saved provider choices move to OpenCode v2 (`opencode2`). Past results keep theirs.
+  `UPDATE lane_pilot_project_settings SET value=replace(value,'"acp-opencode"','"opencode2"'), version=version+1,
+    updated_at=CAST(strftime('%s','now') AS INTEGER)*1000
+    WHERE value LIKE '%"acp-opencode"%' AND key NOT LIKE '%lastResult%'`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

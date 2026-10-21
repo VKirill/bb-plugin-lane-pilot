@@ -11,8 +11,8 @@ export type WriterFallbackSlot = (typeof WRITER_FALLBACK_SLOTS)[number];
 
 /** A slot without a default (fallback 3) is off until the owner turns it on and picks a model. */
 export const WRITER_FALLBACK_DEFAULTS: ReadonlyArray<WriterFallback | null> = [
-  { providerId:"acp-opencode", model:"zai-coding-plan/glm-5.3-flash", reasoningLevel:"high" },
-  { providerId:"acp-opencode", model:"router9/ag/gemini-3.8-flash-high", reasoningLevel:"medium" },
+  { providerId:"opencode2", model:"zai-coding-plan/glm-5.3-flash", reasoningLevel:"high" },
+  { providerId:"opencode2", model:"router9/ag/gemini-3.8-flash-high", reasoningLevel:"medium" },
   null,
 ];
 

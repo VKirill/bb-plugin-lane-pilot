@@ -2,12 +2,12 @@ import { readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { sha256Buffer } from "@lane-pilot/kit";
-import { registerHomeCleanup, makeHome, treeHash, exactDd77Fixture, incompatibleFallback, managedInstall } from "./coexistence-helpers";
+import { registerHomeCleanup, makeHome, treeHash, exactTargetFixture, incompatibleFallback, managedInstall } from "./coexistence-helpers";
 
 registerHomeCleanup();
 
-// All tests below clone the exact dd77 fixture; without it (clean clone) they skip instead of crashing.
-describe.skipIf(!exactDd77Fixture)("managed install transaction failure integrity", () => {
+// All tests below clone a Lane Stack fixture with the target commit; without it (clean clone) they skip instead of crashing.
+describe.skipIf(!exactTargetFixture)("managed install transaction failure integrity", () => {
   it.each(["after-snapshot", "after-ledger-commit"] as const)("preserves complete concurrent snapshot bytes after %s", async (faultAt) => {
     const home = await makeHome();
     const fallback = await incompatibleFallback(home);

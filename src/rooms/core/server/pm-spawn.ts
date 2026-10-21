@@ -85,6 +85,44 @@ async function providerSupportsTier(bb: BbPluginApi, providerId: string | undefi
   return provider ? providerSupportsServiceTier(provider) : null;
 }
 
+/** OpenCode v2's agent for every thread Lane Pilot starts on it (Lane Stack's `profiles/opencode/agents/lane-pilot.md`): its rules,
+ * and Lane Stack's opencode-lane hooks act only in a session whose agent is a `lane-` one (the service is shared, so no env marker reaches them). */
+export const OPENCODE_LANE_AGENT = "lane-pilot";
+const laneAgentByApi = new WeakMap<BbPluginApi, Map<string, { at: number; models: unknown[] }>>();
+
+/**
+ * The `agent` session option an opencode2 thread starts with, when its model's catalog on the host lists Lane Pilot's agent (Lane
+ * Stack installed there). Nothing for another provider, a caller that chose its options, a host without the agent (BB refuses a value
+ * the model does not list) or a catalog that cannot be read: the thread then runs on OpenCode's default agent, and the log says so.
+ */
+async function laneAgentOption(bb: BbPluginApi, args: { providerId?: string; model?: string; environment?: { environmentId?: unknown } } & Record<string, unknown>, hostId: string | undefined): Promise<{ sessionOptions?: Record<string, string> }> {
+  if (args.providerId !== "opencode2" || args.sessionOptions !== undefined) return {};
+  let cache = laneAgentByApi.get(bb);
+  if (!cache) { cache = new Map(); laneAgentByApi.set(bb, cache); }
+  // OpenCode reads its agents from the thread's folder: an existing environment names it, otherwise the host's catalog stands in.
+  const environmentId = !hostId && typeof args.environment?.environmentId === "string" ? args.environment.environmentId : undefined;
+  const key = hostId ?? (environmentId ? `env:${environmentId}` : "");
+  let entry = cache.get(key);
+  try {
+    if (!entry || Date.now() - entry.at > PROVIDER_LIST_TTL_MS) {
+      const listed = await bb.sdk.providers.models(hostId ? { providerId: "opencode2", hostId } : environmentId ? { providerId: "opencode2", environmentId } : { providerId: "opencode2" });
+      entry = { at: Date.now(), models: Array.isArray(listed?.models) ? listed.models : [] };
+      cache.set(key, entry);
+    }
+  } catch (cause) {
+    bb.log.warn(`Lane Pilot: the opencode2 catalog could not be read, the thread starts on OpenCode's default agent: ${cause instanceof Error ? cause.message : String(cause)}`);
+    return {};
+  }
+  const model = entry.models.find((row) => (row as { id?: unknown }).id === args.model) ?? entry.models[0];
+  const options = (model as { sessionOptions?: unknown } | undefined)?.sessionOptions;
+  const agent = Array.isArray(options) ? options.find((option) => (option as { id?: unknown })?.id === "agent") as { values?: unknown } | undefined : undefined;
+  if (Array.isArray(agent?.values) && agent.values.some((value) => (value as { id?: unknown })?.id === OPENCODE_LANE_AGENT)) {
+    return { sessionOptions: { agent: OPENCODE_LANE_AGENT } };
+  }
+  bb.log.warn(`Lane Pilot: OpenCode on ${hostId ?? "the default host"} has no ${OPENCODE_LANE_AGENT} agent (Lane Stack not installed there); the thread starts on OpenCode's default agent without the lane guard`);
+  return {};
+}
+
 /**
  * Every thread Lane Pilot starts (PM, writers, helpers) runs with full access. BB honours the mode only when it is
  * marked explicit; otherwise the project's remembered mode (often accept-edits) makes agents stop for approval.
@@ -94,7 +132,10 @@ export function fullAccessSpawn(bb: BbPluginApi, args: Parameters<BbPluginApi["s
   enforceRunChildBudget(bb, args);
   return (async () => {
     const hostId = args.environment?.type === "host" && typeof args.environment.hostId === "string" ? args.environment.hostId : undefined;
-    const supportsTier = await providerSupportsTier(bb, args.providerId, hostId);
+    const [supportsTier, laneAgent] = await Promise.all([
+      providerSupportsTier(bb, args.providerId, hostId),
+      laneAgentOption(bb, args as unknown as Parameters<typeof laneAgentOption>[1], hostId),
+    ]);
     // A tier the caller named is sent whatever the lookup says, unless the list shows the provider has no tiers.
     // With no named tier and an unknown support, nothing is guessed.
     const namedTier = args.serviceTier === "default" || args.serviceTier === "fast";
@@ -111,6 +152,7 @@ export function fullAccessSpawn(bb: BbPluginApi, args: Parameters<BbPluginApi["s
     const requestedTier: "default" | "fast" = args.serviceTier === "fast" ? "fast" : "default";
     const full = {
       ...restQuiet,
+      ...laneAgent,
       ...(sendTier ? { serviceTier: requestedTier } : {}),
       permissionMode: "full" as const,
       executionInputSources: {

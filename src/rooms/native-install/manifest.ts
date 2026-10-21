@@ -14,7 +14,9 @@ export const MANIFEST_ROWS: ManifestRow[] = [
   { id: "npm-open-cursor", path: EXTERNAL_OPS[0], kind: "external" },
   { id: "open-cursor-install", path: EXTERNAL_OPS[1], kind: "external" },
   { id: "opencode-lane-ts", path: "~/.config/opencode/plugins/opencode-lane.ts", kind: "file" },
+  // The v1-era module folder (Lane Stack ≤1.65): kept in the snapshot so an install that removes it can be rolled back.
   { id: "opencode-lane-dir", path: "~/.config/opencode/plugins/opencode-lane", kind: "tree" },
+  { id: "opencode-lane-modules", path: "~/.config/opencode/opencode-lane", kind: "tree" },
   { id: "lane-context-ts", path: "~/.config/opencode/plugins/lane-context.ts", kind: "file" },
   { id: "opencode-lane-md", path: "~/.config/opencode/commands/opencode-lane.md", kind: "file" },
   { id: "opencode-json", path: "~/.config/opencode/opencode.json", kind: "file" },

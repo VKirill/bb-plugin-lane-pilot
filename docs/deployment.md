@@ -35,7 +35,7 @@ sources:
   - vitest.config.ts
   - src/rooms/contracts/host.ts
   - src/rooms/core/server/core.ts
-  - src/rooms/core/server/opencode-minimal.ts
+  - src/rooms/host-worker/opencode-limit.ts
   - src/rooms/stability/server/deploy-drain.ts
   - src/rooms/native-install/native-install-lifecycle.ts
   - src/rooms/storage/database.ts
@@ -66,8 +66,8 @@ Package scripts define local commands: `npm test`, `npm run test:changed`, `npm 
 
 - A BB server and connected host workers provide thread, provider, storage, RPC and host-call APIs (`package.json:3-18`, `server.ts:55-60`).
 - Writer checks and workspace operations execute on the selected project host through host calls (`src/rooms/writer/server/start.ts:1-30`, `src/rooms/contracts/host.ts:11-25`).
-- The OpenCode minimal-config contributor needs host preparation and can refuse the helper when that preparation is not ready (`src/rooms/core/server/opencode-minimal.ts:9-20`).
-- The host entry binds Git integration, writer-check, shim-preparation, and OpenCode-preparation handlers (`host.ts:1-30`, `host.ts:78-86`).
+- OpenCode writers run through BB's `opencode2` provider on each host's shared OpenCode v2 service; the host worker reads a silent writer's provider limit from that service's API (`src/rooms/host-worker/opencode-limit.ts:92-114`).
+- The host entry binds Git integration, writer-check and shim-preparation handlers (`host.ts:1-30`, `host.ts:78-86`).
 
 ## Deployment boundary
 

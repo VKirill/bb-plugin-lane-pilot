@@ -118,7 +118,8 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
           skills: [...new Map(skillRows.filter((k) => typeof k.name === "string").map((k) => [k.name!, { name: k.name!, description: (k.description ?? "").slice(0, 200) }])).values()].sort((a, b) => a.name.localeCompare(b.name)),
         },
         mandatory: { bbPlugins: [...MANDATORY_BB_PLUGINS], mcpServers: [...MANDATORY_MCP_SERVERS] },
-        providers: Object.fromEntries(Object.entries(CORE_PROVIDER_GROUPS).map(([id, groups]) => [id, [...groups]])),
+        // OpenCode v1 is only in the matrix to match the core; Lane Pilot starts no thread on it.
+        providers: Object.fromEntries(Object.entries(CORE_PROVIDER_GROUPS).filter(([id]) => id !== "acp-opencode").map(([id, groups]) => [id, [...groups]])),
       };
     },
     get_screen: async ({ projectId, sectionId, runsLimit }) => {

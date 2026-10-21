@@ -459,4 +459,49 @@ describe("spawn service tier", () => {
       expect((spawned[0]?.executionInputSources as Record<string, unknown>)?.serviceTier).toBeUndefined();
     });
   });
+
+  describe("Lane Pilot's OpenCode v2 agent", () => {
+    const host = (agents: string[] | Error, spawned: Record<string, unknown>[], calls = { models: 0 }) => createFakePluginHost({
+      pluginId: "lane-pilot",
+      sdk: {
+        providers: {
+          list: async () => [{ id: "opencode2", capabilities: { supportsServiceTier: false } }],
+          models: async () => {
+            calls.models += 1;
+            if (agents instanceof Error) throw agents;
+            return { models: [{ id: "router9/x", sessionOptions: [{ id: "agent", type: "select", value: "build", values: agents.map((id) => ({ id, label: id })) }] }] };
+          },
+        },
+        threads: { spawn: async (args: unknown) => { spawned.push(args as Record<string, unknown>); return { id: "thr-1" }; } },
+      } as never,
+    }).bb;
+    const spawn = (bb: ReturnType<typeof host>, extra: Record<string, unknown> = {}) =>
+      fullAccessSpawn(bb, { projectId: "p1", providerId: "opencode2", model: "router9/x", prompt: "t", environment: { type: "host", hostId: "mini" }, pluginMetadata: { role: "writer" }, ...extra } as never);
+
+    it("starts an opencode2 thread on lane-pilot when the host's catalog lists it, and reads the catalog once a minute", async () => {
+      const spawned: Record<string, unknown>[] = [];
+      const calls = { models: 0 };
+      const bb = host(["build", "plan", "lane-pilot"], spawned, calls);
+      await spawn(bb);
+      await spawn(bb);
+      expect(spawned.map((args) => args.sessionOptions)).toEqual([{ agent: "lane-pilot" }, { agent: "lane-pilot" }]);
+      expect(calls.models).toBe(1);
+    });
+
+    it("names no agent on a host without it, when the catalog fails, or when the caller chose options", async () => {
+      const spawned: Record<string, unknown>[] = [];
+      await spawn(host(["build", "plan"], spawned));
+      await spawn(host(new Error("offline"), spawned));
+      await spawn(host(["lane-pilot"], spawned), { sessionOptions: { agent: "plan" } });
+      expect(spawned.map((args) => args.sessionOptions)).toEqual([undefined, undefined, { agent: "plan" }]);
+    });
+
+    it("leaves other providers alone", async () => {
+      const spawned: Record<string, unknown>[] = [];
+      const calls = { models: 0 };
+      await spawn(host(["lane-pilot"], spawned, calls), { providerId: "codex" });
+      expect(spawned[0]?.sessionOptions).toBeUndefined();
+      expect(calls.models).toBe(0);
+    });
+  });
 });
