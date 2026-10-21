@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Nightly docs accept a component page that gives each operation its own `### How it works`.** On SelfyStudio (2026-10-21, `apps/api/docs`) the repair round told the agent, as it does, to put new content near the size limit on a linked page of its own; the agent moved six admin operations to `apps/api/docs/admin-api-details.md` (type component), each with `### How it works`, Modes and Failures. `lintDocsPages` (`src/rooms/docs/docs-lint.ts`) wanted the heading at level 2 only, so that one structure finding failed the unit and none of the 6 pages written that night was committed. A component page now passes with `## How it works` or `### How it works`; a main flow page still needs one `## How it works`, and a page without any still fails.
+  - Test: `tests/stages/docs-lint.test.ts` «accepts a component page that gives each operation its own '### How it works'», on the agent's real page (`tests/fixtures/docs/selfystudio-admin-api-details.md`).
+
 ## 0.1.260
 
 - **The skill pick waits for a queued System One instead of giving up.** After 0.1.259 the three drill writers of the deploy still got no skill: not the channel (33 chunks answer in 1–2 s from the hub, OVH and the Mac mini alone) but OpenLux's queue when several writers and other callers share the key at once; a chunk then takes 3–10 s, past the handler's 4 s fetch (5.5 s with OpenLux's pad), and the pick's 15 s deadline. Now `councilJudge` takes an optional `timeoutMs` (contract `src/rooms/contracts/host.ts`, handler `src/rooms/host-worker/host-handlers.ts`; the other callers keep 4 s), the pick sends 12 s per chunk with a 20 s host call, and `SKILL_PICK_DEADLINE_MS` is 45 s: a writer runs for an hour or more, so its spawn can wait. The six-in-flight gate of 0.1.259 stays.

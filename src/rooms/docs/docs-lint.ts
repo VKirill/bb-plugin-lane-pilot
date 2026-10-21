@@ -101,7 +101,9 @@ export function lintDocsPages(pages:DocPage[], lineCounts:Record<string, number 
     const h1 = body.split("\n").filter((line) => /^# /.test(line));
     if (h1.length !== 1) add("structure", `page needs exactly one H1, found ${h1.length}`);
     else if (typeof data.title === "string" && h1[0]!.slice(2).trim() !== data.title) add("structure", "H1 must match the frontmatter title");
-    if (typeof data.type === "string" && HOW_IT_WORKS_TYPES.includes(data.type) && (data.type !== "flow" || mainFlow) && !/^## How it works\b/m.test(body)) add("structure", "a component or flow page needs a '## How it works' section: the steps in order, the modes and states it branches on, and what happens on failure");
+    // A component page covering several operations may give each its own '### How it works'; a flow's steps stay one section.
+    const howItWorks = data.type === "component" ? /^#{2,3} How it works\b/m : /^## How it works\b/m;
+    if (typeof data.type === "string" && HOW_IT_WORKS_TYPES.includes(data.type) && (data.type !== "flow" || mainFlow) && !howItWorks.test(body)) add("structure", "a component or flow page needs a '## How it works' section (on a component page covering several operations, a '### How it works' under each): the steps in order, the modes and states it branches on, and what happens on failure");
     if (/^## Referenced by/m.test(withoutBacklinks(body))) add("builder", "do not write a Referenced by section; the backlinks builder owns it");
     const citations = pageCitations(body);
     const least = mainFlow ? MIN_FLOW_CITATIONS : MIN_CITATIONS;

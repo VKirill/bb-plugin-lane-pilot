@@ -240,3 +240,18 @@ it("adds cited sources at the indent of the list already there", () => {
   const indented = TREBA_TRACKING.replace(/^- server/gm, "  - server");
   expect(withCitedSources(indented)).toContain("  - server/utils/sync-orders.ts\n  - public/t.js\n---");
 });
+
+// SelfyStudio, 2026-10-21: the repair round said to move new content to a linked page of its own; the agent moved six
+// admin operations to apps/api/docs/admin-api-details.md (type component), each with its own '### How it works',
+// Modes and Failures. The check wanted a '## How it works' heading, so its one finding failed the pass and the 6 pages
+// written that night stayed uncommitted.
+it("accepts a component page that gives each operation its own '### How it works'", async () => {
+  const content = await readFile(join(__dirname, "../fixtures/docs/selfystudio-admin-api-details.md"), "utf8");
+  const findings = lintDocsPages([{ path:"apps/api/docs/admin-api-details.md", content }], {}, ["apps/api/docs/admin-api.md"]);
+  expect(findings.filter((finding) => finding.rule === "structure")).toEqual([]);
+  // A page with no How it works at any level, or a main flow page that splits it, still fails.
+  const thin = page({}, "# Checks\n\n## Alerts\n\nA (src/check.ts:1). B (src/check.ts:2). C (src/check.ts:3).\n");
+  expect(lintDocsPages([{ path:"docs/features/checks.md", content:thin }], { "src/check.ts":9 }).map((f) => f.rule)).toEqual(["structure"]);
+  const flow = page({ type:"flow" }, "# Checks\n\n## Alerts\n\n### How it works\n\nA (src/check.ts:1).\n");
+  expect(lintDocsPages([{ path:"docs/flows/checks.md", content:flow }], { "src/check.ts":9 }).map((f) => f.detail)).toContainEqual(expect.stringContaining("'## How it works'"));
+});
