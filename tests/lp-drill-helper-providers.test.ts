@@ -38,24 +38,24 @@ print(json.dumps(m.scenario_helper_providers(ctx)))
 }
 
 const ok = (provider: string) => JSON.stringify({ ok: true, providerId: provider, started: true, answered: true, threadId: "thr_1", output: "OK", reason: null, ms: 900 });
-const notStarted = JSON.stringify({ ok: false, started: false, answered: false, threadId: null, output: null, reason: "opencode_minimal_config_failed:host_1: unknown input requestedHostId", ms: 20 });
+const notStarted = JSON.stringify({ ok: false, started: false, answered: false, threadId: null, output: null, reason: "helper_probe_provider_unavailable:opencode2 requestedHostId", ms: 20 });
 const noAnswer = JSON.stringify({ ok: false, started: true, answered: false, threadId: "thr_9", output: null, reason: "helper_probe_timeout", ms: 150000 });
 
 describe("the drill's helper per provider", () => {
   it("passes when a helper on every provider in use started and answered", () => {
-    const { verdict } = runScenario("claude-code=claude-sonnet-5-5,codex=gpt-6-luna,acp-opencode=zai-coding-plan/glm-5.3-flash,acp-cursor=auto", {
-      "claude-code": ok("claude-code"), codex: ok("codex"), "acp-opencode": ok("acp-opencode"), "acp-cursor": ok("acp-cursor"),
+    const { verdict } = runScenario("claude-code=claude-sonnet-5-5,codex=gpt-6-luna,opencode2=zai-coding-plan/glm-5.3-flash,acp-cursor=auto", {
+      "claude-code": ok("claude-code"), codex: ok("codex"), "opencode2": ok("opencode2"), "acp-cursor": ok("acp-cursor"),
     });
     expect(verdict!.result).toBe("pass");
-    expect(verdict!.providers.map((item) => item.provider).sort()).toEqual(["acp-cursor", "acp-opencode", "claude-code", "codex"]);
+    expect(verdict!.providers.map((item) => item.provider).sort()).toEqual(["acp-cursor", "claude-code", "codex", "opencode2"]);
     expect(verdict!.providers.every((item) => item.started && item.answered)).toBe(true);
   });
 
   it("fails naming the provider whose helper was refused (the 0.1.194 case), and one that started but did not answer", () => {
-    const { verdict } = runScenario("claude-code=m,acp-opencode=o/m,codex=g", { "claude-code": ok("claude-code"), "acp-opencode": notStarted, codex: noAnswer });
+    const { verdict } = runScenario("claude-code=m,opencode2=o/m,codex=g", { "claude-code": ok("claude-code"), "opencode2": notStarted, codex: noAnswer });
     expect(verdict!.result).toBe("fail");
     expect(verdict!.problems).toHaveLength(2);
-    expect(verdict!.problems.join("\n")).toMatch(/acp-opencode \(o\/m\): a helper did not start: opencode_minimal_config_failed/);
+    expect(verdict!.problems.join("\n")).toMatch(/opencode2 \(o\/m\): a helper did not start: helper_probe_provider_unavailable/);
     expect(verdict!.problems.join("\n")).toMatch(/codex \(g\): a helper started but did not answer: helper_probe_timeout/);
   });
 

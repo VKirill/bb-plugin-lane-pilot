@@ -6,7 +6,7 @@ Scenarios (each writes its verdict into the receipt, .agents/runs/drills/<date>.
                  is byte for byte the repository's copy (lane-stack/hooks). A drifted or missing copy fails the drill and the
                  receipt lists the install command per machine; --repair-guard (or LP_DRILL_REPAIR_GUARD=1) installs the
                  repository copy and checks it again. A machine that cannot be reached is noted, not failed          [--quick]
-  helper_providers one helper per provider in use (claude-code, codex, acp-opencode, and acp-cursor when a setting names it), each
+  helper_providers one helper per provider in use (claude-code, codex, opencode2, and acp-cursor when a setting names it), each
                  started the way the pm-read stage starts its helper (`bb lane-pilot helper-probe`) with a prompt that asks for
                  one word: each must start and answer. A provider that refuses its helpers fails the drill (0.1.194 refused
                  every OpenCode helper for six minutes and the writer-only drill stayed green)                       [--quick]
@@ -65,7 +65,7 @@ DATE = time.strftime("%Y-%m-%d")
 ALL = ["guard_hash", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit", "nogit_repo"]
 QUICK = ["guard_hash", "helper_providers", "parallel3"]
 # What a provider runs when no setting of the sandbox project names a model for it.
-PROVIDER_FALLBACK_MODEL = {"claude-code": "claude-sonnet-5-5", "codex": "gpt-6-luna", "acp-opencode": "zai-coding-plan/glm-5.3-flash"}
+PROVIDER_FALLBACK_MODEL = {"claude-code": "claude-sonnet-5-5", "codex": "gpt-6-luna", "opencode2": "zai-coding-plan/glm-5.3-flash"}
 # Scenarios that need no PM and no run of their own: they run before the PM starts (guard_hash) or on a project of their own (nogit).
 STANDALONE = ("guard_hash", "nogit", "nogit_repo")
 
