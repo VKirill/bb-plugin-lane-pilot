@@ -204,6 +204,9 @@ it("accepts a core with and without opencode2 in its matrix, and no other change
   expect(parse({ experimental_vkRequiredSessionPolicy: () => ({ ...before, providerGroups: { ...oldGroups, "acp-cursor": ["bbPlugins", "mcpServers"] } }) })).not.toBeNull();
   expect(parse({ experimental_vkRequiredSessionPolicy: () => ({ ...vk, providerGroups: { ...vk.providerGroups, opencode2: ["bbPlugins", "skills"] } }) })).toBeNull();
   expect(parse({ experimental_vkRequiredSessionPolicy: () => ({ ...vk, instructionSwitches: oldSwitches }) })).not.toBeNull();
+  // 0.46.1-vk.2 narrowed only BB plugins for opencode2; 0.46.1-vk.3 adds skills and MCP servers.
+  expect(vk.providerGroups.opencode2).toEqual(["bbPlugins", "skills", "mcpServers"]);
+  expect(parse({ experimental_vkRequiredSessionPolicy: () => ({ ...vk, providerGroups: { ...vk.providerGroups, opencode2: ["bbPlugins"] } }) })).not.toBeNull();
 });
 
 describe("role profiles", () => {

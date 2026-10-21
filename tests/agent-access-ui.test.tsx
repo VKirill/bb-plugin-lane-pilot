@@ -146,8 +146,7 @@ describe("Agent access tab", () => {
       // A role nobody changed has no badge in its row; the origin shows in the drawer.
       expect(slot.queryByTestId("access-badge-writer")).toBeNull();
       expect(slot.getByTestId("access-providers").textContent).toContain("Claude Code and Codex: everything.");
-      expect(slot.getByTestId("access-providers").textContent).toContain("OpenCode: BB plugins; project instructions cannot be turned off.");
-      expect(slot.getByTestId("access-providers").textContent).toContain("Grok (Cursor): everything except CLI plugins; Cursor's own skills cannot be turned off; project instructions cannot be turned off.");
+      expect(slot.getByTestId("access-providers").textContent).toContain("Grok (Cursor) and OpenCode: everything except CLI plugins; Cursor's own skills cannot be turned off; project instructions cannot be turned off.");
       expect(slot.queryByTestId("access-writer-skills")).toBeNull();
       expect(slot.queryByTestId("role-drawer-writer")).toBeNull();
       expect(slot.getByTestId("role-open-writer").getAttribute("aria-expanded")).toBe("false");

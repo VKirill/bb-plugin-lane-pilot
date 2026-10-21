@@ -26,8 +26,9 @@ export const CORE_PROVIDER_GROUPS = {
   // Lane Pilot no longer starts OpenCode v1 threads; the core still advertises the provider, and the match below is exact.
   "acp-opencode": ["bbPlugins", "skills", "mcpServers"],
   "acp-cursor": ["bbPlugins", "skills", "mcpServers"],
-  // OpenCode v2 runs one shared service per machine: the core narrows only the BB plugins and BB's user instructions it sends.
-  opencode2: ["bbPlugins"],
+  // OpenCode v2 runs one shared service per machine: the opencode2 bridge (1.1.0-vk.3) turns skills and MCP servers into the
+  // session's permission rules; native plugins and project instructions load for the whole service and cannot be narrowed.
+  opencode2: ["bbPlugins", "skills", "mcpServers"],
 } as const;
 /** Cores before 0.44.0-vk.15 could not narrow BB skills for Cursor. */
 const LEGACY_CURSOR_GROUPS = ["bbPlugins", "mcpServers"] as const;
@@ -41,7 +42,9 @@ export const CORE_INSTRUCTION_SWITCHES = {
 /** Cores before 0.46.1-vk.2 do not advertise opencode2: their helpers on it run with BB's ordinary context. */
 const { opencode2: _groupsV2, ...PRE_OPENCODE2_GROUPS } = CORE_PROVIDER_GROUPS;
 const { opencode2: _switchesV2, ...PRE_OPENCODE2_SWITCHES } = CORE_INSTRUCTION_SWITCHES;
-const ADVERTISED_GROUPS: ReadonlyArray<Record<string, readonly string[]>> = [CORE_PROVIDER_GROUPS, PRE_OPENCODE2_GROUPS]
+/** The 0.46.1-vk.2 core narrows only BB plugins for opencode2. */
+const VK2_GROUPS = { ...CORE_PROVIDER_GROUPS, opencode2: ["bbPlugins"] as const };
+const ADVERTISED_GROUPS: ReadonlyArray<Record<string, readonly string[]>> = [CORE_PROVIDER_GROUPS, VK2_GROUPS, PRE_OPENCODE2_GROUPS]
   .flatMap((groups) => [groups, { ...groups, "acp-cursor": LEGACY_CURSOR_GROUPS }]);
 const ADVERTISED_SWITCHES: ReadonlyArray<Record<string, readonly string[]>> = [CORE_INSTRUCTION_SWITCHES, PRE_OPENCODE2_SWITCHES];
 /**
