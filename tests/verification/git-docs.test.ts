@@ -90,6 +90,25 @@ it("puts back files changed outside docs and removes files created there", async
   } finally { await rm(root, { recursive:true, force:true }); }
 });
 
+it("puts back a file the docs agent renamed in the index, a case-only rename on macOS included", async () => {
+  // cakekeeper.ru, 2026-10-21: the root docs agent edited site/cakekeeper/docs/DECISIONS.md, then ran
+  // `git mv -f DECISIONS.md decisions.md`; `git rm --cached` refused the staged copy and the night failed.
+  const root = await mkdtemp(join(tmpdir(), "lane-docs-rename-"));
+  try {
+    git(root, "init", "-q"); git(root, "config", "user.email", "t@t"); git(root, "config", "user.name", "t");
+    await mkdir(join(root, "site/x/docs"), { recursive:true }); await writeFile(join(root, "site/x/docs/DECISIONS.md"), "canon");
+    git(root, "add", "."); git(root, "commit", "-qm", "base");
+    await writeFile(join(root, "site/x/docs/DECISIONS.md"), "rewritten");
+    git(root, "mv", "-f", "site/x/docs/DECISIONS.md", "site/x/docs/decisions.md");
+    const { dirty } = await gitDocsScope({ projectCwd:root, sinceEpochMs:0 });
+    expect(dirty).toEqual(["site/x/docs/DECISIONS.md", "site/x/docs/decisions.md"]);
+    expect(await revertPaths({ projectCwd:root, paths:dirty })).toEqual({ reverted:dirty, failed:[] });
+    expect(git(root, "status", "--porcelain", "--untracked-files=all").toString()).toBe("");
+    expect(execFileSync("ls", [join(root, "site/x/docs")]).toString().trim()).toBe("DECISIONS.md");
+    expect(execFileSync("cat", [join(root, "site/x/docs/DECISIONS.md")]).toString()).toBe("canon");
+  } finally { await rm(root, { recursive:true, force:true }); }
+});
+
 it("tells a workspace's docs agent to stay in its folder and link to the root docs", () => {
   const prompt = nightlyDocsPrompt({ since:"yesterday", hasDocs:false, changed:[], unit:{ docsDir:"apps/api/docs", workspace:{ path:"apps/api", name:"@x/api" } } });
   expect(prompt).toContain("Create:\n- apps/api/docs/overview.md (overview)");

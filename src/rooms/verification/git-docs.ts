@@ -33,10 +33,11 @@ export type GitDocsScope = {
   reason: string | null;
 };
 
-function statusPath(line: string): string {
+/** Both sides of a staged rename (`R  old -> new`): the old path is changed too, it is gone from the index. */
+function statusPaths(line: string): string[] {
   const path = line.slice(3);
   const arrow = path.indexOf(" -> ");
-  return arrow >= 0 ? path.slice(arrow + 4) : path;
+  return arrow >= 0 ? [path.slice(0, arrow), path.slice(arrow + 4)] : [path];
 }
 
 /** Workspace folders the root package.json or pnpm-workspace.yaml declares; `dir/*` and `dir/**` globs only. */
@@ -90,7 +91,7 @@ export async function gitDocsScope(input: { projectCwd: string; sinceEpochMs: nu
       || (await git("rev-list", "-1", `--before=@${Math.floor(input.sinceEpochMs / 1000)}`, "HEAD")).trim()
       || EMPTY_TREE;
     const committed = (await git("diff", "--name-only", base, "HEAD")).split("\n");
-    const dirty = (await git("status", "--porcelain", "--untracked-files=all")).split("\n").filter(Boolean).map(statusPath);
+    const dirty = (await git("status", "--porcelain", "--untracked-files=all")).split("\n").filter(Boolean).flatMap(statusPaths);
     const changed = [...new Set([...committed, ...dirty].map((path) => path.trim()).filter((path) => path && !NOT_CODE.test(path)))].sort();
     const workspaces = isRepoRoot ? await listWorkspaces(input.projectCwd, (await git("ls-files")).split("\n").filter(Boolean)) : [];
     return { status: "ready", isRepoRoot, hasDocs, changed, dirty, base, workspaces, ...local, reason: null };
@@ -139,22 +140,33 @@ export async function commitDocs(input:{ projectCwd:string; paths:string[]; mess
 /**
  * Puts back files the docs agent changed outside the docs it may write: a tracked file returns to HEAD,
  * a file it created is removed. Only paths that were clean before the pass reach here.
+ * A created file may be staged with other content (`git mv`), so its index entry is dropped by force. Created files go
+ * first: on a case-insensitive disk `git mv DECISIONS.md decisions.md` leaves one file, and removing decisions.md after
+ * DECISIONS.md came back from HEAD would delete it again.
  */
 export async function revertPaths(input:{ projectCwd:string; paths:string[] }):Promise<{ reverted:string[]; failed:string[] }> {
   const git = (...args:string[]) => run("git", ["-C", input.projectCwd, ...args], { maxBuffer: 8 << 20 });
   const reverted:string[] = [], failed:string[] = [];
   await withBaseLock(input.projectCwd, async () => {
+    const created:string[] = [], tracked:string[] = [];
     for (const path of input.paths) {
       if (path.startsWith("/") || path.split("/").includes("..")) { failed.push(path); continue; }
+      (await git("cat-file", "-e", `HEAD:${path}`).then(() => true, () => false) ? tracked : created).push(path);
+    }
+    for (const path of created) {
       try {
-        const tracked = await git("cat-file", "-e", `HEAD:${path}`).then(() => true, () => false);
-        if (tracked) await git("checkout", "HEAD", "--", path);
-        else { await git("rm", "-q", "--cached", "--ignore-unmatch", "--", path); await rm(join(input.projectCwd, path), { recursive:true, force:true }); }
+        await git("rm", "-q", "-f", "--cached", "--ignore-unmatch", "--", path);
+        await rm(join(input.projectCwd, path), { recursive:true, force:true });
         reverted.push(path);
       } catch { failed.push(path); }
     }
+    for (const path of tracked) {
+      try { await git("checkout", "HEAD", "--", path); reverted.push(path); }
+      catch { failed.push(path); }
+    }
   });
-  return { reverted, failed };
+  const order = (paths:string[]) => input.paths.filter((path) => paths.includes(path));
+  return { reverted:order(reverted), failed:order(failed) };
 }
 
 /** What a folder is made of, for deciding whether keeping docs for it is worth anything. */
