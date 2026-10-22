@@ -1,4 +1,5 @@
 import { taskV2Schema } from "../../contracts";
+import { enrichMemoryContext } from "../../memory-tiers/server";
 import { claimStageSpawn, getRun, getTask, listStageReceipts, searchMemoryRecords, storeMemoryRecords } from "../../storage";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { resolveStageWriterSelection } from "../../writer";
@@ -228,8 +229,12 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     ].map((key)=>[key,configuredSetting(settings,key)])));
     if(!memorySettings.enabled) return {runId:args.runId,state:"skipped",reason:"memory_disabled"};
     const selected=pmMemoryContext(db,args.projectId,memorySettings,args.query);
+    // The cold tier, past tasks like this one and the misses (src/rooms/memory-tiers): never fails the query.
+    let tiers:{text:string;promoted:string[];episodes:number;miss:boolean}={text:"",promoted:[],episodes:0,miss:false};
+    try { tiers=enrichMemoryContext(db,{projectId:args.projectId,query:args.query,activeCount:selected.records.length}); } catch (cause) { ctx.log(`memory tiers skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
     return {runId:args.runId,state:"passed",audience:memorySettings.audience,personalBot:memorySettings.personalBot,querySha256:sha256(args.query),
-      recordIds:selected.records.map((item)=>item.id),estimatedTokens:selected.estimatedTokens,context:selected.text};
+      recordIds:[...selected.records.map((item)=>item.id),...tiers.promoted],estimatedTokens:selected.estimatedTokens,context:[selected.text,tiers.text].filter(Boolean).join("\n\n"),
+      ...(tiers.promoted.length?{promotedFromCold:tiers.promoted.length}:{}),...(tiers.episodes?{episodes:tiers.episodes}:{})};
   }
 
   return { maintainMemoryAfterAcceptance, runMemoryMaintenance, runMemoryContext };

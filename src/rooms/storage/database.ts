@@ -32,6 +32,7 @@ import { runGoalMigrations } from "../run-goal";
 import { capabilityMigrations } from "../capability";
 import { outageMigrations } from "../outage";
 import { backlogMigrations } from "../backlog";
+import { memoryTierMigrations } from "../memory-tiers";
 import { wallDeferralKindMigrations, wallMigrations } from "../wall";
 import { checkerMigrations } from "../checkers";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
@@ -393,6 +394,8 @@ export const migrations = [
   ...outageMigrations,
   // Todos issued from a project's backlog to its PM (src/rooms/backlog).
   ...backlogMigrations,
+  // The cold tier's promotions and the PM's memory misses (src/rooms/memory-tiers).
+  ...memoryTierMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
