@@ -28,9 +28,11 @@ export const MECHANISMS: readonly Mechanism[] = [
   { id: "verification-masked-exit", kind: "contract_lint", coverage: "full", lintCodes: ["verification_masked_exit"], tests: ["tests/contract-lint-exit-status.test.ts"],
     ref: "contract lint verification_masked_exit (src/rooms/tasks/server/lint-exit-status.ts, tests/contract-lint-exit-status.test.ts)",
     matches: /`\$\?`[^.]{0,40}pipe|\|\s*tail`? always exits 0/i },
-  { id: "verification-pass-with-no-tests", kind: "contract_lint", coverage: "full", lintCodes: ["verification_pass_with_no_tests"], tests: ["tests/contract-lint-exit-status.test.ts"],
+  // Partial: the accepted rule also carries project knowledge the lint cannot hold (SelfyStudio apps/api: `npm run test -- <file>` goes to node --test).
+  { id: "verification-pass-with-no-tests", kind: "contract_lint", coverage: "partial", lintCodes: ["verification_pass_with_no_tests"], tests: ["tests/contract-lint-exit-status.test.ts"],
     ref: "contract lint verification_pass_with_no_tests (src/rooms/tasks/server/lint-exit-status.ts, tests/contract-lint-exit-status.test.ts)",
-    matches: /--passWithNoTests/i },
+    matches: /--passWithNoTests/i,
+    gap: "the lint refuses --passWithNoTests; the rule's project knowledge (how a project's test runner takes a file argument) stays text" },
   { id: "filter-folder-slash", kind: "contract_lint", coverage: "full", lintCodes: ["filter_folder_slash"], tests: ["tests/contract-lint.test.ts"],
     ref: "contract lint filter_folder_slash (src/rooms/tasks/server/contract-lint.ts, tests/contract-lint.test.ts)",
     matches: /name a test folder with a trailing slash/i },

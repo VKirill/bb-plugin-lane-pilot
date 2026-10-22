@@ -63,7 +63,7 @@ describe("the mechanism registry", () => {
     for (const id of ["verification-masked-exit", "verification-pass-with-no-tests", "filter-folder-slash", "sibling-tests-owned", "task-standard", "paths-outside-project", "code-roles-keep-gitnexus"]) {
       expect(byMechanism[id], id).toHaveLength(1);
     }
-    expect(held.filter((entry) => entry.mechanism!.coverage === "full")).toHaveLength(7);
+    expect(held.filter((entry) => entry.mechanism!.coverage === "full")).toHaveLength(6);
     expect(held.filter((entry) => entry.mechanism!.coverage === "partial").length).toBeGreaterThanOrEqual(5);
     for (const entry of MECHANISMS.filter((mechanism) => mechanism.coverage === "partial")) expect(entry.gap, entry.id).toBeTruthy();
   });
