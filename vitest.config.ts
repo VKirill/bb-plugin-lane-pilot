@@ -19,7 +19,7 @@ const mocking = [
 ];
 const nodeTests = ["tests/**/*.test.ts", "src/rooms/**/tests/**/*.test.ts", "packages/*/tests/**/*.test.ts"];
 // Page tests that fail when the document (an open picker window, a registered settings backend) is shared with the files before them.
-const uiAlone = ["tests/schedule-detail-ui.test.tsx", "tests/composer-activation.test.tsx", "tests/workflow-models-ui.test.tsx", "tests/ui-settings-integration/part*.test.tsx", "tests/improvement/improvement-ui.test.tsx"];
+const uiAlone = ["tests/schedule-detail-ui.test.tsx", "tests/harness-ui.test.tsx", "tests/composer-activation.test.tsx", "tests/workflow-models-ui.test.tsx", "tests/ui-settings-integration/part*.test.tsx", "tests/improvement/improvement-ui.test.tsx"];
 const uiTests = ["tests/**/*.test.tsx", "src/rooms/**/tests/**/*.test.tsx"];
 
 export default defineConfig({
