@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+From a self-repair of «nightly docs failed … 4 docs checks still fail after one repair round» (treba root docs, 2026-10-22 02:36 UTC):
+- **A broken frontmatter no longer hides a page's other findings from the one repair round.** In the first round the agent's own Python script had glued the closing `---` to the last field of four pages (`web_status: ok---`, `…revenue.spec.ts---`). The same script had also switched those pages from `reference` to `component`. `lintDocsPages` (`src/rooms/docs/docs-lint.ts`) stopped at «page must start with a YAML frontmatter block» and skipped the rest of the page. The repair round was told to «fix exactly these», so it fixed only the delimiter. The next check then found that `docs/components/{app,server,cluster-87,tracking-attribution}.md` had no `## How it works`, and no round was left, so none of the 25 pages written that night was committed. A frontmatter whose closing `---` is glued to a line is now read as written. The finding names the line («must be on a line of its own, not at the end of "…---"»), and every other check of the page runs in the same round. A page with no frontmatter at all is still checked by its body (H1, citations, wording, links).
+  - Test: `tests/stages/docs-lint.test.ts` «reports a page's other findings when its frontmatter's closing '---' is glued to the last field», on the agent's real page (`tests/fixtures/docs/treba-cluster-87-glued-frontmatter.md`). It fails without the fix. Also checked on all four real treba pages as they were after the first round: each now gets both findings at once.
+
 ## 0.1.264
 
 - **opencode2 threads get the session policy again, now with skills and MCP.** The machines' host daemons carry the 0.46.1-vk.3 build (rolled out by hand on 2026-10-22: a daemon updates itself only on a protocol bump), and the opencode2 bridge 1.1.0-vk.3 declares the handshake and applies the policy as OpenCode permission rules: a denied skill leaves the model's prompt (108 KB → 7.6 KB with one allowed skill on the mock test), a denied MCP server's tools answer «Unknown tool». `POLICY_REFUSED_BY_HOSTS` is removed. Test: `helper-context.test.ts`.

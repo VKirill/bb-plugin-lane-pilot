@@ -256,6 +256,21 @@ it("accepts a component page that gives each operation its own '### How it works
   expect(lintDocsPages([{ path:"docs/flows/checks.md", content:flow }], { "src/check.ts":9 }).map((f) => f.detail)).toContainEqual(expect.stringContaining("'## How it works'"));
 });
 
+// treba, 2026-10-22: the agent's script glued the closing '---' to the last source of four pages it had switched from
+// reference to component. The check stopped at «page must start with a YAML frontmatter block», the repair round fixed
+// only that, and then the same pages failed on the missing '## How it works' with no round left. This is the agent's page.
+it("reports a page's other findings when its frontmatter's closing '---' is glued to the last field", async () => {
+  const content = await readFile(join(__dirname, "../fixtures/docs/treba-cluster-87-glued-frontmatter.md"), "utf8");
+  const findings = lintDocsPages([{ path:"docs/components/cluster-87.md", content }], {});
+  expect(findings.map((finding) => finding.rule)).toEqual(["frontmatter", "structure"]);
+  expect(findings[0]!.detail).toMatch(/^the frontmatter's closing '---' must be on a line of its own/);
+  expect(findings[1]!.detail).toMatch(/^a component or flow page needs a '## How it works' section/);
+  expect(findings[0]!.detail).toContain('at the end of "- tests/server/yandex-direct-campaign-revenue.spec.ts---"');
+  // A page with no frontmatter at all is still checked by its body.
+  const bare = "# Checks\n\nA powerful check (src/check.ts:1).\n";
+  expect(lintDocsPages([{ path:"docs/features/checks.md", content:bare }], { "src/check.ts":9 }).map((f) => f.rule)).toEqual(["frontmatter", "evidence", "wording"]);
+});
+
 // SelfyStudio, 2026-10-21: docs/capabilities/operators.md was 29967 bytes, so the repair round, as its prompt says, put the
 // three missing capabilities on a linked page of their own, docs/capabilities/operators/scenario-runner.md. The coverage
 // check counted only area pages the catalogue links directly, so the same 3 findings failed the pass and none of the
