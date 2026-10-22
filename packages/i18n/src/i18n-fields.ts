@@ -967,6 +967,8 @@ export const fieldEn = {
   reason_s504: "The time one project's pass may spend running checks and searching for a bad commit, in seconds. Default 1800.",
   field_s505: "Steps of the bad-commit search",
   reason_s505: "The search is not started over more than 2 to the power of this many commits. Default 9 (512 commits).",
+  field_s506: "A check that is red before the work",
+  reason_s506: "A task of this risk or more must have a check that fails on the base commit before its writer starts. When every check already passes there, the attempt does not start and the PM is told which checks are vacuous and what to add: a check that names the new file or behaviour. Refactor, docs, research and check tasks are never asked. Default: from medium risk.",
 } as const;
 
 export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
@@ -1938,4 +1940,6 @@ export const fieldRu: { [K in keyof typeof fieldEn]: string } = {
   reason_s504: "Сколько секунд проход по одному проекту может тратить на проверки и поиск плохого коммита. По умолчанию 1800.",
   field_s505: "Шагов поиска плохого коммита",
   reason_s505: "Поиск не начинается, если коммитов больше, чем 2 в этой степени. По умолчанию 9 (512 коммитов).",
+  field_s506: "Проверка, красная до работы",
+  reason_s506: "У задачи такого риска и выше должна быть проверка, которая падает на базовом коммите до старта исполнителя. Если все проверки там уже проходят, попытка не запускается, а PM получает список пустых проверок и что добавить: проверку, называющую новый файл или поведение. Рефакторинг, документация, исследование и проверки не затрагиваются. По умолчанию — от среднего риска.",
 };

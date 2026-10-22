@@ -105,7 +105,7 @@ async function runScenario(engine: "on" | "off", scenario: Scenario) {
     experimental_callHostRpc: async (call) => {
       const input = call.input as Record<string, unknown>;
       if (call.method === "inspectCritiqueCoverage") return { hostId: config.hostId, status: "complete", pathCount: 1, findings: [] };
-      if (call.method === "snapshotDryRun") return { hostId: config.hostId, entries: ((input.paths as string[]) ?? []).map((path) => ({ path, kind: "file", sha256: null, symlinkTarget: null })) };
+      if (call.method === "snapshotDryRun") return { hostId: config.hostId, entries: ((input.paths as string[]) ?? []).map((path) => ({ path, kind: path.endsWith("/note.txt") ? "missing" : "file", sha256: null, symlinkTarget: null })) };
       if (call.method === "gitOwnershipBase") {
         if (scenario.gitBase === "error") return { hostId: config.hostId, status: "invalid-ref", branch: null, headSha: null, baseRef: null, baseSha: null, compareCommitted: false, reason: "dirty base" };
         if (scenario.gitBase === "ready") return { hostId: config.hostId, status: "ready", branch: "main", headSha: "a".repeat(40), baseRef: (input.baseRef as string | undefined) ?? "main", baseSha: "b".repeat(40), compareCommitted: true, reason: null };

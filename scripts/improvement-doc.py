@@ -65,7 +65,7 @@ Above the sections a status strip shows four numbers from the same read: the las
 | Night loop (`Ночной цикл`) | `wall.*`: limits of a night, the hunt, the budget | a dry run of the night (`wall_night` with `dryRun`) |
 | Bench set (`Эталонный набор`) | `bench.budget_tokens`, `bench.budget_hours`, `harness.adopt_by` | the newest set: tasks, candidates, date |
 | Night policy (`Политика ночи`) | none, on purpose | version, freeze date, the exam, the lists and the standing prohibitions |
-| Checks (`Проверки`) | `baseline.*`, `plan_fact.mode`, `critic.code.default_for_risk`, `regress.*` | the note that these are defaults for all projects |
+| Checks (`Проверки`) | `baseline.*`, `checks.require_red_on_base`, `plan_fact.mode`, `critic.code.default_for_risk`, `regress.*` | the note that these are defaults for all projects |
 | Waiting for the owner (`Ждут владельца`) | `owner_push.*` | deferral counts and how a term is set |
 | Memory (`Память`) | `memory.note_budget` | the pointer to Knowledge, Memory |
 
@@ -81,7 +81,7 @@ A control is a row of `lane_pilot_project_settings` under project `*` (the globa
 | plugin key-value `bench:config` | `bench.*` | {at("src/rooms/bench/service.ts", "hubFields(deps.db, \"bench\")")} | `bench config`, the screen |
 | table `lane_pilot_owner_config` | `owner_push.*` | {at("src/rooms/owner-waiting/push.ts", "hubFields(db, \"owner_push\")")} | `waiting config`, `owner_waiting_config`, the screen |
 | per-project `harness:config:<id>` | `harness.adopt_by` (the default of every project) | {at("src/rooms/harness/server/harness.ts", "hubFields(db, \"harness\")")} | `harness configure`, the screen |
-| project settings, CLI only | `baseline.*`, `regress.*` in the catalog | {at("src/rooms/baseline/logic.ts", "parseBaselineSettings")} | the screen (default), the project's «Work» tab (own value) |
+| project settings, CLI only | `baseline.*`, `checks.require_red_on_base`, `regress.*` in the catalog | {at("src/rooms/baseline/logic.ts", "parseBaselineSettings")} | the screen (default), the project's «Work» tab (own value) |
 
 Rules: a field with a row reads the row; a field without one reads the old store, so nothing set before is lost; a write goes to the row only and leaves the old store alone ({at("src/rooms/wall/service.ts", "writeHubFields(db, \"wall\"")}); the CLI commands keep their syntax and their clamping (a value over the limit is stored as the limit). A write from the CLI moves the setting's version, so a page that read before sees the next save as a conflict and reloads ({at("src/rooms/improvement/hub.ts", "INSERT INTO lane_pilot_setting_generation")}). A project record of `harness.adopt_by` that was saved before keeps winning over the default.
 
@@ -99,7 +99,7 @@ for key, path, needle in [
     ("harness.adopt_by", "src/rooms/harness/server/harness.ts", "adoptBy: AdoptBy"),
     ("owner_push.enabled", "src/rooms/owner-waiting/push.ts", "export type PushConfig"), ("owner_push.quiet", "src/rooms/owner-waiting/push.ts", "const QUIET"),
     ("owner_push.timezone", "src/rooms/owner-waiting/push.ts", "function validTimezone"),
-    ("baseline.already_built", "src/rooms/baseline/logic.ts", "BaselineSettings"), ("baseline.time_cap_sec", "src/rooms/baseline/logic.ts", "timeCapSec: number"),
+    ("checks.require_red_on_base", "src/rooms/baseline/logic.ts", "requireRed"), ("baseline.already_built", "src/rooms/baseline/logic.ts", "BaselineSettings"), ("baseline.time_cap_sec", "src/rooms/baseline/logic.ts", "timeCapSec: number"),
     ("regress.nightly", "src/rooms/baseline/logic.ts", "nightly: boolean"), ("regress.last_n", "src/rooms/baseline/logic.ts", "lastN: number"),
     ("regress.last_days", "src/rooms/baseline/logic.ts", "days: number"), ("regress.check_cap_sec", "src/rooms/baseline/logic.ts", "checkCapSec: number"),
     ("regress.budget_sec", "src/rooms/baseline/logic.ts", "budgetSec: number"), ("regress.bisect_steps", "src/rooms/baseline/logic.ts", "bisectSteps: number"),

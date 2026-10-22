@@ -141,10 +141,14 @@ SPECS = [
         "The search is not started over more than 2 to the power of this many commits. Default 9 (512 commits).",
         "Поиск не начинается, если коммитов больше, чем 2 в этой степени. По умолчанию 9 (512 коммитов).",
         inv="int", values="1-14", default="9", control="number", scope="project", lo=1, hi=14, cite=("src/rooms/baseline/logic.ts", "bisectSteps: number")),
+    row("checks.require_red_on_base", 'A check that is red before the work', 'Проверка, красная до работы',
+        'A task of this risk or more must have a check that fails on the base commit before its writer starts. When every check already passes there, the attempt does not start and the PM is told which checks are vacuous and what to add: a check that names the new file or behaviour. Refactor, docs, research and check tasks are never asked. Default: from medium risk.',
+        'У задачи такого риска и выше должна быть проверка, которая падает на базовом коммите до старта исполнителя. Если все проверки там уже проходят, попытка не запускается, а PM получает список пустых проверок и что добавить: проверку, называющую новый файл или поведение. Рефакторинг, документация, исследование и проверки не затрагиваются. По умолчанию — от среднего риска.',
+        inv="enum", values="off, medium, high", default="medium", control="select", scope="project", options=["off", "medium", "high"], cite=("src/rooms/baseline/logic.ts", "requireRed")),
 ]
 
 AREAS = {"wall": "Lane Pilot night loop", "bench": "Lane Pilot bench", "harness": "Lane Pilot harness", "owner_push": "Lane Pilot owner push",
-         "baseline": "Lane Pilot baseline", "regress": "Lane Pilot regression pass"}
+         "baseline": "Lane Pilot baseline", "checks": "Lane Pilot checks on the base", "regress": "Lane Pilot regression pass"}
 
 
 def line_of(path: str, needle: str) -> int:

@@ -28,6 +28,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "wall.hunter_reasoning_effort": {
     low: "enumEffortLow", medium: "enumEffortMedium", high: "enumEffortHigh", xhigh: "enumEffortXhigh", max: "enumEffortMax",
   },
+  "checks.require_red_on_base": { off: "enumRequireRedOff", medium: "enumRequireRedMedium", high: "enumRequireRedHigh" },
   "jev.provider": { openlux: "enumJevProviderOpenlux", typesafe: "enumJevProviderTypesafe" },
   "sandbox.backend": {
     auto: "enumSandboxAuto",

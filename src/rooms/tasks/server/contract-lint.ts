@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { TASK_KINDS, type TaskV2 } from "../../contracts";
 import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOverlap } from "@lane-pilot/kit";
 import { findSandboxUnsafeMissingExcludes, runnerFilterArgs, runsWholeSuite } from "../../critique";
+import { NO_RED_KINDS } from "../../baseline";
 import { parseReadFirstHints } from "../read-first";
 import { maskedExitReason, passWithNoTestsReason } from "./lint-exit-status";
 import { SUBJECTIVE_WORDS } from "../../critique";
@@ -83,6 +84,25 @@ export function emptyCheckReason(command:string):string | null {
   if (segments.every((part) => NO_OP_SEGMENT.test(part)) && !piped) return "does nothing and always exits 0";
   if (/(?:\|\||;)\s*(?:true|:|exit\s+0)\s*;?$/.test(text)) return "ends in `|| true`, `; true` or `; exit 0`, which turns a failure into a pass";
   return null;
+}
+
+const EXISTENCE_SEGMENT = /^(?:(?:test|\[\[?)\s+-[fedsr]\s+(\S+?)(?:\s*\]\]?)?|ls(?:\s+-[A-Za-z]+)*\s+(\S+)|stat\s+(\S+))$/;
+
+/**
+ * The paths a check only tests the existence of (`test -f a.ts && test -d b`, `[ -f a.ts ]`, `ls a.ts`), or null when the command does anything
+ * else. Such a check is red on the base only for a path the base lacks.
+ */
+export function existenceOnlyPaths(command:string):string[] | null {
+  const segments = command.trim().split(/\s*&&\s*|;|\n/).map((part) => part.trim()).filter(Boolean);
+  if (!segments.length || /\|/.test(command)) return null;
+  const paths:string[] = [];
+  for (const segment of segments) {
+    const hit = EXISTENCE_SEGMENT.exec(segment);
+    const raw = hit?.[1] ?? hit?.[2] ?? hit?.[3];
+    if (!raw) return null;
+    paths.push(raw.replace(/^['"]+|['"]+$/g, "").replace(/^\.\//, ""));
+  }
+  return paths;
 }
 
 /** The files a check names (a token with a slash or an extension), absolute, in the folder the check runs in. */
@@ -233,6 +253,19 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
     if (masked) errors.push({ code:"verification_masked_exit", message:`verification[${index}] command "${check.command}" ${masked}; start the command with \`set -o pipefail;\` (checks run in bash) or drop the pipe, so the check fails when the command before it fails` });
     const none = passWithNoTestsReason(check.command);
     if (none) errors.push({ code:"verification_pass_with_no_tests", message:`verification[${index}] command "${check.command}" ${none}; remove the flag and name the test file or folder exactly, so a wrong filter fails the check` });
+  }
+  // A check that only tests the existence of files the base already has is green before the work: it proves nothing.
+  if (kinds && !isMainfixTask(task.id)) {
+    const present = (path:string, cwd:string) => { const kind = kindOf(resolve(cwd, path)); return kind === "file" || kind === "directory"; };
+    const vacuous = task.verification.flatMap((check, index) => {
+      const paths = existenceOnlyPaths(check.command);
+      return paths && paths.every((path) => present(path, check.cwd)) ? [{ index, check, paths }] : [];
+    });
+    const allVacuous = vacuous.length === task.verification.length && vacuous.length > 0;
+    for (const { index, check, paths } of vacuous) {
+      const finding = { code:"verification_existence_on_base", message:`verification[${index}] command "${check.command}" only tests that ${paths.join(", ")} exists, and it already exists on the base commit, so it passes before the work; test a new file, grep -q for the expected string, or run a test that fails now` };
+      if (allVacuous && task.risk !== "low" && !NO_RED_KINDS.includes(task.kind ?? "")) errors.push(finding); else warnings.push(finding);
+    }
   }
   if (task.risk !== "low" && task.verification.length > 0 && kinds && !isMainfixTask(task.id) && !errors.some((error) => error.code === "verification_empty_check")
     && !checkNamedPaths(task).some((path) => kindOf(path) === "missing")) {

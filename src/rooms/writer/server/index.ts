@@ -11,6 +11,7 @@ export { createWriterStart } from "./start";
 export { createWriterState } from "./state";
 export { loadFollowUp, markFollowUpCancelled } from "./sticky";
 export { createWriterReassign } from "./reassign";
+export { createAttemptReopen } from "./reopen-attempt";
 export { createWriterUpdateTask } from "./update-task";
 export { createWriterVerify } from "./verify";
 export { createWriterHost } from "./writer-host";

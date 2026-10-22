@@ -53,7 +53,7 @@ export const specOf = (key: string): HubSpec | undefined => HUB_SPECS.find((spec
 
 /** Settings of the global level that a project may override with its own row (they are read per project). */
 export const PROJECT_DEFAULT_KEYS = [
-  "baseline.already_built", "baseline.time_cap_sec",
+  "baseline.already_built", "baseline.time_cap_sec", "checks.require_red_on_base",
   "regress.nightly", "regress.last_n", "regress.last_days", "regress.check_cap_sec", "regress.budget_sec", "regress.bisect_steps",
 ] as const;
 
@@ -102,6 +102,7 @@ export function hubSettingProblem(key: string, value: unknown): string | null {
     if (n !== null && ((range.zeroOff && n === 0) || (n >= range.min && n <= range.max))) return null;
     return range.zeroOff ? `0, ${range.min}-${range.max}` : `${range.min}-${range.max}`;
   }
+  if (key === "checks.require_red_on_base") return value === "off" || value === "medium" || value === "high" ? null : "off, medium, high";
   if (key === "baseline.already_built") return value === "notify" || value === "stop" ? null : "notify или stop";
   if (key === "regress.nightly") return typeof value === "boolean" || ["on", "off", "true", "false"].includes(String(value)) ? null : "on, off, true, false";
   return null;

@@ -152,7 +152,9 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "quality_mode": { label: "field_s423", help: "reason_s423" },
   "critic.code.default_for_risk": { label: "field_s476", help: "reason_s476" },
   "plan_fact.mode": { label: "field_s477", help: "reason_s477" },
+  
   "run.gate": { label: "settingRunGate", help: "settingRunGateHelp" },
+  "checks.require_red_on_base": { label: "field_s506", help: "reason_s506" },
   "wall.enabled": { label: "field_s478", help: "reason_s478" },
   "wall.max_classes_per_night": { label: "field_s479", help: "reason_s479", unit: "fieldUnitClasses" },
   "wall.rounds_per_night": { label: "field_s480", help: "reason_s480", unit: "fieldUnitRounds" },

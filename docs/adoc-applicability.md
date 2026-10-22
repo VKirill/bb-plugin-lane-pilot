@@ -15,11 +15,11 @@ language: ru
 
 | Решение | Число |
 |---|---:|
-| editable | 262 |
+| editable | 263 |
 | read-only | 91 |
 | gap | 0 |
 | excluded | 130 |
-| **сумма** | **483** |
+| **сумма** | **484** |
 
 Из бывших 88 read-only: (a) канал найден и поле стало editable — 0; (b) неприменимо в BB — 50; (c) gap без контракта upstream/SDK — 33.
 
@@ -502,9 +502,10 @@ language: ru
 | 474 | Lane Pilot owner push | owner_push.timezone | src/rooms/owner-waiting/push.ts:25 | user | OWN | editable | The time zone the quiet hours are counted in, an IANA name such as Europe/Madrid. Default Europe/Madrid. (`src/rooms/owner-waiting/push.ts:25`) |
 | 475 | Lane Pilot baseline | baseline.already_built | src/rooms/baseline/logic.ts:12 | user | OWN | editable | Before a writer starts, the task's checks run on the base. If they all pass, the task may be already built. notify: tell the PM and the acceptance card, the writer starts anyway. stop: do not start. Default notify. (`src/rooms/baseline/logic.ts:12`) |
 | 476 | Lane Pilot baseline | baseline.time_cap_sec | src/rooms/baseline/logic.ts:16 | user | OWN | editable | The most time the baseline may spend on a start, in seconds, as the sum of the checks' estimates. 0 turns the baseline off. Default 300. (`src/rooms/baseline/logic.ts:16`) |
-| 477 | Lane Pilot regression pass | regress.nightly | src/rooms/baseline/logic.ts:39 | user | OWN | editable | Each night the checks of the last accepted tasks run again on the current main; a check that went red gets a search for the first bad commit. Default: on. (`src/rooms/baseline/logic.ts:39`) |
-| 478 | Lane Pilot regression pass | regress.last_n | src/rooms/baseline/logic.ts:41 | user | OWN | editable | The last N accepted tasks of a project take part in the night re-check. Default 30. (`src/rooms/baseline/logic.ts:41`) |
-| 479 | Lane Pilot regression pass | regress.last_days | src/rooms/baseline/logic.ts:42 | user | OWN | editable | A task accepted longer ago than this is left out of the night re-check. Default 14. (`src/rooms/baseline/logic.ts:42`) |
-| 480 | Lane Pilot regression pass | regress.check_cap_sec | src/rooms/baseline/logic.ts:44 | user | OWN | editable | A check whose estimate is above this many seconds is not cheap and is left out of the re-check. Default 120. (`src/rooms/baseline/logic.ts:44`) |
-| 481 | Lane Pilot regression pass | regress.budget_sec | src/rooms/baseline/logic.ts:46 | user | OWN | editable | The time one project's pass may spend running checks and searching for a bad commit, in seconds. Default 1800. (`src/rooms/baseline/logic.ts:46`) |
-| 482 | Lane Pilot regression pass | regress.bisect_steps | src/rooms/baseline/logic.ts:48 | user | OWN | editable | The search is not started over more than 2 to the power of this many commits. Default 9 (512 commits). (`src/rooms/baseline/logic.ts:48`) |
+| 477 | Lane Pilot regression pass | regress.nightly | src/rooms/baseline/logic.ts:71 | user | OWN | editable | Each night the checks of the last accepted tasks run again on the current main; a check that went red gets a search for the first bad commit. Default: on. (`src/rooms/baseline/logic.ts:71`) |
+| 478 | Lane Pilot regression pass | regress.last_n | src/rooms/baseline/logic.ts:73 | user | OWN | editable | The last N accepted tasks of a project take part in the night re-check. Default 30. (`src/rooms/baseline/logic.ts:73`) |
+| 479 | Lane Pilot regression pass | regress.last_days | src/rooms/baseline/logic.ts:74 | user | OWN | editable | A task accepted longer ago than this is left out of the night re-check. Default 14. (`src/rooms/baseline/logic.ts:74`) |
+| 480 | Lane Pilot regression pass | regress.check_cap_sec | src/rooms/baseline/logic.ts:76 | user | OWN | editable | A check whose estimate is above this many seconds is not cheap and is left out of the re-check. Default 120. (`src/rooms/baseline/logic.ts:76`) |
+| 481 | Lane Pilot regression pass | regress.budget_sec | src/rooms/baseline/logic.ts:78 | user | OWN | editable | The time one project's pass may spend running checks and searching for a bad commit, in seconds. Default 1800. (`src/rooms/baseline/logic.ts:78`) |
+| 482 | Lane Pilot regression pass | regress.bisect_steps | src/rooms/baseline/logic.ts:80 | user | OWN | editable | The search is not started over more than 2 to the power of this many commits. Default 9 (512 commits). (`src/rooms/baseline/logic.ts:80`) |
+| 483 | Lane Pilot checks on the base | checks.require_red_on_base | src/rooms/baseline/logic.ts:18 | user | OWN | editable | A task of this risk or more must have a check that fails on the base commit before its writer starts. When every check already passes there, the attempt does not start and the PM is told which checks are vacuous and what to add: a check that names the new file or behaviour. Refactor, docs, research and check tasks are never asked. Default: from medium risk. (`src/rooms/baseline/logic.ts:18`) |

@@ -48,7 +48,7 @@ export function WorkTab({ page }: { page: LpPage }) {
       {isGlobal ? null : (
         <div hidden={!advanced}><SettingsGroup testId="settings-project-checks" title={t("workGroupBaseline")}>
           <p className="max-w-xl text-xs text-muted-foreground">{t("workGroupBaselineHelp")}</p>
-          <CatalogFields page={page} keys={["baseline.already_built", "baseline.time_cap_sec", "regress.nightly", "regress.last_n", "regress.last_days", "regress.check_cap_sec", "regress.budget_sec", "regress.bisect_steps"]} />
+          <CatalogFields page={page} keys={["baseline.already_built", "baseline.time_cap_sec", "checks.require_red_on_base", "regress.nightly", "regress.last_n", "regress.last_days", "regress.check_cap_sec", "regress.budget_sec", "regress.bisect_steps"]} />
         </SettingsGroup></div>
       )}
 

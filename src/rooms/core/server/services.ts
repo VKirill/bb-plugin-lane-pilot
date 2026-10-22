@@ -8,6 +8,8 @@ import type { RollbackApi } from "../../rollback/server";
 import type { BenchApi } from "../../bench/server";
 import type { BaselineApi, RegressionApi } from "../../baseline/server";
 import type { WallApi } from "../../wall/server";
+import type { CheckersApi } from "../../checkers/server";
+import type { StageReturnApi } from "../../stage-return/server";
 import type { WorldApi } from "../../world/server";
 import type { Canary } from "../../stability/server";
 import type { createActivation } from "../../native-agent/server";
@@ -71,10 +73,14 @@ export interface Services {
   bench: BenchApi;
   /** The task's checks on its base before a writer, and what turned red after the merge (src/rooms/baseline). */
   baseline: BaselineApi;
+  /** Sends a task back to an earlier stage with a note (src/rooms/stage-return). */
+  stageReturn: StageReturnApi;
   /** The regression pass: accepted tasks' checks on current main, bisect of the ones that went red (src/rooms/baseline). */
   regression: RegressionApi;
   /** The wall journal and the night loop: classes of failures, the night's repairs, the wall ladder (src/rooms/wall). */
   wall: WallApi;
+  /** Checking the checkers: planted defects in accepted candidates, the checker scorecard and the drill (src/rooms/checkers). */
+  checkers: CheckersApi;
   DOCS_NIGHT_ATTEMPTS: DocsNightlyApi["DOCS_NIGHT_ATTEMPTS"];
   DOCS_OPEN_KEY: DocsNightlyApi["DOCS_OPEN_KEY"];
   DOCS_TOOLING: DocsNightlyApi["DOCS_TOOLING"];

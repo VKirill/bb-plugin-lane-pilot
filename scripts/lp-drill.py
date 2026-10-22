@@ -9,6 +9,12 @@ Scenarios (each writes its verdict into the receipt, .agents/runs/drills/<date>.
   deferrals      the register of deferrals (`bb lane-pilot deferrals`): an entry whose term the owner gave has passed, or a skipped test
                  cites an entry the register lacks or holds closed, fails the drill and the receipt says how to close it. Entries
                  without a term (needs_owner_term) are counted, not failed                                           [--quick]
+  checkers       checking the checkers (SMA «which of your key checks have you seen go red on purpose?», `bb lane-pilot checkers drill`): known
+                 defects (an off-by-one, a file outside owns_paths, `|| true` on a check, a claimed acceptance item missing from the diff, a broken
+                 import) are planted in two small accepted candidates, and each code checker (verification, ownership, contract lint, plan-fact)
+                 must catch the class it is there for. A checker that lets one through, a code checker that flags a clean candidate, or a class
+                 that cannot be planted fails the drill. The scenario also blinds the ownership checker on purpose and requires the drill to go
+                 red: a drill that cannot fail proves nothing. It runs the checkout's code (bundled with esbuild), no hub, no model  [--quick]
   memory_paths   the memory delivery paths (SMA block 4, `bb lane-pilot memory-probe`): a token planted through the memory write door must
                  reach what each registered path hands its agent (writer brief, writer turn, PM, critics, council, terminal) -- the
                  probe's own table -- and the real thing: the first prompt of the drill's PM (planted before it started), the brief of a
@@ -73,12 +79,12 @@ OPEN_STATES = ("queued", "spawn_requested", "spawn_unknown", "running")
 TERMINAL = ("accepted", "blocked", "canceled")
 STAMP = time.strftime("%Y%m%d-%H%M%S")
 DATE = time.strftime("%Y-%m-%d")
-ALL = ["guard_hash", "deferrals", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit", "nogit_repo"]
-QUICK = ["guard_hash", "deferrals", "memory_paths", "helper_providers", "parallel3"]
+ALL = ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit", "nogit_repo"]
+QUICK = ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3"]
 # What a provider runs when no setting of the sandbox project names a model for it.
 PROVIDER_FALLBACK_MODEL = {"claude-code": "claude-sonnet-5-5", "codex": "gpt-6-luna", "opencode2": "zai-coding-plan/glm-5.3-flash"}
 # Scenarios that need no PM and no run of their own: they run before the PM starts (guard_hash) or on a project of their own (nogit).
-STANDALONE = ("guard_hash", "deferrals", "nogit", "nogit_repo")
+STANDALONE = ("guard_hash", "deferrals", "checkers", "nogit", "nogit_repo")
 
 
 def log(message: str) -> None:
@@ -850,6 +856,38 @@ def scenario_deferrals(tmp: Path) -> dict:
     return verdict("deferrals", problems, registerDeployed=True, counts=counts, cited=len(cited), needsOwnerTerm=len(data.get("needsOwnerTerm", [])))
 
 
+def scenario_checkers(tmp: Path) -> dict:
+    """The checker drill (src/rooms/checkers): planted defects, the code checkers must catch the class they are for. The checkout's own code is
+    bundled and run, so a change that makes a checker blind turns the drill red before it is deployed. Then the same drill with the ownership
+    checker blinded must come out red, or the drill proves nothing."""
+    esbuild = ROOT / "node_modules/.bin/esbuild"
+    command = [str(esbuild)] if esbuild.exists() else ["npx", "--no-install", "esbuild"]
+    out = ROOT / "node_modules/.cache/lp-checkers-drill.mjs"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    banner = "import{createRequire as __cr}from'module';const require=__cr(import.meta.url);"
+    rc, stdout, stderr = run([*command, str(ROOT / "scripts/lp-checkers.ts"), "--bundle", "--platform=node", "--format=esm", f"--outfile={out}",
+                              "--external:better-sqlite3", "--external:@get-bb/plugin-sdk", f"--banner:js={banner}"], timeout=120)
+    if rc != 0:
+        return verdict("checkers", [f"the checker drill could not be built: {(stderr or stdout).strip()[:300]}"])
+    problems: list[str] = []
+    details: dict = {}
+    for blind in (None, "ownership"):
+        args = ["node", str(out), "drill", "--json"] + (["--blind", blind] if blind else [])
+        rc, stdout, stderr = run(args, timeout=180)
+        try:
+            report = json.loads(stdout)
+        except ValueError:
+            problems.append(f"the checker drill{' (blind: ' + blind + ')' if blind else ''} gave no report: {(stderr or stdout).strip()[:300]}")
+            continue
+        if not blind:
+            details = {"checked": report.get("checked")}
+            if not report.get("ok"):
+                problems += [f"checker drill: {p}" for p in report.get("problems", [])] or ["the checker drill is red without saying why"]
+        elif report.get("ok") or not any(blind in p for p in report.get("problems", [])):
+            problems.append(f"the checker drill stayed green with the {blind} checker blinded: the drill can no longer fail, so it proves nothing")
+    return verdict("checkers", problems, **details)
+
+
 def ensure_prototype_config(spec: dict) -> bool:
     """`bb lane-pilot activate` needs the project's prototype config (host, folders, PM and writer models). The sandbox project that has no git
     gets it once, from the same values as the main sandbox project; it stays (the plugin has no way to remove it). True when this call set it."""
@@ -1045,6 +1083,13 @@ def main() -> int:
             except Exception as cause:
                 scenarios.append(verdict("deferrals", [f"scenario raised: {cause}"]))
             log(f"scenario deferrals: {scenarios[-1]['result']} {scenarios[-1]['problems']}")
+        if "checkers" in names:
+            log("scenario checkers")
+            try:
+                scenarios.append(scenario_checkers(tmp))
+            except Exception as cause:
+                scenarios.append(verdict("checkers", [f"scenario raised: {cause}"]))
+            log(f"scenario checkers: {scenarios[-1]['result']} {scenarios[-1]['problems']}")
         # memory_paths first: its records are planted before the PM starts (its first prompt must carry the probe rule) and removed before
         # the writers of the other scenarios start.
         main_names = sorted((n for n in names if n not in STANDALONE), key=lambda n: n != "memory_paths")

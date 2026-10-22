@@ -176,7 +176,7 @@ function ChecksSection({ ctl }: { ctl: Improvement }) {
     <div className="space-y-6" data-testid="improvement-checks">
       <p className={small}>{t("imp_checks_intro")}</p>
       <p className={small} data-testid="checks-default-note">{t("imp_checks_default")}</p>
-      <Block title={t("imp_g_baseline")} testId="checks-baseline"><Fields ctl={ctl} names={["baseline.already_built", "baseline.time_cap_sec"]} /></Block>
+      <Block title={t("imp_g_baseline")} testId="checks-baseline"><Fields ctl={ctl} names={["baseline.already_built", "baseline.time_cap_sec", "checks.require_red_on_base"]} /></Block>
       <Block title={t("imp_g_during")} testId="checks-during">
         <p className={small}>{t("imp_planfact_help")}</p>
         <Field ctl={ctl} name="plan_fact.mode" />

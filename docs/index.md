@@ -14,6 +14,7 @@ Built by Lane Pilot from page frontmatter.
 | [Lane Pilot architecture](architecture.md) | architecture | active | 2026-10-19 |
 | [Coverage registry, graph and drill](coverage.md) | component | active | 2026-10-22 |
 | [The baseline before a writer and the regression pass after acceptance](baseline.md) | component | active | 2026-10-22 |
+| [Return a task to an earlier stage with added context](stage-return.md) | component | active | 2026-10-22 |
 | [Lane Pilot data model overview](data-model.md) | data-model | active | 2026-10-19 |
 | [Schedules and Pixel World persistence](data-model/automation.md) | data-model | active | 2026-10-10 |
 | [Council, handoff, Jev and run-insight data](data-model/governance.md) | data-model | active | 2026-10-19 |
@@ -22,6 +23,7 @@ Built by Lane Pilot from page frontmatter.
 | [Architectural decisions](decisions.md) | decisions | active | 2026-10-17 |
 | [Protecting Lane Pilot database access](decisions/2026-10-08-lane-pilot-data-db-access.md) | decisions | active | 2026-10-19 |
 | [Build and deploy Lane Pilot](deployment.md) | deployment | active | 2026-10-19 |
+| [Checking the checkers](checkers.md) | component | active | 2026-10-22 |
 | [Cross-cutting gotchas](gotchas.md) | gotchas | active | 2026-10-17 |
 | [Writer harness](harness.md) | component | active | 2026-10-20 |
 | [LP-Bench, the fixed task set](lp-bench.md) | component | active | 2026-10-22 |

@@ -38,7 +38,7 @@ Above the sections a status strip shows four numbers from the same read: the las
 | Night loop (`Ночной цикл`) | `wall.*`: limits of a night, the hunt, the budget | a dry run of the night (`wall_night` with `dryRun`) |
 | Bench set (`Эталонный набор`) | `bench.budget_tokens`, `bench.budget_hours`, `harness.adopt_by` | the newest set: tasks, candidates, date |
 | Night policy (`Политика ночи`) | none, on purpose | version, freeze date, the exam, the lists and the standing prohibitions |
-| Checks (`Проверки`) | `baseline.*`, `plan_fact.mode`, `critic.code.default_for_risk`, `regress.*` | the note that these are defaults for all projects |
+| Checks (`Проверки`) | `baseline.*`, `checks.require_red_on_base`, `plan_fact.mode`, `critic.code.default_for_risk`, `regress.*` | the note that these are defaults for all projects |
 | Waiting for the owner (`Ждут владельца`) | `owner_push.*` | deferral counts and how a term is set |
 | Memory (`Память`) | `memory.note_budget` | the pointer to Knowledge, Memory |
 
@@ -54,7 +54,7 @@ A control is a row of `lane_pilot_project_settings` under project `*` (the globa
 | plugin key-value `bench:config` | `bench.*` | `src/rooms/bench/service.ts:37` | `bench config`, the screen |
 | table `lane_pilot_owner_config` | `owner_push.*` | `src/rooms/owner-waiting/push.ts:38` | `waiting config`, `owner_waiting_config`, the screen |
 | per-project `harness:config:<id>` | `harness.adopt_by` (the default of every project) | `src/rooms/harness/server/harness.ts:174` | `harness configure`, the screen |
-| project settings, CLI only | `baseline.*`, `regress.*` in the catalog | `src/rooms/baseline/logic.ts:30` | the screen (default), the project's «Work» tab (own value) |
+| project settings, CLI only | `baseline.*`, `checks.require_red_on_base`, `regress.*` in the catalog | `src/rooms/baseline/logic.ts:33` | the screen (default), the project's «Work» tab (own value) |
 
 Rules: a field with a row reads the row; a field without one reads the old store, so nothing set before is lost; a write goes to the row only and leaves the old store alone (`src/rooms/wall/service.ts:91`); the CLI commands keep their syntax and their clamping (a value over the limit is stored as the limit). A write from the CLI moves the setting's version, so a page that read before sees the next save as a conflict and reloads (`src/rooms/improvement/hub.ts:72`). A project record of `harness.adopt_by` that was saved before keeps winning over the default.
 
@@ -84,14 +84,15 @@ Every row is in the catalog (`scripts/ui-catalog-hand.json`, written by `scripts
 | `owner_push.enabled` | `src/rooms/owner-waiting/push.ts:17` | `export type PushConfig` |
 | `owner_push.quiet` | `src/rooms/owner-waiting/push.ts:23` | `const QUIET` |
 | `owner_push.timezone` | `src/rooms/owner-waiting/push.ts:25` | `function validTimezone` |
+| `checks.require_red_on_base` | `src/rooms/baseline/logic.ts:18` | `requireRed` |
 | `baseline.already_built` | `src/rooms/baseline/logic.ts:12` | `BaselineSettings` |
 | `baseline.time_cap_sec` | `src/rooms/baseline/logic.ts:16` | `timeCapSec: number` |
-| `regress.nightly` | `src/rooms/baseline/logic.ts:39` | `nightly: boolean` |
-| `regress.last_n` | `src/rooms/baseline/logic.ts:41` | `lastN: number` |
-| `regress.last_days` | `src/rooms/baseline/logic.ts:42` | `days: number` |
-| `regress.check_cap_sec` | `src/rooms/baseline/logic.ts:44` | `checkCapSec: number` |
-| `regress.budget_sec` | `src/rooms/baseline/logic.ts:46` | `budgetSec: number` |
-| `regress.bisect_steps` | `src/rooms/baseline/logic.ts:48` | `bisectSteps: number` |
+| `regress.nightly` | `src/rooms/baseline/logic.ts:71` | `nightly: boolean` |
+| `regress.last_n` | `src/rooms/baseline/logic.ts:73` | `lastN: number` |
+| `regress.last_days` | `src/rooms/baseline/logic.ts:74` | `days: number` |
+| `regress.check_cap_sec` | `src/rooms/baseline/logic.ts:76` | `checkCapSec: number` |
+| `regress.budget_sec` | `src/rooms/baseline/logic.ts:78` | `budgetSec: number` |
+| `regress.bisect_steps` | `src/rooms/baseline/logic.ts:80` | `bisectSteps: number` |
 | `plan_fact.mode` | `src/rooms/writer/server/plan-fact.ts:9` | `PLAN_FACT_MODE_SETTING` |
 | `critic.code.default_for_risk` | `src/rooms/critique/quality-mode.ts:39` | `CODE_CRITIC_DEFAULT_SETTING` |
 | `memory.note_budget` | `packages/memory-core/src/settings.ts:7` | `noteBudget` |
