@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import os
 import re
 import shutil
@@ -124,14 +125,14 @@ def thread_status(thread: str) -> str:
     return thread_field(out, "status") or "?" if rc == 0 else "?"
 
 
-def task(task_id: str, title: str, outputs: list[str], objective: str, acceptance: list[str], cwd: str, risk: str = "high", read_first: list[str] | None = None) -> dict:
+def task(task_id: str, title: str, outputs: list[str], objective: str, acceptance: list[str], cwd: str, risk: str = "high", read_first: list[str] | None = None, verification: list[dict] | None = None) -> dict:
     return {
         # The task standard (the Tasks board). One area per task: tasks of one area run one at a time, and the drills run side by side.
         "schema_version": 2, "id": task_id, "title": title, "display_title": f"Учение: {title}"[:60], "kind": "chore", "area": f"drill:{task_id}", "risk": risk, "lane": "writer", "project_cwd": cwd,
         "read_first": read_first or [], "interfaces": [], "invariants": ["Touch no file except the ones in expected_outputs."],
         "out_of_scope": ["Every other file of the project."], "expected_outputs": outputs, "owns_paths": outputs,
         "never_touch": ["src/**", "tests/**", "package.json"], "depends_on": [], "objective": objective, "acceptance": acceptance,
-        "verify": "none", "verification": [],
+        "verify": "none" if not verification else "smoke", "verification": verification or [],
     }
 
 
@@ -139,7 +140,9 @@ def note_task(task_id: str, path: str, text: str, cwd: str, before: str = "") ->
     """A task that writes one two-line note; `before` is an instruction to do first (a sleep that holds the writer in its attempt)."""
     lead = f"{before} Then create" if before else "Create"
     return task(task_id, f"{text}: one note", [path], f"{lead} the file {path} with exactly two lines. Line 1: `# {text}`. Line 2: `ok: {text}`. Nothing else.",
-                [f"{path} exists, its first line is `# {text}` and its second line is `ok: {text}`."], cwd)
+                [f"{path} exists, its first line is `# {text}` and its second line is `ok: {text}`."], cwd,
+                # A real check (SMA coverage: the drill's verification stage must not be vacuous): red on the base, green after the writer.
+                verification=[{"command": f"test \"$(sed -n 1p {shlex.quote(path)})\" = {shlex.quote('# ' + text)} && test \"$(sed -n 2p {shlex.quote(path)})\" = {shlex.quote('ok: ' + text)}", "cwd": cwd}])
 
 
 class Context:
