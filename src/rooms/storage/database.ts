@@ -27,6 +27,7 @@ import { rollbackMigrations } from "../rollback";
 import { benchMigrations } from "../bench";
 import { ownerWaitingMigrations } from "../owner-waiting";
 import { baselineMigrations } from "../baseline";
+import { stageReturnMigrations } from "../stage-return";
 import { wallDeferralKindMigrations, wallMigrations } from "../wall";
 import { checkerMigrations } from "../checkers";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
@@ -378,6 +379,8 @@ export const migrations = [
   ...wallDeferralKindMigrations,
   // Checking the checkers (src/rooms/checkers): planted-defect runs and the hit or miss of each checker.
   ...checkerMigrations,
+  // Return to an earlier stage with added context (src/rooms/stage-return).
+  ...stageReturnMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

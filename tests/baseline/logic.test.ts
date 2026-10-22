@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import {
-  baselineVerdict, bisectCommand, bisectStepsFor, estimateSec, messageOwner, parseBaselineSettings, parseRegressSettings, planChecks, turnedRed, type BaselineCheck,
+  baselineVerdict, bisectCommand, bisectStepsFor, estimateSec, messageOwner, parseBaselineSettings, parseRegressSettings, planChecks, requiresRedOnBase, turnedRed, vacuousChecks, type BaselineCheck,
 } from "../../src/rooms/baseline/logic";
 
 const item = (command: string, extra: Record<string, unknown> = {}) => ({ command, cwd: "/p", ...extra }) as never;
@@ -9,12 +9,12 @@ const check = (command: string, status: BaselineCheck["status"]): BaselineCheck 
 
 describe("baseline and regression settings", () => {
   it("default to notify, a 300 s cap, a nightly pass over 30 tasks of 14 days", () => {
-    expect(parseBaselineSettings({})).toEqual({ mode: "notify", timeCapSec: 300 });
+    expect(parseBaselineSettings({})).toEqual({ mode: "notify", timeCapSec: 300, requireRed: "medium" });
     expect(parseRegressSettings({})).toEqual({ nightly: true, lastN: 30, days: 14, checkCapSec: 120, budgetSec: 1800, bisectSteps: 9 });
   });
   it("read stop, 0 as off, numeric strings, and fall back on nonsense instead of failing a task", () => {
-    expect(parseBaselineSettings({ "baseline.already_built": "stop", "baseline.time_cap_sec": "0" })).toEqual({ mode: "stop", timeCapSec: 0 });
-    expect(parseBaselineSettings({ "baseline.already_built": "maybe", "baseline.time_cap_sec": "soon" })).toEqual({ mode: "notify", timeCapSec: 300 });
+    expect(parseBaselineSettings({ "baseline.already_built": "stop", "baseline.time_cap_sec": "0" })).toEqual({ mode: "stop", timeCapSec: 0, requireRed: "medium" });
+    expect(parseBaselineSettings({ "baseline.already_built": "maybe", "baseline.time_cap_sec": "soon" })).toEqual({ mode: "notify", timeCapSec: 300, requireRed: "medium" });
     expect(parseBaselineSettings({ "baseline.time_cap_sec": 99999 }).timeCapSec).toBe(3600);
     expect(parseRegressSettings({ "regress.nightly": "off", "regress.last_n": "5", "regress.last_days": 3, "regress.bisect_steps": 99 })).toMatchObject({ nightly: false, lastN: 5, days: 3, bisectSteps: 14 });
   });
@@ -67,5 +67,28 @@ describe("the bisect command and the blame", () => {
   });
   it("needs log2 steps", () => {
     expect([0, 1, 2, 3, 8, 9, 512].map(bisectStepsFor)).toEqual([0, 0, 1, 2, 3, 4, 9]);
+  });
+});
+
+describe("red before green", () => {
+  it("reads checks.require_red_on_base: medium by default, off and high, nonsense is the default", () => {
+    expect(parseBaselineSettings({ "checks.require_red_on_base": "off" }).requireRed).toBe("off");
+    expect(parseBaselineSettings({ "checks.require_red_on_base": "high" }).requireRed).toBe("high");
+    expect(parseBaselineSettings({ "checks.require_red_on_base": "always" }).requireRed).toBe("medium");
+  });
+  it("asks by risk and spares tasks with nothing to run red", () => {
+    expect(requiresRedOnBase("medium", { risk: "low" })).toBe(false);
+    expect(requiresRedOnBase("medium", { risk: "medium" })).toBe(true);
+    expect(requiresRedOnBase("high", { risk: "medium" })).toBe(false);
+    expect(requiresRedOnBase("high", { risk: "critical" })).toBe(true);
+    expect(requiresRedOnBase("off", { risk: "critical" })).toBe(false);
+    expect(requiresRedOnBase("medium", { risk: "high", kind: "refactor" })).toBe(false);
+    expect(requiresRedOnBase("medium", { risk: "high", kind: "feature" })).toBe(true);
+  });
+  it("calls vacuous only checks that all ran green", () => {
+    expect(vacuousChecks([check("a", "green"), check("b", "green")])).toHaveLength(2);
+    expect(vacuousChecks([check("a", "green"), check("b", "red")])).toEqual([]);
+    expect(vacuousChecks([check("a", "green"), check("b", "skipped")])).toEqual([]);
+    expect(vacuousChecks([])).toEqual([]);
   });
 });

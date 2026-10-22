@@ -14,9 +14,12 @@ export type BaselineSettings = {
   mode: "notify" | "stop";
   /** The time the baseline may spend on a start, in seconds, as a sum of the checks' estimates. 0 turns the baseline off. */
   timeCapSec: number;
+  /** `checks.require_red_on_base`: from which risk a task needs at least one check that is red on the base (off: never). */
+  requireRed: RequireRed;
 };
 
-export const BASELINE_DEFAULTS: BaselineSettings = { mode: "notify", timeCapSec: 300 };
+export type RequireRed = "off" | "medium" | "high";
+export const BASELINE_DEFAULTS: BaselineSettings = { mode: "notify", timeCapSec: 300, requireRed: "medium" };
 
 const number = (value: unknown): number | null => {
   const parsed = typeof value === "string" && /^\s*\d+\s*$/.test(value) ? Number(value) : value;
@@ -32,7 +35,36 @@ export function parseBaselineSettings(values: Record<string, unknown>): Baseline
   return {
     mode: mode === "stop" ? "stop" : "notify",
     timeCapSec: number(values["baseline.time_cap_sec"]) === 0 ? 0 : bounded(values["baseline.time_cap_sec"], BASELINE_DEFAULTS.timeCapSec, 10, 3600),
+    requireRed: values["checks.require_red_on_base"] === "off" || values["checks.require_red_on_base"] === "high" ? values["checks.require_red_on_base"] : "medium",
   };
+}
+
+// ---- red before green: a check that is green on the base proves nothing about the work ----
+
+/** Kinds of work that add no behaviour to test for (a refactor keeps the checks green, a docs or research task has nothing to run red). */
+export const NO_RED_KINDS: readonly string[] = ["refactor", "docs", "research", "check"];
+
+const RISK_RANK: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
+
+/** Whether a task of this risk and kind must have a check that is red on the base before its attempt may start. */
+export function requiresRedOnBase(setting: RequireRed, task: { risk: string; kind?: string | undefined }): boolean {
+  if (setting === "off") return false;
+  if (task.kind && NO_RED_KINDS.includes(task.kind)) return false;
+  return (RISK_RANK[task.risk] ?? 0) >= (setting === "high" ? 2 : 1);
+}
+
+/** The checks that cannot fail the work: when every check ran green on the base and none is red, they all are. Otherwise nothing is claimed. */
+export function vacuousChecks(checks: readonly BaselineCheck[]): BaselineCheck[] {
+  return checks.length > 0 && checks.every((check) => check.status === "green") ? [...checks] : [];
+}
+
+/** What the PM reads when the attempt does not start because no check is red on the base: which checks are vacuous and what to add. */
+export function vacuousMessage(taskId: string, vacuous: readonly BaselineCheck[], risk: string, baseSha: string | null): string {
+  const list = vacuous.map((check) => `- ${check.command}`).join("\n");
+  return `все ${vacuous.length} проверок(и) задачи ${taskId} (риск ${risk}) уже проходят на базе${baseSha ? ` ${baseSha.slice(0, 10)}` : ""}, до писателя:\n${list}\n`
+    + `Такие проверки зелёные при любой работе писателя, поэтому не доказывают её. Добавьте хотя бы одну, которая сейчас красная и позеленеет только когда работа сделана: `
+    + `проверку, называющую новый файл или поведение (test -f <новый файл>; grep -q '<новый символ>' <файл>; точечный тест, который падает сейчас), и отправьте задачу снова. `
+    + `Если у работы нельзя написать красную проверку (чистый рефакторинг, документация), укажите kind refactor или docs.`;
 }
 
 export type RegressSettings = {

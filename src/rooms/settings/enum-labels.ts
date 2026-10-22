@@ -23,6 +23,7 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "writer.skill_pick": { on: "enumSkillPickOn", off: "enumSkillPickOff" },
   "critic.code.default_for_risk": { off: "enumCriticCodeOff", medium: "enumCriticCodeMedium", high: "enumCriticCodeHigh" },
   "plan_fact.mode": { record: "enumPlanFactRecord", gate: "enumPlanFactGate" },
+  "checks.require_red_on_base": { off: "enumRequireRedOff", medium: "enumRequireRedMedium", high: "enumRequireRedHigh" },
   "jev.provider": { openlux: "enumJevProviderOpenlux", typesafe: "enumJevProviderTypesafe" },
   "sandbox.backend": {
     auto: "enumSandboxAuto",

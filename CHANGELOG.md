@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+**Strong checks and return to a stage** (SMA atlas delta D1-3 / D1-4 follow-up, D0-2):
+
+- **Red before green.** `checks.require_red_on_base` (`off` | `medium` | `high`, default `medium`): a task of that risk or more whose every check is already green on the base does not start; the PM gets the vacuous checks and what to add (docs/baseline.md). The dispatch instructions carry the line; the contract lint flags an existence-only check on a file the base has (`verification_existence_on_base`).
+- **Return to a stage.** `bb lane-pilot return <task> --to discussion|planning|writer --note "…"`, RPC `task_return_stage`, and «Вернуть на стадию…» in the acceptance card: the intervention is recorded (`lane_pilot_stage_return`, last migration), the stale receipts are reset, a running attempt is stopped with the exit confirmed, and the work restarts from the stage with the note (docs/stage-return.md).
+
 **Checking the checkers (SMA atlas D1-4, «which of your key checks have you seen go red on purpose?»).** Docs: `docs/checkers.md`.
 - **Planted-defect set.** New room `src/rooms/checkers`: deterministic mutators plant eight defect classes in a real accepted candidate (a deleted test assertion, an off-by-one, a file outside `owns_paths`, a swallowed error, `|| true` on a check, an acceptance item the writer claims and the diff lacks, a hard-coded value, a broken import), each with its designed catcher in one table (`EXPECTED_CATCHERS`).
 - **Checker scorecard.** Every checker runs on the planted candidates (the task's `verification[]` in a clone at its base, ownership, contract lint, the plan→fact blind check, the code critic and the plan critic through the pipeline's own prompt builders and parsers): hit or miss per class and checker, false alarms on the clean candidates, escapes (defects no code checker caught), tokens per catch, and the answer to «code critic by default for risk ≥ medium» (`decideCodeCritic`: bar 60% of the escapes, at least 8 judged, at most 30% false alarms). `bb lane-pilot checkers score|scorecard|drill|defects`; `scripts/lp-checkers.ts` runs the same code outside BB. The critics are capped by tokens (`--budget-tokens`).

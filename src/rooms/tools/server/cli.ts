@@ -20,6 +20,7 @@ import { MEMORY_EVAL_USAGE, runMemoryEvalCommand } from "../../memory-eval/serve
 import { MEMORY_CONFLICT_USAGE, runMemoryConflictCli } from "../../memory/server";
 import { BENCH_USAGE, runBenchCli } from "../../bench/server";
 import { BASELINE_USAGE, runBaselineCli } from "../../baseline/server";
+import { RETURN_USAGE, runReturnCli } from "../../stage-return/server";
 import { WALL_USAGE, runWallCli } from "../../wall/server";
 import { CHECKERS_USAGE, runCheckersCli } from "../../checkers/server";
 import { POLICY_USAGE, runPolicyCli } from "../../policy";
@@ -144,6 +145,8 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"regressions", summary:"The regression findings still open (--all for settled ones too)", usage:"bb lane-pilot regressions [project-id] [--all]" },
       { name:"regress-close", summary:"Settle a regression finding by hand", usage:"bb lane-pilot regress-close <id> <reason...>" },
       { name:"baseline", summary:"The checks already green or red on the base a task started from, and what turned red after its merge", usage:"bb lane-pilot baseline <task-id>" },
+      { name:"return", summary:"Send a task back to discussion, planning or the writer with a note: recorded, the stale receipts reset, the running attempt stopped with the exit confirmed, the work restarted from that stage with the note in its input", usage:"bb lane-pilot return <task-id> --to discussion|planning|writer --note \"…\"" },
+      { name:"returns", summary:"The returns on record for a task: the note, the stale and kept stages, how far each got", usage:"bb lane-pilot returns <task-id>" },
       { name:"bench", summary:"LP-Bench: a fixed set of real past tasks replayed on an arm (writer, harness tree, setting) and compared in pairs: stages passed, cost, time", usage:BENCH_USAGE },
       { name:"wall", summary:"The wall journal and the night loop: failures grouped by class, the 3/10-5/100-6/500 recurrence, the night's repairs, hunters and the backlog, re-runs on the new head", usage:WALL_USAGE },
       { name:"checkers", summary:"Checking the checkers: plant known defects in accepted candidates, run every checker on them and print the checker scorecard (score, scorecard, drill, defects)", usage:CHECKERS_USAGE },
@@ -199,6 +202,9 @@ export function registerCli(ctx: ServerCore, services: Services) {
         }
         if (command === "regress" || command === "regressions" || command === "regress-close" || command === "baseline") {
           return await runBaselineCli(services, command, args);
+        }
+        if (command === "return" || command === "returns") {
+          return await runReturnCli(services.stageReturn, command, args);
         }
         if (command === "bench") {
           return await runBenchCli(services.bench, args);

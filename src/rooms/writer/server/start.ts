@@ -35,6 +35,7 @@ import { closeWriterStages, recordStage } from "../../runs/server";
 import { id, stringAt } from "../../core/server";
 import { shouldMergeAttemptWorktree } from "./spawn";
 import { collectHandoffBrief } from "./writer-handoff";
+import { listReturns, renderReturnNotes } from "../../stage-return";
 import { isLiveDecision, LIVE_FOLDER_RECEIPT } from "../live-folder";
 import { resolve } from "node:path";
 import { findThreadsByMetadata } from "../../core/server";
@@ -481,8 +482,10 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         const turnPrompt = await stickyTurnPromptWithRules({ db, host, chainForRun:(runId) => services.ruleScan.chainForRun(runId) },
           { projectId:input.projectId, runId:input.runId, hostId:freshConfig.hostId, task:bound, memorySettings },
           { kind, task:bound, previousAttempt:kind === "merge" && !previousAttempt.includes(REPLAY_CHECK_FAILED) ? "" : previousAttempt, liveFolder });
+        // A task a person sent back to an earlier stage with a note (src/rooms/stage-return) takes the note into the area writer's next-task turn.
+        const returnNotes = kind === "next-task" ? renderReturnNotes(listReturns(db, input.runId, input.taskId)) : "";
         const turn = await sticky.continueInThread({ runId:input.runId, taskId:input.taskId, attemptId, config:freshConfig, writer, kind, dirtBefore:keepDirt,
-          prompt:turnPrompt });
+          prompt:returnNotes ? (conflicts) => `${turnPrompt(conflicts)}\n\n${returnNotes}` : turnPrompt });
         if (!turn.ok) {
           ctx.log(`writer ${input.taskId}: ${kind} in thread ${writer.threadId} not possible (${turn.reason}); a fresh writer starts`);
           // A half-bound attempt cannot take a fresh spawn: it ends as Lane Pilot's fault and the retry spawns.

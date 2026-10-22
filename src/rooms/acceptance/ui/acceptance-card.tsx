@@ -3,6 +3,7 @@ import { useRpc } from "@get-bb/plugin-sdk/app";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
+import { ReturnStage } from "../../stage-return/ui";
 
 type Card = NonNullable<z.infer<(typeof rpcContract)["task_acceptance_card"]["output"]>>;
 type Item = NonNullable<Card["planFact"]>["items"][number];
@@ -61,6 +62,7 @@ export function AcceptanceCard({ runId, taskId, fallback, finished, refreshKey }
             <li key={index} className="flex items-start gap-2 text-sm"><Mark tone={finished ? "ok" : "none"} label="">{finished ? "✓" : "○"}</Mark><span className="min-w-0 break-words">{row}</span></li>
           ))}</ul>
         ) : null}
+        <ReturnStage runId={runId} taskId={taskId} />
       </section>
     );
   }
@@ -202,6 +204,8 @@ export function AcceptanceCard({ runId, taskId, fallback, finished, refreshKey }
           ) : <p className="text-xs text-muted-foreground">{t("acc_notrun_none")}</p>}
         </Block>
       </div>
+
+      <ReturnStage runId={runId} taskId={taskId} />
     </section>
   );
 }

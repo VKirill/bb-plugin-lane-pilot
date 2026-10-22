@@ -43,6 +43,7 @@ export const SETTING_CATALOG: SettingSpec[] = [
   { key:"writer.skill_pick", channel:"OWN", reason:"Native Lane Pilot writer skill picking: Jev picks task skills before each attempt; off keeps the role skills and the task's own skills" },
   { key:"critic.code.default_for_risk", channel:"OWN", reason:"Native Lane Pilot code critic by task risk: off, medium or high; the dispatch can carry its own value for one task (the bench arm)" },
   { key:"plan_fact.mode", channel:"OWN", reason:"Native Lane Pilot plan against fact: record shows the blind check of the writer's table, gate sends an acceptance item with no evidence back to the writer" },
+  { key:"checks.require_red_on_base", channel:"OWN", reason:"Native Lane Pilot baseline gate: a task of medium risk or more whose every check is green on the base does not start; off, medium or high" },
   { key:"jev.provider", channel:"OWN", reason:"Native Lane Pilot Jev provider: openlux or typesafe serves every Jev request; the server picks the Env Catalog key and the host workers get the provider id" },
   { key:"sandbox.backend", channel:"OWN", reason:"Native Lane Pilot verification selects Seatbelt on macOS or bubblewrap on Linux and fails closed when unavailable" },
   { key:"pm_read.enabled", channel:"OWN", reason:"Native Lane Pilot PM-read stage enable switch" },

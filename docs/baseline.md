@@ -23,6 +23,7 @@ sources:
   - tests/baseline/baseline.test.ts
   - tests/baseline/regress.test.ts
   - tests/baseline/start.test.ts
+  - tests/contract-lint-empty-check.test.ts
   - tests/baseline/logic.test.ts
 ---
 
@@ -39,6 +40,7 @@ TL;DR: before a task's first writer starts, its `verification[]` runs once on th
 - **A known answer is not asked again.** The answer to «this command on this commit» does not change: a retry, a redispatch (`.2`) or a sibling task starting from the same base reuses it (`cachedChecks`), and the checks it ran are marked `cached`.
 - **The record.** `lane_pilot_baseline`: base sha, per check `green | red | skipped | unknown` with the end of the output of a red one, `verdict` (`already_built` only when every check ran and passed; `partial`, `red`, `unknown`), `action` (`proceed | notified | stopped`), the duration. `bb lane-pilot baseline <task-id>` and RPC `baseline_status` print it; the acceptance card (`task_acceptance_card`) carries it as `baseline` and shows the block «Checks on the base before the writer».
 - **Mode `baseline.already_built`** (project setting, `notify` by default): `notify` sends the PM one message (all N checks already pass on the base, the list, what to do) and the writer starts; `stop` ends the attempt before any writer, `blocked` with `verdict_block: baseline already_built: …` (the contract class: the PM's to settle, never redone as it is) and the PM gets the evidence. A weak check (`node --test <missing file>` exits 0) makes a false «already built»: that is why `notify` is the default.
+- **Red before green** (`checks.require_red_on_base`: `off` | `medium` | `high`, default `medium`, catalog row s478). A check that is green on the base proves nothing about the work (the planted-defect scorecard: 11 of 36 defects escaped every code check; 69% of bench candidates already passed on the bare base). When a task of risk at or above the setting has every check green on the base (all of them ran and passed; a skipped or unknown check keeps the claim back), the attempt does not start, whatever `baseline.already_built` says: `blocked` with `verdict_block: no_red_on_base: …` (the contract class), the baseline row `action stopped`, and the PM gets one message naming the vacuous checks and what to add: a check that names the new file or behaviour (`test -f <new file>`, `grep -q '<new symbol>' <file>`, a targeted test that fails now). Kinds `refactor`, `docs`, `research` and `check` are never asked (`NO_RED_KINDS`); a baseline turned off (`baseline.time_cap_sec` 0) or a folder without git skips the gate too. A task sent again by the PM under the same id with other checks, or one this gate stopped, is asked again (the answers of the base are cached, so only a new command runs). The dispatch tool's instructions carry the same line with an example, and the contract lint flags `test -f` / `[ -f … ]` / `ls` on a file the base already has (`verification_existence_on_base`: an error when every check of a task of risk medium or more is such, a warning otherwise).
 - **What turned red.** `checkMainAfterMerge` (`src/rooms/writer/server/finish.ts`) hands the task's checks on main to `baseline.afterMerge`: those green on the base and red now are written on the baseline row (`after_json.turnedRed`), shown on the acceptance card, and named in the PM's mainfix message («… passed on the base before this task»).
 
 ## The regression pass (D1-2)
@@ -54,7 +56,7 @@ TL;DR: before a task's first writer starts, its `verification[]` runs once on th
 
 ## Settings
 
-Plain project settings (no catalog row yet): `baseline.already_built` (`notify` | `stop`), `baseline.time_cap_sec`, `regress.nightly` (`on` | `off`), `regress.last_n`, `regress.last_days`, `regress.check_cap_sec`, `regress.budget_sec`, `regress.bisect_steps`. A bad value is the default, never a stopped task (`parseBaselineSettings`, `parseRegressSettings`).
+`checks.require_red_on_base` has a catalog row (s478, section stages). Plain project settings (no catalog row yet): `baseline.already_built` (`notify` | `stop`), `baseline.time_cap_sec`, `regress.nightly` (`on` | `off`), `regress.last_n`, `regress.last_days`, `regress.check_cap_sec`, `regress.budget_sec`, `regress.bisect_steps`. A bad value is the default, never a stopped task (`parseBaselineSettings`, `parseRegressSettings`).
 
 ## Tables
 
