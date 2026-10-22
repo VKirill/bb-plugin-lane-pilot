@@ -20,6 +20,7 @@ import { createDeferrals, sdkOwnerMessagePort } from "./src/rooms/deferral/serve
 import { createRollback } from "./src/rooms/rollback/server";
 import { createPluginBench } from "./src/rooms/bench/server";
 import { createBaselineRoom, mountRegress } from "./src/rooms/baseline/server";
+import { createRunGoal, mountRunGoal } from "./src/rooms/run-goal/server";
 import { createPluginWall } from "./src/rooms/wall/server";
 import { createPluginCheckers } from "./src/rooms/checkers/server";
 import { createStageReturn } from "./src/rooms/stage-return/server";
@@ -107,6 +108,7 @@ export default async function plugin(bb: BbPluginApi) {
     createRollback(ctx, services),
     createBaselineRoom(ctx, services),
     createStageReturn(ctx, services),
+    createRunGoal(ctx, services),
     { bench: createPluginBench(ctx, services) },
     { wall: createPluginWall(ctx, services) },
     { checkers: createPluginCheckers(ctx) },
@@ -123,6 +125,8 @@ export default async function plugin(bb: BbPluginApi) {
   mountCanary(ctx, services.canary);
   // The nightly regression pass over recently accepted tasks (03:25): checks on current main, bisect, a row for the morning list.
   mountRegress(ctx, services.regression);
+  // Once a run is done, every accepted task's checks run together on the final main (every 20 minutes, a verdict per run).
+  mountRunGoal(ctx, services.runGoal);
   // Learning from the owner's messages (src/learning): registers its PM tool before the tool families fold, so it comes first.
   mountLearning(ctx, services);
   registerTools(ctx, services);

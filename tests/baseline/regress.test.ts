@@ -119,6 +119,17 @@ describe("the regression pass over accepted tasks (D1-2)", () => {
     await w.dispose();
   });
 
+  it("with a run id it picks every accepted task of that run, past lastN, and of no other run (the run-goal check)", async () => {
+    const w = await world();
+    await history(w);
+    const capped = await w.services.regression.run({ projectId: "projA", plan: true, lastN: 2 });
+    expect(capped.projects[0]!.tasks).toHaveLength(2);
+    const whole = await w.services.regression.run({ projectId: "projA", plan: true, lastN: 2, runId: "run1" });
+    expect(whole.projects[0]!.tasks.map((task) => task.taskId).sort()).toEqual(["A", "B", "C", "D", "E"]);
+    expect((await w.services.regression.run({ projectId: "projA", plan: true, runId: "run_other" })).projects[0]!.tasks).toEqual([]);
+    await w.dispose();
+  });
+
   it("a check that is red at its own merge commit too is unstable, not a regression, and stays off the morning list", async () => {
     const w = await world();
     await w.acceptedTask("F", async (dir) => { await writeFile(join(dir, "f.txt"), "f\n"); }, ["false"]);

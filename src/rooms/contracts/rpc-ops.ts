@@ -188,6 +188,16 @@ export const rpcOps = {
     input: z.object({ projectId: z.string().min(1).optional(), days: z.number().int().min(1).max(365).optional() }).strict(),
     output: z.unknown(),
   },
+  /** The run-goal verdict of a run: every accepted task's checks together on the final main (src/rooms/run-goal). */
+  run_goal_status: {
+    input: z.object({ runId: z.string().min(1).max(200) }).strict(),
+    output: z.unknown(),
+  },
+  /** Runs the run-goal check of a run now and keeps the verdict. */
+  run_goal_check: {
+    input: z.object({ runId: z.string().min(1).max(200) }).strict(),
+    output: z.unknown(),
+  },
   /** The returns on record for a task: the note, the stale and kept stages, how far each got. */
   task_returns: {
     input: z.object({ ref: z.string().min(1).max(200) }).strict(),

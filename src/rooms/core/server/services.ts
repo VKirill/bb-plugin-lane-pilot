@@ -7,6 +7,7 @@ import type { DeferralApi } from "../../deferral/server";
 import type { RollbackApi } from "../../rollback/server";
 import type { BenchApi } from "../../bench/server";
 import type { BaselineApi, RegressionApi } from "../../baseline/server";
+import type { RunGoalApi } from "../../run-goal/server";
 import type { WallApi } from "../../wall/server";
 import type { CheckersApi } from "../../checkers/server";
 import type { StageReturnApi } from "../../stage-return/server";
@@ -79,6 +80,8 @@ export interface Services {
   regression: RegressionApi;
   /** The wall journal and the night loop: classes of failures, the night's repairs, the wall ladder (src/rooms/wall). */
   wall: WallApi;
+  /** Every accepted task's checks together on the final main once a run is done (src/rooms/run-goal). */
+  runGoal: RunGoalApi;
   /** Checking the checkers: planted defects in accepted candidates, the checker scorecard and the drill (src/rooms/checkers). */
   checkers: CheckersApi;
   DOCS_NIGHT_ATTEMPTS: DocsNightlyApi["DOCS_NIGHT_ATTEMPTS"];

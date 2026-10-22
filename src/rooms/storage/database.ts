@@ -28,6 +28,7 @@ import { benchMigrations } from "../bench";
 import { ownerWaitingMigrations } from "../owner-waiting";
 import { baselineMigrations } from "../baseline";
 import { stageReturnMigrations } from "../stage-return";
+import { runGoalMigrations } from "../run-goal";
 import { wallDeferralKindMigrations, wallMigrations } from "../wall";
 import { checkerMigrations } from "../checkers";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
@@ -381,6 +382,8 @@ export const migrations = [
   ...checkerMigrations,
   // Return to an earlier stage with added context (src/rooms/stage-return).
   ...stageReturnMigrations,
+  // The run-goal verdict: every accepted task's checks together on the final main (src/rooms/run-goal).
+  ...runGoalMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

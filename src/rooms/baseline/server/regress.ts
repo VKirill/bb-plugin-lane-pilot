@@ -32,6 +32,8 @@ export type RegressOptions = {
   plan?: boolean | undefined;
   /** Run even if main has not moved since the last pass. */
   force?: boolean | undefined;
+  /** Only the tasks of this run, all of them (the run-goal check, src/rooms/run-goal); implies force. */
+  runId?: string | undefined;
   signal?: AbortSignal | undefined;
   now?: number | undefined;
 };
@@ -88,16 +90,19 @@ export function createRegression(ctx: ServerCore, services: Services) {
     return new Set(items.map((item) => item.command));
   }
 
-  async function candidatesOf(projectId: string, settings: RegressSettings, now: number, tasks: TaskReport[]): Promise<Candidate[]> {
-    const rows = db.prepare(`SELECT a.id AS attempt_id, a.task_id AS task_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
-      WHERE r.project_id=? AND a.state='accepted' AND a.updated_at>=? ORDER BY a.updated_at DESC, a.rowid DESC`).all(projectId, now - settings.days * DAY) as Array<{ attempt_id: string; task_id: string }>;
+  async function candidatesOf(projectId: string, settings: RegressSettings, now: number, tasks: TaskReport[], runId?: string): Promise<Candidate[]> {
+    const rows = (runId
+      ? db.prepare(`SELECT a.id AS attempt_id, a.task_id AS task_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+          WHERE r.project_id=? AND a.run_id=? AND a.state='accepted' ORDER BY a.updated_at DESC, a.rowid DESC`).all(projectId, runId)
+      : db.prepare(`SELECT a.id AS attempt_id, a.task_id AS task_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+          WHERE r.project_id=? AND a.state='accepted' AND a.updated_at>=? ORDER BY a.updated_at DESC, a.rowid DESC`).all(projectId, now - settings.days * DAY)) as Array<{ attempt_id: string; task_id: string }>;
     const seen = new Set<string>();
     const picked: Array<{ attempt_id: string; task_id: string }> = [];
     for (const row of rows) {
       if (seen.has(row.task_id)) continue;
       seen.add(row.task_id);
       picked.push(row);
-      if (picked.length >= settings.lastN) break;
+      if (!runId && picked.length >= settings.lastN) break;
     }
     const out: Candidate[] = [];
     for (const row of picked) {
@@ -202,7 +207,7 @@ export function createRegression(ctx: ServerCore, services: Services) {
     const report: ProjectPass = { projectId, head: null, settings, tasks: [], findings: [], closed: [], commandsRun: 0, durationMs: 0 };
     const finish = (): ProjectPass => { report.durationMs = Date.now() - started; return report; };
 
-    const candidates = await candidatesOf(projectId, settings, now, report.tasks);
+    const candidates = await candidatesOf(projectId, settings, now, report.tasks, options.runId);
     // An open finding for a task that was reverted since is settled by that revert.
     if (!dry && !options.plan) {
       for (const open of listRegressions(db, { projectId })) {
@@ -220,7 +225,7 @@ export function createRegression(ctx: ServerCore, services: Services) {
       if (!headSha) { for (const m of members) m.report.skipped = "the project folder is not a git checkout"; continue; }
       report.head = headSha;
       const previous = lastPass(db, projectId);
-      if (!options.force && !dry && previous?.headSha === headSha && now - previous.at < 20 * 3_600_000) {
+      if (!options.force && !options.runId && !dry && previous?.headSha === headSha && now - previous.at < 20 * 3_600_000) {
         report.skipped = `main has not moved since the last pass (${headSha.slice(0, 10)})`;
         for (const m of members) m.report.skipped = report.skipped;
         continue;
