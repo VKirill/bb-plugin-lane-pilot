@@ -84,8 +84,8 @@ describe("a denied PM edit points where the PM can act", () => {
     expect(bash("writer", 'sqlite3 data.db "DELETE FROM users; SELECT 1"').status).toBe(2);
     expect(bash("writer", 'psql -c "delete from users" && echo ok').status).toBe(2);
     expect(bash("writer", 'sqlite3 data.db "DELETE FROM users WHERE id=1"').status).toBe(0);
-    // grep pattern in notes file currently matches the broad regex and is denied
-    expect(bash("writer", 'grep -n "delete from users" notes.md').status).toBe(2);
+    // A grep pattern is data, not SQL: Lane Stack 1.66.2 judges the program that runs (SMA rule 8)
+    expect(bash("writer", 'grep -n "delete from users" notes.md').status).toBe(0);
 
     const drop = bash("writer", "psql -c 'DROP TABLE users'");
     expect(drop.status).toBe(2);
