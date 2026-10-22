@@ -23,3 +23,4 @@ export {
   type RunBudgetLimits,
   type RunBudgetSnapshot,
 } from "./budget";
+export { appetiteStop, type Appetite } from "./appetite";

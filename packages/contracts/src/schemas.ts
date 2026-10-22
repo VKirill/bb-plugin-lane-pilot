@@ -128,9 +128,29 @@ export const taskV2Schema = z.object({
     target: z.string().min(1).max(200).optional(),
     change: z.string().min(1).max(1000),
   }).strict()).max(40).optional(),
+  /** SMA «Appetite before solution»: what the task may spend at most. A writer over it is stopped (`run_budget_exceeded:appetite …`, packages/resilience/src/appetite.ts). */
+  appetite: z.object({
+    tokens: z.number().int().positive().max(50_000_000).optional(),
+    minutes: z.number().int().positive().max(24 * 60).optional(),
+  }).strict().refine((value) => value.tokens !== undefined || value.minutes !== undefined, "appetite names tokens, minutes or both")
+    .describe("The most this task may spend: {tokens?, minutes?}; the writer is stopped past it.").optional(),
+  /** SMA «Plan prediction»: the PM's forecast before dispatch; after acceptance the code measures the error (src/rooms/forecast). */
+  forecast: z.object({
+    files: z.number().int().min(0).max(500),
+    checks_pass_first_try: z.boolean(),
+    tokens: z.number().int().positive().max(50_000_000).optional(),
+    minutes: z.number().int().positive().max(24 * 60).optional(),
+  }).strict().describe("Before dispatch: how many files change, whether every check passes on the first attempt, and optionally tokens and minutes.").optional(),
+  /** SMA «Declared wire inventory»: a value that must reach a place, as a chain of identifiers; plan→fact checks each hop in the code (src/rooms/wires). */
+  wires: z.array(z.object({
+    chain: z.array(z.string().trim().min(2).max(200)).min(2).max(8),
+    why: z.string().trim().min(1).max(300).optional(),
+  }).strict()).max(10).describe("Chains of identifiers a value travels, e.g. [\"ui.theme\", \"loadSettings\", \"ThemeProvider\"]: each neighbouring pair must meet in one file.").optional(),
 }).strict();
 
 export type TaskV2 = z.infer<typeof taskV2Schema>;
+/** The optional fields of the task contract: `validateTaskV2` accepts them, any other extra key is refused. */
+export const TASK_V2_OPTIONAL = ["skills", "area", "display_title", "kind", "quality_mode", "qa_cases", "convergence", "files", "appetite", "forecast", "wires"] as const;
 
 /**
  * Host calls that run as background jobs: a separate process the host daemon's deadline cannot cut off (B4). A kind is

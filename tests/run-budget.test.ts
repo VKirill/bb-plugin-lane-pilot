@@ -1,5 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
+import { appetiteStop } from "@lane-pilot/resilience";
 import {
   budgetStopReason,
   createRunBudget,
@@ -185,11 +186,11 @@ describe("lane_pilot_run_health", () => {
 });
 
 describe("running writer budget stop", () => {
-  async function finishWithBudget(budget: ReturnType<typeof createRunBudget>) {
+  async function finishWithBudget(budget: ReturnType<typeof createRunBudget>, contract: TaskV2 = task) {
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
     createRun(db, "run", "P", "cli", "/repo");
-    createTask(db, { id: "t1", runId: "run", kind: "bb", contract: task });
+    createTask(db, { id: "t1", runId: "run", kind: "bb", contract });
     createAttempt(db, { id: "a1", runId: "run", taskId: "t1" });
     transitionAttempt(db, "a1", "spawn_requested");
     transitionAttempt(db, "a1", "running", { threadId: "writer-1" });
@@ -216,7 +217,7 @@ describe("running writer budget stop", () => {
       validateWriterResult: async () => ({ status: "accepted" }),
     } as never);
     const result = await finish.finishWriterAttempt({
-      projectId: "P", config, task, runId: "run", taskId: "t1", attemptId: "a1",
+      projectId: "P", config, task: contract, runId: "run", taskId: "t1", attemptId: "a1",
       pmThreadId: "pm", writerThreadId: "writer-1", dirtBefore: [],
     });
     return { result, stopped, attempt: getAttempt(db, "a1") };
@@ -234,6 +235,23 @@ describe("running writer budget stop", () => {
     const { result, attempt } = await finishWithBudget(budget);
     expect(result).toMatchObject({ status: "blocked", reason: "run_budget_exceeded:tokens" });
     expect(attempt).toMatchObject({ state: "blocked", reason: "run_budget_exceeded:tokens" });
+  });
+
+  it("stops a writer past the task's own appetite even when the run has no budget", async () => {
+    const { result, stopped, attempt } = await finishWithBudget(createRunBudget({}), { ...task, appetite: { tokens: 40 } });
+    expect(result).toMatchObject({ status: "blocked", reason: "run_budget_exceeded:appetite tokens 50 > 40" });
+    expect(stopped).toEqual(["writer-1"]);
+    expect(failureClass(attempt!.reason!)).toBe(failureClass("run_budget_exceeded:tokens"));
+  });
+});
+
+describe("the task's appetite", () => {
+  it("stops past tokens or minutes, never before, and not on tokens the provider has not reported", () => {
+    expect(appetiteStop(undefined, { tokens: 9e9, elapsedMs: 9e9 })).toBeNull();
+    expect(appetiteStop({ tokens: 100 }, { tokens: 100, elapsedMs: 0 })).toBeNull();
+    expect(appetiteStop({ tokens: 100 }, { tokens: null, elapsedMs: 9e9 })).toBeNull();
+    expect(appetiteStop({ tokens: 100, minutes: 5 }, { tokens: 101, elapsedMs: 0 })).toBe("run_budget_exceeded:appetite tokens 101 > 100");
+    expect(appetiteStop({ minutes: 5 }, { tokens: 1, elapsedMs: 6 * 60_000 })).toBe("run_budget_exceeded:appetite minutes 6 > 5");
   });
 });
 

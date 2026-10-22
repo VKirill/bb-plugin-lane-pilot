@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { pluginRootFromModule } from "@lane-pilot/kit";
-import { taskV2Schema, type TaskV2 } from "../contracts";
+import { TASK_V2_OPTIONAL, taskV2Schema, type TaskV2 } from "../contracts";
 import { applyTrustedTooling } from "./trusted-tooling";
 
 export const TASK_V2_REQUIRED = [
@@ -42,7 +42,7 @@ export function validateTaskV2(value: unknown): { ok:true; task:TaskV2 } | { ok:
     return { ok:false, errors:parsed.error.issues.map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`) };
   }
   const record = value as Record<string, unknown>;
-  const extras = Object.keys(record).filter((key) => !(TASK_V2_REQUIRED as readonly string[]).includes(key) && key !== "skills" && key !== "area" && key !== "display_title" && key !== "kind" && key !== "quality_mode" && key !== "qa_cases" && key !== "convergence" && key !== "files");
+  const extras = Object.keys(record).filter((key) => !(TASK_V2_REQUIRED as readonly string[]).includes(key) && !(TASK_V2_OPTIONAL as readonly string[]).includes(key));
   if (extras.length > 0) return { ok:false, errors:extras.map((key) => `${key}: additionalProperties is false`) };
   // A relative cwd is read against project_cwd; from here on every check carries an absolute folder.
   const task = { ...parsed.data, verification:parsed.data.verification.map((check) => (isAbsolute(check.cwd) ? check : { ...check, cwd:resolve(parsed.data.project_cwd, check.cwd) })) };

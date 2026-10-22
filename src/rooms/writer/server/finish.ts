@@ -1,4 +1,4 @@
-import { breakerKey, runningWriterBudgetStop, tokenUsageFromEvent } from "@lane-pilot/resilience";
+import { appetiteStop, breakerKey, runningWriterBudgetStop, tokenUsageFromEvent } from "@lane-pilot/resilience";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { countAttempts, countThreadTurns, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt, taskBasePath } from "../../storage";
 import { saveBlockedBy, type BlockedBy } from "../../runs/server";
@@ -145,17 +145,23 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     };
     try {
       const budget = services.runBudgetFor(input.runId, loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)));
-      const watchBudget = budget.snapshot().limits.maxWallMs !== undefined || budget.snapshot().limits.maxTokens !== undefined;
+      // The task's own appetite (contract `appetite`) is watched next to the run's budget: this writer's tokens and the time since the
+      // wait began (a reload starts the clock again: the appetite is then counted generously, never twice).
+      const appetite = input.task.appetite;
+      const attemptStartedAt = Date.now();
+      let writerTokens: number | null = null;
+      const watchBudget = budget.snapshot().limits.maxWallMs !== undefined || budget.snapshot().limits.maxTokens !== undefined || appetite !== undefined;
       const noteWriterTokens = async () => {
-        if (budget.snapshot().limits.maxTokens === undefined) return;
+        if (budget.snapshot().limits.maxTokens === undefined && appetite?.tokens === undefined) return;
         try {
           const usageListed = await bb.sdk.threads.events.list({ threadId:input.writerThreadId, types:["thread/tokenUsage/updated"], order:"desc", limit:"50" });
           const usage = Array.isArray(usageListed) ? tokenUsageFromEvent(usageListed[0]) : null;
-          if (usage) budget.noteTokens(usage.threadId, usage.totalTokens);
+          if (usage) { writerTokens = usage.totalTokens; budget.noteTokens(usage.threadId, usage.totalTokens); }
         } catch {
           // Usage is informational; a host that cannot list events does not fail the attempt.
         }
       };
+      const overBudget = () => runningWriterBudgetStop(budget.check()) ?? appetiteStop(appetite, { tokens:writerTokens, elapsedMs:Date.now() - attemptStartedAt });
       const stopRunningWriter = async (reason:string) => {
         const current = await getThreadBounded(input.writerThreadId).catch(() => null);
         const status = stringAt(current, "status");
@@ -181,7 +187,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
               .finally(() => { waiting = false; });
             while (waiting) {
               await noteWriterTokens();
-              const budgetStop = runningWriterBudgetStop(budget.check());
+              const budgetStop = overBudget();
               if (budgetStop) return await stopRunningWriter(budgetStop);
               await Promise.race([idle, new Promise((wake) => setTimeout(wake, 2_000))]);
             }
@@ -228,7 +234,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         }
         if (watchBudget) {
           await noteWriterTokens();
-          const budgetStop = runningWriterBudgetStop(budget.check());
+          const budgetStop = overBudget();
           if (budgetStop) return await stopRunningWriter(budgetStop);
         }
         // A run with a wall or token budget is read every 2 s, because the budget is checked here. Otherwise BB's events

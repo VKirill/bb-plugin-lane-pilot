@@ -50,3 +50,20 @@ describe("convergence.criteria and files[] in the task contract (Maestro task.js
     expect(compactContract(task, false)).toMatchObject({ convergence:{ criteria:["the command exits 0"] }, files:[{ path:"src/b.ts", action:"create", change:"x" }] });
   });
 });
+
+describe("appetite, forecast and wires in the task contract (SMA atlas D2-1, D2-4, D2-5)", () => {
+  it("are optional, checked by the schema, and accepted by the validation", () => {
+    expect(validateTaskV2({ ...base, appetite:{ tokens:200_000, minutes:30 }, forecast:{ files:2, checks_pass_first_try:true, tokens:150_000 }, wires:[{ chain:["ui.theme", "loadSettings", "ThemeProvider"], why:"the saved theme reaches the page" }] }).ok).toBe(true);
+    expect(taskV2Schema.safeParse({ ...base, appetite:{} }).success).toBe(false);
+    expect(taskV2Schema.safeParse({ ...base, appetite:{ tokens:0 } }).success).toBe(false);
+    expect(taskV2Schema.safeParse({ ...base, forecast:{ files:2 } }).success).toBe(false);
+    expect(taskV2Schema.safeParse({ ...base, wires:[{ chain:["only-one"] }] }).success).toBe(false);
+    expect(validateTaskV2({ ...base, budget:{ tokens:1 } } as never).ok).toBe(false);
+  });
+
+  it("the writer sees the appetite and the wires, never the PM's forecast", () => {
+    const brief = compactContract({ ...base, appetite:{ minutes:30 }, forecast:{ files:1, checks_pass_first_try:true }, wires:[{ chain:["a.b", "c"] }] }, false);
+    expect(brief).toMatchObject({ appetite:{ minutes:30 }, wires:[{ chain:["a.b", "c"] }] });
+    expect(brief).not.toHaveProperty("forecast");
+  });
+});

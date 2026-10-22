@@ -100,7 +100,8 @@ export function pmReadBrief(pmReadContext:string):{ facts:string; openQuestions:
 export function compactContract(task:TaskV2, readListShown:boolean):Record<string, unknown> {
   const out:Record<string, unknown> = {};
   for (const [key, value] of Object.entries(task)) {
-    if (key === "schema_version" || key === "project_cwd" || (key === "read_first" && readListShown)) continue;
+    // The PM's forecast is measured against what the writer does: the writer does not see it.
+    if (key === "schema_version" || key === "project_cwd" || key === "forecast" || (key === "read_first" && readListShown)) continue;
     if (value == null || value === "" || (Array.isArray(value) && !value.length)) continue;
     if (key === "verification" && Array.isArray(value)) {
       out[key] = value.map((command) => {
