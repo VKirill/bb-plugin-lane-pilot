@@ -6,7 +6,9 @@ describe("the OpenCode v2 settings migration", () => {
   it("moves saved acp-opencode choices to opencode2 and leaves past results alone", () => {
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = bb.storage.database();
-    bb.storage.migrate(db, migrations.slice(0, -1));
+    const own = migrations.findIndex((statement) => statement.includes(`'"acp-opencode"','"opencode2"'`));
+    expect(own).toBeGreaterThan(0);
+    bb.storage.migrate(db, migrations.slice(0, own));
     const insert = db.prepare("INSERT INTO lane_pilot_project_settings(project_id,binding_id,key,value,version,updated_at) VALUES (?,?,?,?,1,1)");
     insert.run("*", "", "writer.fallback1.provider", JSON.stringify("acp-opencode"));
     insert.run("*", "", "ops.provider_pool", JSON.stringify({ "acp-opencode": 2, codex: 1 }));

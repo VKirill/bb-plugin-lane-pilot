@@ -27,7 +27,7 @@ describe("scripts/lp-drill.sh (E3)", () => {
       const [, name, json] = /^scenario (\w+): (\{.*\})$/.exec(line)!;
       byScenario.set(name!, [...(byScenario.get(name!) ?? []), taskV2Schema.parse(JSON.parse(json!))]);
     }
-    expect([...byScenario.keys()]).toEqual(["conflict", "main_moved", "provider", "provider_limit", "reload", "nogit", "nogit_repo"]);
+    expect([...byScenario.keys()]).toEqual(["memory_paths", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit", "nogit_repo"]);
     expect(byScenario.get("conflict")).toHaveLength(2);
     const [x, y] = byScenario.get("conflict")!;
     expect(x!.owns_paths).toEqual(y!.owns_paths);
@@ -37,10 +37,10 @@ describe("scripts/lp-drill.sh (E3)", () => {
     for (const tasks of byScenario.values()) for (const task of tasks) expect(task.expected_outputs.every((path) => task.owns_paths.includes(path))).toBe(true);
   });
 
-  it("--quick is the guard hash check, the register of deferrals, the helper per provider and the three-task scenario, and an unknown scenario is refused", () => {
+  it("--quick is the guard hash check, the register of deferrals, the memory paths, the helper per provider and the three-task scenario, and an unknown scenario is refused", () => {
     const quick = spawnSync("bash", [script, "--quick", "--dry-run"], { encoding: "utf8", timeout: 30_000, env: { ...process.env, BB_CLI: "/nonexistent/bb" } });
     expect(quick.status).toBe(0);
-    expect(quick.stdout).toContain("scenarios: guard_hash, deferrals, helper_providers, parallel3");
+    expect(quick.stdout).toContain("scenarios: guard_hash, deferrals, memory_paths, helper_providers, parallel3");
     expect(quick.stdout).not.toContain("scenario conflict");
     const unknown = spawnSync("bash", [script, "--scenario", "nope", "--dry-run"], { encoding: "utf8", timeout: 30_000 });
     expect(unknown.status).toBe(2);
