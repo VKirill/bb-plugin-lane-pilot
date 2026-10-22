@@ -81,7 +81,7 @@ describe("bench runner", () => {
     const project: BenchProjectRef = { projectId: "proj_bench", name: "LP bench x", hostId: "local", path: w.projectPath };
     const { pipeline, calls } = fakePipeline(project, () => ({ accepted: true }));
     await runSeries({ db: w.db as never, host: localHost, pipeline, clock: clock(), projectNameFor: () => project.name }, { version: "v1", arm: "critic", limit: 1, settings: { "critic.code.default_for_risk": "medium" }, pollMs: 1 });
-    const settings = calls.configure[0]!.settings as Record<string, unknown>;
+    const settings = (calls.configure[0] as { settings: Record<string, unknown> }).settings;
     expect(settings["critic.code.default_for_risk"]).toBe("medium");
     expect("code_critique.enabled" in settings).toBe(false);
     expect(settings["plan_critique.enabled"]).toBe(false);

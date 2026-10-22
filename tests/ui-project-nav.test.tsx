@@ -22,6 +22,8 @@ const projectsRpc = { list_projects: () => ({ projects: PROJECTS, lastProjectId:
 describe("service projects", () => {
   it("tells test projects by id and by name pattern, and keeps the rest", () => {
     expect(PROJECTS.filter(isTestProject).map((project) => project.id)).toEqual(["proj_3tb652jpsi", "proj_n1", "proj_s1"]);
+    // The bench's projects («LP bench <project>», src/rooms/bench) are service projects too.
+    expect(isTestProject({ id: "proj_b1", name: "LP bench SelfyStudio" })).toBe(true);
     const { main, service } = splitProjects(PROJECTS, new Set(["proj_work"]));
     expect(main.map((project) => project.id)).toEqual(["proj_ui"]);
     expect(service.map((project) => project.id)).toEqual(["proj_3tb652jpsi", "proj_n1", "proj_s1", "proj_work"]);
