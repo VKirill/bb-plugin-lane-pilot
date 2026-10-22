@@ -1,5 +1,6 @@
 import { latestTaskAttemptState, listUnreportedTaskOutcomes, markTaskOutcomesReported, pmHasTasksAtWork, type TaskOutcome } from "../../storage";
 import { taskFamily } from "../../runs";
+import { pmDeferralLines } from "../../deferral/server";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { ServerContext } from "../../core/server";
@@ -65,6 +66,8 @@ export type RelayDeps = {
   /** The PM's tasks still at work (queued, being spawned, running, being canceled). */
   tasksAtWork?(pmThreadId:string):Promise<string[]>;
   markReported?(rows:TaskOutcome[]):Promise<void>;
+  /** Lines about the overdue and open deferrals of a project, added to the task-result message (SMA rule 6: read them before you promise a date). */
+  deferralLines?(projectId:string):string[];
   now():number;
   log(message:string):void;
   /** Puts the text into BB's queue for `sendAt`; the queued row's id, or null when it could not be queued (the sweep then sends). */
@@ -365,9 +368,11 @@ export function createRelay(deps:RelayDeps) {
     if (canceled) lines.push(`- ${canceled} canceled`);
     const work = atWork.length ? `Still at work: ${atWork.length} (${atWork.slice(0, 8).join(", ")}${atWork.length > 8 ? ", …" : ""}).` : "None of your tasks is at work now.";
     const noted = notes.map((item) => `- (${clock(item.createdAt)}) ${item.note}`);
+    const deferred = deps.deferralLines ? [...new Set(rows.map((row) => row.projectId))].flatMap((projectId) => deps.deferralLines!(projectId)) : [];
     return [
       "Lane Pilot: results of your tasks (states as they are now):", ...lines, "", work,
       ...(noted.length ? ["", "Your reminder notes on these tasks (written earlier; skip what is already done):", ...noted] : []),
+      ...(deferred.length ? ["", ...deferred] : []),
       "", "Act only on what needs you. No reply is needed; results of your other tasks come here by themselves.",
     ].join("\n");
   }
@@ -589,6 +594,7 @@ export function relayFor(ctx:ServerContext):Relay {
     },
     tasksAtWork:async (pmThreadId) => pmHasTasksAtWork(ctx.db, pmThreadId),
     markReported:async (rows) => markTaskOutcomesReported(ctx.db, rows, Date.now()),
+    deferralLines:(projectId) => { try { return pmDeferralLines(ctx.db, projectId, Date.now()); } catch { return []; } },
     now:() => Date.now(),
     log:ctx.log,
   });

@@ -42,6 +42,7 @@ function parseApplicabilityTable(): Array<{
 }
 
 describe("adoc applicability catalog", () => {
+  // deferral:dfr_seed_skip_applicability
   it.skipIf(NO_AGENCY_SETTINGS)("matches settings.json 1:1 on area+setting+location+category", () => {
     expect(UI_CATALOG).toHaveLength(453);
     expect(SETTINGS!.settings).toHaveLength(355);
@@ -94,6 +95,7 @@ describe("adoc applicability catalog", () => {
     expect(APPLICABILITY).toContain("| 284 | gate scripts | gate-report --gate | bin/gate-report:129 | user | NONE | readonly |");
   });
 
+  // deferral:dfr_seed_skip_applicability
   it.skipIf(NO_AGENCY_SETTINGS)("documents the 355 source rows and native docs/onboarding additions with location and path:line", () => {
     const rows = parseApplicabilityTable();
     expect(rows).toHaveLength(453);

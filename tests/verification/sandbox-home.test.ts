@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { expect, it } from "vitest";
 import { runSandboxedCommandOnHost } from "../../src/rooms/verification/sandbox";
 
+// deferral:dfr_seed_skip_sandbox_home
 it.skipIf(process.platform !== "darwin" || !existsSync("/usr/bin/sandbox-exec"))(
   "lets a sandboxed check write its own HOME, as vitest does for its token",
   async () => {
@@ -19,6 +20,7 @@ it.skipIf(process.platform !== "darwin" || !existsSync("/usr/bin/sandbox-exec"))
   },
 );
 
+// deferral:dfr_seed_skip_sandbox_home
 it.skipIf(process.platform !== "darwin" || !existsSync("/usr/bin/sandbox-exec"))(
   "reports a command killed at its time limit as exit 124, not as a plain failure",
   async () => {
@@ -30,6 +32,7 @@ it.skipIf(process.platform !== "darwin" || !existsSync("/usr/bin/sandbox-exec"))
   },
 );
 
+// deferral:dfr_seed_skip_sandbox_home
 it.skipIf(process.platform !== "darwin" || !existsSync("/usr/bin/sandbox-exec"))(
   "keeps the host worker answering while a sandboxed check runs",
   async () => {
@@ -46,6 +49,7 @@ it.skipIf(process.platform !== "darwin" || !existsSync("/usr/bin/sandbox-exec"))
   },
 );
 
+// deferral:dfr_seed_skip_sandbox_home
 it.skipIf(process.platform !== "darwin" || !existsSync("/usr/bin/sandbox-exec"))(
   "keeps a green check green when it prints more than a megabyte, with its summary at the end",
   async () => {

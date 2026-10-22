@@ -67,6 +67,6 @@ describe("the drill's helper per provider", () => {
 
   it("is part of --quick, between the guard check and the three-task scenario", () => {
     const quick = spawnSync("bash", [script, "--quick", "--dry-run"], { encoding: "utf8", timeout: 30_000, env: { ...process.env, BB_CLI: "/nonexistent/bb" } });
-    expect(quick.stdout).toContain("scenarios: guard_hash, helper_providers, parallel3");
+    expect(quick.stdout).toContain("scenarios: guard_hash, deferrals, helper_providers, parallel3");
   });
 });

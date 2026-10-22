@@ -10,6 +10,7 @@ import { registerHomeCleanup, hostId, makeHome, treeHash, exactTargetFixture, in
 registerHomeCleanup();
 
 // All tests below clone a Lane Stack fixture with the target commit; without it (clean clone) they skip instead of crashing.
+// deferral:dfr_seed_skip_coexistence_managed_1
 describe.skipIf(!exactTargetFixture)("managed install transaction failure integrity", () => {
   it.each(["after-rename", "after-snapshot", "after-ledger-commit"] as const)("compensates and safely retries after %s", async (faultAt) => {
     const home = await makeHome();

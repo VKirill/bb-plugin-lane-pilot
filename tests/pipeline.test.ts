@@ -224,6 +224,7 @@ describe("argv-builder channels", () => {
     ]);
   });
   // Spawns the real upstream binaries; without the pinned upstream they are not on PATH, so skip.
+  // deferral:dfr_seed_skip_pipeline
   it.skipIf(NO_UPSTREAM)("built argv is a subset of real binary --help", () => {
     const cases: Array<{ binary:"run-controller"|"lane-ctl"; subcommand:string; required:Record<string,string> }> = [
       { binary:"run-controller", subcommand:"status", required: requiredCliFlags({ binary:"run-controller", subcommand:"status", runDir:"/tmp/r" }) },
@@ -277,6 +278,7 @@ describe("task-v2", () => {
     verify:"tests" as const,
     verification:[{ command:"true", cwd:"/tmp/x" }],
   };
+  // deferral:dfr_seed_skip_pipeline
   it.skipIf(NO_UPSTREAM)("requires the 18 upstream fields and keeps the copyrighted schema copy", () => {
     const schema = loadTaskV2Schema();
     expect(schema.required).toEqual([...TASK_V2_REQUIRED]);

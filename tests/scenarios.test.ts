@@ -76,6 +76,7 @@ afterAll(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
+// deferral:dfr_seed_skip_scenarios
 describe.skipIf(NO_UPSTREAM)("S1–S8 isolated HOME", () => {
   it("S2 detect sees a non-target SHA", async () => {
     const detected = await detectStack(ctx);

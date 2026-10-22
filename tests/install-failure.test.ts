@@ -11,6 +11,7 @@ const FALLBACK = upstreamPath();
 offlineUpstream();
 const GUARD = join(process.cwd(), "lane-stack/hooks/guard_shell.py");
 
+// deferral:dfr_seed_skip_install_failure
 describe.skipIf(NO_UPSTREAM)("install failure rollback and snapshot integrity", () => {
   it("D3 reuses a compatible source without invoking the ordinary-home installer", async () => {
     const home = mkdtempSync(join(tmpdir(), "lane-pilot-d3-"));

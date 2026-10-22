@@ -1,0 +1,13 @@
+// deferral:dfr_aaaaaaaaaaaa
+it.skip("one", () => {});
+it.todo("two"); // deferral:dfr_bbbbbbbbbbbb
+describe.skipIf(!ok)("three", () => {});
+// it.skip in a comment
+ * describe.skip in a doc block
+// deferral:dfr_cccccccccccc
+xit("four", () => {});
+test.skip("five", () => {})
+
+// deferral:dfr_dddddddddddd
+
+it.todo("six: the mark is two lines away");

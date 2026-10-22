@@ -6,6 +6,9 @@ Scenarios (each writes its verdict into the receipt, .agents/runs/drills/<date>.
                  is byte for byte the repository's copy (lane-stack/hooks). A drifted or missing copy fails the drill and the
                  receipt lists the install command per machine; --repair-guard (or LP_DRILL_REPAIR_GUARD=1) installs the
                  repository copy and checks it again. A machine that cannot be reached is noted, not failed          [--quick]
+  deferrals      the register of deferrals (`bb lane-pilot deferrals`): an entry whose term the owner gave has passed, or a skipped test
+                 cites an entry the register lacks or holds closed, fails the drill and the receipt says how to close it. Entries
+                 without a term (needs_owner_term) are counted, not failed                                           [--quick]
   helper_providers one helper per provider in use (claude-code, codex, opencode2, and acp-cursor when a setting names it), each
                  started the way the pm-read stage starts its helper (`bb lane-pilot helper-probe`) with a prompt that asks for
                  one word: each must start and answer. A provider that refuses its helpers fails the drill (0.1.194 refused
@@ -35,6 +38,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -62,12 +66,12 @@ OPEN_STATES = ("queued", "spawn_requested", "spawn_unknown", "running")
 TERMINAL = ("accepted", "blocked", "canceled")
 STAMP = time.strftime("%Y%m%d-%H%M%S")
 DATE = time.strftime("%Y-%m-%d")
-ALL = ["guard_hash", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit", "nogit_repo"]
-QUICK = ["guard_hash", "helper_providers", "parallel3"]
+ALL = ["guard_hash", "deferrals", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit", "nogit_repo"]
+QUICK = ["guard_hash", "deferrals", "helper_providers", "parallel3"]
 # What a provider runs when no setting of the sandbox project names a model for it.
 PROVIDER_FALLBACK_MODEL = {"claude-code": "claude-sonnet-5-5", "codex": "gpt-6-luna", "opencode2": "zai-coding-plan/glm-5.3-flash"}
 # Scenarios that need no PM and no run of their own: they run before the PM starts (guard_hash) or on a project of their own (nogit).
-STANDALONE = ("guard_hash", "nogit", "nogit_repo")
+STANDALONE = ("guard_hash", "deferrals", "nogit", "nogit_repo")
 
 
 def log(message: str) -> None:
@@ -688,6 +692,45 @@ def scenario_guard_hash(tmp: Path, repair: bool = False) -> dict:
     return verdict("guard_hash", problems, machines=machines, expected=expected, unreachable=unreachable, repaired=repair)
 
 
+DEFERRAL_MARK = re.compile(r"//\s*deferral:(dfr_[A-Za-z0-9_]+)")
+# Words a BB core answers with when the plugin does not (yet) register an RPC method: the register is not deployed, which is not a failure.
+RPC_MISSING = re.compile(r"unknown (rpc )?method|method not found|no such (rpc )?method|not registered|unsupported", re.I)
+
+
+def cited_deferrals() -> list[str]:
+    """Every `// deferral:<id>` written in tests/ and packages/*/tests/ of this checkout (a skipped test names the entry that excuses it)."""
+    found: set[str] = set()
+    folders = [ROOT / "tests", *sorted((ROOT / "packages").glob("*/tests"))]
+    for folder in folders:
+        for path in folder.rglob("*"):
+            if path.suffix not in (".ts", ".tsx", ".mts") or "node_modules" in path.parts:
+                continue
+            found.update(DEFERRAL_MARK.findall(path.read_text(encoding="utf-8", errors="replace")))
+    return sorted(found)
+
+
+def scenario_deferrals(tmp: Path) -> dict:
+    """The register of deferrals (SMA rule 5): an entry whose term the owner gave has passed, or a skipped test cites an entry the register
+    does not hold or holds closed, fails the drill. Entries without a term (`needs_owner_term`) are listed, never failed."""
+    cited = cited_deferrals()
+    try:
+        data = setting_rpc("deferral_list", {"refs": cited})
+    except Exception as cause:
+        if RPC_MISSING.search(str(cause)):
+            return verdict("deferrals", [], registerDeployed=False, note=f"the running plugin has no register yet: {str(cause)[:160]}")
+        return verdict("deferrals", [f"the register of deferrals could not be read: {str(cause)[:200]}"])
+    problems: list[str] = []
+    for item in data.get("overdue", []):
+        problems.append(f"overdue deferral {item['id']} ({item['kind']}: {item['what'][:100]}): the owner's term {item['due']} passed. "
+                        f"Do one of: close it with evidence (bb lane-pilot defer-close {item['id']} --evidence \"<commit, test run, link>\"), "
+                        f"or get a new date from the owner in a new message and set it (bb lane-pilot defer {item['id']} --owner-msg <thread>#<seq>)")
+    for ref in data.get("badRefs", []):
+        why = "is not in the register" if ref["problem"] == "unknown" else "is closed, so the skip it excuses is no longer deferred (run the test or remove the skip)"
+        problems.append(f"a skipped test cites deferral:{ref['id']}, which {why}")
+    counts = data.get("counts", {})
+    return verdict("deferrals", problems, registerDeployed=True, counts=counts, cited=len(cited), needsOwnerTerm=len(data.get("needsOwnerTerm", [])))
+
+
 def ensure_prototype_config(spec: dict) -> bool:
     """`bb lane-pilot activate` needs the project's prototype config (host, folders, PM and writer models). The sandbox project that has no git
     gets it once, from the same values as the main sandbox project; it stays (the plugin has no way to remove it). True when this call set it."""
@@ -861,6 +904,13 @@ def main() -> int:
             except Exception as cause:
                 scenarios.append(verdict("guard_hash", [f"scenario raised: {cause}"]))
             log(f"scenario guard_hash: {scenarios[-1]['result']} {scenarios[-1]['problems']}")
+        if "deferrals" in names:
+            log("scenario deferrals")
+            try:
+                scenarios.append(scenario_deferrals(tmp))
+            except Exception as cause:
+                scenarios.append(verdict("deferrals", [f"scenario raised: {cause}"]))
+            log(f"scenario deferrals: {scenarios[-1]['result']} {scenarios[-1]['problems']}")
         main_names = [n for n in names if n not in STANDALONE]
         if main_names:
             ctx = Context(SANDBOX, tmp)

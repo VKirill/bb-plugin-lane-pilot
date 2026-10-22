@@ -47,6 +47,7 @@ afterEach(async () => {
 });
 
 // Needs a Lane Stack fixture with the target commit; on a clean clone it skips instead of crashing in makeIncompatibleFallback.
+// deferral:dfr_seed_skip_fault_injection
 describe.skipIf(!UPSTREAM_FIXTURE)("managed install metadata preflight", () => {
   it("rejects malformed ownership before rename and reports the unchanged write set", async () => {
     const home = await makeHome();

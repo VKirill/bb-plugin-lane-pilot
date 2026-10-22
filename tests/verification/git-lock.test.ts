@@ -34,6 +34,7 @@ describe("stale git index.lock recovery", () => {
     expect(existsSync(lockOf(base))).toBe(true);
   });
 
+  // deferral:dfr_seed_skip_git_lock
   it.skipIf(!hasLsof)("moves aside a lock older than 60 s that no process holds", async () => {
     const { base } = await repo();
     await writeFile(lockOf(base), "");
@@ -44,6 +45,7 @@ describe("stale git index.lock recovery", () => {
     expect(existsSync(aside!)).toBe(true);
   });
 
+  // deferral:dfr_seed_skip_git_lock
   it.skipIf(!hasLsof)("does not touch an old lock while a process holds it open", async () => {
     const { base } = await repo();
     await writeFile(lockOf(base), "");
@@ -71,6 +73,7 @@ describe("stale git index.lock recovery", () => {
     } finally { process.env.PATH = path; }
   });
 
+  // deferral:dfr_seed_skip_git_lock
   it.skipIf(!hasLsof)("finds a worktree's own lock, so the merge goes through", async () => {
     const { base, worktree } = await repo();
     const a = await worktree("a");
@@ -97,6 +100,7 @@ describe("a merge blocked by a lock", () => {
     expect(result.reason).toMatch(/git merge failed: .*index\.lock/s);
   });
 
+  // deferral:dfr_seed_skip_git_lock
   it.skipIf(!hasLsof)("merges once a stale lock is moved aside", async () => {
     const { base, worktree } = await repo();
     const path = await worktree("w2");

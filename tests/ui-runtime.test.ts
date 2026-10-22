@@ -101,6 +101,7 @@ function requiredFor(spec: SettingSpec): { binary: "run-controller" | "lane-ctl"
 
 describe("UI storage keys feed runtime channels", () => {
   // scripts/generate-ui-catalog.py checks enums against the pinned upstream; skip on a clean clone.
+  // deferral:dfr_seed_skip_ui_runtime
   it.skipIf(NO_UPSTREAM)("derives every editable enum from pinned upstream argparse choices", () => {
     const script = resolve(process.cwd(), "scripts/generate-ui-catalog.py");
     const result = execFileSync("python3", [script, "--check-upstream-enums"], { encoding: "utf8" });
