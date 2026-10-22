@@ -148,4 +148,13 @@ export const rpcOps = {
     input: z.object({ id: z.string().min(1).max(80), evidence: z.string().min(1).max(2000) }).strict(),
     output: z.unknown(),
   },
+  /** LP-Bench (src/rooms/bench): the fixed task set, its series per arm and the paired comparison. Building and running go through `bb lane-pilot bench`. */
+  bench_status: {
+    input: z.object({ version: z.string().min(1).max(40).optional() }).strict(),
+    output: z.unknown(),
+  },
+  bench_compare: {
+    input: z.object({ version: z.string().min(1).max(40).default("v1"), armA: z.string().min(1).max(80), armB: z.string().min(1).max(80), noise: z.tuple([z.string(), z.string()]).optional() }).strict(),
+    output: z.unknown(),
+  },
 };

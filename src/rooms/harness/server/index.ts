@@ -5,4 +5,4 @@ export { HARNESS_ROLES, roleSelection } from "./harness";
 export { harnessRpc } from "./rpc";
 export { ANY_WRITER, writerKeyOf } from "./store";
 export { TRIAL_DEFAULTS, armMetrics, decideTrial } from "./trial";
-export type { TrialConfig, TrialDecision } from "./trial";
+export type { AdoptBy, BenchVerdictInput, TrialConfig, TrialDecision } from "./trial";

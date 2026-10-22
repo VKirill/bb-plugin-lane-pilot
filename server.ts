@@ -15,6 +15,7 @@ import { adoptWaitingRules } from "./src/rooms/self-repair/server";
 import { createRuleScan } from "./src/rooms/self-repair/server";
 import { createHarness } from "./src/rooms/harness/server";
 import { createDeferrals, sdkOwnerMessagePort } from "./src/rooms/deferral/server";
+import { createPluginBench } from "./src/rooms/bench/server";
 import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, pluginStopped } from "./src/rooms/runs/server";
 import { registerRpc } from "./src/rooms/core/server/rpc";
 import { mountAnamnesis } from "./src/rooms/anamnesis";
@@ -94,6 +95,7 @@ export default async function plugin(bb: BbPluginApi) {
     { ruleScan: createRuleScan(ctx, services) },
     { harness: createHarness(ctx, services) },
     { deferrals },
+    { bench: createPluginBench(ctx, services) },
     createStability(ctx, services),
     createScheduleService(ctx, services),
   );

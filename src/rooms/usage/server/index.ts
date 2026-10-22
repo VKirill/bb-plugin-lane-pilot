@@ -2,5 +2,6 @@
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { createProviderUsage, usageHoldReason, usageSkipPercent } from "./provider-usage";
 export { tokenUsageRpc } from "./rpc/token-usage";
-export { billedFrom, parseBreakdown, threadUsage } from "./token-usage";
+export { billedFrom, parseBreakdown, syncTokenUsage, threadUsage } from "./token-usage";
 export { attemptMetrics, renderAttemptMetrics } from "./attempt-metrics";
+export type { AttemptMetrics, AttemptMetricsReport, CostState } from "./attempt-metrics";

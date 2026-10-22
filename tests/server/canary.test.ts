@@ -69,12 +69,13 @@ describe("canaryReport on reasons from the hub", () => {
 });
 
 describe("the sandbox and the drills are not in the error budget or the canary (audit 2026-10-08 round 4, P1-12)", () => {
-  it("leaves out the drill's sandbox project, projects named LP sandbox / LP native and drill-* tasks, in the budget and in the canary", async () => {
+  it("leaves out the drill's sandbox project, projects named LP sandbox / LP native / LP bench and drill-* tasks, in the budget and in the canary", async () => {
     const { db, attempt, attemptIn, projectRows, canary } = setup();
     for (let i = 0; i < 20; i += 1) attempt("accepted");
     // Deliberate failures of the sandbox and the drill: six of them would be 23% of the week.
     for (let i = 0; i < 2; i += 1) attemptIn("proj_3tb652jpsi", "blocked", own);
-    projectRows.push({ id: "proj_named_sb", name: "LP sandbox 2026-10-08" }, { id: "proj_named_native", name: "LP native ab12" }, { id: "proj_real", name: "SelfyStudio" });
+    projectRows.push({ id: "proj_named_sb", name: "LP sandbox 2026-10-08" }, { id: "proj_named_native", name: "LP native ab12" }, { id: "proj_named_bench", name: "LP bench SelfyStudio" }, { id: "proj_real", name: "SelfyStudio" });
+    attemptIn("proj_named_bench", "blocked", own);
     attemptIn("proj_named_sb", "blocked", own);
     attemptIn("proj_named_native", "blocked", own);
     attemptIn("proj", "blocked", own, "drill-parallel-1");
@@ -83,7 +84,7 @@ describe("the sandbox and the drills are not in the error budget or the canary (
     for (let i = 0; i < 10; i += 1) attemptIn("proj_3tb652jpsi", "accepted");
     const bare = canaryReport(db, { version: VERSION, since: Date.now() - 3600_000, now: Date.now() });
     // Without the names only the project id and the drill tasks are known.
-    expect(bare.budget).toMatchObject({ attempts: 22, faults: 2 });
+    expect(bare.budget).toMatchObject({ attempts: 23, faults: 3 });
     const status = await canary.status();
     expect(status.budget).toMatchObject({ attempts: 20, faults: 0, exhausted: false });
     expect(status).toMatchObject({ faults: 0, tripped: false });
