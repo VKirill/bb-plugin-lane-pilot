@@ -9,7 +9,7 @@
  *   node /tmp/lp-checkers.mjs scorecard
  *
  * `drill` needs nothing else (no hub, no model): it is what lp-drill.py runs as the `checkers` scenario.
- * State lives in LP_CHECKERS_HOME (default ~/lp-checkers): checkers.db holds the runs and their rows. Env: LP_BENCH_HOME, LP_BENCH_SSH_OVH, BB_CLI.
+ * State lives in LP_CHECKERS_HOME (default ~/lp-checkers): checkers.db holds the runs and their rows. Env: LP_BENCH_HOME, LP_BENCH_SSH_OVH (used only with LP_CHECKERS_OVH=1), BB_CLI.
  */
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
@@ -50,6 +50,8 @@ function exec(file: string, args: string[], options: { cwd?: string; input?: str
 const host = {
   run: (hostId: string, cwd: string, command: string, timeoutSec = 120): Promise<Exec> => {
     if (hostId === LOCAL_HOST || hostId === "local") return exec("/bin/sh", ["-c", command], { cwd, timeoutSec });
+    // OVH holds the SelfyStudio clones and little disk: a scoring run clones a whole project per candidate there, so it is opt-in.
+    if (hostId === OVH_HOST && process.env.LP_CHECKERS_OVH !== "1") return Promise.resolve({ exitCode: 127, stdout: "", stderr: "OVH is off for the checker scorecard (set LP_CHECKERS_OVH=1)" });
     if (hostId === OVH_HOST) return exec("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=15", OVH, `cd ${quote(cwd)} && ${command}`], { timeoutSec: timeoutSec + 20 });
     return Promise.resolve({ exitCode: 127, stdout: "", stderr: `the live driver cannot reach ${hostId}` });
   },

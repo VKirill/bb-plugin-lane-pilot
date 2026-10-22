@@ -84,6 +84,26 @@ The designed catchers are one table, `EXPECTED_CATCHERS` (`types.ts`). `applies(
 
 `--blind ownership` makes a checker report nothing, to see the drill go red. The `checkers` scenario of `scripts/lp-drill.py` (in `--quick`, so `bb-plugin-push` runs it before every deploy) bundles the checkout's own code, runs the drill, then runs it again with the ownership checker blinded and fails if that run stays green. Classes whose only designed catcher is the code critic are not part of the drill (nothing deterministic is designed to catch them).
 
+## First measurement (2026-10-22)
+
+Real accepted candidates from the bench snapshot, two runs (eight distinct tasks), critics at low reasoning effort: `codex/gpt-6-luna` (run `chk_12fe355a-305`, six candidates) and `claude-haiku-5-5` through `claude -p` (run `chk_a770f81b-d2d`, three candidates; $0.065, 275k full-price tokens). Scorecard of the six-candidate run:
+
+| Class | verification | ownership | contract lint | plan→fact | code critic | plan critic |
+|---|---|---|---|---|---|---|
+| deleted assertion (6) | 0/6 | 0/6 | - | 0/6 | 0/2 (2 off target) | - |
+| off-by-one (4) | 1/4 | 0/4 | - | 0/4 | 0/2 (2 off) | - |
+| outside owns (6) | 0/6 | **6/6** | - | 0/6 | - | - |
+| swallowed error (2) | 0/2 | 0/2 | - | 0/2 | 0/1 (1 off) | - |
+| `\|\| true` (6) | 0/6 | - | **6/6** | - | - | 5/6 |
+| acceptance missing (5) | 3/5 | 0/5 | - | **5/5** | - | - |
+| hard-coded value (4) | 4/4 | 0/4 | - | 0/4 | - | - |
+| broken import (3) | 3/3 | 0/3 | - | 0/3 | - | - |
+
+- The three checkers that are code by construction (ownership, contract lint, plan→fact) caught their class 17/17 times. `verification` caught what the tests cover (broken import 3/3, hard-coded value 4/4) and missed 3 of 4 off-by-ones and every deleted assertion and swallowed error: **11 of 36 planted defects escaped every code checker** (6 deleted assertions, 3 off-by-ones, 2 swallowed errors).
+- **The code critic did not earn the default.** Of the 11 escapes of the luna run, 6 lay past the 8 KB of a file the critic is shown (and the packet carries the new file, never the diff), and the other 5 were judged: **0 caught, 5 off target** (the critic raised a finding on the same file it flags on the clean candidate). In the haiku run 1 of 5 escapes was judged (off target), 3 were past the excerpt and 1 answer was unreadable. It raised a finding on **every clean candidate** (6/6 luna, 1/1 readable haiku answer). Two of three haiku answers were unreadable (the strict verdict schema refuses an unknown key), which in the pipeline would block the attempt. By `decideCodeCritic` the answer is `inconclusive` on size (5 and 1 judged, 8 needed), but every number points one way: keep `critic.code.default_for_risk=off`. A re-measure needs candidates whose changed files fit the excerpt and a critic model that is held to the schema; the scorecard repeats it with `checkers score --critic <provider/model>`.
+- The plan critic caught the masked check in 5 of 6 (3 of 3 haiku) but also raised a finding on every clean contract, so it does not separate a defect from none either.
+- The contract lint's 3-of-6 «false alarms» on clean candidates are real lint errors of old stored contracts (no `display_title`, no `kind`), not noise; ownership's 1 of 6 is a real file outside `owns_paths` in an accepted solution.
+
 ## Caveats
 
 - Planted defects are synthetic and one line each. A critic may find them easier than the defects writers really make, so its catch rate here is an upper bound; the false-alarm rate on clean candidates is not.
