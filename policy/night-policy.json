@@ -1,12 +1,30 @@
 {
-  "version": 1,
+  "version": 2,
+  "frozen_at": "2026-10-22T11:26:00Z",
+  "frozen_hash": "1017b98f92e2d04c825ddead384295249a750f1ffc60058264da68b830f42e7f",
   "title": "What the night may settle without the owner",
-  "rule": "Most restrictive match wins (owner_only > night_proposes > night_decides). A change that matches nothing is night_proposes. A night_decides entry matches only when its proof attributes are present and true; a missing proof is no match.",
-  "exam": { "file": "policy/exam.json", "min_accuracy": 0.8, "note": "night_decides takes effect only while the exam over the held-out items passes; below min_accuracy every night_decides answer degrades to night_proposes (src/rooms/policy/exam.ts)." },
+  "rule": "Most restrictive match wins (owner_only > night_proposes > night_decides). A change that matches nothing is night_proposes. A night_decides entry matches only when its proof attributes are present and true; a missing proof is no match. A standing prohibition is owner_only.",
+  "exam": {
+    "file": "policy/exam.json",
+    "live_file": "policy/exam-v2.json",
+    "min_accuracy": 0.8,
+    "min_items": 20,
+    "note": "night_decides takes effect only while this policy version has scored min_accuracy on at least min_items owner decisions made AFTER frozen_at (policy/exam-v2.json plus the plugin store, grown at night). Fewer items, or a lower score: every night_decides answer degrades to night_proposes (src/rooms/policy/exam.ts). policy/exam.json (32 items) is history: version 1 scored 14/32 = 0.438 on it, and every later version has seen it."
+  },
+  "versions": [
+    { "version": 1, "frozen": "2026-10-22", "exam": "policy/exam.json (x1..x32)", "result": "14/32 = 0.438, failed; night_decides degraded to night_proposes", "tuned_on_exam": false },
+    { "version": 2, "frozen": "2026-10-22T11:26:00Z", "exam": "policy/exam-v2.json + plugin store policy:exam-v2 (decisions after the freeze)", "result": "not enough unseen decisions yet", "changes": "standing_prohibitions concept (8 entries, each with its own source quote); rule_trial_apply moved from night_decides to night_proposes on design-side evidence d7, d10, d11 (against it: d9, d8 and the rollback a trial has; reasoning in docs/night-policy.md; not derived from the exam result); frozen_at/frozen_hash/min_items; exam grows at night", "tuned_on_exam": false }
+  ],
   "split": {
-    "design_items": "design_items below: the decisions this file was written from. Their ids start with d.",
-    "exam_items": "policy/exam.json: decisions this file was NOT written from. Their ids start with x. A test fails when an id sits on both sides or when an entry example cites an exam item.",
-    "time_cut": "Rule-proposal decisions up to 2026-10-14 are design (the five owner revocations of 2026-10-01/03); decisions from 2026-10-15 on are exam. Memory files: see design_items; every other memory file is exam."
+    "design_items": "design_items below: the decisions this file was written from. Their ids start with d. since_version marks the ones added for a later version (absent = 1).",
+    "exam_items": "policy/exam.json (v1, history): decisions version 1 was NOT written from. Ids x1... A test fails when an id sits on both sides or when an entry example cites an exam item. For version 2 and later the whole of exam v1 is in-sample: this file's standing prohibitions quote memory files that v1 exam items also cite (marked cited_by_v1_exam), and the miss analysis of v1 was read before version 2 was written.",
+    "live_items": "policy/exam-v2.json + the plugin store (key policy:exam-v2): owner decisions with a decided_at after frozen_at, appended at night (src/rooms/policy/live-exam.ts). Ids y_<hash>. Only items decided after the version's frozen_at score it.",
+    "time_cut": "v1: rule-proposal decisions up to 2026-10-14 are design (the five owner revocations of 2026-10-01/03); decisions from 2026-10-15 on are exam v1. Memory files: see design_items; every other memory file was exam v1. v2: anything decided after frozen_at is unseen; everything before is seen."
+  },
+  "descriptor_vocabulary": {
+    "note": "Standing prohibitions match what the caller declares. A night-loop caller must put these kinds/attrs on a change that does the thing; a change that does not declare it is not recognised (it falls to the other lists or to night_proposes).",
+    "kinds": ["opencode_v1_enable", "jev_route_session_turn", "jev_route_owner_message", "lane_hook_ungated", "fast_mode_enable", "bb_connect_expose", "access_ban_add", "full_suite_run", "env_catalog_block"],
+    "attrs": ["provider=acp-opencode", "provider_id=acp-opencode", "jev_route_target=session_turn|owner_message", "touches_plain_session=true", "service_tier=fast", "default_service_tier=fast", "exposure=getbb", "access_change=flat_ban", "refusal_text=bare", "actor=parallel_agent", "whole_suite_check_on_single_task=true", "blocks_env_catalog_get=true"]
   },
   "design_items": [
     { "id": "d1", "source": "memory/owner-no-deploy-confirmations.md", "date": "2026-10-08", "quote": "да выкатывай конечно всё что надо делай, зачем мои подтверждения тебе? ... Destructive actions on data (deleting projects, emptying trash) still need a yes.", "informs": ["green_change_ship", "irreversible_data", "project_deletion"] },
@@ -17,7 +35,9 @@
     { "id": "d6", "source": "memory/env-catalog-open-access.md", "date": "2026-10-08", "quote": "не городить огороды … пусть будет доступно любым агентам получить API ключи без танцев с бубнами", "informs": ["secrets_env_catalog", "access_fences"] },
     { "id": "d7", "source": "hub lane_pilot_rule_proposal, state revoked, decided_by owner, 2026-10-01 and 2026-10-03 (rule_dfb496033a61ce24, rule_8a3ad2a7148dfe54, rule_fe80e50b31b853e8, rule_d97f81afb3dc2b0b, rule_ef3d5cf6d220e39a)", "date": "2026-10-03", "quote": "five auto-adopted rules taken back by the owner in the first week of trials (the revoke is the undo that keeps a trial reversible)", "informs": ["rule_trial_apply", "rule_always_on"] },
     { "id": "d8", "source": "maslov-messages.md #31448", "date": "2026-10-22", "quote": "что меняет сам граф (новая стадия, другая модель на роль) — я советую только через твоё да если у тебя нет откатов", "informs": ["new_pipeline_stage", "graph_edit", "default_model_change", "judge_gates"] },
-    { "id": "d9", "source": "sma-gap-analysis.md P1-2", "date": "2026-10-22", "quote": "ночь решает сама (починка LP-вины по классу с прохождением набора, регенерация документации, срок жизни заметок, retire дерева, провалившего бенч, правила в пробное применение); ночь предлагает (always-on правило, смена модели по умолчанию, новая стадия); только владелец (расходы и лимиты, секреты, необратимые действия над данными, изменение судьи, сама политика, удаление проектов)", "informs": ["lp_fault_repair", "docs_regeneration", "memory_note_expiry", "harness_retire_lost", "rule_trial_apply", "rule_always_on", "default_model_change", "new_pipeline_stage", "spending_caps", "secrets_env_catalog", "irreversible_data", "judge_gates", "judge_bench_set", "judge_thresholds", "policy_itself", "project_deletion"] }
+    { "id": "d9", "source": "sma-gap-analysis.md P1-2", "date": "2026-10-22", "quote": "ночь решает сама (починка LP-вины по классу с прохождением набора, регенерация документации, срок жизни заметок, retire дерева, провалившего бенч, правила в пробное применение); ночь предлагает (always-on правило, смена модели по умолчанию, новая стадия); только владелец (расходы и лимиты, секреты, необратимые действия над данными, изменение судьи, сама политика, удаление проектов)", "informs": ["lp_fault_repair", "docs_regeneration", "memory_note_expiry", "harness_retire_lost", "rule_trial_apply", "rule_always_on", "default_model_change", "new_pipeline_stage", "spending_caps", "secrets_env_catalog", "irreversible_data", "judge_gates", "judge_bench_set", "judge_thresholds", "policy_itself", "project_deletion"] },
+    { "id": "d10", "since_version": 2, "source": "memory/lane-pilot-rules-from-lessons.md:11", "date": "2026-10-01", "quote": "Accepted rules are `core` subagent memory and are injected into every writer prompt", "informs": ["rule_trial_apply", "memory_core_edit"] },
+    { "id": "d11", "since_version": 2, "source": "memory/lane-pilot-memory-audit-2026-10-03.md:22", "date": "2026-10-03", "quote": "owner: «память единая, на хабе; правила не должны копиться»", "informs": ["rule_trial_apply", "rule_always_on"] }
   ],
   "change_descriptor": {
     "note": "What a caller hands to classifyChange. Every field is optional except that a descriptor with no kind, files, settings or tables is unknown (night_proposes).",
@@ -57,12 +77,6 @@
       "match": [{ "kinds": ["harness_retire"], "attrs": { "lost_on_bench": true } }]
     },
     {
-      "id": "rule_trial_apply",
-      "description": "A writer or PM rule goes into force on trial (not always-on); the owner can revoke it and the trial retires it by itself.",
-      "examples": ["adoptRuleProposal puts a model-written rule on trial"],
-      "match": [{ "kinds": ["rule_adopt"], "attrs": { "trial": true, "always_on": false } }]
-    },
-    {
       "id": "green_change_ship",
       "description": "Deploy or release of a change whose full suite and post-deploy drill are green and that rolls back by itself.",
       "examples": ["bb-plugin-push of a green tree, then gh release"],
@@ -70,6 +84,12 @@
     }
   ],
   "night_proposes": [
+    {
+      "id": "rule_trial_apply",
+      "description": "Any rule goes into force, on trial or not. Version 1 let the night do this alone (a trial can be revoked). Version 2 proposes it: an accepted rule is core memory read by every writer (d10), core memory edits are proposals (memory_core_edit), the owner took back the first five trial rules himself (d7) and said rules must not pile up (d11). Revocability does not make the change his to skip.",
+      "examples": ["adoptRuleProposal puts a model-written rule on trial", "the owner accepts a rule from the Rules tab"],
+      "match": [{ "kinds": ["rule_adopt", "rule_accept"] }]
+    },
     {
       "id": "rule_always_on",
       "description": "A rule that skips the relevance pick and rides in every prompt.",
@@ -165,6 +185,65 @@
       "description": "A change outside this repository cannot be benched or reverted by the night.",
       "examples": ["edit a sibling plugin repository", "edit an absolute path"],
       "match": [{ "files_any": ["../**", "/**"] }]
+    }
+  ],
+  "standing_prohibitions_note": "Things the owner said must never be done. Each is owner_only, carries the words it comes from and the file/line, and may only grow (tests/policy/growth.test.ts). Sources are design-side material only: memory files and BB memory read as a whole, never an exam item. cited_by_v1_exam marks sources that v1 exam items also cite; those v1 items are in-sample for version 2. A change is recognised by the kinds/attrs it declares (descriptor_vocabulary).",
+  "standing_prohibitions": [
+    {
+      "id": "never_acp_opencode",
+      "description": "OpenCode v1 (acp-opencode) is removed from Lane Pilot; nothing brings it back.",
+      "examples": ["enable provider acp-opencode for a role", "write a setting under providers.acp-opencode"],
+      "match": [{ "attrs": { "provider": "acp-opencode" } }, { "attrs": { "provider_id": "acp-opencode" } }, { "settings_any": ["*acp-opencode*"] }, { "kinds": ["opencode_v1_enable"] }],
+      "source": { "type": "memory_file", "ref": "opencode-v2-migration.md", "line": 21, "date": "2026-10-21", "quote": "any new OpenCode code targets provider id `opencode2` and the v2 HTTP API/plugin SDK; never reintroduce acp-opencode paths.", "cited_by_v1_exam": true }
+    },
+    {
+      "id": "never_jev_routes_session_turns",
+      "description": "Jev routes only the subagents a lane session spawns, never the session's own turns or the owner's messages.",
+      "examples": ["route the owner's chat message through Jev before the model sees it"],
+      "match": [{ "kinds": ["jev_route_session_turn", "jev_route_owner_message"] }, { "attrs": { "jev_route_target": "session_turn" } }, { "attrs": { "jev_route_target": "owner_message" } }],
+      "source": { "type": "memory_file", "ref": "lane-markers-plain-sessions.md", "line": 13, "date": "2026-10-13", "quote": "Jev routes ONLY subagents a lane session spawns (Claude jev-router agent.spawn, Lane Stack 1.65.3) — never the session's own turns/owner messages", "cited_by_v1_exam": true }
+    },
+    {
+      "id": "never_lane_rules_on_plain_sessions",
+      "description": "Lane rules and hooks never touch sessions unrelated to Lane Pilot: a lane hook acts only behind a lane marker.",
+      "examples": ["add a machine-wide hook with no LANE_* marker gate"],
+      "match": [{ "kinds": ["lane_hook_ungated"] }, { "attrs": { "touches_plain_session": true } }],
+      "source": { "type": "memory_file", "ref": "lane-markers-plain-sessions.md", "line": 15, "date": "2026-10-13", "quote": "owner: lane rules must never touch sessions unrelated to Lane Pilot.", "cited_by_v1_exam": true }
+    },
+    {
+      "id": "never_fast_tier_default",
+      "description": "Claude is never in fast mode unless the owner turns it on in that chat; no default, role or spawn sets the fast service tier.",
+      "examples": ["set the project default service tier to fast", "spawn a helper thread with serviceTier fast"],
+      "match": [{ "attrs": { "service_tier": "fast" } }, { "attrs": { "default_service_tier": "fast" } }, { "kinds": ["fast_mode_enable"] }],
+      "source": { "type": "memory_file", "ref": "bb-fast-mode-remembered-default.md", "line": 15, "date": "2026-10-09", "quote": "the owner wants Claude never in fast mode unless he turns it on in that chat", "cited_by_v1_exam": true }
+    },
+    {
+      "id": "never_bb_connect_expose",
+      "description": "No bb connect expose and no getbb.app links; machines talk over WireGuard and the owner gets links on bb.vechkasov.pro.",
+      "examples": ["share a dev server with bb connect expose"],
+      "match": [{ "kinds": ["bb_connect_expose"] }, { "attrs": { "exposure": "getbb" } }],
+      "source": { "type": "memory_file", "ref": "bb-no-getbb-vpn-only.md", "line": 13, "date": "2026-10-02", "quote": "never suggest `bb connect expose` or getbb links; to share a dev server between machines use the machine's VPN address", "cited_by_v1_exam": false }
+    },
+    {
+      "id": "never_flat_access_ban",
+      "description": "Closing an access is never a flat ban or a bare «Refused»: every legitimate consumer keeps a working path and a refusal says what to ask the owner and how.",
+      "examples": ["ban agent reads of a secret with no grant path"],
+      "match": [{ "kinds": ["access_ban_add"] }, { "attrs": { "access_change": "flat_ban" } }, { "attrs": { "refusal_text": "bare" } }],
+      "source": { "type": "memory_file", "ref": "security-keep-legit-paths.md", "line": 13, "date": "2026-10-08", "quote": "Every legitimate consumer keeps a working path (owner grant once, plugin-caller pass, read classification) — never a flat ban.", "cited_by_v1_exam": false }
+    },
+    {
+      "id": "never_full_suite_per_parallel_agent",
+      "description": "Parallel agents and single tasks never run the full test suite; the coordinator runs it once per batch.",
+      "examples": ["a writer task whose check is the whole vitest suite", "six subagents each running the full suite"],
+      "match": [{ "kinds": ["full_suite_run"], "attrs": { "actor": "parallel_agent" } }, { "attrs": { "whole_suite_check_on_single_task": true } }],
+      "source": { "type": "memory_file", "ref": "one-full-suite-per-batch.md", "line": 11, "date": "2026-10-07", "quote": "When several agents/writers work in parallel, none of them runs the full test suite.", "cited_by_v1_exam": false }
+    },
+    {
+      "id": "never_block_env_catalog_reads",
+      "description": "Env Catalog get/set stays open to agents: the guard, shim and OpenCode lists never block it.",
+      "examples": ["add bb env-catalog get to the shell guard's blocked commands"],
+      "match": [{ "kinds": ["env_catalog_block"] }, { "attrs": { "blocks_env_catalog_get": true } }],
+      "source": { "type": "memory_file", "ref": "env-catalog-open-access.md", "line": 11, "date": "2026-10-08", "quote": "don't block `bb env-catalog get/set` in the LP guard/shim/OpenCode lists.", "cited_by_v1_exam": false }
     }
   ]
 }

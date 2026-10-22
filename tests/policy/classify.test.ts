@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { EXAM } from "../../src/rooms/policy/exam";
 import { POLICY, classifyChange, explainChange, globMatch, normalizePath, parsePolicy, type ChangeDescriptor } from "../../src/rooms/policy/policy";
 
 const proof = { bench_subset_passed: true, auto_revertible: true };
@@ -9,8 +10,9 @@ describe("classifyChange: one change from each list goes to its own tier", () =>
     ["docs regeneration", { kind: "docs_regenerate", files: ["docs/learning.md", "packages/kit/docs/index.md"] }, "night_decides"],
     ["memory note expiry", { kind: "memory_note_expire", attrs: { memory_tier: "note" } }, "night_decides"],
     ["retire a harness tree that lost on the bench", { kind: "harness_retire", attrs: { lost_on_bench: true } }, "night_decides"],
-    ["rule on trial", { kind: "rule_adopt", attrs: { trial: true, always_on: false } }, "night_decides"],
     ["green deploy", { kind: "deploy", attrs: { full_suite_green: true, drill_green: true, auto_revertible: true } }, "night_decides"],
+    ["rule on trial (an accepted rule is core memory: a proposal since version 2)", { kind: "rule_adopt", attrs: { trial: true, always_on: false } }, "night_proposes"],
+    ["rule the owner accepts", { kind: "rule_accept" }, "night_proposes"],
     ["always-on rule", { kind: "rule_adopt", attrs: { trial: true, always_on: true } }, "night_proposes"],
     ["default model for a role", { kind: "setting_change", settings: ["writer.model"] }, "night_proposes"],
     ["new pipeline stage", { kind: "stage_add" }, "night_proposes"],
@@ -102,6 +104,62 @@ describe("classifyChange: the rule", () => {
   });
 });
 
+describe("standing prohibitions: what the owner said never to do is his, whatever else the change is", () => {
+  const cases: Array<[string, string, ChangeDescriptor]> = [
+    ["never_acp_opencode", "provider attr", { kind: "setting_change", attrs: { provider: "acp-opencode" } }],
+    ["never_acp_opencode", "setting key", { settings: ["providers.acp-opencode.enabled"] }],
+    ["never_acp_opencode", "kind", { kind: "opencode_v1_enable" }],
+    ["never_jev_routes_session_turns", "kind", { kind: "jev_route_session_turn" }],
+    ["never_jev_routes_session_turns", "target attr", { attrs: { jev_route_target: "owner_message" } }],
+    ["never_lane_rules_on_plain_sessions", "ungated hook", { kind: "lane_hook_ungated" }],
+    ["never_fast_tier_default", "tier attr", { settings: ["writer.service_tier"], attrs: { service_tier: "fast" } }],
+    ["never_bb_connect_expose", "kind", { kind: "bb_connect_expose" }],
+    ["never_flat_access_ban", "bare refusal", { attrs: { refusal_text: "bare" } }],
+    ["never_full_suite_per_parallel_agent", "agent run", { kind: "full_suite_run", attrs: { actor: "parallel_agent" } }],
+    ["never_block_env_catalog_reads", "attr", { attrs: { blocks_env_catalog_get: true } }],
+  ];
+  it.each(cases)("%s (%s)", (id, _how, change) => {
+    const answer = explainChange(change);
+    expect(answer.tier).toBe("owner_only");
+    expect(answer.matched.map((hit) => hit.id)).toContain(id);
+  });
+
+  it("beats a night_decides proof on the same change", () => {
+    const repair: ChangeDescriptor = { kind: "lp_fault_repair", files: ["src/rooms/relay/server/relay.ts"], attrs: { ...proof, service_tier: "fast" } };
+    expect(classifyChange(repair)).toBe("owner_only");
+  });
+
+  it("the same vocabulary with another value is not a prohibition", () => {
+    expect(classifyChange({ attrs: { service_tier: "default" } })).toBe("night_proposes");
+    expect(classifyChange({ attrs: { provider: "opencode2" } })).toBe("night_proposes");
+    expect(classifyChange({ attrs: { jev_route_target: "subagent" } })).toBe("night_proposes");
+  });
+
+  it("every prohibition quotes its source, with a file and a line for memory files, and examples", () => {
+    expect(POLICY.standing_prohibitions.length).toBeGreaterThanOrEqual(8);
+    for (const entry of POLICY.standing_prohibitions) {
+      expect(entry.source.quote.length, entry.id).toBeGreaterThan(20);
+      expect(entry.examples.length, entry.id).toBeGreaterThan(0);
+      if (entry.source.type === "memory_file") expect(entry.source.line, entry.id).toBeGreaterThan(0);
+      expect(entry.id.startsWith("never_"), entry.id).toBe(true);
+    }
+  });
+
+  it("a prohibition whose quote overlaps an exam item says so (cited_by_v1_exam); the rest share no text with the exam", () => {
+    const quotes = EXAM.items.map((item) => item.quote.trim().toLowerCase());
+    for (const entry of POLICY.standing_prohibitions) {
+      const own = entry.source.quote.trim().toLowerCase();
+      const overlaps = quotes.some((quote) => quote.includes(own) || own.includes(quote));
+      if (overlaps) expect(entry.source.cited_by_v1_exam, `${entry.id} shares text with an exam item but is not marked cited_by_v1_exam`).toBe(true);
+    }
+  });
+
+  it("cited_by_v1_exam tells the truth: it is set exactly for the files a v1 exam item cites", () => {
+    const cited = new Set(EXAM.items.filter((item) => item.source.type === "memory").map((item) => item.source.ref));
+    for (const entry of POLICY.standing_prohibitions) if (entry.source.type === "memory_file") expect(entry.source.cited_by_v1_exam, entry.id).toBe(cited.has(entry.source.ref));
+  });
+});
+
 describe("globs and paths", () => {
   it("* stays in a segment, ** crosses them, ?  is one character", () => {
     expect(globMatch("docs/*.md", "docs/a.md")).toBe(true);
@@ -126,7 +184,7 @@ describe("globs and paths", () => {
 
 describe("policy file shape", () => {
   it("every entry id is unique and every design item informs a real entry", () => {
-    const ids = new Set([...POLICY.night_decides, ...POLICY.night_proposes, ...POLICY.owner_only].map((entry) => entry.id));
+    const ids = new Set([...POLICY.night_decides, ...POLICY.night_proposes, ...POLICY.owner_only, ...POLICY.standing_prohibitions].map((entry) => entry.id));
     for (const item of POLICY.design_items) for (const id of item.informs) expect(ids.has(id), `${item.id} informs unknown entry ${id}`).toBe(true);
   });
 
@@ -141,8 +199,8 @@ describe("policy file shape", () => {
 
   it("the brief's lists are all present", () => {
     const has = (list: Array<{ id: string }>, ...ids: string[]) => ids.every((id) => list.some((entry) => entry.id === id));
-    expect(has(POLICY.night_decides, "lp_fault_repair", "docs_regeneration", "memory_note_expiry", "harness_retire_lost", "rule_trial_apply")).toBe(true);
-    expect(has(POLICY.night_proposes, "rule_always_on", "default_model_change", "new_pipeline_stage", "graph_edit")).toBe(true);
+    expect(has(POLICY.night_decides, "lp_fault_repair", "docs_regeneration", "memory_note_expiry", "harness_retire_lost")).toBe(true);
+    expect(has(POLICY.night_proposes, "rule_trial_apply", "rule_always_on", "default_model_change", "new_pipeline_stage", "graph_edit")).toBe(true);
     expect(has(POLICY.owner_only, "spending_caps", "secrets_env_catalog", "irreversible_data", "judge_gates", "judge_bench_set", "judge_thresholds", "policy_itself", "project_deletion")).toBe(true);
   });
 });
