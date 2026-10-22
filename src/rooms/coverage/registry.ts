@@ -101,6 +101,7 @@ export const COVERAGE: readonly CoverageEntry[] = [
   { kind: "room", ids: ["pilot"], tests: ["tests/pilot/pilot.test.ts", "tests/run-pause-start.test.ts"], reason: "takes effect only for three sibling tasks of one area and kind in a run; the drill's tasks have no area" },
   { kind: "room", ids: ["memory-tiers"], tests: ["tests/memory-tiers/tiers.test.ts"], reason: "runs inside the PM's memory query; the memory probe drill covers the active paths, the cold tier needs notes unused for 90 days" },
   { kind: "room", ids: ["atlas"], tests: ["tests/atlas.test.ts"], reason: "a generated document; the test fails when docs/atlas.md no longer matches the registries" },
+  { kind: "room", ids: ["design-eval"], tests: ["tests/design-eval/design-eval.test.ts"], reason: "a script a person or the night runs on a page (scripts/lp-design-eval.ts); checked live on the self-improvement page" },
   { kind: "room", ids: ["stage-return"], tests: ["tests/stage-return/logic.test.ts", "tests/stage-return/return.test.ts", "tests/stage-return/spawn-brief.test.ts", "tests/stage-return-ui.test.tsx"], reason: "a person sends a task back to an earlier stage; the drill has no owner to do it, checked live on the sandbox project" },
   { kind: "room", ids: ["rollback"], tests: ["tests/rollback.test.ts"], reason: "no drill merges a change and reverts it on the sandbox" },
   { kind: "room", ids: ["schedule"], tests: ["tests/schedule/scheduler.test.ts"], reason: "scheduled errands tick on their own clock; the drill starts none" },
