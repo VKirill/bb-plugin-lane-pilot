@@ -163,6 +163,8 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
       "plan_critique.enabled": false, "code_critique.enabled": false, "browser_qa.enabled": false,
       ...(input.settings ?? {}),
     };
+    // A project that sets code_critique.enabled itself keeps its choice, so the `false` above would make an arm's critic.code.default_for_risk dead letter (quality-mode.ts): leave it unset for such an arm.
+    if (input.settings && "critic.code.default_for_risk" in input.settings && !("code_critique.enabled" in input.settings)) delete settings["code_critique.enabled"];
     await deps.pipeline.configure(project, { settings, harness: input.harness ?? "none", sourceProjectId: list[0]!.projectId });
     let lp: { pmThreadId: string; runId: string } | null = null;
     try {

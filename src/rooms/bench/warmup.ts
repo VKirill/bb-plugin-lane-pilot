@@ -29,10 +29,14 @@ const MAX_PATCH_BYTES = 2_000_000;
 
 /**
  * The `node_modules` folders of the live checkout, put into the clone so the checks find their dependencies. On macOS a copy-on-write clone
- * (`cp -Rc`, APFS: no extra disk, and no symlink that leaves the checkout, which Turbopack refuses); elsewhere a symlink, the way the worktree mirror links them.
+ * (`cp -Rc`, APFS: no extra disk, and no symlink that leaves the checkout, which Turbopack refuses); elsewhere a plain copy (`cp -a`). A symlink to the live
+ * folder is wrong in a monorepo: its `node_modules/@scope/pkg -> ../../packages/pkg` links resolve from the real path, so the clone's checks would run
+ * against the LIVE packages (and checks could write into the live node_modules). The gitignored `dist` of the workspace packages is copied the same way.
  */
 export const linkDependenciesCommand = (repo: string, dir: string): string =>
-  `cd ${q(repo)} && find . -maxdepth 4 -name node_modules -type d -prune -not -path '*/node_modules/*' | while read p; do t=${q(dir)}/"$p"; if [ ! -e "$t" ] && [ ! -L "$t" ]; then mkdir -p "$(dirname "$t")" && if [ "$(uname)" = Darwin ]; then cp -Rc ${q(repo)}/"$p" "$t"; else ln -s ${q(repo)}/"$p" "$t"; fi; fi; done`;
+  `cd ${q(repo)} && find . -maxdepth 4 -name node_modules -type d -prune -not -path '*/node_modules/*' | while read p; do t=${q(dir)}/"$p"; if [ ! -e "$t" ] && [ ! -L "$t" ]; then mkdir -p "$(dirname "$t")" && if [ "$(uname)" = Darwin ]; then cp -Rc ${q(repo)}/"$p" "$t"; else cp -a ${q(repo)}/"$p" "$t"; fi; fi; done`
+  // The built outputs of the workspace packages (gitignored `dist`, ~40 MB in SelfyStudio) are not in a clone: `@scope/pkg` resolves to them. Taken from the live checkout (Linux only).
+  + ` && { [ "$(uname)" = Darwin ] || { cd ${q(repo)} && find . -maxdepth 4 -name dist -type d -prune -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | while read p; do t=${q(dir)}/"$p"; if [ ! -e "$t" ] && git check-ignore -q "$p"; then mkdir -p "$(dirname "$t")" && cp -a ${q(repo)}/"$p" "$t"; fi; done; }; }`;
 
 async function runChecks(host: HostPort, hostId: string, candidate: Candidate, dir: string, options: WarmOptions): Promise<WarmRecord["base"]> {
   const out: WarmRecord["base"] = [];
@@ -45,10 +49,12 @@ async function runChecks(host: HostPort, hostId: string, candidate: Candidate, d
   return out;
 }
 
-/** The commit that merged the accepted attempt: the attempt's trailer in the message, else the task id at the start of the subject. */
+/** The commit that merged the accepted attempt: the attempt's trailer in the message, else the task id at the start of the subject (or after «Merge writer work: »). */
 export async function findSolutionCommit(host: HostPort, candidate: Candidate): Promise<{ commit: string } | { reason: WarmReason; detail: string }> {
   const find = async (grep: string, fixed: boolean) => {
-    const result = await host.run(candidate.hostId, candidate.repoPath, `git log --all --format='%H %P' ${fixed ? "-F" : ""} --grep=${q(grep)}`, 60);
+    // SelfyStudio's merges read «Merge writer work: <task id>: …»; its attempt branches hold the unmerged «<task id>: …» commits (three siblings are «ambiguous» without the merge).
+    const greps = fixed ? [grep] : [grep, grep.replace(/^\^/, "^Merge writer work: ")];
+    const result = await host.run(candidate.hostId, candidate.repoPath, `git log --all --format='%H %P' ${fixed ? "-F" : ""} ${greps.map((item) => `--grep=${q(item)}`).join(" ")}`, 60);
     if (result.exitCode !== 0) return { error: tail(result) };
     return { rows: result.stdout.split("\n").map((line) => line.trim().split(/\s+/)).filter((parts) => parts[0] && /^[0-9a-f]{40}$/.test(parts[0])) };
   };
