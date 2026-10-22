@@ -354,7 +354,8 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
         return {hostId:config.hostId,entries:paths.map((path)=>{
           const rel=path.startsWith(`${config.writerWorkspacePath}/`) ? path.slice(config.writerWorkspacePath.length+1) : path;
           const extra=extraListPaths.find((row)=>row.path===rel);
-          return {path,kind:extra?.kind ?? "file",sha256:null,symlinkTarget:null};
+          // note.txt is the file the task creates: it is missing on the base (a «test -f» on it is red before the work).
+          return {path,kind:extra?.kind ?? (rel==="note.txt" ? "missing" : "file"),sha256:null,symlinkTarget:null};
         })};
       }
       if(call.method==="gitOwnershipBase") {
