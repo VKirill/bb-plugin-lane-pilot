@@ -7,6 +7,10 @@ export {
   type WriterStatRow,
 } from "./routing-stats";
 export { collectLessonSources, lessonCandidates, type LessonSource } from "./lessons";
+export {
+  classifyRuleForm, classifyUnformed, FORM_MIN_SCORE, listRuleForms, markMechanized, ruleMechanismMigrations, setRuleForm,
+  type FormConfidence, type FormVerdict, type MechanismKind, type RuleFormRow,
+} from "./rule-forms";
 export { parseGoldenCases, runGoldenEval, type GoldenCase, type GoldenReport } from "./golden";
 export {
   acceptedRules,

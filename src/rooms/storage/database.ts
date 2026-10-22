@@ -3,7 +3,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import { FREE_CLASSES, failureClass, isWaitingSecret, isWriterSilent } from "../runs";
 import { handoffMigrations } from "@lane-pilot/handoff";
 import { councilMigrations } from "@lane-pilot/council";
-import { ruleAudienceMigrations, ruleFormMigrations, ruleMigrations, ruleTrialMigrations, triageMigrations } from "@lane-pilot/run-insights";
+import { ruleAudienceMigrations, ruleFormMigrations, ruleMechanismMigrations, ruleMigrations, ruleTrialMigrations, triageMigrations } from "@lane-pilot/run-insights";
 import type Database from "better-sqlite3";
 import type { PrototypeConfig } from "../contracts";
 import type { StageId, StageState } from "../tasks";
@@ -356,6 +356,8 @@ export const migrations = [
   `CREATE INDEX lane_pilot_memory_probe_at ON lane_pilot_memory_probe(at)`,
   // SMA wall 4: the base, the merge and the changed files of every attempt, and the receipts of reverify / revert (src/rooms/rollback).
   ...rollbackMigrations,
+  // SMA block 6 (P2-6): why a rule has its form, the mechanism that enforces it, and the mechanism proposals waiting for the night loop (src/rooms/rule-forms).
+  ...ruleMechanismMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

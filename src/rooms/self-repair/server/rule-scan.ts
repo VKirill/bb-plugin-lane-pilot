@@ -1,6 +1,6 @@
 import { projectRoleField } from "../../runs/server";
 import {
-  codeVerdict, decideRuleTrial, scopeApplies, getRuleProposal, listRuleProposals, logRuleEvent, ruleTrialStats, saveTriage, setRuleTrial, splitRejectedPaths, triageQuestions, triageState, triageSummary, untriagedAttempts, upsertModelProposal, writerGroups,
+  classifyUnformed, codeVerdict, decideRuleTrial, scopeApplies, getRuleProposal, listRuleProposals, logRuleEvent, ruleTrialStats, saveTriage, setRuleTrial, splitRejectedPaths, triageQuestions, triageState, triageSummary, untriagedAttempts, upsertModelProposal, writerGroups,
   type FailedAttempt, type RuleEvidence, type TriageSummary, type WriterGroup,
 } from "@lane-pilot/run-insights";
 import { observeStageChild } from "@lane-pilot/thread-observe";
@@ -434,6 +434,8 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
       const locale = stored === "ru" || stored === "en" ? stored : preferred === "ru" ? "ru" : "en";
       await startScan(projectId, locale);
       for (let i = 0; i < 180 && running.has(projectId) && !ctx.isDisposed() && !signal?.aborted; i++) await new Promise((resolve) => setTimeout(resolve, 10_000));
+      // SMA block 6: a rule the night just proposed or adopted gets its form (check, hook, skill, memory, always) from the heuristics.
+      try { classifyUnformed(db, projectId); } catch (cause) { bb.log.info(`Lane Pilot rule forms for ${projectId}: ${cause instanceof Error ? cause.message : String(cause)}`); }
     }
   }, { timeoutMs: 6 * 3_600_000 });
 

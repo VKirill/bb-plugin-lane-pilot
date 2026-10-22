@@ -1,0 +1,828 @@
+[
+ {
+  "id": "rule_025365b04d6dcecf",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "Never wake another BB thread (bb thread tell, relay ask, notices) with an informational note that needs no action; every message to a chat idle for hours forces a full-context cache rewrite. Message another chat only when it must act now; otherwise put the note in your own report.",
+  "gold": "hook"
+ },
+ {
+  "id": "rule_02cffc3e73b5b23e",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "In cakekeeper, when a post-merge screens/e2e check fails on main, re-run it yourself with explicit free ports (CK_SCREENS_API_PORT/CK_SCREENS_WEB_PORT, CK_SCREENS_OUT under /tmp); if it passes, cancel the -mainfix task instead of letting a writer hunt a port race.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_044200c8b7dfc263",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Never put paths outside the project (../other-plugin/...) anywhere in a task contract, not even in read_first or never_touch: quote the needed facts from the sibling repo in the plan instead. A rejected contract with such a path stays in the run scope and blocks every later task of the run.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_06251836f90fc33c",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "Do not put `npm run check:translations` (packages/i18n) in a SelfyStudio task's verification: it fails on ~158 pre-existing missing keys (menu, bot, purpose, duo.whoSecond). For i18n copy tasks check named tests (packages/i18n src/__tests__/no-collisions, icu-messages, module-loading) plus a key-set-unchanged-vs-HEAD script.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_0674462f58684708",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "When main is merged into a task worktree, resolve conflicts only inside the task's owns_paths and keep main's version of every other file; after the merge, `git diff --name-status <main-parent> HEAD` must list only owns_paths files. PM: before deploying, check each new merge commit with that diff and restore any file deleted or reverted outside the task's owns_paths.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_10eac3e5987bacb6",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "When the owner performs a step of a live test (presses Start, pays, opens a link), watch the outcome yourself right away (order status in DB, queue, logs) and report or fix it before he has to ask; never leave him waiting for a result you can check.",
+  "gold": "always"
+ },
+ {
+  "id": "rule_10f4ff40f513f062",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "In SelfyStudio, do not start scripts/deploy.sh while the post-merge integration gate (`npm test -- --force`) is still running: the Docker build pushes load to 10-13 and the gate then fails on ~30 unrelated apps/api tests that pass in isolation. Wait for the gate result first, or when it fails during a deploy, rerun a sample of the failing files in isolation before dispatching any fix.",
+  "gold": "hook"
+ },
+ {
+  "id": "rule_11558a021b23ab5a",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Chain parallel tasks that edit the same i18n keys or shared UI file (ui/i18n.ts, ui/keys.tsx) with depends_on instead of running them side by side.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_124248c8368be6a8",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "In every SelfyStudio writer contract that edits apps/marketing or apps/cabinet, add `npm run lint` with cwd set to that package and `npx vitest run no-hardcoded-ui-copy.test.ts` with cwd tests/architecture to verification; the standard release gate runs both and one error blocks every deploy.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_126a3647f5e8193a",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Never end a turn by asking the owner whether to fix a technical defect you found (red tests, a blocked deploy gate, a Lane Pilot bug): diagnose it to a verified root cause and dispatch the fix in the same turn. Ask only for money, irreversible data, secrets or a product decision.",
+  "gold": "always"
+ },
+ {
+  "id": "rule_13c0d82240d037cc",
+  "state": "accepted",
+  "occurrences": 4,
+  "rule": "Подключай секции поздравительных открыток через разрешённый `CardPageRenderer.vue` и проверяй порядок в разрешённых тестах `greeting-cards/__tests__/`, не меняя `CardContentBlocks.vue`.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_14170207f8ec9cc9",
+  "state": "accepted",
+  "occurrences": 4,
+  "rule": "Перед ответом сверяй все изменённые пути с `owns_paths` и `never_touch`; если нужный путь не разрешён, не меняй его и остановись с `NEEDS_HUMAN`, указав блокирующий путь.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_19874543d74d1534",
+  "state": "proposed",
+  "occurrences": 2,
+  "rule": "Перед изменением каждого файла в SelfyStudio сверяй его путь с `owns_paths` и `never_touch` текущего задания; если нужный файл не разрешён, остановись и запроси исправление контракта до правок.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_1a13871bdc9b0fa7",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "When a feature adds or uses a new helper on the native-step helpers object, wire it in host/plugin.ts at every place the helpers are built and add a test against the real host wiring, not only a stubbed helper.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_23a721cab7cc7b61",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "In Content Factory db/store.ts add a new migration ONLY as the last element of MIGRATIONS, even when it alters a table defined earlier; never insert next to related migrations. Then append it to db/migrations.lock.json.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_2452b287d8f67fe4",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "Pick SelfyStudio login providers by visitor IP country, never by browser language: CIS (RU, BY, KZ, UZ, KG, TJ, AM, AZ, MD, TM) shows Telegram, VK ID, Yandex ID, email; outside the CIS shows Telegram, Google, email; Google never for RU. Every ported prototype button must lead to the real target; verify login buttons by following them, not by screenshots.",
+  "gold": "memory"
+ },
+ {
+  "id": "rule_27b30f49626db06f",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "On SelfyStudio layout fixes, change only what the owner pointed at; do not add your own layout tweaks (spacing, distribution) to the task. Ask or mention them as an option instead.",
+  "gold": "always"
+ },
+ {
+  "id": "rule_28c5b0b3baf88a5d",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "When starting a SelfyStudio scenario run with an admin-session.sh session, keep that session alive until the run finishes: the runner calls admin APIs on behalf of the starter (e.g. seed_photos → GET /v1/admin/scenarios/meta-prompts). Revoke the session only after the run ends. Evidence: 2026-10-13 run 4147ab2b failed at seed_photos with 401 'Admin session is inactive or revoked' because the session was revoked right after start.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_2c26f8802ec08b2d",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "Before running any content seed script with --apply against production, read the dry-run's final values of title/h1/description for every record (not just changed key names) and back up the current records; after apply, curl each touched public page and check its <title> at once.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_2e50687b537689c6",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "In bb-plugin-lane-pilot, never use the full vitest suite as a task's verification command: list the test files covering the changed code and run that set outside the sandbox yourself before dispatch. Several suite tests (tests/verification/**, tests/scenarios.test.ts S5) fail only inside Lane Pilot's Seatbelt check.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_2f5601292a484306",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "When deploying SelfyStudio from a temp worktree, symlink the main checkout's node_modules and .env into it and run `npm -w packages/application run build` before scripts/deploy.sh when scenario-runner is affected; the scenario-engine preflight needs packages/application/dist/scenario-agents and fails without it. Run as root, `claude` CLI preflight fails, so pass SCENARIO_ENGINE_REQUIRED_CLIS='opencode'.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_2fd8ce25ffd615c8",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "On unexplained TS2305, missing-export or 'not a constructor' errors in a worktree, rebuild package dists first (`npm -w <pkg> run build`, bypassing the turbo cache) and re-check the main baseline before touching code; rebuild dists after merging new package exports.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_31c2be715e4c6705",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "Treat items the SelfyStudio owner names with «например» as illustrations, not a spec: before building a catalog or page around them, propose a varied set yourself and ship visual examples first; for showcase content do not gate on keyword demand.",
+  "gold": "always"
+ },
+ {
+  "id": "rule_350c7344894d201c",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "Every section on SelfyStudio marketing pages uses the canonical .section__head stack (eyebrow, then H2, then subtitle, left-aligned in the container); never split the eyebrow/subtitle and the H2 into separate columns, and check new or extended blocks against the other heads on the same page before acceptance.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_361e029920f23b0b",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "For the SelfyStudio site v2 port, do NOT restyle or extend the old marketing components: archive the old design untouched as its own complete design, and integrate the prototype (.agents/prototypes/site/home-v2/visual: tokens, base/shared CSS, per-block CSS, JS, markup) from scratch as a separate design in the Nuxt engine, one prototype block = one new component, so the site has two complete designs side by side. This replaces the earlier rule «compose pages from the existing native marketing components».",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_3905786a97bef087",
+  "state": "accepted",
+  "occurrences": 2,
+  "rule": "For D3 lint probe tasks, rewrite `notes/lpv/d3.md` in the current worktree with the requested `D3` line, even if the file already exists, then verify it before answering.",
+  "gold": "memory"
+ },
+ {
+  "id": "rule_39c0c91a6966301f",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "In every apps/marketing writer contract add `npm run lint` (eslint + stylelint, cwd apps/marketing) and `npx vitest run tests/` (cwd apps/marketing: fitness and source-contract tests) to verification; scoped vitest dirs alone let lint errors, fitness regressions and tests/*.test.ts contract breaks reach main.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_3a239fbb64f22051",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "When a SelfyStudio change adds a request field that the site sends to the API, list every hop it passes (apps/site → Angie → apps/marketing server/api proxy → apps/api) and update each proxy that rebuilds the body with an allowlist; prove it with one real request whose DB row or log shows the field arrived.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_3db503c56e7772ac",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "When the integration gate (`npm test -- --force`) fails across many unrelated workspaces that no merged task touched, first rerun each failing workspace's vitest in isolation; if they pass, treat the failure as host-load flakiness (many concurrent writers) and do not dispatch fix tasks. Evidence: 2026-10-12 gate failed on ~50 tests in bot-thin, image-providers, cache-redis, event-bus-bullmq, worker and cabinet with load avg 8; all of them passed in isolation.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_4049e375028a55c0",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Add `npx vitest run` with cwd tests/architecture (the whole release-gate architecture suite, about a minute) to the verification of every SelfyStudio writer task that edits apps/* or packages/* source; the gate checks file-size budgets, dead components and NO-CYRILLIC, and one miss blocks every deploy. Evidence: 2026-10-12, three gate breaks in a row: ArticleBody baseline, seo-clusters size and dead components, localization/service.ts 420 LOC.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_45738664be589f74",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Before launching a new SelfyStudio locale prefix (/es/, /de/, …), delete its `location = /xx { return 404; }` and `location ^~ /xx/ { return 404; }` lines in /etc/angie/sites-enabled/selfystudio.art.conf (backup, angie -t, systemctl reload angie); the edge 404s the prefix before the marketing app sees it.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_45f0fd27d5d5c98c",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "In every SelfyStudio task contract that adds, splits or removes Vue components (admin, marketing, cabinet), add a verification step `npx vitest run admin-vue-page-size.test.ts nuxt-dead-components.test.ts marketing-i18n-completeness.test.ts` with cwd tests/architecture: the release gate runs them and blocks the deploy. Evidence: admin-seo-clusters-two-pane (fb68b9775e, 2026-10-12) passed its own checks but failed the gate on file size and dead components.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_472d3700982e52ba",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Give each task only checks focused on its change (typecheck plus tests related to the touched files, e.g. `npx vitest related <files> --run`), never the whole test suite; the full suite runs once per batch as the integration gate, and its failures go back to the writer whose change caused them.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_478cca84b0c32023",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "For treba-sites subfolder projects (templates/blog etc.), do not dispatch writer tasks with file expected_outputs until Lane Pilot 0.1.164 is deployed; keep contract paths relative to the project folder.",
+  "gold": "memory"
+ },
+ {
+  "id": "rule_4834e9fb0545d57c",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "In bb-plugin-lane-pilot, exclude 'tests/verification/sandbox*.test.ts' (plus tests/guard*.test.ts and tests/native-session-hooks.test.ts) from any full-suite verification command: they cannot nest sandbox-exec inside Lane Pilot's Seatbelt check and always fail there.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_4a1909db5fa5f6a0",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "When a task contract owns a source file or glob (e.g. apps/marketing/app/composables/useHreflang.ts), also put its colocated tests (e.g. apps/marketing/app/composables/__tests__/useHreflang*) in owns_paths, or in never_touch if they must not change.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_4a562df8c2ef0938",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "In cakekeeper UI work, take ready shadcn/ui (Base UI flavour) components and blocks via the shadcn CLI into packages/ui-web and theme them with tokens; never hand-write a primitive, picker, sidebar, table or dialog that shadcn already provides.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_4c5289f87c23a014",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "In muse, the sandbox HOME differs, so write every Rust verification command as `RUSTUP_HOME=/home/ubuntu/.rustup CARGO_HOME=/home/ubuntu/.cargo RUSTUP_TOOLCHAIN=stable /home/ubuntu/.cargo/bin/cargo ...` (cwd rust-sync); a PATH prefix alone fails with 'rustup could not choose a version'. Evidence: qtickets-rebind-2, 2026-10-09.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_507b2caf1550bb0a",
+  "state": "accepted",
+  "occurrences": 3,
+  "rule": "For one-note drill tasks, create only the named drill file and remove any changes to other paths before answering.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_50f5d9f9c83d6154",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Before resending a blocked task, check the dispatch warnings: if it now waits on an open task (owns_paths overlap) that itself depends on it, cancel that downstream gate task and dispatch it again after the resend, so the queue cannot deadlock.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_5243e39133bcf89b",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "In cakekeeper, use YooKassa for subscription payments (env YOOKASSA_SHOP_ID, YOOKASSA_SECRET_KEY; test store) and never add CloudPayments code or env names, even though site/spec/STACK.md still names CloudPayments.",
+  "gold": "memory"
+ },
+ {
+  "id": "rule_5322146d348b7ee9",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "When narrowing a role's context (ROLE_PROFILES, helper.access), never strip the code-intelligence tools a code-working role needs: writers, repair writers and the code critic keep the gitnexus MCP server; cut only catalogs, skills and servers unrelated to the job.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_535c6bc40e250be4",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "When setting a model for Content Factory scenario steps or helper runs, also set serviceTier \"default\" explicitly; the owner does not want fast mode used.",
+  "gold": "memory"
+ },
+ {
+  "id": "rule_54f2e4f84ea84b76",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "In cakekeeper Playwright runs inside Lane Pilot checks, launch the default chromium headless shell with PLAYWRIGHT_BROWSERS_PATH under ${TMPDIR:-/tmp} (as the apps/web `screens` script does); never use channel 'chromium', full Chrome or a persistent userDataDir, which fail with 'Failed to create a ProcessSingleton' in the sandbox.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_54f561433eccb1ab",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "In a verification command, name a test folder with a trailing slash (`npx vitest run tests/server/`), never a bare prefix: vitest filters are substrings, so `tests/server` also runs tests/server-reconcile.test.ts and other files the task does not own.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_5828ea70eb6210b1",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "When a SelfyStudio release includes a Prisma migration, apply it with db-migrate.sh deploy, then run `sudo -n env DATABASE_URL=<compose PG at 127.0.0.1:5436> node scripts/collect-release-evidence.mjs migration --classification rollback-safe --receipt <dir>/<id>-migration.json --evidence <dir>/<id>-migration.evidence.json` with both files in one root:root 750 directory (files root 0400), and pass --migration-receipt to deploy.sh within the 1 h expiry.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_5948b105a0cb9156",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "In SelfyStudio tasks that touch payment or billing code (apps/cabinet/app/features/billing, payment providers), add `npx vitest run payment-provider-registry.test.ts` (cwd tests/architecture) to verification, and type provider ids with the shared Provider type (payment-chips.ts / contracts PaymentProvider), never a hand-written union of 3+ provider ids.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_5948fa665b2dff5e",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "For SelfyStudio Nuxt apps, never read backend URLs from process.env in nuxt.config (runtimeConfig defaults or routeRules proxies): the Docker build has no such env, so the value is baked as the localhost default. Read them at runtime (runtimeConfig overridden by NUXT_* env, or a server route), and verify a build made with NO backend env, started with only NUXT_* vars, before accepting.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_5a8ec924de33b8ae",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "In vue-i18n locale JSON (marketing, cabinet, admin) never write a bare @, | or unbalanced { } in a message; write a literal at-sign as {'@'} (e.g. \"{'@'}SelfyStudioBot\"), otherwise SSR fails with 500 and message \"10\" (INVALID_LINKED_FORMAT).",
+  "gold": "check"
+ },
+ {
+  "id": "rule_5f9d8d7fef5f043e",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "When a SelfyStudio release has a Prisma migration, apply it with db-migrate.sh deploy, then collect the receipt in the deploy worktree: sudo -n env DATABASE_URL=<.env URL with @postgres:5432 → 127.0.0.1:<compose postgres port>> node scripts/collect-release-evidence.mjs migration --classification rollback-safe --receipt /var/lib/selfystudio-release-evidence/<id>-migration.json --evidence …evidence.json (parent dir root-owned 0750), and pass --migration-receipt to deploy.sh.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_601d475902ae9585",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "In bb-plugin-lane-pilot contracts, never use a bare `npx vitest run` as verification: Lane Pilot's sandboxed check cannot run tests/verification/**, tests/scenarios.test.ts, tests/pipeline.test.ts or tests/acceptance-v2.test.ts. Use `npx vitest run --exclude 'tests/verification/**' --exclude tests/scenarios.test.ts --exclude tests/pipeline.test.ts --exclude tests/acceptance-v2.test.ts` and run those excluded files yourself outside the sandbox before release.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_6404a1f8769ba329",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "В тестах `apps/scenario-runner/src/__tests__/executors/cli-agent/` назначай каждому harness отдельный sandbox root вместо общей директории `task-3` и перед ответом дважды запускай затронутые Vitest-тесты.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_66a0c9a1b8c21c85",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "In SelfyStudio writer contracts, name the release-gate architecture tests that match the task's scope (cwd tests/architecture): api-route-size-budget + large-file-size-budget for apps/api, admin-vue-page-size + nuxt-dead-components for Vue, marketing-i18n-completeness for marketing, migration-safety for migrations. Contract lint refuses a bare `npx vitest run` because it is the whole suite. Evidence: three gate breaks on 2026-10-12 (ArticleBody baseline, seo-clusters size, localization/service.ts 420 LOC).",
+  "gold": "check"
+ },
+ {
+  "id": "rule_69c673e23cdfce25",
+  "state": "proposed",
+  "occurrences": 2,
+  "rule": "Before answering a cakekeeper task, compare its changed paths with the task’s owns_paths and restore any generated screenshots or project documentation outside those paths.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_6aee33e73d12859f",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Deploy SelfyStudio only from a worktree of current origin/main HEAD; before deploying, check that the active release receipt commit is an ancestor of HEAD (git merge-base --is-ancestor). If it is not, plan with --base set to their merge-base so every rolled-back service is redeployed. Never deploy a task commit that is not on main.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_6c74d7fadf652f42",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "In cakekeeper web code, never call secure-context-only browser APIs directly (crypto.randomUUID, navigator.clipboard, crypto.subtle): the owner's stack runs over plain http on 10.8.0.2, where they are undefined; use the apps/web/src/lib helpers (randomId, copyText) with fallbacks.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_6f3518f6ddc1b4de",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "The owner does not take part in editorial decisions of Content Factory: design and run scenarios so the AI chief editor decides; never route an editor question to the owner or wait on him for it.",
+  "gold": "memory"
+ },
+ {
+  "id": "rule_700ec21389d210f3",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "Before reporting a new SelfyStudio paid flow as working, run one real end-to-end order on production through the worker and the bot (a no-payment operator path if needed) and take full-page screenshots of every new page at 375 and 1280 yourself (playwright with executablePath /usr/bin/google-chrome); unit tests, curl 200s and a failed browser_qa are not proof.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_706e305ea7748982",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Write SelfyStudio migration release evidence (receipt + raw evidence) to /etc/selfystudio/receipts/, never inside the repo or a deploy worktree: deploy.sh's verification chowns root files in the checkout back to ubuntu, and the receipt then fails 'migration receipt parent directory is not protected'.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_7474931e96b807c0",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "In cakekeeper, a screens check run in the main checkout (post-merge check) rewrites PNGs in site/cakekeeper/docs/screens and blocks the next merge; when Lane Pilot reports uncommitted docs/screens/*.png in main and no chat edited them, restore them with git checkout -- <files>.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_74fb32fc64f08dfa",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Before dispatch, check every file named in owns_paths/expected_outputs exists (ls) unless the task creates it; use real names such as ui/settings-panel.tsx.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_78b0b1240ea31f44",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "Before putting a tests/architecture gate test into a writer task's verification, run it on current main; if it already fails for files outside the task's owns_paths, leave it out of that task (the integration gate still runs it) and dispatch a separate fix, because the writer cannot make it green and the task blocks with needs_human.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_7ec81ab04d1ba896",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Every lane_pilot_dispatch_writer task must carry display_title (Russian, ≤60 chars, what changes for a person) and kind (feature|fix|check|docs|refactor|research|chore); contract lint rejects tasks without them even though the bridge schema does not list these fields.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_7f4441d0379cc7f4",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Do not design automatic refunds into new SelfyStudio paid products unless the owner asks; failed generations are retried until the order is complete and only an operator refunds.",
+  "gold": "memory"
+ },
+ {
+  "id": "rule_82f9aa8a0248bc84",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "A SelfyStudio landing page gets at most 10 unique newly generated frames, reused across its blocks; «before»/reference images are real internet frames (Pinterest) re-hosted on our CDN. Never plan one generation per image slot.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_893b2d6d819adb6b",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Never hand the owner shell commands to paste; when the guard blocks a repo housekeeping step the owner asked for (.gitignore, git rm --cached, commit, push), run it via lane_pilot_errand with authorized: true.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_8c6e072446248489",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "In cakekeeper contracts: a task that adds files under packages/ui-web/src/registry/entries/ must also own packages/ui-web/src/registry/index.ts. A task whose check runs `screens --grep @<group>` must own all of docs/screens/<group>/, or must set CK_SCREENS_OUT to a temp dir and not commit screens.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_90129fb0927be3b8",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "When a task adds a new compose service to SelfyStudio, the same task must add it to release-services classification, a functional_ready probe and smoke URL in scripts/deploy.sh, and classify every new root file; before the first release create the container once (docker compose build <svc> && up -d --no-deps --no-build <svc>) because deploy.sh refuses services without a running container and only bootstraps agent-egress/scenario-runner.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_908e27f38e631fa7",
+  "state": "accepted",
+  "occurrences": 2,
+  "rule": "When an owns_paths check flags a path outside the current task’s owns_paths, do not delete or rewrite that path; keep changes within your listed paths and report the check result.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_937a84be5254f070",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "In apps/marketing locale JSON escape vue-i18n special characters in plain text: write `{'@'}` for @ and `{'|'}` for | (a raw @ breaks message compile and the page returns 500; a raw | is read as a plural separator and cuts the text). Use | only for real plural forms.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_945b705b0730694c",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Never read `$?` after a pipe (`cmd | tail` always exits 0): redirect output to a file and check the real exit code, use pipefail or run the command bare; test grep gates with `rg -q`, not through head.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_95b3dd5f107625f3",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "In Content Factory do not require a package.json version bump in task contracts; if a task must bump the version, also put tests/publish-panel.test.ts in owns_paths because that test pins the version string.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_95f53b0b5e891185",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "When verifying a feature that reacts to a thread being idle (e.g. cache keepalive), do not leave a lane_pilot_relay reminder in that same thread due before the check window ends: reminders are BB queued messages with a future sendAt and count as queued work, which can suppress the behaviour under test. Use a reminder due well after the window or check from another thread.",
+  "gold": "hook"
+ },
+ {
+  "id": "rule_9a3fa79971e52667",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Before redispatching a task in an in_place project, check `git status` of the checkout: if an earlier attempt left its edits uncommitted, verify them yourself and land them (or have them reverted) first, because the new attempt counts pre-existing dirt as not produced and fails with missing expected_outputs.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_9c13d698f23b1526",
+  "state": "proposed",
+  "occurrences": 7,
+  "rule": "Before running build or screen verification for a cakekeeper UI task, merge the current cakekeeper main branch so the task worktree includes the shared screen-runner fixes.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_9ce14625fe5ebaed",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "After deploying a change to the SelfyStudio photoshoot nav/landings list (seo-landings-nav), bump Redis `admin:read:seo-landings-nav:version` (INCR); the sort=popular list is cached 24 h and keeps serving pre-deploy rows.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_9f9cab8feca23f8b",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "In cakekeeper, do not add GitHub Actions or any hosted CI: the owner works alone and only wants local gates (pnpm check:changed / check:all); a workflow just mails him failed runs.",
+  "gold": "memory"
+ },
+ {
+  "id": "rule_a1266031d9f6d9d3",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "For marketing page work from a prototype, compose pages from the existing native marketing components and write the block-to-component map before dispatching; never port prototype markup into new custom-CSS blocks. In task contracts, list in expected_outputs only files the fix must touch.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_a4a4bf05d19941dc",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "On SelfyStudio marketing landings show the works themselves: no model-name chips, prompt captions, «Полный запрос» disclosures or meta lines on example images; before/after pairs must show an obvious change (keep the face, change outfit, scene and light), never a background-only swap.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_a616c67fbdcedff6",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "When a task's acceptance receipt reads merge_conflict, check its state with lane_pilot_reassign_task or the receipt the same turn: if it is validation_failed it is not retried, so redispatch it as <id>.2 with a plan to `git cherry-pick -n <accepted commit>` onto main and resolve the conflict; never trust the «still at work» list for it.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_aa2071921f2d01ec",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "SelfyStudio has a free trial: every new account gets 3 free photoshoot generations (ONBOARDING_BONUS_TOKENS = 3, one per device); the AI chat/editor opens only after the first paid pack. On AI landing pages show «После регистрации — 3 фото со своим лицом бесплатно в фотосессиях» with a second CTA to registration → photoshoots, answer the «без оплаты?» FAQ with it, and never promise free chat/editor generations.",
+  "gold": "memory"
+ },
+ {
+  "id": "rule_aa70c229b378b9c5",
+  "state": "accepted",
+  "occurrences": 3,
+  "rule": "For fixture-note tasks, write and reread the requested `notes/fixture-note-*.md` file to verify its heading and sentence before answering.",
+  "gold": "memory"
+ },
+ {
+  "id": "rule_afbd9f11f20b0a29",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "In cakekeeper, Lane Pilot checks run with a random sandbox HOME, so every Playwright command must use PLAYWRIGHT_BROWSERS_PATH=0 with an idempotent `playwright install chromium` before `playwright test` (in the npm script or the check); never rely on the host ~/Library/Caches/ms-playwright.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_afdf2b8fd056646b",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "On apps/site every ported prototype block must keep its normal layout with apps/site/public/_site/js/blocks.js blocked (CSS-first; JS adds only motion/interaction). Accept a block task only with a Playwright check that compares section heights with and without blocks.js at 1440 and 375.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_afed408eddf6f8c4",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "In cakekeeper task checks, do not chain `pnpm install` and `playwright install` into the e2e command; use `pnpm check:e2e` (its script installs the browser idempotently) as a separate verification step, so a check run stays minutes, not ~50.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_b11ac9e259b094d6",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "SelfyStudio login providers by visitor IP: CIS (RU, BY, KZ, UZ, KG, TJ, AM, AZ, MD, TM) → Telegram, VK ID, Yandex ID, email; outside the CIS → Telegram, Google, Yandex ID, email (Google replaces only VK; Yandex stays everywhere). Google never for RU. Never pick the set by browser language.",
+  "gold": "memory"
+ },
+ {
+  "id": "rule_b1cc63f88567d2ae",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "In every SelfyStudio writer task that adds or edits apps/marketing (or cabinet/admin) Vue or TS files, add a lint step scoped to the touched folders (e.g. `npx eslint-compat app/pages/webapp/` with cwd apps/marketing): the deploy gate runs `turbo run lint typecheck` and one ESLint error blocks the release.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_b1f1564f8bdd4822",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "If `git push` to GitHub fails with 'Authentication failed', push with the stored gh login: `env -u GH_TOKEN git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push origin main`; the GH_TOKEN env var (and the Env Catalog GH_TOKEN) can be stale and overrides it.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_b3363fc238cfffcc",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Take product facts (limits, prices, flags, consent predicates) from code, DB and live files, not model priors or task premises; grep every surface (bot, API, cabinet), cite file:line, and let pre-code recon overrule a stale contract claim.",
+  "gold": "always"
+ },
+ {
+  "id": "rule_b4d12512935ac2a7",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "In muse, cargo is not on the sandbox PATH: write every Rust verification command as `PATH=/home/ubuntu/.cargo/bin:$PATH cargo ...` (cwd rust-sync). Evidence: task qtickets-rebind, 2026-10-09, 'cargo: command not found'.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_b4e4d804d214a430",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Run task-v2 verification commands from the repo root as `npm -w @selfystudio/<app> exec -- vitest run <filter>` (Lane Pilot ignores the cwd field), and include `npm run test:architecture` for any change to shared marketing components or CSS; the deploy gate runs it.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_bbfae1017f66b476",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "To push cakekeeper.ru to GitHub, run `env -u GH_TOKEN -u GITHUB_TOKEN git -c credential.helper= -c credential.helper=osxkeychain push origin main`; the GH_TOKEN in the environment and Env Catalog returns 401, the macOS keychain credential works. Do not ask the owner for a token.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_bcbbed1113e3b055",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Every task that edits .ts or .vue runs the typecheck of its workspace (even test-only or CSS-only edits), and when it adds lines to a file listed in tests/architecture/baselines it also runs `npm run test:architecture` and prefers a compact fix or a sibling module.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_bcdbd0e89f8e7252",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "After the first failed UI or device fix, stop reasoning from source: reproduce with Playwright device emulation at 375/768/1280 and click through; verify BFF and admin mutations with a real POST or PUT-then-GET on the running container, not mocks or static screenshots.",
+  "gold": "always"
+ },
+ {
+  "id": "rule_c2289b30f3599474",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "In Content Factory db/store.ts only append new entries at the end of MIGRATIONS; never insert, reorder or edit an existing migration. The hub records migrations by index and refuses to reload the plugin otherwise.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_c3232c877ee95c71",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Verification commands run from the workspace root regardless of the cwd field; for a subpackage write `cd <pkg> && npm ...` in the command itself.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_c4c833416f73a7d1",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "In bb-plugin-lane-pilot, exclude the whole 'tests/verification/**' folder (not only sandbox*.test.ts), plus tests/guard*.test.ts and tests/native-session-hooks.test.ts, from full-suite verification commands unless the task changes that folder: git-sync and sandbox tests fail inside Lane Pilot's Seatbelt check.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_cec209507314e766",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Before bumping a git-installed BB plugin's version, check its install range with `bb plugin list` (e.g. office-viewer is `^0.8.1`): a 0.x caret range does not accept the next minor (0.9.0), and reinstalling with a new range deletes the plugin's settings, so stay inside the range (0.8.10).",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_d1916e7eaea387a8",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "In SelfyStudio contracts never use `npx vitest related <file> --run` with cwd apps/api or apps/worker; name the direct test file instead (e.g. apps/api src/lib/__tests__/onboarding-presets.test.ts, apps/worker src/__tests__/prepare-provider-params.test.ts). `related` on a shared lib pulls the whole package (344 files) and fails in the sandbox on unrelated warnings. Also list every existing test of the touched module (grep __tests__ for its exports) in owns_paths.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_d90059f508763086",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "During cakekeeper testing, ignore 152-FZ data-location constraints and Yandex Cloud: host everything (web, api, worker, Postgres, MinIO) in self-hosted Docker; do not raise 152-FZ or Russian hosting until the owner says the production move has started.",
+  "gold": "memory"
+ },
+ {
+  "id": "rule_dbfb6ff688d6aa35",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "After the owner hands work to another thread, send that thread nothing beyond the single handoff message: no status notes, no follow-ups; close own sessions, watchers and worktrees and stop.",
+  "gold": "always"
+ },
+ {
+  "id": "rule_e86ae12f5dd064f5",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "List in expected_outputs only files the change must touch; put files that may or may not change in owns_paths, otherwise writers add filler edits just to pass the check.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_eced171fd84b388e",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "In apps/marketing (nuxt-i18n with experimental.preload) a t() key used only in a client-only branch (shown after hydration, polling or a click) may be missing in the browser; verify such UI in a production build (`npm run build` + `.output/server/index.mjs` + a playwright check for no raw keys), not only with vitest mounts that load full messages.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_ed9c07203791eeda",
+  "state": "accepted",
+  "occurrences": 2,
+  "rule": "Sandbox drill: keep sandbox notes under notes/ only, never in the repo root",
+  "gold": "check"
+ },
+ {
+  "id": "rule_ee2b1b1830b9f165",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "To ship a BB plugin from plugins/bb-plugin-*, after git push run `bash /Users/vechkasov/Documents/BB-сервис/infrastructure/plugin-deploy/bb-plugin-push <plugin-id>` and confirm `bb plugin list` shows the new version; `bb plugin reload` alone does not update the hub, which keeps its own copy of the folder.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_ee601b9a83575e96",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "In the Pokecut theme never override the desktop sidebar panel's top (BB places it below the macOS chrome row); stretch it with bottom: 0; height: auto. Desktop sidebar markup has data-side on the outer group div, so target [data-side=\"left\"] > [data-sidebar=\"panel\"], not [data-sidebar=\"panel\"][data-side=\"left\"] (phone-only).",
+  "gold": "memory"
+ },
+ {
+  "id": "rule_f2d0a3bf9745b334",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Verify with commands scoped to the workspace and proven green on clean main first: never `npm run test -- <file>` in apps/api (the arg goes to node --test); confirm at least one test ran, since --passWithNoTests and a wrong filter or cwd pass on zero tests.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_f55e8636197db7cf",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "In cakekeeper, give each task only the checks of the packages it touches (pnpm check:changed or per-package --filter); add e2e or screenshot runs only when the task changes that user flow, and run the full gate (pnpm check:all) once per batch before pushing.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_f6aa78563e55b3c3",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Build and deploy only from a clean committed tree or a clean main snapshot, rebuild just the affected service (--no-deps), never while generations are in flight, and write backup plus rollback SQL before changing live money data (token_packages, system_settings).",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_f7ebf76b3de1413b",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "When the owner points to an existing reference (e.g. studio.vechkasov.pro), copy its approach; do not add extra engines, models or settings screens it does not have without asking first.",
+  "gold": "always"
+ },
+ {
+  "id": "rule_fb3364d09e1111f9",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Before making a failing test pass by reverting code, check git log for a deliberate recent commit that changed that code (owner decision, perf); if one exists, update the stale test instead of reverting. Evidence: fix-marketing-contract-tests (694f666114, 2026-10-09) reverted owner-approved homepage NuxtImg resizing (32365db508) to satisfy stale photo-surface-cdn.spec.ts.",
+  "gold": "always"
+ },
+ {
+  "id": "rule_fba73008b8cffa40",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "On SelfyStudio AI generator landings (/ii-redaktor-foto, /neiroseti*), sell what a person can make with the image generators (use cases with real outputs and prompts); do not cross-sell site tools (Pixar, docs photo, greeting cards) there. Photoshoots-by-example may stay as one promo.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_fd69a17d67afe6f8",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "The owner opens cakekeeper test stacks from another device over WireGuard, not on the Mac mini: build and run them with WEB_ORIGIN/NEXT_PUBLIC_API_URL/API_BASE_URL on http://10.8.0.2:<port> (Mac mini WG address) and give him 10.8.0.2 links, never localhost.",
+  "gold": "memory"
+ },
+ {
+  "id": "rule_fde3ec1288c75add",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "In Vue scoped styles, never write `:deep(.root-class …)` or `[data-v] .root-class` for the component's own root element: the scope attribute sits on the root itself, so the rule needs an ancestor that does not exist and matches nothing. Anchor on the root outside :deep (`.root-class :deep(.child)`), and test the compiled CSS or computed styles, not just the template.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_fefbc9bb81b3230d",
+  "state": "accepted",
+  "occurrences": 1,
+  "rule": "Layout work on marketing pages is not done until it has been checked in a production build (nuxt build plus the built server) with screenshots. Dev-server or unit-test evidence is not enough: CSS linked by URL or imported only in dev can vanish in production. The PM screenshots production right after each deploy and rolls back at once if the layout broke.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_ff5217259c281145",
+  "state": "proposed",
+  "occurrences": 1,
+  "rule": "After merging a task that adds a dependency to package.json, run `npm install` in the base checkout before the next task starts: writer worktrees mirror the base node_modules, so a missing package breaks typecheck for every following task.",
+  "gold": "skill"
+ },
+ {
+  "id": "rule_sbx_deploy",
+  "state": "accepted",
+  "occurrences": 3,
+  "rule": "Before a production deploy, confirm the commit is on main and check the site healthcheck returns 200 after it.",
+  "gold": "check"
+ },
+ {
+  "id": "rule_sbx_npm",
+  "state": "accepted",
+  "occurrences": 3,
+  "rule": "Before answering, run `npm test` in the project root and do not finish while it fails; quote the passing line in your answer.",
+  "gold": "check"
+ }
+]

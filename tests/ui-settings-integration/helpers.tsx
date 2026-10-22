@@ -90,7 +90,8 @@ export const cursorGrokModel = {
 };
 
 export type RuleRow = { id:string; rule:string; author:"sweep"|"pm"|"owner"|"model"; state:"proposed"|"accepted"|"rejected"|"revoked"; occurrences:number; taskCount:number; examples:string[]; evidence:Array<{runId:string;taskId:string;attemptId:string;reason:string}>; lastSeenAt:number; decidedAt:number|null;
-  decidedBy?:"owner"|"auto"|null; trialState?:"trial"|"confirmed"|null; revision?:number; retiredReason?:string|null; trial?:{applied:number;appliedAccepted:number;recurrences:number}|null; scope?:string[]; scopeLabel?:string };
+  decidedBy?:"owner"|"auto"|null; trialState?:"trial"|"confirmed"|null; revision?:number; retiredReason?:string|null; trial?:{applied:number;appliedAccepted:number;recurrences:number}|null; scope?:string[]; scopeLabel?:string;
+  form?:"always"|"skill"|"check"|"hook"|"memory"|null; formReason?:string|null; mechanizedBy?:string|null };
 
 export async function mountWithBackend(options?:{ delayWriterSave?:(input:{providerId:string;model:string;reasoningLevel:string})=>Promise<void>; delayRpc?:(method:string, input:unknown)=>Promise<void>; rules?:RuleRow[]; ruleCalls?:Array<Record<string, unknown>> }) {
   const { bb, harness } = createFakePluginHost({

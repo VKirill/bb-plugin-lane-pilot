@@ -282,6 +282,11 @@ describe("insights tools", () => {
     expect(spawned[0]!.prompt).toContain("Check expected outputs.");
     expect(spawned[0]!.prompt).toContain("missing expected_outputs: a.md");
     expect(first.proposals.find((row: { id: string }) => row.id === "rule-clean")).toMatchObject({ trialState: "confirmed", trial: { applied: 5, recurrences: 0 } });
+    // SMA block 6: the form, its reason and the mechanism that holds a rule reach the Rules screen.
+    db.prepare("UPDATE lane_pilot_rule_proposal SET form='check', form_reason='check/contract_lint: verification', mechanized_by='contract lint verification_masked_exit' WHERE project_id=? AND id='rule-clean'").run(projectId);
+    const formed = await harness.behavior.callRpc("list_rule_proposals", { projectId }) as Record<string, any>;
+    expect(formed.proposals.find((row: { id: string }) => row.id === "rule-clean")).toMatchObject({ form: "check", formReason: "check/contract_lint: verification", mechanizedBy: "contract lint verification_masked_exit" });
+    expect(formed.proposals.find((row: { id: string }) => row.id === "rule-broken")).toMatchObject({ form: null, mechanizedBy: null });
     expect(searchMemoryRecords(db, projectId, "expected outputs before answering", 10, "fts5", "subagent").map((row) => row.content)).toEqual(["Run ls on every expected output before answering (v2)."]);
 
     // The new wording starts its own count; two more writers given it repeat the mistake and it leaves.

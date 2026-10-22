@@ -16,9 +16,9 @@ const DOCS_STATUS_WAIT_MS = 1_500;
 
 const RISKS = ["low", "medium", "high", "critical"] as const;
 
-const ruleView = ({ id, rule, author, state, occurrences, taskCount, examples, evidence, lastSeenAt, decidedAt, decidedBy, trialState, revision, retiredReason, scope, audience, always }: RuleProposal,
+const ruleView = ({ id, rule, author, state, occurrences, taskCount, examples, evidence, lastSeenAt, decidedAt, decidedBy, trialState, revision, retiredReason, scope, audience, always, form, cue, confidence, formReason, mechanizedBy }: RuleProposal,
   trial: { applied: number; appliedAccepted: number; recurrences: number } | null = null, scopeLabel = "") =>
-  ({ id, rule, author, state, occurrences, taskCount, examples, evidence, lastSeenAt, decidedAt, decidedBy, trialState, revision, retiredReason, trial, scope, scopeLabel, audience, always });
+  ({ id, rule, author, state, occurrences, taskCount, examples, evidence, lastSeenAt, decidedAt, decidedBy, trialState, revision, retiredReason, trial, scope, scopeLabel, audience, always, form, cue, confidence, formReason, mechanizedBy });
 
 /** What the settings screen shows next to the writer picker: first-try acceptance per risk against the configured pair. */
 export function insightsRpc(ctx: ServerCore, services: Services) {
