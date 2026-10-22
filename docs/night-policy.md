@@ -25,7 +25,7 @@ answer counts only while an exam over the owner's real past decisions passes.
 | `src/rooms/policy/exam.ts` | `runExam` (line 69), `examFingerprint` (line 65), `authorize` (line 102) |
 | `src/rooms/policy/growth.ts` | `ownerOnlyShrank` (line 12), `examShrank` (line 26) |
 | `src/rooms/policy/morning.ts` + `scripts/lp-morning.sql` | The three-line morning list |
-| `src/rooms/policy/cli.ts` | `bb lane-pilot policy-exam`, `policy show|classify|morning` (registered at `src/rooms/tools/server/cli.ts:94-95`, dispatched at line 109) |
+| `src/rooms/policy/cli.ts` | `bb lane-pilot policy-exam`, `policy show|classify|morning` (registered at `src/rooms/tools/server/cli.ts:101-102`, dispatched at line 109) |
 
 ## The change descriptor and the matcher
 

@@ -10,3 +10,5 @@ export { mapVerificationCwd, retargetTask } from "./verification-cwd";
 export { classifyWriterOutput, isMainfixTask, isOutputPath, unownedExpectedOutputs } from "./validate-output";
 export type { VerifyResult } from "./validate-output";
 export { commonTaskFolder, isTaskBase, ownsFromOuterBase, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask } from "./task-base";
+export { PLAN_FACT_BRIEF_LINE, blindPlanFact, diffHunksCommand, hunksFromCommandOutput, parsePlanFact, planFactOutcome } from "./plan-fact";
+export type { EvidenceCheck, ItemVerdict, PlanFactCheck, PlanFactFacts, PlanFactTable } from "./plan-fact";

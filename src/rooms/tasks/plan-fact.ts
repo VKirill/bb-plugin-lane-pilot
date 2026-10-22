@@ -1,0 +1,214 @@
+import { z } from "zod";
+
+/**
+ * The plan against the fact (SMA plan P1-3, Maslov #30971: «never read the executor's story»).
+ *
+ * The writer closes its answer with a table: one row per `acceptance` item of the contract, with the evidence for it. Code, not a
+ * model, then checks every piece of evidence against the candidate, and never reads the prose around the table:
+ * - `path` or `path:first-last`: the file is among the changed files, and the lines overlap a changed hunk of it;
+ * - `cmd:<command>`: the command is one of the contract's `verification[]` commands, and it ran with exit code 0.
+ * A `done` row with no piece of evidence that holds is `unproven` and blocks that acceptance item.
+ */
+export const PLAN_FACT_FENCE = "plan-fact";
+
+export const planFactRowSchema = z.object({
+  item: z.number().int().min(1).max(200),
+  status: z.enum(["done", "not_done"]),
+  evidence: z.array(z.string().min(1).max(300)).max(8).optional(),
+  why: z.string().max(400).optional(),
+}).strict();
+export type PlanFactRow = z.infer<typeof planFactRowSchema>;
+
+/** The format the writer is told, once, in its brief (writer-task.ts) and in every continuing turn. */
+export const PLAN_FACT_BRIEF_LINE = [
+  "End your answer with the plan→fact table: a fenced block opened with ```plan-fact that holds a JSON array, one row per acceptance item in the contract's order (item 1 is the first):",
+  '{"item":1,"status":"done","evidence":["src/a.ts:10-24","cmd:npm test"]}, or for an item you did not finish {"item":2,"status":"not_done","why":"<reason>"}.',
+  "Evidence is a file you changed with the lines that do the work (path:first-last, or the path alone) or a verification command of the contract (cmd:<command>).",
+  "Lane Pilot checks each entry against the diff and the check results, never your prose; a done row without evidence that holds counts as not done.",
+].join(" ");
+
+export type PlanFactTable =
+  | { status: "ok"; rows: PlanFactRow[] }
+  | { status: "missing" }
+  | { status: "invalid"; reason: string };
+
+/** The last fenced `plan-fact` block of the writer's answer, parsed and validated; the text around it is not read. */
+export function parsePlanFact(answer: string): PlanFactTable {
+  const blocks = [...answer.matchAll(/```[ \t]*plan-fact[^\n]*\n([\s\S]*?)```/gi)];
+  const block = blocks.at(-1);
+  if (!block) return { status: "missing" };
+  let json: unknown;
+  try { json = JSON.parse(block[1]!); } catch (cause) { return { status: "invalid", reason: `the block is not JSON (${cause instanceof Error ? cause.message : "parse error"})`.slice(0, 200) }; }
+  const parsed = z.array(planFactRowSchema).min(1).max(200).safeParse(json);
+  if (!parsed.success) return { status: "invalid", reason: parsed.error.issues.slice(0, 2).map((issue) => `${issue.path.join(".") || "table"}: ${issue.message}`).join("; ").slice(0, 300) };
+  const seen = new Set<number>();
+  for (const row of parsed.data) {
+    if (seen.has(row.item)) return { status: "invalid", reason: `item ${row.item} appears twice` };
+    seen.add(row.item);
+  }
+  return { status: "ok", rows: parsed.data };
+}
+
+/** What the code knows of the candidate; nothing in it comes from the writer's text. */
+export type PlanFactFacts = {
+  /** Paths the candidate changed, relative to the workspace. */
+  produced: readonly string[];
+  /** Changed line ranges (1-based, inclusive) of each changed path; `all`: a new file, every line is new. A path missing here has no known hunks. */
+  changed: Readonly<Record<string, ReadonlyArray<readonly [number, number]> | "all">>;
+  /** Line counts of the files in `all`. */
+  lineCount: Readonly<Record<string, number>>;
+  /** False when the diff against the task's base could not be read: line ranges are then not checked, and the report says so. */
+  hunksKnown: boolean;
+  /** The contract's `verification[].command` values. */
+  contractCommands: readonly string[];
+  /** The checks that ran for the candidate. */
+  ran: ReadonlyArray<{ command: string; exitCode: number }>;
+  /** The workspace root, stripped from absolute paths in the evidence. */
+  root?: string;
+};
+
+export type FindingSeverity = "blocking" | "warning" | "info";
+export type EvidenceCheck = { evidence: string; kind: "file" | "command" | "unparsed"; ok: boolean; code: string; note: string };
+export type ItemVerdict = {
+  item: number; acceptance: string;
+  claimed: "done" | "not_done" | "none";
+  verdict: "proven" | "unproven" | "declared_not_done" | "no_row";
+  severity: FindingSeverity | "ok";
+  evidence: EvidenceCheck[];
+  why: string | null;
+};
+export type PlanFactCheck = {
+  table: PlanFactTable["status"];
+  tableReason: string | null;
+  items: ItemVerdict[];
+  /** Rows naming an item the contract does not have. */
+  extraRows: number[];
+  /** Items whose verdict blocks them. */
+  blocking: number[];
+  /** What the check could not look at; «not checked» is not «found nothing». */
+  notChecked: string[];
+};
+
+const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
+const relativePath = (path: string, root?: string) => {
+  let clean = path.trim().replace(/^\.\//, "");
+  if (root && clean.startsWith(`${root.replace(/\/$/, "")}/`)) clean = clean.slice(root.replace(/\/$/, "").length + 1);
+  return clean;
+};
+
+function checkEvidence(evidence: string, facts: PlanFactFacts): EvidenceCheck {
+  const raw = evidence.trim();
+  if (/^cmd:/i.test(raw)) {
+    const command = normalize(raw.slice(4));
+    const contract = facts.contractCommands.find((candidate) => normalize(candidate) === command);
+    if (!contract) return { evidence, kind: "command", ok: false, code: "command_not_in_contract", note: "not a verification command of the contract" };
+    const ran = facts.ran.find((check) => normalize(check.command) === command);
+    if (!ran) return { evidence, kind: "command", ok: false, code: "command_not_run", note: "the contract lists it, but no result for it came back" };
+    return ran.exitCode === 0
+      ? { evidence, kind: "command", ok: true, code: "command_passed", note: "ran, exit code 0" }
+      : { evidence, kind: "command", ok: false, code: "command_failed", note: `ran, exit code ${ran.exitCode}` };
+  }
+  const match = /^(.+?)(?::(\d+)(?:-(\d+))?)?$/.exec(raw);
+  if (!match || /\s/.test(match[1]!)) return { evidence, kind: "unparsed", ok: false, code: "unparsed", note: "neither path[:lines] nor cmd:<command>" };
+  const path = relativePath(match[1]!, facts.root);
+  if (!facts.produced.includes(path)) return { evidence, kind: "file", ok: false, code: "file_not_in_diff", note: `${path} is not among the changed files` };
+  if (match[2] === undefined) return { evidence, kind: "file", ok: true, code: "file_changed", note: "among the changed files" };
+  const from = Number(match[2]);
+  const to = match[3] === undefined ? from : Number(match[3]);
+  if (from < 1 || to < from) return { evidence, kind: "file", ok: false, code: "lines_invalid", note: `lines ${from}-${to} are not a range` };
+  if (!facts.hunksKnown) return { evidence, kind: "file", ok: true, code: "lines_unchecked", note: "file changed; the lines could not be compared with a diff" };
+  const known = facts.changed[path];
+  if (known === undefined) return { evidence, kind: "file", ok: true, code: "lines_unchecked", note: "file changed; its hunks are unknown" };
+  if (known === "all") {
+    const count = facts.lineCount[path];
+    return count !== undefined && from > count
+      ? { evidence, kind: "file", ok: false, code: "lines_missing", note: `${path} has ${count} lines` }
+      : { evidence, kind: "file", ok: true, code: "lines_changed", note: "new file" };
+  }
+  return known.some(([a, b]) => from <= b && to >= a)
+    ? { evidence, kind: "file", ok: true, code: "lines_changed", note: "overlaps a changed hunk" }
+    : { evidence, kind: "file", ok: false, code: "lines_not_changed", note: `lines ${from}-${to} of ${path} are not in a changed hunk` };
+}
+
+/** The blind check: the table against the candidate, item by item. */
+export function blindPlanFact(acceptance: readonly string[], table: PlanFactTable, facts: PlanFactFacts): PlanFactCheck {
+  const notChecked: string[] = [];
+  if (table.status !== "ok") {
+    return { table: table.status, tableReason: table.status === "invalid" ? table.reason : null, items: [], extraRows: [], blocking: [],
+      notChecked: ["every acceptance item: the writer gave no readable plan-fact table"] };
+  }
+  if (!facts.hunksKnown) notChecked.push("line ranges: the diff against the task's base could not be read, so only the files were checked");
+  const byItem = new Map(table.rows.map((row) => [row.item, row]));
+  const items: ItemVerdict[] = acceptance.map((text, index) => {
+    const row = byItem.get(index + 1);
+    if (!row) return { item: index + 1, acceptance: text, claimed: "none", verdict: "no_row", severity: "blocking", evidence: [], why: null };
+    if (row.status === "not_done") return { item: index + 1, acceptance: text, claimed: "not_done", verdict: "declared_not_done", severity: "blocking", evidence: [], why: row.why ?? null };
+    const evidence = (row.evidence ?? []).map((entry) => checkEvidence(entry, facts));
+    const proven = evidence.some((entry) => entry.ok);
+    const soft = evidence.some((entry) => entry.ok && entry.code === "lines_unchecked");
+    return { item: index + 1, acceptance: text, claimed: "done", verdict: proven ? "proven" : "unproven",
+      severity: proven ? (evidence.some((entry) => !entry.ok) || soft ? "warning" : "ok") : "blocking", evidence, why: row.why ?? null };
+  });
+  return {
+    table: "ok", tableReason: null, items,
+    extraRows: table.rows.filter((row) => row.item > acceptance.length).map((row) => row.item),
+    blocking: items.filter((item) => item.severity === "blocking").map((item) => item.item),
+    notChecked,
+  };
+}
+
+/** The stage result the code decides from the check: a missing or unreadable table is not run, never a refusal by itself. */
+export function planFactOutcome(check: PlanFactCheck): { state: "passed" | "failed" | "skipped"; reason: string | null } {
+  if (check.table === "missing") return { state: "skipped", reason: "plan_fact_table_missing: the writer's answer has no plan-fact block, so no acceptance item was checked against the diff" };
+  if (check.table === "invalid") return { state: "skipped", reason: `plan_fact_table_invalid: ${check.tableReason ?? "unreadable"}; no acceptance item was checked against the diff` };
+  if (check.blocking.length) return { state: "failed", reason: `plan_fact_unproven: acceptance item ${check.blocking.join(", ")} ${check.blocking.length === 1 ? "has" : "have"} no evidence that holds in the diff` };
+  return { state: "passed", reason: null };
+}
+
+/** Changed line ranges per path from `git diff -U0` lines (`+++ b/path` and `@@ -a,b +c,d @@`); only those two kinds of line are read. */
+export function parseDiffHunks(output: string): Record<string, Array<[number, number]>> {
+  const out: Record<string, Array<[number, number]>> = {};
+  let path: string | null = null;
+  for (const line of output.split("\n")) {
+    if (line.startsWith("+++ ")) {
+      const name = line.slice(4).trim();
+      path = name === "/dev/null" ? null : name.replace(/^b\//, "");
+      if (path) out[path] ??= [];
+      continue;
+    }
+    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(line);
+    if (hunk && path) {
+      const start = Number(hunk[1]);
+      const count = hunk[2] === undefined ? 1 : Number(hunk[2]);
+      // A pure deletion leaves no new line: the line it sits at counts as changed.
+      out[path]!.push([start, count === 0 ? start : start + count - 1]);
+    }
+  }
+  return out;
+}
+
+const quote = (path: string) => `'${path.replace(/'/g, `'\\''`)}'`;
+export const PLAN_FACT_UNTRACKED_MARK = "---untracked---";
+export const PLAN_FACT_NO_BASE_MARK = "---nobase---";
+
+/** One shell command that prints the hunk headers against the base commit, then the untracked files among the paths. */
+export function diffHunksCommand(baseSha: string, paths: readonly string[]): string {
+  const list = paths.map(quote).join(" ");
+  return `git cat-file -e ${baseSha}^{commit} 2>/dev/null || echo ${PLAN_FACT_NO_BASE_MARK}; `
+    + `git -c core.quotepath=off diff -U0 --no-color --no-ext-diff ${baseSha} -- ${list} | grep -E '^(\\+\\+\\+ |@@ )'; `
+    + `echo ${PLAN_FACT_UNTRACKED_MARK}; git ls-files --others --exclude-standard -- ${list}`;
+}
+
+/** The facts the diff command's output gives: hunks of tracked paths, `all` for untracked ones. */
+export function hunksFromCommandOutput(output: string, produced: readonly string[]): { hunksKnown: boolean; changed: Record<string, Array<[number, number]> | "all"> } {
+  if (output.includes(PLAN_FACT_NO_BASE_MARK)) return { hunksKnown: false, changed: {} };
+  const [tracked = "", untracked = ""] = output.split(PLAN_FACT_UNTRACKED_MARK);
+  const hunks = parseDiffHunks(tracked);
+  const changed: Record<string, Array<[number, number]> | "all"> = {};
+  for (const path of produced) if (hunks[path]?.length) changed[path] = hunks[path]!;
+  for (const line of untracked.split("\n")) {
+    const path = line.trim();
+    if (path && produced.includes(path)) changed[path] = "all";
+  }
+  return { hunksKnown: true, changed };
+}

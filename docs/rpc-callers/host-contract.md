@@ -22,7 +22,7 @@ TL;DR: `hostContract` validates host procedure names, requests, and results; cor
 
 ## Purpose
 
-The host contract is the typed boundary between the plugin server and a BB-connected host. `src/rooms/contracts/index.ts` exports it separately from the app-facing `rpcContract` (`src/rooms/contracts/index.ts:11-17`).
+The host contract is the typed boundary between the plugin server and a BB-connected host. `src/rooms/contracts/index.ts` exports it separately from the app-facing `rpcContract` (`src/rooms/contracts/index.ts:11-18`).
 
 ## How it works
 
@@ -59,7 +59,7 @@ Git paths must be absolute where declared; worktree snapshot/create names match 
 
 ## Public API or commands
 
-`hostContract` is exported by `@lane-pilot/contracts`' room entry and consumed by `bb.hosts.experimental_client` (`src/rooms/contracts/index.ts:15-17`, `src/rooms/core/server/core.ts:48-49`). `runOnHost` is the typed helper for `runCommand`; it passes the host id in both request and options and defaults transport wait to command timeout plus five seconds (`packages/host-calls/src/run-on-host.ts:8-31`).
+`hostContract` is exported by `@lane-pilot/contracts`' room entry and consumed by `bb.hosts.experimental_client` (`src/rooms/contracts/index.ts:15-18`, `src/rooms/core/server/core.ts:48-49`). `runOnHost` is the typed helper for `runCommand`; it passes the host id in both request and options and defaults transport wait to command timeout plus five seconds (`packages/host-calls/src/run-on-host.ts:8-31`).
 
 ## Gotchas
 

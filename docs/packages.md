@@ -76,7 +76,7 @@ TL;DR: Small workspaces hold reusable contracts and services shared by Lane Pilo
 | `@lane-pilot/handoff` | Handoff card contracts, state transitions, storage, message formatting, receipt parsing and capability registry (`packages/handoff/src/index.ts:1-2`). `handoffMessage` includes objective, acceptance lines, inputs, budget and a fenced receipt format (`packages/handoff/src/messages.ts:12-37`). | Relay and task handoff services. |
 | `@lane-pilot/harness-core` | Writer-harness tree validation, fingerprinting and diff summaries; writer-event trajectory rendering; editor prompt construction; and parsing/rendering of edit verdicts and transferable experience (`packages/harness-core/src/index.ts:1-14`). | Harness server uses it to validate candidate trees, render attempt evidence and parse editor/reflection replies; writer attempts receive its materialized tree through the harness room (`src/rooms/harness/server/harness.ts:1-8`, `:211-250`, `:281-313`). See [writer harness](harness.md) for the end-to-end capability. |
 | `@lane-pilot/host-calls` | Host job client plus `runOnHost`, a typed `runCommand` wrapper that sends host id in both payload and options (`packages/host-calls/src/run-on-host.ts:8-31`). | Writer, verification, scheduling and host-worker rooms. |
-| `@lane-pilot/i18n` | Locale selection, `t()`, and typed English and Russian dictionaries, including Harness model and role labels (`packages/i18n/src/i18n.ts:325-339`, `:1382-1396`, `:2129-2134`) and Tasks board strings (`packages/i18n/src/i18n-board.ts:1-4`). | Room UI and plugin app. |
+| `@lane-pilot/i18n` | Locale selection, `t()`, and typed English and Russian dictionaries, including Harness model and role labels (`packages/i18n/src/i18n.ts:325-339`, `:1391-1405`, `:2147-2152`) and Tasks board strings (`packages/i18n/src/i18n-board.ts:1-4`). | Room UI and plugin app. |
 | `@lane-pilot/jev` | See the ordered `createJev` execution steps, modes and failures under [Package operations](#package-operations). Judgment definitions register themselves through `defineJudgment` when their own modules evaluate; the package root entry only re-exports shared APIs (`packages/jev/src/registry.ts:41-48`, `packages/jev/src/judgments/output-guard.ts:22-28`, `packages/jev/src/index.ts:1-9`). | Core and judgment-owning rooms. See [Jev adapter](jev-adapter.md) and [Jev run details](package-operations.md#jev-run). |
 | `@lane-pilot/kit` | Node helpers for hashing, redaction, process spawning, bounded reads and JSONC patching, with a browser-safe `owns-paths` subpath (`packages/kit/src/index.ts:1-9`, `packages/kit/package.json:1-15`). | Server rooms and selected UI modules. |
 | `@lane-pilot/memory-core` | Project memory records, audiences, retrieval, budgets, file import/export and SQLite helpers (`packages/memory-core/src/index.ts:1-23`). | Memory, writer context and run-insights. |
@@ -95,7 +95,7 @@ The small packages provide reusable contracts and utilities to root rooms; the w
 
 1. Room modules import package APIs by their workspace specifiers; for example, the runs contract imports `@lane-pilot/contracts` and session memory imports `@lane-pilot/memory-core` (`src/rooms/contracts/rpc-runs.ts:1-2`, `src/rooms/memory/server/session-memory.ts:1-10`).
 2. The package exposes domain functions and types; the consuming room supplies BB, SQLite, or host dependencies where required (`packages/jev/src/run.ts:56-63`, `packages/host-calls/src/run-on-host.ts:8-31`). Harness-core itself is pure parsing, rendering and tree logic; `src/rooms/harness` owns host, thread, KV and SQLite effects (`packages/harness-core/src/index.ts:1-14`, `src/rooms/harness/server/harness.ts:161-179`, `:211-250`).
-3. The room composes those exports into server RPCs, UI behavior, and scheduled work (`src/rooms/core/server/rpc.ts:26-50`, `src/rooms/storage/database.ts:230-333`).
+3. The room composes those exports into server RPCs, UI behavior, and scheduled work (`src/rooms/core/server/rpc.ts:27-51`, `src/rooms/storage/database.ts:230-333`).
 
 ## Modes and package variants
 
@@ -113,7 +113,7 @@ The small packages provide reusable contracts and utilities to root rooms; the w
 
 ## Root RPC registration
 
-See [RPC contract composition and route families](rpc-callers/contract-map.md) for how `rpcContract`, `rpcShell`, and `rpcOps` compose, validate and report their outcomes (`src/rooms/contracts/index.ts:17-26`, `src/rooms/contracts/rpc-shell.ts:1-109`, `src/rooms/contracts/rpc-ops.ts:5-64`).
+See [RPC contract composition and route families](rpc-callers/contract-map.md) for how `rpcContract`, `rpcShell`, and `rpcOps` compose, validate and report their outcomes (`src/rooms/contracts/index.ts:18-27`, `src/rooms/contracts/rpc-shell.ts:1-109`, `src/rooms/contracts/rpc-ops.ts:5-64`).
 
 ## Package operations
 

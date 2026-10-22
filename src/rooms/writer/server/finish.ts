@@ -7,7 +7,9 @@ import type { HelperPolicySnapshot } from "../../native-agent";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { actionableFindings, buildCandidateEvidence, codeCritiqueSource, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "../../critique";
 import type { WriterIdentity } from "../../critique";
-import { QUALITY_MODE_SETTING, applyQualityMode, resolveQualityMode } from "../../critique";
+import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode } from "../../critique";
+import { loadCriticCodeDefault } from "./critic-override";
+import { runPlanFactStage } from "./plan-fact";
 import { runCodeCritique } from "../../critique/server";
 import { fullAccessSpawn } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
@@ -285,8 +287,12 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       let approvedArtifact = "";
       let frozenPolicy = storedLedger?.policy;
       const projectSettings = loadProjectSettings(db,input.projectId,getRunSettingsScopes(db,input.runId));
-      // quality_mode (task, else project, else standard) switches the code critic off (quick) or on (full).
-      const liveCritiquePolicy = frozenPolicy ?? parseCodeCritiqueSettings(applyQualityMode(projectSettings,resolveQualityMode(input.task,projectSettings[QUALITY_MODE_SETTING])));
+      // quality_mode (task, else project, else standard) switches the code critic off (quick) or on (full); in standard mode the task's
+      // risk may switch it on (critic.code.default_for_risk, or the value the dispatch carried).
+      const qualityMode = resolveQualityMode(input.task,projectSettings[QUALITY_MODE_SETTING]);
+      const taskCriticDefault = await loadCriticCodeDefault(bb.storage.kv as never, input.taskId);
+      const criticDefault = resolveCodeCriticDefault(projectSettings[CODE_CRITIC_DEFAULT_SETTING], taskCriticDefault);
+      const liveCritiquePolicy = frozenPolicy ?? parseCodeCritiqueSettings(applyCodeCriticDefault(applyQualityMode(projectSettings,qualityMode),qualityMode,input.task.risk,criticDefault));
       const baselineHashes = Object.fromEntries(input.dirtBefore.map((row) => [row.path, row.sha256 || null]));
       const captureEvidence = async () => {
         const dirt = await services.workspaceDirt(input.config, input.task.project_cwd, input.runId);
@@ -325,7 +331,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         if (disputes && disputes.replies.length > 0 && disputes.replies.every((row) => row.status === "disputed")) {
           const recritique = await runCodeCritique({
             bb, db, projectId:input.projectId, runId:input.runId, taskId:input.taskId,
-            config:input.config, task:input.task, evidence, disputes, frozenPolicy,
+            config:input.config, task:input.task, evidence, disputes, frozenPolicy, criticDefault:taskCriticDefault,
           });
           if (recritique.policy) frozenPolicy = recritique.policy;
           if (recritique.allowed) { review = recritique.review; approvedArtifact = evidence.artifactRevisionSha256; break; }
@@ -382,7 +388,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         }
         const critique = await runCodeCritique({
           bb, db, projectId:input.projectId, runId:input.runId, taskId:input.taskId,
-          config:input.config, task:input.task, evidence, frozenPolicy,
+          config:input.config, task:input.task, evidence, frozenPolicy, criticDefault:taskCriticDefault,
         });
         if (critique.policy) frozenPolicy = critique.policy;
         if (critique.allowed) { review = critique.review; approvedArtifact = evidence.artifactRevisionSha256; break; }
@@ -605,6 +611,19 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         transitionAttempt(db, input.attemptId, "blocked", { reason });
         return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
       }
+      }
+      // The plan against the fact: code checks the writer's evidence per acceptance item against the diff, never its prose. It records
+      // its stage whatever the outcome; only plan_fact.mode=gate sends an item with no evidence that holds back to the writer.
+      const planFact = await runPlanFactStage(ctx, { projectId:input.projectId, runId:input.runId, taskId:input.taskId, attempt:countAttempts(db,input.runId,input.taskId),
+        hostId:input.config.hostId, task:input.task, answers:[candidate.output, answer], produced:candidate.produced ?? [], verification:candidate.verification ?? [] })
+        .catch((cause:unknown) => { ctx.log(`plan-fact: ${input.taskId} could not be checked: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
+      if (planFact?.refusal) {
+        recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+          attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"plan_fact_unproven",reason:planFact.refusal}});
+        const stopped = endedByStop(planFact.refusal, writerThreadId);
+        if (stopped) return stopped;
+        transitionAttempt(db, input.attemptId, "validation_failed", { reason:planFact.refusal });
+        return { status:"validation_failed", reason:planFact.refusal, output:candidate.output, produced:candidate.produced, verification:candidate.verification, attemptId:input.attemptId, writerThreadId };
       }
       // A model's opinion alone never accepts a task: some stage decided by code (the ownership and output gates, the checks)
       // must have passed for this candidate. The code critic's «passed» is advisory (STAGE_PROOF).

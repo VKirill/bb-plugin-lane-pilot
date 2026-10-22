@@ -13,6 +13,7 @@ import { rpcWorld } from "./rpc-world";
 export { HOST_JOB_KINDS, WORKFLOW_NODE_TONES, installReceiptSchema, modelCatalogSchema, prototypeConfigSchema, secretNameSchema, settingValidationSchema, stepExecutorSchema, TASK_KINDS, taskV2Schema, workflowDraftCheckSchema, workflowDraftPatchResultSchema, workflowDraftPublishResultSchema, workflowDraftSummarySchema, workflowDraftTestResultSchema, workflowStatsSchema, workflowTrialCaseSchema, workflowViewEdgeSchema, workflowViewNodeSchema, workflowViewSchema } from "@lane-pilot/contracts";
 export type { HostJobKind, PrototypeConfig, TaskV2 } from "@lane-pilot/contracts";
 export { hostContract } from "./host";
+export type { AcceptanceCard } from "./rpc-runs";
 
 export const rpcContract = defineRpcContract({
   ...rpcShell,

@@ -28,9 +28,9 @@ This page explains how the root app RPC contract is assembled and how the shell 
 
 ## How it works
 
-1. The contracts room imports shell, native, runs, settings, operations, knowledge, workflow and world maps, spreads them in that order into `defineRpcContract`, and exports the resulting contract (`src/rooms/contracts/index.ts:1-26`). The maps are included unconditionally; route-level optional values and enums are the only branch points declared here.
+1. The contracts room imports shell, native, runs, settings, operations, knowledge, workflow and world maps, spreads them in that order into `defineRpcContract`, and exports the resulting contract (`src/rooms/contracts/index.ts:1-27`). The maps are included unconditionally; route-level optional values and enums are the only branch points declared here.
 2. Each method schema validates its input before its handler runs. `.strict()` rejects undeclared object fields; defaults fill omitted values; nullable and discriminated unions select declared variants (`src/rooms/contracts/rpc-shell.ts:8-18`, `src/rooms/contracts/rpc-ops.ts:5-64`).
-3. `registerRpc` constructs handler maps using room dependencies, spreads them into one object, wraps the handlers with `timeRpcHandlers`, then registers the pair with BB (`src/rooms/core/server/rpc.ts:27-51`). The timing wrapper returns handler results unchanged and rethrows handler rejection; timing and answer-size logging errors are contained (`src/rooms/core/server/rpc-timing.ts:12-40`).
+3. `registerRpc` constructs handler maps using room dependencies, spreads them into one object, wraps the handlers with `timeRpcHandlers`, then registers the pair with BB (`src/rooms/core/server/rpc.ts:28-52`). The timing wrapper returns handler results unchanged and rethrows handler rejection; timing and answer-size logging errors are contained (`src/rooms/core/server/rpc-timing.ts:12-40`).
 
 ### `rpcShell`
 
@@ -67,11 +67,11 @@ The operations map defines strict methods for run control, statistics and deploy
 
 ## Business rules
 
-The contract declares accepted shapes and outputs; authorization and domain decisions happen in handlers. An `unknown` output schema means the contract does not validate the implementation's result structure (`src/rooms/contracts/rpc-ops.ts:27-64`, `src/rooms/core/server/rpc.ts:27-51`).
+The contract declares accepted shapes and outputs; authorization and domain decisions happen in handlers. An `unknown` output schema means the contract does not validate the implementation's result structure (`src/rooms/contracts/rpc-ops.ts:27-64`, `src/rooms/core/server/rpc.ts:28-52`).
 
 ## Public API or commands
 
-`rpcContract` is exported from `src/rooms/contracts/index.ts`; root handler registration is described in [RPC and host-call contracts](../rpc-callers.md) (`src/rooms/contracts/index.ts:15-26`).
+`rpcContract` is exported from `src/rooms/contracts/index.ts`; root handler registration is described in [RPC and host-call contracts](../rpc-callers.md) (`src/rooms/contracts/index.ts:15-27`).
 
 ## Gotchas
 

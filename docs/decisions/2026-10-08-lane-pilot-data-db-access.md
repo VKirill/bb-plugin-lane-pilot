@@ -19,7 +19,7 @@ TL;DR: Lane Pilot opens its SQLite database through BB storage; access to the da
 
 ## Context
 
-Lane Pilot obtains its database from `bb.storage.database()`, enables foreign keys, and applies its migrations during `openDatabase` (`src/rooms/storage/database.ts:331-336`). Direct access to that SQLite file can change plugin state outside its RPC handlers. The RPC contract assembles method schemas, and `registerRpc` registers handlers without a caller check (`src/rooms/contracts/index.ts:17-26`, `src/rooms/core/server/rpc.ts:27-29`). See [RPC and host-call contracts](../rpc-callers.md) for the contract surface.
+Lane Pilot obtains its database from `bb.storage.database()`, enables foreign keys, and applies its migrations during `openDatabase` (`src/rooms/storage/database.ts:331-336`). Direct access to that SQLite file can change plugin state outside its RPC handlers. The RPC contract assembles method schemas, and `registerRpc` registers handlers without a caller check (`src/rooms/contracts/index.ts:18-27`, `src/rooms/core/server/rpc.ts:28-30`). See [RPC and host-call contracts](../rpc-callers.md) for the contract surface.
 
 ## Decision
 
@@ -43,7 +43,7 @@ Active. This record describes the code boundary and the chosen host-permission c
 
 ## Consequences
 
-- RPC validation remains a contract check and does not stop a process with direct filesystem access from changing SQLite data (`src/rooms/contracts/index.ts:17-26`, `src/rooms/core/server/rpc.ts:27-29`; see [RPC and host-call contracts](../rpc-callers.md)).
+- RPC validation remains a contract check and does not stop a process with direct filesystem access from changing SQLite data (`src/rooms/contracts/index.ts:18-27`, `src/rooms/core/server/rpc.ts:28-30`; see [RPC and host-call contracts](../rpc-callers.md)).
 - The repository does not define an operational review procedure for host process placement or database-directory ownership; `openDatabase` only obtains BB storage, enables foreign keys, and applies migrations (`src/rooms/storage/database.ts:336-340`).
 
 <!-- lane-pilot:backlinks -->

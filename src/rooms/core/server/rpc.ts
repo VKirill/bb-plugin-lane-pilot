@@ -19,6 +19,7 @@ import { canaryRpc } from "../../stability/server";
 import { memoryProbeRpc } from "./rpc-memory-probe";
 import { harnessRpc } from "../../harness/server";
 import { deferralRpc } from "../../deferral/server";
+import { acceptanceRpc } from "../../acceptance/server";
 import { sessionMemoryRpc } from "../../memory/server";
 import { createWorkflowArchitect } from "../../workflow/server";
 import { architectStartRpc } from "../../workflow/server";
@@ -49,6 +50,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...memoryProbeRpc(services),
     ...harnessRpc(services.harness),
     ...deferralRpc(services.deferrals),
+    ...acceptanceRpc(ctx.db),
     ...sessionMemoryRpc(ctx, services),
     ...createWorkflowArchitect(ctx, services).rpc,
     ...architectStartRpc(ctx, services),

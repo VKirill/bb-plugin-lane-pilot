@@ -259,7 +259,7 @@ export const SECTIONED_SETTING_KEYS = new Set([
   "memory.enabled", "memory.maintain", "memory.inject", "memory.audience", "memory.search_engine",
   "memory.personal_bot", "memory.core_budget", "memory.note_budget", "memory.index_budget", "memory.context_budget",
   "specialist.enabled", "specialist.when",
-  "onboarding.depth", "ops.max_tasks", "adoc.040", "adoc.041", "adoc.042", "workspace.provider", "sandbox.backend", "verification.sandbox_unsafe", "secrets.allow", "quality_mode",
+  "onboarding.depth", "ops.max_tasks", "adoc.040", "adoc.041", "adoc.042", "workspace.provider", "sandbox.backend", "verification.sandbox_unsafe", "secrets.allow", "quality_mode", "critic.code.default_for_risk", "plan_fact.mode",
   "browser_qa.enabled", "browser_qa.provider", "browser_qa.model", "browser_qa.backend",
   "browser_qa.approve", "browser_qa.reasoning_effort",
 ]);

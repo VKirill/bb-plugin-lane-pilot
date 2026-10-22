@@ -9,6 +9,8 @@ import { cliReceiptAttemptKey, cliReceiptRunKey, DISPATCH_IDEMPOTENT_WINDOW_MS, 
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
 import { QUALITY_MODE_SETTING, browserQaRequired, resolveQualityMode } from "../../critique";
+import type { CodeCriticDefault } from "../../critique";
+import { saveCriticCodeDefault } from "./critic-override";
 import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskGitBase, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, recordFinishedAttempt, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../storage";
 import { sha256 } from "../../tasks";
 import { liveFolderLockNote, nextStep, taskFamily } from "../../runs";
@@ -143,7 +145,8 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     return { task:moved.task, plan:planWithOutsideReads(plan, moved.outsideReads), movedInto:repo };
   }
 
-  async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2; plan?:string; baseRef?:string; objective?:string; requireObjective?:boolean}): Promise<Record<string,unknown>> {
+  /** `criticCodeDefault`: this task's value of `critic.code.default_for_risk`, over the project's (the bench toggles the code critic per arm with it). */
+  async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2; plan?:string; baseRef?:string; objective?:string; requireObjective?:boolean; criticCodeDefault?:CodeCriticDefault}): Promise<Record<string,unknown>> {
     const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
     if (valueAt(metadata, "role") !== "pm") throw new Error("caller is not a Lane Pilot PM thread");
     const runId = stringAt(metadata, "lanePilotRunId");
@@ -196,6 +199,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       ? [{ code:"objective_missing", message:"objective is missing: this run has none yet; add objective to this first dispatch, one phrase in the language the owner writes in saying what the whole batch is for (later dispatches may leave it out)" }] : [];
     if (lint.errors.length || noObjective.length) return lintReply(runId, [...lint.errors, ...noObjective]);
     createTask(db, { id:taskId, runId, kind:"bb", contract:task });
+    await saveCriticCodeDefault(bb.storage.kv as never, taskId, args.criticCodeDefault);
     saveTaskPlan(db, taskId, canonicalPlan);
     if (run.run_gate === "pre-merge") {
       const reason = "explicit_review_gate_requires_operator";

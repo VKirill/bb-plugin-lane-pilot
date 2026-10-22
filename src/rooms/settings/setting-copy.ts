@@ -150,6 +150,8 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "jev.modes": { label: "field_s442", help: "reason_s442" },
   "jev.provider": { label: "field_s475", help: "reason_s475" },
   "quality_mode": { label: "field_s423", help: "reason_s423" },
+  "critic.code.default_for_risk": { label: "field_s476", help: "reason_s476" },
+  "plan_fact.mode": { label: "field_s477", help: "reason_s477" },
   "run.gate": { label: "settingRunGate", help: "settingRunGateHelp" },
 };
 

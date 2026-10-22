@@ -21,6 +21,8 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "integration.gate_when": { queue_drained: "enumIntegrationGateDrained", every_n: "enumIntegrationGateEveryN" },
   "workspace.provider": { auto: "enumWorkspaceProviderAuto", off: "enumWorkspaceProviderOff" },
   "writer.skill_pick": { on: "enumSkillPickOn", off: "enumSkillPickOff" },
+  "critic.code.default_for_risk": { off: "enumCriticCodeOff", medium: "enumCriticCodeMedium", high: "enumCriticCodeHigh" },
+  "plan_fact.mode": { record: "enumPlanFactRecord", gate: "enumPlanFactGate" },
   "jev.provider": { openlux: "enumJevProviderOpenlux", typesafe: "enumJevProviderTypesafe" },
   "sandbox.backend": {
     auto: "enumSandboxAuto",

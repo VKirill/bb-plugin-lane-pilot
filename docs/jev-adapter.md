@@ -56,7 +56,7 @@ Jev's deterministic classification fallback remains the effective result when cl
 
 ## Public API or commands
 
-The package exposes `judge`, `judgeMany`, `judgeBundle`, `outcome`, and `enabled` (`packages/jev/src/run.ts:35-42`). Native writer selection is visible in the nullable `lastWriterTrace` field of the `get_screen` output, including requested and effective reasoning levels and the Jev status (`src/rooms/contracts/rpc-runs.ts:98-100`, `:147-163`).
+The package exposes `judge`, `judgeMany`, `judgeBundle`, `outcome`, and `enabled` (`packages/jev/src/run.ts:35-42`). Native writer selection is visible in the nullable `lastWriterTrace` field of the `get_screen` output, including requested and effective reasoning levels and the Jev status (`src/rooms/contracts/rpc-runs.ts:125-127`, `:174-190`).
 
 The global Work settings page renders the Jev provider panel; project and section settings show a note that the provider is global (`src/rooms/ui-shell/ui/tab-work.tsx:34-37`, `:89-97`, `src/rooms/settings/ui/jev-provider.tsx:22-26`, `:130-131`). The panel lets the owner select OpenLux or TypeSafe, see key presence without reading the key, save a key to Env Catalog, and send a test request (`src/rooms/settings/ui/jev-provider.tsx:40-70`). Its RPC methods return provider status, save a single-line key, and test the selected provider with a 15-second timeout; status and test results never include a key (`src/rooms/secrets/server/rpc/jev.ts:8-14`, `:19-50`, `src/rooms/contracts/rpc-knowledge.ts:189-200`).
 

@@ -33,7 +33,7 @@ The app's Tasks navigation scope renders `TaskBoard`; it reads the board and tas
 2. The screen calls `task_board` immediately and every eight seconds, sending the selected project when scoped and a completion window; a failed refresh is ignored and the last result remains visible (`src/rooms/runs/ui/task-board.tsx:25`, `:134-141`).
 3. The server selects each task's latest attempt, includes live work and recent terminal work, removes superseded task-family attempts, derives column/phase from attempt and stage receipts, and adds top-level workflow runs (`src/rooms/runs/server/task-board.ts:63-78`, `:81-144`).
 4. The UI filters by task/workflow kind, project, search text, and service-project visibility, then renders fixed columns or a list grouped by goal, chat, area, project, or no group (`src/rooms/runs/ui/task-board.tsx:121-148`, `:169-209`).
-5. Opening an item calls `task_card`. The server reads its contract, plan, ordered stages, attempts and worker threads; thread roots include writer attempts and helper stages, with each root's child sub-agent threads (`src/rooms/runs/ui/task-board.tsx:328-329`, `src/rooms/runs/server/task-board.ts:160-209`, `src/rooms/runs/server/rpc/runs.ts:182-201`).
+5. Opening an item calls `task_card`. The server reads its contract, plan, ordered stages, attempts and worker threads; thread roots include writer attempts and helper stages, with each root's child sub-agent threads (`src/rooms/runs/ui/task-board.tsx:328-329`, `src/rooms/runs/server/task-board.ts:160-209`, `src/rooms/runs/server/rpc/runs.ts:182-201`). The task page also loads the acceptance card with `task_acceptance_card`: contract, plan against fact, stage receipts with their proof kind, gate events, what did not run, risk, base commit and cost (see [Plan against fact and the acceptance card](plan-fact.md)).
 6. The helper panel calls `list_helper_threads`; for an open run, the server adds `buildTaskGraph` output, which the UI lays out as task nodes joined by wait edges (`src/rooms/native-agent/ui/helper-threads.tsx:70-84`, `src/rooms/runs/server/rpc/runs.ts:46-50`, `src/rooms/runs/server/task-graph.ts:21-58`, `src/rooms/native-agent/ui/task-graph-view.tsx:16-36`).
 
 ### Modes and variants
@@ -65,8 +65,8 @@ The app's Tasks navigation scope renders `TaskBoard`; it reads the board and tas
 
 | RPC method | Input and output |
 |---|---|
-| `task_board` | Optional project id and integer `doneHours` from 1 to 720 (default 24); returns board items with project and PM-thread titles (`src/rooms/contracts/rpc-runs.ts:8-21`, `src/rooms/runs/server/rpc/runs.ts:171-180`). |
-| `task_card` | Run id and nullable task id; returns a task or workflow card with stages, attempts, contract, plan and threads, or null (`src/rooms/contracts/rpc-runs.ts:23-30`, `src/rooms/runs/server/rpc/runs.ts:182-202`). |
+| `task_board` | Optional project id and integer `doneHours` from 1 to 720 (default 24); returns board items with project and PM-thread titles (`src/rooms/contracts/rpc-runs.ts:30-43`, `src/rooms/runs/server/rpc/runs.ts:171-180`). |
+| `task_card` | Run id and nullable task id; returns a task or workflow card with stages, attempts, contract, plan and threads, or null (`src/rooms/contracts/rpc-runs.ts:45-52`, `src/rooms/runs/server/rpc/runs.ts:182-202`). |
 | `list_helper_threads` | Parent thread id; returns helper threads, queued task ids, and optional graph for the open run (`src/rooms/contracts/rpc-native.ts:127-144`). |
 
 ## Gotchas

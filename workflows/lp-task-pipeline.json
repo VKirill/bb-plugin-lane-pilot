@@ -271,11 +271,12 @@
       "type": "lp-task",
       "label": "Code task",
       "uses": "lp-task",
-      "stage_proof": {"writer-agent": {"kind": "gate", "check": "gates owns-paths and validate: the changed files are inside owns_paths and expected_outputs exist with content"}, "verification": {"kind": "command", "check": "every verification[].command exits 0 in the sandbox (gate verification passed)"}, "code-critique": {"kind": "advisory", "reason": "a model's review of the candidate", "form": "parseCodeCritique: verdict schema; a critical or high finding counts only when its file is among the candidate's files and its line exists in it"}, "acceptance-receipt": {"kind": "schema", "check": "the acceptance-v2 receipt validates against lane-stack/schemas/acceptance-v2.schema.json (validateAcceptanceV2)"}},
+      "stage_proof": {"writer-agent": {"kind": "gate", "check": "gates owns-paths and validate: the changed files are inside owns_paths and expected_outputs exist with content"}, "verification": {"kind": "command", "check": "every verification[].command exits 0 in the sandbox (gate verification passed)"}, "code-critique": {"kind": "advisory", "reason": "a model's review of the candidate", "form": "parseCodeCritique: verdict schema; a critical or high finding counts only when its file is among the candidate's files and its line exists in it"}, "plan-fact": {"kind": "file", "check": "blindPlanFact checks each acceptance row of the writer's plan-fact table against the candidate: the cited file is among the changed files, the cited lines overlap a changed hunk, the cited command is a verification[] command that exited 0; the writer's prose is never read"}, "acceptance-receipt": {"kind": "schema", "check": "the acceptance-v2 receipt validates against lane-stack/schemas/acceptance-v2.schema.json (validateAcceptanceV2)"}},
       "stages": [
         "writer-agent",
         "verification",
         "code-critique",
+        "plan-fact",
         "acceptance-receipt"
       ],
       "output": [

@@ -20,7 +20,8 @@ import { boundedAgentName } from "../role";
 import { candidateCitations, inputCitations } from "../citations";
 import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "../specialist";
 import { reasonForStatus } from "@lane-pilot/workflow-engine";
-import { QUALITY_MODE_SETTING, applyQualityMode, resolveQualityMode } from "../quality-mode";
+import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode } from "../quality-mode";
+import type { CodeCriticDefault } from "../quality-mode";
 import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { MAIN_ATTEMPT_LIMIT } from "../../runs";
 import { configuredSetting, stageHelperSettings } from "../../core/server";
@@ -307,12 +308,14 @@ export function attemptEnvironment(db:ReturnType<typeof openDatabase>, runId:str
 export async function runCodeCritique(input:{
   bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;
   config:PrototypeConfig;task:TaskV2;evidence:CandidateEvidence;disputes?:unknown;frozenPolicy?:FrozenCritiquePolicy;
+  /** This task's `critic.code.default_for_risk` when the dispatch carried one; else the project's setting decides. */
+  criticDefault?:CodeCriticDefault;
 }): Promise<{allowed:boolean;reason?:string;review:"passed"|"not_required";critique?:unknown;parsed?:ReturnType<typeof parseCodeCritique>;settings?:ReturnType<typeof parseCodeCritiqueSettings>;policy?:FrozenCritiquePolicy}> {
   // The code check on the critic's opinion: a finding's line must exist in the file the critic was shown.
   const cites = candidateCitations(input.evidence.files, MAX_FILE_EXCERPT_BYTES);
   const projectSettings = await stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
   const qualityMode = resolveQualityMode(input.task,projectSettings[QUALITY_MODE_SETTING]);
-  const settings = applyQualityMode(projectSettings,qualityMode);
+  const settings = applyCodeCriticDefault(applyQualityMode(projectSettings,qualityMode),qualityMode,input.task.risk,resolveCodeCriticDefault(projectSettings[CODE_CRITIC_DEFAULT_SETTING],input.criticDefault));
   const existing = listStageReceipts(input.db, input.runId, input.taskId).find((row) => row.stageId === "code-critique");
   const frozen = input.frozenPolicy ?? critiquePolicyFromResult(existing?.result);
   let parsed:ReturnType<typeof parseCodeCritiqueSettings>;

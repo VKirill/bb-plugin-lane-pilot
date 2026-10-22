@@ -49,7 +49,7 @@ Profile mode is `session-override` when the effective profile differs from stock
 
 ## Public API or commands
 
-`rpcNative` is one of the maps assembled into `rpcContract` and registered by the run handlers (`src/rooms/contracts/index.ts:17-26`, `src/rooms/core/server/rpc.ts:30-35`).
+`rpcNative` is one of the maps assembled into `rpcContract` and registered by the run handlers (`src/rooms/contracts/index.ts:18-27`, `src/rooms/core/server/rpc.ts:31-36`).
 
 ## Gotchas
 

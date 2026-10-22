@@ -82,7 +82,7 @@ The host entry registers matching implementations for the host worker (`src/room
 
 ### `hostContract`
 
-1. The contracts room exports `hostContract` separately from the app `rpcContract`; `hostContract` passes one method map to `defineRpcContract` (`src/rooms/contracts/index.ts:11-16`, `src/rooms/contracts/host.ts:6`).
+1. The contracts room exports `hostContract` separately from the app `rpcContract`; `hostContract` passes one method map to `defineRpcContract` (`src/rooms/contracts/index.ts:11-17`, `src/rooms/contracts/host.ts:6`).
 2. Each host operation declares strict input/output objects. Inputs carry `requestedHostId`; declared absolute paths must begin with `/`, names and commands have bounds, and enum fields define accepted actions and result states (`src/rooms/contracts/host.ts:7-13`, `:15-46`).
 3. The map includes native install, Git ownership/worktree actions, jobs, stability, Anamnesis methods, disk, integrate, docs and provider checks. `anamnesisHostMethods` is spread into the contract (`src/rooms/contracts/host.ts:6-72`).
 4. `gitIntegrate` accepts required host/base/worktree/message fields, optional committed-only/bookkeeping options, optional `ownsPaths`, and optional bounded replay-check commands; output distinguishes merged/up-to-date/conflict/failed/busy and may carry checks/rebuild results (`src/rooms/contracts/host.ts:61-71`).
@@ -114,7 +114,7 @@ The host entry registers matching implementations for the host worker (`src/room
 | CLI run config | Uses run-bound host/workspace and current effective writer settings. | Missing host/workspace returns null; missing writer provider/model throws a setup error. |
 | Project Folders sections | Lists sections through plugin RPC and derives deepest matching folder scopes. | Missing RPC or list failure returns no sections. |
 
-`createCore` is the shared dependency object for server rooms; host contract shapes remain separate from app RPC shapes (`src/rooms/core/server/core.ts:31-49`, `src/rooms/contracts/index.ts:11-26`). A native CLI run takes host, workspace, and writer model from run binding/current settings rather than stale prototype configuration (`src/rooms/core/server/core.ts:306-320`, `:370-373`).
+`createCore` is the shared dependency object for server rooms; host contract shapes remain separate from app RPC shapes (`src/rooms/core/server/core.ts:31-49`, `src/rooms/contracts/index.ts:11-27`). A native CLI run takes host, workspace, and writer model from run binding/current settings rather than stale prototype configuration (`src/rooms/core/server/core.ts:306-320`, `:370-373`).
 
 ## Gotchas
 

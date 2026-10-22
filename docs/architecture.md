@@ -65,7 +65,7 @@ C4Container
   Rel(server, db, "Reads and writes")
 ```
 
-The UI and server entries are declared by the package's BB manifest (`package.json:8-18`). The server uses BB's plugin storage database and runs migrations during startup (`src/rooms/storage/database.ts:336-340`). The UI receives methods from the assembled `rpcContract`, while host calls use `hostContract` (`src/rooms/contracts/index.ts:1-26`, `src/rooms/contracts/host.ts:6-15`). The host client wraps checkout-writing calls and acceptance checks with a drain gate (`src/rooms/core/server/core.ts:91-100`, `src/rooms/stability/server/deploy-drain.ts:1-6`).
+The UI and server entries are declared by the package's BB manifest (`package.json:8-18`). The server uses BB's plugin storage database and runs migrations during startup (`src/rooms/storage/database.ts:336-340`). The UI receives methods from the assembled `rpcContract`, while host calls use `hostContract` (`src/rooms/contracts/index.ts:1-27`, `src/rooms/contracts/host.ts:6-15`). The host client wraps checkout-writing calls and acceptance checks with a drain gate (`src/rooms/core/server/core.ts:91-100`, `src/rooms/stability/server/deploy-drain.ts:1-6`).
 
 ## Application and package dependencies
 
@@ -109,7 +109,7 @@ The test's deep-import baseline is recorded in `tests/architecture/deep-imports.
 
 ## RPC composition and event wiring
 
-`rpcContract` combines shell, native-agent, runs, settings, operations, knowledge, workflow, and world schemas (`src/rooms/contracts/index.ts:17-26`). `registerRpc` combines domain handler maps, wraps them with timing, and registers the result against that contract (`src/rooms/core/server/rpc.ts:27-51`). The runs handlers expose the Tasks board and card; the native helper-thread response can include the open run's dependency graph (`src/rooms/runs/server/rpc/runs.ts:46-50`, `:165-202`, `src/rooms/contracts/rpc-native.ts:127-144`). See [RPC and host-call contracts](rpc-callers.md#how-it-works) and [Tasks board](task-board.md).
+`rpcContract` combines shell, native-agent, runs, settings, operations, knowledge, workflow, and world schemas (`src/rooms/contracts/index.ts:18-27`). `registerRpc` combines domain handler maps, wraps them with timing, and registers the result against that contract (`src/rooms/core/server/rpc.ts:28-52`). The runs handlers expose the Tasks board and card; the native helper-thread response can include the open run's dependency graph (`src/rooms/runs/server/rpc/runs.ts:46-50`, `:165-202`, `src/rooms/contracts/rpc-native.ts:127-144`). See [RPC and host-call contracts](rpc-callers.md#how-it-works) and [Tasks board](task-board.md).
 
 `mountNativeWiring` registers the mention provider, `message.dispatch` handler, Claude environment contribution, OpenCode shim, BB shim, and retry handling for dropped provider streams (`src/rooms/core/server/native-wiring.ts:10-58`). `mountLifecycleEvents` adds event listeners only when the BB event API exists and `LANE_PILOT_THREAD_SIGNALS` is not `0`; missing event names are logged and periodic sweeps remain the fallback (`src/rooms/core/server/lifecycle-events.ts:22-37`). It closes runs when their PM thread is archived or deleted and notifies PMs when an attempt is waiting on an owner interaction (`src/rooms/core/server/lifecycle-events.ts:39-72`).
 

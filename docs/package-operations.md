@@ -51,9 +51,9 @@ Describe the execution and failure behavior of selected package APIs summarized 
 
 ### `rpcContract`
 
-1. The contracts room imports the shell, native, runs, settings, operations, knowledge, workflow, and world maps, then spreads each into one `defineRpcContract` call (`src/rooms/contracts/index.ts:1-9`, `:17-26`).
-2. Composition is unconditional. Each method owns its strict input and output schemas; `rpcContract` does not add a separate route mode or transform a domain result (`src/rooms/contracts/index.ts:17-26`).
-3. The module separately exports `hostContract` and shared schemas/types, while `rpcContract` is the single public UI RPC contract of the room (`src/rooms/contracts/index.ts:11-16`).
+1. The contracts room imports the shell, native, runs, settings, operations, knowledge, workflow, and world maps, then spreads each into one `defineRpcContract` call (`src/rooms/contracts/index.ts:1-9`, `:18-27`).
+2. Composition is unconditional. Each method owns its strict input and output schemas; `rpcContract` does not add a separate route mode or transform a domain result (`src/rooms/contracts/index.ts:18-27`).
+3. The module separately exports `hostContract` and shared schemas/types, while `rpcContract` is the single public UI RPC contract of the room (`src/rooms/contracts/index.ts:11-17`).
 
 | Condition | Result | Failure behavior |
 |---|---|---|
@@ -95,7 +95,7 @@ The pixel-world batcher is intended for completed static scene geometry before d
 
 ## Public API or commands
 
-`@lane-pilot/jev` exports `createJev` through its package root; `@lane-pilot/pixel-world` exports `batchStatic` and `createNavGrid` plus navigation types (`packages/jev/src/index.ts:1-9`, `packages/pixel-world/src/index.ts:1-8`). `rpcContract` is exported by the contracts room (`src/rooms/contracts/index.ts:13-26`).
+`@lane-pilot/jev` exports `createJev` through its package root; `@lane-pilot/pixel-world` exports `batchStatic` and `createNavGrid` plus navigation types (`packages/jev/src/index.ts:1-9`, `packages/pixel-world/src/index.ts:1-8`). `rpcContract` is exported by the contracts room (`src/rooms/contracts/index.ts:13-27`).
 
 ## Gotchas
 

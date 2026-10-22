@@ -73,7 +73,7 @@ Tables are created or extended in the ordered plugin migration list; the harness
 
 | From | To | Writer and condition |
 |---|---|---|
-| Attempt state | Next attempted state | `transitionAttempt` checks legal moves and records each accepted or refused transition (`src/rooms/storage/database.ts:1021-1054`; `src/rooms/writer/server/dispatch.ts:12`). |
+| Attempt state | Next attempted state | `transitionAttempt` checks legal moves and records each accepted or refused transition (`src/rooms/storage/database.ts:1021-1054`; `src/rooms/writer/server/dispatch.ts:14`). |
 | Terminal attempt outcome | Reported or suppressed | Relay records a handled outcome; see [cross-cutting gotchas](../gotchas.md#stability-and-local-provider-setup) for delivery conditions (`src/rooms/relay/server/relay.ts:380-415`). |
 | Harness state | `insertHarness` creates `base` or `trial`; editor candidates enter `trial`, then evaluation changes them to `adopted` or `retired` (`src/rooms/harness/server/store.ts:74-92`, `src/rooms/harness/server/harness.ts:387-389`, `:405-420`). |
 | Stage receipt state | `pending` → `running` → terminal | Stage runners write a unique `(run, task, stage)` receipt; stage events preserve change history (`src/rooms/storage/database.ts:138-186`). |

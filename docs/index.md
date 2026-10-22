@@ -30,6 +30,7 @@ Built by Lane Pilot from page frontmatter.
 | [Native agent activation and dispatch](native-agent.md) | component | active | 2026-10-14 |
 | [Lane Pilot overview](overview.md) | overview | active | 2026-10-20 |
 | [Package operation details](package-operations.md) | component | active | 2026-10-17 |
+| [Plan against fact and the acceptance card](plan-fact.md) | component | active | 2026-10-22 |
 | [Shared packages](packages.md) | component | active | 2026-10-20 |
 | [RPC and host-call contracts](rpc-callers.md) | component | active | 2026-10-20 |
 | [RPC contract composition and route families](rpc-callers/contract-map.md) | component | active | 2026-10-20 |

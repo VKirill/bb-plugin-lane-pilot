@@ -100,12 +100,16 @@ const task:TaskV2 = {
   verification:[{ command:"test -f note.txt", cwd:config.writerWorkspacePath, timeout_sec:30 }],
 };
 
+/** What the fake writer answers; null is the plain «writer created note.txt». */
+let writerAnswerOverride:string|null=null;
+
 /** Threads the fake BB answers "Thread not found" for, like a deleted chat. */
 const goneThreads=new Set<string>();
 async function setup(critiqueOutput:string, browserQaResult?:Record<string,unknown>|((input:unknown)=>Promise<Record<string,unknown>>), projectSettings:Record<string,unknown>={}, specialistOutput='{"decision":"approve","summary":"No unmitigated critical risk","risks":[]}', environmentId?:string, memoryOutput='[{"kind":"core","content":"Durable deployment convention uses managed workspaces","concepts":["deployment","workspace"]}]', nightOutput='{"decision":"clear","summary":"No actionable findings","findings":[]}', nightFixOutput="bounded fix applied", snapshotOverrides?:Array<Array<Record<string,string>>>, readFirstUnavailable=false, writerFailures=0, emergencySelection?:{providerId:string;model:string}, pmReadOutput='{"summary":"README notes the managed workspace contract.","keyFacts":["Managed workspaces isolate task edits."],"openQuestions":[]}', onboardingOutput?:string, writerControl:{hold:boolean;snapshots?:Array<Array<Record<string,string>>>;states:Map<string,"active"|"idle">}={hold:false,states:new Map()}, idleWaitThrowThreadId?:string, startingTurnCompletedThreadId?:string, eventsListThrowThreadId?:string, docsHoldEvents=false, docsControl:{inventoryGate?:Promise<void>;pages?:()=>Array<{path:string;modifiedAt:number;sha256:string;content:string}>;output?:string}={}, holdEventThreadIds:string[]=[], codeCritiqueOutputs?:string[], codeRepairOutput?:string) {
   // A held child (docs, onboarding, night review) answers its second event read only after the first poll pause: those tests need the pause at its production length.
   if(docsHoldEvents||holdEventThreadIds.length) process.env.LANE_PILOT_POLL_SCALE="1"; else process.env.LANE_PILOT_POLL_SCALE="0.05";
   docsEventsHeld=false;
+  writerAnswerOverride=null;
   extraListPaths=[];
   limitThreadIds.clear();
   writerControl = writerControl ?? {hold:false,states:new Map()};
@@ -258,7 +262,7 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
             : limitThreadIds.has(threadId) ? { output:"\n\nUpgrade your plan to continue\n" }
             : { output: Number((threadMeta.get(threadId) as {repairRound?:unknown}|undefined)?.repairRound) > 0
               ? (codeRepairOutput ?? '{"replies":[{"id":"f1","status":"fixed","evidence":"updated note.txt"}]}')
-              : "writer created note.txt" },
+              : (writerAnswerOverride ?? "writer created note.txt") },
         list:async () => [...new Set([...threadMeta.keys(), ...seededThreadMeta.keys()])].map((id)=>({id})) as never,
         queue:{list:async (args?:{threadId?:string})=>queuedRetries.filter((row)=>!args?.threadId||row.threadId===args.threadId)},
         queuedMessages:{delete:async ({queuedMessageId}:{queuedMessageId:string})=>{queueLog.push(`delete:${queuedMessageId}`);return {ok:true};}},
@@ -1713,7 +1717,7 @@ describe("stage → native writer → receipt", () => {
     expect(String(writerSpawn.title)).toMatch(/writer/i);
     expect(String(writerSpawn.prompt)).toContain(readFirstLine);
     expect(listStageReceipts(db, "stage-run", task.id).filter((row) => !backgroundStages.has(row.stageId)).map((row) => [row.stageId,row.state]))
-      .toEqual([["acceptance-receipt","passed"],["plan-critique","passed"],["pm-read","skipped"],["specialist-review","skipped"],["verification","passed"],["writer-agent","passed"]]);
+      .toEqual([["acceptance-receipt","passed"],["plan-critique","passed"],["plan-fact","skipped"],["pm-read","skipped"],["specialist-review","skipped"],["verification","passed"],["writer-agent","passed"]]);
     const receipts = listStageReceipts(db, "stage-run", task.id).filter((row) => !backgroundStages.has(row.stageId));
     expect(receipts.every((row) => row.runId === "stage-run" && row.taskId === task.id && row.contractVersion === 1)).toBe(true);
     expect(receipts.filter((row) => row.state === "passed").every((row) =>
@@ -1740,7 +1744,7 @@ describe("stage → native writer → receipt", () => {
     expect(listGateEvents(db,{projectId, since:0}).map((row)=>[row.gate,row.status])).toEqual([
       ["owns-paths","passed"],["verification","passed"],["validate","passed"],["accept","passed"],
     ]);
-    expect((result.stages as typeof receipts).filter((row) => !backgroundStages.has(row.stageId))).toHaveLength(6);
+    expect((result.stages as typeof receipts).filter((row) => !backgroundStages.has(row.stageId))).toHaveLength(7);
     await harness.lifecycle.dispose();
   });
 
@@ -1762,6 +1766,37 @@ describe("stage → native writer → receipt", () => {
     expect(receipts.find((row)=>row.stageId==="writer-agent")?.result).toMatchObject({runV2:expectedProfile});
     expect(completed.stages.filter((row:{taskId:string})=>row.taskId===criticalTask.id)).toEqual(receipts.map((row) => ({ taskId:row.taskId, stageId:row.stageId, state:row.state, ...(row.reason ? { reason:row.reason.slice(0, 400) } : {}) })));
     await harness.lifecycle.dispose();
+  });
+
+  it("checks the writer's plan-fact table against the candidate and keeps the stage receipt beside the others",async()=>{
+    const {db,harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}');
+    writerAnswerOverride="Done.\n```plan-fact\n"+JSON.stringify([{item:1,status:"done",evidence:["note.txt","cmd:test -f note.txt"]}])+"\n```";
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Create the fixture",task},{threadId:pmThreadId,projectId});
+    const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId})));
+    expect(result.state).toBe("accepted");
+    const receipt=listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="plan-fact");
+    expect(receipt).toMatchObject({state:"passed",result:{table:"ok",mode:"record",blocking:[],items:[{item:1,verdict:"proven"}]}});
+    expect((receipt!.result as {items:Array<{evidence:Array<{code:string}>}>}).items[0]!.evidence.map((row)=>row.code)).toEqual([expect.stringMatching(/^(file_changed|lines_changed)$/),"command_passed"]);
+    await harness.lifecycle.dispose();
+  });
+
+  it("records an acceptance item with no evidence in the diff and accepts the task (plan_fact.mode record), refuses it in gate mode",async()=>{
+    const unproven="```plan-fact\n"+JSON.stringify([{item:1,status:"done",evidence:["elsewhere.txt:3","cmd:rm -rf /"]}])+"\n```";
+    const recorded=await setup('{"decision":"approve","summary":"Checked","findings":[]}');
+    writerAnswerOverride=unproven;
+    await recorded.harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Create the fixture",task},{threadId:pmThreadId,projectId});
+    const accepted=JSON.parse(String(await recorded.harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId})));
+    expect(accepted.state).toBe("accepted");
+    expect(listStageReceipts(recorded.db,"stage-run",task.id).find((row)=>row.stageId==="plan-fact")).toMatchObject({state:"failed",reason:expect.stringContaining("plan_fact_unproven: acceptance item 1"),result:{blocking:[1]}});
+    await recorded.harness.lifecycle.dispose();
+
+    const gated=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"plan_fact.mode":"gate"});
+    writerAnswerOverride=unproven;
+    await gated.harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Create the fixture",task},{threadId:pmThreadId,projectId});
+    const refused=JSON.parse(String(await gated.harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId})));
+    expect(refused.state).not.toBe("accepted");
+    expect(JSON.stringify(refused)).toContain("plan_fact_unproven");
+    await gated.harness.lifecycle.dispose();
   });
 
   it("records a rejected owns-paths gate without exposing the offending path in its audit event",async()=>{
@@ -2241,6 +2276,20 @@ describe("stage → native writer → receipt", () => {
 
   const noteSnaps=[[],[],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}],[{path:"note.txt",sha256:noteSha}]];
   const criticOf=(spawned:Array<Record<string,unknown>>)=>spawned.find((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="code-critique") as Record<string,unknown>;
+
+  it("runs the code critic by the task's risk when critic.code.default_for_risk says so and nothing else switched it",async()=>{
+    const settings={"code_critique.enabled":"","critic.code.default_for_risk":"medium"};
+    const on=await setupCode(noteSnaps,{settings});
+    await on.harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task:{...task,risk:"medium"}},{threadId:pmThreadId,projectId});
+    expect(JSON.parse(String(await on.harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId}))).state).toBe("accepted");
+    expect(criticOf(on.spawned)).toBeDefined();
+    await on.harness.lifecycle.dispose();
+    const off=await setupCode(noteSnaps,{settings});
+    await off.harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task:{...task,risk:"low"}},{threadId:pmThreadId,projectId});
+    expect(JSON.parse(String(await off.harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:5},{threadId:pmThreadId,projectId}))).state).toBe("accepted");
+    expect(criticOf(off.spawned)).toBeUndefined();
+    await off.harness.lifecycle.dispose();
+  },20_000);
 
   it("reviews the code on another model than the writer's when the critic's pair equals it (G9)",async()=>{
     // The writer is codex/gpt-6-luna; the critic is set to the same pair, and the plan critique's pair is on the host.
