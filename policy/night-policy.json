@@ -1,7 +1,7 @@
 {
-  "version": 2,
-  "frozen_at": "2026-10-22T11:26:00Z",
-  "frozen_hash": "1017b98f92e2d04c825ddead384295249a750f1ffc60058264da68b830f42e7f",
+  "version": 3,
+  "frozen_at": "2026-10-22T14:14:50Z",
+  "frozen_hash": "a51b31790a2a403f578144e7865b30e7cd26b5794a3412706961b3f4134e4089",
   "title": "What the night may settle without the owner",
   "rule": "Most restrictive match wins (owner_only > night_proposes > night_decides). A change that matches nothing is night_proposes. A night_decides entry matches only when its proof attributes are present and true; a missing proof is no match. A standing prohibition is owner_only.",
   "exam": {
@@ -13,7 +13,8 @@
   },
   "versions": [
     { "version": 1, "frozen": "2026-10-22", "exam": "policy/exam.json (x1..x32)", "result": "14/32 = 0.438, failed; night_decides degraded to night_proposes", "tuned_on_exam": false },
-    { "version": 2, "frozen": "2026-10-22T11:26:00Z", "exam": "policy/exam-v2.json + plugin store policy:exam-v2 (decisions after the freeze)", "result": "not enough unseen decisions yet", "changes": "standing_prohibitions concept (8 entries, each with its own source quote); rule_trial_apply moved from night_decides to night_proposes on design-side evidence d7, d10, d11 (against it: d9, d8 and the rollback a trial has; reasoning in docs/night-policy.md; not derived from the exam result); frozen_at/frozen_hash/min_items; exam grows at night", "tuned_on_exam": false }
+    { "version": 2, "frozen": "2026-10-22T11:26:00Z", "exam": "policy/exam-v2.json + plugin store policy:exam-v2 (decisions after the freeze)", "result": "not enough unseen decisions yet", "changes": "standing_prohibitions concept (8 entries, each with its own source quote); rule_trial_apply moved from night_decides to night_proposes on design-side evidence d7, d10, d11 (against it: d9, d8 and the rollback a trial has; reasoning in docs/night-policy.md; not derived from the exam result); frozen_at/frozen_hash/min_items; exam grows at night", "tuned_on_exam": false },
+    { "version": 3, "frozen": "2026-10-22T14:14:50Z", "exam": "policy/exam-v2.json + plugin store policy:exam-v2 (decisions after the freeze)", "result": "not enough unseen decisions yet", "changes": "judge_gates also covers the code that judges a night repair and decides done (src/rooms/wall, src/rooms/baseline, plan-fact, stage proofs, coverage); owner_only only grew", "tuned_on_exam": false }
   ],
   "split": {
     "design_items": "design_items below: the decisions this file was written from. Their ids start with d. since_version marks the ones added for a later version (absent = 1).",
@@ -153,7 +154,8 @@
       "match": [
         { "kinds": ["gate_change"] },
         { "files_any": ["src/rooms/verification/**", "src/rooms/writer/server/verify.ts", "src/rooms/writer/server/finish.ts", "src/rooms/stability/server/canary.ts", "src/rooms/stability/server/probes.ts", "scripts/test-full.sh", "scripts/lp-drill*", "vitest.config.ts", "tests/architecture/**", "tests/migration-lineage.test.ts"] },
-        { "settings_any": ["run.gate", "integration.*", "verification.*", "night_review.auto_merge", "night_review.enabled"] }
+        { "settings_any": ["run.gate", "integration.*", "verification.*", "night_review.auto_merge", "night_review.enabled"] },
+        { "files_any": ["src/rooms/wall/**", "src/rooms/baseline/**", "src/rooms/tasks/plan-fact.ts", "packages/contracts/src/stage-proof.ts", "src/rooms/coverage/**"] }
       ]
     },
     {

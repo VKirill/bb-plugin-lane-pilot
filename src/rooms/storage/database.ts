@@ -27,6 +27,7 @@ import { rollbackMigrations } from "../rollback";
 import { benchMigrations } from "../bench";
 import { ownerWaitingMigrations } from "../owner-waiting";
 import { baselineMigrations } from "../baseline";
+import { wallDeferralKindMigrations, wallMigrations } from "../wall";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
 export type LanePilotDatabase = Database.Database;
@@ -371,6 +372,9 @@ export const migrations = [
   ...ownerWaitingMigrations,
   // The baseline before a writer, the regression pass after acceptance and their findings (src/rooms/baseline).
   ...baselineMigrations,
+  // The wall journal and the night loop (src/rooms/wall); the deferral register learns the kind `wall`.
+  ...wallMigrations,
+  ...wallDeferralKindMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

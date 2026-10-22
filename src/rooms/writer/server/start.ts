@@ -745,6 +745,10 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           if (latest && RETRY_ELIGIBLE.includes(latest.state as AttemptState)) transitionAttempt(db, latest.id, "blocked", { reason:repeated });
           last = { ...last, status:"blocked", reason:repeated };
           primaryFailure = { ...last };
+          // The two normal moves are spent: the wall ladder opens (hunters from other sides, then the backlog), see src/rooms/wall.
+          services.wall?.noteTaskStop({ projectId:input.projectId, runId:input.runId, taskId:input.taskId, family:taskFamily(input.taskId), state:familyFailure?.state ?? "validation_failed",
+            reason:repeated.replace(/^repeated_failure:\s*/, ""), pmThreadId:input.pmThreadId ?? null, task:input.task, plan:input.plan })
+            .catch((cause:unknown) => ctx.log(`wall: could not note the stop of ${input.taskId}: ${cause instanceof Error ? cause.message : String(cause)}`));
           break;
         }
         familyFailure = { state:String(last.status), reason:typeof last.reason === "string" ? last.reason : null };

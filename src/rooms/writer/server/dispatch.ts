@@ -191,6 +191,9 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       const hint = `${inProgress.taskId} of the same task is ${inProgress.parked ? "parked and restarts by itself" : "running"}: use lane_pilot_update_task / lane_pilot_answer_writer; redispatch only to change the contract, and cancel it first with lane_pilot_cancel_task`;
       return { ok:false, error:{ code:"task_in_progress", retryable:false, sideEffects:"none", hint }, runningTaskId:inProgress.taskId, hint };
     }
+    // A family the wall ladder ended in the backlog is not sent again; one whose hunters found the ask itself wrong is not sent again unchanged.
+    const walled = args.task && !isMainfixTask(args.task.id) ? services.wall?.dispatchGuard({ runId, family:taskFamily(args.task.id), task, plan:canonicalPlan }) ?? null : null;
+    if (walled) return { ok:false, error:{ code:"wall_stop", retryable:false, sideEffects:"none", hint:walled }, hint:walled };
     // Contract lint: every contract mistake a helper or writer would only trip over later goes back to the PM now,
     // in one message with the fix, before a task or an attempt exists.
     const lint = await lintTask(args.projectId, runId, task, taskBase, config.hostId);

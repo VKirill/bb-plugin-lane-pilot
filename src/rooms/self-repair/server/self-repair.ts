@@ -26,6 +26,7 @@ import { MAX_CANDIDATES, repairGroup } from "@lane-pilot/jev/judgments/repair-gr
 import { fileAllowedByOwns, fileBlockedByNeverTouch, sha256Hex } from "@lane-pilot/kit";
 import { codeVerdict, splitRejectedPaths } from "@lane-pilot/run-insights";
 import { DEPENDENCY_REDO_WAIT_MS, HOLDING_ATTEMPT_STATES, latestTaskAttempt } from "../../storage";
+import { getRepairHooks, type NightAssignment } from "./hooks";
 
 /**
  * Self-repair: every 15 minutes Lane Pilot looks for failures that are its own fault (triage origin
@@ -69,7 +70,7 @@ export const SELF_REPAIR_DEFAULTS: SelfRepairConfig = {
 
 export type Incident = {
   signature: string;
-  kind: "triage" | "blocked" | "stuck" | "log" | "repeat" | "queued" | "stage" | "parked" | "breaker" | "drill" | "hook" | "guard" | "owner";
+  kind: "triage" | "blocked" | "stuck" | "log" | "repeat" | "queued" | "stage" | "parked" | "breaker" | "drill" | "hook" | "guard" | "owner" | "night";
   projectId: string;
   runId: string;
   taskId: string;
@@ -228,7 +229,7 @@ export function isDue(record: SignatureRecord, now: number, version = VERSION): 
 }
 
 /** How much a kind of incident matters when it is real: a closed project (breaker) or a parked task outranks a log line or a drill. */
-const KIND_SEVERITY: Record<Incident["kind"], number> = { breaker: 5, guard: 5, parked: 4, owner: 3, blocked: 3, stuck: 3, triage: 3, repeat: 3, hook: 2, queued: 2, stage: 2, log: 1, drill: 0.4 };
+const KIND_SEVERITY: Record<Incident["kind"], number> = { night: 0, breaker: 5, guard: 5, parked: 4, owner: 3, blocked: 3, stuck: 3, triage: 3, repeat: 3, hook: 2, queued: 2, stage: 2, log: 1, drill: 0.4 };
 const IMPACT_FLOOR = 0.3;
 
 /**
@@ -318,7 +319,8 @@ export function repairPrompt(
   signature: string,
   workspace: { path: string; branch: string; basePath: string },
   hub: Pick<SelfRepairConfig, "hubSsh" | "hubDb" | "hubLog"> = SELF_REPAIR_DEFAULTS,
-  activity: { now?: number; lastOwnerAt?: PmLastOwnerAt } = {},
+  /** `brief`: the night loop's addition (src/rooms/wall/brief.ts: proof, whole-class sweep, limits); it goes before «Done when». */
+  activity: { now?: number; lastOwnerAt?: PmLastOwnerAt; brief?: string } = {},
 ): string {
   const lines = incidents.slice(0, 6).map((row) =>
     `- ${row.kind} · ${new Date(row.at).toISOString()} · project ${row.projectId} · run ${row.runId} · task ${row.taskId} · attempt ${row.attemptId}` +
@@ -360,6 +362,7 @@ export function repairPrompt(
     "4. If it is Lane Pilot's (this repository, including the guard in lane-stack/hooks/; the claude-lane-stack copy of the guard and the VK core are not, see the last paragraph), fix the cause, not the symptom. Follow AGENTS.md and CLAUDE.md here (GitNexus impact before edits, detect-changes before commit) and add a test that fails without the fix. Verify against the real case, because unit tests here have missed real failures before: build the test from the failing data you pulled in step 1 and run what you can from your worktree. The code you commit runs nowhere until the release train deploys it, so name in the report what must be checked live after that deploy (scripts/lp-drill.sh runs the sandbox drills).",
     `5. Commit, do not ship. Your workspace ${workspace.path} is your own git worktree on branch ${workspace.branch}, forked from the shared checkout ${workspace.basePath}; the owner and other sessions work in that checkout, so never edit files there. Run the full suite (npx vitest run) first and continue only when it is green. Commit the fix and its test on your branch (git add <paths>, never git add -A) and add a CHANGELOG entry under a «## Unreleased» heading. Do NOT deploy, bump the version, push, merge or create a release: bb-plugin-push is the release train (one deploy a day, from a clean pushed tree, on a green suite) and it is not yours to run. When you finish with the verdict fixed, Lane Pilot merges your branch into the shared checkout itself; with any other verdict it releases your worktree, so commit only a change you want merged.`,
     ...pmStep,
+    ...(activity.brief ? ["", activity.brief] : []),
     "",
     "Done when: the cause is named with evidence, and it is either fixed and committed on your branch (with the commit) or shown to be already fixed or not Lane Pilot's; a live PM that must act now is told, and what an idle PM should do is in the report.",
     "Finish with a short report in Russian for the owner: cause, what you changed (or why nothing), how you verified it, the commit.",
@@ -732,23 +735,60 @@ export function createSelfRepair(ctx: ServerCore) {
       for (const [signature, record] of Object.entries(current.signatures)) {
         signal?.throwIfAborted();
         if (!record.worktree || !record.threadId || (record.worktree.mergeTries ?? 0) >= MERGE_TRIES || await threadBusy(record.threadId)) continue;
+        const night = signature.startsWith("night:") ? getRepairHooks(ctx) : undefined;
+        if (night && record.verdict === "fixed") {
+          // A night repair is merged only when the night policy lets the night do it alone; otherwise it waits on its branch (held) or is released.
+          const decision = await night.mergeGate(signature, { threadId: record.threadId, worktree: record.worktree }).catch(() => "hold" as const);
+          if (decision === "hold") continue;
+          if (decision === "release") {
+            await releaseWorktree(record.worktree);
+            record.worktree = null;
+            record.outcome = "released: held by the night policy";
+            night.settled(signature, { outcome: record.outcome, verdict: record.verdict ?? null, commit: null });
+            continue;
+          }
+        }
         await settleWorktree(record, signature, now);
+        if (night && !record.worktree) {
+          night.settled(signature, { outcome: record.outcome ?? "", verdict: record.verdict ?? null, commit: /^merged (\S+)/.exec(record.outcome ?? "")?.[1] ?? null });
+        }
       }
     }
     const ignored = new Set(cfg.ignoreProjects);
     const due = Object.entries(current.signatures)
-      .filter(([, record]) => isDue(record, now))
+      // A night repair is started by the night loop's assignment, never by the watcher's own due rule.
+      .filter(([signature, record]) => !signature.startsWith("night:") && isDue(record, now))
       .sort(([signatureA, a], [signatureB, b]) => repairPriority(signatureB, b, now, ignored) - repairPriority(signatureA, a, now, ignored) || a.firstAt - b.firstAt);
     let spawned: string | null = null;
     let reason = due.length ? "" : "nothing new";
     const today = current.spawned.filter((row) => now - row.at < 86_400_000);
     const active = await Promise.all(today.map((row) => threadBusy(row.threadId)));
-    if (due.length && !cfg.enabled) reason = "self-repair is off";
+    // The night loop's queued repair goes first and is not counted against the daily limit (the loop has its own: classes and tokens a night).
+    const hooks = getRepairHooks(ctx);
+    let night: NightAssignment | null = null;
+    let target: [string, SignatureRecord] | null = null;
+    if (hooks && cfg.enabled && !options.dryRun && !active.some(Boolean)) {
+      night = hooks.nextAssignment();
+      const existing = night ? current.signatures[night.signature] : undefined;
+      // The round before on the same class must be settled (merged or released) first: one worktree per class.
+      if (night && existing?.worktree) night = null;
+      if (night) {
+        const record: SignatureRecord = current.signatures[night.signature] ?? { firstAt: now, lastAt: now, count: 0, threadId: null, spawnedAt: null, samples: [] };
+        record.samples = night.samples.map((row) => ({ ...row, reason: row.reason.slice(0, SAMPLE_REASON_CHARS) }));
+        record.lastAt = now;
+        record.count += 1;
+        current.signatures[night.signature] = record;
+        target = [night.signature, record];
+      }
+    }
+    if (target) reason = "";
+    else if (due.length && !cfg.enabled) reason = "self-repair is off";
     else if (due.length && active.some(Boolean)) reason = "a repair thread is still working";
     else if (due.length && today.length >= cfg.maxPerDay) reason = `daily limit ${cfg.maxPerDay} reached`;
     else if (due.length && options.dryRun) reason = `would start a repair for ${due[0]![0]}`;
-    else if (due.length) {
-      const [signature, record] = due[0]!;
+    else if (due.length) target = due[0]!;
+    if (target) {
+      const [signature, record] = target;
       let worktree: RepairWorktree | null = null;
       let spawnCalled = false;
       // One id per repair of a kind: a spawn repeated after a lost answer is the same repair thread, not a second one.
@@ -768,8 +808,8 @@ export function createSelfRepair(ctx: ServerCore) {
           projectId: cfg.projectId,
           environment: { type: "host", hostId: worktree.hostId, workspace: { type: "unmanaged", path: worktree.path } },
           title: `Lane Pilot self-repair: ${signature.split(":").slice(2).join(":").slice(0, 70)}`,
-          prompt: repairPrompt(record.samples, signature, worktree, cfg, { now, lastOwnerAt }),
-          ...writerExecutionSelection(cfg.providerId, cfg.model, cfg.reasoningLevel, "default"),
+          prompt: repairPrompt(record.samples, signature, worktree, cfg, { now, lastOwnerAt, ...(night ? { brief: night.brief } : {}) }),
+          ...writerExecutionSelection(night?.selection?.providerId ?? cfg.providerId, night?.selection?.model ?? cfg.model, night?.selection?.reasoningLevel ?? cfg.reasoningLevel, "default"),
           pluginMetadata: { role: "self-repair", signature, spawnId, repairBranch: worktree.branch },
         } as Parameters<typeof fullAccessSpawn>[1]);
         spawned = stringAt(result, "id");
@@ -785,6 +825,7 @@ export function createSelfRepair(ctx: ServerCore) {
           current.spawned = [...today, { at: now, threadId: spawned, signature }];
           ctx.log(`self-repair: started @thread:${spawned} for ${signature}`);
           if (cfg.sectionId) await placeThread(spawned, cfg.projectId, cfg.sectionId);
+          if (night) hooks?.started(night.id, { threadId: spawned, branch: worktree.branch, at: now });
           reason = "started";
         }
       } catch (cause) {
@@ -802,6 +843,8 @@ export function createSelfRepair(ctx: ServerCore) {
         }
         reason = `spawn failed: ${cause instanceof Error ? cause.message : String(cause)}`;
         ctx.log(`self-repair: ${reason}`);
+        // A night assignment whose spawn is not being retried is over for this round (its worktree was released above).
+        if (night && !record.pending) hooks?.startFailed(night.id, reason);
       }
     }
     if (!options.dryRun) {
@@ -860,6 +903,13 @@ export function selfRepairRpc(ctx: ServerCore) {
 }
 
 export type SelfRepair = ReturnType<typeof createSelfRepair>;
+
+/** What the watcher's state holds about one repair signature (read-only; the night loop follows its repairs with it). */
+export async function readRepairRecord(bb: ServerCore["bb"], signature: string): Promise<{ threadId: string | null; verdict: Verdict | null; outcome: string | null; branch: string | null; worktreePath: string | null; spawnedAt: number | null } | null> {
+  const raw = await bb.storage.kv.get(STATE_KEY).catch(() => null);
+  const record = (raw && typeof raw === "object" ? (raw as Partial<SelfRepairState>).signatures?.[signature] : undefined) as SignatureRecord | undefined;
+  return record ? { threadId: record.threadId, verdict: record.verdict ?? null, outcome: record.outcome ?? null, branch: record.worktree?.branch ?? null, worktreePath: record.worktree?.path ?? null, spawnedAt: record.spawnedAt } : null;
+}
 
 export function mountSelfRepair(ctx: ServerCore): SelfRepair {
   const repair = createSelfRepair(ctx);

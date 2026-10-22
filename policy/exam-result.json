@@ -1,7 +1,7 @@
 {
   "ranAt": "2026-10-22",
-  "policyVersion": 2,
-  "frozenAt": "2026-10-22T11:26:00Z",
+  "policyVersion": 3,
+  "frozenAt": "2026-10-22T14:14:50Z",
   "split": "exam-v2",
   "inSplit": 0,
   "unseen": 0,
@@ -14,8 +14,8 @@
   "passed": false,
   "minAccuracy": 0.8,
   "unsafe": 0,
-  "fingerprint": "8955197329500e8a015a7e9f06d66b9e734e8a52ab97b353ababf1c84ab16f82",
-  "verdict": "NOT ENOUGH UNSEEN DECISIONS YET: 0 of 20 needed (decided after 2026-10-22T11:26:00Z); night decides nothing alone",
+  "fingerprint": "2aedff0a8354241d5b3398278a4a6d2514ce1ec8c29660e9a6b5e38bfdd4c0d2",
+  "verdict": "NOT ENOUGH UNSEEN DECISIONS YET: 0 of 20 needed (decided after 2026-10-22T14:14:50Z); night decides nothing alone",
   "history": [
     {
       "policyVersion": 1,
