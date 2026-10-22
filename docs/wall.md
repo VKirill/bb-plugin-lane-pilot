@@ -128,7 +128,7 @@ a resumed writer, the way stability restarts a parked task); a real project, or 
 
 ## Settings and the cap
 
-`bb lane-pilot wall config` (kv key `wall:config`): `enabled`, `maxClassesPerNight` 3, `roundsPerNight` 2, `walks` 2, `hunters` 3, `nightTokenCap`
+`bb lane-pilot wall config` (rows `wall.*` of the global level, edited on the Self-improvement page, see `docs/self-improvement-settings.md`; the old kv key `wall:config` is the fallback for a field with no row): `enabled`, `maxClassesPerNight` 3, `roundsPerNight` 2, `walks` 2, `hunters` 3, `nightTokenCap`
 20 000 000, `huntShare` 0.25 (the share of the cap hunts and analyses may use), `assumedRepairTokens` 4 000 000, `hunterProviderId` / `hunterModel` /
 `hunterReasoningLevel`, `benchSubset` 8, `rerunSandboxOnly` true, `recurrenceFloor` 3. Spend per night is recorded in `lane_pilot_wall_night`
 (repair rows count their synced token usage, the estimate before it; hunts count theirs).

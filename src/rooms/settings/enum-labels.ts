@@ -23,6 +23,11 @@ const BY_KEY: Record<string, Record<string, I18nKey>> = {
   "writer.skill_pick": { on: "enumSkillPickOn", off: "enumSkillPickOff" },
   "critic.code.default_for_risk": { off: "enumCriticCodeOff", medium: "enumCriticCodeMedium", high: "enumCriticCodeHigh" },
   "plan_fact.mode": { record: "enumPlanFactRecord", gate: "enumPlanFactGate" },
+  "baseline.already_built": { notify: "enumBaselineNotify", stop: "enumBaselineStop" },
+  "harness.adopt_by": { bench: "enumAdoptBench", live: "enumAdoptLive" },
+  "wall.hunter_reasoning_effort": {
+    low: "enumEffortLow", medium: "enumEffortMedium", high: "enumEffortHigh", xhigh: "enumEffortXhigh", max: "enumEffortMax",
+  },
   "jev.provider": { openlux: "enumJevProviderOpenlux", typesafe: "enumJevProviderTypesafe" },
   "sandbox.backend": {
     auto: "enumSandboxAuto",

@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { HUB_KEYS } from "../src/rooms/improvement";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -52,7 +53,8 @@ describe("six tabs", () => {
         note(tab);
       }
     }
-    const wanted = [...new Set(VISIBLE_CATALOG.map((row) => row.storageKey))];
+    // The self-improvement controls of the hub have their own page (tests/improvement/improvement-ui.test.tsx walks it); the checks a project may override are in «Work».
+    const wanted = [...new Set(VISIBLE_CATALOG.map((row) => row.storageKey))].filter((key) => !HUB_KEYS.has(key));
     const missing = wanted.filter((key) => !seen.has(key));
     const several = wanted.filter((key) => (seen.get(key)?.size ?? 0) > 1).map((key) => `${key}: ${[...seen.get(key)!].join(", ")}`);
     // Where a few well-known rows live (so the check above cannot pass by seeing nothing).
@@ -62,6 +64,8 @@ describe("six tabs", () => {
     expect(home("memory.maintain")).toEqual(["knowledge"]);
     expect(home("workflow.agent.model")).toEqual(["automation"]);
     expect(home("ops.run_dir")).toEqual(["runs"]);
+    expect(home("baseline.already_built")).toEqual(["work"]);
+    expect(home("regress.last_n")).toEqual(["work"]);
     expect(wanted.length).toBeGreaterThan(200);
     expect(missing, `catalog rows shown in no tab: ${missing.join(", ")}`).toEqual([]);
     expect(several, `catalog rows shown in more than one tab`).toEqual([]);

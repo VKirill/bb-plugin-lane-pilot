@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import json
 import ast
+import os
 import sys
 import re
 from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PROJECT = ROOT.parents[1]
+# The agency folder and the upstream checkout live in the main checkout, not in a linked worktree of it: LP_UI_CATALOG_PROJECT / LP_UI_CATALOG_UPSTREAM point there.
+PROJECT = Path(os.environ["LP_UI_CATALOG_PROJECT"]) if os.environ.get("LP_UI_CATALOG_PROJECT") else ROOT.parents[1]
 SETTINGS = PROJECT / ".agency/jobs/AG-179/settings.json"
 MATRIX = PROJECT / ".agency/jobs/AG-186/adoc-coverage-matrix.md"
-UPSTREAM = ROOT / ".bb/chats/thr_2spsxrsutt/tmp/claude-lane-stack"
+UPSTREAM = Path(os.environ["LP_UI_CATALOG_UPSTREAM"]) if os.environ.get("LP_UI_CATALOG_UPSTREAM") else ROOT / ".bb/chats/thr_2spsxrsutt/tmp/claude-lane-stack"
 TASK_SCHEMA = ROOT / "lane-stack/schemas/task-v2.schema.json"
 # What the upstream matrix cannot say: edits to generated rows, rows added by hand (s366 and on), their labels, the section order.
 HAND = ROOT / "scripts/ui-catalog-hand.json"
@@ -895,7 +897,7 @@ def section_id(decision: str, area: str) -> str:
 
 SECTIONS_EN = {
     "writer": "Writer",
-    "jev": "Jev (OpenCode)",
+    "jev": "Jev",
     "night-review": "Night review",
     "browser-qa": "Browser QA",
     "docs": "Docs stage",
@@ -913,7 +915,7 @@ SECTIONS_EN = {
 }
 SECTIONS_RU = {
     "writer": "Писатель",
-    "jev": "Jev (OpenCode)",
+    "jev": "Jev",
     "night-review": "Ночное ревью",
     "browser-qa": "Browser QA",
     "docs": "Стадия Docs",

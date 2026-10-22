@@ -12,6 +12,7 @@ import { anamnesisEn, anamnesisRu } from "./i18n-anamnesis";
 import { tabsEn, tabsRu } from "./i18n-tabs";
 import { ownedEn, ownedRu } from "./i18n-owned";
 import { jevEn, jevRu } from "./i18n-jev";
+import { improvementEn, improvementRu } from "./i18n-improvement";
 
 const chromeEn = {
   panelTitle: "Lane Pilot",
@@ -711,8 +712,8 @@ const chromeEn = {
   settingMemoryAudienceHelp: "Who receives injected memory: project owner, helpers, or export.",
   settingMemorySearch: "Search method",
   settingMemorySearchHelp: "How stored notes are ranked when memory is added to context.",
-  settingMemoryBot: "Memory partition",
-  settingMemoryBotHelp: "Optional per-bot slice. Shared project memory is used when this is empty.",
+  settingMemoryBot: "One bot's memory",
+  settingMemoryBotHelp: "Optional: take the memory of one bot only (claude, codex and so on). Empty: the shared memory of the project.",
   settingMemoryCoreBudget: "Core memory limit",
   settingMemoryCoreBudgetHelp: "Cap for durable core facts. Counted as tokens: ceil(UTF-8 bytes / 4). Applies when memory is saved.",
   settingMemoryNoteBudget: "Note memory limit",
@@ -738,8 +739,8 @@ const chromeEn = {
   settingNightMaxFixes: "Maximum night fixes",
   settingNightMaxFixesHelp: "How many fix tasks night review may open in one pass.",
   settingWriterAgent: "Writer role label",
-  settingOpsMaxTasks: "Tasks per session",
-  settingOpsMaxTasksHelp: "Upper bound on tasks started in one Lane Pilot session.",
+  settingOpsMaxTasks: "Tasks per session (Lane Stack CLI only)",
+  settingOpsMaxTasksHelp: "Acts only in Lane Stack CLI runs: how many tasks start in one session. Native writers are not affected.",
   settingWorktreeScore: "Separate-copy risk score",
   settingWorktreeScoreHelp: "When isolation is automatic, use a separate working copy at or above this task risk score.",
   settingWorktreeMulti: "Separate copy for several writes",
@@ -800,8 +801,8 @@ const chromeEn = {
   largeFileRead: "Writer material prep",
   largeFileReadHelp: "Prepares excerpts for the writer.",
   largeFileEnabled: "Summarize long read_first excerpts",
-  largeFileThreshold: "Excerpt-line threshold N",
-  largeFileThresholdHelp: "Default 350. Allowed 50–5000. Count is host-read excerpt lines in read_first, not the file on disk. At N-1 the summarizer is skipped; at N it runs. This is not a Claude Read/Bash hook.",
+  largeFileThreshold: "Lines before excerpts are condensed",
+  largeFileThresholdHelp: "Default 350, from 50 to 5000. It counts the excerpt lines of read_first, not the size of a file. Below it the excerpts go as they are; from it a separate helper condenses them first. This is not a Claude read hook.",
   largeFilePicker: "Excerpt helper model",
   largeFilePickerHelp: "Used only when the excerpt-line threshold is met. Unset inherits the writer model. Helper failure blocks the writer. This picker does not install a file-read guard.",
   helperContext: "Helper context",
@@ -854,12 +855,12 @@ const chromeEn = {
   enumJevProviderTypesafe: "TypeSafe (official)",
   field_s475: "Jev provider",
   reason_s475: "Who serves every Jev request. OpenLux (default): a reseller with the same requests and answers at about 60% of the price, a call takes ~0.6 s longer, so Jev timeouts get 1.5 s of headroom; key OPENLUX_API_KEY in the Env Catalog. TypeSafe: the official service, key TYPESAFE_API_KEY. One choice for the whole plugin (set it in the global settings). If the chosen provider has no key in the Env Catalog, Jev uses TypeSafe's key when there is one.",
-  enumCriticCodeOff: "Off (only when code critique is on or quality is full)",
+  enumCriticCodeOff: "Off unless switched on elsewhere",
   enumCriticCodeMedium: "From medium risk",
   enumCriticCodeHigh: "From high risk",
-  enumPlanFactRecord: "Record (show, do not refuse)",
-  enumPlanFactGate: "Gate (send back an item with no evidence)",
-  field_s476: "Code critic by risk",
+  enumPlanFactRecord: "Record only",
+  enumPlanFactGate: "Send back an item with no proof",
+  field_s476: "Code critique by risk",
   reason_s476: "Runs the code critic after the writer by the task's risk when code critique is not switched on or off in the settings above: from medium risk (medium, high, critical) or from high risk (high, critical). Off by default until the bench has measured the critic on and off. Quality mode quick or full, and an explicit code critique switch, win.",
   field_s477: "Plan against fact",
   reason_s477: "The writer closes its answer with a table: one row per acceptance item with the file and lines, or the check, that proves it. Code checks every entry against the diff and the check results and never reads the writer's prose. Record: the result is kept and shown on the acceptance card. Gate: an item with no evidence that holds sends the task back to the writer.",
@@ -1778,8 +1779,8 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   settingMemoryAudienceHelp: "Кому попадает подставленная память: владелец, помощники или экспорт.",
   settingMemorySearch: "Способ поиска",
   settingMemorySearchHelp: "Как ранжируются записи, когда память добавляется в контекст.",
-  settingMemoryBot: "Раздел памяти",
-  settingMemoryBotHelp: "Необязательный срез по боту. Пустое значение — общая память проекта.",
+  settingMemoryBot: "Память одного бота",
+  settingMemoryBotHelp: "Необязательно: брать память только одного бота (claude, codex и т. д.). Пусто — общая память проекта.",
   settingMemoryCoreBudget: "Лимит ядра памяти",
   settingMemoryCoreBudgetHelp: "Потолок устойчивых фактов. Единица — токены: ceil(байты UTF-8 / 4). Проверяется при сохранении памяти.",
   settingMemoryNoteBudget: "Лимит заметок",
@@ -1805,8 +1806,8 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   settingNightMaxFixes: "Максимум ночных правок",
   settingNightMaxFixesHelp: "Сколько задач на правку может открыть ночная проверка за один проход.",
   settingWriterAgent: "Роль писателя",
-  settingOpsMaxTasks: "Задач в сессии",
-  settingOpsMaxTasksHelp: "Верхняя граница задач, которые стартуют в одной сессии Lane Pilot.",
+  settingOpsMaxTasks: "Задач в сессии (только CLI Lane Stack)",
+  settingOpsMaxTasksHelp: "Работает только в CLI-прогонах Lane Stack: сколько задач стартует в одной сессии. Нативных писателей это не касается.",
   settingWorktreeScore: "Порог отдельной копии",
   settingWorktreeScoreHelp: "При автоматической изоляции отдельная рабочая копия включается от этого балла риска задачи.",
   settingWorktreeMulti: "Отдельная копия при нескольких записях",
@@ -1867,8 +1868,8 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   largeFileRead: "Подготовка материалов для исполнителя",
   largeFileReadHelp: "Готовит выдержки для исполнителя.",
   largeFileEnabled: "Суммаризовать длинные выдержки read_first",
-  largeFileThreshold: "Порог N строк выдержек",
-  largeFileThresholdHelp: "По умолчанию 350. Допустимо 50–5000. Считаются строки выдержек read_first, не файл на диске. При N-1 суммаризатор пропускается, при N — запускается. Это не хук Claude Read/Bash.",
+  largeFileThreshold: "Минимум строк для сжатия выдержек",
+  largeFileThresholdHelp: "По умолчанию 350, можно от 50 до 5000. Считаются строки выдержек из read_first, а не размер файла. Если строк меньше, выдержки идут как есть; от этого числа их сначала сжимает отдельный помощник. Это не хук чтения Claude.",
   largeFilePicker: "Модель помощника выдержек",
   largeFilePickerHelp: "Только если порог выдержек достигнут. Если не задано — модель писателя. Сбой помощника блокирует писателя. Этот выбор не ставит охранник чтения файлов.",
   helperContext: "Контекст помощников",
@@ -1921,12 +1922,12 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   enumJevProviderTypesafe: "TypeSafe (официальный)",
   field_s475: "Поставщик Jev",
   reason_s475: "Кто обслуживает все запросы к Jev. OpenLux (по умолчанию): реселлер с теми же запросами и ответами примерно за 60% цены, вызов занимает на ~0,6 с дольше, поэтому ко всем таймаутам Jev добавлено 1,5 с запаса; ключ OPENLUX_API_KEY в Env Catalog. TypeSafe: официальный сервис, ключ TYPESAFE_API_KEY. Один выбор на весь плагин (задаётся в общих настройках). Если у выбранного поставщика нет ключа в Env Catalog, Jev берёт ключ TypeSafe, когда он есть.",
-  enumCriticCodeOff: "Выключено (только если ревью кода включено или качество full)",
+  enumCriticCodeOff: "Выключено, если не включено отдельно",
   enumCriticCodeMedium: "От среднего риска",
   enumCriticCodeHigh: "От высокого риска",
-  enumPlanFactRecord: "Запись (показать, не отклонять)",
-  enumPlanFactGate: "Ворота (вернуть пункт без подтверждения)",
-  field_s476: "Ревью кода по риску",
+  enumPlanFactRecord: "Только записывать",
+  enumPlanFactGate: "Вернуть пункт без доказательства",
+  field_s476: "Критика кода по риску",
   reason_s476: "Запускает ревью кода после исполнителя по риску задачи, если ревью кода не включено и не выключено в настройках выше: от среднего риска (средний, высокий, критический) или от высокого (высокий, критический). По умолчанию выключено, пока бенч не измерит ревью с ним и без него. Режим качества quick или full и явный переключатель ревью кода главнее.",
   field_s477: "План против факта",
   reason_s477: "Исполнитель заканчивает ответ таблицей: строка на каждый пункт приёмки с файлом и строками или проверкой, которые его доказывают. Код сверяет каждую запись с диффом и результатами проверок и не читает текст исполнителя. Запись: результат хранится и виден на карточке приёмки. Ворота: пункт без подтверждения возвращает задачу исполнителю.",
@@ -2147,8 +2148,8 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   accessPurpose_specialist_tavily: "Ищет в сети и собирает отчёты с источниками.",
 };
 
-export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...boardEn, ...ownerEn, ...anamnesisEn, ...tabsEn, ...ownedEn, ...jevEn };
-export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...editorRu, ...opsRu, ...modelsRu, ...canvasRu, ...scheduleRu, ...boardRu, ...ownerRu, ...anamnesisRu, ...tabsRu, ...ownedRu, ...jevRu };
+export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...boardEn, ...ownerEn, ...anamnesisEn, ...tabsEn, ...ownedEn, ...jevEn, ...improvementEn };
+export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...editorRu, ...opsRu, ...modelsRu, ...canvasRu, ...scheduleRu, ...boardRu, ...ownerRu, ...anamnesisRu, ...tabsRu, ...ownedRu, ...jevRu, ...improvementRu };
 
 export type I18nKey = keyof typeof en;
 export type Locale = "en" | "ru";

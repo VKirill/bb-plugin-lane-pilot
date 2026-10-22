@@ -225,6 +225,11 @@ export const rpcOps = {
     input: z.object({ patch: z.record(z.string().max(40), z.string().max(80)).optional() }).strict(),
     output: z.unknown(),
   },
+  /** The «Self-improvement» screen in one read: the values and versions of its controls, the status strip, the night policy and the deferral counts (src/rooms/improvement). */
+  improvement_view: {
+    input: z.object({}).strict(),
+    output: z.unknown(),
+  },
   /** The wall journal and the night loop (src/rooms/wall): classes by recurrence, the night's repairs, the wall ladder, what a night spent. */
   wall_status: {
     input: z.object({}).strict(),

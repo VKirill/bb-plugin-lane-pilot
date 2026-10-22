@@ -61,7 +61,7 @@ Lane Pilot has no Telegram sender of its own. The hub's script `scripts/lp-owner
 - quiet hours, default 23:00-08:00 in Europe/Madrid: nothing is sent, nothing is lost, the items go out together in the first digest after;
 - at most six items are named, the rest are counted.
 
-Settings (stored in `lane_pilot_owner_config`, no catalog row): `bb lane-pilot waiting config [enabled=on|off] [quiet=HH:MM-HH:MM] [timezone=Europe/Madrid]`, or the Telegram block at the foot of the screen. `quiet=00:00-00:00` means no quiet hours.
+Settings (rows `owner_push.enabled|quiet|timezone` of the global level, edited on the Self-improvement page, see `docs/self-improvement-settings.md`; the old table `lane_pilot_owner_config` is the fallback for a field with no row): `bb lane-pilot waiting config [enabled=on|off] [quiet=HH:MM-HH:MM] [timezone=Europe/Madrid]`, or the Telegram block at the foot of the screen. `quiet=00:00-00:00` means no quiet hours.
 
 ## Daily report
 

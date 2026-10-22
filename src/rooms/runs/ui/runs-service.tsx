@@ -156,7 +156,8 @@ export function ServiceSegment({ page }: { page: LpPage }) {
               </SurfaceBody>
             </Surface>
 
-            {diagnosticsGrouped.map(({ section, rows }) => <Surface key={section}>
+            {(() => {
+              const group = ({ section, rows }: (typeof diagnosticsGrouped)[number]) => <Surface key={section}>
               <SurfaceHeader><h2 className="text-sm font-medium">{t(sectionKey(section))}</h2></SurfaceHeader>
               <SurfaceBody className="space-y-2">
                 {rows.map((row) => {
@@ -184,7 +185,17 @@ export function ServiceSegment({ page }: { page: LpPage }) {
                   </div>;
                 })}
               </SurfaceBody>
-            </Surface>)}
+            </Surface>;
+              // The flags of the Lane Stack CLI (run operations, install paths) act only on CLI runs; native writers never read them.
+              const cliOnly = diagnosticsGrouped.filter(({ section }) => section === "ops" || section === "setup");
+              return <>
+                {diagnosticsGrouped.filter(({ section }) => section !== "ops" && section !== "setup").map(group)}
+                {cliOnly.length ? <Disclosure testId="cli-only-settings" summary={t("cliOnlyTitle")}>
+                  <p className="text-xs text-muted-foreground">{t("cliOnlyHelp")}</p>
+                  <div className="space-y-5 pt-2">{cliOnly.map(group)}</div>
+                </Disclosure> : null}
+              </>;
+            })()}
 
             <Disclosure testId="compat-aliases" summary={t("compatTitle")}>
               <p className="text-xs text-muted-foreground">{t("compatIntro")}</p>

@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { hubFields, writeHubFields } from "../improvement";
 import { collectOwnerWaiting, type OwnerItem } from "./items";
 
 /**
@@ -11,7 +12,7 @@ import { collectOwnerWaiting, type OwnerItem } from "./items";
  *  - quiet hours (default 23:00–08:00 Europe/Madrid, a setting): nothing is sent, nothing is lost; the items go out in the first digest after;
  *  - a failed send is not acknowledged, so the next tick tries again.
  */
-type Db = Pick<Database.Database, "prepare">;
+type Db = Pick<Database.Database, "prepare" | "transaction">;
 
 export type PushConfig = { enabled: boolean; quiet: string; timezone: string };
 export const DEFAULT_PUSH_CONFIG: PushConfig = { enabled: true, quiet: "23:00-08:00", timezone: "Europe/Madrid" };
@@ -28,23 +29,28 @@ function validTimezone(zone: string): boolean {
 export function loadPushConfig(db: Db): PushConfig {
   const rows = db.prepare("SELECT key, value FROM lane_pilot_owner_config").all() as Array<{ key: string; value: string }>;
   const stored = Object.fromEntries(rows.map((row) => [row.key, row.value]));
-  return {
+  const old: PushConfig = {
     enabled: stored.enabled === undefined ? DEFAULT_PUSH_CONFIG.enabled : stored.enabled === "on",
     quiet: stored.quiet && QUIET.test(stored.quiet) ? stored.quiet : DEFAULT_PUSH_CONFIG.quiet,
     timezone: stored.timezone && validTimezone(stored.timezone) ? stored.timezone : DEFAULT_PUSH_CONFIG.timezone,
   };
+  // A global row (`owner_push.*`, written by the screen and by this command) wins over the old table, which stays as the fallback.
+  const own = hubFields(db, "owner_push") as Partial<PushConfig>;
+  return { enabled: own.enabled ?? old.enabled, quiet: own.quiet ?? old.quiet, timezone: own.timezone ?? old.timezone };
 }
 
 /** `enabled` on|off, `quiet` HH:MM-HH:MM ("" turns quiet hours off as 00:00-00:00), `timezone` an IANA name. A wrong value is refused with what is accepted. */
 export function savePushConfig(db: Db, patch: Record<string, string | undefined>, now: number = Date.now()): PushConfig {
+  const fields: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue;
     if (key === "enabled" && value !== "on" && value !== "off") throw new Error("enabled is on or off");
     if (key === "quiet" && !QUIET.test(value)) throw new Error("quiet is HH:MM-HH:MM in the time zone (23:00-08:00; 00:00-00:00 means no quiet hours)");
     if (key === "timezone" && !validTimezone(value)) throw new Error(`unknown time zone «${value}» (an IANA name such as Europe/Madrid)`);
     if (!(PUSH_CONFIG_KEYS as readonly string[]).includes(key)) throw new Error(`unknown setting «${key}» (${PUSH_CONFIG_KEYS.join(", ")})`);
-    db.prepare("INSERT INTO lane_pilot_owner_config(key,value,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at").run(key, value, now);
+    fields[key] = key === "enabled" ? value === "on" : value;
   }
+  writeHubFields(db, "owner_push", fields, now);
   return loadPushConfig(db);
 }
 

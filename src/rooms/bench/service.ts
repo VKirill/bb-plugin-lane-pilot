@@ -1,3 +1,4 @@
+import { hubFields, writeHubFields } from "../improvement";
 import { buildSet, type BuildReport } from "./build";
 import { compareArms, computeNoise, renderComparison, summarizeArm, type ArmSummary, type Comparison } from "./compare";
 import type { HostPort, PipelinePort } from "./ports";
@@ -32,13 +33,16 @@ export function createBench(deps: BenchDeps) {
   /** `bench.budget_tokens` / `bench.budget_hours`: the cap of a series, in tokens and hours (owner decision 2026-10-22: a fixed cap, a cheap writer first). */
   async function settings(): Promise<BenchSettings> {
     const stored = await deps.kv.get(CONFIG_KEY).catch(() => null) as Partial<BenchSettings> | null;
-    return { budgetTokens: stored?.budgetTokens ?? DEFAULT_BUDGET_TOKENS, budgetHours: stored?.budgetHours ?? DEFAULT_BUDGET_HOURS };
+    // A global row (`bench.*`, written by the screen and by `bench config`) wins over the old key-value record.
+    const own = hubFields(deps.db, "bench") as Partial<BenchSettings>;
+    return { budgetTokens: own.budgetTokens ?? stored?.budgetTokens ?? DEFAULT_BUDGET_TOKENS, budgetHours: own.budgetHours ?? stored?.budgetHours ?? DEFAULT_BUDGET_HOURS };
   }
   async function configure(patch: Partial<BenchSettings>): Promise<BenchSettings> {
     for (const [key, value] of Object.entries(patch)) if (value !== undefined && !(Number.isFinite(value) && value > 0)) throw new Error(`${key} must be a positive number`);
     const next = { ...(await settings()), ...patch };
-    await deps.kv.set(CONFIG_KEY, next as never);
-    return next;
+    // Whole numbers are what the setting holds; the old record kept any positive number.
+    writeHubFields(deps.db, "bench", Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined).map(([key, value]) => [key, Math.max(1, Math.round(value as number))])));
+    return { ...next, ...(await settings()) };
   }
 
   function job<T>(key: string, wait: boolean, work: () => Promise<T>): Promise<T | { started: true; job: string }> {

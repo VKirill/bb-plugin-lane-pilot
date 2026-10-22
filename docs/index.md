@@ -35,6 +35,7 @@ Built by Lane Pilot from page frontmatter.
 | [Waiting for the owner](owner-waiting.md) | component | active | 2026-10-22 |
 | [Package operation details](package-operations.md) | component | active | 2026-10-17 |
 | [Plan against fact and the acceptance card](plan-fact.md) | component | active | 2026-10-22 |
+| [The Self-improvement page and its settings](self-improvement-settings.md) | component | active | 2026-10-22 |
 | [Shared packages](packages.md) | component | active | 2026-10-20 |
 | [Rolling work back, trusted tooling and pause](rollback.md) | component | active | 2026-10-22 |
 | [Rule forms and the path from a rule to a mechanism](rule-forms.md) | component | active | 2026-10-22 |

@@ -31,9 +31,9 @@ describe("settings that code reads and the catalog now lists", () => {
     expect(row("usage.skip_percent")).toMatchObject({ uiStatus: "editable", control: "number", min: 0, max: 100, defaultValue: String(DEFAULT_USAGE_SKIP_PERCENT), section: "writer" });
     expect(row("secrets.allow")).toMatchObject({ uiStatus: "editable", control: "input", defaultValue: "", section: "stages", scope: "project" });
     expect(row("ops.provider_pool")).toMatchObject({ uiStatus: "editable", control: "input", defaultValue: "", section: "ops", scope: "project" });
-    expect(row("jev.enabled")).toMatchObject({ uiStatus: "editable", control: "switch", defaultValue: "true", section: "ops", scope: "project" });
-    expect(row("jev.thresholds")).toMatchObject({ uiStatus: "editable", control: "input", defaultValue: "", section: "ops", scope: "project" });
-    expect(row("jev.modes")).toMatchObject({ uiStatus: "editable", control: "input", defaultValue: "", section: "ops", scope: "project" });
+    expect(row("jev.enabled")).toMatchObject({ uiStatus: "editable", control: "switch", defaultValue: "true", section: "jev", scope: "project" });
+    expect(row("jev.thresholds")).toMatchObject({ uiStatus: "editable", control: "input", defaultValue: "", section: "jev", scope: "project" });
+    expect(row("jev.modes")).toMatchObject({ uiStatus: "editable", control: "input", defaultValue: "", section: "jev", scope: "project" });
     expect(row("quality_mode")).toMatchObject({ uiStatus: "editable", control: "select", options: ["quick", "standard", "full"], defaultValue: "standard", section: "stages", scope: "project" });
     expect(bookkeepingSetting({ "bookkeeping.paths": row("bookkeeping.paths")!.defaultValue })).toEqual([]);
   });
