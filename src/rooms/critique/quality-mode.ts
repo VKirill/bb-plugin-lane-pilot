@@ -28,3 +28,31 @@ export function applyQualityMode(settings: Record<string, unknown>, mode: Qualit
 /** A task of a full-mode project that carries qa_cases is not done until its browser check has passed. */
 export const browserQaRequired = (mode: QualityMode, task: { qa_cases?: readonly string[] } | null | undefined): boolean =>
   mode === "full" && (task?.qa_cases?.length ?? 0) > 0;
+
+/**
+ * The code critic by the task's risk (SMA plan P1-3). `critic.code.default_for_risk` is `off` (the critic runs only when
+ * `code_critique.enabled` or quality_mode full says so), `medium` (it also runs for risk medium, high and critical) or `high` (high and
+ * critical). The default stays `off` until the bench has measured the critic on and off. The bench passes its arm's value with the dispatch
+ * (`criticCodeDefault`), which wins over the project setting. A project that set `code_critique.enabled` itself, either way, keeps its choice,
+ * and quality_mode quick or full decide before this does.
+ */
+export const CODE_CRITIC_DEFAULT_SETTING = "critic.code.default_for_risk";
+export const CODE_CRITIC_DEFAULTS = ["off", "medium", "high"] as const;
+export type CodeCriticDefault = (typeof CODE_CRITIC_DEFAULTS)[number];
+const RISK_RANK: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
+
+export const isCodeCriticDefault = (value: unknown): value is CodeCriticDefault => (CODE_CRITIC_DEFAULTS as readonly unknown[]).includes(value);
+
+/** The dispatch's override, else the project's value, else off; an unknown value reads as off. */
+export function resolveCodeCriticDefault(projectValue: unknown, override?: unknown): CodeCriticDefault {
+  if (isCodeCriticDefault(override)) return override;
+  return isCodeCriticDefault(projectValue) ? projectValue : "off";
+}
+
+/** The settings the code critic must read for a task of this risk: standard mode plus a risk default turns `code_critique.enabled` on. */
+export function applyCodeCriticDefault(settings: Record<string, unknown>, mode: QualityMode, risk: string | undefined, level: CodeCriticDefault): Record<string, unknown> {
+  const unset = settings["code_critique.enabled"] === undefined || settings["code_critique.enabled"] === null || settings["code_critique.enabled"] === "";
+  if (mode !== "standard" || level === "off" || !unset) return settings;
+  const needed = level === "medium" ? RISK_RANK.medium! : RISK_RANK.high!;
+  return (RISK_RANK[risk ?? ""] ?? 0) >= needed ? { ...settings, "code_critique.enabled": true } : settings;
+}

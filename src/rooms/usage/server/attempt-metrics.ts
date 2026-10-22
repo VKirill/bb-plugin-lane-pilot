@@ -62,17 +62,18 @@ function stageRecords(events: readonly StageEventRow[]): AttemptStage[] {
   return out;
 }
 
-export function attemptMetrics(db: Database.Database, input: { projectId: string; days: number; now?: number }): AttemptMetricsReport {
+/** `taskId` narrows the report to one task (the acceptance card); the window and the numbers are the same as for the project. */
+export function attemptMetrics(db: Database.Database, input: { projectId: string; days: number; now?: number; taskId?: string }): AttemptMetricsReport {
   const now = input.now ?? Date.now();
   const since = now - input.days * DAY_MS;
   const attempts = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.attempt_no, a.state, a.thread_id, a.created_at, a.updated_at
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id = a.run_id
-    WHERE r.project_id = ? AND a.created_at >= ? ORDER BY a.run_id, a.task_id, a.created_at, a.attempt_no`).all(input.projectId, since) as AttemptRow[];
+    WHERE r.project_id = ? AND a.created_at >= ? ${input.taskId ? "AND a.task_id = ?" : ""} ORDER BY a.run_id, a.task_id, a.created_at, a.attempt_no`).all(input.projectId, since, ...(input.taskId ? [input.taskId] : [])) as AttemptRow[];
   // Helper stages run before the first attempt of a task exists: read events from a day earlier.
   const stageEvents = db.prepare(`SELECT run_id, task_id, stage_id, state, occurred_at FROM lane_pilot_stage_event
-    WHERE project_id = ? AND occurred_at >= ? ORDER BY id`).all(input.projectId, since - DAY_MS) as StageEventRow[];
+    WHERE project_id = ? AND occurred_at >= ? ${input.taskId ? "AND task_id = ?" : ""} ORDER BY id`).all(input.projectId, since - DAY_MS, ...(input.taskId ? [input.taskId] : [])) as StageEventRow[];
   const gateEvents = db.prepare(`SELECT run_id, task_id, status, occurred_at FROM lane_pilot_gate_event
-    WHERE project_id = ? AND occurred_at >= ? ORDER BY id`).all(input.projectId, since - DAY_MS) as GateEventRow[];
+    WHERE project_id = ? AND occurred_at >= ? ${input.taskId ? "AND task_id = ?" : ""} ORDER BY id`).all(input.projectId, since - DAY_MS, ...(input.taskId ? [input.taskId] : [])) as GateEventRow[];
   const threadIds = [...new Set(attempts.flatMap((row) => row.thread_id ? [row.thread_id] : []))];
   const cursors = new Map<string, CursorRow>();
   const cursorQuery = db.prepare("SELECT thread_id, provider_id, last_provider, last_model, total_json FROM lane_pilot_token_cursor WHERE thread_id = ?");

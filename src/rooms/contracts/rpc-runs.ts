@@ -5,6 +5,28 @@ import { runViewSchema, stageSummarySchema } from "@lane-pilot/contracts";
 const cardThreadSchema: z.ZodType<{ id: string; role: string; title: string | null; status: string | null; children: unknown[] }> = z.lazy(() =>
   z.object({ id: z.string(), role: z.string(), title: z.string().nullable(), status: z.string().nullable(), children: z.array(cardThreadSchema) }).strict());
 
+/** The acceptance card of one task (src/rooms/acceptance): the contract, what each stage proved and how, the plan against the fact, what did not run, cost. */
+export const acceptanceCardSchema = z.object({
+  contract: z.object({ objective: z.string().nullable(), acceptance: z.array(z.string()), ownsPaths: z.array(z.string()) }).strict(),
+  risk: z.string().nullable(),
+  base: z.object({ ref: z.string().nullable(), sha: z.string().nullable(), branch: z.string(), compareCommitted: z.boolean() }).strict().nullable(),
+  receipts: z.array(z.object({ stageId: z.string(), state: z.string(), proof: z.enum(["code", "advisory"]), proofKind: z.string(), reason: z.string().nullable(), model: z.string().nullable(), updatedAt: z.number() }).strict()),
+  gates: z.array(z.object({ gate: z.string(), status: z.string(), attempt: z.number().int(), at: z.number() }).strict()),
+  planFact: z.object({
+    state: z.string(), table: z.enum(["ok", "missing", "invalid"]), reason: z.string().nullable(), mode: z.enum(["record", "gate"]),
+    items: z.array(z.object({
+      item: z.number().int(), acceptance: z.string(), claimed: z.enum(["done", "not_done", "none"]),
+      verdict: z.enum(["proven", "unproven", "declared_not_done", "no_row"]), severity: z.enum(["ok", "info", "warning", "blocking"]),
+      evidence: z.array(z.object({ evidence: z.string(), kind: z.string(), ok: z.boolean(), code: z.string(), note: z.string() }).strict()), why: z.string().nullable(),
+    }).strict()),
+    extraRows: z.array(z.number().int()), notChecked: z.array(z.string()),
+  }).strict().nullable(),
+  /** Stages with no receipt or a skipped one: «not run» is not «no findings». */
+  notRun: z.array(z.object({ stageId: z.string(), why: z.string() }).strict()),
+  cost: z.object({ state: z.enum(["measured", "partial", "not_measured"]), usd: z.number().nullable(), tokens: z.number().nullable(), note: z.string().nullable(), attempts: z.number().int(), measured: z.number().int() }).strict(),
+}).strict();
+export type AcceptanceCard = z.infer<typeof acceptanceCardSchema>;
+
 export const rpcRuns = {
   /** The «Tasks» board: tasks and workflow runs of one project or of all, by column (src/rooms/runs/server/task-board.ts). */
   task_board: {
@@ -33,6 +55,11 @@ export const rpcRuns = {
       attempts: z.array(z.object({ id: z.string(), no: z.number().int(), state: z.string(), reason: z.string().nullable(), threadId: z.string().nullable(), createdAt: z.number(), updatedAt: z.number() }).strict()),
       threads: cardThreadSchema.nullable(),
     }).strict().nullable(),
+  },
+  /** The acceptance card of a task: one screen for «why was this accepted, on what proof, and what was not looked at». */
+  task_acceptance_card: {
+    input: z.object({ runId: z.string().min(1), taskId: z.string().min(1) }).strict(),
+    output: acceptanceCardSchema.nullable(),
   },
   // The run card a PM message shows for its `::lane-run{id="…"}` directive: the run's tasks with their latest state.
   get_run_card: {

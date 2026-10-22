@@ -23,17 +23,17 @@ TL;DR: Session memory RPC resolves a workspace to its project, stores subagent-a
 
 ## Purpose
 
-`sessionMemoryRpc` gives sessions on a machine access to the project memory stored by the plugin server. The RPC contract defines five strict procedures and `registerRpc` installs their handler map (`src/rooms/contracts/rpc-knowledge.ts:63-85`, `src/rooms/core/server/rpc.ts:47-48`).
+`sessionMemoryRpc` gives sessions on a machine access to the project memory stored by the plugin server. The RPC contract defines five strict procedures and `registerRpc` installs their handler map (`src/rooms/contracts/rpc-knowledge.ts:63-85`, `src/rooms/core/server/rpc.ts:48-49`).
 
 ## `rpcKnowledge` contract map
 
-`rpcKnowledge` is a strict method map spread into the app-facing `rpcContract`; methods validate request and response shapes, while handlers own storage, authorization and domain behavior (`src/rooms/contracts/rpc-knowledge.ts:16-85`, `src/rooms/contracts/index.ts:17-26`). The session-memory procedures are detailed below; the other methods in this file have these inputs and outputs:
+`rpcKnowledge` is a strict method map spread into the app-facing `rpcContract`; methods validate request and response shapes, while handlers own storage, authorization and domain behavior (`src/rooms/contracts/rpc-knowledge.ts:16-85`, `src/rooms/contracts/index.ts:18-27`). The session-memory procedures are detailed below; the other methods in this file have these inputs and outputs:
 
-1. The contracts map declares five council methods, `get_routing_hint` and `list_rule_proposals`, then spreads the Anamnesis methods before declaring session-memory methods. The whole map is later spread into `rpcContract` alongside the other seven route families (`src/rooms/contracts/rpc-knowledge.ts:16-63`, `src/rooms/contracts/index.ts:17-26`).
+1. The contracts map declares five council methods, `get_routing_hint` and `list_rule_proposals`, then spreads the Anamnesis methods before declaring session-memory methods. The whole map is later spread into `rpcContract` alongside the other seven route families (`src/rooms/contracts/rpc-knowledge.ts:16-63`, `src/rooms/contracts/index.ts:18-27`).
 2. Council list/default/get methods take project or council ids; `council_say` also accepts optional trimmed text and a decide flag, while `council_stop` returns whether a stop was requested (`src/rooms/contracts/rpc-knowledge.ts:17-41`).
 3. Routing hints take a project and optional 1–365 day window, returning nullable current provider/model plus hints and counts. Rule proposal listing returns proposals, memory enable/inject state, triage counts, scan/analyzer state and events (`src/rooms/contracts/rpc-knowledge.ts:43-60`).
 4. The Anamnesis spread contributes its own methods between rule proposals and session-memory declarations. Session memory then declares path resolution, write, search, core-list and lesson-proposal procedures (`src/rooms/contracts/rpc-knowledge.ts:62-85`).
-5. BB validates each input before the handler map installed by `registerRpc` is called; output schemas define result shape. Nullable values and declared booleans/states are domain results, while schema errors and uncaught handler errors remain failures (`src/rooms/core/server/rpc.ts:27-50`, `src/rooms/core/server/rpc-timing.ts:12-40`).
+5. BB validates each input before the handler map installed by `registerRpc` is called; output schemas define result shape. Nullable values and declared booleans/states are domain results, while schema errors and uncaught handler errors remain failures (`src/rooms/core/server/rpc.ts:28-51`, `src/rooms/core/server/rpc-timing.ts:12-40`).
 
 | Procedure family | Inputs, branches and outcomes |
 |---|---|

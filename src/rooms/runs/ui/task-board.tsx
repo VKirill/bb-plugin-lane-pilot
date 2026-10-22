@@ -4,7 +4,7 @@ import { t, type I18nKey } from "@lane-pilot/i18n";
 import { Button, Disclosure, Icon, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Switch } from "@lane-pilot/ui-kit";
 import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
-
+import { AcceptanceCard } from "../../acceptance/ui";
 type Board = z.infer<(typeof rpcContract)["task_board"]["output"]>;
 type Card = NonNullable<z.infer<(typeof rpcContract)["task_card"]["output"]>>;
 type Item = Board["items"][number];
@@ -368,17 +368,9 @@ function TaskPage({ item, locale, projectName, onBack }: { item: Item; locale: s
               <h1 className="mb-2 text-2xl font-semibold leading-tight">{card.title}</h1>
               {rail("mb-4 grid grid-cols-2 gap-x-4 rounded-md border border-border p-3 @[45rem]:hidden")}
               {card.reason && !finished(card.state) ? <p className="mt-3 whitespace-pre-wrap break-words rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">{card.reason}</p> : null}
-              {card.contract?.objective ? <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed">{card.contract.objective}</p> : null}
-              {card.contract?.acceptance.length ? (
-                <Section title={t("boardAcceptance")}>
-                  <ul className="space-y-1">
-                    {card.contract.acceptance.map((row, index) => (
-                      <li key={index} className="flex items-start gap-2 text-sm">
-                        <StatusIcon column={finished(card.state) ? "done" : "queued"} className="mt-0.5" /><span className="min-w-0 break-words">{row}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </Section>
+              {card.kind === "task" && item.taskId ? (
+                <AcceptanceCard runId={item.runId} taskId={item.taskId} refreshKey={card} finished={finished(card.state)}
+                  fallback={card.contract ? { objective: card.contract.objective, acceptance: card.contract.acceptance } : null} />
               ) : null}
               {card.contract?.dependsOn.length ? (
                 <Section title={t("boardDepends")}>

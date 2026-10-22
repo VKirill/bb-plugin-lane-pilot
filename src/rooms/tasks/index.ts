@@ -11,3 +11,5 @@ export { classifyWriterOutput, isMainfixTask, isOutputPath, unownedExpectedOutpu
 export type { VerifyResult } from "./validate-output";
 export { commonTaskFolder, isTaskBase, ownsFromOuterBase, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask } from "./task-base";
 export { TRUSTED_TOOLING_PATTERNS, applyTrustedTooling, trustedToolingFor, trustedToolingHint, trustedToolingHits, verificationScriptPaths } from "./trusted-tooling";
+export { PLAN_FACT_BRIEF_LINE, blindPlanFact, diffHunksCommand, hunksFromCommandOutput, parsePlanFact, planFactOutcome } from "./plan-fact";
+export type { EvidenceCheck, ItemVerdict, PlanFactCheck, PlanFactFacts, PlanFactTable } from "./plan-fact";

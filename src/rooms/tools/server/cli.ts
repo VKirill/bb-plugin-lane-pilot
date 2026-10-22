@@ -18,6 +18,13 @@ import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
 import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
 import { POLICY_USAGE, runPolicyCli } from "../../policy";
 import { ROLLBACK_USAGE, runRollbackCli } from "../../rollback/server";
+import { CODE_CRITIC_DEFAULTS, isCodeCriticDefault } from "../../critique";
+import type { CodeCriticDefault } from "../../critique";
+
+function requireCriticCodeDefault(value: string): CodeCriticDefault {
+  if (!isCodeCriticDefault(value)) throw new Error(`critic.code.default_for_risk must be one of ${CODE_CRITIC_DEFAULTS.join(", ")}`);
+  return value;
+}
 
 export function registerCli(ctx: ServerCore, services: Services) {
   const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, host } = ctx;
@@ -49,7 +56,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
     "bb lane-pilot host-run-cli <host-id> <cwd> <binary> <subcommand> [args...]",
     "bb lane-pilot resume [project-id]",
     "bb lane-pilot dispatch-cli <project-id> <pm-thread-id> [binary] [subcommand] [task-file] [task-id] [run-dir]",
-    "bb lane-pilot dispatch-bb <project-id> <pm-thread-id> [task-json]",
+    "bb lane-pilot dispatch-bb <project-id> <pm-thread-id> [task-json] [base-ref] [critic-code-default: off|medium|high]",
     "bb lane-pilot events-list <thread-id>",
     "bb lane-pilot wait-thread <thread-id>",
     "bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]",
@@ -101,7 +108,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"host-run-cli", summary:"Run run-controller/lane-ctl on the project host", usage:"bb lane-pilot host-run-cli <host-id> <cwd> <binary> <subcommand> [args...]" },
       { name:"resume", summary:"Reconcile orphaned writer attempts without spawning duplicates", usage:"bb lane-pilot resume [project-id]" },
       { name:"dispatch-cli", summary:"Dispatch a CLI writer run for a PM thread", usage:"bb lane-pilot dispatch-cli <project-id> <pm-thread-id> [binary] [subcommand]" },
-      { name:"dispatch-bb", summary:"Dispatch a BB writer task, optional task-v2 JSON", usage:"bb lane-pilot dispatch-bb <project-id> <pm-thread-id> [task-json]" },
+      { name:"dispatch-bb", summary:"Dispatch a BB writer task, optional task-v2 JSON", usage:"bb lane-pilot dispatch-bb <project-id> <pm-thread-id> [task-json] [base-ref] [critic-code-default: off|medium|high]" },
       { name:"events-list", summary:"Read-only SDK events.list probe", usage:"bb lane-pilot events-list <thread-id>" },
       { name:"wait-thread", summary:"Read-only waitThreadIdle probe", usage:"bb lane-pilot wait-thread <thread-id>" },
       { name:"anamnesis", summary:"What Lane Pilot knows about its owner (records on the owner's machine); sensitive ones only on explicit request", usage:"bb lane-pilot anamnesis status|list|show|history|add|edit|confirm|reject|forget|sources|host" },
@@ -394,6 +401,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
             threadId:args[1]!,
             task,
             baseRef:args[3]||undefined,
+            ...(args[4] ? { criticCodeDefault:requireCriticCodeDefault(args[4]) } : {}),
           }), null, 2) };
         }
         if (command === "docs-nightly" && args.length >= 1 && args.length <= 3) {

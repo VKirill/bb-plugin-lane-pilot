@@ -15,11 +15,11 @@ language: ru
 
 | Решение | Число |
 |---|---:|
-| editable | 232 |
+| editable | 234 |
 | read-only | 91 |
 | gap | 0 |
 | excluded | 130 |
-| **сумма** | **453** |
+| **сумма** | **455** |
 
 Из бывших 88 read-only: (a) канал найден и поле стало editable — 0; (b) неприменимо в BB — 50; (c) gap без контракта upstream/SDK — 33.
 
@@ -478,3 +478,5 @@ language: ru
 | 450 | Lane Pilot workflow models | workflow.preset.ins-digest.reasoning_effort | src/workflow/model-presets.ts | user | OWN | editable | The model preset «ins-digest», the Insights pipeline stage «INS - сводка» (summary for the author); empty means the built-in default (claude-code / claude-sonnet-5 / medium) (`src/workflow/model-presets.ts:12`) |
 | 451 | Lane Pilot writer | writer.skill_pick | src/rooms/writer/server/skill-pick.ts | user | OWN | editable | Whether a writer gets the BB skills picked for its task: on (default) lets the pick add the project skills the task needs, off gives the writer its role skills only; a pick that runs past 15 s also leaves only the role skills (`src/rooms/writer/server/skill-pick.ts:115`) |
 | 452 | Lane Pilot Jev judgments | jev.provider | src/rooms/core/server/core.ts | user | OWN | editable | Who serves every Jev request: openlux (a reseller, same bodies, about 60% cheaper, model jev-1.13.0:stable, key OPENLUX_API_KEY) or typesafe (the official service, jev-latest, key TYPESAFE_API_KEY); read from the global settings, and a provider with no key in the Env Catalog falls back to TypeSafe's (`src/rooms/core/server/core.ts:73`) |
+| 453 | Lane Pilot code critic | critic.code.default_for_risk | src/rooms/writer/server/finish.ts | user | OWN | editable | Runs the code critic by the task's risk when code_critique.enabled is not set: off (default, until the bench has measured the critic on and off), medium (risk medium, high and critical) or high (high and critical). quality_mode quick or full and an explicit code_critique.enabled win; a dispatch can carry its own value for one task (the bench's arm) (`src/rooms/writer/server/finish.ts:300`) |
+| 454 | Lane Pilot plan against fact | plan_fact.mode | src/rooms/writer/server/plan-fact.ts | user | OWN | editable | The writer closes its answer with a plan-fact table (one row per acceptance item, with the file and lines or the check as evidence); code checks every entry against the diff and the check results. record (default) writes the plan-fact stage and shows it on the acceptance card; gate also sends the task back to the writer when an acceptance item has no evidence that holds (`src/rooms/writer/server/plan-fact.ts:12`) |

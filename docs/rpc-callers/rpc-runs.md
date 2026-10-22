@@ -22,11 +22,11 @@ TL;DR: `rpcRuns` supplies the task board, task and run cards, native thread sele
 
 ## Purpose
 
-`rpcRuns` declares strict request and response shapes for the run screens and cards; its handler factories are registered as part of the app RPC contract (`src/rooms/contracts/rpc-runs.ts:4-8`, `src/rooms/contracts/index.ts:17-26`, `src/rooms/core/server/rpc.ts:30-33`).
+`rpcRuns` declares strict request and response shapes for the run screens and cards; its handler factories are registered as part of the app RPC contract (`src/rooms/contracts/rpc-runs.ts:4-30`, `src/rooms/contracts/index.ts:18-27`, `src/rooms/core/server/rpc.ts:31-34`).
 
 ## How it works
 
-1. BB validates each request against its method schema. Board requests may omit project id and default completed-task lookback to 24 hours; list requests require project id, offset and limit. Card, stage and native-thread requests require their identifying ids (`src/rooms/contracts/rpc-runs.ts:8-75`).
+1. BB validates each request against its method schema. Board requests may omit project id and default completed-task lookback to 24 hours; list requests require project id, offset and limit. Card, stage and native-thread requests require their identifying ids (`src/rooms/contracts/rpc-runs.ts:30-102`).
 2. `task_board` asks `buildTaskBoard` for project or all-project items and a done-since timestamp. The builder includes latest attempts that are still live or changed during the lookback and maps attempt/stage state to board column and phase (`src/rooms/runs/server/task-board.ts:63-75`, `:89-123`). The handler caches PM thread titles for five minutes, queries missing titles in parallel, swallows thread lookup failures to null, then returns the items with nullable titles (`src/rooms/runs/server/rpc/runs.ts:171-181`).
 3. `task_card` reads a task/run card. Missing card returns null. Otherwise it describes worker and PM threads, lists each worker's child threads, and returns the card with its thread tree; BB thread lookup failures produce null metadata or empty children (`src/rooms/runs/server/rpc/runs.ts:182-201`).
 4. `get_run_card` selects the run and latest attempt for each task. Missing run returns null. It parses task title from contract JSON with task id fallback, and exposes a check-log path only when it is relative, has no `..` path segment, and both writer host and workspace are known (`src/rooms/runs/server/rpc/runs.ts:203-232`).
@@ -37,20 +37,20 @@ TL;DR: `rpcRuns` supplies the task board, task and run cards, native thread sele
 | Method branch | Inputs and outcomes | Failure behavior |
 |---|---|---|
 | Board phase mapping | Accepted/canceled attempts map to done; queued work can be planning or waiting; live work can be checking or writing; recent failed work is retrying; remaining cases are blocked, stuck, or closed. | This affects display column/phase, not the underlying attempt state (`src/rooms/runs/server/task-board.ts:89-114`). |
-| Board | Optional `projectId`; `doneHours` is an integer 1–720, default 24. | SQL/task-board errors reject; thread title lookup errors are swallowed into a null title (`src/rooms/contracts/rpc-runs.ts:9-20`, `src/rooms/runs/server/rpc/runs.ts:171-181`). |
-| Task card | Nonempty run id and nullable task id. | Missing card returns null; thread lookup failures do not remove the card (`src/rooms/contracts/rpc-runs.ts:22-35`, `src/rooms/runs/server/rpc/runs.ts:182-201`). |
-| Run card | Nonempty run id. | Missing run returns null. Unsafe or incomplete check-log references are returned as `checkLog:null` (`src/rooms/contracts/rpc-runs.ts:37-52`, `src/rooms/runs/server/rpc/runs.ts:203-232`). |
-| Native thread | Nonempty thread id. | Missing KV selection returns null; invalid stored selection schema or KV failure rejects. Agent compilation alone is caught and falls back to id (`src/rooms/contracts/rpc-runs.ts:54-63`, `src/rooms/runs/server/rpc/runs.ts:234-251`). |
-| Run page | Project id, optional section, nonnegative offset, limit 1–200, optional `pinOpen`. | Section, database and view-building failures reject; the page response includes runs and total (`src/rooms/contracts/rpc-runs.ts:64-67`, `src/rooms/settings/server/rpc/settings.ts:260-264`). |
-| Stage results | Run id, then run/task/stage ids for one result. | Missing stage summary is an empty list; a result lookup reports missing row separately from an empty result body (`src/rooms/contracts/rpc-runs.ts:68-75`, `src/rooms/storage/database.ts:705-728`). |
+| Board | Optional `projectId`; `doneHours` is an integer 1–720, default 24. | SQL/task-board errors reject; thread title lookup errors are swallowed into a null title (`src/rooms/contracts/rpc-runs.ts:31-42`, `src/rooms/runs/server/rpc/runs.ts:171-181`). |
+| Task card | Nonempty run id and nullable task id. | Missing card returns null; thread lookup failures do not remove the card (`src/rooms/contracts/rpc-runs.ts:44-57`, `src/rooms/runs/server/rpc/runs.ts:182-201`). |
+| Run card | Nonempty run id. | Missing run returns null. Unsafe or incomplete check-log references are returned as `checkLog:null` (`src/rooms/contracts/rpc-runs.ts:64-79`, `src/rooms/runs/server/rpc/runs.ts:203-232`). |
+| Native thread | Nonempty thread id. | Missing KV selection returns null; invalid stored selection schema or KV failure rejects. Agent compilation alone is caught and falls back to id (`src/rooms/contracts/rpc-runs.ts:81-90`, `src/rooms/runs/server/rpc/runs.ts:234-251`). |
+| Run page | Project id, optional section, nonnegative offset, limit 1–200, optional `pinOpen`. | Section, database and view-building failures reject; the page response includes runs and total (`src/rooms/contracts/rpc-runs.ts:91-94`, `src/rooms/settings/server/rpc/settings.ts:260-264`). |
+| Stage results | Run id, then run/task/stage ids for one result. | Missing stage summary is an empty list; a result lookup reports missing row separately from an empty result body (`src/rooms/contracts/rpc-runs.ts:95-102`, `src/rooms/storage/database.ts:705-728`). |
 
 ## Business rules
 
-`task_card` is nullable when its run or task is absent; stage summaries omit result JSON and the result endpoint loads a single body (`src/rooms/contracts/rpc-runs.ts:22-35`, `:68-75`, `src/rooms/storage/database.ts:705-728`). `list_runs` uses newest-first ordering and may include open runs beyond the requested page when `pinOpen` is true (`src/rooms/storage/database.ts:1366-1380`). Check-log paths are restricted before they are combined with a writer workspace path (`src/rooms/runs/server/rpc/runs.ts:214-230`).
+`task_card` is nullable when its run or task is absent; stage summaries omit result JSON and the result endpoint loads a single body (`src/rooms/contracts/rpc-runs.ts:44-57`, `:95-102`, `src/rooms/storage/database.ts:705-728`). `list_runs` uses newest-first ordering and may include open runs beyond the requested page when `pinOpen` is true (`src/rooms/storage/database.ts:1366-1380`). Check-log paths are restricted before they are combined with a writer workspace path (`src/rooms/runs/server/rpc/runs.ts:214-230`).
 
 ## Public API or commands
 
-Procedures covered here are `task_board`, `task_card`, `get_run_card`, `native_thread`, `list_runs`, `list_run_stages`, and `get_stage_result` (`src/rooms/contracts/rpc-runs.ts:8-75`). Other procedures later in `rpcRuns` belong to the screen and helper-access views and remain documented by their owning RPC page.
+Procedures covered here are `task_board`, `task_card`, `get_run_card`, `native_thread`, `list_runs`, `list_run_stages`, and `get_stage_result` (`src/rooms/contracts/rpc-runs.ts:30-102`). Other procedures later in `rpcRuns` belong to the screen and helper-access views and remain documented by their owning RPC page.
 
 ## Gotchas
 

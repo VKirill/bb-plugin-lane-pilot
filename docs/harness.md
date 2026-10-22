@@ -63,7 +63,7 @@ A harness tree contains the optional writer additions described by `LANE_PILOT_S
 
 ## Public API or commands
 
-The harness room exports `createHarness`, `harnessRpc`, tree helpers and trial helpers to other rooms (`src/rooms/harness/server/index.ts:1-7`, `src/rooms/harness/index.ts:1`). App RPC methods are `harness_status`, `harness_configure`, `harness_edit`, `harness_tick` and `harness_reflect` (`src/rooms/contracts/rpc-ops.ts:110-129`, `src/rooms/harness/server/rpc.ts:7-17`). The `harness`, `harness-edit`, `harness-tick` and `harness-trajectory` CLI commands expose status, editing, trial evaluation and trajectory output (`src/rooms/tools/server/cli.ts:60-63`, `:163-179`).
+The harness room exports `createHarness`, `harnessRpc`, tree helpers and trial helpers to other rooms (`src/rooms/harness/server/index.ts:1-7`, `src/rooms/harness/index.ts:1`). App RPC methods are `harness_status`, `harness_configure`, `harness_edit`, `harness_tick` and `harness_reflect` (`src/rooms/contracts/rpc-ops.ts:110-129`, `src/rooms/harness/server/rpc.ts:7-17`). The `harness`, `harness-edit`, `harness-tick` and `harness-trajectory` CLI commands expose status, editing, trial evaluation and trajectory output (`src/rooms/tools/server/cli.ts:67-70`, `:170-186`).
 
 ### `HarnessCard`
 

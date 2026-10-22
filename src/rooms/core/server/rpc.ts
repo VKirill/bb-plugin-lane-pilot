@@ -20,6 +20,7 @@ import { memoryProbeRpc } from "./rpc-memory-probe";
 import { harnessRpc } from "../../harness/server";
 import { deferralRpc } from "../../deferral/server";
 import { rollbackRpc } from "../../rollback/server";
+import { acceptanceRpc } from "../../acceptance/server";
 import { sessionMemoryRpc } from "../../memory/server";
 import { createWorkflowArchitect } from "../../workflow/server";
 import { architectStartRpc } from "../../workflow/server";
@@ -51,6 +52,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...harnessRpc(services.harness),
     ...deferralRpc(services.deferrals),
     ...rollbackRpc(services.rollback),
+    ...acceptanceRpc(ctx.db),
     ...sessionMemoryRpc(ctx, services),
     ...createWorkflowArchitect(ctx, services).rpc,
     ...architectStartRpc(ctx, services),

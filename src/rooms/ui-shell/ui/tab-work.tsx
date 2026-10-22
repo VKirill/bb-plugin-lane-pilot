@@ -41,7 +41,7 @@ export function WorkTab({ page }: { page: LpPage }) {
         </section>
         <section className="space-y-2" data-testid="settings-group-quality">
           <CatalogField page={page} keyName="quality_mode" />
-          <AdvancedRows show={advanced}><CatalogFields page={page} keys={["sandbox.backend", "verification.sandbox_unsafe", "secrets.allow"]} /></AdvancedRows>
+          <AdvancedRows show={advanced}><CatalogFields page={page} keys={["sandbox.backend", "verification.sandbox_unsafe", "secrets.allow", "plan_fact.mode"]} /></AdvancedRows>
         </section>
       </SettingsGroup>
 
@@ -56,7 +56,7 @@ export function WorkTab({ page }: { page: LpPage }) {
       <SettingsGroup testId="settings-checks" title={t("workGroupChecks")}>
         {group("plan", <CatalogFields page={page} keys={["plan_critique.mode", "plan_critique.min_score", "plan_critique.min_write_tasks", "plan_critique.on_high_risk"]} />,
           t("stagePlanCritique"), t("planCritiqueHelp"), "plan-critique-policy", { key: "plan_critique.enabled", fallback: true })}
-        {group("code", <CatalogFields page={page} keys={["code_critique.mode", "code_critique.auto_fix", "code_critique.max_rounds"]} />,
+        {group("code", <CatalogFields page={page} keys={["code_critique.mode", "code_critique.auto_fix", "code_critique.max_rounds", "critic.code.default_for_risk"]} />,
           t("stageCodeCritique"), t("codeCritiqueHelp"), "code-critique-policy", { key: "code_critique.enabled", fallback: false })}
         {group("specialist", <CatalogField page={page} keyName="specialist.when" />,
           t("specialistReview"), t("settingSpecialistEnabledHelp"), "specialist-policy", { key: "specialist.enabled", fallback: false })}

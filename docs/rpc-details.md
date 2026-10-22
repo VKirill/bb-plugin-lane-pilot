@@ -49,7 +49,7 @@ Explain how the route families described in [RPC and host-call contracts](rpc-ca
 
 ### Writer harness operations
 
-The harness routes are registered from the harness room. Status and configuration are project-scoped; edit can run in the background unless `wait` is true; tick accepts a dry-run flag; reflection is keyed by harness id. The contract leaves all five outputs unknown, so result shapes are owned by the harness implementation (`src/rooms/contracts/rpc-ops.ts:110-129`, `src/rooms/harness/server/rpc.ts:7-17`, `src/rooms/core/server/rpc.ts:46-48`).
+The harness routes are registered from the harness room. Status and configuration are project-scoped; edit can run in the background unless `wait` is true; tick accepts a dry-run flag; reflection is keyed by harness id. The contract leaves all five outputs unknown, so result shapes are owned by the harness implementation (`src/rooms/contracts/rpc-ops.ts:110-129`, `src/rooms/harness/server/rpc.ts:7-17`, `src/rooms/core/server/rpc.ts:47-49`).
 
 ### `rpcWorkflow`
 
@@ -80,17 +80,17 @@ The harness routes are registered from the harness room. Status and configuratio
 
 ### `rpcRuns`
 
-1. `task_board` returns task/workflow rows; `task_card` accepts a task id or null workflow-card id and may return null (`src/rooms/contracts/rpc-runs.ts:8-35`).
-2. Run-card lookup can be nullable. Stage listing returns summaries, while `get_stage_result` returns `found` and a nullable result (`src/rooms/contracts/rpc-runs.ts:37-75`).
-3. `list_runs` requires project id, optional section, nonnegative integer offset, and integer limit 1–200; optional `pinOpen` controls open-run pinning (`src/rooms/contracts/rpc-runs.ts:64-67`).
-4. `get_screen` takes project, optional section, and optional run limit 1–200. It includes screen settings and recent runs, an optional writer binding with five resolution states, and a nullable writer trace (`src/rooms/contracts/rpc-runs.ts:98-117`, `:126-163`).
+1. `task_board` returns task/workflow rows; `task_card` accepts a task id or null workflow-card id and may return null (`src/rooms/contracts/rpc-runs.ts:30-57`).
+2. Run-card lookup can be nullable. Stage listing returns summaries, while `get_stage_result` returns `found` and a nullable result (`src/rooms/contracts/rpc-runs.ts:64-102`).
+3. `list_runs` requires project id, optional section, nonnegative integer offset, and integer limit 1–200; optional `pinOpen` controls open-run pinning (`src/rooms/contracts/rpc-runs.ts:91-94`).
+4. `get_screen` takes project, optional section, and optional run limit 1–200. It includes screen settings and recent runs, an optional writer binding with five resolution states, and a nullable writer trace (`src/rooms/contracts/rpc-runs.ts:125-144`, `:153-190`).
 
 | Route | Branch and result | Failure or absence |
 |---|---|---|
-| Task/run card | Card may be returned for a known run/task. | `task_card` and run-card lookup can return null when the record is absent (`src/rooms/contracts/rpc-runs.ts:22-43`). |
-| Stage result | Separately fetched result body and `found` flag. | Missing result uses `found:false` and `result:null`; invalid ids fail validation (`src/rooms/contracts/rpc-runs.ts:68-75`). |
-| Run paging | Required offset and 1–200 limit. | Negative offset, non-integer values, or out-of-range limit fail schema validation (`src/rooms/contracts/rpc-runs.ts:64-67`). |
-| Screen binding | `resolved`, `ambiguous`, `setup_required`, `offline`, or `catalog_unavailable`. | These are domain binding states; nullable host/path fields carry unresolved states (`src/rooms/contracts/rpc-runs.ts:98-117`). |
+| Task/run card | Card may be returned for a known run/task. | `task_card` and run-card lookup can return null when the record is absent (`src/rooms/contracts/rpc-runs.ts:44-70`). |
+| Stage result | Separately fetched result body and `found` flag. | Missing result uses `found:false` and `result:null`; invalid ids fail validation (`src/rooms/contracts/rpc-runs.ts:95-102`). |
+| Run paging | Required offset and 1–200 limit. | Negative offset, non-integer values, or out-of-range limit fail schema validation (`src/rooms/contracts/rpc-runs.ts:91-94`). |
+| Screen binding | `resolved`, `ambiguous`, `setup_required`, `offline`, or `catalog_unavailable`. | These are domain binding states; nullable host/path fields carry unresolved states (`src/rooms/contracts/rpc-runs.ts:125-144`). |
 
 ### `sessionMemoryRpc`
 
@@ -112,7 +112,7 @@ All declared method schemas reject extra object keys. Nullable values, booleans,
 
 ## Public API or commands
 
-The maps are registered through the shared `rpcContract`; route implementation is supplied by domain handler factories (`src/rooms/contracts/index.ts:17-26`, `src/rooms/core/server/rpc.ts:27-51`).
+The maps are registered through the shared `rpcContract`; route implementation is supplied by domain handler factories (`src/rooms/contracts/index.ts:18-27`, `src/rooms/core/server/rpc.ts:28-52`).
 
 ## Gotchas
 
