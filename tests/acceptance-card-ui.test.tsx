@@ -22,6 +22,7 @@ const card = (extra: Record<string, unknown> = {}) => ({
   gates: [{ gate: "owns-paths", status: "passed", attempt: 1, at: 1 }, { gate: "accept", status: "rejected", attempt: 1, at: 2 }],
   planFact: {
     state: "failed", table: "ok", reason: null, mode: "record", extraRows: [7], notChecked: ["line ranges: the diff against the task's base could not be read, so only the files were checked"],
+    wires: [{ chain: ["form.retry", "saveForm"], broken: null }, { chain: ["saveForm", "ErrorBanner"], broken: { from: "saveForm", to: "ErrorBanner" } }],
     items: [
       { item: 1, acceptance: "the form saves", claimed: "done", verdict: "proven", severity: "ok", why: null, evidence: [evidence("src/form/save.ts:10-24", true, "lines_changed", "overlaps a changed hunk"), evidence("cmd:npm test", true, "command_passed", "ran, exit code 0")] },
       { item: 2, acceptance: "errors are shown", claimed: "done", verdict: "unproven", severity: "blocking", why: null, evidence: [evidence("src/form/errors.ts:300", false, "lines_not_changed", "lines 300-300 of src/form/errors.ts are not in a changed hunk")] },
@@ -70,6 +71,8 @@ describe("the acceptance card", () => {
     expect(text("acc-notrun")).toContain("Not run is not «no findings»");
     expect(text("acc-notrun")).toContain("Specialist review");
     expect(text("acc-notrun")).toContain("only the files were checked");
+    expect(text("acc-wires")).toContain("form.retry → saveForm");
+    expect(text("acc-wires")).toContain("broken between «saveForm» and «ErrorBanner»");
     expect(text("acc-notrun")).toContain("turned off in the project's settings");
     expect(text("acc-notrun")).not.toContain("disabled_by_project_setting");
   });

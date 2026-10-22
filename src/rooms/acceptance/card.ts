@@ -41,6 +41,9 @@ export function buildAcceptanceCard(db: LanePilotDatabase, input: { runId: strin
     items: Array.isArray(stored.items) ? stored.items as NonNullable<AcceptanceCard["planFact"]>["items"] : [],
     extraRows: Array.isArray(stored.extraRows) ? (stored.extraRows as unknown[]).filter((value): value is number => typeof value === "number") : [],
     notChecked: strings(stored.notChecked),
+    ...(Array.isArray(stored.wires) ? { wires: (stored.wires as Array<{ chain?: unknown; broken?: { from?: unknown; to?: unknown } | null }>).map((wire) => ({
+      chain: strings(wire.chain), broken: wire.broken ? { from: String(wire.broken.from ?? ""), to: String(wire.broken.to ?? "") } : null,
+    })) } : {}),
   } : null;
 
   const notRun: AcceptanceCard["notRun"] = [];

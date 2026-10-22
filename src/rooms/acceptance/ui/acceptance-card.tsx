@@ -121,6 +121,16 @@ export function AcceptanceCard({ runId, taskId, fallback, finished, refreshKey }
             ))}
           </ul>
           {pf && pf.extraRows.length ? <p className="mt-1.5 text-xs text-muted-foreground">{fill("acc_extra_rows", { items: pf.extraRows.join(", ") })}</p> : null}
+          {pf?.wires?.length ? (
+            <ul className="mt-2 space-y-0.5 text-xs" data-testid="acc-wires">
+              {pf.wires.map((wire, index) => (
+                <li key={index} className="flex min-w-0 items-start gap-1.5" data-broken={wire.broken ? "true" : "false"}>
+                  <Mark tone={wire.broken ? "bad" : "ok"} label={wire.broken ? "fail" : "ok"}>{wire.broken ? "✗" : "✓"}</Mark>
+                  <span className="min-w-0 break-words"><span className="font-mono">{wire.chain.join(" → ")}</span> <span className="text-muted-foreground">· {wire.broken ? fill("acc_wire_broken", { from: wire.broken.from, to: wire.broken.to }) : t("acc_wire_ok")}</span></span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </Block>
       </div>
 

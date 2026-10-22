@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { brokenWireReason, type WireResult } from "../wires";
 
 /**
  * The plan against the fact (SMA plan P1-3, Maslov #30971: «never read the executor's story»).
@@ -87,6 +88,8 @@ export type PlanFactCheck = {
   blocking: number[];
   /** What the check could not look at; «not checked» is not «found nothing». */
   notChecked: string[];
+  /** The declared wires of the contract, hop by hop (src/rooms/wires); absent when the contract declares none. */
+  wires?: WireResult[];
 };
 
 const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
@@ -159,6 +162,9 @@ export function blindPlanFact(acceptance: readonly string[], table: PlanFactTabl
 
 /** The stage result the code decides from the check: a missing or unreadable table is not run, never a refusal by itself. */
 export function planFactOutcome(check: PlanFactCheck): { state: "passed" | "failed" | "skipped"; reason: string | null } {
+  // A broken wire is a code fact about the finished work, whatever the writer's table says.
+  const wire = brokenWireReason(check.wires ?? []);
+  if (wire) return { state: "failed", reason: wire };
   if (check.table === "missing") return { state: "skipped", reason: "plan_fact_table_missing: the writer's answer has no plan-fact block, so no acceptance item was checked against the diff" };
   if (check.table === "invalid") return { state: "skipped", reason: `plan_fact_table_invalid: ${check.tableReason ?? "unreadable"}; no acceptance item was checked against the diff` };
   if (check.blocking.length) return { state: "failed", reason: `plan_fact_unproven: acceptance item ${check.blocking.join(", ")} ${check.blocking.length === 1 ? "has" : "have"} no evidence that holds in the diff` };

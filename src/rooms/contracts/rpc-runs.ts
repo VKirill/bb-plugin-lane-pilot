@@ -20,6 +20,8 @@ export const acceptanceCardSchema = z.object({
       evidence: z.array(z.object({ evidence: z.string(), kind: z.string(), ok: z.boolean(), code: z.string(), note: z.string() }).strict()), why: z.string().nullable(),
     }).strict()),
     extraRows: z.array(z.number().int()), notChecked: z.array(z.string()),
+    /** The declared wires (contract `wires`), the file each hop met in, the first hop that met nowhere (src/rooms/wires). */
+    wires: z.array(z.object({ chain: z.array(z.string()), broken: z.object({ from: z.string(), to: z.string() }).strict().nullable() }).strict()).optional(),
   }).strict().nullable(),
   /** The task's checks on its base before any writer (src/rooms/baseline): which were already green or red, and which turned red after the merge. */
   baseline: z.object({

@@ -1,4 +1,5 @@
 import { runOnHost } from "@lane-pilot/host-calls";
+import { readWires, wiresCommand } from "../../wires";
 import type { TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../core/server";
 import { deleteStageReceipt, getRunSettingsScopes, getTaskGitBase, loadProjectSettings } from "../../storage";
@@ -58,6 +59,11 @@ export async function runPlanFactStage(ctx: ServerCore, input: {
     produced, ...hunks, lineCount, root: input.task.project_cwd,
     contractCommands: input.task.verification.map((row) => row.command), ran: input.verification,
   });
+  if (input.task.wires?.length) {
+    const ran = await runOnHost(host, { hostId: input.hostId, cwd: input.task.project_cwd, command: wiresCommand(input.task.wires), timeoutSec: 60 }).catch(() => null);
+    if (ran) check.wires = readWires(input.task.wires, ran.stdout);
+    else check.notChecked.push("wires: the search in the worktree could not run, so the declared wires were not checked");
+  }
   if (table.status === "ok" && base === null) check.notChecked.push("line ranges: the task has no recorded base commit (a folder without git), so only the files were checked");
   const outcome = planFactOutcome(check);
   const mode = planFactMode(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)));
