@@ -22,6 +22,7 @@ Built by Lane Pilot from page frontmatter.
 | [Architectural decisions](decisions.md) | decisions | active | 2026-10-17 |
 | [Protecting Lane Pilot database access](decisions/2026-10-08-lane-pilot-data-db-access.md) | decisions | active | 2026-10-19 |
 | [Build and deploy Lane Pilot](deployment.md) | deployment | active | 2026-10-19 |
+| [Checking the checkers](checkers.md) | component | active | 2026-10-22 |
 | [Cross-cutting gotchas](gotchas.md) | gotchas | active | 2026-10-17 |
 | [Writer harness](harness.md) | component | active | 2026-10-20 |
 | [LP-Bench, the fixed task set](lp-bench.md) | component | active | 2026-10-22 |

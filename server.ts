@@ -21,6 +21,7 @@ import { createRollback } from "./src/rooms/rollback/server";
 import { createPluginBench } from "./src/rooms/bench/server";
 import { createBaselineRoom, mountRegress } from "./src/rooms/baseline/server";
 import { createPluginWall } from "./src/rooms/wall/server";
+import { createPluginCheckers } from "./src/rooms/checkers/server";
 import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, pluginStopped } from "./src/rooms/runs/server";
 import { registerRpc } from "./src/rooms/core/server/rpc";
 import { mountAnamnesis } from "./src/rooms/anamnesis";
@@ -106,6 +107,7 @@ export default async function plugin(bb: BbPluginApi) {
     createBaselineRoom(ctx, services),
     { bench: createPluginBench(ctx, services) },
     { wall: createPluginWall(ctx, services) },
+    { checkers: createPluginCheckers(ctx) },
     createStability(ctx, services),
     createScheduleService(ctx, services),
   );
