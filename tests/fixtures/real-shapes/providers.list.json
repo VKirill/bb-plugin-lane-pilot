@@ -1,0 +1,69 @@
+{
+  "name": "providers.list",
+  "recordedAt": "2026-10-22T23:53:31.584Z",
+  "shape": [
+    {
+      "available": "boolean",
+      "capabilities": {
+        "modelCatalogScope": "string",
+        "permissionModes": [
+          "string"
+        ],
+        "supportsFork": "boolean",
+        "supportsNativeUserQuestion": "boolean",
+        "supportsServiceTier": "boolean",
+        "supportsSessionRewind": "boolean",
+        "supportsThreadArchive": "boolean",
+        "supportsThreadRename": "boolean"
+      },
+      "completedTurnDisplay": "string",
+      "composerActions": [
+        {
+          "kind": "string",
+          "trigger": "string"
+        }
+      ],
+      "displayName": "string",
+      "extensionKinds": {
+        "provider-codex/async-question": {
+          "item": "boolean",
+          "state": "boolean"
+        },
+        "provider-codex/goal": {
+          "item": "boolean",
+          "state": "boolean"
+        },
+        "provider-codex/macos-permission": {
+          "item": "boolean",
+          "state": "boolean"
+        }
+      },
+      "id": "string",
+      "logoUrl": "string",
+      "maintenance": {
+        "health": "boolean",
+        "installation": "boolean",
+        "usage": "boolean"
+      },
+      "pluginId": "string",
+      "reasoningLevels": [
+        {
+          "id": "string",
+          "label": "string"
+        }
+      ],
+      "serviceTiers": [
+        {
+          "id": "string",
+          "label": "string"
+        }
+      ],
+      "strings": {
+        "brandPrefix": "string",
+        "expiredHint": "string",
+        "installUrl": "string",
+        "signInHint": "string"
+      }
+    }
+  ]
+}

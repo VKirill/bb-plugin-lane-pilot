@@ -1,0 +1,34 @@
+{
+  "name": "threads.get",
+  "recordedAt": "2026-10-22T23:53:31.598Z",
+  "shape": {
+    "activeBackgroundAgentCount": "number",
+    "archivedAt": "number",
+    "canRestoreEnvironment": "boolean",
+    "canSpawnChild": "boolean",
+    "createdAt": "number",
+    "deletedAt": "null",
+    "environmentId": "string",
+    "id": "string",
+    "lastReadAt": "number",
+    "latestAttentionAt": "number",
+    "lifecycleOwnerThreadId": "string",
+    "originKind": "null",
+    "originPluginId": "string",
+    "parentThreadId": "string",
+    "pinnedAt": "null",
+    "projectId": "string",
+    "providerId": "string",
+    "queuedMessageCount": "number",
+    "runtime": {
+      "displayStatus": "string"
+    },
+    "sectionId": "null",
+    "sourceThreadId": "null",
+    "status": "string",
+    "title": "string",
+    "titleFallback": "string",
+    "updatedAt": "number",
+    "visibility": "string"
+  }
+}

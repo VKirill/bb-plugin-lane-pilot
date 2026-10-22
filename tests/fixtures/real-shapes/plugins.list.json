@@ -1,0 +1,65 @@
+{
+  "name": "plugins.list",
+  "recordedAt": "2026-10-22T23:53:31.597Z",
+  "shape": [
+    {
+      "app": {
+        "bundle": "null",
+        "hasApp": "boolean"
+      },
+      "capabilities": [
+        {
+          "detail": "string",
+          "id": "string",
+          "kind": "string",
+          "label": "string"
+        }
+      ],
+      "cliCommand": "null",
+      "collections": [
+        "unknown"
+      ],
+      "description": "string",
+      "enabled": "boolean",
+      "handlerStats": {
+        "count": "number",
+        "errorCount": "number",
+        "maxMs": "number",
+        "totalMs": "number"
+      },
+      "hasSettings": "boolean",
+      "icon": "string",
+      "iconUrl": "null",
+      "icons": {},
+      "id": "string",
+      "isOrphanedBuiltin": "boolean",
+      "logoDarkUrl": "null",
+      "logoUrl": "null",
+      "name": "string",
+      "provenance": "string",
+      "providerIds": [
+        "unknown"
+      ],
+      "publisherLabel": "string",
+      "rootDir": "string",
+      "schedules": [
+        "unknown"
+      ],
+      "screenshots": [
+        "unknown"
+      ],
+      "services": [
+        "unknown"
+      ],
+      "source": "string",
+      "sourceDisplay": "string",
+      "status": "string",
+      "statusDetail": "null",
+      "updateState": {
+        "lastCheckAt": "number",
+        "outcome": "string"
+      },
+      "version": "string"
+    }
+  ]
+}
