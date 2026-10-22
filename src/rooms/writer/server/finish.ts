@@ -15,7 +15,8 @@ import { closeWriterStages, recordGateEvaluation, recordStage } from "../../runs
 import { stringAt } from "../../core/server";
 import { needsHumanQuestion, outputText, providerLimitNotice, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines } from "./writer-task";
 import { isLiveDecision } from "../live-folder";
-import { isMainfixTask } from "../../tasks";
+import { acceptanceProofGap, isMainfixTask } from "../../tasks";
+import type { StageId } from "../../tasks";
 import { IntegrationGateRunner, parseIntegrationGateSettings } from "../../verification/server";
 import { gateResolverFor } from "../../verification/server";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, sleepUntilThreadSignal, startLimitWaiting, threadFailure, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -604,6 +605,20 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         transitionAttempt(db, input.attemptId, "blocked", { reason });
         return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
       }
+      }
+      // A model's opinion alone never accepts a task: some stage decided by code (the ownership and output gates, the checks)
+      // must have passed for this candidate. The code critic's «passed» is advisory (STAGE_PROOF).
+      const provenBy:StageId[] = [];
+      if (candidate.status === "accepted") provenBy.push("writer-agent");
+      const checks = candidate.verification ?? [];
+      if (checks.length > 0 && checks.every((row) => row.exitCode === 0)) provenBy.push("verification");
+      if (review === "passed") provenBy.push("code-critique");
+      const proofGap = acceptanceProofGap(provenBy);
+      if (proofGap) {
+        recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+          attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"no_code_proof",reason:proofGap}});
+        transitionAttempt(db, input.attemptId, "blocked", { reason:proofGap });
+        return { status:"blocked", reason:proofGap, attemptId:input.attemptId, writerThreadId };
       }
       const receipt = await services.persistWriterAcceptance({
         config:input.config, task:input.task, runId:input.runId, taskId:input.taskId,

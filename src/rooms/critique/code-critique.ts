@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { clipped, extractModelJson, NO_TOOLS_LINE } from "@lane-pilot/workflow-engine";
 import { CODE_CRITIC_METHOD } from "./role-method";
+import { demoteUncited } from "./citations";
+import type { Citation } from "./citations";
 import { VERDICT_STATUSES, isVerdictShape, legacyOutputToVerdict, settleVerdict, verdictSchema, verdictSeverityToLegacy, verdictSummary, withoutDecision } from "@lane-pilot/workflow-engine";
 import type { Verdict, VerdictFinding, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { sha256Hex } from "@lane-pilot/kit";
@@ -190,7 +192,7 @@ export function parseCodeCritiqueSettings(settings: Record<string, unknown>): Co
 }
 
 const MAX_CRITIQUE_PACKET_BYTES = 24 * 1024;
-const MAX_FILE_EXCERPT_BYTES = 8 * 1024;
+export const MAX_FILE_EXCERPT_BYTES = 8 * 1024;
 export const MAX_VERIFICATION_IO_BYTES = 4_000;
 
 export function buildCandidateEvidence(input: {
@@ -383,10 +385,12 @@ const fromVerdictFinding = (row: VerdictFinding): CodeCritiqueFinding => ({
 });
 
 /** The new answer (`status`) or the old one (`decision`): both give a result with a status; the old one maps approve to pass and changes_requested to rework. */
-export function parseCodeCritique(output: string): CodeCritiqueResult {
+export function parseCodeCritique(output: string, cites?: Citation): CodeCritiqueResult {
   const raw = extractModelJson(output);
   if (isVerdictShape(raw)) {
-    const { verdict, demoted } = settleVerdict(verdictSchema.parse(withoutDecision(raw)), "code");
+    const cited = demoteUncited(verdictSchema.parse(withoutDecision(raw)), cites);
+    const settled = settleVerdict(cited.verdict, "code");
+    const { verdict } = settled, demoted = settled.demoted + cited.demoted;
     return {
       decision: verdict.status === "pass" ? "approve" : "changes_requested",
       summary: verdictSummary(verdict),

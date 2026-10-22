@@ -160,6 +160,31 @@ export const rpcKnowledge = {
       costUsd: z.number().nullable(),
     }).strict(),
   },
+  /** Per attempt: stages passed or failed, seconds per stage, writer tokens and list-price cost, with `not_measured` where the provider reports no usage (never 0). */
+  lp_attempt_metrics: {
+    input: z.object({ projectId: z.string().min(1), days: z.number().int().min(1).max(90).default(7) }).strict(),
+    output: z.object({
+      projectId: z.string(), days: z.number(), since: z.number(),
+      summary: z.object({
+        attempts: z.number().int(), measured: z.number().int(), partial: z.number().int(), notMeasured: z.number().int(),
+        measuredCostUsd: z.number().nullable(), measuredTokens: z.number().nullable(),
+        notMeasuredByProvider: z.record(z.string(), z.number().int()),
+        stagesPassed: z.number().int(), stagesFailed: z.number().int(),
+      }).strict(),
+      attempts: z.array(z.object({
+        taskId: z.string(), attemptId: z.string(), attemptNo: z.number().int(), state: z.string(), createdAt: z.number(),
+        seconds: z.number().nullable(),
+        stages: z.array(z.object({ stageId: z.string(), state: z.string(), seconds: z.number().nullable(), proof: z.string() }).strict()),
+        stagesPassed: z.number().int(), stagesFailed: z.number().int(),
+        gates: z.object({ passed: z.number().int(), rejected: z.number().int() }).strict(),
+        writer: z.object({ threadId: z.string().nullable(), providerId: z.string().nullable(), model: z.string().nullable() }).strict(),
+        tokens: z.object({ input: z.number(), output: z.number(), cached: z.number(), total: z.number() }).strict().nullable(),
+        costUsd: z.number().nullable(),
+        costState: z.enum(["measured", "partial", "not_measured"]),
+        costNote: z.string().nullable(),
+      }).strict()),
+    }).strict(),
+  },
   token_usage_sync: {
     input: z.object({}).strict(),
     output: z.object({ started: z.boolean() }).strict(),

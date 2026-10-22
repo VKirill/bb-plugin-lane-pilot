@@ -73,3 +73,13 @@ create temp view lp_triage as
 select t.*, coalesce(s.scope, 'real') as scope, coalesce(s.cur, 0) as cur
 from lane_pilot_failure_triage t
 left join lp_attempt s on s.id = t.attempt_id;
+
+-- Whether an attempt's writer spent measurable tokens: its thread has a row in lane_pilot_token_cursor with tokens in it. A provider that
+-- reports no usage (acp-cursor, acp-opencode) has none: that is «not measured», never zero. `provider` is the one the usage sync saw.
+create temp view lp_attempt_usage as
+select s.id, s.project, s.scope, s.cur, s.state, s.created_at, a.thread_id,
+  coalesce(nullif(c.last_provider, ''), nullif(c.provider_id, ''), case when a.thread_id is null then 'no writer thread' else 'no usage row' end) as provider,
+  (coalesce(json_extract(c.total_json, '$.total'), 0) > 0 or coalesce(json_extract(c.total_json, '$.output'), 0) > 0) as measured
+from lp_attempt s
+join lane_pilot_attempt a on a.id = s.id
+left join lane_pilot_token_cursor c on c.thread_id = a.thread_id;

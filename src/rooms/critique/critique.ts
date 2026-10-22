@@ -2,6 +2,8 @@ import { z } from "zod";
 import type { CoverageFinding } from "./critique-coverage";
 import { clipped, extractModelJson, NO_TOOLS_LINE } from "@lane-pilot/workflow-engine";
 import { PLAN_CRITIC_METHOD } from "./role-method";
+import { demoteUncited } from "./citations";
+import type { Citation } from "./citations";
 import { isVerdictShape, legacyDecisionToStatus, legacyOutputToVerdict, settleVerdict, statusToLegacyDecision, verdictSchema, verdictSummary, verdictSeverityToLegacy, withoutDecision } from "@lane-pilot/workflow-engine";
 import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
 
@@ -87,10 +89,13 @@ export function critiquePrompt(input: { plan:string; task:unknown; agent?:string
   ].join("\n\n");
 }
 
-export function parseCritique(output: string): CritiqueResult {
+/** `cites` is the code check on the findings' files (inputCitations): a serious finding that names a file the critic never saw counts as medium. */
+export function parseCritique(output: string, cites?: Citation): CritiqueResult {
   const raw = extractModelJson(output);
   if (isVerdictShape(raw)) {
-    const { verdict, demoted } = settleVerdict(verdictSchema.parse(withoutDecision(raw)), "plan");
+    const cited = demoteUncited(verdictSchema.parse(withoutDecision(raw)), cites);
+    const settled = settleVerdict(cited.verdict, "plan");
+    const { verdict } = settled, demoted = settled.demoted + cited.demoted;
     return {
       decision: statusToLegacyDecision(verdict.status),
       summary: verdictSummary(verdict),

@@ -11,7 +11,8 @@ function database(since = "") {
   const db = new Database(":memory:");
   db.exec(`attach ':memory:' as core; create table core.projects(id text primary key, name text);
     create table lane_pilot_run(id text primary key, project_id text not null);
-    create table lane_pilot_attempt(id text primary key, run_id text not null, task_id text not null, state text not null, reason text, created_at integer not null, harness_version text);
+    create table lane_pilot_attempt(id text primary key, run_id text not null, task_id text not null, state text not null, reason text, created_at integer not null, harness_version text, thread_id text);
+    create table lane_pilot_token_cursor(thread_id text primary key, provider_id text not null default '', last_provider text not null default '', total_json text not null default '{}');
     create table lane_pilot_failure_triage(project_id text, attempt_id text, reason text, origin text, failed_at integer);
     create table lane_pilot_jev_receipt(id integer primary key autoincrement, judgment text, mode text, status text, input_chars integer, latency_ms integer, tokens_in integer, tokens_out integer, at integer);
     create temp table lp_params(days integer, since_version text); insert into lp_params values (7, '${since}');`);
@@ -40,7 +41,7 @@ describe("lp-metrics views", () => {
     const db = database();
     db.prepare("insert into core.projects values ('proj_real', 'SelfyStudio')").run();
     db.prepare("insert into lane_pilot_run values ('run1', 'proj_real')").run();
-    const insert = db.prepare("insert into lane_pilot_attempt values (?, 'run1', 'task', ?, ?, ?, null)");
+    const insert = db.prepare("insert into lane_pilot_attempt(id, run_id, task_id, state, reason, created_at, harness_version) values (?, 'run1', 'task', ?, ?, ?, null)");
     REASONS.forEach(([state, reason], index) => insert.run(`a${index}`, state, reason, Date.now()));
     const rows = db.prepare("select id, cls from lp_attempt_class").all() as Array<{ id: string; cls: string }>;
     const byId = new Map(rows.map((row) => [row.id, row.cls]));
@@ -55,8 +56,8 @@ describe("lp-metrics views", () => {
   it("gives accepted and canceled attempts no class, so they are never counted as failures", () => {
     const db = database();
     db.prepare("insert into lane_pilot_run values ('run1', 'proj_x')").run();
-    db.prepare("insert into lane_pilot_attempt values ('a1', 'run1', 't', 'accepted', 'internal_error', 1, null)").run();
-    db.prepare("insert into lane_pilot_attempt values ('a2', 'run1', 't', 'canceled', null, 1, null)").run();
+    db.prepare("insert into lane_pilot_attempt(id, run_id, task_id, state, reason, created_at, harness_version) values ('a1', 'run1', 't', 'accepted', 'internal_error', 1, null)").run();
+    db.prepare("insert into lane_pilot_attempt(id, run_id, task_id, state, reason, created_at, harness_version) values ('a2', 'run1', 't', 'canceled', null, 1, null)").run();
     expect(db.prepare("select cls from lp_attempt_class").all()).toEqual([{ cls: null }, { cls: null }]);
   });
 
@@ -66,9 +67,9 @@ describe("lp-metrics views", () => {
     for (const [id, name] of projects) {
       db.prepare("insert into core.projects values (?, ?)").run(id, name);
       db.prepare("insert into lane_pilot_run values (?, ?)").run(`run_${id}`, id);
-      db.prepare("insert into lane_pilot_attempt values (?, ?, 'T-1', 'accepted', null, 1, null)").run(`a_${id}`, `run_${id}`);
+      db.prepare("insert into lane_pilot_attempt(id, run_id, task_id, state, reason, created_at, harness_version) values (?, ?, 'T-1', 'accepted', null, 1, null)").run(`a_${id}`, `run_${id}`);
     }
-    db.prepare("insert into lane_pilot_attempt values ('a_drill', 'run_proj_c', 'drill-20261007-1', 'accepted', null, 1, null)").run();
+    db.prepare("insert into lane_pilot_attempt(id, run_id, task_id, state, reason, created_at, harness_version) values ('a_drill', 'run_proj_c', 'drill-20261007-1', 'accepted', null, 1, null)").run();
     const scope = (id: string) => (db.prepare("select scope from lp_attempt where id = ?").get(id) as { scope: string }).scope;
     expect(["a_proj_3tb652jpsi", "a_proj_a", "a_proj_b", "a_drill"].map(scope)).toEqual(["sandbox", "sandbox", "sandbox", "sandbox"]);
     expect(["a_proj_c", "a_proj_d", "a_proj_gone"].map(scope)).toEqual(["real", "real", "real"]);
@@ -79,8 +80,8 @@ describe("lp-metrics views", () => {
     db.prepare("insert into core.projects values ('proj_a', 'LP sandbox x')").run();
     db.prepare("insert into lane_pilot_run values ('r1', 'proj_a')").run();
     db.prepare("insert into lane_pilot_run values ('r2', 'proj_real')").run();
-    db.prepare("insert into lane_pilot_attempt values ('a1', 'r1', 't', 'blocked', 'x', 1, null)").run();
-    db.prepare("insert into lane_pilot_attempt values ('a2', 'r2', 't', 'blocked', 'x', 1, null)").run();
+    db.prepare("insert into lane_pilot_attempt(id, run_id, task_id, state, reason, created_at, harness_version) values ('a1', 'r1', 't', 'blocked', 'x', 1, null)").run();
+    db.prepare("insert into lane_pilot_attempt(id, run_id, task_id, state, reason, created_at, harness_version) values ('a2', 'r2', 't', 'blocked', 'x', 1, null)").run();
     db.prepare("insert into lane_pilot_failure_triage values ('proj_a', 'a1', 'x', 'writer', 1)").run();
     db.prepare("insert into lane_pilot_failure_triage values ('proj_real', 'a2', 'x', 'writer', 1)").run();
     expect(db.prepare("select attempt_id, scope from lp_triage order by attempt_id").all()).toEqual([{ attempt_id: "a1", scope: "sandbox" }, { attempt_id: "a2", scope: "real" }]);
@@ -93,7 +94,7 @@ describe("lp-metrics views", () => {
       const db = database(since);
       db.prepare("insert into core.projects values ('proj_real', 'SelfyStudio')").run();
       db.prepare("insert into lane_pilot_run values ('run1', 'proj_real')").run();
-      versions.forEach((version, index) => db.prepare("insert into lane_pilot_attempt values (?, 'run1', 'task', 'accepted', null, ?, ?)").run(`a${index}`, 1_000 + index, version));
+      versions.forEach((version, index) => db.prepare("insert into lane_pilot_attempt(id, run_id, task_id, state, reason, created_at, harness_version) values (?, 'run1', 'task', 'accepted', null, ?, ?)").run(`a${index}`, 1_000 + index, version));
       return db;
     }
     const split = (db: ReturnType<typeof database>) => db.prepare("select id, cur from lp_attempt order by id").all().map((row) => (row as { cur: number }).cur);
@@ -118,9 +119,9 @@ describe("lp-metrics views", () => {
     it("leaves attempts that have not finished out of every count: they are neither accepted nor failed yet", () => {
       const db = world("0.1.193", ["0.1.194", "0.1.194"]);
       for (const [index, state] of ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"].entries()) {
-        db.prepare("insert into lane_pilot_attempt values (?, 'run1', 'task', ?, null, ?, '0.1.194')").run(`open${index}`, state, 2_000 + index);
+        db.prepare("insert into lane_pilot_attempt(id, run_id, task_id, state, reason, created_at, harness_version) values (?, 'run1', 'task', ?, null, ?, '0.1.194')").run(`open${index}`, state, 2_000 + index);
       }
-      db.prepare("insert into lane_pilot_attempt values ('failed1', 'run1', 'task', 'blocked', 'internal_error: x', 3000, '0.1.194')").run();
+      db.prepare("insert into lane_pilot_attempt(id, run_id, task_id, state, reason, created_at, harness_version) values ('failed1', 'run1', 'task', 'blocked', 'internal_error: x', 3000, '0.1.194')").run();
       expect(db.prepare("select count(*) n from lp_attempt").get()).toEqual({ n: 3 });
       expect(db.prepare("select count(*) n, sum(cls is not null) failed from lp_attempt_class").get()).toEqual({ n: 3, failed: 1 });
     });
@@ -144,6 +145,15 @@ describe("lp-metrics views", () => {
       db.prepare("insert into lane_pilot_failure_triage values ('proj_real', 'a1', 'x', 'writer', 1)").run();
       db.prepare("insert into lane_pilot_failure_triage values ('proj_real', 'gone', 'x', 'writer', 1)").run();
       expect(db.prepare("select attempt_id, cur from lp_triage order by attempt_id").all()).toEqual([{ attempt_id: "a0", cur: 0 }, { attempt_id: "a1", cur: 1 }, { attempt_id: "gone", cur: 0 }]);
+    });
+
+    it("tells a writer with measured tokens from one whose provider reports none (not measured, never zero)", () => {
+      const db = world("", ["0.1.194", "0.1.194", "0.1.194", "0.1.194"]);
+      ["thr_codex", "thr_cursor", null, "thr_unseen"].forEach((thread, index) => db.prepare("update lane_pilot_attempt set thread_id = ? where id = ?").run(thread, `a${index}`));
+      db.prepare("insert into lane_pilot_token_cursor values ('thr_codex', 'codex', 'codex', '{\"total\":1200,\"output\":30}')").run();
+      db.prepare("insert into lane_pilot_token_cursor values ('thr_cursor', 'acp-cursor', 'acp-cursor', '{\"total\":0,\"output\":0}')").run();
+      expect(db.prepare("select provider, measured from lp_attempt_usage order by id").all()).toEqual([
+        { provider: "codex", measured: 1 }, { provider: "acp-cursor", measured: 0 }, { provider: "no writer thread", measured: 0 }, { provider: "no usage row", measured: 0 }]);
     });
 
     it("runs the report and the daily queries on a database with the real shape", () => {

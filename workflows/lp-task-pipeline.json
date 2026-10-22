@@ -68,6 +68,7 @@
       "label": "PM read",
       "role": "pm-reader",
       "uses": "lp.pm-read",
+      "proof": {"kind": "advisory", "reason": "a model's summary of the read_first excerpts; it only hands context to the critics and decides nothing", "form": "parsePmReadResult: one JSON object with a non-blank summary (a blank or unreadable answer fails the stage)"},
       "output": [
         {
           "name": "state",
@@ -94,6 +95,7 @@
       "type": "action",
       "label": "Block: PM read failed",
       "uses": "lp.block-pm-read",
+      "proof": {"kind": "receipt", "check": "the failed pm-read receipt is stored with its reason and the reply to the PM is built from it"},
       "output": [
         {
           "name": "reply",
@@ -106,6 +108,7 @@
       "type": "decision",
       "label": "Quality mode",
       "uses": "lp.quality-mode",
+      "proof": {"kind": "gate", "check": "resolveQualityMode reads the task, then the project setting: a closed enum quick, standard or full"},
       "output": [
         {
           "name": "mode",
@@ -125,6 +128,7 @@
       "label": "Plan critique",
       "role": "plan-critic",
       "uses": "lp.plan-critique",
+      "proof": {"kind": "advisory", "reason": "a model's verdict on the plan", "form": "parseCritique: verdict schema; a critical or high finding counts only with a file, a line and quoted evidence, and a file the critic's input names"},
       "output": [
         {
           "name": "allowed",
@@ -144,6 +148,7 @@
       "label": "Plan critique (quick: skipped by its own receipt)",
       "role": "plan-critic",
       "uses": "lp.plan-critique",
+      "proof": {"kind": "advisory", "reason": "a model's verdict on the plan", "form": "parseCritique: verdict schema; a critical or high finding counts only with a file, a line and quoted evidence, and a file the critic's input names"},
       "output": [
         {
           "name": "allowed",
@@ -161,6 +166,7 @@
       "type": "action",
       "label": "Block: plan critique",
       "uses": "lp.block-plan-critique",
+      "proof": {"kind": "receipt", "check": "the blocked plan-critique receipt is stored with its reason and the reply to the PM is built from it"},
       "output": [
         {
           "name": "reply",
@@ -176,6 +182,7 @@
       "label": "Specialist review",
       "role": "specialist-reviewer",
       "uses": "lp.specialist-review",
+      "proof": {"kind": "advisory", "reason": "a model's risk opinion on the plan", "form": "parseSpecialistResult: verdict schema; a high or critical risk counts only with a file, a line and quoted evidence, and a file the reviewer's input names"},
       "output": [
         {
           "name": "allowed",
@@ -193,6 +200,7 @@
       "type": "action",
       "label": "Block: specialist review",
       "uses": "lp.block-specialist",
+      "proof": {"kind": "receipt", "check": "the blocked specialist-review receipt is stored with its reason and the reply to the PM is built from it"},
       "output": [
         {
           "name": "reply",
@@ -205,6 +213,7 @@
       "type": "action",
       "label": "Ownership base",
       "uses": "lp.ownership-base",
+      "proof": {"kind": "receipt", "check": "the run gate decision and the ownership base preflight are stored in the run-gate receipt; the repository must report a readable base commit"},
       "output": [
         {
           "name": "ok",
@@ -235,6 +244,7 @@
       "type": "action",
       "label": "Block: ownership base",
       "uses": "lp.block-ownership",
+      "proof": {"kind": "receipt", "check": "the blocked run-gate receipt is stored with its reason and the reply to the PM is built from it"},
       "output": [
         {
           "name": "reply",
@@ -247,6 +257,7 @@
       "type": "action",
       "label": "Task folder",
       "uses": "lp.task-folder",
+      "proof": {"kind": "file", "check": "the task folder exists on the writer's machine before the writer starts"},
       "output": [
         {
           "name": "ok",
@@ -260,6 +271,7 @@
       "type": "lp-task",
       "label": "Code task",
       "uses": "lp-task",
+      "stage_proof": {"writer-agent": {"kind": "gate", "check": "gates owns-paths and validate: the changed files are inside owns_paths and expected_outputs exist with content"}, "verification": {"kind": "command", "check": "every verification[].command exits 0 in the sandbox (gate verification passed)"}, "code-critique": {"kind": "advisory", "reason": "a model's review of the candidate", "form": "parseCodeCritique: verdict schema; a critical or high finding counts only when its file is among the candidate's files and its line exists in it"}, "acceptance-receipt": {"kind": "schema", "check": "the acceptance-v2 receipt validates against lane-stack/schemas/acceptance-v2.schema.json (validateAcceptanceV2)"}},
       "stages": [
         "writer-agent",
         "verification",

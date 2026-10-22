@@ -7,6 +7,7 @@ import { bbServiceTier, writerExecutionSelection, writerServiceTier, findModelIn
 import { qaSpawnClaimed } from "../../qa";
 import { reconcileCritic } from "../../stability";
 import { resolveStageWriterSelection } from "../../writer";
+import { MAX_FILE_EXCERPT_BYTES } from "../code-critique";
 import { codeCritiquePrompt, codeCritiqueSource, critiqueFromStageResult, critiquePolicyFromResult, freezeCritiquePolicy, parseCodeCritique, parseCodeCritiqueSettings, persistLedgerFields, settingsFromFrozenPolicy } from "../code-critique";
 import type { CandidateEvidence, FrozenCritiquePolicy } from "../code-critique";
 import { sha256 } from "../../tasks";
@@ -16,6 +17,7 @@ import type { CoverageFinding } from "../critique-coverage";
 import { buildExecutionPacket, renderPacketExcerpts } from "../../tasks/execution-packet";
 import { parsePmReadResult, parsePmReadSettings, pmReadPrompt } from "../pm-read";
 import { boundedAgentName } from "../role";
+import { candidateCitations, inputCitations } from "../citations";
 import { parseSpecialistResult, shouldRunSpecialist, specialistPrompt } from "../specialist";
 import { reasonForStatus } from "@lane-pilot/workflow-engine";
 import { QUALITY_MODE_SETTING, applyQualityMode, resolveQualityMode } from "../quality-mode";
@@ -271,7 +273,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
     await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
     const raw = (await input.bb.sdk.threads.output({ threadId })).output;
     if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-    const critique = parseCritique(raw);
+    const critique = parseCritique(raw, inputCitations(JSON.stringify(input.task), input.plan, input.pmReadContext ?? "", JSON.stringify(structuralFindings)));
     const blocked = critique.decision === "changes_requested" && mode === "gate";
     const result = { ...critique, mode, ...(qualityMode !== "standard" ? { qualityMode } : {}), structuralCoverage:{status:coverageStatus,pathCount:coveragePathCount}, structuralFindings, rawOutput:raw.slice(0, 12_000) };
     const why = verdictReasons(critique, "plan-critique");
@@ -306,6 +308,8 @@ export async function runCodeCritique(input:{
   bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;
   config:PrototypeConfig;task:TaskV2;evidence:CandidateEvidence;disputes?:unknown;frozenPolicy?:FrozenCritiquePolicy;
 }): Promise<{allowed:boolean;reason?:string;review:"passed"|"not_required";critique?:unknown;parsed?:ReturnType<typeof parseCodeCritique>;settings?:ReturnType<typeof parseCodeCritiqueSettings>;policy?:FrozenCritiquePolicy}> {
+  // The code check on the critic's opinion: a finding's line must exist in the file the critic was shown.
+  const cites = candidateCitations(input.evidence.files, MAX_FILE_EXCERPT_BYTES);
   const projectSettings = await stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
   const qualityMode = resolveQualityMode(input.task,projectSettings[QUALITY_MODE_SETTING]);
   const settings = applyQualityMode(projectSettings,qualityMode);
@@ -341,7 +345,7 @@ export async function runCodeCritique(input:{
         await waitThreadIdle(input.bb,existing.threadId,"critique_thread_timeout");
         const raw = (await input.bb.sdk.threads.output({ threadId:existing.threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-        const critique = parseCodeCritique(raw);
+        const critique = parseCodeCritique(raw, cites);
         const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
         const result = { ...ledgerCarry, ...critique, ...hashFields, mode:parsed.mode, rawOutput:raw.slice(0, 12_000), policy:frozen ?? critiquePolicyFromResult(existing.result) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId:existing.providerId, model:existing.model,
@@ -367,7 +371,7 @@ export async function runCodeCritique(input:{
           await waitThreadIdle(input.bb,recovered.threadId,"critique_thread_timeout");
           const raw = (await input.bb.sdk.threads.output({ threadId:recovered.threadId })).output;
           if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-          const critique = parseCodeCritique(raw);
+          const critique = parseCodeCritique(raw, cites);
           const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
           const result = { ...ledgerCarry, ...critique, ...hashFields, mode:parsed.mode, rawOutput:raw.slice(0, 12_000), policy:frozen ?? critiquePolicyFromResult(existing.result) };
           recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId:existing.providerId, model:existing.model,
@@ -448,7 +452,7 @@ export async function runCodeCritique(input:{
         await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
         const raw = (await input.bb.sdk.threads.output({ threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-        const critique = parseCodeCritique(raw);
+        const critique = parseCodeCritique(raw, cites);
         const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
         const result = { ...snapshot, ...critique, policy, reviewer:{ providerId, model:modelId, reasoningEffort:configuredEffort, serviceTier: writerServiceTier(settings) === "fast" ? "fast" : "standard", mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix }, rawOutput:raw.slice(0, 12_000) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
@@ -467,7 +471,7 @@ export async function runCodeCritique(input:{
         await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
         const raw = (await input.bb.sdk.threads.output({ threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-        const critique = parseCodeCritique(raw);
+        const critique = parseCodeCritique(raw, cites);
         const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
         const result = { ...snapshot, ...critique, policy, rawOutput:raw.slice(0, 12_000) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
@@ -524,7 +528,7 @@ export async function runCodeCritique(input:{
     await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
     const raw = (await input.bb.sdk.threads.output({ threadId })).output;
     if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-    const critique = parseCodeCritique(raw);
+    const critique = parseCodeCritique(raw, cites);
     const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
     const result = { ...snapshot, ...critique, policy, reviewer:{ providerId, model:modelId, reasoningEffort:configuredEffort, serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix }, rawOutput:raw.slice(0, 12_000) };
     recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
@@ -601,7 +605,7 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
     await waitThreadIdle(input.bb,threadId,"specialist_thread_timeout");
     const raw = (await input.bb.sdk.threads.output({threadId})).output;
     if (typeof raw !== "string" || !raw.trim()) throw new Error("specialist_output_empty");
-    const review = parseSpecialistResult(raw);
+    const review = parseSpecialistResult(raw, inputCitations(JSON.stringify(input.task), input.plan));
     const blocked = review.decision === "block";
     const why = verdictReasons(review, "specialist-review");
     recordStage(input.db,{...base,state:blocked ? "blocked" : "passed",providerId,model:modelId,threadId,

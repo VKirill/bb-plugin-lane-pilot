@@ -2,7 +2,7 @@
 title: Lane Pilot overview
 type: overview
 created: 2026-10-10
-updated: 2026-10-20
+updated: 2026-10-22
 status: active
 confidence: low
 tags: [overview, bb-plugin, orchestration]
@@ -36,6 +36,12 @@ sources:
   - src/rooms/runs/server/task-graph.ts
   - src/rooms/runs/server/rpc/runs.ts
   - src/rooms/runs/ui/task-board.tsx
+  - packages/contracts/src/stage-proof.ts
+  - workflows/lp-task-pipeline.json
+  - src/rooms/critique/citations.ts
+  - src/rooms/tasks/server/contract-lint.ts
+  - src/rooms/usage/server/attempt-metrics.ts
+  - src/rooms/tools/server/cli.ts
 ---
 
 # Lane Pilot overview
@@ -58,6 +64,16 @@ When enabled, the writer harness assigns an adopted tree or the empty base to an
 - **Project knowledge:** memory RPCs create and retrieve project-scoped agent records; the UI displays the records and their lifecycle (`src/rooms/memory/server/memory.ts:19-78`, `src/rooms/memory/ui/memory-records.tsx:13-64`).
 - **Owner profile:** Anamnesis collects enabled sources, masks detected personal data, stores evidence-backed records, and can render an annual review (`src/rooms/anamnesis/collect.ts:29-63`, `src/rooms/anamnesis/pii.ts:41-72`, `src/rooms/anamnesis/year-review.ts:13-72`).
 - **Council and world view:** `CouncilPage` renders the council session UI; on desktop its office view builds an isometric cutaway floor with exterior ground, paving, trees and bushes, then floor zones, walls, doors and layout furniture. The Pixel World service is also mounted with the plugin (`src/rooms/council/ui/council-page.tsx:64-65`, `src/rooms/council/ui/office-scene.ts:59-69`, `:90-136`, `:166-185`, `:300-303`, `server.ts:97-105`).
+
+## Stage proof and attempt metrics
+
+Every stage declares what decides that it is done: a code predicate (a command's exit code, a file, a gate or receipt record, a schema validation) or `advisory` with a reason, which marks a model's opinion (`packages/contracts/src/stage-proof.ts:24-48`). The registry covers every stage id, so a new stage does not compile without a proof, and `workflows/lp-task-pipeline.json` carries the same declarations on its nodes (`workflows/lp-task-pipeline.json:71`, `:274`). The four opinion stages are `pm-read`, `plan-critique`, `specialist-review` and `code-critique`. Code still checks their form: a blank pm-read summary fails the stage, and a critical or high finding that cites a file the reviewer was never shown, or a line past the end of a file it was shown, is read as medium (`src/rooms/critique/pm-read.ts:30`, `src/rooms/critique/citations.ts:20-50`).
+
+Acceptance refuses an opinion as its only reason. Before the acceptance receipt is written, the writer finish collects the stages that passed for the candidate, and a set with no code-decided stage blocks the attempt (`src/rooms/writer/server/finish.ts:609-621`, `packages/contracts/src/stage-proof.ts:54-60`).
+
+The contract lint refuses a verification command that cannot fail (`true`, `:`, `exit 0`, a bare `echo`, or a failure hidden by `|| true`), and for risk medium or higher it warns, without refusing, when no check names a file that is missing on the base commit (`src/rooms/tasks/server/contract-lint.ts:76-96`, `:225-233`).
+
+`bb lane-pilot metrics <project-id> [--days N]` and the `lp_attempt_metrics` RPC list each attempt with its stages passed or failed, seconds per stage, writer tokens and a list-price cost. A provider that reports no usage, such as acp-cursor, shows `not_measured` with no tokens and no cost, never zero; a model with no price or a thread shared by several attempts shows `partial` (`src/rooms/usage/server/attempt-metrics.ts:65-125`, `src/rooms/tools/server/cli.ts:183-190`).
 
 ## Workspaces
 

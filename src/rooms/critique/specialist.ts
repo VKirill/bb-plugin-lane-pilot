@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { clipped, extractModelJson, NO_TOOLS_LINE } from "@lane-pilot/workflow-engine";
-import { isSerious, isVerdictShape, legacyDecisionToStatus, legacyOutputToVerdict, settleVerdict, verdictSchema, verdictSummary, withoutDecision } from "@lane-pilot/workflow-engine";
+import { demoteUncited } from "./citations";
+import type { Citation } from "./citations";
+import { isSerious,isVerdictShape, legacyDecisionToStatus, legacyOutputToVerdict, settleVerdict, verdictSchema, verdictSummary, withoutDecision } from "@lane-pilot/workflow-engine";
 import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
 
 export const specialistResultSchema = z.object({
@@ -28,10 +30,12 @@ export function specialistPrompt(input:{task:unknown; plan:string; agent?:string
   ].join("\n\n");
 }
 
-export function parseSpecialistResult(output:string):SpecialistResult {
+export function parseSpecialistResult(output:string, cites?:Citation):SpecialistResult {
   const raw = extractModelJson(output);
   if (isVerdictShape(raw)) {
-    const { verdict, demoted } = settleVerdict(verdictSchema.parse(withoutDecision(raw)), "specialist");
+    const cited = demoteUncited(verdictSchema.parse(withoutDecision(raw)), cites);
+    const settled = settleVerdict(cited.verdict, "specialist");
+    const { verdict } = settled, demoted = settled.demoted + cited.demoted;
     const risks = verdict.findings.filter(isSerious).map((row) => ({
       severity: row.severity as "high" | "critical",
       path: row.file || "-",

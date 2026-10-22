@@ -4,7 +4,7 @@ import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOve
 import { findSandboxUnsafeMissingExcludes, runnerFilterArgs, runsWholeSuite } from "../../critique";
 import { parseReadFirstHints } from "../read-first";
 import { SUBJECTIVE_WORDS } from "../../critique";
-import { isOutputPath, unownedExpectedOutputs } from "../validate-output";
+import { isMainfixTask, isOutputPath, unownedExpectedOutputs } from "../validate-output";
 import { mapVerificationCwd } from "../verification-cwd";
 import { SANDBOX_OWN_ENV } from "../../verification";
 import type { CatalogEntry, SecretCheck } from "../../secrets/server";
@@ -66,6 +66,35 @@ export function subjectiveWordIn(text:string):string | null {
 const folderFilters = (task:TaskV2) => task.verification.flatMap((check, index) =>
   runnerFilterArgs(check.command).filter((arg) => !arg.endsWith("/")).map((arg) => ({ index, command:check.command, arg, path:resolve(check.cwd, arg) })));
 
+/** One shell command that changes nothing and exits 0, whatever the code does. */
+const NO_OP_SEGMENT = /^(?:true|:|exit(?:\s+0)?|\/(?:usr\/)?bin\/true|echo\b.*|printf\b.*|sleep\s+[\d.]+|pwd|cd\s+\S+|set\s+[-+]\w+(?:\s+[-+]?\w+)*|(?:test|\[)\s+1\s+(?:-eq|=)\s+1\s*\]?)$/;
+
+/**
+ * Why a verification command cannot fail, or null when it can: `true`, `:`, `exit 0`, a bare `echo …`, a chain of only those, or a
+ * real command whose failure is swallowed (`npm test || true`, `npm test; exit 0`). Such a check passes whatever the writer did.
+ */
+export function emptyCheckReason(command:string):string | null {
+  let text = command.trim();
+  const wrapped = /^(?:ba|z)?sh\s+-c\s+(['"])([\s\S]*)\1$/.exec(text);
+  if (wrapped) text = wrapped[2]!.trim();
+  const segments = text.split(/&&|\|\||;|\n/).map((part) => part.trim()).filter(Boolean);
+  const piped = /(^|[^|])\|(?!\|)/.test(text);
+  if (segments.every((part) => NO_OP_SEGMENT.test(part)) && !piped) return "does nothing and always exits 0";
+  if (/(?:\|\||;)\s*(?:true|:|exit\s+0)\s*;?$/.test(text)) return "ends in `|| true`, `; true` or `; exit 0`, which turns a failure into a pass";
+  return null;
+}
+
+/** The files a check names (a token with a slash or an extension), absolute, in the folder the check runs in. */
+export function checkNamedPaths(task:Pick<TaskV2, "verification">):string[] {
+  const found = new Set<string>();
+  for (const check of task.verification) for (const raw of check.command.split(/\s+/)) {
+    const token = raw.replace(/^['"]+|['"]+$/g, "").replace(/^\.\//, "");
+    if (!token || token.startsWith("-") || token.startsWith("$") || /[=*?[\]{}()<>|&;`]/.test(token)) continue;
+    if (token.includes("/") || /\.[A-Za-z0-9]{1,6}$/.test(token)) found.add(resolve(check.cwd, token));
+  }
+  return [...found];
+}
+
 const TS_SOURCE = /\.(?:ts|tsx|vue)$/, JS_SOURCE = /\.(?:js|jsx|mjs|cjs)$/, TEST_FILE = /(^|\/)(?:__tests__|tests?)\/|\.(?:test|spec)\.[A-Za-z]+$/;
 
 /**
@@ -97,7 +126,7 @@ export function lintProbePaths(task:TaskV2, workspacePath:string):string[] {
   let hints:string[] = [];
   try { hints = parseReadFirstHints(task.read_first).map((hint) => resolve(workspacePath, hint.path)); } catch { /* reported by lintContract */ }
   const tests = siblingTestCandidates(task).map((candidate) => resolve(workspacePath, candidate.folder ?? candidate.test));
-  return [...new Set([...hints, ...folderFilters(task).map((filter) => filter.path), ...tests])].slice(0, MAX_PROBES);
+  return [...new Set([...hints, ...folderFilters(task).map((filter) => filter.path), ...tests, ...checkNamedPaths(task)])].slice(0, MAX_PROBES);
 }
 
 export const DISPLAY_TITLE_MAX = 60;
@@ -190,6 +219,16 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
     if (fileAllowedByOwns(candidate.test, task.owns_paths) || fileBlockedByNeverTouch(candidate.test, task.never_touch)) continue;
     flagged.add(candidate.test);
     errors.push({ code:"test_unowned", message:`owns_paths ${candidate.owned} has ${candidate.folder ? "tests in" : "its test"} ${candidate.folder ?? candidate.test} outside owns_paths; the writer updates the tests of the code it changes and an edit there rejects the attempt, so add ${candidate.test} to owns_paths, or to never_touch if the writer must leave it as it is` });
+  }
+
+  // A check that cannot fail proves nothing; a task of medium risk or more needs one that fails until its work exists.
+  for (const [index, check] of task.verification.entries()) {
+    const why = emptyCheckReason(check.command);
+    if (why) errors.push({ code:"verification_empty_check", message:`verification[${index}] command "${check.command}" ${why}, so it passes whatever the writer does; replace it with a check that fails when the work is missing (the task's own test file, a grep for the expected string, test -f on a new file, a typecheck)` });
+  }
+  if (task.risk !== "low" && task.verification.length > 0 && kinds && !isMainfixTask(task.id) && !errors.some((error) => error.code === "verification_empty_check")
+    && !checkNamedPaths(task).some((path) => kindOf(path) === "missing")) {
+    warnings.push({ code:"no_red_before_green", message:`risk ${task.risk}: no verification command names a file that is missing on the base commit, so every check may already pass before the work; add one that fails until the task is done (a test for the new behaviour in a file the task creates, grep -q for the expected string, test -f on a new output). This is a warning: the task goes on` });
   }
 
   // Checks: a folder filter ends in «/», and a whole-suite vitest run excludes what the sandbox cannot run.

@@ -14,6 +14,7 @@ import { ANAMNESIS_USAGE } from "../../anamnesis";
 import { anamnesisFor } from "../../anamnesis";
 import { LEARNING_USAGE, runLearningCli } from "../../learning";
 import { learningFor } from "../../learning";
+import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
 
 export function registerCli(ctx: ServerCore, services: Services) {
   const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, host } = ctx;
@@ -22,6 +23,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
     "bb lane-pilot configure <json>",
     "bb lane-pilot activate <project-id> <ordinary-source-thread-id>",
     "bb lane-pilot state <project-id>",
+    "bb lane-pilot metrics <project-id> [--days N] [--json]",
     "bb lane-pilot finish <project-id>",
     "bb lane-pilot deactivate <project-id>",
     "bb lane-pilot cancel <attempt-id>",
@@ -56,6 +58,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"activate", summary:"Spawn a visible isolated PM thread", usage:"bb lane-pilot activate <project-id> <ordinary-source-thread-id>" },
       { name:"state", summary:"Inspect persisted stage-0 state", usage:"bb lane-pilot state <project-id>" },
       { name:"budget", summary:"Set or show the run budget of a project (attempts, wall minutes, tokens, child threads; empty value clears)", usage:"bb lane-pilot budget <project-id> [run.max_attempts=N] [run.max_wall_minutes=N] [run.max_tokens=N] [run.max_children=N]" },
+      { name:"metrics", summary:"Per attempt: stages passed or failed, seconds per stage, writer tokens and list-price cost; cost shows not measured where the provider reports no usage, never 0", usage:"bb lane-pilot metrics <project-id> [--days N] [--json]" },
       { name:"health", summary:"Provider breaker state and the budgets of open runs", usage:"bb lane-pilot health [run-id]" },
       { name:"harness", summary:"The writer harness that learns: active trees, trials and their arms, keys with enough attempts", usage:"bb lane-pilot harness <project-id>" },
       { name:"harness-edit", summary:"Run the harness editor now for one key (two editors, one composer; the result goes on trial)", usage:"bb lane-pilot harness-edit <project-id> [area] [writer-key] [wait=1]" },
@@ -176,6 +179,15 @@ export function registerCli(ctx: ServerCore, services: Services) {
         }
         if (command === "harness-tick" && args.length >= 1 && args.length <= 2) {
           return { exitCode:0, stdout:JSON.stringify(await services.harness.tick(args[0]!, { dryRun:args[1] === "dry=1" }), null, 2) };
+        }
+        if (command === "metrics" && args.length >= 1) {
+          const projectId = args[0]!;
+          const flag = (name:string) => args.indexOf(name);
+          const at = flag("--days");
+          const days = at >= 0 ? Number(args[at + 1]) : 7;
+          if (!Number.isInteger(days) || days < 1 || days > 90) throw new Error("--days must be an integer from 1 to 90");
+          const report = attemptMetrics(db, { projectId, days });
+          return { exitCode:0, stdout:flag("--json") >= 0 ? JSON.stringify(report, null, 2) : renderAttemptMetrics(report) };
         }
         if (command === "health" && args.length <= 1) {
           const runIds = args[0] ? [args[0]] : [...services.runBudgets.keys()];
