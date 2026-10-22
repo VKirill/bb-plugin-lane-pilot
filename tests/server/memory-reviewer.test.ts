@@ -44,6 +44,18 @@ describe("K8 reviewer role: reviewers and critics get the notes relevant to revi
     expect(picked).not.toContain(ids[4]);
   });
 
+  it("review-tagged notes found only by the task's words do not push the core conventions out", () => {
+    const db = newDb();
+    const ids = put(db, [
+      note("Cards render through components/greeting-cards/render.ts", ["cards"]),
+      note("Use integer cents for prices everywhere", ["money"], "core"),
+      ...[1, 2, 3, 4].map((n) => note(`Review check ${n}: every card change keeps its tests`, ["review", `check-${n}`])),
+    ]);
+    const picked = mix(db).ids;
+    expect(picked).toHaveLength(5);
+    expect(picked.slice(0, 2)).toEqual([ids[0], ids[1]]);
+  });
+
   it("leaves out rules, notes in quarantine and expired notes", () => {
     const db = newDb();
     const [rule] = put(db, [note("Always run the review checklist", ["rule", "review"], "core")]);

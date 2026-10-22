@@ -4,7 +4,7 @@
 
 ## 0.1.272
 
-**The bench set can be built from real history.** The warm-up finds SelfyStudio's «Merge writer work: <task id>: …» merge commits, copies `node_modules` and the gitignored `dist` of workspace packages on Linux instead of symlinking them, and a bench arm that sets `critic.code.default_for_risk` leaves `code_critique.enabled` unset. Projects named «LP bench …» are service projects in the navigation, like the sandbox ones. Tests: the stage-return file runs isolated (its `writer-stop` mock missed when another file had loaded the real module in the shared worker).
+**The bench set can be built from real history.** The warm-up finds SelfyStudio's «Merge writer work: <task id>: …» merge commits, copies `node_modules` and the gitignored `dist` of workspace packages on Linux instead of symlinking them, and a bench arm that sets `critic.code.default_for_risk` leaves `code_critique.enabled` unset. Projects named «LP bench …» are service projects in the navigation, like the sandbox ones. Reviewers and critics get the project's core conventions before review-tagged notes the task's words merely found (four such notes in the drill sandbox pushed the core out of the five slots; the quick drill's `memory_paths` turned red and rolled the first 0.1.272 deploy back). Tests: the stage-return file runs isolated (its `writer-stop` mock missed when another file had loaded the real module in the shared worker).
 
 ## 0.1.271
 

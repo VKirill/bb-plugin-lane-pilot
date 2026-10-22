@@ -46,10 +46,10 @@ export function memoryLine(note:Pick<MemoryNote, "content">):string {
 const REVIEW_LIMIT = 5;
 
 /**
- * The notes a reviewer or critic gets, at most five: review-tagged notes about the task's paths, then ones the task's
- * words found, then other notes about its paths, the project's core conventions (a reviewer judges against them), and
- * last the remaining review-tagged notes. `found` is the search for the task's text, `always` the review-tagged notes and
- * core conventions whatever the text; rules never go in.
+ * The notes a reviewer or critic gets, at most five: review-tagged notes about the task's paths, then other notes about
+ * its paths, the project's core conventions (a reviewer judges against them; review-tagged notes the task's words merely
+ * found pushed them out), then those found notes, and last the remaining review-tagged notes. `found` is the search for
+ * the task's text, `always` the review-tagged notes and core conventions whatever the text; rules never go in.
  */
 export function reviewerMemoryPicks<T extends MemoryNote>(found:readonly T[], always:readonly T[], task:Pick<TaskV2, "owns_paths" | "read_first">, limit = REVIEW_LIMIT):T[] {
   const anchors = pathAnchors(task);
@@ -63,9 +63,9 @@ export function reviewerMemoryPicks<T extends MemoryNote>(found:readonly T[], al
   const byUse = (a:T, b:T) => memoryUsefulness(b) - memoryUsefulness(a);
   const tiers:T[][] = [
     usable.filter((note) => isTagged(note) && about(note)),
-    usable.filter((note) => isTagged(note) && !about(note) && foundKeys.has(keyOf(note))),
     usable.filter((note) => !isTagged(note) && about(note)),
     usable.filter((note) => !isTagged(note) && !about(note) && note.kind === "core"),
+    usable.filter((note) => isTagged(note) && !about(note) && foundKeys.has(keyOf(note))),
     usable.filter((note) => isTagged(note) && !about(note) && !foundKeys.has(keyOf(note))),
   ].map((tier) => tier.sort(byUse));
   return tiers.flat().slice(0, limit);
