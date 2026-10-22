@@ -45,21 +45,52 @@ const entrySchema = z.object({
 }).strict();
 export type PolicyEntry = z.infer<typeof entrySchema>;
 
-const designItemSchema = z.object({ id: z.string().regex(/^d\d+$/), source: z.string().min(1), date: z.string(), quote: z.string().min(1), informs: z.array(z.string()).min(1) }).strict();
+/** since_version: the policy version the item was added for (absent = 1). Only version-1 items take part in the v1 split test. */
+const designItemSchema = z.object({
+  id: z.string().regex(/^d\d+$/), source: z.string().min(1), date: z.string(), quote: z.string().min(1), informs: z.array(z.string()).min(1),
+  since_version: z.number().int().positive().optional(),
+}).strict();
+
+/**
+ * A standing prohibition: something the owner said must never be done («never reintroduce acp-opencode paths»). It always belongs to the
+ * owner (tier owner_only), is matched against the change descriptor like any entry and carries the words it comes from. Its sources are
+ * design-side material only (memory files, BB memory, owner messages), never an exam item.
+ */
+const prohibitionSchema = entrySchema.extend({
+  source: z.object({
+    type: z.enum(["memory_file", "bb_memory", "owner_message"]),
+    ref: z.string().min(1),
+    line: z.number().int().positive().optional(),
+    date: z.string().min(1),
+    quote: z.string().min(1),
+    /** True when an item of the v1 exam cites the same file: that item is in-sample for this policy version and proves nothing about it. */
+    cited_by_v1_exam: z.boolean(),
+  }).strict(),
+}).strict();
+export type Prohibition = z.infer<typeof prohibitionSchema>;
 
 export const policySchema = z.object({
   version: z.number().int().positive(),
-  exam: z.object({ file: z.string(), min_accuracy: z.number().min(0).max(1) }).passthrough(),
+  /** When this version was frozen (ISO time). Only owner decisions made after it can score it. */
+  frozen_at: z.string().datetime(),
+  /** sha256 of the lists as frozen (policyHash in exam.ts). A policy edited without a version bump and a new freeze fails its test. */
+  frozen_hash: z.string().regex(/^[0-9a-f]{64}$/),
+  exam: z.object({
+    file: z.string(), min_accuracy: z.number().min(0).max(1),
+    /** The split the gate reads: owner decisions newer than frozen_at, appended at night. At least min_items of them must exist. */
+    live_file: z.string(), min_items: z.number().int().positive(),
+  }).passthrough(),
   design_items: z.array(designItemSchema).min(1),
   night_decides: z.array(entrySchema),
   night_proposes: z.array(entrySchema),
   owner_only: z.array(entrySchema).min(1),
+  standing_prohibitions: z.array(prohibitionSchema),
 }).passthrough();
 export type Policy = z.infer<typeof policySchema>;
 
 export function parsePolicy(raw: unknown): Policy {
   const policy = policySchema.parse(raw);
-  const ids = [...policy.night_decides, ...policy.night_proposes, ...policy.owner_only].map((entry) => entry.id);
+  const ids = [...policy.night_decides, ...policy.night_proposes, ...policy.owner_only, ...policy.standing_prohibitions].map((entry) => entry.id);
   const duplicate = ids.find((id, index) => ids.indexOf(id) !== index);
   if (duplicate) throw new Error(`policy entry id «${duplicate}» appears twice`);
   return policy;
@@ -121,6 +152,8 @@ export function explainChange(change: ChangeDescriptor, policy: Policy = POLICY)
   for (const tier of TIERS) {
     for (const entry of policy[tier]) if (entry.match.some((matcher) => matcherMatches(matcher, change))) matched.push({ id: entry.id, tier });
   }
+  // A standing prohibition is the owner's by definition.
+  for (const entry of policy.standing_prohibitions) if (entry.match.some((matcher) => matcherMatches(matcher, change))) matched.push({ id: entry.id, tier: "owner_only" });
   if (!matched.length) return { tier: "night_proposes", matched, reason: "no entry matches: unknown changes are proposals" };
   const tier = matched.reduce<Tier>((worst, hit) => (RESTRICTION[hit.tier] > RESTRICTION[worst] ? hit.tier : worst), "night_decides");
   const decisive = matched.filter((hit) => hit.tier === tier).map((hit) => hit.id).join(", ");

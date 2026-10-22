@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "labelling": {
+    "what": "Owner decisions made AFTER the policy version was frozen (decided_at later than policy.frozen_at). Grows at night (src/rooms/policy/live-exam.ts); this file is the committed export of the plugin store key policy:exam-v2, refreshed with `bb lane-pilot policy exam-export`. Items are only appended; an item keeps its descriptor, expected tier and decided_at (tests/policy/growth.test.ts).",
+    "sources": "rule proposals the owner accepted / rejected / took back (lane_pilot_rule_event owner_*) -> night_proposes, medium; auto-adopted rules left standing 7 days -> night_decides, weak; learning observations he labelled (ok -> night_decides, wrong -> night_proposes), medium; owner messages approving or refusing a change (policy exam-add), strong.",
+    "gate": "authorize() needs at least policy.exam.min_items (20) items decided after frozen_at and policy.exam.min_accuracy (0.8) on them; otherwise night_decides degrades to night_proposes.",
+    "honesty": "Empty on 2026-10-22: version 2 was frozen at 2026-10-22T11:26:00Z and no owner decision has been recorded after it yet. Version 1's split (policy/exam.json) is history and is not scored here."
+  },
+  "items": []
+}
