@@ -31,6 +31,8 @@ function setup() {
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
   const stops: string[] = [];
   const sent: Array<{ threadId: string; text: string }> = [];
+  // The core's periodic sweeps read the running threads; a slow run (full suite) lets one fire inside a test.
+  harness.sdk.stub("threads.listRunning", async () => []);
   harness.sdk.stub("threads.stop", async (args: { threadId: string }) => { stops.push(args.threadId); return {}; });
   harness.sdk.stub("threads.get", async (args: { threadId: string }) => ({ id: args.threadId, status: "idle" }));
   harness.sdk.stub("threads.send", async (args: { threadId: string; input: Array<{ text: string }> }) => { sent.push({ threadId: args.threadId, text: args.input[0]!.text }); return undefined; });
