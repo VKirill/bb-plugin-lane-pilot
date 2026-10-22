@@ -8,7 +8,7 @@ select 'Ночная петля: классов с повтором ' || (select
   || ' млн токенов.';
 select 'Ремонты ночи: слито ' || (select count(*) from lane_pilot_wall_repair where state = 'merged' and updated_at >= (select since from lp_morning))
   || ', принято ' || (select count(*) from lane_pilot_wall_repair where state = 'accepted' and updated_at >= (select since from lp_morning))
-  || ', держит политика (ждут вас) ' || (select count(*) from lane_pilot_wall_repair where state = 'held' and updated_at >= (select since from lp_morning))
+  || ', держит политика (ветка ждёт, в журнале) ' || (select count(*) from lane_pilot_wall_repair where state = 'held' and updated_at >= (select since from lp_morning))
   || ', откат ' || (select count(*) from lane_pilot_wall_repair where state in ('rolled_back', 'red') and updated_at >= (select since from lp_morning)) || '.';
 select 'Охранник цикла: охот ' || (select count(*) from lane_pilot_wall where hunt_state <> 'none' and updated_at >= (select since from lp_morning))
   || ', в беклоге ' || (select count(*) from lane_pilot_wall where state = 'backlog')

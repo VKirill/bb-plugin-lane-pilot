@@ -24,7 +24,7 @@ export function composeWallMorning(db: WallDb, now: number = Date.now(), windowM
   const listed = count(db, "SELECT count(*) AS n FROM lane_pilot_wall_rerun WHERE state='listed' AND created_at>=?", since);
   return [
     `Ночная петля: классов с повтором ${open}, взято в ремонт ${started}; потрачено ${millions(night?.spend_tokens ?? 0)} из ${millions(night?.cap_tokens ?? 0)} млн токенов.`,
-    `Ремонты ночи: слито ${repair("merged")}, принято ${repair("accepted")}, держит политика (ждут вас) ${repair("held")}, откат ${repair("rolled_back") + repair("red")}.`,
+    `Ремонты ночи: слито ${repair("merged")}, принято ${repair("accepted")}, держит политика (ветка ждёт, в журнале) ${repair("held")}, откат ${repair("rolled_back") + repair("red")}.`,
     `Охранник цикла: охот ${hunts}, в беклоге ${backlog}, перепрогонов ${dispatched} (в списке ${listed}).`,
   ];
 }
