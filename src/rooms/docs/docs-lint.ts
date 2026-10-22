@@ -109,12 +109,20 @@ export function lintDocsPages(pages:DocPage[], lineCounts:Record<string, number 
   for (const page of pages) {
     if (!isDocsContent(page.path)) continue;
     const add = (rule:string, detail:string, target?:string) => findings.push({ path:page.path, rule, detail, ...(target ? { target } : {}) });
-    const parsed = parseFrontmatter(page.content);
-    if (!parsed) { add("frontmatter", "page must start with a YAML frontmatter block"); continue; }
-    const { data, body } = parsed;
+    // A broken frontmatter must not hide the page's other findings: the repair round is the only one, so what it is not
+    // told fails the pass (treba, 2026-10-22: an agent's script glued the closing '---' to the last field; once the
+    // round fixed that, 4 pages it had switched to type component lacked '## How it works'). A glued block is read as
+    // written; a page with none is checked by its body.
+    const strict = parseFrontmatter(page.content);
+    const glued = strict ? null : /^---\n([\s\S]*?)---[ \t]*\n/.exec(page.content);
+    const parsed = strict ?? (glued ? parseFrontmatter(`---\n${glued[1]}\n---\n${page.content.slice(glued[0].length)}`) : null);
+    if (!strict) add("frontmatter", parsed
+      ? `the frontmatter's closing '---' must be on a line of its own, not at the end of "${glued![1]!.split("\n").pop()!.trim()}---"`
+      : "page must start with a YAML frontmatter block");
+    const { data, body } = parsed ?? { data:{} as Frontmatter, body:page.content };
     // The main page of a flow carries the process; the part pages it splits into are held to the general rules.
     const mainFlow = data.type === "flow" && /(^|\/)docs\/flows\/[^/]+\.md$/.test(page.path);
-    for (const key of REQUIRED) if (data[key] === undefined || data[key] === "" || (Array.isArray(data[key]) && !data[key]!.length)) add("frontmatter", `missing ${key}`);
+    if (parsed) for (const key of REQUIRED) if (data[key] === undefined || data[key] === "" || (Array.isArray(data[key]) && !data[key]!.length)) add("frontmatter", `missing ${key}`);
     if (typeof data.type === "string" && !(DOC_PAGE_TYPES as readonly string[]).includes(data.type)) add("frontmatter", `type must be one of ${DOC_PAGE_TYPES.join(", ")}`);
     if (typeof data.status === "string" && !STATUSES.includes(data.status)) add("frontmatter", `status must be one of ${STATUSES.join(", ")}`);
     if (typeof data.confidence === "string" && !CONFIDENCE.includes(data.confidence)) add("frontmatter", `confidence must be one of ${CONFIDENCE.join(", ")}`);
