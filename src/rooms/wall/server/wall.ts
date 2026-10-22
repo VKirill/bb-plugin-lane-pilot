@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { fullAccessSpawn, scheduleIsolated, stringAt } from "../../core/server";
+import { conveyorState } from "../../runs/server";
 import type { ServerCore, Services } from "../../core/server";
 import { createAttempt, getAttempt } from "../../storage";
 import { reopenWriterStages } from "../../runs/server";
@@ -229,6 +230,8 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
 
   scheduleIsolated(bb, "wall-night", "0 3 * * *", async () => {
     if (ctx.isDisposed()) return;
+    // The conveyor is off (src/rooms/runs/server/conveyor.ts): the night queues no repair.
+    if (!(await conveyorState(bb.storage.kv as never)).on) { ctx.log("wall-night: skipped, the conveyor is off"); return; }
     await wall.runNight().then((summary) => ctx.log(`wall-night: ${summary.picked.length} repair(s) queued, ${summary.hunts.length} hunt(s), ${summary.backlog.length} to the backlog`))
       .catch((cause) => { if (!ctx.isDisposed()) ctx.log(`wall-night failed: ${cause instanceof Error ? cause.message : String(cause)}`); });
   }, { timeoutMs: 2 * 3_600_000 });

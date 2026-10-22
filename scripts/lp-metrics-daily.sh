@@ -38,6 +38,9 @@ morning=$( { echo "create temp table lp_morning(since integer, now integer); ins
 # What the night loop did (three lines, scripts/lp-wall-morning.sql, src/rooms/wall): the same rule, a missing file or table leaves it out.
 wall=$( { echo "create temp table lp_morning(since integer); insert into lp_morning values ($(( ($(date +%s) - 86400) * 1000 )));"; cat "$HOME/.config/lp-metrics/wall-morning.sql"; } | sqlite3 -readonly "$DB" 2>/dev/null ) || wall=""
 [ -z "$wall" ] || text="${text}"$'\n'"${wall}"
+# Outages of the last day (src/rooms/outage: gaps of more than 5 minutes in the plugin's heartbeat); none, or no table yet, leaves it out.
+outages=$(sqlite3 -readonly "$DB" "select 'Простои Lane Pilot: '||count(*)||' ('||sum(minutes)||' мин, дольше всего '||max(minutes)||' мин).' from lane_pilot_outage where to_at >= $(( ($(date +%s) - 86400) * 1000 )) having count(*) > 0" 2>/dev/null) || outages=""
+[ -z "$outages" ] || text="${text}"$'\n'"${outages}"
 if [ -n "${DRY_RUN:-}" ]; then echo "$text"; exit 0; fi
 curl -fsS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" -d chat_id="$TG_CHAT" -d message_thread_id="$TG_TOPIC" --data-urlencode text="$text" >/dev/null
 echo "$text"

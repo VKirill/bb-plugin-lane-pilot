@@ -188,6 +188,11 @@ export const rpcOps = {
     input: z.object({ projectId: z.string().min(1).optional(), days: z.number().int().min(1).max(365).optional() }).strict(),
     output: z.unknown(),
   },
+  /** The conveyor switch: read it, or turn it on or off (off: no new work is issued anywhere; src/rooms/runs/server/conveyor.ts). */
+  conveyor: {
+    input: z.object({ set: z.enum(["on", "off"]).optional(), reason: z.string().max(300).optional() }).strict(),
+    output: z.unknown(),
+  },
   /** Per provider in use: the adapter version installed and each capability's state, supported, not_supported or unproven (src/rooms/capability). */
   capability_table: {
     input: z.object({}).strict(),

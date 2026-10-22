@@ -24,6 +24,8 @@ import { RETURN_USAGE, runReturnCli } from "../../stage-return/server";
 import { FORECAST_USAGE, runForecastCli } from "../../forecast/server";
 import { RUN_GOAL_USAGE, runRunGoalCli } from "../../run-goal/server";
 import { CAPABILITY_USAGE, runCapabilityCli } from "../../capability/server";
+import { OUTAGE_USAGE, runOutageCli } from "../../outage/server";
+import { conveyorState, setConveyor } from "../../runs/server";
 import { WALL_USAGE, runWallCli } from "../../wall/server";
 import { CHECKERS_USAGE, runCheckersCli } from "../../checkers/server";
 import { POLICY_USAGE, runPolicyCli } from "../../policy";
@@ -144,6 +146,8 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"defer", summary:"Put a mandatory check off: write it in the register with a term (at most 30 days) and the reason, or set/move the term of an entry; a message of the owner that names a date also works (--owner-msg)", usage:"bb lane-pilot defer <what|dfr_id> --kind drill_scenario|skipped_test|gate|plan_decision --due 2026-11-05 --reason \"…\" [--area A] [--project P]" },
       { name:"defer-close", summary:"Close a deferral with the evidence that settles it", usage:"bb lane-pilot defer-close <dfr_id> --evidence <text>" },
       { name:"deferrals", summary:"The register of deferrals: overdue and open, with their terms", usage:"bb lane-pilot deferrals [--project P] [--state open|overdue|closed]" },
+      { name:"conveyor", summary:"The conveyor switch: off, no new work is issued anywhere (writers wait, parked tasks stay, the night queues nothing) while running stages finish and checks go on", usage:"bb lane-pilot conveyor on|off [reason]|status" },
+      { name:"outages", summary:"The gaps of more than 5 minutes when Lane Pilot was not running", usage:OUTAGE_USAGE },
       { name:"capabilities", summary:"Per provider in use: the adapter (BB plugin) version installed and whether it is proven to answer; --probe tries the unproven ones now", usage:CAPABILITY_USAGE },
       { name:"run-goal", summary:"Every accepted task's checks of a run together on the final main (two tasks green alone can break each other): check one run, sweep the finished ones, or read a verdict", usage:RUN_GOAL_USAGE },
       { name:"forecast", summary:"The PM's forecasts (contract `forecast`) against the facts of accepted tasks: files, first try, tokens and minutes, per area", usage:FORECAST_USAGE },
@@ -212,6 +216,12 @@ export function registerCli(ctx: ServerCore, services: Services) {
         if (command === "forecast") return runForecastCli(db, args);
         if (command === "run-goal") return await runRunGoalCli(services.runGoal, args);
         if (command === "capabilities") return await runCapabilityCli(services.capabilities, args);
+        if (command === "outages") return runOutageCli(ctx, args);
+        if (command === "conveyor" && ["on", "off", "status"].includes(args[0] ?? "")) {
+          const kv = bb.storage.kv as never;
+          const state = args[0] === "status" ? await conveyorState(kv) : await setConveyor(kv, args[0] === "on", args.slice(1).join(" "));
+          return { exitCode:0, stdout:JSON.stringify(state, null, 2) };
+        }
         if (command === "return" || command === "returns") {
           return await runReturnCli(services.stageReturn, command, args);
         }

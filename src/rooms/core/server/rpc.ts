@@ -28,6 +28,7 @@ import { stageReturnRpc } from "../../stage-return/server";
 import { forecastRpc } from "../../forecast/server";
 import { runGoalRpc } from "../../run-goal/server";
 import { capabilityRpc } from "../../capability/server";
+import { conveyorState, setConveyor } from "../../runs/server";
 import { wallRpc } from "../../wall/server";
 import { improvementRpc } from "../../improvement/server";
 import { sessionMemoryRpc } from "../../memory/server";
@@ -69,6 +70,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...forecastRpc(ctx.db),
     ...runGoalRpc(services.runGoal),
     ...capabilityRpc(services.capabilities),
+    conveyor: async ({ set, reason }: { set?: "on" | "off"; reason?: string }) => set ? await setConveyor(ctx.bb.storage.kv as never, set === "on", reason) : await conveyorState(ctx.bb.storage.kv as never),
     ...wallRpc(services.wall),
     ...improvementRpc({ db: ctx.db, kv: ctx.bb.storage.kv, wall: services.wall, bench: services.bench, deferrals: services.deferrals }),
     ...sessionMemoryRpc(ctx, services),

@@ -2,6 +2,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { pollPause } from "@lane-pilot/kit";
 import { getRun } from "../../storage";
 import { isRunPaused, runPausedSince, setRunPaused } from "./runs-halt";
+import { isHeld } from "./conveyor";
 import type { ServerCore } from "../../core/server";
 
 /**
@@ -18,7 +19,8 @@ type Kv = { get(key: string): Promise<unknown>; set(key: string, value: unknown)
  */
 export async function waitWhileRunPaused(kv: Kv, runId: string, options: { isDisposed: () => boolean; pollMs?: number; onFirstWait?: () => void }): Promise<boolean> {
   let waited = false;
-  while (await isRunPaused(kv, runId)) {
+  // The conveyor switch (conveyor.ts) holds every run the same way.
+  while (await isHeld(kv, runId)) {
     if (options.isDisposed()) return false;
     if (!waited) { waited = true; options.onFirstWait?.(); }
     await sleep(options.pollMs ?? pollPause(5_000));

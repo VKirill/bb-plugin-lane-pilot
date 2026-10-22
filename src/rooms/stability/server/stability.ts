@@ -5,6 +5,7 @@ import { createAttempt, getAttempt, getRun, getRunSettingsScopes, loadProjectSet
 import { id } from "../../core/server";
 import { reopenWriterStages } from "../../runs/server/stage-records";
 import { isRunHalted, isRunPaused } from "../../runs/server/runs-halt";
+import { conveyorState } from "../../runs/server/conveyor";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 
@@ -202,6 +203,8 @@ export function createStability(ctx:ServerCore, services:Services) {
   async function sweep(now = Date.now(), signal?:AbortSignal):Promise<string[]> {
     const list = await loadParked();
     if (!list.length) return [];
+    // The conveyor is off: nothing parked restarts, every row stays as it is.
+    if (!(await conveyorState(bb.storage.kv as never)).on) return [];
     const keep:ParkedTask[] = [];
     const started:string[] = [];
     const perProject = new Map<string, number>();
