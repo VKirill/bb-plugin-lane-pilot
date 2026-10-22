@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Register of deferrals with the owner's terms (SMA rule 5, P0-4).** New table `lane_pilot_deferral` (last migrations). A put-off mandatory check gets a term only through `bb lane-pilot defer <what> --kind … --owner-msg <thread>#<seq> [--due …]` (RPC `deferral_defer`): the code reads that event through the SDK, accepts it only if the user wrote it (initiator `user`, no sender thread, no system label, user-owned thread) and takes the date from its text (ISO, `5 ноября`, `через 14 дней`, `до пятницы`; none: message day + 14 days, `due_source: default_14d`). An agent cannot move a term without a newer owner message. `defer-close <id> --evidence …`, `deferrals [--project]`. An overdue entry turns the `deferrals` drill scenario (in `--quick`) red, is added to the PM's task-result message and to the daily Telegram line. Every `skip/todo/skipIf` in tests needs `// deferral:<id>` (lint test); the 16 test files that skip and the five open decisions of the 2026-10-05 plan are seeded as `needs_owner_term` (the owner's morning list, never overdue). Docs: `docs/deferrals.md`.
+
 ## 0.1.264
 
 - **opencode2 threads get the session policy again, now with skills and MCP.** The machines' host daemons carry the 0.46.1-vk.3 build (rolled out by hand on 2026-10-22: a daemon updates itself only on a protocol bump), and the opencode2 bridge 1.1.0-vk.3 declares the handshake and applies the policy as OpenCode permission rules: a denied skill leaves the model's prompt (108 KB → 7.6 KB with one allowed skill on the mock test), a denied MCP server's tools answer «Unknown tool». `POLICY_REFUSED_BY_HOSTS` is removed. Test: `helper-context.test.ts`.

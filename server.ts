@@ -14,6 +14,7 @@ import { createStability } from "./src/rooms/stability/server";
 import { adoptWaitingRules } from "./src/rooms/self-repair/server";
 import { createRuleScan } from "./src/rooms/self-repair/server";
 import { createHarness } from "./src/rooms/harness/server";
+import { createDeferrals, sdkOwnerMessagePort } from "./src/rooms/deferral/server";
 import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, pluginStopped } from "./src/rooms/runs/server";
 import { registerRpc } from "./src/rooms/core/server/rpc";
 import { mountAnamnesis } from "./src/rooms/anamnesis";
@@ -59,6 +60,9 @@ export default async function plugin(bb: BbPluginApi) {
   installThreadSignals(bb);
   const ctx = createCore(bb, db);
   bindToolLocale(bb, await toolLocale(bb));
+  // The register of deferrals: the first entries (skipped tests, old plan decisions) are written once; terms come only from the owner's messages.
+  const deferrals = createDeferrals({ db, port: sdkOwnerMessagePort(bb), log: ctx.log });
+  deferrals.seed();
   const services = {} as Services;
   mountNativeWiring(ctx);
   Object.assign(
@@ -88,6 +92,7 @@ export default async function plugin(bb: BbPluginApi) {
     { canary: createCanary(ctx) },
     { ruleScan: createRuleScan(ctx, services) },
     { harness: createHarness(ctx, services) },
+    { deferrals },
     createStability(ctx, services),
     createScheduleService(ctx, services),
   );

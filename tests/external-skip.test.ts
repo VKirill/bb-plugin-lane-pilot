@@ -13,6 +13,7 @@ const NPM_BLOCK = INSTALL_SH.slice(
   INSTALL_SH.indexOf('if [[ -f "$HOME/.config/opencode/opencode.json" && -f "$STACK_ROOT/profiles/opencode/opencode-lane.ts" ]]; then'),
 );
 
+// deferral:dfr_seed_skip_external_skip
 describe.skipIf(NO_UPSTREAM)("D1 skip wrappers block install.sh npm/open-cursor", () => {
   it("never execs real npm and leaves the host global prefix unchanged", async () => {
     const root = mkdtempSync(join(tmpdir(), "lane-pilot-d1-"));

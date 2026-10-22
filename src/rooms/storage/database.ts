@@ -22,6 +22,7 @@ import { learningMigrations } from "../learning/migrations";
 import { scheduleMigrations } from "../schedule";
 import { worldMigrations } from "../world";
 import { harnessMigrations } from "../harness";
+import { deferralMigrations } from "../deferral";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
 export type LanePilotDatabase = Database.Database;
@@ -335,6 +336,8 @@ export const migrations = [
   `UPDATE lane_pilot_project_settings SET value=replace(value,'"acp-opencode"','"opencode2"'), version=version+1,
     updated_at=CAST(strftime('%s','now') AS INTEGER)*1000
     WHERE value LIKE '%"acp-opencode"%' AND key NOT LIKE '%lastResult%'`,
+  // The register of deferrals with the owner's terms (src/rooms/deferral). Always last.
+  ...deferralMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

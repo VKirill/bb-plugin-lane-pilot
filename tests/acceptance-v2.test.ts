@@ -33,6 +33,7 @@ const task = {
   verification:[],
 } as TaskV2;
 
+// deferral:dfr_seed_skip_acceptance_v2
 describe.skipIf(NO_UPSTREAM)("upstream acceptance-v2 receipt", () => {
   it("validates the serialized acceptance.json against the exact upstream schema with zero errors", () => {
     const report = "STATUS: complete\n";

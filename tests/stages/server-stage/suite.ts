@@ -2001,6 +2001,7 @@ describe("stage → native writer → receipt", () => {
     await harness.lifecycle.dispose();
   });
 
+  // deferral:dfr_seed_skip_server_stage_live_browser
   it.skipIf(process.env.LANE_PILOT_LIVE_BROWSER !== "1")("persists an actual host browser runner result through the Lane Pilot browser-QA stage", async () => {
     const { db, harness } = await setup(
       '{"decision":"approve","summary":"Checked","findings":[]}',

@@ -128,4 +128,24 @@ export const rpcOps = {
     input: z.object({ harnessId: z.string().min(1) }).strict(),
     output: z.unknown(),
   },
+  /** The register of deferrals (src/rooms/deferral): terms come only from a verified owner message. */
+  deferral_list: {
+    input: z.object({
+      projectId: z.string().min(1).optional(), state: z.enum(["open", "overdue", "closed", "needs_owner_term"]).optional(),
+      /** Ids cited in the repository (`// deferral:<id>` beside a skipped test): the answer names the ones the register does not hold or holds closed. */
+      refs: z.array(z.string().min(1).max(80)).max(500).optional(),
+    }).strict(),
+    output: z.unknown(),
+  },
+  deferral_defer: {
+    input: z.object({
+      what: z.string().min(1).max(500), kind: z.string().max(40).optional(), area: z.string().max(120).optional(), projectId: z.string().min(1).optional(),
+      ownerMsg: z.string().min(1).max(300), due: z.string().max(40).optional(),
+    }).strict(),
+    output: z.unknown(),
+  },
+  deferral_close: {
+    input: z.object({ id: z.string().min(1).max(80), evidence: z.string().min(1).max(2000) }).strict(),
+    output: z.unknown(),
+  },
 };

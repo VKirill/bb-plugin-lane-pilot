@@ -14,6 +14,7 @@ import { ANAMNESIS_USAGE } from "../../anamnesis";
 import { anamnesisFor } from "../../anamnesis";
 import { LEARNING_USAGE, runLearningCli } from "../../learning";
 import { learningFor } from "../../learning";
+import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
 
 export function registerCli(ctx: ServerCore, services: Services) {
   const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, host } = ctx;
@@ -46,6 +47,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
     "bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]",
     SCHEDULE_USAGE,
     ANAMNESIS_USAGE,
+    DEFERRAL_USAGE,
   ].join("\n");
 
   bb.cli.register({
@@ -90,6 +92,9 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"anamnesis", summary:"What Lane Pilot knows about its owner (records on the owner's machine); sensitive ones only on explicit request", usage:"bb lane-pilot anamnesis status|list|show|history|add|edit|confirm|reject|forget|sources|host" },
       { name:"learning", summary:"What Lane Pilot learned from the owner's own messages: status, review, learned items, yes or no, settings", usage:LEARNING_USAGE },
       { name:"workflow-trigger", summary:"Start a workflow in a project as its schedule trigger does (the automation of a schedule calls this); exit 1 with the reason when it cannot start", usage:"bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]" },
+      { name:"defer", summary:"Put a mandatory check off: write it in the register with a term from the owner's own message (the code reads the message and its date), or set/move the term of an entry", usage:"bb lane-pilot defer <what|dfr_id> --kind drill_scenario|skipped_test|gate|plan_decision --owner-msg <threadId>#<seq> [--due 2026-11-05] [--area A] [--project P]" },
+      { name:"defer-close", summary:"Close a deferral with the evidence that settles it", usage:"bb lane-pilot defer-close <dfr_id> --evidence <text>" },
+      { name:"deferrals", summary:"The register of deferrals: overdue, open and the ones that need a term from the owner", usage:"bb lane-pilot deferrals [--project P] [--state open|overdue|needs_owner_term|closed]" },
       { name:"schedule", summary:"The schedule board: scheduled workflows, errands and scripts (list, show, history, preview, create, update, pause, resume, run-now, delete)", usage:SCHEDULE_USAGE },
     ],
     async run(argv) {
@@ -108,6 +113,9 @@ export function registerCli(ctx: ServerCore, services: Services) {
           // The tick's id is the key: a retried tick is the same run, not a second one.
           const result = await services.workflowTriggers.start({ projectId:args[0]!, workflowId:args[1]!, inputs:parsed as Record<string, unknown>, source:"schedule", key:args[3] || undefined });
           return { exitCode:result.ok ? 0 : 1, stdout:JSON.stringify(result, null, 2) };
+        }
+        if (command === "defer" || command === "defer-close" || command === "deferrals") {
+          return await runDeferralCli(services.deferrals, command, args);
         }
         if (command === "schedule") {
           return await runScheduleCli(services, args);

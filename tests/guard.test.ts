@@ -119,6 +119,7 @@ describe("E2 Lane Pilot PM guard", () => {
     expect(a.status).not.toBe(0);
   });
 
+  // deferral:dfr_seed_skip_guard
   it.skipIf(NO_UPSTREAM)("leaves representative upstream PM_AGENTS behavior byte-for-byte", () => {
     const probes = [
       bash("read","git status",true),

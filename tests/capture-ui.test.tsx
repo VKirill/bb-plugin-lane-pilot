@@ -137,6 +137,7 @@ function chromeDump(htmlPath: string): string {
   ], { encoding: "utf8", timeout: 60_000 });
 }
 
+// deferral:dfr_seed_skip_capture_ui
 describe.skipIf(process.env.CAPTURE !== "1")("UI screenshot HTML", () => {
   it("writes EN/RU light/dark fixtures at 375px", { timeout: 180_000 }, async () => {
     mkdirSync(outDir, { recursive: true });

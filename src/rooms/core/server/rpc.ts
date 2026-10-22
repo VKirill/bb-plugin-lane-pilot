@@ -17,6 +17,7 @@ import { councilRpc } from "../../council/server";
 import { selfRepairRpc } from "../../self-repair/server";
 import { canaryRpc } from "../../stability/server";
 import { harnessRpc } from "../../harness/server";
+import { deferralRpc } from "../../deferral/server";
 import { sessionMemoryRpc } from "../../memory/server";
 import { createWorkflowArchitect } from "../../workflow/server";
 import { architectStartRpc } from "../../workflow/server";
@@ -45,6 +46,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...selfRepairRpc(ctx),
     ...canaryRpc(services.canary),
     ...harnessRpc(services.harness),
+    ...deferralRpc(services.deferrals),
     ...sessionMemoryRpc(ctx, services),
     ...createWorkflowArchitect(ctx, services).rpc,
     ...architectStartRpc(ctx, services),
