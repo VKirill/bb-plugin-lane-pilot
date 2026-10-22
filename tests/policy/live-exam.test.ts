@@ -90,15 +90,14 @@ describe("the store", () => {
   });
 });
 
-describe("the growing exam gates the night end to end", () => {
-  it("20 decisions the policy agrees with open the gate; fewer keep it shut", async () => {
+describe("the growing exam measures the policy", () => {
+  it("20 decisions the policy agrees with pass it; the gate never reads it", async () => {
     const { kv } = memoryKv();
     const repair = { kind: "lp_fault_repair", files: ["src/rooms/relay/server/relay.ts"], attrs: { bench_subset_passed: true, auto_revertible: true } };
     for (let n = 0; n < 19; n++) await appendLiveItems(kv, [recordOwnerDecision({ quote: `ok ${n}`, ref: `thr_${n}`, at: FREEZE + 1000 + n, descriptor: n % 2 ? { kind: "stage_add" } : repair, expected: n % 2 ? "night_proposes" : "night_decides", why: "w" })]);
-    expect(authorize(repair, { exam: await loadLiveExam(kv) })).toMatchObject({ tier: "night_proposes", degraded: true });
+    expect(runLiveExam(POLICY, await loadLiveExam(kv))).toMatchObject({ enough: false, passed: false });
     await appendLiveItems(kv, [recordOwnerDecision({ quote: "ok 19", ref: "thr_19", at: FREEZE + 2000, descriptor: { kind: "data_delete" }, expected: "owner_only", why: "w" })]);
-    const exam = await loadLiveExam(kv);
-    expect(runLiveExam(POLICY, exam)).toMatchObject({ enough: true, passed: true, accuracy: 1 });
-    expect(authorize(repair, { exam })).toMatchObject({ tier: "night_decides", degraded: false });
+    expect(runLiveExam(POLICY, await loadLiveExam(kv))).toMatchObject({ enough: true, passed: true, accuracy: 1 });
+    expect(authorize(repair)).toMatchObject({ tier: "night_decides" });
   });
 });

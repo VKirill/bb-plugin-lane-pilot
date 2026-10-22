@@ -76,13 +76,13 @@ export function repairChange(files: readonly string[], proofs: { benchSubset: bo
   return { kind: "lp_fault_repair", files: [...files], attrs: { bench_subset_passed: proofs.benchSubset, auto_revertible: proofs.revertible } };
 }
 
-export type GateDecision = { decision: "merge" | "hold"; requested: Tier; tier: Tier; degraded: boolean; reason: string; matched: Array<{ id: string; tier: Tier }> };
+export type GateDecision = { decision: "merge" | "hold"; requested: Tier; tier: Tier; reason: string; matched: Array<{ id: string; tier: Tier }> };
 
 /**
- * night_decides may merge (and the train ships it); night_proposes and owner_only are held: the branch stays, the evidence goes to the
- * morning list. `authorize` degrades night_decides to night_proposes until the policy exam is passed on enough owner decisions.
+ * night_decides may merge (and the train ships it, the checks after it revert it); night_proposes and owner_only are held: the branch
+ * stays, the night does not merge it and nobody is asked (the repair is logged with the policy's reason).
  */
-export function gateRepair(change: ChangeDescriptor, exam?: Parameters<typeof authorize>[1]): GateDecision {
-  const answer = authorize(change, exam);
-  return { decision: answer.tier === "night_decides" ? "merge" : "hold", requested: answer.requested, tier: answer.tier, degraded: answer.degraded, reason: answer.reason, matched: answer.matched };
+export function gateRepair(change: ChangeDescriptor): GateDecision {
+  const answer = authorize(change);
+  return { decision: answer.tier === "night_decides" ? "merge" : "hold", requested: answer.requested, tier: answer.tier, reason: answer.reason, matched: answer.matched };
 }

@@ -455,7 +455,7 @@ export function pickRelevantRules<T>(rules: readonly T[], answers: Record<string
 }
 
 
-export type RuleEventAction = "adopted" | "confirmed" | "revised" | "retired" | "cap_reached" | "owner_accepted" | "owner_rejected" | "owner_revoked";
+export type RuleEventAction = "adopted" | "confirmed" | "revised" | "retired" | "cap_reached" | "made_room" | "owner_accepted" | "owner_rejected" | "owner_revoked";
 export type RuleEvent = { ruleId: string; action: RuleEventAction; detail: string | null; at: number };
 
 export function logRuleEvent(db: RulesDatabase, projectId: string, ruleId: string, action: RuleEventAction, detail: string | null = null, now = Date.now()): void {

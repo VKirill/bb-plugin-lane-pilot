@@ -66,11 +66,16 @@ export function insertDeferral(db: DeferralDb, row: Deferral, ignoreExisting = f
 }
 
 /** Gives an entry a new term (first term or an extension). The previous term goes to the history. */
-export function setTerm(db: DeferralDb, id: string, term: { dueAt: number; dueSource: DueSource; ownerRef: OwnerRef; ownerQuote: string }, now: number): void {
+export function setTerm(db: DeferralDb, id: string, term: { dueAt: number; dueSource: DueSource; ownerRef: OwnerRef | null; ownerQuote: string }, now: number): void {
   const row = getDeferral(db, id)!;
   const history = row.dueAt !== null || row.ownerRef ? [...row.history, { dueAt: row.dueAt, dueSource: row.dueSource, ownerRef: row.ownerRef, at: now }] : row.history;
   db.prepare("UPDATE lane_pilot_deferral SET due_at=?, due_source=?, owner_ref=?, owner_quote=?, state=?, history_json=?, updated_at=? WHERE id=?")
     .run(term.dueAt, term.dueSource, JSON.stringify(term.ownerRef), term.ownerQuote, term.dueAt < now ? "overdue" : "open", JSON.stringify(history), now, id);
+}
+
+/** Entries left from the time a term had to come from the owner (`needs_owner_term`) get the default term from now. */
+export function dateUntermed(db: DeferralDb, dueAt: number, now: number): number {
+  return db.prepare("UPDATE lane_pilot_deferral SET state='open', due_at=?, due_source='default_14d', updated_at=? WHERE state='needs_owner_term'").run(dueAt, now).changes;
 }
 
 export function closeDeferral(db: DeferralDb, id: string, evidence: string, now: number): void {

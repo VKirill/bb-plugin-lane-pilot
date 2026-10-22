@@ -31,6 +31,9 @@ sources:
   - tests/wall/service.test.ts
 ---
 
+> [!important] Since 2026-10-22 the owner takes no part in the loop
+> A repair with its proofs merges (`authorize` has no exam gate), the checks after the merge revert it; a held repair and a wall in the backlog are logged, not posted to «Waiting for the owner». The backlog entry of the deferral register gets the default term of 14 days.
+
 # The wall journal and the night loop
 
 TL;DR: every night at 03:00 Lane Pilot groups the last 24 hours of failures into classes, follows each class on the 3/10, 5/100, 6/500 recurrence

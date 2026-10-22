@@ -36,22 +36,22 @@ function seeded() {
 }
 
 describe("the morning list", () => {
-  it("is four lines: the owner's decisions waiting, what went red, what was accepted, the other things only he can decide", () => {
+  it("is four lines of a report: rules, what went red, what was accepted, deferrals and what his own words left for the owner", () => {
     expect(composeMorningList(seeded(), NOW)).toEqual([
-      "Только владелец: ждут решения правил — 2, пунктов обучения — 1.",
+      "Правила: на пробу 1, подтверждено 1, ждут места 2.",
       "Красное за ночь: 3 попыток (provider_error 1, validation_failed 2).",
-      "Принято: 2 попыток, правил на пробу 1, подтверждено 1.",
-      "Ещё ждут владельца: отсрочек без срока — 2, просроченных — 1, конфликтов памяти — 1, от ночного цикла — 1. Подробно: экран «Ждут владельца».",
+      "Принято: 2 попыток.",
+      "Отсрочки: просрочено 1, открыто 1. От твоих сообщений — 2.",
     ]);
   });
 
   it("says «ничего» for a quiet night and works on an empty database", () => {
     const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
     expect(composeMorningList(db, NOW)).toEqual([
-      "Только владелец: ждут решения правил — 0, пунктов обучения — 0.",
+      "Правила: на пробу 0, подтверждено 0, ждут места 0.",
       "Красное за ночь: ничего.",
-      "Принято: 0 попыток, правил на пробу 0, подтверждено 0.",
-      "Ещё ждут владельца: отсрочек без срока — 0, просроченных — 0, конфликтов памяти — 0, от ночного цикла — 0. Подробно: экран «Ждут владельца».",
+      "Принято: 0 попыток.",
+      "Отсрочки: просрочено 0, открыто 0. От твоих сообщений — 0.",
     ]);
   });
 

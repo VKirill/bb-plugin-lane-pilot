@@ -1,7 +1,6 @@
 import { join } from "node:path";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { writerExecutionSelection } from "@lane-pilot/models";
-import { loadLiveExam } from "../../policy";
 import { fullAccessSpawn, scheduleIsolated, stringAt } from "../../core/server";
 import type { ServerCore, Services } from "../../core/server";
 import { createAttempt, getAttempt } from "../../storage";
@@ -14,8 +13,6 @@ import type { DrillOutcome } from "../../stability/server";
 import { threadUsage } from "../../usage/server";
 import { id as newId } from "../../core/server";
 import { wallLogLines } from "../logs";
-import { postOwnerItem } from "../../owner-waiting";
-import type { PostOwnerItem } from "../../owner-waiting";
 import { createWall, type RepairView, type Scope, type ThreadRun, type WallApi, type WallPorts } from "../service";
 
 const LOG_TAIL_BYTES = 1_000_000;
@@ -100,7 +97,6 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
 
   const ports: WallPorts = {
     // Held repairs and backlog walls go to the screen «Ждут владельца» (and its Telegram push), never as a blocking question.
-    owner: { post: async (item) => { postOwnerItem(db, { ...item, wake: true } as PostOwnerItem); } },
     now: () => Date.now(),
     version: VERSION,
     loadScope,
@@ -203,7 +199,6 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
         return tasks ? runs.reduce((sum, row) => sum + row.accepted, 0) / tasks : null;
       },
     },
-    exam: async () => ({ exam: await loadLiveExam(bb.storage.kv as never) }),
     restart: async (plan) => {
       const run = db.prepare("SELECT closed_at FROM lane_pilot_run WHERE id=?").get(plan.runId) as { closed_at: number | null } | undefined;
       if (!run || run.closed_at) return { ok: false, note: "the run is closed" };

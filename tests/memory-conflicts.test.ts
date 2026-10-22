@@ -1,13 +1,13 @@
 import Database from "better-sqlite3";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { disagreement, findConflicts, listMemory, searchMemoryRecords, storeMemoryRecords, heldClause } from "../packages/memory-core/src";
+import { disagreement, findConflicts, holdConflict, searchMemoryRecords, storeMemoryRecords } from "../packages/memory-core/src";
 import { createDeferrals } from "../src/rooms/deferral/server";
 import { deferralKindMigrations, deferralMigrations } from "../src/rooms/deferral/migrations";
 import { createMemoryConflicts, runMemoryConflictCli } from "../src/rooms/memory/server";
 import { openDatabase } from "../src/rooms/storage/database";
 
-// SMA block 4, P2-7: two notes that disagree are held, both, with a term the owner gives, until a person settles it.
+// SMA block 4, P2-7: two notes that disagree are settled at once, the newer one kept; nobody is asked.
 const limits = { sourceSha256: "a".repeat(64), audience: "subagent" as const, coreBudget: 99_999, noteBudget: 99_999, indexBudget: 999_999 };
 const T = Date.parse("2026-10-22T10:00:00Z");
 // Tags that share only one word: a restated note with two shared tags would replace the older one at write (`sameSubject`), not conflict with it.
@@ -70,28 +70,18 @@ describe("the register", () => {
   const B = "apps/admin/src/seo.ts: the seo-landings Redis key has a cache TTL of 48 h and is bumped on deploy.";
 
 
-  it("holds both notes out of search and listing, and opens a deferral that waits for the owner's term", () => {
+  it("settles a pair at once: the newer note supersedes the older one, no deferral, nobody is asked", () => {
     const { db, conflicts, deferrals, put } = setup();
     const a = put(A, TA, T - 2000);
     put("Unrelated note about apps/admin/src/other.ts and billing.", ["billing"]);
-    expect(searchMemoryRecords(db, "P", "seo landings redis cache", 10, "auto", "subagent", "")).toHaveLength(1);
     const b = put(B, TB, T - 1000);
-    const opened = conflicts.detect("P", new Set([b]));
-    expect(opened).toHaveLength(1);
-    expect(opened[0]).toMatchObject({ noteA: [a, b].sort()[0], state: "held", kind: "value" });
-
-    // Neither reaches any reader.
-    expect(searchMemoryRecords(db, "P", "seo landings redis cache", 10, "auto", "subagent", "")).toEqual([]);
-    expect(listMemory(db, "P", {}, 10).map((record) => record.id)).not.toContain(a);
-    const raw = db.prepare(`SELECT id FROM lane_pilot_memory WHERE project_id='P' AND status='active'${heldClause(db, "lane_pilot_memory")}`).all() as Array<{ id: string }>;
-    expect(raw.map((row) => row.id)).not.toContain(a);
-    expect(raw.map((row) => row.id)).not.toContain(b);
-    expect(db.prepare("SELECT count(*) n FROM lane_pilot_memory WHERE project_id='P' AND status='active'").get()).toEqual({ n: 3 });
-
-    // The deferral register holds it, untermed: the morning list, never overdue.
-    const entry = deferrals.list({ projectId: "P" }).needsOwnerTerm.find((item) => item.id === opened[0]!.deferralId);
-    expect(entry).toMatchObject({ kind: "memory_conflict", state: "needs_owner_term", due: null, projectId: "P" });
-    expect(deferrals.list({ projectId: "P" }).overdue).toEqual([]);
+    const settled = conflicts.detect("P", new Set([b]));
+    expect(settled).toHaveLength(1);
+    expect(settled[0]).toMatchObject({ state: "settled", kind: "value", resolution: settled[0]!.noteA === b ? "keep_a" : "keep_b" });
+    expect(settled[0]!.settledBy).toMatch(/^automatic: the newer note/);
+    expect(searchMemoryRecords(db, "P", "seo landings redis cache", 10, "auto", "subagent", "").map((record) => record.id)).toEqual([b]);
+    expect(db.prepare("SELECT status FROM lane_pilot_memory WHERE id=?").get(a)).toEqual({ status: "superseded" });
+    expect(deferrals.list({ projectId: "P" }).entries).toEqual([]);
   });
 
   it("does not open the same pair twice", () => {
@@ -102,66 +92,47 @@ describe("the register", () => {
     expect(conflicts.detect("P")).toHaveLength(0);
   });
 
-  it("settling with keep a releases a and retires b, and closes the deferral with the evidence", () => {
-    const { db, conflicts, deferrals, put } = setup();
-    const first = put(A, TA, T - 2000);
-    const second = put(B, TB, T - 1000);
-    const [row] = conflicts.detect("P");
-    expect(() => conflicts.settle({ id: row!.id, keep: "a", evidence: "short" })).toThrow(/evidence/);
-    const keepId = row!.noteA;
-    const settled = conflicts.settle({ id: row!.id, keep: "a", evidence: "checked apps/admin/src/seo.ts: the TTL is 24 h" });
-    expect(settled).toMatchObject({ state: "settled", resolution: "keep_a" });
-    const alive = searchMemoryRecords(db, "P", "seo landings redis cache", 10, "auto", "subagent", "").map((record) => record.id);
-    expect(alive).toEqual([keepId]);
-    expect([first, second]).toContain(keepId);
-    expect(deferrals.list({ projectId: "P", state: "closed" }).entries.find((item) => item.id === row!.deferralId)?.closedBy).toContain("keep_a");
-    expect(() => conflicts.settle({ id: row!.id, keep: "b", evidence: "again, with a reason" })).toThrow(/already settled/);
-  });
-
-  it("settling with both releases both and the pair is never held again", () => {
+  it("a pair held before (when a person settled them) can still be settled by hand, and settles itself as moot when a note is gone", () => {
     const { db, conflicts, put } = setup();
     put(A, TA, T - 2000);
     put(B, TB, T - 1000);
-    const [row] = conflicts.detect("P");
-    conflicts.settle({ id: row!.id, keep: "both", evidence: "two different keys, both true" });
+    const notes = (db.prepare("SELECT id, content, concepts_json, created_at FROM lane_pilot_memory WHERE project_id='P'").all() as Array<{ id: string; content: string; concepts_json: string; created_at: number }>)
+      .map((row) => ({ id: row.id, content: row.content, concepts: JSON.parse(row.concepts_json) as string[], createdAt: row.created_at }));
+    const held = holdConflict(db, { projectId: "P", personalBot: "", conflict: findConflicts(notes)[0]!, now: T })!;
+    expect(() => conflicts.settle({ id: held.id, keep: "a", evidence: "short" })).toThrow(/evidence/);
+    expect(conflicts.settle({ id: held.id, keep: "both", evidence: "two different keys, both true" })).toMatchObject({ state: "settled", resolution: "keep_both" });
     expect(searchMemoryRecords(db, "P", "seo landings redis cache", 10, "auto", "subagent", "")).toHaveLength(2);
-    expect(conflicts.detect("P")).toEqual([]);
+    expect(() => conflicts.settle({ id: held.id, keep: "b", evidence: "again, with a reason" })).toThrow(/already settled/);
+
+    db.prepare("DELETE FROM lane_pilot_memory_conflict").run();
+    const again = holdConflict(db, { projectId: "P", personalBot: "", conflict: findConflicts(notes)[0]!, now: T })!;
+    db.prepare("UPDATE lane_pilot_memory SET status='expired' WHERE project_id='P' AND id=?").run(again.noteA);
+    expect(conflicts.sweepMoot("P").map((item) => item.resolution)).toEqual(["moot"]);
   });
 
-  it("a conflict whose note is replaced settles itself as moot", () => {
-    const { db, conflicts, deferrals, put } = setup();
-    put(A, TA, T - 2000);
-    put(B, TB, T - 1000);
-    const [row] = conflicts.detect("P");
-    db.prepare("UPDATE lane_pilot_memory SET status='expired' WHERE project_id='P' AND id=?").run(row!.noteA);
-    const swept = conflicts.sweepMoot("P");
-    expect(swept.map((item) => item.resolution)).toEqual(["moot"]);
-    expect(deferrals.list({ projectId: "P", state: "closed" }).entries.map((item) => item.id)).toContain(row!.deferralId);
-  });
-
-  it("stops opening entries when a project holds too many (the heuristics are misfiring)", () => {
+  it("settles nothing when one write finds too many pairs (the heuristics are misfiring)", () => {
     const { conflicts, put } = setup();
     for (let index = 0; index < 30; index++) {
       put(`apps/admin/src/f${index}.ts keeps a cache TTL of 24 h for item${index}.`, [`a${index}`, "shared"], T - 5000 - index);
       put(`apps/admin/src/f${index}.ts keeps a cache TTL of 48 h for item${index}.`, [`b${index}`, "other"], T - 1000 - index);
     }
-    expect(conflicts.detect("P").length).toBe(25);
-    expect(conflicts.list({ projectId: "P", state: "held" })).toHaveLength(25);
+    expect(conflicts.detect("P")).toEqual([]);
+    expect(conflicts.list({ projectId: "P" })).toEqual([]);
   });
 });
 
 describe("the command line", () => {
-  it("lists, detects and settles", () => {
+  it("lists and detects; a settled pair is not settled again and --keep is checked", () => {
     const { conflicts, put } = setup();
     put("apps/admin/src/seo.ts keeps a cache TTL of 24 h for the seo-landings key.", TA, T - 2000);
     put("apps/admin/src/seo.ts keeps a cache TTL of 48 h for the seo-landings key.", TB, T - 1000);
     const listed = JSON.parse(runMemoryConflictCli(conflicts, "memory-conflicts", ["--project", "P", "--detect"]).stdout!);
     expect(listed.opened).toBe(1);
     const id = listed.conflicts[0].id as string;
+    expect(listed.conflicts[0]).toMatchObject({ state: "settled", resolution: expect.stringMatching(/^keep_/) });
     expect(runMemoryConflictCli(conflicts, "memory-conflict-settle", [id, "--keep", "b"]).exitCode).toBe(1);
     expect(runMemoryConflictCli(conflicts, "memory-conflict-settle", [id, "--keep", "x", "--evidence", "a good reason"]).stderr).toMatch(/--keep is a/);
-    const done = runMemoryConflictCli(conflicts, "memory-conflict-settle", [id, "--keep", "none", "--evidence", "both are stale, the code changed"]);
-    expect(JSON.parse(done.stdout!)).toMatchObject({ state: "settled", resolution: "drop_both" });
+    expect(runMemoryConflictCli(conflicts, "memory-conflict-settle", [id, "--keep", "none", "--evidence", "both are stale, the code changed"]).stderr).toMatch(/already settled/);
     expect(runMemoryConflictCli(conflicts, "memory-conflicts", ["--detect"]).exitCode).toBe(1);
   });
 });

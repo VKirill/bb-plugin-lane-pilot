@@ -15,7 +15,7 @@
   "minAccuracy": 0.8,
   "unsafe": 0,
   "fingerprint": "2aedff0a8354241d5b3398278a4a6d2514ce1ec8c29660e9a6b5e38bfdd4c0d2",
-  "verdict": "NOT ENOUGH UNSEEN DECISIONS YET: 0 of 20 needed (decided after 2026-10-22T14:14:50Z); night decides nothing alone",
+  "verdict": "NOT ENOUGH UNSEEN DECISIONS YET: 0 of 20 needed (decided after 2026-10-22T14:14:50Z); a measurement only, the night decides by its proofs",
   "history": [
     {
       "policyVersion": 1,

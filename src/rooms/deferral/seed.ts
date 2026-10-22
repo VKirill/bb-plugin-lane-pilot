@@ -1,10 +1,10 @@
+import { defaultTermFrom } from "./due";
 import { insertDeferral, type DeferralDb, type DeferralKind } from "./store";
 
 /**
  * What the register held on its first day (unreleased): the skipped tests (one entry per test file, the id is written beside each skip
- * as `// deferral:<id>`) and the five decisions the 2026-10-05 plan still waits on. Nobody has given a term for any of them, so each
- * is `needs_owner_term`: shown in the morning list, never counted overdue, until the owner's message sets a date
- * (`bb lane-pilot defer <id> --owner-msg <thread>#<seq>`). Seeded on start with INSERT OR IGNORE, so a term set later is never reset.
+ * as `// deferral:<id>`) and the five decisions the 2026-10-05 plan still waits on. Each gets the default term of 14 days from the day it
+ * is seeded. Seeded on start with INSERT OR IGNORE, so a term set later is never reset.
  */
 export type SeedEntry = { id: string; kind: DeferralKind; area: string; what: string };
 
@@ -44,8 +44,8 @@ export function seedDeferrals(db: DeferralDb, now: number): number {
   let added = 0;
   for (const entry of SEED_ENTRIES) {
     if (insertDeferral(db, {
-      id: entry.id, projectId: null, what: entry.what, kind: entry.kind, area: entry.area, dueAt: null, dueSource: null, ownerRef: null, ownerQuote: null,
-      state: "needs_owner_term", history: [], source: "seed", createdAt: now, updatedAt: now, closedAt: null, closedBy: null,
+      id: entry.id, projectId: null, what: entry.what, kind: entry.kind, area: entry.area, dueAt: defaultTermFrom(now), dueSource: "default_14d", ownerRef: null, ownerQuote: null,
+      state: "open", history: [], source: "seed", createdAt: now, updatedAt: now, closedAt: null, closedBy: null,
     }, true)) added += 1;
   }
   return added;

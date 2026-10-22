@@ -45,7 +45,7 @@ export async function runPolicyCli(deps: PolicyCliDeps, command: "policy-exam" |
     if (op === "classify") {
       if (!rest[0]) return { exitCode: 1, stderr: `classify needs a descriptor\n${POLICY_USAGE}` };
       const change = JSON.parse(rest.join(" ")) as ChangeDescriptor;
-      return { exitCode: 0, stdout: json({ ...explainChange(change), authorized: authorize(change, { exam: await loadLiveExam(deps.kv) }) }) };
+      return { exitCode: 0, stdout: json({ ...explainChange(change), authorized: authorize(change) }) };
     }
     if (op === "exam-collect") return { exitCode: 0, stdout: json(await collectAndAppend(deps.db, deps.kv, now())) };
     if (op === "exam-add") {

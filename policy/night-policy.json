@@ -2,14 +2,14 @@
   "version": 3,
   "frozen_at": "2026-10-22T14:14:50Z",
   "frozen_hash": "a51b31790a2a403f578144e7865b30e7cd26b5794a3412706961b3f4134e4089",
-  "title": "What the night may settle without the owner",
-  "rule": "Most restrictive match wins (owner_only > night_proposes > night_decides). A change that matches nothing is night_proposes. A night_decides entry matches only when its proof attributes are present and true; a missing proof is no match. A standing prohibition is owner_only.",
+  "title": "What the night settles by itself (the owner takes no part)",
+  "rule": "Most restrictive match wins (owner_only > night_proposes > night_decides). night_decides: the night merges it, and the checks after the merge (canary, bench subset, recurrence) revert it. night_proposes: the night does not merge it; the branch stays held and the repair is logged, nobody is asked. owner_only: the night never does it. A change that matches nothing is night_proposes. A night_decides entry matches only when its proof attributes are present and true; a missing proof is no match. A standing prohibition is owner_only.",
   "exam": {
     "file": "policy/exam.json",
     "live_file": "policy/exam-v2.json",
     "min_accuracy": 0.8,
     "min_items": 20,
-    "note": "night_decides takes effect only while this policy version has scored min_accuracy on at least min_items owner decisions made AFTER frozen_at (policy/exam-v2.json plus the plugin store, grown at night). Fewer items, or a lower score: every night_decides answer degrades to night_proposes (src/rooms/policy/exam.ts). policy/exam.json (32 items) is history: version 1 scored 14/32 = 0.438 on it, and every later version has seen it."
+    "note": "A measurement, not a gate (since 2026-10-22: the owner takes no part in the loop). The score of this version on owner decisions made AFTER frozen_at (policy/exam-v2.json plus the plugin store, grown at night) shows how close the policy is to what the owner decided himself; authorize reads only the classification and its proofs (src/rooms/policy/exam.ts). policy/exam.json (32 items) is history: version 1 scored 14/32 = 0.438 on it, and every later version has seen it."
   },
   "versions": [
     { "version": 1, "frozen": "2026-10-22", "exam": "policy/exam.json (x1..x32)", "result": "14/32 = 0.438, failed; night_decides degraded to night_proposes", "tuned_on_exam": false },

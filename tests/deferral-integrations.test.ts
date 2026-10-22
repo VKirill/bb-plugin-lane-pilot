@@ -61,13 +61,13 @@ describe("the drill's deferrals scenario", () => {
     expect(input!.refs.length).toBeGreaterThan(10);
   });
 
-  it("fails on an overdue deferral and says how to close it or get a new date from the owner", () => {
+  it("fails on an overdue deferral and says how an agent closes it or moves it with a reason", () => {
     const { verdict } = runDrill({ counts: {}, overdue: [{ id: "dfr_abc123abc123", kind: "drill_scenario", what: "reload scenario", due: "2026-11-05" }], needsOwnerTerm: [], entries: [], badRefs: [] });
     expect(verdict!.result).toBe("fail");
     expect(verdict!.problems).toHaveLength(1);
-    expect(verdict!.problems[0]).toMatch(/overdue deferral dfr_abc123abc123 \(drill_scenario: reload scenario\): the owner's term 2026-11-05 passed/);
+    expect(verdict!.problems[0]).toMatch(/overdue deferral dfr_abc123abc123 \(drill_scenario: reload scenario\): its term 2026-11-05 passed/);
     expect(verdict!.problems[0]).toMatch(/bb lane-pilot defer-close dfr_abc123abc123 --evidence/);
-    expect(verdict!.problems[0]).toMatch(/new date from the owner.*bb lane-pilot defer dfr_abc123abc123 --owner-msg/);
+    expect(verdict!.problems[0]).toMatch(/new term with the reason \(bb lane-pilot defer dfr_abc123abc123 --due .* --reason/);
   });
 
   it("fails on a skipped test that cites an entry the register lacks or holds closed", () => {

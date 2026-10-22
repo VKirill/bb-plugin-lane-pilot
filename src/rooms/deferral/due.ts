@@ -6,17 +6,21 @@
  * «in 14 days» · «завтра», «послезавтра», «tomorrow» · «до пятницы», «в пятницу», «by Friday» (the next such day after the message).
  * A day and month without a year is the next one on or after the message's day.
  */
-export type DueSource = "explicit" | "relative" | "weekday" | "default_14d";
-export type NamedDate = { day: string; dueAt: number; source: Exclude<DueSource, "default_14d">; match: string };
+export type DueSource = "explicit" | "relative" | "weekday" | "default_14d" | "agent";
+export type NamedDate = { day: string; dueAt: number; source: Exclude<DueSource, "default_14d" | "agent">; match: string };
 
 const DAY = 86_400_000;
 export const DEFAULT_TERM_DAYS = 14;
+/** The furthest an agent may set a term (`defer <id> --due … --reason …`): a longer one is a new entry with its own reason. */
+export const MAX_AGENT_TERM_DAYS = 30;
 
 const pad = (n: number): string => String(n).padStart(2, "0");
 export const dayOf = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
 /** The last millisecond of the UTC day `YYYY-MM-DD`. */
 export const endOfDay = (day: string): number => Date.parse(`${day}T23:59:59.999Z`);
 const startOf = (ms: number): number => Date.parse(`${dayOf(ms)}T00:00:00.000Z`);
+/** The default term counted from `at`: the end of the day 14 days later. */
+export const defaultTermFrom = (at: number): number => endOfDay(dayOf(startOf(at) + DEFAULT_TERM_DAYS * DAY));
 const valid = (y: number, m: number, d: number): boolean => {
   const probe = new Date(Date.UTC(y, m - 1, d));
   return probe.getUTCFullYear() === y && probe.getUTCMonth() === m - 1 && probe.getUTCDate() === d;

@@ -1,16 +1,16 @@
-import { resolveTerm, dayOf } from "./due";
+import { MAX_AGENT_TERM_DAYS, dayOf, dayOfArg, defaultTermFrom, endOfDay, resolveTerm } from "./due";
 import { seedDeferrals } from "./seed";
 import {
-  DEFERRAL_KINDS, closeDeferral, countDeferrals, getDeferral, insertDeferral, listDeferrals, newDeferralId, setTerm, sweepOverdue,
+  DEFERRAL_KINDS, closeDeferral, countDeferrals, dateUntermed, getDeferral, insertDeferral, listDeferrals, newDeferralId, setTerm, sweepOverdue,
   type Deferral, type DeferralDb, type DeferralKind, type DeferralState,
 } from "./store";
 import { verifyOwnerMessage, type OwnerMessagePort } from "./verify";
 
 /**
- * The register of deferrals as one service (SMA rule 5). The only way to give an entry a term is `defer`: the code reads the owner's
- * message through BB (verify.ts), takes the date from its text (due.ts) and refuses a term it cannot find there. An agent can open
- * an entry only with a message the owner wrote, and move a term only with a newer one. No login, no form: it protects against a
- * made-up date, not against a person.
+ * The register of deferrals as one service (SMA rule 5): nothing is put off without a term. The owner takes no part (2026-10-22): an entry
+ * the code opens gets the default term of 14 days, an agent sets or moves a term with `--due` and a `--reason` (at most 30 days ahead;
+ * the history keeps every earlier term), and an overdue term turns the deploy drill red until an agent closes the entry with evidence
+ * or gives it a new term with its reason. A message of the owner that names a date still sets the term when one is cited (`--owner-msg`).
  */
 export type DeferInput = {
   /** The thing put off, or the id of an existing entry whose term is set or moved. */
@@ -18,8 +18,10 @@ export type DeferInput = {
   kind?: string | undefined;
   area?: string | undefined;
   projectId?: string | undefined;
-  /** `<threadId>#<event seq>` of the owner's message. */
-  ownerMsg: string;
+  /** `<threadId>#<event seq>` of a message of the owner that names the term; without it an agent sets the term with `due` and `reason`. */
+  ownerMsg?: string | undefined;
+  /** Why the agent puts it off until `due` (no owner message). */
+  reason?: string | undefined;
   /** The day the message names (2026-11-05); omitted: the one date in the text, or the default of 14 days. */
   due?: string | undefined;
 };
@@ -59,14 +61,17 @@ export function createDeferrals(deps: { db: DeferralDb; port: OwnerMessagePort; 
   const { db, port } = deps;
 
   function seed(): number {
-    const added = seedDeferrals(db, now());
-    if (added) deps.log?.(`deferrals: ${added} first entries added (skipped tests and plan decisions without an owner term)`);
+    const at = now();
+    const added = seedDeferrals(db, at);
+    if (added) deps.log?.(`deferrals: ${added} first entries added (skipped tests and plan decisions, default term)`);
+    const dated = dateUntermed(db, defaultTermFrom(at), at);
+    if (dated) deps.log?.(`deferrals: ${dated} entries without a term got the default of 14 days`);
     return added;
   }
 
   async function defer(input: DeferInput): Promise<{ entry: DeferralView; created: boolean }> {
     const what = input.what.trim();
-    if (!what) throw new Error("say what is put off: bb lane-pilot defer <what> --kind … --owner-msg <thread>#<seq>");
+    if (!what) throw new Error("say what is put off: bb lane-pilot defer <what> --kind … --due <date> --reason <why>");
     const existing = /^dfr_/.test(what) ? getDeferral(db, what) : null;
     if (/^dfr_/.test(what) && !existing) throw new Error(`no deferral ${what}`);
     if (existing?.state === "closed") throw new Error(`${existing.id} is closed (${existing.closedBy ?? "no evidence"}); open a new entry if it is put off again`);
@@ -74,6 +79,7 @@ export function createDeferrals(deps: { db: DeferralDb; port: OwnerMessagePort; 
     if (!kind || !(DEFERRAL_KINDS as readonly string[]).includes(kind)) throw new Error(`--kind must be one of ${DEFERRAL_KINDS.join(", ")}`);
     if (what.length > 500) throw new Error("what is longer than 500 characters; name the thing, put the detail in the plan");
 
+    if (!input.ownerMsg) return byAgent(existing, kind as DeferralKind, what, input);
     const checked = await verifyOwnerMessage(port, input.ownerMsg);
     if (!checked.ok) throw new Error(checked.error);
     const { message } = checked;
@@ -105,16 +111,38 @@ export function createDeferrals(deps: { db: DeferralDb; port: OwnerMessagePort; 
     throw new Error("could not allocate a deferral id");
   }
 
-  /**
-   * Opens an entry that waits for the owner's term (`needs_owner_term`), idempotent on `id`: the morning list shows it, nothing is counted
-   * overdue, and only the owner's message gives it a date (`defer`). Code may open an entry (a held memory conflict); it may not date one.
-   */
+  /** A term an agent sets: a day at most 30 days ahead and the reason; an earlier term goes to the history. */
+  function byAgent(existing: Deferral | null, kind: DeferralKind, what: string, input: DeferInput): { entry: DeferralView; created: boolean } {
+    const reason = input.reason?.replace(/\s+/g, " ").trim() ?? "";
+    if (reason.length < 8) throw new Error("--reason must say why it waits until then (what it waits for)");
+    const day = input.due ? dayOfArg(input.due) : null;
+    if (!day) throw new Error("--due must be a day, e.g. 2026-11-05");
+    const at = now(), dueAt = endOfDay(day);
+    if (dueAt < at) throw new Error(`--due ${day} has passed`);
+    if (dueAt > at + MAX_AGENT_TERM_DAYS * 86_400_000) throw new Error(`--due ${day} is more than ${MAX_AGENT_TERM_DAYS} days ahead; put off a smaller step`);
+    const quote = `agent: ${reason}`.slice(0, 300);
+    if (existing) {
+      setTerm(db, existing.id, { dueAt, dueSource: "agent", ownerRef: null, ownerQuote: quote }, at);
+      return { entry: view(getDeferral(db, existing.id)!), created: false };
+    }
+    const row: Deferral = {
+      id: "", projectId: input.projectId?.trim() || null, what, kind, area: input.area?.trim() ?? "", dueAt, dueSource: "agent", ownerRef: null, ownerQuote: quote,
+      state: "open", history: [], source: "cli", createdAt: at, updatedAt: at, closedAt: null, closedBy: null,
+    };
+    for (let tries = 0; tries < 3; tries++) {
+      row.id = newDeferralId();
+      if (!getDeferral(db, row.id) && insertDeferral(db, row)) return { entry: view(getDeferral(db, row.id)!), created: true };
+    }
+    throw new Error("could not allocate a deferral id");
+  }
+
+  /** Opens an entry with the default term of 14 days, idempotent on `id` (a wall in the backlog, a held memory conflict). */
   function open(input: { id: string; kind: DeferralKind; what: string; area?: string; projectId?: string | null }): DeferralView {
     if (!(DEFERRAL_KINDS as readonly string[]).includes(input.kind)) throw new Error(`kind must be one of ${DEFERRAL_KINDS.join(", ")}`);
     const at = now();
     insertDeferral(db, {
-      id: input.id, projectId: input.projectId ?? null, what: input.what.trim().slice(0, 500), kind: input.kind, area: input.area ?? "", dueAt: null, dueSource: null,
-      ownerRef: null, ownerQuote: null, state: "needs_owner_term", history: [], source: "code", createdAt: at, updatedAt: at, closedAt: null, closedBy: null,
+      id: input.id, projectId: input.projectId ?? null, what: input.what.trim().slice(0, 500), kind: input.kind, area: input.area ?? "", dueAt: defaultTermFrom(at), dueSource: "default_14d",
+      ownerRef: null, ownerQuote: null, state: "open", history: [], source: "code", createdAt: at, updatedAt: at, closedAt: null, closedBy: null,
     }, true);
     return view(getDeferral(db, input.id)!);
   }
@@ -124,7 +152,7 @@ export function createDeferrals(deps: { db: DeferralDb; port: OwnerMessagePort; 
     if (!row) throw new Error(`no deferral ${input.id}`);
     if (row.state === "closed") throw new Error(`${row.id} is already closed (${row.closedBy ?? "no evidence"})`);
     const evidence = input.evidence.trim();
-    if (evidence.length < 8) throw new Error("--evidence must say what closes it: a commit, a test run, a link, the owner's decision");
+    if (evidence.length < 8) throw new Error("--evidence must say what closes it: a commit, a test run, a link, a decision with its reason");
     closeDeferral(db, row.id, evidence.slice(0, 2_000), now());
     return view(getDeferral(db, row.id)!);
   }
@@ -153,7 +181,7 @@ export type DeferralApi = ReturnType<typeof createDeferrals>;
 
 /**
  * What a PM reads before it promises a date (SMA rule 6), as lines of its task-result message: the overdue and the open deferrals
- * of its project and the global ones. Entries without a term are the owner's morning list, not the PM's. Nothing when there is none.
+ * of its project and the global ones. Nothing when there is none.
  */
 export function pmDeferralLines(db: DeferralDb, projectId: string, at: number): string[] {
   const live = listDeferrals(db, { projectId, states: ["open", "overdue"] });
@@ -161,9 +189,9 @@ export function pmDeferralLines(db: DeferralDb, projectId: string, at: number): 
   const open = live.filter((row) => !overdue.includes(row));
   if (!overdue.length && !open.length) return [];
   const short = (row: Deferral): string => `${row.what.replace(/\s+/g, " ").slice(0, 80)} (${row.id}, term ${row.dueAt === null ? "none" : dayOf(row.dueAt)})`;
-  const lines = ["Deferrals (read before you promise a date; the owner gave each term in his own message):"];
+  const lines = ["Deferrals (read before you promise a date):"];
   if (overdue.length) lines.push(`- overdue ${overdue.length}: ${overdue.slice(0, 5).map(short).join("; ")}${overdue.length > 5 ? "; …" : ""}`);
   if (open.length) lines.push(`- open ${open.length}, next term ${dayOf(Math.min(...open.map((row) => row.dueAt ?? Infinity)))}`);
-  if (overdue.length) lines.push("An overdue term turns the deploy drill red. Close it with evidence (bb lane-pilot defer-close <id> --evidence …) or ask the owner for a new date; only a newer message of the owner moves a term (bb lane-pilot defer <id> --owner-msg <thread>#<seq>).");
+  if (overdue.length) lines.push("An overdue term turns the deploy drill red. Do the thing and close it with evidence (bb lane-pilot defer-close <id> --evidence …), or give it a new term with the reason (bb lane-pilot defer <id> --due <day> --reason <what it waits for>).");
   return lines;
 }

@@ -177,25 +177,44 @@ describe("the term passes and the entry is closed", () => {
 });
 
 describe("first entries", () => {
-  it("are seeded as needs_owner_term, once, and are never counted overdue", () => {
+  it("are seeded once with the default term of 14 days, and turn overdue when it passes", () => {
     const { api, clock } = register();
     expect(api.seed()).toBe(SEED_ENTRIES.length);
     expect(api.seed()).toBe(0);
-    clock.now = T0 + 400 * DAY;
     const listed = api.list();
-    expect(listed.counts).toMatchObject({ needs_owner_term: SEED_ENTRIES.length, overdue: 0, open: 0 });
-    expect(listed.overdue).toEqual([]);
-    expect(listed.needsOwnerTerm.map((item) => item.id)).toContain("dfr_seed_plan_code_critique_default");
+    expect(listed.counts).toMatchObject({ needs_owner_term: 0, overdue: 0, open: SEED_ENTRIES.length });
+    expect(listed.entries.find((item) => item.id === "dfr_seed_plan_code_critique_default")).toMatchObject({ due: "2026-11-05", dueSource: "default_14d" });
+    clock.now = T0 + 15 * DAY;
+    expect(api.list().counts).toMatchObject({ overdue: SEED_ENTRIES.length, open: 0 });
     expect(SEED_ENTRIES.filter((item) => item.kind === "plan_decision")).toHaveLength(5);
   });
 
-  it("a seeded entry gets its term from the owner like any other, and a restart does not reset it", async () => {
+  it("an entry left from the time a term had to come from the owner gets the default term at start", () => {
+    const { api, db } = register();
+    db.prepare("INSERT INTO lane_pilot_deferral(id,what,kind,state,created_at,updated_at) VALUES('dfr_old','an old one','gate','needs_owner_term',1,1)").run();
+    api.seed();
+    expect(api.list().entries.find((item) => item.id === "dfr_old")).toMatchObject({ state: "open", due: "2026-11-05", dueSource: "default_14d" });
+  });
+
+  it("an agent sets or moves a term with the day and the reason, at most 30 days ahead", async () => {
+    const { api } = register();
+    api.seed();
+    await expect(api.defer({ what: "dfr_seed_plan_containment", due: "2026-11-10" })).rejects.toThrow(/--reason/);
+    await expect(api.defer({ what: "dfr_seed_plan_containment", due: "2026-12-30", reason: "waits for the bench v2 build" })).rejects.toThrow(/more than 30 days/);
+    await expect(api.defer({ what: "dfr_seed_plan_containment", due: "2026-10-01", reason: "waits for the bench v2 build" })).rejects.toThrow(/has passed/);
+    const moved = await api.defer({ what: "dfr_seed_plan_containment", due: "2026-11-10", reason: "waits for the bench v2 build" });
+    expect(moved.entry).toMatchObject({ state: "open", due: "2026-11-10", dueSource: "agent", ownerQuote: "agent: waits for the bench v2 build" });
+    const made = await api.defer({ what: "flaky gate", kind: "gate", due: "2026-11-01", reason: "the gate is rewritten next week" });
+    expect(made).toMatchObject({ created: true, entry: { state: "open", dueSource: "agent" } });
+  });
+
+  it("a seeded entry takes a term an owner's message names, and a restart does not reset it", async () => {
     const { api } = register();
     api.seed();
     const moved = await api.defer({ what: "dfr_seed_plan_containment", ownerMsg: "thr_owner#3" });
-    expect(moved.entry).toMatchObject({ state: "open", due: "2026-11-05" });
+    expect(moved.entry).toMatchObject({ state: "open", due: "2026-11-05", ownerMsg: "thr_owner#3" });
     api.seed();
-    expect(api.list({ state: "open" } as never).entries.map((item) => item.id)).toEqual(["dfr_seed_plan_containment"]);
+    expect(api.list().entries.find((item) => item.id === "dfr_seed_plan_containment")).toMatchObject({ ownerMsg: "thr_owner#3" });
   });
 
   it("names cited ids the register lacks or holds closed", async () => {
@@ -216,7 +235,8 @@ describe("the CLI", () => {
     expect(JSON.parse(made.stdout!).entry.what).toBe("reload drill");
     const listed = JSON.parse((await runDeferralCli(api, "deferrals", [])).stdout!) as { entries: Array<{ id: string }> };
     expect(listed.entries.map((item) => item.id)).toEqual([id]);
-    expect((await runDeferralCli(api, "defer", ["x", "--kind", "gate"])).stderr).toMatch(/comes from the owner's message/);
+    expect((await runDeferralCli(api, "defer", ["x", "--kind", "gate"])).stderr).toMatch(/--reason must say why/);
+    expect((await runDeferralCli(api, "defer", ["x", "--kind", "gate", "--due", "2026-11-01", "--reason", "the gate is rewritten next week"])).exitCode).toBe(0);
     expect((await runDeferralCli(api, "defer", ["x", "--kind", "gate", "--owner-msg", "thr_owner#6"])).stderr).toMatch(/not a message the owner wrote/);
     expect((await runDeferralCli(api, "defer", ["x", "--bogus", "1"])).stderr).toMatch(/unknown flag --bogus/);
     expect((await runDeferralCli(api, "defer-close", [id])).exitCode).toBe(1);
@@ -246,8 +266,8 @@ describe("the plugin", () => {
       } as never,
     });
     await plugin(bb);
-    const before = await harness.behavior.callRpc("deferral_list", {}) as { counts: { needs_owner_term: number } };
-    expect(before.counts.needs_owner_term).toBe(SEED_ENTRIES.length);
+    const before = await harness.behavior.callRpc("deferral_list", {}) as { counts: { needs_owner_term: number; open: number } };
+    expect(before.counts).toMatchObject({ needs_owner_term: 0, open: SEED_ENTRIES.length });
 
     const made = await harness.behavior.callRpc("deferral_defer", { what: "flaky gate", kind: "gate", ownerMsg: "thr_x#12", due: "2026-11-07" }) as { entry: { id: string; due: string } };
     expect(made.entry.due).toBe("2026-11-07");

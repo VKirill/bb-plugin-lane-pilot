@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { HeadPart } from "@lane-pilot/contracts";
 import { extractModelJson } from "../critique";
-import { authorize, type ChangeDescriptor } from "../policy";
+import type { ChangeDescriptor } from "../policy";
 import { decideAcceptance, gateRepair, repairChange, type Acceptance, type AcceptanceEvidence, type GateDecision } from "./acceptance";
 import { analysisPrompt, hunterPrompt, parseNightReport, repairBrief, taskWallMessage } from "./brief";
 import { hubFields, writeHubFields } from "../improvement";
@@ -25,8 +25,6 @@ const QUEUED_STALE_MS = 12 * 3_600_000;
 export type Scope = { isReal(projectId: string, taskId: string): boolean; scopeOf(projectId: string): RerunScope };
 export type ThreadRun = { text: string | null; tokens: number };
 export type RepairView = { threadId: string | null; verdict: string | null; outcome: string | null; branch: string | null; worktreePath: string | null; spawnedAt: number | null };
-export type OwnerItem = { key: string; source: string; kind: string; what: string; why: string; projectId?: string; evidence?: Array<{ kind: string; ref: string; label?: string }>; actions?: Array<{ id: string; label: string; cli: string }> };
-type Exam = Parameters<typeof authorize>[1];
 
 /** Everything the loop needs from outside its database; the plugin wires the real ones (server/wall.ts), tests pass fakes. */
 export type WallPorts = {
@@ -57,10 +55,8 @@ export type WallPorts = {
     compare(base: string, arm: string): Promise<"pass" | "fail" | "pending" | "unavailable">;
     score(arm: string): Promise<number | null>;
   };
-  exam(): Promise<Exam>;
   restart(plan: RerunPlan): Promise<{ ok: boolean; note: string }>;
   deferrals: { open(input: { id: string; what: string; area: string; projectId: string | null }): void; close(id: string, evidence: string): void };
-  owner?: { post(item: OwnerItem): Promise<void> };
 };
 
 type Kv = { get(key: string): Promise<unknown>; set(key: string, value: never): Promise<unknown> };
@@ -157,8 +153,6 @@ export function createWall(deps: WallDeps) {
         updateWall(db, key, { analysis: { text: run.text, at: ports.now() }, tokensUsed: (wall.tokensUsed ?? 0) + run.tokens }, ports.now());
       }
     }
-    await ports.owner?.post({ key: `wall:${key}`, source: "wall", kind: "backlog", what: `Стена в беклоге: ${subject.slice(0, 200)}`, why: `Ступени пройдены (${why}); дальше решает человек.`, projectId: projectId || undefined,
-      actions: [{ id: "show", label: "Разбор стены", cli: `bb lane-pilot wall show ${key}` }] }).catch(() => undefined);
     log(`wall: ${subject} went to the backlog (${why}) as ${id}`);
     return id;
   }
@@ -349,13 +343,10 @@ export function createWall(deps: WallDeps) {
     const cfg = await config();
     const benchOk = cfg.benchSubset > 0 && await ports.bench.available().catch(() => false);
     const change: ChangeDescriptor = repairChange(files, { benchSubset: benchOk, revertible: true });
-    const decision = gateRepair(change, await ports.exam());
+    const decision = gateRepair(change);
     updateRepair(db, row.id, { state: decision.decision === "merge" ? "fixed" : "held", verdict: "fixed", policy: { ...decision, change, benchEnforcedAfterDeploy: benchOk } }, now);
     if (decision.decision === "hold") {
       log(`wall: repair ${row.id} of ${row.classKey} is held by the policy (${decision.tier}): ${decision.reason}`);
-      await ports.owner?.post({ key: `wall-repair:${row.id}`, source: "night", kind: "repair_proposal", what: `Ночной ремонт класса ${row.classKey} ждёт решения`, why: `Политика ночи: ${decision.tier}${decision.degraded ? " (экзамен политики не сдан)" : ""}; ${decision.reason}`.slice(0, 400),
-        evidence: [{ kind: "text", ref: `branch ${view?.branch ?? "?"}`, label: (files.slice(0, 8).join(", ")) }],
-        actions: [{ id: "show", label: "Показать ремонт", cli: `bb lane-pilot wall show ${row.classKey}` }] }).catch(() => undefined);
     }
     void info;
     return decision.decision;
@@ -505,7 +496,7 @@ export function createWall(deps: WallDeps) {
         const result = await ports.restart(plan).catch((cause: unknown) => ({ ok: false, note: cause instanceof Error ? cause.message : String(cause) }));
         if (recordRerun(db, plan, result.ok ? "dispatched" : "skipped", result.note, now)) count += 1;
       } else {
-        const why = plan.scope === "real" ? "a real project: the owner's morning list" : `earliest affected stage ${plan.affected.from ?? "none"} needs return-to-stage (not restartable in place)`;
+        const why = plan.scope === "real" ? "a real project: listed, re-run only with rerun_sandbox_only off" : `earliest affected stage ${plan.affected.from ?? "none"} needs return-to-stage (not restartable in place)`;
         if (recordRerun(db, plan, "listed", why, now)) count += 1;
       }
     }

@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, expect, it } from "vitest";
 import { getRuleProposal, listRuleProposals, upsertLessonProposal } from "@lane-pilot/run-insights";
-import { openDatabase } from "../src/rooms/storage/database";
+import { openDatabase, saveProjectSetting, storeMemoryRecords } from "../src/rooms/storage/database";
 import { adoptRuleProposal, adoptWaitingRules } from "../src/rooms/self-repair/server/insights";
 import { DEFAULT_RULE_TOKENS, ruleTokens, setRuleBudgets } from "../src/rooms/learning/rule-budget";
 
@@ -50,4 +50,22 @@ it("does not displace a young rule; the waiting one goes on trial later by itsel
   expect(getRuleProposal(db, "proj", waiting)?.state).toBe("proposed");
   expect(adoptWaitingRules(db, now + 4 * DAY)).toBe(1);
   expect(getRuleProposal(db, "proj", waiting)?.state).toBe("accepted");
+});
+
+it("a full core memory makes room for a rule on trial: a convention of the memory maintainer no accepted brief ever used goes, never a rule or a used one", () => {
+  const db = setup();
+  const now = 100 * DAY;
+  saveProjectSetting(db, "proj", "memory.core_budget", 150);
+  const conventions = storeMemoryRecords(db, { projectId: "proj", sourceSha256: "c".repeat(64), audience: "subagent", origin: "maintainer", coreBudget: 150, noteBudget: 99_999, indexBudget: 999_999,
+    entries: [1, 2, 3].map((n) => ({ kind: "core" as const, content: `Convention ${n}: ${"words of a project convention ".repeat(6)}`, concepts: ["convention"] })) }).insertedIds;
+  db.prepare("UPDATE lane_pilot_memory SET use_count=9, accepted_count=9 WHERE id IN (?, ?)").run(conventions[0], conventions[2]);
+  const rule = adoptRuleProposal(db, "proj", lesson(db, 1, "writer", now), now);
+  expect(rule?.state).toBe("accepted");
+  const status = (id: string) => (db.prepare("SELECT status FROM lane_pilot_memory WHERE id=?").get(id) as { status: string }).status;
+  expect(conventions.map(status)).toEqual(["active", "expired", "active"]);
+  // With no unused convention left the next rule waits: the used conventions and the first rule stay.
+  saveProjectSetting(db, "proj", "memory.core_budget", 100);
+  expect(adoptRuleProposal(db, "proj", lesson(db, 2, "writer", now), now)).toBeNull();
+  expect(conventions.map(status)).toEqual(["active", "expired", "active"]);
+  expect(status(rule!.memoryId!)).toBe("active");
 });

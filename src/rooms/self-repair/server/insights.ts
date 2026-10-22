@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { dropMemoryIndexes, memoryRecordId, parseMemorySettings, searchMemoryRecords, storeMemoryRecords, type MemoryCandidate, type MemorySettings } from "@lane-pilot/memory-core";
+import { dropMemoryIndexes, hideRecord, memoryRecordId, parseMemorySettings, searchMemoryRecords, storeMemoryRecords, type MemoryCandidate, type MemorySettings } from "@lane-pilot/memory-core";
 import {
   collectLessonSources, decideRuleProposal, getRuleProposal, lessonCandidates, listRuleProposals, logRuleEvent, parseGoldenCases, repeatedLessons,
   reviseAdoptedRule, reviseRuleProposal, routingHint, runGoldenEval, setRuleTrial, upsertRuleProposals, writerAcceptanceStats, type RuleProposal,
@@ -111,15 +111,37 @@ export function adoptRuleProposal(db: LanePilotDatabase, projectId: string, id: 
     left = left.filter((rule) => rule.id !== weakest.id);
   }
   for (const weakest of victims) retireAdoptedRule(db, projectId, weakest.id, `displaced by a newer rule (${id})`, now);
-  try {
-    return acceptRuleProposal(db, projectId, id, proposal.rule, "auto", now);
-  } catch (cause) {
-    // The project's core memory budget holds the rules with its other conventions; a store that refuses is a full pool all the same.
-    const message = cause instanceof Error ? cause.message : String(cause);
-    if (!/core budget exceeded/.test(message)) throw cause;
-    logRuleEvent(db, projectId, id, "cap_reached", `the project's core memory budget has no room for this rule (${message})`, now);
-    return null;
+  // The project's core memory budget holds the rules with its other conventions. A rule comes from a mistake that repeated; a convention
+  // of the memory maintainer that no accepted brief ever carried gives way to it, the oldest first. A rule, a used convention, the owner's
+  // or a probe's record never does: with none of those left the rule waits and the journal says why.
+  const evicted: string[] = [];
+  for (;;) {
+    try {
+      const accepted = acceptRuleProposal(db, projectId, id, proposal.rule, "auto", now);
+      if (evicted.length) logRuleEvent(db, projectId, id, "made_room", `unused memory conventions expired for it: ${evicted.join(", ")}`, now);
+      return accepted;
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      if (!/core budget exceeded/.test(message)) throw cause;
+      const unused = evicted.length < MAX_CONVENTIONS_EVICTED ? unusedConvention(db, projectId) : null;
+      if (!unused) {
+        logRuleEvent(db, projectId, id, "cap_reached", `the project's core memory budget has no room for this rule (${message})${evicted.length ? `; ${evicted.length} unused conventions expired, not enough` : ""}`, now);
+        return null;
+      }
+      hideRecord(db, projectId, unused, "expired", null, (project, record) => dropMemoryIndexes(db, project, record));
+      evicted.push(unused.slice(0, 12));
+    }
   }
+}
+
+/** At most this many conventions give way to one rule: a rule that needs more is too long for the core. */
+const MAX_CONVENTIONS_EVICTED = 5;
+
+/** The oldest core convention of the memory maintainer that no accepted brief carried: the one a rule may take the room of. */
+function unusedConvention(db: LanePilotDatabase, projectId: string): string | null {
+  const row = db.prepare(`SELECT id FROM lane_pilot_memory WHERE project_id=? AND kind='core' AND status='active' AND origin='maintainer'
+    AND accepted_count=0 AND concepts_json NOT LIKE '%"rule"%' ORDER BY created_at, id LIMIT 1`).get(projectId) as { id: string } | undefined;
+  return row?.id ?? null;
 }
 
 /** Every waiting rule of every project tries to go on trial again. */

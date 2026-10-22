@@ -835,8 +835,8 @@ def cited_deferrals() -> list[str]:
 
 
 def scenario_deferrals(tmp: Path) -> dict:
-    """The register of deferrals (SMA rule 5): an entry whose term the owner gave has passed, or a skipped test cites an entry the register
-    does not hold or holds closed, fails the drill. Entries without a term (`needs_owner_term`) are listed, never failed."""
+    """The register of deferrals (SMA rule 5): an entry whose term has passed, or a skipped test citing an entry the register does not hold
+    or holds closed, fails the drill. Every entry has a term (the default of 14 days, an agent's with its reason, or one an owner's message named)."""
     cited = cited_deferrals()
     try:
         data = setting_rpc("deferral_list", {"refs": cited})
@@ -846,9 +846,9 @@ def scenario_deferrals(tmp: Path) -> dict:
         return verdict("deferrals", [f"the register of deferrals could not be read: {str(cause)[:200]}"])
     problems: list[str] = []
     for item in data.get("overdue", []):
-        problems.append(f"overdue deferral {item['id']} ({item['kind']}: {item['what'][:100]}): the owner's term {item['due']} passed. "
-                        f"Do one of: close it with evidence (bb lane-pilot defer-close {item['id']} --evidence \"<commit, test run, link>\"), "
-                        f"or get a new date from the owner in a new message and set it (bb lane-pilot defer {item['id']} --owner-msg <thread>#<seq>)")
+        problems.append(f"overdue deferral {item['id']} ({item['kind']}: {item['what'][:100]}): its term {item['due']} passed. "
+                        f"Do one of: do it and close it with evidence (bb lane-pilot defer-close {item['id']} --evidence \"<commit, test run, link>\"), "
+                        f"or give it a new term with the reason (bb lane-pilot defer {item['id']} --due <day, at most 30 days ahead> --reason \"<what it waits for>\")")
     for ref in data.get("badRefs", []):
         why = "is not in the register" if ref["problem"] == "unknown" else "is closed, so the skip it excuses is no longer deferred (run the test or remove the skip)"
         problems.append(f"a skipped test cites deferral:{ref['id']}, which {why}")

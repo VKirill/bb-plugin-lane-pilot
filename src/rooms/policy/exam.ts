@@ -13,7 +13,8 @@ import { POLICY, RESTRICTION, TIERS, explainChange, type ChangeDescriptor, type 
  *  - exam v1 (policy/exam.json): the first 32 items. History. The version-1 policy scored 14/32 on it; every later policy has seen it, so it
  *    can show a regression and prove nothing.
  *  - exam v2 (policy/exam-v2.json + the plugin store, `live-exam.ts`): grows at night with decisions made AFTER the policy version was
- *    frozen. Only items decided after `frozen_at` score a policy; `authorize` needs `exam.min_items` of them and `exam.min_accuracy` on them.
+ *    frozen. Only items decided after `frozen_at` score a policy. A measurement of how close the policy is to the owner's own decisions;
+ *    since 2026-10-22 no gate reads it (the owner takes no part in the loop: `authorize`).
  */
 const scalar = z.union([z.string(), z.number(), z.boolean()]);
 const descriptorSchema = z.object({
@@ -150,9 +151,9 @@ export function runLiveExam(policy: Policy = POLICY, exam: { items: readonly Liv
   const enough = unseen.length >= needed;
   const passed = enough && base.accuracy >= policy.exam.min_accuracy;
   const verdict = !enough
-    ? `NOT ENOUGH UNSEEN DECISIONS YET: ${unseen.length} of ${needed} needed (decided after ${policy.frozen_at}); night decides nothing alone`
-    : passed ? `PASSED: ${base.correct}/${base.total} = ${base.accuracy} on unseen decisions (bar ${policy.exam.min_accuracy}); night_decides takes effect`
-      : `FAILED: ${base.correct}/${base.total} = ${base.accuracy} on unseen decisions, under ${policy.exam.min_accuracy}; night decides nothing alone`;
+    ? `NOT ENOUGH UNSEEN DECISIONS YET: ${unseen.length} of ${needed} needed (decided after ${policy.frozen_at}); a measurement only, the night decides by its proofs`
+    : passed ? `PASSED: ${base.correct}/${base.total} = ${base.accuracy} on unseen decisions (bar ${policy.exam.min_accuracy})`
+      : `FAILED: ${base.correct}/${base.total} = ${base.accuracy} on unseen decisions, under ${policy.exam.min_accuracy}: the policy disagrees with the owner's own decisions, worth a look`;
   return { ...base, passed, split: "exam-v2", inSplit: exam.items.length, seenExcluded: exam.items.length - unseen.length, needed, enough, verdict };
 }
 
@@ -164,19 +165,14 @@ export const storedExam = (result: ExamResult | LiveExamResult, at: number): Sto
   ...("split" in result ? { split: result.split, needed: result.needed, enough: result.enough } : {}),
 });
 
-export type Authorization = { requested: Tier; tier: Tier; degraded: boolean; reason: string; matched: Array<{ id: string; tier: Tier }> };
+export type Authorization = { requested: Tier; tier: Tier; reason: string; matched: Array<{ id: string; tier: Tier }> };
 
 /**
- * What the night may do with a change. The classification is final except for one rule: night_decides is night_proposes unless the policy
- * version has passed the exam on enough owner decisions made after it was frozen (`runLiveExam`). Recomputed on every call, so a policy
- * edited without a new freeze (its items would be seen) or a split that is too small cannot decide. Pass the merged split from
- * `loadLiveExam` in production; the default is only the committed part.
+ * What the night may do with a change: the classification, final. The owner takes no part in the loop (2026-10-22): night_decides
+ * stands on the proofs its entry asks for (the bench subset, an automatic revert) and the checks after the merge (canary, bench,
+ * recurrence) revert it; the exam (`runLiveExam`) is a measurement of the policy, not a gate.
  */
-export function authorize(change: ChangeDescriptor, options: { policy?: Policy; exam?: { items: readonly LiveItem[] } } = {}): Authorization {
-  const policy = options.policy ?? POLICY;
-  const answer = explainChange(change, policy);
-  if (answer.tier !== "night_decides") return { requested: answer.tier, tier: answer.tier, degraded: false, reason: answer.reason, matched: answer.matched };
-  const result = runLiveExam(policy, options.exam ?? EXAM_LIVE);
-  if (result.passed) return { requested: answer.tier, tier: "night_decides", degraded: false, reason: answer.reason, matched: answer.matched };
-  return { requested: answer.tier, tier: "night_proposes", degraded: true, reason: `${answer.reason}; degraded: ${result.verdict}`, matched: answer.matched };
+export function authorize(change: ChangeDescriptor, options: { policy?: Policy } = {}): Authorization {
+  const answer = explainChange(change, options.policy ?? POLICY);
+  return { requested: answer.tier, tier: answer.tier, reason: answer.reason, matched: answer.matched };
 }

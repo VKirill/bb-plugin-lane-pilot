@@ -1,8 +1,9 @@
 import type { DeferralApi } from "./service";
 
 export const DEFERRAL_USAGE = [
-  "bb lane-pilot defer <what> --kind drill_scenario|skipped_test|gate|plan_decision|memory_conflict|wall --owner-msg <threadId>#<seq> [--due 2026-11-05] [--area A] [--project P]",
-  "bb lane-pilot defer <dfr_id> --owner-msg <threadId>#<seq> [--due 2026-11-05]   (set or move the term of an entry; needs a newer owner message)",
+  "bb lane-pilot defer <what> --kind drill_scenario|skipped_test|gate|plan_decision|memory_conflict|wall --due 2026-11-05 --reason <what it waits for> [--area A] [--project P]",
+  "bb lane-pilot defer <dfr_id> --due 2026-11-05 --reason <what it waits for>   (set or move the term of an entry, at most 30 days ahead)",
+  "bb lane-pilot defer <what|dfr_id> --owner-msg <threadId>#<seq> [--due 2026-11-05]   (the term a message of the owner names)",
   "bb lane-pilot defer-close <dfr_id> --evidence <commit, test run, link, decision>",
   "bb lane-pilot deferrals [--project P] [--state open|overdue|needs_owner_term|closed]",
 ].join("\n");
@@ -27,9 +28,8 @@ export function parseFlags(argv: readonly string[], known: readonly string[]): {
 export async function runDeferralCli(api: DeferralApi, command: "defer" | "defer-close" | "deferrals", argv: string[]): Promise<Result> {
   try {
     if (command === "defer") {
-      const { positional, flags } = parseFlags(argv, ["kind", "area", "project", "owner-msg", "due"]);
-      if (!flags["owner-msg"]) throw new Error(`a term comes from the owner's message: add --owner-msg <threadId>#<seq>\n${DEFERRAL_USAGE}`);
-      const result = await api.defer({ what: positional.join(" "), kind: flags.kind, area: flags.area, projectId: flags.project, ownerMsg: flags["owner-msg"], due: flags.due });
+      const { positional, flags } = parseFlags(argv, ["kind", "area", "project", "owner-msg", "due", "reason"]);
+      const result = await api.defer({ what: positional.join(" "), kind: flags.kind, area: flags.area, projectId: flags.project, ownerMsg: flags["owner-msg"], due: flags.due, reason: flags.reason });
       return { exitCode: 0, stdout: JSON.stringify(result, null, 2) };
     }
     if (command === "defer-close") {

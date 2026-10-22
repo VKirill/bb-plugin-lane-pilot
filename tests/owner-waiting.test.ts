@@ -28,10 +28,10 @@ function seeded() {
 }
 
 describe("the owner's waiting list", () => {
-  it("reads every source in one shape: what, why it is the owner's, evidence, the exact action", () => {
+  it("holds only what the owner's own words started: a waiting rule, a deferral and a memory conflict are the system's, not his", () => {
     const waiting = collectOwnerWaiting(seeded(), NOW);
-    expect(waiting.counts).toEqual({ deferral_overdue: 1, memory_conflict: 1, rule_proposal: 1, learning: 1, deferral_term: 1 });
-    expect(waiting.items.map((item) => item.key)).toEqual(["deferral:dfr_b", "memory_conflict:mc1", "rule:proj_1:r1", "learning:i1", "deferral:dfr_a"]);
+    expect(waiting.counts).toEqual({ learning: 1 });
+    expect(waiting.items.map((item) => item.key)).toEqual(["learning:i1"]);
     for (const item of waiting.items) {
       expect(item.what.length, item.key).toBeGreaterThan(0);
       expect(item.why.length, item.key).toBeGreaterThan(20);
@@ -39,40 +39,6 @@ describe("the owner's waiting list", () => {
       expect(item.actions.length, item.key).toBeGreaterThan(0);
       for (const action of item.actions) expect(action.cli, `${item.key} ${action.id}`).toMatch(/^(bb |echo )/);
     }
-  });
-
-  it("gives a rule proposal accept and reject as buttons that call the existing RPC, with the attempt as evidence", () => {
-    const rule = collectOwnerWaiting(seeded(), NOW).items.find((item) => item.source === "rule_proposal")!;
-    expect(rule.evidence[0]).toMatchObject({ kind: "attempt", ref: "att_1" });
-    expect(rule.actions.map((action) => action.rpc)).toEqual([
-      { method: "decide_rule_proposal", input: { projectId: "proj_1", id: "r1", action: "accept" } },
-      { method: "decide_rule_proposal", input: { projectId: "proj_1", id: "r1", action: "reject" } },
-    ]);
-    expect(rule.actions[0]!.cli).toContain("decide_rule_proposal");
-    // The RPC the button calls exists in the contract, with that input.
-    expect(rpcContract.decide_rule_proposal.input.safeParse(rule.actions[0]!.rpc!.input).success).toBe(true);
-  });
-
-  it("shows a deferral's term as a command that needs the owner's own message, never as a button", () => {
-    const items = collectOwnerWaiting(seeded(), NOW).items;
-    for (const key of ["deferral:dfr_a", "deferral:dfr_b"]) {
-      const term = items.find((item) => item.key === key)!.actions.find((action) => action.id === "term")!;
-      expect(term.needsOwnerMessage).toBe(true);
-      expect(term.rpc).toBeUndefined();
-      expect(term.cli).toContain("--owner-msg <threadId>#<seq>");
-      expect(term.hint).toContain("events-list");
-    }
-    // An overdue entry wakes the owner; one that only lacks a term waits on the screen.
-    expect(items.find((item) => item.key === "deferral:dfr_b")!.wake).toBe(true);
-    expect(items.find((item) => item.key === "deferral:dfr_a")!.wake).toBe(false);
-  });
-
-  it("counts a held memory conflict once (its deferral entry is not a second item) and names the settle command", () => {
-    const items = collectOwnerWaiting(seeded(), NOW).items;
-    expect(items.some((item) => item.key === "deferral:dfr_d")).toBe(false);
-    const conflict = items.find((item) => item.source === "memory_conflict")!;
-    expect(conflict.actions[0]!.cli).toContain("memory-conflict-settle mc1 --keep a|b|both|none --evidence");
-    expect(conflict.wake).toBe(true);
   });
 
   it("holds the night loop's rows in a stable shape: posted once per key, shown, closed", () => {
@@ -83,7 +49,7 @@ describe("the owner's waiting list", () => {
     expect(postOwnerItem(db, row, NOW + HOUR).created).toBe(false);
     const posted = collectOwnerWaiting(db, NOW).items.find((item) => item.key === row.key)!;
     expect(posted).toMatchObject({ source: "night", wake: true, since: NOW, projectId: null, evidence: row.evidence, actions: row.actions });
-    expect(collectOwnerWaiting(db, NOW).items[1]!.source).toBe("night");
+    expect(collectOwnerWaiting(db, NOW).items[0]!.source).toBe("night");
     expect(() => postOwnerItem(db, { ...row, key: "k2", why: " " })).toThrow(/needs a key, what and why/);
     expect(closeOwnerItem(db, row.key, "applied in 0.1.270", NOW)).toBe(true);
     expect(closeOwnerItem(db, row.key, "again", NOW)).toBe(false);
@@ -109,11 +75,13 @@ describe("the owner's waiting list", () => {
 describe("the Telegram digest", () => {
   it("pushes only new wake items, once, and the daily report stays the reminder", () => {
     const db = seeded();
+    expect(planDigest(db, NOW)).toMatchObject({ send: false, reason: "nothing_new" });
+    postOwnerItem(db, { key: "night:a", source: "night", kind: "proposal", what: "First", why: "posted by a caller", evidence: [], actions: [] }, NOW);
+    postOwnerItem(db, { key: "night:b", source: "night", kind: "proposal", what: "Second", why: "posted by a caller", evidence: [], actions: [] }, NOW);
     const first = planDigest(db, NOW);
-    expect(first).toMatchObject({ send: true, reason: null, keys: ["deferral:dfr_b", "memory_conflict:mc1"] });
+    expect(first).toMatchObject({ send: true, reason: null, keys: ["night:a", "night:b"] });
     expect(first.text).toContain("новых — 2");
-    expect(first.text).toContain("просрочена отсрочка");
-    expect(first.text).not.toContain("Never edit lockfiles");
+    expect(first.text).not.toContain("Prefer short answers");
     // Not acknowledged (the send failed): the next tick offers the same keys again.
     expect(planDigest(db, NOW + HOUR).keys).toEqual(first.keys);
     expect(ackDigest(db, first.keys, NOW)).toBe(2);
@@ -125,6 +93,7 @@ describe("the Telegram digest", () => {
 
   it("is silent in quiet hours (23:00-08:00 Europe/Madrid) and sends what piled up after", () => {
     const db = seeded();
+    postOwnerItem(db, { key: "night:q", source: "night", kind: "proposal", what: "q", why: "posted by a caller", evidence: [], actions: [] }, NOW);
     const madrid = (hour: number, minute = 0, month = 9, day = 22) => Date.UTC(2026, month, day, hour - (month === 9 ? 2 : 1), minute);
     expect(planDigest(db, madrid(23, 30))).toMatchObject({ send: false, reason: "quiet_hours" });
     expect(planDigest(db, madrid(3))).toMatchObject({ send: false, reason: "quiet_hours" });
@@ -142,9 +111,9 @@ describe("the Telegram digest", () => {
     const db = seeded();
     for (let i = 0; i < 9; i++) postOwnerItem(db, { key: `night:p${i}`, source: "night", kind: "proposal", what: `proposal ${i}`, why: "graph change", evidence: [], actions: [] }, NOW);
     const digest = planDigest(db, NOW);
-    expect(digest.keys).toHaveLength(11);
-    expect(digest).toMatchObject({ shown: 6, more: 5 });
-    expect(digest.text).toContain("…и ещё 5.");
+    expect(digest.keys).toHaveLength(9);
+    expect(digest).toMatchObject({ shown: 6, more: 3 });
+    expect(digest.text).toContain("…и ещё 3.");
   });
 
   it("has settings: on/off, quiet hours and time zone, refused when wrong", () => {
@@ -165,12 +134,12 @@ describe("bb lane-pilot waiting", () => {
     const db = seeded();
     const list = runWaitingCli(db, [], NOW);
     expect(list.exitCode).toBe(0);
-    expect(list.stdout).toContain("Ждут владельца: 5. Ничего не блокируется.");
-    expect(list.stdout).toContain("--owner-msg <threadId>#<seq>");
-    expect(list.stdout).toContain("(нужно твоё сообщение)");
+    expect(list.stdout).toContain("Ждут владельца: 1. Ничего не блокируется.");
+    expect(list.stdout).toContain("Prefer short answers");
+    postOwnerItem(db, { key: "night:x", source: "night", kind: "proposal", what: "x", why: "posted by a caller", evidence: [], actions: [] }, NOW);
     const digest = JSON.parse(runWaitingCli(db, ["digest", "--json"], NOW).stdout!);
-    expect(digest.keys).toHaveLength(2);
-    expect(JSON.parse(runWaitingCli(db, ["ack", ...digest.keys], NOW).stdout!)).toEqual({ acknowledged: 2 });
+    expect(digest.keys).toHaveLength(1);
+    expect(JSON.parse(runWaitingCli(db, ["ack", ...digest.keys], NOW).stdout!)).toEqual({ acknowledged: 1 });
     expect(runWaitingCli(db, ["digest"], NOW).stdout).toBe("nothing to send (nothing_new)");
     expect(JSON.parse(runWaitingCli(db, ["config", "quiet=22:00-07:00"], NOW).stdout!).quiet).toBe("22:00-07:00");
     expect(runWaitingCli(db, ["config", "quiet=nope"], NOW)).toMatchObject({ exitCode: 1 });

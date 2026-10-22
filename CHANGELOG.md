@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.1.275
+
+**The owner takes no part in the loop** (owner 2026-10-22: «я вообще не должен участвовать»). Every place that waited for him now decides by itself, on proofs and with a way back:
+
+- **Night policy.** `authorize` reads only the classification and its proofs: a repair with the bench-subset proof and a one-step revert merges, and the checks after the merge (canary, bench, recurrence of the class) revert it. The exam on the owner's past decisions is a measurement, no longer a gate (it degraded every night repair to «waits for the owner»). A held repair (a judge's file, no proof) stays on its branch and is logged; the wall posts nothing to the owner, a wall in the backlog neither.
+- **Rules.** A rule waiting for a place in the full core memory takes the room of the oldest maintainer conventions no accepted brief ever carried (at most five, never a rule, a used convention, the owner's or a probe's record); journal event `made_room`. The 37 rules stuck on `cap_reached` go on trial at the next rule scan.
+- **Deferrals.** Nothing waits for a term: the code's entries get the default of 14 days, the 21 left as `needs_owner_term` get it at start, an agent sets or moves a term with `defer <id> --due <day> --reason <…>` (at most 30 days ahead, history kept); an owner's message still works. The drill and the PM name the agent's two ways out.
+- **Memory conflicts** settle at once: the newer note supersedes the older one; one write with more than 5 pairs settles none (misfiring heuristics).
+- **«Ждут владельца»** holds only what his own words started (a reminder from his message); the morning list and the daily report are a report (rules on trial, red, accepted, deferrals), the self-improvement page explains the measurement and the tiers in the new terms.
+
 ## 0.1.274
 
 **A bench build that loses its host freezes nothing.** Three host errors in a row stop that host's chain, the build writes no set and says which host stopped answering; the warm-up keeps the host's own error text. On 2026-10-22 a plugin reload in the middle of `bench build --set v1` turned the remaining 82 candidates into host errors and froze v1 with 5 tasks. Without `--set` the bench commands take the newest set (`build`: the next free version), not always v1.

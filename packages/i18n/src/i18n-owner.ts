@@ -2,7 +2,7 @@
 export const ownerEn = {
   navOwnerWaiting: "Waiting for you",
   ow_title: "Waiting for you",
-  ow_help: "Everything only you can decide, with why it is yours, the evidence and the exact action. Nothing waits for an answer: the work goes on.",
+  ow_help: "Only what your own words started (a reminder you asked for). Rules, deferrals, memory conflicts and night repairs the system settles itself; the overnight summary below is a report. Nothing waits for an answer.",
   ow_empty: "Nothing waits for you.",
   ow_loading: "Loading…",
   ow_failed: "Could not read the list",
@@ -39,7 +39,7 @@ export const ownerEn = {
 export const ownerRu: { [K in keyof typeof ownerEn]: string } = {
   navOwnerWaiting: "Ждут владельца",
   ow_title: "Ждут владельца",
-  ow_help: "Всё, что может решить только ты: почему это твоё, доказательства и точное действие. Ничто не ждёт ответа: работа идёт дальше.",
+  ow_help: "Только то, что начали твои собственные слова (напоминание, о котором ты просил). Правила, отсрочки, конфликты памяти и ночные ремонты система решает сама; сводка за ночь ниже — отчёт. Ответа никто не ждёт.",
   ow_empty: "Тебя ничто не ждёт.",
   ow_loading: "Загрузка…",
   ow_failed: "Не удалось прочитать список",

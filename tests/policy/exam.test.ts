@@ -135,45 +135,25 @@ describe("exam v2: only decisions made after the freeze score the policy", () =>
     expect(runLiveExam(POLICY, split(20, 5))).toMatchObject({ enough: true, passed: false, accuracy: 0.75 });
   });
 
-  it("the committed split is empty today: night decides nothing alone", () => {
+  it("the committed split is empty today: the exam has nothing to score yet", () => {
     const result = runLiveExam();
     expect(result.passed).toBe(false);
     expect(result.enough).toBe(EXAM_LIVE.items.filter((item) => Date.parse(item.decided_at) > Date.parse(POLICY.frozen_at)).length >= POLICY.exam.min_items);
   });
 });
 
-describe("authorize: night_decides takes effect only on enough unseen decisions at the bar", () => {
-  it("decides when the unseen split passes", () => {
-    expect(authorize(repair, { exam: split(20) })).toMatchObject({ tier: "night_decides", degraded: false });
+describe("authorize: the classification is final, the exam is a measurement (the owner takes no part in the loop)", () => {
+  it("an LP-fault repair with its proofs is night_decides whatever the exam says", () => {
+    for (const exam of [split(0), split(19), split(20, 10), split(40, 0, -3_600_000)]) expect(runLiveExam(POLICY, exam).passed).toBe(false);
+    expect(authorize(repair)).toMatchObject({ requested: "night_decides", tier: "night_decides" });
+    expect(authorize(repair).reason).not.toMatch(/degraded|DECISIONS/);
   });
 
-  it("degrades to night_proposes when the score is under the bar, and says why", () => {
-    const answer = authorize(repair, { exam: split(20, 10) });
-    expect(answer).toMatchObject({ requested: "night_decides", tier: "night_proposes", degraded: true });
-    expect(answer.reason).toMatch(/degraded.*FAILED: 10\/20 = 0\.5/);
-  });
-
-  it("degrades when the split is too small, even at 100 %", () => {
-    const answer = authorize(repair, { exam: split(19) });
-    expect(answer).toMatchObject({ tier: "night_proposes", degraded: true });
-    expect(answer.reason).toMatch(/NOT ENOUGH UNSEEN DECISIONS YET: 19 of 20/);
-  });
-
-  it("degrades when the split is old: a policy edited after reading it has seen it", () => {
-    expect(authorize(repair, { exam: split(40, 0, -3_600_000) })).toMatchObject({ tier: "night_proposes", degraded: true });
-  });
-
-  it("never loosens the other tiers", () => {
-    expect(authorize({ kind: "data_delete" }, { exam: split(20) }).tier).toBe("owner_only");
-    expect(authorize({ kind: "stage_add" }, { exam: split(0) })).toMatchObject({ tier: "night_proposes", degraded: false });
-    expect(authorize({ attrs: { service_tier: "fast" } }, { exam: split(20) }).tier).toBe("owner_only");
-  });
-
-  it("the committed state: the night decides nothing alone until enough decisions exist", () => {
-    expect(classifyChange(repair)).toBe("night_decides");
-    const committed = authorize(repair);
-    expect(committed.degraded).toBe(!runLiveExam().passed);
-    expect(committed.reason).toMatch(/NOT ENOUGH UNSEEN DECISIONS YET|PASSED|FAILED/);
+  it("a missing proof, a judge's file or data stay out of the night's hands", () => {
+    expect(authorize({ ...repair, attrs: { bench_subset_passed: false, auto_revertible: true } }).tier).toBe("night_proposes");
+    expect(authorize({ kind: "data_delete" }).tier).toBe("owner_only");
+    expect(authorize({ kind: "stage_add" }).tier).toBe("night_proposes");
+    expect(authorize({ attrs: { service_tier: "fast" } }).tier).toBe("owner_only");
   });
 });
 
@@ -220,7 +200,7 @@ describe("bb lane-pilot policy-exam", () => {
     const show = await runPolicyCli(deps, "policy", ["show"]);
     expect(JSON.parse(show.stdout!)).toMatchObject({ owner_only: expect.arrayContaining(["judge_gates"]), standing_prohibitions: expect.arrayContaining(["never_acp_opencode"]), exam: { lastStoredRun: { split: "exam-v2" } } });
     const classified = await runPolicyCli(deps, "policy", ["classify", JSON.stringify({ kind: "project_delete" })]);
-    expect(JSON.parse(classified.stdout!)).toMatchObject({ tier: "owner_only", authorized: { tier: "owner_only", degraded: false } });
+    expect(JSON.parse(classified.stdout!)).toMatchObject({ tier: "owner_only", authorized: { tier: "owner_only" } });
     expect((await runPolicyCli(deps, "policy", ["classify"])).exitCode).toBe(1);
     expect((await runPolicyCli(deps, "policy", ["classify", "{bad"])).exitCode).toBe(1);
     expect((await runPolicyCli(deps, "policy", ["exam-add"])).exitCode).toBe(1);

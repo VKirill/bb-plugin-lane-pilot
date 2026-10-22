@@ -152,14 +152,15 @@ describe("the Self-improvement page", () => {
     expect([...seen].filter((key) => !wanted.includes(key))).toEqual([]);
   });
 
-  it("the night policy is read only and says why; the exam is 0 of 20", async () => {
+  it("the night policy is read only and says why; the agreement with the owner's decisions is a measurement, 0 of 20", async () => {
     const slot = await mount({ improvement_view: () => view() });
     await slot.findByTestId("improvement-night");
     fireEvent.click(slot.getByTestId("seg-improvement-policy"));
     const panel = await slot.findByTestId("improvement-policy");
     expect(panel.querySelector("input, select, button[role='switch'], [data-storage-key]")).toBeNull();
     expect(slot.getByTestId("policy-readonly-why").textContent).toContain("Read only on purpose");
-    expect(slot.getByTestId("policy-exam-line").textContent).toBe("Exam: 0 of 20 of your decisions made after the freeze");
+    expect(slot.getByTestId("policy-exam-line").textContent).toBe("Agreement with your past decisions: 0 of 20 made after the freeze");
+    expect(slot.getByTestId("policy-exam").textContent).toContain("A measurement only: the night decides by its proofs");
     expect(slot.getByTestId("policy-exam-bar").getAttribute("aria-valuemax")).toBe("20");
     expect(slot.getByTestId("policy-items-night_decides").textContent).toContain("Repair of a failure that is Lane Pilot's own fault");
     // An entry the dictionary has no title for shows the description the policy file carries.
@@ -175,6 +176,6 @@ describe("the Self-improvement page", () => {
     expect(slot.getByTestId("status-policy").textContent).toContain("0 из 20 решений");
     expect(slot.getByTestId("status-bench").textContent).toContain("24 задач");
     fireEvent.click(slot.getByTestId("seg-improvement-policy"));
-    expect((await slot.findByTestId("policy-exam-line")).textContent).toBe("Экзамен: 0 из 20 ваших решений, принятых после заморозки");
+    expect((await slot.findByTestId("policy-exam-line")).textContent).toBe("Сверка с вашими прошлыми решениями: 0 из 20, принятых после заморозки");
   });
 });

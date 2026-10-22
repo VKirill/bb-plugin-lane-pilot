@@ -86,13 +86,9 @@ describe("acceptance of a night repair", () => {
 });
 
 describe("the policy gate of a night repair", () => {
-  it("an LP-fault repair with the bench proof and a one-step revert is night_decides, but only counts once the exam is passed", () => {
+  it("an LP-fault repair with the bench proof and a one-step revert is night_decides: the night merges it", () => {
     const change = repairChange(["src/rooms/relay/server/relay.ts", "tests/relay.test.ts"], { benchSubset: true, revertible: true });
-    const gate = gateRepair(change);
-    expect(gate.requested).toBe("night_decides");
-    // The committed exam has no unseen decisions yet: the night decides nothing alone.
-    expect(gate).toMatchObject({ tier: "night_proposes", degraded: true, decision: "hold" });
-    expect(gate.reason).toMatch(/NOT ENOUGH UNSEEN DECISIONS/);
+    expect(gateRepair(change)).toMatchObject({ requested: "night_decides", tier: "night_decides", decision: "merge" });
   });
 
   it("without the bench proof it is a proposal; one that touches the judge or the policy is the owner's", () => {

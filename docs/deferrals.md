@@ -22,6 +22,9 @@ sources:
   - tests/deferral-skips.test.ts
 ---
 
+> [!important] Since 2026-10-22 the owner takes no part in the loop
+> No entry waits for a term: one the code opens (seeded skips, plan decisions, a wall in the backlog) gets the default of 14 days, and entries left as `needs_owner_term` got it at the first start of 0.1.275. An agent sets or moves a term with `bb lane-pilot defer <id> --due <day> --reason <what it waits for>` (at most 30 days ahead, the history keeps the earlier term); a message of the owner that names a date still works with `--owner-msg`. An overdue term turns the deploy drill red until an agent closes the entry with evidence or moves it with a reason.
+
 # Register of deferrals
 
 TL;DR: A mandatory check that is put off is written in one table with a term the owner gave in his own message; when the term passes, the deploy drill is red until someone closes the entry with evidence or the owner gives a new date.

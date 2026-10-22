@@ -23,6 +23,9 @@ sources:
   - tests/policy/morning.test.ts
 ---
 
+> [!important] Since 2026-10-22 the owner takes no part in the loop
+> The screen holds only what the owner's own words started (learned items from his messages, e.g. a reminder) and whatever a caller posts to the inbox (nothing in the plugin does now). Waiting rules, deferrals, held memory conflicts and night repairs are the system's and are not listed; the morning list is a report (`src/rooms/policy/morning.ts`). The sections below describe the earlier design where they differ.
+
 # Waiting for the owner
 
 TL;DR: one screen («Ждут владельца», in the System group of the Lane Pilot page), one command (`bb lane-pilot waiting`), one line in the daily report and one short Telegram message hold everything only the owner can decide. Each item says what it is, why it is his, where the evidence is and the exact action. Nothing waits for an answer: the work goes on.

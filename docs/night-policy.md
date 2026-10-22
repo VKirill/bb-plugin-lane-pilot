@@ -8,6 +8,9 @@ confidence: high
 tags: [policy, night, exam, owner]
 ---
 
+> [!important] Since 2026-10-22 the owner takes no part in the loop
+> `authorize` reads only the classification and the proofs of its entry. The exam below is a **measurement** of how close the policy is to the owner's own past decisions; it no longer degrades `night_decides`. A `night_proposes` repair is held on its branch and logged; nothing is sent to the owner. `owner_only` means the night never does it.
+
 # Night policy
 
 SMA block 5 («a clone of the owner's judgment, examined before it may decide») and Maslov's #31448 («graph changes only through your yes»).

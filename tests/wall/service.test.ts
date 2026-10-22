@@ -1,6 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { POLICY } from "../../src/rooms/policy/policy";
-import type { LiveItem } from "../../src/rooms/policy/exam";
 import { createWall, askSha, type RepairView, type WallPorts } from "../../src/rooms/wall/service";
 import { listRepairs, listWalls } from "../../src/rooms/wall/store";
 import { wallSignature } from "../../src/rooms/wall/signature";
@@ -9,15 +7,8 @@ import { HOUR, NOW, freshDb, isReal } from "./helpers";
 const REASON = "internal_error: another writer integration holds the base checkout lpattempt_aaa";
 const KEY = wallSignature("blocked", REASON).classKey;
 
-/** An exam split that passes: 20 owner decisions after the policy's freeze, all as the policy answers. */
-function passingExam(): { items: LiveItem[] } {
-  const at = new Date(Date.parse(POLICY.frozen_at) + 60_000).toISOString();
-  return { items: Array.from({ length: 20 }, (_, index): LiveItem => ({ id: `y_${index.toString(16).padStart(12, "0")}`, source: { type: "owner_message", ref: `thr_${index}#1`, date: at.slice(0, 10) }, decided_at: at,
-    quote: "q", descriptor: { kind: "lp_fault_repair", files: ["src/rooms/relay/server/relay.ts"], attrs: { bench_subset_passed: true, auto_revertible: true } }, expected: "night_decides", strength: "strong", why: "w" })) };
-}
-
 type Fake = ReturnType<typeof fakePorts>;
-function fakePorts(h: ReturnType<typeof freshDb>, patch: { exam?: boolean; version?: { v: string } } = {}) {
+function fakePorts(h: ReturnType<typeof freshDb>, patch: { version?: { v: string } } = {}) {
   const state = {
     version: patch.version ?? { v: "0.1.268" },
     views: new Map<string, RepairView>(),
@@ -35,7 +26,6 @@ function fakePorts(h: ReturnType<typeof freshDb>, patch: { exam?: boolean; versi
     reverted: [] as string[],
     restarted: [] as string[],
     deferrals: new Map<string, { what: string; closed?: string }>(),
-    owner: [] as Array<{ key: string; kind: string }>,
     busy: new Set<string>(),
     time: NOW,
   };
@@ -66,13 +56,11 @@ function fakePorts(h: ReturnType<typeof freshDb>, patch: { exam?: boolean; versi
       compare: async () => state.benchCompare,
       score: async (arm) => state.scores.get(arm) ?? null,
     },
-    exam: async () => ({ exam: patch.exam ? passingExam() : { items: [] } }),
     restart: async (plan) => { state.restarted.push(plan.taskId); return { ok: true, note: "restarted" }; },
     deferrals: {
       open: (input) => { state.deferrals.set(input.id, { what: input.what }); },
       close: (id, evidence) => { const row = state.deferrals.get(id); if (row) row.closed = evidence; },
     },
-    owner: { post: async (item) => { state.owner.push({ key: item.key, kind: item.kind }); } },
   };
   const kv = new Map<string, unknown>();
   const wall = createWall({ db: h.db, kv: { get: async (key) => kv.get(key) ?? null, set: async (key, value) => { kv.set(key, value); } }, ports, log: () => undefined, hubDb: "/hub/data.db" });
@@ -107,7 +95,7 @@ describe("a dry-run night", () => {
 });
 
 describe("the real night and the life of one repair", () => {
-  it("queues a repair with the proof, the sweep and the cap; the watcher's tick takes it; a fixed branch is HELD while the exam is not passed", async () => {
+  it("queues a repair with the proof, the sweep and the cap; the watcher's tick takes it; a fixed branch that touches a judge is HELD and nobody is asked", async () => {
     const h = freshDb(); seedNight(h);
     const { wall, state } = fakePorts(h);
     const summary = await wall.runNight({ now: NOW });
@@ -127,32 +115,32 @@ describe("the real night and the life of one repair", () => {
     expect(wall.nextAssignment()).toBeNull();
     state.views.set(assignment.signature, { threadId: "thr_fix", verdict: "fixed", outcome: null, branch: "lane/self-repair-1", worktreePath: "/wt/x", spawnedAt: NOW });
     state.reports.set("thr_fix", verdictLine("fixed"));
+    state.changed = ["src/rooms/relay/server/relay.ts", "src/rooms/tasks/plan-fact.ts"];
     await wall.advance(NOW + 2 * HOUR);
     const decided = await wall.mergeGate(assignment.signature, { threadId: "thr_fix" });
     expect(decided).toBe("hold");
     const row = listRepairs(h.db)[0]!;
     expect(row.state).toBe("held");
     expect(row.outcome).toMatch(/fixed; 2 sites listed; test tests\/x\.test\.ts/);
-    expect(row.policy).toMatchObject({ decision: "hold", tier: "night_proposes", degraded: true });
-    expect(state.owner).toEqual([{ key: `wall-repair:${row.id}`, kind: "repair_proposal" }]);
+    expect(row.policy).toMatchObject({ decision: "hold", tier: "owner_only" });
     expect(await wall.mergeGate(assignment.signature, { threadId: "thr_fix" })).toBe("hold");   // stored, not decided again
     state.time = NOW + 8 * 24 * HOUR;
     expect(await wall.mergeGate(assignment.signature, { threadId: "thr_fix" })).toBe("release");   // a week on its branch with nobody taking it: released as a patch
   });
 
-  it("with the exam passed the night merges, the train ships, the checks go green and the repair is accepted; the failed attempts are planned for a re-run", async () => {
+  it("the night merges a repair with its proofs, the train ships, the checks go green and the repair is accepted; the failed attempts are planned for a re-run", async () => {
     const h = freshDb(); seedNight(h);
     // A failed attempt of the class in a sandbox project with its receipts: it is restarted from its earliest affected stage.
     h.attempt("blocked", REASON, NOW - 2 * HOUR, { id: "sand1", task: "ts1", run: "run_sand" });
     for (const stage of ["pm-read", "plan-critique", "specialist-review"]) h.receipt("ts1", stage, "passed", "i", "run_sand");
     h.receipt("ts1", "writer-agent", "failed", "i", "run_sand");
-    const { wall, state } = fakePorts(h, { exam: true });
+    const { wall, state } = fakePorts(h);
     await wall.runNight({ now: NOW });
     const assignment = wall.nextAssignment()!;
     wall.started(assignment.id, { threadId: "thr_fix", branch: "lane/self-repair-1", at: NOW + 1000 });
     state.views.set(assignment.signature, { threadId: "thr_fix", verdict: "fixed", outcome: null, branch: "lane/self-repair-1", worktreePath: "/wt/x", spawnedAt: NOW });
     expect(await wall.mergeGate(assignment.signature, { threadId: "thr_fix" })).toBe("merge");
-    expect(listRepairs(h.db)[0]!.policy).toMatchObject({ decision: "merge", tier: "night_decides", degraded: false, benchEnforcedAfterDeploy: true });
+    expect(listRepairs(h.db)[0]!.policy).toMatchObject({ decision: "merge", tier: "night_decides", benchEnforcedAfterDeploy: true });
     wall.settled(assignment.signature, { outcome: "merged abcdef123456", verdict: "fixed", commit: "abcdef123456" });
     expect(listRepairs(h.db)[0]).toMatchObject({ state: "merged", mergedCommit: "abcdef123456" });
 
@@ -185,7 +173,7 @@ describe("the real night and the life of one repair", () => {
 
   it("a red canary reverts the merge in code, the class stays open and the round counts as failed", async () => {
     const h = freshDb(); seedNight(h);
-    const { wall, state } = fakePorts(h, { exam: true });
+    const { wall, state } = fakePorts(h);
     await wall.runNight({ now: NOW });
     const assignment = wall.nextAssignment()!;
     wall.started(assignment.id, { threadId: "thr_fix", branch: "b", at: NOW });
@@ -204,7 +192,7 @@ describe("the real night and the life of one repair", () => {
 
   it("a red drill is the train's rollback: the plugin runs the old version again, the class stays open", async () => {
     const h = freshDb(); seedNight(h);
-    const { wall, state } = fakePorts(h, { exam: true });
+    const { wall, state } = fakePorts(h);
     await wall.runNight({ now: NOW });
     const assignment = wall.nextAssignment()!;
     wall.started(assignment.id, { threadId: "thr_fix", branch: "b", at: NOW });
@@ -272,8 +260,7 @@ describe("the loop guard on a class: two rounds, the hunt, one informed round, t
     expect(walls[0]!.deferralId).toMatch(/^dfr_wall_/);
     expect((walls[0]!.analysis as { text: string }).text).toMatch(/Full analysis/);
     expect(state.deferrals.size).toBe(1);
-    expect(state.owner.some((row) => row.kind === "backlog")).toBe(true);
-    // A fifth night picks nothing for it: it waits for a person.
+    // A fifth night picks nothing for it: the backlog keeps it with its analysis.
     flood(4);
     const fifth = await wall.runNight({ now: T(4) });
     expect(fifth.picked).toEqual([]);

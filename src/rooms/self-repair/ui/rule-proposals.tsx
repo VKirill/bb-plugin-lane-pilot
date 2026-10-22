@@ -26,7 +26,7 @@ type Triage = { total: number; byOrigin: Record<string, number>; errors: number;
 type Analyzer = { providerId: string; model: string; reasoningLevel: string; serviceTier: "default" | "fast" | null };
 type Listed = { proposals: Proposal[]; memory: { enabled: boolean; inject: boolean }; triage: Triage; scan: Scan; analyzer: Analyzer | null; events: RuleEventRow[] };
 const EVENT_LABEL: Record<string, I18nKey> = {
-  adopted: "rulesEvent_adopted", confirmed: "rulesEvent_confirmed", revised: "rulesEvent_revised", retired: "rulesEvent_retired", cap_reached: "rulesEvent_cap_reached",
+  adopted: "rulesEvent_adopted", confirmed: "rulesEvent_confirmed", revised: "rulesEvent_revised", retired: "rulesEvent_retired", cap_reached: "rulesEvent_cap_reached", made_room: "rulesEvent_made_room",
   owner_accepted: "rulesEvent_owner_accepted", owner_rejected: "rulesEvent_owner_rejected", owner_revoked: "rulesEvent_owner_revoked",
 };
 
