@@ -6,6 +6,7 @@ import {
   setRuleAudience,
   upsertLessonProposal,
   ruleFormMigrations,
+  ruleMechanismMigrations,
   acceptedRules, collectLessonSources, decideRuleProposal, getRuleProposal, lessonSignature, listRuleProposals,
   normalizeLessonText, repeatedLessons, reviseRuleProposal, ruleMigrations, ruleProposalId, upsertRuleProposals,
   type LessonSource,
@@ -20,7 +21,7 @@ function openDb() {
       provider_id TEXT, model TEXT, result_json TEXT, reason TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY(run_id, task_id, stage_id));
     CREATE TABLE lane_pilot_memory (id TEXT NOT NULL, project_id TEXT NOT NULL, UNIQUE(project_id,id));
   `);
-  for (const statement of [...ruleMigrations, ...ruleTrialMigrations, ...ruleAudienceMigrations, ...ruleFormMigrations]) db.exec(statement);
+  for (const statement of [...ruleMigrations, ...ruleTrialMigrations, ...ruleAudienceMigrations, ...ruleFormMigrations, ...ruleMechanismMigrations]) db.exec(statement);
   return db;
 }
 
@@ -201,5 +202,18 @@ describe("rule scope and trial", () => {
     const many = ruleTrialStatsMany(db, "p", [{ id: "rule-x", since: 5 }, { id: "rule-y", since: 0 }]);
     expect(many.get("rule-x")).toEqual(stats);
     expect(many.get("rule-y")).toEqual({ applied: 0, appliedAccepted: 0, recurrences: [], lastAppliedAt: null });
+  });
+});
+
+describe("a lesson that comes back for a rule a mechanism now enforces", () => {
+  it("counts as a repeat of the retired rule, not as a new proposal", () => {
+    const db = new Database(":memory:");
+    for (const statement of [...ruleMigrations, ...ruleTrialMigrations, ...ruleAudienceMigrations, ...ruleFormMigrations, ...ruleMechanismMigrations]) db.exec(statement);
+    const rule = "Every verification command that pipes test output must set pipefail so a failing test fails the check";
+    const first = upsertLessonProposal(db, "p", { rule });
+    db.prepare("UPDATE lane_pilot_rule_proposal SET state='revoked', mechanized_by='lint:verification_masked_exit' WHERE id=?").run(first.id);
+    const again = upsertLessonProposal(db, "p", { rule });
+    expect(again).toEqual({ id: first.id, created: false, repeatOf: first.id });
+    expect((db.prepare("SELECT count(*) n FROM lane_pilot_rule_proposal").get() as { n: number }).n).toBe(1);
   });
 });

@@ -339,7 +339,8 @@ export function upsertLessonProposal(db: RulesDatabase, projectId: string, input
   { id: string; created: boolean; repeatOf: string | null } {
   const rule = clip(input.rule, 600);
   const words = ruleWords(rule);
-  const live = db.prepare("SELECT id, rule FROM lane_pilot_rule_proposal WHERE project_id=? AND state IN ('proposed','accepted')").all(projectId) as Array<{ id: string; rule: string }>;
+  // A rule a mechanism now enforces (mechanized_by) left the brief on purpose: its lesson coming back counts as a repeat of it, not as a new proposal.
+  const live = db.prepare("SELECT id, rule FROM lane_pilot_rule_proposal WHERE project_id=? AND (state IN ('proposed','accepted') OR mechanized_by IS NOT NULL)").all(projectId) as Array<{ id: string; rule: string }>;
   const twin = live.map((row) => ({ row, score: similarity(words, ruleWords(row.rule)) })).sort((a, b) => b.score - a.score)[0];
   if (twin && twin.score >= LESSON_SAME_RULE) {
     db.prepare("UPDATE lane_pilot_rule_proposal SET occurrences=occurrences+1, last_seen_at=?, updated_at=? WHERE project_id=? AND id=?").run(now, now, projectId, twin.row.id);
