@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.266
+
+**SMA integration, wave 2**: plan→fact table from the writer with a blind code check against the diff (new stage `plan-fact`, record mode by default), the acceptance card (contract, stage receipts by proof kind, «not run ≠ no findings», cost with not_measured), `critic.code.default_for_risk` (default off; the bench will decide), `bb lane-pilot reverify` / `revert` / `changes`, run pause at a safe boundary, stop = confirmed exit and work returned, trusted tooling in every task's never_touch, the night policy v2 (owner's standing prohibitions with provenance, an exam that grows from new owner decisions, the RHI stop rule), and the Lane Stack 1.66.2 pin (the shell guard judges the program that really runs).
+
 **SMA integration, wave 2: rolling work back (P2-1, P2-2, P2-4, P2-8).** Walls 3 and 4 and rule 9 of Maslov's process: «stopped» has two conditions, every job rolls back to a named state, a stop is a confirmed exit and the work returned. All of it is protection from mistakes (no login, no form). Docs: `docs/rollback.md`.
 - **The record names «roll back to what».** New tables `lane_pilot_attempt_change` (per attempt: the commit its worktree started from, main before the merge, the merge commit, the changed files with deletions as `D`, what the worktree held at the stop) and `lane_pilot_task_receipt` (append only), the last two migrations. A worktree Lane Pilot makes returns its start commit; a merge returns main's HEAD before it and its changed files; a failed attempt's worktree is described before it goes. Work accepted before the record is found in main by its `Lane-Pilot-Attempt` trailer and recorded on first use. `bb lane-pilot changes <task|attempt>` (RPC `task_changes`) prints it.
 - **`bb lane-pilot reverify <task|attempt>`** (RPC `task_reverify`): the task's `verification[]` again on a fresh worktree of the merged change (the recorded base plus the accepted change), item by item, exit 0 only when all pass, a receipt kept. A task reverted since says so.
