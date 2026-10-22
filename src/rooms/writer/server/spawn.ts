@@ -27,6 +27,7 @@ import { planDigest, writerBriefInput, writerBriefSegments, type TaskFolderBrief
 import { areaHistoryText, loadArea } from "./sticky";
 import { taskFolderRel } from "../../verification";
 import { resolve } from "node:path";
+import { listReturns, renderReturnNotes } from "../../stage-return";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 import { runOnHost } from "@lane-pilot/host-calls";
@@ -440,9 +441,13 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         ? "fallback"  // the reason stays in the trace; the writer is only told it is the fallback
         : undefined,writerAgent,input.pmReadContext ?? "",briefRulesText,input.previousAttempt ?? "",taskFolder,live);
       // A fallback that continues the interrupted session reads its handoff right after its role line.
-      const briefSegments = input.continuation
+      const handoffSegments = input.continuation
         ? [contextSegments[0]!,{text:input.continuation.brief,hidden:true},...contextSegments.slice(1)]
         : contextSegments;
+      // A task a person sent back to an earlier stage with a note (src/rooms/stage-return) carries every such note in its brief.
+      const returnNotes = renderReturnNotes(listReturns(db, input.runId, input.taskId));
+      const notesAt = input.continuation ? 2 : 1;
+      const briefSegments = returnNotes ? [...handoffSegments.slice(0, notesAt), {text:returnNotes,hidden:true}, ...handoffSegments.slice(notesAt)] : handoffSegments;
       const writerBrief = briefSegments.map(segment=>segment.text).join("\n\n");
       const existingTrace = getReasoningTrace(db, input.attemptId);
       if (existingTrace) {

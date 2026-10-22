@@ -106,3 +106,22 @@ export function affectedFrom(input: {
   const judgeOnly = stale.every((row) => JUDGE_STAGES.includes(row.stage));
   return { from, reused: TASK_STAGE_ORDER.slice(0, firstIndex) as TaskStage[], stale, mode: judgeOnly ? "rejudge" : "rerun" };
 }
+
+/**
+ * The stages a person can send a task back to (atlas delta D0-2: «из 4 вернуться в 1, из 5 во 2»), and the first task stage each one re-opens.
+ * discussion: the whole plan is talked over again, so every stage reads it again; planning: the plan is re-checked, the facts read from the
+ * code (pm-read) still hold; writer: the plan stands, the writer works again and everything that judges its work is stale.
+ */
+export const RETURN_STAGES = ["discussion", "planning", "writer"] as const;
+export type ReturnStage = (typeof RETURN_STAGES)[number];
+export const RETURN_FROM: Record<ReturnStage, TaskStage> = { discussion: "pm-read", planning: "plan-critique", writer: "writer-agent" };
+
+/**
+ * Which receipts a return to `to` leaves valid and which it makes stale. The stage returned to and every later one are stale (a later stage reads
+ * the output of an earlier one); a receipt before it is reused, unless it did not pass, which is stale on its own account.
+ */
+export function returnAffected(receipts: readonly ReceiptSummary[], to: ReturnStage): Affected {
+  const result = affectedFrom({ receipts, failedStage: RETURN_FROM[to] });
+  const returned = RETURN_FROM[to];
+  return { ...result, stale: result.stale.map((row) => (row.stage === returned ? { ...row, why: `returned to ${to}` } : row)) };
+}

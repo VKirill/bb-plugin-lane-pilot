@@ -27,6 +27,7 @@ import { rollbackMigrations } from "../rollback";
 import { benchMigrations } from "../bench";
 import { ownerWaitingMigrations } from "../owner-waiting";
 import { baselineMigrations } from "../baseline";
+import { stageReturnMigrations } from "../stage-return";
 import { wallDeferralKindMigrations, wallMigrations } from "../wall";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
@@ -375,6 +376,8 @@ export const migrations = [
   // The wall journal and the night loop (src/rooms/wall); the deferral register learns the kind `wall`.
   ...wallMigrations,
   ...wallDeferralKindMigrations,
+  // Return to an earlier stage with added context (src/rooms/stage-return).
+  ...stageReturnMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
