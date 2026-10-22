@@ -225,9 +225,10 @@ describe("the CLI", () => {
 });
 
 describe("the plugin", () => {
-  it("keeps the register migrations last, seeds on start and serves the three RPCs through the SDK", async () => {
-    expect(migrations.at(-2)).toMatch(/CREATE TABLE lane_pilot_deferral/);
-    expect(migrations.at(-1)).toMatch(/CREATE INDEX lane_pilot_deferral_state/);
+  it("keeps the register migrations in order, seeds on start and serves the three RPCs through the SDK", async () => {
+    const table = migrations.findIndex((statement) => /CREATE TABLE lane_pilot_deferral/.test(statement));
+    expect(table).toBeGreaterThan(0);
+    expect(migrations[table + 1]).toMatch(/CREATE INDEX lane_pilot_deferral_state/);
 
     const threadEvents: Array<Record<string, unknown>> = [];
     const { bb, harness } = createFakePluginHost({

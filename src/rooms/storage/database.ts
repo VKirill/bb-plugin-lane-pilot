@@ -336,8 +336,23 @@ export const migrations = [
   `UPDATE lane_pilot_project_settings SET value=replace(value,'"acp-opencode"','"opencode2"'), version=version+1,
     updated_at=CAST(strftime('%s','now') AS INTEGER)*1000
     WHERE value LIKE '%"acp-opencode"%' AND key NOT LIKE '%lastResult%'`,
-  // The register of deferrals with the owner's terms (src/rooms/deferral). Always last.
+  // The register of deferrals with the owner's terms (src/rooms/deferral).
   ...deferralMigrations,
+  // SMA block 4: the memory probe (src/rooms/memory-probe/server/memory-probe.ts): one row per memory delivery path per run: did the token
+  // planted through the write door reach what the agent of that path receives, and did an unrelated query pull nothing of ours.
+  `CREATE TABLE lane_pilot_memory_probe (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    project_id TEXT NOT NULL,
+    token TEXT NOT NULL,
+    path TEXT NOT NULL,
+    found INTEGER NOT NULL,
+    negative_ok INTEGER,
+    latency_ms INTEGER NOT NULL,
+    lp_version TEXT NOT NULL,
+    detail TEXT
+  )`,
+  `CREATE INDEX lane_pilot_memory_probe_at ON lane_pilot_memory_probe(at)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

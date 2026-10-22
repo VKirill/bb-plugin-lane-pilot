@@ -16,6 +16,7 @@ import { schedulesRpc } from "../../schedule/server";
 import { councilRpc } from "../../council/server";
 import { selfRepairRpc } from "../../self-repair/server";
 import { canaryRpc } from "../../stability/server";
+import { memoryProbeRpc } from "./rpc-memory-probe";
 import { harnessRpc } from "../../harness/server";
 import { deferralRpc } from "../../deferral/server";
 import { sessionMemoryRpc } from "../../memory/server";
@@ -45,6 +46,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...councilRpc(ctx.db, services.council),
     ...selfRepairRpc(ctx),
     ...canaryRpc(services.canary),
+    ...memoryProbeRpc(services),
     ...harnessRpc(services.harness),
     ...deferralRpc(services.deferrals),
     ...sessionMemoryRpc(ctx, services),

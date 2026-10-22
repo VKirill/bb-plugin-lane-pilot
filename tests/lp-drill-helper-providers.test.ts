@@ -65,8 +65,8 @@ describe("the drill's helper per provider", () => {
     expect(verdict!.problems[0]).toMatch(/codex \(g\): a helper did not start: boom/);
   });
 
-  it("is part of --quick, between the guard check and the three-task scenario", () => {
+  it("is part of --quick, after the guard check and the memory delivery check, before the three-task scenario", () => {
     const quick = spawnSync("bash", [script, "--quick", "--dry-run"], { encoding: "utf8", timeout: 30_000, env: { ...process.env, BB_CLI: "/nonexistent/bb" } });
-    expect(quick.stdout).toContain("scenarios: guard_hash, deferrals, helper_providers, parallel3");
+    expect(quick.stdout).toContain("scenarios: guard_hash, deferrals, memory_paths, helper_providers, parallel3");
   });
 });

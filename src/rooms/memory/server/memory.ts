@@ -3,7 +3,8 @@ import { claimStageSpawn, getRun, getTask, listStageReceipts, searchMemoryRecord
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { resolveStageWriterSelection } from "../../writer";
 import { sha256 } from "../../tasks";
-import { memoryContext, memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../memory";
+import { memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../memory";
+import { pmMemoryContext } from "./memory-mix";
 import { boundedAgentName } from "../../critique";
 import { MemoryChildSnapshot, childResultObject, memoryChildSnapshot, spawnRefused } from "../../runs/server";
 import { compactAcceptedResult } from "../../tasks/server";
@@ -224,8 +225,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       "memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget",
     ].map((key)=>[key,configuredSetting(settings,key)])));
     if(!memorySettings.enabled) return {runId:args.runId,state:"skipped",reason:"memory_disabled"};
-    const records=searchMemoryRecords(db,args.projectId,args.query,100,memorySettings.searchEngine,memorySettings.audience,memorySettings.personalBot);
-    const selected=memoryContext(records,args.query,memorySettings.contextBudget);
+    const selected=pmMemoryContext(db,args.projectId,memorySettings,args.query);
     return {runId:args.runId,state:"passed",audience:memorySettings.audience,personalBot:memorySettings.personalBot,querySha256:sha256(args.query),
       recordIds:selected.records.map((item)=>item.id),estimatedTokens:selected.estimatedTokens,context:selected.text};
   }

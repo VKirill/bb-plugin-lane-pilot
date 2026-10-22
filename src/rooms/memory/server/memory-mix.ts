@@ -1,4 +1,4 @@
-import { MEMORY_SETTING_KEYS, REVIEWER_CONCEPTS, estimateTokens, listMemory, parseMemorySettings, searchMemoryRecords, type MemorySearchEngine } from "@lane-pilot/memory-core";
+import { MEMORY_SETTING_KEYS, REVIEWER_CONCEPTS, estimateTokens, listMemory, memoryContext, parseMemorySettings, searchMemoryRecords, type MemorySearchEngine, type MemorySettings } from "@lane-pilot/memory-core";
 import type { TaskV2 } from "../../contracts";
 import { getRunSettingsScopes, loadProjectSettings, type LanePilotDatabase } from "../../storage";
 import { memoryLine, reviewerMemoryPicks, writerMemory, writerMemoryPicks } from "../../writer";
@@ -49,4 +49,10 @@ export function reviewerMemoryFor(db: LanePilotDatabase, projectId: string, runI
   } catch {
     return "";
   }
+}
+
+/** What the PM tool `lane_pilot_memory {action:"context"}` returns for a query: the project's records ranked for it, within the context budget. Also what the memory probe reads. */
+export function pmMemoryContext(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string) {
+  const records = searchMemoryRecords(db, projectId, query, 100, memory.searchEngine, memory.audience, memory.personalBot);
+  return memoryContext(records, query, memory.contextBudget);
 }

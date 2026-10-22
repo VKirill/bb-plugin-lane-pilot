@@ -9,6 +9,7 @@ import { createWorldService } from "./src/rooms/world/server";
 import { createDocsNightly } from "./src/rooms/docs/server";
 import { mountNativeWiring } from "./src/rooms/core/server/native-wiring";
 import { createProbes } from "./src/rooms/stability/server";
+import { createMemoryProbe } from "./src/rooms/memory-probe/server";
 import { createReconcile } from "./src/rooms/stability/server";
 import { createStability } from "./src/rooms/stability/server";
 import { adoptWaitingRules } from "./src/rooms/self-repair/server";
@@ -91,6 +92,7 @@ export default async function plugin(bb: BbPluginApi) {
     { council: createCouncil(ctx) },
     { world: createWorldService(ctx, { projectName: (projectId) => bb.sdk.projects.get({ projectId }).then((p) => (typeof p?.name === "string" ? p.name : null), () => null) }) },
     { canary: createCanary(ctx) },
+    { memoryProbe: createMemoryProbe(ctx, services) },
     { ruleScan: createRuleScan(ctx, services) },
     { harness: createHarness(ctx, services) },
     { deferrals },
