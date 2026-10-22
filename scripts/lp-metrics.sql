@@ -41,6 +41,12 @@ select count(*) attempts, sum(state='accepted') accepted, round(100.0*sum(state=
   count(distinct project) projects
 from lp_attempt_class where scope='sandbox' and created_at > (select ms from lp_cut);
 
+-- Writer token usage: how many attempts have measured tokens. Where the provider reports none the cost is «not measured», not zero
+-- (bb lane-pilot metrics <project-id> gives tokens and list-price USD per attempt).
+select '== Writer token usage, real projects on this version: measured vs not measured' as report;
+select provider, count(*) attempts, sum(measured) measured, sum(1 - measured) not_measured
+from lp_attempt_usage where scope='real' and cur=1 and created_at > (select ms from lp_cut) group by provider order by 2 desc;
+
 -- What the Jev output guard (J-11) costs: calls, characters sent to the Jev API, tokens and latency, by day and mode.
 select '== Jev output guard (J-11) calls in the window' as report;
 select date(at / 1000, 'unixepoch') day, mode, count(*) calls, sum(status != 'ok') failed, sum(input_chars) chars_sent,

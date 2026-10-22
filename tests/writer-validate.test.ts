@@ -94,7 +94,7 @@ const task: TaskV2 = {
   acceptance:["never"],
   verify:"tests",
   verification:[
-    { command:"true", cwd:config.writerWorkspacePath, timeout_sec:5 },
+    { command:"test -d .", cwd:config.writerWorkspacePath, timeout_sec:5 },
     { command:"false", cwd:config.writerWorkspacePath, timeout_sec:5 },
   ],
 };
@@ -842,7 +842,7 @@ describe("BB writer validation on the server path", () => {
             ++snapshots === 1 || snapshots === 3 ? [] : [{ path:"hello.txt", sha256:snapshots === 2 ? "attempt-1" : "attempt-2" }],
           ), stderr:"" };
         }
-        if (command === "true") return { hostId:"host-test", exitCode:0, stdout:"", stderr:"" };
+        if (command === "test -d .") return { hostId:"host-test", exitCode:0, stdout:"", stderr:"" };
         if (command === "false") return { hostId:"host-test", exitCode:1, stdout:"", stderr:"boom" };
         return { hostId:"host-test", exitCode:0, stdout:"", stderr:"" };
       },
@@ -865,8 +865,8 @@ describe("BB writer validation on the server path", () => {
     // A failing check runs once more before it counts as failed. One writer session: the failure goes back to the same
     // writer as feedback turns (this fake's diff changes on turns 1-3, then repeats with the same failure on turn 4,
     // which ends the session), so the three commands run four times instead of twice.
-    expect(ran.filter((command) => command === "true" || command === "false")).toEqual(
-      Array.from({ length:4 }, () => ["true", "false", "false"]).flat());
+    expect(ran.filter((command) => command === "test -d ." || command === "false")).toEqual(
+      Array.from({ length:4 }, () => ["test -d .", "false", "false"]).flat());
     expect(maxActiveVerifications).toBe(2);
     expect(JSON.parse(getRun(db,"run-v")!.run_policy_json)).toMatchObject({pools:{verification:2}});
     expect(result.state).toBe("blocked");

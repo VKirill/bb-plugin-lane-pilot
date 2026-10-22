@@ -3,3 +3,4 @@
 export { createProviderUsage, usageHoldReason, usageSkipPercent } from "./provider-usage";
 export { tokenUsageRpc } from "./rpc/token-usage";
 export { billedFrom, parseBreakdown, threadUsage } from "./token-usage";
+export { attemptMetrics, renderAttemptMetrics } from "./attempt-metrics";

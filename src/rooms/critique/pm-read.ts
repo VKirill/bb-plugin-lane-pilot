@@ -26,7 +26,8 @@ export function parsePmReadSettings(input:Record<string,unknown>):PmReadSettings
 
 // Not strict: pm-read only hands context to plan critique, and a helper's stray top-level key (Haiku's `__note`,
 // 2026-10-15) blocked a whole task. The three fields are still checked; any other key is dropped unread.
-export const pmReadResultSchema=z.object({summary:clipped(8000),keyFacts:z.array(clipped(500)).max(30),openQuestions:z.array(clipped(500)).max(20)});
+// The code check that makes this stage's proof (STAGE_PROOF): a blank summary is no read, so the stage fails instead of passing on whitespace.
+export const pmReadResultSchema=z.object({summary:clipped(8000).refine((text)=>String(text).trim().length>0,"pm_read_summary_blank"),keyFacts:z.array(clipped(500)).max(30),openQuestions:z.array(clipped(500)).max(20)});
 export type PmReadResult=z.infer<typeof pmReadResultSchema>;
 
 export function pmReadPrompt(input:{agent:string;packet:string;task:unknown}):string {

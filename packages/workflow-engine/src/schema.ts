@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { stageProofSchema } from "@lane-pilot/contracts";
 
 /**
  * The workflow file format (W1). A workflow is a graph of typed nodes; every node declares the fields of its output, and a
@@ -90,6 +91,8 @@ const nodeBase = {
   produces: z.array(producesSchema).max(8).optional(),
   /** Checkable conditions over the step's own output (`plan.task_count >= 1`, same language as `when`); one that is false makes the step not done. */
   gates: z.array(z.string().min(1).max(300)).max(10).optional(),
+  /** What decides the step is done: a code predicate, or `advisory` for a model's opinion (the built-in task pipeline declares it for every stage). */
+  proof: stageProofSchema.optional(),
   title: bilingual.optional(),
   label: z.string().max(80).optional(),
   /** Where the text of this node comes from (THIRD_PARTY_NOTICES). */
@@ -142,6 +145,8 @@ const lpTaskBody = {
   owns_paths: z.array(z.string().min(1)).max(50).default([]),
   /** Stage ids the code task runs inside (writer, checks, critic, merge ...). Locked: not edited in an editor. */
   stages: z.array(z.string().min(1).max(64)).max(30).default([]),
+  /** The proof of each of the stages above, by stage id. */
+  stage_proof: z.record(z.string().min(1).max(64), stageProofSchema).optional(),
 };
 const actionBody = {
   action: z.string().regex(/^[a-z][a-z0-9_.:-]{0,63}$/).optional(),
@@ -377,7 +382,7 @@ function fieldList(value: unknown, defaultRequired: boolean): unknown {
 
 const bilingualOf = (value: unknown): unknown => (typeof value === "string" ? { en: value, ru: value } : value);
 
-const ACTION_KEYS = new Set(["id", "type", "title", "label", "src", "consumes", "produces", "gates", "out", "output", "uses", "maxVisits", "maxAttempts", "timeoutSec", "guards", "applicable_modes", "skip_when", "skip_out", "with", "reads",
+const ACTION_KEYS = new Set(["id", "type", "title", "label", "src", "consumes", "produces", "gates", "proof", "out", "output", "uses", "maxVisits", "maxAttempts", "timeoutSec", "guards", "applicable_modes", "skip_when", "skip_out", "with", "reads",
   "model_preset", "profile", "position", "action", "params", "map", "test_mode"]);
 
 function normalizeNode(node: unknown, isChild = false): unknown {
