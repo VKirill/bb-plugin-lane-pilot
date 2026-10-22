@@ -264,7 +264,8 @@ export function logIncidents(text: string, since: number): Incident[] {
   return out;
 }
 
-function readTail(path: string, bytes: number): string {
+/** The last `bytes` of a file (the plugin log); also the wall journal's reader, since only this file may read the hub's disk. */
+export function readTail(path: string, bytes: number): string {
   const fd = openSync(path, "r");
   try {
     const size = fstatSync(fd).size;

@@ -1,4 +1,3 @@
-import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { writerExecutionSelection } from "@lane-pilot/models";
@@ -8,7 +7,7 @@ import type { ServerCore, Services } from "../../core/server";
 import { createAttempt, getAttempt } from "../../storage";
 import { reopenWriterStages } from "../../runs/server";
 import { sendServiceMessage } from "../../relay/server";
-import { CONFIG_KEY as SELF_REPAIR_CONFIG_KEY, SELF_REPAIR_DEFAULTS, VERSION, readRepairRecord, setRepairHooks } from "../../self-repair/server";
+import { CONFIG_KEY as SELF_REPAIR_CONFIG_KEY, SELF_REPAIR_DEFAULTS, VERSION, readRepairRecord, readTail, setRepairHooks } from "../../self-repair/server";
 import type { SelfRepairConfig } from "../../self-repair/server";
 import { DRILL_KEY, SANDBOX_PROJECT_ID, isDrillTask, isSandboxProjectName } from "../../stability/server";
 import type { DrillOutcome } from "../../stability/server";
@@ -23,17 +22,6 @@ const LOG_TAIL_BYTES = 1_000_000;
 const READER_WAIT_MS = 25 * 60_000;
 /** A reader thread that reports no usage still cost something: its prompt and answer, read a few times. */
 const estimateTokens = (...texts: string[]): number => Math.ceil(texts.reduce((sum, text) => sum + text.length, 0) / 3) * 3;
-
-function readTail(path: string, bytes: number): string {
-  const fd = openSync(path, "r");
-  try {
-    const size = fstatSync(fd).size;
-    const length = Math.min(size, bytes);
-    const buffer = Buffer.alloc(length);
-    readSync(fd, buffer, 0, length, size - length);
-    return buffer.toString("utf8");
-  } finally { closeSync(fd); }
-}
 
 /** The night loop inside the plugin: the real ports, the self-repair hooks, the two schedules. */
 export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
