@@ -725,6 +725,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             attemptId:input.attemptId, writerThreadId };
         }
         integration = { status:merged.status, commit:merged.commit, conflicts:[], ...(merged.rebased ? { rebased:true } : {}) };
+        // The base, the merge commit and the files it changed (deletions included) go on the attempt's record (SMA wall 4).
+        services.rollback?.noteMerge(input.attemptId, merged);
         if (merged.status === "merged") {
           const gate = await gateFor(input.projectId, input.runId, input.config.hostId, basePath);
           if (gate) {

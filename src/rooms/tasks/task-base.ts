@@ -1,6 +1,7 @@
 import { isAbsolute, relative, resolve } from "node:path";
 import type { TaskV2 } from "../contracts";
 import { isOutputPath } from "./validate-output";
+import { applyTrustedTooling } from "./trusted-tooling";
 
 /**
  * A task's base is the checkout it works in: the run's folder, or a git repository inside it. A run folder without git that
@@ -89,8 +90,9 @@ export function rerootTask(task: TaskV2, prefix: string): { task: TaskV2; outsid
     return rest ? [rest] : [];
   });
   return {
-    task: { ...task, project_cwd: base, owns_paths: owns, expected_outputs: outputs, never_touch: never, read_first: reads,
-      verification: task.verification.map((check) => ({ ...check, cwd: resolve(task.project_cwd, check.cwd) })) },
+    // The repository's own root is where hooks, CI and .claude live now, so the trusted tooling is added again relative to it.
+    task: applyTrustedTooling({ ...task, project_cwd: base, owns_paths: owns, expected_outputs: outputs, never_touch: never, read_first: reads,
+      verification: task.verification.map((check) => ({ ...check, cwd: resolve(task.project_cwd, check.cwd) })) }),
     outsideReads,
   };
 }

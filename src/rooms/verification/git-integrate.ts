@@ -22,7 +22,23 @@ export type GitIntegration = {
   rebuilt?:Array<{dir:string;ok:boolean;detail:string|null}>;
   /** With «conflict» and no files: the task's checks that went red on the attempt replayed on the moved main. */
   checks?:ReplayCheck[];
+  /** With «merged»: main's HEAD before the merge (the merge commit's first parent), and what the merge changed there, deletions included. */
+  base?:string|null;
+  changed?:ChangedFile[];
 };
+
+/** One file a change touched: A added, M modified, D deleted, T type changed. */
+export type ChangedFile = {path:string;status:string};
+
+/** `git diff --name-status` between two commits, deletions included (SMA wall 4: a rollback names what it undoes). */
+export async function changedBetween(cwd:string,from:string,to:string):Promise<ChangedFile[]> {
+  const diff=await git(cwd,["diff","--name-status","-z","--no-renames",from,to]);
+  if(!diff.ok) return [];
+  const parts=diff.stdout.split("\0").filter(Boolean);
+  const files:ChangedFile[]=[];
+  for(let i=0;i+1<parts.length;i+=2) files.push({status:parts[i]![0]!,path:parts[i+1]!});
+  return files;
+}
 
 export type ReplayCheck = {command:string;exitCode:number;stdout:string;stderr:string};
 /** What the checks run on the replayed attempt said: green, or the checks that are red. A check that could not run is no red. */
@@ -109,7 +125,7 @@ export async function withIndexLockNote(cwd:string,reason:string):Promise<string
   return `${reason} (index.lock present)`;
 }
 
-async function git(cwd:string,args:string[]) {
+export async function git(cwd:string,args:string[]) {
   const result=await spawnAsync("git",args,{cwd,timeout:60_000,maxBuffer:4_000_000});
   if(result.error) return {ok:false as const,stdout:"",reason:result.error.message};
   if(result.status!==0) return {ok:false as const,stdout:result.stdout??"",reason:await withIndexLockNote(cwd,(result.stderr||result.stdout||`git exited ${result.status}`).trim())};
@@ -117,7 +133,7 @@ async function git(cwd:string,args:string[]) {
 }
 
 /** The repository's own identity when set, otherwise a writer identity, so commits never fail on a bare host. */
-async function identity(cwd:string):Promise<string[]> {
+export async function identity(cwd:string):Promise<string[]> {
   const email=await git(cwd,["config","user.email"]);
   return email.ok&&email.stdout.trim()?[]:FALLBACK_IDENTITY;
 }
@@ -268,6 +284,8 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
       }
       const merged=await merge(input.basePath,rebased??sha,input.message,input.bookkeeping,input.ownsPaths,input.indexLockWaitMs);
       if(rebased&&merged.status==="merged") merged.rebased=true;
+      // What main was and what the merge changed in it, so the record can say «roll back to what» without the checkout.
+      if(merged.status==="merged"&&before&&merged.commit) { merged.base=before; merged.changed=await changedBetween(input.basePath,before,merged.commit); }
       if(merged.status==="merged"&&before) merged.rebuilt=await rebuildChangedPackages(input.basePath,before,"HEAD");
       return merged;
     },input.message,input.lockWaitMs);
@@ -336,19 +354,24 @@ export async function workspaceGitLayout(workspacePath:string):Promise<
  * Creates Lane Pilot's own worktree of a section repository on a fresh lane/<name> branch from its HEAD. A chat folder
  * nested in a larger repo gets a worktree of that repo; `path` is then the same subfolder inside it, where the writer works.
  */
-export async function createWorktree(input:{basePath:string;targetPath:string;name:string}):Promise<{status:"ready"|"failed";path:string|null;branch:string|null;reason:string|null}> {
+export async function createWorktree(input:{basePath:string;targetPath:string;name:string;
+  /** Start from this commit instead of the base checkout's HEAD (a reverify checks out the merged change, a revert compares with its base). */
+  commit?:string}):Promise<{status:"ready"|"failed";path:string|null;branch:string|null;reason:string|null;
+  /** The commit the worktree starts from: the attempt's base, recorded so a rollback can name it. */
+  baseSha:string|null}> {
   const layout=await workspaceGitLayout(input.basePath);
-  if(!layout.ok) return {status:"failed",path:null,branch:null,reason:`not a git checkout: ${layout.reason}`};
+  if(!layout.ok) return {status:"failed",path:null,branch:null,baseSha:null,reason:`not a git checkout: ${layout.reason}`};
   const repoRoot=layout.nested?layout.repoTop:input.basePath;
   const branch=`lane/${input.name}`;
   await mkdir(join(input.targetPath,".."),{recursive:true});
   await recoverStaleGitLock(repoRoot);
-  const added=await git(repoRoot,["worktree","add","-q","-b",branch,input.targetPath,"HEAD"]);
-  if(!added.ok) return {status:"failed",path:null,branch:null,reason:added.reason};
+  const added=await git(repoRoot,["worktree","add","-q","-b",branch,input.targetPath,input.commit??"HEAD"]);
+  if(!added.ok) return {status:"failed",path:null,branch:null,baseSha:null,reason:added.reason};
+  const head=await git(input.targetPath,["rev-parse","HEAD"]);
   const path=layout.nested?join(input.targetPath,layout.prefix):input.targetPath;
   // A subfolder with no tracked file yet is not in the checkout.
   if(layout.nested) await mkdir(path,{recursive:true});
-  return {status:"ready",path,branch,reason:null};
+  return {status:"ready",path,branch,reason:null,baseSha:head.ok&&/^[a-f0-9]{40,64}$/.test(head.stdout.trim())?head.stdout.trim():null};
 }
 
 /** Files only machines write (receipts, episodes, locks): never the work of a task, whatever owns_paths names. */
@@ -714,14 +737,23 @@ async function worktreeTop(worktreePath:string):Promise<string> {
   return (await git(worktreePath,["rev-parse","--show-toplevel"])).stdout.trim()||worktreePath;
 }
 
-/** Removes Lane Pilot's own worktree and its lane/ branch; other worktrees are left alone. */
-export async function removeLaneWorktree(input:{basePath:string;worktreePath:string}):Promise<{removed:boolean}> {
+/**
+ * Removes Lane Pilot's own worktree and its lane/ branch; other worktrees are left alone. With `releaseDir` the work is
+ * returned first (SMA rule 9: stop = the writer is gone AND its work is back): the uncommitted edits and the commits no
+ * other branch has are saved by `snapshotWorktree`, and a snapshot that fails keeps the worktree.
+ */
+export async function removeLaneWorktree(input:{basePath:string;worktreePath:string;releaseDir?:string}):Promise<{removed:boolean;saved?:{status:"clean"|"saved"|"missing"|"failed";path:string|null;dirty:number;ahead:number;reason:string|null}}> {
   const branch=(await git(input.worktreePath,["rev-parse","--abbrev-ref","HEAD"])).stdout.trim();
   if(!branch.startsWith("lane/")) return {removed:false};
+  let saved:Awaited<ReturnType<typeof snapshotWorktree>>|undefined;
+  if(input.releaseDir) {
+    saved=await snapshotWorktree({worktreePath:input.worktreePath,name:branch.slice("lane/".length),dir:input.releaseDir});
+    if(saved.status==="failed") return {removed:false,saved};
+  }
   await recoverStaleGitLock(input.basePath);
   const removed=(await git(input.basePath,["worktree","remove","--force",await worktreeTop(input.worktreePath)])).ok;
   if(removed) await git(input.basePath,["branch","-D",branch]);
-  return {removed};
+  return {removed,...(saved?{saved}:{})};
 }
 
 /**

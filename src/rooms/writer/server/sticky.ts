@@ -1,4 +1,5 @@
 import type { DirtSnapshot } from "../cli-outcome";
+import { isLiveDecision } from "../live-folder";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { getAttempt, getReasoningTrace, getRun, saveReasoningTrace, setAttemptDirtBefore, setAttemptWorkspace, transitionAttempt, taskBasePath } from "../../storage";
 import { SESSION_MAX_TURNS, failureClass } from "../../runs";
@@ -274,6 +275,8 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
         return { ok:false, reason:`sticky_send_failed:${cause instanceof Error ? cause.message : String(cause)}`, bound:true };
       }
       transitionAttempt(db, input.attemptId, "running", { threadId:writer.threadId });
+      // The continued writer's worktree holds earlier commits: the attempt starts from where it stands now (SMA wall 4).
+      if (!isLiveDecision(writer.decision)) services.rollback?.ensureBase(input.attemptId, input.config.hostId, writer.workspacePath);
       ctx.log(`writer ${input.taskId} continues in thread ${writer.threadId} (${input.kind}, turn ${writer.turns + 1})`);
       return { ok:true, workspacePath:writer.workspacePath, dirtBefore };
     } catch (cause) {

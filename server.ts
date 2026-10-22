@@ -16,6 +16,7 @@ import { adoptWaitingRules } from "./src/rooms/self-repair/server";
 import { createRuleScan } from "./src/rooms/self-repair/server";
 import { createHarness } from "./src/rooms/harness/server";
 import { createDeferrals, sdkOwnerMessagePort } from "./src/rooms/deferral/server";
+import { createRollback } from "./src/rooms/rollback/server";
 import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, pluginStopped } from "./src/rooms/runs/server";
 import { registerRpc } from "./src/rooms/core/server/rpc";
 import { mountAnamnesis } from "./src/rooms/anamnesis";
@@ -96,6 +97,7 @@ export default async function plugin(bb: BbPluginApi) {
     { ruleScan: createRuleScan(ctx, services) },
     { harness: createHarness(ctx, services) },
     { deferrals },
+    createRollback(ctx, services),
     createStability(ctx, services),
     createScheduleService(ctx, services),
   );
@@ -128,7 +130,7 @@ export default async function plugin(bb: BbPluginApi) {
   }, (cause) => pluginStopped(cause) ? undefined : bb.log.warn(`Lane Pilot worktree sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
   const releasedLaneWorktrees = new Set<string>();
   const removeLaneWorktree = async (hostId:string, basePath:string, worktreePath:string) =>
-    (await ctx.host.call("gitRemoveWorktree", { requestedHostId:hostId, basePath, worktreePath }, { hostId, timeoutMs:60_000 })).removed;
+    (await ctx.host.call("gitRemoveWorktree", { requestedHostId:hostId, basePath, worktreePath, release:true }, { hostId, timeoutMs:300_000 })).removed;
   scheduleIsolated(bb, "attempt-worktree-sweep", "*/10 * * * *", (signal) => Promise.all([sweepEnvironments(signal),
     cleanupStickyLaneWorktrees(db, removeLaneWorktree, releasedLaneWorktrees, Date.now(), signal).then((removed) => {
       if (removed.length) bb.log.info(`Lane Pilot released ${removed.length} area worktree(s) after their sticky window`);

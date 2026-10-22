@@ -8,6 +8,15 @@ export const rpcOps = {
     input: z.object({ runId: z.string().min(1) }).strict(),
     output: z.object({ ok: z.boolean(), canceled: z.array(z.string()), left: z.array(z.string()) }).strict(),
   },
+  /** Pauses a run at a safe boundary: new tasks wait, running attempts finish their current stage and then wait; nothing is canceled. */
+  pause_run: {
+    input: z.object({ runId: z.string().min(1) }).strict(),
+    output: z.unknown(),
+  },
+  resume_run: {
+    input: z.object({ runId: z.string().min(1) }).strict(),
+    output: z.unknown(),
+  },
   cancel_attempt: {
     input: z.object({ attemptId: z.string().min(1) }).strict(),
     output: z.object({ ok: z.boolean(), state: z.string(), reason: z.string().nullable() }).strict(),
@@ -152,6 +161,21 @@ export const rpcOps = {
   },
   deferral_close: {
     input: z.object({ id: z.string().min(1).max(80), evidence: z.string().min(1).max(2000) }).strict(),
+    output: z.unknown(),
+  },
+  /** The task's verification[] again on its recorded base plus the accepted change, in a fresh worktree; a receipt is kept (src/rooms/rollback). */
+  task_reverify: {
+    input: z.object({ ref: z.string().min(1).max(200) }).strict(),
+    output: z.unknown(),
+  },
+  /** Reverts an accepted task's merge commit(s) in a worktree, checked and merged through the merge queue; refused with the next step on a conflict. */
+  task_revert: {
+    input: z.object({ ref: z.string().min(1).max(200), dryRun: z.boolean().optional(), skipGate: z.boolean().optional() }).strict(),
+    output: z.unknown(),
+  },
+  /** What is on record for a task or an attempt: bases, merges, changed files, receipts. */
+  task_changes: {
+    input: z.object({ ref: z.string().min(1).max(200) }).strict(),
     output: z.unknown(),
   },
 };

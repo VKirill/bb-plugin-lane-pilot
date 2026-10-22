@@ -31,6 +31,7 @@ Built by Lane Pilot from page frontmatter.
 | [Lane Pilot overview](overview.md) | overview | active | 2026-10-20 |
 | [Package operation details](package-operations.md) | component | active | 2026-10-17 |
 | [Shared packages](packages.md) | component | active | 2026-10-20 |
+| [Rolling work back, trusted tooling and pause](rollback.md) | component | active | 2026-10-22 |
 | [RPC and host-call contracts](rpc-callers.md) | component | active | 2026-10-20 |
 | [RPC contract composition and route families](rpc-callers/contract-map.md) | component | active | 2026-10-20 |
 | [Server core construction](rpc-callers/create-core.md) | component | active | 2026-10-20 |

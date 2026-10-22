@@ -1,5 +1,5 @@
 import { networkInterfaces } from "node:os";
-import { createWorktree, integrateWorktree, prepareWorktree, removeLaneWorktree, syncWorktree, snapshotWorktree, type ReplayCheckOutcome } from "../verification";
+import { createWorktree, integrateWorktree, mergeInfo, prepareWorktree, removeLaneWorktree, revertCommitsInWorktree, syncWorktree, snapshotWorktree, worktreeState, type ReplayCheckOutcome } from "../verification";
 import { attributeGateOnHost, bisectGateOnHost, runGateOnHost } from "../verification";
 import { buildDocsAnchors, docsDepth as readDocsDepth, docsStaleness, jevApiKey, jevProviderOfKey, provideJevKey, verifyDocsCitations } from "../verification";
 import { buildDocsFlows } from "../verification";
@@ -151,7 +151,23 @@ export const gitWorktreeSnapshot: ExperimentalHostRpcHandlers<typeof hostContrac
 
 export const gitRemoveWorktree: ExperimentalHostRpcHandlers<typeof hostContract>["gitRemoveWorktree"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
-  ...await removeLaneWorktree({basePath:input.basePath,worktreePath:input.worktreePath}),
+  // With `release` the work is returned (saved as a patch) before the worktree goes; a snapshot that fails keeps it (SMA rule 9).
+  ...await removeLaneWorktree({basePath:input.basePath,worktreePath:input.worktreePath,...(input.release?{releaseDir:join(homedir(),".lane-pilot","released")}:{})}),
+});
+
+export const gitWorktreeState: ExperimentalHostRpcHandlers<typeof hostContract>["gitWorktreeState"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  ...await worktreeState({basePath:input.basePath,worktreePath:input.worktreePath}),
+});
+
+export const gitMergeInfo: ExperimentalHostRpcHandlers<typeof hostContract>["gitMergeInfo"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  ...await mergeInfo({basePath:input.basePath,...(input.commit?{commit:input.commit}:{}),...(input.attemptId?{attemptId:input.attemptId}:{})}),
+});
+
+export const gitRevertCommits: ExperimentalHostRpcHandlers<typeof hostContract>["gitRevertCommits"] = async (input) => ({
+  hostId:process.env.BB_HOST_ID??input.requestedHostId,
+  ...await revertCommitsInWorktree({worktreePath:input.worktreePath,commits:input.commits}),
 });
 
 export const gitSyncWorktree: ExperimentalHostRpcHandlers<typeof hostContract>["gitSyncWorktree"] = async (input) => ({
@@ -174,7 +190,7 @@ export const laneWorktreeRoot = () => join(homedir(), ".lane-pilot", "worktrees"
 
 export const gitCreateWorktree: ExperimentalHostRpcHandlers<typeof hostContract>["gitCreateWorktree"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
-  ...await createWorktree({basePath:input.basePath,name:input.name,
+  ...await createWorktree({basePath:input.basePath,name:input.name,...(input.commit?{commit:input.commit}:{}),
     targetPath:join(laneWorktreeRoot(),input.name,basename(input.basePath))}),
 });
 

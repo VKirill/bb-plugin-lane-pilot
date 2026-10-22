@@ -1,6 +1,6 @@
 import { prototypeConfigSchema, taskV2Schema } from "../../contracts";
 import { getActivation, getAttempt, getRun, getTask, importSettingsOnce, inspectState, listRunsWithAttempts, loadProjectSettings, loadPrototypeConfig, savePrototypeConfig, saveProjectSetting, transitionAttempt } from "../../storage";
-import { cancelRejection, finishRunSafely } from "../../runs/server";
+import { cancelRejection, confirmWriterStopped, finishRunSafely, pauseRun } from "../../runs/server";
 import { stringAt, valueAt } from "../../core/server";
 import { outputText } from "../../writer/server";
 import { THREAD_WATCH_EVENT_TYPES, decideThreadCompletion, eventsListQueryLabel, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -17,6 +17,7 @@ import { learningFor } from "../../learning";
 import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
 import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
 import { POLICY_USAGE, runPolicyCli } from "../../policy";
+import { ROLLBACK_USAGE, runRollbackCli } from "../../rollback/server";
 
 export function registerCli(ctx: ServerCore, services: Services) {
   const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, host } = ctx;
@@ -30,6 +31,9 @@ export function registerCli(ctx: ServerCore, services: Services) {
     "bb lane-pilot deactivate <project-id>",
     "bb lane-pilot cancel <attempt-id>",
     "bb lane-pilot recover <attempt-id>",
+    "bb lane-pilot pause <run-id>   (new tasks wait, running attempts finish their current stage and then wait; nothing is canceled)",
+    "bb lane-pilot resume <run-id>   (let a paused run go on; `resume [project-id]` still reconciles orphaned writers)",
+    ROLLBACK_USAGE,
     "bb lane-pilot start-cancel-probe <project-id> <pm-thread-id>",
     "bb lane-pilot start-provider-error-probe <project-id> <pm-thread-id>",
     "bb lane-pilot start-ambiguous-probe <project-id> <pm-thread-id>",
@@ -77,6 +81,10 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"finish", summary:"Close a PM run after observing it idle and release activation", usage:"bb lane-pilot finish <project-id> [run-id]" },
       { name:"deactivate", summary:"Alias for finish", usage:"bb lane-pilot deactivate <project-id> [run-id]" },
       { name:"cancel", summary:"Stop a writer and persist canceled after observing idle", usage:"bb lane-pilot cancel <attempt-id>" },
+      { name:"pause", summary:"Pause a run at a safe boundary: new tasks wait, running attempts finish their current stage and then wait, nothing is canceled", usage:"bb lane-pilot pause <run-id>" },
+      { name:"reverify", summary:"Run a task's verification[] again on its recorded base plus the accepted change, in a fresh worktree on the project host; exit 0 only when every item passes, a receipt is kept", usage:"bb lane-pilot reverify <task-id|attempt-id>" },
+      { name:"revert", summary:"Revert an accepted task's merge commit(s) with git revert in a worktree, check them, merge through the normal merge queue; refuses with the next step when later commits touch the same lines", usage:"bb lane-pilot revert <task-id> [--dry-run] [--no-gate]" },
+      { name:"changes", summary:"What is on record for a task or an attempt: base, merge, changed files (deletions included) and the reverify / revert receipts", usage:"bb lane-pilot changes <task-id|attempt-id>" },
       { name:"recover", summary:"Reconcile a known writer identity and emit its validated receipt", usage:"bb lane-pilot recover <attempt-id>" },
       { name:"start-cancel-probe", summary:"Spawn a long-running writer for a live stop observation", usage:"bb lane-pilot start-cancel-probe <project-id> <pm-thread-id>" },
       { name:"start-provider-error-probe", summary:"Observe a live provider error and persist provider_error", usage:"bb lane-pilot start-provider-error-probe <project-id> <pm-thread-id>" },
@@ -109,6 +117,16 @@ export function registerCli(ctx: ServerCore, services: Services) {
     async run(argv) {
       try {
         const [command, ...args] = argv;
+        if (command === "reverify" || command === "revert" || command === "changes") {
+          return await runRollbackCli(services.rollback, command, args);
+        }
+        if (command === "pause" && args.length === 1) {
+          return { exitCode:0, stdout:JSON.stringify(await pauseRun(ctx, args[0]!, "pause"), null, 2) };
+        }
+        // `resume <run-id>` lets a paused run go on; `resume [project-id]` is the older reconcile of orphaned writers.
+        if (command === "resume" && args.length === 1 && getRun(db, args[0]!)) {
+          return { exitCode:0, stdout:JSON.stringify(await pauseRun(ctx, args[0]!, "resume"), null, 2) };
+        }
         if (command === "anamnesis") {
           return await anamnesisFor(ctx).cli(args);
         }
@@ -238,13 +256,11 @@ export function registerCli(ctx: ServerCore, services: Services) {
           if (rejection) return { exitCode:1, stdout:JSON.stringify({ ok:false, attemptId:attempt.id, state:attempt.state, reason:rejection }) };
           transitionAttempt(db, attempt.id, "cancel_requested", { threadId:attempt.thread_id });
           await bb.sdk.threads.stop({ threadId:attempt.thread_id });
-          const observed = await bb.sdk.threads.get({ threadId:attempt.thread_id });
-          const status = stringAt(observed, "status");
-          const listRunning = (bb.sdk.threads as { listRunning?: (query?: Record<string, unknown>) => Promise<Array<{id:string}>> }).listRunning;
-          const running = listRunning ? await listRunning({}) : [];
-          const stillRunning = running.some((thread) => thread.id === attempt.thread_id)
-            || status === "active" || status === "running";
-          if (stillRunning) throw new Error(`writer stop was not independently observed (status=${status ?? "unknown"})`);
+          // A stop is two things (SMA rule 9): the writer is confirmed gone, waiting a bounded time for it, and its work is on record.
+          const confirmed = await confirmWriterStopped(bb, attempt.thread_id);
+          const status = confirmed.status;
+          if (!confirmed.stopped) throw new Error(`writer stop was not independently observed (status=${status ?? "unknown"}, waited ${Math.round(confirmed.waitedMs / 1000)}s)`);
+          await services.rollback.noteStopped(attempt.id).catch(() => undefined);
           transitionAttempt(db, attempt.id, "canceled", { threadId:attempt.thread_id });
           return { exitCode:0, stdout:JSON.stringify({
             ok:true, attemptId:attempt.id, threadId:attempt.thread_id, state:"canceled", observedStatus:status,

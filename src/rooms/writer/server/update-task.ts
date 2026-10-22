@@ -23,6 +23,7 @@ import { markTaskSatisfied } from "../../runs/server";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 import { validateTaskV2 } from "../../tasks/task-v2";
+import { applyTrustedTooling } from "../../tasks";
 import { planWithOutsideReads, rerootTask } from "../../tasks";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification";
 import { runOnHost } from "@lane-pilot/host-calls";
@@ -193,7 +194,8 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
     }
     const taskConfig = { ...runConfig, writerWorkspacePath: taskBase };
 
-    const changes = changedFields(oldContract, valid.task);
+    // A task stored before the trusted tooling joined never_touch (P2-4) is compared as it would be stored now, so no change is invented.
+    const changes = changedFields(applyTrustedTooling(oldContract), valid.task);
     if (canonicalPlan !== oldPlan) changes.push({ field: "plan", from: oldPlan, to: canonicalPlan });
     if (blocked) {
       const frozen = changes.map((change) => change.field).filter((field) => !IN_PLACE_FIELDS.includes(field));
