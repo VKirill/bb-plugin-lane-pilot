@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.270
+
+**SMA integration, wave 6**: checking the checkers (`bb lane-pilot checkers`: 8 planted-defect classes, a scorecard per checker; the quick drill's `checkers` scenario turns red when a code checker stops catching its class; the code critic is not turned on by default — it flagged every clean candidate), red before green (`checks.require_red_on_base`, default medium: a task whose checks all pass on its base does not start, the PM is told which checks are vacuous and what to add; lint `verification_existence_on_base`), return to an earlier stage with a note (`bb lane-pilot return <task> --to discussion|planning|writer --note …` and buttons in the acceptance card; stale stage receipts reset, the writer continues in its worktree without spending an attempt). The owner push script never passes BB_CLI (it fork-bombed the hub on 2026-10-22).
+
 **Strong checks and return to a stage** (SMA atlas delta D1-3 / D1-4 follow-up, D0-2):
 
 - **Red before green.** `checks.require_red_on_base` (`off` | `medium` | `high`, default `medium`): a task of that risk or more whose every check is already green on the base does not start; the PM gets the vacuous checks and what to add (docs/baseline.md). The dispatch instructions carry the line; the contract lint flags an existence-only check on a file the base has (`verification_existence_on_base`).
