@@ -1,10 +1,12 @@
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildSet } from "../../src/rooms/bench/build";
 import { contractRejection } from "../../src/rooms/bench/candidates";
 import { getSet, verifySet } from "../../src/rooms/bench/store";
 import { chooseFinal, interleave, warmOrder } from "../../src/rooms/bench/stratify";
 import { manifestHash, type BenchProject, type Candidate } from "../../src/rooms/bench/types";
-import { warmUp } from "../../src/rooms/bench/warmup";
+import { findSolutionCommit, warmUp } from "../../src/rooms/bench/warmup";
 import { benchWorld, git, localHost, makeContract, makeRepo, tmp } from "./helpers";
 
 const BB = "proj_ejbam66722";
@@ -77,6 +79,26 @@ describe("bench warm-up", () => {
     expect(await warmUp(localHost, green, options)).toMatchObject({ ok: false, reason: "passes_on_base" });
     const broken = { ...base, contract: makeContract(s.repo, { verification: [{ command: "test -f a.txt", cwd: s.repo }, { command: "test -f never-there.txt", cwd: s.repo }] }) };
     expect(await warmUp(localHost, broken, options)).toMatchObject({ ok: false, reason: "solution_fails_checks" });
+  });
+});
+
+describe("bench solution commit", () => {
+  it("finds the «Merge writer work: <task id>: …» merge when sibling attempt branches carry the bare subject", async () => {
+    const repo = tmp("lp-bench-selfy-");
+    git(repo, "init", "-q", "-b", "main");
+    writeFileSync(join(repo, "README.md"), "base\n");
+    git(repo, "add", "-A"); git(repo, "commit", "-qm", "base");
+    for (const branch of ["a1", "a2", "a3"]) {
+      git(repo, "checkout", "-q", "-b", branch, "main");
+      writeFileSync(join(repo, `${branch}.txt`), "done\n");
+      git(repo, "add", "-A"); git(repo, "commit", "-qm", "task-s: add a file");
+    }
+    git(repo, "checkout", "-q", "main");
+    git(repo, "merge", "-q", "--no-ff", "a2", "-m", "Merge writer work: task-s: add a file");
+    const candidate: Candidate = { taskId: "task-s", runId: "r", projectId: BB, projectName: "BB-сервис", attemptId: "att_none", attemptNo: 1, hard: false, risk: "low", area: "", repoPath: repo, hostId: "local",
+      initialHeadSha: git(repo, "rev-parse", "main~1"), baseSha: null, contract: makeContract(repo) };
+    const found = await findSolutionCommit(localHost, candidate);
+    expect(found).toEqual({ commit: git(repo, "rev-parse", "main") });
   });
 });
 

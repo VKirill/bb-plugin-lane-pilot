@@ -45,10 +45,12 @@ async function runChecks(host: HostPort, hostId: string, candidate: Candidate, d
   return out;
 }
 
-/** The commit that merged the accepted attempt: the attempt's trailer in the message, else the task id at the start of the subject. */
+/** The commit that merged the accepted attempt: the attempt's trailer in the message, else the task id at the start of the subject (or after «Merge writer work: »). */
 export async function findSolutionCommit(host: HostPort, candidate: Candidate): Promise<{ commit: string } | { reason: WarmReason; detail: string }> {
   const find = async (grep: string, fixed: boolean) => {
-    const result = await host.run(candidate.hostId, candidate.repoPath, `git log --all --format='%H %P' ${fixed ? "-F" : ""} --grep=${q(grep)}`, 60);
+    // SelfyStudio's merges read «Merge writer work: <task id>: …»; its attempt branches hold the unmerged «<task id>: …» commits (three siblings are «ambiguous» without the merge).
+    const greps = fixed ? [grep] : [grep, grep.replace(/^\^/, "^Merge writer work: ")];
+    const result = await host.run(candidate.hostId, candidate.repoPath, `git log --all --format='%H %P' ${fixed ? "-F" : ""} ${greps.map((item) => `--grep=${q(item)}`).join(" ")}`, 60);
     if (result.exitCode !== 0) return { error: tail(result) };
     return { rows: result.stdout.split("\n").map((line) => line.trim().split(/\s+/)).filter((parts) => parts[0] && /^[0-9a-f]{40}$/.test(parts[0])) };
   };
