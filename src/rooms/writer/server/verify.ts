@@ -8,7 +8,7 @@ import { checkTimeoutSec } from "../check-timing";
 import { sha256 } from "../../tasks";
 import { parseReadFirstHints } from "../../tasks/read-first";
 import { buildRunExecutionProfile, buildRunPolicy, mapBounded } from "../../tasks";
-import { classifyWriterOutput, isOutputPath } from "../../tasks";
+import { classifyWriterOutput, isOutputPath, trustedToolingHint } from "../../tasks";
 import { cleanCheckOutput, pollPause } from "@lane-pilot/kit";
 import { redactKnown, redactSecrets } from "@lane-pilot/kit";
 import { SecretsNotReadyError, allowedSecretNames, secretProblem } from "../../secrets/server";
@@ -389,7 +389,8 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     if (unowned.length) {
       recordGateEvaluation(db,{...input,gate:"owns-paths",status:"rejected",input:JSON.stringify(input.task),summary:{unownedCount:unowned.length}});
       recordGateEvaluation(db,{...input,gate:"validate",status:"skipped",input:JSON.stringify(input.task),summary:{reason:"ownership_rejected"}});
-      return { status:"validation_failed", reason:`writer changed paths outside owns_paths or inside never_touch: ${unowned.join(", ")}`,
+      const trusted = trustedToolingHint(unowned, input.task);
+      return { status:"validation_failed", reason:`writer changed paths outside owns_paths or inside never_touch: ${unowned.join(", ")}${trusted ? `; ${trusted}` : ""}`,
         output:outputText(output), produced:checkedPaths, verification:[], diffKey };
     }
     recordGateEvaluation(db,{...input,gate:"owns-paths",status:"passed",input:JSON.stringify(input.task),summary:{changedPathCount:checkedPaths.length,branchChangedPathCount:branchChanges.length,scope:"run",taskCount:ownershipScope.taskIds.length,gitBase:gitBase?{ref:gitBase.base_ref,sha:gitBase.base_sha,branch:gitBase.branch,compareCommitted:!!gitBase.compare_committed,pathsSha256:sha256(branchChanges.join("\0"))}:null}});

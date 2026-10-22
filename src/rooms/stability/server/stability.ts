@@ -4,7 +4,7 @@ import { allowedSecretNames, secretProblem, waitingSecretNote, WAITING_SECRET_PR
 import { createAttempt, getAttempt, getRun, getRunSettingsScopes, loadProjectSettings } from "../../storage";
 import { id } from "../../core/server";
 import { reopenWriterStages } from "../../runs/server/stage-records";
-import { isRunHalted } from "../../runs/server/runs-halt";
+import { isRunHalted, isRunPaused } from "../../runs/server/runs-halt";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 
@@ -209,7 +209,9 @@ export function createStability(ctx:ServerCore, services:Services) {
       // An aborted sweep keeps what it has not decided yet: the rows it did not reach are saved as they were.
       if (signal?.aborted) { keep.push(row); continue; }
       const run = getRun(db, row.runId);
-      if (!run || run.closed_at || superseded(row) || services.activeWriterTasks.has(`${row.runId}:${row.taskId}`) || await isRunHalted(bb.storage.kv as never, row.runId)) continue;
+      if (!run || run.closed_at || superseded(row) || services.activeWriterTasks.has(`${row.runId}:${row.taskId}`) || await isRunHalted(bb.storage.kv as never, row.runId)
+        // A paused run restarts nothing: its parked tasks stay parked until it is resumed.
+        || await isRunPaused(bb.storage.kv as never, row.runId)) continue;
       const count = perProject.get(row.projectId) ?? 0;
       // A task waiting for a secret is not a fault: no breaker, no backoff, only the secret itself.
       const waiting = isWaitingSecret(row.reason);

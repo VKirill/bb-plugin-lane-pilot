@@ -141,7 +141,9 @@ describe("a task over one repository of a run folder without git (BB-серви�
     // The stored contract is the repository's: paths relative to it, the other plugin's reference file in the plan.
     const stored = getTask(env.db, "p-hello")!.contract as TaskV2;
     expect(stored).toMatchObject({ project_cwd: join(env.folder, "plugins", "p"), owns_paths: ["src/"], expected_outputs: ["src/hello.ts"],
-      read_first: ["README.md"], never_touch: [] });
+      read_first: ["README.md"] });
+    // nothing from the PM, and the repository's own trusted tooling (hooks, CI, .claude) kept out of reach by default (P2-4)
+    expect(stored.never_touch).toEqual([".git/hooks/**", ".husky/**", ".claude/**", "lane-stack/hooks/**", ".github/workflows/**"]);
     expect(getTaskPlan(env.db, "p-hello")).toContain(join(env.folder, "plugins", "q", "src", "other.ts"));
     const attempt = await env.finished();
     expect(getAttempt(env.db, attempt.id)?.reason ?? null).toBeNull();

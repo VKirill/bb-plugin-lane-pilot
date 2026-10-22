@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { pluginRootFromModule } from "@lane-pilot/kit";
 import { taskV2Schema, type TaskV2 } from "../contracts";
+import { applyTrustedTooling } from "./trusted-tooling";
 
 export const TASK_V2_REQUIRED = [
   "schema_version",
@@ -45,5 +46,6 @@ export function validateTaskV2(value: unknown): { ok:true; task:TaskV2 } | { ok:
   if (extras.length > 0) return { ok:false, errors:extras.map((key) => `${key}: additionalProperties is false`) };
   // A relative cwd is read against project_cwd; from here on every check carries an absolute folder.
   const task = { ...parsed.data, verification:parsed.data.verification.map((check) => (isAbsolute(check.cwd) ? check : { ...check, cwd:resolve(parsed.data.project_cwd, check.cwd) })) };
-  return { ok:true, task };
+  // Trusted tooling (hooks, CI, .claude, the task's own check scripts) joins never_touch unless owns_paths names it (P2-4).
+  return { ok:true, task:applyTrustedTooling(task) };
 }

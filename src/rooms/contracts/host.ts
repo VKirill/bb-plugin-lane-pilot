@@ -3,6 +3,8 @@ import { z } from "zod";
 import { anamnesisHostMethods } from "../anamnesis";
 import { HOST_JOB_KINDS, HOST_JOB_MAX_SEC, coexistenceInventory, coexistenceManager, coexistenceOperation, coexistenceOperationResult, hostBaseFields, hostBaseInput, hostJobId, hostJobRef, installReceiptSchema, secretNameSchema } from "@lane-pilot/contracts";
 
+const changedFile = z.object({ path:z.string(), status:z.string().min(1).max(2) }).strict();
+
 export const hostContract = defineRpcContract({
   nativeInstall: {
     input: z.object({ requestedHostId: z.string().min(1), action: z.enum(["install", "enable", "disable", "remove", "status"]) }).strict(),
@@ -21,8 +23,25 @@ export const hostContract = defineRpcContract({
     output: z.object({ hostId:z.string(), status:z.enum(["clean","saved","missing","failed"]), path:z.string().nullable(), dirty:z.number().int(), ahead:z.number().int(), reason:z.string().nullable() }).strict(),
   },
   gitRemoveWorktree: {
+    // `release`: return the work first (save the uncommitted edits and unmerged commits as a patch) and keep the worktree when that fails (additive; an older host ignores it).
+    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/"), release:z.boolean().optional() }).strict(),
+    output: z.object({ hostId:z.string(), removed:z.boolean(),
+      saved:z.object({ status:z.enum(["clean","saved","missing","failed"]), path:z.string().nullable(), dirty:z.number().int(), ahead:z.number().int(), reason:z.string().nullable() }).strict().optional() }).strict(),
+  },
+  gitWorktreeState: {
     input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/") }).strict(),
-    output: z.object({ hostId:z.string(), removed:z.boolean() }).strict(),
+    output: z.object({ hostId:z.string(), status:z.enum(["ready","missing","failed"]), head:z.string().nullable(), base:z.string().nullable(), dirty:z.number().int(), ahead:z.number().int(),
+      changed:z.array(changedFile).max(5000), reason:z.string().nullable() }).strict(),
+  },
+  gitMergeInfo: {
+    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), commit:z.string().regex(/^[a-f0-9]{40,64}$/).optional(), attemptId:z.string().regex(/^[A-Za-z0-9_.-]{1,120}$/).optional() }).strict(),
+    output: z.object({ hostId:z.string(), status:z.enum(["found","missing","failed"]), commit:z.string().nullable(), base:z.string().nullable(), subject:z.string().nullable(),
+      changed:z.array(changedFile).max(5000), inMain:z.boolean(), reason:z.string().nullable() }).strict(),
+  },
+  gitRevertCommits: {
+    input: z.object({ requestedHostId:z.string().min(1), worktreePath:z.string().startsWith("/"), commits:z.array(z.string().regex(/^[a-f0-9]{40,64}$/)).min(1).max(20) }).strict(),
+    output: z.object({ hostId:z.string(), status:z.enum(["reverted","conflict","empty","failed"]), commits:z.array(z.string()), conflicts:z.array(z.string()),
+      later:z.array(z.object({ sha:z.string(), subject:z.string(), files:z.array(z.string()) }).strict()), reason:z.string().nullable() }).strict(),
   },
   gitSyncWorktree: {
     input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/"), keepConflicts:z.boolean().optional() }).strict(),
@@ -55,8 +74,9 @@ export const hostContract = defineRpcContract({
     output: z.object({ hostId:z.string(), path:z.string(), freeBytes:z.number().nonnegative(), totalBytes:z.number().nonnegative() }).strict(),
   },
   gitCreateWorktree: {
-    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), name:z.string().regex(/^[A-Za-z0-9._-]{1,120}$/) }).strict(),
-    output: z.object({ hostId:z.string(), status:z.enum(["ready","failed"]), path:z.string().nullable(), branch:z.string().nullable(), reason:z.string().nullable() }).strict(),
+    // `commit`: start from it instead of HEAD; `baseSha` in the answer: the commit the worktree started from (both additive; an older host ignores the first and omits the second).
+    input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), name:z.string().regex(/^[A-Za-z0-9._-]{1,120}$/), commit:z.string().regex(/^[a-f0-9]{7,64}$/).optional() }).strict(),
+    output: z.object({ hostId:z.string(), status:z.enum(["ready","failed"]), path:z.string().nullable(), branch:z.string().nullable(), reason:z.string().nullable(), baseSha:z.string().nullable().optional() }).strict(),
   },
   gitIntegrate: {
     input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), worktreePath:z.string().startsWith("/"), message:z.string().min(1).max(500), removeWorktree:z.boolean().optional(),
@@ -68,7 +88,9 @@ export const hostContract = defineRpcContract({
         commands:z.array(z.object({ command:z.string().min(1).max(32_000), cwd:z.string().startsWith("/"), timeoutSec:z.number().int().min(1).max(7200).optional() }).strict()).min(1).max(20) }).strict().optional() }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["merged","up-to-date","conflict","failed","busy"]), commit:z.string().nullable(), conflicts:z.array(z.string()), reason:z.string().nullable(), holder:z.string().nullable().optional(), rebased:z.boolean().optional(),
       checks:z.array(z.object({ command:z.string(), exitCode:z.number().int(), stdout:z.string(), stderr:z.string() }).strict()).optional(),
-      rebuilt:z.array(z.object({ dir:z.string(), ok:z.boolean(), detail:z.string().nullable() }).strict()).optional() }).strict(),
+      rebuilt:z.array(z.object({ dir:z.string(), ok:z.boolean(), detail:z.string().nullable() }).strict()).optional(),
+      // With «merged»: main before the merge and what the merge changed there, deletions included (additive; an older host omits them).
+      base:z.string().nullable().optional(), changed:z.array(changedFile).max(5000).optional() }).strict(),
   },
   gitDocsScope: {
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), sinceEpochMs:z.number().int().nonnegative(), base:z.string().min(1).max(200).optional(),

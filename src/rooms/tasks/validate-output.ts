@@ -2,6 +2,7 @@ import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
 import { ENVIRONMENT_REASON, NO_ANSWER_REASON, isEnvironmentCheckFailure } from "../runs";
 import { cleanCheckOutput } from "@lane-pilot/kit";
 import type { TaskV2 } from "../contracts";
+import { trustedToolingHint } from "./trusted-tooling";
 
 export function isTaskFolderFile(path:string):boolean {
   const normalized = path.replace(/^\.\//, "").replaceAll("\\", "/");
@@ -63,8 +64,9 @@ export function classifyWriterOutput(input: {
   const blocked = produced.filter((file) => fileBlockedByNeverTouch(file, input.task.never_touch));
   const rejected = produced.filter((file) => !blocked.includes(file) && !fileAllowedByOwns(file, input.task.owns_paths));
   if (blocked.length || rejected.length) {
+    const trusted = trustedToolingHint(blocked, input.task);
     const reason = [blocked.length ? `never_touch matched ${blocked.join(", ")}` : "",
-      rejected.length ? `owns_paths rejected ${rejected.join(", ")}` : ""].filter(Boolean).join("; ");
+      rejected.length ? `owns_paths rejected ${rejected.join(", ")}` : "", trusted ?? ""].filter(Boolean).join("; ");
     return { ok:false, state:"validation_failed", reason };
   }
   // A Lane PM may describe an output in prose; only path-like entries name a file to check.

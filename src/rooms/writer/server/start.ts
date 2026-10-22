@@ -23,7 +23,7 @@ import { createWriterSticky } from "./sticky";
 import { failureClass, type FailureClass } from "../../runs";
 import { jev } from "@lane-pilot/jev";
 import { judgedFailureClass } from "../../runs";
-import { isRunHalted } from "../../runs/server";
+import { isRunHalted, waitWhileRunPaused } from "../../runs/server";
 import { allowedSecretNames, secretProblem, waitingSecretNote, waitingSecretReason } from "../../secrets/server";
 
 /** How long a task waits for a blocked dependency to be sent again and accepted. */
@@ -335,8 +335,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     const removeWorktreeOf = async (failed:ReturnType<typeof getAttempt>) => {
       const failedBase=taskBasePath(db, input.runId, input.taskId);
       if(failed?.workspace_path&&failed.environment_id===null&&failedBase&&shouldMergeAttemptWorktree(failed.workspace_path,failedBase)) {
-        await host.call("gitRemoveWorktree",{requestedHostId:input.config.hostId,basePath:failedBase,worktreePath:failed.workspace_path},
-          {hostId:input.config.hostId,timeoutMs:60_000}).catch((cause)=>bb.log.warn(`Lane Pilot could not remove worktree of ${failed.id}: ${cause instanceof Error?cause.message:String(cause)}`));
+        // The work comes back before the worktree goes (SMA rule 9): its state is on record, it is saved as a patch, and a
+        // snapshot that fails keeps the worktree.
+        await services.rollback?.noteWorktree({attemptId:failed.id,hostId:input.config.hostId,basePath:failedBase,worktreePath:failed.workspace_path,outcome:`failed:${failed.state}`});
+        const removed=await host.call("gitRemoveWorktree",{requestedHostId:input.config.hostId,basePath:failedBase,worktreePath:failed.workspace_path,release:true},
+          {hostId:input.config.hostId,timeoutMs:300_000}).catch((cause)=>{ bb.log.warn(`Lane Pilot could not remove worktree of ${failed.id}: ${cause instanceof Error?cause.message:String(cause)}`); return null; });
+        services.rollback?.noteSaved(failed.id,removed?.saved);
       }
     };
     void (async () => {
@@ -362,6 +366,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       }
       /** The waits a task passes before its writer gets a turn: depends_on, overlapping tasks, secrets, the breaker and the pools. */
       const waitForAdmission = async (): Promise<boolean> => {
+        // A paused run lets nothing new start (bb lane-pilot pause): the task waits here, before it takes any slot, and goes on by itself on resume.
+        if (!await waitWhileRunPaused(bb.storage.kv as never, input.runId, { isDisposed: ctx.isDisposed, onFirstWait: () => {
+          ctx.log(`writer ${input.taskId} waits: run ${input.runId} is paused`);
+          recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
+            reason:"waiting: the run is paused; starts by itself once it is resumed" });
+        } })) return false;
         const dependency = await waitForDependencies(wallOrTokenStop);
         if (dependency) {
           blockBeforeWriter(dependency);
@@ -505,6 +515,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         if (hot) await continueWith(hot, "next-task", "");
       }
       while (attemptsLeft()) {
+        // The stage that just ended is the safe boundary of a pause: the next attempt or turn waits for the resume.
+        if (!await waitWhileRunPaused(bb.storage.kv as never, input.runId, { isDisposed: ctx.isDisposed, onFirstWait: () => ctx.log(`writer ${input.taskId} waits at a stage boundary: run ${input.runId} is paused`) })) return;
         if (!inSession) { attemptsHere += 1; sessionStartedAt = Date.now(); previousTurn = null; }
         const budgetCheck=budget.check();
         if (!budgetCheck.ok) {

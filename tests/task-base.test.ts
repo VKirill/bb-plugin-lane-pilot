@@ -47,7 +47,8 @@ describe("a task's base inside the run folder", () => {
       project_cwd: `${U}/plugins/bb-plugin-agency`,
       owns_paths: ["src/", "server.ts", "README.md"],
       expected_outputs: ["src/shared/decisions.ts", "tests/decisions.test.ts"],
-      never_touch: ["dist/"],
+      // the PM's own entry first, then the trusted tooling of the repository itself (hooks, CI, .claude: P2-4)
+      never_touch: ["dist/", ".git/hooks/**", ".husky/**", ".claude/**", "lane-stack/hooks/**", ".github/workflows/**"],
       read_first: ["AGENTS.md", "src/shared/decisions.ts"],
       verification: [{ command: "npx tsc --noEmit", cwd: `${U}/plugins/bb-plugin-agency` }],
     });

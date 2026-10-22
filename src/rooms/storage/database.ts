@@ -23,6 +23,7 @@ import { scheduleMigrations } from "../schedule";
 import { worldMigrations } from "../world";
 import { harnessMigrations } from "../harness";
 import { deferralMigrations } from "../deferral";
+import { rollbackMigrations } from "../rollback";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
 export type LanePilotDatabase = Database.Database;
@@ -353,6 +354,8 @@ export const migrations = [
     detail TEXT
   )`,
   `CREATE INDEX lane_pilot_memory_probe_at ON lane_pilot_memory_probe(at)`,
+  // SMA wall 4: the base, the merge and the changed files of every attempt, and the receipts of reverify / revert (src/rooms/rollback).
+  ...rollbackMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

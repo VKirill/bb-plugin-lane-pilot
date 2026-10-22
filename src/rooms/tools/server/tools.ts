@@ -97,7 +97,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
       for (const taskId of params.taskIds) {
         const attempts = open.filter((row) => row.task_id === taskId);
         if (!attempts.length) { results.push({ taskId, ok:false, state:"not_open", reason:"no open attempt of this task in this run" }); continue; }
-        for (const attempt of attempts) results.push({ taskId, attemptId:attempt.id, ...await cancelAttemptById(ctx, attempt.id) });
+        for (const attempt of attempts) results.push({ taskId, attemptId:attempt.id, ...await cancelAttemptById(ctx, attempt.id, services.rollback) });
       }
       return JSON.stringify({ runId, results });
     },

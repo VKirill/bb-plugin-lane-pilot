@@ -179,7 +179,7 @@ describe("fallback writer continues the interrupted session", () => {
     const env = harness([{ limit: true }], true);
     start(env);
     await vi.waitFor(() => expect(removals(env)).toHaveLength(1));
-    expect(removals(env)[0]!.args).toEqual({ requestedHostId: "h1", basePath: WORKSPACE, worktreePath: WORKTREE });
+    expect(removals(env)[0]!.args).toEqual({ requestedHostId: "h1", basePath: WORKSPACE, worktreePath: WORKTREE, release: true });
     expect(env.spawns.slice(1).every((spawn) => spawn.continuation?.workspacePath === WORKTREE)).toBe(true);
     await env.harness.lifecycle.dispose();
   });

@@ -8,7 +8,9 @@ export type { DocsChildSnapshot, MemoryChildSnapshot, NightChildSnapshot, Onboar
 export { runsRpc } from "./rpc/runs";
 export { cancelRejection, cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, finishRunSafely, pluginStopped } from "./run-finish";
 export { CRITIC_OUTCOME_UNKNOWN, NATIVE_CODE_CRITIQUE_KEYS, NATIVE_DOCS_KEYS, NATIVE_MEMORY_KEYS, NATIVE_NIGHT_REVIEW_KEYS, NATIVE_ONBOARDING_KEYS, NATIVE_PLAN_CRITIQUE_KEYS, NATIVE_PM_READ_KEYS, NATIVE_PROJECT_LIFE_KEYS, NATIVE_SPECIALIST_KEYS, NATIVE_WRITER_KEYS, WriterSelectionError, criticReconcilePort, freezeRunRouting, helperChildPlacement, inheritedProjectSettings, projectRoleField, requireHelperSpawn, requiredPolicyField } from "./run-routing";
-export { isRunHalted, setRunHalted } from "./runs-halt";
+export { isRunHalted, isRunPaused, setRunHalted, setRunPaused } from "./runs-halt";
+export { pauseRun, waitWhileRunPaused } from "./runs-pause";
+export { STOP_CONFIRM_MS, confirmWriterStopped } from "./writer-stop";
 export { compactDispatchReply, compactReceipt, stageDetail } from "./stage-brief";
 export { closeWriterStages, recordGateEvaluation, recordStage, reopenWriterStages, resetHelperStages } from "./stage-records";
 export { createTaskReconcile } from "./task-reconcile";

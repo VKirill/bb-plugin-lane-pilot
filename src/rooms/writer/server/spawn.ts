@@ -13,7 +13,7 @@ import { parseMemorySettings } from "../../memory";
 import { resolveRetryEffort } from "../../critique";
 import { boundedAgentName } from "../../critique";
 import { WORKSPACE_DIRT_COMMAND } from "../../verification";
-import { LIVE_FOLDER_REASON } from "../live-folder";
+import { LIVE_FOLDER_REASON, isLiveDecision } from "../live-folder";
 import { createLiveFolder } from "./live-folder";
 import { createWriterSkillPick } from "./skill-pick";
 import { createSkillMaterializer } from "./skill-materialize";
@@ -311,6 +311,8 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
               if(!setAttemptWorkspace(db,input.attemptId,{path:workspacePath,environmentId:null,decision:workspaceDecision})) {
                 throw new WriterSelectionError("attempt_workspace_cas_conflict");
               }
+              // Where the attempt starts from, on record (SMA wall 4).
+              services.rollback?.noteBase(input.attemptId,created.baseSha);
               environment={type:"host",hostId:input.config.hostId,workspace:{type:"unmanaged",path:workspacePath}};
             } else {
               throw new WriterSelectionError(worktreeCreateError(created.reason));
@@ -494,6 +496,9 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         return { ok:false, status:"canceled", reason:"canceled while its writer was starting", attemptId:input.attemptId };
       }
       transitionAttempt(db, input.attemptId, "running", { threadId:writerThreadId });
+      // A BB environment, a folder in place: the base is asked of git (a worktree Lane Pilot made recorded its own already).
+      // A folder without git has no commit to name, and Lane Pilot never touches git there.
+      { const bound = getAttempt(db, input.attemptId); if (bound?.workspace_path && !isLiveDecision(bound.workspace_decision)) services.rollback?.ensureBase(input.attemptId, input.config.hostId, bound.workspace_path); }
       setReasoningThread(db, input.attemptId, writerThreadId);
       const spawnedTrace = getReasoningTrace(db, input.attemptId);
       if (spawnedTrace) bb.log.info(`Lane Pilot writer execution ${JSON.stringify({ attemptId:input.attemptId, threadId:writerThreadId, providerId:spawnedTrace.providerId, model:spawnedTrace.model, reasoningLevel:spawnedTrace.effectiveReasoningLevel, serviceTier:spawnedTrace.serviceTier })}`);
@@ -557,6 +562,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
     const prepared=await workspaceDirt(input.config,created.path,input.runId).catch(async (cause)=>{ await dropWorktree("a baseline error"); throw cause; });
     if(!prepared.ok) { await dropWorktree("a failed baseline"); throw new WriterSelectionError(`attempt_worktree_baseline_failed:${prepared.reason}`); }
     if(!setAttemptWorkspace(db,input.attemptId,{path:created.path,environmentId:null,decision})) { await dropWorktree("a binding conflict"); throw new WriterSelectionError("attempt_workspace_cas_conflict"); }
+    services.rollback?.noteBase(input.attemptId,created.baseSha);
     return {path:created.path,dirtBefore:prepared.snapshots};
   }
 

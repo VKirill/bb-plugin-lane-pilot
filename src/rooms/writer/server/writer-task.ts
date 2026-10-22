@@ -225,7 +225,7 @@ export function previousAttemptBrief(last:Record<string, unknown> | null | undef
   // files → drop it», and the update-queued-task.2 writer (Lane Pilot, 2026-10-06) reset src/ui-catalog.ts to git
   // HEAD. That wiped another session's uncommitted edit in the shared checkout and still failed, because the file is
   // compared with its state before the attempt, not with HEAD.
-  const stray = [/never_touch matched (.+?)(;|$)/, /owns_paths rejected (.+?)(;|$)/, /writer changed paths outside owns_paths or inside never_touch: (.+)/]
+  const stray = [/never_touch matched (.+?)(;|$)/, /owns_paths rejected (.+?)(;|$)/, /writer changed paths outside owns_paths or inside never_touch: (.+?)(;|$)/]
     .flatMap((pattern) => pattern.exec(reason)?.[1]?.split(", ") ?? []).map((file) => file.trim()).filter(Boolean);
   if (stray.length) {
     const files = [...new Set(stray)];
