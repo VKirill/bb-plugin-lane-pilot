@@ -31,10 +31,12 @@ const MAX_PATCH_BYTES = 2_000_000;
  * The `node_modules` folders of the live checkout, put into the clone so the checks find their dependencies. On macOS a copy-on-write clone
  * (`cp -Rc`, APFS: no extra disk, and no symlink that leaves the checkout, which Turbopack refuses); elsewhere a plain copy (`cp -a`). A symlink to the live
  * folder is wrong in a monorepo: its `node_modules/@scope/pkg -> ../../packages/pkg` links resolve from the real path, so the clone's checks would run
- * against the LIVE packages (SelfyStudio: the solution's own code on the bare base, and a newer package under an old base).
+ * against the LIVE packages (and checks could write into the live node_modules). The gitignored `dist` of the workspace packages is copied the same way.
  */
 export const linkDependenciesCommand = (repo: string, dir: string): string =>
-  `cd ${q(repo)} && find . -maxdepth 4 -name node_modules -type d -prune -not -path '*/node_modules/*' | while read p; do t=${q(dir)}/"$p"; if [ ! -e "$t" ] && [ ! -L "$t" ]; then mkdir -p "$(dirname "$t")" && if [ "$(uname)" = Darwin ]; then cp -Rc ${q(repo)}/"$p" "$t"; else cp -a ${q(repo)}/"$p" "$t"; fi; fi; done`;
+  `cd ${q(repo)} && find . -maxdepth 4 -name node_modules -type d -prune -not -path '*/node_modules/*' | while read p; do t=${q(dir)}/"$p"; if [ ! -e "$t" ] && [ ! -L "$t" ]; then mkdir -p "$(dirname "$t")" && if [ "$(uname)" = Darwin ]; then cp -Rc ${q(repo)}/"$p" "$t"; else cp -a ${q(repo)}/"$p" "$t"; fi; fi; done`
+  // The built outputs of the workspace packages (gitignored `dist`, ~40 MB in SelfyStudio) are not in a clone: `@scope/pkg` resolves to them. Taken from the live checkout (Linux only).
+  + ` && { [ "$(uname)" = Darwin ] || { cd ${q(repo)} && find . -maxdepth 4 -name dist -type d -prune -not -path '*/node_modules/*' -not -path '*/.nuxt/*' | while read p; do t=${q(dir)}/"$p"; if [ ! -e "$t" ] && git check-ignore -q "$p"; then mkdir -p "$(dirname "$t")" && cp -a ${q(repo)}/"$p" "$t"; fi; done; }; }`;
 
 async function runChecks(host: HostPort, hostId: string, candidate: Candidate, dir: string, options: WarmOptions): Promise<WarmRecord["base"]> {
   const out: WarmRecord["base"] = [];

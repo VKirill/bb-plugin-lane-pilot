@@ -107,6 +107,7 @@ describe("bench dependencies", () => {
     const command = linkDependenciesCommand("/live/repo", "/clone");
     expect(command).toContain("cp -a '/live/repo'/");
     expect(command).not.toContain("ln -s");
+    expect(command).toContain("-name dist");
   });
 });
 
