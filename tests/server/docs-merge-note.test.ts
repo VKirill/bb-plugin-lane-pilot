@@ -38,4 +38,14 @@ describe("docs passes stopped by a plugin reload", () => {
     expect(pluginStopped(new Error('plugin "lane-pilot" used a stale API handle — it was reloaded or disabled; re-entry happens via a fresh factory call'))).toBe(true);
     expect(pluginStopped(new Error("docs commit failed: nothing to commit"))).toBe(false);
   });
+
+  it("read host calls the reload cut off as a stop, a crashed or killed worker as a failure", () => {
+    const { pluginStopped } = createDocsNightly({ bb: { background: { schedule: () => undefined } }, db: {}, host: {} } as unknown as ServerCore, {} as Services);
+    // 2026-10-22 12:00:14 UTC, the 0.1.266 deploy reload: the hourly pass of the old instance had host calls in flight.
+    expect(pluginStopped(new Error("host plugin worker exited (0)"))).toBe(true);
+    expect(pluginStopped(Object.assign(new Error("Host plugin call was cancelled"), { name:"AbortError" }))).toBe(true);
+    expect(pluginStopped(new Error("host plugin worker exited (1)"))).toBe(false);
+    expect(pluginStopped(new Error("host plugin worker exited (SIGKILL)"))).toBe(false);
+    expect(pluginStopped(new Error("host plugin call 42 timed out after 120000 ms"))).toBe(false);
+  });
 });

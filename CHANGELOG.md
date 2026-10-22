@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **A reload that cuts a docs pass's host calls is not logged as a nightly docs failure.** The 0.1.266 deploy reload (2026-10-22 12:00:14 UTC) came while the old instance's hourly docs pass had host calls in flight: the host daemon disposed the retired generation's worker, which exits with 0 and rejects pending calls with «host plugin worker exited (0)», and the aborted schedule run cancelled the rest («Host plugin call was cancelled»). Neither text was read as a plugin stop, so feed-gen and lg-tv got «nightly docs failed» warnings and the watcher opened a self-repair. Both now count as a stop; a worker that crashes or is killed (any other exit) is still a failure. Nothing was lost: the cut pass was the hourly probe outside both places' docs hour, and a cut pass inside it is resumed by the catch-up.
+
 ## 0.1.266
 
 **SMA integration, wave 2**: plan→fact table from the writer with a blind code check against the diff (new stage `plan-fact`, record mode by default), the acceptance card (contract, stage receipts by proof kind, «not run ≠ no findings», cost with not_measured), `critic.code.default_for_risk` (default off; the bench will decide), `bb lane-pilot reverify` / `revert` / `changes`, run pause at a safe boundary, stop = confirmed exit and work returned, trusted tooling in every task's never_touch, the night policy v2 (owner's standing prohibitions with provenance, an exam that grows from new owner decisions, the RHI stop rule), and the Lane Stack 1.66.2 pin (the shell guard judges the program that really runs).
