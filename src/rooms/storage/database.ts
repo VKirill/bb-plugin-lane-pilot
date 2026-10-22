@@ -31,6 +31,7 @@ import { stageReturnMigrations } from "../stage-return";
 import { runGoalMigrations } from "../run-goal";
 import { capabilityMigrations } from "../capability";
 import { outageMigrations } from "../outage";
+import { backlogMigrations } from "../backlog";
 import { wallDeferralKindMigrations, wallMigrations } from "../wall";
 import { checkerMigrations } from "../checkers";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
@@ -390,6 +391,8 @@ export const migrations = [
   ...capabilityMigrations,
   // Gaps in the plugin's heartbeat: when Lane Pilot was not running (src/rooms/outage).
   ...outageMigrations,
+  // Todos issued from a project's backlog to its PM (src/rooms/backlog).
+  ...backlogMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

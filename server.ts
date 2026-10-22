@@ -22,6 +22,7 @@ import { createPluginBench } from "./src/rooms/bench/server";
 import { createBaselineRoom, mountRegress } from "./src/rooms/baseline/server";
 import { createRunGoal, mountRunGoal } from "./src/rooms/run-goal/server";
 import { createCapabilities, mountCapabilities } from "./src/rooms/capability/server";
+import { createBacklog, mountBacklog } from "./src/rooms/backlog/server";
 import { mountOutage } from "./src/rooms/outage/server";
 import { createPluginWall } from "./src/rooms/wall/server";
 import { createPluginCheckers } from "./src/rooms/checkers/server";
@@ -112,6 +113,7 @@ export default async function plugin(bb: BbPluginApi) {
     createStageReturn(ctx, services),
     createRunGoal(ctx, services),
     createCapabilities(ctx, services),
+    createBacklog(ctx),
     { bench: createPluginBench(ctx, services) },
     { wall: createPluginWall(ctx, services) },
     { checkers: createPluginCheckers(ctx) },
@@ -132,6 +134,8 @@ export default async function plugin(bb: BbPluginApi) {
   mountRunGoal(ctx, services.runGoal);
   // Every hour: a provider whose adapter (BB plugin) version changed is probed once; a failing one is held off by the breaker.
   mountCapabilities(ctx, services.capabilities);
+  // Every hour: ready todos with an estimate go to the project's PM in queue order (one a project a day, three a day in all).
+  mountBacklog(ctx, services.backlog);
   // A gap in the heartbeat longer than 5 minutes is an outage on record; then one beat a minute.
   await mountOutage(ctx).catch((cause: unknown) => bb.log.warn(`Lane Pilot: outage record skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
   // Learning from the owner's messages (src/learning): registers its PM tool before the tool families fold, so it comes first.
