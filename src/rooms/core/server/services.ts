@@ -6,6 +6,7 @@ import type { HarnessApi } from "../../harness/server";
 import type { DeferralApi } from "../../deferral/server";
 import type { RollbackApi } from "../../rollback/server";
 import type { BenchApi } from "../../bench/server";
+import type { CheckersApi } from "../../checkers/server";
 import type { WorldApi } from "../../world/server";
 import type { Canary } from "../../stability/server";
 import type { createActivation } from "../../native-agent/server";
@@ -67,6 +68,8 @@ export interface Services {
   rollback: RollbackApi;
   /** LP-Bench: the fixed task set and its comparisons (src/rooms/bench). */
   bench: BenchApi;
+  /** Checking the checkers: planted defects in accepted candidates, the checker scorecard and the drill (src/rooms/checkers). */
+  checkers: CheckersApi;
   DOCS_NIGHT_ATTEMPTS: DocsNightlyApi["DOCS_NIGHT_ATTEMPTS"];
   DOCS_OPEN_KEY: DocsNightlyApi["DOCS_OPEN_KEY"];
   DOCS_TOOLING: DocsNightlyApi["DOCS_TOOLING"];

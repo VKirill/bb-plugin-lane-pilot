@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+**Checking the checkers (SMA atlas D1-4, «which of your key checks have you seen go red on purpose?»).** Docs: `docs/checkers.md`.
+- **Planted-defect set.** New room `src/rooms/checkers`: deterministic mutators plant eight defect classes in a real accepted candidate (a deleted test assertion, an off-by-one, a file outside `owns_paths`, a swallowed error, `|| true` on a check, an acceptance item the writer claims and the diff lacks, a hard-coded value, a broken import), each with its designed catcher in one table (`EXPECTED_CATCHERS`).
+- **Checker scorecard.** Every checker runs on the planted candidates (the task's `verification[]` in a clone at its base, ownership, contract lint, the plan→fact blind check, the code critic and the plan critic through the pipeline's own prompt builders and parsers): hit or miss per class and checker, false alarms on the clean candidates, escapes (defects no code checker caught), tokens per catch, and the answer to «code critic by default for risk ≥ medium» (`decideCodeCritic`: bar 60% of the escapes, at least 8 judged, at most 30% false alarms). `bb lane-pilot checkers score|scorecard|drill|defects`; `scripts/lp-checkers.ts` runs the same code outside BB. The critics are capped by tokens (`--budget-tokens`).
+- **Drill scenario `checkers`** (in `--quick`): the code checkers on a fixture, no model, no hub, ~5 s. A designed catcher that lets a planted defect through, a code checker that flags the clean candidate or a class that cannot be planted turns the drill red; the scenario also blinds the ownership checker on purpose and requires the drill to go red.
+- `critique/index.ts` exports `critiquePrompt`, `parseCritique`, `parseCodeCritique`, `MAX_FILE_EXCERPT_BYTES`; `tasks/server` exports `lintContract`; `bench/server` exports `loadCandidates` and `findSolutionCommit` (read-only reuse).
+- Migration (appended last): tables `lane_pilot_checker_run`, `lane_pilot_checker_result`.
+- Tests: `tests/checkers/*` (mutators, scorecard, service with a fake model, history on a real git repository, the drill green and red on purpose).
+
 ## 0.1.268
 
 **SMA integration, wave 4 — LP-Bench** (Maslov #31448: a fixed set of real past tasks, three numbers — stages passed, cost, time): `bb lane-pilot bench build|show|prepare|run|noise|compare|status|config`, immutable sets with a manifest hash, warm-up (a task enters only if its accepted solution passes on base+solution and its checks fail on the bare base), paired comparison with a noise baseline, fault arms that must lose. Harness² trees are adopted only after a bench comparison passes (`harness.adopt_by=bench`); the nightly editor skips areas younger than 3 days. Live smoke: identical arms 3/3 accepted, a broken arm 0/3 and refused by `compare`. Set v1-local holds 6 tasks so far (SelfyStudio not warmed: OVH disk). Also: the `--passWithNoTests` lint holds its rule only partly; a lesson for a mechanized rule counts as its repeat.

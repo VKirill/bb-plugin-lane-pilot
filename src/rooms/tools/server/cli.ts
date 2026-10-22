@@ -19,6 +19,7 @@ import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
 import { MEMORY_EVAL_USAGE, runMemoryEvalCommand } from "../../memory-eval/server";
 import { MEMORY_CONFLICT_USAGE, runMemoryConflictCli } from "../../memory/server";
 import { BENCH_USAGE, runBenchCli } from "../../bench/server";
+import { CHECKERS_USAGE, runCheckersCli } from "../../checkers/server";
 import { POLICY_USAGE, runPolicyCli } from "../../policy";
 import { RULES_USAGE, runRulesCli } from "../../rule-forms";
 import { retireAdoptedRule } from "../../self-repair/server";
@@ -132,6 +133,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"defer-close", summary:"Close a deferral with the evidence that settles it", usage:"bb lane-pilot defer-close <dfr_id> --evidence <text>" },
       { name:"deferrals", summary:"The register of deferrals: overdue, open and the ones that need a term from the owner", usage:"bb lane-pilot deferrals [--project P] [--state open|overdue|needs_owner_term|closed]" },
       { name:"bench", summary:"LP-Bench: a fixed set of real past tasks replayed on an arm (writer, harness tree, setting) and compared in pairs: stages passed, cost, time", usage:BENCH_USAGE },
+      { name:"checkers", summary:"Checking the checkers: plant known defects in accepted candidates, run every checker on them and print the checker scorecard (score, scorecard, drill, defects)", usage:CHECKERS_USAGE },
       { name:"schedule", summary:"The schedule board: scheduled workflows, errands and scripts (list, show, history, preview, create, update, pause, resume, run-now, delete)", usage:SCHEDULE_USAGE },
     ],
     async run(argv) {
@@ -178,6 +180,9 @@ export function registerCli(ctx: ServerCore, services: Services) {
         }
         if (command === "bench") {
           return await runBenchCli(services.bench, args);
+        }
+        if (command === "checkers") {
+          return await runCheckersCli(services.checkers, args);
         }
         if (command === "schedule") {
           return await runScheduleCli(services, args);
