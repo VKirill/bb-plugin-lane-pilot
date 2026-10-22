@@ -27,6 +27,7 @@ import { baselineRpc } from "../../baseline/server";
 import { stageReturnRpc } from "../../stage-return/server";
 import { forecastRpc } from "../../forecast/server";
 import { runGoalRpc } from "../../run-goal/server";
+import { capabilityRpc } from "../../capability/server";
 import { wallRpc } from "../../wall/server";
 import { improvementRpc } from "../../improvement/server";
 import { sessionMemoryRpc } from "../../memory/server";
@@ -67,6 +68,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...stageReturnRpc(services.stageReturn),
     ...forecastRpc(ctx.db),
     ...runGoalRpc(services.runGoal),
+    ...capabilityRpc(services.capabilities),
     ...wallRpc(services.wall),
     ...improvementRpc({ db: ctx.db, kv: ctx.bb.storage.kv, wall: services.wall, bench: services.bench, deferrals: services.deferrals }),
     ...sessionMemoryRpc(ctx, services),

@@ -21,6 +21,7 @@ import { createRollback } from "./src/rooms/rollback/server";
 import { createPluginBench } from "./src/rooms/bench/server";
 import { createBaselineRoom, mountRegress } from "./src/rooms/baseline/server";
 import { createRunGoal, mountRunGoal } from "./src/rooms/run-goal/server";
+import { createCapabilities, mountCapabilities } from "./src/rooms/capability/server";
 import { createPluginWall } from "./src/rooms/wall/server";
 import { createPluginCheckers } from "./src/rooms/checkers/server";
 import { createStageReturn } from "./src/rooms/stage-return/server";
@@ -109,6 +110,7 @@ export default async function plugin(bb: BbPluginApi) {
     createBaselineRoom(ctx, services),
     createStageReturn(ctx, services),
     createRunGoal(ctx, services),
+    createCapabilities(ctx, services),
     { bench: createPluginBench(ctx, services) },
     { wall: createPluginWall(ctx, services) },
     { checkers: createPluginCheckers(ctx) },
@@ -127,6 +129,8 @@ export default async function plugin(bb: BbPluginApi) {
   mountRegress(ctx, services.regression);
   // Once a run is done, every accepted task's checks run together on the final main (every 20 minutes, a verdict per run).
   mountRunGoal(ctx, services.runGoal);
+  // Every hour: a provider whose adapter (BB plugin) version changed is probed once; a failing one is held off by the breaker.
+  mountCapabilities(ctx, services.capabilities);
   // Learning from the owner's messages (src/learning): registers its PM tool before the tool families fold, so it comes first.
   mountLearning(ctx, services);
   registerTools(ctx, services);

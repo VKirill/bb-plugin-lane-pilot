@@ -188,6 +188,11 @@ export const rpcOps = {
     input: z.object({ projectId: z.string().min(1).optional(), days: z.number().int().min(1).max(365).optional() }).strict(),
     output: z.unknown(),
   },
+  /** Per provider in use: the adapter version installed and each capability's state, supported, not_supported or unproven (src/rooms/capability). */
+  capability_table: {
+    input: z.object({}).strict(),
+    output: z.unknown(),
+  },
   /** The run-goal verdict of a run: every accepted task's checks together on the final main (src/rooms/run-goal). */
   run_goal_status: {
     input: z.object({ runId: z.string().min(1).max(200) }).strict(),

@@ -8,6 +8,7 @@ import type { RollbackApi } from "../../rollback/server";
 import type { BenchApi } from "../../bench/server";
 import type { BaselineApi, RegressionApi } from "../../baseline/server";
 import type { RunGoalApi } from "../../run-goal/server";
+import type { CapabilitiesApi } from "../../capability/server";
 import type { WallApi } from "../../wall/server";
 import type { CheckersApi } from "../../checkers/server";
 import type { StageReturnApi } from "../../stage-return/server";
@@ -82,6 +83,8 @@ export interface Services {
   wall: WallApi;
   /** Every accepted task's checks together on the final main once a run is done (src/rooms/run-goal). */
   runGoal: RunGoalApi;
+  /** The capability table: each provider's adapter version probed once, a failing one held off by the breaker (src/rooms/capability). */
+  capabilities: CapabilitiesApi;
   /** Checking the checkers: planted defects in accepted candidates, the checker scorecard and the drill (src/rooms/checkers). */
   checkers: CheckersApi;
   DOCS_NIGHT_ATTEMPTS: DocsNightlyApi["DOCS_NIGHT_ATTEMPTS"];
