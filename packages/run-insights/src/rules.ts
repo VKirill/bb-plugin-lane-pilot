@@ -144,6 +144,12 @@ export type RuleProposal = {
   form: RuleForm | null;
   cue: string | null;
   confidence: string | null;
+  /** Why the rule has its form and who set it (heuristic | jev | owner | reflection): SMA block 6, rule-forms.ts. */
+  formReason: string | null;
+  formBy: string | null;
+  /** The commit, test or lint code that now enforces the rule; its text then leaves the brief. */
+  mechanizedBy: string | null;
+  mechanizedAt: number | null;
   /** Given to every writer task without asking System One. */
   always: boolean;
 };
@@ -244,6 +250,7 @@ type Row = {
   decided_by: "owner" | "auto" | null; trial_state: "trial" | "confirmed" | null; revision: number; revision_started_at: number | null; retired_reason: string | null;
   scope_json?: string;
   audience?: RuleAudience; always_on?: number; form?: RuleForm | null; cue?: string | null; confidence?: string | null;
+  form_reason?: string | null; form_by?: string | null; mechanized_by?: string | null; mechanized_at?: number | null;
 };
 
 function fromRow(row: Row): RuleProposal {
@@ -256,6 +263,7 @@ function fromRow(row: Row): RuleProposal {
     revisionStartedAt: row.revision_started_at ?? null, retiredReason: row.retired_reason ?? null,
     scope: parseScope(row.scope_json),
     audience: row.audience ?? "writer", always: row.always_on === 1, form: row.form ?? null, cue: row.cue ?? null, confidence: row.confidence ?? null,
+    formReason: row.form_reason ?? null, formBy: row.form_by ?? null, mechanizedBy: row.mechanized_by ?? null, mechanizedAt: row.mechanized_at ?? null,
   };
 }
 

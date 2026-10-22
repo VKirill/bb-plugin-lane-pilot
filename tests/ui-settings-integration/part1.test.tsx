@@ -67,6 +67,25 @@ describe("native writer settings against the registered SQLite backend", () => {
     } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
   });
 
+  it("shows the form of a rule and, when a check enforces it, the mechanism (SMA block 6)", async () => {
+    const rules:RuleRow[] = [
+      { id:"rule_held", rule:"Never read $? after a pipe.", author:"pm", state:"accepted", occurrences:1, taskCount:1, examples:[], evidence:[], lastSeenAt:1, decidedAt:2,
+        decidedBy:"owner", form:"check", formReason:"check/contract_lint: exit-status", mechanizedBy:"contract lint verification_masked_exit (tests/contract-lint-exit-status.test.ts)" },
+      { id:"rule_text", rule:"Ask the owner only for money.", author:"pm", state:"accepted", occurrences:1, taskCount:1, examples:[], evidence:[], lastSeenAt:1, decidedAt:2, decidedBy:"owner", form:"always" },
+    ];
+    const { harness, slot } = await mountWithBackend({ rules, ruleCalls:[] });
+    try {
+      openTab(slot, "rules");
+      await slot.findByTestId("rule-rule_held");
+      expect(slot.getByTestId("rule-form-rule_held").textContent).toBe("check");
+      expect(slot.getByTestId("rule-form-rule_held").getAttribute("title")).toBe("check/contract_lint: exit-status");
+      expect(slot.getByTestId("rule-mechanized-rule_held").textContent).toBe(en.rulesMechanized);
+      expect(slot.getByTestId("rule-mechanized-rule_held").getAttribute("title")).toContain("verification_masked_exit");
+      expect(slot.getByTestId("rule-form-rule_text").textContent).toBe("always");
+      expect(slot.queryByTestId("rule-mechanized-rule_text")).toBeNull();
+    } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
+  });
+
   it("saves one coherent provider/model/reasoning/service-tier selection with CAS and persists it", async () => {
     const { harness, slot, saveCalls } = await mountWithBackend();
     const before = await harness.behavior.callRpc("get_screen", { projectId }) as { values:Record<string,unknown>; versions:Record<string,number> };

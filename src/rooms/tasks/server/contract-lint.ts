@@ -3,6 +3,7 @@ import { TASK_KINDS, type TaskV2 } from "../../contracts";
 import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOverlap } from "@lane-pilot/kit";
 import { findSandboxUnsafeMissingExcludes, runnerFilterArgs, runsWholeSuite } from "../../critique";
 import { parseReadFirstHints } from "../read-first";
+import { maskedExitReason, passWithNoTestsReason } from "./lint-exit-status";
 import { SUBJECTIVE_WORDS } from "../../critique";
 import { isMainfixTask, isOutputPath, unownedExpectedOutputs } from "../validate-output";
 import { mapVerificationCwd } from "../verification-cwd";
@@ -225,6 +226,13 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
   for (const [index, check] of task.verification.entries()) {
     const why = emptyCheckReason(check.command);
     if (why) errors.push({ code:"verification_empty_check", message:`verification[${index}] command "${check.command}" ${why}, so it passes whatever the writer does; replace it with a check that fails when the work is missing (the task's own test file, a grep for the expected string, test -f on a new file, a typecheck)` });
+  }
+  // A check that cannot see its own failure: a pipe into `tail`, a runner flag that passes when no test ran (rules 30694c, 45b334).
+  for (const [index, check] of task.verification.entries()) {
+    const masked = maskedExitReason(check.command);
+    if (masked) errors.push({ code:"verification_masked_exit", message:`verification[${index}] command "${check.command}" ${masked}; start the command with \`set -o pipefail;\` (checks run in bash) or drop the pipe, so the check fails when the command before it fails` });
+    const none = passWithNoTestsReason(check.command);
+    if (none) errors.push({ code:"verification_pass_with_no_tests", message:`verification[${index}] command "${check.command}" ${none}; remove the flag and name the test file or folder exactly, so a wrong filter fails the check` });
   }
   if (task.risk !== "low" && task.verification.length > 0 && kinds && !isMainfixTask(task.id) && !errors.some((error) => error.code === "verification_empty_check")
     && !checkNamedPaths(task).some((path) => kindOf(path) === "missing")) {

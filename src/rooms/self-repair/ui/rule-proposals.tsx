@@ -17,6 +17,7 @@ type Proposal = {
   scope: string[]; scopeLabel: string;
   audience: "writer" | "pm" | "both"; always: boolean;
   form?: "always" | "skill" | "check" | "hook" | "memory" | null; cue?: string | null; confidence?: string | null;
+  formReason?: string | null; mechanizedBy?: string | null;
 };
 type Scan = { state: "idle" | "running" | "done" | "failed"; startedAt: number | null; finishedAt: number | null; triaged: number; groups: number; proposals: number; reason: string | null;
   adopted?: number; confirmed?: number; revised?: number; retired?: number };
@@ -167,9 +168,10 @@ export function RuleProposals({ projectId }: { projectId: string }) {
   );
   const ruleText = (id: string) => proposals.find((row) => row.id === id)?.rule ?? id;
 
-  const lessonShape = (proposal: Proposal) => (proposal.cue || proposal.form) ? (
-    <p className="text-xs text-muted-foreground" data-testid={`rule-shape-${proposal.id}`}>
-      {proposal.form ? <span className="mr-2 rounded border border-input px-1 font-mono">{proposal.form}</span> : null}
+  const lessonShape = (proposal: Proposal) => (proposal.cue || proposal.form || proposal.mechanizedBy) ? (
+    <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground" data-testid={`rule-shape-${proposal.id}`}>
+      {proposal.form ? <Badge variant="outline" className="font-mono" title={proposal.formReason ?? undefined} data-testid={`rule-form-${proposal.id}`}>{proposal.form}</Badge> : null}
+      {proposal.mechanizedBy ? <Badge variant="secondary" title={proposal.mechanizedBy} data-testid={`rule-mechanized-${proposal.id}`}>{t("rulesMechanized")}</Badge> : null}
       {proposal.cue ? <span>{t("rulesCue")}: {proposal.cue}</span> : null}
       {proposal.confidence ? <span className="ml-2">({proposal.confidence})</span> : null}
     </p>

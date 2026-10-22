@@ -33,6 +33,7 @@ Built by Lane Pilot from page frontmatter.
 | [Plan against fact and the acceptance card](plan-fact.md) | component | active | 2026-10-22 |
 | [Shared packages](packages.md) | component | active | 2026-10-20 |
 | [Rolling work back, trusted tooling and pause](rollback.md) | component | active | 2026-10-22 |
+| [Rule forms and the path from a rule to a mechanism](rule-forms.md) | component | active | 2026-10-22 |
 | [RPC and host-call contracts](rpc-callers.md) | component | active | 2026-10-20 |
 | [RPC contract composition and route families](rpc-callers/contract-map.md) | component | active | 2026-10-20 |
 | [Server core construction](rpc-callers/create-core.md) | component | active | 2026-10-20 |

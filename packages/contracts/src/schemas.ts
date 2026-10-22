@@ -54,6 +54,9 @@ export const ruleProposalSchema = z.object({
   form: z.enum(["always", "skill", "check", "hook", "memory"]).nullable().optional(),
   cue: z.string().nullable().optional(),
   confidence: z.string().nullable().optional(),
+  /** SMA block 6: why the rule has its form, and the mechanism (lint code, test, commit) that now enforces it. */
+  formReason: z.string().nullable().optional(),
+  mechanizedBy: z.string().nullable().optional(),
 }).strict();
 
 export const ruleScanSchema = z.object({
