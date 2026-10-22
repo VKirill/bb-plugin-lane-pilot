@@ -19,6 +19,7 @@ import { createHarness } from "./src/rooms/harness/server";
 import { createDeferrals, sdkOwnerMessagePort } from "./src/rooms/deferral/server";
 import { createRollback } from "./src/rooms/rollback/server";
 import { createPluginBench } from "./src/rooms/bench/server";
+import { createBaselineRoom, mountRegress } from "./src/rooms/baseline/server";
 import { cleanupFinishedAttemptEnvironments, cleanupStickyLaneWorktrees, closeAbandonedRuns, pluginStopped } from "./src/rooms/runs/server";
 import { registerRpc } from "./src/rooms/core/server/rpc";
 import { mountAnamnesis } from "./src/rooms/anamnesis";
@@ -101,6 +102,7 @@ export default async function plugin(bb: BbPluginApi) {
     { deferrals },
     { memoryConflicts: createMemoryConflicts({ db, deferrals: () => services.deferrals, log: ctx.log }) },
     createRollback(ctx, services),
+    createBaselineRoom(ctx, services),
     { bench: createPluginBench(ctx, services) },
     createStability(ctx, services),
     createScheduleService(ctx, services),
@@ -113,6 +115,8 @@ export default async function plugin(bb: BbPluginApi) {
   // The Pixel World: tick loop, WebSocket route and listeners; the world starts with the service.
   services.world.mount();
   mountCanary(ctx, services.canary);
+  // The nightly regression pass over recently accepted tasks (03:25): checks on current main, bisect, a row for the morning list.
+  mountRegress(ctx, services.regression);
   // Learning from the owner's messages (src/learning): registers its PM tool before the tool families fold, so it comes first.
   mountLearning(ctx, services);
   registerTools(ctx, services);

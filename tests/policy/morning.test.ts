@@ -48,6 +48,22 @@ describe("the morning list", () => {
     ]);
   });
 
+  it("names a check that broke after acceptance at the end of line 2, and the SQL prints the same", () => {
+    const db = seeded();
+    const regression = (task: string, kind: string, state: string, commit: string | null) => db.prepare(`INSERT INTO lane_pilot_regression(found_at,updated_at,project_id,run_id,task_id,command,kind,state,bisect_status,culprit_commit)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(NOW, NOW, "proj_1", "run_1", task, `check ${task}`, kind, state, commit ? "found" : "skipped", commit);
+    regression("taskA", "regression", "open", "0123456789abcdef");
+    regression("taskB", "regression", "open", null);
+    regression("taskC", "unstable", "open", null);
+    regression("taskD", "regression", "closed", "fedcba9876543210");
+    expect(composeMorningList(db, NOW)[1]).toBe("Красное за ночь: 3 попыток (provider_error 1, validation_failed 2). Сломано после приёмки: 2 (taskA ← 01234567, taskB ← ?).");
+    db.exec(`CREATE TEMP TABLE lp_morning(since integer); INSERT INTO lp_morning VALUES (${NOW - 24 * HOUR})`);
+    const sql = readFileSync(join(__dirname, "..", "..", "scripts", "lp-morning.sql"), "utf8").split("\n").filter((line) => !line.startsWith("--")).join("\n");
+    const lines = sql.split(";").map((statement) => statement.trim()).filter(Boolean)
+      .map((statement) => Object.values(db.prepare(statement).get() as Record<string, string>)[0]);
+    expect(lines).toEqual(composeMorningList(db, NOW));
+  });
+
   it("scripts/lp-morning.sql (used by the daily report) prints the same three lines", () => {
     const db = seeded();
     db.exec(`CREATE TEMP TABLE lp_morning(since integer); INSERT INTO lp_morning VALUES (${NOW - 24 * HOUR})`);

@@ -87,6 +87,29 @@ describe("the acceptance card", () => {
     expect(slot.getByTestId("acc-base").textContent).toContain("not recorded");
   });
 
+  it("shows the checks that already passed on the base («already built»), the ones that were red, and what turned red after the merge", async () => {
+    const baseline = (extra: Record<string, unknown>) => ({ state: "ran", verdict: "partial", action: "proceed", mode: "notify", summary: "1 green, 1 red", baseSha: "0123456789abcdef", at: 1, turnedRed: null,
+      checks: [{ command: "npm test", status: "green", note: "", cached: false }, { command: "npm run lint", status: "red", note: "", cached: true }, { command: "npm run e2e", status: "skipped", note: "too slow for this pass (about 400s, cap 300s)", cached: false }], ...extra });
+    const slot = await mount({ task_acceptance_card: () => card({ baseline: baseline({ turnedRed: ["npm test"] }) }) });
+    await slot.findByTestId("acceptance-card");
+    const text = slot.getByTestId("acc-baseline").textContent ?? "";
+    expect(text).toContain("npm test");
+    expect(text).toContain("green on the base");
+    expect(text).toContain("red on the base · known from an earlier baseline");
+    expect(text).toContain("not run · too slow for this pass");
+    expect(slot.getByTestId("acc-baseline-turned").textContent).toContain("Green on the base, red on main after the change: npm test");
+    cleanup();
+    const built = await mount({ task_acceptance_card: () => card({ baseline: baseline({ verdict: "already_built", turnedRed: [], checks: [{ command: "npm test", status: "green", note: "", cached: false }] }) }) });
+    await built.findByTestId("acceptance-card");
+    expect(built.getByTestId("acc-baseline-summary").getAttribute("data-verdict")).toBe("already_built");
+    expect(built.getByTestId("acc-baseline-summary").textContent).toContain("may be already done");
+    expect(built.getByTestId("acc-baseline-turned").textContent).toContain("Nothing that was green on the base turned red");
+    cleanup();
+    const none = await mount({ task_acceptance_card: () => card({ baseline: null }) });
+    await none.findByTestId("acceptance-card");
+    expect(none.queryByTestId("acc-baseline")).toBeNull();
+  });
+
   it("falls back to the contract's own lines when the card cannot be read", async () => {
     const slot = await mount({ task_acceptance_card: () => { throw new Error("rpc down"); } });
     await waitFor(() => expect(slot.getByTestId("acceptance-card-fallback").textContent).toContain("the form saves"));

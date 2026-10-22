@@ -793,6 +793,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     const unrun = checks?.filter((check) => check.hostError) ?? [];
     if (unrun.length) ctx.log(`post-merge check of ${input.task.id} could not run on the host: ${unrun.map((check) => `${check.command} (${check.stderr.slice(0, 160)})`).join(", ")}`);
     const failing = checks?.filter((check) => check.exitCode !== 0 && !check.hostError) ?? [];
+    // «What turned red» (src/rooms/baseline): the checks that were green on the base before this task and are red on main with it.
+    const turnedRed = checks ? services.baseline?.afterMerge({ runId:input.runId, taskId:input.task.id, mergeCommit:input.mergeCommit, checks }) ?? [] : [];
     const tell = (text:string) => bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", text, mentions:[] }] } as never).catch(() => undefined);
     // A check the machine broke (EACCES, EPERM, EEXIST: root-owned files after a deploy) is no clash of merged work, and
     // no writer can fix it inside owns_paths: an infra incident and one message to the PM, no -mainfix.
@@ -820,7 +822,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         content:log.content, contentEncoding:"utf8", createParents:true, expectedSha256:null }).catch(() => undefined);
     }
     const sent = await services.dispatchWriter({ threadId:input.pmThreadId, projectId:input.projectId, task:fix, plan }).catch((cause:unknown) => ({ state:"rejected", reason:cause instanceof Error ? cause.message : String(cause) }));
-    await tell(`Lane Pilot: ${input.task.id} is merged, but ${red.map((check) => check.command).join(", ")} fails on main with it. The work stays in main; ${String(sent.state) === "rejected" || String(sent.state) === "blocked" ? `the repair task could not start (${String((sent as { reason?:unknown }).reason ?? sent.state)}), dispatch it yourself` : `repair task ${fix.id} is on its way — no action needed`}.`);
+    await tell(`Lane Pilot: ${input.task.id} is merged, but ${red.map((check) => check.command).join(", ")} fails on main with it${turnedRed.length ? ` (${turnedRed.join(", ")} passed on the base before this task)` : ""}. The work stays in main; ${String(sent.state) === "rejected" || String(sent.state) === "blocked" ? `the repair task could not start (${String((sent as { reason?:unknown }).reason ?? sent.state)}), dispatch it yourself` : `repair task ${fix.id} is on its way — no action needed`}.`);
   }
 
   return { finishWriterAttempt, checkMainAfterMerge, noteMergedForGate };

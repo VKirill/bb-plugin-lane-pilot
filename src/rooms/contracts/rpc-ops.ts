@@ -178,6 +178,27 @@ export const rpcOps = {
     input: z.object({ ref: z.string().min(1).max(200) }).strict(),
     output: z.unknown(),
   },
+  /** The baseline a task started from (checks already green or red on its base, what turned red after the merge) and the regression findings (src/rooms/baseline). */
+  baseline_status: {
+    input: z.object({ taskId: z.string().min(1).max(200) }).strict(),
+    output: z.unknown(),
+  },
+  /** The regression pass: the last accepted tasks' checks on current main, a bisect for the ones that went red. `plan` only picks; `dryRun` writes nothing. */
+  regress_run: {
+    input: z.object({ projectId: z.string().min(1).optional(), lastN: z.number().int().min(1).max(200).optional(), days: z.number().int().min(1).max(365).optional(),
+      dryRun: z.boolean().optional(), plan: z.boolean().optional(), force: z.boolean().optional() }).strict(),
+    output: z.unknown(),
+  },
+  /** The regression findings still open (or all of them), with the first bad commit, its task and the evidence. */
+  regress_list: {
+    input: z.object({ projectId: z.string().min(1).optional(), all: z.boolean().optional() }).strict(),
+    output: z.unknown(),
+  },
+  /** Settles a regression finding by hand, with the reason. */
+  regress_close: {
+    input: z.object({ id: z.number().int().min(1), reason: z.string().min(1).max(500) }).strict(),
+    output: z.unknown(),
+  },
   /** LP-Bench (src/rooms/bench): the fixed task set, its series per arm and the paired comparison. Building and running go through `bb lane-pilot bench`. */
   bench_status: {
     input: z.object({ version: z.string().min(1).max(40).optional() }).strict(),

@@ -162,6 +162,29 @@ export function AcceptanceCard({ runId, taskId, fallback, finished, refreshKey }
         </Block>
       </div>
 
+      {card.baseline ? (
+        <div className="mt-4">
+          <Block title={t("acc_baseline")} testId="acc-baseline">
+            <p className={`mb-1.5 break-words text-xs ${card.baseline.verdict === "already_built" ? WARN : "text-muted-foreground"}`} data-testid="acc-baseline-summary" data-verdict={card.baseline.verdict}>
+              {card.baseline.verdict === "already_built" ? (card.baseline.action === "stopped" ? t("acc_baseline_stopped") : t("acc_baseline_built")) : card.baseline.summary}
+            </p>
+            <ul className="space-y-1">
+              {card.baseline.checks.map((row, index) => (
+                <li key={`${row.command}:${index}`} className="flex min-w-0 items-start gap-1.5 text-sm" data-status={row.status}>
+                  <Mark tone={row.status === "green" ? "ok" : row.status === "red" ? "bad" : "none"} label={row.status}>{row.status === "green" ? "✓" : row.status === "red" ? "✗" : "–"}</Mark>
+                  <span className="min-w-0 break-words"><span className="break-all font-mono text-xs">{row.command}</span> <span className="text-xs text-muted-foreground">· {t(`acc_baseline_${row.status}` as I18nKey)}{row.cached ? ` · ${t("acc_baseline_cached")}` : ""}{row.status === "skipped" && row.note ? ` · ${row.note}` : ""}</span></span>
+                </li>
+              ))}
+            </ul>
+            {card.baseline.turnedRed === null ? null : (
+              <p className={`mt-1.5 break-words text-xs ${card.baseline.turnedRed.length ? BAD : "text-muted-foreground"}`} data-testid="acc-baseline-turned">
+                {card.baseline.turnedRed.length ? fill("acc_baseline_turned", { list: card.baseline.turnedRed.join(", ") }) : t("acc_baseline_nothing_turned")}
+              </p>
+            )}
+          </Block>
+        </div>
+      ) : null}
+
       <div className="mt-4">
         <Block title={t("acc_notrun")} testId="acc-notrun">
           {card.notRun.length ? (

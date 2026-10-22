@@ -6,6 +6,7 @@ import type { HarnessApi } from "../../harness/server";
 import type { DeferralApi } from "../../deferral/server";
 import type { RollbackApi } from "../../rollback/server";
 import type { BenchApi } from "../../bench/server";
+import type { BaselineApi, RegressionApi } from "../../baseline/server";
 import type { WorldApi } from "../../world/server";
 import type { Canary } from "../../stability/server";
 import type { createActivation } from "../../native-agent/server";
@@ -67,6 +68,10 @@ export interface Services {
   rollback: RollbackApi;
   /** LP-Bench: the fixed task set and its comparisons (src/rooms/bench). */
   bench: BenchApi;
+  /** The task's checks on its base before a writer, and what turned red after the merge (src/rooms/baseline). */
+  baseline: BaselineApi;
+  /** The regression pass: accepted tasks' checks on current main, bisect of the ones that went red (src/rooms/baseline). */
+  regression: RegressionApi;
   DOCS_NIGHT_ATTEMPTS: DocsNightlyApi["DOCS_NIGHT_ATTEMPTS"];
   DOCS_OPEN_KEY: DocsNightlyApi["DOCS_OPEN_KEY"];
   DOCS_TOOLING: DocsNightlyApi["DOCS_TOOLING"];

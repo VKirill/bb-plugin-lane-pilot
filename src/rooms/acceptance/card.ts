@@ -4,6 +4,7 @@ import type { LanePilotDatabase } from "../storage";
 import { STAGE_PROOF, isAdvisoryProof } from "../tasks";
 import type { StageId } from "../tasks";
 import { attemptMetrics } from "../usage/server";
+import { getBaseline } from "../baseline";
 
 /**
  * The acceptance card of a task (SMA plan P1-4): everything that says why it was accepted or not, from records that already exist —
@@ -59,6 +60,7 @@ export function buildAcceptanceCard(db: LanePilotDatabase, input: { runId: strin
   const usd = measured.length ? measured.reduce((sum, row) => sum + (row.costUsd ?? 0), 0) : null;
   const note = metrics.find((row) => row.costState !== "measured")?.costNote ?? null;
 
+  const baseline = getBaseline(db, input.runId, input.taskId);
   return {
     contract: { objective: typeof contract.objective === "string" ? contract.objective : null, acceptance: strings(contract.acceptance), ownsPaths: strings(contract.owns_paths) },
     risk: typeof contract.risk === "string" ? contract.risk : null,
@@ -70,6 +72,11 @@ export function buildAcceptanceCard(db: LanePilotDatabase, input: { runId: strin
       return [{ stageId, state: row.state, proof: isAdvisoryProof(proof) ? "advisory" as const : "code" as const, proofKind: proof.kind, reason: clip(row.reason), model: row.model, updatedAt: row.updatedAt }];
     }),
     gates, planFact, notRun,
+    baseline: baseline ? {
+      state: baseline.state, verdict: baseline.verdict, action: baseline.action, mode: baseline.mode, summary: baseline.summary, baseSha: baseline.baseSha, at: baseline.at,
+      checks: baseline.checks.map((check) => ({ command: check.command, status: check.status, note: clip(check.note, 300) ?? "", cached: check.cached === true })),
+      turnedRed: baseline.after ? baseline.after.turnedRed : null,
+    } : null,
     cost: {
       state: !metrics.length || !measured.length ? "not_measured" : measured.length === metrics.length ? "measured" : "partial",
       usd, tokens: measured.length ? measured.reduce((sum, row) => sum + (row.tokens?.total ?? 0), 0) : null,

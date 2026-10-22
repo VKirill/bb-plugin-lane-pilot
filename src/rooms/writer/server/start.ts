@@ -504,6 +504,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         executionPacketSha256 = null;
         return true;
       };
+      // The baseline (src/rooms/baseline): the task's checks on the base before any writer is asked. «Already built» is told to the PM, or in
+      // mode stop ends the task here with the evidence. A mainfix has its own preflight below; a folder without git has no base to run on.
+      if (!writerThreadId && !input.turnSent && !liveFolder && !isMainfixTask(input.task.id)) {
+        const baseline = await services.baseline?.preflight({ projectId:input.projectId, runId:input.runId, taskId:input.taskId, attemptId, pmThreadId:input.pmThreadId, config:freshConfig, task:freshTask });
+        if (baseline?.stop) { blockBeforeWriter(baseline.stop); return; }
+      }
       // The area's writer from an earlier task of this run takes this one in its own thread, unless the writer setting now names
       // another provider or model: then this task gets a fresh writer on the current one (the spawn's own selection, below).
       if (!writerThreadId && input.task.area && !liveFolder) {
