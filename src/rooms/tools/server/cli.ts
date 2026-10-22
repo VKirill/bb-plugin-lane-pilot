@@ -21,6 +21,7 @@ import { MEMORY_CONFLICT_USAGE, runMemoryConflictCli } from "../../memory/server
 import { BENCH_USAGE, runBenchCli } from "../../bench/server";
 import { BASELINE_USAGE, runBaselineCli } from "../../baseline/server";
 import { RETURN_USAGE, runReturnCli } from "../../stage-return/server";
+import { FORECAST_USAGE, runForecastCli } from "../../forecast/server";
 import { WALL_USAGE, runWallCli } from "../../wall/server";
 import { CHECKERS_USAGE, runCheckersCli } from "../../checkers/server";
 import { POLICY_USAGE, runPolicyCli } from "../../policy";
@@ -138,9 +139,10 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"coverage", summary:"What proves each pipeline stage, attempt transition, failure class, gate, memory path, room and key mechanism: covered live by a deploy-drill scenario, covered by tests only (and why no drill), or not covered; --receipt checks the live claims against a drill receipt", usage:COVERAGE_USAGE },
       { name:"rules", summary:"The rules by form (always | skill | check | hook | memory) and the mechanism that enforces each; classify them, generate mechanism tasks for the recurring check rules, retire the text a mechanism now holds", usage:RULES_USAGE },
       { name:"workflow-trigger", summary:"Start a workflow in a project as its schedule trigger does (the automation of a schedule calls this); exit 1 with the reason when it cannot start", usage:"bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]" },
-      { name:"defer", summary:"Put a mandatory check off: write it in the register with a term from the owner's own message (the code reads the message and its date), or set/move the term of an entry", usage:"bb lane-pilot defer <what|dfr_id> --kind drill_scenario|skipped_test|gate|plan_decision --owner-msg <threadId>#<seq> [--due 2026-11-05] [--area A] [--project P]" },
+      { name:"defer", summary:"Put a mandatory check off: write it in the register with a term (at most 30 days) and the reason, or set/move the term of an entry; a message of the owner that names a date also works (--owner-msg)", usage:"bb lane-pilot defer <what|dfr_id> --kind drill_scenario|skipped_test|gate|plan_decision --due 2026-11-05 --reason \"…\" [--area A] [--project P]" },
       { name:"defer-close", summary:"Close a deferral with the evidence that settles it", usage:"bb lane-pilot defer-close <dfr_id> --evidence <text>" },
-      { name:"deferrals", summary:"The register of deferrals: overdue, open and the ones that need a term from the owner", usage:"bb lane-pilot deferrals [--project P] [--state open|overdue|needs_owner_term|closed]" },
+      { name:"deferrals", summary:"The register of deferrals: overdue and open, with their terms", usage:"bb lane-pilot deferrals [--project P] [--state open|overdue|closed]" },
+      { name:"forecast", summary:"The PM's forecasts (contract `forecast`) against the facts of accepted tasks: files, first try, tokens and minutes, per area", usage:FORECAST_USAGE },
       { name:"regress", summary:"Regression after acceptance: the last accepted tasks' cheap checks on current main, a bisect to the first bad commit for the ones gone red; --plan only picks, --dry-run writes nothing, nothing is reverted", usage:BASELINE_USAGE },
       { name:"regressions", summary:"The regression findings still open (--all for settled ones too)", usage:"bb lane-pilot regressions [project-id] [--all]" },
       { name:"regress-close", summary:"Settle a regression finding by hand", usage:"bb lane-pilot regress-close <id> <reason...>" },
@@ -203,6 +205,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
         if (command === "regress" || command === "regressions" || command === "regress-close" || command === "baseline") {
           return await runBaselineCli(services, command, args);
         }
+        if (command === "forecast") return runForecastCli(db, args);
         if (command === "return" || command === "returns") {
           return await runReturnCli(services.stageReturn, command, args);
         }

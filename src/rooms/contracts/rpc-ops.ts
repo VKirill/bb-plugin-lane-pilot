@@ -183,6 +183,11 @@ export const rpcOps = {
     input: z.object({ ref: z.string().min(1).max(200), to: z.enum(["discussion", "planning", "writer"]), note: z.string().max(8000), by: z.string().min(1).max(60).optional() }).strict(),
     output: z.unknown(),
   },
+  /** The PM's forecasts against the facts of accepted tasks, scored and calibrated per area (src/rooms/forecast). */
+  forecast_report: {
+    input: z.object({ projectId: z.string().min(1).optional(), days: z.number().int().min(1).max(365).optional() }).strict(),
+    output: z.unknown(),
+  },
   /** The returns on record for a task: the note, the stale and kept stages, how far each got. */
   task_returns: {
     input: z.object({ ref: z.string().min(1).max(200) }).strict(),

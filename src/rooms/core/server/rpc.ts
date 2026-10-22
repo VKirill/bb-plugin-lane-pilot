@@ -25,6 +25,7 @@ import { benchRpc } from "../../bench/server";
 import { ownerWaitingRpc } from "../../owner-waiting/server";
 import { baselineRpc } from "../../baseline/server";
 import { stageReturnRpc } from "../../stage-return/server";
+import { forecastRpc } from "../../forecast/server";
 import { wallRpc } from "../../wall/server";
 import { improvementRpc } from "../../improvement/server";
 import { sessionMemoryRpc } from "../../memory/server";
@@ -63,6 +64,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...ownerWaitingRpc(ctx.db),
     ...baselineRpc(services.baseline, services.regression),
     ...stageReturnRpc(services.stageReturn),
+    ...forecastRpc(ctx.db),
     ...wallRpc(services.wall),
     ...improvementRpc({ db: ctx.db, kv: ctx.bb.storage.kv, wall: services.wall, bench: services.bench, deferrals: services.deferrals }),
     ...sessionMemoryRpc(ctx, services),

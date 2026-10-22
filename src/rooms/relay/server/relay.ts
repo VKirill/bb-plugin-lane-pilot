@@ -1,6 +1,8 @@
 import { latestTaskAttemptState, listUnreportedTaskOutcomes, markTaskOutcomesReported, pmHasTasksAtWork, type TaskOutcome } from "../../storage";
 import { taskFamily } from "../../runs";
 import { pmDeferralLines } from "../../deferral/server";
+import { calibrationLine } from "../../forecast";
+import { forecastReport } from "../../forecast/server";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { ServerContext } from "../../core/server";
@@ -594,7 +596,13 @@ export function relayFor(ctx:ServerContext):Relay {
     },
     tasksAtWork:async (pmThreadId) => pmHasTasksAtWork(ctx.db, pmThreadId),
     markReported:async (rows) => markTaskOutcomesReported(ctx.db, rows, Date.now()),
-    deferralLines:(projectId) => { try { return pmDeferralLines(ctx.db, projectId, Date.now()); } catch { return []; } },
+    // What a PM reads before it promises a date (SMA rule 6): the register of deferrals and how its forecasts held (src/rooms/forecast).
+    deferralLines:(projectId) => {
+      const lines: string[] = [];
+      try { lines.push(...pmDeferralLines(ctx.db, projectId, Date.now())); } catch { /* the register is informational here */ }
+      try { const line = calibrationLine(forecastReport(ctx.db, { projectId, days:60 }).calibration.overall ?? undefined); if (line) lines.push(line); } catch { /* idem */ }
+      return lines;
+    },
     now:() => Date.now(),
     log:ctx.log,
   });
