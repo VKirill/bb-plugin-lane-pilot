@@ -136,6 +136,21 @@ describe("bench build", () => {
     expect(verifySet({ ...stored, tasks: stored.tasks.map((t, i) => (i === 0 ? { ...t, initialHeadSha: "f".repeat(40) } : t)) })).toMatchObject({ ok: false });
   });
 
+  it("a host that stops answering mid-build (a plugin reload) stops the stratum and freezes nothing", async () => {
+    const s = scenario();
+    let warmed = 0;
+    const dying = { run: (hostId: string, cwd: string, command: string, timeoutSec?: number) => {
+      if (command.startsWith("git cat-file -e") && ++warmed > 1) return Promise.reject(new Error("plugin disposed"));
+      return localHost.run(hostId, cwd, command, timeoutSec);
+    } };
+    const { report } = await buildSet(input(s, { host: dying }));
+    expect(report.survived).toBe(1);
+    expect(report.strata[0]).toMatchObject({ rejected: { host_error: 3 }, stoppedBecause: expect.stringContaining("plugin disposed") });
+    expect(report.set).toBeNull();
+    expect(report.note).toContain("stopped answering");
+    expect(getSet(s.db as never, "v1")).toBeNull();
+  });
+
   it("writes nothing on a dry run or a partial build", async () => {
     const s = scenario();
     const dry = await buildSet(input(s, { dryRun: true }));

@@ -73,8 +73,8 @@ export async function findSolutionCommit(host: HostPort, candidate: Candidate): 
 export async function warmUp(host: HostPort, candidate: Candidate, options: WarmOptions): Promise<WarmResult> {
   const hostId = candidate.hostId, repo = candidate.repoPath;
   const git = (command: string, timeout = 120) => host.run(hostId, repo, command, timeout);
-  const reachable = await git(`git cat-file -e ${q(`${candidate.initialHeadSha}^{commit}`)}`, 30).catch(() => null);
-  if (!reachable) return { ok: false, reason: "host_error", detail: "the host did not answer" };
+  const reachable = await git(`git cat-file -e ${q(`${candidate.initialHeadSha}^{commit}`)}`, 30).catch((cause: unknown) => ({ failed: cause instanceof Error ? cause.message : String(cause) }));
+  if ("failed" in reachable) return { ok: false, reason: "host_error", detail: `the host did not answer: ${reachable.failed}` };
   if (reachable.exitCode !== 0) return { ok: false, reason: "base_unreachable", detail: candidate.initialHeadSha };
   const solution = await findSolutionCommit(host, candidate);
   if ("reason" in solution) return { ok: false, reason: solution.reason, detail: solution.detail };

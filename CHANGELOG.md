@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.274
+
+**A bench build that loses its host freezes nothing.** Three host errors in a row stop that host's chain, the build writes no set and says which host stopped answering; the warm-up keeps the host's own error text. On 2026-10-22 a plugin reload in the middle of `bench build --set v1` turned the remaining 82 candidates into host errors and froze v1 with 5 tasks.
+
 ## 0.1.273
 
 **Plan→fact checks lines for tasks in a worktree.** A task whose ownership base compares the working tree (no base commit recorded, only the head the writer started from) was checked by files only, and the acceptance card said «base: not recorded (a folder without git)»; plan→fact now diffs against that head and the card shows it. Found by the first end-to-end run through the owner's composer (task `clamp-fn` in the sandbox: PM → writer → checks → plan→fact → acceptance, merged to main). The card's «not run» list reads «turned off in the project's settings» instead of the raw code.

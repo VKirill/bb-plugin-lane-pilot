@@ -47,7 +47,9 @@ model or another edit; three numbers: how many stages passed, what it cost, how 
   (`git apply`, `--3way` as the second try). The task enters only when at least one check fails on the bare base and every check passes with the
   solution. Every other outcome is recorded with its reason (`WarmReason`, `warmup.ts:14`): `base_unreachable`, `solution_commit_not_found`,
   `solution_ambiguous`, `solution_empty`, `solution_too_large`, `clone_failed`, `passes_on_base`, `solution_does_not_apply`, `solution_fails_checks`,
-  `host_error`. Dependencies: a copy-on-write copy of `node_modules` on macOS (a symlink that leaves the checkout is refused by Turbopack), a symlink elsewhere.
+  `host_error`. Dependencies: a copy-on-write copy of `node_modules` on macOS (a symlink that leaves the checkout is refused by Turbopack), a copy on Linux.
+- **A host that stops answering** (`build.ts`): three `host_error` in a row stop that host's chain and the build writes no set (a plugin reload
+  mid-build once froze v1 with 5 tasks: every remaining candidate became a host error). Run the build again under a new version.
 - **Disk**: a machine with less than 25 GB free (`MIN_FREE_GB`, `warmup.ts:112`) is not touched: Lane Pilot's own writers hold at min(15 GB, 5%)
   (memory `mac-mini-disk-test-temp`).
 - **Frozen** (`migrations.ts`): `lane_pilot_bench_set` and `lane_pilot_bench_task` refuse UPDATE and DELETE by trigger; `manifest_sha256` is the hash of

@@ -73,7 +73,12 @@ export async function buildSet(input: BuildInput): Promise<{ report: BuildReport
   const chains = new Map<string, typeof byStratum>();
   for (const entry of byStratum) chains.set(hostOf(entry.pool), [...(chains.get(hostOf(entry.pool)) ?? []), entry]);
 
+  // A host that stops answering (a plugin reload, a machine gone) would turn every remaining candidate into a host error and freeze a
+  // stunted set: three in a row stop that host's chain, and the build writes nothing.
+  const HOST_ERRORS_IN_A_ROW = 3;
+  const lostHosts: string[] = [];
   await Promise.all([...chains.entries()].map(async ([hostId, entries]) => {
+    let hostErrors = 0;
     for (const { stratum, pool } of entries) {
       const report: StratumReport = { key: stratum.key, quota: stratum.quota, candidates: pool.length, hardCandidates: pool.filter((c) => c.hard).length, tried: 0, survived: 0, kept: 0, keptHard: 0, rejected: {}, stoppedBecause: "" };
       reports.set(stratum.key, report);
@@ -84,12 +89,14 @@ export async function buildSet(input: BuildInput): Promise<{ report: BuildReport
       for (const candidate of input.planOnly ? [] : order) {
         const enough = survivors.length >= stratum.quota && survivors.filter((s) => s.candidate.hard).length >= Math.min(need, pool.filter((c) => c.hard).length);
         if (enough) { report.stoppedBecause = "quota filled"; break; }
+        if (lostHosts.includes(hostId)) { report.stoppedBecause = `host ${hostId} stopped answering`; break; }
         if (report.tried >= maxTries) { report.stoppedBecause = `tried ${maxTries} candidates`; break; }
         const free = hostId === "none" ? null : await freeGb(input.host, hostId);
         if (free !== null && free < minFree) { report.stoppedBecause = `host ${hostId} has ${free} GB free, below ${minFree}`; log(`bench build: ${report.stoppedBecause}`); break; }
         report.tried++;
         const started = Date.now();
         const result = await warmUp(input.host, candidate, { ...warmOptions, scratch: await scratchOn(hostId) }).catch((cause: unknown) => ({ ok: false as const, reason: "host_error" as const, detail: cause instanceof Error ? cause.message : String(cause) }));
+        hostErrors = !result.ok && result.reason === "host_error" ? hostErrors + 1 : 0;
         if (result.ok) {
           report.survived++;
           survivors.push({ candidate, stratum: stratum.key, solutionCommit: result.solutionCommit, patchSha256: result.patchSha256, warm: result.record });
@@ -98,6 +105,12 @@ export async function buildSet(input: BuildInput): Promise<{ report: BuildReport
           report.rejected[result.reason] = (report.rejected[result.reason] ?? 0) + 1;
           rejected.push({ taskId: candidate.taskId, stratum: stratum.key, reason: result.reason, ...(result.detail ? { detail: result.detail.slice(0, 300) } : {}) });
           log(`bench build: ${stratum.key} ${candidate.taskId} rejected: ${result.reason}`);
+          if (hostErrors >= HOST_ERRORS_IN_A_ROW) {
+            lostHosts.push(hostId);
+            report.stoppedBecause = `host ${hostId} stopped answering (${HOST_ERRORS_IN_A_ROW} host errors in a row; last: ${(result.detail ?? "").slice(0, 160)})`;
+            log(`bench build: ${report.stoppedBecause}`);
+            break;
+          }
         }
       }
       if (!report.stoppedBecause) report.stoppedBecause = "candidates exhausted";
@@ -123,9 +136,10 @@ export async function buildSet(input: BuildInput): Promise<{ report: BuildReport
   let note = "";
   if (input.planOnly) note = "plan only: candidates counted, nothing warmed up or written";
   else if (input.dryRun) note = "dry run: nothing written";
+  else if (lostHosts.length) note = `host ${lostHosts.join(", ")} stopped answering during the warm-up: nothing written; run the build again`;
   else if (!tasks.length) note = "no task survived the warm-up: nothing written";
   else if (input.only) note = `partial set: strata ${input.only.join(", ")} only; the other strata are not in this version`;
-  if (!input.dryRun && !input.planOnly && tasks.length) set = insertSet(input.db, { version: input.version, tasks, rejected, candidateCount: loaded.candidates.length, config: { seed, triesFactor: factor, strata: strata.map((s) => ({ key: s.key, quota: s.quota })) } });
+  if (!input.dryRun && !input.planOnly && !lostHosts.length && tasks.length) set = insertSet(input.db, { version: input.version, tasks, rejected, candidateCount: loaded.candidates.length, config: { seed, triesFactor: factor, strata: strata.map((s) => ({ key: s.key, quota: s.quota })) } });
   const keptHard = tasks.filter((task) => task.hard).length;
   return {
     tasks, rejected,
