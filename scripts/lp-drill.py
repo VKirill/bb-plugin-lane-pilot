@@ -963,6 +963,20 @@ def dry_run(names: list[str]) -> None:
             print(f"scenario {name}: {json.dumps(spec)}")
 
 
+def evidence_seen(run_id: str) -> dict | None:
+    """What the drill's run left on the hub: stage receipts (stage -> state -> n), gate evaluations (gate -> status -> n) and attempt moves
+    ("from>to" -> n). `bb lane-pilot coverage --receipt` checks the registry's «covered live» claims against it (src/rooms/coverage)."""
+    try:
+        stages = hubsql(f"select stage_id as k, state as v, count(*) as n from lane_pilot_stage_receipt where run_id='{run_id}' group by 1, 2;")
+        gates = hubsql(f"select gate as k, status as v, count(*) as n from lane_pilot_gate_event where run_id='{run_id}' group by 1, 2;")
+        moves = hubsql(f"select t.from_state||'>'||t.to_state as k, case t.refused when 1 then 'refused' else 'ok' end as v, count(*) as n from lane_pilot_attempt_transition t join lane_pilot_attempt a on a.id=t.attempt_id where a.run_id='{run_id}' group by 1, 2;")
+    except Exception as cause:  # the hub could not be read: the receipt says so instead of failing the drill
+        log(f"evidence of the run not recorded: {cause}")
+        return None
+    nest = lambda rows: {k: {r["v"]: r["n"] for r in rows if r["k"] == k} for k in sorted({r["k"] for r in rows})}
+    return {"stages": nest(stages), "gates": nest(gates), "moves": nest(moves)}
+
+
 def write_receipt(path: Path, start: float, scenarios: list[dict], ctx: Context | None, problems: list[str], names: list[str]) -> str:
     first = next((s for s in scenarios if s["name"] == "parallel3"), None)
     failed = [s["name"] for s in scenarios if s["result"] == "fail"]
@@ -974,6 +988,7 @@ def write_receipt(path: Path, start: float, scenarios: list[dict], ctx: Context 
         "result": result, "problems": problems + [f"{s['name']}: {p}" for s in scenarios for p in s["problems"]],
         "checks": first.get("checks") if first else None, "tasks": first.get("tasks") if first else None, "dispatch": first.get("dispatch") if first else None,
         "scenarios": scenarios,
+        "seen": evidence_seen(ctx.run_id) if ctx and ctx.run_id else None,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")

@@ -27,15 +27,21 @@ function seeded() {
   const event = (rule_id: string, action: string, at: number) => db.prepare("INSERT INTO lane_pilot_rule_event(project_id,rule_id,action,at) VALUES ('proj_1',?,?,?)").run(rule_id, action, at);
   event("r3", "adopted", NOW - 2 * HOUR); event("r3", "adopted", NOW - 50 * HOUR); event("r3", "confirmed", NOW - HOUR);
   db.prepare("INSERT INTO lane_pilot_learning_item(id,obs_id,project_id,thread_id,kind,text,reach,state,evidence,created_at) VALUES ('i1','o1','proj_1','t','preference','p','owner','pending_owner','e',?)").run(NOW);
+  const deferral = (id: string, kind: string, state: string, dueAt: number | null) => db.prepare("INSERT INTO lane_pilot_deferral(id,project_id,what,kind,state,due_at,created_at,updated_at) VALUES (?,NULL,'w',?,?,?,?,?)").run(id, kind, state, dueAt, NOW, NOW);
+  deferral("d1", "skipped_test", "needs_owner_term", null); deferral("d2", "plan_decision", "needs_owner_term", null);
+  deferral("d3", "gate", "overdue", NOW - HOUR); deferral("d4", "gate", "open", NOW + HOUR); deferral("d5", "memory_conflict", "needs_owner_term", null);
+  db.prepare("INSERT INTO lane_pilot_memory_conflict(id,project_id,note_a,note_b,kind,subject,state,detected_at) VALUES ('mc1','proj_1','a','b','value','s','held',?)").run(NOW);
+  db.prepare("INSERT INTO lane_pilot_owner_item(key,source,kind,what,why,state,created_at) VALUES ('night:1','night','proposal','w','y','open',?)").run(NOW);
   return db;
 }
 
 describe("the morning list", () => {
-  it("is three lines: the owner's decisions waiting, what went red, what was accepted", () => {
+  it("is four lines: the owner's decisions waiting, what went red, what was accepted, the other things only he can decide", () => {
     expect(composeMorningList(seeded(), NOW)).toEqual([
       "Только владелец: ждут решения правил — 2, пунктов обучения — 1.",
       "Красное за ночь: 3 попыток (provider_error 1, validation_failed 2).",
       "Принято: 2 попыток, правил на пробу 1, подтверждено 1.",
+      "Ещё ждут владельца: отсрочек без срока — 2, просроченных — 1, конфликтов памяти — 1, от ночного цикла — 1. Подробно: экран «Ждут владельца».",
     ]);
   });
 
@@ -45,12 +51,13 @@ describe("the morning list", () => {
       "Только владелец: ждут решения правил — 0, пунктов обучения — 0.",
       "Красное за ночь: ничего.",
       "Принято: 0 попыток, правил на пробу 0, подтверждено 0.",
+      "Ещё ждут владельца: отсрочек без срока — 0, просроченных — 0, конфликтов памяти — 0, от ночного цикла — 0. Подробно: экран «Ждут владельца».",
     ]);
   });
 
-  it("scripts/lp-morning.sql (used by the daily report) prints the same three lines", () => {
+  it("scripts/lp-morning.sql (used by the daily report) prints the same four lines", () => {
     const db = seeded();
-    db.exec(`CREATE TEMP TABLE lp_morning(since integer); INSERT INTO lp_morning VALUES (${NOW - 24 * HOUR})`);
+    db.exec(`CREATE TEMP TABLE lp_morning(since integer, now integer); INSERT INTO lp_morning VALUES (${NOW - 24 * HOUR}, ${NOW})`);
     const sql = readFileSync(join(__dirname, "..", "..", "scripts", "lp-morning.sql"), "utf8").split("\n").filter((line) => !line.startsWith("--")).join("\n");
     const lines = sql.split(";").map((statement) => statement.trim()).filter(Boolean)
       .map((statement) => Object.values(db.prepare(statement).get() as Record<string, string>)[0]);

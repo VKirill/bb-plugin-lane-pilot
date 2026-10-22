@@ -30,7 +30,7 @@ Today it has no unseen decisions, so **the night decides nothing alone**.
 | `src/rooms/policy/live-exam.ts` | The growing split: `collectOwnerDecisions`, `appendLiveItems`, `loadLiveExam`, `recordOwnerDecision`, `collectAndAppend` |
 | `src/rooms/policy/growth.ts` | `ownerOnlyShrank`, `examShrank`, `freezeProblems` |
 | `src/rooms/policy/cycle.ts` | `shouldStopCycle`: the stop rule of the night loop |
-| `src/rooms/policy/morning.ts` + `scripts/lp-morning.sql` | The three-line morning list |
+| `src/rooms/policy/morning.ts` + `scripts/lp-morning.sql` | The four-line morning list; the fourth line and the screen «Ждут владельца» are in `docs/owner-waiting.md` |
 | `src/rooms/policy/cli.ts` | `bb lane-pilot policy-exam`, `policy show|classify|exam-collect|exam-add|exam-export|morning` (registered in `src/rooms/tools/server/cli.ts`) |
 
 ## The change descriptor and the matcher

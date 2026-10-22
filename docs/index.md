@@ -12,6 +12,7 @@ Built by Lane Pilot from page frontmatter.
 |---|---|---|---|
 | [Anamnesis and owner profile](anamnesis.md) | component | active | 2026-10-10 |
 | [Lane Pilot architecture](architecture.md) | architecture | active | 2026-10-19 |
+| [Coverage registry, graph and drill](coverage.md) | component | active | 2026-10-22 |
 | [Lane Pilot data model overview](data-model.md) | data-model | active | 2026-10-19 |
 | [Schedules and Pixel World persistence](data-model/automation.md) | data-model | active | 2026-10-10 |
 | [Council, handoff, Jev and run-insight data](data-model/governance.md) | data-model | active | 2026-10-19 |
@@ -30,6 +31,7 @@ Built by Lane Pilot from page frontmatter.
 | [Project memory](memory.md) | component | active | 2026-10-11 |
 | [Native agent activation and dispatch](native-agent.md) | component | active | 2026-10-14 |
 | [Lane Pilot overview](overview.md) | overview | active | 2026-10-20 |
+| [Waiting for the owner](owner-waiting.md) | component | active | 2026-10-22 |
 | [Package operation details](package-operations.md) | component | active | 2026-10-17 |
 | [Plan against fact and the acceptance card](plan-fact.md) | component | active | 2026-10-22 |
 | [Shared packages](packages.md) | component | active | 2026-10-20 |

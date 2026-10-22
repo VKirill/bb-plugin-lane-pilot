@@ -187,4 +187,21 @@ export const rpcOps = {
     input: z.object({ version: z.string().min(1).max(40).default("v1"), armA: z.string().min(1).max(80), armB: z.string().min(1).max(80), noise: z.tuple([z.string(), z.string()]).optional() }).strict(),
     output: z.unknown(),
   },
+  /** «Waiting for the owner» (src/rooms/owner-waiting): what only the owner can decide, the Telegram digest of new items, and its settings. */
+  owner_waiting: {
+    input: z.object({}).strict(),
+    output: z.unknown(),
+  },
+  owner_waiting_digest: {
+    input: z.object({}).strict(),
+    output: z.unknown(),
+  },
+  owner_waiting_ack: {
+    input: z.object({ keys: z.array(z.string().min(1).max(300)).min(1).max(200) }).strict(),
+    output: z.unknown(),
+  },
+  owner_waiting_config: {
+    input: z.object({ patch: z.record(z.string().max(40), z.string().max(80)).optional() }).strict(),
+    output: z.unknown(),
+  },
 };

@@ -30,8 +30,10 @@ usage=$(week "select coalesce(group_concat(provider||' '||m||'/'||n, ', '), 'н�
 now_ms="$(( $(date +%s) * 1000 ))"
 dfr=$(day "select 'Отсрочки: просрочено '||coalesce(sum(state in ('open','overdue') and due_at<$now_ms),0)||', открыто '||coalesce(sum(state in ('open','overdue') and due_at>=$now_ms),0)||', нужен срок от владельца '||coalesce(sum(state='needs_owner_term'),0)||coalesce((select ' (просрочено: '||group_concat(substr(what,1,60)||' ['||id||']', '; ')||')' from (select id, what from lane_pilot_deferral where state in ('open','overdue') and due_at<$now_ms order by due_at limit 3)),'') from lane_pilot_deferral" 2>/dev/null) || dfr=""
 text="📊 Lane Pilot за сутки, реальные проекты на версии ≥${ver}: ${acc} (за 7 дней ${accw}). Окно стабильности: ${win}. Вина Lane Pilot (harness): ${fault}. Провалы: ${orig:-нет}. Доля orchestrator: ${orch}. Системных причин: ${sys}. Цель: orchestrator <5%, системных 0, принято ≥60%, 7 дней подряд. Старые версии (до ${ver}), для сравнения: ${old}. Песочницы и учения отдельно: ${sand}. Токены писателей за 7 дней (измерено/попыток): ${usage}; где провайдер не отдаёт расход (acp-cursor), цена «не измерено», не 0 (bb lane-pilot metrics).${dfr:+ ${dfr}.}"
-# The morning list (three lines, scripts/lp-morning.sql): never blocks the report; no file or a failing query just leaves it out.
-morning=$( { echo "create temp table lp_morning(since integer); insert into lp_morning values ($(( ($(date +%s) - 86400) * 1000 )));"; cat "$HOME/.config/lp-metrics/morning.sql"; } | sqlite3 -readonly "$DB" 2>/dev/null ) || morning=""
+# The morning list (four lines, scripts/lp-morning.sql; the fourth is «Ещё ждут владельца», the summary of the screen «Ждут владельца»): never blocks the report;
+# no file just leaves it out, and a failing line (a database without the owner-waiting tables) leaves out only itself.
+now_s=$(date +%s)
+morning=$( { echo "create temp table lp_morning(since integer, now integer); insert into lp_morning values ($(( (now_s - 86400) * 1000 )), $(( now_s * 1000 )));"; cat "$HOME/.config/lp-metrics/morning.sql"; } | sqlite3 -readonly "$DB" 2>/dev/null ) || true
 [ -z "$morning" ] || text="${text}"$'\n\n'"${morning}"
 if [ -n "${DRY_RUN:-}" ]; then echo "$text"; exit 0; fi
 curl -fsS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" -d chat_id="$TG_CHAT" -d message_thread_id="$TG_TOPIC" --data-urlencode text="$text" >/dev/null

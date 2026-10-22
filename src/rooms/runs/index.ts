@@ -6,5 +6,5 @@ export { DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING, EXTERNAL_OPS, E
 export { judgedFailureClass } from "./failure-class-model";
 export { ENVIRONMENT_REASON, FREE_CLASSES, FREE_RETRY_LIMIT, NO_ANSWER_REASON, PARKED_CLASSES, REPLAY_CHECK_FAILED, SESSION_MAX_MS, SESSION_MAX_TURNS, WRITER_SILENT_REASON, failureClass, failureFingerprint, isEnvironmentCheckFailure, isWaitingSecret, isWriterSilent, liveFolderLockNote, nextStep, repeatedFailureReason, taskFamily, turnFailureKey } from "./failure-class";
 export type { FailureClass } from "./failure-class";
-export { IllegalTransitionError, MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, isLegalMove } from "./state-machine";
+export { IllegalTransitionError, MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, TRANSITION_TABLE, isLegalMove } from "./state-machine";
 export type { AttemptState } from "./state-machine";
