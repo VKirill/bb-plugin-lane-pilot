@@ -1,6 +1,6 @@
 // Public API of critique: what other rooms import. Everything else in this room is private.
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
-export { actionableFindings, buildCandidateEvidence, codeCritiqueSource, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "./code-critique";
+export { actionableFindings, buildCandidateEvidence, codeCritiquePrompt, codeCritiqueSource, codeRepairPrompt, findingsHash, nextRepairAction, parseCodeCritiqueSettings, parseWriterRepairReply, repairLedgerFromResult, sameUnresolvedFindings, sameWriterIdentity, settingsFromFrozenPolicy, shouldRequestRepair } from "./code-critique";
 export type { WriterIdentity } from "./code-critique";
 export { criticStats } from "./critic-stats";
 export { findSandboxUnsafeMissingExcludes, parseSandboxUnsafePatterns, runnerFilterArgs, runsWholeSuite, scanCritiqueCoverage } from "./critique-coverage";

@@ -8,6 +8,7 @@ import type { Canary } from "../../stability/server";
 import type { createActivation } from "../../native-agent/server";
 import type { createDocsNightly } from "../../docs/server";
 import type { createProbes } from "../../stability/server";
+import type { createMemoryProbe } from "../../memory-probe/server";
 import type { createReconcile } from "../../stability/server";
 import type { createStability } from "../../stability/server";
 import type { createStageChildren } from "../../qa/server";
@@ -131,6 +132,7 @@ export interface Services {
   startCancelProbe: ProbesApi["startCancelProbe"];
   startProviderErrorProbe: ProbesApi["startProviderErrorProbe"];
   startHelperProbe: ProbesApi["startHelperProbe"];
+  memoryProbe: ReturnType<typeof createMemoryProbe>;
   startWriterTask: WriterStartApi["startWriterTask"];
   stability: ReturnType<typeof createStability>["stability"];
   threadReconcilePort: ReconcileApi["threadReconcilePort"];

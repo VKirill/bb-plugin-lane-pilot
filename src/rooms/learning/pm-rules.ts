@@ -2,7 +2,7 @@ import { listRuleProposals, scopeApplies, RULE_RELEVANCE_THRESHOLD, type RulePro
 import type { Jev } from "@lane-pilot/jev";
 import { defineJudgment, noul, noulOf } from "@lane-pilot/jev";
 import type { Db } from "./store";
-import { ruleTokens } from "./rule-budget";
+import { ruleBudget, ruleTokens } from "./rule-budget";
 
 /**
  * The rules for the PM reach the PM (T4). The map of 2026-10-08 found that rules the owner's corrections produced (`audience` pm or
@@ -45,6 +45,12 @@ export function pmRulesBlock(rules: readonly PmRule[], budgetTokens: number): Pm
 /** The rules block of a PM that is being started for a run (activation.ts); empty when the project has no rule for the PM. */
 export function pmRulesPromptBlock(db: Db, projectId: string, chain: readonly string[], budgetTokens: number): string {
   try { return pmRulesBlock(pmRulesOf(db, projectId, chain), budgetTokens).text; } catch { return ""; }
+}
+
+/** The instructions a PM session that starts or resumes gets from `contributeInstructions` (service.ts): the rules block, cut to BB's limit; null when there is none. */
+export function pmResumeInstructions(db: Db, projectId: string, chain: readonly string[]): string | null {
+  const block = pmRulesBlock(pmRulesOf(db, projectId, chain), ruleBudget("pm"));
+  return block.text.trim().slice(0, 4_000) || null;
 }
 
 /* ---- picking the rules that apply to a text ---- */

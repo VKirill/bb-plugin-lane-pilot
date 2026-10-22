@@ -6,6 +6,12 @@ Scenarios (each writes its verdict into the receipt, .agents/runs/drills/<date>.
                  is byte for byte the repository's copy (lane-stack/hooks). A drifted or missing copy fails the drill and the
                  receipt lists the install command per machine; --repair-guard (or LP_DRILL_REPAIR_GUARD=1) installs the
                  repository copy and checks it again. A machine that cannot be reached is noted, not failed          [--quick]
+  memory_paths   the memory delivery paths (SMA block 4, `bb lane-pilot memory-probe`): a token planted through the memory write door must
+                 reach what each registered path hands its agent (writer brief, writer turn, PM, critics, council, terminal) -- the
+                 probe's own table -- and the real thing: the first prompt of the drill's PM (planted before it started), the brief of a
+                 real writer spawned for a probe task (cancelled once its thread exists) and a Lane Stack terminal (`lane-memory`,
+                 when this host has it). Any path that does not deliver, or an unrelated query that pulls our records, fails the
+                 drill (and so blocks the deploy). Records live a day at most and are removed at the end              [--quick]
   helper_providers one helper per provider in use (claude-code, codex, opencode2, and acp-cursor when a setting names it), each
                  started the way the pm-read stage starts its helper (`bb lane-pilot helper-probe`) with a prompt that asks for
                  one word: each must start and answer. A provider that refuses its helpers fails the drill (0.1.194 refused
@@ -62,8 +68,8 @@ OPEN_STATES = ("queued", "spawn_requested", "spawn_unknown", "running")
 TERMINAL = ("accepted", "blocked", "canceled")
 STAMP = time.strftime("%Y%m%d-%H%M%S")
 DATE = time.strftime("%Y-%m-%d")
-ALL = ["guard_hash", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit", "nogit_repo"]
-QUICK = ["guard_hash", "helper_providers", "parallel3"]
+ALL = ["guard_hash", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit", "nogit_repo"]
+QUICK = ["guard_hash", "memory_paths", "helper_providers", "parallel3"]
 # What a provider runs when no setting of the sandbox project names a model for it.
 PROVIDER_FALLBACK_MODEL = {"claude-code": "claude-sonnet-5-5", "codex": "gpt-6-luna", "opencode2": "zai-coding-plan/glm-5.3-flash"}
 # Scenarios that need no PM and no run of their own: they run before the PM starts (guard_hash) or on a project of their own (nogit).
@@ -140,6 +146,8 @@ class Context:
         self.tmp = tmp
         self.source = self.pm = self.run_id = ""
         self.dispatches: dict[str, str] = {}
+        # The report of `memory-probe --keep`, planted before the PM started (scenario memory_paths); None when that scenario is not run.
+        self.memory_probe: dict | None = None
 
     def start(self) -> None:
         rc, out, err = bb("thread", "spawn", "--project", self.project, "--environment", self.environment, "--provider", "codex", "--model", "gpt-6-luna",
@@ -424,6 +432,114 @@ def scenario_helper_providers(ctx: Context) -> dict:
             what = "did not start" if not item["started"] else "started but did not answer"
             problems.append(f"{item['provider']} ({item['model']}): a helper {what}: {item['reason'] or 'no reason given'}")
     return verdict("helper_providers", problems, providers=results)
+
+
+MEMORY_ANCHOR = "lp-probe/memory"
+LANE_MEMORY = os.environ.get("LP_DRILL_LANE_MEMORY", str(Path.home() / ".agents/bin/lane-memory"))
+
+
+def task_memory(cwd: str) -> dict:
+    """The task whose writer brief must carry the probe's note (it names the folder), core convention and rule. Cancelled once its thread exists."""
+    rel = f"{MEMORY_ANCHOR}/{STAMP}.md"
+    return note_task(f"drill-{STAMP}-memory", rel, f"Drill {STAMP} memory", cwd) | {"risk": "low"}
+
+
+def plant_memory_probe() -> dict:
+    """`memory-probe --keep` before the PM starts, so the PM's first prompt can carry the probe rule. Exit 1 (a path red) still gives a report."""
+    rc, out, err = bb("lane-pilot", "memory-probe", SANDBOX["project"], "--keep", timeout=180)
+    try:
+        report = json.loads(out)
+    except ValueError:
+        report = {}
+    return {"rc": rc, "report": report if isinstance(report, dict) else {}, "error": (err or out).strip()[:300]}
+
+
+def clean_memory_probe() -> None:
+    bb("lane-pilot", "memory-probe", SANDBOX["project"], "--clean", timeout=120)
+
+
+def thread_text(thread: str) -> str:
+    """The thread's event log as raw JSON text: the first prompt an agent got is in it. Alphanumeric tokens survive JSON escaping."""
+    if not thread:
+        return ""
+    rc, out, _ = bb("thread", "log", thread, "--json", "--limit", "100", timeout=90)
+    return out if rc == 0 else ""
+
+
+def memory_problems(report: dict, pm_text: str, writer_text: str | None, terminal: dict | None) -> list[str]:
+    """What is wrong with the memory delivery: the probe's rows, then the real PM prompt, the real writer brief and the terminal."""
+    problems: list[str] = []
+    results = report.get("results") or []
+    tokens = report.get("tokens") or {}
+    if not results or not tokens:
+        return ["the memory probe gave no report (is the plugin on the version that has memory-probe?)"]
+    problems += [f"probe: {p}" for p in report.get("problems") or []]
+    for row in results:
+        if not row.get("found"):
+            problems.append(f"path {row.get('path')} does not deliver: {row.get('detail')}")
+        elif row.get("negativeOk") is False:
+            problems.append(f"path {row.get('path')} pulled our records for an unrelated query: {row.get('detail')}")
+    if tokens.get("rule") not in pm_text:
+        problems.append("the drill's PM first prompt does not carry the probe rule (pm.start live)")
+    if writer_text is None:
+        problems.append("the probe task's writer thread did not start in time, so its brief could not be read")
+    else:
+        for kind in ("note", "core", "rule"):
+            if tokens.get(kind) not in writer_text:
+                problems.append(f"the real writer's first prompt does not carry the probe {kind} (writer.brief live)")
+    if terminal is not None:
+        if tokens.get("note") not in terminal.get("search", ""):
+            problems.append("`lane-memory search` in the sandbox folder did not find the probe note (terminal.search live)")
+        if tokens.get("core") not in terminal.get("core", ""):
+            problems.append("`lane-memory core` in the sandbox folder did not list the probe core convention (terminal.core live)")
+    return problems
+
+
+def terminal_memory(cwd: str, report: dict) -> dict | None:
+    """What a Lane Stack terminal session in the sandbox folder gets from the hub; None when this host has no lane-memory."""
+    if not Path(LANE_MEMORY).is_file():
+        log(f"memory_paths: no {LANE_MEMORY} on this host, the terminal is not read live")
+        return None
+    query = "memory delivery check lp-probe"
+    _, search, _ = run([LANE_MEMORY, "search", query, cwd], timeout=120)
+    _, core, _ = run([LANE_MEMORY, "core", cwd], timeout=120)
+    return {"search": search, "core": core}
+
+
+def scenario_memory_paths(ctx: Context) -> dict:
+    planted = ctx.memory_probe
+    if not planted:
+        return verdict("memory_paths", ["the probe was not planted before the PM started"])
+    report = planted["report"]
+    if not report:
+        clean_memory_probe()
+        return verdict("memory_paths", [f"memory-probe failed (exit {planted['rc']}): {planted['error'] or 'no output'}"])
+    spec = task_memory(ctx.cwd)
+    writer_text: str | None = None
+    attempt = ""
+    try:
+        if not ctx.dispatch(spec):
+            raise RuntimeError("dispatch-bb exited with an error")
+        deadline = time.time() + 5 * 60
+        while time.time() < deadline and writer_text is None:
+            try:
+                rows = [r for r in ctx.rows([spec["id"]]) if r.get("thread_id")]
+            except RuntimeError as cause:
+                log(str(cause))
+                rows = []
+            if rows:
+                attempt = rows[-1]["id"]
+                writer_text = thread_text(rows[-1]["thread_id"])
+                break
+            time.sleep(5)
+        ctx.quiet()
+        problems = memory_problems(report, thread_text(ctx.pm), writer_text, terminal_memory(ctx.cwd, report))
+    except RuntimeError as cause:
+        problems = [str(cause)]
+    finally:
+        clean_memory_probe()
+    return verdict("memory_paths", problems, token=report.get("token"), lpVersion=report.get("lpVersion"), paths=report.get("results"), skipped=report.get("skipped"),
+                   unanswered=report.get("unanswered"), writerAttempt=attempt or None, dispatch=ctx.dispatches.get(spec["id"]))
 
 
 def task_provider(cwd: str) -> dict:
@@ -798,7 +914,7 @@ def dry_run(names: list[str]) -> None:
         for spec in tasks_parallel3(SANDBOX["cwd"]):
             print(json.dumps(spec))
     cwd = SANDBOX["cwd"]
-    documents = {"conflict": tasks_conflict(cwd), "main_moved": [task_moved(cwd)], "provider": [task_provider(cwd)], "provider_limit": [task_limit(cwd)], "reload": [task_reload(cwd)], "nogit": [task_nogit(NOGIT["cwd"])], "nogit_repo": [task_nogit_repo(NOGIT["cwd"])]}
+    documents = {"memory_paths": [task_memory(cwd)], "conflict": tasks_conflict(cwd), "main_moved": [task_moved(cwd)], "provider": [task_provider(cwd)], "provider_limit": [task_limit(cwd)], "reload": [task_reload(cwd)], "nogit": [task_nogit(NOGIT["cwd"])], "nogit_repo": [task_nogit_repo(NOGIT["cwd"])]}
     for name in names:
         for spec in documents.get(name, []):
             print(f"scenario {name}: {json.dumps(spec)}")
@@ -861,9 +977,14 @@ def main() -> int:
             except Exception as cause:
                 scenarios.append(verdict("guard_hash", [f"scenario raised: {cause}"]))
             log(f"scenario guard_hash: {scenarios[-1]['result']} {scenarios[-1]['problems']}")
-        main_names = [n for n in names if n not in STANDALONE]
+        # memory_paths first: its records are planted before the PM starts (its first prompt must carry the probe rule) and removed before
+        # the writers of the other scenarios start.
+        main_names = sorted((n for n in names if n not in STANDALONE), key=lambda n: n != "memory_paths")
         if main_names:
             ctx = Context(SANDBOX, tmp)
+            if "memory_paths" in main_names:
+                log("planting the memory probe before the PM starts")
+                ctx.memory_probe = plant_memory_probe()
             try:
                 ctx.start()
             except RuntimeError as cause:
@@ -896,6 +1017,8 @@ def main() -> int:
         if ctx and ctx.run_id:
             problems += ctx.finish()
     finally:
+        if ctx and ctx.memory_probe:
+            clean_memory_probe()  # also when the PM did not start or a scenario broke: a probe rule must not outlive the drill
         result = write_receipt(receipt, start, scenarios, ctx, problems, names)
         shutil.rmtree(tmp, ignore_errors=True)
         lock.rmdir()

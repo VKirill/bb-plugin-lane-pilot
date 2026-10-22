@@ -87,6 +87,12 @@ export const rpcOps = {
     input: z.object({}).strict(),
     output: z.unknown(),
   },
+  // Memory probe (SMA block 4): plants a token through the write door and asks every memory delivery path for it; `clean` removes what a kept run left, `report` reads the last run.
+  memory_probe: {
+    input: z.object({ projectId: z.string().min(1), paths: z.array(z.string().min(1)).max(40).optional(), keep: z.boolean().optional(), force: z.boolean().optional(),
+      action: z.enum(["run", "clean", "report"]).default("run") }).strict(),
+    output: z.unknown(),
+  },
   self_repair_tick: {
     input: z.object({ dryRun: z.boolean().default(true), since: z.number().int().optional() }).strict(),
     output: z.unknown(),

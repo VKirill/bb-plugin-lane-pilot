@@ -20,8 +20,8 @@ import { createLiveFeed } from "./live";
 import { createObserver } from "./observe";
 import { createOps, type Kv } from "./ops";
 import { KEY_NAME, createDecisionsClient } from "./opinion";
-import { pmRulesBlock, pmRulesOf, relevantPmRules } from "./pm-rules";
-import { ruleBudget, setRuleBudgets } from "./rule-budget";
+import { pmResumeInstructions, pmRulesOf, relevantPmRules } from "./pm-rules";
+import { setRuleBudgets } from "./rule-budget";
 import { lpNotesPort, lpRulesPort } from "./rules-port";
 import { complexityReport, noteOwnerQuestion, scanComplexity, scanPromises } from "./signals";
 import { DAY_MS, projectsWithCandidates, purgeStaleBodies, startOfDay, type ItemKind, type ItemState } from "./store";
@@ -231,8 +231,7 @@ export function mountLearning(ctx: ServerCore, services: Services): Learning | n
       bb.agents.contributeInstructions(({ threadId, projectId }) => {
         const run = db.prepare("SELECT id FROM lane_pilot_run WHERE pm_thread_id=? AND closed_at IS NULL LIMIT 1").get(threadId) as { id: string } | undefined;
         if (!run) return null;
-        const block = pmRulesBlock(pmRulesOf(db, projectId, getRunSettingsScopes(db, run.id)), ruleBudget("pm"));
-        return block.text.trim().slice(0, 4_000) || null;
+        return pmResumeInstructions(db, projectId, getRunSettingsScopes(db, run.id));
       });
     } catch (cause) { bb.log.info(`Lane Pilot learning cannot contribute instructions: ${cause instanceof Error ? cause.message : String(cause)}`); }
 

@@ -1,10 +1,9 @@
 import { breakerKey, RunBudgetExceeded } from "@lane-pilot/resilience";
 import { recordMemoryMixed } from "@lane-pilot/memory-core";
-import { mixWriterMemory } from "../../memory/server";
+import { writerKnowledge } from "./writer-knowledge";
 import { parseDirtSnapshots } from "../cli-outcome";
 import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { acceptedRules, pickRelevantRules, ruleRelevanceQuestions, ruleRelevanceState } from "@lane-pilot/run-insights";
 import { HARNESS_VERSION, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, saveReasoningTrace, setAttemptDirtBefore, setAttemptEnvironment, setAttemptHolderThread, setAttemptWorkspace, setReasoningThread, transitionAttempt, taskBasePath } from "../../storage";
 import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier, findModelIn } from "@lane-pilot/models";
 import { spawnWithSeam } from "../spawn-seam";
@@ -107,26 +106,6 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
     return reason;
   }
 
-  /**
-   * System One picks the accepted rules this task needs, so a writer's prompt does not carry every rule of the
-   * project. Rules for the PM never reach a writer; rules marked for every task skip the question. Without an
-   * answer every rule of that chunk goes in: a missing rule costs more than an extra one.
-   */
-  async function relevantRules<T extends { rule:string; audience:string; always:boolean }>(rules:T[],task:Record<string,unknown>,hostId:string):Promise<T[]> {
-    const forWriter=rules.filter((rule)=>rule.audience!=="pm");
-    const asked=forWriter.filter((rule)=>!rule.always);
-    const chunks:T[][]=[];
-    for(let start=0;start<asked.length;start+=8) chunks.push(asked.slice(start,start+8));
-    const state=JSON.stringify(ruleRelevanceState(task)).slice(0,60_000);
-    // Chunks are independent questions; asking them together keeps the wait at one answer (~0.5–1 s).
-    const answered=await Promise.all(chunks.map(async(chunk)=>{
-      const judged=await host.call("councilJudge",{requestedHostId:hostId,state,questions:ruleRelevanceQuestions(chunk)},{hostId,timeoutMs:10_000}).catch(()=>null);
-      return judged?.status==="ok"?pickRelevantRules(chunk,judged.answers,judged.confidence??{},undefined,judged.probabilities??{}):chunk;
-    }));
-    const picked=new Set([...forWriter.filter((rule)=>rule.always),...answered.flat()]);
-    return forWriter.filter((rule)=>picked.has(rule));
-  }
-
   async function spawnWriterAttempt(input: {
     projectId:string; runId:string; taskId:string; attemptId:string;
     config:PrototypeConfig; task:TaskV2; plan:string; pmThreadId:string; pmReadContext?:string;
@@ -165,18 +144,11 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       if(!sourcePreflight.ok) throw new WriterSelectionError(`attempt_workspace_snapshot_failed:${sourcePreflight.reason}`);
       let dirtBefore=sourcePreflight.snapshots;
       const memorySettings=parseMemorySettings(settings);
-      const taskMemoryQuery=`${input.task.title}\n${input.task.objective}\n${input.task.acceptance.join(" ")}`;
-      const memoryOn=memorySettings.enabled&&memorySettings.inject;
-      // Confirmed rules reach every writer; retrieval skips their records so they are not repeated as memory.
-      // Rules of the run's own sections only: a client's rule never reaches another client's writer.
-      const allRules=memoryOn?acceptedRules(db,input.projectId,await services.ruleScan.chainForRun(input.runId)):[];
-      const ruleMemoryIds=new Set(allRules.map((rule)=>rule.memoryId));
-      const rules=await relevantRules(allRules,input.task as unknown as Record<string,unknown>,input.config.hostId);
-      const rulesText=rules.map((rule)=>`- ${rule.rule}`).join("\n");
+      // The rules that apply and the notes that name this task's paths (writer-knowledge.ts, shared with the turn that continues a thread and the memory probe).
+      const { allRules, rules, rulesText, mixed }=await writerKnowledge({db,host,chainForRun:(runId)=>services.ruleScan.chainForRun(runId)},
+        {projectId:input.projectId,runId:input.runId,hostId:input.config.hostId,task:input.task,memorySettings});
       // A fresh writer of an area hears what its earlier tasks decided, in place of the thread that remembered it.
       const areaHistory=input.task.area?areaHistoryText(await loadArea(bb.storage.kv,input.projectId,input.task.area)):"";
-      // The writer gets at most three notes that name a path of this task; other helpers keep the budgeted context.
-      const mixed=memoryOn?mixWriterMemory(db,{projectId:input.projectId,query:taskMemoryQuery,task:input.task,searchEngine:memorySettings.searchEngine,personalBot:memorySettings.personalBot,ruleMemoryIds}):{text:"",ids:[] as string[]};
       const relevantMemory={text:[areaHistory,mixed.text].filter(Boolean).join("\n\n")};
       const writerProviderId = input.emergency?.providerId ?? (typeof settings["writer.provider"] === "string"
         ? settings["writer.provider"] as string : input.config.writerProviderId);

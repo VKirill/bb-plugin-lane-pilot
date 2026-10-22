@@ -5,3 +5,6 @@ export { FRUSTRATION_KEY, frustrationReason } from "./frustration";
 export type { FrustrationRecord } from "./frustration";
 export { ruleBudget } from "./rule-budget";
 export { learningFor, mountLearning } from "./service";
+export { memoryUnanswered } from "./unanswered";
+export type { MemoryUnanswered } from "./unanswered";
+export { pmResumeInstructions, pmRulesOf, pmRulesPromptBlock } from "./pm-rules";

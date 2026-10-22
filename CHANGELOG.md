@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+**Memory you can prove (SMA block 4, P0-3).** One delivery path carried zero lessons for three months in Maslov's system because nothing asked the path. Now every path is asked.
+- **Registry.** `MEMORY_PATHS` (`src/rooms/memory/memory-paths.ts`) names every way memory, rules and lessons reach an agent (writer brief, continuing writer turn, repair round, PM start and resume, the PM's memory and rules tools, code critic, night review, council, terminal search and CORE) with its injection sites; `tests/memory-paths.test.ts` fails when a call of an injection helper appears or goes away without an entry.
+- **Probe.** `bb lane-pilot memory-probe <project> [--paths a,b] [--keep] [--clean] [--report]` (and RPC `memory_probe`) plants a note, a core convention and an always-on rule with a unique token through the write door (sandbox project only, one day to live), builds what each path hands its agent with the code production calls, looks for the tokens, and checks a negative case (an unrelated task or a gibberish query must pull none of them). One row per path in `lane_pilot_memory_probe` (the last migration).
+- **Drill.** New quick scenario `memory_paths`: the probe table, the first prompt of the drill's PM, the first prompt of a real writer spawned for a probe task and `lane-memory search` / `core` in the sandbox folder must all carry the tokens; a path that does not deliver turns the drill red and so blocks the deploy.
+- **Fixed by the registry.** A writer thread continued with the next task of its area got no rules: `stickyTurnPrompt` took `rulesText` but its caller never passed it. The next-task turn now carries the rules that apply to its contract.
+- **Metric.** `memoryUnanswered`: the owner's repeats of what was in force and the questions another agent or the memory could have answered (learning room), printed with the probe report.
+- **Finding.** The 1532 expired notes on the hub were evicted by the note budget (1515) or by their date (17): the maintainer stores about 2.5 task-specific notes per accepted task and the shelf holds about 130, so a note lives a day or two. No code change (docs/memory.md).
+
 ## 0.1.264
 
 - **opencode2 threads get the session policy again, now with skills and MCP.** The machines' host daemons carry the 0.46.1-vk.3 build (rolled out by hand on 2026-10-22: a daemon updates itself only on a protocol bump), and the opencode2 bridge 1.1.0-vk.3 declares the handshake and applies the policy as OpenCode permission rules: a denied skill leaves the model's prompt (108 KB → 7.6 KB with one allowed skill on the mock test), a denied MCP server's tools answer «Unknown tool». `POLICY_REFUSED_BY_HOSTS` is removed. Test: `helper-context.test.ts`.
