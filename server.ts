@@ -62,7 +62,8 @@ export default async function plugin(bb: BbPluginApi) {
   bindToolLocale(bb, await toolLocale(bb));
   // The register of deferrals: the first entries (skipped tests, old plan decisions) are written once; terms come only from the owner's messages.
   const deferrals = createDeferrals({ db, port: sdkOwnerMessagePort(bb), log: ctx.log });
-  deferrals.seed();
+  // A failing seed must not keep the plugin from starting: the register only adds the morning list.
+  try { deferrals.seed(); } catch (cause) { bb.log.warn(`Lane Pilot: deferral seed skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
   const services = {} as Services;
   mountNativeWiring(ctx);
   Object.assign(
