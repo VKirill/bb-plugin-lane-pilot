@@ -105,6 +105,20 @@ export function createDeferrals(deps: { db: DeferralDb; port: OwnerMessagePort; 
     throw new Error("could not allocate a deferral id");
   }
 
+  /**
+   * Opens an entry that waits for the owner's term (`needs_owner_term`), idempotent on `id`: the morning list shows it, nothing is counted
+   * overdue, and only the owner's message gives it a date (`defer`). Code may open an entry (a held memory conflict); it may not date one.
+   */
+  function open(input: { id: string; kind: DeferralKind; what: string; area?: string; projectId?: string | null }): DeferralView {
+    if (!(DEFERRAL_KINDS as readonly string[]).includes(input.kind)) throw new Error(`kind must be one of ${DEFERRAL_KINDS.join(", ")}`);
+    const at = now();
+    insertDeferral(db, {
+      id: input.id, projectId: input.projectId ?? null, what: input.what.trim().slice(0, 500), kind: input.kind, area: input.area ?? "", dueAt: null, dueSource: null,
+      ownerRef: null, ownerQuote: null, state: "needs_owner_term", history: [], source: "code", createdAt: at, updatedAt: at, closedAt: null, closedBy: null,
+    }, true);
+    return view(getDeferral(db, input.id)!);
+  }
+
   function close(input: { id: string; evidence: string }): DeferralView {
     const row = getDeferral(db, input.id.trim());
     if (!row) throw new Error(`no deferral ${input.id}`);
@@ -133,7 +147,7 @@ export function createDeferrals(deps: { db: DeferralDb; port: OwnerMessagePort; 
     };
   }
 
-  return { seed, defer, close, list };
+  return { seed, open, defer, close, list };
 }
 export type DeferralApi = ReturnType<typeof createDeferrals>;
 

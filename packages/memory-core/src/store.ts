@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import { memoryRecordId } from "./candidates";
 import { OBSERVED_QUARANTINE_MS, expireMemory, hideRecord, idleSql, sameSubject } from "./lifecycle";
 import { memoryStem, memoryTokens } from "./terms";
+import { heldClause } from "./conflict-store";
 import type { MemoryAudience, MemoryCandidate, MemoryKind, MemoryRecord, MemorySearchEngine, MemoryStatus, MemoryTrust } from "./settings";
 
 /** The better-sqlite3 surface this package needs; BB's `bb.storage.database()` satisfies it. */
@@ -61,7 +62,8 @@ export function dropMemoryIndexes(db: MemoryDatabase, projectId: string, id: str
   if (trigramReady(db)) db.prepare("DELETE FROM lane_pilot_memory_trgm WHERE project_id=? AND id=?").run(projectId, id);
 }
 
-function addToIndexes(db: MemoryDatabase, projectId: string, id: string, content: string, concepts: string[]): void {
+/** Puts a record in both search indexes; the write door and the evaluation harness share it, so a harness corpus is indexed exactly as a stored one. */
+export function addToIndexes(db: MemoryDatabase, projectId: string, id: string, content: string, concepts: string[]): void {
   db.prepare("INSERT INTO lane_pilot_memory_fts(id,project_id,content,concepts) VALUES(?,?,?,?)").run(id, projectId, content, concepts.join(" "));
   if (trigramReady(db)) db.prepare("INSERT INTO lane_pilot_memory_trgm(id,project_id,content,concepts) VALUES(?,?,?,?)").run(id, projectId, content, concepts.join(" "));
 }
@@ -177,10 +179,11 @@ export function hideRecordsOfFile(db: MemoryDatabase, projectId: string, persona
 /** Who may read a record: active and in date; a record only one session or import vouches for waits for a second source or the quarantine. */
 export type SearchOptions = { now?: number; includeObserved?: boolean };
 
-function visibility(alias: string, options: SearchOptions): string {
+function visibility(db: MemoryDatabase, alias: string, options: SearchOptions): string {
   const now = Math.floor(options.now ?? Date.now());
+  // A note of a held conflict (two notes that disagree, waiting for a person) is read by nobody: `conflict-store.ts`.
   return `${alias}.status='active' AND (${alias}.valid_until IS NULL OR ${alias}.valid_until>${now}) AND NOT (${idleSql(alias, now)})`
-    + (options.includeObserved ? "" : ` AND (${alias}.trust='confirmed' OR ${alias}.created_at<=${now - OBSERVED_QUARANTINE_MS})`);
+    + (options.includeObserved ? "" : ` AND (${alias}.trust='confirmed' OR ${alias}.created_at<=${now - OBSERVED_QUARANTINE_MS})`) + heldClause(db, alias);
 }
 
 export function searchMemoryRecords(db: MemoryDatabase, projectId: string, query: string, limit: number, engine: MemorySearchEngine, audience: MemoryAudience = "subagent", personalBot = "", options: SearchOptions = {}): MemoryRecord[] {
@@ -191,19 +194,19 @@ export function searchMemoryRecords(db: MemoryDatabase, projectId: string, query
     const match = tokens.map((word) => `"${word.replaceAll('"', "")}"`).join(" OR ");
     const words = db.prepare(`SELECT ${cols("m.")}
       FROM lane_pilot_memory_fts f JOIN lane_pilot_memory m ON m.id=f.id AND m.project_id=f.project_id
-      WHERE lane_pilot_memory_fts MATCH ? AND f.project_id=? AND m.audience=? AND m.personal_bot=? AND ${visibility("m", options)}
+      WHERE lane_pilot_memory_fts MATCH ? AND f.project_id=? AND m.audience=? AND m.personal_bot=? AND ${visibility(db, "m", options)}
       ORDER BY bm25(lane_pilot_memory_fts) LIMIT ?`).all(match, projectId, audience, personalBot, limit) as Row[];
     // Word forms and substrings the whole-word index misses: the trigram index, or a scan where SQLite has none.
     const stems = [...new Set(tokens.map(memoryStem))];
     const parts = trigramReady(db)
       ? db.prepare(`SELECT ${cols("m.")}
         FROM lane_pilot_memory_trgm t JOIN lane_pilot_memory m ON m.id=t.id AND m.project_id=t.project_id
-        WHERE lane_pilot_memory_trgm MATCH ? AND t.project_id=? AND m.audience=? AND m.personal_bot=? AND ${visibility("m", options)}
+        WHERE lane_pilot_memory_trgm MATCH ? AND t.project_id=? AND m.audience=? AND m.personal_bot=? AND ${visibility(db, "m", options)}
         ORDER BY bm25(lane_pilot_memory_trgm) LIMIT ?`).all(stems.map((stem) => `"${stem.replaceAll('"', "")}"`).join(" OR "), projectId, audience, personalBot, limit) as Row[]
       : scanRows(db, projectId, audience, personalBot, stems, options, limit);
     rows = fuse([words, parts], limit);
   } else {
-    const all = db.prepare(`SELECT ${cols("m.")} FROM lane_pilot_memory m WHERE m.project_id=? AND m.audience=? AND m.personal_bot=? AND ${visibility("m", options)}`).all(projectId, audience, personalBot) as Row[];
+    const all = db.prepare(`SELECT ${cols("m.")} FROM lane_pilot_memory m WHERE m.project_id=? AND m.audience=? AND m.personal_bot=? AND ${visibility(db, "m", options)}`).all(projectId, audience, personalBot) as Row[];
     const score = (text: string) => tokens.reduce((sum, token) => sum + (text.toLowerCase().split(token).length - 1), 0);
     rows = all.map((row) => ({ ...row, _score: score(`${row.content} ${row.concepts_json}`) })).filter((row) => row._score > 0).sort((a, b) => b._score - a._score || b.created_at - a.created_at).slice(0, limit);
   }
@@ -222,7 +225,7 @@ function fuse(lists: Row[][], limit: number): Row[] {
 
 /** The in-code stand-in for the trigram index: records whose text contains the stems, most stems first. */
 function scanRows(db: MemoryDatabase, projectId: string, audience: MemoryAudience, personalBot: string, stems: string[], options: SearchOptions, limit: number): Row[] {
-  const all = db.prepare(`SELECT ${cols("m.")} FROM lane_pilot_memory m WHERE m.project_id=? AND m.audience=? AND m.personal_bot=? AND ${visibility("m", options)}`).all(projectId, audience, personalBot) as Row[];
+  const all = db.prepare(`SELECT ${cols("m.")} FROM lane_pilot_memory m WHERE m.project_id=? AND m.audience=? AND m.personal_bot=? AND ${visibility(db, "m", options)}`).all(projectId, audience, personalBot) as Row[];
   const score = (row: Row) => { const text = `${row.content} ${row.concepts_json}`.toLowerCase(); return stems.filter((stem) => text.includes(stem)).length; };
   return all.map((row) => ({ row, score: score(row) })).filter((item) => item.score > 0).sort((a, b) => b.score - a.score || b.row.created_at - a.row.created_at).slice(0, limit).map((item) => item.row);
 }
@@ -236,6 +239,6 @@ export function listMemory(db: MemoryDatabase, projectId: string, filter: { kind
   const concepts = filter.concepts ?? [];
   const where = [filter.kind ? "m.kind=?" : "", concepts.length ? `(${concepts.map(() => "m.concepts_json LIKE ?").join(" OR ")})` : ""].filter(Boolean);
   const args = [...(filter.kind ? [filter.kind] : []), ...concepts.map((concept) => `%"${concept}"%`)];
-  return (db.prepare(`SELECT ${cols("m.")} FROM lane_pilot_memory m WHERE m.project_id=? AND m.audience=? AND m.personal_bot=? ${where.map((part) => `AND ${part}`).join(" ")} AND ${visibility("m", options)}
+  return (db.prepare(`SELECT ${cols("m.")} FROM lane_pilot_memory m WHERE m.project_id=? AND m.audience=? AND m.personal_bot=? ${where.map((part) => `AND ${part}`).join(" ")} AND ${visibility(db, "m", options)}
     ORDER BY m.created_at DESC LIMIT ?`).all(projectId, audience, personalBot, ...args, limit) as Row[]).map(toRecord);
 }

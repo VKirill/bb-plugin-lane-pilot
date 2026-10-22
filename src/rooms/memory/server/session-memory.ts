@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, upsertLessonProposal } from "@lane-pilot/run-insights";
-import { parseMemoryCandidates, searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
+import { heldClause, parseMemoryCandidates, searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 import type { rpcContract } from "../../contracts";
 import { adoptRuleProposal, memorySettingsFor } from "../../self-repair/server";
 import type { ServerCore } from "../../core/server";
@@ -41,6 +41,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
           // One CLI session is one voice: its note reaches writers once a second source states it or a day has passed.
           trust: "observed", origin: "session",
           coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget });
+        try { services.memoryConflicts.detect(projectId, new Set(result.insertedIds)); } catch { /* the write stands; the conflict check is retried by the next write */ }
         const id = result.insertedIds[0] ?? result.corroboratedIds[0] ?? null;
         return { stored: result.insertedIds.length > 0, id, reason: result.insertedIds.length ? null : result.corroboratedIds.length ? "corroborated" : "duplicate" };
       } catch (cause) {
@@ -53,7 +54,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
         .map((record) => ({ id: record.id, kind: record.kind, content: record.content, concepts: record.concepts })) };
     },
     session_memory_core: async ({ projectId }) => {
-      const rows = db.prepare("SELECT id, content FROM lane_pilot_memory WHERE project_id=? AND kind='core' AND audience='subagent' AND status='active' AND (valid_until IS NULL OR valid_until>?) ORDER BY created_at")
+      const rows = db.prepare(`SELECT id, content FROM lane_pilot_memory WHERE project_id=? AND kind='core' AND audience='subagent' AND status='active' AND (valid_until IS NULL OR valid_until>?)${heldClause(db, "lane_pilot_memory")} ORDER BY created_at`)
         .all(projectId, Date.now()) as Array<{ id: string; content: string }>;
       return { records: rows };
     },

@@ -16,6 +16,8 @@ import { LEARNING_USAGE, runLearningCli } from "../../learning";
 import { learningFor } from "../../learning";
 import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
 import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
+import { MEMORY_EVAL_USAGE, runMemoryEvalCommand } from "../../memory-eval/server";
+import { MEMORY_CONFLICT_USAGE, runMemoryConflictCli } from "../../memory/server";
 import { POLICY_USAGE, runPolicyCli } from "../../policy";
 import { ROLLBACK_USAGE, runRollbackCli } from "../../rollback/server";
 import { CODE_CRITIC_DEFAULTS, isCodeCriticDefault } from "../../critique";
@@ -46,6 +48,8 @@ export function registerCli(ctx: ServerCore, services: Services) {
     "bb lane-pilot start-ambiguous-probe <project-id> <pm-thread-id>",
     "bb lane-pilot helper-probe <project-id> <run-id> <provider-id> <model>",
     "bb lane-pilot memory-probe <project-id> [--paths a,b] [--keep] [--clean] [--report] [--force]",
+    MEMORY_EVAL_USAGE,
+    MEMORY_CONFLICT_USAGE,
     "bb lane-pilot host-detect <host-id> <workspace-path>",
     "bb lane-pilot host-snapshot <host-id> <absolute-path>...",
     "bb lane-pilot host-snapshot-manifest <host-id> [thread-storage]",
@@ -97,6 +101,9 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"start-provider-error-probe", summary:"Observe a live provider error and persist provider_error", usage:"bb lane-pilot start-provider-error-probe <project-id> <pm-thread-id>" },
       { name:"helper-probe", summary:"Start one cheap helper (pm-read path) on a provider and check it answered", usage:"bb lane-pilot helper-probe <project-id> <run-id> <provider-id> <model>" },
       { name:"memory-probe", summary:"Plant a token through the memory write door and check that every delivery path (writer brief, PM, critics, terminal) hands it to its agent; sandbox project only unless --force", usage:"bb lane-pilot memory-probe <project-id> [--paths a,b] [--keep] [--clean] [--report] [--force]" },
+      { name:"memory-eval", summary:"Score memory retrieval at 30, 300 and 3000 notes on real accepted tasks (right answer, nothing relevant, off-topic) against a plain path-and-keyword baseline; reads the hub data, writes nothing", usage:MEMORY_EVAL_USAGE },
+      { name:"memory-conflicts", summary:"Memory notes that disagree: held out of every brief until a person settles them; --detect looks for new ones", usage:"bb lane-pilot memory-conflicts [--project P] [--state held|settled] [--detect]" },
+      { name:"memory-conflict-settle", summary:"Settle a held memory conflict: keep one note, both, or neither, with the evidence", usage:"bb lane-pilot memory-conflict-settle <mc_id> --keep a|b|both|none --evidence <text>" },
       { name:"start-ambiguous-probe", summary:"Create duplicate metadata and prove reconcile blocks", usage:"bb lane-pilot start-ambiguous-probe <project-id> <pm-thread-id>" },
       { name:"host-detect", summary:"Call the host worker detect method", usage:"bb lane-pilot host-detect <host-id> <workspace-path>" },
       { name:"host-snapshot", summary:"Call read-only snapshotDryRun", usage:"bb lane-pilot host-snapshot <host-id> <absolute-path>..." },
@@ -334,6 +341,12 @@ export function registerCli(ctx: ServerCore, services: Services) {
           if (has("report")) return { exitCode:0, stdout:JSON.stringify(services.memoryProbe.report(args[0]!), null, 2) };
           const probe = await services.memoryProbe.run({ projectId:args[0]!, paths:paths ? paths.split(",").map((item) => item.trim()).filter(Boolean) : undefined, keep:has("keep"), force:has("force") });
           return { exitCode:probe.ok ? 0 : 1, stdout:JSON.stringify(probe, null, 2) };
+        }
+        if (command === "memory-eval") {
+          return await runMemoryEvalCommand(db, args);
+        }
+        if (command === "memory-conflicts" || command === "memory-conflict-settle") {
+          return runMemoryConflictCli(services.memoryConflicts, command, args);
         }
         if (command === "start-ambiguous-probe" && args.length === 2) {
           return { exitCode:0, stdout:JSON.stringify(await services.startAmbiguousProbe(args[0]!, args[1]!), null, 2) };

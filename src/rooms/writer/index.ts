@@ -6,6 +6,6 @@ export type { DirtSnapshot } from "./cli-outcome";
 export { runCliOnHost, runCommandOnHost, writePmSettingsOnHost } from "./cli-run";
 export { resolveStageWriterSelection } from "./stage-writer-selection";
 export { attachStreamRetry, droppedStreamDetail } from "./stream-retry";
-export { memoryLine, reviewerMemoryPicks, writerBriefStats, writerMemory, writerMemoryPicks } from "./writer-brief";
+export { memoryLine, pathAnchors, reviewerMemoryPicks, writerBriefStats, writerMemory, writerMemoryPicks } from "./writer-brief";
 export { writerFallbackChain, writerFallbackKeys, writerFallbacks } from "./writer-fallbacks";
 export { writerReuseStats } from "./writer-reuse-stats";

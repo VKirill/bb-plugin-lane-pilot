@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   exportedFileName,
+  heldClause,
   hideRecordsOfFile,
   laneMemoryFileToCandidate,
   parseLaneMemoryFile,
@@ -97,7 +98,7 @@ export async function importFileMemory(ctx: ServerCore, input: { projectId: stri
 export type MemoryExportResult = { runId: string; records: number; written: number; existing: number; removed: number; state: "exported" | "skipped"; reason?: string };
 
 function listAllRecords(db: LanePilotDatabase, projectId: string, personalBot: string): Array<MemoryRecord & { audience: MemoryAudience }> {
-  const rows = db.prepare("SELECT id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? AND status='active' ORDER BY created_at ASC")
+  const rows = db.prepare(`SELECT id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? AND status='active'${heldClause(db, "lane_pilot_memory")} ORDER BY created_at ASC`)
     .all(projectId, personalBot) as Array<{ id: string; project_id: string; personal_bot: string; kind: "core" | "note"; audience: MemoryAudience; content: string; concepts_json: string; source_sha256: string; created_at: number }>;
   return rows.map((row) => ({ id: row.id, projectId: row.project_id, personalBot: row.personal_bot, kind: row.kind, audience: row.audience, content: row.content, concepts: JSON.parse(row.concepts_json) as string[], sourceSha256: row.source_sha256, createdAt: row.created_at }));
 }

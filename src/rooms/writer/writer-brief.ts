@@ -71,13 +71,17 @@ export function reviewerMemoryPicks<T extends MemoryNote>(found:readonly T[], al
   return tiers.flat().slice(0, limit);
 }
 
-/** The notes `writerMemory` writes out; within each group the one that served accepted attempts goes first. */
+/**
+ * The notes `writerMemory` writes out; within each group they keep the order the search gave them, best match first. Not reordered by
+ * how often a note was in an accepted brief: with a median of 10 notes naming a task's folders, that counter put the notes that had
+ * been picked before ahead of the best match and cut the hit rate on the real hub shelf from 63% to 41% (`bb lane-pilot memory-eval`,
+ * docs/memory.md). The counters still rank the PM context and the reviewers' tiers.
+ */
 export function writerMemoryPicks<T extends MemoryNote>(notes:readonly T[], task:Pick<TaskV2, "owns_paths" | "read_first">):T[] {
   const anchors = pathAnchors(task);
   const usable = notes.filter((note) => !note.concepts.includes("lesson"));
-  const byUse = (a:T, b:T) => memoryUsefulness(b) - memoryUsefulness(a);
-  const aboutPaths = usable.filter((note) => anchors.some((anchor) => note.content.includes(anchor))).sort(byUse);
-  const core = usable.filter((note) => note.kind === "core" && !aboutPaths.includes(note)).sort(byUse);
+  const aboutPaths = usable.filter((note) => anchors.some((anchor) => note.content.includes(anchor)));
+  const core = usable.filter((note) => note.kind === "core" && !aboutPaths.includes(note));
   return [...aboutPaths, ...core].slice(0, MEMORY_LIMIT);
 }
 

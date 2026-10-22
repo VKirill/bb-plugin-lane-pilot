@@ -17,7 +17,9 @@ export {
 } from "./settings";
 export { estimateTokens, memoryRecordId, parseMemoryCandidates } from "./candidates";
 export { memoryContext, memoryMaintenancePrompt } from "./context";
-export { MEMORY_SCHEMA, dropMemoryIndexes, trigramReady, listMemory, hideRecordsOfFile, searchMemoryRecords, storeMemoryRecords, type MemoryDatabase, type SearchOptions, type StoreMemoryInput, type StoreMemoryResult } from "./store";
+export { MEMORY_SCHEMA, addToIndexes, dropMemoryIndexes, trigramReady, listMemory, hideRecordsOfFile, searchMemoryRecords, storeMemoryRecords, type MemoryDatabase, type SearchOptions, type StoreMemoryInput, type StoreMemoryResult } from "./store";
 export { memoryStem, memoryTokens } from "./terms";
-export { NOTE_IDLE_MS, OBSERVED_QUARANTINE_MS, memoryUsefulness, recordMemoryAccepted, recordMemoryMixed } from "./lifecycle";
+export { NOTE_IDLE_MS, OBSERVED_QUARANTINE_MS, hideRecord, memoryUsefulness, recordMemoryAccepted, recordMemoryMixed } from "./lifecycle";
 export { audienceForSensitivity, exportedFileName, laneMemoryFileToCandidate, parseLaneMemoryFile, renderLaneMemoryFile, sensitivityForAudience, type LaneMemoryFile } from "./files";
+export { findConflicts, conflictId, disagreement, type Conflict, type ConflictKind, type ConflictNote } from "./conflicts";
+export { conflictTableReady, getConflict, heldClause, holdConflict, listConflicts, markSettled, memoryConflictMigrations, setDeferral, type ConflictResolution, type ConflictRow } from "./conflict-store";

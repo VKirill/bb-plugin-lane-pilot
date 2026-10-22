@@ -2,7 +2,7 @@
 title: Project memory
 type: component
 created: 2026-10-10
-updated: 2026-10-11
+updated: 2026-10-22
 status: active
 confidence: high
 tags: [memory, knowledge, maintenance]
@@ -15,6 +15,11 @@ sources:
   - packages/memory-core/src/context.ts
   - src/rooms/storage/database.ts
   - src/rooms/contracts/rpc-knowledge.ts
+  - src/rooms/memory-eval/server/memory-eval.ts
+  - src/rooms/memory-eval/server/shelf.ts
+  - src/rooms/memory/server/memory-conflicts.ts
+  - packages/memory-core/src/conflicts.ts
+  - packages/memory-core/src/conflict-store.ts
 ---
 
 # Project memory
@@ -94,4 +99,60 @@ Observed (single-session) records wait a day for writers (`OBSERVED_QUARANTINE_M
 
 ### Why 1532 expired notes were almost never used
 
-Measured on the hub on 2026-10-22: 1532 expired notes, 1515 of them hidden by the budget eviction (`packages/memory-core/src/store.ts:139`), 17 by `valid_until`; none by the 90-day idle rule. One project (`proj_acpiaqf4wq`) holds 1374 of them: 664 accepted attempts produced 1648 notes (about 2.5 per task) in 17 days, while the note shelf (`memory.note_budget` 8000 tokens, about 130 notes) is full, so each batch evicts the oldest never-used notes: the shelf is a one-to-two-day window on busy days (10-12: 247 notes created, 38 still active a week later; 10-13: 159 created, 1 used). A writer reads at most three notes and only those naming a folder of its task (`writerMemoryPicks`), so a note about one finished task is read only if the same folder is touched again within that window. `src/rooms/learning/housekeeping.ts:5` records the same mechanism. The cause is the supply (the maintainer stores task-specific facts; 357 of 1192 passed stages stored nothing, the rest 1 to 15) against a fixed budget, not a bug; no code change was made. Options for the owner: a lower cap per task, a prompt that asks for facts that outlive the task, or a larger `memory.note_budget` for the busy projects.
+Measured on the hub on 2026-10-22: 1532 expired notes, 1515 of them hidden by the budget eviction (`packages/memory-core/src/store.ts:139`), 17 by `valid_until`; none by the 90-day idle rule. One project (`proj_acpiaqf4wq`) holds 1374 of them: 664 accepted attempts produced 1648 notes (about 2.5 per task) in 17 days, while the note shelf (`memory.note_budget` 8000 tokens, about 130 notes) is full, so each batch evicts the oldest never-used notes: the shelf is a one-to-two-day window on busy days (10-12: 247 notes created, 38 still active a week later; 10-13: 159 created, 1 used). A writer reads at most three notes and only those naming a folder of its task (`writerMemoryPicks`), so a note about one finished task is read only if the same folder is touched again within that window. `src/rooms/learning/housekeeping.ts:5` records the same mechanism. The cause is the supply (the maintainer stores task-specific facts; 357 of 1192 passed stages stored nothing, the rest 1 to 15) against a fixed budget, not a bug. The options (a cap per task, a prompt for facts that outlive the task, a larger budget) were then measured: see «Supply against the budget, measured» below.
+
+## Evaluation: 30, 300 and 3,000 notes, and questions whose answer is nothing (SMA block 4 «Next», P2-7)
+
+`bb lane-pilot memory-eval [--sizes 30,300,3000] [--seed N] [--scope project|pile] [--source <extract.db>] [--json]` (`src/rooms/memory-eval/server/`, standalone `npx tsx scripts/memory-eval.ts --source <file>`) builds a corpus of each size from the notes the hub really holds and asks it the questions real accepted tasks pose. It reads the plugin database and writes nothing (`--export <file>` makes a small extract of the two things it needs, the notes and the accepted tasks with the files their accepted attempt produced, so the run can happen on any machine).
+
+- **Question.** An accepted task: the words `writerKnowledge` searches with (title, objective, acceptance) and its path lists (`owns_paths`, `read_first`).
+- **Gold answer.** From the outcome, not from the retrieval: the notes written before the attempt started that name a file the accepted attempt really produced (`produced` of the acceptance receipt, last two path segments). A lower bound, since a note can help without naming a file: precision against gold is a floor, and «nearby» counts delivered notes that name the same folder.
+- **Negative question.** A real task for which the right answer is nothing: no earlier note names a file or folder of its solution. Plus six off-topic questions (a borscht recipe, gibberish). A delivered note is a false hit; core conventions are reported apart because the writer's brief hands them to every task by design (and the reviewer path hands over every review-tagged note by design, so its off-topic figure is not comparable).
+- **Sizes.** The gold notes of the chosen questions are always in the corpus (they may take 50 % of 30 notes, 35 % of 300, 10 % of 3,000), the rest is real filler from the hub, and what the hub does not have (it holds about 2,200 notes ever) is padded with copies of real notes whose folders are renamed (`apps/api/x.ts` becomes `apps-s1/api-s1/x.ts`): they read like the project and name no file anyone touched. `--scope project` keeps each note in its own project as production does; `--scope pile` puts a person's whole memory in one scope (the harder test). A note written after a task started is hidden from it.
+- **Retrievals.** The production ones are the very functions the delivery paths call: `mixWriterMemory` (writer brief), `searchMemoryRecords` + `memoryContext` (PM tool, terminal, council), `searchMemoryRecords` alone, `mixReviewerMemory` (critics, night review). Against them the plain baseline Maslov's claim asks for: **plain** (a note names a folder of the task, the one with most uncommon task words first; no stemming, no trigram index, no rank fusion, no counters) for the writer path, **plain-keyword** (at least three uncommon words in common) for the query paths, and a diagnostic `search+floor` (the production search with a floor of three shared words). Every number comes with a 95 % bootstrap interval; the questions are the sample.
+
+Measured on the hub's data of 2026-10-22 (project scope, 3 seeds; ranges are the seeds; hit@k is «a gold note among the k delivered», false hit is «something other than core delivered for a question whose answer is nothing»):
+
+| | 30 notes | 300 notes | 3,000 notes |
+|---|---|---|---|
+| writer path, hit@3 | 60-100 % (plain: the same) | 77-86 % (plain 72-92 %) | 70-76 % (plain 68-73 %) |
+| writer path, false hit | 0 % (plain 0 %) | 6-14 % (plain 8-14 %) | 7-14 % (plain 16-23 %) |
+| PM / terminal context (`pm`), hit@5 | 100 % | 77-95 % | 51-66 % |
+| PM / terminal context, false hit | 30-69 % | 81-88 % | 85-88 % |
+| plain-keyword, hit@5 / false hit | 47-73 % / 4-13 % | 43-59 % / 18-29 % | 41-48 % / 45-55 % |
+| p50 latency, writer path / plain | 0.4-1.4 / 0.0 ms | 1.8-4.5 / 0.0-0.1 ms | 12.5-16.5 / 0.2-0.5 ms |
+
+What it says, honestly:
+
+1. **Plain does not beat clever on the writer path; they tie.** The writer's brief is already «plain» at its core (a note must name a folder of the task); the full-text search in front of it adds nothing measurable to the hit rate (differences of -6 to +5 points, every interval contains zero) and makes it slightly quieter on questions that have no answer at 3,000 notes (7-14 % false hits against 16-23 %, a difference of 9 points, interval [3, 16], the same in all three seeds). Cost: 13 ms against 0.3 ms at 3,000 notes, which does not matter.
+2. **On the query paths plain loses on recall and clever fails on silence.** The production search finds the gold note for 60-87 % of the questions at 300 notes, but returns something for 81-91 % of the questions whose answer is nothing: there is no relevance floor, any shared word is enough. The plain keyword rule is quiet but finds half as much (44 % against 77-87 % at 300). A floor of three shared words on the production search keeps the recall (86 % against 87 %) and cuts the false hits from 81 % to 58 % at 300 notes; at 3,000 notes it does not help (83 %). Not changed here: a floor changes what the PM tool and the terminal return, and the figure to beat is not agreed; the diagnostic is in the report so the next change can be measured.
+3. **The ranking was the real defect, and it is fixed.** In a static corpus all counters are zero and the two agree. On the real shelf the writer's three notes were ordered by how often a note had been in an accepted brief (`memoryUsefulness`), ahead of how well it matched: with a median of 10 notes naming a task's folders the best match was pushed out by notes picked before. Replaying the hub's history through the real write door (`memory-eval --shelf`, 569 real tasks with an answer on record), hit@3 was **41 %** with the counters first and is **62 %** with the search's order; `writerMemoryPicks` keeps the search's order now (the counters still rank the PM context and the reviewers' tiers). `tests/server/memory-usefulness.test.ts` pins it.
+
+## Supply against the budget, measured (P0-3 finding)
+
+`memory-eval --shelf` replays the hub's notes batch by batch and its accepted tasks in time order through the real write door (`storeMemoryRecords`, with its eviction) and the real search, and asks at every task whether a note naming a produced file was still on the shelf and whether the writer's three notes included one (569 tasks, 2,191 notes written):
+
+| configuration | gold on shelf | hit@3 | notes written | evicted |
+|---|---|---|---|---|
+| legacy order, budget 8000 (before) | 84 % | 41 % | 2191 | 1654 |
+| relevance order, budget 8000 | 83 % | 62 % | 2191 | 1683 |
+| relevance order, budget **24000** (now) | 92 % | **69 %** | 2191 | 1303 |
+| relevance order, 8000, cap 1 note per task | 72 % | 53 % | 841 | 451 |
+| relevance order, 8000, cap 2 per task | 79 % | 56 % | 1244 | 808 |
+| relevance order, 24000, cap 2 per task | 90 % | 70 % | 1244 | 562 |
+
+- **A cap per task lowers recall** (62 % to 53-56 % at the old budget): the notes it drops are chosen by how many files they name, and that is a weak guess at which note a later task needs (48 % of all the hub's notes were later the answer of some task). Not implemented. The prompt option (ask for facts that outlive the task) cannot be replayed on history and was not tried.
+- **A larger budget raises it** (62 % to 69 %), and costs no brief space: a writer reads at most three notes whatever the shelf holds, the PM context has its own `memory.context_budget`. `memory.note_budget` now defaults to **24000** tokens (`packages/memory-core/src/settings.ts`, the catalog default in `packages/settings-catalog/src/ui-catalog.ts`); the hub's projects set none, so they take the new default at the next deploy. The total index budget (65536) is unchanged.
+- The shelf is still a window: with 2.5 notes per task and about 400 notes a project holds a few days of busy work, not weeks. The gap that remains (92 % on the shelf, 69 % picked) is retrieval, not supply.
+
+## Contradictions: two notes that disagree are held until a person settles it
+
+`findConflicts` (`packages/memory-core/src/conflicts.ts`) compares a note written now with the active notes of its project and audience. Deterministic heuristics, conservative on purpose (a missed conflict leaves two notes in circulation as today; a false one holds two good notes back): the two notes are about the same thing (they name the same file path, or share at least three tags that are most of their tags) and disagree in one of three ways: **value** (the same quantity next to the same two label words with two numbers: «cache TTL of 24 h» and «cache TTL of 48 h»), **literal** (the same constant or key with two values: `` `MAX_UPLOAD_MB` = `10` `` and `` = `25` ``) or **polarity** (a sentence of at least five content words once affirmed and once negated, 80 % of the words equal after the negation is taken out). Near-identical restatements are not conflicts: `sameSubject` replaces the older wording at write (two shared tags and similar words), which is also why the real corpus has almost none left. No model is asked; a judge for the ambiguous pairs would be the next step if the heuristics miss real ones.
+
+On the hub's 2,191 notes ever stored (the sandbox excluded), 0 pairs of active notes conflict; the history holds 1 pair (two expired notes about a breakpoint, `Below 1024px` against `Below 1280 px`, the same admin page). The first version of the polarity rule found 3 more, all false (a negation in another clause of the same sentence); the 0.8 word overlap removed them. The register is a mechanism waiting for its first real case, not a backlog.
+
+**What is held and how.** After every maintainer write and every session write the new notes are compared; a pair that disagrees gets a row in `lane_pilot_memory_conflict` (state `held`) and **both notes leave every reader through one SQL clause** (`heldClause`, used by `searchMemoryRecords`, `listMemory`, `session_memory_core` and the lane-memory file export): the writer's brief, the reviewers, the PM tool, the council, the terminal's core block. The notes stay `active` in the table, so budgets still count them and nothing is lost. **Why hold both rather than inject both with a «conflict, owner to settle» marker:** an agent cannot weigh two facts neither of which it can check, a marker invites a guess and costs tokens in every brief that carries it, and a wrong «fact» is worse than a missing one (the task's read list still points at the code). The conflict reaches a person through the deferral register instead.
+
+**The term.** Each held conflict opens a deferral of the new kind `memory_conflict` (`dfr_mc_<10 hex>_<10 hex>`, the `deferral` table was rebuilt for the wider CHECK), state `needs_owner_term`: it is in the morning list and counted in the daily report, never overdue, and **only the owner's message gives it a date** (`bb lane-pilot defer <dfr_id> --owner-msg <thread>#<seq>`, the same rules as any deferral: the code reads the message). A date that passes turns the deploy drill red like any other deferral. A project holds at most 25 held conflicts: beyond that the heuristics are misfiring and no more entries open (the log says so).
+
+`bb lane-pilot memory-conflicts [--project P] [--state held|settled] [--detect]` lists them (and looks for new ones); `bb lane-pilot memory-conflict-settle <mc_id> --keep a|b|both|none --evidence <why>` settles: `a` (the older) or `b` keeps one and retires the other as superseded by it, `both` says they do not disagree (the pair is never held again), `none` retires both; the evidence is required and closes the deferral. A conflict whose note was replaced, evicted or expired settles itself as `moot`. Tests: `tests/memory-conflicts.test.ts`, `tests/memory-eval.test.ts`.

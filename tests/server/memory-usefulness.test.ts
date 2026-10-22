@@ -49,11 +49,10 @@ describe("K8 usefulness: how often a note was mixed into a brief, and how often 
 
   const rec = (id: string, content: string, over: Partial<MemoryRecord> = {}): MemoryRecord => ({ id, projectId: "P", personalBot: "", kind: "note", content, concepts: [], sourceSha256: "s", createdAt: 1, ...over });
 
-  it("ranks the note that served accepted attempts first among those about the task's paths", () => {
+  it("keeps the search's order among the notes about the task's paths: the best match first, whatever the counters say", () => {
     const notes = ["one", "two", "three", "four"].map((word, index) => rec(`id${index}`, `The ${word} fact about components/greeting-cards`, index === 3 ? { useCount: 6, acceptedCount: 6 } : index === 0 ? { useCount: 6, acceptedCount: 0 } : {}));
     const text = writerMemory(notes, task);
-    expect(text.split("\n")[0]).toContain("four fact");
-    expect(text).not.toContain("one fact");
+    expect(text.split("\n").map((line) => line.replace(/^- The (\w+) fact.*/, "$1"))).toEqual(["one", "two", "three"]);
   });
 
   it("ranks the PM and council context the same way", () => {
