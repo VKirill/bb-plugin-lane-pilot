@@ -8,12 +8,15 @@
 # Settings: bb lane-pilot waiting config [enabled=on|off] [quiet=HH:MM-HH:MM] [timezone=Europe/Madrid]
 set -euo pipefail
 [ -n "${DRY_RUN:-}" ] || . "$HOME/.config/lp-metrics/tg.env"
-BB="${BB_CLI:-bb}"
+# The bb CLI: LP_BB (the hub has no `bb` on PATH: point it at the runtime's node_modules/.bin/bb). Never pass it as BB_CLI: the bb-app
+# launcher spawns BB_CLI as a child, so BB_CLI naming the launcher itself spawns it again and again (on 2026-10-22 ~2000 node processes
+# took the hub's memory and it rebooted). BB_CLI is dropped from every call below.
+BB="${LP_BB:-bb}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 call() { # method, input json -> the result object
   printf '%s' "$2" > "$tmp/in.json"
-  "$BB" plugin rpc call lane-pilot "$1" --input-file "$tmp/in.json" --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps(d.get("result", d) if isinstance(d, dict) else {}))'
+  env -u BB_CLI "$BB" plugin rpc call lane-pilot "$1" --input-file "$tmp/in.json" --json 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps(d.get("result", d) if isinstance(d, dict) else {}))'
 }
 field() { python3 -c 'import json,sys; v=json.loads(sys.argv[1]).get(sys.argv[2]); print(json.dumps(v) if isinstance(v,(list,dict)) else ("" if v is None else v))' "$1" "$2"; }
 digest="$(call owner_waiting_digest '{}')"

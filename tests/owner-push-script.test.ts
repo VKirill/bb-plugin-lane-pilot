@@ -23,7 +23,7 @@ if [ "$method" = owner_waiting_digest ]; then cat "${dir}/digest.json"; else ech
   const curl = join(dir, "curl");
   writeFileSync(curl, `#!/bin/sh\necho "$@" >> "${dir}/curl.log"\n${options.curlFails ? "exit 22" : "exit 0"}\n`);
   chmodSync(bb, 0o755); chmodSync(curl, 0o755);
-  const run = (env: Record<string, string> = {}) => spawnSync("bash", [script], { encoding: "utf8", timeout: 30_000, env: { ...process.env, HOME: home, BB_CLI: bb, PATH: `${dir}:${process.env.PATH}`, ...env } });
+  const run = (env: Record<string, string> = {}) => spawnSync("bash", [script], { encoding: "utf8", timeout: 30_000, env: { ...process.env, HOME: home, LP_BB: bb, BB_CLI: "/must/not/be/used", PATH: `${dir}:${process.env.PATH}`, ...env } });
   return { dir, run, ack: () => (existsSync(join(dir, "in-owner_waiting_ack.json")) ? JSON.parse(readFileSync(join(dir, "in-owner_waiting_ack.json"), "utf8")) : null), curlLog: () => (existsSync(join(dir, "curl.log")) ? readFileSync(join(dir, "curl.log"), "utf8") : "") };
 }
 const digest = { send: true, reason: null, text: "Lane Pilot: ждут владельца, новых — 1.\n• конфликт памяти: порт", keys: ["memory_conflict:mc1"], shown: 1, more: 0 };
