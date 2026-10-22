@@ -3,16 +3,18 @@ import { t } from "@lane-pilot/i18n";
 import { Button } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
 import { CONTROL_H } from "@lane-pilot/ui-kit";
+import { OwnerWaitingBadge } from "../../owner-waiting/ui";
 import type { LpPage } from "./use-lp-page";
 
-type Scope = "projects" | "globals" | "agents" | "tokens" | "workflows" | "schedule" | "tasks";
-const SYSTEM_PAGES: Array<{ scope: Exclude<Scope, "projects">; label: "navGlobals" | "navAgents" | "tabTokens" | "navWorkflows" | "navSchedule" | "navTasks"; testId?: string }> = [
+type Scope = "projects" | "globals" | "agents" | "tokens" | "workflows" | "schedule" | "tasks" | "waiting";
+const SYSTEM_PAGES: Array<{ scope: Exclude<Scope, "projects">; label: "navGlobals" | "navAgents" | "tabTokens" | "navWorkflows" | "navSchedule" | "navTasks" | "navOwnerWaiting"; testId?: string }> = [
   { scope: "globals", label: "navGlobals" },
   { scope: "agents", label: "navAgents" },
   { scope: "tokens", label: "tabTokens", testId: "scope-nav-tokens" },
   { scope: "workflows", label: "navWorkflows", testId: "scope-nav-workflows" },
   { scope: "schedule", label: "navSchedule", testId: "scope-nav-schedule" },
   { scope: "tasks", label: "navTasks", testId: "scope-nav-tasks" },
+  { scope: "waiting", label: "navOwnerWaiting", testId: "scope-nav-waiting" },
 ];
 
 /** Phones: one select with the system pages, the projects (the open one with its sections) and the service projects. */
@@ -102,7 +104,7 @@ export function ScopeRail({ page }: { page: LpPage }) {
       <div className="flex flex-col gap-1 pb-2" data-testid="scope-nav">
         {SYSTEM_PAGES.map((item) => (
           <Button key={item.scope} type="button" role="tab" size="sm" aria-selected={activeScope === item.scope} variant="ghost" className="lp-nav-item h-9 w-full justify-start px-3 text-sm hover:bg-state-hover"
-            data-testid={item.testId} onClick={() => setActiveScope(item.scope)}>{t(item.label)}</Button>
+            data-testid={item.testId} onClick={() => setActiveScope(item.scope)}>{t(item.label)}{item.scope === "waiting" ? <OwnerWaitingBadge /> : null}</Button>
         ))}
       </div>
       <div className="border-t border-[var(--lp-hairline)] px-3 pb-1 pt-3"><span className="text-xs font-medium text-muted-foreground">{t("projects")}</span></div>

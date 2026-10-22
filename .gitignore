@@ -2,7 +2,7 @@ node_modules/
 dist/
 .gitnexus/
 .claude/
-coverage/
+/coverage/
 *.log
 .bb/
 AGENTS.md

@@ -22,6 +22,7 @@ import { deferralRpc } from "../../deferral/server";
 import { rollbackRpc } from "../../rollback/server";
 import { acceptanceRpc } from "../../acceptance/server";
 import { benchRpc } from "../../bench/server";
+import { ownerWaitingRpc } from "../../owner-waiting/server";
 import { sessionMemoryRpc } from "../../memory/server";
 import { createWorkflowArchitect } from "../../workflow/server";
 import { architectStartRpc } from "../../workflow/server";
@@ -55,6 +56,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...rollbackRpc(services.rollback),
     ...acceptanceRpc(ctx.db),
     ...benchRpc(services.bench),
+    ...ownerWaitingRpc(ctx.db),
     ...sessionMemoryRpc(ctx, services),
     ...createWorkflowArchitect(ctx, services).rpc,
     ...architectStartRpc(ctx, services),

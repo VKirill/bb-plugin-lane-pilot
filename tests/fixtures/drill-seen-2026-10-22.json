@@ -1,0 +1,87 @@
+{
+ "note": "A drill receipt's scenarioNames and `seen` as scripts/lp-drill.py (evidence_seen) reads them from the hub for the quick drill of 2026-10-22 (20261022-151637); the real result of that run was pass.",
+ "scenarioNames": [
+  "guard_hash",
+  "deferrals",
+  "memory_paths",
+  "helper_providers",
+  "parallel3"
+ ],
+ "result": "pass",
+ "date": "2026-10-22",
+ "seen": {
+  "stages": {
+   "acceptance-receipt": {
+    "canceled": 2,
+    "passed": 3
+   },
+   "memory-maintenance": {
+    "passed": 3
+   },
+   "plan-critique": {
+    "skipped": 5
+   },
+   "plan-fact": {
+    "passed": 3
+   },
+   "pm-read": {
+    "skipped": 5
+   },
+   "project-life": {
+    "failed": 1
+   },
+   "specialist-review": {
+    "skipped": 5
+   },
+   "verification": {
+    "canceled": 2,
+    "passed": 3
+   },
+   "writer-agent": {
+    "canceled": 2,
+    "passed": 3
+   }
+  },
+  "gates": {
+   "accept": {
+    "passed": 3
+   },
+   "owns-paths": {
+    "passed": 3
+   },
+   "validate": {
+    "passed": 3
+   },
+   "verification": {
+    "passed": 1,
+    "skipped": 3
+   }
+  },
+  "moves": {
+   "cancel_requested>canceled": {
+    "ok": 2
+   },
+   "canceled>canceled": {
+    "ok": 1
+   },
+   "queued>queued": {
+    "ok": 10
+   },
+   "queued>spawn_requested": {
+    "ok": 5
+   },
+   "running>accepted": {
+    "ok": 3
+   },
+   "running>cancel_requested": {
+    "ok": 1
+   },
+   "spawn_requested>cancel_requested": {
+    "ok": 1
+   },
+   "spawn_requested>running": {
+    "ok": 4
+   }
+  }
+ }
+}
