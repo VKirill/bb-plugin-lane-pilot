@@ -82,3 +82,16 @@ it("names the post-merge check by the attempt and the merge commit it follows", 
   await finish.checkMainAfterMerge({ ...base, attemptId: "lpattempt_2", mergeCommit: "bbb222" });
   expect(seen).toEqual([{ background: true, jobKey: "post-merge:lpattempt_1:aaa111" }, { background: true, jobKey: "post-merge:lpattempt_2:bbb222" }]);
 });
+
+it("hands the post-merge checks to the baseline («what turned red») and tells the PM which of the red ones were green on the base", async () => {
+  const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+  const sent: string[] = [];
+  const ctx = { bb: { storage: bb.storage, sdk: { threads: { send: async (input: { input: Array<{ text: string }> }) => { sent.push(input.input[0]!.text); } }, files: { write: async () => ({}) } } }, db: {}, log: vi.fn(), state: { disposed: false }, host: { call: async () => ({}) } };
+  const checks = [{ command: "npm run build", exitCode: 1, stdout: "", stderr: "1 failed" }];
+  const afterMerge = vi.fn(() => ["npm run build"]);
+  const services = { runVerification: async () => checks, dispatchWriter: vi.fn(async () => ({ state: "queued" })), baseline: { afterMerge } };
+  const finish = createWriterFinish(ctx as never, services as never);
+  await finish.checkMainAfterMerge({ projectId: "P", pmThreadId: "pm", config: { hostId: "h" } as never, runId: "run", task, basePath: "/work/base", worktreePath: "/work/wt", attemptId: "att_1", mergeCommit: "abc" });
+  expect(afterMerge).toHaveBeenCalledWith({ runId: "run", taskId: "site-fix", mergeCommit: "abc", checks });
+  expect(sent.some((text) => text.includes("fails on main with it (npm run build passed on the base before this task)"))).toBe(true);
+});

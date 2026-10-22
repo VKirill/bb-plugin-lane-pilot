@@ -13,6 +13,7 @@ Built by Lane Pilot from page frontmatter.
 | [Anamnesis and owner profile](anamnesis.md) | component | active | 2026-10-10 |
 | [Lane Pilot architecture](architecture.md) | architecture | active | 2026-10-19 |
 | [Coverage registry, graph and drill](coverage.md) | component | active | 2026-10-22 |
+| [The baseline before a writer and the regression pass after acceptance](baseline.md) | component | active | 2026-10-22 |
 | [Lane Pilot data model overview](data-model.md) | data-model | active | 2026-10-19 |
 | [Schedules and Pixel World persistence](data-model/automation.md) | data-model | active | 2026-10-10 |
 | [Council, handoff, Jev and run-insight data](data-model/governance.md) | data-model | active | 2026-10-19 |

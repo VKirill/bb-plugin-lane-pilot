@@ -45,7 +45,7 @@ export type RollbackResult = {
   [extra: string]: unknown;
 };
 
-type Target = {
+export type RollbackTarget = {
   taskId: string; task: TaskV2; runId: string; projectId: string; hostId: string; basePath: string; config: PrototypeConfig;
 };
 
@@ -138,7 +138,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
 
   // ---- finding what to roll back ----
 
-  async function targetOf(ref: string): Promise<{ target: Target; attemptId: string | null } | { error: string }> {
+  async function targetOf(ref: string): Promise<{ target: RollbackTarget; attemptId: string | null } | { error: string }> {
     const attempt = getAttempt(db, ref);
     const taskId = attempt ? attempt.task_id : ref;
     const row = getTask(db, taskId);
@@ -162,7 +162,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
   type Change = { attemptId: string; mergeCommit: string; mergeParent: string | null; changed: ChangedFile[] };
 
   /** The attempt's merge in main: from the record, else found in main by the attempt's trailer (work accepted before the record existed) and recorded. */
-  async function changeOf(t: Target, attemptId: string): Promise<Change | { refused: string }> {
+  async function changeOf(t: RollbackTarget, attemptId: string): Promise<Change | { refused: string }> {
     const recorded = getAttemptChange(db, attemptId);
     if (recorded?.mergeCommit) return { attemptId, mergeCommit: recorded.mergeCommit, mergeParent: recorded.mergeParent, changed: recorded.changed };
     const found = await host.call("gitMergeInfo", { requestedHostId: t.hostId, basePath: t.basePath, attemptId }, { hostId: t.hostId, timeoutMs: 60_000 });
@@ -176,7 +176,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
 
   // ---- worktrees on the project's host ----
 
-  async function makeWorktree(t: Target, name: string, commit?: string): Promise<{ path: string } | { error: string }> {
+  async function makeWorktree(t: RollbackTarget, name: string, commit?: string): Promise<{ path: string } | { error: string }> {
     const created = await host.call("gitCreateWorktree", { requestedHostId: t.hostId, basePath: t.basePath, name: safeName(name), ...(commit ? { commit } : {}) },
       { hostId: t.hostId, timeoutMs: 120_000 }).catch((cause: unknown) => ({ status: "failed" as const, path: null, reason: cause instanceof Error ? cause.message : String(cause) }));
     if (created.status !== "ready" || !created.path) return { error: `could not make a worktree: ${created.reason ?? "unknown"}` };
@@ -185,14 +185,14 @@ export function createRollback(ctx: ServerCore, services: Services) {
     return { path: created.path };
   }
 
-  async function dropWorktree(t: Target, path: string | null): Promise<void> {
+  async function dropWorktree(t: RollbackTarget, path: string | null): Promise<void> {
     if (!path) return;
     await host.call("gitRemoveWorktree", { requestedHostId: t.hostId, basePath: t.basePath, worktreePath: path }, { hostId: t.hostId, timeoutMs: 60_000 })
       .catch((cause: unknown) => log(`rollback: could not remove ${path}: ${cause instanceof Error ? cause.message : String(cause)}`));
   }
 
   /** The task's verification[] on a tree, item by item. */
-  async function runChecks(t: Target, root: string, commands?: TaskV2["verification"]): Promise<RollbackItem[]> {
+  async function runChecks(t: RollbackTarget, root: string, commands?: TaskV2["verification"]): Promise<RollbackItem[]> {
     const task = retargetTask({ ...t.task, verification: commands ?? t.task.verification }, root);
     if (!task.verification.length) return [];
     const results = await services.runVerification(t.config, task, t.runId);
@@ -202,14 +202,14 @@ export function createRollback(ctx: ServerCore, services: Services) {
     }));
   }
 
-  function receipt(t: Target, kind: TaskReceiptKind, state: TaskReceiptState, summary: string, extra: Partial<Pick<TaskReceipt, "attemptId" | "baseSha" | "changeSha" | "resultCommit">> & { detail?: unknown } = {}): number {
+  function receipt(t: RollbackTarget, kind: TaskReceiptKind, state: TaskReceiptState, summary: string, extra: Partial<Pick<TaskReceipt, "attemptId" | "baseSha" | "changeSha" | "resultCommit">> & { detail?: unknown } = {}): number {
     try {
       return appendTaskReceipt(db, { kind, projectId: t.projectId, runId: t.runId, taskId: t.taskId, state, summary, attemptId: extra.attemptId ?? null,
         baseSha: extra.baseSha ?? null, changeSha: extra.changeSha ?? null, resultCommit: extra.resultCommit ?? null, detail: extra.detail ?? {} });
     } catch (cause) { log(`rollback receipt not kept: ${cause instanceof Error ? cause.message : String(cause)}`); return 0; }
   }
 
-  const refuse = (t: Target | null, kind: TaskReceiptKind, ref: string, reason: string, next: string, extra: { attemptId?: string | null; detail?: unknown } = {}): RollbackResult => {
+  const refuse = (t: RollbackTarget | null, kind: TaskReceiptKind, ref: string, reason: string, next: string, extra: { attemptId?: string | null; detail?: unknown } = {}): RollbackResult => {
     const taskId = t?.taskId ?? ref;
     const receiptId = t ? receipt(t, kind, "refused", reason, { attemptId: extra.attemptId ?? null, detail: { next, ...(extra.detail as object | undefined) } }) : 0;
     return { ok: false, state: "refused", taskId, attemptId: extra.attemptId ?? null, base: null, change: null, summary: reason, next, ...(receiptId ? { receiptId } : {}), ...(extra.detail as object | undefined) };
@@ -262,7 +262,7 @@ export function createRollback(ctx: ServerCore, services: Services) {
   // ---- revert ----
 
   /** Merges the revert through the base-checkout lock, waiting in the queue like every writer merge. */
-  async function mergeRevert(t: Target, worktreePath: string, message: string): Promise<{ status: string; commit: string | null; reason: string | null; conflicts: string[] }> {
+  async function mergeRevert(t: RollbackTarget, worktreePath: string, message: string): Promise<{ status: string; commit: string | null; reason: string | null; conflicts: string[] }> {
     const settings = loadProjectSettings(db, t.projectId, getRunSettingsScopes(db, t.runId));
     const integrate = () => host.call("gitIntegrate", { requestedHostId: t.hostId, basePath: t.basePath, worktreePath, message, removeWorktree: true, bookkeeping: bookkeepingSetting(settings) },
       { hostId: t.hostId, timeoutMs: 180_000 });
@@ -400,7 +400,13 @@ export function createRollback(ctx: ServerCore, services: Services) {
     return { taskId, attempts, receipts: listTaskReceipts(db, taskId) };
   }
 
-  return { rollback: { noteBase, ensureBase, noteMerge, noteWorktree, noteSaved, noteStopped, reverify, revert, status } };
+  /**
+   * The pieces the baseline and the regression pass reuse (src/rooms/baseline): the task's target, its merge, a throwaway worktree on the
+   * project's host and the task's checks in it. Nothing here writes to the project's checkout.
+   */
+  const kit = { targetOf, changeOf, makeWorktree, dropWorktree, runChecks };
+
+  return { rollback: { noteBase, ensureBase, noteMerge, noteWorktree, noteSaved, noteStopped, reverify, revert, status, kit } };
 }
 
 export type RollbackApi = ReturnType<typeof createRollback>["rollback"];

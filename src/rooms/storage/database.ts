@@ -26,6 +26,7 @@ import { deferralKindMigrations, deferralMigrations } from "../deferral";
 import { rollbackMigrations } from "../rollback";
 import { benchMigrations } from "../bench";
 import { ownerWaitingMigrations } from "../owner-waiting";
+import { baselineMigrations } from "../baseline";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
 export type LanePilotDatabase = Database.Database;
@@ -368,6 +369,8 @@ export const migrations = [
   ...benchMigrations,
   // SMA D0-3: «Waiting for the owner» (src/rooms/owner-waiting): the inbox of the night loop, what already went to Telegram, the push settings.
   ...ownerWaitingMigrations,
+  // The baseline before a writer, the regression pass after acceptance and their findings (src/rooms/baseline).
+  ...baselineMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

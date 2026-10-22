@@ -21,6 +21,14 @@ export const acceptanceCardSchema = z.object({
     }).strict()),
     extraRows: z.array(z.number().int()), notChecked: z.array(z.string()),
   }).strict().nullable(),
+  /** The task's checks on its base before any writer (src/rooms/baseline): which were already green or red, and which turned red after the merge. */
+  baseline: z.object({
+    state: z.enum(["ran", "skipped", "error"]), verdict: z.enum(["already_built", "partial", "red", "unknown"]), action: z.enum(["proceed", "notified", "stopped"]),
+    mode: z.string(), summary: z.string(), baseSha: z.string().nullable(), at: z.number(),
+    checks: z.array(z.object({ command: z.string(), status: z.enum(["green", "red", "skipped", "unknown"]), note: z.string(), cached: z.boolean() }).strict()),
+    /** Null until the merge's checks on main ran; then the checks green on the base and red after the change. */
+    turnedRed: z.array(z.string()).nullable(),
+  }).strict().nullable().optional(),
   /** Stages with no receipt or a skipped one: «not run» is not «no findings». */
   notRun: z.array(z.object({ stageId: z.string(), why: z.string() }).strict()),
   cost: z.object({ state: z.enum(["measured", "partial", "not_measured"]), usd: z.number().nullable(), tokens: z.number().nullable(), note: z.string().nullable(), attempts: z.number().int(), measured: z.number().int() }).strict(),
