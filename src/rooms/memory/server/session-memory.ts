@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, upsertLessonProposal } from "@lane-pilot/run-insights";
-import { heldClause, parseMemoryCandidates, searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
+import { NOTHING_RELEVANT, heldClause, parseMemoryCandidates, relevantRecords, searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 import type { rpcContract } from "../../contracts";
 import { adoptRuleProposal, memorySettingsFor } from "../../self-repair/server";
 import type { ServerCore } from "../../core/server";
@@ -50,8 +50,12 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
     },
     session_memory_search: async ({ projectId, query, limit }) => {
       const settings = memorySettingsFor(db, projectId);
-      return { records: searchMemoryRecords(db, projectId, query, limit ?? 8, settings.searchEngine, "subagent", settings.personalBot, { includeObserved: true })
-        .map((record) => ({ id: record.id, kind: record.kind, content: record.content, concepts: record.concepts })) };
+      const wanted = limit ?? 8;
+      // The floor drops records, so the search looks further than the limit to fill it; a query nothing clears gets the explicit «nothing» next to the empty list.
+      const found = searchMemoryRecords(db, projectId, query, Math.min(100, Math.max(40, wanted * 4)), settings.searchEngine, "subagent", settings.personalBot, { includeObserved: true });
+      const records = relevantRecords(db, projectId, query, found, { audience: "subagent", personalBot: settings.personalBot }).slice(0, wanted)
+        .map((record) => ({ id: record.id, kind: record.kind, content: record.content, concepts: record.concepts }));
+      return records.length ? { records } : { records, nothingRelevant: true, message: NOTHING_RELEVANT };
     },
     session_memory_core: async ({ projectId }) => {
       const rows = db.prepare(`SELECT id, content FROM lane_pilot_memory WHERE project_id=? AND kind='core' AND audience='subagent' AND status='active' AND (valid_until IS NULL OR valid_until>?)${heldClause(db, "lane_pilot_memory")} ORDER BY created_at`)

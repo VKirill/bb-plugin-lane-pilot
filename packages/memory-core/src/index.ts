@@ -23,3 +23,4 @@ export { NOTE_IDLE_MS, OBSERVED_QUARANTINE_MS, hideRecord, memoryUsefulness, rec
 export { audienceForSensitivity, exportedFileName, laneMemoryFileToCandidate, parseLaneMemoryFile, renderLaneMemoryFile, sensitivityForAudience, type LaneMemoryFile } from "./files";
 export { findConflicts, conflictId, disagreement, type Conflict, type ConflictKind, type ConflictNote } from "./conflicts";
 export { conflictTableReady, getConflict, heldClause, holdConflict, listConflicts, markSettled, memoryConflictMigrations, setDeferral, type ConflictResolution, type ConflictRow } from "./conflict-store";
+export { DEFAULT_RELEVANCE_FLOOR, NOTHING_RELEVANT, clearsFloor, floorThreshold, pathAnchorsOf, questionWords, recordRelevance, relevantRecords, wordFrequencies, type Frequencies, type RecordRelevance, type RelevanceFloor } from "./floor";

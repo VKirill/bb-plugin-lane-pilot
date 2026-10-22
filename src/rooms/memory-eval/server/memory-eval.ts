@@ -1,3 +1,4 @@
+import { DEFAULT_RELEVANCE_FLOOR, type RelevanceFloor } from "@lane-pilot/memory-core";
 import { buildEvalDb, planCorpus, prng, type EvalScope, type SizePlan } from "./corpus";
 import { createRetrievers, type Retriever } from "./retrievers";
 import type { EvalQuestion } from "./questions";
@@ -78,7 +79,7 @@ export function score(retriever: Pick<Retriever, "id" | "production" | "group" |
   };
 }
 
-export type RunOptions = { sizes?: readonly number[]; seed?: number; scope?: EvalScope; skipProjects: ReadonlySet<string>; skipTask: (taskId: string) => boolean; now?: number };
+export type RunOptions = { /** The floor of the query paths; `null` runs them as they were before it. */ floor?: RelevanceFloor | null; sizes?: readonly number[]; seed?: number; scope?: EvalScope; skipProjects: ReadonlySet<string>; skipTask: (taskId: string) => boolean; now?: number };
 
 export async function runMemoryEval(data: EvalData, options: RunOptions): Promise<EvalReport> {
   const seed = options.seed ?? 1;
@@ -87,7 +88,7 @@ export async function runMemoryEval(data: EvalData, options: RunOptions): Promis
     const plan = planCorpus({ data, size, seed, scope: options.scope ?? "project", skipProjects: options.skipProjects, skipTask: options.skipTask, ...(options.now !== undefined ? { now: options.now } : {}) });
     const db = buildEvalDb(plan);
     try {
-      const retrievers = createRetrievers(db, plan.notes);
+      const retrievers = createRetrievers(db, plan.notes, options.floor === undefined ? DEFAULT_RELEVANCE_FLOOR : options.floor);
       const kinds = new Map(plan.notes.map((note) => [note.id, note.kind]));
       const times = plan.notes.map((note) => [note.id, note.createdAt] as const);
       const rowsBy = new Map<string, Row[]>(retrievers.map((retriever) => [retriever.id, []]));

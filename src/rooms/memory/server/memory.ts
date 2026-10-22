@@ -4,6 +4,7 @@ import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { resolveStageWriterSelection } from "../../writer";
 import { sha256 } from "../../tasks";
 import { memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../memory";
+import { NOTHING_RELEVANT } from "@lane-pilot/memory-core";
 import { pmMemoryContext } from "./memory-mix";
 import { boundedAgentName } from "../../critique";
 import { MemoryChildSnapshot, childResultObject, memoryChildSnapshot, spawnRefused } from "../../runs/server";
@@ -229,7 +230,9 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
     if(!memorySettings.enabled) return {runId:args.runId,state:"skipped",reason:"memory_disabled"};
     const selected=pmMemoryContext(db,args.projectId,memorySettings,args.query);
     return {runId:args.runId,state:"passed",audience:memorySettings.audience,personalBot:memorySettings.personalBot,querySha256:sha256(args.query),
-      recordIds:selected.records.map((item)=>item.id),estimatedTokens:selected.estimatedTokens,context:selected.text};
+      recordIds:selected.records.map((item)=>item.id),estimatedTokens:selected.estimatedTokens,
+      // Nothing cleared the relevance floor: say so plainly in `context` too, so an agent that reads only that field does not invent.
+      context:selected.nothingRelevant?NOTHING_RELEVANT:selected.text,nothingRelevant:selected.nothingRelevant};
   }
 
   return { maintainMemoryAfterAcceptance, runMemoryMaintenance, runMemoryContext };

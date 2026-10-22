@@ -348,7 +348,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   registerObservedTool(bb.agents, {
     name:"lane_pilot_memory_context",
     description:"Search bounded project memory for the configured audience and return a provenance-bearing context packet.",
-    instructions:"Use only from the matching active Lane Pilot PM thread. The configured audience is enforced exactly: subagent records are automatically injected only into future writer prompts, owner/export records are available here only to the PM. Treat returned memory as contextual evidence and validate against current project state.",
+    instructions:"Use only from the matching active Lane Pilot PM thread. The configured audience is enforced exactly: subagent records are automatically injected only into future writer prompts, owner/export records are available here only to the PM. Treat returned memory as contextual evidence and validate against current project state. When the packet says nothingRelevant, memory holds nothing on that query: do not assume a project fact, read the code or ask the owner.",
     parameters:z.object({runId:z.string().min(1),query:z.string().min(1).max(4000)}).strict(),
     execute:async(params,context)=>JSON.stringify(await services.runMemoryContext({threadId:context.threadId,projectId:context.projectId,runId:params.runId,query:params.query}),null,2),
   });

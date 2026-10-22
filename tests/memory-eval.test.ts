@@ -7,6 +7,7 @@ import { createRetrievers } from "../src/rooms/memory-eval/server/retrievers";
 import { formatEvalReport, runMemoryEval, score, stat } from "../src/rooms/memory-eval/server/memory-eval";
 import { exportEvalExtract, loadEvalData, type EvalData, type RawNote, type RawQuestion } from "../src/rooms/memory-eval/server/source";
 import { runMemoryEvalCommand } from "../src/rooms/memory-eval/server/command";
+import { formatFloorTuning, halfOf, pooled, tuneFloor } from "../src/rooms/memory-eval/server/floor-tuning";
 import { writerMemoryPicks } from "../src/rooms/writer/writer-brief";
 import { SHELF_CONFIGS, durabilityScore, formatShelf, pickThree, replayShelf, runShelfReplay } from "../src/rooms/memory-eval/server/shelf";
 
@@ -144,7 +145,7 @@ describe("a run", () => {
     const report = await runMemoryEval(data(), { sizes: [30, 60], seed: 1, scope: "pile", ...options });
     expect(report.sizes.map((size) => size.size)).toEqual([30, 60]);
     for (const size of report.sizes) {
-      expect(size.scores.map((row) => row.id)).toEqual(["writer", "plain", "pm", "search", "search+floor", "plain-keyword", "reviewer"]);
+      expect(size.scores.map((row) => row.id)).toEqual(["writer", "plain", "pm", "search", "pm-nofloor", "search-nofloor", "search+floor", "plain-keyword", "reviewer"]);
       const writer = size.scores.find((row) => row.id === "writer")!, plain = size.scores.find((row) => row.id === "plain")!;
       expect(writer.hit.mean).toBeGreaterThan(0.7);
       expect(plain.hit.mean).toBeGreaterThan(0.7);
@@ -155,6 +156,17 @@ describe("a run", () => {
     expect(text).toContain("== 30 notes");
     expect(text).toContain("plain (plain)");
     expect(text).toContain("false-hit(non-core)");
+  });
+
+  it("--no-floor runs the query paths as they were: the production rows equal the -nofloor rows, and the floor changes the production rows only", async () => {
+    const off = await runMemoryEval(data(), { sizes: [30], seed: 1, scope: "pile", floor: null, ...options });
+    const on = await runMemoryEval(data(), { sizes: [30], seed: 1, scope: "pile", ...options });
+    const row = (report: typeof on, id: string) => report.sizes[0]!.scores.find((item) => item.id === id)!;
+    for (const [production, old] of [["pm", "pm-nofloor"], ["search", "search-nofloor"]] as const) {
+      expect(row(off, production).delivered).toBe(row(off, old).delivered);
+      expect(row(on, old).delivered).toBe(row(off, old).delivered);
+      expect(row(on, production).delivered).toBeLessThanOrEqual(row(on, old).delivered);
+    }
   });
 
   it("the writer's picks keep the search's order whatever the usefulness counters say", () => {
@@ -220,5 +232,24 @@ describe("the shelf replay", () => {
     expect(formatShelf(results)).toContain("legacy order, budget 8000 (before)");
     expect(durabilityScore({ content: "a/b.ts c/d.ts e/f.ts" })).toBeGreaterThan(durabilityScore({ content: "a/b.ts" }));
     expect(pickThree([], [], "legacy")).toEqual([]);
+  });
+});
+
+describe("choosing the relevance floor", () => {
+  it("chooses on the tuning half, reports the held-out half, and the two halves add up to every question", async () => {
+    const tuned = await tuneFloor(data(), { sizes: [30, 60], seed: 1, scope: "pile", ...options });
+    expect(tuned.stages.map((stage) => stage.variant)).toEqual(["full", "title"]);
+    const total = (half: "tune" | "held") => pooled(tuned.baseline, half, "pm", "full");
+    expect(total("tune").positives + total("held").positives).toBe(tuned.sizes.length * 12);
+    // The chosen floor loses at most five points of hit@5 on the tuning half, on both query paths.
+    for (const path of ["pm", "search"] as const) {
+      const before = pooled(tuned.baseline, "tune", path, "full"), after = pooled(tuned.chosen, "tune", path, "full");
+      if (before.positives) expect(after.hits / before.positives).toBeGreaterThanOrEqual(before.hits / before.positives - 0.05 - 1e-9);
+    }
+    // A question is on the same side at every size.
+    expect(halfOf({ id: "a", taskId: "task3" })).toBe(halfOf({ id: "b", taskId: "task3" }));
+    const text = formatFloorTuning(tuned);
+    expect(text).toContain("HELD-OUT");
+    expect(text).toContain("Chosen on the tuning half");
   });
 });
