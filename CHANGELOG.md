@@ -4,7 +4,7 @@
 
 ## 0.1.274
 
-**A bench build that loses its host freezes nothing.** Three host errors in a row stop that host's chain, the build writes no set and says which host stopped answering; the warm-up keeps the host's own error text. On 2026-10-22 a plugin reload in the middle of `bench build --set v1` turned the remaining 82 candidates into host errors and froze v1 with 5 tasks.
+**A bench build that loses its host freezes nothing.** Three host errors in a row stop that host's chain, the build writes no set and says which host stopped answering; the warm-up keeps the host's own error text. On 2026-10-22 a plugin reload in the middle of `bench build --set v1` turned the remaining 82 candidates into host errors and froze v1 with 5 tasks. Without `--set` the bench commands take the newest set (`build`: the next free version), not always v1.
 
 ## 0.1.273
 

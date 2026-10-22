@@ -267,10 +267,16 @@ describe("bench runner: ids and the command line", () => {
   it("parses the bench command line: writer, repeatable settings, fault and caps", async () => {
     const { runBenchCli } = await import("../../src/rooms/bench/cli");
     const calls: unknown[] = [];
-    const bench = { run: async (input: unknown) => { calls.push(input); return []; } } as never;
+    const sets: Array<{ version: string; createdAt: number }> = [];
+    const bench = { run: async (input: unknown) => { calls.push(input); return []; }, build: async (input: unknown) => { calls.push(input); return {}; }, status: () => sets } as never;
     const ok = await runBenchCli(bench, ["run", "--arm", "x", "--writer", "codex/gpt-6-luna", "--setting", "plan_critique.enabled=true", "--setting", "quality_mode=\"full\"", "--repeat", "2", "--tasks", "3", "--fault", "owns", "--budget-tokens", "1000"]);
     expect(ok.exitCode).toBe(0);
     expect(calls[0]).toMatchObject({ version: "v1", arm: "x", writer: { providerId: "codex", model: "gpt-6-luna" }, settings: { "plan_critique.enabled": true, quality_mode: "full" }, repeat: 2, limit: 3, fault: "owns", budgetTokens: 1000 });
+    // Without --set: the newest set to run on, the next free version to build.
+    sets.push({ version: "v1", createdAt: 1 }, { version: "v2", createdAt: 2 });
+    await runBenchCli(bench, ["run", "--arm", "y"]);
+    await runBenchCli(bench, ["build"]);
+    expect(calls.slice(1)).toMatchObject([{ version: "v2", arm: "y" }, { version: "v3" }]);
     expect((await runBenchCli(bench, ["run"])).exitCode).toBe(1);
     expect((await runBenchCli(bench, ["run", "--arm", "x", "--writer", "nomodel"])).stderr).toMatch(/provider\/model/);
     expect((await runBenchCli(bench, ["run", "--arm", "x", "--fault", "cosmic"])).stderr).toMatch(/owns or read_first/);

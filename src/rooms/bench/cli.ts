@@ -2,14 +2,14 @@ import type { BenchApi } from "./service";
 import type { Fault } from "./runner";
 
 export const BENCH_USAGE = [
-  "bb lane-pilot bench build [--set v1] [--seed S] [--only stratum,..] [--tries 4] [--plan | --dry-run] [--wait]   (select, warm up and freeze a set of past tasks)",
-  "bb lane-pilot bench show [--set v1]                    (the tasks of a set and the funnel of its build)",
-  "bb lane-pilot bench prepare [--set v1]                 (the «LP bench …» projects the set needs, and the command that creates each)",
-  "bb lane-pilot bench run --arm NAME [--set v1] [--writer provider/model] [--harness none|tree|<tree id>] [--repeat k] [--tasks N] [--only id,id]",
+  "bb lane-pilot bench build [--set vN] [--seed S] [--only stratum,..] [--tries 4] [--plan | --dry-run] [--wait]   (select, warm up and freeze a set of past tasks; default: the next free version)",
+  "bb lane-pilot bench show [--set vN]                    (without --set: the newest set; the tasks of a set and the funnel of its build)",
+  "bb lane-pilot bench prepare [--set vN]                 (the «LP bench …» projects the set needs, and the command that creates each)",
+  "bb lane-pilot bench run --arm NAME [--set vN] [--writer provider/model] [--harness none|tree|<tree id>] [--repeat k] [--tasks N] [--only id,id]",
   "                       [--setting key=value]... [--fault owns|read_first] [--budget-tokens N] [--budget-hours H] [--wait]",
-  "bb lane-pilot bench noise <armA> <armB> [--set v1]      (two identical arms: calibrates the threshold of compare)",
-  "bb lane-pilot bench compare <armA> <armB> [--set v1] [--noise X,Y] [--harness-id <tree id>] [--json]   (A is the baseline; --harness-id records the verdict harness.adopt_by=bench waits for)",
-  "bb lane-pilot bench status [--set v1]",
+  "bb lane-pilot bench noise <armA> <armB> [--set vN]      (two identical arms: calibrates the threshold of compare)",
+  "bb lane-pilot bench compare <armA> <armB> [--set vN] [--noise X,Y] [--harness-id <tree id>] [--json]   (A is the baseline; --harness-id records the verdict harness.adopt_by=bench waits for)",
+  "bb lane-pilot bench status [--set vN]                  (without --set: every set)",
   "bb lane-pilot bench config [budget_tokens=N] [budget_hours=H]   (bench.budget_tokens / bench.budget_hours: the cap of one arm)",
 ].join("\n");
 
@@ -47,6 +47,13 @@ function settingPair(text: string): [string, unknown] {
   try { return [text.slice(0, at), JSON.parse(raw)]; } catch { return [text.slice(0, at), raw]; }
 }
 
+/** Without --set: the newest set for reading and running, the next free version for a build («v1» on an empty hub). */
+function defaultVersion(bench: BenchApi, kind: "newest" | "next"): string {
+  const sets = bench.status();
+  if (kind === "next") return `v${Math.max(0, ...sets.map((row) => Number(/^v(\d+)$/.exec(row.version)?.[1] ?? 0))) + 1}`;
+  return sets.slice().sort((a, b) => b.createdAt - a.createdAt)[0]?.version ?? "v1";
+}
+
 export async function runBenchCli(bench: BenchApi, argv: string[]): Promise<Result> {
   try {
     const [sub, ...rest] = argv;
@@ -54,21 +61,21 @@ export async function runBenchCli(bench: BenchApi, argv: string[]): Promise<Resu
     if (sub === "build") {
       const { flags } = parseBenchArgs(rest, ["set", "seed", "only", "tries", "dry-run", "plan", "wait", "min-free-gb", "check-timeout"]);
       return out(await bench.build({
-        version: flags.set ?? "v1", wait: flags.wait === "true", dryRun: flags["dry-run"] === "true", planOnly: flags.plan === "true",
+        version: flags.set ?? defaultVersion(bench, "next"), wait: flags.wait === "true", dryRun: flags["dry-run"] === "true", planOnly: flags.plan === "true",
         ...(flags.seed ? { seed: flags.seed } : {}), ...(flags.only ? { only: flags.only.split(",") } : {}), ...(flags.tries ? { triesFactor: positive("tries", flags.tries)! } : {}),
         ...(flags["min-free-gb"] ? { minFreeGb: positive("min-free-gb", flags["min-free-gb"])! } : {}), ...(flags["check-timeout"] ? { checkTimeoutSec: positive("check-timeout", flags["check-timeout"])! } : {}),
       }));
     }
     if (sub === "show") {
       const { flags } = parseBenchArgs(rest, ["set"]);
-      const version = flags.set ?? "v1";
+      const version = flags.set ?? defaultVersion(bench, "newest");
       const shown = bench.show(version);
       if (!shown) return { exitCode: 1, stderr: `no bench set ${version}` };
       return out({ ...shown, build: await bench.lastBuild(version) });
     }
     if (sub === "prepare") {
       const { flags } = parseBenchArgs(rest, ["set"]);
-      return out(await bench.prepare(flags.set ?? "v1"));
+      return out(await bench.prepare(flags.set ?? defaultVersion(bench, "newest")));
     }
     if (sub === "run") {
       const { flags, lists } = parseBenchArgs(rest, ["set", "arm", "writer", "harness", "repeat", "tasks", "only", "setting", "fault", "budget-tokens", "budget-hours", "wait", "task-timeout"]);
@@ -82,7 +89,7 @@ export async function runBenchCli(bench: BenchApi, argv: string[]): Promise<Resu
       if (flags.fault && flags.fault !== "owns" && flags.fault !== "read_first") throw new Error("--fault is owns or read_first");
       const settings = Object.fromEntries((lists.setting ?? []).map(settingPair));
       return out(await bench.run({
-        version: flags.set ?? "v1", arm: flags.arm, ...(writer ? { writer } : {}), ...(flags.harness ? { harness: flags.harness } : {}),
+        version: flags.set ?? defaultVersion(bench, "newest"), arm: flags.arm, ...(writer ? { writer } : {}), ...(flags.harness ? { harness: flags.harness } : {}),
         ...(flags.repeat ? { repeat: positive("repeat", flags.repeat)! } : {}), ...(flags.tasks ? { limit: positive("tasks", flags.tasks)! } : {}),
         ...(flags.only ? { only: flags.only.split(",") } : {}), settings, ...(flags.fault ? { fault: flags.fault as Fault } : {}),
         ...(flags["budget-tokens"] ? { budgetTokens: positive("budget-tokens", flags["budget-tokens"])! } : {}), ...(flags["budget-hours"] ? { budgetHours: positive("budget-hours", flags["budget-hours"])! } : {}),
@@ -91,15 +98,15 @@ export async function runBenchCli(bench: BenchApi, argv: string[]): Promise<Resu
     }
     if (sub === "noise") {
       const { positional, flags } = parseBenchArgs(rest, ["set"]);
-      if (positional.length !== 2) throw new Error("usage: bb lane-pilot bench noise <armA> <armB> [--set v1]");
-      return out(bench.noise({ version: flags.set ?? "v1", armA: positional[0]!, armB: positional[1]! }));
+      if (positional.length !== 2) throw new Error("usage: bb lane-pilot bench noise <armA> <armB> [--set vN]");
+      return out(bench.noise({ version: flags.set ?? defaultVersion(bench, "newest"), armA: positional[0]!, armB: positional[1]! }));
     }
     if (sub === "compare") {
       const { positional, flags } = parseBenchArgs(rest, ["set", "noise", "harness-id", "json"]);
-      if (positional.length !== 2) throw new Error("usage: bb lane-pilot bench compare <armA> <armB> [--set v1] [--noise X,Y] [--harness-id id] [--json]");
+      if (positional.length !== 2) throw new Error("usage: bb lane-pilot bench compare <armA> <armB> [--set vN] [--noise X,Y] [--harness-id id] [--json]");
       const noiseArms = flags.noise ? flags.noise.split(",") as [string, string] : undefined;
       if (noiseArms && noiseArms.length !== 2) throw new Error("--noise wants two arm names: X,Y");
-      const result = bench.compare({ version: flags.set ?? "v1", armA: positional[0]!, armB: positional[1]!, ...(noiseArms ? { noiseArms } : {}), ...(flags["harness-id"] ? { harnessId: flags["harness-id"] } : {}) });
+      const result = bench.compare({ version: flags.set ?? defaultVersion(bench, "newest"), armA: positional[0]!, armB: positional[1]!, ...(noiseArms ? { noiseArms } : {}), ...(flags["harness-id"] ? { harnessId: flags["harness-id"] } : {}) });
       return { exitCode: result.comparison.verdict === "pass" ? 0 : 1, stdout: flags.json === "true" ? JSON.stringify(result.comparison, null, 2) : `${result.text}${result.verdictId ? `\nRecorded as ${result.verdictId} for harness ${flags["harness-id"]}.` : ""}` };
     }
     if (sub === "status") {
