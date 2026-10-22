@@ -152,6 +152,7 @@ export const SETTING_META: Record<string, SettingMeta> = {
   "quality_mode": { label: "field_s423", help: "reason_s423" },
   "critic.code.default_for_risk": { label: "field_s476", help: "reason_s476" },
   "plan_fact.mode": { label: "field_s477", help: "reason_s477" },
+  "checks.require_red_on_base": { label: "field_s478", help: "reason_s478" },
   "run.gate": { label: "settingRunGate", help: "settingRunGateHelp" },
 };
 

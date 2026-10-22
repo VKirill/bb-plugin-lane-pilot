@@ -130,3 +130,59 @@ describe("the baseline before a writer (D1-3)", () => {
     await w.dispose();
   });
 });
+
+describe("red before green (checks.require_red_on_base)", () => {
+  const at = (input: ReturnType<Awaited<ReturnType<typeof world>>["pendingTask"]>, patch: Record<string, unknown>) => ({ ...input, task: { ...(input.task as object), ...patch } as never });
+
+  it("does not start an attempt of medium risk whose every check is green on the base: the PM is told which checks and what to add", async () => {
+    const w = await world();
+    const input = at(w.pendingTask("t1", ["test -f keep.txt", "grep -q line2 server.ts"]), { risk: "medium" });
+    const result = await w.services.baseline.preflight(input);
+    expect(result.stop).toMatch(/^verdict_block: no_red_on_base: /);
+    expect(classifyFailure("blocked", result.stop).cls).toBe("contract");
+    expect(getBaseline(w.db, "run1", "t1")).toMatchObject({ verdict: "already_built", action: "stopped" });
+    const text = (w.send.mock.calls[0] as unknown as [{ input: Array<{ text: string }> }])[0].input[0]!.text;
+    expect(text).toContain("задача t1 не запущена");
+    expect(text).toContain("- test -f keep.txt");
+    expect(text).toContain("- grep -q line2 server.ts");
+    expect(text).toContain("test -f <новый файл>");
+    await w.dispose();
+  });
+
+  it("starts the attempt when one check is red on the base", async () => {
+    const w = await world();
+    const result = await w.services.baseline.preflight(at(w.pendingTask("t1", ["test -f keep.txt", "test -f feature.txt"]), { risk: "high" }));
+    expect(result.stop).toBeNull();
+    expect(getBaseline(w.db, "run1", "t1")).toMatchObject({ verdict: "partial", action: "proceed" });
+    expect(w.send).not.toHaveBeenCalled();
+    await w.dispose();
+  });
+
+  it("leaves low risk, refactor and docs kinds, risk below the setting, and the off setting alone", async () => {
+    const w = await world();
+    expect((await w.services.baseline.preflight(w.pendingTask("low", ["test -f keep.txt"]))).stop).toBeNull();
+    expect((await w.services.baseline.preflight(at(w.pendingTask("ref", ["test -f keep.txt"]), { risk: "high", kind: "refactor" }))).stop).toBeNull();
+    expect((await w.services.baseline.preflight(at(w.pendingTask("doc", ["test -f keep.txt"]), { risk: "critical", kind: "docs" }))).stop).toBeNull();
+    await w.dispose();
+    const high = await world({ settings: { "checks.require_red_on_base": "high" } });
+    expect((await high.services.baseline.preflight(at(high.pendingTask("m", ["test -f keep.txt"]), { risk: "medium" }))).stop).toBeNull();
+    expect((await high.services.baseline.preflight(at(high.pendingTask("h", ["test -f keep.txt"]), { risk: "high" }))).stop).toMatch(/no_red_on_base/);
+    await high.dispose();
+    const off = await world({ settings: { "checks.require_red_on_base": "off" } });
+    expect((await off.services.baseline.preflight(at(off.pendingTask("m", ["test -f keep.txt"]), { risk: "critical" }))).stop).toBeNull();
+    await off.dispose();
+  });
+
+  it("asks again when the PM sends the task back with a red check, and does not claim «all green» for checks it could not run", async () => {
+    const w = await world();
+    const first = at(w.pendingTask("t1", ["test -f keep.txt"]), { risk: "medium" });
+    expect((await w.services.baseline.preflight(first)).stop).toMatch(/no_red_on_base/);
+    // the same task, strengthened
+    const stronger = { ...first, task: { ...(first.task as object), verification: [{ command: "test -f keep.txt", cwd: w.base }, { command: "test -f feature.txt", cwd: w.base }] } as never };
+    expect((await w.services.baseline.preflight(stronger)).stop).toBeNull();
+    expect(getBaseline(w.db, "run1", "t1")).toMatchObject({ action: "proceed", verdict: "partial" });
+    const unknown = at(w.pendingTask("t2", ["test -f keep.txt", { command: "echo $TOKEN", secrets: ["TOKEN"] }]), { risk: "medium" });
+    expect((await w.services.baseline.preflight(unknown)).stop).toBeNull();
+    await w.dispose();
+  });
+});

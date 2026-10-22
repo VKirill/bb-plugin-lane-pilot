@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TaskV2 } from "../src/rooms/contracts";
-import { checkNamedPaths, emptyCheckReason, lintContract, lintProbePaths } from "../src/rooms/tasks/server/contract-lint";
+import { checkNamedPaths, emptyCheckReason, existenceOnlyPaths, lintContract, lintProbePaths } from "../src/rooms/tasks/server/contract-lint";
 import type { PathKind } from "../src/rooms/tasks/server/contract-lint";
 
 const root = "/tmp/writer";
@@ -64,5 +64,37 @@ describe("red before green", () => {
 
   it("applies to high and critical risk", () => {
     for (const risk of ["high", "critical"] as const) expect(codes(lint({ risk }, kindsFor({ risk }, {})).warnings)).toContain("no_red_before_green");
+  });
+});
+
+describe("existence-only checks on files the base has", () => {
+  const exists = (task:Partial<TaskV2>, answers:Record<string, PathKind> = {}) =>
+    new Map(lintProbePaths({ ...base, ...task }, root).map((path) => [path, answers[path] ?? "file"] as const));
+
+  it.each([
+    ["test -f src/a.ts", ["src/a.ts"]], ["[ -f src/a.ts ]", ["src/a.ts"]], ["test -f src/a.ts && test -d src", ["src/a.ts", "src"]], ["ls src/a.ts", ["src/a.ts"]],
+    ["test -f './src/a.ts'", ["src/a.ts"]],
+  ])("reads %s as a check of existence only", (command, paths) => expect(existenceOnlyPaths(command)).toEqual(paths));
+
+  it.each(["test -f src/a.ts && grep -q X src/a.ts", "npm test", "test -f a.ts | wc -l", "grep -q X src/a.ts"])("does not read %s as existence only", (command) =>
+    expect(existenceOnlyPaths(command)).toBeNull());
+
+  it("refuses a medium-risk task whose only checks test files that exist on the base, naming the check", () => {
+    const task = { verification:[{ command:"test -f src/a.ts", cwd:root }] };
+    const result = lint(task, exists(task));
+    expect(codes(result.errors)).toContain("verification_existence_on_base");
+    expect(result.errors.find((row) => row.code === "verification_existence_on_base")!.message).toContain("verification[0]");
+  });
+
+  it("only warns when another check can fail, for a low-risk task, for a refactor, or when the file is new", () => {
+    const mixed = { verification:[{ command:"test -f src/a.ts", cwd:root }, { command:"npx vitest run tests/b.test.ts", cwd:root }] };
+    const result = lint(mixed, exists(mixed));
+    expect(codes(result.errors)).not.toContain("verification_existence_on_base");
+    expect(codes(result.warnings)).toContain("verification_existence_on_base");
+    const only = { verification:[{ command:"test -f src/a.ts", cwd:root }] };
+    expect(codes(lint({ ...only, risk:"low" }, exists(only)).errors)).not.toContain("verification_existence_on_base");
+    expect(codes(lint({ ...only, kind:"refactor" }, exists(only)).errors)).not.toContain("verification_existence_on_base");
+    const fresh = lint(only, exists(only, { [`${root}/src/a.ts`]: "missing" }));
+    expect([...fresh.errors, ...fresh.warnings].map((row) => row.code)).not.toContain("verification_existence_on_base");
   });
 });
