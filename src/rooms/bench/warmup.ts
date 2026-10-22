@@ -29,10 +29,12 @@ const MAX_PATCH_BYTES = 2_000_000;
 
 /**
  * The `node_modules` folders of the live checkout, put into the clone so the checks find their dependencies. On macOS a copy-on-write clone
- * (`cp -Rc`, APFS: no extra disk, and no symlink that leaves the checkout, which Turbopack refuses); elsewhere a symlink, the way the worktree mirror links them.
+ * (`cp -Rc`, APFS: no extra disk, and no symlink that leaves the checkout, which Turbopack refuses); elsewhere a plain copy (`cp -a`). A symlink to the live
+ * folder is wrong in a monorepo: its `node_modules/@scope/pkg -> ../../packages/pkg` links resolve from the real path, so the clone's checks would run
+ * against the LIVE packages (SelfyStudio: the solution's own code on the bare base, and a newer package under an old base).
  */
 export const linkDependenciesCommand = (repo: string, dir: string): string =>
-  `cd ${q(repo)} && find . -maxdepth 4 -name node_modules -type d -prune -not -path '*/node_modules/*' | while read p; do t=${q(dir)}/"$p"; if [ ! -e "$t" ] && [ ! -L "$t" ]; then mkdir -p "$(dirname "$t")" && if [ "$(uname)" = Darwin ]; then cp -Rc ${q(repo)}/"$p" "$t"; else ln -s ${q(repo)}/"$p" "$t"; fi; fi; done`;
+  `cd ${q(repo)} && find . -maxdepth 4 -name node_modules -type d -prune -not -path '*/node_modules/*' | while read p; do t=${q(dir)}/"$p"; if [ ! -e "$t" ] && [ ! -L "$t" ]; then mkdir -p "$(dirname "$t")" && if [ "$(uname)" = Darwin ]; then cp -Rc ${q(repo)}/"$p" "$t"; else cp -a ${q(repo)}/"$p" "$t"; fi; fi; done`;
 
 async function runChecks(host: HostPort, hostId: string, candidate: Candidate, dir: string, options: WarmOptions): Promise<WarmRecord["base"]> {
   const out: WarmRecord["base"] = [];

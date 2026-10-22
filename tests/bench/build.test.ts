@@ -6,7 +6,7 @@ import { contractRejection } from "../../src/rooms/bench/candidates";
 import { getSet, verifySet } from "../../src/rooms/bench/store";
 import { chooseFinal, interleave, warmOrder } from "../../src/rooms/bench/stratify";
 import { manifestHash, type BenchProject, type Candidate } from "../../src/rooms/bench/types";
-import { findSolutionCommit, warmUp } from "../../src/rooms/bench/warmup";
+import { findSolutionCommit, linkDependenciesCommand, warmUp } from "../../src/rooms/bench/warmup";
 import { benchWorld, git, localHost, makeContract, makeRepo, tmp } from "./helpers";
 
 const BB = "proj_ejbam66722";
@@ -99,6 +99,14 @@ describe("bench solution commit", () => {
       initialHeadSha: git(repo, "rev-parse", "main~1"), baseSha: null, contract: makeContract(repo) };
     const found = await findSolutionCommit(localHost, candidate);
     expect(found).toEqual({ commit: git(repo, "rev-parse", "main") });
+  });
+});
+
+describe("bench dependencies", () => {
+  it("copies node_modules on Linux instead of symlinking it, so a monorepo's workspace links stay inside the clone", () => {
+    const command = linkDependenciesCommand("/live/repo", "/clone");
+    expect(command).toContain("cp -a '/live/repo'/");
+    expect(command).not.toContain("ln -s");
   });
 });
 
