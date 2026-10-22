@@ -4,7 +4,7 @@ import type { DueSource } from "./due";
 
 export type DeferralDb = Pick<Database.Database, "prepare">;
 
-export const DEFERRAL_KINDS = ["drill_scenario", "skipped_test", "gate", "plan_decision"] as const;
+export const DEFERRAL_KINDS = ["drill_scenario", "skipped_test", "gate", "plan_decision", "memory_conflict"] as const;
 export type DeferralKind = (typeof DEFERRAL_KINDS)[number];
 export type DeferralState = "open" | "overdue" | "closed" | "needs_owner_term";
 

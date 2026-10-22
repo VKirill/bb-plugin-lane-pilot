@@ -13,7 +13,7 @@ import { sha256Buffer } from "@lane-pilot/kit";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import packageJson from "../../../package.json";
 import { IllegalTransitionError, isLegalMove } from "../runs";
-import { recordMemoryAccepted } from "@lane-pilot/memory-core";
+import { memoryConflictMigrations, recordMemoryAccepted } from "@lane-pilot/memory-core";
 import { workflowMigrations } from "@lane-pilot/workflow-engine";
 import { workflowOpsMigrations } from "@lane-pilot/workflow-engine";
 import { draftMigrations } from "@lane-pilot/workflow-engine";
@@ -22,7 +22,7 @@ import { learningMigrations } from "../learning/migrations";
 import { scheduleMigrations } from "../schedule";
 import { worldMigrations } from "../world";
 import { harnessMigrations } from "../harness";
-import { deferralMigrations } from "../deferral";
+import { deferralKindMigrations, deferralMigrations } from "../deferral";
 import { rollbackMigrations } from "../rollback";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
@@ -358,6 +358,10 @@ export const migrations = [
   ...rollbackMigrations,
   // SMA block 6 (P2-6): why a rule has its form, the mechanism that enforces it, and the mechanism proposals waiting for the night loop (src/rooms/rule-forms).
   ...ruleMechanismMigrations,
+  // SMA block 4, P2-7: two memory notes that disagree are held until a person settles them (packages/memory-core/src/conflict-store.ts), and the
+  // deferral register learns the kind `memory_conflict` (the table is rebuilt: a CHECK cannot be altered).
+  ...memoryConflictMigrations,
+  ...deferralKindMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

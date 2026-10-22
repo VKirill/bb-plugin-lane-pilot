@@ -10,6 +10,7 @@ import { createDocsNightly } from "./src/rooms/docs/server";
 import { mountNativeWiring } from "./src/rooms/core/server/native-wiring";
 import { createProbes } from "./src/rooms/stability/server";
 import { createMemoryProbe } from "./src/rooms/memory-probe/server";
+import { createMemoryConflicts } from "./src/rooms/memory/server";
 import { createReconcile } from "./src/rooms/stability/server";
 import { createStability } from "./src/rooms/stability/server";
 import { adoptWaitingRules } from "./src/rooms/self-repair/server";
@@ -97,6 +98,7 @@ export default async function plugin(bb: BbPluginApi) {
     { ruleScan: createRuleScan(ctx, services) },
     { harness: createHarness(ctx, services) },
     { deferrals },
+    { memoryConflicts: createMemoryConflicts({ db, deferrals: () => services.deferrals, log: ctx.log }) },
     createRollback(ctx, services),
     createStability(ctx, services),
     createScheduleService(ctx, services),
