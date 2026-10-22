@@ -141,18 +141,18 @@ describe("the daily Telegram line", () => {
     return cell;
   }
 
-  it("counts overdue, open and the entries that need a term from the owner, and names the overdue", () => {
+  it("counts overdue and open entries and names the overdue", () => {
     expect(line([
       { what: "reload drill", dueAt: NOW - DAY, state: "overdue" },
       { what: "stale", dueAt: NOW - 3 * DAY, state: "open" },
       { what: "soon", dueAt: NOW + DAY },
       { what: "t1", state: "needs_owner_term" }, { what: "t2", state: "needs_owner_term" },
       { what: "done", dueAt: NOW - DAY, state: "closed" },
-    ])).toBe("Отсрочки: просрочено 2, открыто 1, нужен срок от владельца 2 (просрочено: stale [dfr_000000000001]; reload drill [dfr_000000000000])");
+    ])).toBe("Отсрочки: просрочено 2, открыто 1 (просрочено: stale [dfr_000000000001]; reload drill [dfr_000000000000])");
   });
 
   it("is a line of zeros on an empty register and is added to the message only when the query answered", () => {
-    expect(line([])).toBe("Отсрочки: просрочено 0, открыто 0, нужен срок от владельца 0");
+    expect(line([])).toBe("Отсрочки: просрочено 0, открыто 0");
     expect(daily).toContain("${dfr:+ ${dfr}.}");
     expect(daily).toContain(`2>/dev/null) || dfr=""`);
   });
