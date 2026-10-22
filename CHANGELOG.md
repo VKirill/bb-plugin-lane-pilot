@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.265
+
+**SMA integration, wave 1** (Matvey Maslov's «recursive improvement of the process, not the model»): stage proofs decided by code (P0-2), per-attempt metrics with honest «not measured» cost, the register of deferrals with the owner's terms (P0-4), memory you can prove — every delivery path probed with a planted token (P0-3), and the night decision policy with its held-out exam over the owner's past decisions (P1-2; it fails its first exam at 14/32, so the night decides nothing alone yet). The deploy drill gains the `deferrals` and `memory_paths` scenarios.
+
 **Memory you can prove (SMA block 4, P0-3).** One delivery path carried zero lessons for three months in Maslov's system because nothing asked the path. Now every path is asked.
 - **Registry.** `MEMORY_PATHS` (`src/rooms/memory/memory-paths.ts`) names every way memory, rules and lessons reach an agent (writer brief, continuing writer turn, repair round, PM start and resume, the PM's memory and rules tools, code critic, night review, council, terminal search and CORE) with its injection sites; `tests/memory-paths.test.ts` fails when a call of an injection helper appears or goes away without an entry.
 - **Probe.** `bb lane-pilot memory-probe <project> [--paths a,b] [--keep] [--clean] [--report]` (and RPC `memory_probe`) plants a note, a core convention and an always-on rule with a unique token through the write door (sandbox project only, one day to live), builds what each path hands its agent with the code production calls, looks for the tokens, and checks a negative case (an unrelated task or a gibberish query must pull none of them). One row per path in `lane_pilot_memory_probe` (the last migration).
