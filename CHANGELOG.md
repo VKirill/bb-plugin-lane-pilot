@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.272
+
+**The bench set can be built from real history.** The warm-up finds SelfyStudio's «Merge writer work: <task id>: …» merge commits, copies `node_modules` and the gitignored `dist` of workspace packages on Linux instead of symlinking them, and a bench arm that sets `critic.code.default_for_risk` leaves `code_critique.enabled` unset. Projects named «LP bench …» are service projects in the navigation, like the sandbox ones. Tests: the stage-return file runs isolated (its `writer-stop` mock missed when another file had loaded the real module in the shared worker).
+
 ## 0.1.271
 
 **The self-improvement page and tidy settings.** One page «Самоулучшение» (between «Задачи» and «Ждут владельца») holds every control of the SMA flow with plain Russian help: the night loop (limits, hunters, token cap, a dry-run button), the bench (budgets, harness adoption), the night policy (read-only: version, exam progress, the three lists, standing prohibitions), checks (baseline, red before green, plan→fact, code critic by risk, regression pass), «Ждут владельца» (push, quiet hours) and memory (note budget); a status strip shows the last/next night, the bench set size, the policy exam progress and what waits for the owner. All of it writes through the settings catalog (KV configs of the night loop, bench and push migrated with a read-through fallback; the CLI commands keep working). The existing settings are tidied: clearer labels, «Операции запуска» split into limits / integration gates / project service files / Jev, Lane Stack CLI-only flags folded away, the catalog generator is again the single source (`scripts/ui-catalog-hand.json`).

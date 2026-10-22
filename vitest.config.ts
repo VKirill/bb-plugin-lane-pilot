@@ -16,6 +16,7 @@ const mocking = [
   "tests/schedule/workflow-outcome.test.ts",
   "tests/server/helper-probe.test.ts",
   "tests/verification/replay-check-handler.test.ts",
+  "tests/stage-return/return.test.ts",
 ];
 const nodeTests = ["tests/**/*.test.ts", "src/rooms/**/tests/**/*.test.ts", "packages/*/tests/**/*.test.ts"];
 // Page tests that fail when the document (an open picker window, a registered settings backend) is shared with the files before them.
