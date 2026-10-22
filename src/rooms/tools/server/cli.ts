@@ -16,6 +16,7 @@ import { LEARNING_USAGE, runLearningCli } from "../../learning";
 import { learningFor } from "../../learning";
 import { attemptMetrics, renderAttemptMetrics } from "../../usage/server";
 import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
+import { POLICY_USAGE, runPolicyCli } from "../../policy";
 
 export function registerCli(ctx: ServerCore, services: Services) {
   const { bb, cancelQueuedAttempt, db, effectiveProjectSettings, host } = ctx;
@@ -50,6 +51,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
     SCHEDULE_USAGE,
     ANAMNESIS_USAGE,
     DEFERRAL_USAGE,
+    POLICY_USAGE,
   ].join("\n");
 
   bb.cli.register({
@@ -94,6 +96,8 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"wait-thread", summary:"Read-only waitThreadIdle probe", usage:"bb lane-pilot wait-thread <thread-id>" },
       { name:"anamnesis", summary:"What Lane Pilot knows about its owner (records on the owner's machine); sensitive ones only on explicit request", usage:"bb lane-pilot anamnesis status|list|show|history|add|edit|confirm|reject|forget|sources|host" },
       { name:"learning", summary:"What Lane Pilot learned from the owner's own messages: status, review, learned items, yes or no, settings", usage:LEARNING_USAGE },
+      { name:"policy-exam", summary:"Run the held-out exam of the night policy over the owner's past decisions and store the result; below 0.8 the night proposes instead of deciding", usage:"bb lane-pilot policy-exam" },
+      { name:"policy", summary:"The night policy: show the lists, classify a change descriptor, the three-line morning list", usage:"bb lane-pilot policy show|classify '<json>'|morning" },
       { name:"workflow-trigger", summary:"Start a workflow in a project as its schedule trigger does (the automation of a schedule calls this); exit 1 with the reason when it cannot start", usage:"bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]" },
       { name:"defer", summary:"Put a mandatory check off: write it in the register with a term from the owner's own message (the code reads the message and its date), or set/move the term of an entry", usage:"bb lane-pilot defer <what|dfr_id> --kind drill_scenario|skipped_test|gate|plan_decision --owner-msg <threadId>#<seq> [--due 2026-11-05] [--area A] [--project P]" },
       { name:"defer-close", summary:"Close a deferral with the evidence that settles it", usage:"bb lane-pilot defer-close <dfr_id> --evidence <text>" },
@@ -109,6 +113,9 @@ export function registerCli(ctx: ServerCore, services: Services) {
         if (command === "learning") {
           const learning = learningFor(ctx);
           return learning ? await runLearningCli(learning, args) : { exitCode:1, stderr:"learning is not mounted" };
+        }
+        if (command === "policy-exam" || command === "policy") {
+          return await runPolicyCli({ db, kv:bb.storage.kv as never }, command, args);
         }
         if (command === "workflow-trigger" && args.length >= 2 && args.length <= 4) {
           const parsed: unknown = args[2] ? JSON.parse(args[2]) : {};

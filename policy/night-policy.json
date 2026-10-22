@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "title": "What the night may settle without the owner",
+  "rule": "Most restrictive match wins (owner_only > night_proposes > night_decides). A change that matches nothing is night_proposes. A night_decides entry matches only when its proof attributes are present and true; a missing proof is no match.",
+  "exam": { "file": "policy/exam.json", "min_accuracy": 0.8, "note": "night_decides takes effect only while the exam over the held-out items passes; below min_accuracy every night_decides answer degrades to night_proposes (src/rooms/policy/exam.ts)." },
+  "split": {
+    "design_items": "design_items below: the decisions this file was written from. Their ids start with d.",
+    "exam_items": "policy/exam.json: decisions this file was NOT written from. Their ids start with x. A test fails when an id sits on both sides or when an entry example cites an exam item.",
+    "time_cut": "Rule-proposal decisions up to 2026-10-14 are design (the five owner revocations of 2026-10-01/03); decisions from 2026-10-15 on are exam. Memory files: see design_items; every other memory file is exam."
+  },
+  "design_items": [
+    { "id": "d1", "source": "memory/owner-no-deploy-confirmations.md", "date": "2026-10-08", "quote": "да выкатывай конечно всё что надо делай, зачем мои подтверждения тебе? ... Destructive actions on data (deleting projects, emptying trash) still need a yes.", "informs": ["green_change_ship", "irreversible_data", "project_deletion"] },
+    { "id": "d2", "source": "memory/release-workflow.md", "date": "2026-10-01", "quote": "коменть и обновляй сразу плагин и релиз делай на гитхабе ... Destructive actions (deleting projects or data) still need confirmation.", "informs": ["green_change_ship", "irreversible_data", "project_deletion"] },
+    { "id": "d3", "source": "memory/one-full-suite-per-batch.md", "date": "2026-10-07", "quote": "hard gates stay: clean pushed tree, full tests, drill after reload, dist hash, rollback.", "informs": ["judge_gates", "green_change_ship"] },
+    { "id": "d4", "source": "memory/no-anti-agent-gates.md", "date": "2026-10-08", "quote": "Убрать, держать просто ... no owner login in the core, no RPC caller checks or confirmation forms in Lane Pilot / Env Catalog.", "informs": ["access_fences"] },
+    { "id": "d5", "source": "memory/security-keep-legit-paths.md", "date": "2026-10-08", "quote": "сломали плагин чрезмерной безопасностью ... Before closing any access — inventory legitimate consumers.", "informs": ["secrets_env_catalog"] },
+    { "id": "d6", "source": "memory/env-catalog-open-access.md", "date": "2026-10-08", "quote": "не городить огороды … пусть будет доступно любым агентам получить API ключи без танцев с бубнами", "informs": ["secrets_env_catalog", "access_fences"] },
+    { "id": "d7", "source": "hub lane_pilot_rule_proposal, state revoked, decided_by owner, 2026-10-01 and 2026-10-03 (rule_dfb496033a61ce24, rule_8a3ad2a7148dfe54, rule_fe80e50b31b853e8, rule_d97f81afb3dc2b0b, rule_ef3d5cf6d220e39a)", "date": "2026-10-03", "quote": "five auto-adopted rules taken back by the owner in the first week of trials (the revoke is the undo that keeps a trial reversible)", "informs": ["rule_trial_apply", "rule_always_on"] },
+    { "id": "d8", "source": "maslov-messages.md #31448", "date": "2026-10-22", "quote": "что меняет сам граф (новая стадия, другая модель на роль) — я советую только через твоё да если у тебя нет откатов", "informs": ["new_pipeline_stage", "graph_edit", "default_model_change", "judge_gates"] },
+    { "id": "d9", "source": "sma-gap-analysis.md P1-2", "date": "2026-10-22", "quote": "ночь решает сама (починка LP-вины по классу с прохождением набора, регенерация документации, срок жизни заметок, retire дерева, провалившего бенч, правила в пробное применение); ночь предлагает (always-on правило, смена модели по умолчанию, новая стадия); только владелец (расходы и лимиты, секреты, необратимые действия над данными, изменение судьи, сама политика, удаление проектов)", "informs": ["lp_fault_repair", "docs_regeneration", "memory_note_expiry", "harness_retire_lost", "rule_trial_apply", "rule_always_on", "default_model_change", "new_pipeline_stage", "spending_caps", "secrets_env_catalog", "irreversible_data", "judge_gates", "judge_bench_set", "judge_thresholds", "policy_itself", "project_deletion"] }
+  ],
+  "change_descriptor": {
+    "note": "What a caller hands to classifyChange. Every field is optional except that a descriptor with no kind, files, settings or tables is unknown (night_proposes).",
+    "kind": "string, what the change is, e.g. lp_fault_repair, docs_regenerate, rule_adopt, setting_change, data_delete",
+    "files": "string[], repository-relative paths the change touches",
+    "settings": "string[], setting keys the change writes",
+    "tables": "string[], database tables the change writes",
+    "attrs": "object of string|number|boolean proofs, e.g. bench_subset_passed, auto_revertible, always_on, irreversible"
+  },
+  "matcher": {
+    "note": "A matcher is an AND of the fields it carries; an entry matches when ANY of its matchers matches. Globs: * stays inside a path segment, ** crosses segments, ? is one character; matching is case-insensitive and paths are normalised (./ and .. are resolved, a path that leaves the repository starts with ../).",
+    "fields": ["kinds (any of)", "files_any (some touched file matches some glob)", "files_all (every touched file matches some glob; needs at least one file)", "settings_any (glob)", "tables_any (exact)", "attrs (every key equals)"]
+  },
+  "night_decides": [
+    {
+      "id": "lp_fault_repair",
+      "description": "Repair of a failure class that is Lane Pilot's own fault, accepted only with the bench subset passing and a one-step revert ready.",
+      "examples": ["close the class 'wildcard folder patterns own their contents' with a regression test", "stop the relay retrying archived PM chats"],
+      "match": [{ "kinds": ["lp_fault_repair"], "attrs": { "bench_subset_passed": true, "auto_revertible": true } }]
+    },
+    {
+      "id": "docs_regeneration",
+      "description": "Regeneration of generated documentation pages; only when every touched file is a docs file.",
+      "examples": ["nightly docs pass rewrites docs/*.md and packages/*/docs/*.md"],
+      "match": [{ "kinds": ["docs_regenerate"], "files_all": ["docs/**", "packages/*/docs/**"] }]
+    },
+    {
+      "id": "memory_note_expiry",
+      "description": "A memory note (not the core) reaches its end of life and is retired.",
+      "examples": ["note past its expires_at is archived"],
+      "match": [{ "kinds": ["memory_note_expire"], "attrs": { "memory_tier": "note" } }]
+    },
+    {
+      "id": "harness_retire_lost",
+      "description": "Retire a harness tree that lost against the incumbent on the bench.",
+      "examples": ["trial arm B lost by the alternation rule and is retired"],
+      "match": [{ "kinds": ["harness_retire"], "attrs": { "lost_on_bench": true } }]
+    },
+    {
+      "id": "rule_trial_apply",
+      "description": "A writer or PM rule goes into force on trial (not always-on); the owner can revoke it and the trial retires it by itself.",
+      "examples": ["adoptRuleProposal puts a model-written rule on trial"],
+      "match": [{ "kinds": ["rule_adopt"], "attrs": { "trial": true, "always_on": false } }]
+    },
+    {
+      "id": "green_change_ship",
+      "description": "Deploy or release of a change whose full suite and post-deploy drill are green and that rolls back by itself.",
+      "examples": ["bb-plugin-push of a green tree, then gh release"],
+      "match": [{ "kinds": ["deploy", "release_publish"], "attrs": { "full_suite_green": true, "drill_green": true, "auto_revertible": true } }]
+    }
+  ],
+  "night_proposes": [
+    {
+      "id": "rule_always_on",
+      "description": "A rule that skips the relevance pick and rides in every prompt.",
+      "examples": ["a model-written rule marked always_on"],
+      "match": [{ "kinds": ["rule_adopt", "rule_accept"], "attrs": { "always_on": true } }]
+    },
+    {
+      "id": "default_model_change",
+      "description": "Default model, provider, reasoning effort, service tier or agent for a role.",
+      "examples": ["writer default moves to another model", "a role picker is reset to global"],
+      "match": [{ "settings_any": ["*.model", "*.provider", "*.reasoning_effort", "*.service_tier", "*.agent"] }]
+    },
+    {
+      "id": "new_pipeline_stage",
+      "description": "A stage is added to, removed from or reordered in the pipeline.",
+      "examples": ["add a code critic stage before acceptance"],
+      "match": [{ "kinds": ["stage_add", "stage_remove", "stage_reorder"] }]
+    },
+    {
+      "id": "graph_edit",
+      "description": "Any edit of the work graph: workflow definitions and the workflow engine.",
+      "examples": ["edit workflows/lp-task-pipeline.json"],
+      "match": [{ "kinds": ["graph_edit"] }, { "files_any": ["workflows/**", "packages/workflow-engine/**", "src/rooms/workflow/**"] }]
+    },
+    {
+      "id": "memory_core_edit",
+      "description": "Change of the project's core memory (rules and conventions every agent reads).",
+      "examples": ["trim the core instead of failing"],
+      "match": [{ "kinds": ["memory_core_edit"] }]
+    }
+  ],
+  "owner_only": [
+    {
+      "id": "spending_caps",
+      "description": "Money, quotas and budgets: caps on attempts, tokens, wall time, children, daily judge calls, memory budgets.",
+      "examples": ["raise run.max_tokens", "raise dailyJudgeCap"],
+      "match": [{ "kinds": ["budget_change", "spend_cap_change"] }, { "settings_any": ["run.max_*", "*budget*", "*cap", "*cap_*","*cost*", "*usd*"] }]
+    },
+    {
+      "id": "secrets_env_catalog",
+      "description": "Writing, moving or re-fencing secrets and the Env Catalog access model. Using a key as an agent is not a change and is not classified here.",
+      "examples": ["rewrite how env_get serves keys", "touch .env files"],
+      "match": [{ "kinds": ["secret_write", "secret_access_change", "env_catalog_change"] }, { "files_any": ["src/rooms/secrets/**", "**/.env", "**/.env.*", "**/*secret*"] }, { "tables_any": ["lane_pilot_secret_issuance"] }]
+    },
+    {
+      "id": "irreversible_data",
+      "description": "Anything on data that cannot be undone: deletes, drops, history rewrites, emptying trash.",
+      "examples": ["DELETE FROM a core table without a backup", "git push --force"],
+      "match": [{ "kinds": ["data_delete", "drop_table", "trash_empty", "history_rewrite", "force_push"] }, { "attrs": { "irreversible": true } }]
+    },
+    {
+      "id": "project_deletion",
+      "description": "Deleting a project.",
+      "examples": ["project_delete of a sandbox project"],
+      "match": [{ "kinds": ["project_delete"] }]
+    },
+    {
+      "id": "judge_gates",
+      "description": "The judge: acceptance and integration gates, drills, the canary and the full-suite gate, the code that decides done or not done.",
+      "examples": ["loosen the owns-paths gate", "turn night_review.auto_merge on"],
+      "match": [
+        { "kinds": ["gate_change"] },
+        { "files_any": ["src/rooms/verification/**", "src/rooms/writer/server/verify.ts", "src/rooms/writer/server/finish.ts", "src/rooms/stability/server/canary.ts", "src/rooms/stability/server/probes.ts", "scripts/test-full.sh", "scripts/lp-drill*", "vitest.config.ts", "tests/architecture/**", "tests/migration-lineage.test.ts"] },
+        { "settings_any": ["run.gate", "integration.*", "verification.*", "night_review.auto_merge", "night_review.enabled"] }
+      ]
+    },
+    {
+      "id": "judge_bench_set",
+      "description": "The fixed bench set the night is measured against.",
+      "examples": ["swap a task in the bench subset"],
+      "match": [{ "kinds": ["bench_set_change"] }, { "files_any": ["bench/**", "tests/bench/**", "src/rooms/bench/**", "**/bench-set*"] }]
+    },
+    {
+      "id": "judge_thresholds",
+      "description": "Verification thresholds: accuracy bars, acceptance scores, exam threshold.",
+      "examples": ["lower REVIEW_ACCURACY from 0.8"],
+      "match": [{ "kinds": ["threshold_change"] }, { "settings_any": ["*threshold*", "*accuracy*", "*min_score*"] }]
+    },
+    {
+      "id": "policy_itself",
+      "description": "This policy, its exam, its classifier and its tests.",
+      "examples": ["edit policy/night-policy.json", "edit policy/exam.json"],
+      "match": [{ "kinds": ["policy_change"] }, { "files_any": ["policy/**", "src/rooms/policy/**", "tests/policy/**"] }]
+    },
+    {
+      "id": "access_fences",
+      "description": "Owner login, caller checks and confirmation forms: the owner rejected them (2026-10-08); only the owner brings one back.",
+      "examples": ["agent-caller refusal on plugin install"],
+      "match": [{ "kinds": ["access_fence_add", "owner_login_enable", "confirmation_form_add"] }]
+    },
+    {
+      "id": "outside_repo",
+      "description": "A change outside this repository cannot be benched or reverted by the night.",
+      "examples": ["edit a sibling plugin repository", "edit an absolute path"],
+      "match": [{ "files_any": ["../**", "/**"] }]
+    }
+  ]
+}
