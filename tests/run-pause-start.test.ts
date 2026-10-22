@@ -6,6 +6,7 @@ import { createAttempt, createRun, createTask, getAttempt, listStageReceipts, op
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../src/rooms/core/server/services";
 import { setRunPaused } from "../src/rooms/runs/server/runs-halt";
+import { setConveyor } from "../src/rooms/runs/server/conveyor";
 import { recordStage } from "../src/rooms/runs/server/stage-records";
 import { createWriterStart } from "../src/rooms/writer/server/start";
 
@@ -68,8 +69,8 @@ function services(env: ReturnType<typeof setup>, afterTurn: (turn: number) => Pr
   return { all, spawned, finished };
 }
 
-function start(env: ReturnType<typeof setup>, svc: Services) {
-  const task = contract("T1");
+function start(env: ReturnType<typeof setup>, svc: Services, extra: Partial<TaskV2> = {}) {
+  const task = { ...contract("T1"), ...extra };
   createTask(env.db, { id: "T1", runId: "run1", kind: "bb", contract: task });
   saveTaskPlan(env.db, "T1", "Plan for T1");
   for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) recordStage(env.db, { runId: "run1", taskId: "T1", stageId, state: "pending", input: "Plan for T1" });
@@ -118,5 +119,37 @@ it("a run that is not paused is not slowed", async () => {
   start(env, all);
   await vi.waitFor(() => expect(writerStage(env.db).state).toBe("passed"));
   expect(finished).toEqual([1, 2]);
+  await env.harness.lifecycle.dispose();
+});
+
+it("the conveyor switch off holds a new task exactly like a pause, and on lets it start", async () => {
+  const env = setup();
+  await setConveyor(env.bb.storage.kv as never, false, "maintenance");
+  const { all, spawned } = services(env);
+  start(env, all);
+  await vi.waitFor(() => expect(writerStage(env.db).reason ?? "").toContain("paused"));
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  expect(spawned).toEqual([]);
+  await setConveyor(env.bb.storage.kv as never, true);
+  await vi.waitFor(() => expect(writerStage(env.db).state).toBe("passed"));
+  await env.harness.lifecycle.dispose();
+});
+
+it("a sibling of an area with three tasks of one kind waits for the pilot, the first of them, and starts once it is accepted", async () => {
+  const env = setup();
+  const sibling = (id: string) => ({ ...contract(id), area: "page:/cards", kind: "feature" as const });
+  createTask(env.db, { id: "T0", runId: "run1", kind: "bb", contract: sibling("T0") });
+  createAttempt(env.db, { id: "T0-a1", runId: "run1", taskId: "T0" });
+  transitionAttempt(env.db, "T0-a1", "spawn_requested");
+  transitionAttempt(env.db, "T0-a1", "running", { threadId: "thr_pilot" });
+  createTask(env.db, { id: "T2", runId: "run1", kind: "bb", contract: sibling("T2") });
+  const { all, spawned } = services(env);
+  start(env, all, { area: "page:/cards", kind: "feature" });
+  await vi.waitFor(() => expect(writerStage(env.db).reason ?? "").toContain("T0 is the pilot of its area"));
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  expect(spawned).toEqual([]);
+  transitionAttempt(env.db, "T0-a1", "accepted");
+  await vi.waitFor(() => expect(writerStage(env.db).state).toBe("passed"), { timeout: 15_000 });
+  expect(spawned).toEqual(["T1-a1"]);
   await env.harness.lifecycle.dispose();
 });

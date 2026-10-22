@@ -98,6 +98,7 @@ export const COVERAGE: readonly CoverageEntry[] = [
   { kind: "room", ids: ["capability"], tests: ["tests/capability/capability.test.ts"], live: ["helper_providers"], via: "the quick drill runs the same helper probe on every provider in use; the hourly sweep runs it once per new adapter version" },
   { kind: "room", ids: ["outage"], tests: ["tests/outage/outage-conveyor.test.ts"], reason: "a gap shows only after the plugin was down for more than five minutes; the daily report reads the table" },
   { kind: "room", ids: ["backlog"], tests: ["tests/backlog/backlog.test.ts"], reason: "the hourly scan reads real projects' todos and writes to their PMs; the drill has no backlog" },
+  { kind: "room", ids: ["pilot"], tests: ["tests/pilot/pilot.test.ts", "tests/run-pause-start.test.ts"], reason: "takes effect only for three sibling tasks of one area and kind in a run; the drill's tasks have no area" },
   { kind: "room", ids: ["stage-return"], tests: ["tests/stage-return/logic.test.ts", "tests/stage-return/return.test.ts", "tests/stage-return/spawn-brief.test.ts", "tests/stage-return-ui.test.tsx"], reason: "a person sends a task back to an earlier stage; the drill has no owner to do it, checked live on the sandbox project" },
   { kind: "room", ids: ["rollback"], tests: ["tests/rollback.test.ts"], reason: "no drill merges a change and reverts it on the sandbox" },
   { kind: "room", ids: ["schedule"], tests: ["tests/schedule/scheduler.test.ts"], reason: "scheduled errands tick on their own clock; the drill starts none" },

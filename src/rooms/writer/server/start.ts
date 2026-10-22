@@ -1,4 +1,5 @@
 import { retryBudgetReason, spendRetryBudget } from "../retry-budget";
+import { pilotOf, runTasks } from "../../pilot";
 import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop, tokenUsageFromEvent, type RunBudget } from "@lane-pilot/resilience";
 import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
@@ -184,7 +185,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
      * A canceled dependency, or a name no one dispatched, ends the wait at once.
      */
     const waitForDependencies = async (shouldStop?:()=>string|null): Promise<string | null> => {
-      const deps = [...new Set((input.task.depends_on ?? []).filter((dep) => dep && dep !== input.taskId))];
+      // The pilot of this task's siblings (src/rooms/pilot): waited for like a dependency, except that a canceled pilot holds no one.
+      const pilot = pilotOf(input.taskId, runTasks(db, input.runId));
+      const deps = [...new Set([...(input.task.depends_on ?? []), ...(pilot ? [pilot] : [])].filter((dep) => dep && dep !== input.taskId))];
       let noted = "";
       const since = Date.now();
       const blockedSince = new Map<string, number>();
@@ -198,6 +201,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           if (state === "accepted") continue;
           // A batch may dispatch the dependent before its dependency: give the name two minutes to appear.
           if (state === null && Date.now() - since > 120_000) return `depends_on ${dep}: no such task was dispatched in this project`;
+          if (state === "canceled" && dep === pilot && !(input.task.depends_on ?? []).includes(dep)) continue;
           if (state === "canceled") return `depends_on ${dep}: that task ended canceled`;
           if (state === "blocked") {
             // The PM verified this blocked task by hand (lane_pilot_update_task satisfied:true): its dependents go on.
@@ -217,7 +221,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           if (!stage || stage.state === "pending") {
             const redo = pending.filter((dep) => blockedSince.has(dep));
             recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
-              reason:redo.length ? `waiting for depends_on: ${pending.join(",")} (${redo.join(", ")} ended blocked; starts once it is sent again and accepted)` : `waiting for depends_on: ${pending.join(",")}` });
+              reason:`${redo.length ? `waiting for depends_on: ${pending.join(",")} (${redo.join(", ")} ended blocked; starts once it is sent again and accepted)` : `waiting for depends_on: ${pending.join(",")}`}${pilot && pending.includes(pilot) ? ` (${pilot} is the pilot of its area: the siblings start once it is accepted)` : ""}` });
           }
         }
         await new Promise((wake) => setTimeout(wake, pollPause(10_000)));
