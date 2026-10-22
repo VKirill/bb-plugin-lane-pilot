@@ -4,4 +4,7 @@ export { adoptRuleProposal, adoptWaitingRules, deleteMemoryRecord, memorySetting
 export { insightsRpc } from "./rpc/insights";
 export { createRuleScan } from "./rule-scan";
 export type { RuleScanApi } from "./rule-scan";
-export { CONFIG_KEY, SELF_REPAIR_DEFAULTS, mountSelfRepair, selfRepairRpc } from "./self-repair";
+export { CONFIG_KEY, SELF_REPAIR_DEFAULTS, VERSION, logIncidents, mountSelfRepair, readRepairRecord, selfRepairRpc } from "./self-repair";
+export type { Incident, RepairWorktree, SelfRepairConfig, Verdict } from "./self-repair";
+export { getRepairHooks, setRepairHooks } from "./hooks";
+export type { MergeDecision, NightAssignment, RepairHooks } from "./hooks";

@@ -19,6 +19,7 @@ import { DEFERRAL_USAGE, runDeferralCli } from "../../deferral/server";
 import { MEMORY_EVAL_USAGE, runMemoryEvalCommand } from "../../memory-eval/server";
 import { MEMORY_CONFLICT_USAGE, runMemoryConflictCli } from "../../memory/server";
 import { BENCH_USAGE, runBenchCli } from "../../bench/server";
+import { WALL_USAGE, runWallCli } from "../../wall/server";
 import { POLICY_USAGE, runPolicyCli } from "../../policy";
 import { RULES_USAGE, runRulesCli } from "../../rule-forms";
 import { retireAdoptedRule } from "../../self-repair/server";
@@ -132,6 +133,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"defer-close", summary:"Close a deferral with the evidence that settles it", usage:"bb lane-pilot defer-close <dfr_id> --evidence <text>" },
       { name:"deferrals", summary:"The register of deferrals: overdue, open and the ones that need a term from the owner", usage:"bb lane-pilot deferrals [--project P] [--state open|overdue|needs_owner_term|closed]" },
       { name:"bench", summary:"LP-Bench: a fixed set of real past tasks replayed on an arm (writer, harness tree, setting) and compared in pairs: stages passed, cost, time", usage:BENCH_USAGE },
+      { name:"wall", summary:"The wall journal and the night loop: failures grouped by class, the 3/10-5/100-6/500 recurrence, the night's repairs, hunters and the backlog, re-runs on the new head", usage:WALL_USAGE },
       { name:"schedule", summary:"The schedule board: scheduled workflows, errands and scripts (list, show, history, preview, create, update, pause, resume, run-now, delete)", usage:SCHEDULE_USAGE },
     ],
     async run(argv) {
@@ -178,6 +180,9 @@ export function registerCli(ctx: ServerCore, services: Services) {
         }
         if (command === "bench") {
           return await runBenchCli(services.bench, args);
+        }
+        if (command === "wall") {
+          return await runWallCli(services.wall, args);
         }
         if (command === "schedule") {
           return await runScheduleCli(services, args);

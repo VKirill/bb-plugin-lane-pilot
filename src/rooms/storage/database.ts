@@ -25,6 +25,7 @@ import { harnessMigrations } from "../harness";
 import { deferralKindMigrations, deferralMigrations } from "../deferral";
 import { rollbackMigrations } from "../rollback";
 import { benchMigrations } from "../bench";
+import { wallDeferralKindMigrations, wallMigrations } from "../wall";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
 export type LanePilotDatabase = Database.Database;
@@ -365,6 +366,9 @@ export const migrations = [
   ...deferralKindMigrations,
   // LP-Bench (src/rooms/bench): the fixed task set, its runs and comparisons.
   ...benchMigrations,
+  // The wall journal and the night loop (src/rooms/wall); the deferral register learns the kind `wall`.
+  ...wallMigrations,
+  ...wallDeferralKindMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

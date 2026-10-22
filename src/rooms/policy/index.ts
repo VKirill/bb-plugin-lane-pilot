@@ -4,5 +4,5 @@ export { shouldStopCycle } from "./cycle";
 export { authorize, runExam, runLiveExam } from "./exam";
 export { collectAndAppend, loadLiveExam, recordOwnerDecision } from "./live-exam";
 export { composeMorningList } from "./morning";
-export { classifyChange, explainChange } from "./policy";
+export { classifyChange, explainChange, globMatch } from "./policy";
 export type { ChangeDescriptor, Tier } from "./policy";

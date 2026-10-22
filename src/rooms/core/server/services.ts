@@ -6,6 +6,7 @@ import type { HarnessApi } from "../../harness/server";
 import type { DeferralApi } from "../../deferral/server";
 import type { RollbackApi } from "../../rollback/server";
 import type { BenchApi } from "../../bench/server";
+import type { WallApi } from "../../wall/server";
 import type { WorldApi } from "../../world/server";
 import type { Canary } from "../../stability/server";
 import type { createActivation } from "../../native-agent/server";
@@ -67,6 +68,8 @@ export interface Services {
   rollback: RollbackApi;
   /** LP-Bench: the fixed task set and its comparisons (src/rooms/bench). */
   bench: BenchApi;
+  /** The wall journal and the night loop: classes of failures, the night's repairs, the wall ladder (src/rooms/wall). */
+  wall: WallApi;
   DOCS_NIGHT_ATTEMPTS: DocsNightlyApi["DOCS_NIGHT_ATTEMPTS"];
   DOCS_OPEN_KEY: DocsNightlyApi["DOCS_OPEN_KEY"];
   DOCS_TOOLING: DocsNightlyApi["DOCS_TOOLING"];

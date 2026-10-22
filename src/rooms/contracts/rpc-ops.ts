@@ -187,4 +187,29 @@ export const rpcOps = {
     input: z.object({ version: z.string().min(1).max(40).default("v1"), armA: z.string().min(1).max(80), armB: z.string().min(1).max(80), noise: z.tuple([z.string(), z.string()]).optional() }).strict(),
     output: z.unknown(),
   },
+  /** The wall journal and the night loop (src/rooms/wall): classes by recurrence, the night's repairs, the wall ladder, what a night spent. */
+  wall_status: {
+    input: z.object({}).strict(),
+    output: z.unknown(),
+  },
+  wall_show: {
+    input: z.object({ key: z.string().min(1).max(200) }).strict(),
+    output: z.unknown(),
+  },
+  /** Runs the night now; `dryRun` keeps nothing, calls no model and answers what it would pick and why. */
+  wall_night: {
+    input: z.object({ dryRun: z.boolean().optional() }).strict(),
+    output: z.unknown(),
+  },
+  /** Reads (no fields) or changes the night loop's settings: classes and rounds per night, walks, hunters, the night's token cap. */
+  wall_config: {
+    input: z.object({
+      enabled: z.boolean().optional(), maxClassesPerNight: z.number().int().min(1).max(3).optional(), roundsPerNight: z.number().int().min(1).max(2).optional(),
+      walks: z.number().int().min(1).max(5).optional(), hunters: z.number().int().min(1).max(5).optional(), nightTokenCap: z.number().int().min(0).optional(),
+      huntShare: z.number().min(0.01).max(1).optional(), assumedRepairTokens: z.number().int().min(0).optional(), hunterProviderId: z.string().min(1).max(80).optional(),
+      hunterModel: z.string().min(1).max(120).optional(), hunterReasoningLevel: z.string().min(1).max(40).optional(), benchSubset: z.number().int().min(0).max(50).optional(),
+      rerunSandboxOnly: z.boolean().optional(), recurrenceFloor: z.number().int().min(1).max(50).optional(),
+    }).strict(),
+    output: z.unknown(),
+  },
 };
