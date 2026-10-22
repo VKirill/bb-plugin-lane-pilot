@@ -76,6 +76,17 @@ describe("bench runner", () => {
     expect(git(w.projectPath, "rev-parse", "HEAD")).toBe(git(w.projectPath, "rev-parse", "lp-bench"));
   });
 
+  it("leaves code_critique.enabled unset when the arm moves critic.code.default_for_risk, so the arm's value can take effect", async () => {
+    const w = await builtSet();
+    const project: BenchProjectRef = { projectId: "proj_bench", name: "LP bench x", hostId: "local", path: w.projectPath };
+    const { pipeline, calls } = fakePipeline(project, () => ({ accepted: true }));
+    await runSeries({ db: w.db as never, host: localHost, pipeline, clock: clock(), projectNameFor: () => project.name }, { version: "v1", arm: "critic", limit: 1, settings: { "critic.code.default_for_risk": "medium" }, pollMs: 1 });
+    const settings = calls.configure[0]!.settings as Record<string, unknown>;
+    expect(settings["critic.code.default_for_risk"]).toBe("medium");
+    expect("code_critique.enabled" in settings).toBe(false);
+    expect(settings["plan_critique.enabled"]).toBe(false);
+  });
+
   it("does not run in a project that is not a bench project", async () => {
     const w = await builtSet();
     const real: BenchProjectRef = { projectId: "p", name: "SelfyStudio", hostId: "local", path: w.projectPath };
