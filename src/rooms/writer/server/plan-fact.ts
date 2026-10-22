@@ -39,7 +39,9 @@ export async function runPlanFactStage(ctx: ServerCore, input: {
   const produced = [...input.produced];
   let hunks: Pick<PlanFactFacts, "hunksKnown" | "changed"> = { hunksKnown: false, changed: {} };
   const lineCount: Record<string, number> = {};
-  const base = getTaskGitBase(db, input.taskId)?.base_sha ?? null;
+  // A working-tree base (compare_committed off) records no base commit, only the head the writer started from: the diff is against it.
+  const gitBase = getTaskGitBase(db, input.taskId);
+  const base = gitBase ? gitBase.base_sha ?? gitBase.initial_head_sha : null;
   if (table.status === "ok" && base && produced.length > 0 && produced.length <= MAX_DIFF_PATHS) {
     try {
       const out = await runOnHost(host, { hostId: input.hostId, cwd: input.task.project_cwd, command: diffHunksCommand(base, produced), timeoutSec: 30 });

@@ -28,7 +28,7 @@ const card = (extra: Record<string, unknown> = {}) => ({
       { item: 3, acceptance: "docs mention it", claimed: "not_done", verdict: "declared_not_done", severity: "blocking", why: "no docs folder", evidence: [] },
     ],
   },
-  notRun: [{ stageId: "specialist-review", why: "no receipt: no specialist review was asked for" }, { stageId: "plan-fact", why: "line ranges: the diff against the task's base could not be read, so only the files were checked" }],
+  notRun: [{ stageId: "specialist-review", why: "no receipt: no specialist review was asked for" }, { stageId: "pm-read", why: "disabled_by_project_setting" }, { stageId: "plan-fact", why: "line ranges: the diff against the task's base could not be read, so only the files were checked" }],
   cost: { state: "not_measured", usd: null, tokens: null, note: "acp-cursor reports no token usage", attempts: 2, measured: 0 },
   ...extra,
 });
@@ -70,6 +70,8 @@ describe("the acceptance card", () => {
     expect(text("acc-notrun")).toContain("Not run is not «no findings»");
     expect(text("acc-notrun")).toContain("Specialist review");
     expect(text("acc-notrun")).toContain("only the files were checked");
+    expect(text("acc-notrun")).toContain("turned off in the project's settings");
+    expect(text("acc-notrun")).not.toContain("disabled_by_project_setting");
   });
 
   it("says NOT RUN, not «all clear», when the writer gave no table, and prints a partial cost with its count", async () => {

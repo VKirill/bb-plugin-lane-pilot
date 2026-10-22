@@ -224,6 +224,18 @@ describe("the plan-fact stage and the acceptance card on a database", () => {
     expect(card.cost).toMatchObject({ state: "not_measured", usd: null });
   });
 
+  it("a working-tree base (no base commit, only the head the writer started from) is diffed against that head", async () => {
+    const w = world();
+    const HEAD = "c".repeat(40);
+    w.db.prepare("DELETE FROM lane_pilot_task_git_base WHERE task_id='t1'").run();
+    saveTaskGitBase(w.db, "t1", { baseRef: null, baseSha: null, initialHeadSha: HEAD, branch: "main", compareCommitted: false });
+    const result = await run(w, [fence([{ item: 1, status: "done", evidence: ["src/a.ts:4-5"] }, { item: 2, status: "done", evidence: ["src/new.ts:2"] }])]);
+    expect(w.commands[0]).toContain(`--no-ext-diff ${HEAD} --`);
+    expect(result.check.notChecked).toEqual([]);
+    expect(result.check.items.flatMap((row) => row.evidence.map((entry) => entry.code))).not.toContain("lines_unchecked");
+    expect(buildAcceptanceCard(w.db, { runId: "run", taskId: "t1" })!.base).toMatchObject({ sha: HEAD, compareCommitted: false });
+  });
+
   it("a retry replaces the receipt; a task without a recorded base checks the files only", async () => {
     const w = world();
     await run(w, ["no table"]);

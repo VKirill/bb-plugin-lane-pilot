@@ -64,7 +64,7 @@ export function buildAcceptanceCard(db: LanePilotDatabase, input: { runId: strin
   return {
     contract: { objective: typeof contract.objective === "string" ? contract.objective : null, acceptance: strings(contract.acceptance), ownsPaths: strings(contract.owns_paths) },
     risk: typeof contract.risk === "string" ? contract.risk : null,
-    base: base ? { ref: base.base_ref, sha: base.base_sha, branch: base.branch, compareCommitted: base.compare_committed } : null,
+    base: base ? { ref: base.base_ref, sha: base.base_sha ?? base.initial_head_sha, branch: base.branch, compareCommitted: base.compare_committed } : null,
     receipts: PIPELINE.flatMap((stageId) => {
       const row = byStage.get(stageId);
       if (!row) return [];

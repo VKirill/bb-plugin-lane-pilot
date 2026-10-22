@@ -196,7 +196,7 @@ export function AcceptanceCard({ runId, taskId, fallback, finished, refreshKey }
                 {card.notRun.map((row, index) => (
                   <li key={`${row.stageId}:${index}`} className="text-sm">
                     <span className={`font-medium ${WARN}`}>{stageName(row.stageId)}</span>
-                    <span className="break-words text-xs text-muted-foreground"> · {row.why}</span>
+                    <span className="break-words text-xs text-muted-foreground"> · {row.why === "disabled_by_project_setting" ? t("reason_disabled_by_setting") : row.why}</span>
                   </li>
                 ))}
               </ul>
