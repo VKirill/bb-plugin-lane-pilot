@@ -39,7 +39,28 @@ export function armMetrics(rows: readonly ArmAttempt[]): ArmMetrics {
   };
 }
 
-export function decideTrial(rows: readonly ArmAttempt[], startedAt: number, now: number, config: TrialConfig = TRIAL_DEFAULTS): TrialDecision {
+/**
+ * Who adopts a tree (`harness.adopt_by`, SMA plan P0-1): `bench` (default) adopts only after a bench comparison passed (src/rooms/bench:
+ * the same fixed tasks on both trees, paired); the live alternation below stays as an observation and can still retire a tree that is
+ * worse or unused. `live` is the old rule: the alternation alone decides.
+ */
+export type AdoptBy = "bench" | "live";
+export type BenchVerdictInput = { passed: boolean; summary: string };
+
+/** The live alternation's decision, then the bench's word over it when `adoptBy` is `bench`. Without the third argument it is the live rule only. */
+export function decideTrial(rows: readonly ArmAttempt[], startedAt: number, now: number, config: TrialConfig = TRIAL_DEFAULTS, bench?: { adoptBy: AdoptBy; verdict: BenchVerdictInput | null }): TrialDecision {
+  const live = decideLive(rows, startedAt, now, config);
+  if (!bench || bench.adoptBy === "live") return live;
+  // A bench comparison decides by itself: passed adopts, failed retires, whatever the live arms have collected.
+  if (bench.verdict) {
+    return { action: bench.verdict.passed ? "adopt" : "retire", reason: `bench ${bench.verdict.passed ? "passed" : "failed"}: ${bench.verdict.summary}; live observation: ${live.reason}`, arms: live.arms };
+  }
+  // No comparison yet: the live alternation can still retire a tree that is worse or unused, but it cannot adopt.
+  if (live.action === "adopt") return { action: "wait", reason: `live alternation favours it (${live.reason}) but adoption waits for a passed bench comparison: bb lane-pilot bench run/compare with --harness <tree id>`, arms: live.arms };
+  return live;
+}
+
+function decideLive(rows: readonly ArmAttempt[], startedAt: number, now: number, config: TrialConfig): TrialDecision {
   const arms = { new: armMetrics(rows.filter((row) => row.arm === "new")), old: armMetrics(rows.filter((row) => row.arm === "old")) };
   const ageDays = (now - startedAt) / 86_400_000;
   const late = ageDays >= config.maxDays;

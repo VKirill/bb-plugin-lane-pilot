@@ -1,0 +1,138 @@
+import { loadCandidates } from "./candidates";
+import type { HostPort } from "./ports";
+import { chooseFinal, DEFAULT_STRATA, interleave, warmOrder, type Stratum } from "./stratify";
+import { insertSet, type BenchDb, type BenchSet } from "./store";
+import type { Candidate, ManifestTask, Rejection } from "./types";
+import { MIN_FREE_GB, freeGb, warmUp, type WarmOptions } from "./warmup";
+
+export type BuildInput = {
+  db: BenchDb;
+  host: HostPort;
+  version: string;
+  seed?: string;
+  strata?: readonly Stratum[];
+  projectNames: ReadonlyMap<string, string>;
+  isSandboxName: (name: string) => boolean;
+  projects?: readonly import("./types").BenchProject[];
+  hostFor?: (path: string) => string | null;
+  /** Warm-up attempts per stratum as a multiple of its quota (the rest of the candidates stay untried). */
+  triesFactor?: number;
+  /** A host with less free space than this (GB) is not touched. */
+  minFreeGb?: number;
+  scratch?: string;
+  /** Cap on a single check during warm-up. */
+  checkTimeoutSec?: number;
+  /** Plan and warm up but write nothing. */
+  dryRun?: boolean;
+  /** Only count the candidates per stratum (no clone, no check run). */
+  planOnly?: boolean;
+  /** Warm-up on these strata only (a partial build is never written). */
+  only?: readonly string[];
+  log?: (line: string) => void;
+};
+
+export type StratumReport = { key: string; quota: number; candidates: number; hardCandidates: number; tried: number; survived: number; kept: number; keptHard: number; rejected: Record<string, number>; stoppedBecause: string };
+export type BuildReport = {
+  version: string; candidates: number; prefilter: Record<string, number>; strata: StratumReport[];
+  tried: number; survived: number; survivalRate: number | null; kept: number; keptHard: number; hardShare: number | null;
+  risks: Record<string, number>; set: BenchSet | null; note: string;
+  /** The first warm-up rejections with their detail (the full list is stored with the set). */
+  rejectedSample: Rejection[];
+};
+
+export async function buildSet(input: BuildInput): Promise<{ report: BuildReport; tasks: ManifestTask[]; rejected: Rejection[] }> {
+  const log = input.log ?? (() => undefined);
+  const seed = input.seed ?? input.version;
+  const strata = (input.strata ?? DEFAULT_STRATA).filter((stratum) => !input.only || input.only.includes(stratum.key));
+  const loaded = loadCandidates(input.db, { projectNames: input.projectNames, isSandboxName: input.isSandboxName, ...(input.projects ? { projects: input.projects } : {}), ...(input.hostFor ? { hostFor: input.hostFor } : {}) });
+  const rejected: Rejection[] = [...loaded.rejected];
+  const scratch = input.scratch ?? "$HOME/lp-bench/warm";
+  const warmOptions: WarmOptions = { scratch, ...(input.checkTimeoutSec ? { checkTimeoutSec: input.checkTimeoutSec } : {}) };
+  const homes = new Map<string, string>();
+  /** `$HOME/...` written for any machine, expanded on the one that runs the warm-up (a quoted `$HOME` is not expanded by the shell). */
+  const scratchOn = async (hostId: string): Promise<string> => {
+    if (!scratch.startsWith("$HOME")) return scratch;
+    if (!homes.has(hostId)) homes.set(hostId, (await input.host.run(hostId, "/", "printf %s \"$HOME\"", 15).catch(() => ({ stdout: "" }))).stdout.trim() || "/tmp");
+    return scratch.replace("$HOME", homes.get(hostId)!);
+  };
+  const minFree = input.minFreeGb ?? MIN_FREE_GB;
+  const factor = input.triesFactor ?? 4;
+
+  type Kept = { candidate: Candidate; stratum: string; solutionCommit: string; patchSha256: string; warm: ManifestTask["warm"] };
+  const reports = new Map<string, StratumReport>();
+  const keptByStratum = new Map<string, Kept[]>();
+
+  // One chain per host: two warm-ups never run on one machine at once (the disk and the CPU are the owner's); different machines go side by side.
+  const claimed = new Set<string>();
+  const byStratum = strata.map((stratum) => {
+    const pool = loaded.candidates.filter((candidate) => stratum.match(candidate) && !claimed.has(candidate.taskId));
+    pool.forEach((candidate) => claimed.add(candidate.taskId));
+    return { stratum, pool };
+  });
+  const hostOf = (pool: Candidate[]) => pool[0]?.hostId ?? "none";
+  const chains = new Map<string, typeof byStratum>();
+  for (const entry of byStratum) chains.set(hostOf(entry.pool), [...(chains.get(hostOf(entry.pool)) ?? []), entry]);
+
+  await Promise.all([...chains.entries()].map(async ([hostId, entries]) => {
+    for (const { stratum, pool } of entries) {
+      const report: StratumReport = { key: stratum.key, quota: stratum.quota, candidates: pool.length, hardCandidates: pool.filter((c) => c.hard).length, tried: 0, survived: 0, kept: 0, keptHard: 0, rejected: {}, stoppedBecause: "" };
+      reports.set(stratum.key, report);
+      const survivors: Kept[] = [];
+      const need = Math.ceil(stratum.quota * 0.3);
+      const order = warmOrder(pool, seed);
+      const maxTries = Math.max(stratum.quota, Math.round(stratum.quota * factor));
+      for (const candidate of input.planOnly ? [] : order) {
+        const enough = survivors.length >= stratum.quota && survivors.filter((s) => s.candidate.hard).length >= Math.min(need, pool.filter((c) => c.hard).length);
+        if (enough) { report.stoppedBecause = "quota filled"; break; }
+        if (report.tried >= maxTries) { report.stoppedBecause = `tried ${maxTries} candidates`; break; }
+        const free = hostId === "none" ? null : await freeGb(input.host, hostId);
+        if (free !== null && free < minFree) { report.stoppedBecause = `host ${hostId} has ${free} GB free, below ${minFree}`; log(`bench build: ${report.stoppedBecause}`); break; }
+        report.tried++;
+        const started = Date.now();
+        const result = await warmUp(input.host, candidate, { ...warmOptions, scratch: await scratchOn(hostId) }).catch((cause: unknown) => ({ ok: false as const, reason: "host_error" as const, detail: cause instanceof Error ? cause.message : String(cause) }));
+        if (result.ok) {
+          report.survived++;
+          survivors.push({ candidate, stratum: stratum.key, solutionCommit: result.solutionCommit, patchSha256: result.patchSha256, warm: result.record });
+          log(`bench build: ${stratum.key} ${candidate.taskId} warm in ${Math.round((Date.now() - started) / 1000)}s (${result.record.discriminating.length} discriminating checks)`);
+        } else {
+          report.rejected[result.reason] = (report.rejected[result.reason] ?? 0) + 1;
+          rejected.push({ taskId: candidate.taskId, stratum: stratum.key, reason: result.reason, ...(result.detail ? { detail: result.detail.slice(0, 300) } : {}) });
+          log(`bench build: ${stratum.key} ${candidate.taskId} rejected: ${result.reason}`);
+        }
+      }
+      if (!report.stoppedBecause) report.stoppedBecause = "candidates exhausted";
+      const chosen = chooseFinal(survivors.map((s) => s.candidate), stratum.quota, seed);
+      const keep = survivors.filter((s) => chosen.includes(s.candidate));
+      keptByStratum.set(stratum.key, keep);
+      report.kept = keep.length;
+      report.keptHard = keep.filter((s) => s.candidate.hard).length;
+    }
+  }));
+
+  const kept = strata.flatMap((stratum) => keptByStratum.get(stratum.key) ?? []);
+  const ordered = interleave(kept.map((entry) => ({ ...entry, stratum: entry.stratum })), strata.map((stratum) => stratum.key));
+  const tasks: ManifestTask[] = ordered.map((entry, index) => ({
+    taskId: entry.candidate.taskId, position: index + 1, projectId: entry.candidate.projectId, projectName: entry.candidate.projectName, hostId: entry.candidate.hostId, repoPath: entry.candidate.repoPath,
+    stratum: entry.stratum, hard: entry.candidate.hard, risk: entry.candidate.risk, area: entry.candidate.area, initialHeadSha: entry.candidate.initialHeadSha,
+    solutionCommit: entry.solutionCommit, solutionPatchSha256: entry.patchSha256, contract: entry.candidate.contract, warm: entry.warm,
+  }));
+  const tried = [...reports.values()].reduce((sum, row) => sum + row.tried, 0), survived = [...reports.values()].reduce((sum, row) => sum + row.survived, 0);
+  const risks: Record<string, number> = {};
+  for (const task of tasks) risks[task.risk] = (risks[task.risk] ?? 0) + 1;
+  let set: BenchSet | null = null;
+  let note = "";
+  if (input.planOnly) note = "plan only: candidates counted, nothing warmed up or written";
+  else if (input.dryRun) note = "dry run: nothing written";
+  else if (!tasks.length) note = "no task survived the warm-up: nothing written";
+  else if (input.only) note = `partial set: strata ${input.only.join(", ")} only; the other strata are not in this version`;
+  if (!input.dryRun && !input.planOnly && tasks.length) set = insertSet(input.db, { version: input.version, tasks, rejected, candidateCount: loaded.candidates.length, config: { seed, triesFactor: factor, strata: strata.map((s) => ({ key: s.key, quota: s.quota })) } });
+  const keptHard = tasks.filter((task) => task.hard).length;
+  return {
+    tasks, rejected,
+    report: {
+      version: input.version, candidates: loaded.candidates.length, prefilter: loaded.counts, strata: strata.map((stratum) => reports.get(stratum.key)!).filter(Boolean),
+      tried, survived, survivalRate: tried ? survived / tried : null, kept: tasks.length, keptHard, hardShare: tasks.length ? keptHard / tasks.length : null, risks, set, note,
+      rejectedSample: rejected.filter((row) => row.stratum).slice(0, 12),
+    },
+  };
+}

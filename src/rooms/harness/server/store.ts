@@ -134,13 +134,13 @@ export function listExperiences(db: HarnessDb, projectId: string, area: string):
   return rows.map((row) => ({ ...row, harness: getHarness(db, row.harnessId)! })).filter((row) => row.harness);
 }
 
-/** Keys (area, writer) with enough recent attempts to teach an editor something, newest activity first. */
-export function teachingKeys(db: HarnessDb, projectId: string, since: number, minAttempts: number): Array<{ area: string; writerKey: string; attempts: number }> {
+/** Keys (area, writer) with enough recent attempts, spread over at least `minSpanMs`, to teach an editor something (an area that lived an afternoon repeats nothing), newest activity first. */
+export function teachingKeys(db: HarnessDb, projectId: string, since: number, minAttempts: number, minSpanMs = 0): Array<{ area: string; writerKey: string; attempts: number }> {
   const rows = db.prepare(`SELECT COALESCE(json_extract(t.contract_json,'$.area'),'') AS area,
       COALESCE(json_extract(x.trace_json,'$.dispatchContext.writerKey'), '*') AS writerKey, count(*) AS attempts, max(a.created_at) AS last
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id JOIN lane_pilot_task t ON t.id=a.task_id
     LEFT JOIN lane_pilot_attempt_reasoning x ON x.attempt_id=a.id
     WHERE r.project_id=? AND a.created_at>=? AND a.task_id NOT LIKE 'drill-%' AND a.state IN ('accepted','blocked','validation_failed','empty_output')
-    GROUP BY 1,2 HAVING count(*)>=? ORDER BY last DESC`).all(projectId, since, minAttempts) as Array<{ area: string; writerKey: string; attempts: number }>;
+    GROUP BY 1,2 HAVING count(*)>=? AND max(a.created_at)-min(a.created_at)>=? ORDER BY last DESC`).all(projectId, since, minAttempts, minSpanMs) as Array<{ area: string; writerKey: string; attempts: number }>;
   return rows.map((row) => ({ area: row.area ?? "", writerKey: row.writerKey ?? "*", attempts: row.attempts }));
 }

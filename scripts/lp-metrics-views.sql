@@ -7,7 +7,7 @@
 -- 0.1.177 have harness_version NULL and are always older. Older real attempts are one separate line for comparison, so the numbers
 -- describe the Lane Pilot that runs now and not the one that ran last week. `vnum` is x*1000000+y*1000+z of a dotted x.y.z.
 --
--- Scope. Sandbox and drill traffic is not the product's: proj_3tb652jpsi, every project named «LP sandbox …» or «LP native …», and the
+-- Scope. Sandbox and drill traffic is not the product's: proj_3tb652jpsi, every project named «LP sandbox …», «LP native …» or «LP bench …», and the
 -- drill tasks (`drill-*`, scripts/lp-drill.sh). It is counted in its own line; every other project is `real`.
 -- Class. `cls` mirrors failureClass() of src/rooms/runs/failure-class.ts for a failed attempt (tests/lp-metrics.test.ts keeps the two equal);
 -- the classes the report needs are named, everything else (task, provider, contract) is `other`.
@@ -35,7 +35,7 @@ create temp view lp_attempt as
 select a.id, a.run_id, a.task_id, a.state, a.reason, a.created_at, a.harness_version, coalesce(vn.n, -1) as vnum,
   coalesce(vn.n, -1) >= (select n from lp_floor) as cur,
   r.project_id, coalesce(p.name, r.project_id) as project,
-  case when r.project_id = 'proj_3tb652jpsi' or p.name like 'LP sandbox%' or p.name like 'LP native%' or a.task_id like 'drill-%' then 'sandbox' else 'real' end as scope,
+  case when r.project_id = 'proj_3tb652jpsi' or p.name like 'LP sandbox%' or p.name like 'LP native%' or p.name like 'LP bench%' or a.task_id like 'drill-%' then 'sandbox' else 'real' end as scope,
   case when a.reason like 'retry limit % exhausted:%' then trim(substr(a.reason, instr(a.reason, 'exhausted:') + 10)) else coalesce(a.reason, '') end as t
 from lane_pilot_attempt a
 join lane_pilot_run r on r.id = a.run_id

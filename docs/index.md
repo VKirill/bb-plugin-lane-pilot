@@ -22,6 +22,7 @@ Built by Lane Pilot from page frontmatter.
 | [Build and deploy Lane Pilot](deployment.md) | deployment | active | 2026-10-19 |
 | [Cross-cutting gotchas](gotchas.md) | gotchas | active | 2026-10-17 |
 | [Writer harness](harness.md) | component | active | 2026-10-20 |
+| [LP-Bench, the fixed task set](lp-bench.md) | component | active | 2026-10-22 |
 | [docs/invoice-send.md](invoice-send.md) | — | — | — |
 | [Jev adapter for native writer reasoning](jev-adapter.md) | component | active | 2026-10-13 |
 | [docs/jev-judgments.md](jev-judgments.md) | — | — | — |

@@ -15,7 +15,8 @@ import {
   ANY_WRITER, activeHarness, assignAttemptHarness, getHarness, insertHarness, listExperiences, listHarnesses, saveExperience, setHarnessState, teachingKeys, trialAttempts, trialHarness,
   type HarnessRow,
 } from "./store";
-import { TRIAL_DEFAULTS, decideTrial, type TrialConfig, type TrialDecision } from "./trial";
+import { TRIAL_DEFAULTS, decideTrial, type AdoptBy, type TrialConfig, type TrialDecision } from "./trial";
+import { getBenchProject, verdictForHarness } from "../../bench";
 
 /**
  * The writer harness that learns (the Harness² port, phases 1–5). Per (project, area, writer model) one tree is active:
@@ -38,6 +39,10 @@ export type HarnessConfig = {
   roles: Partial<Record<HarnessRole, ModelSelection | null>>;
   waitMinutes: number;
   trial: TrialConfig;
+  /** `harness.adopt_by` (SMA plan P0-1): `bench` (default) adopts a tree only after a passed bench comparison; `live` keeps the alternation as the judge. */
+  adoptBy: AdoptBy;
+  /** An area is taught only when its attempts in the window span at least this many days (≥5 attempts in one afternoon repeat nothing). */
+  minSpanDays: number;
 };
 
 export type ModelSelection = { providerId: string; model: string; reasoningLevel: string };
@@ -55,7 +60,7 @@ export const HARNESS_DEFAULTS: HarnessConfig = {
   // Owner's choice 2026-10-19: the editors run on Gemini 3.8 Flash (high) through OpenCode's Antigravity route
   // (`router9/ag/gemini-3.8-flash-high`; the «high» is in the name, the effort stays the catalog default «medium»),
   // not on Opus: three sessions a key a night must stay cheap, and the trial, not the editor, decides what ships.
-  editor: { providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningLevel: "medium" }, roles: {}, waitMinutes: 40, trial: TRIAL_DEFAULTS,
+  editor: { providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningLevel: "medium" }, roles: {}, waitMinutes: 40, trial: TRIAL_DEFAULTS, adoptBy: "bench", minSpanDays: 3,
 };
 
 const CONFIG_KEY = (projectId: string) => `harness:config:${projectId}`;
@@ -185,6 +190,9 @@ export function createHarness(ctx: ServerCore, services: Services) {
    * so both arms see the same stream of tasks; without one the active tree (adopted or base) is recorded with no arm.
    */
   async function forAttempt(input: { projectId: string; area: string | null | undefined; writerKey: string; attemptId: string }): Promise<BriefParts | null> {
+    // A bench sandbox project runs under the tree its arm names (none, the source project's active tree, or one tree id), never under live alternation.
+    const bench = getBenchProject(db, input.projectId);
+    if (bench) return forBenchAttempt(bench, input);
     const cfg = await config(input.projectId);
     if (!cfg.enabled) return null;
     const area = (input.area ?? "").trim();
@@ -206,6 +214,25 @@ export function createHarness(ctx: ServerCore, services: Services) {
     const active = own ?? any ?? activeHarness(db, input.projectId, area, input.writerKey);
     assignAttemptHarness(db, input.attemptId, active.id, null);
     return briefParts(active, null);
+  }
+
+  /** The tree a bench arm names: `none` gives the writer no tree, `tree` the source project's adopted or base tree for the task's area, anything else is a tree id. */
+  function forBenchAttempt(bench: NonNullable<ReturnType<typeof getBenchProject>>, input: { projectId: string; area: string | null | undefined; writerKey: string; attemptId: string }): BriefParts | null {
+    if (bench.harness === "none") return null;
+    // The bench gives every task an area of its own (`<area>~b<position><arm>r<n>`); the tree belongs to the original area.
+    const area = (input.area ?? "").trim().replace(/~b\d+[a-z0-9-]*r\d+$/, "");
+    if (bench.harness === "tree") {
+      const sourceId = bench.sourceProjectId ?? input.projectId;
+      const own = listHarnesses(db, sourceId, { area, writerKey: input.writerKey, states: ["adopted"] })[0];
+      const any = own ? null : listHarnesses(db, sourceId, { area, writerKey: ANY_WRITER, states: ["adopted"] })[0];
+      const chosen = own ?? any ?? activeHarness(db, sourceId, area, input.writerKey);
+      assignAttemptHarness(db, input.attemptId, chosen.id, null);
+      return briefParts(chosen, null);
+    }
+    const tree = getHarness(db, bench.harness);
+    if (!tree) return null;
+    assignAttemptHarness(db, input.attemptId, tree.id, null);
+    return briefParts(tree, null);
   }
 
   /** Writes a tree's skills and checks into the worktree (git-excluded) and links the skills where the writer's runtime looks. */
@@ -462,6 +489,13 @@ export function createHarness(ctx: ServerCore, services: Services) {
     }
   }
 
+  /** The newest bench comparison on a tree and the rule that decides who adopts (`adoptBy`). */
+  function benchInput(cfg: HarnessConfig, harnessId: string): { adoptBy: AdoptBy; verdict: { passed: boolean; summary: string } | null } {
+    const verdict = verdictForHarness(db, harnessId);
+    const report = verdict?.report as { armA?: string; armB?: string; verdict?: string } | null | undefined;
+    return { adoptBy: cfg.adoptBy, verdict: verdict ? { passed: verdict.passed, summary: `${report?.armB ?? verdict.armB} vs ${report?.armA ?? verdict.armA} on set ${verdict.setId.replace("benchset_", "")}` } : null };
+  }
+
   /** The trials of a project judged on their attempts; a decided trial gets its reflection. */
   async function evaluateTrials(projectId: string, options: { dryRun?: boolean; now?: number } = {}): Promise<Array<{ id: string; area: string; writerKey: string; decision: TrialDecision }>> {
     const cfg = await config(projectId);
@@ -469,7 +503,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
     const out: Array<{ id: string; area: string; writerKey: string; decision: TrialDecision }> = [];
     for (const trial of listHarnesses(db, projectId, { states: ["trial"] })) {
       const rows = trialAttempts(db, trial);
-      const decision = decideTrial(rows, trial.trialStartedAt ?? trial.createdAt, now, cfg.trial);
+      const decision = decideTrial(rows, trial.trialStartedAt ?? trial.createdAt, now, cfg.trial, benchInput(cfg, trial.id));
       out.push({ id: trial.id, area: trial.area, writerKey: trial.writerKey, decision });
       if (options.dryRun || decision.action === "wait") continue;
       if (decision.action === "adopt") {
@@ -498,7 +532,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
     const rows = trialAttempts(db, trial);
     const pick = (arm: "new" | "old") => rows.filter((row) => row.arm === arm).slice(-3).map((row) => row.attemptId);
     const attempts = await collectEvidence(trial.projectId, trial.area, trial.writerKey, 6, 0, { attemptIds: [...pick("new"), ...pick("old")] });
-    const decision = decideTrial(rows, trial.trialStartedAt ?? trial.createdAt, Date.now(), cfg.trial);
+    const decision = decideTrial(rows, trial.trialStartedAt ?? trial.createdAt, Date.now(), cfg.trial, benchInput(cfg, trial.id));
     const files = evidenceFiles({
       area: trial.area, writerKey: trial.writerKey, attempts, harness: trial.tree, baseHarness: parent?.tree ?? {}, library: libraryEntries(trial.projectId, trial.area),
       pool: [{ label: "candidate", tree: trial.tree, diff: treeDiff(parent?.tree ?? {}, trial.tree), notes: trial.notes ?? "" }],
@@ -544,7 +578,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
     if (!cfg.enabled) return { trials, editors };
     const since = Date.now() - cfg.windowDays * 86_400_000;
     let started = 0;
-    for (const key of teachingKeys(db, projectId, since, cfg.minAttempts)) {
+    for (const key of teachingKeys(db, projectId, since, cfg.minAttempts, cfg.minSpanDays * 86_400_000)) {
       if (started >= cfg.maxKeysPerNight || ctx.isDisposed()) break;
       if (trialHarness(db, projectId, key.area, key.writerKey)) { editors.push({ ...key, result: "trial running" }); continue; }
       const last = await bb.storage.kv.get(LAST_EDIT_KEY(projectId, key.area, key.writerKey)).catch(() => null) as { at?: number } | null;
@@ -560,7 +594,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
   async function status(projectId: string) {
     const cfg = await config(projectId);
     const trees = listHarnesses(db, projectId, { states: ["base", "adopted", "trial"] });
-    const trials = trees.filter((row) => row.state === "trial").map((row) => ({ id: row.id, area: row.area, writerKey: row.writerKey, since: row.trialStartedAt, decision: decideTrial(trialAttempts(db, row), row.trialStartedAt ?? row.createdAt, Date.now(), cfg.trial) }));
+    const trials = trees.filter((row) => row.state === "trial").map((row) => ({ id: row.id, area: row.area, writerKey: row.writerKey, since: row.trialStartedAt, decision: decideTrial(trialAttempts(db, row), row.trialStartedAt ?? row.createdAt, Date.now(), cfg.trial, benchInput(cfg, row.id)) }));
     const recent = listHarnesses(db, projectId, { states: ["retired"] }).slice(0, 10).map((row) => ({ id: row.id, area: row.area, writerKey: row.writerKey, reason: row.reason, decidedAt: row.decidedAt }));
     return {
       config: cfg,

@@ -30,12 +30,12 @@ const SINCE_KEY = (version: string) => `canary:since:${version}`;
 const ALERTED_KEY = (version: string) => `canary:alerted:${version}`;
 
 /**
- * Sandbox and drill traffic is not the product's: the drill's sandbox project, every project named «LP sandbox …» or «LP native …» and
+ * Sandbox and drill traffic is not the product's: the drill's sandbox project, every project named «LP sandbox …», «LP native …» or «LP bench …» (src/rooms/bench: the fixed task set replayed on purpose) and
  * the drill's tasks (`drill-*`, scripts/lp-drill.sh) fail on purpose and would spend the budget of the real projects (audit 2026-10-08
  * round 4, P1-12). The same rule as scripts/lp-metrics-views.sql (`scope`), which tests/lp-metrics.test.ts keeps in step.
  */
 export const SANDBOX_PROJECT_ID = "proj_3tb652jpsi";
-export const isSandboxProjectName = (name: string | null | undefined): boolean => typeof name === "string" && (name.startsWith("LP sandbox") || name.startsWith("LP native"));
+export const isSandboxProjectName = (name: string | null | undefined): boolean => typeof name === "string" && (name.startsWith("LP sandbox") || name.startsWith("LP native") || name.startsWith("LP bench"));
 export const isDrillTask = (taskId: string): boolean => taskId.startsWith("drill-");
 
 const FAILED_STATES = ["blocked", "provider_error", "timeout", "empty_output", "validation_failed", "spawn_rejected"];
@@ -124,7 +124,7 @@ export function createCanary(ctx: ServerCore) {
   const noteStart = async (): Promise<void> => { await since(); };
 
   let sandboxCache: { at: number; ids: ReadonlySet<string> } | null = null;
-  /** The ids of the projects named «LP sandbox …» / «LP native …»; a minute's memory, and none when BB cannot list projects. */
+  /** The ids of the projects named «LP sandbox …» / «LP native …» / «LP bench …»; a minute's memory, and none when BB cannot list projects. */
   async function sandboxProjects(now: number): Promise<ReadonlySet<string>> {
     if (sandboxCache && now - sandboxCache.at < 60_000) return sandboxCache.ids;
     const projects = (bb.sdk as unknown as { projects?: { list: (query: unknown) => Promise<Array<{ id: string; name?: string }>> } }).projects;

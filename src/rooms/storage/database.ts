@@ -24,6 +24,7 @@ import { worldMigrations } from "../world";
 import { harnessMigrations } from "../harness";
 import { deferralKindMigrations, deferralMigrations } from "../deferral";
 import { rollbackMigrations } from "../rollback";
+import { benchMigrations } from "../bench";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 
 export type LanePilotDatabase = Database.Database;
@@ -362,6 +363,8 @@ export const migrations = [
   // deferral register learns the kind `memory_conflict` (the table is rebuilt: a CHECK cannot be altered).
   ...memoryConflictMigrations,
   ...deferralKindMigrations,
+  // LP-Bench (src/rooms/bench): the fixed task set, its runs and comparisons.
+  ...benchMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

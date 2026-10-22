@@ -5,6 +5,7 @@ import type { RuleScanApi } from "../../self-repair/server";
 import type { HarnessApi } from "../../harness/server";
 import type { DeferralApi } from "../../deferral/server";
 import type { RollbackApi } from "../../rollback/server";
+import type { BenchApi } from "../../bench/server";
 import type { WorldApi } from "../../world/server";
 import type { Canary } from "../../stability/server";
 import type { createActivation } from "../../native-agent/server";
@@ -64,6 +65,8 @@ export interface Services {
   deferrals: DeferralApi;
   /** The record of every attempt's base and change, and reverify / revert of accepted work (src/rooms/rollback). */
   rollback: RollbackApi;
+  /** LP-Bench: the fixed task set and its comparisons (src/rooms/bench). */
+  bench: BenchApi;
   DOCS_NIGHT_ATTEMPTS: DocsNightlyApi["DOCS_NIGHT_ATTEMPTS"];
   DOCS_OPEN_KEY: DocsNightlyApi["DOCS_OPEN_KEY"];
   DOCS_TOOLING: DocsNightlyApi["DOCS_TOOLING"];

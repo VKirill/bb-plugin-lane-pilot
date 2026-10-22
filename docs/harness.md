@@ -91,3 +91,7 @@ The harness room exports `createHarness`, `harnessRpc`, tree helpers and trial h
 
 - [Lane Pilot overview](overview.md)
 - [Shared packages](packages.md)
+
+## Adoption by the bench (`harness.adopt_by`)
+
+With `adoptBy: "bench"` (the default) the live alternation above is an observation: `decideTrial` can still retire a tree that is worse or unused, but it returns `wait` instead of `adopt` until `bb lane-pilot bench compare <baseline> <arm> --harness-id <tree id>` has recorded a passed verdict; a failed verdict retires the tree whatever the live arms say (`src/rooms/harness/server/trial.ts`, `src/rooms/harness/server/harness.ts` `benchInput`). `adoptBy: "live"` is the old rule. The nightly tick starts an editor only for a key with at least `minAttempts` attempts spanning `minSpanDays` (3) days (`teachingKeys`, `src/rooms/harness/server/store.ts`). A bench project runs under the tree its arm names, never under live alternation (`forBenchAttempt`). See [LP-Bench](lp-bench.md).

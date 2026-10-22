@@ -63,7 +63,7 @@ describe("lp-metrics views", () => {
 
   it("puts sandbox projects, LP native projects and drill tasks apart from the real projects", () => {
     const db = database();
-    const projects: Array<[string, string]> = [["proj_3tb652jpsi", "LP sandbox rules"], ["proj_a", "LP sandbox layout A3"], ["proj_b", "LP native NOGIT"], ["proj_c", "SelfyStudio"], ["proj_d", "BB-сервис"], ["proj_gone", "Renamed sandbox"]];
+    const projects: Array<[string, string]> = [["proj_3tb652jpsi", "LP sandbox rules"], ["proj_a", "LP sandbox layout A3"], ["proj_b", "LP native NOGIT"], ["proj_bench", "LP bench SelfyStudio"], ["proj_c", "SelfyStudio"], ["proj_d", "BB-сервис"], ["proj_gone", "Renamed sandbox"]];
     for (const [id, name] of projects) {
       db.prepare("insert into core.projects values (?, ?)").run(id, name);
       db.prepare("insert into lane_pilot_run values (?, ?)").run(`run_${id}`, id);
@@ -71,7 +71,7 @@ describe("lp-metrics views", () => {
     }
     db.prepare("insert into lane_pilot_attempt(id, run_id, task_id, state, reason, created_at, harness_version) values ('a_drill', 'run_proj_c', 'drill-20261007-1', 'accepted', null, 1, null)").run();
     const scope = (id: string) => (db.prepare("select scope from lp_attempt where id = ?").get(id) as { scope: string }).scope;
-    expect(["a_proj_3tb652jpsi", "a_proj_a", "a_proj_b", "a_drill"].map(scope)).toEqual(["sandbox", "sandbox", "sandbox", "sandbox"]);
+    expect(["a_proj_3tb652jpsi", "a_proj_a", "a_proj_b", "a_proj_bench", "a_drill"].map(scope)).toEqual(["sandbox", "sandbox", "sandbox", "sandbox", "sandbox"]);
     expect(["a_proj_c", "a_proj_d", "a_proj_gone"].map(scope)).toEqual(["real", "real", "real"]);
   });
 
