@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+**Strong checks and return to a stage** (SMA atlas delta D1-3 / D1-4 follow-up, D0-2):
+
+- **Red before green.** `checks.require_red_on_base` (`off` | `medium` | `high`, default `medium`): a task of that risk or more whose every check is already green on the base does not start; the PM gets the vacuous checks and what to add (docs/baseline.md). The dispatch instructions carry the line; the contract lint flags an existence-only check on a file the base has (`verification_existence_on_base`).
+- **Return to a stage.** `bb lane-pilot return <task> --to discussion|planning|writer --note "…"`, RPC `task_return_stage`, and «Вернуть на стадию…» in the acceptance card: the intervention is recorded (`lane_pilot_stage_return`, last migration), the stale receipts are reset, a running attempt is stopped with the exit confirmed, and the work restarts from the stage with the note (docs/stage-return.md).
+
 ## 0.1.269
 
 **SMA integration, wave 5 — the closed loop** (Maslov's atlas and dialogue of 2026-10-22): the wall journal and night loop (`bb lane-pilot wall …`: classes by recurrence 3/10 → 5/100 → 6/500, ≤3 classes and 2 rounds a night, whole-class repairs with proof, acceptance by drill + canary + bench subset with revert, the RHI stop rule, a 20M-token night cap), the wall ladder (two moves → three read-only «hunters» on another model whose citations code checks → backlog with a full analysis; also for ordinary repeated task failures), re-run from the earliest affected stage after a new head (sandbox/bench; real projects listed), the screen «Ждут владельца» with a Telegram digest (quiet hours 23:00–08:00), the coverage registry graph ↔ drill (`bb lane-pilot coverage`), the baseline before a writer («already built?», notify by default) and the nightly regression pass with bisect (`bb lane-pilot regress`). Policy v3: the night's judge (wall, baseline, plan-fact, stage proofs, coverage) is owner-only. The night merges nothing alone until the policy passes its exam on ≥20 unseen owner decisions. Drill note tasks now carry a real check.
