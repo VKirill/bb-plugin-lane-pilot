@@ -45,6 +45,13 @@ export function WorkTab({ page }: { page: LpPage }) {
         </section>
       </SettingsGroup>
 
+      {isGlobal ? null : (
+        <div hidden={!advanced}><SettingsGroup testId="settings-project-checks" title={t("workGroupBaseline")}>
+          <p className="max-w-xl text-xs text-muted-foreground">{t("workGroupBaselineHelp")}</p>
+          <CatalogFields page={page} keys={["baseline.already_built", "baseline.time_cap_sec", "checks.require_red_on_base", "regress.nightly", "regress.last_n", "regress.last_days", "regress.check_cap_sec", "regress.budget_sec", "regress.bisect_steps"]} />
+        </SettingsGroup></div>
+      )}
+
       <div hidden={!advanced}><SettingsGroup title={t("sectionHelperContext")} testId="settings-helper-context" help={<HelpSup label={t("helperContextTechnical")}><p>{t("helperContextTechnical")}</p><p className="mt-1">{t("helperContextNoneNote")}</p></HelpSup>}>
         <section className="space-y-2" data-testid="helper-context-settings">
           <p className="max-w-xl text-xs text-muted-foreground">{t("helperContextHelp")}</p>

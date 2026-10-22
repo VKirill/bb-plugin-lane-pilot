@@ -11,7 +11,7 @@ export const WAITING_USAGE = [
   "bb lane-pilot waiting close <key> --by <text>   (night loop) the waiting is settled",
 ].join("\n");
 
-type Db = Pick<Database.Database, "prepare">;
+type Db = Pick<Database.Database, "prepare" | "transaction">;
 type Result = { exitCode: number; stdout?: string; stderr?: string };
 const json = (value: unknown) => JSON.stringify(value, null, 2);
 

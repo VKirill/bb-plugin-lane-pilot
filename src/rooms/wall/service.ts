@@ -4,6 +4,7 @@ import { extractModelJson } from "../critique";
 import { authorize, type ChangeDescriptor } from "../policy";
 import { decideAcceptance, gateRepair, repairChange, type Acceptance, type AcceptanceEvidence, type GateDecision } from "./acceptance";
 import { analysisPrompt, hunterPrompt, parseNightReport, repairBrief, taskWallMessage } from "./brief";
+import { hubFields, writeHubFields } from "../improvement";
 import { WALL_CONFIG_KEY, parseWallConfig, type WallConfig } from "./config";
 import { classVersions, collectEntries, getClass, listClasses, nightOf, refreshClasses, writeEntries, type WallDb } from "./journal";
 import { afterFailedMove, ladderStep } from "./ladder";
@@ -79,12 +80,15 @@ export const classWallKey = (classKey: string): string => `class:${classKey}`;
 export function createWall(deps: WallDeps) {
   const { db, kv, ports, log } = deps;
 
+  /** The settings of the global level (`wall.*`) over what the old key-value store holds: a field with no row reads the old value. */
   async function config(): Promise<WallConfig> {
-    return parseWallConfig(await kv.get(WALL_CONFIG_KEY).catch(() => null));
+    const old = await kv.get(WALL_CONFIG_KEY).catch(() => null);
+    return parseWallConfig({ ...(old && typeof old === "object" ? old : {}), ...hubFields(db, "wall") });
   }
   async function setConfig(patch: Partial<WallConfig>): Promise<WallConfig> {
     const next = parseWallConfig({ ...(await config()), ...patch });
-    await kv.set(WALL_CONFIG_KEY, next as never);
+    // Only the fields the caller named become settings rows, with the value the parser settled on (the clamped one).
+    writeHubFields(db, "wall", Object.fromEntries(Object.keys(patch).map((field) => [field, (next as Record<string, unknown>)[field]])));
     return next;
   }
 

@@ -2,6 +2,7 @@ import { VISIBLE_CATALOG, type CatalogRow } from "@lane-pilot/settings-catalog";
 import { t, type I18nKey } from "@lane-pilot/i18n";
 import { settingUnitKey } from "../../settings/setting-copy";
 import { Tabs } from "@lane-pilot/ui-kit";
+import { HUB_KEYS, PROJECT_DEFAULT_KEYS } from "../../improvement";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../runs/state-machine";
 import type { StageReceipt } from "../../tasks";
 
@@ -262,6 +263,8 @@ export const SECTIONED_SETTING_KEYS = new Set([
   "onboarding.depth", "ops.max_tasks", "adoc.040", "adoc.041", "adoc.042", "workspace.provider", "sandbox.backend", "verification.sandbox_unsafe", "secrets.allow", "quality_mode", "critic.code.default_for_risk", "plan_fact.mode",
   "browser_qa.enabled", "browser_qa.provider", "browser_qa.model", "browser_qa.backend",
   "browser_qa.approve", "browser_qa.reasoning_effort",
+  // The self-improvement controls have their own page (src/rooms/improvement/ui); the project-level checks also sit in «Work».
+  ...HUB_KEYS, ...PROJECT_DEFAULT_KEYS,
 ]);
 
 export const BASIC_SETTING_KEYS = new Set([

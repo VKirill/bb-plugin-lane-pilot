@@ -10,6 +10,7 @@ import { workflowEn } from "../src/i18n-workflows";
 import { ownedEn } from "../src/i18n-owned";
 import { scheduleEn } from "../src/i18n-schedule";
 import { tabsEn } from "../src/i18n-tabs";
+import { improvementEn } from "../src/i18n-improvement";
 
 /**
  * The dictionaries are spread into one object, so a key defined in two partial dictionaries is shadowed by the later
@@ -17,7 +18,7 @@ import { tabsEn } from "../src/i18n-tabs";
  */
 describe("i18n dictionaries", () => {
   it("defines every key of the partial dictionaries once", () => {
-    const partials = { fieldEn, workflowEn, editorEn, opsEn, modelsEn, canvasEn, scheduleEn, anamnesisEn, tabsEn, ownedEn };
+    const partials = { fieldEn, workflowEn, editorEn, opsEn, modelsEn, canvasEn, scheduleEn, anamnesisEn, tabsEn, ownedEn, improvementEn };
     const owner = new Map<string, string>();
     const duplicates: string[] = [];
     for (const [name, dictionary] of Object.entries(partials)) {

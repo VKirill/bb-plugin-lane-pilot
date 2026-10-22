@@ -6,14 +6,15 @@ import { CONTROL_H } from "@lane-pilot/ui-kit";
 import { OwnerWaitingBadge } from "../../owner-waiting/ui";
 import type { LpPage } from "./use-lp-page";
 
-type Scope = "projects" | "globals" | "agents" | "tokens" | "workflows" | "schedule" | "tasks" | "waiting";
-const SYSTEM_PAGES: Array<{ scope: Exclude<Scope, "projects">; label: "navGlobals" | "navAgents" | "tabTokens" | "navWorkflows" | "navSchedule" | "navTasks" | "navOwnerWaiting"; testId?: string }> = [
+type Scope = "projects" | "globals" | "agents" | "tokens" | "workflows" | "schedule" | "tasks" | "waiting" | "improvement";
+const SYSTEM_PAGES: Array<{ scope: Exclude<Scope, "projects">; label: "navGlobals" | "navAgents" | "tabTokens" | "navWorkflows" | "navSchedule" | "navTasks" | "navOwnerWaiting" | "navImprovement"; testId?: string }> = [
   { scope: "globals", label: "navGlobals" },
   { scope: "agents", label: "navAgents" },
   { scope: "tokens", label: "tabTokens", testId: "scope-nav-tokens" },
   { scope: "workflows", label: "navWorkflows", testId: "scope-nav-workflows" },
   { scope: "schedule", label: "navSchedule", testId: "scope-nav-schedule" },
   { scope: "tasks", label: "navTasks", testId: "scope-nav-tasks" },
+  { scope: "improvement", label: "navImprovement", testId: "scope-nav-improvement" },
   { scope: "waiting", label: "navOwnerWaiting", testId: "scope-nav-waiting" },
 ];
 

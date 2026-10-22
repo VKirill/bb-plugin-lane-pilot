@@ -10,6 +10,7 @@ import { fullAccessSpawn, scheduleIsolated, stringAt, type ServerCore, type Serv
 import { SANDBOX_PROJECT_ID, isSandboxProjectName } from "../../stability/server";
 import { ensureExcludeLinesCommand, EXCLUDE_NOT_GIT } from "../../verification";
 import { getAttempt } from "../../storage";
+import { hubFields } from "../../improvement";
 import { evidenceFiles, evidenceLayout, harvestCommand, parseHarvest, shellQuote, sliceAttemptEvents, treeDiff, writeFileCommands, type AttemptEvidence, type LibraryEntry, type PoolCandidate } from "./evidence";
 import {
   ANY_WRITER, activeHarness, assignAttemptHarness, getHarness, insertHarness, listExperiences, listHarnesses, saveExperience, setHarnessState, teachingKeys, trialAttempts, trialHarness,
@@ -169,7 +170,9 @@ export function createHarness(ctx: ServerCore, services: Services) {
 
   async function config(projectId: string): Promise<HarnessConfig> {
     const raw = await bb.storage.kv.get(CONFIG_KEY(projectId)).catch(() => null) as Partial<HarnessConfig> | null;
-    return { ...HARNESS_DEFAULTS, ...(raw ?? {}), editor: { ...HARNESS_DEFAULTS.editor, ...(raw?.editor ?? {}) }, roles: { ...(raw?.roles ?? {}) }, trial: { ...TRIAL_DEFAULTS, ...(raw?.trial ?? {}) } };
+    // `harness.adopt_by` of the global level is the default of every project; a project's own record still wins.
+    const hub = hubFields(db, "harness") as { adoptBy?: AdoptBy };
+    return { ...HARNESS_DEFAULTS, ...(hub.adoptBy ? { adoptBy: hub.adoptBy } : {}), ...(raw ?? {}), editor: { ...HARNESS_DEFAULTS.editor, ...(raw?.editor ?? {}) }, roles: { ...(raw?.roles ?? {}) }, trial: { ...TRIAL_DEFAULTS, ...(raw?.trial ?? {}) } };
   }
 
   /** A patch merges a level deep; a role set to null goes back to the editor's model. */
@@ -181,7 +184,11 @@ export function createHarness(ctx: ServerCore, services: Services) {
       if (value === null) delete roles[role as HarnessRole]; else roles[role as HarnessRole] = { ...(roles[role as HarnessRole] ?? current.editor), ...value };
     }
     const next: HarnessConfig = { ...current, ...patch, editor: { ...current.editor, ...(patch.editor ?? {}) }, roles, trial: { ...current.trial, ...(patch.trial ?? {}) } };
-    await bb.storage.kv.set(CONFIG_KEY(projectId), next as never);
+    // The resolved default stays out of the project's record unless the project set it, so a later change of the global default reaches it.
+    const stored = await bb.storage.kv.get(CONFIG_KEY(projectId)).catch(() => null) as Partial<HarnessConfig> | null;
+    const keepAdopt = patch.adoptBy !== undefined || stored?.adoptBy !== undefined;
+    const { adoptBy: _resolved, ...withoutAdopt } = next;
+    await bb.storage.kv.set(CONFIG_KEY(projectId), (keepAdopt ? next : withoutAdopt) as never);
     return next;
   }
 

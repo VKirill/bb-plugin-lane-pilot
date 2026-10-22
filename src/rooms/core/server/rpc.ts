@@ -26,6 +26,7 @@ import { ownerWaitingRpc } from "../../owner-waiting/server";
 import { baselineRpc } from "../../baseline/server";
 import { stageReturnRpc } from "../../stage-return/server";
 import { wallRpc } from "../../wall/server";
+import { improvementRpc } from "../../improvement/server";
 import { sessionMemoryRpc } from "../../memory/server";
 import { createWorkflowArchitect } from "../../workflow/server";
 import { architectStartRpc } from "../../workflow/server";
@@ -63,6 +64,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...baselineRpc(services.baseline, services.regression),
     ...stageReturnRpc(services.stageReturn),
     ...wallRpc(services.wall),
+    ...improvementRpc({ db: ctx.db, kv: ctx.bb.storage.kv, wall: services.wall, bench: services.bench, deferrals: services.deferrals }),
     ...sessionMemoryRpc(ctx, services),
     ...createWorkflowArchitect(ctx, services).rpc,
     ...architectStartRpc(ctx, services),

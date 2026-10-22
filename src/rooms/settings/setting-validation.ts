@@ -6,6 +6,7 @@ import "../runs/failure-class-judgment";
 import "@lane-pilot/jev/judgments/output-guard";
 import { listJudgments } from "@lane-pilot/jev";
 import { jevSettingProblem } from "@lane-pilot/jev";
+import { HUB_KEYS, PROJECT_DEFAULT_KEYS, hubSettingProblem } from "../improvement";
 import { UI_CATALOG, WRITER_EFFORT_CHOICES_BY_PROVIDER } from "@lane-pilot/settings-catalog";
 
 export type SettingValidationError = {
@@ -26,9 +27,17 @@ export function allowedSettingChoices(key: string): string[] | null {
   return choices.size ? [...choices] : null;
 }
 
+/** The checks whose project-level rows the self-improvement screen edits as defaults (and `memory.note_budget`, which had no range check). */
+const PROJECT_CHECK_KEYS: ReadonlySet<string> = new Set([...PROJECT_DEFAULT_KEYS, "memory.note_budget"]);
+
 const WORKFLOW_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 
 export function validateSettingValue(key: string, value: unknown): SettingValidationError | null {
+  // The self-improvement controls (src/rooms/improvement/keys.ts) carry their own ranges, shared with the readers and the CLI.
+  if (HUB_KEYS.has(key) || PROJECT_CHECK_KEYS.has(key)) {
+    const problem = hubSettingProblem(key, value);
+    return problem ? { code: "invalid_choice", key, params: [key, problem] } : null;
+  }
   const minimum = key === "plan_critique.min_score" ? 0
     : key === "plan_critique.min_write_tasks" ? 1
     : key === "code_critique.max_rounds" ? 1

@@ -123,7 +123,8 @@ export function FieldControl({
     );
   }
   if (control === "slider" || control === "number" || settingUsesNumericControl(row)) {
-    const numeric = typeof value === "number" ? value : Number(value ?? row.min ?? 0);
+    // An empty value (no limit, not set) stays empty: «0» would read as «zero attempts».
+    const numeric = typeof value === "number" ? value : value === "" ? Number.NaN : Number(value ?? row.min ?? 0);
     const parsed = (raw: string) => raw === "" ? "" : Number(raw);
     return (
       <div className="flex min-w-0 items-center gap-2">
