@@ -18,7 +18,7 @@ export function defaultProofRoots(cwd: string): ProofRoots {
 
 export function renderSmaMap(all: readonly SmaRow[], listed: readonly SmaRow[] = []): string {
   const c = smaCounts(all);
-  const lines = [`SMA map: ${c.total} nodes — done ${smaDonePercent(all)}% (proven ${c.proven}, not taken with a reason ${c.skip}); have without proof ${c.have - c.proven}, partial ${c.partial}, missing ${c.missing}.`, "", "region                                   done   have partial missing skip"];
+  const lines = [`SMA map: ${c.total} nodes — done ${smaDonePercent(all)}% (proven ${c.proven}); have without proof ${c.have - c.proven}, partial ${c.partial}, missing ${c.missing}.`, "", "region                                   done   have partial missing skip"];
   SMA_REGIONS.forEach((region, index) => {
     const part = all.filter((row) => row.region === region);
     const n = smaCounts(part);

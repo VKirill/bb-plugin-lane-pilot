@@ -11,7 +11,7 @@ const roots = {
 };
 
 describe("the SMA map registry", () => {
-  it("has one entry for every node of the map and a reason for every node not taken", () => {
+  it("has one entry for every node of the map and leaves none out", () => {
     expect(SMA_NODES.length).toBe(1768);
     expect(smaHoles()).toEqual([]);
   });
@@ -26,7 +26,7 @@ describe("the SMA map registry", () => {
     expect(broken).toEqual([]);
   });
 
-  it("is done: every node is proven in the code or not taken with a reason", () => {
+  it("is done: every node is proven in the code", () => {
     const notDone = smaRows().filter((row) => !isDone(row)).map((row) => `${row.id} ${row.status} ${row.label}`);
     expect(notDone).toEqual([]);
   });

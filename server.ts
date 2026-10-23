@@ -21,6 +21,7 @@ import { createRollback } from "./src/rooms/rollback/server";
 import { createPluginBench } from "./src/rooms/bench/server";
 import { createBaselineRoom, mountRegress } from "./src/rooms/baseline/server";
 import { createRunGoal, mountRunGoal } from "./src/rooms/run-goal/server";
+import { createPhaseDriver, mountPhaseDriver, registerPhaseTool } from "./src/rooms/phase/server";
 import { createCapabilities, mountCapabilities } from "./src/rooms/capability/server";
 import { createBacklog, mountBacklog } from "./src/rooms/backlog/server";
 import { createHypotheses } from "./src/rooms/hypotheses/server";
@@ -114,6 +115,7 @@ export default async function plugin(bb: BbPluginApi) {
     createBaselineRoom(ctx, services),
     createStageReturn(ctx, services),
     createRunGoal(ctx, services),
+    createPhaseDriver(ctx, services),
     createCapabilities(ctx, services),
     createBacklog(ctx),
     createHypotheses(ctx, services),
@@ -136,6 +138,8 @@ export default async function plugin(bb: BbPluginApi) {
   mountRegress(ctx, services.regression);
   // Once a run is done, every accepted task's checks run together on the final main (every 20 minutes, a verdict per run).
   mountRunGoal(ctx, services.runGoal);
+  // Every two minutes: each live phase is moved by its gates, the next wave of its plan is issued, and the PM gets the one thing the stage needs.
+  mountPhaseDriver(ctx, services.phases);
   // Every hour: a provider whose adapter (BB plugin) version changed is probed once; a failing one is held off by the breaker.
   mountCapabilities(ctx, services.capabilities);
   // Every hour: ready todos with an estimate go to the project's PM in queue order (one a project a day, three a day in all).
@@ -148,6 +152,7 @@ export default async function plugin(bb: BbPluginApi) {
   await mountOutage(ctx).catch((cause: unknown) => bb.log.warn(`Lane Pilot: outage record skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
   // Learning from the owner's messages (src/learning): registers its PM tool before the tool families fold, so it comes first.
   mountLearning(ctx, services);
+  registerPhaseTool(ctx, services);
   registerTools(ctx, services);
   registerCli(ctx, services);
   // The pixel world's GLB files (council office people and cars) over HTTP, not inside app.js.

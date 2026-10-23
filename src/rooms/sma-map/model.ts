@@ -17,8 +17,8 @@ export function smaRows(): SmaRow[] {
   });
 }
 
-/** Done means: we have it and a proof points at the code, or it is not taken with a reason. */
-export const isDone = (row: SmaRow) => (row.status === "have" && !!row.proof) || (row.status === "skip" && row.ours.trim().length > 0);
+/** Done means: we have it and a proof points at the code. Nothing is left out (the owner, 2026-10-24: «нам нужна 100% реализация»). */
+export const isDone = (row: SmaRow) => row.status === "have" && !!row.proof;
 
 export function smaCounts(rows: readonly SmaRow[]): SmaCounts {
   const counts: SmaCounts = { total: rows.length, have: 0, partial: 0, missing: 0, skip: 0, proven: 0 };
@@ -29,16 +29,16 @@ export function smaCounts(rows: readonly SmaRow[]): SmaCounts {
   return counts;
 }
 
-/** Share of the map that is done (proven or not taken with a reason), in percent with one decimal. */
+/** Share of the map that is done (proven in the code), in percent with one decimal. */
 export const smaDonePercent = (rows: readonly SmaRow[]) => (rows.length ? Math.round((rows.filter(isDone).length / rows.length) * 1000) / 10 : 0);
 
-/** Registry holes: map nodes without an entry, entries for nodes the map does not have, skips without a reason. */
+/** Registry holes: map nodes without an entry, entries for nodes the map does not have, and any node left out (skip). */
 export function smaHoles(): string[] {
   const ids = new Set(SMA_NODES.map(([id]) => id));
   const holes: string[] = [];
   for (const id of ids) if (!SMA_ENTRIES[id]) holes.push(`${id}: no entry`);
   for (const id of Object.keys(SMA_ENTRIES)) if (!ids.has(id)) holes.push(`${id}: entry for a node the map does not have`);
-  for (const [id, entry] of Object.entries(SMA_ENTRIES)) if (entry[0] === "skip" && !entry[1].trim()) holes.push(`${id}: not taken without a reason`);
+  for (const [id, entry] of Object.entries(SMA_ENTRIES)) if (entry[0] === "skip") holes.push(`${id}: left out — the whole map is built`);
   return holes;
 }
 

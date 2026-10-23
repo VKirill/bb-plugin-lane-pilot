@@ -28,6 +28,7 @@ import { stageReturnRpc } from "../../stage-return/server";
 import { forecastRpc } from "../../forecast/server";
 import { workGraphRpc } from "../../work-graph/server";
 import { runGoalRpc } from "../../run-goal/server";
+import { phaseRpc } from "../../phase/server";
 import { capabilityRpc } from "../../capability/server";
 import { conveyorState, setConveyor } from "../../conveyor";
 import { wallRpc } from "../../wall/server";
@@ -71,6 +72,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...forecastRpc(ctx.db),
     ...workGraphRpc(ctx),
     ...runGoalRpc(services.runGoal),
+    ...phaseRpc(services.phases),
     ...capabilityRpc(services.capabilities),
     conveyor: async ({ set, reason }: { set?: "on" | "off"; reason?: string }) => set ? await setConveyor(ctx.bb.storage.kv as never, set === "on", reason) : await conveyorState(ctx.bb.storage.kv as never),
     ...wallRpc(services.wall),

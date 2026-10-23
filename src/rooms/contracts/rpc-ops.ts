@@ -213,6 +213,21 @@ export const rpcOps = {
     input: z.object({}).strict(),
     output: z.unknown(),
   },
+  /** Phases on rails (src/rooms/phase): the live and recent phases of a project or a PM chat, with stage and next action. */
+  phase_list: {
+    input: z.object({ projectId: z.string().min(1).optional(), pmThreadId: z.string().min(1).optional(), live: z.boolean().optional() }).strict(),
+    output: z.unknown(),
+  },
+  /** One phase: its record, gates, next action, the facts of its pieces and its book (the chain of parts). */
+  phase_get: {
+    input: z.object({ phaseId: z.string().min(1).max(40) }).strict(),
+    output: z.unknown(),
+  },
+  /** Controls of a phase from the screen or the CLI: pause, resume, return to an earlier stage with a note, stop the wave, close in words. */
+  phase_control: {
+    input: z.object({ phaseId: z.string().min(1).max(40), action: z.enum(["pause", "resume", "return", "stop_wave", "close"]), to: z.enum(["discussion", "planning", "design", "execution"]).optional(), note: z.string().max(2000).optional() }).strict(),
+    output: z.unknown(),
+  },
   /** The run-goal verdict of a run: every accepted task's checks together on the final main (src/rooms/run-goal). */
   run_goal_status: {
     input: z.object({ runId: z.string().min(1).max(200) }).strict(),

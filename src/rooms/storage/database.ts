@@ -29,6 +29,7 @@ import { ownerWaitingMigrations } from "../owner-waiting";
 import { baselineMigrations } from "../baseline";
 import { stageReturnMigrations } from "../stage-return";
 import { runGoalMigrations } from "../run-goal";
+import { phaseMigrations } from "../phase";
 import { capabilityMigrations } from "../capability";
 import { outageMigrations } from "../outage";
 import { backlogMigrations } from "../backlog";
@@ -406,6 +407,8 @@ export const migrations = [
   // Memory of one section of a shared project (Мои проекты: several games and FeedGen in one BB project) stays with that section
   // (packages/memory-core: scope_json, the sections outermost first; '[]' the whole project).
   `ALTER TABLE lane_pilot_memory ADD COLUMN scope_json TEXT NOT NULL DEFAULT '[]'`,
+  // Phases on rails and their append-only book (src/rooms/phase, SMA map: Phase graph).
+  ...phaseMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
