@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.286
+
+**Checks may write the shared /tmp.** A check that drives an app outside the sandbox talks to it through files in /tmp: Vampirism Fire's `studio_test.py` keeps its lock and run files in /tmp/vf-tests for Roblox Studio and failed with «Operation not permitted». Seatbelt now allows writes under /private/tmp and bubblewrap binds the real /tmp; the repository's .git, .agents and .cls, the real home and everything else stay read-only.
+
 ## 0.1.285
 
 **Checks find the project's own toolchain.** The check sandbox had the system folders on PATH and an empty temp HOME, so tools a user installs in their home (rokit's rojo, lune, selene, stylua; cargo, bun, deno, go, ~/.local/bin) were «command not found» (exit 127) and rokit, finding no ~/.rokit, made one in the repository, which the owns check charged to the writer: Vampirism Fire's test-infra task failed ten attempts that way and the writers rewrote check.sh outside their task. The bin folders that exist are now on PATH and the tool homes are linked into the temp HOME (read only; the sandbox still writes only the workspace and temp).

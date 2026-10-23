@@ -67,7 +67,9 @@ export function buildSeatbeltProfile(workspacePath:string, tempPath:string):stri
     "(version 1)",
     "(allow default)",
     // Network stays open: checks such as curl against a dev server or an API must be able to pass.
-    `(deny file-write* (require-all (require-not (subpath ${workspace})) (require-not (subpath ${temporary})) (require-not (literal \"/dev/null\"))))`,
+    // The shared /tmp stays writable: a check that drives an app outside the sandbox talks to it through files there (Vampirism Fire's
+    // studio_test.py: a lock and the run's files in /tmp/vf-tests, read by Roblox Studio; «Operation not permitted», 2026-10-23).
+    `(deny file-write* (require-all (require-not (subpath ${workspace})) (require-not (subpath ${temporary})) (require-not (subpath \"/private/tmp\")) (require-not (literal \"/dev/null\"))))`,
     denyWrites,
   ].join("\n");
 }
@@ -130,7 +132,8 @@ export function buildBubblewrapArgs(input:{workspacePath:string;cwd:string;tempP
   // --share-net keeps the host network while every other namespace stays private: a check may curl a dev
   // server or an API, but still writes only into the workspace and its temp folder. Before, --unshare-all
   // alone cut the network, so no curl verification could ever pass.
-  const args=["--die-with-parent","--new-session","--unshare-all","--share-net","--ro-bind","/","/","--bind",input.workspacePath,input.workspacePath];
+  // The shared /tmp stays writable (see buildSeatbeltProfile); the workspace and the guards are bound after it, so they still win.
+  const args=["--die-with-parent","--new-session","--unshare-all","--share-net","--ro-bind","/","/","--bind","/tmp","/tmp","--bind",input.workspacePath,input.workspacePath];
   for (const guardPath of input.guardPaths) args.push("--ro-bind",guardPath,guardPath);
   args.push("--bind",input.tempPath,input.tempPath,"--proc","/proc","--dev","/dev","--chdir",input.cwd,
     "--clearenv","--setenv","PATH",sandboxPath("/usr/local/bin:/usr/bin:/bin"),"--setenv","HOME",input.tempPath,

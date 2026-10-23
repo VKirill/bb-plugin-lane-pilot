@@ -20,7 +20,7 @@ describe("host sandbox policy", () => {
   it("allows writes only in the selected workspace and temporary scope and denies protected state, with network open", () => {
     const profile = buildSeatbeltProfile("/tmp/lane-worktree","/private/tmp/lane-temp");
     expect(profile).toContain("(allow default)");
-    expect(profile).toContain('(deny file-write* (require-all (require-not (subpath "/tmp/lane-worktree")) (require-not (subpath "/private/tmp/lane-temp")) (require-not (literal "/dev/null"))))');
+    expect(profile).toContain('(deny file-write* (require-all (require-not (subpath "/tmp/lane-worktree")) (require-not (subpath "/private/tmp/lane-temp")) (require-not (subpath "/private/tmp")) (require-not (literal "/dev/null"))))');
     expect(profile).toContain('(deny file-write* (subpath "/tmp/lane-worktree/.git"))');
     expect(profile).toContain('(deny file-write* (subpath "/tmp/lane-worktree/.agents"))');
     expect(profile).toContain('(deny file-write* (subpath "/tmp/lane-worktree/.cls"))');
@@ -35,7 +35,7 @@ describe("host sandbox policy", () => {
   it("builds bubblewrap argv with isolated namespaces and read-only root/guard binds",()=>{
     const args=buildBubblewrapArgs({workspacePath:"/work",cwd:"/work/project",tempPath:"/tmp/lp",guardPaths:["/work/.git","/work/.agents","/work/.cls"]});
     expect(args.slice(2, 4)).toEqual(["--unshare-all","--share-net"]);
-    expect(args).toEqual(expect.arrayContaining(["--unshare-all","--ro-bind","/","/","--bind","/work","/work","--ro-bind","/work/.git","/work/.git","--chdir","/work/project","--clearenv","--setenv","HOME","/tmp/lp","--","/bin/bash","--noprofile","--norc","-c"]));
+    expect(args).toEqual(expect.arrayContaining(["--unshare-all","--ro-bind","/","/","--bind","/tmp","/tmp","--bind","/work","/work","--ro-bind","/work/.git","/work/.git","--chdir","/work/project","--clearenv","--setenv","HOME","/tmp/lp","--","/bin/bash","--noprofile","--norc","-c"]));
     expect(args).toContain("--share-net");
   });
 
