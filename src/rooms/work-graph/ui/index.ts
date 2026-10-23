@@ -3,3 +3,4 @@ export { StageStrip, useStageStrips } from "./stage-strip";
 export type { Strip } from "./stage-strip";
 export { WorkBreakdown } from "./work-breakdown";
 export { StageModelStats } from "./stage-model-stats";
+export { StageSteps } from "./stage-steps";

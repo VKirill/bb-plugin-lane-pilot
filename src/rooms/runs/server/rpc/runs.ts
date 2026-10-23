@@ -13,6 +13,7 @@ import type { AttemptState } from "../../state-machine";
 import { finishRunSafely } from "../run-finish";
 import { buildTaskGraph } from "../task-graph";
 import { buildTaskBoard, readTaskCard, type CardThread } from "../task-board";
+import { readThreadLive } from "../thread-live";
 import { cancelAttemptById } from "../cancel";
 import { pauseRun } from "../runs-pause";
 import { id, stringAt, valueAt } from "../../../core/server";
@@ -180,6 +181,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       }));
       return { items: items.map((item) => ({ ...item, pmThreadTitle: item.pmThreadId ? pmTitles.get(item.pmThreadId)?.title ?? null : null })) };
     },
+    thread_live: async ({ threadId }) => readThreadLive(db, threadId),
     task_card: async ({ runId, taskId }) => {
       const card = readTaskCard(db, { runId, taskId });
       if (!card) return null;
@@ -334,6 +336,6 @@ export function runsRpc(ctx: ServerCore, services: Services) {
       return { ok: true, state: "queued", attemptId: nextId, reason: null };
     },
     resume_runs: ({ projectId }) => services.resumeOrphans(projectId),
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "native_install_status" | "prepare_native_session" | "list_helper_threads" | "task_board" | "task_card" | "get_run_card" | "native_thread" | "activation_context" | "cancel_attempt" | "pause_run" | "resume_run" | "halt_run" | "retry_attempt" | "resume_runs">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "finish_run" | "activate_pm" | "native_install_start" | "native_install_status" | "prepare_native_session" | "list_helper_threads" | "task_board" | "thread_live" | "task_card" | "get_run_card" | "native_thread" | "activation_context" | "cancel_attempt" | "pause_run" | "resume_run" | "halt_run" | "retry_attempt" | "resume_runs">;
   return handlers;
 }

@@ -47,6 +47,13 @@ export const graphEn = {
   graphCapped: "the newest {n} tasks",
   graphEmpty: "No task ran a stage in this period.",
   graphOff: "Off in the project settings: {stages}",
+  liveTitle: "Lane Pilot",
+  liveSummary: "at work {work} · done {done} of {all}",
+  liveNow: "Now",
+  liveWeek: "This week",
+  liveWriterOf: "This thread works on:",
+  liveSteps: "Step by step",
+  liveHide: "Hide steps",
 };
 
 export const graphRu: { [K in keyof typeof graphEn]: string } = {
@@ -97,4 +104,11 @@ export const graphRu: { [K in keyof typeof graphEn]: string } = {
   graphCapped: "последние {n} задач",
   graphEmpty: "За этот период ни одна задача не проходила этапы.",
   graphOff: "Выключено в настройках проекта: {stages}",
+  liveTitle: "Lane Pilot",
+  liveSummary: "в работе {work} · готово {done} из {all}",
+  liveNow: "Сейчас",
+  liveWeek: "За неделю",
+  liveWriterOf: "Этот тред работает над:",
+  liveSteps: "По шагам",
+  liveHide: "Скрыть шаги",
 };

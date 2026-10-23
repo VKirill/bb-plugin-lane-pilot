@@ -1,12 +1,16 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import "./app.css";
-import { t } from "@lane-pilot/i18n";
+import { detectLocale, t } from "@lane-pilot/i18n";
+import type { ComponentType } from "react";
 import { LanePilotPage } from "./src/rooms/ui-shell/ui/page";
 import { CouncilPage } from "./src/rooms/council/ui";
 import { ComposerAgentBadge } from "./src/rooms/native-agent/ui";
 import { EnableLanePilotAction } from "./src/rooms/native-agent/ui";
 import { HELPER_PANEL_ACTION, HelperThreadPanel } from "./src/rooms/native-agent/ui";
-import { RUN_CARD_DIRECTIVE, RunCardDirective } from "./src/rooms/runs/ui";
+import { RUN_CARD_DIRECTIVE, RunCardDirective, ThreadLive } from "./src/rooms/runs/ui";
+
+/** VK core 0.46.1-vk.5: a section of the thread's info panel (feature-tested; older cores get a panel tab instead). */
+type VkThreadInfoSection = (registration: { id: string; title: string; component: ComponentType<{ threadId: string; projectId: string }> }) => void;
 import { OWNER_ASK_RENDERER_ID } from "./src/rooms/relay";
 import { OwnerAsk } from "./src/rooms/relay/ui";
 
@@ -33,6 +37,13 @@ export default definePluginApp((app) => {
     layout: "flush",
     component: ({ threadId, params }) => <HelperThreadPanel threadId={threadId} params={params} />,
   });
+  // What Lane Pilot does for this chat (tasks now, step by step), in the thread's info panel below the uncommitted files.
+  const infoSection = (app.slots as unknown as { experimental_vkThreadInfoSection?: VkThreadInfoSection }).experimental_vkThreadInfoSection;
+  if (typeof infoSection === "function") {
+    infoSection.call(app.slots, { id: "lane-pilot-live", title: t("liveTitle"), component: ({ threadId }) => <ThreadLive threadId={threadId} locale={detectLocale()} /> });
+  } else {
+    app.slots.threadPanelAction({ id: "lane-pilot-live", title: t("liveTitle"), icon: "Workflow", component: ({ threadId }) => <ThreadLive threadId={threadId} locale={detectLocale()} /> });
+  }
   // The PM's `::lane-run{id="…"}` line becomes a live card of the run's tasks.
   app.slots.messageDirective({ id: RUN_CARD_DIRECTIVE, component: RunCardDirective });
   // A question to the owner (PM, integration gate, repair thread, council) as BB's pending interaction; BB's

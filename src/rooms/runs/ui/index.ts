@@ -6,3 +6,4 @@ export { RunStages } from "./run-parts";
 export { ServiceSegment } from "./runs-service";
 export { readRunsWindow } from "./runs-window";
 export { TaskBoard } from "./task-board";
+export { ThreadLive } from "./thread-live";

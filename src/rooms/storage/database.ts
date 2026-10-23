@@ -399,6 +399,10 @@ export const migrations = [
   ...memoryTierMigrations,
   // Ideas checked on the bench set (src/rooms/hypotheses).
   ...hypothesisMigrations,
+  // The thread's info panel (src/rooms/runs/server/thread-live.ts) finds a chat's runs and a thread's task by thread id.
+  `CREATE INDEX IF NOT EXISTS lane_pilot_run_pm_thread ON lane_pilot_run(pm_thread_id)`,
+  `CREATE INDEX IF NOT EXISTS lane_pilot_attempt_thread ON lane_pilot_attempt(thread_id)`,
+  `CREATE INDEX IF NOT EXISTS lane_pilot_stage_receipt_thread ON lane_pilot_stage_receipt(thread_id)`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

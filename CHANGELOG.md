@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.284
+
+**Lane Pilot in the chat.** The thread's info panel (project, branch, uncommitted files) gets a «Lane Pilot» section below the uncommitted files: in a PM chat the tasks now at work with phase, stage, model and minutes, their stage squares and step by step on a click (who ran each stage, turns, time, cost, the thread), then the week's tasks; in a writer or helper thread the task it works on. Nothing shows in other threads. Needs core `0.46.1-vk.5` (`experimental_vkThreadInfoSection`); an older core gets a «Lane Pilot» panel tab. New RPC `thread_live`; indexes on `lane_pilot_run(pm_thread_id)`, `lane_pilot_attempt(thread_id)`, `lane_pilot_stage_receipt(thread_id)`; the task board can be narrowed to some runs.
+
 ## 0.1.283
 
 Work graph after the first live look: turns are counted (BB pages thread events at 100; a limit of 500 was refused without a word), stages the project turned off are one line instead of a card each, and the tables fit the task page (the thread link is an arrow, shorter median headings).

@@ -33,4 +33,10 @@ Cost is the list price of the model (`@lane-pilot/models` price table), also on 
 attempt, the earlier ones are «partial». Code stages (checks, plan against fact, acceptance, run gate) run no model: their row has
 time only, and the writer thread a check ran in is not counted twice.
 
-RPC: `work_graph_task {runId, taskId}`, `work_graph_strips {keys}`, `work_graph_stats {projectId?, days?, excludeProjectIds?}`.
+- **In a chat** (the thread's info panel, below the uncommitted files; core `0.46.1-vk.5` slot `experimental_vkThreadInfoSection`,
+  an older core gets a «Lane Pilot» panel tab instead): a PM chat shows its tasks now at work, with phase, stage, model and minutes,
+  their stage squares, and step by step on a click (`StageSteps`: one line per stage with role, model, turns, time, cost and the
+  thread); below them the week's tasks. A writer or a helper thread shows the task it works on, its steps open. A thread Lane Pilot
+  has no part in shows nothing (`thread_live` returns null; indexes on the thread ids keep that cheap, it is asked every 8 s).
+
+RPC: `thread_live {threadId}`, `work_graph_task {runId, taskId}`, `work_graph_strips {keys}`, `work_graph_stats {projectId?, days?, excludeProjectIds?}`.

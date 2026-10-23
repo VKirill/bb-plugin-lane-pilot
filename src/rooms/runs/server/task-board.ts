@@ -60,10 +60,11 @@ function waitsFor(reason: string | null): string[] {
   return holder ? [holder[1]!] : [];
 }
 
-export function buildTaskBoard(db: LanePilotDatabase, input: { projectId?: string | null; doneSince: number; limit?: number }): BoardItem[] {
+export function buildTaskBoard(db: LanePilotDatabase, input: { projectId?: string | null; doneSince: number; limit?: number; runIds?: readonly string[] }): BoardItem[] {
   const limit = input.limit ?? 400;
-  const scope = input.projectId ? "AND r.project_id=?" : "";
-  const args = input.projectId ? [input.projectId] : [];
+  const runs = input.runIds?.length ? `AND a.run_id IN (${input.runIds.map(() => "?").join(",")})` : "";
+  const scope = `${input.projectId ? "AND r.project_id=?" : ""} ${runs}`;
+  const args = [...(input.projectId ? [input.projectId] : []), ...(input.runIds?.length ? input.runIds : [])];
   const tasks = db.prepare(`SELECT a.id AS attempt_id, a.run_id, a.task_id, a.state, a.reason, a.thread_id, a.attempt_no, a.updated_at,
       t.contract_json, r.project_id, r.pm_thread_id, r.closed_at, r.objective
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
@@ -123,9 +124,10 @@ export function buildTaskBoard(db: LanePilotDatabase, input: { projectId?: strin
     };
   });
   // Workflow runs the owner or a PM started (insights, research, reels...); a task's own pipeline run is part of the task above.
-  const flows = db.prepare(`SELECT id, workflow_id, definition_json, project_id, status, reason, created_at, updated_at FROM lane_pilot_wf_run
+  // A board narrowed to some task runs has none.
+  const flows = input.runIds?.length ? [] : db.prepare(`SELECT id, workflow_id, definition_json, project_id, status, reason, created_at, updated_at FROM lane_pilot_wf_run
     WHERE depth=0 AND link_task_id IS NULL AND (status NOT IN ('succeeded','canceled') OR updated_at>=?) ${input.projectId ? "AND project_id=?" : ""}
-    ORDER BY updated_at DESC LIMIT ?`).all(input.doneSince, ...args, limit) as Array<{
+    ORDER BY updated_at DESC LIMIT ?`).all(input.doneSince, ...(input.projectId ? [input.projectId] : []), limit) as Array<{
     id: string; workflow_id: string; definition_json: string; project_id: string | null; status: string; reason: string | null; created_at: number; updated_at: number;
   }>;
   const currentStep = db.prepare("SELECT node_id FROM lane_pilot_wf_step WHERE run_id=? AND state IN ('running','waiting') ORDER BY rowid DESC LIMIT 1");

@@ -52,6 +52,11 @@ export const rpcRuns = {
     }).strict()) }).strict(),
   },
   /** One board card opened: contract, plan, stages, attempts and the tree of threads that worked on it. */
+  /** What Lane Pilot does for a chat (its PM runs' tasks, or the task a writer or helper works on), for the thread's info panel; null for other threads. */
+  thread_live: {
+    input: z.object({ threadId: z.string().min(1) }).strict(),
+    output: z.unknown(),
+  },
   task_card: {
     input: z.object({ runId: z.string().min(1), taskId: z.string().min(1).nullable() }).strict(),
     output: z.object({
