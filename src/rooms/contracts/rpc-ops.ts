@@ -183,6 +183,21 @@ export const rpcOps = {
     input: z.object({ ref: z.string().min(1).max(200), to: z.enum(["discussion", "planning", "writer"]), note: z.string().max(8000), by: z.string().min(1).max(60).optional() }).strict(),
     output: z.unknown(),
   },
+  /** One task's work graph: a cell per stage, who ran each (role, round, model, turns, time, tokens, cost) (src/rooms/work-graph). */
+  work_graph_task: {
+    input: z.object({ runId: z.string().min(1), taskId: z.string().min(1) }).strict(),
+    output: z.unknown(),
+  },
+  /** The stage cells and the summary line of many tasks, keyed `runId:taskId`, for the task list. */
+  work_graph_strips: {
+    input: z.object({ keys: z.array(z.object({ runId: z.string().min(1), taskId: z.string().min(1) }).strict()).max(300) }).strict(),
+    output: z.unknown(),
+  },
+  /** Stages and models over a window: green, red, rounds, cost and time per stage, and per model on each stage. */
+  work_graph_stats: {
+    input: z.object({ projectId: z.string().min(1).optional(), days: z.number().int().min(1).max(365).optional(), excludeProjectIds: z.array(z.string().min(1)).max(100).optional() }).strict(),
+    output: z.unknown(),
+  },
   /** The PM's forecasts against the facts of accepted tasks, scored and calibrated per area (src/rooms/forecast). */
   forecast_report: {
     input: z.object({ projectId: z.string().min(1).optional(), days: z.number().int().min(1).max(365).optional() }).strict(),

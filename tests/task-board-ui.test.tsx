@@ -39,6 +39,13 @@ async function mount() {
           { id: "thr_w", role: "writer#1", title: "Writer b1", status: "active", children: [{ id: "thr_sub", role: "sub-agent", title: "Explore", status: "idle", children: [] }] },
         ] },
       }),
+      work_graph_task: () => ({
+        cells: [{ stageId: "plan-critique", state: "passed", rounds: 1, failures: 0, reason: null }],
+        stages: [{ cell: { stageId: "plan-critique", state: "passed", rounds: 1, failures: 0, reason: null },
+          rows: [{ stageId: "plan-critique", role: "reviewer", round: 1, threadId: "thr_c", providerId: "claude-code", model: "opus", seconds: 30, tokens: null, costUsd: null, costState: "not_measured", turns: 2 }] }],
+        summary: { returns: 0, seconds: 30, costUsd: null, costState: "not_measured", models: ["opus"] },
+      }),
+      work_graph_strips: () => ({}),
       retry_attempt: () => ({ ok: true }),
     } as never,
   });

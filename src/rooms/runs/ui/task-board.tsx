@@ -5,6 +5,7 @@ import { Button, Disclosure, Icon, Input, Select, SelectContent, SelectItem, Sel
 import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
 import { AcceptanceCard } from "../../acceptance/ui";
+import { StageModelStats, StageStrip, WorkBreakdown, useStageStrips } from "../../work-graph/ui";
 type Board = z.infer<(typeof rpcContract)["task_board"]["output"]>;
 type Card = NonNullable<z.infer<(typeof rpcContract)["task_card"]["output"]>>;
 type Item = Board["items"][number];
@@ -124,7 +125,7 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
   const rpc = useRpc<typeof rpcContract>();
   const [projectId, setProjectId] = useState<string>(initialProjectId ?? "all");
   const [kind, setKind] = useState<"all" | "task" | "workflow">("all");
-  const [view, setView] = useState<"board" | "list">("board");
+  const [view, setView] = useState<"board" | "list" | "stats">("board");
   const [groupBy, setGroupBy] = useState<GroupBy>("goal");
   const [doneHours, setDoneHours] = useState(24);
   const [drills, setDrills] = useState(false);
@@ -158,10 +159,10 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
           <p className="text-sm text-muted-foreground">{t("boardHelp")}</p>
         </div>
         <div className="inline-flex rounded-md border border-border p-0.5" role="tablist" data-testid="board-view">
-          {(["board", "list"] as const).map((id) => (
+          {(["board", "list", "stats"] as const).map((id) => (
             <button key={id} type="button" role="tab" aria-selected={view === id} onClick={() => setView(id)} data-testid={`board-view-${id}`}
               className={`rounded px-2.5 py-1 text-xs ${view === id ? "bg-secondary font-medium text-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-              {t(id === "board" ? "boardViewBoard" : "boardViewList")}
+              {t(id === "board" ? "boardViewBoard" : id === "list" ? "boardViewList" : "graphViewStats")}
             </button>
           ))}
         </div>
@@ -208,7 +209,9 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
           </label>
         ) : null}
       </div>
-      {items === null ? <p className="text-sm text-muted-foreground">{t("boardLoading")}</p> : view === "board" ? (
+      {view === "stats" ? (
+        <StageModelStats locale={locale} projectId={projectId === "all" ? undefined : projectId} excludeProjectIds={drills ? [] : serviceProjectIds} />
+      ) : items === null ? <p className="text-sm text-muted-foreground">{t("boardLoading")}</p> : view === "board" ? (
         <div className="-mx-1 flex items-start gap-3 overflow-x-auto px-1 pb-3" data-testid="board-columns">
           {COLUMNS.map((column) => {
             const cards = shown.filter((item) => item.column === column.id);
@@ -244,6 +247,7 @@ function TaskList({ items, groupBy, projectName, showProject, locale, onOpen }: 
     groups.set(group.key, { title: group.title, items: [...(groups.get(group.key)?.items ?? []), item] });
   }
   const ordered = [...groups].sort(([, a], [, b]) => Math.min(...a.items.map((item) => ORDER[item.column])) - Math.min(...b.items.map((item) => ORDER[item.column])));
+  const strips = useStageStrips(items.flatMap((item) => (item.kind === "task" && item.taskId ? [{ runId: item.runId, taskId: item.taskId }] : [])));
   return (
     <div className="@container overflow-hidden rounded-lg border border-border bg-card" data-testid="board-list">
       {ordered.map(([key, group]) => {
@@ -263,6 +267,9 @@ function TaskList({ items, groupBy, projectName, showProject, locale, onOpen }: 
                 <StatusIcon column={item.column} phase={item.phase} />
                 <span className="w-16 shrink-0 truncate text-xs tabular-nums text-muted-foreground">{item.taskId ? shortTaskId(item.taskId) : t("boardChain")}</span>
                 <span className="min-w-0 flex-1 truncate">{item.title}</span>
+                {item.taskId && strips[`${item.runId}:${item.taskId}`] ? (
+                  <span className="hidden shrink-0 @lg:inline-flex"><StageStrip cells={strips[`${item.runId}:${item.taskId}`]!.cells} testId={`board-strip-${item.key}`} /></span>
+                ) : null}
                 <span className="hidden max-w-[40%] shrink-0 items-center gap-1.5 text-xs @xl:flex"><PhaseLine item={item} locale={locale} /></span>
                 <span className="hidden shrink-0 @lg:inline-flex"><KindChip kind={item.taskKind} /></span>
                 {showProject ? <span className="hidden w-28 shrink-0 truncate text-xs text-muted-foreground @2xl:inline">{projectName(item.projectId)}</span> : null}
@@ -377,7 +384,9 @@ function TaskPage({ item, locale, projectName, onBack }: { item: Item; locale: s
                   <div className="flex flex-wrap gap-1.5">{card.contract.dependsOn.map((id) => <span key={id} className={chip} title={id}>{shortTaskId(id)}</span>)}</div>
                 </Section>
               ) : null}
-              {card.stages.length ? (
+              {card.kind === "task" && item.taskId ? (
+                <Section title={t("graphTitle")}><WorkBreakdown runId={item.runId} taskId={item.taskId} locale={locale} /></Section>
+              ) : card.stages.length ? (
                 <Section title={card.kind === "workflow" ? t("boardSteps") : t("boardProgress")}>
                   <ol className="relative space-y-0 border-l border-border pl-4" data-testid="task-card-stages">
                     {card.stages.map((stage, index) => (
