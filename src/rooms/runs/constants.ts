@@ -1,5 +1,5 @@
 /** The managed Lane Stack engine: 1.66.2, the OpenCode v2 opencode-lane plugin with the lane-pilot agent and the SMA rule mechanisms (1.65 and older are v1-only). */
-export const TARGET_SHA = "73cdcf8cb118525771c9d2e50da7f30bca29981f";
+export const TARGET_SHA = "5608b88378ba3d87b7fb8bf54cfe9179a8f43723";
 export const UPSTREAM_REPO = "https://github.com/VKirill/claude-lane-stack";
 export const OPENCODE_PLUGIN = "./plugins/opencode-lane.ts";
 export const OPENCODE_OLD_PLUGIN = "./plugins/lane-context.ts";
