@@ -78,10 +78,9 @@ export function createBbShimEnv(ctx: Pick<ServerCore, "bb" | "host">, now: () =>
 
 /**
  * Claude Code threads Lane Pilot starts (helpers, critics) get the lane marker alone, no PATH shim: without it the machine's hooks took them
- * for the owner's own sessions (the owner-presence mark, 2026-10-23: a helper probe marked the owner present).
+ * for the owner's own sessions (the owner-presence mark, 2026-10-23: a helper probe marked the owner present). BB takes one env resolver per
+ * provider, so the claude-code one (core/server/native-wiring.ts) adds this marker to the native session's env.
  */
-export const MARKER_ONLY_PROVIDER_IDS = ["claude-code"] as const;
-
 export function createRoleMarkerEnv(ctx: Pick<ServerCore, "bb">) {
   const { bb } = ctx;
   return async (context: { threadId: string; hostId: string }): Promise<ExperimentalPluginProviderEnvEntry[]> => {
@@ -96,6 +95,4 @@ export function createRoleMarkerEnv(ctx: Pick<ServerCore, "bb">) {
 export function mountBbShim(ctx: ServerCore) {
   const resolve = createBbShimEnv(ctx);
   for (const providerId of BB_SHIM_PROVIDER_IDS) ctx.bb.providers.experimental_contributeEnv(providerId, resolve);
-  const marker = createRoleMarkerEnv(ctx);
-  for (const providerId of MARKER_ONLY_PROVIDER_IDS) ctx.bb.providers.experimental_contributeEnv(providerId, marker);
 }

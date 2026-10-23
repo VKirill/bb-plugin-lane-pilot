@@ -2,7 +2,7 @@ import { getAttempt } from "../../storage";
 import { handleNativeDispatch, mentionContext, nativeContributedEnv } from "../../native-agent";
 import { NATIVE_MENTION_PROVIDER, nativeSelectionSchema } from "../../native-agent";
 import { attachStreamRetry, droppedStreamDetail } from "../../writer";
-import { mountBbShim } from "../../native-agent/server";
+import { createRoleMarkerEnv, mountBbShim } from "../../native-agent/server";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import type { ServerCore } from "./core";
 
@@ -27,7 +27,12 @@ export function mountNativeWiring(ctx: ServerCore) {
 
   bb.experimental_hooks.on("message.dispatch", (ctx) => handleNativeDispatch(bb, nativeHost, ctx, db));
 
-  bb.providers.experimental_contributeEnv("claude-code", (ctx) => nativeContributedEnv(bb, nativeHost, ctx));
+  // One resolver per provider: the native session's env, plus the lane marker of a Claude Code thread Lane Pilot started (helper-bb-shim.ts).
+  const marker = createRoleMarkerEnv(ctx);
+  bb.providers.experimental_contributeEnv("claude-code", async (thread) => {
+    const [native, mark] = await Promise.all([nativeContributedEnv(bb, nativeHost, thread), marker(thread)]);
+    return [...native, ...mark.filter((entry) => !native.some((own) => own.name === entry.name))];
+  });
   mountBbShim(ctx);
 
   attachStreamRetry({
