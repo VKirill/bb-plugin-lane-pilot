@@ -45,7 +45,7 @@ describe("parked for a secret", () => {
     db.prepare("INSERT INTO lane_pilot_task(id,run_id,kind,contract_json,created_at) VALUES('T','run','bb','{}',1)").run();
     const resumed:string[] = [];
     const services = { activeWriterTasks:new Set<string>(), enqueueResumedWriter:async (_p:string, attempt:{ task_id:string }) => { resumed.push(attempt.task_id); return true; } };
-    const { stability } = createStability({ bb, db, log:() => undefined, secrets:createSecrets({ bb }) } as never, services as never);
+    const { stability } = createStability({ bb, isDisposed:() => false, db, log:() => undefined, secrets:createSecrets({ bb }) } as never, services as never);
     return { db, stability, resumed, sent };
   }
 

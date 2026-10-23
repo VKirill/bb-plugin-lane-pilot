@@ -42,7 +42,7 @@ function setup() {
   const resumed:string[] = [];
   const services = { activeWriterTasks:new Set<string>(),
     enqueueResumedWriter:async (_projectId:string, attempt:{ task_id:string }) => { resumed.push(attempt.task_id); return true; } };
-  const { stability } = createStability({ bb, db, log:() => undefined } as never, services as never);
+  const { stability } = createStability({ bb, isDisposed:() => false, db, log:() => undefined } as never, services as never);
   return { bb, db, stability, resumed, sent };
 }
 
@@ -242,7 +242,7 @@ describe("the breaker survives a reload", () => {
     await open(first.stability);
     expect(first.stability.breakerHolds("proj", 4000)).toContain("page_cap");
     // The plugin reloaded: a new instance on the same store starts with no breaker until it restores them.
-    const { stability:after } = createStability({ bb:first.bb, db:first.db, log:() => undefined } as never, { activeWriterTasks:new Set(), enqueueResumedWriter:async () => true } as never);
+    const { stability:after } = createStability({ bb:first.bb, isDisposed:() => false, db:first.db, log:() => undefined } as never, { activeWriterTasks:new Set(), enqueueResumedWriter:async () => true } as never);
     expect(after.breakerHolds("proj", 4000)).toBeNull();
     expect(await after.restoreBreakers()).toEqual(["proj"]);
     expect(after.breakerHolds("proj", 4000)).toContain("page_cap");
@@ -252,7 +252,7 @@ describe("the breaker survives a reload", () => {
   it("does not restore a breaker of another version (the fix shipped) or junk", async () => {
     const { bb, db } = setup();
     await bb.storage.kv.set("stability:breakers", { proj:{ fingerprint:"x", openedAt:1, version:"0.0.1", probing:false }, bad:"nope" });
-    const { stability } = createStability({ bb, db, log:() => undefined } as never, { activeWriterTasks:new Set() } as never);
+    const { stability } = createStability({ bb, isDisposed:() => false, db, log:() => undefined } as never, { activeWriterTasks:new Set() } as never);
     expect(await stability.restoreBreakers()).toEqual([]);
     expect(stability.breakerHolds("proj", 2)).toBeNull();
     expect(await bb.storage.kv.get("stability:breakers")).toEqual({});
@@ -295,7 +295,7 @@ describe("disk hold", () => {
     const { bb } = createFakePluginHost({ pluginId:"lane-pilot" });
     const db = openDatabase(bb);
     const host = { call:async () => ({ freeBytes:freeGb * GB, totalBytes:totalGb * GB }) };
-    const { stability } = createStability({ bb, db, host, log:() => undefined } as never, { activeWriterTasks:new Set() } as never);
+    const { stability } = createStability({ bb, isDisposed:() => false, db, host, log:() => undefined } as never, { activeWriterTasks:new Set() } as never);
     return stability.diskHolds("host_mini", "/srv/p");
   };
   it("holds writers below the smaller of 15 GB and 5 % of the disk, never below 3 GB (Mac mini 460 GB held at 16 GB free, 2026-10-08)", async () => {

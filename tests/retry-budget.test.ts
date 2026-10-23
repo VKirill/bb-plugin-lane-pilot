@@ -44,7 +44,7 @@ describe("overall retry budget of a task", () => {
     const { bb } = createFakePluginHost({ pluginId:"lane-pilot", sdk:{ threads:{ send:async () => ({}) } } as never });
     const db = openDatabase(bb);
     createRun(db, "run", "proj", "cli", "/repo");
-    const { stability } = createStability({ bb, db, log:() => undefined } as never, { activeWriterTasks:new Set() } as never);
+    const { stability } = createStability({ bb, isDisposed:() => false, db, log:() => undefined } as never, { activeWriterTasks:new Set() } as never);
     expect(await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T1", pmThreadId:"pm", state:"blocked",
       reason:retryBudgetReason("T1", { spent:12, attempts:12, fallbacks:0, firstAt:1, lastAt:2 }) })).toBe(false);
     expect(await stability.loadParked()).toEqual([]);

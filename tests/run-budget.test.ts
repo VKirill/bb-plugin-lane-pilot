@@ -186,7 +186,7 @@ describe("budget stop outcome", () => {
     const resumed: string[] = [];
     const services = { activeWriterTasks: new Set<string>(),
       enqueueResumedWriter: async (_projectId: string, attempt: { task_id: string }) => { resumed.push(attempt.task_id); return true; } };
-    const { stability } = createStability({ bb, db, log: () => undefined } as never, services as never);
+    const { stability } = createStability({ bb, isDisposed:() => false, db, log: () => undefined } as never, services as never);
     expect(await stability.onTaskFailed({
       projectId: "proj", runId: "run", taskId: "T1", pmThreadId: "pm",
       state: "blocked", reason: "run_budget_exceeded:tokens",
