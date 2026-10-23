@@ -51,3 +51,8 @@ export function capabilityTable(inUse: ReadonlyMap<string, string>, versions: Re
       receipts.find((row) => row.providerId === providerId && row.version === version && row.capability === capability)?.state ?? "unproven"])) as Record<Capability, CapabilityState | "unproven"> };
   });
 }
+
+/** A probe failure of the probe's own setup (the parent chat, the run, the project, the model name), not of the adapter. */
+export function probeSetupFailed(reason: string | null): boolean {
+  return /Parent thread is invalid|helper_probe_run_unusable|helper_probe_project_not_configured|helper_probe_model_unavailable|no sandbox run/i.test(reason ?? "");
+}

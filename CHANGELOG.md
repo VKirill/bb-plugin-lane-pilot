@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.277
+
+**The capability probe no longer blames an adapter for its own setup.** The first live sweep after 0.1.276 started its helpers under an archived sandbox PM chat («Parent thread is invalid») and recorded every provider as not_supported, opening their breakers; it also paired a provider with another project's model. Now a probe that cannot be set up (a dead parent, an unknown model, an unusable run) writes no receipt and trips no breaker, the probe takes the latest sandbox run whose PM chat is alive, and providers pair with models within one project. The four wrong receipts were removed on the hub; the reload clears the breakers.
+
 ## 0.1.276
 
 **The rest of Maslov's graph (SMA atlas D2 and P2), each as a small room of its own** (owner 2026-10-23: «дроби на составляющие как у него … всё используемое и переиспользуемое»). Docs per room in `docs/`; the generated map is `docs/atlas.md`.

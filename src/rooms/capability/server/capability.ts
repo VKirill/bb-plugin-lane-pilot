@@ -1,7 +1,7 @@
 import { breakerKey } from "@lane-pilot/resilience";
 import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
 import { SANDBOX_PROJECT_ID } from "../../stability/server";
-import { adapterVersions, capabilityTable, dueProbes, providersInUse } from "../logic";
+import { adapterVersions, capabilityTable, dueProbes, probeSetupFailed, providersInUse } from "../logic";
 import { listReceipts, saveReceipt } from "../store";
 
 /**
@@ -18,9 +18,12 @@ export function createCapabilities(ctx: ServerCore, services: Services) {
   const { db, bb } = ctx;
 
   async function snapshot() {
-    const rows = (db.prepare(`SELECT key, value FROM lane_pilot_project_settings WHERE binding_id='' AND (key LIKE '%.provider' OR key LIKE '%.model' OR key IN ('pmProviderId','pmModel','writerProviderId','writerModel'))`).all() as Array<{ key: string; value: string }>)
-      .map((row) => { try { return { key: row.key, value: JSON.parse(row.value) as unknown }; } catch { return { key: row.key, value: row.value as unknown }; } });
-    const inUse = providersInUse(rows, BASE_PROVIDERS);
+    const rows = (db.prepare(`SELECT project_id, key, value FROM lane_pilot_project_settings WHERE binding_id='' AND (key LIKE '%.provider' OR key LIKE '%.model' OR key IN ('pmProviderId','pmModel','writerProviderId','writerModel'))`).all() as Array<{ project_id: string; key: string; value: string }>)
+      .map((row) => { try { return { project: row.project_id, key: row.key, value: JSON.parse(row.value) as unknown }; } catch { return { project: row.project_id, key: row.key, value: row.value as unknown }; } });
+    // A provider and its model pair up within one project's settings, never across projects.
+    const inUse = new Map<string, string>();
+    for (const project of new Set(rows.map((row) => row.project))) for (const [provider, model] of providersInUse(rows.filter((row) => row.project === project))) if (!inUse.has(provider)) inUse.set(provider, model);
+    for (const [provider, model] of Object.entries(BASE_PROVIDERS)) if (!inUse.has(provider)) inUse.set(provider, model);
     const hostId = (db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND key='hostId'").get(SANDBOX_PROJECT_ID) as { value: string } | undefined)?.value;
     const providers = rowsOf(await bb.sdk.providers.list({ hostId: hostId ? JSON.parse(hostId) as string : undefined } as never).catch(() => []), "providers");
     const plugins = rowsOf(await (bb.sdk.plugins.list() as Promise<unknown>).catch(() => []), "plugins");
@@ -29,20 +32,31 @@ export function createCapabilities(ctx: ServerCore, services: Services) {
     return { inUse, versions };
   }
 
-  /** The latest sandbox run with a PM chat: the place the helper probe starts its helper in. */
-  function probeRun(): string | null {
-    return (db.prepare("SELECT id FROM lane_pilot_run WHERE project_id=? AND pm_thread_id IS NOT NULL ORDER BY created_at DESC LIMIT 1").get(SANDBOX_PROJECT_ID) as { id: string } | undefined)?.id ?? null;
+  /** The latest sandbox run whose PM chat is still there (not archived or deleted): a helper needs a live parent. */
+  async function probeRun(): Promise<string | null> {
+    const runs = db.prepare("SELECT id, pm_thread_id FROM lane_pilot_run WHERE project_id=? AND pm_thread_id IS NOT NULL ORDER BY created_at DESC LIMIT 20").all(SANDBOX_PROJECT_ID) as Array<{ id: string; pm_thread_id: string }>;
+    for (const run of runs) {
+      const thread = await bb.sdk.threads.get({ threadId: run.pm_thread_id }).catch(() => null) as { archivedAt?: unknown; deletedAt?: unknown } | null;
+      if (thread && !thread.archivedAt && !thread.deletedAt) return run.id;
+    }
+    return null;
   }
 
   async function sweep(now = Date.now()) {
     const { inUse, versions } = await snapshot();
     const due = dueProbes(inUse, versions, listReceipts(db));
-    const runId = probeRun();
+    const runId = due.length ? await probeRun() : null;
     const probed: Array<{ providerId: string; version: string; state: string; reason: string | null }> = [];
     for (const item of due) {
       if (ctx.isDisposed()) break;
       if (!runId) { ctx.log("capability: no sandbox run with a PM chat to probe in"); break; }
-      const result = await services.startHelperProbe(SANDBOX_PROJECT_ID, runId, item.providerId, item.model).catch((cause: unknown) => ({ ok: false, reason: cause instanceof Error ? cause.message : String(cause) }));
+      const result = await services.startHelperProbe(SANDBOX_PROJECT_ID, runId, item.providerId, item.model).catch((cause: unknown) => ({ ok: false, started: false, reason: cause instanceof Error ? cause.message : String(cause) }));
+      // A probe that could not even be set up (a dead parent, no such model) says nothing about the adapter: no receipt, no breaker.
+      if (!result.ok && probeSetupFailed(result.reason ?? null)) {
+        ctx.log(`capability: ${item.providerId} ${item.version} not probed: ${result.reason}`);
+        probed.push({ providerId: item.providerId, version: item.version, state: "not_probed", reason: result.reason ?? null });
+        continue;
+      }
       const state = result.ok ? "supported" : "not_supported";
       saveReceipt(db, { providerId: item.providerId, version: item.version, capability: "answers", state, model: item.model, detail: result.ok ? null : (result.reason ?? "no answer").slice(0, 500), at: now });
       if (!result.ok) services.providerBreaker.record(breakerKey(item.providerId, item.model), "exhausted", now);

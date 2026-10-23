@@ -36,6 +36,7 @@ describe("the sweep", () => {
     const db = openDatabase(bb);
     createRun(db, "run_s", "proj_3tb652jpsi", "bb", "/s");
     setRunThread(db, "run_s", "thr_pm");
+    harness.sdk.stub("threads.get", async () => ({ id: "thr_pm", status: "idle", archivedAt: null }));
     const probes: string[] = [], tripped: string[] = [];
     const services = {
       startHelperProbe: async (_project: string, _run: string, provider: string) => { probes.push(provider); return provider === "opencode2" ? { ok: false, reason: "did not answer" } : { ok: true, reason: null }; },
@@ -51,5 +52,35 @@ describe("the sweep", () => {
     expect(cli.exitCode).toBe(1);
     expect(JSON.parse(cli.stdout!).table.find((row: { providerId: string }) => row.providerId === "opencode2").capabilities.answers).toBe("not_supported");
     expect((await runCapabilityCli(api, ["--bogus"])).exitCode).toBe(1);
+  });
+
+  it("a probe that cannot be set up (archived parent, unknown model) writes no receipt and trips no breaker; an archived PM chat is skipped", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    harness.sdk.stub("providers.list", async () => [{ id: "codex", pluginId: "provider-codex" }]);
+    harness.sdk.stub("plugins.list", async () => [{ id: "provider-codex", version: "0.1.0" }]);
+    harness.sdk.stub("threads.get", async (args: { threadId: string }) => ({ id: args.threadId, status: "idle", archivedAt: args.threadId === "thr_new" ? "2026-10-23T00:00:00Z" : null }));
+    const db = openDatabase(bb);
+    createRun(db, "run_old", "proj_3tb652jpsi", "bb", "/s"); setRunThread(db, "run_old", "thr_old");
+    db.prepare("UPDATE lane_pilot_run SET created_at=1 WHERE id='run_old'").run();
+    createRun(db, "run_new", "proj_3tb652jpsi", "bb", "/s"); setRunThread(db, "run_new", "thr_new");
+    const usedRuns: string[] = [], tripped: string[] = [];
+    let reason = "HTTP 400: Parent thread is invalid";
+    const services = {
+      startHelperProbe: async (_p: string, run: string) => { usedRuns.push(run); return { ok: false, started: false, reason }; },
+      providerBreaker: { record: (key: string) => { tripped.push(key); } },
+    };
+    const api = createCapabilities({ db, bb, log: () => undefined, isDisposed: () => false } as never, services as never).capabilities;
+    expect((await api.sweep()).map((row) => row.state)).toEqual(["not_probed"]);
+    expect(new Set(usedRuns)).toEqual(new Set(["run_old"]));
+    expect(listReceipts(db)).toEqual([]);
+    expect(tripped).toEqual([]);
+    reason = "spawn failed: provider crashed";
+    expect((await api.sweep()).every((row) => row.state === "not_supported")).toBe(true);
+    expect(tripped.length).toBeGreaterThan(0);
+  });
+
+  it("pairs a provider with a model within one project, never across projects", () => {
+    expect([...providersInUse([{ key: "writer.provider", value: "acp-cursor" }, { key: "writer.model", value: "composer-2.5" }])]).toEqual([["acp-cursor", "composer-2.5"]]);
+    expect([...providersInUse([{ key: "writer.provider", value: "acp-cursor" }])]).toEqual([]);
   });
 });
