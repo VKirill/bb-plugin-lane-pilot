@@ -6,8 +6,8 @@ import { z } from "zod";
  * with `bb lane-pilot learning config key=value …` or by the PM through `lane_pilot_memory {action:"learned", op:"config", …}`.
  *
  * `mode` is the switch between watching and acting. In `observe` (the start) every message is judged and recorded and nothing else
- * happens: no model extracts, no rule is written, no one is told. The owner (or the PM, when the owner says so) switches to `active`
- * once the recorded judgments look right (`op:"status"` shows the evidence).
+ * happens: no model extracts, no rule is written, no one is told. Learning switches itself to `active` once a model has checked
+ * enough of the recorded judgments and found them right (autonomy.ts; `op:"status"` shows the evidence); the owner takes no part.
  */
 export const CONFIG_KEY = "learning:config";
 

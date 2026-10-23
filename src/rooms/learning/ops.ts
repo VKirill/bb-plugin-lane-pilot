@@ -40,7 +40,7 @@ export function createOps(deps: OpsDeps) {
     const days = first === null ? 0 : Math.floor((at - first) / DAY_MS);
     const missing = [
       ...(days < OBSERVE_DAYS ? [`${OBSERVE_DAYS - days} more day(s) of observation`] : []),
-      ...(review.reviewed < REVIEW_CASES ? [`${REVIEW_CASES - review.reviewed} more reviewed case(s) (op:"review")`] : []),
+      ...(review.reviewed < REVIEW_CASES ? [`${REVIEW_CASES - review.reviewed} more reviewed case(s) (a model checks them by itself)`] : []),
       ...(review.accuracy !== null && review.reviewed >= REVIEW_CASES && review.accuracy < REVIEW_ACCURACY ? [`review accuracy ${review.accuracy} is under ${REVIEW_ACCURACY}`] : []),
     ];
     const usage = usageToday(deps.db, at);

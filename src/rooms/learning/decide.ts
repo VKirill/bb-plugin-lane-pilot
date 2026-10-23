@@ -3,8 +3,8 @@ import { getItem, setItemState, type Db, type Item } from "./store";
 import { sha256Hex } from "@lane-pilot/kit";
 
 /**
- * What the owner decides about a learned item (T3, T5): `accept` the ones that wait for a yes, `reject` them, `drop` one already in force.
- * There is no form: the PM asks in the chat, as it asks anything, and calls this with the answer.
+ * What is decided about a learned item (T3, T5): `accept` the ones that wait for a yes (autonomy.ts accepts them by itself: the owner
+ * said them), `reject` them, `drop` one already in force (an agent or the owner, in the chat, with a reason).
  *
  *  - a global preference becomes a BB memory, but BB offers an agent only `bb memory add`, so the accepted item returns the exact
  *    command and the PM runs it;

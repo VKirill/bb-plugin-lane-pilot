@@ -1,4 +1,4 @@
-import { latestTaskAttemptState, listUnreportedTaskOutcomes, markTaskOutcomesReported, pmHasTasksAtWork, type TaskOutcome } from "../../storage";
+import { latestTaskAttemptState, listUnreportedTaskOutcomes, markTaskOutcomesReported, pmBookkeepingPending, pmHasTasksAtWork, type TaskOutcome } from "../../storage";
 import { taskFamily } from "../../runs";
 import { pmDeferralLines } from "../../deferral/server";
 import { calibrationLine } from "../../forecast";
@@ -67,6 +67,8 @@ export type RelayDeps = {
   taskOutcomes?():Promise<TaskOutcome[]>;
   /** The PM's tasks still at work (queued, being spawned, running, being canceled). */
   tasksAtWork?(pmThreadId:string):Promise<string[]>;
+  /** Lane Pilot's own commit after these accepted tasks (project life) is still on its way to main: the PM would push before it. */
+  bookkeeping?(rows:TaskOutcome[]):Promise<boolean>;
   markReported?(rows:TaskOutcome[]):Promise<void>;
   /** Lines about the overdue and open deferrals of a project, added to the task-result message (SMA rule 6: read them before you promise a date). */
   deferralLines?(projectId:string):string[];
@@ -90,7 +92,7 @@ const TASK_DONE = new Set(["accepted", "blocked", "canceled"]);
  * Canceled-only batches are marked reported with no message (the PM canceled them itself); a mixed batch sums them as a count.
  * Results older than a day were never deliverable (the PM thread is gone): they are dropped.
  */
-export const TASK_NOTICE = { settleMs:60_000, urgentMaxMs:5 * 60_000, quietMs:30_000, maxWaitMs:30 * 60_000, dropAfterMs:86_400_000 };
+export const TASK_NOTICE = { settleMs:60_000, urgentMaxMs:5 * 60_000, quietMs:30_000, maxWaitMs:30 * 60_000, dropAfterMs:86_400_000, bookkeepingMaxMs:10 * 60_000 };
 
 const id = (prefix:string) => `${prefix}_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
 
@@ -412,6 +414,8 @@ export function createRelay(deps:RelayDeps) {
         || (!atWork.length && now - newest >= TASK_NOTICE.quietMs)
         || now - oldest >= TASK_NOTICE.maxWaitMs;
       if (!due || await deps.busy?.(threadId).catch(() => true)) continue;
+      // Results wait for the project-life commit (FeedGen 2026-10-23: the PM pushed, then PROGRESS landed on main unpushed), a blocked task does not.
+      if (!urgent && now - oldest < TASK_NOTICE.bookkeepingMaxMs && await deps.bookkeeping?.(rows).catch(() => false)) continue;
       try {
         await deps.send(threadId, noticeText(rows, atWork, satisfied));
       } catch (cause) {
@@ -595,6 +599,7 @@ export function relayFor(ctx:ServerContext):Relay {
       return listUnreportedTaskOutcomes(ctx.db, since);
     },
     tasksAtWork:async (pmThreadId) => pmHasTasksAtWork(ctx.db, pmThreadId),
+    bookkeeping:async (rows) => pmBookkeepingPending(ctx.db, rows, Date.now()),
     markReported:async (rows) => markTaskOutcomesReported(ctx.db, rows, Date.now()),
     // What a PM reads before it promises a date (SMA rule 6): the register of deferrals and how its forecasts held (src/rooms/forecast).
     deferralLines:(projectId) => {

@@ -960,6 +960,20 @@ export function pmHasTasksAtWork(db: LanePilotDatabase, pmThreadId: string): str
     .all(pmThreadId, ...HOLDING_ATTEMPT_STATES) as Array<{ task_id:string }>).map((row) => row.task_id);
 }
 
+/**
+ * Lane Pilot's own commit after an accepted task is still on its way to main: the project-life stage of one of these accepted attempts
+ * is pending or running, or has not started within `startMs` of the acceptance. A PM told its results now would push before it.
+ */
+export function pmBookkeepingPending(db: LanePilotDatabase, rows: ReadonlyArray<Pick<TaskOutcome, "attemptId" | "taskId" | "state" | "at">>, now: number, startMs = 90_000): boolean {
+  const stage = db.prepare(`SELECT s.state FROM lane_pilot_stage_receipt s JOIN lane_pilot_attempt a ON a.run_id=s.run_id AND a.task_id=s.task_id
+    WHERE a.id=? AND s.stage_id='project-life'`);
+  return rows.some((row) => {
+    if (row.state !== "accepted") return false;
+    const receipt = stage.get(row.attemptId) as { state:string } | undefined;
+    return receipt ? receipt.state === "pending" || receipt.state === "running" : now - row.at < startMs;
+  });
+}
+
 export function markTaskOutcomesReported(db: LanePilotDatabase, rows: Array<Pick<TaskOutcome, "transitionId" | "attemptId" | "pmThreadId">>, at: number): void {
   const insert = db.prepare("INSERT OR IGNORE INTO lane_pilot_pm_notice(transition_id,attempt_id,pm_thread_id,sent_at) VALUES(?,?,?,?)");
   db.transaction(() => { for (const row of rows) insert.run(row.transitionId, row.attemptId, row.pmThreadId, at); })();

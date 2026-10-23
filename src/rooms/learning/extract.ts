@@ -12,13 +12,13 @@ import { bumpItem, candidatesOf, finishCandidates, insertItem, itemId, listItems
  * Where things go:
  *  - a rule or preference for the project: a rule of Lane Pilot (`audience` pm, writer or both) that goes on trial, exactly as a rule
  *    the PM recorded does; the trial confirms it after five clean uses or retires it;
- *  - a rule or preference for all the owner's work: waits for the owner's «yes» (`pending_owner`), then becomes a BB global
- *    preference memory; nothing global is written silently;
+ *  - a rule or preference for all the owner's work: `pending_owner`, accepted by autonomy.ts on the next tick (the owner said it), then
+ *    the project's PM saves it as a BB global preference memory;
  *  - a decision: a note in the project's memory (the decision journal that writers and the PM can search);
- *  - a date or promise: waits for the owner's «yes», then becomes a reminder in the thread it was said in;
+ *  - a date or promise: `pending_owner`, accepted the same way, then a reminder in the thread it was said in;
  *  - a fact: recorded only (anamnesis, a separate layer, owns facts about the owner).
- * A statement that says the same as one in force adds a confirmation to it; one that says the opposite is held for the owner and
- * replaces the old one only when the owner agrees.
+ * A statement that says the same as one in force adds a confirmation to it; one that says the opposite replaces the old one once
+ * accepted (the newer word of the owner wins), and the new rule goes on trial.
  */
 const MAX_TEXT = 600;
 const SIMILAR_FOR_JEV = 0.1;
@@ -194,7 +194,7 @@ export function createExtractor(deps: ExtractDeps) {
       return finish({ state: "duplicate", duplicateOf: verdict.of.ref });
     }
     if (verdict.kind === "opposite") {
-      // The newer word of the owner wins, but not silently: the old statement stays in force until the owner says yes.
+      // The newer word of the owner wins: the old statement stays in force until autonomy.ts accepts this one on the next tick.
       return finish({ state: "pending_owner", duplicateOf: verdict.of.ref, target: "replace", note: `contradicts: ${verdict.of.text.slice(0, 200)}` });
     }
     if (kind === "decision") {

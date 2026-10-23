@@ -11,7 +11,7 @@ import {
  * on the hub, each a full Opus turn over a ~520k context. One reminder arrived after the PM had done the work itself. Lane Pilot
  * now tells the PM the results by itself, one message for a batch, and closes the reminders they satisfy in the same message.
  */
-function harness(options:{ busy?:() => boolean; send?:(threadId:string, text:string) => Promise<void> } = {}) {
+function harness(options:{ busy?:() => boolean; send?:(threadId:string, text:string) => Promise<void>; bookkeeping?:() => boolean } = {}) {
   let items:RelayItem[] = [];
   let now = 10_000_000;
   let outcomes:TaskOutcome[] = [];
@@ -30,6 +30,7 @@ function harness(options:{ busy?:() => boolean; send?:(threadId:string, text:str
     taskStates:async (_project, ids) => Object.fromEntries(ids.map((task) => [task, states[task] ?? null])),
     taskOutcomes:async () => outcomes.filter((row) => !reported.some((done) => done.transitionId === row.transitionId)),
     tasksAtWork:async () => atWork,
+    ...(options.bookkeeping ? { bookkeeping:async () => options.bookkeeping!() } : {}),
     markReported:async (rows) => { reported.push(...rows); },
     scheduleQueued:async () => "qmsg_1",
     dropQueued:async (_thread, id) => { dropped.push(id); return "deleted"; },
@@ -240,5 +241,44 @@ describe("listUnreportedTaskOutcomes", () => {
     expect(listUnreportedTaskOutcomes(db, 0)).toEqual([]);
     transitionAttempt(db, "q1", "blocked", { reason:"needs_human: second" });
     expect(listUnreportedTaskOutcomes(db, 0).map((row) => row.reason)).toEqual(["needs_human: second"]);
+  });
+});
+
+describe("task results wait for Lane Pilot's own commit", () => {
+  it("an accepted task is told once the project-life commit landed, or after the longest wait", async () => {
+    let writing = true;
+    const h = harness({ bookkeeping:() => writing });
+    h.end("a", "accepted");
+    h.tick(TASK_NOTICE.quietMs);
+    await h.relay.sweep();
+    expect(h.sent).toEqual([]);
+    writing = false;
+    await h.relay.sweep();
+    expect(h.sent).toHaveLength(1);
+
+    writing = true;
+    h.end("b", "accepted");
+    h.tick(TASK_NOTICE.bookkeepingMaxMs);
+    await h.relay.sweep();
+    expect(h.sent).toHaveLength(2);
+  });
+
+  it("a blocked task does not wait for it", async () => {
+    const h = harness({ bookkeeping:() => true });
+    h.end("a", "blocked", "needs_human: x");
+    h.tick(TASK_NOTICE.settleMs);
+    await h.relay.sweep();
+    expect(h.sent).toHaveLength(1);
+  });
+});
+
+describe("pmBookkeepingPending", () => {
+  it("is pending while project life runs for an accepted attempt, or has not started a minute and a half after it", async () => {
+    const { pmBookkeepingPending } = await import("../src/rooms/storage/database");
+    const db = openDatabase(createFakePluginHost({ pluginId:"lane-pilot" }).bb);
+    const row = { attemptId:"att_x", taskId:"t", state:"accepted", at:1_000 };
+    expect(pmBookkeepingPending(db, [row], 1_000 + 30_000)).toBe(true);
+    expect(pmBookkeepingPending(db, [row], 1_000 + 120_000)).toBe(false);
+    expect(pmBookkeepingPending(db, [{ ...row, state:"blocked" }], 1_000)).toBe(false);
   });
 });

@@ -271,3 +271,24 @@ describe("the per-task override a dispatch carries for the code critic", () => {
     expect(resolveCodeCriticDefault("off", await loadCriticCodeDefault(kv, "t1"))).toBe("medium");
   });
 });
+
+describe("an acceptance item that says something stays as it was", () => {
+  const facts = { produced: ["src/handler.ts"], changed: { "src/handler.ts": [[80, 90]] as Array<[number, number]> }, lineCount: {}, hunksKnown: true, contractCommands: [], ran: [] };
+  const table = (evidence: string[]) => ({ status: "ok" as const, rows: [{ item: 1, status: "done" as const, evidence }] });
+
+  it("is proven by the lines the candidate left out of its changes", () => {
+    const check = blindPlanFact(["Legacy and error responses unchanged"], table(["src/handler.ts:60-72"]), facts);
+    expect(check.items[0]).toMatchObject({ verdict: "proven", severity: "ok" });
+    expect(check.items[0]!.evidence[0]!.code).toBe("lines_kept");
+  });
+
+  it("is proven, as a warning, by a file the candidate did not touch", () => {
+    const check = blindPlanFact(["Старый адрес работает по-прежнему"], table(["src/legacy.ts"]), facts);
+    expect(check.items[0]).toMatchObject({ verdict: "proven", severity: "warning" });
+  });
+
+  it("an ordinary item still needs changed lines", () => {
+    const check = blindPlanFact(["The keyed response is cached privately"], table(["src/handler.ts:60-72"]), facts);
+    expect(check.items[0]).toMatchObject({ verdict: "unproven", severity: "blocking" });
+  });
+});

@@ -46,11 +46,13 @@ The writer is told the format by one line, `PLAN_FACT_BRIEF_LINE` (`src/rooms/ta
 | `file_changed`, `lines_changed` | yes | the path is among the changed files; the lines overlap a changed hunk (or the file is new and has them) |
 | `lines_unchecked` | yes, with a warning | the file changed, but the diff against the base could not be read |
 | `command_passed` | yes | the command is in `verification[]` and its result came back with exit code 0 |
+| `lines_kept` | yes, for an item that says something stays as it was | the file changed, and the cited lines are left out of its changed hunks |
+| `file_untouched` | yes, with a warning, for such an item | the path is not among the changed files (the diff cannot show it exists) |
 | `file_not_in_diff`, `lines_not_changed`, `lines_missing`, `lines_invalid` | no | the path was not changed, or the lines were not |
 | `command_not_in_contract`, `command_not_run`, `command_failed` | no | the command is not a contract check, has no result, or failed |
 | `unparsed` | no | neither `path[:lines]` nor `cmd:` |
 
-An item is `proven` when one piece of evidence holds. It is blocking when it is `unproven` (claimed done, nothing holds, or no evidence at all), `declared_not_done` (the writer says so) or `no_row` (the table skipped it). Rows for items the contract does not have are listed, not blocking.
+An item «stays as it was» when the contract's line matches `INVARIANT_ITEM` (unchanged, untouched, still works, no changes, не меняется, без изменений, по-прежнему, …); its proof is the code the candidate did not change, and the writer is told to cite those lines (FeedGen run 2026-10-23: «Legacy and error responses unchanged» was called unproven though the writer cited exactly the untouched handler lines). An item is `proven` when one piece of evidence holds. It is blocking when it is `unproven` (claimed done, nothing holds, or no evidence at all), `declared_not_done` (the writer says so) or `no_row` (the table skipped it). Rows for items the contract does not have are listed, not blocking.
 
 The changed hunks come from one shell command run in the task's workspace (`diffHunksCommand`, `src/rooms/tasks/plan-fact.ts:195`): `git diff -U0` against the task's recorded base commit (`lane_pilot_task_git_base`) plus the untracked files; `hunksFromCommandOutput` (`src/rooms/tasks/plan-fact.ts:203`) reads it. A task without a recorded base (a folder without git) or an unreadable diff checks the files only, and the stage says so in `notChecked`.
 

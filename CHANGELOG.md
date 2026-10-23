@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.1.281
+
+Findings of the first real run (FeedGen, 2026-10-23) and the last place the owner was still a step of the loop.
+
+- **Learning switches itself on.** A strong model of its own (the project's rules analyzer, not Jev and not the second opinion) checks 25 judged messages every three hours (at most four runs a day) and labels each decision right or wrong; with seven days of observation and 50 checked cases at 80 % learning goes `active` by itself and logs why, below 80 % it keeps observing. What waited for the owner's «yes» (a date, a global preference, a statement that contradicts one in force) is accepted on the next extractor tick; a global preference goes to the project's PM as the `bb memory add` command to run (`src/rooms/learning/autonomy.ts`).
+- **Plan against fact proves an «unchanged» item.** An acceptance item that says something stays as it was (unchanged, untouched, still works, без изменений, по-прежнему …) is proven by the cited lines the candidate left out of its changes (`lines_kept`) or a file it did not touch (`file_untouched`, a warning); the writer's brief says to cite them. FeedGen's «Legacy and error responses unchanged» was called unproven though the writer cited exactly those lines.
+- **Task results wait for Lane Pilot's own commit.** The PM is told an accepted task's result once its project-life stage has committed PROGRESS to main (at most 10 minutes; a blocked task does not wait): FeedGen's PM pushed, then the bookkeeping commit landed unpushed.
+- **Service projects out of the sidebar.** «LP sandbox …» and «LP bench …» projects are hidden through project-folders' `hidden` item style at start and every night; a project the owner styled himself is left alone. The seven existing ones were hidden on the hub; three obsolete ones (two «LP sandbox bench …», «LP native NOGIT») were deleted with their folders archived.
+
 ## 0.1.280
 
 **Lane Stack pin → 1.66.7 (`b523a3b`).** BB's Claude Code provider reads the model list with an SDK query of `.` outside any thread (every probe and hub restart); the owner-presence hook took it for the owner and held Claude Code writers for 10 minutes. The hook now skips exactly that prompt; a `.` typed in a terminal still counts.

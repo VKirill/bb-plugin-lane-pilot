@@ -15,7 +15,7 @@ import { mountSpecialists } from "../../critique/server";
 import { mountRelay } from "../../relay/server";
 import { mountWorkflowTools } from "../../workflow/server";
 import { mountSelfRepair } from "../../self-repair/server";
-import { mountHookTimeoutWatch } from "../../stability/server";
+import { mountHookTimeoutWatch, mountServiceProjects } from "../../stability/server";
 import { mountWorkflowArchitect } from "../../workflow/server";
 import { mountScheduleTools } from "../../schedule/server";
 import { mountToolFamilies } from "./tool-families";
@@ -381,6 +381,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   mountWorkflowTools(ctx, services);
   mountSelfRepair(ctx);
   mountHookTimeoutWatch(ctx);
+  mountServiceProjects(ctx);
   mountWorkflowArchitect(ctx, services);
   mountScheduleTools(ctx, services);
   mountToolFamilies(ctx);

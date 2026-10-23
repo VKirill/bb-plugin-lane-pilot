@@ -9,6 +9,9 @@ import { brokenWireReason, type WireResult } from "../wires";
  * - `path` or `path:first-last`: the file is among the changed files, and the lines overlap a changed hunk of it;
  * - `cmd:<command>`: the command is one of the contract's `verification[]` commands, and it ran with exit code 0.
  * A `done` row with no piece of evidence that holds is `unproven` and blocks that acceptance item.
+ * An item of the contract that says something stays as it was («legacy responses unchanged», «X still works») is proven the other way
+ * round: by the lines that do the work and were left out of the changed hunks (FeedGen run 2026-10-23: the writer cited exactly those
+ * and the check called the item unproven). The kind of item is read from the contract's text, never from the writer's.
  */
 export const PLAN_FACT_FENCE = "plan-fact";
 
@@ -24,7 +27,7 @@ export type PlanFactRow = z.infer<typeof planFactRowSchema>;
 export const PLAN_FACT_BRIEF_LINE = [
   "End your answer with the plan→fact table: a fenced block opened with ```plan-fact that holds a JSON array, one row per acceptance item in the contract's order (item 1 is the first):",
   '{"item":1,"status":"done","evidence":["src/a.ts:10-24","cmd:npm test"]}, or for an item you did not finish {"item":2,"status":"not_done","why":"<reason>"}.',
-  "Evidence is a file you changed with the lines that do the work (path:first-last, or the path alone) or a verification command of the contract (cmd:<command>).",
+  "Evidence is a file you changed with the lines that do the work (path:first-last, or the path alone) or a verification command of the contract (cmd:<command>); for an item that says something stays unchanged, cite the lines that do that work and that you left as they were.",
   "Lane Pilot checks each entry against the diff and the check results, never your prose; a done row without evidence that holds counts as not done.",
 ].join(" ");
 
@@ -93,13 +96,16 @@ export type PlanFactCheck = {
 };
 
 const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
+
+/** An acceptance item that claims something stays as it was; its proof is code the candidate did not change. */
+export const INVARIANT_ITEM = /\b(unchanged|not changed|untouched|stays? the same|still (?:works?|returns?|passes|serves?)|no (?:other )?changes?)\b|не (?:меня|трога|измен)|без изменений|по-прежнему|как раньше/i;
 const relativePath = (path: string, root?: string) => {
   let clean = path.trim().replace(/^\.\//, "");
   if (root && clean.startsWith(`${root.replace(/\/$/, "")}/`)) clean = clean.slice(root.replace(/\/$/, "").length + 1);
   return clean;
 };
 
-function checkEvidence(evidence: string, facts: PlanFactFacts): EvidenceCheck {
+function checkEvidence(evidence: string, facts: PlanFactFacts, invariant = false): EvidenceCheck {
   const raw = evidence.trim();
   if (/^cmd:/i.test(raw)) {
     const command = normalize(raw.slice(4));
@@ -114,7 +120,11 @@ function checkEvidence(evidence: string, facts: PlanFactFacts): EvidenceCheck {
   const match = /^(.+?)(?::(\d+)(?:-(\d+))?)?$/.exec(raw);
   if (!match || /\s/.test(match[1]!)) return { evidence, kind: "unparsed", ok: false, code: "unparsed", note: "neither path[:lines] nor cmd:<command>" };
   const path = relativePath(match[1]!, facts.root);
-  if (!facts.produced.includes(path)) return { evidence, kind: "file", ok: false, code: "file_not_in_diff", note: `${path} is not among the changed files` };
+  if (!facts.produced.includes(path)) {
+    return invariant
+      ? { evidence, kind: "file", ok: true, code: "file_untouched", note: `${path} is not among the changed files, as the item says` }
+      : { evidence, kind: "file", ok: false, code: "file_not_in_diff", note: `${path} is not among the changed files` };
+  }
   if (match[2] === undefined) return { evidence, kind: "file", ok: true, code: "file_changed", note: "among the changed files" };
   const from = Number(match[2]);
   const to = match[3] === undefined ? from : Number(match[3]);
@@ -128,8 +138,9 @@ function checkEvidence(evidence: string, facts: PlanFactFacts): EvidenceCheck {
       ? { evidence, kind: "file", ok: false, code: "lines_missing", note: `${path} has ${count} lines` }
       : { evidence, kind: "file", ok: true, code: "lines_changed", note: "new file" };
   }
-  return known.some(([a, b]) => from <= b && to >= a)
-    ? { evidence, kind: "file", ok: true, code: "lines_changed", note: "overlaps a changed hunk" }
+  if (known.some(([a, b]) => from <= b && to >= a)) return { evidence, kind: "file", ok: true, code: "lines_changed", note: "overlaps a changed hunk" };
+  return invariant
+    ? { evidence, kind: "file", ok: true, code: "lines_kept", note: `lines ${from}-${to} of ${path} are left out of the changed hunks, as the item says` }
     : { evidence, kind: "file", ok: false, code: "lines_not_changed", note: `lines ${from}-${to} of ${path} are not in a changed hunk` };
 }
 
@@ -146,9 +157,10 @@ export function blindPlanFact(acceptance: readonly string[], table: PlanFactTabl
     const row = byItem.get(index + 1);
     if (!row) return { item: index + 1, acceptance: text, claimed: "none", verdict: "no_row", severity: "blocking", evidence: [], why: null };
     if (row.status === "not_done") return { item: index + 1, acceptance: text, claimed: "not_done", verdict: "declared_not_done", severity: "blocking", evidence: [], why: row.why ?? null };
-    const evidence = (row.evidence ?? []).map((entry) => checkEvidence(entry, facts));
+    const evidence = (row.evidence ?? []).map((entry) => checkEvidence(entry, facts, INVARIANT_ITEM.test(text)));
     const proven = evidence.some((entry) => entry.ok);
-    const soft = evidence.some((entry) => entry.ok && entry.code === "lines_unchecked");
+    // A file the item says is untouched cannot be shown to exist from the diff alone: proven, but as a warning.
+    const soft = evidence.some((entry) => entry.ok && (entry.code === "lines_unchecked" || entry.code === "file_untouched"));
     return { item: index + 1, acceptance: text, claimed: "done", verdict: proven ? "proven" : "unproven",
       severity: proven ? (evidence.some((entry) => !entry.ok) || soft ? "warning" : "ok") : "blocking", evidence, why: row.why ?? null };
   });

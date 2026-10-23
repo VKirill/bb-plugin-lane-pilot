@@ -8,6 +8,7 @@ export { HOOK_TIMEOUTS_KEY, mountHookTimeoutWatch } from "./hook-timeouts";
 export type { HookTimeoutRecord } from "./hook-timeouts";
 export { createProbes } from "./probes";
 export { createProviderRetryGuard } from "./provider-retry";
+export { hideServiceProjects, mountServiceProjects } from "./service-projects";
 export { createReconcile } from "./reconcile";
 export { BREAKERS_KEY, DRILL_KEY, PARKED_KEY, createStability } from "./stability";
 export type { DrillOutcome, ParkedTask } from "./stability";

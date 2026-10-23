@@ -9,6 +9,7 @@ import { memorySettingsFor } from "../self-repair/server/insights";
 import { registerObservedTool } from "../core/server";
 import type { ServerCore } from "../core/server";
 import type { Services } from "../core/server";
+import { createAutonomy } from "./autonomy";
 import { DEFAULT_CONFIG, loadConfig, type LearningConfig } from "./config";
 import { createDecisions } from "./decide";
 import { createDigest } from "./digest";
@@ -29,7 +30,8 @@ import { DAY_MS, projectsWithCandidates, purgeStaleBodies, startOfDay, type Item
 /**
  * The learning room, wired (src/learning). `createLearning` builds the pieces on the plugin's database and key-value store;
  * `mountLearning` connects them: the observer subscribes to the owner-message hub of the anamnesis room, the live feed listens to
- * BB's thread events, the PM gets its rules, the schedules run the extractor, the daily report and the signal scans, and the one
+ * BB's thread events, the PM gets its rules, the schedules run the extractor, the model review of the judges (autonomy.ts: it also
+ * switches learning on and settles what waited for the owner), the daily report and the signal scans, and the one
  * PM tool (an action of `lane_pilot_memory`) and the CLI `bb lane-pilot learning` reach the same operations.
  */
 const EXTRACT_AFTER_MS = 10 * 60_000;
@@ -122,6 +124,11 @@ export function createLearning(ctx: ServerCore, services: Services) {
     memoryFill: () => memoryFill(db, (projectId) => { const s = memorySettingsFor(db, projectId); return { noteBudget: s.noteBudget, coreBudget: s.coreBudget }; }).slice(0, 12),
   });
 
+  const sendToPm = async (threadId: string, text: string) => { await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never); };
+  const autonomy = createAutonomy({
+    db, kv, config: () => config, status: () => ops.status(), configure: (words) => ops.configure(words), runModel, decisions, pmThread, sendToPm, log,
+  });
+
   const signalDeps = {
     db, jev, log,
     finalAnswer: async (threadId: string) => {
@@ -154,6 +161,7 @@ export function createLearning(ctx: ServerCore, services: Services) {
       const result = await extractNow(waiting.projectId).catch((cause: unknown) => ({ state: "error", reason: cause instanceof Error ? cause.message : String(cause) }));
       if (result.state !== "nothing") log(`learning: extraction for ${waiting.projectId}: ${JSON.stringify(result)}`);
     }
+    if (!ctx.isDisposed()) await autonomy.settleWaiting();
   }
 
   /* ---- operations (the PM's action and the CLI) ---- */
@@ -162,7 +170,7 @@ export function createLearning(ctx: ServerCore, services: Services) {
     const needId = () => { if (!args.id) throw new Error(`op "${op}" needs the id of a learned item`); return args.id; };
     switch (op) {
       case "status": return await ops.status();
-      case "review": return { cases: ops.review(args.limit ?? 10), how: 'Show the owner each case and mark it with op "label": id and correct true (the decision was right) or false.' };
+      case "review": return { cases: ops.review(args.limit ?? 10), how: 'A model checks these by itself (autonomy.ts); op "label" with id and correct true or false adds a mark of your own.' };
       case "label": if (!args.id || args.correct === undefined) throw new Error('op "label" needs id and correct'); return ops.label(args.id, args.correct);
       case "items": return ops.items({ ...(args.projectId ? { projectId: args.projectId } : {}), ...(args.state ? { states: [args.state as ItemState] } : {}), ...(args.kind ? { kinds: [args.kind as ItemKind] } : {}), limit: args.limit ?? 30 });
       case "accept": return await decisions.accept(needId());
@@ -182,7 +190,7 @@ export function createLearning(ctx: ServerCore, services: Services) {
     }
   }
 
-  return { observer, live, extractor, decisions, digest, ops, run, extractNow, extractTick, refresh, signalDeps, config: () => config, pmThread, noteQuestion: (input: { projectId: string; threadId: string; question: string; detail?: string | undefined }) => noteOwnerQuestion(signalDeps, input) };
+  return { observer, live, extractor, decisions, digest, ops, run, extractNow, extractTick, reviewTick: autonomy.reviewTick, refresh, signalDeps, config: () => config, pmThread, noteQuestion: (input: { projectId: string; threadId: string; question: string; detail?: string | undefined }) => noteOwnerQuestion(signalDeps, input) };
 }
 export type Learning = ReturnType<typeof createLearning>;
 
@@ -194,7 +202,7 @@ export function mountLearning(ctx: ServerCore, services: Services): Learning | n
   registerObservedTool(bb.agents, {
     name: "lane_pilot_learned",
     description: "What Lane Pilot learned from the owner's own messages: status and evidence, cases to check, learned items, the owner's yes or no, PM rules for a text, settings.",
-    instructions: `op: status (is it ready to act, cost, agreement), review (cases to mark), label {id, correct}, items {state?, kind?, projectId?}, accept/reject/drop {id}, digest {send?}, rules {projectId, text?}, agreement {days?}, signals {kind?}, config {settings:["key=value"]}, extract {projectId}. Learning is observing until the owner switches it on: ask him, then config {settings:["mode=active"]}. Ask the owner before accept; a global preference accept returns a bb memory add command to run.`,
+    instructions: `op: status (is it ready to act, cost, agreement), review (cases to mark), label {id, correct}, items {state?, kind?, projectId?}, accept/reject/drop {id}, digest {send?}, rules {projectId, text?}, agreement {days?}, signals {kind?}, config {settings:["key=value"]}, extract {projectId}. Learning switches itself on once a model has checked enough of the judges' decisions; do not ask the owner. Items are accepted by themselves; when Lane Pilot sends you a bb memory add command for a global preference, run it.`,
     parameters: z.object({
       op: z.enum(OPS), id: z.string().min(1).optional(), correct: z.boolean().optional(), state: z.string().optional(), kind: z.string().optional(),
       projectId: z.string().min(1).optional(), limit: z.number().int().min(1).max(100).optional(), days: z.number().int().min(1).max(90).optional(),
@@ -248,6 +256,7 @@ export function mountLearning(ctx: ServerCore, services: Services): Learning | n
 
     // Cron, off the quarter-hours (BB starts at most 8 isolated runs at once).
     scheduleIsolated(bb, "learning-extract", "11,41 * * * *", async () => { if (!ctx.isDisposed()) await room.extractTick(); }, { timeoutMs: 30 * 60_000 });
+    scheduleIsolated(bb, "learning-review", "26 */3 * * *", async () => { if (!ctx.isDisposed()) await room.reviewTick(); }, { timeoutMs: 20 * 60_000 });
     scheduleIsolated(bb, "learning-digest", "20 18 * * *", async () => {
       if (ctx.isDisposed() || room.config().mode !== "active") return;
       const sent = await room.digest.run();

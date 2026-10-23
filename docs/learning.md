@@ -12,21 +12,24 @@ owner message (a person's request in a visible top-level thread: the one collect
   observe mode stops here (a row in lane_pilot_learning_obs)
   active mode:  learn -> masked text kept -> extractor (JSON) -> compare with what is in force (Jev learning.same_as)
         rule/preference, project   -> Lane Pilot rule on trial (audience pm|writer|both)
-        rule/preference, owner     -> waits for the owner's yes -> `bb memory add --scope global --kind preference`
+        rule/preference, owner     -> accepted by itself -> the PM runs `bb memory add --scope global --kind preference`
         decision                   -> note in the project's memory
-        date                       -> waits for yes -> reminder in the thread
+        date                       -> accepted by itself -> reminder in the thread
         fact                       -> recorded only (the anamnesis owns facts about the owner)
-        same as one in force       -> confirmation; opposite -> waits for the owner, replaces on yes
+        same as one in force       -> confirmation; opposite -> replaces the old one, the new rule on trial
         annoyance                  -> kv record -> self-repair incident of kind `owner`
-  daily 18:20: one message per project to the PM chat; the PM asks the owner and calls accept / reject / drop
+  every extractor tick (autonomy.ts): what waited for a yes is accepted; daily 18:20: one report per project to the PM chat
 ```
 
 ## Switching on
 
-It starts in `observe`: judged and recorded, nothing else. `bb lane-pilot learning status` (or the PM: `lane_pilot_memory
-{action:"learned", op:"status"}`) lists what is missing for `active`: seven days of observation, 50 cases checked by hand
-(`review`, then `label <id> ok|wrong`) at 80 % or better, and shows the agreement of the two judges and the cost. Then
-`bb lane-pilot learning config mode=active`.
+It starts in `observe`: judged and recorded, nothing else. The owner takes no part in switching it on (owner out of the loop,
+2026-10-23): every three hours (`learning-review`, at most four runs a day) a strong model of its own — the project's rules analyzer,
+not Jev and not the second opinion — checks a batch of 25 judged messages and labels each decision right or wrong
+(`src/rooms/learning/autonomy.ts`). `bb lane-pilot learning status` (or the PM: `lane_pilot_memory {action:"learned", op:"status"}`)
+lists what is missing for `active`: seven days of observation and 50 checked cases at 80 % or better. When both hold, learning
+switches itself to `active` and logs why; below 80 % it keeps observing, because the judges need fixing, not a person.
+`label <id> ok|wrong` still adds a mark by hand, and `config mode=observe` stops acting.
 
 ## Settings (`learning:config`, changed with `learning config key=value`)
 
