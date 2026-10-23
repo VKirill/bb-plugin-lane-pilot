@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { existsSync, unlinkSync } from "node:fs";
-import { appendFile, cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { appendFile, cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, rmdir, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative } from "node:path";
+import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { spawnAsync } from "@lane-pilot/kit";
 import { isBookkeepingPath } from "@lane-pilot/settings-catalog";
 import { matchOwnsPath } from "@lane-pilot/kit";
@@ -298,7 +298,8 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
   // Lane Pilot's own worktree is done once its work is in main. A conflict keeps it: uncommitted edits in main block
   // the merge without anything to redo, and the committed work there is merged as soon as main is clean.
   if(input.removeWorktree&&(result.status==="merged"||result.status==="up-to-date")) {
-    await git(input.basePath,["worktree","remove","--force",await worktreeTop(input.worktreePath)]);
+    const top=await worktreeTop(input.worktreePath);
+    if((await git(input.basePath,["worktree","remove","--force",top])).ok) await removeEmptyWorktreeParent(top);
     if(branch.startsWith("lane/")) await git(input.basePath,["branch","-D",branch]);
   }
   return result;
@@ -755,6 +756,16 @@ export async function prepareWorktree(input:{basePath:string;worktreePath:string
   return {linked};
 }
 
+/**
+ * Lane Pilot's worktrees sit in a folder of their own (`~/.lane-pilot/worktrees/lpattempt_…/feed-gen`); `git worktree remove` takes the
+ * checkout and left that folder behind, empty (339 of 347 on OVH, 2026-10-23). Only an empty one directly under worktrees/ goes.
+ */
+async function removeEmptyWorktreeParent(top:string):Promise<void> {
+  const parent=dirname(top);
+  if(basename(dirname(parent))!=="worktrees"||basename(dirname(dirname(parent)))!==".lane-pilot") return;
+  await rmdir(parent).catch(()=>undefined);
+}
+
 /** The worktree's own top folder: a subfolder workspace's path is not what `git worktree remove` takes. */
 async function worktreeTop(worktreePath:string):Promise<string> {
   return (await git(worktreePath,["rev-parse","--show-toplevel"])).stdout.trim()||worktreePath;
@@ -774,8 +785,9 @@ export async function removeLaneWorktree(input:{basePath:string;worktreePath:str
     if(saved.status==="failed") return {removed:false,saved};
   }
   await recoverStaleGitLock(input.basePath);
-  const removed=(await git(input.basePath,["worktree","remove","--force",await worktreeTop(input.worktreePath)])).ok;
-  if(removed) await git(input.basePath,["branch","-D",branch]);
+  const top=await worktreeTop(input.worktreePath);
+  const removed=(await git(input.basePath,["worktree","remove","--force",top])).ok;
+  if(removed) { await git(input.basePath,["branch","-D",branch]); await removeEmptyWorktreeParent(top); }
   return {removed,...(saved?{saved}:{})};
 }
 

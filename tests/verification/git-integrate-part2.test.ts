@@ -36,6 +36,20 @@ it("removes only Lane Pilot's own worktree of a failed attempt", async () => {
   expect(await removeLaneWorktree({ basePath: base, worktreePath: foreign })).toEqual({ removed: false });
 });
 
+it("removes the empty folder a Lane Pilot worktree sat in, and only under .lane-pilot/worktrees", async () => {
+  const { createWorktree, removeLaneWorktree } = await import("../../src/rooms/verification/git-integrate");
+  const { stat } = await import("node:fs/promises");
+  const { base } = await repo();
+  const holder = join(base, "..", ".lane-pilot", "worktrees", "lpattempt_9");
+  await createWorktree({ basePath: base, targetPath: join(holder, "main"), name: "lpattempt_9" });
+  expect(await removeLaneWorktree({ basePath: base, worktreePath: join(holder, "main") })).toEqual({ removed: true });
+  expect(await stat(holder).catch(() => null)).toBeNull();
+  const elsewhere = join(base, "..", "own3", "main");
+  await createWorktree({ basePath: base, targetPath: elsewhere, name: "lpattempt_10" });
+  expect(await removeLaneWorktree({ basePath: base, worktreePath: elsewhere })).toEqual({ removed: true });
+  expect((await stat(join(base, "..", "own3")))?.isDirectory()).toBe(true);
+});
+
 it("re-points workspace package links at the worktree so checks import the writer's edits", async () => {
   const { prepareWorktree } = await import("../../src/rooms/verification/git-integrate");
   const { mkdir, lstat, realpath } = await import("node:fs/promises");
