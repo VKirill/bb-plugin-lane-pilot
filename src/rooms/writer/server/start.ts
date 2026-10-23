@@ -4,7 +4,7 @@ import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop,
 import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { providerPoolCap } from "@lane-pilot/settings-catalog";
-import { DEPENDENCY_REDO_WAIT_MS, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, transitionAttempt, taskBasePath } from "../../storage";
+import { DEPENDENCY_REDO_WAIT_MS, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, noteToldPmDirectly, transitionAttempt, taskBasePath } from "../../storage";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
 import { reconcile } from "../../stability";
@@ -909,6 +909,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       const reason = accepted ? undefined : String(last.reason ?? last.status ?? "writer_failed");
       // A writer's question would wait unseen: writers are quiet children and do not wake the PM.
       if (!accepted && reason && failureClass(String(last.status), reason) === "judgment" && input.pmThreadId) {
+        noteToldPmDirectly(input.pmThreadId, input.taskId);
         void sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:writerThreadId || undefined,
           text:`Lane Pilot: ${input.taskId} stopped with a question from its writer. Answer it with lane_pilot_answer_writer (taskId, answer) — from the code or docs if they settle it, else ask the owner once; the writer continues in its own thread and no attempt is spent. Send the task again only when the contract itself must change; tasks that depend on it wait for that.${liveFolder ? " This folder has no git, so the writer's files stay where they are and the folder stays locked: other tasks for it queue until this question is answered (or the task is sent again)." : ""}\n${reason.slice(0, 1200)}` }).catch(() => undefined);
       }

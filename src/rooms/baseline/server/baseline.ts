@@ -1,5 +1,5 @@
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
-import { getRunSettingsScopes, listCheckDurations, taskBasePath } from "../../storage";
+import { getRunSettingsScopes, listCheckDurations, noteToldPmDirectly, taskBasePath } from "../../storage";
 import type { RollbackApi, RollbackTarget } from "../../rollback/server";
 import type { ServerCore, Services } from "../../core/server";
 import {
@@ -164,12 +164,14 @@ export function createBaseline(ctx: ServerCore, services: Services) {
     const text = stopped
       ? `Lane Pilot: задача ${input.taskId} не запущена: ${fact} (baseline.already_built=stop).\n${list}\nЕсли задача действительно не нужна, ничего делать не надо. Если проверки слабые и работа не сделана, усильте acceptance/verification и отправьте задачу снова.`
       : `Lane Pilot: ${fact}: задача, возможно, уже сделана. Писатель всё равно стартует (baseline.already_built=notify); карточка приёмки покажет эти проверки.\n${list}\nЕсли работа уже сделана, остановите задачу (lane_pilot_cancel); если проверки слабые, усильте их.`;
+    if (stopped) noteToldPmDirectly(input.pmThreadId, input.taskId);
     await bb.sdk.threads.send({ threadId: input.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never).catch(() => undefined);
   }
 
   async function tellPmVacuous(input: BaselineInput, vacuous: BaselineCheck[], baseSha: string | null): Promise<void> {
     if (!input.pmThreadId) return;
     const text = `Lane Pilot: задача ${input.taskId} не запущена: ${vacuousMessage(input.taskId, vacuous, input.task.risk, baseSha)}`;
+    noteToldPmDirectly(input.pmThreadId, input.taskId);
     await bb.sdk.threads.send({ threadId: input.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never).catch(() => undefined);
   }
 

@@ -11,7 +11,7 @@ import {
  * on the hub, each a full Opus turn over a ~520k context. One reminder arrived after the PM had done the work itself. Lane Pilot
  * now tells the PM the results by itself, one message for a batch, and closes the reminders they satisfy in the same message.
  */
-function harness(options:{ busy?:() => boolean; send?:(threadId:string, text:string) => Promise<void>; bookkeeping?:() => boolean } = {}) {
+function harness(options:{ busy?:() => boolean; send?:(threadId:string, text:string) => Promise<void>; bookkeeping?:() => boolean; toldDirectly?:(taskId:string) => boolean } = {}) {
   let items:RelayItem[] = [];
   let now = 10_000_000;
   let outcomes:TaskOutcome[] = [];
@@ -31,6 +31,7 @@ function harness(options:{ busy?:() => boolean; send?:(threadId:string, text:str
     taskOutcomes:async () => outcomes.filter((row) => !reported.some((done) => done.transitionId === row.transitionId)),
     tasksAtWork:async () => atWork,
     ...(options.bookkeeping ? { bookkeeping:async () => options.bookkeeping!() } : {}),
+    ...(options.toldDirectly ? { toldDirectly:(row:TaskOutcome) => options.toldDirectly!(row.taskId) } : {}),
     markReported:async (rows) => { reported.push(...rows); },
     scheduleQueued:async () => "qmsg_1",
     dropQueued:async (_thread, id) => { dropped.push(id); return "deleted"; },
@@ -231,6 +232,20 @@ describe("listUnreportedTaskOutcomes", () => {
     expect(listUnreportedTaskOutcomes(db, 0)).toEqual([]);
   });
 
+  it("skips versions the PM replaced with a renumbered redo: x.3 blocked or canceled while x.4 runs (Vampirism Fire, 2026-10-23)", async () => {
+    const db = world();
+    finish(db, "a3", "vf-s1-xp.3", "blocked", "verdict_block: no_red_on_base");
+    createAttempt(db, { id:"b3", runId:"run", taskId:"vf-s1-round.3" });
+    transitionAttempt(db, "b3", "canceled");
+    finish(db, "c3", "vf-s0-damage.3", "accepted");
+    await new Promise((wake) => setTimeout(wake, 2));
+    createAttempt(db, { id:"a4", runId:"run", taskId:"vf-s1-xp.4" });
+    createAttempt(db, { id:"b4", runId:"run", taskId:"vf-s1-round.4" });
+    // A task whose name only starts the same way is another family.
+    createAttempt(db, { id:"d1", runId:"run", taskId:"vf-s0-damage-extra" });
+    expect(listUnreportedTaskOutcomes(db, 0).map((row) => row.taskId)).toEqual(["vf-s0-damage.3"]);
+  });
+
   it("a blocked task the PM answered is reported again when it blocks a second time", () => {
     const db = world();
     finish(db, "q1", "q", "blocked", "needs_human: first");
@@ -280,5 +295,21 @@ describe("pmBookkeepingPending", () => {
     expect(pmBookkeepingPending(db, [row], 1_000 + 30_000)).toBe(true);
     expect(pmBookkeepingPending(db, [row], 1_000 + 120_000)).toBe(false);
     expect(pmBookkeepingPending(db, [{ ...row, state:"blocked" }], 1_000)).toBe(false);
+  });
+});
+
+describe("an outcome Lane Pilot already told the PM directly", () => {
+  it("is marked reported and does not wake the PM again (vf-s1-xp.3: «не запущена» at 20:18, the batch at 20:19)", async () => {
+    const h = harness({ toldDirectly:(taskId) => taskId === "x" });
+    h.end("x", "blocked", "verdict_block: no_red_on_base");
+    h.tick(TASK_NOTICE.settleMs);
+    await h.relay.sweep();
+    expect(h.sent).toEqual([]);
+    expect(h.reported.map((row) => row.taskId)).toEqual(["x"]);
+    h.end("y", "accepted");
+    h.tick(TASK_NOTICE.quietMs);
+    await h.relay.sweep();
+    expect(h.sent).toHaveLength(1);
+    expect(h.sent[0]!.text).not.toContain("- x ");
   });
 });

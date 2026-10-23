@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.287
+
+**A PM is not woken for news it already has.** The batched «results of your tasks» listed versions the PM had already replaced (`vf-s1-xp.3` blocked and two `.3` tasks it canceled, while their `.4` ran): the check for a newer version looked for `x.3.1`, and PMs number redos `x.4`; redos of one task family are skipped now. An outcome Lane Pilot already told the PM in a message of its own (a writer's question, «задача не запущена» for its baseline) is marked reported instead of repeated a minute later.
+
 ## 0.1.286
 
 **Checks may write the shared /tmp.** A check that drives an app outside the sandbox talks to it through files in /tmp: Vampirism Fire's `studio_test.py` keeps its lock and run files in /tmp/vf-tests for Roblox Studio and failed with «Operation not permitted». Seatbelt now allows writes under /private/tmp and bubblewrap binds the real /tmp; the repository's .git, .agents and .cls, the real home and everything else stay read-only.

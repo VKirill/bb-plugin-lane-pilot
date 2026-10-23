@@ -1,4 +1,4 @@
-import { latestTaskAttemptState, listUnreportedTaskOutcomes, markTaskOutcomesReported, pmBookkeepingPending, pmHasTasksAtWork, type TaskOutcome } from "../../storage";
+import { latestTaskAttemptState, listUnreportedTaskOutcomes, markTaskOutcomesReported, pmBookkeepingPending, pmHasTasksAtWork, toldPmDirectly, type TaskOutcome } from "../../storage";
 import { taskFamily } from "../../runs";
 import { pmDeferralLines } from "../../deferral/server";
 import { calibrationLine } from "../../forecast";
@@ -69,6 +69,8 @@ export type RelayDeps = {
   tasksAtWork?(pmThreadId:string):Promise<string[]>;
   /** Lane Pilot's own commit after these accepted tasks (project life) is still on its way to main: the PM would push before it. */
   bookkeeping?(rows:TaskOutcome[]):Promise<boolean>;
+  /** Lane Pilot already told the PM this outcome in a message of its own (a writer's question, a task not started). */
+  toldDirectly?(row:TaskOutcome):boolean;
   markReported?(rows:TaskOutcome[]):Promise<void>;
   /** Lines about the overdue and open deferrals of a project, added to the task-result message (SMA rule 6: read them before you promise a date). */
   deferralLines?(projectId:string):string[];
@@ -390,10 +392,10 @@ export function createRelay(deps:RelayDeps) {
     if (!deps.taskOutcomes) return 0;
     const now = deps.now();
     const outcomes = await deps.taskOutcomes().catch((cause:unknown) => { deps.log(`relay: task results unreadable: ${cause instanceof Error ? cause.message : String(cause)}`); return [] as TaskOutcome[]; });
-    const stale = outcomes.filter((row) => now - row.at > TASK_NOTICE.dropAfterMs);
+    const stale = outcomes.filter((row) => now - row.at > TASK_NOTICE.dropAfterMs || deps.toldDirectly?.(row));
     if (stale.length) await deps.markReported?.(stale);
     const byThread = new Map<string, TaskOutcome[]>();
-    for (const row of outcomes) if (now - row.at <= TASK_NOTICE.dropAfterMs) byThread.set(row.pmThreadId, [...(byThread.get(row.pmThreadId) ?? []), row]);
+    for (const row of outcomes) if (now - row.at <= TASK_NOTICE.dropAfterMs && !deps.toldDirectly?.(row)) byThread.set(row.pmThreadId, [...(byThread.get(row.pmThreadId) ?? []), row]);
     let sent = 0;
     for (const [threadId, rows] of byThread) {
       if (rows.every((row) => row.state === "canceled")) {
@@ -600,6 +602,7 @@ export function relayFor(ctx:ServerContext):Relay {
     },
     tasksAtWork:async (pmThreadId) => pmHasTasksAtWork(ctx.db, pmThreadId),
     bookkeeping:async (rows) => pmBookkeepingPending(ctx.db, rows, Date.now()),
+    toldDirectly:(row) => toldPmDirectly(row.pmThreadId, row.taskId, row.at),
     markReported:async (rows) => markTaskOutcomesReported(ctx.db, rows, Date.now()),
     // What a PM reads before it promises a date (SMA rule 6): the register of deferrals and how its forecasts held (src/rooms/forecast).
     deferralLines:(projectId) => {
