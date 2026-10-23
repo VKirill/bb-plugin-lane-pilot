@@ -82,6 +82,11 @@ describe("the regression pass over accepted tasks (D1-2)", () => {
     const finding = first.projects[0]!.findings[0]!;
     expect(finding.note).toContain("the culprit task changed the same file(s): a.txt");
     expect(listRegressions(w.db, { projectId: "projA" })[0]!.evidence).toMatchObject({ sharedFiles: ["a.txt"] });
+    expect(finding.sharedFiles).toEqual(["a.txt"]);
+    // the open finding seen again (the run-goal check forces a pass): the shared files come with it and stay in its evidence
+    const seen = (await w.services.regression.run({ projectId: "projA", force: true })).projects[0]!.findings[0]!;
+    expect(seen).toMatchObject({ fresh: false, id: finding.id, sharedFiles: ["a.txt"] });
+    expect(listRegressions(w.db, { projectId: "projA" })[0]!.evidence).toMatchObject({ sharedFiles: ["a.txt"] });
     expect(w.services.regression.close(finding.id!, "the release pin was meant").ok).toBe(true);
     expect(w.services.regression.close(finding.id!, "again").ok).toBe(false);
     // main moves on, the check is still red: it stays settled, no new finding, nothing on the morning list

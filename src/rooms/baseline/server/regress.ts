@@ -47,6 +47,8 @@ export type TaskReport = {
 export type RegressFinding = {
   taskId: string; command: string; kind: "regression" | "unstable"; bisect: RegressionRecord["bisectStatus"]; culpritCommit: string | null; culpritTask: string | null;
   culpritSubject: string | null; note: string | null; id: number | null; fresh: boolean;
+  /** The files the red task and the culprit task both changed (the run-goal check reads them to tell a meant rewrite from a break). */
+  sharedFiles: string[];
 };
 
 export type ProjectPass = {
@@ -166,15 +168,17 @@ export function createRegression(ctx: ServerCore, services: Services) {
   /** A check red now: is it a regression (green at its own merge commit) or only unstable, and who broke it. */
   async function judge(c: Candidate, item: VerificationItem, row: RollbackItem, headSha: string, settings: RegressSettings, dry: boolean): Promise<RegressFinding> {
     const base = { taskId: c.target.taskId, command: item.command };
-    const finding = (patch: Partial<RegressFinding>): RegressFinding => ({ ...base, kind: "regression", bisect: "skipped", culpritCommit: null, culpritTask: null, culpritSubject: null, note: null, id: null, fresh: false, ...patch });
+    const finding = (patch: Partial<RegressFinding>): RegressFinding => ({ ...base, kind: "regression", bisect: "skipped", culpritCommit: null, culpritTask: null, culpritSubject: null, note: null, id: null, fresh: false, sharedFiles: [], ...patch });
     const existing = dry ? undefined : openRegression(db, c.target.taskId, item.command);
     if (existing) {
-      touchRegression(db, existing.id, headSha, { output: tail(row.tail), head: headSha });
-      return finding({ kind: existing.kind, bisect: existing.bisectStatus, culpritCommit: existing.culpritCommit, culpritTask: existing.culpritTask, culpritSubject: existing.culpritSubject, note: existing.note, id: existing.id });
+      const shared = existing.culpritTask ? sharedFiles(c.target.taskId, existing.culpritTask) : [];
+      touchRegression(db, existing.id, headSha, { output: tail(row.tail), head: headSha, sharedFiles: shared });
+      return finding({ kind: existing.kind, bisect: existing.bisectStatus, culpritCommit: existing.culpritCommit, culpritTask: existing.culpritTask, culpritSubject: existing.culpritSubject, note: existing.note, id: existing.id, sharedFiles: shared });
     }
     if (dry) return finding({ note: "dry run: not confirmed at the merge commit, not bisected" });
     const settled = settledByHand(db, c.target.taskId, item.command);
     if (settled) return finding({ kind: settled.kind, bisect: settled.bisectStatus, culpritCommit: settled.culpritCommit, culpritTask: settled.culpritTask, culpritSubject: settled.culpritSubject, id: settled.id,
+      sharedFiles: settled.culpritTask ? sharedFiles(c.target.taskId, settled.culpritTask) : [],
       note: `settled by hand earlier (${settled.closedReason ?? "no reason"}): not opened again while the check stays red` });
     // Green at the merge commit too? A check that is red there as well never was a regression of later work.
     let kind: RegressFinding["kind"] = "regression";
@@ -194,7 +198,7 @@ export function createRegression(ctx: ServerCore, services: Services) {
       greenAt: c.mergeCommit, redAt: headSha, bisectStatus: found.status, culpritCommit: found.commit, culpritTask: found.task, culpritSubject: found.subject, note: stored,
       evidence: { output: tail(row.tail), head: headSha, exitCode: row.exitCode, sharedFiles: shared } });
     log(`regress: ${c.target.taskId} \`${item.command}\` is red on main ${headSha.slice(0, 10)}${found.commit ? `, first bad commit ${found.commit.slice(0, 10)}${found.task ? ` (task ${found.task})` : ""}` : ` (${stored ?? "no culprit"})`}`);
-    return finding({ kind, bisect: found.status, culpritCommit: found.commit, culpritTask: found.task, culpritSubject: found.subject, note: stored, id, fresh: true });
+    return finding({ kind, bisect: found.status, culpritCommit: found.commit, culpritTask: found.task, culpritSubject: found.subject, note: stored, id, fresh: true, sharedFiles: shared });
   }
 
   async function passFor(projectId: string, options: RegressOptions, deadline: number): Promise<ProjectPass> {

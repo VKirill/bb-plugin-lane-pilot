@@ -7,7 +7,8 @@ import { getRunGoal, saveRunGoal, type RunGoalRecord } from "../store";
  * The run-goal service (SMA atlas D2-3). A sweep every 20 minutes finds the runs of the last week that are done (every task accepted or
  * canceled, two accepted at least) and have no verdict yet, and checks each once: the regression pass runs every accepted task's checks
  * together on the project's current main (one throwaway worktree, a bisect for what went red). A failed goal is a message to the PM with
- * the red checks and the commit bisect named; the verdict is kept per run.
+ * the red checks and the commit bisect named; a red check broken by work outside the run, or rewritten on purpose by a later task of the
+ * run, is set aside (logic.ts goalVerdict) and stays in the regression list; the verdict is kept per run.
  */
 const WEEK = 7 * 86_400_000;
 
@@ -25,7 +26,7 @@ export function createRunGoal(ctx: ServerCore, services: Services) {
     const tasks = taskStates(runId);
     const result = await services.regression.run({ projectId: run.project_id, runId, force: true });
     const pass = result.projects[0] ?? { skipped: "the regression pass returned nothing", tasks: [], findings: [], head: null };
-    const verdict = goalVerdict(pass);
+    const verdict = goalVerdict(pass, tasks.map((task) => task.taskId));
     const record: RunGoalRecord = { runId, projectId: run.project_id, state: verdict.state, tasks: tasks.filter((task) => task.state === "accepted").length, headSha: pass.head ?? null, red: verdict.red, detail: verdict.detail, at: Date.now() };
     saveRunGoal(db, record);
     if (verdict.state === "failed" && run.pm_thread_id) {

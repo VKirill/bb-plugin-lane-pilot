@@ -24,6 +24,71 @@ describe("when a run is done and what its checks together mean", () => {
   });
 });
 
+describe("red checks that are not the run's composition (lprun_38203a8b, 2026-10-23: 13 red, none a break of the run)", () => {
+  // The real case, cut down: a run of releases and a revert, checked five days later on a main with a PR and docs refreshes on top.
+  const release = (version: string) => `node -e "const p=require('./package.json');if(p.version!=='${version}')process.exit(1)" && grep -q '## ${version}' CHANGELOG.md`;
+  const runTasks = ["release-0.8.14", "release-0.8.15", "sheet-link-chips", "sheet-link-chips-revert", "studio-settings-i18n", "prototype-builder", "prototype-toolbar"];
+  const i18n = "node --experimental-strip-types --test src/studio/i18n-coverage.test.ts src/studio/studio-panel.test.ts 'src/studio/prototype/*.test.ts'";
+  const chips = "node --experimental-strip-types --test src/spreadsheet/link-chip.test.ts";
+  const pass = {
+    tasks: [
+      { taskId: "release-0.8.15", checks: [{ command: release("0.8.15"), state: "red" }] },
+      { taskId: "release-0.8.14", checks: [{ command: release("0.8.14"), state: "red" }] },
+      { taskId: "sheet-link-chips", checks: [{ command: chips, state: "red" }] },
+      { taskId: "studio-settings-i18n", checks: [{ command: i18n, state: "red" }] },
+      { taskId: "prototype-builder", checks: [{ command: "node --test src/studio/prototype/builder.test.ts", state: "red" }] },
+    ],
+    findings: [
+      // release 0.8.16 came with the owner's PR after the run: no task of the run
+      { taskId: "release-0.8.15", command: release("0.8.15"), culpritCommit: "4880b9f30043a509e68c4d7a496195fe73303087", culpritTask: null, sharedFiles: [] },
+      { taskId: "release-0.8.14", command: release("0.8.14"), culpritCommit: "bd53329c6875a6b06231bc28359896bbaaeab5e8", culpritTask: "release-0.8.15", sharedFiles: ["CHANGELOG.md", "package-lock.json", "package.json"] },
+      { taskId: "sheet-link-chips", command: chips, culpritCommit: "e64b6b915c468cba9f343ae5b09d4444f617c8c3", culpritTask: "sheet-link-chips-revert",
+        sharedFiles: ["src/spreadsheet/grid.tsx", "src/spreadsheet/link-chip.test.ts", "src/spreadsheet/link-chip.ts"] },
+      // the nightly docs refresh, after the run
+      { taskId: "studio-settings-i18n", command: i18n, culpritCommit: "432d7425d95b36ae5820e4f070511b19158f7a35", culpritTask: null, sharedFiles: [] },
+      // a later task of the run that changed the code under the test but not the test: a real break of the composition
+      { taskId: "prototype-builder", command: "node --test src/studio/prototype/builder.test.ts", culpritCommit: "a".repeat(40), culpritTask: "prototype-toolbar", sharedFiles: ["src/studio/prototype/builder.ts"] },
+    ],
+  };
+
+  it("sets aside the reds by work outside the run and the checks a later task of the run rewrote, and fails on the real break", () => {
+    const verdict = goalVerdict(pass, runTasks);
+    expect(verdict.state).toBe("failed");
+    expect(verdict.red).toEqual([{ taskId: "prototype-builder", command: "node --test src/studio/prototype/builder.test.ts", culpritCommit: "a".repeat(40), culpritTask: "prototype-toolbar" }]);
+    expect(verdict.aside!.map((row) => [row.taskId, row.why])).toEqual([["release-0.8.15", "outside"], ["release-0.8.14", "rewritten"], ["sheet-link-chips", "rewritten"], ["studio-settings-i18n", "outside"]]);
+    expect(verdict.detail).toContain("2 red by work outside the run (release-0.8.15 by 4880b9f300, studio-settings-i18n by 432d7425d9)");
+    expect(verdict.detail).toContain("2 rewritten on purpose by a later task of the run (release-0.8.14 by release-0.8.15, sheet-link-chips by sheet-link-chips-revert)");
+  });
+
+  it("the incident itself, without the made-up break, is a passed goal; a red with no culprit or no run to compare still counts", () => {
+    const real = { tasks: pass.tasks.slice(0, 4), findings: pass.findings.slice(0, 4) };
+    expect(goalVerdict(real, runTasks)).toMatchObject({ state: "passed", red: [] });
+    expect(goalVerdict(real).state).toBe("failed");
+    const unknown = { tasks: [pass.tasks[1]!], findings: [{ ...pass.findings[1]!, culpritCommit: null, culpritTask: null }] };
+    expect(goalVerdict(unknown, runTasks).state).toBe("failed");
+    // a shared file the command names only as part of a longer name is no rewrite of the check
+    const near = { tasks: [{ taskId: "sheet-link-chips", checks: [{ command: "node --test src/spreadsheet/link-chip.tsx.test.ts", state: "red" }] }],
+      findings: [{ taskId: "sheet-link-chips", command: "node --test src/spreadsheet/link-chip.tsx.test.ts", culpritCommit: "e".repeat(40), culpritTask: "sheet-link-chips-revert", sharedFiles: ["src/spreadsheet/link-chip.tsx"] }] };
+    expect(goalVerdict(near, runTasks).state).toBe("failed");
+  });
+
+  it("a check red at its own merge commit as well is no composition break (lprun_6163b96a: FeedGen tsc in the pass's worktree)", () => {
+    const tsc = "cd intro-video && npx tsc --noEmit -p tsconfig.json";
+    const ids = ["promo-video-banner-layout-fix", "promo-video-creative-banners"];
+    // The hub's rows 18 and 19 of lane_pilot_regression: kind unstable, bisect skipped, no culprit; the contract's other checks green.
+    const feedGen = {
+      tasks: ids.map((taskId) => ({ taskId, checks: [{ command: "grep -q 'Характеристики\\|specs' intro-video/src/promo/kit.tsx", state: "green" }, { command: tsc, state: "red" }] })),
+      findings: ids.map((taskId) => ({ taskId, command: tsc, kind: "unstable" as const, culpritCommit: null, culpritTask: null, sharedFiles: [] })),
+    };
+    const verdict = goalVerdict(feedGen, ids);
+    expect(verdict).toMatchObject({ state: "passed", red: [] });
+    expect(verdict.aside!.map((row) => [row.taskId, row.why])).toEqual([["promo-video-banner-layout-fix", "unstable"], ["promo-video-creative-banners", "unstable"]]);
+    expect(verdict.detail).toContain("2 red at their own merge commit as well");
+    // the same red confirmed green at the merge commit (a regression) with no culprit still fails the goal
+    expect(goalVerdict({ ...feedGen, findings: feedGen.findings.map((row) => ({ ...row, kind: "regression" as const })) }, ids).state).toBe("failed");
+  });
+});
+
 describe("the sweep", () => {
   function world(red: boolean) {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
