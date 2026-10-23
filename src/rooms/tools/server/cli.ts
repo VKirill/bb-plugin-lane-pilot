@@ -34,6 +34,7 @@ import { CHECKERS_USAGE, runCheckersCli } from "../../checkers/server";
 import { POLICY_USAGE, runPolicyCli } from "../../policy";
 import { WAITING_USAGE, runWaitingCli } from "../../owner-waiting/server";
 import { COVERAGE_USAGE, runCoverageCli } from "../../coverage";
+import { SMA_MAP_USAGE, runSmaMapCli } from "../../sma-map";
 import { RULES_USAGE, runRulesCli } from "../../rule-forms";
 import { retireAdoptedRule } from "../../self-repair/server";
 import { ROLLBACK_USAGE, runRollbackCli } from "../../rollback/server";
@@ -87,6 +88,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
     POLICY_USAGE,
     WAITING_USAGE,
     COVERAGE_USAGE,
+    SMA_MAP_USAGE,
     RULES_USAGE,
   ].join("\n");
 
@@ -144,6 +146,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"policy", summary:"The night policy: show the lists, classify a change descriptor, the three-line morning list", usage:"bb lane-pilot policy show|classify '<json>'|exam-collect|exam-add '<json>'|exam-export|morning" },
       { name:"waiting", summary:"Everything only the owner can decide, with why, evidence and the exact action; what went red overnight; the Telegram digest of new items (quiet hours 23:00-08:00 Europe/Madrid by default)", usage:WAITING_USAGE },
       { name:"coverage", summary:"What proves each pipeline stage, attempt transition, failure class, gate, memory path, room and key mechanism: covered live by a deploy-drill scenario, covered by tests only (and why no drill), or not covered; --receipt checks the live claims against a drill receipt", usage:COVERAGE_USAGE },
+      { name:"sma-map", summary:"The SMA product map node by node: what Lane Pilot has for each of its 1768 nodes, the proof in the code, what is missing, and the share done", usage:SMA_MAP_USAGE },
       { name:"rules", summary:"The rules by form (always | skill | check | hook | memory) and the mechanism that enforces each; classify them, generate mechanism tasks for the recurring check rules, retire the text a mechanism now holds", usage:RULES_USAGE },
       { name:"workflow-trigger", summary:"Start a workflow in a project as its schedule trigger does (the automation of a schedule calls this); exit 1 with the reason when it cannot start", usage:"bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]" },
       { name:"defer", summary:"Put a mandatory check off: write it in the register with a term (at most 30 days) and the reason, or set/move the term of an entry; a message of the owner that names a date also works (--owner-msg)", usage:"bb lane-pilot defer <what|dfr_id> --kind drill_scenario|skipped_test|gate|plan_decision --due 2026-11-05 --reason \"…\" [--area A] [--project P]" },
@@ -194,6 +197,9 @@ export function registerCli(ctx: ServerCore, services: Services) {
         }
         if (command === "coverage") {
           return runCoverageCli(args);
+        }
+        if (command === "sma-map") {
+          return runSmaMapCli(args);
         }
         if (command === "waiting") {
           return runWaitingCli(db, args);
