@@ -403,6 +403,9 @@ export const migrations = [
   `CREATE INDEX IF NOT EXISTS lane_pilot_run_pm_thread ON lane_pilot_run(pm_thread_id)`,
   `CREATE INDEX IF NOT EXISTS lane_pilot_attempt_thread ON lane_pilot_attempt(thread_id)`,
   `CREATE INDEX IF NOT EXISTS lane_pilot_stage_receipt_thread ON lane_pilot_stage_receipt(thread_id)`,
+  // Memory of one section of a shared project (Мои проекты: several games and FeedGen in one BB project) stays with that section
+  // (packages/memory-core: scope_json, the sections outermost first; '[]' the whole project).
+  `ALTER TABLE lane_pilot_memory ADD COLUMN scope_json TEXT NOT NULL DEFAULT '[]'`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

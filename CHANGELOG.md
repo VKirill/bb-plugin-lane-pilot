@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.290
+
+**Memory, rules and learning stay in their section.** «Мои проекты» holds several games and FeedGen in one BB project, and what one section taught reached the others: a decision about one Roblox game's characters went to the Vampirism Fire PM, and a learned rule (inverse kinematics for skeletons) would have reached FeedGen's writers. Memory records now carry the sections they belong to (`scope_json`, outermost first; `[]` the whole project): the memory maintainer writes a task's notes into its run's sections, an adopted rule's record takes the rule's scope, and what Lane Pilot learns from the owner's messages takes the sections of the chat it was said in (its run's scopes, else the folder its workspace sits in). A writer, a reviewer and the PM's memory context read the project's records and their own sections', never a sibling's. The learning report goes to the PM of the section the owner spoke in and wakes no other PM.
+
 ## 0.1.289
 
 **Replaced task versions leave the board.** The Tasks board and the chat's Lane Pilot section kept a version the PM had replaced with a renumbered redo (`vf-s1-xp.3` blocked beside its accepted `vf-s1-xp.4`, `vf-t0-test-infra.2` beside `.3`) under «Now» and counted it at work: the check looked for `x.3.1`. Versions of one task family are recognised now (`taskFamily`).

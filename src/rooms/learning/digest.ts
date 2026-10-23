@@ -45,6 +45,11 @@ export type DigestDeps = {
   db: Db;
   /** The open PM chat of a project, or null. */
   pmThread(projectId: string): string | null;
+  /**
+   * The PM chat an item is told in: the chat it was said in when that is a PM's, else an open PM of the same section; null when the
+   * section has none, and then no PM is woken (a decision about one game of «Мои проекты» went to another game's PM, 2026-10-23).
+   */
+  pmThreadFor?(item: Item): Promise<string | null>;
   send(threadId: string, text: string): Promise<void>;
   now?(): number;
   log?(line: string): void;
@@ -55,13 +60,16 @@ export function createDigest(deps: DigestDeps) {
   /** Sends the day's message to every project that has one; `dryRun` only composes. */
   async function run(options: { dryRun?: boolean; projectId?: string } = {}): Promise<Array<{ projectId: string; sent: boolean; items: number; text: string }>> {
     const unannounced = listItems(deps.db, { unannounced: true, limit: 500, ...(options.projectId ? { projectId: options.projectId } : {}) });
-    const byProject = new Map<string, Item[]>();
-    for (const item of unannounced) byProject.set(item.projectId, [...(byProject.get(item.projectId) ?? []), item]);
+    const byPm = new Map<string, { projectId: string; thread: string | null; items: Item[] }>();
+    for (const item of unannounced) {
+      const thread = deps.pmThreadFor ? await deps.pmThreadFor(item).catch(() => null) : deps.pmThread(item.projectId);
+      const key = `${item.projectId}\u0000${thread ?? ""}`;
+      byPm.set(key, { projectId: item.projectId, thread, items: [...(byPm.get(key)?.items ?? []), item] });
+    }
     const out: Array<{ projectId: string; sent: boolean; items: number; text: string }> = [];
-    for (const [projectId, items] of byProject) {
+    for (const { projectId, thread, items } of byPm.values()) {
       const digest = composeDigest(items.reverse(), now());
       if (!digest) { if (!options.dryRun) markAnnounced(deps.db, items.map((item) => item.id), now()); continue; }
-      const thread = deps.pmThread(projectId);
       let sent = false;
       if (thread && !options.dryRun) {
         try { await deps.send(thread, digest.text); markAnnounced(deps.db, digest.ids, now()); sent = true; }

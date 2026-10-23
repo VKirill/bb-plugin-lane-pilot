@@ -96,8 +96,19 @@ export function createLearning(ctx: ServerCore, services: Services) {
     return await services.ruleScan.runAnalyzer(projectId, `Learning from owner messages · ${label}`.slice(0, 160), prompt, { hostId: place.hostId, path: place.path }, analyzer, { learning: true });
   }
 
+  /** The sections of the chat a message was said in: a PM chat's run scopes, else the folder its workspace sits in. */
+  async function scopeOf(threadId: string, projectId: string): Promise<string[]> {
+    const run = db.prepare("SELECT id FROM lane_pilot_run WHERE pm_thread_id=? ORDER BY created_at DESC LIMIT 1").get(threadId) as { id: string } | undefined;
+    const scopes = run ? getRunSettingsScopes(db, run.id) : [];
+    if (scopes.length) return scopes;
+    const thread = await bb.sdk.threads.get({ threadId }).catch(() => null) as { environmentId?: unknown } | null;
+    const environmentId = typeof thread?.environmentId === "string" ? thread.environmentId : null;
+    const environment = environmentId ? await bb.sdk.environments.get({ environmentId }).catch(() => null) as { path?: unknown } | null : null;
+    return typeof environment?.path === "string" && environment.path ? await ctx.scopesForWorkspace(projectId, environment.path) : [];
+  }
+
   const extractor = createExtractor({
-    db, jev, rules, notes, globalPreferences, runModel,
+    db, jev, rules, notes, globalPreferences, runModel, scopeOf,
     locale: async (projectId) => {
       const stored = await bb.storage.kv.get<string>(`rules-locale:${projectId}`), preferred = await bb.storage.kv.get<string>("preferences:locale");
       return stored === "ru" || stored === "en" ? stored : preferred === "ru" ? "ru" : "en";
@@ -114,8 +125,17 @@ export function createLearning(ctx: ServerCore, services: Services) {
     },
   });
 
+  /** A PM chat of the item's own section: the chat it was said in when that is a PM's, else an open PM run with the same scopes. */
+  async function pmThreadFor(item: { projectId: string; threadId: string }): Promise<string | null> {
+    const own = db.prepare("SELECT pm_thread_id FROM lane_pilot_run WHERE pm_thread_id=? AND closed_at IS NULL LIMIT 1").get(item.threadId) as { pm_thread_id: string } | undefined;
+    if (own) return own.pm_thread_id;
+    const scope = JSON.stringify(await scopeOf(item.threadId, item.projectId));
+    const rows = db.prepare("SELECT id, pm_thread_id FROM lane_pilot_run WHERE project_id=? AND closed_at IS NULL AND pm_thread_id IS NOT NULL ORDER BY updated_at DESC").all(item.projectId) as Array<{ id: string; pm_thread_id: string }>;
+    return rows.find((row) => JSON.stringify(getRunSettingsScopes(db, row.id)) === scope)?.pm_thread_id ?? null;
+  }
+
   const digest = createDigest({
-    db, pmThread, log,
+    db, pmThread, pmThreadFor, log,
     send: async (threadId, text) => { await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never); },
   });
 

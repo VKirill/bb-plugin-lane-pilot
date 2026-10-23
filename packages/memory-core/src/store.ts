@@ -14,7 +14,7 @@ export const MEMORY_SCHEMA = {
   table: "lane_pilot_memory",
   fts: "lane_pilot_memory_fts",
   columns: ["id", "project_id", "personal_bot", "kind", "audience", "content", "concepts_json", "source_sha256", "created_at",
-    "status", "superseded_by", "valid_until", "last_used_at", "use_count", "accepted_count", "trust", "origin", "source_file_id"],
+    "status", "superseded_by", "valid_until", "last_used_at", "use_count", "accepted_count", "trust", "origin", "source_file_id", "scope_json"],
 } as const;
 
 const COLUMNS = ["id", "project_id", "personal_bot", "kind", "audience", "content", "concepts_json", "source_sha256", "created_at",
@@ -71,7 +71,12 @@ export function addToIndexes(db: MemoryDatabase, projectId: string, id: string, 
 export type StoreMemoryInput = { projectId: string; personalBot?: string; audience: MemoryAudience; sourceSha256: string; entries: MemoryCandidate[];
   coreBudget: number; noteBudget: number; indexBudget: number;
   /** confirmed (default): the maintainer, a rule or a file; observed: one session wrote it, writers wait for a second source or the quarantine. */
-  trust?: MemoryTrust; origin?: string; now?: number };
+  trust?: MemoryTrust; origin?: string; now?: number;
+  /**
+   * The sections the records belong to, outermost first (a run's settings scopes, `section:<id>`); empty or absent: the whole project.
+   * A search with a chain reads the project's records and those of the chain's sections, never a sibling section's.
+   */
+  scope?: readonly string[] };
 export type StoreMemoryResult = { records: MemoryRecord[]; insertedIds: string[];
   /** Notes hidden to make room under a budget, least useful first. */
   evictedIds: string[];
@@ -153,6 +158,7 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
     for (const { entry, id } of pending) {
       insert.run({ id, projectId: input.projectId, personalBot, kind: entry.kind, audience: input.audience, content: entry.content, conceptsJson: JSON.stringify(entry.concepts),
         sourceSha256: input.sourceSha256, createdAt: now, trust, origin, validUntil: entry.validUntil ?? null, sourceFileId: entry.sourceFileId ?? null });
+      if (input.scope?.length) db.prepare("UPDATE lane_pilot_memory SET scope_json=? WHERE project_id=? AND id=?").run(JSON.stringify(input.scope), input.projectId, id);
       addToIndexes(db, input.projectId, id, entry.content, entry.concepts);
       insertedIds.push(id);
     }
@@ -177,13 +183,22 @@ export function hideRecordsOfFile(db: MemoryDatabase, projectId: string, persona
 }
 
 /** Who may read a record: active and in date; a record only one session or import vouches for waits for a second source or the quarantine. */
-export type SearchOptions = { now?: number; includeObserved?: boolean };
+export type SearchOptions = { now?: number; includeObserved?: boolean;
+  /** The reader's sections, outermost first: only records of the whole project and of these sections (a prefix of the chain). */
+  chain?: readonly string[] };
+
+/** The scope values a reader with this chain sees: the whole project and every prefix of its chain. */
+export function scopeValuesFor(chain: readonly string[]): string[] {
+  return Array.from({ length: chain.length + 1 }, (_, length) => JSON.stringify(chain.slice(0, length)));
+}
+const sqlString = (value: string) => `'${value.replace(/'/g, "''")}'`;
 
 function visibility(db: MemoryDatabase, alias: string, options: SearchOptions): string {
   const now = Math.floor(options.now ?? Date.now());
   // A note of a held conflict (two notes that disagree, waiting for a person) is read by nobody: `conflict-store.ts`.
   return `${alias}.status='active' AND (${alias}.valid_until IS NULL OR ${alias}.valid_until>${now}) AND NOT (${idleSql(alias, now)})`
-    + (options.includeObserved ? "" : ` AND (${alias}.trust='confirmed' OR ${alias}.created_at<=${now - OBSERVED_QUARANTINE_MS})`) + heldClause(db, alias);
+    + (options.includeObserved ? "" : ` AND (${alias}.trust='confirmed' OR ${alias}.created_at<=${now - OBSERVED_QUARANTINE_MS})`) + heldClause(db, alias)
+    + (options.chain ? ` AND ${alias}.scope_json IN (${scopeValuesFor(options.chain).map(sqlString).join(",")})` : "");
 }
 
 export function searchMemoryRecords(db: MemoryDatabase, projectId: string, query: string, limit: number, engine: MemorySearchEngine, audience: MemoryAudience = "subagent", personalBot = "", options: SearchOptions = {}): MemoryRecord[] {

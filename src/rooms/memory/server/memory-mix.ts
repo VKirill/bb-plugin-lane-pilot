@@ -11,8 +11,10 @@ type TaskPaths = Pick<TaskV2, "owns_paths" | "read_first">;
  * useful first. Confirmed rules are left out (the rules block carries them). The caller records the mix once the
  * brief is final (`recordMemoryMixed`), so a mix that never reached a writer is not counted.
  */
-export function mixWriterMemory(db: LanePilotDatabase, input: { projectId: string; query: string; task: TaskPaths; searchEngine: MemorySearchEngine; personalBot: string; ruleMemoryIds: ReadonlySet<string> }): { text: string; ids: string[] } {
-  const found = searchMemoryRecords(db, input.projectId, input.query, 100, input.searchEngine, "subagent", input.personalBot).filter((record) => !input.ruleMemoryIds.has(record.id));
+export function mixWriterMemory(db: LanePilotDatabase, input: { projectId: string; query: string; task: TaskPaths; searchEngine: MemorySearchEngine; personalBot: string; ruleMemoryIds: ReadonlySet<string>;
+  /** The run's sections: notes of a sibling section of a shared project are not this writer's. */
+  chain?: readonly string[] }): { text: string; ids: string[] } {
+  const found = searchMemoryRecords(db, input.projectId, input.query, 100, input.searchEngine, "subagent", input.personalBot, input.chain ? { chain: input.chain } : {}).filter((record) => !input.ruleMemoryIds.has(record.id));
   return { text: writerMemory(found, input.task), ids: writerMemoryPicks(found, input.task).map((record) => record.id) };
 }
 
@@ -22,11 +24,12 @@ type ReviewTask = TaskPaths & Partial<Pick<TaskV2, "title" | "objective" | "acce
  * The notes a reviewer or critic gets (role `reviewer`): up to five, within the token budget, chosen for review rather
  * than for writing (`reviewerMemoryPicks`). Not counted as uses of a brief: the usefulness counters follow writers.
  */
-export function mixReviewerMemory(db: LanePilotDatabase, input: { projectId: string; task: ReviewTask; searchEngine: MemorySearchEngine; personalBot: string; ruleMemoryIds: ReadonlySet<string>; budget: number }): { text: string; ids: string[] } {
+export function mixReviewerMemory(db: LanePilotDatabase, input: { projectId: string; task: ReviewTask; searchEngine: MemorySearchEngine; personalBot: string; ruleMemoryIds: ReadonlySet<string>; budget: number; chain?: readonly string[] }): { text: string; ids: string[] } {
+  const scoped = input.chain ? { chain: input.chain } : {};
   const query = [input.task.title, input.task.objective, ...(input.task.acceptance ?? []), ...input.task.owns_paths, ...input.task.read_first].filter(Boolean).join("\n");
-  const found = searchMemoryRecords(db, input.projectId, query, 100, input.searchEngine, "subagent", input.personalBot).filter((record) => !input.ruleMemoryIds.has(record.id));
+  const found = searchMemoryRecords(db, input.projectId, query, 100, input.searchEngine, "subagent", input.personalBot, scoped).filter((record) => !input.ruleMemoryIds.has(record.id));
   // Not only what the task's words find: the review-tagged notes and the core conventions a reviewer judges against.
-  const always = [...listMemory(db, input.projectId, { concepts: REVIEWER_CONCEPTS }, 20, "subagent", input.personalBot), ...listMemory(db, input.projectId, { kind: "core" }, 20, "subagent", input.personalBot)]
+  const always = [...listMemory(db, input.projectId, { concepts: REVIEWER_CONCEPTS }, 20, "subagent", input.personalBot, scoped), ...listMemory(db, input.projectId, { kind: "core" }, 20, "subagent", input.personalBot, scoped)]
     .filter((record) => !input.ruleMemoryIds.has(record.id));
   const lines: string[] = [], ids: string[] = [];
   let used = 0;
@@ -45,14 +48,15 @@ export function reviewerMemoryFor(db: LanePilotDatabase, projectId: string, runI
     const settings = loadProjectSettings(db, projectId, runId ? getRunSettingsScopes(db, runId) : undefined);
     const memory = parseMemorySettings(Object.fromEntries(MEMORY_SETTING_KEYS.map((key) => [key, configuredSetting(settings, key)])));
     if (!memory.enabled || !memory.inject) return "";
-    return mixReviewerMemory(db, { projectId, task, searchEngine: memory.searchEngine, personalBot: memory.personalBot, ruleMemoryIds: new Set(), budget: memory.contextBudget }).text;
+    return mixReviewerMemory(db, { projectId, task, searchEngine: memory.searchEngine, personalBot: memory.personalBot, ruleMemoryIds: new Set(), budget: memory.contextBudget,
+      ...(runId ? { chain: getRunSettingsScopes(db, runId) } : {}) }).text;
   } catch {
     return "";
   }
 }
 
 /** What the PM tool `lane_pilot_memory {action:"context"}` returns for a query: the project's records ranked for it, within the context budget. Also what the memory probe reads. */
-export function pmMemoryContext(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string) {
-  const records = searchMemoryRecords(db, projectId, query, 100, memory.searchEngine, memory.audience, memory.personalBot);
+export function pmMemoryContext(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[]) {
+  const records = searchMemoryRecords(db, projectId, query, 100, memory.searchEngine, memory.audience, memory.personalBot, chain ? { chain } : {});
   return memoryContext(records, query, memory.contextBudget);
 }

@@ -97,7 +97,7 @@ export type RuleView = { id: string; rule: string; state: "proposed" | "accepted
 export interface RulesPort {
   list(projectId: string): RuleView[];
   /** A lesson becomes a proposal; a close twin counts as a repeat of it (`repeatOf`). */
-  propose(projectId: string, input: { rule: string; evidence: string; audience: "pm" | "writer" | "both" }): { id: string; created: boolean; repeatOf: string | null };
+  propose(projectId: string, input: { rule: string; evidence: string; audience: "pm" | "writer" | "both"; scope?: readonly string[] }): { id: string; created: boolean; repeatOf: string | null };
   /** On trial now; false when the pool had no room. */
   adopt(projectId: string, id: string): boolean;
   confirm(projectId: string, id: string): void;
@@ -107,7 +107,7 @@ export interface RulesPort {
   reject(projectId: string, id: string): void;
 }
 export interface NotesPort {
-  remember(projectId: string, text: string, evidence: string, at: number): string;
+  remember(projectId: string, text: string, evidence: string, at: number, scope?: readonly string[]): string;
   forget(projectId: string, memoryId: string): void;
 }
 
@@ -121,6 +121,11 @@ export type ExtractDeps = {
   /** One run of the short model on a prompt; the reply is its text. */
   runModel(prompt: string, projectId: string, label: string): Promise<string>;
   locale?(projectId: string): Promise<"ru" | "en">;
+  /**
+   * The sections of the chat a message was said in, outermost first; [] for the whole project. What the owner taught in one section of
+   * a shared project stays there: «Мои проекты» holds several games and FeedGen, and a decision about one game reached the others.
+   */
+  scopeOf?(threadId: string, projectId: string): Promise<string[]>;
   now?(): number;
   log?(line: string): void;
 };
@@ -175,6 +180,7 @@ export function createExtractor(deps: ExtractDeps) {
   async function route(extracted: Extracted, others: Known[]): Promise<Item["state"]> {
     const { observation, kind, text } = extracted;
     const at = now();
+    const scope = await deps.scopeOf?.(observation.threadId, observation.projectId).catch(() => [] as string[]) ?? [];
     const base: Item = {
       id: itemId(observation.id, kind, text), obsId: observation.id, projectId: observation.projectId, threadId: observation.threadId, kind, text, audience: kind === "rule" || kind === "preference" ? extracted.audience : null,
       reach: extracted.reach, dueAt: extracted.dueAt, state: "dropped", target: null, evidence: evidenceOf(observation, extracted.quote), duplicateOf: null, confirmations: 0, note: null,
@@ -198,11 +204,11 @@ export function createExtractor(deps: ExtractDeps) {
       return finish({ state: "pending_owner", duplicateOf: verdict.of.ref, target: "replace", note: `contradicts: ${verdict.of.text.slice(0, 200)}` });
     }
     if (kind === "decision") {
-      try { return finish({ state: "noted", target: `memory:${deps.notes.remember(observation.projectId, text, base.evidence, observation.at)}` }); }
+      try { return finish({ state: "noted", target: `memory:${deps.notes.remember(observation.projectId, text, base.evidence, observation.at, scope)}` }); }
       catch (cause) { return finish({ state: "dropped", note: cause instanceof Error ? cause.message.slice(0, 200) : String(cause) }); }
     }
     if (extracted.reach === "owner") return finish({ state: "pending_owner", target: "bb-memory" });
-    const proposal = deps.rules.propose(observation.projectId, { rule: text, evidence: base.evidence, audience: extracted.audience });
+    const proposal = deps.rules.propose(observation.projectId, { rule: text, evidence: base.evidence, audience: extracted.audience, scope });
     if (proposal.repeatOf) return finish({ state: "duplicate", duplicateOf: `rule:${proposal.repeatOf}` });
     const adopted = deps.rules.adopt(observation.projectId, proposal.id);
     return finish({ state: adopted ? "adopted" : "proposed", target: `rule:${proposal.id}` });

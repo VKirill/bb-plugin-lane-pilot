@@ -50,7 +50,7 @@ export async function writerKnowledge(deps:KnowledgeDeps, input:KnowledgeInput) 
   const { allRules, rules, rulesText }=await writerRules(deps,input);
   const ruleMemoryIds=new Set(allRules.map((rule)=>rule.memoryId));
   // The writer gets at most three notes that name a path of this task; other helpers keep the budgeted context.
-  const mixed=memoryOn?mixWriterMemory(deps.db,{projectId:input.projectId,query:taskMemoryQuery,task:input.task,searchEngine:input.memorySettings.searchEngine,personalBot:input.memorySettings.personalBot,ruleMemoryIds}):{text:"",ids:[] as string[]};
+  const mixed=memoryOn?mixWriterMemory(deps.db,{projectId:input.projectId,query:taskMemoryQuery,task:input.task,searchEngine:input.memorySettings.searchEngine,personalBot:input.memorySettings.personalBot,ruleMemoryIds,chain:await deps.chainForRun(input.runId)}):{text:"",ids:[] as string[]};
   return { allRules, rules, rulesText, mixed };
 }
 
