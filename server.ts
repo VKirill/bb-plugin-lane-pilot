@@ -24,6 +24,7 @@ import { createRunGoal, mountRunGoal } from "./src/rooms/run-goal/server";
 import { createCapabilities, mountCapabilities } from "./src/rooms/capability/server";
 import { createBacklog, mountBacklog } from "./src/rooms/backlog/server";
 import { createHypotheses } from "./src/rooms/hypotheses/server";
+import { createOwnerPresence, mountOwnerPresence } from "./src/rooms/owner-presence/server";
 import { mountOutage } from "./src/rooms/outage/server";
 import { createPluginWall } from "./src/rooms/wall/server";
 import { createPluginCheckers } from "./src/rooms/checkers/server";
@@ -116,6 +117,7 @@ export default async function plugin(bb: BbPluginApi) {
     createCapabilities(ctx, services),
     createBacklog(ctx),
     createHypotheses(ctx, services),
+    createOwnerPresence(ctx),
     { bench: createPluginBench(ctx, services) },
     { wall: createPluginWall(ctx, services) },
     { checkers: createPluginCheckers(ctx) },
@@ -138,6 +140,8 @@ export default async function plugin(bb: BbPluginApi) {
   mountCapabilities(ctx, services.capabilities);
   // Every hour: ready todos with an estimate go to the project's PM in queue order (one a project a day, three a day in all).
   mountBacklog(ctx, services.backlog);
+  // Every two minutes: where the owner typed in his own session lately; writers keep off that provider meanwhile.
+  mountOwnerPresence(ctx, services.ownerPresence);
   // The seeded hypotheses (SMA P2-11 contracts between roles) are on the register from the first start.
   try { services.hypotheses.seed(); } catch (cause) { bb.log.warn(`Lane Pilot: hypotheses seed skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }
   // A gap in the heartbeat longer than 5 minutes is an outage on record; then one beat a minute.

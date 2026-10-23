@@ -11,6 +11,7 @@ import type { RunGoalApi } from "../../run-goal/server";
 import type { CapabilitiesApi } from "../../capability/server";
 import type { BacklogApi } from "../../backlog/server";
 import type { HypothesesApi } from "../../hypotheses/server";
+import type { OwnerPresenceApi } from "../../owner-presence/server";
 import type { WallApi } from "../../wall/server";
 import type { CheckersApi } from "../../checkers/server";
 import type { StageReturnApi } from "../../stage-return/server";
@@ -91,6 +92,8 @@ export interface Services {
   backlog: BacklogApi;
   /** Ideas checked on the bench set: two arms, the verdict, adoption through the night policy (src/rooms/hypotheses). */
   hypotheses: HypothesesApi;
+  /** The owner's presence on a provider in the last minutes: writers keep off it (src/rooms/owner-presence). */
+  ownerPresence: OwnerPresenceApi;
   /** Checking the checkers: planted defects in accepted candidates, the checker scorecard and the drill (src/rooms/checkers). */
   checkers: CheckersApi;
   DOCS_NIGHT_ATTEMPTS: DocsNightlyApi["DOCS_NIGHT_ATTEMPTS"];

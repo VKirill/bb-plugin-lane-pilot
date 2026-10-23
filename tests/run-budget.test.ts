@@ -138,6 +138,34 @@ describe("run-bound helper spawn", () => {
   });
 });
 
+describe("the owner at the keyboard (SMA D2-6)", () => {
+  it("a writer on the provider the owner is using now is not spawned: the chain moves on with a limit reason", async () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    createRun(db, "run", "P", "cli", "/repo");
+    setRunThread(db, "run", "pm");
+    createTask(db, { id: "t1", runId: "run", kind: "bb", contract: task });
+    createAttempt(db, { id: "a1", runId: "run", taskId: "t1" });
+    let spawned = 0;
+    const ctx = {
+      bb: { storage: bb.storage, log: { info() {}, warn() {} }, sdk: { projects: { get: async () => ({ sources: [] }) }, files: { read: async () => ({ content: null }) },
+        threads: { get: async () => ({ id: "pm", projectId: "P", status: "idle" }), spawn: async () => { spawned += 1; return { id: "writer-1" }; } } } },
+      db,
+      host: { call: async (method: string) => (method === "runCommand" ? { hostId: "h", exitCode: 0, stdout: "[]", stderr: "" } : method === "gitCreateWorktree" ? { status: "ready", path: "/wt/a1/repo", branch: "lane/a1", reason: null } : {}) },
+      effectiveProjectSettings: async () => ({ values: { "jev.LANE_JEV_EFFORT": false, "memory.enabled": false, "adoc.040": "auto" } }),
+    };
+    const writer = createWriterSpawn(ctx as never, {
+      providerBreaker: { decide: () => ({ allow: true }) },
+      ownerPresence: { holds: (provider: string) => (provider === "codex" ? "owner_present:codex used by the owner 2 min ago on mini" : null) },
+      ruleScan: { chainForRun: async () => [] },
+    } as never);
+    const result = await writer.spawnWriterAttempt({ projectId: "P", runId: "run", taskId: "t1", attemptId: "a1", config, task, plan: "write", pmThreadId: "pm" });
+    expect(result).toMatchObject({ ok: false, reason: "writer_provider_unavailable:owner_present:codex used by the owner 2 min ago on mini" });
+    expect(spawned).toBe(0);
+    expect(failureClass("blocked", result.reason!)).toBe(failureClass("blocked", "writer_provider_unavailable:breaker_open:x"));
+  });
+});
+
 describe("budget stop outcome", () => {
   it("is uncharged and is not parked or restarted", async () => {
     const { bb } = createFakePluginHost({ pluginId: "lane-pilot", sdk: { threads: {

@@ -19,7 +19,8 @@
 - **D2-12 design evaluation** (`src/rooms/design-eval`, `scripts/lp-design-eval.ts`): a rubric the browser measures on the real page, and a paired before/after judgement.
 - **Q13 / P2-5 twins** (`src/rooms/twins`): every test double of a BB answer is checked against recorded real shapes, refreshed yearly.
 - **P2-10 / P2-11 hypotheses** (`src/rooms/hypotheses`): ideas checked by two bench arms, adopted through the night policy (v4 `bench_proven_setting`); seeded `role-contracts` (`writer.brief_mode=narrow`).
-- Lane Stack 1.66.3: stall rules in Claude Code lane sessions (D2-6), todo `estimate`/`depends_on`.
+- **D2-6 the owner at the keyboard** (`src/rooms/owner-presence`): Lane Stack 1.66.4's `owner_presence.py` marks the time of every prompt the owner types in a session of his own (lane sessions mark nothing, the prompt is never written); every two minutes Lane Pilot reads the marks of every machine, and while the owner used a provider in the last 10 minutes its writers keep off it — the chain moves to the next provider like for an open breaker (failure class `limit`). `bb lane-pilot owner-presence`.
+- Lane Stack 1.66.3/1.66.4: stall rules in Claude Code lane sessions (D2-6), the owner's presence mark, todo `estimate`/`depends_on`.
 
 ## 0.1.275
 

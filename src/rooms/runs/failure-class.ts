@@ -67,7 +67,7 @@ const WAITING_SECRET = /^waiting_secret:/;
 export const isWaitingSecret = (reason:string | null | undefined):boolean => WAITING_SECRET.test(reason ?? "");
 /** The task spent its overall writer-attempt budget (retry-budget.ts): ends for the PM, never parked or redriven. */
 const RETRY_BUDGET = /^retry_budget_exhausted:/;
-const LIMIT = /writer_provider_limit:|^writer_provider_unavailable:(breaker_open|usage_window)/;
+const LIMIT = /writer_provider_limit:|^writer_provider_unavailable:(breaker_open|usage_window|owner_present)/;
 /** A writer that stayed silent through its nudges (writer-silence.ts): the provider's session hung, not the task's work. */
 export const WRITER_SILENT_REASON = "writer_silent_after_nudge";
 const SILENT = /^writer_silent_after_nudge/;

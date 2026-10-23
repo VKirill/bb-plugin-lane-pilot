@@ -164,6 +164,12 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
           const reason = `writer_provider_unavailable:breaker_open:${gate.reason}`;
           return { ok:false, status:endSpawnFailure(db, input.attemptId, reason), reason, attemptId:input.attemptId };
         }
+        // The owner is at the keyboard on this provider (src/rooms/owner-presence): the writer chain takes the next one.
+        const present = services.ownerPresence?.holds(writerProviderId) ?? null;
+        if (present) {
+          const reason = `writer_provider_unavailable:${present}`;
+          return { ok:false, status:endSpawnFailure(db, input.attemptId, reason), reason, attemptId:input.attemptId };
+        }
       }
       const requestedServiceTier = input.emergency ? "default" as const : bbServiceTier(writerServiceTier(settings));
       let providers:Awaited<ReturnType<typeof bb.sdk.providers.list>>;
