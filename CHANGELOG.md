@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+**The run-goal check fails a run only on its own composition.** Its first sweep (2026-10-23) checked lprun_38203a8b five days after it ended, on a main with a PR and docs refreshes on top, and told the PM «13 checks red together»: 2 were broken by commits outside the run (release 0.8.16 from PR #1, a docs refresh), 11 were release pins and a revert that a later task of the same run rewrote on purpose (release-0.8.14 by release-0.8.15, link chips by their revert). `goalVerdict` now sets those aside: a red whose bisect culprit is no task of the run, or a later task of the run that changed a file the check command itself names (the regression finding carries `sharedFiles` now, also for an open finding seen again). They stay open in `bb lane-pilot regress`; the verdict's detail names them; a red with no culprit still fails the goal.
+
 ## 0.1.284
 
 **Lane Pilot in the chat.** The thread's info panel (project, branch, uncommitted files) gets a «Lane Pilot» section below the uncommitted files: in a PM chat the tasks now at work with phase, stage, model and minutes, their stage squares and step by step on a click (who ran each stage, turns, time, cost, the thread), then the week's tasks; in a writer or helper thread the task it works on. Nothing shows in other threads. Needs core `0.46.1-vk.5` (`experimental_vkThreadInfoSection`); an older core gets a «Lane Pilot» panel tab. New RPC `thread_live`; indexes on `lane_pilot_run(pm_thread_id)`, `lane_pilot_attempt(thread_id)`, `lane_pilot_stage_receipt(thread_id)`; the task board can be narrowed to some runs.
