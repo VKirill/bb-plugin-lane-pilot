@@ -218,6 +218,9 @@ export function previousAttemptBrief(last:Record<string, unknown> | null | undef
     // Pilot suite-green-pm-helpers into tests/server-reconcile.test.ts, and both lost their last retry to
     // «owns_paths rejected» (2026-10-06).
     const outside = task && failed ? failingCheckFiles(cleanCheckOutput(`${failed.stderr ?? ""}\n${failed.stdout ?? ""}`)).filter((file) => !fileAllowedByOwns(file, task.owns_paths)) : [];
+    // Exit 127 is a program the check calls that Lane Pilot's sandbox could not find: the writer's own shell has it, so «run it
+    // yourself» passed there, and Vampirism Fire's writers spent ten attempts rewriting check.sh outside their task (2026-10-23).
+    if (failed && (failed.exitCode === 127 || /command not found/i.test(tail))) bullets.push(`exit 127 / «command not found» means the sandbox Lane Pilot runs checks in could not find a program the check calls: that is the check environment, not your code → do not rewrite the check script and do not install tools; if your change did not remove the program, change nothing more and answer \`${NEEDS_HUMAN_MARKER} ${commands} cannot find <program> in Lane Pilot's check sandbox\``);
     if (outside.length) bullets.push(`the failure points at ${outside.join(", ")}, outside owns_paths → do not edit ${outside.length > 1 ? "them" : "it"}. If your change broke ${outside.length > 1 ? "them" : "it"}, fix it in your owned files; if ${outside.length > 1 ? "they fail" : "it fails"} without your change (main is red from another task, or the check also runs files of other tasks), change nothing more and answer \`${NEEDS_HUMAN_MARKER} ${commands} fails in ${outside.join(", ")}, outside owns_paths and not caused by this task\``);
   }
   const missing = /missing expected_outputs: (.+)/.exec(reason)?.[1];
