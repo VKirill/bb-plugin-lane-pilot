@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
-import { mkdir, readFile, utimes, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
 import { integrateWorktree, prepareWorktree, withBaseLock } from "../../src/rooms/verification/git-integrate";
@@ -78,6 +78,33 @@ it("re-points workspace package links at the worktree so checks import the write
   expect(git(a, "status", "--porcelain").trim()).toBe("M packages/contracts/index.js");
   expect((await integrateWorktree({ basePath: base, worktreePath: a, message: "a" })).status).toBe("merged");
   expect(git(base, "show", "--stat", "--format=", "HEAD^2")).not.toContain("node_modules");
+});
+
+it("mirrors the node_modules of a nested package that is no workspace (FeedGen intro-video, lprun_6163b96a)", async () => {
+  const { lstat, realpath } = await import("node:fs/promises");
+  const { base, worktree } = await repo();
+  // FeedGen's layout: a root app with its own install and intro-video/ with another, no `workspaces` in the root package.json.
+  await writeFile(join(base, "package.json"), JSON.stringify({ name: "feed-gen" }) + "\n");
+  await mkdir(join(base, "intro-video", "src"), { recursive: true });
+  await writeFile(join(base, "intro-video", "package.json"), JSON.stringify({ name: "intro-video" }) + "\n");
+  await writeFile(join(base, "intro-video", "tsconfig.json"), JSON.stringify({ compilerOptions: { types: ["web"] } }) + "\n");
+  await writeFile(join(base, "intro-video", ".gitignore"), "node_modules/\n");
+  await writeFile(join(base, ".gitignore"), "node_modules\n");
+  git(base, "add", "-A"); git(base, "commit", "-qm", "feed-gen");
+  await mkdir(join(base, "node_modules", "remotion"), { recursive: true });
+  await mkdir(join(base, "intro-video", "node_modules", "@types", "web"), { recursive: true });
+  await writeFile(join(base, "intro-video", "node_modules", "@types", "web", "index.d.ts"), "export {};\n");
+  const a = await worktree("a");
+  expect(await prepareWorktree({ basePath: base, worktreePath: a })).toEqual({ linked: ["node_modules", "intro-video/node_modules"] });
+  expect(await realpath(join(a, "intro-video", "node_modules", "@types", "web"))).toBe(await realpath(join(base, "intro-video", "node_modules", "@types", "web")));
+  expect(git(a, "status", "--porcelain").trim()).toBe("");
+  // A project whose root has no install of its own still gets the nested one.
+  await rm(join(base, "node_modules"), { recursive: true });
+  const b = await worktree("b");
+  expect(await prepareWorktree({ basePath: base, worktreePath: b })).toEqual({ linked: ["intro-video/node_modules"] });
+  expect((await lstat(join(b, "node_modules")).catch(() => null))).toBeNull();
+  // Prepared again: nothing is linked twice.
+  expect(await prepareWorktree({ basePath: base, worktreePath: b })).toEqual({ linked: [] });
 });
 
 it("names the files when main has uncommitted edits the merge would overwrite", async () => {

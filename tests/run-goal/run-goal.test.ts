@@ -71,6 +71,22 @@ describe("red checks that are not the run's composition (lprun_38203a8b, 2026-10
       findings: [{ taskId: "sheet-link-chips", command: "node --test src/spreadsheet/link-chip.tsx.test.ts", culpritCommit: "e".repeat(40), culpritTask: "sheet-link-chips-revert", sharedFiles: ["src/spreadsheet/link-chip.tsx"] }] };
     expect(goalVerdict(near, runTasks).state).toBe("failed");
   });
+
+  it("a check red at its own merge commit as well is no composition break (lprun_6163b96a: FeedGen tsc in the pass's worktree)", () => {
+    const tsc = "cd intro-video && npx tsc --noEmit -p tsconfig.json";
+    const ids = ["promo-video-banner-layout-fix", "promo-video-creative-banners"];
+    // The hub's rows 18 and 19 of lane_pilot_regression: kind unstable, bisect skipped, no culprit; the contract's other checks green.
+    const feedGen = {
+      tasks: ids.map((taskId) => ({ taskId, checks: [{ command: "grep -q 'Характеристики\\|specs' intro-video/src/promo/kit.tsx", state: "green" }, { command: tsc, state: "red" }] })),
+      findings: ids.map((taskId) => ({ taskId, command: tsc, kind: "unstable" as const, culpritCommit: null, culpritTask: null, sharedFiles: [] })),
+    };
+    const verdict = goalVerdict(feedGen, ids);
+    expect(verdict).toMatchObject({ state: "passed", red: [] });
+    expect(verdict.aside!.map((row) => [row.taskId, row.why])).toEqual([["promo-video-banner-layout-fix", "unstable"], ["promo-video-creative-banners", "unstable"]]);
+    expect(verdict.detail).toContain("2 red at their own merge commit as well");
+    // the same red confirmed green at the merge commit (a regression) with no culprit still fails the goal
+    expect(goalVerdict({ ...feedGen, findings: feedGen.findings.map((row) => ({ ...row, kind: "regression" as const })) }, ids).state).toBe("failed");
+  });
 });
 
 describe("the sweep", () => {

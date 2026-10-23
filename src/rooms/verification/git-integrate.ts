@@ -586,6 +586,27 @@ async function rebuildChangedPackages(basePath:string,before:string,after:string
   return out;
 }
 
+/**
+ * The repository's own packages that are no declared workspace (an app in a subfolder with its own package.json and its own install):
+ * the folders of the package.json files the worktree tracks, that have a node_modules in the base. Only the root and the workspaces were
+ * mirrored, so a check in such a folder ran without its dependencies in every throwaway worktree: FeedGen's `cd intro-video && npx tsc`
+ * fetched a bare tsc and failed TS2688 (no 'web' types) at main and at its own merge commit alike, and the run-goal check called a run
+ * of two accepted tasks red (lprun_6163b96a, 2026-10-23).
+ */
+async function nestedPackageDirs(baseReal:string,worktreePath:string,workspaces:readonly string[]):Promise<string[]> {
+  const listed=await git(worktreePath,["ls-files","-z","--",":(glob)**/package.json"]);
+  if(!listed.ok) return [];
+  const taken=new Set(workspaces);
+  const dirs:string[]=[];
+  for(const file of listed.stdout.split("\0").filter(Boolean)) {
+    const dir=dirname(file);
+    if(dir==="."||taken.has(dir)||dir.split("/").length>3||dir.split("/").includes("node_modules")) continue;
+    if((await stat(join(baseReal,dir,"node_modules")).catch(()=>null))?.isDirectory()) dirs.push(dir);
+    if(dirs.length>=20) break;
+  }
+  return [...new Set(dirs)].sort();
+}
+
 /** The workspace folders of a monorepo (`apps/*`, a literal path), from the base package.json; [] when none. */
 async function workspaceDirs(basePath:string):Promise<string[]> {
   const manifest=await readFile(join(basePath,"package.json"),"utf8").then((text)=>JSON.parse(text) as {workspaces?:string[]|{packages?:string[]}}).catch(()=>null);
@@ -702,7 +723,10 @@ export async function prepareWorktree(input:{basePath:string;worktreePath:string
   await copyTaskItems(input.basePath, input.worktreePath);
   await installBaseDependencies(input.basePath);
   const baseReal=await realpath(input.basePath).catch(()=>input.basePath);
-  if(!(await stat(join(baseReal,"node_modules")).catch(()=>null))?.isDirectory()||await lstat(join(input.worktreePath,"node_modules")).catch(()=>null)) return {linked:[]};
+  const workspaces=await workspaceDirs(baseReal);
+  const nested=await nestedPackageDirs(baseReal,input.worktreePath,workspaces);
+  const rootModules=(await stat(join(baseReal,"node_modules")).catch(()=>null))?.isDirectory()??false;
+  if(await lstat(join(input.worktreePath,"node_modules")).catch(()=>null)||(!rootModules&&!nested.length)) return {linked:[]};
   const exclude=await infoExcludePath(input.worktreePath);
   if(!exclude) return {linked:[]};
   const current=await readFile(exclude,"utf8").catch(()=>"");
@@ -713,8 +737,7 @@ export async function prepareWorktree(input:{basePath:string;worktreePath:string
     await appendFile(exclude,`${current&&!current.endsWith("\n")?"\n":""}${missing.join("\n")}\n`);
   }
   const linked:string[]=[];
-  const workspaces=await workspaceDirs(baseReal);
-  for(const workspace of ["",...workspaces]) {
+  for(const workspace of ["",...workspaces,...nested]) {
     if(await mirrorNodeModules({baseReal,worktreePath:input.worktreePath,dir:workspace})) linked.push(workspace?join(workspace,"node_modules"):"node_modules");
   }
   // Workspace packages are consumed through their ignored build output (exports → dist/). A fresh
