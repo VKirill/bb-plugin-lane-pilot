@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.289
+
+**Replaced task versions leave the board.** The Tasks board and the chat's Lane Pilot section kept a version the PM had replaced with a renumbered redo (`vf-s1-xp.3` blocked beside its accepted `vf-s1-xp.4`, `vf-t0-test-infra.2` beside `.3`) under «Now» and counted it at work: the check looked for `x.3.1`. Versions of one task family are recognised now (`taskFamily`).
+
 ## 0.1.288
 
 **Results the PM already has do not wake it.** Besides Lane Pilot's own direct notices, an outcome the PM saw in its `lane_pilot_wait_writer` receipt or caused itself with `lane_pilot_cancel_task` is marked as told: the batched «results of your tasks» no longer repeats it minutes later (PMs call wait_writer and cancel_task themselves; the batch then woke them with the same states).

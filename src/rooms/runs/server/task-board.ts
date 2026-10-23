@@ -1,4 +1,5 @@
 import type { LanePilotDatabase } from "../../storage";
+import { taskFamily } from "../failure-class";
 
 /**
  * The «Tasks» board: every Lane Pilot task and workflow run of one project or of all of them, in the columns the BB Tasks
@@ -65,7 +66,7 @@ export function buildTaskBoard(db: LanePilotDatabase, input: { projectId?: strin
   const runs = input.runIds?.length ? `AND a.run_id IN (${input.runIds.map(() => "?").join(",")})` : "";
   const scope = `${input.projectId ? "AND r.project_id=?" : ""} ${runs}`;
   const args = [...(input.projectId ? [input.projectId] : []), ...(input.runIds?.length ? input.runIds : [])];
-  const tasks = db.prepare(`SELECT a.id AS attempt_id, a.run_id, a.task_id, a.state, a.reason, a.thread_id, a.attempt_no, a.updated_at,
+  const rawTasks = db.prepare(`SELECT a.id AS attempt_id, a.run_id, a.task_id, a.state, a.reason, a.thread_id, a.attempt_no, a.updated_at, a.created_at,
       t.contract_json, r.project_id, r.pm_thread_id, r.closed_at, r.objective
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     LEFT JOIN lane_pilot_task t ON t.id=a.task_id
@@ -75,8 +76,17 @@ export function buildTaskBoard(db: LanePilotDatabase, input: { projectId?: strin
         WHERE rc.project_id=r.project_id AND c.created_at>=a.created_at AND substr(c.task_id,1,length(a.task_id)+1)=a.task_id || '.')
     ORDER BY a.updated_at DESC LIMIT ?`).all(input.doneSince, ...args, limit) as Array<{
     attempt_id: string; run_id: string; task_id: string; state: string; reason: string | null; thread_id: string | null; attempt_no: number;
-    updated_at: number; contract_json: string | null; project_id: string; pm_thread_id: string | null; closed_at: number | null; objective: string | null;
+    updated_at: number; created_at: number; contract_json: string | null; project_id: string; pm_thread_id: string | null; closed_at: number | null; objective: string | null;
   }>;
+  // A version the PM replaced is not on the board: the check above finds only `x.3.1`, and PMs number redos `x.4`, so a blocked
+  // `vf-s1-xp.3` stayed «blocked» next to its accepted `vf-s1-xp.4` (Vampirism Fire, 2026-10-23).
+  const laterOfFamily = db.prepare(`SELECT c.task_id AS taskId FROM lane_pilot_attempt c JOIN lane_pilot_run rc ON rc.id=c.run_id
+    WHERE rc.project_id=? AND c.created_at>? AND c.task_id<>? AND c.task_id LIKE ? ESCAPE '\\'`);
+  const tasks = rawTasks.filter((row) => {
+    const family = taskFamily(row.task_id);
+    const like = `${family.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
+    return !(laterOfFamily.all(row.project_id, row.created_at, row.task_id, like) as Array<{ taskId: string }>).some((other) => taskFamily(other.taskId) === family);
+  });
   const now = Date.now();
   const stagesOf = db.prepare("SELECT stage_id, state, reason, model, updated_at FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=?");
   const items: BoardItem[] = tasks.map((row) => {

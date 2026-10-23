@@ -44,6 +44,18 @@ describe("buildTaskBoard", () => {
     expect(later).toEqual(expect.arrayContaining(["q", "w", "c"]));
   });
 
+  it("drops a version the PM replaced with a renumbered redo (vf-s1-xp.3 blocked beside its accepted xp.4)", async () => {
+    const w = world();
+    w.task("vf-s1-xp.3"); w.attempt("x3", "vf-s1-xp.3", "run", "spawn_requested", "running", "blocked");
+    await new Promise((wake) => setTimeout(wake, 2));
+    w.task("vf-s1-xp.4"); w.attempt("x4", "vf-s1-xp.4", "run", "spawn_requested", "running", "accepted");
+    w.task("vf-s1-xp-extra"); w.attempt("xe", "vf-s1-xp-extra", "run", "spawn_requested", "running", "blocked");
+    const ids = buildTaskBoard(w.db, { doneSince: 0 }).map((item) => item.taskId);
+    expect(ids).toContain("vf-s1-xp.4");
+    expect(ids).toContain("vf-s1-xp-extra");
+    expect(ids).not.toContain("vf-s1-xp.3");
+  });
+
   it("does not keep a failed attempt no retry followed, or a task of a closed run, «at work»", () => {
     const w = world();
     w.task("f"); w.attempt("af", "f", "run", "spawn_requested", "running", "validation_failed");
