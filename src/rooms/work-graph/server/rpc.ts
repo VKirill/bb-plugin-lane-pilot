@@ -4,7 +4,8 @@ import { TURN_REQUESTED } from "../../anamnesis";
 import type { ServerCore } from "../../core/server";
 import { workGraphStats, workGraphStrips, workGraphTask } from "./report";
 
-const TURNS_LIMIT = 500;
+/** BB pages thread events at 100 at most; a thread with more requested turns shows 100. */
+export const TURNS_LIMIT = 100;
 const CALL_MS = 4_000;
 
 /** The work graph over RPC: one task with the turns of its threads (BB counts them), the cells of many, and stages × models. */
@@ -15,6 +16,8 @@ export function workGraphRpc(ctx: Pick<ServerCore, "bb" | "db">) {
       const events = await Promise.race([list, new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), CALL_MS))]);
       return [threadId, Array.isArray(events) ? events.length : 0] as const;
     }));
+    const failed = counted.find((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (failed) bb.log.info(`Lane Pilot work graph: could not count the turns of a thread: ${failed.reason instanceof Error ? failed.reason.message : String(failed.reason)}`);
     return new Map(counted.flatMap((result) => (result.status === "fulfilled" ? [result.value] : [])));
   }
   const { bb, db } = ctx;

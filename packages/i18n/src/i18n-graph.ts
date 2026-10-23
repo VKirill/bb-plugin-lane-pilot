@@ -37,8 +37,8 @@ export const graphEn = {
   graphSkipped: "Skipped",
   graphGreenShare: "Green share",
   graphMedianRounds: "Rounds",
-  graphMedianCost: "Cost, median",
-  graphMedianTime: "Time, median",
+  graphMedianCost: "Cost, med.",
+  graphMedianTime: "Time, med.",
   graphModelStage: "Model × stage",
   graphShare: "Share",
   graphShareGreen: "{v} green",
@@ -46,6 +46,7 @@ export const graphEn = {
   graphTasks: "{n} tasks",
   graphCapped: "the newest {n} tasks",
   graphEmpty: "No task ran a stage in this period.",
+  graphOff: "Off in the project settings: {stages}",
 };
 
 export const graphRu: { [K in keyof typeof graphEn]: string } = {
@@ -86,8 +87,8 @@ export const graphRu: { [K in keyof typeof graphEn]: string } = {
   graphSkipped: "Пропущено",
   graphGreenShare: "Доля зелёных",
   graphMedianRounds: "Круги",
-  graphMedianCost: "Цена, медиана",
-  graphMedianTime: "Время, медиана",
+  graphMedianCost: "Цена, мед.",
+  graphMedianTime: "Время, мед.",
   graphModelStage: "Модель × этап",
   graphShare: "Доля",
   graphShareGreen: "{v} зелёных",
@@ -95,4 +96,5 @@ export const graphRu: { [K in keyof typeof graphEn]: string } = {
   graphTasks: "{n} задач",
   graphCapped: "последние {n} задач",
   graphEmpty: "За этот период ни одна задача не проходила этапы.",
+  graphOff: "Выключено в настройках проекта: {stages}",
 };

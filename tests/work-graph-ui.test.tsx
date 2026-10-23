@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "@lane-pilot/i18n";
+import type { ReactElement } from "react";
 
 configure({ asyncUtilTimeout: 5_000 });
 vi.setConfig({ testTimeout: 20_000 });
@@ -26,7 +27,7 @@ async function ui() {
   graph = await makeGraph();
   return await import("../src/rooms/work-graph/ui");
 }
-const mount = (element: () => JSX.Element, rpc: Record<string, unknown>) => renderSlot({ component: element }, {}, { context: { projectId: null, threadId: null }, rpc: rpc as never });
+const mount = (element: () => ReactElement, rpc: Record<string, unknown>) => renderSlot({ component: element }, {}, { context: { projectId: null, threadId: null }, rpc: rpc as never });
 
 describe("the work graph screens", () => {
   it("a task's run: the cells with the retry count, who ran each stage, tokens in the owner's units, not measured stays not measured", async () => {

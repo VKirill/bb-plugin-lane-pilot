@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.283
+
+Work graph after the first live look: turns are counted (BB pages thread events at 100; a limit of 500 was refused without a word), stages the project turned off are one line instead of a card each, and the tables fit the task page (the thread link is an arrow, shorter median headings).
+
 ## 0.1.282
 
 **The work graph (Matvey Maslov's «Работы / Этапы и модели» screens).** Tasks → List shows one square per stage a task ran (green passed, red failed, a number when a stage took more than one round); a task's page shows «How the work went»: returns, cost, agent time and models, then per stage who ran it with round, model, turns, time, fresh/cache-read/cache-write/output tokens, cost and the thread; Tasks → «Stages and models» shows per stage green, red, unknown, green share and median rounds, cost and time, and per model on each stage its green share (for a reviewer, the share where it blocked), over 7/30/90 days. Read from the stage events, receipts, attempts and token cursors Lane Pilot already records; a provider that reports no usage stays «not measured» (`src/rooms/work-graph`, docs/work-graph.md).

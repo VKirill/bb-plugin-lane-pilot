@@ -7,8 +7,10 @@ import { StageStrip } from "./stage-strip";
 import { duration, fill, money, roleName, shortModel, stageName, stageState, tokens } from "./format";
 
 const POLL_MS = 10_000;
-const th = "px-2 py-1.5 text-left font-medium";
-const td = "px-2 py-1.5 tabular-nums";
+/** A stage the project's settings turned off never ran: one line names them all instead of a card each. */
+const isOff = (block: StageBlock) => block.cell.state === "skipped" && block.cell.rounds === 0;
+const th = "px-1.5 py-1.5 text-left font-medium";
+const td = "whitespace-nowrap px-1.5 py-1.5 tabular-nums";
 
 function Cost({ row }: { row: ExecutorRow }) {
   if (row.costState === null) return <>—</>;
@@ -32,7 +34,7 @@ function StageCard({ block, locale, onThread }: { block: StageBlock; locale: str
       </div>
       {rows.length ? (
         <div className="overflow-x-auto border-t border-border">
-          <table className="w-full min-w-[46rem] text-xs">
+          <table className="w-full min-w-[36rem] text-xs">
             <thead>
               <tr className="border-b border-border text-muted-foreground">
                 <th className={th}>{t("graphRole")}</th><th className={th}>{t("graphRound")}</th><th className={th}>{t("graphModel")}</th>
@@ -46,7 +48,7 @@ function StageCard({ block, locale, onThread }: { block: StageBlock; locale: str
                 <tr key={`${row.threadId ?? "code"}:${row.round}:${index}`} className="border-b border-border/60 last:border-b-0" data-testid={`graph-row-${row.stageId}-${row.round}`}>
                   <td className={td}>{roleName(row.role)}</td>
                   <td className={td}>{row.round}</td>
-                  <td className="px-2 py-1.5" title={row.model ?? ""}>{row.role === "code" ? "—" : shortModel(row.model)}</td>
+                  <td className="px-1.5 py-1.5" title={row.model ?? ""}>{row.role === "code" ? "—" : shortModel(row.model)}</td>
                   <td className={td}>{row.turns ?? "—"}</td>
                   <td className={td}>{duration(row.seconds, locale)}</td>
                   <td className={td}>{tokens(row.tokens?.fresh, locale)}</td>
@@ -54,8 +56,8 @@ function StageCard({ block, locale, onThread }: { block: StageBlock; locale: str
                   <td className={td}>{tokens(row.tokens?.cacheWrite, locale)}</td>
                   <td className={td}>{tokens(row.tokens?.output, locale)}</td>
                   <td className={td}><Cost row={row} /></td>
-                  <td className="px-2 py-1.5 text-right">
-                    {row.threadId ? <button type="button" className="whitespace-nowrap underline decoration-input underline-offset-2 hover:decoration-current" onClick={() => onThread(row.threadId!)}>{t("graphOpenThread")}</button> : null}
+                  <td className="px-1.5 py-1.5 text-right">
+                    {row.threadId ? <button type="button" title={t("graphOpenThread")} aria-label={t("graphOpenThread")} className="rounded px-1 text-sm leading-none text-muted-foreground hover:bg-state-hover hover:text-foreground" onClick={() => onThread(row.threadId!)}>↗</button> : null}
                   </td>
                 </tr>
               ))}
@@ -83,6 +85,7 @@ export function WorkBreakdown({ runId, taskId, locale }: { runId: string; taskId
   if (!graph) return <p className="text-sm text-muted-foreground">{t("graphLoading")}</p>;
   if (!graph.cells.length) return <p className="text-sm text-muted-foreground">{t("graphNoStages")}</p>;
   const { summary } = graph;
+  const off = graph.stages.filter(isOff);
   const cost = summary.costState === null ? "—" : summary.costUsd === null ? t("graphNotMeasured") : `${money(summary.costUsd)}${summary.costState === "partial" ? ` (${t("graphPartial")})` : ""}`;
   return (
     <div className="space-y-2.5" data-testid="work-breakdown">
@@ -93,7 +96,8 @@ export function WorkBreakdown({ runId, taskId, locale }: { runId: string; taskId
         <span>{fill("graphAgentTime", { v: duration(summary.seconds, locale) })}</span>
         {summary.models.length ? <span className="min-w-0 break-words">{summary.models.map((model) => shortModel(model)).join(" · ")}</span> : null}
       </div>
-      {graph.stages.map((block) => <StageCard key={block.cell.stageId} block={block} locale={locale} onThread={(threadId) => navigate.toThread(threadId)} />)}
+      {off.length ? <p className="text-xs text-muted-foreground" data-testid="graph-off">{fill("graphOff", { stages: off.map((block) => stageName(block.cell.stageId)).join(", ") })}</p> : null}
+      {graph.stages.filter((block) => !isOff(block)).map((block) => <StageCard key={block.cell.stageId} block={block} locale={locale} onThread={(threadId) => navigate.toThread(threadId)} />)}
     </div>
   );
 }

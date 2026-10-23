@@ -8,8 +8,8 @@ import { duration, fill, money, percent, roleName, shortModel, stageName } from 
 
 type Stats = GraphStats & { days: number; capped: boolean };
 const DAYS = [7, 30, 90] as const;
-const th = "px-2 py-1.5 text-left font-medium";
-const num = "px-2 py-1.5 text-right tabular-nums";
+const th = "px-1.5 py-1.5 text-left font-medium";
+const num = "whitespace-nowrap px-1.5 py-1.5 text-right tabular-nums";
 
 /** Over the period: how each stage fared, and how each model fared on each stage (the second table answers «which model where»). */
 export function StageModelStats({ projectId, excludeProjectIds, locale }: { projectId?: string | undefined; excludeProjectIds?: readonly string[] | undefined; locale: string }) {
@@ -37,7 +37,7 @@ export function StageModelStats({ projectId, excludeProjectIds, locale }: { proj
         <>
           <p className="text-xs text-muted-foreground">{stats.capped ? fill("graphCapped", { n: stats.tasks }) : fill("graphTasks", { n: stats.tasks })}</p>
           <div className="overflow-x-auto rounded-md border border-border">
-            <table className="w-full min-w-[44rem] text-xs" data-testid="graph-stage-table">
+            <table className="w-full min-w-[38rem] text-xs" data-testid="graph-stage-table">
               <thead><tr className="border-b border-border text-muted-foreground">
                 <th className={th}>{t("graphStage")}</th><th className={th}>{t("graphGreen")}</th><th className={th}>{t("graphRed")}</th><th className={th}>{t("graphUnknown")}</th>
                 <th className={th}>{t("graphSkipped")}</th><th className={th}>{t("graphGreenShare")}</th><th className={th}>{t("graphMedianRounds")}</th>
@@ -62,7 +62,7 @@ export function StageModelStats({ projectId, excludeProjectIds, locale }: { proj
           </div>
           <h3 className="text-sm font-semibold">{t("graphModelStage")}</h3>
           <div className="overflow-x-auto rounded-md border border-border">
-            <table className="w-full min-w-[40rem] text-xs" data-testid="graph-model-table">
+            <table className="w-full min-w-[34rem] text-xs" data-testid="graph-model-table">
               <thead><tr className="border-b border-border text-muted-foreground">
                 <th className={th}>{t("graphModel")}</th><th className={th}>{t("graphRole")}</th><th className={th}>{t("graphStage")}</th>
                 <th className={th}>n</th><th className={th}>{t("graphShare")}</th><th className={th}>{t("graphMedianCost")}</th><th className={th}>{t("graphMedianTime")}</th>
