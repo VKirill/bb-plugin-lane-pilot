@@ -2,7 +2,7 @@ import { mountErrands } from "../../qa/server";
 import { cancelAttemptById } from "../../runs/server";
 import { LANE_PILOT_READ_NAME } from "@lane-pilot/kit";
 import { taskV2Schema } from "../../contracts";
-import { getRun, getRunSettingsScopes, listOpenAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig } from "../../storage";
+import { getRun, getRunSettingsScopes, listOpenAttempts, listStageReceipts, loadProjectSettings, loadPrototypeConfig, noteToldPmDirectly } from "../../storage";
 import { finalizeNativeLaneBinding, nativeRunReady, ownedNativePmRun, writerWorkspaceForPmInstructions } from "../../native-agent";
 import { NATIVE_LP_BRIDGE_PM_TOOLS } from "../../native-agent";
 import { readGateReport } from "../../tasks/gate-report";
@@ -98,6 +98,8 @@ export function registerTools(ctx: ServerCore, services: Services) {
         const attempts = open.filter((row) => row.task_id === taskId);
         if (!attempts.length) { results.push({ taskId, ok:false, state:"not_open", reason:"no open attempt of this task in this run" }); continue; }
         for (const attempt of attempts) results.push({ taskId, attemptId:attempt.id, ...await cancelAttemptById(ctx, attempt.id, services.rollback) });
+        // The PM canceled it: its «canceled» is no news for the batched results.
+        noteToldPmDirectly(context.threadId, taskId, Date.now() + 5 * 60_000);
       }
       return JSON.stringify({ runId, results });
     },
@@ -174,9 +176,12 @@ export function registerTools(ctx: ServerCore, services: Services) {
         }
         return JSON.stringify(stageDetail(params.runId, params.stage, listStageReceipts(db, params.runId, params.taskId)));
       }
-      return JSON.stringify(
-        compactWaitResult(await services.waitWriter({ threadId:context.threadId, projectId:context.projectId, runId:params.runId, timeoutSec:params.timeoutSec })),
-      );
+      const waited = await services.waitWriter({ threadId:context.threadId, projectId:context.projectId, runId:params.runId, timeoutSec:params.timeoutSec });
+      // The receipt shows the PM every task's state: those already ended are no news for the batched results.
+      const ended = db.prepare(`SELECT DISTINCT task_id AS taskId FROM lane_pilot_attempt a WHERE run_id=? AND state IN ('accepted','blocked','canceled')
+        AND attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)`).all(params.runId) as Array<{ taskId:string }>;
+      for (const row of ended) noteToldPmDirectly(context.threadId, row.taskId);
+      return JSON.stringify(compactWaitResult(waited));
     },
   });
 

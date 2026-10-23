@@ -313,3 +313,14 @@ describe("an outcome Lane Pilot already told the PM directly", () => {
     expect(h.sent[0]!.text).not.toContain("- x ");
   });
 });
+
+describe("toldPmDirectly", () => {
+  it("covers every transition up to the time the PM had the news, and a notice sent just ahead of one", async () => {
+    const { noteToldPmDirectly, toldPmDirectly } = await import("../src/rooms/storage/database");
+    noteToldPmDirectly("pm-told", "t", 10_000_000);
+    expect(toldPmDirectly("pm-told", "t", 9_000_000)).toBe(true);
+    expect(toldPmDirectly("pm-told", "t", 10_000_000 + 10 * 60_000)).toBe(true);
+    expect(toldPmDirectly("pm-told", "t", 10_000_000 + 20 * 60_000)).toBe(false);
+    expect(toldPmDirectly("pm-told", "other", 9_000_000)).toBe(false);
+  });
+});

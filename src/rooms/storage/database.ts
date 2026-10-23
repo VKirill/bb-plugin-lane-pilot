@@ -967,9 +967,11 @@ export function listUnreportedTaskOutcomes(db: LanePilotDatabase, since: number)
 }
 
 /**
- * Outcomes Lane Pilot already told a PM in a message of their own (a writer's question, a task not started for its baseline): the
- * batched results skip them, so the PM is not woken twice for one fact (Vampirism Fire vf-s1-xp.3, 20:18 and again 20:19, 2026-10-23).
- * In memory: after a reload a told outcome may be repeated once, never lost.
+ * Outcomes a PM already has: Lane Pilot told it in a message of their own (a writer's question, a task not started for its baseline),
+ * its own lane_pilot_wait_writer returned them, or it canceled the task itself. The batched results skip them, so the PM is not woken
+ * for a fact it already acted on (Vampirism Fire vf-s1-xp.3, 20:18 and again 20:19, 2026-10-23). The mark is the time the PM had the
+ * news; it covers every transition up to then (and 15 minutes before a transition, for a notice sent just ahead of it). In memory:
+ * after a reload a told outcome may be repeated once, never lost.
  */
 const toldDirectly = new Map<string, number>();
 export function noteToldPmDirectly(pmThreadId: string, taskId: string, at = Date.now()): void {
@@ -978,7 +980,7 @@ export function noteToldPmDirectly(pmThreadId: string, taskId: string, at = Date
 }
 export function toldPmDirectly(pmThreadId: string, taskId: string, at: number, windowMs = 15 * 60_000): boolean {
   const when = toldDirectly.get(`${pmThreadId}\u0000${taskId}`);
-  return when !== undefined && Math.abs(when - at) <= windowMs;
+  return when !== undefined && when >= at - windowMs;
 }
 
 /** Whether any task of the PM's runs is still at work (queued, being spawned, running or being canceled). */

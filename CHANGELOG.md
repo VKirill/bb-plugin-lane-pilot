@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.288
+
+**Results the PM already has do not wake it.** Besides Lane Pilot's own direct notices, an outcome the PM saw in its `lane_pilot_wait_writer` receipt or caused itself with `lane_pilot_cancel_task` is marked as told: the batched «results of your tasks» no longer repeats it minutes later (PMs call wait_writer and cancel_task themselves; the batch then woke them with the same states).
+
 ## 0.1.287
 
 **A PM is not woken for news it already has.** The batched «results of your tasks» listed versions the PM had already replaced (`vf-s1-xp.3` blocked and two `.3` tasks it canceled, while their `.4` ran): the check for a newer version looked for `x.3.1`, and PMs number redos `x.4`; redos of one task family are skipped now. An outcome Lane Pilot already told the PM in a message of its own (a writer's question, «задача не запущена» for its baseline) is marked reported instead of repeated a minute later.
