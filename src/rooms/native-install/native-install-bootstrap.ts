@@ -5,7 +5,7 @@ import { delimiter, join } from "node:path";
 import { lstat, readFile } from "node:fs/promises";
 
 /** Lane Stack 1.66.2: its opencode-lane plugin is an OpenCode v2 definition with the lane-pilot agent (earlier ones load only in v1). */
-export const NATIVE_STACK_SHA = "f3dc93b9eb20243cb821ffb612d61ff5ea1a4d4c";
+export const NATIVE_STACK_SHA = "b523a3bffe31ca1589253dc97dddabedb8db6170";
 export const CLAUDE_LANE_REPO = "https://github.com/VKirill/claude-lane-stack";
 /** Where Claude Lane's own install keeps its checkout; installing here makes Lane Pilot's install the user's install. */
 export const CLAUDE_LANE_SOURCE = ".local/share/claude-lane-stack-installed";

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.280
+
+**Lane Stack pin → 1.66.7 (`b523a3b`).** BB's Claude Code provider reads the model list with an SDK query of `.` outside any thread (every probe and hub restart); the owner-presence hook took it for the owner and held Claude Code writers for 10 minutes. The hook now skips exactly that prompt; a `.` typed in a terminal still counts.
+
 ## 0.1.279
 
 **Helpers keep the lane marker under a required session policy.** The VK core cut the env of every plugin a required session policy leaves out, Lane Pilot included, so the memory-maintainer, PM readers and other helpers with a required policy got neither `LANE_PILOT_ROLE` nor the guard PATH (Codex, OpenCode, Cursor): the owner-presence hook took them for the owner, and the bb guard wrappers did not reach them. Core `0.46.1-vk.4` keeps the env of the plugin that started the thread (its skills, tools and instructions stay out); a drill on vk.4 showed the marker on the probe and all three memory maintainers. Lane Stack pin → 1.66.6 (`f3dc93b`): the opening prompt of a PM or self-repair thread Lane Pilot starts no longer marks the owner present.

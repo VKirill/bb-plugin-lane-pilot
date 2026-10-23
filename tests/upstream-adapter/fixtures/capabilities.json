@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "baseline": {
     "version": "1.66.0",
-    "sourceSha": "f3dc93b9eb20243cb821ffb612d61ff5ea1a4d4c",
+    "sourceSha": "b523a3bffe31ca1589253dc97dddabedb8db6170",
     "capabilities": [
       "opencode.plugin.default_export",
       "opencode.hook.event_subscribe",
@@ -32,7 +32,7 @@
     {
       "label": "v1.66.0-no-windows",
       "version": "1.66.0",
-      "sourceSha": "f3dc93b9eb20243cb821ffb612d61ff5ea1a4d4c",
+      "sourceSha": "b523a3bffe31ca1589253dc97dddabedb8db6170",
       "capabilities": [
         "opencode.plugin.default_export",
         "opencode.hook.event_subscribe",
