@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase, createRun, createTask, createAttempt, countAttempts, getAttempt, getTask, getTaskPlan, savePrototypeConfig, listStageReceipts, saveProjectSetting, transitionAttempt } from "../src/rooms/storage/database";
+import { openDatabase, createRun, createTask, createAttempt, countAttempts, getAttempt, getTask, getTaskPlan, loadPrototypeConfig,
+  savePrototypeConfig, listStageReceipts, saveProjectSetting, transitionAttempt } from "../src/rooms/storage/database";
 import { createWriterUpdateTask } from "../src/rooms/writer/server/update-task";
 import type { TaskV2 } from "../src/rooms/contracts";
 import type { ServerCore } from "../src/rooms/core/server/core";
@@ -93,6 +94,7 @@ describe("lane_pilot_update_task", () => {
       bb: fakeBb as never,
       db,
       state: { disposed: false },
+      configForRun: async (id: string) => loadPrototypeConfig(db, id),
       log: () => {},
     } as unknown as ServerCore;
 
@@ -135,12 +137,27 @@ describe("lane_pilot_update_task", () => {
     expect(receipts.some((r) => r.stageId === "plan-critique")).toBe(true);
   });
 
+  it("updates a task of a chat that switched Lane Pilot on in the composer: no project config, the run's own (Vampirism Fire 2026-10-23)", async () => {
+    createTask(db, { id: taskId, runId, kind: "bb", contract: baseTask });
+    createAttempt(db, { id: "att-1", runId, taskId });
+    const runConfig = loadPrototypeConfig(db, projectId);
+    db.prepare("DELETE FROM lane_pilot_project_settings WHERE project_id=? AND key=?").run(projectId, "hostId");
+    expect(loadPrototypeConfig(db, projectId)).toBeNull();
+    const asked: string[] = [];
+    const ctx = { bb: fakeBb as never, db, state: { disposed: false }, log: () => {},
+      configForRun: async (id: string) => { asked.push(id); return runConfig; } } as unknown as ServerCore;
+    const { updateTask } = createWriterUpdateTask(ctx, { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services);
+    const res = await updateTask({ projectId, runId, pmThreadId, taskId, task: { ...baseTask, title: "Updated title" }, plan: "New plan" });
+    expect(res.ok).toBe(true);
+    expect(asked).toEqual([projectId]);
+  });
+
   it("moves the PM's contract into the repository its task works in, and refuses one that leaves it (BB-сервис 2026-10-11)", async () => {
     // The task was moved at dispatch into the repository plugins/p of the run folder /ws.
     const moved: TaskV2 = { ...baseTask, project_cwd: "/ws/plugins/p", owns_paths: ["src/**"], expected_outputs: ["out.txt"], verification: [{ command: "npm test", cwd: "/ws/plugins/p" }] };
     createTask(db, { id: taskId, runId, kind: "bb", contract: moved });
     createAttempt(db, { id: "att-1", runId, taskId });
-    const ctx = { bb: fakeBb as never, db, state: { disposed: false }, log: () => {} } as unknown as ServerCore;
+    const ctx = { bb: fakeBb as never, db, state: { disposed: false }, configForRun: async (id: string) => loadPrototypeConfig(db, id), log: () => {} } as unknown as ServerCore;
     const services = { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
     const { updateTask } = createWriterUpdateTask(ctx, services);
     // The PM sends it as it wrote it: from the run folder, with a reference file of another plugin.
@@ -164,6 +181,7 @@ describe("lane_pilot_update_task", () => {
       bb: fakeBb as never,
       db,
       state: { disposed: false },
+      configForRun: async (id: string) => loadPrototypeConfig(db, id),
       log: () => {},
     } as unknown as ServerCore;
 
@@ -207,6 +225,7 @@ describe("lane_pilot_update_task", () => {
           },
         },
         state: { disposed: false },
+      configForRun: async (id: string) => loadPrototypeConfig(db, id),
         log: () => {},
       } as unknown as ServerCore;
       const services = { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
@@ -321,6 +340,7 @@ describe("lane_pilot_update_task", () => {
             : { exitCode: 0, stdout: "", stderr: "" },
         },
         state: { disposed: false },
+      configForRun: async (id: string) => loadPrototypeConfig(db, id),
         log: () => {},
         getThreadBounded: async () => ({ id: "thr-w", status: "idle" }),
         acceptedTaskWorkspace: (_runId: string, _taskId: string, _workspace: string, contract: TaskV2) =>

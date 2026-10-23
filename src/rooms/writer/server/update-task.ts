@@ -11,7 +11,6 @@ import {
   getTaskPlan,
   listAttemptsForTask,
   listStageReceipts,
-  loadPrototypeConfig,
   saveTaskPlan,
   updateTaskContract,
 } from "../../storage";
@@ -149,7 +148,9 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
       };
     }
 
-    const config = await loadPrototypeConfig(db, input.projectId);
+    // A chat that switched Lane Pilot on in the composer runs as kind `cli` and has no project prototype config: its run's config is
+    // the one dispatch and the writer answer use (owner's Vampirism Fire PM, 2026-10-23: update_task said «not configured» twice).
+    const config = await ctx.configForRun(input.projectId, run);
     if (!config) {
       return {
         ok: false,
