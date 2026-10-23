@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.279
+
+**Helpers keep the lane marker under a required session policy.** The VK core cut the env of every plugin a required session policy leaves out, Lane Pilot included, so the memory-maintainer, PM readers and other helpers with a required policy got neither `LANE_PILOT_ROLE` nor the guard PATH (Codex, OpenCode, Cursor): the owner-presence hook took them for the owner, and the bb guard wrappers did not reach them. Core `0.46.1-vk.4` keeps the env of the plugin that started the thread (its skills, tools and instructions stay out); a drill on vk.4 showed the marker on the probe and all three memory maintainers. Lane Stack pin → 1.66.6 (`f3dc93b`): the opening prompt of a PM or self-repair thread Lane Pilot starts no longer marks the owner present.
+
 ## 0.1.278
 
 **Claude Code threads Lane Pilot starts carry the lane marker.** Helpers and critics on Claude Code got no `LANE_PILOT_ROLE` (only Codex, OpenCode and Cursor did), so the machine's hooks took them for the owner's own sessions: a helper probe marked the owner present and held every Claude writer off. They now get the marker alone (no PATH shim); the PM and the owner's chats get nothing. Lane hooks (stall rules, Jev routing of subagents) now apply to them as to every lane session.

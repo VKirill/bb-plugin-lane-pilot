@@ -21,3 +21,5 @@ Every two minutes Lane Pilot reads that file on every connected machine (a machi
 used a provider within the last 10 minutes, a writer that would run on it is not spawned
 (`writer_provider_unavailable:owner_present:…`, failure class `limit`): the writer chain moves to the next provider, as for an open breaker.
 The subscription is one account across the machines, so the hold is global. `bb lane-pilot owner-presence` shows the marks.
+
+Lane Pilot's own threads carry `LANE_PILOT_ROLE` (helpers on every provider; core `0.46.1-vk.4` or later keeps it under a required session policy) and its opening PM/self-repair prompt (`You are the Lane Pilot …`) is skipped by the hook, so they never mark the owner.

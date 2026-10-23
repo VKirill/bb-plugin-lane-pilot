@@ -25,7 +25,7 @@ async function openCodeHost(guard: string) {
 
 describe("native install pinned Lane Stack revision", () => {
   it("pins Lane Stack 1.66.0 (8cfe994), the first whose OpenCode plugin loads in OpenCode v2", () => {
-    expect(NATIVE_STACK_SHA).toBe("1bb3955a50af2ef2fd975f2001d86d6fb734ece7");
+    expect(NATIVE_STACK_SHA).toBe("f3dc93b9eb20243cb821ffb612d61ff5ea1a4d4c");
     expect(NATIVE_STACK_SHA).not.toBe("45fa19eab528d92d8ce2744d49153ecb4133ea33");
   });
 
