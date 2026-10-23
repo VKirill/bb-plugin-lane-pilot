@@ -4,6 +4,10 @@
 
 ## 0.1.285
 
+**Checks find the project's own toolchain.** The check sandbox had the system folders on PATH and an empty temp HOME, so tools a user installs in their home (rokit's rojo, lune, selene, stylua; cargo, bun, deno, go, ~/.local/bin) were «command not found» (exit 127) and rokit, finding no ~/.rokit, made one in the repository, which the owns check charged to the writer: Vampirism Fire's test-infra task failed ten attempts that way and the writers rewrote check.sh outside their task. The bin folders that exist are now on PATH and the tool homes are linked into the temp HOME (read only; the sandbox still writes only the workspace and temp).
+
+**A task sent again is not its own pilot.** The pilot rule counted `vf-t0-test-infra`, `.2` and `.3` as three siblings of one area, made the first (blocked) one their pilot, and `.3` waited for it forever. Redos of one task are one sibling now, and a redo never waits for its own family.
+
 **Worktrees reuse the project's packages.** A FeedGen writer found `intro-video/node_modules` missing in its worktree and ran `npm ci` there (569 MB, plus Remotion's 92 MB browser): only the root and the declared workspaces were mirrored. Nested packages are now mirrored too (below), every package of `node_modules` is a link to the main checkout's copy (one copy on disk), and the writer's brief says the dependencies are linked: no `npm ci` or `npm install`, a missing `node_modules` is a blocker to report. The folder a removed worktree sat in (`~/.lane-pilot/worktrees/lpattempt_…`) is removed when empty (339 of 347 on OVH were such leftovers).
 
 **Updating a task works in a chat that switched Lane Pilot on in the composer.** `lane_pilot_update_task` read the project's prototype config, which such a chat (a run of kind `cli`) never has, and answered «not_configured» (the Vampirism Fire PM, 2026-10-23, twice, so the change went to the writer as an answer instead of into the contract). It now takes the run's config, as dispatch and the writer answer do.

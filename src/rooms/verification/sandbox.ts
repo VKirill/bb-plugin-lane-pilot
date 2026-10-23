@@ -1,5 +1,5 @@
-import { accessSync, constants as fsConstants } from "node:fs";
-import { access, lstat, mkdir, mkdtemp, realpath, rm, rmdir } from "node:fs/promises";
+import { accessSync, constants as fsConstants, existsSync } from "node:fs";
+import { access, lstat, mkdir, mkdtemp, realpath, rm, rmdir, symlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createCapture, redactSecrets, sha256Hex } from "@lane-pilot/kit";
@@ -95,9 +95,35 @@ export function bbDataDir(env:NodeJS.ProcessEnv = process.env):string {
   return pinned && isAbsolute(pinned) ? pinned : join(homedir(),".bb");
 }
 
+/**
+ * Tools a user installs into their own home: rokit (rojo, lune, selene…), aftman, foreman, cargo, bun, deno, go, pipx/uv in ~/.local/bin.
+ * The sandbox's HOME is a temp folder and its PATH the system folders only, so a project's own toolchain was «command not found»
+ * (exit 127: Vampirism Fire's `scripts/check.sh` ran rojo and lune, 2026-10-23) and rokit, finding no ~/.rokit, made one in the
+ * repository, which the owns check then charged to the writer. The bin folders that exist go on PATH, and the tool homes are linked
+ * into the temp HOME: read, the user's settings and installed tools; written, nothing (the sandbox allows writes only in the
+ * workspace and the temp folder).
+ */
+export const USER_TOOL_HOMES = [".rokit", ".aftman", ".foreman", ".cargo", ".rustup", ".bun", ".deno"] as const;
+export const USER_TOOL_BINS = [".rokit/bin", ".aftman/bin", ".foreman/bin", ".cargo/bin", ".bun/bin", ".deno/bin", "go/bin", ".local/bin"] as const;
+
+export function userToolBins(home:string = homedir()):string[] {
+  return USER_TOOL_BINS.map((dir)=>join(home,dir)).filter((dir)=>existsSync(dir));
+}
+
+/** Links the user's tool homes that exist into the sandbox's temp HOME. */
+export async function linkUserToolHomes(tempPath:string, home:string = homedir()):Promise<string[]> {
+  const linked:string[]=[];
+  for (const name of USER_TOOL_HOMES) {
+    const source=join(home,name);
+    if (!existsSync(source)) continue;
+    await symlink(source,join(tempPath,name),"dir").then(()=>linked.push(name),()=>undefined);
+  }
+  return linked;
+}
+
 function sandboxPath(base:string):string {
   const bb = bbCliDir();
-  return bb ? `${base}:${bb}` : base;
+  return [base, ...userToolBins(), ...(bb ? [bb] : [])].join(":");
 }
 
 export function buildBubblewrapArgs(input:{workspacePath:string;cwd:string;tempPath:string;guardPaths:string[]}):string[] {
@@ -197,6 +223,7 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
   // macOS tmpdir() sits under the /var -> /private/var symlink and seatbelt matches real paths,
   // so an unresolved temp path would leave the sandbox's own HOME unwritable.
   const tempPath = await realpath(await mkdtemp(resolve(tmpdir(),"lane-pilot-sandbox-")));
+  await linkUserToolHomes(tempPath);
   let releaseGuards=async():Promise<void>=>{};
   try {
     if (backend === "linux-bubblewrap") {
@@ -280,6 +307,7 @@ export async function prepareSandboxedCommandLine(input:SandboxedCommandInput & 
   if (!within(workspacePath,cwd)) throw new Error("sandbox_cwd_outside_workspace");
   if (!input.command.trim() || input.command.length > 32_000 || input.command.includes("\0")) throw new Error("sandbox_command_invalid_or_too_large");
   const tempPath = await realpath(await mkdtemp(resolve(tmpdir(),"lane-pilot-sandbox-")));
+  await linkUserToolHomes(tempPath);
   const hostId=process.env.BB_HOST_ID ?? input.requestedHostId;
   if (backend === "linux-bubblewrap") {
     const {guardPaths,created}=await prepareGuardPaths(workspacePath);

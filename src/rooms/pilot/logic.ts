@@ -12,11 +12,21 @@ export type RunTask = { id: string; area: string | null; kind: string | null; cr
  * depends_on (then its own order holds and no pilot is added, so the two can never wait for each other). The pilot is the earliest sibling
  * that depends on nothing.
  */
+/** `vf-t0-test-infra.3` and `vf-t0-test-infra` are one task sent again: the family is the id without its redo suffix. */
+export const taskFamilyOf = (id: string): string => id.replace(/\.\d+$/, "");
+
 export function pilotOf(taskId: string, tasks: readonly RunTask[], min = PILOT_MIN_SIBLINGS): string | null {
   const own = tasks.find((task) => task.id === taskId);
   if (!own?.area || own.dependsOn.length) return null;
-  const siblings = tasks.filter((task) => task.area === own.area && task.kind === own.kind);
-  if (siblings.length < min) return null;
-  const pilot = siblings.filter((task) => !task.dependsOn.length).sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))[0];
-  return pilot && pilot.id !== taskId ? pilot.id : null;
+  // One task sent again is one sibling, not three: the redos of a blocked task made it its own pilot's sibling, and the third
+  // version waited for the first, blocked one (Vampirism Fire vf-t0-test-infra.3, 2026-10-23).
+  const families = new Map<string, RunTask>();
+  for (const task of tasks) {
+    if (task.area !== own.area || task.kind !== own.kind) continue;
+    const family = taskFamilyOf(task.id), first = families.get(family);
+    if (!first || task.createdAt < first.createdAt) families.set(family, task);
+  }
+  if (families.size < min) return null;
+  const pilot = [...families.values()].filter((task) => !task.dependsOn.length).sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))[0];
+  return pilot && taskFamilyOf(pilot.id) !== taskFamilyOf(taskId) ? pilot.id : null;
 }

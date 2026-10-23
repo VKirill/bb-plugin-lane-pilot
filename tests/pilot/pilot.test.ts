@@ -23,3 +23,15 @@ describe("the pilot of an area", () => {
     expect(pilotOf("d", mixed)).toBe("a");
   });
 });
+
+describe("a task sent again is one sibling", () => {
+  it("the redos of a blocked task never make it its own pilot (Vampirism Fire vf-t0-test-infra.3, 2026-10-23)", () => {
+    const t = (id: string, createdAt: number) => ({ id, area: "game:test-infra", kind: "chore", createdAt, dependsOn: [] as string[] });
+    const tasks = [t("vf-t0-test-infra", 1), t("vf-t0-test-infra.2", 2), t("vf-t0-test-infra.3", 3)];
+    expect(pilotOf("vf-t0-test-infra.3", tasks)).toBeNull();
+    expect(pilotOf("vf-t0-test-infra.2", tasks)).toBeNull();
+    const siblings = [...tasks, t("vf-other-a", 4), t("vf-other-b", 5)];
+    expect(pilotOf("vf-other-b", siblings)).toBe("vf-t0-test-infra");
+    expect(pilotOf("vf-t0-test-infra.3", siblings)).toBeNull();
+  });
+});
