@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { BB_SHIM_PROVIDER_IDS, createBbShimEnv, mountBbShim } from "../../src/rooms/native-agent/server/helper-bb-shim";
+import { BB_SHIM_PROVIDER_IDS, MARKER_ONLY_PROVIDER_IDS, createBbShimEnv, mountBbShim } from "../../src/rooms/native-agent/server/helper-bb-shim";
 
 // Audit 2026-10-08 round 3, P0-2: Codex, OpenCode and Cursor threads of Lane Pilot get the bb guard wrappers first on PATH.
 const SHIM = { dir: "/data/bb-shim", path: "/data/bb-shim:/usr/local/bin:/usr/bin" };
@@ -91,8 +91,14 @@ describe("which providers get the wrappers", () => {
 
   it("Codex, OpenCode and Cursor through their own resolver", async () => {
     const { registered } = mounted(mountBbShim);
-    expect([...registered.keys()].sort()).toEqual([...BB_SHIM_PROVIDER_IDS].sort());
+    expect([...registered.keys()].sort()).toEqual([...BB_SHIM_PROVIDER_IDS, ...MARKER_ONLY_PROVIDER_IDS].sort());
     expect(BB_SHIM_PROVIDER_IDS).toEqual(expect.arrayContaining(["codex", "opencode2", "acp-cursor"]));
     expect(await registered.get("codex")!({ threadId: "thr_1", hostId: "ovh" })).toEqual([expect.objectContaining({ name: "LANE_PILOT_ROLE", value: "writer" }), expect.objectContaining({ name: "PATH", value: SHIM.path })]);
+  });
+
+  it("a Claude Code thread Lane Pilot started gets the lane marker alone, no PATH shim; the PM and the owner's chats get nothing", async () => {
+    const { registered, host } = mounted(mountBbShim);
+    expect(await registered.get("claude-code")!({ threadId: "thr_2", hostId: "mini" })).toEqual([expect.objectContaining({ name: "LANE_PILOT_ROLE", value: "writer" })]);
+    expect(host.call).not.toHaveBeenCalled();
   });
 });

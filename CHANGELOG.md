@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.278
+
+**Claude Code threads Lane Pilot starts carry the lane marker.** Helpers and critics on Claude Code got no `LANE_PILOT_ROLE` (only Codex, OpenCode and Cursor did), so the machine's hooks took them for the owner's own sessions: a helper probe marked the owner present and held every Claude writer off. They now get the marker alone (no PATH shim); the PM and the owner's chats get nothing. Lane hooks (stall rules, Jev routing of subagents) now apply to them as to every lane session.
+
 ## 0.1.277
 
 **The capability probe no longer blames an adapter for its own setup.** The first live sweep after 0.1.276 started its helpers under an archived sandbox PM chat («Parent thread is invalid») and recorded every provider as not_supported, opening their breakers; it also paired a provider with another project's model. Now a probe that cannot be set up (a dead parent, an unknown model, an unusable run) writes no receipt and trips no breaker, the probe takes the latest sandbox run whose PM chat is alive, and providers pair with models within one project. The four wrong receipts were removed on the hub; the reload clears the breakers.

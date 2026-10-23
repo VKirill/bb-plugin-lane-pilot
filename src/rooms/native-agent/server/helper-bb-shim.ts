@@ -76,7 +76,26 @@ export function createBbShimEnv(ctx: Pick<ServerCore, "bb" | "host">, now: () =>
   };
 }
 
+/**
+ * Claude Code threads Lane Pilot starts (helpers, critics) get the lane marker alone, no PATH shim: without it the machine's hooks took them
+ * for the owner's own sessions (the owner-presence mark, 2026-10-23: a helper probe marked the owner present).
+ */
+export const MARKER_ONLY_PROVIDER_IDS = ["claude-code"] as const;
+
+export function createRoleMarkerEnv(ctx: Pick<ServerCore, "bb">) {
+  const { bb } = ctx;
+  return async (context: { threadId: string; hostId: string }): Promise<ExperimentalPluginProviderEnvEntry[]> => {
+    let metadata: unknown = null;
+    try { metadata = await within(CALL_MS, "getPluginMetadata", Promise.resolve(bb.sdk.threads.getPluginMetadata({ threadId: context.threadId }))); } catch { return []; }
+    const role = stringAt(metadata, "role");
+    if (!role || role === "pm") return [];
+    return [{ name: "LANE_PILOT_ROLE", value: role, reason: `Lane Pilot: ${role} thread; lane plugins and hooks on the machine act only where this is set`.slice(0, 500) }];
+  };
+}
+
 export function mountBbShim(ctx: ServerCore) {
   const resolve = createBbShimEnv(ctx);
   for (const providerId of BB_SHIM_PROVIDER_IDS) ctx.bb.providers.experimental_contributeEnv(providerId, resolve);
+  const marker = createRoleMarkerEnv(ctx);
+  for (const providerId of MARKER_ONLY_PROVIDER_IDS) ctx.bb.providers.experimental_contributeEnv(providerId, marker);
 }
