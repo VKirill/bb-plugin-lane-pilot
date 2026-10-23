@@ -1,7 +1,7 @@
 {
-  "version": 3,
-  "frozen_at": "2026-10-22T14:14:50Z",
-  "frozen_hash": "a51b31790a2a403f578144e7865b30e7cd26b5794a3412706961b3f4134e4089",
+  "version": 4,
+  "frozen_at": "2026-10-22T23:53:00Z",
+  "frozen_hash": "e07f16e2bac5e6232a7ddd7aa468d209f8a56cf50946d85e3fc4cacfe9ae93c4",
   "title": "What the night settles by itself (the owner takes no part)",
   "rule": "Most restrictive match wins (owner_only > night_proposes > night_decides). night_decides: the night merges it, and the checks after the merge (canary, bench subset, recurrence) revert it. night_proposes: the night does not merge it; the branch stays held and the repair is logged, nobody is asked. owner_only: the night never does it. A change that matches nothing is night_proposes. A night_decides entry matches only when its proof attributes are present and true; a missing proof is no match. A standing prohibition is owner_only.",
   "exam": {
@@ -14,7 +14,8 @@
   "versions": [
     { "version": 1, "frozen": "2026-10-22", "exam": "policy/exam.json (x1..x32)", "result": "14/32 = 0.438, failed; night_decides degraded to night_proposes", "tuned_on_exam": false },
     { "version": 2, "frozen": "2026-10-22T11:26:00Z", "exam": "policy/exam-v2.json + plugin store policy:exam-v2 (decisions after the freeze)", "result": "not enough unseen decisions yet", "changes": "standing_prohibitions concept (8 entries, each with its own source quote); rule_trial_apply moved from night_decides to night_proposes on design-side evidence d7, d10, d11 (against it: d9, d8 and the rollback a trial has; reasoning in docs/night-policy.md; not derived from the exam result); frozen_at/frozen_hash/min_items; exam grows at night", "tuned_on_exam": false },
-    { "version": 3, "frozen": "2026-10-22T14:14:50Z", "exam": "policy/exam-v2.json + plugin store policy:exam-v2 (decisions after the freeze)", "result": "not enough unseen decisions yet", "changes": "judge_gates also covers the code that judges a night repair and decides done (src/rooms/wall, src/rooms/baseline, plan-fact, stage proofs, coverage); owner_only only grew", "tuned_on_exam": false }
+    { "version": 3, "frozen": "2026-10-22T14:14:50Z", "exam": "policy/exam-v2.json + plugin store policy:exam-v2 (decisions after the freeze)", "result": "not enough unseen decisions yet", "changes": "judge_gates also covers the code that judges a night repair and decides done (src/rooms/wall, src/rooms/baseline, plan-fact, stage proofs, coverage); owner_only only grew", "tuned_on_exam": false },
+    { "version": 4, "frozen": "2026-10-22T23:53:00Z", "exam": "policy/exam-v2.json + plugin store (a measurement only)", "result": "not a gate", "changes": "night_decides gains bench_proven_setting: a setting change a bench comparison found not worse is applied and undone by writing the old value back (src/rooms/hypotheses)", "tuned_on_exam": false }
   ],
   "split": {
     "design_items": "design_items below: the decisions this file was written from. Their ids start with d. since_version marks the ones added for a later version (absent = 1).",
@@ -76,6 +77,12 @@
       "description": "Retire a harness tree that lost against the incumbent on the bench.",
       "examples": ["trial arm B lost by the alternation rule and is retired"],
       "match": [{ "kinds": ["harness_retire"], "attrs": { "lost_on_bench": true } }]
+    },
+    {
+      "id": "bench_proven_setting",
+      "description": "A setting change that a bench comparison found not worse (an external or internal hypothesis, src/rooms/hypotheses) and that is undone by writing the old value back.",
+      "examples": ["writer.brief_mode=narrow passed the bench against full"],
+      "match": [{ "kinds": ["setting_change"], "attrs": { "bench_passed": true, "auto_revertible": true } }]
     },
     {
       "id": "green_change_ship",

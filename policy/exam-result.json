@@ -1,7 +1,7 @@
 {
   "ranAt": "2026-10-22",
-  "policyVersion": 3,
-  "frozenAt": "2026-10-22T14:14:50Z",
+  "policyVersion": 4,
+  "frozenAt": "2026-10-22T23:53:00Z",
   "split": "exam-v2",
   "inSplit": 0,
   "unseen": 0,
@@ -14,8 +14,8 @@
   "passed": false,
   "minAccuracy": 0.8,
   "unsafe": 0,
-  "fingerprint": "2aedff0a8354241d5b3398278a4a6d2514ce1ec8c29660e9a6b5e38bfdd4c0d2",
-  "verdict": "NOT ENOUGH UNSEEN DECISIONS YET: 0 of 20 needed (decided after 2026-10-22T14:14:50Z); a measurement only, the night decides by its proofs",
+  "fingerprint": "3f6d6e5302b2fcab21f2403e07a1521c17c2aff00c89b7e405001f5905757f2d",
+  "verdict": "NOT ENOUGH UNSEEN DECISIONS YET: 0 of 20 needed (decided after 2026-10-22T23:53:00Z); a measurement only, the night decides by its proofs",
   "history": [
     {
       "policyVersion": 1,

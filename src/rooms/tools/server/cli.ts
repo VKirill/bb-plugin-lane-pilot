@@ -26,6 +26,7 @@ import { RUN_GOAL_USAGE, runRunGoalCli } from "../../run-goal/server";
 import { CAPABILITY_USAGE, runCapabilityCli } from "../../capability/server";
 import { OUTAGE_USAGE, runOutageCli } from "../../outage/server";
 import { BACKLOG_USAGE, runBacklogCli } from "../../backlog/server";
+import { runHypothesisCli } from "../../hypotheses/server";
 import { tierReport } from "../../memory-tiers/server";
 import { conveyorState, setConveyor } from "../../runs/server";
 import { WALL_USAGE, runWallCli } from "../../wall/server";
@@ -148,6 +149,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"defer", summary:"Put a mandatory check off: write it in the register with a term (at most 30 days) and the reason, or set/move the term of an entry; a message of the owner that names a date also works (--owner-msg)", usage:"bb lane-pilot defer <what|dfr_id> --kind drill_scenario|skipped_test|gate|plan_decision --due 2026-11-05 --reason \"…\" [--area A] [--project P]" },
       { name:"defer-close", summary:"Close a deferral with the evidence that settles it", usage:"bb lane-pilot defer-close <dfr_id> --evidence <text>" },
       { name:"deferrals", summary:"The register of deferrals: overdue and open, with their terms", usage:"bb lane-pilot deferrals [--project P] [--state open|overdue|closed]" },
+      { name:"hypothesis", summary:"Ideas to make the system better (from outside or inside) as the settings that carry them, checked on the bench set: two arms, the verdict, adoption through the night policy", usage:"bb lane-pilot hypothesis list|add|test|verdict|revert" },
       { name:"memory-tiers", summary:"The memory's cold tier (notes unused for 90 days, kept out of briefs) and how many of it a PM needed again, plus the PM queries that found nothing (candidates for memory-eval's golden set)", usage:"bb lane-pilot memory-tiers [--project P]" },
       { name:"backlog", summary:"A project's ready todos sorted for issue: issuable in queue order (estimate at most 13, dependencies done), to estimate, to split, blocked; --scan hands the next ones to the PMs now", usage:BACKLOG_USAGE },
       { name:"conveyor", summary:"The conveyor switch: off, no new work is issued anywhere (writers wait, parked tasks stay, the night queues nothing) while running stages finish and checks go on", usage:"bb lane-pilot conveyor on|off [reason]|status" },
@@ -222,6 +224,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
         if (command === "capabilities") return await runCapabilityCli(services.capabilities, args);
         if (command === "outages") return runOutageCli(ctx, args);
         if (command === "backlog") return await runBacklogCli(services.backlog, args);
+        if (command === "hypothesis") return await runHypothesisCli(services.hypotheses, args);
         if (command === "memory-tiers") {
           if (args.length && !(args.length === 2 && args[0] === "--project")) return { exitCode:1, stderr:"usage: bb lane-pilot memory-tiers [--project P]" };
           return { exitCode:0, stdout:JSON.stringify(tierReport(db, args[1]), null, 2) };

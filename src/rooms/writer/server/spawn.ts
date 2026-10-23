@@ -1,4 +1,5 @@
 import { breakerKey, RunBudgetExceeded } from "@lane-pilot/resilience";
+import { briefMode, briefParts } from "../../hypotheses";
 import { recordMemoryMixed } from "@lane-pilot/memory-core";
 import { writerKnowledge } from "./writer-knowledge";
 import { parseDirtSnapshots } from "../cli-outcome";
@@ -433,13 +434,16 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
         ? await services.harness.materialize({ attemptId:input.attemptId, hostId:input.config.hostId, workspacePath, live, providerId:writerProviderId, parts:harness }).catch(()=>({ written:[] as string[], reason:"error" }))
         : { written:[] as string[], reason:null as string|null };
       const harnessSkills=harnessFiles.written.length?harness!.skillNames:[];
-      const briefRulesText=[rulesText, harness?.alwaysOn ?? ""].filter(Boolean).join("\n");
-      const briefMemoryText=[relevantMemory.text, harness?.memory ?? ""].filter(Boolean).join("\n");
+      // `writer.brief_mode=narrow` (src/rooms/hypotheses/brief-mode.ts): the contract and the plan only, no memory, rules or PM read summary.
+      const brief=briefParts(briefMode(settings),{ rules:[rulesText, harness?.alwaysOn ?? ""].filter(Boolean).join("\n"),
+        memory:[relevantMemory.text, harness?.memory ?? ""].filter(Boolean).join("\n"), pmRead:input.pmReadContext ?? "" });
+      const briefRulesText=brief.rules;
+      const briefMemoryText=brief.memory;
       const writerAgent = boundedAgentName(settings["writer.agent"],"Lane Pilot writer");
       const taskFolder = await listTaskFolder(bb, input.config.hostId, workspacePath, input.taskId);
       const contextSegments = writerBriefSegments(attemptTask,briefMemoryText,executionPacket,input.emergency&&!input.continuation
         ? "fallback"  // the reason stays in the trace; the writer is only told it is the fallback
-        : undefined,writerAgent,input.pmReadContext ?? "",briefRulesText,input.previousAttempt ?? "",taskFolder,live);
+        : undefined,writerAgent,brief.pmRead,briefRulesText,input.previousAttempt ?? "",taskFolder,live);
       // A fallback that continues the interrupted session reads its handoff right after its role line.
       const handoffSegments = input.continuation
         ? [contextSegments[0]!,{text:input.continuation.brief,hidden:true},...contextSegments.slice(1)]

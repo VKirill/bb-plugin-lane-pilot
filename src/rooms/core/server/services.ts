@@ -10,6 +10,7 @@ import type { BaselineApi, RegressionApi } from "../../baseline/server";
 import type { RunGoalApi } from "../../run-goal/server";
 import type { CapabilitiesApi } from "../../capability/server";
 import type { BacklogApi } from "../../backlog/server";
+import type { HypothesesApi } from "../../hypotheses/server";
 import type { WallApi } from "../../wall/server";
 import type { CheckersApi } from "../../checkers/server";
 import type { StageReturnApi } from "../../stage-return/server";
@@ -88,6 +89,8 @@ export interface Services {
   capabilities: CapabilitiesApi;
   /** The backlog scanner: ready todos with an estimate issued to the project's PM in queue order (src/rooms/backlog). */
   backlog: BacklogApi;
+  /** Ideas checked on the bench set: two arms, the verdict, adoption through the night policy (src/rooms/hypotheses). */
+  hypotheses: HypothesesApi;
   /** Checking the checkers: planted defects in accepted candidates, the checker scorecard and the drill (src/rooms/checkers). */
   checkers: CheckersApi;
   DOCS_NIGHT_ATTEMPTS: DocsNightlyApi["DOCS_NIGHT_ATTEMPTS"];

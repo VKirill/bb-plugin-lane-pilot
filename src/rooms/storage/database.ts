@@ -33,6 +33,7 @@ import { capabilityMigrations } from "../capability";
 import { outageMigrations } from "../outage";
 import { backlogMigrations } from "../backlog";
 import { memoryTierMigrations } from "../memory-tiers";
+import { hypothesisMigrations } from "../hypotheses";
 import { wallDeferralKindMigrations, wallMigrations } from "../wall";
 import { checkerMigrations } from "../checkers";
 export { searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
@@ -396,6 +397,8 @@ export const migrations = [
   ...backlogMigrations,
   // The cold tier's promotions and the PM's memory misses (src/rooms/memory-tiers).
   ...memoryTierMigrations,
+  // Ideas checked on the bench set (src/rooms/hypotheses).
+  ...hypothesisMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
