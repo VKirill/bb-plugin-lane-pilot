@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { fullAccessSpawn, scheduleIsolated, stringAt } from "../../core/server";
-import { conveyorState } from "../../runs/server";
+import { conveyorState } from "../../conveyor";
 import type { ServerCore, Services } from "../../core/server";
 import { createAttempt, getAttempt } from "../../storage";
 import { reopenWriterStages } from "../../runs/server";

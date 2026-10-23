@@ -2,7 +2,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { pollPause } from "@lane-pilot/kit";
 import { getRun } from "../../storage";
 import { isRunPaused, runPausedSince, setRunPaused } from "./runs-halt";
-import { isHeld } from "./conveyor";
+import { conveyorState } from "../../conveyor";
 import type { ServerCore } from "../../core/server";
 
 /**
@@ -12,6 +12,11 @@ import type { ServerCore } from "../../core/server";
  * The flag lives in the plugin's key-value store, so a reload does not lose it.
  */
 type Kv = { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> };
+
+/** A run's work waits: the run is paused, or the conveyor is off (src/rooms/conveyor). */
+export async function isHeld(kv: Kv, runId: string): Promise<boolean> {
+  return await isRunPaused(kv, runId) || !(await conveyorState(kv as never)).on;
+}
 
 /**
  * Holds the caller while the run is paused. Returns once it is resumed (true) or the plugin is being reloaded (false: the

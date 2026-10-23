@@ -28,7 +28,7 @@ import { OUTAGE_USAGE, runOutageCli } from "../../outage/server";
 import { BACKLOG_USAGE, runBacklogCli } from "../../backlog/server";
 import { runHypothesisCli } from "../../hypotheses/server";
 import { tierReport } from "../../memory-tiers/server";
-import { conveyorState, setConveyor } from "../../runs/server";
+import { conveyorState, setConveyor } from "../../conveyor";
 import { WALL_USAGE, runWallCli } from "../../wall/server";
 import { CHECKERS_USAGE, runCheckersCli } from "../../checkers/server";
 import { POLICY_USAGE, runPolicyCli } from "../../policy";

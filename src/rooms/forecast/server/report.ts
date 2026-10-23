@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import { taskV2Schema } from "../../contracts";
-import { attemptMetrics } from "../../usage/server";
+import { attemptMetrics } from "../../usage";
 import { calibrate, scoreForecast, type Calibration, type ForecastFact, type ForecastScore } from "../logic";
 
 /**

@@ -53,7 +53,7 @@ describe("bench runner", () => {
     const w = await builtSet();
     const project: BenchProjectRef = { projectId: "proj_bench", name: "LP bench BB-сервис / " + w.repo.split("/").pop(), hostId: "local", path: w.projectPath };
     const { pipeline, calls } = fakePipeline(project, () => ({ accepted: true }));
-    const report = await runSeries({ db: w.db as never, host: localHost, pipeline, clock: clock(), projectNameFor: () => project.name }, { version: "v1", arm: "luna", repeat: 1, writer: { providerId: "codex", model: "gpt-6-luna" }, pollMs: 1 });
+    const report = await runSeries({ db: w.db as never, host: localHost, pipeline, clock: clock(), projectNameFor: () => project.name }, { minFreeGb: 0, version: "v1", arm: "luna", repeat: 1, writer: { providerId: "codex", model: "gpt-6-luna" }, pollMs: 1 });
     expect(report).toMatchObject({ state: "done", tasks: 3, ran: 3, accepted: 3, skipped: 0 });
 
     const sent = calls.dispatched;
@@ -80,7 +80,7 @@ describe("bench runner", () => {
     const w = await builtSet();
     const project: BenchProjectRef = { projectId: "proj_bench", name: "LP bench x", hostId: "local", path: w.projectPath };
     const { pipeline, calls } = fakePipeline(project, () => ({ accepted: true }));
-    await runSeries({ db: w.db as never, host: localHost, pipeline, clock: clock(), projectNameFor: () => project.name }, { version: "v1", arm: "critic", limit: 1, settings: { "critic.code.default_for_risk": "medium" }, pollMs: 1 });
+    await runSeries({ db: w.db as never, host: localHost, pipeline, clock: clock(), projectNameFor: () => project.name }, { minFreeGb: 0, version: "v1", arm: "critic", limit: 1, settings: { "critic.code.default_for_risk": "medium" }, pollMs: 1 });
     const settings = (calls.configure[0] as { settings: Record<string, unknown> }).settings;
     expect(settings["critic.code.default_for_risk"]).toBe("medium");
     expect("code_critique.enabled" in settings).toBe(false);
@@ -91,7 +91,7 @@ describe("bench runner", () => {
     const w = await builtSet();
     const real: BenchProjectRef = { projectId: "p", name: "SelfyStudio", hostId: "local", path: w.projectPath };
     const { pipeline } = fakePipeline(real, () => ({ accepted: true }));
-    await expect(runSeries({ db: w.db as never, host: localHost, pipeline, clock: clock(), projectNameFor: () => "SelfyStudio" }, { version: "v1", arm: "x", pollMs: 1 })).resolves.toMatchObject({ state: "failed" });
+    await expect(runSeries({ db: w.db as never, host: localHost, pipeline, clock: clock(), projectNameFor: () => "SelfyStudio" }, { minFreeGb: 0, version: "v1", arm: "x", pollMs: 1 })).resolves.toMatchObject({ state: "failed" });
   });
 
   it("stops the series before the token cap and resumes it without redoing finished tasks", async () => {
@@ -100,11 +100,11 @@ describe("bench runner", () => {
     const { pipeline, calls } = fakePipeline(project, () => ({ accepted: true }));
     const deps = { db: w.db as never, host: localHost, pipeline, clock: clock(), projectNameFor: () => project.name };
     // One task costs 1.01 M tokens; a 2.5 M cap lets two run (the third is expected to push past it).
-    const first = await runSeries(deps, { version: "v1", arm: "capped", budgetTokens: 2_500_000, pollMs: 1 });
+    const first = await runSeries(deps, { version: "v1", minFreeGb: 0, arm: "capped", budgetTokens: 2_500_000, pollMs: 1 });
     expect(first).toMatchObject({ state: "stopped_budget", ran: 2, skipped: 1 });
     expect(first.stopReason).toMatch(/token budget/);
     expect(calls.dispatched).toHaveLength(2);
-    const second = await runSeries(deps, { version: "v1", arm: "capped", budgetTokens: 10_000_000, pollMs: 1 });
+    const second = await runSeries(deps, { version: "v1", minFreeGb: 0, arm: "capped", budgetTokens: 10_000_000, pollMs: 1 });
     expect(second).toMatchObject({ state: "done", ran: 3, accepted: 3 });
     expect(calls.dispatched).toHaveLength(3);
   });
@@ -113,13 +113,13 @@ describe("bench runner", () => {
     const w = await builtSet();
     const project: BenchProjectRef = { projectId: "proj_bench", name: "LP bench y", hostId: "local", path: w.projectPath };
     const slow = fakePipeline(project, () => ({ accepted: true, metrics: { seconds: 3600 } }));
-    const hours = await runSeries({ db: w.db as never, host: localHost, pipeline: slow.pipeline, clock: clock(), projectNameFor: () => project.name }, { version: "v1", arm: "hours", budgetHours: 1.5, pollMs: 1 });
+    const hours = await runSeries({ db: w.db as never, host: localHost, pipeline: slow.pipeline, clock: clock(), projectNameFor: () => project.name }, { minFreeGb: 0, version: "v1", arm: "hours", budgetHours: 1.5, pollMs: 1 });
     expect(hours).toMatchObject({ state: "stopped_budget", ran: 1 });
     expect(hours.stopReason).toMatch(/time budget/);
 
     let cancelled = 0;
     const stuck: PipelinePort = { ...fakePipeline(project, () => ({ accepted: true })).pipeline, outcome: async () => ({ latestState: "running", attempts: 1 }), cancel: async () => { cancelled++; } };
-    const out = await runSeries({ db: w.db as never, host: localHost, pipeline: stuck, clock: clock(), projectNameFor: () => project.name }, { version: "v1", arm: "stuck", only: ["task-a"], taskTimeoutMin: 1, pollMs: 20_000 });
+    const out = await runSeries({ db: w.db as never, host: localHost, pipeline: stuck, clock: clock(), projectNameFor: () => project.name }, { minFreeGb: 0, version: "v1", arm: "stuck", only: ["task-a"], taskTimeoutMin: 1, pollMs: 20_000 });
     expect(out).toMatchObject({ accepted: 0, ran: 1 });
     expect(cancelled).toBe(1);
   });
@@ -129,7 +129,7 @@ describe("bench runner", () => {
     w.db.exec("DROP TRIGGER lane_pilot_bench_task_frozen_u");
     w.db.prepare("UPDATE lane_pilot_bench_task SET initial_head_sha=? WHERE task_id='task-a'").run("f".repeat(40));
     const project: BenchProjectRef = { projectId: "p", name: "LP bench z", hostId: "local", path: w.projectPath };
-    await expect(runSeries({ db: w.db as never, host: localHost, pipeline: fakePipeline(project, () => ({ accepted: true })).pipeline, clock: clock() }, { version: "v1", arm: "z" })).rejects.toThrow(/changed after it was written/);
+    await expect(runSeries({ db: w.db as never, host: localHost, pipeline: fakePipeline(project, () => ({ accepted: true })).pipeline, clock: clock() }, { minFreeGb: 0, version: "v1", arm: "z" })).rejects.toThrow(/changed after it was written/);
   });
 });
 
@@ -237,8 +237,8 @@ describe("bench service", () => {
     const kv = new Map<string, unknown>();
     const bench = createBench({ db: w.db as never, kv: { get: async (k) => kv.get(k), set: async (k, v) => { kv.set(k, v); } }, host: localHost,
       pipeline: { ...fakePipeline(project, () => ({ accepted: true })).pipeline, findProject: async () => project }, projectNames: async () => new Map(), isSandboxName: () => false, log: () => undefined });
-    await bench.run({ version: "v1", arm: "A", wait: true, pollMs: 1 } as never);
-    await bench.run({ version: "v1", arm: "B", wait: true, pollMs: 1 } as never);
+    await bench.run({ version: "v1", arm: "A", wait: true, pollMs: 1, minFreeGb: 0 } as never);
+    await bench.run({ version: "v1", arm: "B", wait: true, pollMs: 1, minFreeGb: 0 } as never);
     const result = bench.compare({ version: "v1", armA: "A", armB: "B", harnessId: "harness_1" });
     expect(result.comparison.verdict).toBe("pass");
     expect(result.verdictId).toMatch(/^benchverdict_/);
@@ -259,7 +259,7 @@ describe("bench runner: ids and the command line", () => {
       dispatch: async (_p, _pm, task) => ({ ok: true, detail: "queued", taskId: `${String(task.id)}.2` }),
       outcome: async (_run, taskId) => { asked.push(taskId); return { latestState: taskId.endsWith(".2") ? "accepted" : null, attempts: 1 }; },
     };
-    const report = await runSeries({ db: w.db as never, host: localHost, pipeline, clock: clock(), projectNameFor: () => project.name }, { version: "v1", arm: "renamed", only: ["task-a"], pollMs: 1 });
+    const report = await runSeries({ db: w.db as never, host: localHost, pipeline, clock: clock(), projectNameFor: () => project.name }, { minFreeGb: 0, version: "v1", arm: "renamed", only: ["task-a"], pollMs: 1 });
     expect(report).toMatchObject({ accepted: 1, ran: 1 });
     expect(asked.every((id) => id.endsWith(".2"))).toBe(true);
   });

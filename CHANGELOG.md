@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## 0.1.276
+
+**The rest of Maslov's graph (SMA atlas D2 and P2), each as a small room of its own** (owner 2026-10-23: «дроби на составляющие как у него … всё используемое и переиспользуемое»). Docs per room in `docs/`; the generated map is `docs/atlas.md`.
+
+- **D2-5 appetite and pre-mortem.** Contract `appetite: {tokens?, minutes?}` stops a writer past it (`run_budget_exceeded:appetite …`, `packages/resilience/src/appetite.ts`); the plan critic names a pre-mortem cause. Contract also gains `forecast` and `wires`; the writer never sees the forecast.
+- **D2-1 forecast and calibration** (`src/rooms/forecast`): the PM's forecast scored against the accepted attempt (files, first try, tokens, minutes), calibrated per area; the PM reads one calibration line before it promises a date. `bb lane-pilot forecast`.
+- **D2-4 declared wires** (`src/rooms/wires`): each hop of a chain must meet in one source file of the finished work; a broken wire fails plan→fact and shows on the acceptance card.
+- **D2-3 run-goal** (`src/rooms/run-goal`): once a run is done, every accepted task's checks run together on the final main (the regression pass, `runId`), a red composition goes to the PM with the culprit commit. `bb lane-pilot run-goal`.
+- **D2-7 capability table** (`src/rooms/capability`): every provider in use is probed once per adapter (plugin) version; a failing one is held off by the breaker. `bb lane-pilot capabilities`.
+- **D2-10 outages and the conveyor** (`src/rooms/outage`, `runs/server/conveyor.ts`): heartbeat gaps over 5 minutes are outages on record and in the daily report; `bb lane-pilot conveyor off|on` holds new work everywhere.
+- **D2-9 backlog** (`src/rooms/backlog`): ready todos with an estimate ≤13 and done dependencies go to the project's PM in queue order, one a project a day.
+- **D2-2 pilot then fan-out** (`src/rooms/pilot`): three or more siblings of one area and kind wait for the first one's acceptance.
+- **D2-8 memory tiers** (`src/rooms/memory-tiers`): the cold tier comes back when needed, past-task episodes and recorded misses around the PM's memory query.
+- **D2-11 atlas** (`src/rooms/atlas`, `scripts/generate-atlas.ts`): the map of rooms, stages, transitions, memory paths and RPC from the registries; a test fails when it is stale.
+- **D2-12 design evaluation** (`src/rooms/design-eval`, `scripts/lp-design-eval.ts`): a rubric the browser measures on the real page, and a paired before/after judgement.
+- **Q13 / P2-5 twins** (`src/rooms/twins`): every test double of a BB answer is checked against recorded real shapes, refreshed yearly.
+- **P2-10 / P2-11 hypotheses** (`src/rooms/hypotheses`): ideas checked by two bench arms, adopted through the night policy (v4 `bench_proven_setting`); seeded `role-contracts` (`writer.brief_mode=narrow`).
+- Lane Stack 1.66.3: stall rules in Claude Code lane sessions (D2-6), todo `estimate`/`depends_on`.
+
 ## 0.1.275
 
 **The owner takes no part in the loop** (owner 2026-10-22: «я вообще не должен участвовать»). Every place that waited for him now decides by itself, on proofs and with a way back:

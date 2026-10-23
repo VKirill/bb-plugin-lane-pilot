@@ -13,8 +13,9 @@ sources:
 
 # Pilot, then fan-out (SMA D2-2)
 
-Sibling tasks of one run — the same `area` and the same `kind` — tend to fail the same way. With three of them or more, the first one
-dispatched is the pilot: the others wait for its acceptance through the same wait as `depends_on`. A blocked pilot is waited for while the
+Sibling tasks of one run — the same `area` and the same `kind` — tend to fail the same way. With three of them or more, the earliest sibling
+that depends on nothing is the pilot: the others wait for its acceptance through the same wait as `depends_on`. A task the PM already ordered
+with `depends_on` keeps its own order and gets no pilot, so the two rules can never wait for each other. A blocked pilot is waited for while the
 PM sends it again (up to six hours); a canceled pilot holds no one. The writer stage of a waiting sibling says
 `… (T0 is the pilot of its area: the siblings start once it is accepted)`.
 

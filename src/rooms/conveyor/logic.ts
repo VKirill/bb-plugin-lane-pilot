@@ -1,8 +1,6 @@
-import { isRunPaused } from "./runs-halt";
-
 /**
  * The conveyor switch (SMA atlas D2-10: «Conveyor switch», «Conveyor off from the factory»): one flag for the whole plugin. Off, no new
- * work is issued anywhere — a task waits before it takes a writer slot exactly as in a paused run, parked tasks are not restarted, the
+ * work is issued anywhere — a task waits before it takes a writer slot exactly as in a paused run (`isHeld`, runs/server/runs-pause.ts), parked tasks are not restarted, the
  * night loop picks nothing — while running attempts finish their current stage and every check (run goal, capabilities, regression) goes
  * on. The flag lives in the plugin's key-value store, so a reload keeps it.
  */
@@ -19,9 +17,4 @@ export async function setConveyor(kv: Kv, on: boolean, reason?: string): Promise
   if (on) await kv.set(CONVEYOR_KEY, null);
   else if ((await conveyorState(kv)).on) await kv.set(CONVEYOR_KEY, { at: Date.now(), reason: reason?.trim().slice(0, 300) || null });
   return await conveyorState(kv);
-}
-
-/** A run's work waits: the run is paused, or the conveyor is off. */
-export async function isHeld(kv: Kv, runId: string): Promise<boolean> {
-  return await isRunPaused(kv, runId) || !(await conveyorState(kv)).on;
 }

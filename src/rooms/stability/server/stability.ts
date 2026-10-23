@@ -5,7 +5,7 @@ import { createAttempt, getAttempt, getRun, getRunSettingsScopes, loadProjectSet
 import { id } from "../../core/server";
 import { reopenWriterStages } from "../../runs/server/stage-records";
 import { isRunHalted, isRunPaused } from "../../runs/server/runs-halt";
-import { conveyorState } from "../../runs/server/conveyor";
+import { conveyorState } from "../../conveyor";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 

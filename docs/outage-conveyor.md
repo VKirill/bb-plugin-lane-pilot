@@ -8,7 +8,7 @@ confidence: medium
 tags: [sma, outage, conveyor, hub]
 sources:
   - src/rooms/outage
-  - src/rooms/runs/server/conveyor.ts
+  - src/rooms/conveyor/logic.ts
 ---
 
 # Outage record and the conveyor switch (SMA D2-10)

@@ -104,6 +104,7 @@ export const COVERAGE: readonly CoverageEntry[] = [
   { kind: "room", ids: ["design-eval"], tests: ["tests/design-eval/design-eval.test.ts"], reason: "a script a person or the night runs on a page (scripts/lp-design-eval.ts); checked live on the self-improvement page" },
   { kind: "room", ids: ["twins"], tests: ["tests/twins.test.ts"], reason: "checks the tests' own doubles against recorded real answers; nothing of it runs in the plugin" },
   { kind: "room", ids: ["hypotheses"], tests: ["tests/hypotheses/hypotheses.test.ts"], reason: "a hypothesis is checked by two bench arms (hours, tokens); the drill does not run the bench" },
+  { kind: "room", ids: ["conveyor"], tests: ["tests/outage/outage-conveyor.test.ts", "tests/run-pause-start.test.ts"], reason: "a switch a person or an agent turns; the drill keeps it on" },
   { kind: "room", ids: ["stage-return"], tests: ["tests/stage-return/logic.test.ts", "tests/stage-return/return.test.ts", "tests/stage-return/spawn-brief.test.ts", "tests/stage-return-ui.test.tsx"], reason: "a person sends a task back to an earlier stage; the drill has no owner to do it, checked live on the sandbox project" },
   { kind: "room", ids: ["rollback"], tests: ["tests/rollback.test.ts"], reason: "no drill merges a change and reverts it on the sandbox" },
   { kind: "room", ids: ["schedule"], tests: ["tests/schedule/scheduler.test.ts"], reason: "scheduled errands tick on their own clock; the drill starts none" },

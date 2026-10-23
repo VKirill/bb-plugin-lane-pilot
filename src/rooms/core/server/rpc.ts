@@ -28,7 +28,7 @@ import { stageReturnRpc } from "../../stage-return/server";
 import { forecastRpc } from "../../forecast/server";
 import { runGoalRpc } from "../../run-goal/server";
 import { capabilityRpc } from "../../capability/server";
-import { conveyorState, setConveyor } from "../../runs/server";
+import { conveyorState, setConveyor } from "../../conveyor";
 import { wallRpc } from "../../wall/server";
 import { improvementRpc } from "../../improvement/server";
 import { sessionMemoryRpc } from "../../memory/server";
