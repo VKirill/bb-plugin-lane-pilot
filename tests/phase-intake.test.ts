@@ -19,13 +19,14 @@ function world(options: { settings?: Record<string, unknown>; role?: string } = 
   const opened: Phase[] = [];
   const phases: IntakePhases = {
     open: async (input) => {
+      expect(input.rails).toBe(true);
       const phase = { id: `ph_${opened.length + 1}`, projectId: input.projectId, pmThreadId: input.pmThreadId, runId: "run1", title: input.title, goal: input.goal,
         stage: "discussion", state: "active", record: {}, edition: 1, createdAt: 1, updatedAt: 1 } as unknown as Phase;
       opened.push(phase);
       return phase;
     },
     tick: async () => 0,
-    list: (filter) => opened.filter((phase) => (!filter.pmThreadId || phase.pmThreadId === filter.pmThreadId) && (!filter.live || phase.state !== "closed")),
+    list: (filter) => opened.filter((phase) => (!filter.pmThreadId || phase.pmThreadId === filter.pmThreadId) && (!filter.live || !["closed", "stopped"].includes(phase.state))),
     status: () => ({ next: { text: "write the discussion files and report them with context" } }),
   };
   const intake = createPhaseIntake({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: options.settings ?? {} }) } as never, phases);
@@ -73,11 +74,18 @@ describe("rails by default", () => {
     say("поправь опечатку", "creq_4", "agent");
     expect(await intake.dispatchRefusal(PM)).toMatch(/phase ph_1/);
   });
-  it("a paused or closed phase lets the PM dispatch", async () => {
+  it("a paused phase still holds the request; only a closed one lets the PM dispatch", async () => {
     const { intake, opened } = world();
     await intake.take(PM);
     (opened[0] as { state: string }).state = "paused";
+    expect(await intake.dispatchRefusal(PM)).toMatch(/phase ph_1/);
+    (opened[0] as { state: string }).state = "closed";
     expect(await intake.dispatchRefusal(PM)).toBeNull();
+  });
+  it("the phase is opened as a rails phase", async () => {
+    const { intake, opened } = world();
+    await intake.take(PM);
+    expect(opened).toHaveLength(1);
   });
   it("a second heavy message joins the live phase instead of opening another", async () => {
     const { intake, opened, say } = world();

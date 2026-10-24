@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.295
+
+**The machinist cannot leave the rails.** The first live phase (ph_9ed0f7f04b, the sandbox's statistics module) found two ways off them. The phase tool refused lists and objects a PM sends as JSON text (`"docs":"[\"CONTEXT.md\"]"`, the usual shape after ToolSearch), so the PM's context report failed twice, and the PM then closed the phase in words as «a small job» and went back to dispatching by hand. Now every list, object, number and yes/no field of `lane_pilot_phase` also takes the JSON text of its type, and `rubric` takes a phaseId alone (the phase's stage). A phase the rails opened is marked `rails` and the PM cannot close it before acceptance: it ends by its gates or by the owner's word (cockpit, Telegram); work that is in fact small is planned as one or two pieces. A paused or stopped phase still holds the request: only a closed one lets the PM dispatch its work by hand.
+
 ## 0.1.294
 
 **Rails by default.** In Matvey's system the machine drives: every heavy request of the owner goes through the phase graph, and the orchestrator is only switched on at its turns. Here the phase existed, but only the PM could open one, and no PM ever did (0 phases on the hub). Now each turn that starts in a PM chat begins with the owner's newest message read in code (`phase/intake.ts`): a whole-message consent and a short message are settled by rules, the rest by the Jev judgment `intake.weight` (heavy, small, batch, question, consent; without Jev a message over 700 characters is heavy). A heavy goal opens its phase at once and the driver wakes the PM with the discussion's one step; a second heavy message joins the live phase as the owner's correction. While that phase is active, `lane_pilot_dispatch_writer` refuses to hand out the request's work by hand (`phase_rails`) and names the stage's step; small jobs, batches and questions keep the usual road, a paused phase lets the PM dispatch, and closing the phase in words releases it. `phase.rails off` turns it off for a project.

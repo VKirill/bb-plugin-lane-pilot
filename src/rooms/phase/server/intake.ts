@@ -6,7 +6,7 @@ import type { Phase } from "../logic";
 
 /** What the intake needs of the phase driver (its own type, so the driver can build the intake without a type cycle). */
 export type IntakePhases = {
-  open(input: { projectId: string; pmThreadId: string; title: string; goal: string }): Promise<Phase>;
+  open(input: { projectId: string; pmThreadId: string; title: string; goal: string; rails?: boolean }): Promise<Phase>;
   tick(): Promise<number>;
   list(filter: { pmThreadId?: string; live?: boolean }): Phase[];
   status(phaseId: string): { next: { text: string } };
@@ -67,7 +67,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases) {
         await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", mentions: [], text:
           `[Lane Pilot phase] The owner's new message belongs to phase ${live.id} «${live.title}» (stage ${live.stage}). If it changes the goal, report it with lane_pilot_phase revise (goal, note) or return the phase to an earlier stage (return, to, note); a note for the pieces at work goes with correct.` }] } as never).catch(() => undefined);
       } else {
-        const phase = await phases.open({ projectId: run.project_id, pmThreadId: threadId, title: intakeTitle(text), goal: text });
+        const phase = await phases.open({ projectId: run.project_id, pmThreadId: threadId, title: intakeTitle(text), goal: text, rails: true });
         phaseId = phase.id;
         ctx.log(`phase intake: ${threadId} — the owner's request is heavy (${by}); phase ${phase.id} opened`);
         // The driver wakes the PM with the discussion's one step now, not at the next two-minute pass.
@@ -90,14 +90,14 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases) {
   }
 
   /**
-   * Why the PM may not dispatch by hand now, or null: the owner's newest request was heavy and its phase is live (not paused,
-   * not closed). The reading of the newest message is finished first, so a quick dispatch cannot slip past it.
+   * Why the PM may not dispatch by hand now, or null: the owner's newest request was heavy and its phase is not closed. The reading of the newest message is finished first, so a quick dispatch cannot slip past it.
    */
   async function dispatchRefusal(threadId: string): Promise<string | null> {
     const record = await take(threadId) ?? await bb.storage.kv.get(KEY(threadId)).catch(() => null) as IntakeRecord | null;
     if (record?.kind !== "heavy" || !record.phaseId) return null;
     const phase = phases.list({ pmThreadId: threadId, live: true }).find((row) => row.id === record.phaseId);
-    if (!phase || phase.state !== "active") return null;
+    // A paused or stopped phase still holds the request: only a closed one releases it.
+    if (!phase || phase.state === "closed") return null;
     return railsRefusal(phase, phases.status(phase.id).next.text);
   }
 
