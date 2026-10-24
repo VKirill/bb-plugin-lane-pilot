@@ -430,6 +430,26 @@ export const whichPrograms: ExperimentalHostRpcHandlers<typeof hostContract>["wh
 export const writePhaseBook: ExperimentalHostRpcHandlers<typeof hostContract>["writePhaseBook"] = async (input) =>
   casWriteMarkdown({ ...input, confirmed:true }, 2_000_000, (path) => (/^\.agents\/phases\/ph_[a-z0-9]{6,}\/[^/]+(\/[^/]+)*$/.test(path) || /^\.agents\/planning\/(STATE|ROADMAP)\.md$/.test(path)) && !path.includes(".."));
 
+/**
+ * Fresh codex home per task, seeded (SMA: Fresh codex home per task, Seed the codex home): a writer of the strict worker mode gets its own
+ * CODEX_HOME, so no task reads another task's sessions and history; config.toml and AGENTS.md are copied, auth.json is linked (one login
+ * that refreshes in one place).
+ */
+export const prepareWorkerHome: ExperimentalHostRpcHandlers<typeof hostContract>["prepareWorkerHome"] = async (input) => {
+  const { mkdir: mk, copyFile, symlink: link, access: can } = await import("node:fs/promises");
+  const { homedir: home } = await import("node:os");
+  const { join: at } = await import("node:path");
+  const source = process.env.CODEX_HOME?.trim() || at(home(), ".codex");
+  const codexHome = at(home(), ".lane-pilot", "codex-homes", input.key);
+  await mk(codexHome, { recursive: true });
+  const seeded: string[] = [];
+  for (const name of ["config.toml", "AGENTS.md"]) {
+    if (await can(at(source, name)).then(() => true, () => false) && !await can(at(codexHome, name)).then(() => true, () => false)) { await copyFile(at(source, name), at(codexHome, name)); seeded.push(name); }
+  }
+  if (await can(at(source, "auth.json")).then(() => true, () => false) && !await can(at(codexHome, "auth.json")).then(() => true, () => false)) { await link(at(source, "auth.json"), at(codexHome, "auth.json")); seeded.push("auth.json"); }
+  return { codexHome, seeded };
+};
+
 /** An enabled forge draft lands only at `.claude/skills/<name>/SKILL.md` or `.claude/agents/<name>.md` of the project (src/rooms/forge). */
 export const writeForgeEnabled: ExperimentalHostRpcHandlers<typeof hostContract>["writeForgeEnabled"] = async (input) =>
   casWriteMarkdown({ ...input, confirmed:true }, 60_000, (path) => /^\.claude\/(skills\/[a-z][a-z0-9-]{1,47}\/SKILL\.md|agents\/[a-z][a-z0-9-]{1,47}\.md)$/.test(path));

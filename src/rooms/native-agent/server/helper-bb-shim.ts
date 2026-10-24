@@ -1,3 +1,4 @@
+import { loadProjectSettings } from "../../storage";
 import type { ExperimentalPluginProviderEnvEntry } from "@get-bb/plugin-sdk";
 import { stringAt } from "../../core/server";
 import type { ServerCore } from "../../core/server";
@@ -32,7 +33,7 @@ async function within<T>(ms: number, label: string, work: Promise<T>): Promise<T
 
 type Shim = { dir: string; path: string } | null;
 
-export function createBbShimEnv(ctx: Pick<ServerCore, "bb" | "host">, now: () => number = Date.now) {
+export function createBbShimEnv(ctx: Pick<ServerCore, "bb" | "host"> & { db?: ServerCore["db"] }, now: () => number = Date.now) {
   const { bb, host } = ctx;
   const cache = new Map<string, { at: number; value: Shim }>();
   const inflight = new Map<string, Promise<Shim>>();
@@ -60,7 +61,7 @@ export function createBbShimEnv(ctx: Pick<ServerCore, "bb" | "host">, now: () =>
     return await work;
   }
 
-  return async (context: { threadId: string; hostId: string }): Promise<ExperimentalPluginProviderEnvEntry[]> => {
+  return async (context: { threadId: string; hostId: string }, providerId?: string): Promise<ExperimentalPluginProviderEnvEntry[]> => {
     let metadata: unknown = null;
     try { metadata = await within(CALL_MS, "getPluginMetadata", Promise.resolve(bb.sdk.threads.getPluginMetadata({ threadId: context.threadId }))); } catch (cause) {
       bb.log.warn(`Lane Pilot: could not tell whether thread ${context.threadId} is a helper (${reasonOf(cause)}); it starts without the bb guard wrappers`);
@@ -71,9 +72,23 @@ export function createBbShimEnv(ctx: Pick<ServerCore, "bb" | "host">, now: () =>
     // The marker the machine's lane plugins and hooks (opencode-lane guard) check: without it they leave the owner's own sessions alone.
     const mark = { name: "LANE_PILOT_ROLE", value: role, reason: `Lane Pilot: ${role} thread; lane plugins and hooks on the machine act only where this is set`.slice(0, 500) };
     const shim = await prepare(context.hostId);
-    if (!shim) return [mark];
-    return [mark, { name: "PATH", value: shim.path, reason: `Lane Pilot: ${role} thread runs bb, ssh, scp and sftp through the guard wrappers in ${shim.dir}`.slice(0, 500) }];
+    const home = providerId === "codex" && role === "writer" ? await workerHome(metadata, context.hostId) : null;
+    const extra = home ? [{ name: "CODEX_HOME", value: home, reason: "Lane Pilot strict worker: a fresh codex home for this task (worker.strict_user on)" }] : [];
+    if (!shim) return [mark, ...extra];
+    return [mark, { name: "PATH", value: shim.path, reason: `Lane Pilot: ${role} thread runs bb, ssh, scp and sftp through the guard wrappers in ${shim.dir}`.slice(0, 500) }, ...extra];
   };
+
+  /** The task's own codex home when the run's project has worker.strict_user on; null otherwise or when the host cannot make it. */
+  async function workerHome(metadata: unknown, hostId: string): Promise<string | null> {
+    const runId = stringAt(metadata, "lanePilotRunId");
+    const taskId = stringAt(metadata, "taskId") ?? stringAt(metadata, "attemptId");
+    if (!runId || !taskId || !ctx.db) return null;
+    const projectId = (ctx.db.prepare("SELECT project_id FROM lane_pilot_run WHERE id=?").get(runId) as { project_id?: string } | undefined)?.project_id;
+    if (!projectId || String(loadProjectSettings(ctx.db as never, projectId)["worker.strict_user"] ?? "off") !== "on") return null;
+    const key = taskId.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120);
+    const made = await within(CALL_MS, "prepareWorkerHome", Promise.resolve(host.call("prepareWorkerHome", { requestedHostId: hostId, key }, { hostId, timeoutMs: CALL_MS }))).catch(() => null);
+    return made?.codexHome ?? null;
+  }
 }
 
 /**
@@ -94,5 +109,5 @@ export function createRoleMarkerEnv(ctx: Pick<ServerCore, "bb">) {
 
 export function mountBbShim(ctx: ServerCore) {
   const resolve = createBbShimEnv(ctx);
-  for (const providerId of BB_SHIM_PROVIDER_IDS) ctx.bb.providers.experimental_contributeEnv(providerId, resolve);
+  for (const providerId of BB_SHIM_PROVIDER_IDS) ctx.bb.providers.experimental_contributeEnv(providerId, (thread) => resolve(thread, providerId));
 }

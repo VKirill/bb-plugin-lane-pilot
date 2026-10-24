@@ -424,6 +424,8 @@ export const hostContract = defineRpcContract({
       command:z.string().min(1).max(32_000),timeoutSec:z.number().int().min(1).max(7200).optional(),
       /** Secret values for this one command (Env Catalog, J2): they go into the sandbox's environment only, and the host masks them in the output. */
       env:z.record(secretNameSchema,z.string().max(65_536)).optional(),
+      /** The strict worker: run as this OS user (worker.strict_user on). */
+      asUser:z.string().regex(/^[a-z_][a-z0-9_-]{0,31}$/).optional(),
     }).strict(),
     output:z.object({
       hostId:z.string(),backend:z.enum(["macos-seatbelt","linux-bubblewrap"]),workspacePath:z.string(),cwd:z.string(),
@@ -540,6 +542,11 @@ export const hostContract = defineRpcContract({
     }).strict(),
   },
   /** The directory of guard wrappers (bb, ssh, scp, sftp) for Codex, OpenCode and Cursor helpers (see src/bb-shim.ts) and the PATH that puts it first. */
+  /** A fresh codex home per task (worker.strict_user on): ~/.lane-pilot/codex-homes/<key>/ seeded with the machine's codex config and login. */
+  prepareWorkerHome: {
+    input: z.object({ requestedHostId: z.string().min(1), key: z.string().regex(/^[A-Za-z0-9._-]{1,120}$/) }).strict(),
+    output: z.object({ codexHome: z.string(), seeded: z.array(z.string()) }).strict(),
+  },
   prepareBbShim: {
     input: z.object({ requestedHostId: z.string().min(1) }).strict(),
     output: z.object({ dir: z.string(), path: z.string() }).strict(),

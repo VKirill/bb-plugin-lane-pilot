@@ -138,7 +138,10 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
         catch(cause) { bb.log.warn(`secret issuance journal: ${cause instanceof Error?cause.message:String(cause)}`); }
         bb.log.info(`secret ${name} given to a check of ${task.id} (${runId??"-"})`);
       }
-      const inTerminal=writerThreadId&&!hasSecrets ? await runInWriterTerminal({config,writerThreadId,workspacePath:task.project_cwd,cwd:command.cwd,
+      // The strict worker (worker.strict_user on): the check runs as worker.user through the host call, never in the owner's terminal.
+      const checkSettings=loadProjectSettings(db,config.projectId,verificationScopes);
+      const asUser=String(checkSettings["worker.strict_user"] ?? "off")==="on" ? String(checkSettings["worker.user"] ?? "lp-worker") : null;
+      const inTerminal=writerThreadId&&!hasSecrets&&!asUser ? await runInWriterTerminal({config,writerThreadId,workspacePath:task.project_cwd,cwd:command.cwd,
         command:command.command,backend,timeoutSec}).catch((cause:unknown)=>{
           bb.log.warn(`verification terminal failed, running on the host: ${cause instanceof Error?cause.message:String(cause)}`);
           return null;
@@ -153,6 +156,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
         cwd: command.cwd,
         timeoutSec,
         ...(hasSecrets ? { env } : {}),
+        ...(asUser ? { asUser } : {}),
         // A background job is kept by the host with its input: a check with secrets runs as a plain call instead.
       }, { hostId:config.hostId, timeoutMs:(timeoutSec + 15) * 1000, ...(options?.background && !hasSecrets ? { job:true, ...(options.jobKey ? { jobKey:options.jobKey } : {}) } : {}) }).catch((cause: unknown) => ({
         hostId: config.hostId,

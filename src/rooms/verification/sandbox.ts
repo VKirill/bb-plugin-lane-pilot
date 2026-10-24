@@ -4,11 +4,14 @@ import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createCapture, redactSecrets, sha256Hex } from "@lane-pilot/kit";
 import { spawnAsync } from "@lane-pilot/kit";
+import { asWorker, grantRunFolders, workerReachable } from "./worker-user";
 
 export type SandboxedCommandInput = {
   requestedHostId:string; workspacePath:string; cwd:string; command:string; backend?:"auto"|"macos-seatbelt"|"linux-bubblewrap"; timeoutSec?:number;
   /** Secret values for this command (Env Catalog): set in its environment, masked in what it printed. */
   env?:Record<string,string>;
+  /** Run as this OS user (worker.strict_user on): sudo -n -u, rights on the run folder granted and listed (worker-user.ts). */
+  asUser?:string;
 };
 export type SandboxedCommandResult = {
   hostId:string; backend:"macos-seatbelt"|"linux-bubblewrap"; workspacePath:string; cwd:string; exitCode:number;
@@ -227,6 +230,15 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
   // so an unresolved temp path would leave the sandbox's own HOME unwritable.
   const tempPath = await realpath(await mkdtemp(resolve(tmpdir(),"lane-pilot-sandbox-")));
   await linkUserToolHomes(tempPath);
+  // Checks as the worker: probe first, then rights on exactly the run folder and this job's temp folder (the job spool).
+  if (input.asUser) {
+    if (!await workerReachable(input.asUser)) {
+      await rm(tempPath,{recursive:true,force:true});
+      throw new Error(`worker_unreachable: sudo cannot run as ${input.asUser} without a password; an admin runs scripts/lp-worker-user.sh create ${input.asUser} on this machine, or worker.strict_user goes off`);
+    }
+    await grantRunFolders(input.asUser,[workspacePath,tempPath]);
+  }
+  const launch=(program:string,args:string[],keep:string[])=>input.asUser ? asWorker(input.asUser,program,args,keep) : { program, args };
   let releaseGuards=async():Promise<void>=>{};
   try {
     if (backend === "linux-bubblewrap") {
@@ -237,7 +249,8 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
       const secrets=sandboxSecretEnv(input.env);
       const args=buildBubblewrapArgs({workspacePath,cwd,tempPath,guardPaths});
       const policySha256=sha256Hex(JSON.stringify(args));
-      const child=await spawnAsync(bubblewrapPath!,[...(Object.keys(secrets).length?args.filter((arg)=>arg!=="--clearenv"):args),input.command],{
+      const bw=launch(bubblewrapPath!,[...(Object.keys(secrets).length?args.filter((arg)=>arg!=="--clearenv"):args),input.command],Object.keys(secrets));
+      const child=await spawnAsync(bw.program,bw.args,{
         cwd,env:secrets,timeout:Math.min(timeoutSec * 1000,MAX_TIMEOUT_MS),keepEnds:KEEP_STDOUT,
       });
       if (child.error && ["EPERM","EACCES","ENOENT"].includes(String((child.error as NodeJS.ErrnoException).code))) {
@@ -249,7 +262,8 @@ export async function runSandboxedCommandOnHost(input:SandboxedCommandInput):Pro
     const profile = buildSeatbeltProfile(workspacePath,tempPath);
     const policySha256 = sha256Hex(profile);
     const seatbeltSecrets=sandboxSecretEnv(input.env);
-    const child = await spawnAsync(SANDBOX_EXEC,["-p",profile,"/bin/bash","--noprofile","--norc","-c",input.command],{
+    const sb=launch(SANDBOX_EXEC,["-p",profile,"/bin/bash","--noprofile","--norc","-c",input.command],[...Object.keys(seatbeltSecrets),"PATH","HOME","TMPDIR","TMP","TEMP","BB_DATA_DIR","LANG","LC_ALL"]);
+    const child = await spawnAsync(sb.program,sb.args,{
       cwd,
       env:{
         // Secrets first: the sandbox's own variables below always win.
