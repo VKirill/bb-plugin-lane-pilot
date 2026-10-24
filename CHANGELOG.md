@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.1.302
+
+**A redone piece is judged on its whole work, and a stopped wave is named.** In the live phase ph_ae0a8de9db the piece was issued again as a redo, accepted, and the phase still stood still for an hour:
+- **plan-fact of a redo** diffed only the redo's own change, so the piece's code merged by its first attempt was «not in a changed hunk». A redo of a family whose earlier member was accepted is now diffed from the family's base: the lines this same piece wrote count as its proof.
+- **A shortened command** (`node scripts/notes.js add … ...`) is matched by its start when exactly one contract command begins with it (20 characters at least).
+- **A wave is weighed again** when its pieces got new facts (its package changed); the record of the first attempt was kept forever and held the next wave.
+- **A wave that is in with a failing line** is now a step for the PM (return to planning, change the failing piece or add one) instead of «Lane Pilot issues the next wave itself» with nobody acting.
+
 ## 0.1.301
 
 A piece issued before the contract prints (0.1.299) takes as its print the contract it really went out with — the stored task — compared on acceptance and verification, instead of the plan's current contract. The live phase ph_ae0a8de9db showed why: the PM reworded the failing acceptance line before the first pass of 0.1.299, that pass printed the reworded contract as the issued one, and the changed piece was never issued again (the phase stopped at «unchanged»).
