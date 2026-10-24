@@ -2,7 +2,7 @@
 title: UI Kit — Overview
 type: overview
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-24
 status: active
 confidence: high
 tags: [ui-kit, react, components]
@@ -18,6 +18,7 @@ sources:
   - src/rooms/core/server/realtime.ts
   - src/rooms/ui-shell/ui/use-lp-realtime.ts
   - packages/ui-kit/src/ui/button.tsx
+  - packages/ui-kit/src/ui/segments.tsx
   - packages/ui-kit/src/lib/utils.ts
 ---
 
@@ -29,7 +30,7 @@ TL;DR: `@lane-pilot/ui-kit` provides the shared React UI components, layout help
 
 The workspace is a private ESM TypeScript package named `@lane-pilot/ui-kit`; its package root and type entry point both resolve to `src/index.ts`, while `./realtime-channel` resolves to `src/realtime-channel.ts` (packages/ui-kit/package.json:1-18). The main entry re-exports UI components, hooks, utility functions, layout helpers, and icon APIs (packages/ui-kit/src/index.ts:1-32).
 
-The package root exposes React components such as `Surface` (packages/ui-kit/src/ui/surface.tsx:1-19), while the realtime subpath exposes the shared signal contract (packages/ui-kit/src/realtime-channel.ts:1-22). See [UI Primitives](features/primitives.md) and [Realtime Signals](features/realtime-signals.md) for their behavior. Server code imports the realtime subpath directly (src/rooms/workflow/server/workflow.ts:1-2; src/rooms/core/server/realtime.ts:1-2).
+The package root exposes React components such as `Surface` and `Segments` (packages/ui-kit/src/ui/surface.tsx:1-19; packages/ui-kit/src/index.ts:21; packages/ui-kit/src/ui/segments.tsx:9-36), while the realtime subpath exposes the shared signal contract (packages/ui-kit/src/realtime-channel.ts:1-22). `Segments` presents a controlled item set as a select in compact mode or pressed buttons in wide mode (packages/ui-kit/src/ui/segments.tsx:18-32). See [UI Primitives](features/primitives.md) and [Realtime Signals](features/realtime-signals.md) for their behavior. Server code imports the realtime subpath directly (src/rooms/workflow/server/workflow.ts:1-2; src/rooms/core/server/realtime.ts:1-2).
 
 ## Stack
 

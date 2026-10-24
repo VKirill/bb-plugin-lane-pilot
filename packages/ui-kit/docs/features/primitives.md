@@ -2,7 +2,7 @@
 title: UI Primitives
 type: component
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-24
 status: active
 confidence: high
 tags: [ui-kit, react, components]
@@ -41,6 +41,7 @@ sources:
   - packages/ui-kit/src/ui/motion.ts
   - packages/ui-kit/src/ui/table.tsx
   - packages/ui-kit/src/ui/panel-layout.ts
+  - packages/ui-kit/src/ui/segments.tsx
 ---
 
 # UI Primitives
@@ -69,21 +70,39 @@ The primitives provide common visual and interaction elements used by room UIs, 
 | `Select` | `position="popper"` default; Radix supports other positions | Portaled dropdown; popper mode sizes viewport to trigger dimensions | (packages/ui-kit/src/ui/select.tsx:70-99) |
 | `Popover` | `align="center"`, collision avoidance true, padding 8, side offset 4 | Portaled content with overridable alignment and collision props | (packages/ui-kit/src/ui/popover.tsx:12-42) |
 | `Tooltip` | Collision avoidance true, padding 8, side offset 4 | Portaled content; pointer-origin focus does not open it, keyboard-origin focus can | (packages/ui-kit/src/ui/tooltip.tsx:12-27; packages/ui-kit/src/ui/tooltip.tsx:31-59) |
-| `Input` | Native input types | Sets `autoComplete="off"`, unless caller overrides through later spread props | (packages/ui-kit/src/ui/input.tsx:10-24) |
+| `Input` | Native input types | Sets `autoComplete="off"` before spreading caller props, so a supplied `autoComplete` overrides it | (packages/ui-kit/src/ui/input.tsx:13-24) |
 | `Switch` | `size="sm"` default or `default`; controlled `checked` boolean | Calls `onCheckedChange(!checked)` after click unless prevented | (packages/ui-kit/src/ui/switch.tsx:5-12; packages/ui-kit/src/ui/switch.tsx:14-45) |
+| `Segments` | `compact` true/false; optional `badge` values keyed by item id | Compact mode renders a labeled select; wide mode renders pressed ghost buttons; nonzero badge values append to item labels | (packages/ui-kit/src/ui/segments.tsx:9-36) |
 | Layout and display | `Card*`, `Surface*`, `Table*`, `Tabs*`, `Label`, `Separator`, `Skeleton`, `Slider`, `HelpSup` | Native or Radix composition with local classes | (packages/ui-kit/src/index.ts:1-32) |
+
+### Icon resolution
+
+1. `Icon` checks the app icon registry for `name` and checks whether it is a built-in name. If neither exists, it resolves the requested name to `fallback`, which defaults to `Zap` (packages/ui-kit/src/ui/icon.tsx:225-240).
+2. If the resolved app icon is a component, `Icon` renders it inside a span and passes through class, style, and accessibility props. A repeated resolved name in the ancestor chain renders a built-in icon instead, using the resolved name when built in or `Zap` otherwise (packages/ui-kit/src/ui/icon.tsx:241-268).
+3. If the custom component throws during rendering, the error boundary renders the built-in `Zap` icon. Without an app component, built-in resolution uses the core icon map first and sends other names to the extended icon renderer (packages/ui-kit/src/ui/icon.tsx:249-275; packages/ui-kit/src/ui/icon.tsx:278-307).
+4. The extended renderer subscribes to the extended icon registry. While the map or requested icon is unavailable, it renders an empty icon value with `data-icon-pending`; it starts loading the extended module and ignores a rejected load for rendering (packages/ui-kit/src/ui/icon.tsx:309-337; packages/ui-kit/src/ui/icon.tsx:180-190).
+
+| Icon case | Input or condition | Output or failure behavior | Evidence |
+|---|---|---|---|
+| Registered app icon | `name` exists in the app registry | Renders the registered component; a render error falls back to built-in `Zap` | (packages/ui-kit/src/ui/icon.tsx:227-240; packages/ui-kit/src/ui/icon.tsx:249-267) |
+| Unknown name | Neither app-registered nor built in | Resolves to `fallback` (default `Zap`); if that also cannot resolve to a built-in name, built-in rendering uses `Zap` | (packages/ui-kit/src/ui/icon.tsx:225-240; packages/ui-kit/src/ui/icon.tsx:270-275) |
+| Core built-in | Resolved name is in the core map | Renders through `HugeiconsIcon` using the core map entry | (packages/ui-kit/src/ui/icon.tsx:278-297) |
+| Extended built-in | Name is not in core map | Reads the registered extended map; while missing, renders an empty icon and marks it pending while requesting the extended module | (packages/ui-kit/src/ui/icon.tsx:309-337) |
+| Recursive custom icon | Resolved name already occurs in the ancestor chain | Renders a built-in icon, or `Zap` when the repeated name is not built in | (packages/ui-kit/src/ui/icon.tsx:241-247) |
 
 ### Failures
 
 - A custom icon used inside a primitive resolves through the icon API’s fallback behavior; see [Icons](icons.md) for resolution and load failure details (packages/ui-kit/src/ui/icon.tsx:225-275).
 - The overlay blur helpers return without action when no document exists, no editable field is active, or an optional container does not contain that field (packages/ui-kit/src/ui/overlay-trigger.ts:41-57).
 - `TooltipTrigger` preserves a caller’s `onFocus` handler; it suppresses focus only when the event remains unprevented and the last recorded input was not keyboard (packages/ui-kit/src/ui/tooltip.tsx:15-27).
+- `Segments` passes `value` and `onChange` to the select in compact mode and derives each wide button’s pressed state from `value`; it does not validate that `value` matches an item id (packages/ui-kit/src/ui/segments.tsx:18-32).
 
 ## Business rules
 
 - `Button` supplies disabled pointer and opacity styling and focus-visible styling across variants (packages/ui-kit/src/ui/button.tsx:8-10).
 - `Switch` is controlled: the caller supplies `checked`; clicking requests the opposite value through `onCheckedChange` and does not mutate internal state (packages/ui-kit/src/ui/switch.tsx:14-45).
 - `Disclosure` uses native details state unless the caller supplies `open`, and invokes `onToggle` with the DOM element’s resulting state (packages/ui-kit/src/ui/disclosure.tsx:23-27).
+- `Segments` requires the caller to supply the controlled `value`, `onChange`, `compact` mode, and item list; badge text appears only for non-null, nonzero values (packages/ui-kit/src/ui/segments.tsx:9-24).
 - Portaled popover, select, tooltip, and alert dialog content receives the plugin scope attributes defined in (packages/ui-kit/src/lib/portal-scope.ts:3-16) ((packages/ui-kit/src/ui/select.tsx:70-78), (packages/ui-kit/src/ui/tooltip.tsx:44-50), (packages/ui-kit/src/ui/alert-dialog.tsx:14-45)).
 
 ## Public API
@@ -117,6 +136,7 @@ Every export from `src/index.ts` is listed below, grouped by source file. The `r
 | `Skeleton` | (packages/ui-kit/src/ui/skeleton.tsx:4-14) |
 | `Slider` | (packages/ui-kit/src/ui/slider.tsx:6-26) |
 | `Switch` | (packages/ui-kit/src/ui/switch.tsx:5-12; packages/ui-kit/src/ui/switch.tsx:14-62) |
+| `Segments` | (packages/ui-kit/src/ui/segments.tsx:9-36) |
 | `Table`, `TableHeader`, `TableBody`, `TableFooter`, `TableHead`, `TableRow`, `TableCell`, `TableCaption` | (packages/ui-kit/src/ui/table.tsx:111-120) |
 | `Tabs`, `TabsList`, `TabsTrigger`, `TabsContent` | (packages/ui-kit/src/ui/tabs.tsx:6-53) |
 | `Tooltip`, `TooltipTrigger`, `TooltipContent`, `TooltipProvider` | (packages/ui-kit/src/ui/tooltip.tsx:8-61) |
@@ -128,7 +148,7 @@ Every export from `src/index.ts` is listed below, grouped by source file. The `r
 ## Gotchas
 
 - `formatHomePathForDisplay` only shortens recognized Unix home paths (`/Users/<name>`, `/home/<name>`, `/root`) and Windows user paths; other paths are returned unchanged (packages/ui-kit/src/lib/utils.ts:8-17).
-- `Input` sets `autoComplete="off"` before spreading caller props, so callers can override it (packages/ui-kit/src/ui/input.tsx:10-24).
+- `Input` sets `autoComplete="off"` before spreading caller props, so callers can override it (packages/ui-kit/src/ui/input.tsx:13-24).
 - `CONTROL_H` aliases the coarse-pointer input height class, which is `h-9` and becomes `h-10` under the CSS coarse-pointer media variant ((packages/ui-kit/src/ui/control-row.ts:1-4), (packages/ui-kit/src/ui/coarse-pointer-sizing.ts:53-55)).
 
 <!-- lane-pilot:backlinks -->
