@@ -34,7 +34,7 @@ import { CHECKERS_USAGE, runCheckersCli } from "../../checkers/server";
 import { POLICY_USAGE, runPolicyCli } from "../../policy";
 import { WAITING_USAGE, runWaitingCli } from "../../owner-waiting/server";
 import { COVERAGE_USAGE, runCoverageCli } from "../../coverage";
-import { SMA_MAP_USAGE, runSmaMapCli } from "../../sma-map";
+import { SMA_MAP_USAGE, runSmaLiveCli, runSmaMapCli } from "../../sma-map";
 import { readinessWords, trainedConditions, trainingRatios, type DesignJournalLine } from "../../design-eval";
 import { PHASE_USAGE, runPhaseCli } from "../../phase/server";
 import { unknownReasons } from "../../runs";
@@ -275,7 +275,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
           return { exitCode:0, stdout:args.includes("--json") ? JSON.stringify(report, null, 2) : `${report.readiness}\n\n${JSON.stringify(report.ratios)}\n${report.conditions.map((row) => `${row.ok ? "✓" : "✗"} ${row.id}: ${row.detail}`).join("\n")}` };
         }
         if (command === "sma-map") {
-          return runSmaMapCli(args);
+          return args.includes("--live") ? runSmaLiveCli(db as never, args) : runSmaMapCli(args);
         }
         if (command === "waiting") {
           return runWaitingCli(db, args);

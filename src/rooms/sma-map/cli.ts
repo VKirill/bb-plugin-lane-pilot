@@ -2,9 +2,11 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { brokenProof, isDone, smaCounts, smaDonePercent, smaHoles, smaRows, type ProofRoots, type SmaRow } from "./model";
-import { SMA_REGIONS } from "./graph";
+import { SMA_NODES, SMA_REGIONS } from "./graph";
 
-export const SMA_MAP_USAGE = "bb lane-pilot sma-map [--json] [--region <number|name>] [--status have|partial|missing|skip|unproven] [--check-proofs]   the SMA product map node by node: what Lane Pilot has for each node, the proof in the code, and the share done";
+export const SMA_MAP_USAGE = "bb lane-pilot sma-map [--json] [--region <number|name>] [--status have|partial|missing|skip|unproven] [--check-proofs] [--live [--days N]]   the SMA product map node by node: what Lane Pilot has for each node, the proof in the code, and the share done; --live says which groups worked on real work in the window";
+
+import { readSmaLive, renderSmaLive, smaGroups } from "./live";
 
 type Result = { exitCode: number; stdout?: string; stderr?: string };
 const flag = (argv: readonly string[], name: string) => { const at = argv.indexOf(name); return at >= 0 ? argv[at + 1] : undefined; };
@@ -45,4 +47,12 @@ export function runSmaMapCli(argv: string[], cwd: string = process.cwd()): Resul
   if (holes.length) out.push("", `Registry holes (${holes.length}):`, ...holes.map((hole) => `  ${hole}`));
   if (broken.length) out.push("", `Broken proofs (${broken.length}):`, ...broken.map((line) => `  ${line}`));
   return { exitCode: holes.length || broken.length ? 1 : 0, stdout: out.join("\n") };
+}
+
+/** `bb lane-pilot sma-map --live [--days N] [--json]`: which groups of the map left a trace in the plugin's database in the window. */
+export function runSmaLiveCli(db: Parameters<typeof readSmaLive>[0], argv: string[], now = Date.now()): Result {
+  const days = Math.max(1, Math.min(365, Number(flag(argv, "--days") ?? 7) || 7));
+  const rows = readSmaLive(db, smaGroups(SMA_NODES as never, SMA_REGIONS), now - days * 86_400_000);
+  if (argv.includes("--json")) return { exitCode: 0, stdout: JSON.stringify({ days, rows }, null, 2) };
+  return { exitCode: 0, stdout: renderSmaLive(rows, days, now) };
 }
