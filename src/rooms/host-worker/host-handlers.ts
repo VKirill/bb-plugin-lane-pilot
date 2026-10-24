@@ -430,6 +430,10 @@ export const whichPrograms: ExperimentalHostRpcHandlers<typeof hostContract>["wh
 export const writePhaseBook: ExperimentalHostRpcHandlers<typeof hostContract>["writePhaseBook"] = async (input) =>
   casWriteMarkdown({ ...input, confirmed:true }, 2_000_000, (path) => (/^\.agents\/phases\/ph_[a-z0-9]{6,}\/[^/]+(\/[^/]+)*$/.test(path) || /^\.agents\/planning\/(STATE|ROADMAP)\.md$/.test(path)) && !path.includes(".."));
 
+/** An enabled forge draft lands only at `.claude/skills/<name>/SKILL.md` or `.claude/agents/<name>.md` of the project (src/rooms/forge). */
+export const writeForgeEnabled: ExperimentalHostRpcHandlers<typeof hostContract>["writeForgeEnabled"] = async (input) =>
+  casWriteMarkdown({ ...input, confirmed:true }, 60_000, (path) => /^\.claude\/(skills\/[a-z][a-z0-9-]{1,47}\/SKILL\.md|agents\/[a-z][a-z0-9-]{1,47}\.md)$/.test(path));
+
 /** Writes one chain file into the project's own `.lane-pilot/workflows` folder, which must not be a link out of the project. */
 export const writeWorkflowFile: ExperimentalHostRpcHandlers<typeof hostContract>["writeWorkflowFile"] = async (input) => {
   const rootInfo = await lstat(input.projectCwd);
