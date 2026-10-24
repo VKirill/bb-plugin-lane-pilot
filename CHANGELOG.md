@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+**A merge turn no longer blames the writer for main's files.** When main moved and the writer resolved the conflict in its own worktree, Lane Pilot measured the turn against the snapshot taken before it merged main in. The conflicted merge stays unfinished for the writer, so every file main had changed sat staged in the worktree and counted as the writer's: Vampirism Fire `vf-untrack-pycache` (2026-10-23) failed with «owns_paths rejected game/AGENTS.md, game/scripts/studio_test.py», two files another task had just merged, and the retry told the writer to `git checkout` them, which would have dropped main's work from the merge. A turn that syncs the worktree with main now takes its snapshot after the sync.
+
 ## 0.1.290
 
 **Memory, rules and learning stay in their section.** «Мои проекты» holds several games and FeedGen in one BB project, and what one section taught reached the others: a decision about one Roblox game's characters went to the Vampirism Fire PM, and a learned rule (inverse kinematics for skeletons) would have reached FeedGen's writers. Memory records now carry the sections they belong to (`scope_json`, outermost first; `[]` the whole project): the memory maintainer writes a task's notes into its run's sections, an adopted rule's record takes the rule's scope, and what Lane Pilot learns from the owner's messages takes the sections of the chat it was said in (its run's scopes, else the folder its workspace sits in). A writer, a reviewer and the PM's memory context read the project's records and their own sections', never a sibling's. The learning report goes to the PM of the section the owner spoke in and wakes no other PM.

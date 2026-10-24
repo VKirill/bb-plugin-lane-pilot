@@ -225,6 +225,7 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
     try {
       transitionAttempt(db, input.attemptId, "spawn_requested");
       let conflicts: string[] = [];
+      let mergedMain = false;
       if (input.kind !== "retry" && resolve(writer.workspacePath) !== resolve(base)) {
         const synced = await host.call("gitSyncWorktree", { requestedHostId:input.config.hostId, basePath:base, worktreePath:writer.workspacePath,
           ...(input.kind === "merge" ? { keepConflicts:true } : {}) }, { hostId:input.config.hostId, timeoutMs:120_000 });
@@ -233,8 +234,13 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
         if (!usable) return { ok:false, reason:`worktree_sync_${synced.status}:${synced.reason ?? ""}`, bound:false };
         await host.call("gitPrepareWorktree", { requestedHostId:input.config.hostId, basePath:base, worktreePath:writer.workspacePath },
           { hostId:input.config.hostId, timeoutMs:600_000 }).catch(() => undefined);
+        mergedMain = true;
       }
-      let dirtBefore = input.dirtBefore;
+      // A sync starts from a worktree without uncommitted edits (the earlier work is committed), and a conflicted merge
+      // of main is left unfinished for the writer, with main's files staged. A snapshot taken before the sync counted
+      // them as this writer's: «owns_paths rejected game/AGENTS.md, game/scripts/studio_test.py» on a merge turn
+      // (Vampirism Fire vf-untrack-pycache, 2026-10-23), and the retry then told the writer to check them out of the merge.
+      let dirtBefore = mergedMain ? undefined : input.dirtBefore;
       if (!dirtBefore) {
         const dirt = await services.workspaceDirt(input.config, writer.workspacePath, input.runId);
         if (!dirt.ok) return { ok:false, reason:`workspace_snapshot:${dirt.reason}`, bound:false };
