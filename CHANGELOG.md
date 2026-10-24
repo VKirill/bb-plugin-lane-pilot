@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **The watcher no longer takes an attempt waiting for its checks for a stuck one.** Vampirism Fire on 2026-10-24: six attempts (vf-runner-pool.2 twice, vf-s4-archangel.3, vf-s5-coins, vf-s5-combat-items, vf-s5-inventory.2) were reported «running 47–53 min while its writer thread is idle». Each writer had finished; its checks waited in the run's check pool of two behind other tasks' Studio tests (one full `studio_test.py` took 28 minutes), and each attempt got its verdict once its turn came. The «stuck» check knew only the attempt state and the writer thread status. `runVerification` now marks a writer thread's checks as in flight while they wait for the pool and while they run (`src/rooms/runs/checks-in-flight.ts`); the watcher skips such an attempt while a check of its pool started or ended in the last 45 minutes, and still reports it when the pool stopped moving.
+
 ## 0.1.305
 
 **A night repair that cannot merge is released, not left for the owner.** Two fixed night repairs (a sandbox class and a merge class) failed to merge four times each — only on CHANGELOG.md, where every branch adds its entry at the top while main moves on; the code merged cleanly — and the watcher then left their branches «for the owner», who takes no part in the loop. Now:

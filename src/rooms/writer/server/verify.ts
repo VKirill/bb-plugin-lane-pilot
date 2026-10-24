@@ -15,7 +15,7 @@ import { SecretsNotReadyError, allowedSecretNames, secretProblem } from "../../s
 import type { VerifyResult } from "../../tasks";
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
 import { isLiveDecision, LIVE_FOLDER_RECEIPT } from "../live-folder";
-import { taskFamily } from "../../runs";
+import { beginChecks, checksMoved, taskFamily } from "../../runs";
 import { bookkeepingSetting, filterOwnershipNoise } from "@lane-pilot/settings-catalog";
 import { findUnownedChanges, findUnownedRunChanges, resolveRunOwnershipScope } from "../../verification";
 import { recordGateEvaluation } from "../../runs/server";
@@ -114,8 +114,13 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
     // live attempt (its writer thread known) runs them; the post-merge check on main has no such files.
     const harnessChecks=runId&&writerThreadId ? services.harness?.checksForWriterThread(runId, task.id, writerThreadId) ?? [] : [];
     const commands:TaskV2["verification"]=harnessChecks.length ? [...task.verification, ...harnessChecks.map((check)=>({ command:check.command, cwd:task.project_cwd, timeout_sec:check.timeout_sec }))] : task.verification;
-    return mapBounded(commands,policy.pools.verification,async(command)=>{
-      const release=await services.runWriterPool.acquire(`verification:${runId??config.projectId}`,policy.pools.verification);
+    const pool=`verification:${runId??config.projectId}`;
+    // The watcher reads this: the attempt stays «running» with its writer idle while its checks wait or run (self-repair.ts).
+    const endChecks=writerThreadId?beginChecks(writerThreadId,pool):()=>undefined;
+    try {
+    return await mapBounded(commands,policy.pools.verification,async(command)=>{
+      const release=await services.runWriterPool.acquire(pool,policy.pools.verification);
+      checksMoved(pool);
       try {
       return await runWithFlakyRerun(command.command,async()=>{
       const backend=(loadProjectSettings(db,config.projectId,verificationScopes)["sandbox.backend"] as "auto"|"macos-seatbelt"|"linux-bubblewrap"|undefined) ?? "auto";
@@ -178,8 +183,9 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       return recorded({command:command.command,exitCode:ran.exitCode,stdout:typeof ran.stdout==="string"?mask(ran.stdout):"",stderr:typeof ran.stderr==="string"?mask(ran.stderr):"",
         sandboxBackend:ran.backend,policySha256:ran.policySha256,workspacePath:ran.workspacePath,...("hostError" in ran?{hostError:true as const}:{})});
       },(line)=>bb.log.info(line));
-      } finally { release(); }
+      } finally { checksMoved(pool); release(); }
     });
+    } finally { endChecks(); }
   }
 
   async function persistWriterAcceptance(input: {

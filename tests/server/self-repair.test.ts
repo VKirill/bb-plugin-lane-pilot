@@ -6,6 +6,7 @@ import { createJev } from "@lane-pilot/jev";
 import { setJevForTests } from "@lane-pilot/jev";
 import type { JevClient } from "@lane-pilot/jev";
 import type { ServerCore } from "../../src/rooms/core/server/core";
+import { beginChecks, checksMoved } from "../../src/rooms/runs";
 
 type HostCall = { method: string; input: Record<string, unknown> };
 
@@ -181,6 +182,24 @@ describe("self-repair", () => {
     attempt("lpattempt_r", "lprun_a", "running", null, now - 5 * 60_000);
     const incidents = await createSelfRepair(ctx).collect(0, { ...(await createSelfRepair(ctx).config()) });
     expect(incidents.map((row) => [row.kind, row.attemptId])).toEqual([["stuck", "lpattempt_s"]]);
+  });
+
+  it("does not take an attempt whose checks wait in a moving check pool for a stuck one, and does take a pool that stopped", async () => {
+    // Vampirism Fire 2026-10-24: vf-runner-pool.2's writer ended at 21:21, its Studio test waited behind other tasks' ones in
+    // the run's pool of two until 22:06, and the watcher reported the attempt at 22:00 as «running 47 min while idle».
+    const { ctx, attempt, now } = setup();
+    attempt("lpattempt_q", "lprun_a", "running", null, now - 50 * 60_000, "thr_w_queued");
+    const end = beginChecks("thr_w_queued", "verification:lprun_a", now - 50 * 60_000);
+    try {
+      checksMoved("verification:lprun_a", now - 3 * 60_000);
+      const repair = createSelfRepair(ctx);
+      expect(await repair.collect(0, await repair.config())).toEqual([]);
+      // Nothing started or ended in the pool for an hour: the queue itself is stuck.
+      checksMoved("verification:lprun_a", now - 60 * 60_000);
+      expect((await repair.collect(0, await repair.config())).map((row) => [row.kind, row.attemptId])).toEqual([["stuck", "lpattempt_q"]]);
+    } finally { end(); }
+    const repair = createSelfRepair(ctx);
+    expect((await repair.collect(0, await repair.config())).map((row) => row.attemptId)).toEqual(["lpattempt_q"]);
   });
 
   it("reads Lane Pilot's own failures from the plugin log, not machine outages or its own lines", () => {
