@@ -417,7 +417,7 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
     }
     case "verification": {
       const verdict = r.verification?.verdict;
-      if (verdict?.state === "failed") return { key: key(`failed:${verdict.inputSha}`), stage: phase.stage, waitsForPm: true,
+      if (verdict?.state === "failed") return { key: key(`verdict-failed:${verdict.inputSha}`), stage: phase.stage, waitsForPm: true,
         text: `${head} — stage 5, verification failed: ${verdict.detail}. Accepted pieces are not run again by themselves: return the phase to planning (${tool("return", `, phaseId:"${id}", to:"planning", note`)}) and change the failing piece's contract (a changed piece is issued again as a redo) or add a piece; a return to execution without new work meets the same verdict.` };
       if (verdict && !r.verification?.model) return { key: key("model"), stage: phase.stage, waitsForPm: true,
         text: `${head} — stage 5, verification: the blind check passed (${verdict.detail}). Run the goal audit (workflow lp.close) against the phase goal «${phase.goal}»${r.design?.drawing ? ` and the phase drawing (${r.design.drawing.paths.join(", ")})` : ""} and report it with ${tool("goal_audit", `, phaseId:"${id}", state:"met"|"unmet", by, summary`)}.` };
