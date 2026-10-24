@@ -2,9 +2,9 @@
 title: Workflow Definitions and Validation
 type: component
 created: 2026-10-10
-updated: 2026-10-13
+updated: 2026-10-24
 status: active
-confidence: high
+confidence: medium
 tags: [workflow-engine, schema, validation]
 sources:
   - packages/workflow-engine/src/schema.ts
@@ -78,6 +78,8 @@ The schemas use Zod; file parsing and hashing are delegated to the store and `@l
 
 ## Lowering, expression checks, and schema details
 
+For the detailed expression parser and structured-condition conversion, see [Expression Parsing and Conditions](expression-parsing.md). The two-pass definition-store merge and validation phases are described in [Workflow Store Loading and Validation](workflow-store-loading.md).
+
 ### `lowerWorkflow`
 
 `lowerWorkflow` makes a shallow transformed workflow; it does not run validation itself. It walks each source node and constructs a new node list plus generated edges, then retargets incoming edges, appends only generated edges whose `(from,to)` pair is not already present, adds a `$start` edge for `entry` when no start edge exists, removes `entry`, and returns the copy (`packages/workflow-engine/src/lower.ts:52-100`).
@@ -96,6 +98,8 @@ The function does not catch errors from a supplied resolver. Invalid generated g
 `conditionSchema` lazily validates either a strict field/operator/value object, a nonempty `all` or `any` list capped at 20 children, or a strict recursive `not` object. `whenSchema` also accepts a nonempty expression string up to 600 characters; unsupported object shapes and extra keys fail Zod parsing (`packages/workflow-engine/src/schema.ts:41-57`).
 
 `nodeSchema` dispatches on the required `type` discriminator to one of nine strict schemas: agent, lp-task, action, decision, human, parallel, join, subworkflow, or note. The selected node schema enforces its required fields, defaults, and type-specific constraints; a missing/unknown discriminator, wrong field type, or unknown property fails parsing (`packages/workflow-engine/src/schema.ts:223-227`, `packages/workflow-engine/src/schema.ts:180-221`).
+
+Runnable nodes may declare a step contract: up to 12 consumed artifacts, up to 8 produced artifacts, up to 10 output gates, and a stage proof definition. Each consumed or produced artifact has a kind and version; production may select an output field or check each item. Gates are expressions over the node's own output, and `proof` uses the shared stage-proof schema (`packages/workflow-engine/src/schema.ts:87-95`, `packages/workflow-engine/src/schema.ts:77-83`).
 
 `edgeSchema` requires nonempty `from` and `to` strings no longer than 48 characters; `when` is optional; `label` is optional and capped at 80 characters; `with` maps strings to strings; `pass` defaults to `artifact` and accepts the pass-mode enum. The object is strict, so extra fields fail schema parsing (`packages/workflow-engine/src/schema.ts:229-238`).
 

@@ -2,7 +2,7 @@
 title: Workflow Execution Engine
 type: component
 created: 2026-10-10
-updated: 2026-10-13
+updated: 2026-10-24
 status: active
 confidence: medium
 tags: [workflow-engine, execution, journal]
@@ -84,6 +84,8 @@ The engine consumes the workspace's schema, expression, validation, lowering, ou
 
 ### `WorkflowEngine`
 
+Detailed construction, compilation, preflight, journal transitions, and pure action execution branches are in [Engine, Journal, and Pure Action Details](engine-journal-actions.md).
+
 Construction chooses the clock, creates a journal bound to the supplied database and event callback, assigns the caller's instance ID or a generated one, chooses the lease duration, and registers built-in executors (`packages/workflow-engine/src/engine.ts:151-174`). `register` replaces the executor stored under a key and returns the engine for chaining; `hasExecutor` checks that map (`packages/workflow-engine/src/engine.ts:176-177`).
 
 Before execution, `preflight` validates the workflow, lowers it, skips note nodes, and checks that every remaining node resolves to an executor key that is registered. It returns a list of problems; it does not start a run (`packages/workflow-engine/src/engine.ts:210-220`).
@@ -116,9 +118,10 @@ The factory closes over the database and clock, then provides `getRun`, `getStep
 
 ### `workflowMigrations`
 
-This exported ordered string array defines the run, step, parallel-arrival, external-effect, and event tables, their lookup indexes, and triggers that reject event updates and deletes. The host storage room appends these statements to its ordered migrations; the engine package exports definitions but does not open or migrate a database by itself (`packages/workflow-engine/src/journal.ts:10-105`, `packages/workflow-engine/src/db.ts:1-4`). The table meanings and fields live in the [run journal data model](../data-model/run-journal.md). Migration execution errors are handled by the host migration runner, not caught in this array (`packages/workflow-engine/src/journal.ts:10-105`).
+This exported ordered string array defines the run, step, parallel-arrival, external-effect, and event tables, their lookup indexes, and triggers that reject event updates and deletes. The host storage room appends these statements to its ordered migrations; the engine package exports definitions but does not open or migrate a database by itself (`packages/workflow-engine/src/journal.ts:10-105`, `packages/workflow-engine/src/db.ts:1-4`). The table meanings and fields live in the [run journal data model](../data-model/run-journal.md).
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by
 
+- [Engine, Journal, and Pure Action Details](engine-journal-actions.md)
 - [Workflow Engine — Overview](../overview.md)
