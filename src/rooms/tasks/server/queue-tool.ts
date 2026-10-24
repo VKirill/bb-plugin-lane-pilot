@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { ToolError, registerObservedTool, type ServerCore } from "../../core/server";
 import { deadLetters, HOLD_FOREVER } from "../rails";
+import { TASK_WORDS_KEY, taskWordKey, type TaskWord } from "../words";
+import { taskFamily } from "../../runs";
 import { hostContract } from "../../contracts";
 import { getRun, getRunWriterHost } from "../../storage";
 
@@ -19,11 +21,12 @@ export function registerQueueTool(ctx: ServerCore): void {
   registerObservedTool(bb.agents, {
     name: "lane_pilot_queue",
     description: "The run's queue: hold tasks out of it until a date or until released, release them, list the dead letters (tasks that ended blocked and were not sent again).",
-    instructions: "`hold` (taskIds, until? ISO date; without it the task waits until `release`): a queued task takes no writer while held. `release` (taskIds). `close_backlog` (id): the backlog item the accepted work came from gets status done in its meta.yaml — exactly that item. `dead_letters`: the tasks of this project whose latest attempt ended blocked or rejected more than a day ago and that nobody sent again — fix and send each again, or cancel it with the words why.",
+    instructions: "`hold` (taskIds, until? ISO date; without it the task waits until `release`): a queued task takes no writer while held. `release` (taskIds). `close_backlog` (id): the backlog item the accepted work came from gets status done in its meta.yaml — exactly that item. `word` (taskId, decision yes|no, text): the owner's word on a task, written only after he answered (lane_pilot_ask_owner) — with owner.words on a verified task lands on main only after his yes. `dead_letters`: the tasks of this project whose latest attempt ended blocked or rejected more than a day ago and that nobody sent again — fix and send each again, or cancel it with the words why.",
     parameters: z.discriminatedUnion("action", [
       z.object({ action: z.literal("hold"), taskIds: z.array(z.string().min(1)).min(1).max(50), until: z.string().datetime().optional() }).strict(),
       z.object({ action: z.literal("release"), taskIds: z.array(z.string().min(1)).min(1).max(50) }).strict(),
       z.object({ action: z.literal("dead_letters") }).strict(),
+      z.object({ action: z.literal("word"), taskId: z.string().min(1), decision: z.enum(["yes", "no"]), text: z.string().trim().min(1).max(600) }).strict(),
       z.object({ action: z.literal("close_backlog"), id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/), note: z.string().max(300).optional() }).strict(),
     ]),
     execute: async (input, context) => {
@@ -33,6 +36,13 @@ export function registerQueueTool(ctx: ServerCore): void {
         return JSON.stringify({ deadLetters: deadLetters(rows, Date.now()).slice(0, 50) });
       }
       const runId = await runOf(context.threadId);
+      if (input.action === "word") {
+        const all = ((await bb.storage.kv.get(TASK_WORDS_KEY).catch(() => null)) as Record<string, TaskWord[]> | null) ?? {};
+        const key = taskWordKey(runId, taskFamily(input.taskId));
+        all[key] = [...(all[key] ?? []), { turn: "land" as const, decision: input.decision, text: input.text, at: Date.now() }].slice(-10);
+        await bb.storage.kv.set(TASK_WORDS_KEY, all as never);
+        return JSON.stringify({ runId, taskId: input.taskId, word: input.decision, next: input.decision === "yes" ? "send the task again: it lands without a new writer pass" : "cancel the task with the owner's words, or change it and send again" });
+      }
       if (input.action === "close_backlog") {
         // Close exactly that line: the backlog item the accepted work came from is marked done in its own meta.yaml, nothing else.
         const run = getRun(db, runId);

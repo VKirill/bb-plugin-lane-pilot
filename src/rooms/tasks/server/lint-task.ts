@@ -62,6 +62,7 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
         programs = new Map(Object.entries(answer.found));
       } catch { programs = null; }
     }
-    return lintContract({ task, workspacePath, hostId, kinds, sandboxUnsafe, gate, openTasks, deadDependencies, programs, ...(secrets ? { secrets } : {}) });
+    const ownerWords = String(settings["owner.words"] ?? "off") === "on";
+    return lintContract({ task, workspacePath, hostId, kinds, sandboxUnsafe, gate, openTasks, deadDependencies, programs, ownerWords, ...(secrets ? { secrets } : {}) });
   };
 }

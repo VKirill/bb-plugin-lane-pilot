@@ -23,7 +23,7 @@ export function queueOrder<T extends { priority?: string; queuedAt: number }>(ro
 /** The three classes a task that cannot start falls into (SMA: Three blocking classes): something is missing, something must come first, or something is in the way. */
 export type BlockingClass = "missing_info" | "dependency" | "conflict";
 export function blockingClass(code: string): BlockingClass | null {
-  if (/^(clarify_open|read_first_missing|read_first_path|secret_missing|secret_name_unknown|secret_catalog_unavailable|task_standard_|promise_missing|check_not_runnable|missing_)/.test(code)) return "missing_info";
+  if (/^(clarify_open|clarify_needs_owner|owner_word|read_first_missing|read_first_path|secret_missing|secret_name_unknown|secret_catalog_unavailable|task_standard_|promise_missing|check_not_runnable|missing_)/.test(code)) return "missing_info";
   if (/^(depends_dead|depends_|waiting_secret|held)/.test(code)) return "dependency";
   if (/^(owns_overlap|ownership_|never_touch|area_busy|conflict|verification_cwd|task_in_progress)/.test(code)) return "conflict";
   return null;
@@ -31,11 +31,21 @@ export function blockingClass(code: string): BlockingClass | null {
 
 type Contract = {
   risk?: string; kind?: string; owns_paths?: readonly string[]; verification?: ReadonlyArray<{ command: string }>;
-  promise?: { given?: string; when?: string; then?: string }; clarify?: { questions?: readonly string[] }; drawing?: readonly string[];
+  promise?: { given?: string; when?: string; then?: string }; clarify?: { questions?: readonly string[]; answers?: ReadonlyArray<{ question: string; by: string }> }; drawing?: readonly string[];
 };
 
 const UI_PATH = /\.(tsx|jsx|vue|svelte|css|scss|html)$|(^|\/)(ui|components|pages|screens|views)\//i;
 const atLeastMedium = (risk: string | undefined) => risk === "medium" || risk === "high" || risk === "critical";
+
+/**
+ * The owner's word on a task (SMA: Clarification awaits a person, Clarification confirmed by a person): with owner.words on, an answer the PM
+ * gave himself does not settle a clarification — the owner's does. Off (the default), the PM's answers count as before.
+ */
+export function ownerWordFindings(task: Contract, ownerWords: boolean): Array<{ code: string; message: string }> {
+  if (!ownerWords) return [];
+  const byPm = (task.clarify?.answers ?? []).filter((answer) => answer.by !== "owner");
+  return byPm.length ? [{ code: "clarify_needs_owner", message: `owner.words is on: the clarification ${byPm.map((answer) => `«${answer.question}»`).join(", ")} was answered by the PM; ask the owner with lane_pilot_ask_owner, fold in his answer with by:"owner", then send the task again` }] : [];
+}
 
 /** Findings of the task-birth rails; errors stop the dispatch, warnings go back with it. */
 export function birthFindings(task: Contract): { errors: Array<{ code: string; message: string }>; warnings: Array<{ code: string; message: string }> } {

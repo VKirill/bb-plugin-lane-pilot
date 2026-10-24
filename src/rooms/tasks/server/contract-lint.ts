@@ -1,4 +1,4 @@
-import { birthFindings, blockingClass, checkProgram } from "../rails";
+import { birthFindings, blockingClass, checkProgram, ownerWordFindings } from "../rails";
 import { resolve } from "node:path";
 import { TASK_KINDS, type TaskV2 } from "../../contracts";
 import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOverlap } from "@lane-pilot/kit";
@@ -28,6 +28,8 @@ export type LintInput = {
   programs?:ReadonlyMap<string, boolean> | null;
   /** The project's integration gate (explicit or detected) runs the whole suite once per batch; absent or null when there is none. */
   gate?:{ command:string } | null;
+  /** The project asks for the owner's word (setting owner.words = on): a clarification counts only with his answer. */
+  ownerWords?:boolean;
   /** Other open tasks of the project. */
   openTasks:readonly LintOpenTask[];
   /** depends_on names whose latest task ended blocked or canceled and that nothing restarts or vouches for. */
@@ -178,7 +180,7 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
   errors.push(...taskStandardFindings(task));
   // The task-birth rails (src/rooms/tasks/rails.ts): open clarification, the promise in Given/When/Then words, the drawing a screen task follows.
   const birth = birthFindings(task);
-  errors.push(...birth.errors);
+  errors.push(...birth.errors, ...ownerWordFindings(task, input.ownerWords === true));
   warnings.push(...birth.warnings);
   for (const [index, check] of task.verification.entries()) {
     const program = checkProgram(check.command);

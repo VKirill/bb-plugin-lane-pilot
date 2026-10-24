@@ -17,7 +17,8 @@ import { closeWriterStages, recordGateEvaluation, recordStage } from "../../runs
 import { stringAt } from "../../core/server";
 import { needsHumanQuestion, outputText, providerLimitNotice, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines } from "./writer-task";
 import { isLiveDecision } from "../live-folder";
-import { acceptanceProofGap, isMainfixTask, questionsFromFile, referenceTestEdits, writerMarkers } from "../../tasks";
+import { TASK_WORDS_KEY, acceptanceProofGap, isMainfixTask, landingWordGap, questionsFromFile, referenceTestEdits, taskWordKey, writerMarkers } from "../../tasks";
+import type { TaskWord } from "../../tasks";
 import type { StageId } from "../../tasks";
 import { IntegrationGateRunner, parseIntegrationGateSettings } from "../../verification/server";
 import { gateResolverFor } from "../../verification/server";
@@ -32,7 +33,7 @@ import { shouldMergeAttemptWorktree } from "./spawn";
 import { loadWriterNudge } from "./writer-silence";
 import { recordedWriterSkills } from "./skill-pick";
 import { createSkillMaterializer, recordedMaterializedSkills } from "./skill-materialize";
-import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON, failureFingerprint, isEnvironmentCheckFailure } from "../../runs";
+import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON, failureFingerprint, isEnvironmentCheckFailure, taskFamily } from "../../runs";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../../verification/server";
 import { sendServiceMessage } from "../../relay/server";
@@ -45,6 +46,8 @@ const FOLLOW_UP_DELETED = "the owner deleted the queued instruction for this wri
 const MERGE_QUEUE_MS = 15 * 60_000;
 /** How long finished work waits for someone's uncommitted edits in the base checkout to be committed or put away. */
 const DIRTY_BASE_WAIT_MS = 2 * 3600_000;
+/** How long a verified task waits for the owner's word to land when owner.words is on. */
+const OWNER_WORD_WAIT_MS = 6 * 3600_000;
 const dirtyBase = (merged:{ status:string; reason?:string|null }) => merged.status === "conflict" && Boolean(merged.reason?.startsWith("base checkout has uncommitted changes"));
 
 /**
@@ -701,6 +704,26 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"no_code_proof",reason:proofGap}});
         transitionAttempt(db, input.attemptId, "blocked", { reason:proofGap });
         return { status:"blocked", reason:proofGap, attemptId:input.attemptId, writerThreadId };
+      }
+      // The owner's word before landing (SMA: Approving, Authorized by a person): with owner.words on, a verified task waits here,
+      // in place and with its worktree, for the owner's yes the PM records (lane_pilot_queue word); a no or six silent hours block it.
+      const ownerWords = String(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId))["owner.words"] ?? "off") === "on";
+      const wordsOf = async () => ((await bb.storage.kv.get(TASK_WORDS_KEY).catch(() => null)) as Record<string, TaskWord[]> | null)?.[taskWordKey(input.runId, taskFamily(input.taskId))];
+      let wordGap = landingWordGap(ownerWords, await wordsOf());
+      if (wordGap && !wordGap.includes("said no")) {
+        void sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:writerThreadId,
+          text:`Lane Pilot: task ${input.taskId} passed its checks and waits for the owner's word before it lands on main (owner.words is on). Ask him with lane_pilot_ask_owner, then record his answer with lane_pilot_queue {action:"word", taskId:"${input.taskId}", decision:"yes"|"no", text}. It waits up to 6 hours; no need to resend it.` }).catch(() => undefined);
+        const since = Date.now();
+        while (wordGap && !wordGap.includes("said no") && Date.now() - since < OWNER_WORD_WAIT_MS && !ctx.isDisposed()) {
+          await new Promise((wake) => setTimeout(wake, 60_000));
+          wordGap = landingWordGap(ownerWords, await wordsOf());
+        }
+      }
+      if (wordGap) {
+        recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+          attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"owner_word",reason:wordGap}});
+        transitionAttempt(db, input.attemptId, "blocked", { reason:wordGap });
+        return { status:"blocked", reason:wordGap, attemptId:input.attemptId, writerThreadId };
       }
       const receipt = await services.persistWriterAcceptance({
         config:input.config, task:input.task, runId:input.runId, taskId:input.taskId,

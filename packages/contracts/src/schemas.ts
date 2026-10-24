@@ -147,8 +147,12 @@ export const taskV2Schema = z.object({
   /** SMA «Queue priority»: urgent, high, normal (default) or low; a higher one starts first when the run waits for a free writer. */
   priority: z.enum(["low", "normal", "high", "urgent"]).describe("low, normal (default), high or urgent: the order queued tasks start in.").optional(),
   /** SMA «Clarification awaits a person»: questions open before the task can start; the dispatch refuses while any is left. */
-  clarify: z.object({ questions: z.array(z.string().trim().min(1).max(600)).max(10) }).strict()
-    .describe("Open questions; the task does not start while any is listed: answer them, fold the answers in, drop clarify.").optional(),
+  clarify: z.object({
+    questions: z.array(z.string().trim().min(1).max(600)).max(10),
+    /** SMA «Clarification confirmed by a person»: the answers folded in, each with who gave it; with owner.words on only the owner's count. */
+    answers: z.array(z.object({ question: z.string().trim().min(1).max(600), answer: z.string().trim().min(1).max(1200), by: z.enum(["owner", "pm"]) }).strict()).max(10).optional(),
+  }).strict()
+    .describe("Open questions; the task does not start while any is listed: answer them, fold the answers in (answers, each with by owner|pm), empty questions.").optional(),
   /** SMA «Drawing placed in the copy»: the drawing (screens) this task follows; its files are read first and the acceptance checks them unchanged. */
   drawing: z.array(z.string().trim().min(1).max(1024)).max(30).describe("Paths of the drawing (screen mock-ups) the task follows.").optional(),
   /** SMA «Declared wire inventory»: a value that must reach a place, as a chain of identifiers; plan→fact checks each hop in the code (src/rooms/wires). */
