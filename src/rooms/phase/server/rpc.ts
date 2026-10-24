@@ -14,7 +14,7 @@ export function phaseRpc(api: PhaseApi) {
         : action === "context" ? await api.context({ phaseId: need(), docs: p.docs, risks: p.risks, requirements: p.requirements, decisions: p.decisions, by: "screen" })
         : action === "plan" ? api.plan({ phaseId: need(), items: p.items, design: p.design })
         : action === "plan_check" ? await api.planCheck({ phaseId: need(), decision: p.decision, by: p.by, summary: p.summary })
-        : action === "drawing" ? await api.drawing({ phaseId: need(), paths: p.paths, designer: p.designer, feasible: p.feasible, contradiction: p.contradiction, reviewer: p.reviewer })
+        : action === "drawing" ? await api.drawing({ phaseId: need(), paths: p.paths, designer: p.designer, feasible: p.feasible, contradiction: p.contradiction, reviewer: p.reviewer, critique: p.critique, lesson: p.lesson })
         : action === "goal_audit" ? api.goalAudit({ phaseId: need(), state: p.state, by: p.by, summary: p.summary })
         : api.lessons({ phaseId: need(), analysis: p.analysis, author: p.author, reviewer: p.reviewer, reviewedHash: p.reviewedHash });
       return api.status(done.id);

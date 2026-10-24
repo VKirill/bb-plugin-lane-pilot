@@ -35,6 +35,7 @@ import { POLICY_USAGE, runPolicyCli } from "../../policy";
 import { WAITING_USAGE, runWaitingCli } from "../../owner-waiting/server";
 import { COVERAGE_USAGE, runCoverageCli } from "../../coverage";
 import { SMA_MAP_USAGE, runSmaMapCli } from "../../sma-map";
+import { readinessWords, trainedConditions, trainingRatios, type DesignJournalLine } from "../../design-eval";
 import { PHASE_USAGE, runPhaseCli } from "../../phase/server";
 import { unknownReasons } from "../../runs";
 import { manifest, passport, preship, prPassport, receiptChain, verifyChain } from "../../receipts";
@@ -166,6 +167,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"money", summary:"Money: spent month to date on paid lanes, the 14-day series, the monthly cap (money.monthly_cap_usd) and what is left", usage:"bb lane-pilot money" },
       { name:"unknown-codes", summary:"Failure reasons no class or rule names yet (the unknown code register), most frequent first, over the last 14 days", usage:"bb lane-pilot unknown-codes [--days 14]" },
       { name:"phase", summary:"Phases on rails: list, show (with the phase book), drive now, return to an earlier stage with a note, pause, resume, close in words", usage:PHASE_USAGE },
+      { name:"design-metrics", summary:"The designer's training: the four ratios from the design measurement journal, the four conditions of «trained» and the readiness words", usage:"bb lane-pilot design-metrics [--project <id>] [--json]" },
       { name:"sma-map", summary:"The SMA product map node by node: what Lane Pilot has for each of its 1768 nodes, the proof in the code, what is missing, and the share done", usage:SMA_MAP_USAGE },
       { name:"rules", summary:"The rules by form (always | skill | check | hook | memory) and the mechanism that enforces each; classify them, generate mechanism tasks for the recurring check rules, retire the text a mechanism now holds", usage:RULES_USAGE },
       { name:"workflow-trigger", summary:"Start a workflow in a project as its schedule trigger does (the automation of a schedule calls this); exit 1 with the reason when it cannot start", usage:"bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]" },
@@ -264,6 +266,13 @@ export function registerCli(ctx: ServerCore, services: Services) {
         }
         if (command === "phase") {
           return await runPhaseCli(services.phases, args);
+        }
+        if (command === "design-metrics") {
+          const all = ((await ctx.bb.storage.kv.get("lp.design.journal").catch(() => null)) as DesignJournalLine[] | null) ?? [];
+          const project = args.includes("--project") ? args[args.indexOf("--project") + 1] : null;
+          const lines = project ? all.filter((line) => line.projectId === project) : all;
+          const report = { ratios:trainingRatios(lines), conditions:trainedConditions(lines), readiness:readinessWords(lines) };
+          return { exitCode:0, stdout:args.includes("--json") ? JSON.stringify(report, null, 2) : `${report.readiness}\n\n${JSON.stringify(report.ratios)}\n${report.conditions.map((row) => `${row.ok ? "✓" : "✗"} ${row.id}: ${row.detail}`).join("\n")}` };
         }
         if (command === "sma-map") {
           return runSmaMapCli(args);

@@ -15,6 +15,10 @@ import {
 import { appendPart, getPhase, insertPhase, listParts, listPhases, notePoked, savePhase } from "../store";
 import { archiveDrawing, conclusionText, markRoadmap, nextRoadmapRow, stateText, uatState, uatText, waveTable } from "../stages";
 import { runOnHost } from "@lane-pilot/host-calls";
+import { critiqueProblems, roleLine, type DesignJournalLine, type DrawingCritique } from "../../design-eval";
+
+export const DESIGN_JOURNAL = "lp.design.journal";
+export const ROLE_LINES = "lp.role.lines";
 
 /**
  * The phase driver: the machine above the PM (SMA map, Phase graph; Matvey Maslov 2026-10-22: «there is a machine above the orchestrator that
@@ -46,6 +50,25 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     } catch (cause) {
       throw new PhaseRefusal(`cannot read ${path}: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
+  }
+
+  /** The design measurement journal (src/rooms/design-eval/training.ts) and the designer's role lines, in the plugin's store. */
+  async function journalDrawing(line: DesignJournalLine): Promise<void> {
+    const lines = ((await bb.storage.kv.get(DESIGN_JOURNAL).catch(() => null)) as DesignJournalLine[] | null) ?? [];
+    await bb.storage.kv.set(DESIGN_JOURNAL, [...lines, line].slice(-2000) as never);
+  }
+  async function noteDesignWord(phaseId: string, decision: "yes" | "no"): Promise<void> {
+    const lines = ((await bb.storage.kv.get(DESIGN_JOURNAL).catch(() => null)) as DesignJournalLine[] | null) ?? [];
+    const last = [...lines].reverse().find((line) => line.phaseId === phaseId);
+    if (!last) return;
+    last.ownerWord = decision;
+    if (decision === "no") last.firstPass = false;
+    await bb.storage.kv.set(DESIGN_JOURNAL, lines as never);
+  }
+  async function addRoleLine(projectId: string, role: string, line: string): Promise<void> {
+    const key = `${ROLE_LINES}:${projectId}:${role}`;
+    const lines = ((await bb.storage.kv.get(key).catch(() => null)) as string[] | null) ?? [];
+    if (!lines.includes(line)) await bb.storage.kv.set(key, [...lines, line].slice(-30) as never);
   }
 
   /** A file's text in the PM's workspace, or null when it does not exist. */
@@ -183,7 +206,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     return admitIfReady(mustGet(phase.id));
   }
 
-  async function drawing(input: Reported & { paths: string[]; designer: string; feasible: boolean; contradiction?: string; reviewer?: string }): Promise<Phase> {
+  async function drawing(input: Reported & { paths: string[]; designer: string; feasible: boolean; contradiction?: string; reviewer?: string; critique?: DrawingCritique; lesson?: string }): Promise<Phase> {
     const phase = mustGet(input.phaseId);
     if (phase.stage !== "design") throw new PhaseRefusal(`phase ${phase.id} is at ${phase.stage}, not design`);
     const folder = `${phaseFolder(phase.id)}/design/`;
@@ -199,6 +222,14 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     const archived = archiveDrawing(phase.record, drawn);
     if (archived.length > (phase.record.design?.archived?.length ?? 0)) book(phase, "design", "archived", `previous drawing ${phase.record.design!.drawing!.sha256.slice(0, 12)} (${phase.record.design!.drawing!.paths.join(", ")}) archived`);
     const record: PhaseRecord = { ...phase.record, design: { ...(phase.record.design ?? { decision: "needed", why: "" }), drawing: drawn, archived } };
+    if (input.critique) {
+      const why = critiqueProblems(input.critique);
+      if (why.length) throw new PhaseRefusal("the drawing critique form is not filled", why);
+    }
+    // The design measurement journal: one line per drawing; first pass = the first drawing of the phase, feasible, and passed by its critic.
+    await journalDrawing({ at: now(), projectId: phase.projectId, phaseId: phase.id, designer: input.designer, reviewer: input.reviewer ?? null, drawingSha: drawn.sha256,
+      firstPass: archived.length === 0 && input.feasible && (input.critique ? input.critique.verdict === "pass" : true), critique: input.critique ?? null, codeScore: null, ownerWord: null });
+    if (input.lesson?.trim()) await addRoleLine(phase.projectId, "design-lead", roleLine(input.lesson));
     book(phase, "design", "drawing", `${input.paths.join(", ")} by ${input.designer}; ${input.feasible ? "feasible" : `contradiction: ${input.contradiction ?? "?"}`}${input.reviewer ? `; reviewed by ${input.reviewer}` : ""}`);
     if (!input.feasible) {
       savePhase(db, phase.id, { record, at: now() });
@@ -280,6 +311,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     const record: PhaseRecord = { ...phase.record, words: [...(phase.record.words ?? []), { turn: input.turn, decision: input.decision, by: input.by ?? "owner", text: input.text.slice(0, 2000), at: now(), ...(input.wave !== undefined ? { wave: input.wave } : {}) }] };
     closeOwnerItem(db as never, `phase-word:${phase.id}:${input.turn}${input.wave !== undefined ? `:${input.wave}` : ""}`, input.by ?? "owner");
     book(phase, "decisions", `word_${input.turn}`, `${input.by ?? "owner"}: ${input.decision} — ${input.text}`);
+    if (input.turn === "design") await noteDesignWord(phase.id, input.decision);
     savePhase(db, phase.id, { record, at: now() });
     if (input.decision === "no") {
       const to: PhaseStage = input.turn === "acceptance" || input.turn === "uat" ? "execution" : "planning";

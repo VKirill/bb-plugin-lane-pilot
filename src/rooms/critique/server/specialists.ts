@@ -19,9 +19,10 @@ export const SPECIALIST_ROLES = ["design-lead", "copy-lead", "seo-specialist", "
 const SPECIALIST_MODEL = "claude-opus-5-5";
 const WAIT_STEP_MS = 5_000;
 
-export function specialistPrompt(marker: string, role: string, task: string): string {
+export function specialistPrompt(marker: string, role: string, task: string, roleLines: readonly string[] = []): string {
   return [
     marker,
+    ...(roleLines.length ? ["", `Lines added to your role in this project (one dated line per review lesson):`, ...roleLines.map((line) => `- ${line}`)] : []),
     "",
     `The Lane Pilot PM of this project hands you this work as ${role}. You work in the PM's own checkout, so write only your deliverable (under .agents/, or DESIGN.md files if you are design-lead) and do not change product code, docs/, README.md or PROJECT.md: Lane Pilot's nightly docs pass owns those, and implementation goes to a writer. If the task asks for such a change, do not make it: return it as a task for a writer.`,
     "Do not commit: leave your files in place and give the PM their paths. If you need an account or key, list the names with env_list and read one with env_get; never print a value. Your final message is the PM's only view of your work: what you produced, the paths, open questions.",
@@ -59,7 +60,7 @@ export function mountSpecialists(ctx: ServerCore): void {
       ...placement,
       ...requiredPolicyField(bb, helperPolicy, "claude-code", `specialist:${input.role}` as HelperRole),
       ...writerExecutionSelection("claude-code", SPECIALIST_MODEL, "high", null),
-      prompt: specialistPrompt(mentionContext(selection), input.role, input.task),
+      prompt: specialistPrompt(mentionContext(selection), input.role, input.task, ((await bb.storage.kv.get(`lp.role.lines:${input.projectId}:${input.role}`).catch(() => null)) as string[] | null) ?? []),
       environment: { type: "reuse", environmentId },
       pluginMetadata: { role: "specialist", specialist: input.role, spawnId: `${runId}:${input.role}:${spawnTextId(input.task)}`, lanePilotRunId: runId, parentPmThreadId: input.pmThreadId, helperMode: helperPolicy.mode },
     } as Parameters<typeof fullAccessSpawn>[1]);
