@@ -17,7 +17,7 @@ import { closeWriterStages, recordGateEvaluation, recordStage } from "../../runs
 import { stringAt } from "../../core/server";
 import { needsHumanQuestion, outputText, providerLimitNotice, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines } from "./writer-task";
 import { isLiveDecision } from "../live-folder";
-import { acceptanceProofGap, isMainfixTask, referenceTestEdits, writerMarkers } from "../../tasks";
+import { acceptanceProofGap, isMainfixTask, questionsFromFile, referenceTestEdits, writerMarkers } from "../../tasks";
 import type { StageId } from "../../tasks";
 import { IntegrationGateRunner, parseIntegrationGateSettings } from "../../verification/server";
 import { gateResolverFor } from "../../verification/server";
@@ -658,6 +658,18 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"passed",
         attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"markers",approach:markers.approach,lesson:markers.lesson,noLessonReason:markers.noLessonReason,referenceTestEdits:testEdits}});
       if (markerWarnings.length) candidate.warnings = [...(candidate.warnings ?? []), ...markerWarnings];
+      // Stage questions from files and the execution checkpoint: the task folder's QUESTIONS.md and CHECKPOINT.md, read from the attempt's copy.
+      const attemptRow = getAttempt(db, input.attemptId);
+      const folderOf = (name:string) => `.agents/plans/items/${input.taskId}/${name}`;
+      const readTaskFile = async (name:string) => attemptRow?.workspace_path ? await host.call("readBoundedFile", { requestedHostId:input.config.hostId, projectCwd:attemptRow.workspace_path, relativePath:folderOf(name), offset:0, maxLines:200 }, { hostId:input.config.hostId, timeoutMs:10_000 }).then((file) => file.content, () => null) : null;
+      const questionsText = await readTaskFile("QUESTIONS.md");
+      const checkpoint = await readTaskFile("CHECKPOINT.md");
+      const fileQuestions = questionsText ? questionsFromFile(questionsText) : [];
+      if (fileQuestions.length || checkpoint) {
+        recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"passed",
+          attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"stage_questions",questions:fileQuestions,checkpoint:checkpoint?.slice(0, 2000) ?? null}});
+        if (fileQuestions.length) candidate.warnings = [...(candidate.warnings ?? []), `the writer left ${fileQuestions.length} question(s) in QUESTIONS.md: ${fileQuestions.map((row) => `[${row.kind}] ${row.question}`).join("; ").slice(0, 600)}`];
+      }
       // Drawing unchanged: the drawing a task follows is its input, not its output; a writer that edited it changed the yardstick.
       const drawingTouched = (input.task.drawing ?? []).filter((path) => (candidate.produced ?? []).some((changed) => changed.replace(/^\.\//, "") === path.replace(/^\.\//, "")));
       if (drawingTouched.length) {

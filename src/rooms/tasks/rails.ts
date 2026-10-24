@@ -78,7 +78,14 @@ export function writerMarkers(report: string): WriterMarkers {
 }
 
 /** The marker lines the writer's brief asks for. */
-export const MARKER_BRIEF_LINE = "End your final report with two lines: `APPROACH: <how you solved it, one sentence>` and `LESSON: <what the next writer should know>` (or `LESSON: none — <why there is nothing to learn>`).";
+export const MARKER_BRIEF_LINE = "End your final report with two lines: `APPROACH: <how you solved it, one sentence>` and `LESSON: <what the next writer should know>` (or `LESSON: none — <why there is nothing to learn>`). Questions you could not settle go one per line into the task folder's QUESTIONS.md, and where you stopped into its CHECKPOINT.md (.agents/plans/items/<task id>/ — Lane Pilot reads both, they are not your outputs).";
+
+/** Stage questions from files (SMA): the lines of the task folder's QUESTIONS.md, each with its kind. */
+export function questionsFromFile(text: string): Array<{ question: string; kind: string }> {
+  return text.split("\n").map((line) => line.replace(/^\s*[-*\d.)]+\s*/, "").trim()).filter((line) => line.length > 3 && !line.startsWith("#")).slice(0, 20)
+    .map((question) => ({ question: question.slice(0, 600), kind: questionKindOf(question) }));
+}
+const questionKindOf = (question: string) => questionKind(question);
 
 const TEST_PATH = /(^|\/)(__tests__|tests?|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|_test\.(go|py)$|(^|\/)test_[^/]+\.py$/;
 
@@ -138,3 +145,51 @@ export const WORKER_ENVELOPE = {
   time: "the appetite's minutes, the session's turn ceiling and the run's wall clock (packages/resilience)",
   tokens: "the appetite's tokens and the run's token budget, with the spend reserve at dispatch (src/rooms/tasks/rails.ts spendReserve)",
 } as const;
+
+// ---------------------------------------------------------------- conversation and stage questions (SMA: Conversation and intake)
+
+/** The five kinds of a stage question (SMA: Five question kinds): a decision, a missing secret, missing access, a clarification, a contradiction. */
+export const QUESTION_KINDS = ["decision", "secret", "access", "clarification", "contradiction"] as const;
+export type QuestionKind = (typeof QUESTION_KINDS)[number];
+export function questionKind(question: string): QuestionKind {
+  const text = question.toLowerCase();
+  if (/\bneeds? secret\b|api[_ -]?key|token|password|credential|секрет|ключ/.test(text)) return "secret";
+  if (/\baccess\b|permission|login|ssh|доступ|права/.test(text)) return "access";
+  if (/contradict|conflict|does not match|противореч|не совпада/.test(text)) return "contradiction";
+  if (/\bwhich\b|\bwhat should\b|\bdo you want\b|какой|какую|что выбрать|решить/.test(text)) return "decision";
+  return "clarification";
+}
+
+/** Secret-shaped answer refused (SMA): an answer that carries what looks like a key or a password never goes into a writer's thread. */
+const SECRET_SHAPES = [/\bsk-[A-Za-z0-9_-]{16,}/, /\bgh[pousr]_[A-Za-z0-9]{20,}/, /\bxox[abpr]-[A-Za-z0-9-]{10,}/, /\bAKIA[0-9A-Z]{16}\b/, /-----BEGIN [A-Z ]*PRIVATE KEY-----/, /\b[A-Za-z0-9+/]{40,}={0,2}\b/, /\b\d{8,10}:[A-Za-z0-9_-]{30,}\b/];
+export const secretShaped = (text: string) => SECRET_SHAPES.some((pattern) => pattern.test(text));
+
+/** Consent is the whole message (SMA): «да», «ок», «go» alone is consent to the last proposal; a «да, но …» is a new word, not consent. */
+export function isWholeConsent(message: string): boolean {
+  return /^\s*(да|ок|окей|ok|okay|yes|go|давай|согласен|принято|подтверждаю|выдавай|делай)[.!\s]*$/i.test(message);
+}
+
+/** What kind of question the owner asked (SMA: What kind of question): the ones code answers from facts, and the rest for the model. */
+export const FACT_KINDS = ["board", "limit", "history", "failure", "free"] as const;
+export type FactKind = (typeof FACT_KINDS)[number];
+export function factKind(question: string): FactKind {
+  const text = question.toLowerCase();
+  if (/почему.*(упал|не прош|красн|заблок)|why.*(fail|block|red)|причин/.test(text)) return "failure";
+  if (/лимит|limit|токен|token|сколько.*(потрат|ушло)|расход|spend/.test(text)) return "limit";
+  if (/вчера|на прошлой|что было|история|history|yesterday|last week/.test(text)) return "history";
+  if (/что с задач|статус|доска|board|status|что идёт|в работе|сколько задач/.test(text)) return "board";
+  return "free";
+}
+
+/** The three check recipes (SMA: Three check recipes) and the one the whole request selects (SMA: Whole request selects a recipe). */
+export const CHECK_RECIPES = ["quick", "full", "browser"] as const;
+export type CheckRecipe = (typeof CHECK_RECIPES)[number];
+export function checkRecipe(request: string): CheckRecipe {
+  const text = request.toLowerCase();
+  if (/браузер|страниц|экран|верстк|ui\b|browser|page|screen|375|1280/.test(text)) return "browser";
+  if (/всё|все тесты|полн|full|whole|целиком|регресс/.test(text)) return "full";
+  return "quick";
+}
+
+/** Five required measures of a check (SMA: Five required measures): what ran, where, what was expected, within what time, and the evidence. */
+export type CheckMeasure = { command: string; cwd: string; expectExit: number; timeoutSec: number; evidence: string; exitCode: number; passed: boolean };

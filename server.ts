@@ -22,7 +22,8 @@ import { createPluginBench } from "./src/rooms/bench/server";
 import { createBaselineRoom, mountRegress } from "./src/rooms/baseline/server";
 import { createRunGoal, mountRunGoal } from "./src/rooms/run-goal/server";
 import { createPhaseDriver, mountPhaseDriver, registerPhaseTool } from "./src/rooms/phase/server";
-import { registerQueueTool } from "./src/rooms/tasks/server";
+import { registerConversationTools, registerQueueTool } from "./src/rooms/tasks/server";
+import { mountOutbound } from "./src/rooms/outbound";
 import { createCapabilities, mountCapabilities } from "./src/rooms/capability/server";
 import { createBacklog, mountBacklog } from "./src/rooms/backlog/server";
 import { createHypotheses } from "./src/rooms/hypotheses/server";
@@ -106,7 +107,7 @@ export default async function plugin(bb: BbPluginApi) {
     createWriterHost(ctx),
     { council: createCouncil(ctx) },
     { world: createWorldService(ctx, { projectName: (projectId) => bb.sdk.projects.get({ projectId }).then((p) => (typeof p?.name === "string" ? p.name : null), () => null) }) },
-    { canary: createCanary(ctx) },
+    { canary: createCanary(ctx, () => services.providerBreaker) },
     { memoryProbe: createMemoryProbe(ctx, services) },
     { ruleScan: createRuleScan(ctx, services) },
     { harness: createHarness(ctx, services) },
@@ -141,6 +142,8 @@ export default async function plugin(bb: BbPluginApi) {
   mountRunGoal(ctx, services.runGoal);
   // Every two minutes: each live phase is moved by its gates, the next wave of its plan is issued, and the PM gets the one thing the stage needs.
   mountPhaseDriver(ctx, services.phases);
+  // Each task that ends is posted to the project's webhook (events.webhook_url) with nine fields; the world version grows with every attempt change.
+  mountOutbound(ctx);
   // Every hour: a provider whose adapter (BB plugin) version changed is probed once; a failing one is held off by the breaker.
   mountCapabilities(ctx, services.capabilities);
   // Every hour: ready todos with an estimate go to the project's PM in queue order (one a project a day, three a day in all).
@@ -155,6 +158,7 @@ export default async function plugin(bb: BbPluginApi) {
   mountLearning(ctx, services);
   registerPhaseTool(ctx, services);
   registerQueueTool(ctx);
+  registerConversationTools(ctx);
   registerTools(ctx, services);
   registerCli(ctx, services);
   // The pixel world's GLB files (council office people and cars) over HTTP, not inside app.js.

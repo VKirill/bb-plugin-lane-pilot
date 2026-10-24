@@ -352,6 +352,24 @@ export const applyOnboardingPages: ExperimentalHostRpcHandlers<typeof hostContra
 export const writeDocsPages: ExperimentalHostRpcHandlers<typeof hostContract>["writeDocsPages"] = async (input) =>
   casWriteMarkdown({ ...input, confirmed:true }, 2_000_000, (path) => /(^|\/)docs\//.test(path));
 
+/** Close exactly that line: the backlog item's meta.yaml gets `status: done`; a file with no or two status lines is refused, not guessed. */
+export const closeBacklogItem: ExperimentalHostRpcHandlers<typeof hostContract>["closeBacklogItem"] = async (input) => {
+  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  const file = join(await realpath(input.projectCwd), ".agents", "todos", "items", input.id, "meta.yaml");
+  const text = await readFile(file, "utf8").catch(() => null);
+  if (text === null) return { hostId, status: "refused", reason: `no ${relative(input.projectCwd, file)}` };
+  const lines = text.split("\n");
+  const at = lines.flatMap((line, index) => (/^status\s*:/.test(line) ? [index] : []));
+  if (at.length !== 1) return { hostId, status: "refused", reason: `${at.length} status lines in meta.yaml; expected exactly one` };
+  if (/^status\s*:\s*done\s*$/.test(lines[at[0]!]!)) return { hostId, status: "already", reason: null };
+  lines[at[0]!] = "status: done";
+  const temp = `${file}.lp-${randomUUID().slice(0, 8)}`;
+  const handle = await open(temp, "w");
+  try { await handle.writeFile(lines.join("\n")); } finally { await handle.close(); }
+  await rename(temp, file);
+  return { hostId, status: "closed", reason: null };
+};
+
 /** Is the check command runnable: each program found on PATH, among the user's tool bins, or in the check folder's node_modules/.bin. */
 export const whichPrograms: ExperimentalHostRpcHandlers<typeof hostContract>["whichPrograms"] = async (input) => {
   const dirs = [join(input.cwd, "node_modules", ".bin"), ...userToolBins(), ...(process.env.PATH ?? "").split(delimiter)].filter(Boolean);

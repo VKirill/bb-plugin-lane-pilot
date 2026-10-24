@@ -36,6 +36,7 @@ import { WAITING_USAGE, runWaitingCli } from "../../owner-waiting/server";
 import { COVERAGE_USAGE, runCoverageCli } from "../../coverage";
 import { SMA_MAP_USAGE, runSmaMapCli } from "../../sma-map";
 import { PHASE_USAGE, runPhaseCli } from "../../phase/server";
+import { unknownReasons } from "../../runs";
 import { RULES_USAGE, runRulesCli } from "../../rule-forms";
 import { retireAdoptedRule } from "../../self-repair/server";
 import { ROLLBACK_USAGE, runRollbackCli } from "../../rollback/server";
@@ -148,6 +149,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"policy", summary:"The night policy: show the lists, classify a change descriptor, the three-line morning list", usage:"bb lane-pilot policy show|classify '<json>'|exam-collect|exam-add '<json>'|exam-export|morning" },
       { name:"waiting", summary:"Everything only the owner can decide, with why, evidence and the exact action; what went red overnight; the Telegram digest of new items (quiet hours 23:00-08:00 Europe/Madrid by default)", usage:WAITING_USAGE },
       { name:"coverage", summary:"What proves each pipeline stage, attempt transition, failure class, gate, memory path, room and key mechanism: covered live by a deploy-drill scenario, covered by tests only (and why no drill), or not covered; --receipt checks the live claims against a drill receipt", usage:COVERAGE_USAGE },
+      { name:"unknown-codes", summary:"Failure reasons no class or rule names yet (the unknown code register), most frequent first, over the last 14 days", usage:"bb lane-pilot unknown-codes [--days 14]" },
       { name:"phase", summary:"Phases on rails: list, show (with the phase book), drive now, return to an earlier stage with a note, pause, resume, close in words", usage:PHASE_USAGE },
       { name:"sma-map", summary:"The SMA product map node by node: what Lane Pilot has for each of its 1768 nodes, the proof in the code, what is missing, and the share done", usage:SMA_MAP_USAGE },
       { name:"rules", summary:"The rules by form (always | skill | check | hook | memory) and the mechanism that enforces each; classify them, generate mechanism tasks for the recurring check rules, retire the text a mechanism now holds", usage:RULES_USAGE },
@@ -200,6 +202,11 @@ export function registerCli(ctx: ServerCore, services: Services) {
         }
         if (command === "coverage") {
           return runCoverageCli(args);
+        }
+        if (command === "unknown-codes") {
+          const days = args[0] === "--days" && Number(args[1]) > 0 ? Number(args[1]) : 14;
+          const rows = db.prepare("SELECT reason, updated_at AS at FROM lane_pilot_attempt WHERE updated_at >= ? AND reason IS NOT NULL").all(Date.now() - days * 86_400_000) as Array<{ reason: string | null; at: number }>;
+          return { exitCode:0, stdout:JSON.stringify(unknownReasons(rows).slice(0, 50), null, 2) };
         }
         if (command === "phase") {
           return await runPhaseCli(services.phases, args);

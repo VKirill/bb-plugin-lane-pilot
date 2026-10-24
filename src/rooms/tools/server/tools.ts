@@ -1,3 +1,4 @@
+import { secretShaped } from "../../tasks";
 import { mountErrands } from "../../qa/server";
 import { cancelAttemptById } from "../../runs/server";
 import { LANE_PILOT_READ_NAME } from "@lane-pilot/kit";
@@ -199,6 +200,8 @@ export function registerTools(ctx: ServerCore, services: Services) {
       if ((metadata as Record<string, unknown> | null)?.role !== "pm" || !runId) {
         throw new ToolError("caller is not a Lane Pilot PM thread", { code: "not_pm_thread", retryable: false, sideEffects: "none" });
       }
+      // Secret-shaped answer refused: a key or a password never goes into a writer's thread; the check gets it from Env Catalog by name.
+      if (secretShaped(params.answer)) throw new ToolError("the answer looks like it carries a secret (a key, a token or a password); never send a secret to a writer: save it in Env Catalog (env_set) and name it in the check's secrets", { code:"secret_shaped_answer", retryable:false, sideEffects:"none" });
       return JSON.stringify(
         await answerWriter({ projectId:context.projectId, runId, pmThreadId:context.threadId, taskId:params.taskId, answer:params.answer }),
         null,

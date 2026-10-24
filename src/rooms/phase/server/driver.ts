@@ -4,7 +4,7 @@ import { taskFamily } from "../../runs";
 import { getRunGoal } from "../../run-goal";
 import { getRun, getRunSettingsScopes, getRunWriterHost, listOpenAttempts, storeMemoryRecords } from "../../storage";
 import { postOwnerItem, closeOwnerItem } from "../../owner-waiting";
-import { spendReserve } from "../../tasks";
+import { isWholeConsent, spendReserve } from "../../tasks";
 import { hostContract } from "../../contracts";
 import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
 import {
@@ -230,6 +230,8 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   /** The owner's word at a turn (owner.words on). «no» sends the phase back: from planning or design to planning, from acceptance to execution. */
   function word(input: Reported & { turn: WordTurn; decision: "yes" | "no"; text: string; wave?: number }): Phase {
     const phase = mustGet(input.phaseId);
+    // Consent is the whole message: «да» alone is consent; «да, но …» is a new word that goes back as words, not as yes.
+    if (input.decision === "yes" && !isWholeConsent(input.text) && !/^owner via (screen|cli)$/.test(input.by ?? "")) throw new PhaseRefusal("the owner's message is not a whole consent: «да, но …» is a new word — record it as decision no with his words, or ask again");
     const record: PhaseRecord = { ...phase.record, words: [...(phase.record.words ?? []), { turn: input.turn, decision: input.decision, by: input.by ?? "owner", text: input.text.slice(0, 2000), at: now(), ...(input.wave !== undefined ? { wave: input.wave } : {}) }] };
     closeOwnerItem(db as never, `phase-word:${phase.id}:${input.turn}${input.wave !== undefined ? `:${input.wave}` : ""}`, input.by ?? "owner");
     book(phase, "decisions", `word_${input.turn}`, `${input.by ?? "owner"}: ${input.decision} — ${input.text}`);

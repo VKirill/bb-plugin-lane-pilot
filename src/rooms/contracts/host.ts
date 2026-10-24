@@ -211,6 +211,11 @@ export const hostContract = defineRpcContract({
     }).strict(),
     output:z.object({hostId:z.string(),previewSha256:z.string().regex(/^[a-f0-9]{64}$/),status:z.enum(["applied","conflict","blocked"]),writes:z.array(z.object({path:z.string(),beforeSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(),afterSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(),status:z.enum(["applied","conflict","blocked"]),reason:z.string().nullable()}).strict()),reason:z.string().nullable()}).strict(),
   },
+  /** SMA «Close exactly that line»: sets `status: done` in `.agents/todos/items/<id>/meta.yaml`, only when the file has exactly one status line. */
+  closeBacklogItem: {
+    input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), id:z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/), note:z.string().max(300).optional() }).strict(),
+    output: z.object({ hostId:z.string(), status:z.enum(["closed","already","refused"]), reason:z.string().nullable() }).strict(),
+  },
   /** SMA «Is the check command runnable»: which of the named programs the machine finds on PATH (with the user's tool bins). */
   whichPrograms: {
     input: z.object({ requestedHostId:z.string().min(1), cwd:z.string().startsWith("/"), programs:z.array(z.string().regex(/^[A-Za-z0-9._+-]{1,80}$/)).max(40) }).strict(),

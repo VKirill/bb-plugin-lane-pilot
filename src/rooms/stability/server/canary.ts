@@ -110,7 +110,16 @@ export function canaryAlertText(report: CanaryReport): string {
     + `No action needed from you for these tasks (they are parked and restart once fixed); the owner decides on a rollback${report.rollback ? `: ${report.rollback} (in the lane-pilot checkout on the Mac mini)` : ""}.`;
 }
 
-export function createCanary(ctx: ServerCore) {
+/**
+ * Green only when the pool works (SMA: Green only when pool works, Not green: workers blocked): the canary reads the provider breaker;
+ * when every provider/model a writer used lately is held open, Lane Pilot is up but cannot write — not green.
+ */
+export function poolHealth(snapshot: ReadonlyArray<{ key: string; state: string }>): { works: boolean; held: string[] } {
+  const held = snapshot.filter((row) => row.state === "open").map((row) => row.key);
+  return { works: snapshot.length === 0 || held.length < snapshot.length, held };
+}
+
+export function createCanary(ctx: ServerCore, breaker?: () => { snapshot(now?: number): Array<{ key: string; state: string }> } | undefined) {
   const { bb, db } = ctx;
 
   async function since(version = VERSION, now = Date.now()): Promise<number> {
@@ -139,9 +148,10 @@ export function createCanary(ctx: ServerCore) {
     return ids;
   }
 
-  async function status(now = Date.now()): Promise<CanaryReport & { alerted: boolean }> {
+  async function status(now = Date.now()): Promise<CanaryReport & { alerted: boolean; pool: { works: boolean; held: string[] }; green: boolean }> {
     const report = canaryReport(db, { version: VERSION, since: await since(VERSION, now), now, sandboxProjects: await sandboxProjects(now) });
-    return { ...report, alerted: Boolean(await bb.storage.kv.get(ALERTED_KEY(VERSION)).catch(() => null)) };
+    const pool = poolHealth(breaker?.()?.snapshot(now) ?? []);
+    return { ...report, pool, green: !report.tripped && pool.works, alerted: Boolean(await bb.storage.kv.get(ALERTED_KEY(VERSION)).catch(() => null)) };
   }
 
   /** Tells the PMs of the faulting tasks once per version when the canary has tripped. Returns whether it did. */

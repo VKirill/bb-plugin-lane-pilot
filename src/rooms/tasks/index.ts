@@ -13,5 +13,5 @@ export { commonTaskFolder, isTaskBase, ownsFromOuterBase, parseRepoTop, planWith
 export { TRUSTED_TOOLING_PATTERNS, applyTrustedTooling, trustedToolingFor, trustedToolingHint, trustedToolingHits, verificationScriptPaths } from "./trusted-tooling";
 export { PLAN_FACT_BRIEF_LINE, blindPlanFact, diffHunksCommand, hunksFromCommandOutput, parsePlanFact, planFactOutcome } from "./plan-fact";
 export type { EvidenceCheck, ItemVerdict, PlanFactCheck, PlanFactFacts, PlanFactTable } from "./plan-fact";
-export { BIRTH_KINDS, HOLD_FOREVER, LANE_QUEUES, WORKER_ENVELOPE, laneCap, laneQueueOf, MARKER_BRIEF_LINE, PRIORITIES, birthFindings, blockingClass, checkProgram, deadLetters, priorityRank, queueOrder, referenceTestEdits, spendReserve, writerMarkers } from "./rails";
-export type { BirthKind, BlockingClass, Priority, WriterMarkers } from "./rails";
+export { BIRTH_KINDS, CHECK_RECIPES, FACT_KINDS, HOLD_FOREVER, LANE_QUEUES, QUESTION_KINDS, WORKER_ENVELOPE, checkRecipe, factKind, isWholeConsent, questionKind, questionsFromFile, secretShaped, laneCap, laneQueueOf, MARKER_BRIEF_LINE, PRIORITIES, birthFindings, blockingClass, checkProgram, deadLetters, priorityRank, queueOrder, referenceTestEdits, spendReserve, writerMarkers } from "./rails";
+export type { BirthKind, BlockingClass, CheckMeasure, CheckRecipe, FactKind, Priority, QuestionKind, WriterMarkers } from "./rails";

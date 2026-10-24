@@ -213,6 +213,11 @@ export const rpcOps = {
     input: z.object({}).strict(),
     output: z.unknown(),
   },
+  /** The world version (src/rooms/outbound): one number that grows with every attempt change; a screen reads the board again when it moved. */
+  world_version: {
+    input: z.object({}).strict(),
+    output: z.object({ version: z.number().int().nonnegative() }).strict(),
+  },
   /** Phases on rails (src/rooms/phase): the live and recent phases of a project or a PM chat, with stage and next action. */
   phase_list: {
     input: z.object({ projectId: z.string().min(1).optional(), pmThreadId: z.string().min(1).optional(), live: z.boolean().optional() }).strict(),
