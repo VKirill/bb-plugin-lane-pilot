@@ -37,6 +37,10 @@ import { COVERAGE_USAGE, runCoverageCli } from "../../coverage";
 import { SMA_MAP_USAGE, runSmaMapCli } from "../../sma-map";
 import { PHASE_USAGE, runPhaseCli } from "../../phase/server";
 import { unknownReasons } from "../../runs";
+import { manifest, passport, preship, prPassport, receiptChain, verifyChain } from "../../receipts";
+import { EXCAVATE_LOG_ARGS, approvalSuggestions, costPerVerified, excavate, htmlReport, missCurriculum } from "../../self-improve";
+import { smaCounts, smaDonePercent, smaRows } from "../../sma-map";
+import { loadLiveExam } from "../../policy";
 import { RULES_USAGE, runRulesCli } from "../../rule-forms";
 import { retireAdoptedRule } from "../../self-repair/server";
 import { ROLLBACK_USAGE, runRollbackCli } from "../../rollback/server";
@@ -149,6 +153,17 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"policy", summary:"The night policy: show the lists, classify a change descriptor, the three-line morning list", usage:"bb lane-pilot policy show|classify '<json>'|exam-collect|exam-add '<json>'|exam-export|morning" },
       { name:"waiting", summary:"Everything only the owner can decide, with why, evidence and the exact action; what went red overnight; the Telegram digest of new items (quiet hours 23:00-08:00 Europe/Madrid by default)", usage:WAITING_USAGE },
       { name:"coverage", summary:"What proves each pipeline stage, attempt transition, failure class, gate, memory path, room and key mechanism: covered live by a deploy-drill scenario, covered by tests only (and why no drill), or not covered; --receipt checks the live claims against a drill receipt", usage:COVERAGE_USAGE },
+      { name:"passport", summary:"An attempt's passport: provider, model, harness and Lane Pilot versions, the receipts of its stages", usage:"bb lane-pilot passport <attempt-id>" },
+      { name:"manifest", summary:"This build: name, version, its tables", usage:"bb lane-pilot manifest" },
+      { name:"receipt-chain", summary:"A task's stage receipts hashed in order (tip), or verify a tip recorded earlier", usage:"bb lane-pilot receipt-chain <run-id> <task-id> [--verify <tip>]" },
+      { name:"preship", summary:"What is open before a release (unfinished tasks, open regressions, deferrals) and the disposition each needs; exit 1 when not clear", usage:"bb lane-pilot preship [--project <id>]" },
+      { name:"pr-passport", summary:"A pull request body assembled from a task's receipts", usage:"bb lane-pilot pr-passport <run-id> <task-id>" },
+      { name:"curriculum", summary:"The queries memory failed to answer lately, grouped (the next lessons to write)", usage:"bb lane-pilot curriculum [--days 30]" },
+      { name:"excavate", summary:"Fix commits of a repository's history as lesson candidates (runs git log on the given run's machine)", usage:"bb lane-pilot excavate <run-id> [<path in the checkout>]" },
+      { name:"approvals-suggest", summary:"Owner decisions that repeat the same way three times or more: candidates for an automatic night rule", usage:"bb lane-pilot approvals-suggest" },
+      { name:"cost", summary:"Cost per verified result: writer tokens per accepted task, per project, over 30 days", usage:"bb lane-pilot cost [--days 30]" },
+      { name:"report", summary:"A local HTML report: the SMA map by region, the spend, the cost per verified result", usage:"bb lane-pilot report > report.html" },
+      { name:"money", summary:"Money: spent month to date on paid lanes, the 14-day series, the monthly cap (money.monthly_cap_usd) and what is left", usage:"bb lane-pilot money" },
       { name:"unknown-codes", summary:"Failure reasons no class or rule names yet (the unknown code register), most frequent first, over the last 14 days", usage:"bb lane-pilot unknown-codes [--days 14]" },
       { name:"phase", summary:"Phases on rails: list, show (with the phase book), drive now, return to an earlier stage with a note, pause, resume, close in words", usage:PHASE_USAGE },
       { name:"sma-map", summary:"The SMA product map node by node: what Lane Pilot has for each of its 1768 nodes, the proof in the code, what is missing, and the share done", usage:SMA_MAP_USAGE },
@@ -202,6 +217,45 @@ export function registerCli(ctx: ServerCore, services: Services) {
         }
         if (command === "coverage") {
           return runCoverageCli(args);
+        }
+        if (command === "passport") {
+          const result = args[0] ? passport(db, args[0]) : null;
+          return result ? { exitCode:0, stdout:JSON.stringify(result, null, 2) } : { exitCode:1, stderr:"bb lane-pilot passport <attempt-id>: no such attempt" };
+        }
+        if (command === "manifest") return { exitCode:0, stdout:JSON.stringify(manifest(db), null, 2) };
+        if (command === "receipt-chain" && args[0] && args[1]) {
+          if (args[2] === "--verify" && args[3]) { const ok = verifyChain(db, args[0], args[1], args[3]); return { exitCode:ok ? 0 : 1, stdout:ok ? "intact" : "the receipts changed since that tip" }; }
+          return { exitCode:0, stdout:JSON.stringify(receiptChain(db, args[0], args[1]), null, 2) };
+        }
+        if (command === "preship") {
+          const result = preship(db, args[0] === "--project" ? args[1] : undefined);
+          return { exitCode:result.clear ? 0 : 1, stdout:JSON.stringify(result, null, 2) };
+        }
+        if (command === "pr-passport" && args[0] && args[1]) return { exitCode:0, stdout:prPassport(db, args[0], args[1]) };
+        if (command === "curriculum") return { exitCode:0, stdout:JSON.stringify(missCurriculum(db, args[0] === "--days" ? Number(args[1]) || 30 : 30), null, 2) };
+        if (command === "cost") return { exitCode:0, stdout:JSON.stringify(costPerVerified(db, args[0] === "--days" ? Number(args[1]) || 30 : 30), null, 2) };
+        if (command === "approvals-suggest") {
+          const live = await loadLiveExam(bb.storage.kv as never).catch(() => ({ items: [] as never[] }));
+          return { exitCode:0, stdout:JSON.stringify(approvalSuggestions((live as { items?: never[] }).items ?? []), null, 2) };
+        }
+        if (command === "excavate" && args[0]) {
+          const run = db.prepare("SELECT writer_workspace_path AS path, writer_host_id AS hostId FROM lane_pilot_run WHERE id=?").get(args[0]) as { path?: string; hostId?: string } | undefined;
+          if (!run?.path || !run.hostId) return { exitCode:1, stderr:"the run has no checkout on a machine" };
+          const cwd = args[1] ? `${run.path}/${args[1].replace(/^\.?\//, "")}` : run.path;
+          const out = await host.call("runCommand", { requestedHostId:run.hostId, command:`git ${EXCAVATE_LOG_ARGS.map((arg) => `'${arg}'`).join(" ")}`, cwd, timeoutSec:60 }, { hostId:run.hostId, timeoutMs:90_000 }) as { stdout?: string };
+          return { exitCode:0, stdout:JSON.stringify(excavate(out.stdout ?? ""), null, 2) };
+        }
+        if (command === "report") {
+          const rows = smaRows();
+          const regions = [...new Set(rows.map((row) => row.region))].map((region) => { const part = rows.filter((row) => row.region === region); return { region, done: `${smaDonePercent(part)}%`, ...smaCounts(part) }; });
+          return { exitCode:0, stdout:htmlReport({ title:`Lane Pilot report ${new Date().toISOString().slice(0, 10)}`, sections:[
+            { heading:`SMA map: ${smaDonePercent(rows)}% done`, rows:regions },
+            { heading:"Money", rows:[services.money.status() as never] },
+            { heading:"Cost per verified result (30 days)", rows:costPerVerified(db) as never },
+          ] }) };
+        }
+        if (command === "money") {
+          return { exitCode:0, stdout:JSON.stringify(services.money.status(), null, 2) };
         }
         if (command === "unknown-codes") {
           const days = args[0] === "--days" && Number(args[1]) > 0 ? Number(args[1]) : 14;

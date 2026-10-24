@@ -409,8 +409,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           const budgetStop = wallOrTokenStop();
           if (budgetStop) { blockBeforeWriter(budgetStop); return false; }
           const base = taskBasePath(db, input.runId, input.taskId);
+          // Money and the subscription window: a paid lane over the month's cap, or a Claude window at 98%, waits (src/rooms/money).
+          const moneyProvider = typeof runSettings["writer.provider"] === "string" && runSettings["writer.provider"] ? runSettings["writer.provider"] as string : input.config.writerProviderId;
+          const moneyModel = typeof runSettings["writer.model"] === "string" ? runSettings["writer.model"] as string : "";
           const held = services.stability.breakerHolds(input.projectId)
-            ?? (base ? await services.stability.diskHolds(input.config.hostId, base) : null);
+            ?? (base ? await services.stability.diskHolds(input.config.hostId, base) : null)
+            ?? (services.money ? await services.money.holds(moneyProvider, moneyModel, input.config.hostId) : null);
           if (!held) break;
           if (noted !== held) {
             noted = held;

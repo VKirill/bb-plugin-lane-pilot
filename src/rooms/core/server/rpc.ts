@@ -75,6 +75,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...runGoalRpc(services.runGoal),
     ...phaseRpc(services.phases),
     world_version: async () => ({ version: worldVersion() }),
+    money_status: async () => services.money.status(),
     ...capabilityRpc(services.capabilities),
     conveyor: async ({ set, reason }: { set?: "on" | "off"; reason?: string }) => set ? await setConveyor(ctx.bb.storage.kv as never, set === "on", reason) : await conveyorState(ctx.bb.storage.kv as never),
     ...wallRpc(services.wall),

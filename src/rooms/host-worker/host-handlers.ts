@@ -352,6 +352,48 @@ export const applyOnboardingPages: ExperimentalHostRpcHandlers<typeof hostContra
 export const writeDocsPages: ExperimentalHostRpcHandlers<typeof hostContract>["writeDocsPages"] = async (input) =>
   casWriteMarkdown({ ...input, confirmed:true }, 2_000_000, (path) => /(^|\/)docs\//.test(path));
 
+/** The permit channel on this machine: every ticket a writer filed that has no answer yet. */
+export const listPermitTickets: ExperimentalHostRpcHandlers<typeof hostContract>["listPermitTickets"] = async (input) => {
+  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  const root = join(homedir(), ".agents", "permits");
+  const tickets: Array<{ session: string; ticket: string; category: string; command: string; cwd: string; at: number }> = [];
+  for (const session of await readdir(root).catch(() => [] as string[])) {
+    for (const name of await readdir(join(root, session)).catch(() => [] as string[])) {
+      if (!name.endsWith(".ticket.json")) continue;
+      const id = name.slice(0, -".ticket.json".length);
+      if (await stat(join(root, session, `${id}.answer.json`)).then(() => true, () => false)) continue;
+      const raw = await readFile(join(root, session, name), "utf8").then((text) => JSON.parse(text) as Record<string, unknown>, () => null);
+      if (raw) tickets.push({ session, ticket: id, category: String(raw.category ?? ""), command: String(raw.command ?? "").slice(0, 2000), cwd: String(raw.cwd ?? ""), at: Number(raw.at ?? 0) });
+    }
+  }
+  return { hostId, tickets: tickets.slice(0, 100) };
+};
+
+/** The PM's answer to one permit ticket. */
+export const answerPermit: ExperimentalHostRpcHandlers<typeof hostContract>["answerPermit"] = async (input) => {
+  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  const folder = join(homedir(), ".agents", "permits", input.session);
+  if (!await stat(join(folder, `${input.ticket}.ticket.json`)).then(() => true, () => false)) return { hostId, written: false };
+  const temp = join(folder, `.${input.ticket}.${randomUUID().slice(0, 8)}`);
+  const handle = await open(temp, "w");
+  try { await handle.writeFile(JSON.stringify({ decision: input.decision, why: input.why, at: Date.now() / 1000 })); } finally { await handle.close(); }
+  await rename(temp, join(folder, `${input.ticket}.answer.json`));
+  return { hostId, written: true };
+};
+
+/** The subscription windows the statusline cached on this machine: five hours, seven days, seven days of Opus (utilization in percent). */
+export const readUsageWindows: ExperimentalHostRpcHandlers<typeof hostContract>["readUsageWindows"] = async (input) => {
+  const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
+  const file = join(process.env.LANE_STATUSLINE_CACHE ?? join(homedir(), ".agents", "statusline"), "last_usage.json");
+  const raw = await readFile(file, "utf8").then((text) => JSON.parse(text) as Record<string, unknown>, () => null);
+  const usage = (raw?.usage ?? {}) as Record<string, { utilization?: unknown; resets_at?: unknown }>;
+  const windows: Record<string, { utilization: number; resetsAt: string | null }> = {};
+  for (const [key, value] of Object.entries(usage)) {
+    if (typeof value?.utilization === "number") windows[key] = { utilization: value.utilization, resetsAt: typeof value.resets_at === "string" ? value.resets_at : null };
+  }
+  return { hostId, at: typeof raw?.at === "string" ? raw.at : null, windows };
+};
+
 /** Close exactly that line: the backlog item's meta.yaml gets `status: done`; a file with no or two status lines is refused, not guessed. */
 export const closeBacklogItem: ExperimentalHostRpcHandlers<typeof hostContract>["closeBacklogItem"] = async (input) => {
   const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;

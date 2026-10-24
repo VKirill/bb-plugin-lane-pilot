@@ -18,12 +18,14 @@ import { createRuleScan } from "./src/rooms/self-repair/server";
 import { createHarness } from "./src/rooms/harness/server";
 import { createDeferrals, sdkOwnerMessagePort } from "./src/rooms/deferral/server";
 import { createRollback } from "./src/rooms/rollback/server";
-import { createPluginBench } from "./src/rooms/bench/server";
+import { createPluginBench, mountBenchWeekly } from "./src/rooms/bench/server";
 import { createBaselineRoom, mountRegress } from "./src/rooms/baseline/server";
 import { createRunGoal, mountRunGoal } from "./src/rooms/run-goal/server";
 import { createPhaseDriver, mountPhaseDriver, registerPhaseTool } from "./src/rooms/phase/server";
 import { registerConversationTools, registerQueueTool } from "./src/rooms/tasks/server";
 import { mountOutbound } from "./src/rooms/outbound";
+import { createMoney } from "./src/rooms/money";
+import { mountPermits } from "./src/rooms/permits";
 import { createCapabilities, mountCapabilities } from "./src/rooms/capability/server";
 import { createBacklog, mountBacklog } from "./src/rooms/backlog/server";
 import { createHypotheses } from "./src/rooms/hypotheses/server";
@@ -118,6 +120,7 @@ export default async function plugin(bb: BbPluginApi) {
     createStageReturn(ctx, services),
     createRunGoal(ctx, services),
     createPhaseDriver(ctx, services),
+    createMoney(ctx),
     createCapabilities(ctx, services),
     createBacklog(ctx),
     createHypotheses(ctx, services),
@@ -159,6 +162,9 @@ export default async function plugin(bb: BbPluginApi) {
   registerPhaseTool(ctx, services);
   registerQueueTool(ctx);
   registerConversationTools(ctx);
+  mountPermits(ctx);
+  // Every Sunday 02:00 UTC the newest bench set runs as this week's arm and is compared with last week's (bench.weekly).
+  mountBenchWeekly(ctx, () => services.bench);
   registerTools(ctx, services);
   registerCli(ctx, services);
   // The pixel world's GLB files (council office people and cars) over HTTP, not inside app.js.

@@ -21,7 +21,8 @@ export type CliInvocation = {
   unapplied: UnappliedSetting[];
 };
 
-const FORBIDDEN_TOKENS = ["--apply", "setup"];
+// Forbidden flags (SMA): installers and the flags that switch a CLI's own permission checks off never reach a lane CLI.
+const FORBIDDEN_TOKENS = ["--apply", "setup", "--dangerously-skip-permissions", "--dangerously-bypass-approvals-and-sandbox", "--yolo"];
 
 function appliesTo(spec: SettingSpec, binary: CliBinary, subcommand: string): boolean {
   if (spec.binaries && !spec.binaries.includes(binary)) return false;
@@ -56,7 +57,7 @@ function canonicalWriterSettings(settings: Record<string, unknown>): Record<stri
 export function assertSafeArgv(argv: string[]): void {
   for (const token of argv) {
     if (FORBIDDEN_TOKENS.some((forbidden) => token === forbidden || token.startsWith(`${forbidden}=`))) {
-      throw new Error(`refusing argv token ${token}: --apply/setup are forbidden in Mode 2`);
+      throw new Error(`refusing argv token ${token}: --apply, setup and permission-bypass flags are forbidden in Mode 2`);
     }
   }
 }

@@ -211,6 +211,21 @@ export const hostContract = defineRpcContract({
     }).strict(),
     output:z.object({hostId:z.string(),previewSha256:z.string().regex(/^[a-f0-9]{64}$/),status:z.enum(["applied","conflict","blocked"]),writes:z.array(z.object({path:z.string(),beforeSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(),afterSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(),status:z.enum(["applied","conflict","blocked"]),reason:z.string().nullable()}).strict()),reason:z.string().nullable()}).strict(),
   },
+  /** SMA «Permit channel»: the permit tickets writers filed on this machine (~/.agents/permits/<session>/<ticket>.ticket.json) and not yet answered. */
+  listPermitTickets: {
+    input: z.object({ requestedHostId:z.string().min(1) }).strict(),
+    output: z.object({ hostId:z.string(), tickets:z.array(z.object({ session:z.string(), ticket:z.string(), category:z.string(), command:z.string(), cwd:z.string(), at:z.number() }).strict()) }).strict(),
+  },
+  /** SMA «Approve or deny the call»: the PM's answer to a permit ticket, written next to it; a grant is used once by the same command. */
+  answerPermit: {
+    input: z.object({ requestedHostId:z.string().min(1), session:z.string().regex(/^[A-Za-z0-9_-]{1,80}$/), ticket:z.string().regex(/^[a-f0-9]{16}$/), decision:z.enum(["allow","deny"]), why:z.string().max(600) }).strict(),
+    output: z.object({ hostId:z.string(), written:z.boolean() }).strict(),
+  },
+  /** SMA «Five hours and seven days»: the subscription windows this machine's statusline last read (~/.agents/statusline/last_usage.json). */
+  readUsageWindows: {
+    input: z.object({ requestedHostId:z.string().min(1) }).strict(),
+    output: z.object({ hostId:z.string(), at:z.string().nullable(), windows:z.record(z.string(), z.object({ utilization:z.number(), resetsAt:z.string().nullable() }).strict()) }).strict(),
+  },
   /** SMA «Close exactly that line»: sets `status: done` in `.agents/todos/items/<id>/meta.yaml`, only when the file has exactly one status line. */
   closeBacklogItem: {
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), id:z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/), note:z.string().max(300).optional() }).strict(),

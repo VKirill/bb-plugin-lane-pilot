@@ -213,6 +213,11 @@ export const rpcOps = {
     input: z.object({}).strict(),
     output: z.unknown(),
   },
+  /** Money (src/rooms/money): spent month to date, the 14-day series, the cap and what is left of it. */
+  money_status: {
+    input: z.object({}).strict(),
+    output: z.unknown(),
+  },
   /** The world version (src/rooms/outbound): one number that grows with every attempt change; a screen reads the board again when it moved. */
   world_version: {
     input: z.object({}).strict(),

@@ -517,6 +517,13 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       setReasoningThread(db, input.attemptId, writerThreadId);
       const spawnedTrace = getReasoningTrace(db, input.attemptId);
       if (spawnedTrace) bb.log.info(`Lane Pilot writer execution ${JSON.stringify({ attemptId:input.attemptId, threadId:writerThreadId, providerId:spawnedTrace.providerId, model:spawnedTrace.model, reasoningLevel:spawnedTrace.effectiveReasoningLevel, serviceTier:spawnedTrace.serviceTier })}`);
+      // Launch profile parity (SMA): the thread BB made runs the provider and model Lane Pilot asked for; a different one is named.
+      void bb.sdk.threads.get({ threadId:writerThreadId }).then((thread) => {
+        const got = { providerId:stringAt(thread, "providerId"), model:stringAt(thread, "model") };
+        if ((got.providerId && got.providerId !== selectedProviderId) || (got.model && selectedModel && got.model !== selectedModel)) {
+          bb.log.warn(`Lane Pilot launch profile mismatch for ${input.attemptId}: asked ${selectedProviderId}/${selectedModel}, the thread runs ${got.providerId}/${got.model}`);
+        }
+      }, () => undefined);
       return { ok:true, threadId:writerThreadId, providerId:selectedProviderId, model:selectedModel,
         reasoningLevel:lastExecution?.reasoningLevel, serviceTier:lastExecution?.serviceTier, selectionSource:lastExecution?.selectionSource,
         dirtBefore, workspacePath, executionPacketSha256 };

@@ -70,6 +70,7 @@ export const NATIVE_LP_BRIDGE_TOOLS = [
   "lane_pilot_queue",
   "lane_pilot_facts",
   "lane_pilot_check",
+  "lane_pilot_permit",
   "lane_pilot_helpers",
   "lane_pilot_council",
   "lane_pilot_relay",
@@ -109,6 +110,7 @@ export const NATIVE_LP_BRIDGE_PM_TOOLS = [
   "lane_pilot_queue",
   "lane_pilot_facts",
   "lane_pilot_check",
+  "lane_pilot_permit",
   "lane_pilot_tool_search",
 ] as const;
 

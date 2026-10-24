@@ -686,6 +686,15 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const checks = candidate.verification ?? [];
       if (checks.length > 0 && checks.every((row) => row.exitCode === 0)) provenBy.push("verification");
       if (review === "passed") provenBy.push("code-critique");
+      // Challenge gate (SMA): with critic.challenge_high on, a task of high or critical risk is accepted only after the code critic passed it.
+      const challengeOn = String(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId))["critic.challenge_high"] ?? "off") === "on";
+      if (challengeOn && (input.task.risk === "high" || input.task.risk === "critical") && review !== "passed") {
+        const reason = `challenge_gate: a ${input.task.risk}-risk task needs the code critic's pass before acceptance (critic.challenge_high is on); the critic ${review ?? "did not run"}`;
+        recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+          attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"challenge_gate",reason}});
+        transitionAttempt(db, input.attemptId, "blocked", { reason });
+        return { status:"blocked", reason, attemptId:input.attemptId, writerThreadId };
+      }
       const proofGap = acceptanceProofGap(provenBy);
       if (proofGap) {
         recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
