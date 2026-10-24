@@ -71,18 +71,46 @@ export function decideAcceptance(e: AcceptanceEvidence): Acceptance {
   return out("accepted", recurred ? "the repair stays (nothing else got worse) but the class still happens: the round counts as failed" : "all checks green", { recurred });
 }
 
-/** What the descriptor of a night repair says: the repository files its branch changed and the proofs the policy asks of `lp_fault_repair`. */
-export function repairChange(files: readonly string[], proofs: { benchSubset: boolean; revertible: boolean }): ChangeDescriptor {
-  return { kind: "lp_fault_repair", files: [...files], attrs: { bench_subset_passed: proofs.benchSubset, auto_revertible: proofs.revertible } };
-}
-
-export type GateDecision = { decision: "merge" | "hold"; requested: Tier; tier: Tier; reason: string; matched: Array<{ id: string; tier: Tier }> };
+/** A changed file of a repair's branch: its path and git's letter (A added, M modified, D deleted); a bare path has no known status. */
+export type RepairFile = string | { path: string; status: string };
+const isTestFile = (path: string) => /(^|\/)tests?\//.test(path) || /\.test\.[cm]?[jt]sx?$/.test(path);
 
 /**
- * night_decides may merge (and the train ships it, the checks after it revert it); night_proposes and owner_only are held: the branch
- * stays, the night does not merge it and nobody is asked (the repair is logged with the policy's reason).
+ * What the descriptor of a night repair says: the repository files its branch changed and the proofs the policy asks of
+ * `lp_fault_repair`, plus whether every test the branch touched is new (an existing test changed or deleted could loosen the judge).
+ */
+export function repairChange(files: readonly RepairFile[], proofs: { benchSubset: boolean; revertible: boolean }): ChangeDescriptor {
+  const entries = files.map((file) => (typeof file === "string" ? { path: file, status: "?" } : file));
+  const testsUntouched = entries.every((file) => !isTestFile(file.path) || file.status === "A");
+  return { kind: "lp_fault_repair", files: entries.map((file) => file.path), attrs: { bench_subset_passed: proofs.benchSubset, auto_revertible: proofs.revertible, tests_untouched: testsUntouched } };
+}
+
+/**
+ * Entries a night repair may still merge with the strict proofs: it changes the judge or the graph, and Matvey's rule is «only with
+ * your yes if you have no rollbacks» (#31448) — the night has them (canary, bench subset, recurrence revert the merge). The other
+ * owner_only entries (money, secrets, irreversible data, the bench set, the policy itself, access fences, outside the repository,
+ * the standing prohibitions) are what the night never does.
+ */
+export const STRICT_PROOF_ENTRIES = ["judge_gates", "judge_thresholds", "rule_trial_apply", "rule_always_on", "default_model_change", "new_pipeline_stage", "graph_edit", "memory_core_edit"] as const;
+
+export type GateDecision = { decision: "merge" | "reject"; requested: Tier; tier: Tier; reason: string; matched: Array<{ id: string; tier: Tier }>; strict?: boolean };
+
+/**
+ * No repair waits for the owner (owner 2026-10-22: «я вообще не должен участвовать»): a held branch was released unread after a week.
+ * night_decides merges; a change of the judge or the graph merges only with the strict proofs (bench subset passed, revertible, no
+ * existing test changed or deleted); anything else, or a change without those proofs, is rejected with its reason and the class's
+ * round counts as failed, so the ladder moves on.
  */
 export function gateRepair(change: ChangeDescriptor): GateDecision {
   const answer = authorize(change);
-  return { decision: answer.tier === "night_decides" ? "merge" : "hold", requested: answer.requested, tier: answer.tier, reason: answer.reason, matched: answer.matched };
+  const base = { requested: answer.requested, tier: answer.tier, matched: answer.matched };
+  if (answer.tier === "night_decides") return { ...base, decision: "merge", reason: answer.reason };
+  const restrictive = answer.matched.filter((hit) => hit.tier !== "night_decides");
+  const strictOnly = restrictive.length > 0 && restrictive.every((hit) => (STRICT_PROOF_ENTRIES as readonly string[]).includes(hit.id));
+  const attrs = change.attrs ?? {};
+  const proofs = attrs.bench_subset_passed === true && attrs.auto_revertible === true && attrs.tests_untouched === true;
+  if (strictOnly && proofs) return { ...base, decision: "merge", strict: true, reason: `${answer.reason}; merged on the strict proofs (bench subset, revertible, no existing test changed)` };
+  const missing = !strictOnly ? `the night never does ${restrictive.filter((hit) => !(STRICT_PROOF_ENTRIES as readonly string[]).includes(hit.id)).map((hit) => hit.id).join(", ") || "an unknown change"}`
+    : [attrs.bench_subset_passed !== true && "no passed bench subset", attrs.auto_revertible !== true && "not revertible", attrs.tests_untouched !== true && "an existing test was changed or deleted"].filter(Boolean).join(", ");
+  return { ...base, decision: "reject", reason: `${answer.reason}; rejected: ${missing}` };
 }

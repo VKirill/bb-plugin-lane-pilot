@@ -139,7 +139,7 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
         if (!view.worktreePath) return null;
         const { hostId, basePath } = await environmentOf();
         const state = await host.call("gitWorktreeState", { requestedHostId: hostId, basePath, worktreePath: view.worktreePath }, { hostId, timeoutMs: 60_000 });
-        return state.status === "ready" ? state.changed.map((file) => file.path) : null;
+        return state.status === "ready" ? state.changed.map((file) => ({ path: file.path, status: file.status })) : null;
       },
       revert: async (commit) => {
         const { hostId, basePath } = await environmentOf();

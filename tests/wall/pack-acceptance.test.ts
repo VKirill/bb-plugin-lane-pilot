@@ -91,10 +91,22 @@ describe("the policy gate of a night repair", () => {
     expect(gateRepair(change)).toMatchObject({ requested: "night_decides", tier: "night_decides", decision: "merge" });
   });
 
-  it("without the bench proof it is a proposal; one that touches the judge or the policy is the owner's", () => {
-    expect(gateRepair(repairChange(["src/rooms/relay/server/relay.ts"], { benchSubset: false, revertible: true }))).toMatchObject({ requested: "night_proposes", decision: "hold" });
-    expect(gateRepair(repairChange(["src/rooms/verification/gate-output.ts"], { benchSubset: true, revertible: true }))).toMatchObject({ tier: "owner_only", decision: "hold" });
-    expect(gateRepair(repairChange(["src/rooms/policy/exam.ts"], { benchSubset: true, revertible: true })).tier).toBe("owner_only");
+  it("without the bench proof a repair is rejected, never held for the owner", () => {
+    expect(gateRepair(repairChange(["src/rooms/relay/server/relay.ts"], { benchSubset: false, revertible: true }))).toMatchObject({ requested: "night_proposes", decision: "reject" });
+  });
+
+  it("a change of the judge merges on the strict proofs and is rejected without them", () => {
+    const judge = (files: Parameters<typeof repairChange>[0], benchSubset = true) => gateRepair(repairChange(files, { benchSubset, revertible: true }));
+    expect(judge([{ path: "src/rooms/verification/gate-output.ts", status: "M" }, { path: "tests/gate-output-new.test.ts", status: "A" }])).toMatchObject({ tier: "owner_only", decision: "merge", strict: true });
+    expect(judge([{ path: "src/rooms/verification/gate-output.ts", status: "M" }, { path: "tests/gate-output.test.ts", status: "M" }]).reason).toMatch(/existing test was changed/);
+    expect(judge([{ path: "src/rooms/verification/gate-output.ts", status: "M" }], false)).toMatchObject({ decision: "reject" });
+    // A bare path has no known status: a test among them is not proven new.
+    expect(judge(["src/rooms/verification/gate-output.ts", "tests/gate-output.test.ts"])).toMatchObject({ decision: "reject" });
+  });
+
+  it("what the night never does is rejected whatever the proofs", () => {
+    expect(gateRepair(repairChange([{ path: "src/rooms/policy/exam.ts", status: "M" }], { benchSubset: true, revertible: true }))).toMatchObject({ tier: "owner_only", decision: "reject" });
+    expect(gateRepair(repairChange([{ path: "src/rooms/policy/exam.ts", status: "M" }], { benchSubset: true, revertible: true })).reason).toMatch(/never does policy_itself/);
   });
 });
 

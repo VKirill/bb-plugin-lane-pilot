@@ -46,7 +46,7 @@ function fakePorts(h: ReturnType<typeof freshDb>, patch: { version?: { v: string
       report: async (thread) => state.reports.get(thread) ?? "",
       tokens: async () => 3_000_000,
       busy: async (thread) => state.busy.has(thread),
-      changedFiles: async () => state.changed,
+      changedFiles: async () => state.changed as never,
       revert: async (commit) => { state.reverted.push(commit); return { ok: true, detail: "merged abc" }; },
     },
     release: { drill: async () => state.drill, canary: async () => state.canary },
@@ -115,17 +115,16 @@ describe("the real night and the life of one repair", () => {
     expect(wall.nextAssignment()).toBeNull();
     state.views.set(assignment.signature, { threadId: "thr_fix", verdict: "fixed", outcome: null, branch: "lane/self-repair-1", worktreePath: "/wt/x", spawnedAt: NOW });
     state.reports.set("thr_fix", verdictLine("fixed"));
-    state.changed = ["src/rooms/relay/server/relay.ts", "src/rooms/tasks/plan-fact.ts"];
+    // It touches the judge (plan-fact) and changes an existing test: no strict proof, so it is rejected — nothing waits for the owner.
+    state.changed = [{ path: "src/rooms/relay/server/relay.ts", status: "M" }, { path: "src/rooms/tasks/plan-fact.ts", status: "M" }, { path: "tests/plan-fact.test.ts", status: "M" }];
     await wall.advance(NOW + 2 * HOUR);
     const decided = await wall.mergeGate(assignment.signature, { threadId: "thr_fix" });
-    expect(decided).toBe("hold");
+    expect(decided).toBe("release");
     const row = listRepairs(h.db)[0]!;
-    expect(row.state).toBe("held");
     expect(row.outcome).toMatch(/fixed; 2 sites listed; test tests\/x\.test\.ts/);
-    expect(row.policy).toMatchObject({ decision: "hold", tier: "owner_only" });
-    expect(await wall.mergeGate(assignment.signature, { threadId: "thr_fix" })).toBe("hold");   // stored, not decided again
-    state.time = NOW + 8 * 24 * HOUR;
-    expect(await wall.mergeGate(assignment.signature, { threadId: "thr_fix" })).toBe("release");   // a week on its branch with nobody taking it: released as a patch
+    expect(row.policy).toMatchObject({ decision: "reject", tier: "owner_only" });
+    expect((row.policy as { reason: string }).reason).toMatch(/an existing test was changed or deleted/);
+    expect(await wall.mergeGate(assignment.signature, { threadId: "thr_fix" })).toBe("release");   // stored, not decided again
   });
 
   it("the night merges a repair with its proofs, the train ships, the checks go green and the repair is accepted; the failed attempts are planned for a re-run", async () => {

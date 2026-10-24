@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { HeadPart } from "@lane-pilot/contracts";
 import { extractModelJson } from "../critique";
 import type { ChangeDescriptor } from "../policy";
-import { decideAcceptance, gateRepair, repairChange, type Acceptance, type AcceptanceEvidence, type GateDecision } from "./acceptance";
+import { decideAcceptance, gateRepair, repairChange, type Acceptance, type AcceptanceEvidence, type GateDecision, type RepairFile } from "./acceptance";
 import { analysisPrompt, hunterPrompt, parseNightReport, repairBrief, taskWallMessage } from "./brief";
 import { hubFields, writeHubFields } from "../improvement";
 import { WALL_CONFIG_KEY, parseWallConfig, type WallConfig } from "./config";
@@ -19,7 +19,6 @@ import {
 import { OPEN_REPAIR_STATES, type NightSummary, type WallClass } from "./types";
 
 const DAY = 86_400_000;
-const HELD_RELEASE_MS = 7 * DAY;
 const QUEUED_STALE_MS = 12 * 3_600_000;
 
 export type Scope = { isReal(projectId: string, taskId: string): boolean; scopeOf(projectId: string): RerunScope };
@@ -42,7 +41,7 @@ export type WallPorts = {
     report(threadId: string): Promise<string>;
     tokens(threadId: string): Promise<number | null>;
     busy(threadId: string): Promise<boolean>;
-    changedFiles(view: RepairView): Promise<string[] | null>;
+    changedFiles(view: RepairView): Promise<RepairFile[] | null>;
     revert(commit: string): Promise<{ ok: boolean; detail: string }>;
   };
   release: {
@@ -334,22 +333,22 @@ export function createWall(deps: WallDeps) {
     const row = listRepairs(db, { states: OPEN_REPAIR_STATES }).filter((item) => item.signature === signature).at(-1);
     if (!row) return "hold";
     const now = ports.now();
-    const stored = row.policy as { decision?: GateDecision["decision"] } | null;
+    // A decision taken once stands; a «hold» from before 0.1.297 is decided again under the rule that nothing waits for the owner.
+    const stored = row.policy as { decision?: GateDecision["decision"] | "hold" } | null;
     if (stored?.decision === "merge") return "merge";
-    if (stored?.decision === "hold") return now - row.updatedAt > HELD_RELEASE_MS && row.state === "held" ? "release" : "hold";
+    if (stored?.decision === "reject") return "release";
     const view = await ports.repair.view(signature);
     const files = view ? await ports.repair.changedFiles(view).catch(() => null) : null;
-    if (!files) { updateRepair(db, row.id, { policy: { decision: "hold", reason: "the branch's changed files could not be read" } }, now); return "hold"; }
+    // Unreadable files are asked again on the next watch pass; nothing is stored, so no decision is taken on no evidence.
+    if (!files) return "hold";
     const cfg = await config();
     const benchOk = cfg.benchSubset > 0 && await ports.bench.available().catch(() => false);
     const change: ChangeDescriptor = repairChange(files, { benchSubset: benchOk, revertible: true });
     const decision = gateRepair(change);
-    updateRepair(db, row.id, { state: decision.decision === "merge" ? "fixed" : "held", verdict: "fixed", policy: { ...decision, change, benchEnforcedAfterDeploy: benchOk } }, now);
-    if (decision.decision === "hold") {
-      log(`wall: repair ${row.id} of ${row.classKey} is held by the policy (${decision.tier}): ${decision.reason}`);
-    }
+    updateRepair(db, row.id, { state: "fixed", verdict: "fixed", policy: { ...decision, change, benchEnforcedAfterDeploy: benchOk } }, now);
+    if (decision.decision === "reject") log(`wall: repair ${row.id} of ${row.classKey} is rejected by the policy (${decision.tier}): ${decision.reason}`);
     void info;
-    return decision.decision;
+    return decision.decision === "merge" ? "merge" : "release";
   }
 
   function settled(signature: string, info: { outcome: string; verdict: string | null; commit: string | null }): void {
