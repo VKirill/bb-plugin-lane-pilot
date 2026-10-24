@@ -292,3 +292,17 @@ describe("an acceptance item that says something stays as it was", () => {
     expect(check.items[0]).toMatchObject({ verdict: "unproven", severity: "blocking" });
   });
 });
+
+describe("a contract command the writer shortened", () => {
+  const long = "( D=$(mktemp -d /tmp/notes.XXXXXX) && export NOTES_FILE=\"$D/n.json\" && node scripts/notes.js add 'Купить молоко' --tag home && node scripts/notes.js list )";
+  it("is found by its start when one contract command begins with it", () => {
+    const check = blindPlanFact(["the scenario works"], { status: "ok", rows: [{ item: 1, status: "done", evidence: ["cmd:( D=$(mktemp -d /tmp/notes.XXXXXX) && export NOTES_FILE=\"$D/n.json\" && node scripts/notes.js add 'Купить молоко' ... )"] }] },
+      facts({ contractCommands: [long], ran: [{ command: long, exitCode: 0 }] }));
+    expect(check.items[0]).toMatchObject({ verdict: "proven" });
+  });
+  it("a too short start proves nothing", () => {
+    const check = blindPlanFact(["the scenario works"], { status: "ok", rows: [{ item: 1, status: "done", evidence: ["cmd:( D=$(mktemp ..."] }] },
+      facts({ contractCommands: [long], ran: [{ command: long, exitCode: 0 }] }));
+    expect(check.items[0]).toMatchObject({ verdict: "unproven" });
+  });
+});

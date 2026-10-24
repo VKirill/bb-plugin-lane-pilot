@@ -46,3 +46,14 @@ describe("the next action", () => {
     expect(next.text).toMatch(/nothing changed since the verification failed/);
   });
 });
+
+describe("a wave that is in with a failing line", () => {
+  it("is named to the PM instead of «Lane Pilot issues the next wave»", () => {
+    const items = [piece("a"), { ...piece("b"), wave: 2 }];
+    const phase = { id: "ph_1", projectId: "p", pmThreadId: "t", runId: "r", title: "T", goal: "G", stage: "execution", state: "active", edition: 1, createdAt: 1, updatedAt: 1,
+      record: { plan: { items }, waveReview: true, execution: { issued: { a: "a.2" }, waves: { "1": { packageSha: "p".repeat(64), at: 1, lines: [{ id: "promises_proved", ok: false, detail: "plan-fact failed: a" }] } } } } } as unknown as Phase;
+    const next = nextAction(phase, accepted(["a"]));
+    expect(next).toMatchObject({ waitsForPm: true });
+    expect(next.text).toMatch(/wave 1 is in, but promises_proved \(plan-fact failed: a\)/);
+  });
+});

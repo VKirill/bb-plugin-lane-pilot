@@ -109,9 +109,14 @@ function checkEvidence(evidence: string, facts: PlanFactFacts, invariant = false
   const raw = evidence.trim();
   if (/^cmd:/i.test(raw)) {
     const command = normalize(raw.slice(4));
-    const contract = facts.contractCommands.find((candidate) => normalize(candidate) === command);
+    // A writer that shortens a long contract command with «...» names it by its start: one contract command must begin with it.
+    const cut = /\s*(?:\.\.\.|…)/.exec(command);
+    const head = cut && cut.index >= 20 ? command.slice(0, cut.index) : null;
+    const byHead = head ? facts.contractCommands.filter((candidate) => normalize(candidate).startsWith(head)) : [];
+    const contract = facts.contractCommands.find((candidate) => normalize(candidate) === command) ?? (byHead.length === 1 ? byHead[0] : undefined);
+    const ranCommand = contract ? normalize(contract) : command;
     if (!contract) return { evidence, kind: "command", ok: false, code: "command_not_in_contract", note: "not a verification command of the contract" };
-    const ran = facts.ran.find((check) => normalize(check.command) === command);
+    const ran = facts.ran.find((check) => normalize(check.command) === ranCommand);
     if (!ran) return { evidence, kind: "command", ok: false, code: "command_not_run", note: "the contract lists it, but no result for it came back" };
     return ran.exitCode === 0
       ? { evidence, kind: "command", ok: true, code: "command_passed", note: "ran, exit code 0" }

@@ -404,6 +404,11 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
         text: `${head} — stage 4, execution: Lane Pilot could not issue ${errors.map(([piece, why]) => `${piece} (${why})`).join("; ")}. Correct the plan with ${tool("return", `, phaseId:"${id}", to:"planning", note`)}.` };
       if (r.ownerWords && !wordOf(r, "issue")) return { key: key("word:issue"), stage: phase.stage, waitsForPm: true,
         text: `${head} — stage 4, execution awaits the owner's word «issue» (owner.words is on). Ask him, then ${tool("word", `, phaseId:"${id}", turn:"issue", decision:"yes"|"no", text`)}.` };
+      // A wave that is in with a failing line stops the next wave: said to the PM, not left as «Lane Pilot issues the next wave».
+      const red = Object.entries(r.execution?.waves ?? {}).find(([wave, done]) => !done.lines.every((line) => line.ok)
+        && !items.some((item) => item.wave === Number(wave) && issued[item.id] && facts.get(item.id)?.state !== "accepted"));
+      if (red) return { key: key(`wave_red:${red[0]}:${red[1].packageSha}`), stage: phase.stage, waitsForPm: true,
+        text: `${head} — stage 4, execution: wave ${red[0]} is in, but ${red[1].lines.filter((line) => !line.ok).map((line) => `${line.id} (${line.detail})`).join("; ")}; the next wave waits. A failing promise needs new work: return the phase to planning (${tool("return", `, phaseId:"${id}", to:"planning", note`)}) and change the failing piece (it is issued again) or add one.` };
       const unreviewed = Object.entries(r.execution?.waves ?? {}).find(([, wave]) => wave.lines.every((line) => line.ok) && r.waveReview && !wave.review);
       if (unreviewed) return { key: key(`wave_review:${unreviewed[0]}`), stage: phase.stage, waitsForPm: true,
         text: `${head} — wave ${unreviewed[0]} is in (package ${unreviewed[1].packageSha.slice(0, 12)}). Have another model verify it (workflow lp.review on the wave's diff, a reviewer model other than the writers'), then ${tool("wave_review", `, phaseId:"${id}", wave:${unreviewed[0]}, state:"passed"|"failed", by, summary`)}; the next wave waits for it.` };

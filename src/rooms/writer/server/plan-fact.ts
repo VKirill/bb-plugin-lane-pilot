@@ -1,3 +1,4 @@
+import { taskFamily } from "../../runs";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { readWires, wiresCommand } from "../../wires";
 import type { TaskV2 } from "../../contracts";
@@ -31,6 +32,15 @@ export function tableFromAnswers(answers: readonly string[]): PlanFactTable {
  * table is a skipped stage with its reason, never a refusal. Returns the refusal reason only in `gate` mode, for an acceptance item
  * with no evidence that holds.
  */
+/** The git base of the first accepted member of a redo's family in the run, or undefined for a task that is no redo. */
+function familyBase(db: ServerCore["db"], runId: string, taskId: string) {
+  const family = taskFamily(taskId);
+  if (family === taskId) return undefined;
+  const first = (db.prepare("SELECT DISTINCT task_id FROM lane_pilot_attempt WHERE run_id=? AND state='accepted' ORDER BY created_at").all(runId) as Array<{ task_id: string }>)
+    .map((row) => row.task_id).find((id) => id !== taskId && taskFamily(id) === family);
+  return first ? getTaskGitBase(db, first) : undefined;
+}
+
 export async function runPlanFactStage(ctx: ServerCore, input: {
   projectId: string; runId: string; taskId: string; attempt: number; hostId: string; task: TaskV2;
   answers: readonly string[]; produced: readonly string[]; verification: ReadonlyArray<{ command: string; exitCode: number }>;
@@ -41,7 +51,10 @@ export async function runPlanFactStage(ctx: ServerCore, input: {
   let hunks: Pick<PlanFactFacts, "hunksKnown" | "changed"> = { hunksKnown: false, changed: {} };
   const lineCount: Record<string, number> = {};
   // A working-tree base (compare_committed off) records no base commit, only the head the writer started from: the diff is against it.
-  const gitBase = getTaskGitBase(db, input.taskId);
+  // A redo of a piece whose earlier member was accepted (piece.2 after piece): the piece's work is already merged, so the redo's own
+  // diff holds little of it. The family's base is the base, so lines this same piece wrote earlier count as its proof (live
+  // ph_ae0a8de9db: the redo's evidence in scripts/notes.js was «not in a changed hunk»).
+  const gitBase = familyBase(db, input.runId, input.taskId) ?? getTaskGitBase(db, input.taskId);
   const base = gitBase ? gitBase.base_sha ?? gitBase.initial_head_sha : null;
   if (table.status === "ok" && base && produced.length > 0 && produced.length <= MAX_DIFF_PATHS) {
     try {
