@@ -11,7 +11,7 @@ const piece = (id: string, wave: number, extra: Record<string, unknown> = {}): P
 
 const signed = (): PhaseRecord => {
   const docs = [{ path: "docs/CONTEXT.md", sha256: "a".repeat(64), bytes: 120 }];
-  return { context: { docs, sha: contextSignature(docs), signedAt: 1 } };
+  return { context: { docs, sha: contextSignature(docs), signedAt: 1, risks: { technical: "none", product: "users miss totals", operations: "none", security: "none" } } };
 };
 
 const planned = (items: PlanItem[], decision: "approve" | "changes_requested" = "approve"): PhaseRecord => {

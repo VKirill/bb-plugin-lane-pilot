@@ -225,7 +225,8 @@ export const rpcOps = {
   },
   /** Controls of a phase from the screen or the CLI: pause, resume, return to an earlier stage with a note, stop the wave, close in words. */
   phase_control: {
-    input: z.object({ phaseId: z.string().min(1).max(40), action: z.enum(["pause", "resume", "return", "stop_wave", "close"]), to: z.enum(["discussion", "planning", "design", "execution"]).optional(), note: z.string().max(2000).optional() }).strict(),
+    input: z.object({ phaseId: z.string().min(1).max(40), action: z.enum(["pause", "resume", "return", "stop_wave", "close", "word"]), to: z.enum(["discussion", "planning", "design", "execution"]).optional(),
+      note: z.string().max(2000).optional(), turn: z.enum(["planning", "design", "acceptance", "uat"]).optional(), decision: z.enum(["yes", "no"]).optional() }).strict(),
     output: z.unknown(),
   },
   /** The run-goal verdict of a run: every accepted task's checks together on the final main (src/rooms/run-goal). */

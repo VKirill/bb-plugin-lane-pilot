@@ -7,7 +7,11 @@ export function phaseRpc(api: PhaseApi) {
   return {
     phase_list: async ({ projectId, pmThreadId, live }) => api.list({ projectId, pmThreadId, live }).map((phase) => ({ ...phase, next: api.status(phase.id).next })),
     phase_get: async ({ phaseId }) => api.status(phaseId),
-    phase_control: async ({ phaseId, action, to, note }) => {
+    phase_control: async ({ phaseId, action, to, note, turn, decision }) => {
+      if (action === "word") {
+        if (!turn || !decision) throw new Error("the owner's word names the turn and the decision");
+        return api.status(api.word({ phaseId, turn, decision, text: note?.trim() || decision, by: "owner" }).id);
+      }
       if (action === "return") {
         if (!to || !note?.trim()) throw new Error("a return names the stage and carries a note");
         return api.status(api.returnTo({ phaseId, to, note, by: "owner" }).id);

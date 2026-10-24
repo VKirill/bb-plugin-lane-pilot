@@ -8,14 +8,21 @@ const item = z.object({ id: z.string().trim().min(1).max(80), title: z.string().
 const phaseId = z.string().trim().min(1).max(40);
 
 const params = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("open"), title: z.string().trim().min(1).max(200), goal: z.string().trim().min(1).max(4000) }).strict(),
+  z.object({ action: z.literal("open"), title: z.string().trim().min(1).max(200), goal: z.string().trim().min(1).max(4000), legacy: z.boolean().optional() }).strict(),
   z.object({ action: z.literal("status"), phaseId: phaseId.optional() }).strict(),
-  z.object({ action: z.literal("context"), phaseId, docs: z.array(z.string().trim().min(1).max(1024)).min(1).max(20) }).strict(),
+  z.object({ action: z.literal("context"), phaseId, docs: z.array(z.string().trim().min(1).max(1024)).min(1).max(20),
+    risks: z.object({ technical: z.string().max(600), product: z.string().max(600), operations: z.string().max(600), security: z.string().max(600) }).strict() }).strict(),
   z.object({ action: z.literal("plan"), phaseId, items: z.array(item).min(1).max(60), design: z.boolean().optional() }).strict(),
   z.object({ action: z.literal("plan_check"), phaseId, decision: z.enum(["approve", "changes_requested"]), by: z.string().trim().min(1).max(120), summary: z.string().max(2000).optional() }).strict(),
   z.object({ action: z.literal("drawing"), phaseId, paths: z.array(z.string().trim().min(1).max(1024)).min(1).max(30), designer: z.string().trim().min(1).max(120), feasible: z.boolean(), contradiction: z.string().max(2000).optional(), reviewer: z.string().trim().min(1).max(120).optional() }).strict(),
   z.object({ action: z.literal("goal_audit"), phaseId, state: z.enum(["met", "unmet"]), by: z.string().trim().min(1).max(120), summary: z.string().trim().min(1).max(2000) }).strict(),
-  z.object({ action: z.literal("lessons"), phaseId, analysis: z.string().trim().min(1).max(4000), reviewer: z.string().trim().min(1).max(120) }).strict(),
+  z.object({ action: z.literal("lessons"), phaseId, analysis: z.string().trim().min(1).max(4000), author: z.string().trim().min(1).max(120), reviewer: z.string().trim().min(1).max(120), reviewedHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
+  z.object({ action: z.literal("question"), phaseId, text: z.string().trim().min(1).max(1000), blocking: z.boolean().default(true) }).strict(),
+  z.object({ action: z.literal("answer"), phaseId, questionId: z.string().trim().min(1).max(20), answer: z.string().trim().min(1).max(2000) }).strict(),
+  z.object({ action: z.literal("word"), phaseId, turn: z.enum(["planning", "design", "acceptance", "uat"]), decision: z.enum(["yes", "no"]), text: z.string().trim().min(1).max(2000) }).strict(),
+  z.object({ action: z.literal("withdraw"), phaseId, pieces: z.array(z.string().trim().min(1).max(80)).min(1).max(60), note: z.string().trim().min(1).max(2000) }).strict(),
+  z.object({ action: z.literal("revise"), phaseId, goal: z.string().trim().min(1).max(4000), note: z.string().trim().min(1).max(2000) }).strict(),
+  z.object({ action: z.literal("correct"), phaseId, note: z.string().trim().min(1).max(4000), pieces: z.array(z.string().trim().min(1).max(80)).max(60).optional() }).strict(),
   z.object({ action: z.literal("return"), phaseId, to: z.enum(["discussion", "planning", "design", "execution"]), note: z.string().trim().min(1).max(2000) }).strict(),
   z.object({ action: z.literal("pause"), phaseId }).strict(),
   z.object({ action: z.literal("resume"), phaseId }).strict(),
@@ -38,7 +45,7 @@ export function registerPhaseTool(ctx: ServerCore, services: Services): void {
       try {
         switch (input.action) {
           case "open": {
-            const phase = api.open({ projectId: context.projectId, pmThreadId: context.threadId, title: input.title, goal: input.goal });
+            const phase = await api.open({ projectId: context.projectId, pmThreadId: context.threadId, title: input.title, goal: input.goal, legacy: input.legacy });
             return json({ phaseId: phase.id, stage: phase.stage, next: api.status(phase.id).next.text });
           }
           case "status": {
@@ -46,12 +53,18 @@ export function registerPhaseTool(ctx: ServerCore, services: Services): void {
             const status = api.status(input.phaseId);
             return json({ phaseId: status.phase.id, stage: status.phase.stage, state: status.phase.state, next: status.next.text, gates: status.gates, book: status.book.slice(0, 6000) });
           }
-          case "context": return json(summary(await api.context({ phaseId: input.phaseId, docs: input.docs, by: context.threadId })));
+          case "context": return json(summary(await api.context({ phaseId: input.phaseId, docs: input.docs, risks: input.risks, by: context.threadId })));
           case "plan": return json(summary(api.plan({ phaseId: input.phaseId, items: input.items as never, design: input.design })));
-          case "plan_check": return json(summary(api.planCheck({ phaseId: input.phaseId, decision: input.decision, by: input.by, summary: input.summary })));
+          case "plan_check": return json(summary(await api.planCheck({ phaseId: input.phaseId, decision: input.decision, by: input.by, summary: input.summary })));
           case "drawing": return json(summary(await api.drawing({ phaseId: input.phaseId, paths: input.paths, designer: input.designer, feasible: input.feasible, contradiction: input.contradiction, reviewer: input.reviewer })));
           case "goal_audit": return json(summary(api.goalAudit({ phaseId: input.phaseId, state: input.state, by: input.by, summary: input.summary })));
-          case "lessons": return json(summary(api.lessons({ phaseId: input.phaseId, analysis: input.analysis, reviewer: input.reviewer })));
+          case "lessons": return json(summary(api.lessons({ phaseId: input.phaseId, analysis: input.analysis, author: input.author, reviewer: input.reviewer, reviewedHash: input.reviewedHash })));
+          case "question": return json(summary(api.question({ phaseId: input.phaseId, text: input.text, blocking: input.blocking })));
+          case "answer": return json(summary(api.answer({ phaseId: input.phaseId, questionId: input.questionId, answer: input.answer, by: "pm" })));
+          case "word": return json(summary(api.word({ phaseId: input.phaseId, turn: input.turn, decision: input.decision, text: input.text, by: "owner via pm" })));
+          case "withdraw": return json(summary(api.withdraw({ phaseId: input.phaseId, pieces: input.pieces, note: input.note, by: "pm" })));
+          case "revise": return json(summary(api.revise({ phaseId: input.phaseId, goal: input.goal, note: input.note, by: "pm" })));
+          case "correct": { const out = await api.correct({ phaseId: input.phaseId, note: input.note, pieces: input.pieces }); return json({ ...summary(out.phase), sent: out.sent }); }
           case "return": return json(summary(api.returnTo({ phaseId: input.phaseId, to: input.to, note: input.note, by: "pm" })));
           case "pause": case "resume": return json(summary(api.setState({ phaseId: input.phaseId, state: input.action, by: "pm" })));
           case "close": return json(summary(api.setState({ phaseId: input.phaseId, state: "close", words: input.words, by: "pm" })));

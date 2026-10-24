@@ -27,15 +27,35 @@ export type FrozenVerdict = { state: "passed" | "failed"; detail: string; mainSh
 export type AcceptanceLine = { id: AcceptanceLineId; ok: boolean; detail: string };
 export type ModelVerdict = { state: "met" | "unmet"; by: string; summary: string; at: number };
 
+/** The four kinds of risk a discussion names before any solution (SMA: Four risk kinds); «none» is an answer, silence is not. */
+export const RISK_KINDS = ["technical", "product", "operations", "security"] as const;
+export type RiskKind = (typeof RISK_KINDS)[number];
+
+/** A question a stage parks instead of guessing (SMA: Plan question parked, Answer a stage question); a blocking one holds the gate. */
+export type StageQuestion = { id: string; stage: PhaseStage; text: string; blocking: boolean; askedAt: number; answer?: string; answeredBy?: string; answeredAt?: number };
+
+/** The owner's word at a turn, when the project asks for it (setting owner.words = on; SMA: Plan row awaits a word, Drawing confirmation, Keyed decision, UAT line). */
+export const WORD_TURNS = ["planning", "design", "acceptance", "uat"] as const;
+export type WordTurn = (typeof WORD_TURNS)[number];
+export type OwnerWord = { turn: WordTurn; decision: "yes" | "no"; by: string; text: string; at: number };
+
 /** What the phase holds besides its row: one JSON record, each stage writes its part. */
 export type PhaseRecord = {
-  context?: { docs: ContextDoc[]; sha: string; signedAt: number };
+  context?: { docs: ContextDoc[]; sha: string; signedAt: number; risks?: Partial<Record<RiskKind, string>>; legacy?: boolean };
+  questions?: StageQuestion[];
+  /** The project asked for the owner's word at the turns (owner.words = on when the phase opened). */
+  ownerWords?: boolean;
+  words?: OwnerWord[];
+  /** Goal revisions and withdrawn pieces, each one a decision in the book. */
+  scope?: { revisions: number; withdrawn: string[] };
   plan?: { items: PlanItem[]; sha: string; contextSha: string; critique?: PlanCritique; admittedSha?: string; admittedAt?: number };
   design?: { decision: "needed" | "not_needed"; why: string; drawing?: Drawing; confirmedAt?: number };
-  execution?: { issued: Record<string, string>; startedAt?: number; baseSha?: string | null; issueErrors?: Record<string, string> };
+  execution?: { issued: Record<string, string>; startedAt?: number; baseSha?: string | null; issueErrors?: Record<string, string>; acceptedNoted?: string[] };
   verification?: { verdict?: FrozenVerdict; model?: ModelVerdict };
   acceptance?: { lines: AcceptanceLine[]; at: number; accepted: boolean };
-  lessons?: { needed: boolean; why: string; analysis?: string; reviewer?: string; at?: number };
+  lessons?: { needed: boolean; why: string; analysis?: string; author?: string; reviewer?: string; reviewedHash?: string; at?: number };
+  /** The book written to the project (.agents/phases/<id>/BOOK.md) up to this part. */
+  bookWritten?: { seq: number; sha256: string; at: number };
   closing?: { by: string; words: string; at: number };
 };
 
@@ -69,6 +89,9 @@ export function discussionGate(record: PhaseRecord): GateResult {
   if (!docs.length) why.push("no context documents: write the discussion (decisions, FAQ, ADR) to files in the project and name them");
   for (const doc of docs) if (doc.bytes === 0) why.push(`${doc.path} is empty`);
   if (docs.length && record.context?.sha !== contextSignature(docs)) why.push("the context signature does not match its documents");
+  const risks = record.context?.risks ?? {};
+  const unnamed = RISK_KINDS.filter((kind) => !risks[kind]?.trim());
+  if (unnamed.length) why.push(`risks not named: ${unnamed.join(", ")} (name each, «none» is an answer)`);
   return gate(why);
 }
 
@@ -112,10 +135,21 @@ export function planGate(record: PhaseRecord): GateResult {
   if (plan.sha !== planSignature(plan.items, plan.contextSha)) why.push("the plan signature does not match its pieces");
   if (!plan.critique) why.push("no independent plan check: run the plan critic (workflow lp.plan or grill-plan) and report its decision");
   else if (plan.critique.decision !== "approve") why.push(`the plan checker asked for changes${plan.critique.summary ? `: ${plan.critique.summary}` : ""}`);
+  why.push(...openQuestions(record, "planning").map((question) => `open question ${question.id}: ${question.text}`));
+  if (record.ownerWords && wordOf(record, "planning")?.decision !== "yes") why.push("the plan awaits the owner's word (owner.words is on)");
   return gate(why);
 }
 
 const UI_PATH = /\.(tsx|jsx|vue|svelte|css|scss|html)$|(^|\/)(ui|components|pages|screens|views)\//i;
+
+/** Blocking questions of a stage that nobody answered yet. */
+export const openQuestions = (record: PhaseRecord, stage: PhaseStage) => (record.questions ?? []).filter((question) => question.stage === stage && question.blocking && !question.answer);
+
+/** The owner's latest word at a turn. */
+export const wordOf = (record: PhaseRecord, turn: WordTurn) => [...(record.words ?? [])].reverse().find((word) => word.turn === turn);
+
+/** Where a phase keeps its own files in the project: the book, and the drawing in design/ (SMA: The phase has a home, Drawing in its own folder). */
+export const phaseFolder = (phaseId: string) => `.agents/phases/${phaseId}`;
 
 /** Is a drawing needed: a piece that changes a screen (UI files) needs one; the PM can ask for one on any plan. */
 export function designDecision(items: readonly PlanItem[], asked?: boolean): { decision: "needed" | "not_needed"; why: string } {
@@ -138,10 +172,11 @@ export function designGate(record: PhaseRecord): GateResult {
     if (!drawing.reviewer) why.push("the drawing is not reviewed by a separate role");
     else if (drawing.reviewer === drawing.designer) why.push("the reviewer of the drawing is its designer: it must be a separate role");
   }
+  if (record.ownerWords && wordOf(record, "design")?.decision !== "yes") why.push("the drawing awaits the owner's word (owner.words is on)");
   return gate(why);
 }
 
-export type TaskFact = { taskId: string; state: string | null; planFact: "passed" | "failed" | "skipped" | null; verification: "passed" | "failed" | "skipped" | null; codeCritique: "passed" | "blocked" | "skipped" | "failed" | null };
+export type TaskFact = { taskId: string; state: string | null; planFact: "passed" | "failed" | "skipped" | null; verification: "passed" | "failed" | "skipped" | null; codeCritique: "passed" | "blocked" | "skipped" | "failed" | null; browserQa?: "passed" | "failed" | "skipped" | null };
 
 /** The pieces that may be issued now: wave by wave, the next wave only once every piece of the earlier waves is accepted. */
 export function issuable(items: readonly PlanItem[], issued: Readonly<Record<string, string>>, facts: ReadonlyMap<string, TaskFact>): PlanItem[] {
@@ -184,7 +219,7 @@ export function blindVerdict(items: readonly PlanItem[], facts: ReadonlyMap<stri
   return { state: problems.length ? "failed" : "passed", detail: problems.join("; ") || "every piece accepted and proved; the composition passes on main", mainSha: runGoal?.headSha ?? null, at: now, inputSha };
 }
 
-export const ACCEPTANCE_LINES = ["contract_current", "promises_proved", "checks_passed", "independent_check", "landed", "composition_verified", "main_unmoved", "limits_acknowledged"] as const;
+export const ACCEPTANCE_LINES = ["contract_current", "promises_proved", "checks_passed", "independent_check", "landed", "composition_verified", "main_unmoved", "qa_read", "goal_met", "limits_acknowledged", "owner_word"] as const;
 export type AcceptanceLineId = (typeof ACCEPTANCE_LINES)[number];
 
 /** The phase acceptance calculation: each line decided by code; the phase is accepted only when every line holds. */
@@ -197,6 +232,9 @@ export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFac
   const notChecked = failed((fact) => fact?.verification === "failed");
   const blockedByCritic = failed((fact) => fact?.codeCritique === "blocked");
   const notLanded = failed((fact) => fact?.state !== "accepted");
+  const qaRed = failed((fact) => fact?.browserQa === "failed");
+  const model = phase.record.verification?.model;
+  const word = wordOf(phase.record, "acceptance");
   return [
     line("contract_current", !!phase.record.plan?.admittedSha && phase.record.plan.admittedSha === phase.record.plan.sha, phase.record.plan?.admittedSha === phase.record.plan?.sha ? "the plan is the admitted one" : "the plan changed after its admission"),
     line("promises_proved", notProved.length === 0, notProved.length ? `not proved by plan-fact: ${notProved.join(", ")}` : `${items.length} promises proved`),
@@ -205,7 +243,10 @@ export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFac
     line("landed", notLanded.length === 0, notLanded.length ? `not merged: ${notLanded.join(", ")}` : "every piece is merged into main"),
     line("composition_verified", verdict?.state === "passed", verdict ? verdict.detail : "no blind verdict yet"),
     line("main_unmoved", !verdict?.mainSha || !now.mainSha || verdict.mainSha === now.mainSha, verdict?.mainSha && now.mainSha && verdict.mainSha !== now.mainSha ? `main moved from ${verdict.mainSha.slice(0, 12)} to ${now.mainSha.slice(0, 12)} since the verdict — verify again` : "main is where the verdict saw it"),
+    line("qa_read", qaRed.length === 0, qaRed.length ? `the browser check failed: ${qaRed.join(", ")}` : "the window, the blind verdict and the browser checks read clean"),
+    line("goal_met", model?.state === "met", model ? `${model.by}: ${model.summary}` : "no goal audit yet"),
     line("limits_acknowledged", true, now.openDeferrals ? `${now.openDeferrals} deferred item(s) of this project stay open, named in the book` : "nothing deferred"),
+    line("owner_word", !phase.record.ownerWords || word?.decision === "yes", !phase.record.ownerWords ? "the project does not ask for the owner's word (owner.words off)" : word ? `${word.by}: ${word.decision} — ${word.text}` : "awaits the owner's keyed decision"),
   ];
 }
 
@@ -214,6 +255,12 @@ export function lessonsNeeded(input: { returns: number; failedAttempts: number; 
   const reasons = [input.returns ? `${input.returns} return(s) to an earlier stage` : "", input.failedAttempts ? `${input.failedAttempts} failed attempt(s)` : "", input.verdictFailures ? `${input.verdictFailures} failed verdict(s)` : ""].filter(Boolean);
   return reasons.length ? { needed: true, why: reasons.join(", ") } : { needed: false, why: "the phase went through without returns or failures" };
 }
+
+/** Every stage names the gate that lets a phase out of it (SMA: Stage without gates is refused); the test checks none is missing. */
+export const STAGE_GATES: Readonly<Record<Exclude<PhaseStage, "closed">, string>> = {
+  discussion: "discussionGate", planning: "planGate", design: "designGate", execution: "executionGate",
+  verification: "blindVerdict", acceptance: "acceptanceLines", lessons: "lessonsNeeded",
+};
 
 // ---------------------------------------------------------------- the driver's next action
 
@@ -230,12 +277,20 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
   const r = phase.record;
   const head = `Phase ${id} «${phase.title}»`;
   const key = (suffix: string) => `${phase.stage}:${suffix}`;
+  const questions = (r.questions ?? []).filter((question) => !question.answer && question.stage === phase.stage);
+  if (questions.length) return { key: key(`questions:${questions.map((question) => question.id).join(",")}`), stage: phase.stage, waitsForPm: true,
+    text: `${head} — open question(s) at ${phase.stage}: ${questions.map((question) => `${question.id}${question.blocking ? " (blocking)" : ""}: ${question.text}`).join("; ")}. Answer with ${tool("answer", `, phaseId:"${id}", questionId, answer`)}; ask the owner first (lane_pilot_ask_owner) if only he knows.` };
+  const turn: WordTurn | null = !r.ownerWords ? null : phase.stage === "planning" && r.plan?.critique?.decision === "approve" && wordOf(r, "planning")?.decision !== "yes" ? "planning"
+    : phase.stage === "design" && r.design?.drawing?.reviewer && wordOf(r, "design")?.decision !== "yes" ? "design"
+    : phase.stage === "acceptance" && wordOf(r, "acceptance")?.decision !== "yes" ? "acceptance" : null;
+  if (turn) return { key: key(`word:${turn}`), stage: phase.stage, waitsForPm: true,
+    text: `${head} awaits the owner's word at ${turn} (owner.words is on). Ask him with lane_pilot_ask_owner, then record it with ${tool("word", `, phaseId:"${id}", turn:"${turn}", decision:"yes"|"no", text`)}.` };
   if (phase.state === "paused" || phase.state === "pause_requested") return { key: key("paused"), stage: phase.stage, text: `${head} is paused; ${tool("resume", `, phaseId:"${id}"`)} moves it on.`, waitsForPm: false };
   switch (phase.stage) {
     case "discussion": {
       const check = discussionGate(r);
       return { key: key(r.context?.sha ?? "none"), stage: phase.stage, waitsForPm: true,
-        text: `${head} — stage 1, discussion. Goal: ${phase.goal}\nWrite the discussion to files in the project (decisions locked/free/deferred, FAQ, ADR — workflow lp.brainstorm or lp.analyze writes them), then ${tool("context", `, phaseId:"${id}", docs:["<path>", ...]`)}: Lane Pilot reads and signs them.${check.ok ? "" : `\nOpen: ${check.why.join("; ")}`}` };
+        text: `${head} — stage 1, discussion. Goal: ${phase.goal}\nWrite the discussion to files in the project (decisions locked/free/deferred, FAQ, ADR — workflow lp.brainstorm or lp.analyze writes them), name the four risks (${RISK_KINDS.join(", ")}), then ${tool("context", `, phaseId:"${id}", docs:["<path>", ...], risks:{technical, product, operations, security}`)}: Lane Pilot reads and signs them.${check.ok ? "" : `\nOpen: ${check.why.join("; ")}`}` };
     }
     case "planning": {
       const check = planGate(r);
@@ -245,7 +300,7 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
     case "design": {
       const check = designGate(r);
       return { key: key(`${r.design?.drawing?.sha256 ?? "none"}:${r.design?.drawing?.feasible ?? "-"}:${r.design?.drawing?.reviewer ?? "-"}`), stage: phase.stage, waitsForPm: true,
-        text: `${head} — stage 3, design (${r.design?.why ?? ""}).\nHave design-lead draw the screens into .agents/phases/${id}/design/ (lane_pilot_helpers {action:"specialist", role:"design-lead"}), then ${tool("drawing", `, phaseId:"${id}", paths:[...], designer, feasible:true|false, contradiction?, reviewer`)} — the reviewer is a role other than the designer (ui-review / design-taste).${check.ok ? "" : `\nOpen: ${check.why.join("; ")}`}` };
+        text: `${head} — stage 3, design (${r.design?.why ?? ""}).\nHave design-lead draw the screens into ${phaseFolder(id)}/design/ (lane_pilot_helpers {action:"specialist", role:"design-lead"}), then ${tool("drawing", `, phaseId:"${id}", paths:[...], designer, feasible:true|false, contradiction?, reviewer`)} — the reviewer is a role other than the designer (ui-review / design-taste).${check.ok ? "" : `\nOpen: ${check.why.join("; ")}`}` };
     }
     case "execution": {
       const items = r.plan?.items ?? [];
@@ -265,7 +320,7 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
       if (verdict?.state === "failed") return { key: key(`failed:${verdict.inputSha}`), stage: phase.stage, waitsForPm: true,
         text: `${head} — stage 5, verification failed: ${verdict.detail}. Return the phase to execution (fix tasks) or planning with ${tool("return", `, phaseId:"${id}", to:"execution"|"planning", note`)}.` };
       if (verdict && !r.verification?.model) return { key: key("model"), stage: phase.stage, waitsForPm: true,
-        text: `${head} — stage 5, verification: the blind check passed (${verdict.detail}). Run the goal audit (workflow lp.close) against the phase goal «${phase.goal}» and report it with ${tool("goal_audit", `, phaseId:"${id}", state:"met"|"unmet", by, summary`)}.` };
+        text: `${head} — stage 5, verification: the blind check passed (${verdict.detail}). Run the goal audit (workflow lp.close) against the phase goal «${phase.goal}»${r.design?.drawing ? ` and the phase drawing (${r.design.drawing.paths.join(", ")})` : ""} and report it with ${tool("goal_audit", `, phaseId:"${id}", state:"met"|"unmet", by, summary`)}.` };
       return { key: key("running"), stage: phase.stage, waitsForPm: false, text: `${head} — stage 5, verification: Lane Pilot runs every piece's checks together on main.` };
     }
     case "acceptance": {
@@ -276,7 +331,7 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
     }
     case "lessons":
       return { key: key(r.lessons?.analysis ? "written" : "analysis"), stage: phase.stage, waitsForPm: !r.lessons?.analysis,
-        text: `${head} — stage 7, lessons (${r.lessons?.why ?? ""}). Run the retrospective (workflow retrospective) on the phase book and report it with ${tool("lessons", `, phaseId:"${id}", analysis, reviewer`)}; the reviewer is a role other than the author.` };
+        text: `${head} — stage 7, lessons (${r.lessons?.why ?? ""}). Run the retrospective (workflow retrospective) on the phase book and report it with ${tool("lessons", `, phaseId:"${id}", analysis, author, reviewer, reviewedHash`)}: the reviewer is a role other than the author, and reviewedHash is the book's last part hash the reviewer read (status shows it).` };
     case "closed":
       return { key: key("closed"), stage: phase.stage, waitsForPm: false, text: `${head} is closed.` };
   }
@@ -291,6 +346,8 @@ export function staleAfterReturn(to: PhaseStage, record: PhaseRecord): PhaseReco
   if (order <= PHASE_STAGES.indexOf("design")) delete next.design;
   if (order <= PHASE_STAGES.indexOf("execution")) { delete next.verification; delete next.acceptance; }
   delete next.lessons;
+  const later = (stage: string) => PHASE_STAGES.indexOf(stage as PhaseStage) >= order;
+  if (next.words) next.words = next.words.filter((word) => !later(word.turn === "uat" ? "acceptance" : word.turn));
   return next;
 }
 
