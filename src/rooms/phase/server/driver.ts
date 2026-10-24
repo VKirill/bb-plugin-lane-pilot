@@ -658,6 +658,10 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     }
     const last = getPhase(db, phase.id)?.pokedKey ?? null;
     if (!action.waitsForPm || action.key === last) return;
+    // A busy PM is not queued a step: by the time it is delivered the phase may have moved (live ph_9ed0f7f04b, 2026-10-24: the
+    // discussion's step arrived after the phase was closed). The next pass, two minutes on, pokes it once it is idle.
+    const thread = await bb.sdk.threads.get({ threadId: phase.pmThreadId }).catch(() => null) as { status?: unknown } | null;
+    if (thread?.status !== "idle") return;
     await bb.sdk.threads.send({ threadId: phase.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text: `[Lane Pilot phase] ${action.text}`, mentions: [] }] } as never).catch(() => undefined);
     notePoked(db, phase.id, action.key, now());
   }

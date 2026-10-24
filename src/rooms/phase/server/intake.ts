@@ -62,15 +62,14 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases) {
     if (kind === "heavy") {
       const live = phases.list({ pmThreadId: threadId, live: true })[0];
       if (live) {
+        // A new heavy message while a phase runs is the owner's correction of it (SMA: the owner may return 4 → 1); the PM reads it
+        // in this very turn, and the dispatch refusal names the phase if it tries to hand the work out.
         phaseId = live.id;
-        // A new heavy message while a phase runs is the owner's correction of it (SMA: the owner may return 4 → 1).
-        await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", mentions: [], text:
-          `[Lane Pilot phase] The owner's new message belongs to phase ${live.id} «${live.title}» (stage ${live.stage}). If it changes the goal, report it with lane_pilot_phase revise (goal, note) or return the phase to an earlier stage (return, to, note); a note for the pieces at work goes with correct.` }] } as never).catch(() => undefined);
       } else {
         const phase = await phases.open({ projectId: run.project_id, pmThreadId: threadId, title: intakeTitle(text), goal: text, rails: true });
         phaseId = phase.id;
         ctx.log(`phase intake: ${threadId} — the owner's request is heavy (${by}); phase ${phase.id} opened`);
-        // The driver wakes the PM with the discussion's one step now, not at the next two-minute pass.
+        // The phase is booked now; the PM gets the discussion's step once its turn ends (the driver pokes an idle PM only).
         await phases.tick().catch(() => 0);
       }
     }

@@ -6,12 +6,15 @@ import { createPhaseDriver } from "../src/rooms/phase/server/driver";
 import { phaseToolParams } from "../src/rooms/phase/server/tool";
 import { createRun, openDatabase } from "../src/rooms/storage";
 
-function driver() {
+function driver(status = "idle") {
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
-  harness.sdk.stub("threads.send", async () => ({}));
+  const sent: string[] = [];
+  harness.sdk.stub("threads.send", async (input: { input: Array<{ text: string }> }) => { sent.push(input.input[0]!.text); return {}; });
+  harness.sdk.stub("threads.get", async () => ({ status }));
+  harness.sdk.stub("threads.list", async () => []);
   const db = openDatabase(bb);
   createRun(db, "run1", "projA");
-  return createPhaseDriver(createCore(bb, db), {} as Services).phases;
+  return Object.assign(createPhaseDriver(createCore(bb, db), {} as Services).phases, { sent });
 }
 
 describe("a phase the rails opened", () => {
@@ -26,6 +29,20 @@ describe("a phase the rails opened", () => {
     const phases = driver();
     const phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Stats", goal: "stats module" });
     expect(phases.setState({ phaseId: phase.id, state: "close", words: "dropped", by: "pm" }).state).toBe("closed");
+  });
+});
+
+describe("the driver's poke", () => {
+  it("goes to an idle PM once, and waits while the PM is busy", async () => {
+    const busy = driver("active");
+    await busy.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Stats", goal: "stats module", rails: true });
+    await busy.tick();
+    expect(busy.sent.filter((text) => text.startsWith("[Lane Pilot phase]"))).toEqual([]);
+    const idle = driver("idle");
+    await idle.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Stats", goal: "stats module", rails: true });
+    await idle.tick();
+    await idle.tick();
+    expect(idle.sent.filter((text) => text.startsWith("[Lane Pilot phase]"))).toHaveLength(1);
   });
 });
 

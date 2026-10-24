@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.296
+
+**A phase's step is not queued to a busy PM.** The driver queued the stage's step with `queue-if-active` whenever a pass found it unsent; to a PM in the middle of a turn it arrived after the turn, when the phase had moved on (live ph_9ed0f7f04b: the discussion's step reached the PM after the phase was closed, and the PM had to say it was late). Now a pass pokes only an idle PM; a busy one is poked by a later pass, two minutes on, once its turn ends. The intake no longer queues its own note about a heavy message joining the live phase: the PM reads that message in the same turn, and the dispatch refusal names the phase.
+
 ## 0.1.295
 
 **The machinist cannot leave the rails.** The first live phase (ph_9ed0f7f04b, the sandbox's statistics module) found two ways off them. The phase tool refused lists and objects a PM sends as JSON text (`"docs":"[\"CONTEXT.md\"]"`, the usual shape after ToolSearch), so the PM's context report failed twice, and the PM then closed the phase in words as «a small job» and went back to dispatching by hand. Now every list, object, number and yes/no field of `lane_pilot_phase` also takes the JSON text of its type, and `rubric` takes a phaseId alone (the phase's stage). A phase the rails opened is marked `rails` and the PM cannot close it before acceptance: it ends by its gates or by the owner's word (cockpit, Telegram); work that is in fact small is planned as one or two pieces. A paused or stopped phase still holds the request: only a closed one lets the PM dispatch its work by hand.
