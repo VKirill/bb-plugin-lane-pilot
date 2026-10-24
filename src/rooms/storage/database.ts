@@ -409,6 +409,10 @@ export const migrations = [
   `ALTER TABLE lane_pilot_memory ADD COLUMN scope_json TEXT NOT NULL DEFAULT '[]'`,
   // Phases on rails and their append-only book (src/rooms/phase, SMA map: Phase graph).
   ...phaseMigrations,
+  // The task graph's rails (src/rooms/tasks/rails.ts): where a row was born, a hold until a date (2999 = no date), the words it was closed with.
+  `ALTER TABLE lane_pilot_task ADD COLUMN birth TEXT NOT NULL DEFAULT 'pm'`,
+  `ALTER TABLE lane_pilot_task ADD COLUMN held_until INTEGER`,
+  `ALTER TABLE lane_pilot_task ADD COLUMN closed_words TEXT`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {
@@ -572,10 +576,10 @@ export function closeRun(db: LanePilotDatabase, runId: string, closedBy: "rpc" |
 
 export function createTask(
   db: LanePilotDatabase,
-  ids: { id:string; runId:string; kind:"bb"|"cli"; contract:unknown },
+  ids: { id:string; runId:string; kind:"bb"|"cli"; contract:unknown; birth?:string },
 ): void {
-  db.prepare("INSERT INTO lane_pilot_task(id,run_id,kind,contract_json,created_at) VALUES (?,?,?,?,?)")
-    .run(ids.id, ids.runId, ids.kind, JSON.stringify(ids.contract), Date.now());
+  db.prepare("INSERT INTO lane_pilot_task(id,run_id,kind,contract_json,created_at,birth) VALUES (?,?,?,?,?,?)")
+    .run(ids.id, ids.runId, ids.kind, JSON.stringify(ids.contract), Date.now(), ids.birth ?? "pm");
 }
 
 export function updateTaskContract(

@@ -1,3 +1,4 @@
+import { birthFindings, blockingClass, checkProgram } from "../rails";
 import { resolve } from "node:path";
 import { TASK_KINDS, type TaskV2 } from "../../contracts";
 import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOverlap } from "@lane-pilot/kit";
@@ -23,6 +24,8 @@ export type LintInput = {
   /** Kinds of lintProbePaths on the workspace's machine; null when that machine could not be asked (those rules then stay silent). */
   kinds:ReadonlyMap<string, PathKind> | null;
   sandboxUnsafe:readonly string[];
+  /** Is the check command runnable: the programs the checks start, and whether the writer's machine finds them; null when it was not asked. */
+  programs?:ReadonlyMap<string, boolean> | null;
   /** The project's integration gate (explicit or detected) runs the whole suite once per batch; absent or null when there is none. */
   gate?:{ command:string } | null;
   /** Other open tasks of the project. */
@@ -173,6 +176,16 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
   const kindOf = (path:string) => kinds?.get(path);
 
   errors.push(...taskStandardFindings(task));
+  // The task-birth rails (src/rooms/tasks/rails.ts): open clarification, the promise in Given/When/Then words, the drawing a screen task follows.
+  const birth = birthFindings(task);
+  errors.push(...birth.errors);
+  warnings.push(...birth.warnings);
+  for (const [index, check] of task.verification.entries()) {
+    const program = checkProgram(check.command);
+    if (program && !program.includes("/") && input.programs?.get(program) === false) {
+      errors.push({ code:"check_not_runnable", message:`verification[${index}] starts ${program}, which the writer's machine (${input.hostId}) does not find on PATH, among the user's tool bins or in node_modules/.bin; install it there or use a command that exists` });
+    }
+  }
 
   // read_first: a project-relative path that exists on the writer's machine and is a file.
   try {
@@ -335,5 +348,7 @@ export function lintReply(runId:string, errors:readonly LintFinding[]):Record<st
   const data = Object.assign({}, ...[...errors].reverse().map((error) => error.data ?? {})) as Record<string, unknown>;
   return { runId, state:"validation_failed", ...data,
     reason:`contract lint: nothing was dispatched and no attempt was spent. Fix and send the task again:\n${errors.map((error) => `- ${error.message}`).join("\n")}`,
-    findings:errors.map(({ code, message }) => ({ code, message })) };
+    findings:errors.map(({ code, message }) => ({ code, message, blockingClass:blockingClass(code) })),
+    // Three blocking classes: what is missing, what must come first, what is in the way.
+    blockingClasses:[...new Set(errors.map((error) => blockingClass(error.code)).filter(Boolean))] };
 }

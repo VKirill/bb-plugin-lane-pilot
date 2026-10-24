@@ -69,7 +69,7 @@ export function createPluginBench(ctx: ServerCore, services: Services): BenchApi
 
     async dispatch(project, pmThreadId, task) {
       try {
-        const sent = await services.dispatchWriter({ projectId: project.projectId, threadId: pmThreadId, task: taskV2Schema.parse(task) });
+        const sent = await services.dispatchWriter({ projectId: project.projectId, threadId: pmThreadId, task: taskV2Schema.parse(task), birth: "bench" });
         const state = String(sent.state ?? "");
         return { ok: state !== "rejected" && state !== "failed" && state !== "validation_failed", detail: JSON.stringify(sent).slice(0, 400), ...(typeof sent.taskId === "string" ? { taskId: sent.taskId } : {}) };
       } catch (cause) {

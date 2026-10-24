@@ -3,13 +3,14 @@ import { createWorktree, integrateWorktree, mergeInfo, prepareWorktree, removeLa
 import { attributeGateOnHost, bisectGateOnHost, runGateOnHost } from "../verification";
 import { buildDocsAnchors, docsDepth as readDocsDepth, docsStaleness, jevApiKey, jevProviderOfKey, provideJevKey, verifyDocsCitations } from "../verification";
 import { buildDocsFlows } from "../verification";
-import { runStabilityDrill } from "../verification";
+import { runStabilityDrill, userToolBins } from "../verification";
 import { commitDocs, docsLineCounts as readDocsLineCounts, docsWorthinessFacts as readDocsWorthinessFacts, gitDocsScope as readGitDocsScope, revertPaths } from "../verification";
 import { randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { chmod, lstat, mkdir, open, stat, statfs, readFile, readlink, readdir, realpath, rename, unlink } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
+import { access, chmod, lstat, mkdir, open, stat, statfs, readFile, readlink, readdir, realpath, rename, unlink } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { basename, delimiter, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { homedir } from "node:os";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { hostContract } from "../contracts";
@@ -350,6 +351,20 @@ export const applyOnboardingPages: ExperimentalHostRpcHandlers<typeof hostContra
 /** The builders write into any docs folder: the root docs/ or a monorepo workspace's own docs/. */
 export const writeDocsPages: ExperimentalHostRpcHandlers<typeof hostContract>["writeDocsPages"] = async (input) =>
   casWriteMarkdown({ ...input, confirmed:true }, 2_000_000, (path) => /(^|\/)docs\//.test(path));
+
+/** Is the check command runnable: each program found on PATH, among the user's tool bins, or in the check folder's node_modules/.bin. */
+export const whichPrograms: ExperimentalHostRpcHandlers<typeof hostContract>["whichPrograms"] = async (input) => {
+  const dirs = [join(input.cwd, "node_modules", ".bin"), ...userToolBins(), ...(process.env.PATH ?? "").split(delimiter)].filter(Boolean);
+  const found: Record<string, boolean> = {};
+  for (const program of input.programs) {
+    let hit = false;
+    for (const dir of dirs) {
+      if (await access(join(dir, program), fsConstants.X_OK).then(() => true, () => false)) { hit = true; break; }
+    }
+    found[program] = hit;
+  }
+  return { hostId: process.env.BB_HOST_ID ?? input.requestedHostId, found };
+};
 
 /** The phase book (BOOK.md) and the phase's own files, only inside `.agents/phases/<phase-id>/` (src/rooms/phase). */
 export const writePhaseBook: ExperimentalHostRpcHandlers<typeof hostContract>["writePhaseBook"] = async (input) =>

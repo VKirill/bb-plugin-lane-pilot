@@ -233,7 +233,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const hostId = getRunWriterHost(db, rt.runId) ?? "";
       const lint = await lintTask(rt.projectId, rt.runId, valid.task, run.writer_workspace_path, hostId).catch(() => null);
       if (lint?.errors.length) return { output: failedTask("failed", `contract lint: ${lint.errors.map((error) => error.message).join("; ").slice(0, 600)}`) };
-      const reply = await services.dispatchWriter({ threadId: rt.pmThreadId, projectId: rt.projectId, task: valid.task, plan: valid.task.objective });
+      const reply = await services.dispatchWriter({ threadId: rt.pmThreadId, projectId: rt.projectId, task: valid.task, plan: valid.task.objective, birth: "workflow" });
       if (reply.state === "rejected") return { output: failedTask("blocked", String(reply.reason ?? "the dispatch was rejected")) };
       const taskId = str(reply.taskId) || valid.task.id;
       return { wait: { kind: "attempt", detail: { runId: str(reply.runId) || rt.runId, taskId, files: valid.task.owns_paths } }, ...(planned ? { usage: planned } : {}) };

@@ -85,7 +85,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
     name:"lane_pilot_cancel_task",
     description:"Cancel tasks of this PM's run that are no longer wanted: a queued one at once, a running one once its writer stops.",
     instructions:"Use only from a Lane Pilot PM thread, for tasks a newer task supersedes or the owner dropped. Name the task ids you sent; tasks that depend on a canceled one stop waiting for it. Cancel does not undo work already merged into main.",
-    parameters:z.object({ taskIds:z.array(z.string().min(1)).min(1).max(50) }).strict(),
+    parameters:z.object({ taskIds:z.array(z.string().min(1)).min(1).max(50), words:z.string().trim().min(1).max(1000).describe("Closed in words: why these tasks end here; kept on the task.").optional() }).strict(),
     execute: async (params, context) => {
       const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:context.threadId });
       const runId = typeof (metadata as Record<string, unknown> | null)?.lanePilotRunId === "string" ? String((metadata as Record<string, unknown>).lanePilotRunId) : null;
@@ -100,6 +100,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
         for (const attempt of attempts) results.push({ taskId, attemptId:attempt.id, ...await cancelAttemptById(ctx, attempt.id, services.rollback) });
         // The PM canceled it: its «canceled» is no news for the batched results.
         noteToldPmDirectly(context.threadId, taskId, Date.now() + 5 * 60_000);
+        if (params.words) db.prepare("UPDATE lane_pilot_task SET closed_words=? WHERE id=?").run(params.words, taskId);
       }
       return JSON.stringify({ runId, results });
     },

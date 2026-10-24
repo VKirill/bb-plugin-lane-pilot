@@ -5,6 +5,7 @@ import { taskFamily } from "../../runs";
 import { parseSandboxUnsafePatterns } from "../../critique";
 import { isTaskSatisfied } from "../../runs/server";
 import { lintContract, lintProbePaths } from "./contract-lint";
+import { checkProgram } from "../rails";
 import { allowedSecretNames } from "../../secrets/server";
 import { gateResolverFor } from "../../verification/server";
 import { parseIntegrationGateSettings } from "../../verification/server";
@@ -52,6 +53,15 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
     const secrets = declared.length ? await ctx.secrets.check({ declared, allowed:allowedSecretNames(settings) }, { fresh:true }) : undefined;
     // The gate runs in the run's base checkout; its explicit or detected command makes a whole-suite check a contract error.
     const gate = await gateResolverFor(ctx)({ runId, hostId, basePath:workspacePath, gate:parseIntegrationGateSettings(settings) });
-    return lintContract({ task, workspacePath, hostId, kinds, sandboxUnsafe, gate, openTasks, deadDependencies, ...(secrets ? { secrets } : {}) });
+    // Is the check command runnable: the bare programs the checks start, looked up on the writer's machine (best-effort; silent when it cannot be asked).
+    let programs:Map<string, boolean> | null = null;
+    const wanted = [...new Set(task.verification.map((check) => checkProgram(check.command)).filter((program): program is string => !!program && /^[A-Za-z0-9._+-]{1,80}$/.test(program)))];
+    if (wanted.length) {
+      try {
+        const answer = await host.call("whichPrograms", { requestedHostId:hostId, cwd:workspacePath, programs:wanted }, { hostId, timeoutMs:15_000 });
+        programs = new Map(Object.entries(answer.found));
+      } catch { programs = null; }
+    }
+    return lintContract({ task, workspacePath, hostId, kinds, sandboxUnsafe, gate, openTasks, deadDependencies, programs, ...(secrets ? { secrets } : {}) });
   };
 }

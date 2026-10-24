@@ -12,7 +12,7 @@ import { QUALITY_MODE_SETTING, browserQaRequired, resolveQualityMode } from "../
 import type { CodeCriticDefault } from "../../critique";
 import { saveCriticCodeDefault } from "./critic-override";
 import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskGitBase, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, recordFinishedAttempt, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../storage";
-import { sha256 } from "../../tasks";
+import { sha256 , spendReserve, type BirthKind } from "../../tasks";
 import { liveFolderLockNote, nextStep, taskFamily } from "../../runs";
 import { commonTaskFolder, isMainfixTask, isTaskBase, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask } from "../../tasks";
 import { validateTaskV2 } from "../../tasks/task-v2";
@@ -146,7 +146,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
   }
 
   /** `criticCodeDefault`: this task's value of `critic.code.default_for_risk`, over the project's (the bench toggles the code critic per arm with it). */
-  async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2; plan?:string; baseRef?:string; objective?:string; requireObjective?:boolean; criticCodeDefault?:CodeCriticDefault}): Promise<Record<string,unknown>> {
+  async function dispatchWriter(args:{threadId:string; projectId:string; task?:TaskV2; plan?:string; baseRef?:string; objective?:string; requireObjective?:boolean; criticCodeDefault?:CodeCriticDefault; birth?:BirthKind}): Promise<Record<string,unknown>> {
     const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
     if (valueAt(metadata, "role") !== "pm") throw new Error("caller is not a Lane Pilot PM thread");
     const runId = stringAt(metadata, "lanePilotRunId");
@@ -201,7 +201,14 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     const noObjective:LintFinding[] = args.requireObjective && !getRunObjective(db, runId)
       ? [{ code:"objective_missing", message:"objective is missing: this run has none yet; add objective to this first dispatch, one phrase in the language the owner writes in saying what the whole batch is for (later dispatches may leave it out)" }] : [];
     if (lint.errors.length || noObjective.length) return lintReply(runId, [...lint.errors, ...noObjective]);
-    createTask(db, { id:taskId, runId, kind:"bb", contract:task });
+    // Spend reserve: the run's token budget must still hold this task's appetite after the appetites of its open tasks.
+    const budgetNow = services.runBudgets.get(runId)?.snapshot();
+    if (budgetNow?.limits.maxTokens && task.appetite?.tokens) {
+      const openAppetites = listOpenAttempts(db).filter((row) => row.run_id === runId).map((row) => Number((getTask(db, row.task_id)?.contract as { appetite?: { tokens?: number } } | undefined)?.appetite?.tokens ?? 0));
+      const reserve = spendReserve({ budgetTokens:budgetNow.limits.maxTokens, spentTokens:budgetNow.tokens, openAppetites, appetite:task.appetite.tokens });
+      if (!reserve.ok) return lintReply(runId, [{ code:"spend_reserve", message:`spend reserve: ${reserve.why}; lower the appetite, wait for an open task, or raise the run's budget` }]);
+    }
+    createTask(db, { id:taskId, runId, kind:"bb", contract:task, birth:args.birth ?? "pm" });
     await saveCriticCodeDefault(bb.storage.kv as never, taskId, args.criticCodeDefault);
     saveTaskPlan(db, taskId, canonicalPlan);
     if (run.run_gate === "pre-merge") {

@@ -30,6 +30,7 @@ import {
   applyOnboardingPages,
   writeDocsPages,
   writePhaseBook,
+  whichPrograms,
   writeWorkflowFile,
   gitDocsScope,
   docsLineCounts,
@@ -83,7 +84,7 @@ export default experimental_defineHostEntry({
   handlers: {
     nativeInstall: nativeInstallHost,
     anamnesis: anamnesisHandler,
-    detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, gitDocsScope, docsWorthinessFacts, docsLineCounts, gitCommitDocs, gitRevertPaths, gitUndoCheckWrites, docsAnchors:withJevKey(docsAnchors), docsFlows:withJevKey(docsFlows), docsDepth:withJevKey(docsDepth), docsVerifyCitations:withJevKey(docsVerifyCitations), docsStaleness:withJevKey(docsStalenessHandler), gitIntegrate, gateRun, gateBisect, gateAttribute, jobStart, jobStatus, jobCancel, gitPrepareWorktree, gitCreateWorktree, gitRemoveWorktree, gitSyncWorktree, diskFree, stabilityDrill, gitWorktreeSnapshot, gitWorktreeState, gitMergeInfo, gitRevertCommits, openCodeLimitProbe, readOpenCodeTelemetry, readBoundedFile, listDocsPages, listWorkflowFiles, applyOnboardingPages, writeDocsPages, writePhaseBook, writeWorkflowFile, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan:withJevKey(classifyPlan), inspectCritiqueCoverage,
+    detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, gitDocsScope, docsWorthinessFacts, docsLineCounts, gitCommitDocs, gitRevertPaths, gitUndoCheckWrites, docsAnchors:withJevKey(docsAnchors), docsFlows:withJevKey(docsFlows), docsDepth:withJevKey(docsDepth), docsVerifyCitations:withJevKey(docsVerifyCitations), docsStaleness:withJevKey(docsStalenessHandler), gitIntegrate, gateRun, gateBisect, gateAttribute, jobStart, jobStatus, jobCancel, gitPrepareWorktree, gitCreateWorktree, gitRemoveWorktree, gitSyncWorktree, diskFree, stabilityDrill, gitWorktreeSnapshot, gitWorktreeState, gitMergeInfo, gitRevertCommits, openCodeLimitProbe, readOpenCodeTelemetry, readBoundedFile, listDocsPages, listWorkflowFiles, applyOnboardingPages, writeDocsPages, writePhaseBook, whichPrograms, writeWorkflowFile, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan:withJevKey(classifyPlan), inspectCritiqueCoverage,
     councilJudge:withJevKey(councilJudge), browserGoal, runCli, runCommand, runScript, runSandboxedCommand, sandboxCommandLine, sandboxRelease, vpnAddress, runBrowserQa, probeBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
     discoverClaudeAgents: discoverClaudeAgentsHost, prepareNativeClaude: prepareNativeClaudeHost,
     prepareBbShim: prepareBbShimHost,

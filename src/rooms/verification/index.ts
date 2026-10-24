@@ -12,7 +12,7 @@ export { findUnownedChanges, findUnownedRunChanges, resolveRunOwnershipScope, sa
 export type { OwnershipTask } from "./ownership";
 export { createProviderGate, providerListed, providerSwitchOn, waitProviderEnvironment } from "./provider-gate";
 export { parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "./routing";
-export { SANDBOX_OWN_ENV, prepareSandboxedCommandLine, releaseSandboxedCommandLine, runSandboxedCommandOnHost } from "./sandbox";
+export { SANDBOX_OWN_ENV, prepareSandboxedCommandLine, releaseSandboxedCommandLine, runSandboxedCommandOnHost, userToolBins } from "./sandbox";
 export { runStabilityDrill } from "./stability-drill";
 export { WORKSPACE_DIRT_COMMAND } from "./workspace-dirt";
 export { mergeInfo, revertCommitsInWorktree, worktreeState } from "./git-rollback";

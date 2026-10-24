@@ -78,15 +78,19 @@ export async function mapBounded<T,R>(items:readonly T[],limit:number,work:(item
 
 export class RunWriterPool {
   private readonly active=new Map<string,number>();
-  private readonly waiting=new Map<string,Array<()=>void>>();
+  /** Waiters per pool, each with its queue priority (SMA: Queue priority): a higher one is served first, equal ones in arrival order. */
+  private readonly waiting=new Map<string,Array<{ wake:()=>void; rank:number; seq:number }>>();
+  private seq=0;
 
-  async acquire(runId:string,limit:number):Promise<()=>void> {
+  async acquire(runId:string,limit:number,rank=1):Promise<()=>void> {
     if(!Number.isInteger(limit)||limit<1||limit>MAX_POOL)throw new Error(`provider pool limit must be an integer from 1 to ${MAX_POOL}`);
     const count=this.active.get(runId)??0;
     if(count<limit)this.active.set(runId,count+1);
     else await new Promise<void>(resolve=>{
       const queue=this.waiting.get(runId)??[];
-      queue.push(resolve);this.waiting.set(runId,queue);
+      queue.push({ wake:resolve, rank, seq:this.seq++ });
+      queue.sort((a,b)=>b.rank-a.rank||a.seq-b.seq);
+      this.waiting.set(runId,queue);
     });
     let released=false;
     return ()=>{
@@ -94,7 +98,7 @@ export class RunWriterPool {
       const queue=this.waiting.get(runId);
       const next=queue?.shift();
       if(queue?.length===0)this.waiting.delete(runId);
-      if(next)next();
+      if(next)next.wake();
       else {
         const active=this.active.get(runId)??0;
         if(active<=1)this.active.delete(runId);else this.active.set(runId,active-1);

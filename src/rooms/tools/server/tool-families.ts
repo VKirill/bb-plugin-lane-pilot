@@ -189,7 +189,7 @@ type CatalogEntry = { tool: string; action?: string; formerName?: string; descri
 function catalog(ctx: ServerCore): CatalogEntry[] {
   const book = registeredTools(ctx.bb.agents);
   const entries: CatalogEntry[] = [];
-  for (const name of [...PM_CORE_TOOLS, "lane_pilot_schedule", "lane_pilot_phase"]) {
+  for (const name of [...PM_CORE_TOOLS, "lane_pilot_schedule", "lane_pilot_phase", "lane_pilot_queue"]) {
     const tool = book.get(name);
     if (tool) entries.push({ tool: name, description: tidy(tool.description), schema: tool });
   }

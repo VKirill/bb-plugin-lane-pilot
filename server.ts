@@ -22,6 +22,7 @@ import { createPluginBench } from "./src/rooms/bench/server";
 import { createBaselineRoom, mountRegress } from "./src/rooms/baseline/server";
 import { createRunGoal, mountRunGoal } from "./src/rooms/run-goal/server";
 import { createPhaseDriver, mountPhaseDriver, registerPhaseTool } from "./src/rooms/phase/server";
+import { registerQueueTool } from "./src/rooms/tasks/server";
 import { createCapabilities, mountCapabilities } from "./src/rooms/capability/server";
 import { createBacklog, mountBacklog } from "./src/rooms/backlog/server";
 import { createHypotheses } from "./src/rooms/hypotheses/server";
@@ -153,6 +154,7 @@ export default async function plugin(bb: BbPluginApi) {
   // Learning from the owner's messages (src/learning): registers its PM tool before the tool families fold, so it comes first.
   mountLearning(ctx, services);
   registerPhaseTool(ctx, services);
+  registerQueueTool(ctx);
   registerTools(ctx, services);
   registerCli(ctx, services);
   // The pixel world's GLB files (council office people and cars) over HTTP, not inside app.js.

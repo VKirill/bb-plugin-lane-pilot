@@ -17,7 +17,7 @@ import { closeWriterStages, recordGateEvaluation, recordStage } from "../../runs
 import { stringAt } from "../../core/server";
 import { needsHumanQuestion, outputText, providerLimitNotice, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines } from "./writer-task";
 import { isLiveDecision } from "../live-folder";
-import { acceptanceProofGap, isMainfixTask } from "../../tasks";
+import { acceptanceProofGap, isMainfixTask, referenceTestEdits, writerMarkers } from "../../tasks";
 import type { StageId } from "../../tasks";
 import { IntegrationGateRunner, parseIntegrationGateSettings } from "../../verification/server";
 import { gateResolverFor } from "../../verification/server";
@@ -161,7 +161,17 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           // Usage is informational; a host that cannot list events does not fail the attempt.
         }
       };
-      const overBudget = () => runningWriterBudgetStop(budget.check()) ?? appetiteStop(appetite, { tokens:writerTokens, elapsedMs:Date.now() - attemptStartedAt });
+      // Stage budget question: at four fifths of the task's appetite the PM is asked once whether to extend it (lane_pilot_update_task) or let it stop.
+      let budgetAsked = false;
+      const askBudgetOnce = () => {
+        if (budgetAsked || !appetite || !input.pmThreadId) return;
+        const used = appetite.tokens && writerTokens !== null ? writerTokens / appetite.tokens : 0;
+        const timeUsed = appetite.minutes ? (Date.now() - attemptStartedAt) / (appetite.minutes * 60_000) : 0;
+        if (Math.max(used, timeUsed) < 0.8) return;
+        budgetAsked = true;
+        void bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[], text:`[Lane Pilot] Task ${input.taskId} has spent ${Math.round(Math.max(used, timeUsed) * 100)}% of its appetite (${appetite.tokens ? `${writerTokens ?? 0}/${appetite.tokens} tokens` : ""}${appetite.tokens && appetite.minutes ? ", " : ""}${appetite.minutes ? `${Math.round((Date.now() - attemptStartedAt) / 60_000)}/${appetite.minutes} min` : ""}). Its writer stops at the appetite: raise it with lane_pilot_update_task now if the work is worth more, or let it stop.` }] } as never).catch(() => undefined);
+      };
+      const overBudget = () => { askBudgetOnce(); return runningWriterBudgetStop(budget.check()) ?? appetiteStop(appetite, { tokens:writerTokens, elapsedMs:Date.now() - attemptStartedAt }); };
       const stopRunningWriter = async (reason:string) => {
         const current = await getThreadBounded(input.writerThreadId).catch(() => null);
         const status = stringAt(current, "status");
@@ -630,6 +640,32 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         if (stopped) return stopped;
         transitionAttempt(db, input.attemptId, "validation_failed", { reason:planFact.refusal });
         return { status:"validation_failed", reason:planFact.refusal, output:candidate.output, produced:candidate.produced, verification:candidate.verification, attemptId:input.attemptId, writerThreadId };
+      }
+      // Approach and lesson markers, and the reference-test edit trace (src/rooms/tasks/rails.ts): what the writer says it did and learned,
+      // and which tests that existed before the attempt it changed. Recorded for the acceptance card and the critic; they warn, they do not block.
+      const markers = writerMarkers(`${candidate.output ?? ""}\n${answer}`);
+      const testEdits: string[] = [];
+      for (const path of referenceTestEdits((candidate.produced ?? []).map((path) => ({ path, status:"M" }))).slice(0, 20)) {
+        const basePathForTests = taskBasePath(db, input.runId, input.taskId);
+        const existed = basePathForTests ? await host.call("readBoundedFile", { requestedHostId:input.config.hostId, projectCwd:basePathForTests, relativePath:path, offset:0, maxLines:1 }, { hostId:input.config.hostId, timeoutMs:10_000 }).then(() => true, () => false) : false;
+        if (existed) testEdits.push(path);
+      }
+      const markerWarnings = [
+        ...(!markers.approach ? ["the report has no APPROACH line"] : []),
+        ...(!markers.lesson && !markers.noLessonReason ? ["the report has no LESSON line (a lesson, or none with the reason)"] : []),
+        ...(testEdits.length ? [`the writer changed tests that existed before the attempt (reference tests): ${testEdits.join(", ")} — the critic checks they were not weakened`] : []),
+      ];
+      recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"passed",
+        attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"markers",approach:markers.approach,lesson:markers.lesson,noLessonReason:markers.noLessonReason,referenceTestEdits:testEdits}});
+      if (markerWarnings.length) candidate.warnings = [...(candidate.warnings ?? []), ...markerWarnings];
+      // Drawing unchanged: the drawing a task follows is its input, not its output; a writer that edited it changed the yardstick.
+      const drawingTouched = (input.task.drawing ?? []).filter((path) => (candidate.produced ?? []).some((changed) => changed.replace(/^\.\//, "") === path.replace(/^\.\//, "")));
+      if (drawingTouched.length) {
+        const reason = `drawing_changed: the task follows the drawing ${drawingTouched.join(", ")} and must not change it; undo those edits (the drawing is changed in the phase's design stage)`;
+        recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"rejected",
+          attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"drawing_changed",reason}});
+        transitionAttempt(db, input.attemptId, "validation_failed", { reason });
+        return { status:"validation_failed", reason, output:candidate.output, produced:candidate.produced, verification:candidate.verification, attemptId:input.attemptId, writerThreadId };
       }
       // A model's opinion alone never accepts a task: some stage decided by code (the ownership and output gates, the checks)
       // must have passed for this candidate. The code critic's «passed» is advisory (STAGE_PROOF).

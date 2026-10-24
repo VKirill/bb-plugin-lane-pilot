@@ -211,6 +211,11 @@ export const hostContract = defineRpcContract({
     }).strict(),
     output:z.object({hostId:z.string(),previewSha256:z.string().regex(/^[a-f0-9]{64}$/),status:z.enum(["applied","conflict","blocked"]),writes:z.array(z.object({path:z.string(),beforeSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(),afterSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(),status:z.enum(["applied","conflict","blocked"]),reason:z.string().nullable()}).strict()),reason:z.string().nullable()}).strict(),
   },
+  /** SMA «Is the check command runnable»: which of the named programs the machine finds on PATH (with the user's tool bins). */
+  whichPrograms: {
+    input: z.object({ requestedHostId:z.string().min(1), cwd:z.string().startsWith("/"), programs:z.array(z.string().regex(/^[A-Za-z0-9._+-]{1,80}$/)).max(40) }).strict(),
+    output: z.object({ hostId:z.string(), found:z.record(z.string(), z.boolean()) }).strict(),
+  },
   /** The phase book and the phase's documents, written only under the project's `.agents/phases/<phase-id>/` (src/rooms/phase). */
   writePhaseBook: {
     input: z.object({

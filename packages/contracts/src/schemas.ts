@@ -141,6 +141,16 @@ export const taskV2Schema = z.object({
     tokens: z.number().int().positive().max(50_000_000).optional(),
     minutes: z.number().int().positive().max(24 * 60).optional(),
   }).strict().describe("Before dispatch: how many files change, whether every check passes on the first attempt, and optionally tokens and minutes.").optional(),
+  /** SMA «Promise: Given, When, Then»: the sentence the checks prove; the writer's brief and plan→fact read it (src/rooms/tasks/rails.ts). */
+  promise: z.object({ given: z.string().trim().min(1).max(600), when: z.string().trim().min(1).max(600), then: z.string().trim().min(1).max(600) }).strict()
+    .describe("What the task promises: {given, when, then}, each one sentence; the checks prove it.").optional(),
+  /** SMA «Queue priority»: urgent, high, normal (default) or low; a higher one starts first when the run waits for a free writer. */
+  priority: z.enum(["low", "normal", "high", "urgent"]).describe("low, normal (default), high or urgent: the order queued tasks start in.").optional(),
+  /** SMA «Clarification awaits a person»: questions open before the task can start; the dispatch refuses while any is left. */
+  clarify: z.object({ questions: z.array(z.string().trim().min(1).max(600)).max(10) }).strict()
+    .describe("Open questions; the task does not start while any is listed: answer them, fold the answers in, drop clarify.").optional(),
+  /** SMA «Drawing placed in the copy»: the drawing (screens) this task follows; its files are read first and the acceptance checks them unchanged. */
+  drawing: z.array(z.string().trim().min(1).max(1024)).max(30).describe("Paths of the drawing (screen mock-ups) the task follows.").optional(),
   /** SMA «Declared wire inventory»: a value that must reach a place, as a chain of identifiers; plan→fact checks each hop in the code (src/rooms/wires). */
   wires: z.array(z.object({
     chain: z.array(z.string().trim().min(2).max(200)).min(2).max(8),

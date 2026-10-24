@@ -63,7 +63,7 @@ export const PM_CORE_TOOLS = [
 ] as const;
 
 /** Families that were a tool of their own before (lane_pilot_schedule is one tool with actions from the start). */
-export const PM_FAMILY_TOOLS = [...Object.keys(PM_TOOL_FAMILIES), "lane_pilot_schedule", "lane_pilot_phase"] as string[];
+export const PM_FAMILY_TOOLS = [...Object.keys(PM_TOOL_FAMILIES), "lane_pilot_schedule", "lane_pilot_phase", "lane_pilot_queue"] as string[];
 
 /** Where an old tool name lives now: `{ tool: "lane_pilot_relay", action: "ask" }`; undefined for a tool that kept its name. */
 export function foldedToolHome(oldName: string): { tool: string; action: string } | undefined {

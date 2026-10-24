@@ -18,7 +18,7 @@ import { isTaskSatisfied } from "../../runs/server";
 import { isWriterStreamError, previousAttemptBrief } from "./writer-task";
 import { stickyTurnPromptWithRules } from "./writer-knowledge";
 import { parseMemorySettings } from "../../memory";
-import { isMainfixTask, ownsFromOuterBase, retargetTask } from "../../tasks";
+import { isMainfixTask, ownsFromOuterBase, retargetTask , priorityRank, HOLD_FOREVER, laneCap, laneQueueOf } from "../../tasks";
 import { openDatabase } from "../../storage";
 import { createWriterSticky } from "./sticky";
 import { failureClass, type FailureClass } from "../../runs";
@@ -377,6 +377,17 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
             reason:"waiting: the run is paused; starts by itself once it is resumed" });
         } })) return false;
+        // Held until a date (2999 = until released): the task stays queued and takes no slot (lane_pilot_queue {action:"hold"}).
+        for (let noted = false; !ctx.isDisposed();) {
+          const held = (db.prepare("SELECT held_until FROM lane_pilot_task WHERE id=?").get(input.taskId) as { held_until: number | null } | undefined)?.held_until ?? null;
+          if (!held || held <= Date.now()) break;
+          if (!noted) {
+            noted = true;
+            recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
+              reason:`waiting: held until ${held >= HOLD_FOREVER ? "released" : new Date(held).toISOString()}` });
+          }
+          await new Promise((wake) => setTimeout(wake, 60_000));
+        }
         const dependency = await waitForDependencies(wallOrTokenStop);
         if (dependency) {
           blockBeforeWriter(dependency);
@@ -411,7 +422,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         }
         releaseWriterSlot=liveFolder
           ? await services.runWriterPool.acquire(`live-folder:${input.config.hostId}:${resolve(runFolder)}`,1)
-          : await services.runWriterPool.acquire(input.runId,policy.pools.provider);
+          : await services.runWriterPool.acquire(input.runId,policy.pools.provider,priorityRank(input.task.priority));
         // BB's concurrency-limit plugin caps the threads a host runs at once: writers beyond it would only wait in BB's queue,
         // so they wait here, before their attempt starts (no pool slot is held by a writer that cannot run). No plugin, no cap.
         const hostCap = await services.concurrencyLimit.hostCap(input.config.hostId);
@@ -428,6 +439,14 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           const releaseHeld = releaseWriterSlot;
           const releaseProviderSlot = await services.runWriterPool.acquire(`provider-pool:${poolProvider}`, providerCap);
           releaseWriterSlot = () => { releaseProviderSlot(); releaseHeld?.(); };
+        }
+        // Four lane queues: writing, checks, docs and research each wait in their own queue when the project caps it (queue.lane_caps).
+        const lane = laneQueueOf(input.task.kind);
+        const capOfLane = laneCap(runSettings["queue.lane_caps"], lane);
+        if (capOfLane !== null && !liveFolder) {
+          const releaseHeld = releaseWriterSlot;
+          const releaseLaneSlot = await services.runWriterPool.acquire(`lane-queue:${input.projectId}:${lane}`, capOfLane, priorityRank(input.task.priority));
+          releaseWriterSlot = () => { releaseLaneSlot(); releaseHeld?.(); };
         }
         return true;
       };
