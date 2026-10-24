@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## 0.1.291
+
+**The SMA map, all of it.** Matvey Maslov's product map (1768 nodes) is a registry in the code (`src/rooms/sma-map`, `bb lane-pilot sma-map`): every node names what Lane Pilot has for it and the file and symbol that prove it, and a test fails when a proof stops resolving. All 1768 are proven.
+
+- **Phases on rails** (`lane_pilot_phase`): a driver moves a phase through discussion, planning, design, execution, verification, acceptance and lessons by gates in code — signed context with four named risks, requirement and decision coverage, a threat model for a security risk, checks that would fail without the work, three rounds of the independent plan check, a drawing with its UI contract (design mode, motion rows, the animator law), waves issued one by one with the wave table in the book, another model's wave review, a blind verdict, the acceptance lines, UAT.md for the owner, lessons into memory, then SUMMARY.md, the roadmap row and STATE marked and committed, the phase marker branch, and (phase.autonomous) the next roadmap row opened. The book is an append-only hash chain. Rubrics, stage initialization and `next`/`rubric` actions.
+- **Tasks**: promise in Given/When/Then, priority and four lane queues, holds and dead letters (`lane_pilot_queue`), clarification answers with who gave them, the owner's word before a task lands (owner.words, off by default), the spend reserve and the 80 % budget question, approach and lesson markers.
+- **The forge** (`lane_pilot_forge`): the Creator writes exactly one skill, role or workflow draft; the lint with forbidden grants; a receipt on its bytes; enabling in two steps.
+- **Safety and money**: the price list and spend book, the monthly cap of paid lanes, the subscription windows hold, permits for a refused delete-for-good (`lane_pilot_permit`), guard tools (leaks, internal ids, parity), receipts (passport, manifest, chain, preship, PR passport).
+- **Self-improvement and proof**: the miss curriculum, excavation, approval suggestions, cost per verified result, the weekly bench arena; drills watchdog, live_word, no_code_exit, skills and phase; the release series with suite and series judges and the scout; coverage names gaps without a term.
+- **The daemon's life and front**: the hub watchdog (five lifts in an hour stop it, rotation, daily counts, real-query readiness, install without admin and as a LaunchAgent), the door closed to all but lo, WireGuard and docker (scripts/bb-door.sh), the first-run interview, your own helpers into forge drafts, peers' snapshots, coordination, one line per changing action.
+- **Strict worker** (worker.strict_user, off by default): checks as an OS user through sudo with folder rights listed, a fresh codex home per task.
+- **Capabilities**: documentary and pause probes besides answers.
+- **Design training**: the measurement journal, the critique form, four ratios, four conditions of «trained», readiness words, a review lesson as one dated line in the designer's role, `bb lane-pilot design-metrics`.
+- **Shipping**: `scripts/lp-ship.ts` (doc honesty, vendor ledger, license ledger, badge, publishable, prediction lint, explainers, ship lanes, freshness) and `scripts/lp-ui-drive.mjs` (window scenes).
+- **The window**: the cockpit page (Lane Pilot · пульт): phases, today, tasks, money, workers, forge, memory, first run, coordination, ship, system, the screen registry.
+- **Workflows**: validate-phase, eval-review, ai-integration-phase, spike, ship, pr-branch, cleanup, new-milestone, plan-review-convergence, project-start.
+- Lane Stack 1.67.0 pinned (session hooks, terminal coordination, lane-plan, memory care, roles, installer, remove and update).
+- Fixed on the way: an accept was counted twice (the writer's markers and stage questions were extra «accept passed» gate events); preship read a column the deferral register does not have; the budget question could throw.
+
 **A merge turn no longer blames the writer for main's files.** When main moved and the writer resolved the conflict in its own worktree, Lane Pilot measured the turn against the snapshot taken before it merged main in. The conflicted merge stays unfinished for the writer, so every file main had changed sat staged in the worktree and counted as the writer's: Vampirism Fire `vf-untrack-pycache` (2026-10-23) failed with «owns_paths rejected game/AGENTS.md, game/scripts/studio_test.py», two files another task had just merged, and the retry told the writer to `git checkout` them, which would have dropped main's work from the merge. A turn that syncs the worktree with main now takes its snapshot after the sync.
 
 ## 0.1.290
