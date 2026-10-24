@@ -27,6 +27,7 @@ import { mountOutbound } from "./src/rooms/outbound";
 import { createMoney } from "./src/rooms/money";
 import { mountPermits } from "./src/rooms/permits";
 import { mountForge } from "./src/rooms/forge";
+import { createFront, mountFront } from "./src/rooms/front";
 import { createCapabilities, mountCapabilities } from "./src/rooms/capability/server";
 import { createBacklog, mountBacklog } from "./src/rooms/backlog/server";
 import { createHypotheses } from "./src/rooms/hypotheses/server";
@@ -122,6 +123,7 @@ export default async function plugin(bb: BbPluginApi) {
     createRunGoal(ctx, services),
     createPhaseDriver(ctx, services),
     createMoney(ctx),
+    createFront(ctx),
     createCapabilities(ctx, services),
     createBacklog(ctx),
     createHypotheses(ctx, services),
@@ -165,6 +167,7 @@ export default async function plugin(bb: BbPluginApi) {
   registerConversationTools(ctx);
   mountPermits(ctx);
   mountForge(ctx, services);
+  mountFront(ctx, services.front);
   // Every Sunday 02:00 UTC the newest bench set runs as this week's arm and is compared with last week's (bench.weekly).
   mountBenchWeekly(ctx, () => services.bench);
   registerTools(ctx, services);

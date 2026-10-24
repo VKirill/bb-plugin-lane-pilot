@@ -450,6 +450,10 @@ export const prepareWorkerHome: ExperimentalHostRpcHandlers<typeof hostContract>
   return { codexHome, seeded };
 };
 
+/** A forge draft lands only under `.agents/forge/(skills|roles|workflows)/<name>/` (src/rooms/front, src/rooms/forge). */
+export const writeForgeDraft: ExperimentalHostRpcHandlers<typeof hostContract>["writeForgeDraft"] = async (input) =>
+  casWriteMarkdown({ ...input, confirmed:true }, 60_000, (path) => /^\.agents\/forge\/(skills|roles|workflows)\/[a-z][a-z0-9-]{1,47}\/[A-Za-z0-9._-]{1,60}$/.test(path));
+
 /** An enabled forge draft lands only at `.claude/skills/<name>/SKILL.md` or `.claude/agents/<name>.md` of the project (src/rooms/forge). */
 export const writeForgeEnabled: ExperimentalHostRpcHandlers<typeof hostContract>["writeForgeEnabled"] = async (input) =>
   casWriteMarkdown({ ...input, confirmed:true }, 60_000, (path) => /^\.claude\/(skills\/[a-z][a-z0-9-]{1,47}\/SKILL\.md|agents\/[a-z][a-z0-9-]{1,47}\.md)$/.test(path));

@@ -244,6 +244,14 @@ export const hostContract = defineRpcContract({
     }).strict(),
     output:z.object({hostId:z.string(),previewSha256:z.string().regex(/^[a-f0-9]{64}$/),status:z.enum(["applied","conflict","blocked"]),writes:z.array(z.object({path:z.string(),beforeSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(),afterSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(),status:z.enum(["applied","conflict","blocked"]),reason:z.string().nullable()}).strict()),reason:z.string().nullable()}).strict(),
   },
+  /** A forge draft from the project's own helpers: written only under `.agents/forge/<kind>s/<name>/`, never over one that exists (src/rooms/front). */
+  writeForgeDraft: {
+    input: z.object({
+      requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), previewSha256:z.string().regex(/^[a-f0-9]{64}$/),
+      edits:z.array(z.object({path:z.string().min(1).max(240),expectedSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(),content:z.string().max(60_000)}).strict()).min(1).max(1),
+    }).strict(),
+    output:z.object({hostId:z.string(),previewSha256:z.string().regex(/^[a-f0-9]{64}$/),status:z.enum(["applied","conflict","blocked"]),writes:z.array(z.object({path:z.string(),beforeSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(),afterSha256:z.string().regex(/^[a-f0-9]{64}$/).nullable(),status:z.enum(["applied","conflict","blocked"]),reason:z.string().nullable()}).strict()),reason:z.string().nullable()}).strict(),
+  },
   /** An enabled forge draft: a skill or a role written only to the project's `.claude/skills/<name>/SKILL.md` or `.claude/agents/<name>.md` (src/rooms/forge). */
   writeForgeEnabled: {
     input: z.object({

@@ -39,3 +39,16 @@ export function timeRpcHandlers<T extends Record<string, Handler>>(handlers: T, 
   }
   return timed as T;
 }
+
+/** One action — one line (SMA): every call passes to `note` after it answered (the front's journal keeps only those that change something). */
+export function journalRpcHandlers<T extends Record<string, Handler>>(handlers: T, note: (name: string, input: unknown) => Promise<void> | void): T {
+  const journaled: Record<string, Handler> = {};
+  for (const [name, handler] of Object.entries(handlers)) {
+    journaled[name] = (async (input: never, ...rest: never[]) => {
+      const answer = await handler(input, ...rest);
+      try { await note(name, input); } catch { /* the journal never changes an answer */ }
+      return answer;
+    }) as Handler;
+  }
+  return journaled as T;
+}

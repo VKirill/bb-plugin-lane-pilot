@@ -10,6 +10,7 @@ import type { BaselineApi, RegressionApi } from "../../baseline/server";
 import type { RunGoalApi } from "../../run-goal/server";
 import type { PhaseApi } from "../../phase/server";
 import type { MoneyApi } from "../../money";
+import type { FrontApi } from "../../front";
 import type { CapabilitiesApi } from "../../capability/server";
 import type { BacklogApi } from "../../backlog/server";
 import type { HypothesesApi } from "../../hypotheses/server";
@@ -92,6 +93,8 @@ export interface Services {
   phases: PhaseApi;
   /** The spend book, the money cap of paid lanes and the subscription windows (src/rooms/money). */
   money: MoneyApi;
+  /** The front outside the graphs: first run, own helpers, peers, coordination, the door, the action journal (src/rooms/front). */
+  front: FrontApi;
   /** The capability table: each provider's adapter version probed once, a failing one held off by the breaker (src/rooms/capability). */
   capabilities: CapabilitiesApi;
   /** The backlog scanner: ready todos with an estimate issued to the project's PM in queue order (src/rooms/backlog). */

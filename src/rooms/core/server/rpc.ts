@@ -39,14 +39,14 @@ import { improvementRpc } from "../../improvement/server";
 import { sessionMemoryRpc } from "../../memory/server";
 import { createWorkflowArchitect } from "../../workflow/server";
 import { architectStartRpc } from "../../workflow/server";
-import { timeRpcHandlers } from "./rpc-timing";
+import { journalRpcHandlers, timeRpcHandlers } from "./rpc-timing";
 import { anamnesisFor } from "../../anamnesis";
 import { worldRpc } from "../../world/server";
 
 /** One handler object from the five groups; each group carries the exact contract keys it implements. */
 export function registerRpc(ctx: ServerCore, services: Services) {
   // Every call is timed (rpc-timing.ts). No caller check: every machine and every caller is the owner's (owner decision 2026-10-08).
-  ctx.bb.rpc.register(rpcContract, timeRpcHandlers({
+  ctx.bb.rpc.register(rpcContract, journalRpcHandlers(timeRpcHandlers({
     ...preferencesRpc(ctx, services),
     ...runsRpc(ctx, services),
     ...settingsRpc(ctx, services),
@@ -76,6 +76,16 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...workGraphRpc(ctx),
     ...runGoalRpc(services.runGoal),
     ...phaseRpc(services.phases),
+    first_run_get: async ({ projectId }: { projectId: string }) => services.front.firstRun(projectId),
+    first_run_answer: async ({ projectId, step, answer }: { projectId: string; step: "goal" | "writer" | "quality" | "words"; answer: string }) => services.front.firstRunAnswer(projectId, step, answer),
+    first_run_finish: async ({ projectId }: { projectId: string }) => services.front.firstRunFinish(projectId),
+    helpers_list: async ({ runId }: { runId: string }) => services.front.helpers(runId),
+    helpers_import: async ({ runId, names }: { runId: string; names: string[] }) => services.front.importHelpers(runId, names),
+    peers_list: async () => services.front.peers(),
+    coord_status: async ({ runId }: { runId: string }) => services.front.coord(runId),
+    coord_clear: async ({ runId, session, reason }: { runId: string; session: string; reason: string }) => services.front.coord(runId, { session, reason }),
+    door_audience: async () => services.front.doorAudience(),
+    actions_recent: async ({ limit }: { limit?: number }) => services.front.actions(limit),
     task_word: async ({ runId, taskId, decision, text }: { runId: string; taskId: string; decision: "yes" | "no"; text: string }) => {
       await recordTaskWord(ctx.bb.storage.kv as never, runId, taskFamily(taskId), decision, text);
       return { ok: true as const };
@@ -91,5 +101,5 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...architectStartRpc(ctx, services),
     ...anamnesisFor(ctx).rpc,
     ...worldRpc(services.world),
-  }, (message) => ctx.bb.log.debug(message)));
+  }, (message) => ctx.bb.log.debug(message)), (name, input) => services.front?.journal(name, input)));
 }

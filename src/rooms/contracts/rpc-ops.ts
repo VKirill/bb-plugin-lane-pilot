@@ -234,6 +234,17 @@ export const rpcOps = {
     output: z.unknown(),
   },
   /** Controls of a phase from the screen or the CLI: pause, resume, return to an earlier stage with a note, stop the wave, close in words. */
+  /** The front (src/rooms/front): the first-run interview, the project's own helpers, peers, coordination, the door, the action journal. */
+  first_run_get: { input: z.object({ projectId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
+  first_run_answer: { input: z.object({ projectId: z.string().min(1).max(200), step: z.enum(["goal", "writer", "quality", "words"]), answer: z.string().trim().min(1).max(2000) }).strict(), output: z.unknown() },
+  first_run_finish: { input: z.object({ projectId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
+  helpers_list: { input: z.object({ runId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
+  helpers_import: { input: z.object({ runId: z.string().min(1).max(200), names: z.array(z.string().min(1).max(80)).min(1).max(30) }).strict(), output: z.unknown() },
+  peers_list: { input: z.object({}).strict(), output: z.unknown() },
+  coord_status: { input: z.object({ runId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
+  coord_clear: { input: z.object({ runId: z.string().min(1).max(200), session: z.string().min(1).max(120), reason: z.string().trim().min(3).max(300) }).strict(), output: z.unknown() },
+  door_audience: { input: z.object({}).strict(), output: z.unknown() },
+  actions_recent: { input: z.object({ limit: z.number().int().min(1).max(1000).optional() }).strict(), output: z.unknown() },
   /** The owner's word on a task (owner.words on): a verified task waiting to land gets yes or no (src/rooms/tasks/words.ts). */
   task_word: {
     input: z.object({ runId: z.string().min(1).max(200), taskId: z.string().min(1).max(200), decision: z.enum(["yes", "no"]), text: z.string().trim().min(1).max(600) }).strict(),
