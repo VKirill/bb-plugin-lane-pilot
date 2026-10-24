@@ -13,7 +13,8 @@ const flag = (argv: readonly string[], name: string) => { const at = argv.indexO
 export function defaultProofRoots(cwd: string): ProofRoots {
   const laneStack = join(cwd, "..", "claude-lane-stack");
   const core = join(homedir(), ".local", "share", "bb-source-vk");
-  return { lanePilot: cwd, ...(existsSync(laneStack) ? { laneStack } : {}), ...(existsSync(core) ? { core } : {}) };
+  const telegram = join(cwd, "..", "bb-plugin-telegram-projects");
+  return { lanePilot: cwd, ...(existsSync(laneStack) ? { laneStack } : {}), ...(existsSync(core) ? { core } : {}), ...(existsSync(telegram) ? { telegram } : {}) };
 }
 
 export function renderSmaMap(all: readonly SmaRow[], listed: readonly SmaRow[] = []): string {

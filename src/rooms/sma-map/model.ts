@@ -8,7 +8,7 @@ export type SmaRow = { id: string; region: string; group: string; kind: SmaKind;
 export type SmaCounts = { total: number; have: number; partial: number; missing: number; skip: number; proven: number };
 
 /** Repositories a proof can point into: this one, Lane Stack and the BB core with its vk layer. */
-export type ProofRoots = { lanePilot: string; laneStack?: string; core?: string };
+export type ProofRoots = { lanePilot: string; laneStack?: string; core?: string; telegram?: string };
 
 export function smaRows(): SmaRow[] {
   return SMA_NODES.map(([id, region, group, kind, label]) => {
@@ -45,8 +45,8 @@ export function smaHoles(): string[] {
 /** A proof that does not resolve: the file is missing, or the symbol is not in it. Proofs into an absent sibling repository are not judged. */
 export function brokenProof(proof: string, roots: ProofRoots): string | null {
   const [where, symbol] = proof.split("#", 2) as [string, string | undefined];
-  const prefix = where.match(/^(lane-stack|core):(.*)$/);
-  const root = prefix ? (prefix[1] === "lane-stack" ? roots.laneStack : roots.core) : roots.lanePilot;
+  const prefix = where.match(/^(lane-stack|core|telegram):(.*)$/);
+  const root = prefix ? (prefix[1] === "lane-stack" ? roots.laneStack : prefix[1] === "telegram" ? roots.telegram : roots.core) : roots.lanePilot;
   const path = prefix ? prefix[2]! : where;
   if (!root) return null;
   const file = resolve(join(root, path));
