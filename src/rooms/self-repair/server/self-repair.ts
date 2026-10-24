@@ -1,5 +1,5 @@
 import { writerReuseStats } from "../../writer";
-import { failureClass } from "../../runs";
+import { checksInFlight, failureClass } from "../../runs";
 import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
@@ -453,6 +453,10 @@ export function createSelfRepair(ctx: ServerCore) {
       const thread = await bb.sdk.threads.get({ threadId: row.thread_id }).catch(() => null);
       const status = thread ? stringAt(thread, "status") : "missing";
       if (status !== "idle" && status !== "error" && status !== "stopped" && status !== "missing") continue;
+      // Its checks run or wait in the run's check pool, and that pool moves: the writer is idle by design, not stuck
+      // (Vampirism Fire 2026-10-24: six attempts behind other tasks' Studio tests were reported after 47–53 minutes).
+      const checks = checksInFlight(row.thread_id);
+      if (checks && now - checks.movedAt < STUCK_MS) continue;
       const reason = `attempt still «running» ${Math.round((now - row.updated_at) / 60_000)} min while its writer thread is ${status}`;
       out.push({ signature: reasonSignature("stuck", `attempt running while its writer is ${status}`), kind: "stuck", projectId: row.project_id, runId: row.run_id,
         taskId: row.task_id, attemptId: row.id, pmThreadId: runPm(row.run_id), writerThreadId: row.thread_id, reason, at: now });
