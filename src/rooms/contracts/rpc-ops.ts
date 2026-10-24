@@ -239,6 +239,12 @@ export const rpcOps = {
     input: z.object({ runId: z.string().min(1).max(200), taskId: z.string().min(1).max(200), decision: z.enum(["yes", "no"]), text: z.string().trim().min(1).max(600) }).strict(),
     output: z.object({ ok: z.literal(true) }).strict(),
   },
+  /** What the PM reports to a phase, from the owner's screen or a drill (the same driver checks as lane_pilot_phase). */
+  phase_act: {
+    input: z.object({ action: z.enum(["open", "context", "plan", "plan_check", "drawing", "goal_audit", "lessons"]), projectId: z.string().min(1).max(200), pmThreadId: z.string().min(1).max(200),
+      phaseId: z.string().min(1).max(40).optional(), payload: z.record(z.string(), z.unknown()).default({}) }).strict(),
+    output: z.unknown(),
+  },
   phase_control: {
     input: z.object({ phaseId: z.string().min(1).max(40), action: z.enum(["pause", "resume", "return", "stop_wave", "close", "word"]), to: z.enum(["discussion", "planning", "design", "execution"]).optional(),
       note: z.string().max(2000).optional(), turn: z.enum(["planning", "design", "acceptance", "uat"]).optional(), decision: z.enum(["yes", "no"]).optional() }).strict(),

@@ -91,3 +91,6 @@ export function checkReceipt(rows: readonly CoverageRow[], receipt: DrillReceipt
   }
   return { checked, confirmed, notSeen, skipped: "", evidence: true };
 }
+
+/** Term or founder's word (SMA: Graph regression catalogue): a node nobody proves carries a deferral with a term or the owner's word in its note. */
+export const untermedGaps = (rows: readonly CoverageRow[]) => rows.filter((row) => row.status === "none" && !/deferral:[A-Za-z0-9_-]+|owner:|владелец/i.test(row.note));

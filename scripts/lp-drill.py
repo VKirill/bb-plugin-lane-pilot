@@ -79,7 +79,7 @@ OPEN_STATES = ("queued", "spawn_requested", "spawn_unknown", "running")
 TERMINAL = ("accepted", "blocked", "canceled")
 STAMP = time.strftime("%Y%m%d-%H%M%S")
 DATE = time.strftime("%Y-%m-%d")
-ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "reload", "nogit", "nogit_repo"]
+ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "phase", "reload", "nogit", "nogit_repo"]
 QUICK = ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3"]
 # What a provider runs when no setting of the sandbox project names a model for it.
 PROVIDER_FALLBACK_MODEL = {"claude-code": "claude-sonnet-5-5", "codex": "gpt-6-luna", "opencode2": "zai-coding-plan/glm-5.3-flash"}
@@ -778,6 +778,39 @@ def scenario_no_code_exit(ctx: "Context") -> dict:
     return verdict("no_code_exit", problems, tasks=[row])
 
 
+def scenario_phase(ctx: "Context") -> dict:
+    """Three tasks, two batches, a phase (SMA: Graph release series): a phase opened, its context signed, a plan of three pieces in two waves
+    checked and admitted; the driver issues wave 1, then wave 2 after wave 1 is accepted, and the phase reaches verification."""
+    problems: list[str] = []
+    act = lambda action, phase_id=None, **payload: setting_rpc("phase_act", {"action": action, "projectId": ctx.project, "pmThreadId": ctx.pm, **({"phaseId": phase_id} if phase_id else {}), "payload": payload})
+    doc = f"drills/phase-{STAMP}-CONTEXT.md"
+    commit_file(ctx.cwd, doc, f"# Context\n\nLocked: three notes in two waves (drill {STAMP}).\n", f"drill: phase context {STAMP}")
+    opened = act("open", title=f"Drill phase {STAMP}", goal="three notes exist, written in two waves")
+    phase_id = opened["phase"]["id"]
+    try:
+        act("context", phase_id, docs=[doc], risks={"technical": "none", "product": "none", "operations": "none", "security": "none"})
+        notes = [note_task(f"drill-ph{n}-{STAMP}", f"drills/phase-{STAMP}-{n}.md", f"phase piece {n}", ctx.cwd) for n in (1, 2, 3)]
+        notes[2]["depends_on"] = [notes[0]["id"]]
+        items = [{"id": spec["id"], "title": spec["title"], "wave": 1 if n < 2 else 2, "task": spec,
+                  "promise": {"given": "the sandbox", "when": "the piece runs", "then": f"{spec['expected_outputs'][0]} holds its two lines"}} for n, spec in enumerate(notes)]
+        act("plan", phase_id, items=items)
+        act("plan_check", phase_id, decision="approve", by="lp-drill", summary="drill plan")
+        deadline, stage = time.time() + TIMEOUT_MIN * 60, ""
+        while time.time() < deadline:
+            stage = setting_rpc("phase_get", {"phaseId": phase_id})["phase"]["stage"]
+            if stage in ("verification", "acceptance", "lessons", "closed"):
+                break
+            time.sleep(POLL_SEC)
+        if stage not in ("verification", "acceptance", "lessons", "closed"):
+            problems.append(f"the phase did not reach verification: it is at {stage}")
+        book = setting_rpc("phase_get", {"phaseId": phase_id}).get("book", "")
+        if "wave 2" not in book or "wave_table" not in book and "| piece |" not in book:
+            problems.append("the book has no wave table for wave 2")
+    finally:
+        setting_rpc("phase_control", {"phaseId": phase_id, "action": "close", "note": "drill done"})
+    return verdict("phase", problems, phaseId=phase_id)
+
+
 def scenario_skills(ctx: "Context") -> dict:
     """Skills drill (SMA): a skill the PM names on a task reaches the writer's brief."""
     spec = note_task(f"drill-skill-{STAMP}", f"drills/skill-{STAMP}.md", "skill check", ctx.cwd)
@@ -1117,6 +1150,34 @@ def evidence_seen(run_id: str) -> dict | None:
     return {"stages": nest(stages), "gates": nest(gates), "moves": nest(moves)}
 
 
+def judge_scenario(scenario: dict) -> dict:
+    """Suite report judge: a pass counts only with evidence — the tasks it ran, the events it saw or the details it checked."""
+    evidence = [key for key, value in scenario.items() if key not in ("name", "result", "problems") and value not in (None, [], {}, "")]
+    verdict_of = "pass" if scenario["result"] == "pass" and (evidence or scenario.get("note")) else "skipped" if scenario["result"] == "skipped" else "fail"
+    return {"name": scenario["name"], "verdict": verdict_of, "evidence": evidence, "why": "" if verdict_of != "fail" else "; ".join(scenario["problems"]) or "a pass without evidence"}
+
+
+def judge_series(judged: list[dict], names: list[str]) -> dict:
+    """Series judge: every scenario asked for has a verdict, none failed, and the skipped ones say why."""
+    missing = [name for name in names if name not in {row["name"] for row in judged}]
+    failed = [row["name"] for row in judged if row["verdict"] == "fail"]
+    return {"verdict": "pass" if not missing and not failed else "fail", "missing": missing, "failed": failed, "skipped": [row["name"] for row in judged if row["verdict"] == "skipped"]}
+
+
+def scout() -> dict:
+    """Scout of named suites: every scenario_* in this file is named in ALL, and every name in ALL has its function."""
+    defined = sorted(name[len("scenario_"):] for name in globals() if name.startswith("scenario_"))
+    return {"defined": defined, "unlisted": [name for name in defined if name not in ALL], "undefined": [name for name in ALL if name not in defined]}
+
+
+def series_preparation() -> dict:
+    """Series preparation: what the series runs against — the plugin version and commit, the scout, a clean sandbox."""
+    commit = git(str(ROOT), "rev-parse", "HEAD")
+    version = json.loads((ROOT / "package.json").read_text()).get("version")
+    dirty = git(SANDBOX["cwd"], "status", "--porcelain")
+    return {"commit": commit, "version": version, "scout": scout(), "sandboxClean": not dirty.strip()}
+
+
 def write_receipt(path: Path, start: float, scenarios: list[dict], ctx: Context | None, problems: list[str], names: list[str]) -> str:
     first = next((s for s in scenarios if s["name"] == "parallel3"), None)
     failed = [s["name"] for s in scenarios if s["result"] == "fail"]
@@ -1130,6 +1191,11 @@ def write_receipt(path: Path, start: float, scenarios: list[dict], ctx: Context 
         "scenarios": scenarios,
         "seen": evidence_seen(ctx.run_id) if ctx and ctx.run_id else None,
     }
+    data["judged"] = [judge_scenario(row) for row in scenarios]
+    data["series"] = judge_series(data["judged"], names)
+    if data["series"]["verdict"] == "fail" and result == "pass":
+        result = data["result"] = "fail"
+        data["problems"].append(f"series judge: {data['series']}")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
     return result
@@ -1141,6 +1207,8 @@ def main() -> int:
     parser.add_argument("--scenario", default="")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--repair-guard", action="store_true")
+    parser.add_argument("--series", action="store_true", help="the release series: preparation, every scenario in a process of its own, the judges")
+    parser.add_argument("--scout", action="store_true", help="only list the named suites against the scenario functions")
     args = parser.parse_args()
     names = QUICK if args.quick else [n for n in args.scenario.split(",") if n] or ALL
     repair_guard = args.repair_guard or os.environ.get("LP_DRILL_REPAIR_GUARD") == "1"
@@ -1151,6 +1219,25 @@ def main() -> int:
     if args.dry_run:
         dry_run(names)
         return 0
+    if args.scout:
+        print(json.dumps(scout(), indent=1))
+        return 0
+    if args.series:
+        # One process per scene: each scenario runs in its own interpreter, so one that wedges or leaks state cannot spoil the next.
+        prep = series_preparation()
+        log(f"series: {json.dumps(prep)[:300]}")
+        if prep["scout"]["unlisted"] or prep["scout"]["undefined"]:
+            log(f"scout: {prep['scout']}")
+        receipts = []
+        for name in names:
+            rc, out, _ = run([sys.executable, "-I", __file__, "--scenario", name], timeout=TIMEOUT_MIN * 60 * 3)
+            receipts.append({"name": name, "exit": rc, "receipt": next((line.split("=", 1)[1] for line in out.splitlines() if line.startswith("RECEIPT=")), None)})
+        manifest = Path(os.environ.get("LP_DRILL_RECEIPT_DIR") or ROOT / ".agents/runs/drills") / f"series-{STAMP}.json"
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        verdict_all = "pass" if all(row["exit"] == 0 for row in receipts) else "fail"
+        manifest.write_text(json.dumps({"kind": "lane-pilot-release-series", "stamp": STAMP, "preparation": prep, "scenes": receipts, "verdict": verdict_all}, indent=2) + "\n")
+        print(f"SERIES={manifest}")
+        return 0 if verdict_all == "pass" else 1
 
     lock = Path(tempfile.gettempdir()) / "lp-drill.lock"
     try:

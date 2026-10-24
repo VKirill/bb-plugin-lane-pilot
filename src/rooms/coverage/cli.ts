@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { checkReceipt, coverageRows, codeNodes, holes, summarize, type CoverageRow, type DrillReceipt } from "./model";
+import { checkReceipt, coverageRows, codeNodes, holes, summarize, untermedGaps, type CoverageRow, type DrillReceipt } from "./model";
 import { NODE_KINDS } from "./registry";
 
 export const COVERAGE_USAGE = "bb lane-pilot coverage [--json] [--kind stage|transition|failure_class|gate|memory_path|room|mechanism] [--status live|tests|none] [--receipt <drill receipt.json|latest>]   what proves each stage and mechanism: covered live by a drill scenario / by tests only / not covered, with the reason";
@@ -33,6 +33,8 @@ export function renderCoverage(rows: readonly CoverageRow[]): string {
     const row = summary[kind];
     if (row) lines.push(`${kind.padEnd(15)} ${String(row.live).padStart(4)}  ${String(row.tests).padStart(5)}  ${String(row.none).padStart(4)}  ${String(row.total).padStart(5)}`);
   }
+  const untermed = untermedGaps(rows);
+  if (untermed.length) lines.push("", `not covered without a term or the owner's word (${untermed.length}): ${untermed.map((row) => `${row.kind}:${row.id}`).slice(0, 20).join(", ")}${untermed.length > 20 ? " …" : ""}`);
   lines.push("");
   for (const row of rows) {
     const where = row.live.length ? `drill: ${row.live.join(", ")}` : row.tests.length ? `tests: ${row.tests.slice(0, 2).join(", ")}${row.tests.length > 2 ? ` +${row.tests.length - 2}` : ""}` : "no test";

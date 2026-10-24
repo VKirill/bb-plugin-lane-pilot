@@ -7,6 +7,18 @@ export function phaseRpc(api: PhaseApi) {
   return {
     phase_list: async ({ projectId, pmThreadId, live }) => api.list({ projectId, pmThreadId, live }).map((phase) => ({ ...phase, next: api.status(phase.id).next })),
     phase_get: async ({ phaseId }) => api.status(phaseId),
+    phase_act: async ({ action, projectId, pmThreadId, phaseId, payload }) => {
+      const p = payload as Record<string, never>;
+      const need = () => { if (!phaseId) throw new Error(`${action} names the phase`); return phaseId; };
+      const done = action === "open" ? await api.open({ projectId, pmThreadId, title: p.title, goal: p.goal, roadmapRow: p.roadmapRow })
+        : action === "context" ? await api.context({ phaseId: need(), docs: p.docs, risks: p.risks, requirements: p.requirements, decisions: p.decisions, by: "screen" })
+        : action === "plan" ? api.plan({ phaseId: need(), items: p.items, design: p.design })
+        : action === "plan_check" ? await api.planCheck({ phaseId: need(), decision: p.decision, by: p.by, summary: p.summary })
+        : action === "drawing" ? await api.drawing({ phaseId: need(), paths: p.paths, designer: p.designer, feasible: p.feasible, contradiction: p.contradiction, reviewer: p.reviewer })
+        : action === "goal_audit" ? api.goalAudit({ phaseId: need(), state: p.state, by: p.by, summary: p.summary })
+        : api.lessons({ phaseId: need(), analysis: p.analysis, author: p.author, reviewer: p.reviewer, reviewedHash: p.reviewedHash });
+      return api.status(done.id);
+    },
     phase_control: async ({ phaseId, action, to, note, turn, decision }) => {
       if (action === "word") {
         if (!turn || !decision) throw new Error("the owner's word names the turn and the decision");
@@ -20,5 +32,5 @@ export function phaseRpc(api: PhaseApi) {
       if (action === "close" && !note?.trim()) throw new Error("closing in words carries the words");
       return api.status(api.setState({ phaseId, state: action, words: note, by: "owner" }).id);
     },
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "phase_list" | "phase_get" | "phase_control">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "phase_list" | "phase_get" | "phase_act" | "phase_control">;
 }
