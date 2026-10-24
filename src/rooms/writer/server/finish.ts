@@ -661,6 +661,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"passed",
         attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"markers",approach:markers.approach,lesson:markers.lesson,noLessonReason:markers.noLessonReason,referenceTestEdits:testEdits}});
       if (markerWarnings.length) candidate.warnings = [...(candidate.warnings ?? []), ...markerWarnings];
+      // The approach note the window's task screen shows (the gate keeps only the hash of its summary).
+      await bb.storage.kv.set(`lp.task.approach:${input.runId}:${input.taskId}`, { approach:markers.approach, lesson:markers.lesson, noLessonReason:markers.noLessonReason, at:Date.now() } as never).catch(() => undefined);
       // Stage questions from files and the execution checkpoint: the task folder's QUESTIONS.md and CHECKPOINT.md, read from the attempt's copy.
       const attemptRow = getAttempt(db, input.attemptId);
       const folderOf = (name:string) => `.agents/plans/items/${input.taskId}/${name}`;

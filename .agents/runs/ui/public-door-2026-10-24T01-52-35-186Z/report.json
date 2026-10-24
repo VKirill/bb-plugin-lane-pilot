@@ -1,0 +1,44 @@
+{
+  "scene": "tests/ui-scenes/public-door.json",
+  "url": "https://bb.vechkasov.pro/install/version",
+  "stage": false,
+  "widths": [
+    {
+      "width": 375,
+      "asserts": [
+        {
+          "selector": "body",
+          "minCount": 1,
+          "ok": true,
+          "detail": "1 of at least 1"
+        },
+        {
+          "noOverflow": true,
+          "ok": true,
+          "detail": "horizontal overflow 0px"
+        }
+      ],
+      "screenshot": "/Users/vechkasov/lp-sma-full/.agents/runs/ui/public-door-2026-10-24T01-52-35-186Z/w375.png",
+      "error": null
+    },
+    {
+      "width": 1280,
+      "asserts": [
+        {
+          "selector": "body",
+          "minCount": 1,
+          "ok": true,
+          "detail": "1 of at least 1"
+        },
+        {
+          "noOverflow": true,
+          "ok": true,
+          "detail": "horizontal overflow 0px"
+        }
+      ],
+      "screenshot": "/Users/vechkasov/lp-sma-full/.agents/runs/ui/public-door-2026-10-24T01-52-35-186Z/w1280.png",
+      "error": null
+    }
+  ],
+  "judge": "Does the hub's door answer at both widths?"
+}

@@ -234,6 +234,20 @@ export const rpcOps = {
     output: z.unknown(),
   },
   /** Controls of a phase from the screen or the CLI: pause, resume, return to an earlier stage with a note, stop the wave, close in words. */
+  /** The window's cockpit (src/rooms/cockpit): Today, workers, the memory corpus, the forge order, the designer, windows, views, faults. */
+  cockpit_today: { input: z.object({ projectId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
+  cockpit_workers: { input: z.object({ projectId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
+  cockpit_memory: { input: z.object({ runId: z.string().min(1).max(200), action: z.enum(["lint", "index", "tags", "consolidate"]) }).strict(), output: z.unknown() },
+  cockpit_forge_order: { input: z.object({ projectId: z.string().min(1).max(200), kind: z.enum(["skill", "role", "workflow"]), name: z.string().regex(/^[a-z][a-z0-9-]{1,47}$/), brief: z.string().trim().min(20).max(4000) }).strict(), output: z.unknown() },
+  cockpit_designer: { input: z.object({ projectId: z.string().min(1).max(200).optional() }).strict(), output: z.unknown() },
+  cockpit_windows: { input: z.object({ hostId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
+  cockpit_seen: { input: z.object({ screen: z.string().min(1).max(80), ms: z.number().int().min(0).max(86_400_000) }).strict(), output: z.unknown() },
+  cockpit_seen_list: { input: z.object({}).strict(), output: z.unknown() },
+  cockpit_request: { input: z.object({ projectId: z.string().min(1).max(200), kind: z.enum(["task", "batch", "promote", "ship"]), text: z.string().trim().min(5).max(8000) }).strict(), output: z.unknown() },
+  cockpit_queue: { input: z.object({ runId: z.string().min(1).max(200), taskIds: z.array(z.string().min(1).max(200)).min(1).max(50), action: z.enum(["hold", "release", "priority"]), priority: z.enum(["low", "normal", "high", "urgent"]).optional() }).strict(), output: z.unknown() },
+  cockpit_update: { input: z.object({ hostId: z.string().min(1).max(200), apply: z.boolean().default(false) }).strict(), output: z.unknown() },
+  cockpit_task: { input: z.object({ runId: z.string().min(1).max(200), taskId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
+  cockpit_fault: { input: z.object({ screen: z.string().min(1).max(80), text: z.string().trim().min(3).max(2000) }).strict(), output: z.unknown() },
   /** The front (src/rooms/front): the first-run interview, the project's own helpers, peers, coordination, the door, the action journal. */
   first_run_get: { input: z.object({ projectId: z.string().min(1).max(200) }).strict(), output: z.unknown() },
   first_run_answer: { input: z.object({ projectId: z.string().min(1).max(200), step: z.enum(["goal", "writer", "quality", "words"]), answer: z.string().trim().min(1).max(2000) }).strict(), output: z.unknown() },
@@ -252,7 +266,7 @@ export const rpcOps = {
   },
   /** What the PM reports to a phase, from the owner's screen or a drill (the same driver checks as lane_pilot_phase). */
   phase_act: {
-    input: z.object({ action: z.enum(["open", "context", "plan", "plan_check", "drawing", "goal_audit", "lessons"]), projectId: z.string().min(1).max(200), pmThreadId: z.string().min(1).max(200),
+    input: z.object({ action: z.enum(["open", "context", "plan", "plan_check", "drawing", "goal_audit", "lessons", "correct", "answer"]), projectId: z.string().min(1).max(200), pmThreadId: z.string().min(1).max(200),
       phaseId: z.string().min(1).max(40).optional(), payload: z.record(z.string(), z.unknown()).default({}) }).strict(),
     output: z.unknown(),
   },

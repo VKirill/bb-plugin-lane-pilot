@@ -11,6 +11,7 @@ import { ownerEn, ownerRu } from "./i18n-owner";
 import { anamnesisEn, anamnesisRu } from "./i18n-anamnesis";
 import { tabsEn, tabsRu } from "./i18n-tabs";
 import { graphEn, graphRu } from "./i18n-graph";
+import { cockpitEn, cockpitRu } from "./i18n-cockpit";
 import { ownedEn, ownedRu } from "./i18n-owned";
 import { jevEn, jevRu } from "./i18n-jev";
 import { improvementEn, improvementRu } from "./i18n-improvement";
@@ -2157,8 +2158,8 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   accessPurpose_specialist_tavily: "Ищет в сети и собирает отчёты с источниками.",
 };
 
-export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...boardEn, ...ownerEn, ...anamnesisEn, ...tabsEn, ...ownedEn, ...jevEn, ...improvementEn, ...graphEn };
-export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...editorRu, ...opsRu, ...modelsRu, ...canvasRu, ...scheduleRu, ...boardRu, ...ownerRu, ...anamnesisRu, ...tabsRu, ...ownedRu, ...jevRu, ...improvementRu, ...graphRu };
+export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...boardEn, ...ownerEn, ...anamnesisEn, ...tabsEn, ...ownedEn, ...jevEn, ...improvementEn, ...graphEn, ...cockpitEn };
+export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...editorRu, ...opsRu, ...modelsRu, ...canvasRu, ...scheduleRu, ...boardRu, ...ownerRu, ...anamnesisRu, ...tabsRu, ...ownedRu, ...jevRu, ...improvementRu, ...graphRu, ...cockpitRu };
 
 export type I18nKey = keyof typeof en;
 export type Locale = "en" | "ru";

@@ -19,6 +19,7 @@ import { canaryRpc } from "../../stability/server";
 import { memoryProbeRpc } from "./rpc-memory-probe";
 import { harnessRpc } from "../../harness/server";
 import { deferralRpc } from "../../deferral/server";
+import { cockpitRpc } from "../../cockpit/server";
 import { recordTaskWord } from "../../tasks";
 import { taskFamily } from "../../runs";
 import { rollbackRpc } from "../../rollback/server";
@@ -90,6 +91,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
       await recordTaskWord(ctx.bb.storage.kv as never, runId, taskFamily(taskId), decision, text);
       return { ok: true as const };
     },
+    ...cockpitRpc(ctx, services),
     world_version: async () => ({ version: worldVersion() }),
     money_status: async () => services.money.status(),
     ...capabilityRpc(services.capabilities),

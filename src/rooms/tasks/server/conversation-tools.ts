@@ -23,7 +23,7 @@ export function registerConversationTools(ctx: ServerCore): void {
   registerObservedTool(bb.agents, {
     name: "lane_pilot_facts",
     description: "Answer the owner's question about tasks, limits, the past or a failure from Lane Pilot's records, by code, before you answer in words.",
-    instructions: "Pass the owner's question as is. Lane Pilot names its kind (board, limit, history, failure, free) and returns the facts for it: the board of this run, the tokens spent today per provider and model, the last finished tasks, the last failures with their class. Answer from these facts; for kind free there are none and you answer from your reading.",
+    instructions: "Pass the owner's question as is. Lane Pilot names its kind (board, limit, history, failure, free) and returns the facts for it: the board of this run, the tokens spent today per provider and model, the last finished tasks, the last failures with their class. Answer from these facts and name their sources (the answer's `sources`) at the end of your reply; for kind free there are none and you answer from your reading.",
     parameters: z.object({ question: z.string().trim().min(1).max(2000) }).strict(),
     execute: async (input, context) => {
       const kind = factKind(input.question);
@@ -34,22 +34,22 @@ export function registerConversationTools(ctx: ServerCore): void {
           FROM lane_pilot_task t WHERE t.run_id=? ORDER BY t.created_at DESC LIMIT 60`).all(runId ?? "") as Array<{ taskId: string; title: string; state: string | null }>;
         const counts: Record<string, number> = {};
         for (const row of rows) counts[row.state ?? "queued"] = (counts[row.state ?? "queued"] ?? 0) + 1;
-        return JSON.stringify({ kind, runId, counts, tasks: rows });
+        return JSON.stringify({ kind, runId, counts, tasks: rows, sources: [`the run board (lane_pilot_attempt, run ${runId})`] });
       }
       if (kind === "limit") {
         const day = new Date().toISOString().slice(0, 10);
         const rows = db.prepare("SELECT provider_id AS provider, model, SUM(total_tokens) AS tokens FROM lane_pilot_token_daily WHERE project_id=? AND day=? GROUP BY provider_id, model ORDER BY tokens DESC").all(context.projectId, day);
-        return JSON.stringify({ kind, day, byModel: rows });
+        return JSON.stringify({ kind, day, byModel: rows, sources: [`the spend book (lane_pilot_token_daily, ${day})`] });
       }
       if (kind === "history") {
         const rows = db.prepare(`SELECT a.task_id AS taskId, a.state, a.updated_at AS at FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
           WHERE r.project_id=? AND a.state IN ('accepted','blocked','canceled') ORDER BY a.updated_at DESC LIMIT 15`).all(context.projectId) as Array<{ taskId: string; state: string; at: number }>;
-        return JSON.stringify({ kind, finished: rows.map((row) => ({ ...row, at: new Date(row.at).toISOString() })) });
+        return JSON.stringify({ kind, finished: rows.map((row) => ({ ...row, at: new Date(row.at).toISOString() })), sources: ["the finished attempts (lane_pilot_attempt)"] });
       }
       if (kind === "failure") {
         const rows = db.prepare(`SELECT a.task_id AS taskId, a.state, a.reason, a.updated_at AS at FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
           WHERE r.project_id=? AND a.state IN ('validation_failed','blocked','provider_error','timeout','empty_output') ORDER BY a.updated_at DESC LIMIT 10`).all(context.projectId) as Array<{ taskId: string; state: string; reason: string | null; at: number }>;
-        return JSON.stringify({ kind, failures: rows.map((row) => ({ ...row, class: failureClass(row.state, row.reason), reason: (row.reason ?? "").slice(0, 300), at: new Date(row.at).toISOString() })) });
+        return JSON.stringify({ kind, failures: rows.map((row) => ({ ...row, class: failureClass(row.state, row.reason), reason: (row.reason ?? "").slice(0, 300), at: new Date(row.at).toISOString() })), sources: ["the failed attempts and their failure class (lane_pilot_attempt)"] });
       }
       return JSON.stringify({ kind, facts: null, note: "no code answer for this kind of question: answer from your reading" });
     },

@@ -4,6 +4,7 @@ import { detectLocale, t } from "@lane-pilot/i18n";
 import type { ComponentType } from "react";
 import { LanePilotPage } from "./src/rooms/ui-shell/ui/page";
 import { CouncilPage } from "./src/rooms/council/ui";
+import { CockpitPage } from "./src/rooms/cockpit/ui";
 import { ComposerAgentBadge } from "./src/rooms/native-agent/ui";
 import { EnableLanePilotAction } from "./src/rooms/native-agent/ui";
 import { HELPER_PANEL_ACTION, HelperThreadPanel } from "./src/rooms/native-agent/ui";
@@ -28,6 +29,14 @@ export default definePluginApp((app) => {
     icon: "Workflow",
     path: "lane-pilot-council",
     component: () => <CouncilPage />,
+  });
+  // The cockpit: the window's screens of the SMA map (phases, today, tasks, money, workers, forge, memory, first run, coordination, ship, system).
+  app.slots.navPanel({
+    id: "lane-pilot-cockpit",
+    title: t("ckTitle"),
+    icon: "Workflow",
+    path: "lane-pilot-cockpit",
+    component: ({ subPath }) => <CockpitPage subPath={subPath} />,
   });
   // A working helper (writer, specialist, browser check…) opens in the thread's side panel from its square.
   app.slots.threadPanelAction({
