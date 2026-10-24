@@ -33,6 +33,9 @@ const params = z.discriminatedUnion("action", [
 
 const json = (value: unknown) => JSON.stringify(value);
 
+/** No autopilot flags: no action takes force, skip or auto; a phase moves only when its gates pass in code (SMA: No autopilot flags). */
+export const NO_AUTOPILOT_FLAGS = ["force", "skip", "auto", "noGates"] as const;
+
 /** The PM's one tool for phases: it reports what each stage produced; the phase driver decides, in code, whether the phase moves on. */
 export function registerPhaseTool(ctx: ServerCore, services: Services): void {
   registerObservedTool(ctx.bb.agents, {

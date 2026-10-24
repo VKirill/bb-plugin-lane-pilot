@@ -387,6 +387,8 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     return mustGet(phase.id);
   }
 
+  /** One step of a phase. Reconciling after force: every tick reads the pieces' facts afresh, so a phase paused, stopped or edited by hand
+   * continues from what the attempts and receipts say now, not from what it last believed. */
   async function drive(phase: Phase): Promise<Phase> {
     if (phase.state === "pause_requested") { savePhase(db, phase.id, { state: "paused", at: now() }); return mustGet(phase.id); }
     if (phase.state !== "active") return phase;
