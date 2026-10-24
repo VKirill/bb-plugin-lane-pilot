@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.1.299
+
+**A phase gets past a failed verification.** The live phase ph_ae0a8de9db reached verification and stalled: plan-fact could not prove «npm test is green» because `npm test` was not among the contract's checks, the PM returned the phase to execution as the driver advised, every piece was already accepted, so the phase went straight back to verification, met the same verdict on the same facts, and the poke for it was the one the PM had already been given — a silent loop. Four changes:
+- **Tests are part of the task from the start** (Matvey #31865): the plan gate refuses a piece whose acceptance line names a command (`npm test`, `node --test`, `pytest`, a command in a code span…) that is not one of its verification commands.
+- **A changed piece is issued again**: each issued piece keeps the print of its contract; after a return to planning, a piece whose contract changed is issued again as a redo of its family (`piece.2`) and its facts follow the new work, while unchanged pieces keep theirs (the train runs again on a new head and skips what did not change). Pieces issued before this version take their current contract as their print.
+- **No silent re-verify**: with every piece accepted and the facts equal to those of the last failed verdict, the phase stays at execution, books «unchanged» and asks the PM, once, to return to planning and change the failing piece or add one.
+- The failed verdict's step now says so: accepted pieces are not run again by themselves; return to planning, not to execution. `issue()` no longer drops the waves' records when it saves.
+
 ## 0.1.298
 
 **A phase issues its pieces.** The task-v2 schema had grown `promise`, `priority`, `clarify` and `drawing`, but the list the validator checks extra keys against had not, so every piece a phase issued (with its `priority: high`) was refused as «priority: additionalProperties is false» (live ph_ae0a8de9db stopped at execution). The list now holds them, and a test fails when the schema and the list part.
