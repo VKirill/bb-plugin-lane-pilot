@@ -65,6 +65,8 @@ export type AutonomyDeps = {
   decisions: Pick<Decisions, "accept">;
   pmThread(projectId: string): string | null;
   sendToPm(threadId: string, text: string): Promise<void>;
+  /** The project asks for the owner's word (owner.words = on): its waiting items stay for him (SMA: Draft awaits a person, Person applies the draft). */
+  ownerWords?(projectId: string): boolean;
   now?(): number;
   log(line: string): void;
 };
@@ -113,6 +115,8 @@ export function createAutonomy(deps: AutonomyDeps) {
   async function settleWaiting() {
     const settled: Array<{ id: string; state: string; run?: string }> = [];
     for (const item of listItems(deps.db, { states: ["pending_owner"], limit: 50 })) {
+      // Approval path (SMA): with owner.words on, an item that waits for the owner is applied only by his word, not settled here.
+      if (deps.ownerWords?.(item.projectId)) continue;
       try {
         const decided = await deps.decisions.accept(item.id);
         settled.push({ id: item.id, state: decided.item.state, ...(decided.run ? { run: decided.run } : {}) });
