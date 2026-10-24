@@ -621,7 +621,7 @@ export function createSelfRepair(ctx: ServerCore) {
       }
       if (result.status !== "busy") worktree.mergeTries = (worktree.mergeTries ?? 0) + 1;
       record.outcome = `${result.status}: ${String(result.reason ?? "").slice(0, 200)}`;
-      if ((worktree.mergeTries ?? 0) >= MERGE_TRIES) ctx.log(`self-repair: ${worktree.branch} is left at ${worktree.path} for the owner: ${record.outcome}`);
+      if ((worktree.mergeTries ?? 0) >= MERGE_TRIES) ctx.log(`self-repair: ${worktree.branch} failed to merge ${MERGE_TRIES} times; the next pass releases it: ${record.outcome}`);
       return;
     }
     if (!record.verdict && now - (record.spawnedAt ?? now) < ABANDON_MS) return;
@@ -735,8 +735,19 @@ export function createSelfRepair(ctx: ServerCore) {
     if (!options.dryRun) {
       for (const [signature, record] of Object.entries(current.signatures)) {
         signal?.throwIfAborted();
-        if (!record.worktree || !record.threadId || (record.worktree.mergeTries ?? 0) >= MERGE_TRIES || await threadBusy(record.threadId)) continue;
+        if (!record.worktree || !record.threadId || await threadBusy(record.threadId)) continue;
         const night = signature.startsWith("night:") ? getRepairHooks(ctx) : undefined;
+        // Merges that failed MERGE_TRIES times are not left on their branch «for the owner» (he takes no part in the loop): the work is
+        // saved as a patch, the worktree goes, and a night repair's round counts as failed so its class is taken again on a fresh main.
+        if ((record.worktree.mergeTries ?? 0) >= MERGE_TRIES) {
+          const last = record.outcome ?? "";
+          await releaseWorktree(record.worktree);
+          record.worktree = null;
+          record.outcome = `released after ${MERGE_TRIES} failed merges: ${last}`.slice(0, 400);
+          ctx.log(`self-repair: ${signature} ${record.outcome}`);
+          night?.settled(signature, { outcome: record.outcome, verdict: record.verdict ?? null, commit: null });
+          continue;
+        }
         if (night && record.verdict === "fixed") {
           // A night repair is merged only when the night policy lets the night do it alone; otherwise it waits on its branch (held) or is released.
           const decision = await night.mergeGate(signature, { threadId: record.threadId, worktree: record.worktree }).catch(() => "hold" as const);

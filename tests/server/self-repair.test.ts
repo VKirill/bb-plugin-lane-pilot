@@ -623,17 +623,18 @@ describe("self-repair", () => {
       expect(env.hostCalls).toEqual([]);
     });
 
-    it("a conflict is retried on later passes, then the branch is left for the owner", async () => {
+    it("a conflict is retried on later passes, then the work is saved as a patch and the branch released — nobody is waited for", async () => {
       const env = setup({}, { thr_repair1: fixed }, { gitIntegrate: { status: "conflict", commit: null, conflicts: ["a.ts"], reason: "CONFLICT in a.ts" } });
       env.attempt("lpattempt_1", "lprun_a", "blocked", "merge_failed: index.lock exists");
       const repair = createSelfRepair(env.ctx);
       await repair.tick({ since: 0 });
       for (let pass = 0; pass < 6; pass++) await repair.tick();
       expect(env.hostCalls.filter((call) => call.method === "gitIntegrate")).toHaveLength(4);
+      expect(env.hostCalls.map((call) => call.method)).toContain("gitWorktreeSnapshot");
       const record = Object.values((await repair.state()).signatures)[0]!;
-      expect(record.worktree?.mergeTries).toBe(4);
-      expect(record.outcome).toBe("conflict: CONFLICT in a.ts");
-      expect(env.logs.filter((line) => line.includes("is left at"))).toHaveLength(1);
+      expect(record.worktree).toBeNull();
+      expect(record.outcome).toBe("released after 4 failed merges: conflict: CONFLICT in a.ts");
+      expect(env.logs.some((line) => line.includes("for the owner"))).toBe(false);
     });
 
     it("a busy base checkout is not a failed try", async () => {

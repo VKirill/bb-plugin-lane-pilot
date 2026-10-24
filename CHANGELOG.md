@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.305
+
+**A night repair that cannot merge is released, not left for the owner.** Two fixed night repairs (a sandbox class and a merge class) failed to merge four times each — only on CHANGELOG.md, where every branch adds its entry at the top while main moves on; the code merged cleanly — and the watcher then left their branches «for the owner», who takes no part in the loop. Now:
+- `.gitattributes` merges CHANGELOG.md with git's `union` driver, so parallel release notes keep both sides.
+- A repair whose merge failed `MERGE_TRIES` times is saved as a patch and its worktree released on the next pass; a night repair's round counts as failed, so its class is taken again on a fresh main.
+
 ## 0.1.304
 
 **A night repair's acceptance no longer waits a week for a drill.** The acceptance of a merged night repair waited for the weekly fire drill of exactly the deployed version, so with versions shipping daily it never came: repair wr_de6a97453070 sat «waiting for the drill of the deployed version» through thirteen releases, and its canary, bench subset and recurrence were never weighed. The release train runs the drill on every deploy and rolls back on a red one, so the version the plugin runs had a green drill: that is the deploy drill now, and a fire drill of the version still counts when there is one (a red one rolls back as before).

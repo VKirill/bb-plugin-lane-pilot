@@ -1,0 +1,2 @@
+# Release notes are appended at the top by every branch (night repairs, parallel work): a merge keeps both sides' lines.
+CHANGELOG.md merge=union
