@@ -8,7 +8,7 @@ import { isWholeConsent, spendReserve } from "../../tasks";
 import { hostContract } from "../../contracts";
 import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
 import {
-  PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceLines, blindVerdict, contextSignature, openQuestions, phaseFolder, planGate as planGateOf, piecesOfWave, waveCleared, waveLines, wavePackage, wavesOf, wordOf, designDecision, designGate, discussionGate,
+  PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceLines, blindVerdict, pieceSha, contextSignature, openQuestions, phaseFolder, planGate as planGateOf, piecesOfWave, waveCleared, waveLines, wavePackage, wavesOf, wordOf, designDecision, designGate, discussionGate,
   executionGate, issuable, lessonsNeeded, nextAction, planGate, planSignature, renderBook, sha256, staleAfterReturn,
   type ContextDoc, type Phase, type PhaseRecord, type PhaseStage, type PlanItem, type RiskKind, type TaskFact, type WordTurn,
 } from "../logic";
@@ -464,14 +464,25 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
 
   // ------------------------------------------------------------ the drive
 
+  /** The next free redo id of a piece's family in the run: piece.2, piece.3, … */
+  function redoId(pieceId: string, runId: string | null): string {
+    const taken = runId ? (db.prepare("SELECT id FROM lane_pilot_task WHERE run_id=?").all(runId) as Array<{ id: string }>).map((row) => row.id).filter((id) => taskFamily(id) === pieceId) : [];
+    let n = 2;
+    while (taken.includes(`${pieceId}.${n}`)) n += 1;
+    return `${pieceId}.${n}`;
+  }
+
   async function issue(phase: Phase): Promise<Phase> {
     const items = phase.record.plan?.items ?? [];
-    const execution = { issued: { ...(phase.record.execution?.issued ?? {}) }, startedAt: phase.record.execution?.startedAt ?? now(), issueErrors: {} as Record<string, string> };
+    const execution = { issued: { ...(phase.record.execution?.issued ?? {}) }, startedAt: phase.record.execution?.startedAt ?? now(), issueErrors: {} as Record<string, string>,
+      issuedSha: { ...(phase.record.execution?.issuedSha ?? {}) } };
+    // A phase issued before the contract prints existed: its issued pieces are taken as issued with the contract they have now.
+    for (const item of items) if (execution.issued[item.id] && execution.issuedSha[item.id] === undefined) execution.issuedSha[item.id] = pieceSha(item);
     if (phase.record.plan?.sha !== phase.record.plan?.admittedSha) throw new PhaseRefusal("the plan changed since it was checked: return the phase to planning");
     let runId = phase.runId;
     // Awaits the word «issue»: with owner.words on nothing is issued before the owner says so.
     if (phase.record.ownerWords && wordOf(phase.record, "issue")?.decision !== "yes") return phase;
-    const next = issuable(items, execution.issued, facts(phase), (wave) => waveCleared(phase.record, wave));
+    const next = issuable(items, execution.issued, facts(phase), (wave) => waveCleared(phase.record, wave), execution.issuedSha);
     // Batch issue capacity and a free seat in the house: at most issueCap pieces a pass, none while the run already has that many at work.
     const atWork = phase.runId ? listOpenAttempts(db).filter((row) => row.run_id === phase.runId).length : 0;
     // Path with or without subagents: off, the pieces go one at a time, inline.
@@ -484,14 +495,19 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       if (!reserve.ok) { execution.issueErrors.budget = `wave budget question: ${reserve.why}`; savePhase(db, phase.id, { record: { ...phase.record, execution }, at: now() }); return mustGet(phase.id); }
     }
     for (const item of next.slice(0, seats)) {
+      // A piece issued before with another contract goes again as a redo of its family (id.N), so its facts follow the new work.
+      const redoOf = execution.issued[item.id];
+      const taskIdForIssue = redoOf ? redoId(item.id, runId) : item.id;
       const reply: Record<string, unknown> = await services.dispatchWriter({ threadId: phase.pmThreadId, projectId: phase.projectId, birth: "phase",
         // Stage above ordinary work: a phase's pieces start before the run's ordinary tasks when writers are scarce.
-        task: { ...item.task, priority: (item.task.priority as string | undefined) ?? "high", ...(phase.record.design?.drawing ? { drawing: phase.record.design.drawing.paths } : {}) } as never,
+        task: { ...item.task, id: taskIdForIssue, priority: (item.task.priority as string | undefined) ?? "high", ...(phase.record.design?.drawing ? { drawing: phase.record.design.drawing.paths } : {}) } as never,
         plan: `Phase ${phase.id} «${phase.title}», wave ${item.wave}, piece ${item.id}. Promise — given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}.${phase.record.design?.drawing ? ` The phase drawing: ${phase.record.design.drawing.paths.join(", ")} — the screens follow it.` : ""}`,
         objective: phase.goal }).catch((cause: unknown) => ({ ok: false, reason: cause instanceof Error ? cause.message : String(cause) }));
       const taskId = typeof reply.taskId === "string" ? reply.taskId : null;
       if (taskId) {
         execution.issued[item.id] = taskId;
+        execution.issuedSha[item.id] = pieceSha(item);
+        if (redoOf) book(phase, "execution", "reissued", `${item.id}: its contract changed since ${redoOf} — issued again as ${taskId}`);
         if (typeof reply.runId === "string") runId = reply.runId;
         book(phase, "execution", "issued", `${item.id} → task ${taskId} (wave ${item.wave})`);
       } else {
@@ -507,7 +523,9 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     // Phase base at start: the commit the first piece was cut from.
     const firstTask = Object.values(execution.issued)[0];
     const baseSha = phase.record.execution?.baseSha ?? (firstTask ? (db.prepare("SELECT base_sha FROM lane_pilot_task_git_base WHERE task_id=? LIMIT 1").get(firstTask) as { base_sha?: string } | undefined)?.base_sha ?? null : null);
-    savePhase(db, phase.id, { record: { ...phase.record, execution: { ...execution, baseSha, acceptedNoted: phase.record.execution?.acceptedNoted ?? [] } }, runId, at: now() });
+    // The waves' records stay (they were dropped here before), and a new issue clears the «nothing changed» stop.
+    savePhase(db, phase.id, { record: { ...phase.record, execution: { ...execution, baseSha, acceptedNoted: phase.record.execution?.acceptedNoted ?? [], ...(phase.record.execution?.waves ? { waves: phase.record.execution.waves } : {}),
+      ...(phase.record.execution?.unchanged && !next.some((item) => execution.issued[item.id])) ? { unchanged: phase.record.execution.unchanged } : {} } }, runId, at: now() });
     return mustGet(phase.id);
   }
 
@@ -541,7 +559,19 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
         wrote = true;
       }
       if (wrote) { savePhase(db, current.id, { record: { ...current.record, execution: { ...current.record.execution!, waves } }, at: now() }); current = mustGet(current.id); }
-      if (executionGate(items, current.record.execution?.issued ?? {}, facts(current)).ok) move(current, "verification", current.record, "every piece is issued and accepted");
+      if (executionGate(items, current.record.execution?.issued ?? {}, facts(current)).ok) {
+        // Nothing changed since a verdict failed on these very facts: verifying again would fail the same way, and its poke is the
+        // one the PM was already given — the phase stalled silently (live ph_ae0a8de9db). It waits for new work instead.
+        const goal = current.runId ? getRunGoal(db, current.runId) : null;
+        const would = blindVerdict(items, facts(current), goal, now());
+        const lastFailed = listParts(db, current.id).filter((part) => part.kind === "blind_verdict" && part.text.startsWith("failed")).at(-1);
+        if (would.state === "failed" && lastFailed?.text.includes(`(input ${would.inputSha.slice(0, 12)})`)) {
+          if (current.record.execution?.unchanged?.inputSha !== would.inputSha) {
+            book(current, "execution", "unchanged", `every piece accepted, but the facts are the ones the last verdict failed on: ${would.detail}`);
+            savePhase(db, current.id, { record: { ...current.record, execution: { ...current.record.execution!, unchanged: { inputSha: would.inputSha, detail: would.detail } } }, at: now() });
+          }
+        } else move(current, "verification", current.record, "every piece is issued and accepted");
+      }
       current = mustGet(current.id);
     }
     if (current.stage === "verification" && !current.record.verification?.verdict && current.runId) {

@@ -68,7 +68,11 @@ export type PhaseRecord = {
   uat?: { path: string; sha256: string; at: number };
   /** The conclusion and the roadmap/STATE marks written when the phase closed. */
   closedDocs?: { at: number; commit: string | null };
-  execution?: { issued: Record<string, string>; startedAt?: number; baseSha?: string | null; issueErrors?: Record<string, string>; acceptedNoted?: string[]; waves?: Record<string, WaveRecord> };
+  execution?: { issued: Record<string, string>; startedAt?: number; baseSha?: string | null; issueErrors?: Record<string, string>; acceptedNoted?: string[]; waves?: Record<string, WaveRecord>;
+    /** The contract each piece was issued with (pieceSha): a piece whose contract changed after a return to planning is issued again. */
+    issuedSha?: Record<string, string>;
+    /** All pieces accepted, but the facts are the ones a verdict already failed on: the phase waits for new work instead of failing again. */
+    unchanged?: { inputSha: string; detail: string } };
   /** Each finished wave is verified by another model before the next one is issued (setting phase.wave_review, on by default). */
   waveReview?: boolean;
   /** The most pieces the driver issues in one pass (Batch issue capacity; setting phase.issue_cap, 8 by default). */
@@ -145,7 +149,23 @@ export function pieceProblems(item: PlanItem): string[] {
   const checks = Array.isArray(task.verification) ? (task.verification as Array<{ command?: unknown }>) : [];
   if (!checks.length && task.verify !== "none") why.push(`${item.id}: no verification command — nothing proves the promise`);
   for (const check of checks) if (typeof check.command !== "string" || !check.command.trim()) why.push(`${item.id}: a verification item has no command`);
+  // Tests are part of the task from the start (Matvey #31865): an acceptance line that names a command is proved only when that command
+  // is a check of the contract (live ph_ae0a8de9db: «npm test is green» with no `npm test` among the checks failed plan-fact forever).
+  const commands = checks.map((check) => String(check.command ?? ""));
+  const acceptance = Array.isArray(task.acceptance) ? (task.acceptance as unknown[]).map(String) : [];
+  for (const line of acceptance) for (const named of acceptanceCommands(line)) {
+    if (!commands.some((command) => command.includes(named))) why.push(`${item.id}: the acceptance line «${line.slice(0, 120)}» names \`${named}\`, which is not a verification command — add it to verification or reword the line`);
+  }
   return why;
+}
+
+/** Commands an acceptance line names: `code spans` that look like a command, and the usual test runners written plainly. */
+export function acceptanceCommands(line: string): string[] {
+  const found = new Set<string>();
+  for (const match of line.matchAll(/`([^`]{2,120})`/g)) if (/^(npm|pnpm|yarn|npx|node|bun|deno|pytest|python3? -m|cargo|go|make|bash|sh|\.\/)\b/.test(match[1]!.trim())) found.add(match[1]!.trim());
+  const plain = line.replace(/`[^`]*`/g, " ");
+  for (const match of plain.matchAll(/\b(npm (?:test|run [\w:.-]+)|pnpm (?:test|run [\w:.-]+)|yarn (?:test|run [\w:.-]+)|node --test|pytest|cargo test|go test)\b/g)) found.add(match[1]!);
+  return [...found];
 }
 
 /** Planning → admission: every piece becomes a work, waves are computable, the plan was built on the signed context, and an independent checker approved it. */
@@ -210,10 +230,16 @@ export function designGate(record: PhaseRecord): GateResult {
 export type TaskFact = { taskId: string; state: string | null; planFact: "passed" | "failed" | "skipped" | null; verification: "passed" | "failed" | "skipped" | null; codeCritique: "passed" | "blocked" | "skipped" | "failed" | null; browserQa?: "passed" | "failed" | "skipped" | null };
 
 /** The pieces that may be issued now: wave by wave, the next wave only once every piece of the earlier waves is accepted. */
-export function issuable(items: readonly PlanItem[], issued: Readonly<Record<string, string>>, facts: ReadonlyMap<string, TaskFact>, cleared: (wave: number) => boolean = () => true): PlanItem[] {
+/** What a piece's work is: its contract and its promise. A changed one after a return to planning is new work. */
+export const pieceSha = (item: PlanItem) => sha256(canonical({ task: item.task, promise: item.promise }));
+
+export function issuable(items: readonly PlanItem[], issued: Readonly<Record<string, string>>, facts: ReadonlyMap<string, TaskFact>, cleared: (wave: number) => boolean = () => true,
+  issuedSha: Readonly<Record<string, string>> = {}): PlanItem[] {
   for (const wave of wavesOf(items)) {
     const pieces = piecesOfWave(items, wave);
-    const waiting = pieces.filter((item) => !issued[item.id]);
+    // The head changed (SMA: the train runs again on a new head from the stage that changed, skipping the stages that did not):
+    // a piece whose contract changed since it was issued is issued again; an unchanged one keeps its work.
+    const waiting = pieces.filter((item) => !issued[item.id] || (issuedSha[item.id] !== undefined && issuedSha[item.id] !== pieceSha(item)));
     if (waiting.length) return waiting;
     if (!pieces.every((item) => facts.get(item.id)?.state === "accepted")) return [];
     if (!cleared(wave)) return [];
@@ -384,13 +410,15 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
       const unworded = Object.keys(r.execution?.waves ?? {}).find((wave) => r.ownerWords && !(r.words ?? []).some((word) => word.turn === "wave" && word.wave === Number(wave) && word.decision === "yes"));
       if (unworded) return { key: key(`word:wave:${unworded}`), stage: phase.stage, waitsForPm: true,
         text: `${head} — wave ${unworded} awaits the owner's word (owner.words is on). Ask him, then ${tool("word", `, phaseId:"${id}", turn:"wave", wave:${unworded}, decision:"yes"|"no", text`)}.` };
+      if (r.execution?.unchanged) return { key: key(`unchanged:${r.execution.unchanged.inputSha}`), stage: phase.stage, waitsForPm: true,
+        text: `${head} — stage 4, execution: every piece is accepted, but nothing changed since the verification failed (${r.execution.unchanged.detail}). Return the phase to planning (${tool("return", `, phaseId:"${id}", to:"planning", note`)}) and change the failing piece's contract or add a piece; a changed piece is issued again.` };
       return { key: key(`running:${Object.keys(issued).length}:${open.length}`), stage: phase.stage, waitsForPm: false,
         text: `${head} — stage 4, execution: ${Object.keys(issued).length} of ${items.length} pieces issued, ${open.length} at work. Lane Pilot issues the next wave itself once this one is accepted.` };
     }
     case "verification": {
       const verdict = r.verification?.verdict;
       if (verdict?.state === "failed") return { key: key(`failed:${verdict.inputSha}`), stage: phase.stage, waitsForPm: true,
-        text: `${head} — stage 5, verification failed: ${verdict.detail}. Return the phase to execution (fix tasks) or planning with ${tool("return", `, phaseId:"${id}", to:"execution"|"planning", note`)}.` };
+        text: `${head} — stage 5, verification failed: ${verdict.detail}. Accepted pieces are not run again by themselves: return the phase to planning (${tool("return", `, phaseId:"${id}", to:"planning", note`)}) and change the failing piece's contract (a changed piece is issued again as a redo) or add a piece; a return to execution without new work meets the same verdict.` };
       if (verdict && !r.verification?.model) return { key: key("model"), stage: phase.stage, waitsForPm: true,
         text: `${head} — stage 5, verification: the blind check passed (${verdict.detail}). Run the goal audit (workflow lp.close) against the phase goal «${phase.goal}»${r.design?.drawing ? ` and the phase drawing (${r.design.drawing.paths.join(", ")})` : ""} and report it with ${tool("goal_audit", `, phaseId:"${id}", state:"met"|"unmet", by, summary`)}.` };
       return { key: key("running"), stage: phase.stage, waitsForPm: false, text: `${head} — stage 5, verification: Lane Pilot runs every piece's checks together on main.` };
