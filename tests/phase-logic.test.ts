@@ -56,6 +56,9 @@ describe("phase gates", () => {
     const record: PhaseRecord = { design: { decision: "needed", why: "", drawing: { paths: ["d.png"], sha256: "x", designer: "design-lead", feasible: true, reviewer: "design-lead" } } };
     expect(JSON.stringify(designGate(record))).toContain("separate role");
     record.design!.drawing!.reviewer = "ui-review";
+    // The design contract is mandatory: the drawing carries its checkable points.
+    expect(JSON.stringify(designGate(record))).toContain("UI-SPEC.md");
+    record.design!.drawing!.paths.push(".agents/phases/ph_1/design/UI-SPEC.md");
     expect(designGate(record).ok).toBe(true);
   });
 });
@@ -86,7 +89,7 @@ describe("execution and verification", () => {
   it("accepts only when every line holds, and sees main move after the verdict", () => {
     const record = planned(items);
     record.plan!.admittedSha = record.plan!.sha;
-    record.verification = { verdict: blindVerdict(items, facts([["a", {}], ["b", {}], ["c", {}]]), { state: "passed", headSha: "h1" }, 1) };
+    record.verification = { verdict: blindVerdict(items, facts([["a", {}], ["b", {}], ["c", {}]]), { state: "passed", headSha: "h1" }, 1), model: { state: "met", by: "lp.close", summary: "sums are right", at: 2 } };
     const phase = phaseWith({ ...record, execution: { issued: { a: "a", b: "b", c: "c" } } }, "acceptance");
     const ok = acceptanceLines(phase, facts([["a", {}], ["b", {}], ["c", {}]]), { mainSha: "h1", openDeferrals: 0 });
     expect(ok.every((line) => line.ok)).toBe(true);

@@ -172,7 +172,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const timeUsed = appetite.minutes ? (Date.now() - attemptStartedAt) / (appetite.minutes * 60_000) : 0;
         if (Math.max(used, timeUsed) < 0.8) return;
         budgetAsked = true;
-        void bb.sdk.threads.send({ threadId:input.pmThreadId, mode:"queue-if-active", input:[{ type:"text", mentions:[], text:`[Lane Pilot] Task ${input.taskId} has spent ${Math.round(Math.max(used, timeUsed) * 100)}% of its appetite (${appetite.tokens ? `${writerTokens ?? 0}/${appetite.tokens} tokens` : ""}${appetite.tokens && appetite.minutes ? ", " : ""}${appetite.minutes ? `${Math.round((Date.now() - attemptStartedAt) / 60_000)}/${appetite.minutes} min` : ""}). Its writer stops at the appetite: raise it with lane_pilot_update_task now if the work is worth more, or let it stop.` }] } as never).catch(() => undefined);
+        void Promise.resolve().then(() => bb.sdk.threads.send({ threadId:input.pmThreadId!, mode:"queue-if-active", input:[{ type:"text", mentions:[], text:`[Lane Pilot] Task ${input.taskId} has spent ${Math.round(Math.max(used, timeUsed) * 100)}% of its appetite (${appetite.tokens ? `${writerTokens ?? 0}/${appetite.tokens} tokens` : ""}${appetite.tokens && appetite.minutes ? ", " : ""}${appetite.minutes ? `${Math.round((Date.now() - attemptStartedAt) / 60_000)}/${appetite.minutes} min` : ""}). Its writer stops at the appetite: raise it with lane_pilot_update_task now if the work is worth more, or let it stop.` }] } as never)).catch(() => undefined);
       };
       const overBudget = () => { askBudgetOnce(); return runningWriterBudgetStop(budget.check()) ?? appetiteStop(appetite, { tokens:writerTokens, elapsedMs:Date.now() - attemptStartedAt }); };
       const stopRunningWriter = async (reason:string) => {
@@ -645,7 +645,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         return { status:"validation_failed", reason:planFact.refusal, output:candidate.output, produced:candidate.produced, verification:candidate.verification, attemptId:input.attemptId, writerThreadId };
       }
       // Approach and lesson markers, and the reference-test edit trace (src/rooms/tasks/rails.ts): what the writer says it did and learned,
-      // and which tests that existed before the attempt it changed. Recorded for the acceptance card and the critic; they warn, they do not block.
+      // and which tests that existed before the attempt it changed. Kept for the window's task screen and the critic (not a gate event: an accept is counted once); they warn, they do not block.
       const markers = writerMarkers(`${candidate.output ?? ""}\n${answer}`);
       const testEdits: string[] = [];
       for (const path of referenceTestEdits((candidate.produced ?? []).map((path) => ({ path, status:"M" }))).slice(0, 20)) {
@@ -658,11 +658,9 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         ...(!markers.lesson && !markers.noLessonReason ? ["the report has no LESSON line (a lesson, or none with the reason)"] : []),
         ...(testEdits.length ? [`the writer changed tests that existed before the attempt (reference tests): ${testEdits.join(", ")} — the critic checks they were not weakened`] : []),
       ];
-      recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"passed",
-        attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"markers",approach:markers.approach,lesson:markers.lesson,noLessonReason:markers.noLessonReason,referenceTestEdits:testEdits}});
       if (markerWarnings.length) candidate.warnings = [...(candidate.warnings ?? []), ...markerWarnings];
       // The approach note the window's task screen shows (the gate keeps only the hash of its summary).
-      await bb.storage.kv.set(`lp.task.approach:${input.runId}:${input.taskId}`, { approach:markers.approach, lesson:markers.lesson, noLessonReason:markers.noLessonReason, at:Date.now() } as never).catch(() => undefined);
+      await bb.storage.kv.set(`lp.task.approach:${input.runId}:${input.taskId}`, { approach:markers.approach, lesson:markers.lesson, noLessonReason:markers.noLessonReason, referenceTestEdits:testEdits, at:Date.now() } as never).catch(() => undefined);
       // Stage questions from files and the execution checkpoint: the task folder's QUESTIONS.md and CHECKPOINT.md, read from the attempt's copy.
       const attemptRow = getAttempt(db, input.attemptId);
       const folderOf = (name:string) => `.agents/plans/items/${input.taskId}/${name}`;
@@ -671,8 +669,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const checkpoint = await readTaskFile("CHECKPOINT.md");
       const fileQuestions = questionsText ? questionsFromFile(questionsText) : [];
       if (fileQuestions.length || checkpoint) {
-        recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"passed",
-          attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{writerStatus:"stage_questions",questions:fileQuestions,checkpoint:checkpoint?.slice(0, 2000) ?? null}});
+        await bb.storage.kv.set(`lp.task.questions:${input.runId}:${input.taskId}`, { questions:fileQuestions, checkpoint:checkpoint?.slice(0, 2000) ?? null, at:Date.now() } as never).catch(() => undefined);
         if (fileQuestions.length) candidate.warnings = [...(candidate.warnings ?? []), `the writer left ${fileQuestions.length} question(s) in QUESTIONS.md: ${fileQuestions.map((row) => `[${row.kind}] ${row.question}`).join("; ").slice(0, 600)}`];
       }
       // Drawing unchanged: the drawing a task follows is its input, not its output; a writer that edited it changed the yardstick.

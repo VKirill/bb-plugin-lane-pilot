@@ -22,7 +22,7 @@ describe("the PM's folded tool list", () => {
     const registered = harness.registrations.agentTools.map((tool) => tool.name);
     expect(NATIVE_LP_BRIDGE_PM_TOOLS.length).toBeLessThanOrEqual(30);
     expect(new Set(NATIVE_LP_BRIDGE_PM_TOOLS).size).toBe(NATIVE_LP_BRIDGE_PM_TOOLS.length);
-    expect([...NATIVE_LP_BRIDGE_PM_TOOLS].sort()).toEqual([...PM_CORE_TOOLS, ...Object.keys(PM_TOOL_FAMILIES), "lane_pilot_schedule", "lane_pilot_tool_search"].sort());
+    expect([...NATIVE_LP_BRIDGE_PM_TOOLS].sort()).toEqual([...PM_CORE_TOOLS, ...Object.keys(PM_TOOL_FAMILIES), "lane_pilot_schedule", "lane_pilot_phase", "lane_pilot_queue", "lane_pilot_forge", "lane_pilot_facts", "lane_pilot_check", "lane_pilot_permit", "lane_pilot_tool_search"].sort());
     for (const name of NATIVE_LP_BRIDGE_PM_TOOLS) expect(registered, name).toContain(name);
     for (const name of NATIVE_LP_BRIDGE_TOOLS) expect(registered, name).toContain(name);
     // The old handlers stay registered under their old names for the roles that still name them.

@@ -44,7 +44,7 @@ export function preship(db: Db, projectId?: string) {
   const args = projectId ? [projectId] : [];
   const open = db.prepare(`SELECT a.task_id AS taskId, a.state FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state IN ('queued','running','validation_failed','spawn_unknown') ${where} ORDER BY a.updated_at DESC LIMIT 50`).all(...args);
   const regressions = db.prepare(`SELECT task_id AS taskId, state FROM lane_pilot_regression WHERE state NOT IN ('closed','fixed') LIMIT 50`).all();
-  const deferrals = db.prepare(`SELECT id, kind, title FROM lane_pilot_deferral WHERE closed_at IS NULL ${projectId ? "AND project_id=?" : ""} LIMIT 50`).all(...args);
+  const deferrals = db.prepare(`SELECT id, kind, what AS title FROM lane_pilot_deferral WHERE closed_at IS NULL ${projectId ? "AND project_id=?" : ""} LIMIT 50`).all(...args);
   const items = [
     ...(open as Array<{ taskId: string; state: string }>).map((row) => ({ what: `task ${row.taskId} is ${row.state}`, disposition: row.state === "validation_failed" ? "fix or cancel" : "let it finish or cancel" })),
     ...(regressions as Array<{ taskId: string; state: string }>).map((row) => ({ what: `regression of ${row.taskId} (${row.state})`, disposition: "fix, or revert the task" })),

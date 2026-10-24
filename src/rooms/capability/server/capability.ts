@@ -52,6 +52,8 @@ export function createCapabilities(ctx: ServerCore, services: Services) {
       if (ctx.isDisposed()) break;
       if (!runId) { ctx.log("capability: no sandbox run with a PM chat to probe in"); break; }
       // Every capability the installed version has no receipt for: answers first; documentary and pause only once it answers.
+      const silent = listReceipts(db).some((row) => row.providerId === item.providerId && row.version === item.version && row.capability === "answers" && row.state === "not_supported");
+      if (silent) continue;
       for (const capability of CAPABILITIES.filter((name) => !have.has(`${item.providerId}\u0000${item.version}\u0000${name}`))) {
         const result = await services.startHelperProbe(SANDBOX_PROJECT_ID, runId, item.providerId, item.model, capability).catch((cause: unknown) => ({ ok: false, started: false, reason: cause instanceof Error ? cause.message : String(cause) }));
         // A probe that could not even be set up (a dead parent, no such model) says nothing about the adapter: no receipt, no breaker.

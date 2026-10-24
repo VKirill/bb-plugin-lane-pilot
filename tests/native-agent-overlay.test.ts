@@ -128,6 +128,12 @@ it("gives specialists no bb-bridge tools and keeps the folded PM list (core tool
     "mcp__bb-bridge__lane_pilot_memory",
     "mcp__bb-bridge__lane_pilot_workflow_draft",
     "mcp__bb-bridge__lane_pilot_schedule",
+    "mcp__bb-bridge__lane_pilot_phase",
+    "mcp__bb-bridge__lane_pilot_queue",
+    "mcp__bb-bridge__lane_pilot_forge",
+    "mcp__bb-bridge__lane_pilot_facts",
+    "mcp__bb-bridge__lane_pilot_check",
+    "mcp__bb-bridge__lane_pilot_permit",
     "mcp__bb-bridge__lane_pilot_tool_search",
     // Without ToolSearch Claude Code sends every MCP schema at the start; with it the schemas load when the PM asks.
     "ToolSearch",

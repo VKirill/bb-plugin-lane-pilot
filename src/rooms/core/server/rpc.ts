@@ -19,7 +19,7 @@ import { canaryRpc } from "../../stability/server";
 import { memoryProbeRpc } from "./rpc-memory-probe";
 import { harnessRpc } from "../../harness/server";
 import { deferralRpc } from "../../deferral/server";
-import { cockpitRpc } from "../../cockpit/server";
+import { cockpitRpc } from "../../cockpit";
 import { recordTaskWord } from "../../tasks";
 import { taskFamily } from "../../runs";
 import { rollbackRpc } from "../../rollback/server";

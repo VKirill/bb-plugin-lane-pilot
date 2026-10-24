@@ -18,12 +18,13 @@ describe("the capability table", () => {
   it("a version with no receipt is due and unproven; a receipt settles it until the version changes", () => {
     const inUse = new Map([["codex", "gpt-6-luna"], ["opencode2", "glm"]]);
     const versions = new Map<string, string | null>([["codex", "0.1.0"], ["opencode2", "1.2.0"]]);
-    const receipts = [{ providerId: "codex", version: "0.1.0", capability: "answers" as const, state: "supported" as const, model: "gpt-6-luna", detail: null, at: 1 },
-      { providerId: "opencode2", version: "1.1.0", capability: "answers" as const, state: "supported" as const, model: "glm", detail: null, at: 1 }];
+    // Every capability of the version has its receipt: answers, the documentary cell and the pause.
+    const receipts = (["answers", "documentary", "pause"] as const).map((capability) => ({ providerId: "codex", version: "0.1.0", capability, state: "supported" as const, model: "gpt-6-luna", detail: null, at: 1 }));
+    receipts.push({ providerId: "opencode2", version: "1.1.0", capability: "answers" as const, state: "supported" as const, model: "glm", detail: null, at: 1 });
     expect(dueProbes(inUse, versions, receipts)).toEqual([{ providerId: "opencode2", model: "glm", version: "1.2.0" }]);
     expect(capabilityTable(inUse, versions, receipts)).toEqual([
-      { providerId: "codex", version: "0.1.0", capabilities: { answers: "supported" } },
-      { providerId: "opencode2", version: "1.2.0", capabilities: { answers: "unproven" } },
+      { providerId: "codex", version: "0.1.0", capabilities: { answers: "supported", documentary: "supported", pause: "supported" } },
+      { providerId: "opencode2", version: "1.2.0", capabilities: { answers: "unproven", documentary: "unproven", pause: "unproven" } },
     ]);
   });
 });
@@ -39,15 +40,18 @@ describe("the sweep", () => {
     harness.sdk.stub("threads.get", async () => ({ id: "thr_pm", status: "idle", archivedAt: null }));
     const probes: string[] = [], tripped: string[] = [];
     const services = {
-      startHelperProbe: async (_project: string, _run: string, provider: string) => { probes.push(provider); return provider === "opencode2" ? { ok: false, reason: "did not answer" } : { ok: true, reason: null }; },
+      startHelperProbe: async (_project: string, _run: string, provider: string, _model: string, kind = "answers") => { probes.push(`${provider}:${kind}`); return provider === "opencode2" ? { ok: false, reason: "did not answer" } : { ok: true, reason: null }; },
       providerBreaker: { record: (key: string) => { tripped.push(key); } },
     };
     const api = createCapabilities({ db, bb, log: () => undefined, isDisposed: () => false } as never, services as never).capabilities;
     const first = await api.sweep();
-    expect(first.map((row) => [row.providerId, row.state])).toEqual([["claude-code", "supported"], ["codex", "supported"], ["opencode2", "not_supported"]]);
+    // A provider that answers is probed for its documentary cell and its pause too; one that does not answer stops at answers.
+    expect(first.map((row) => [row.providerId, row.state])).toEqual([["claude-code", "answers:supported"], ["claude-code", "documentary:supported"], ["claude-code", "pause:supported"],
+      ["codex", "answers:supported"], ["codex", "documentary:supported"], ["codex", "pause:supported"], ["opencode2", "answers:not_supported"]]);
     expect(tripped).toEqual([expect.stringContaining("opencode2")]);
+    // A version that does not answer is not probed for the rest until a new version comes.
     expect(await api.sweep()).toEqual([]);
-    expect(listReceipts(db)).toHaveLength(3);
+    expect(listReceipts(db)).toHaveLength(7);
     const cli = await runCapabilityCli(api, []);
     expect(cli.exitCode).toBe(1);
     expect(JSON.parse(cli.stdout!).table.find((row: { providerId: string }) => row.providerId === "opencode2").capabilities.answers).toBe("not_supported");
@@ -75,7 +79,7 @@ describe("the sweep", () => {
     expect(listReceipts(db)).toEqual([]);
     expect(tripped).toEqual([]);
     reason = "spawn failed: provider crashed";
-    expect((await api.sweep()).every((row) => row.state === "not_supported")).toBe(true);
+    expect((await api.sweep()).every((row) => row.state.endsWith("not_supported"))).toBe(true);
     expect(tripped.length).toBeGreaterThan(0);
   });
 

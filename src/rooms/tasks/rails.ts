@@ -88,7 +88,7 @@ export function writerMarkers(report: string): WriterMarkers {
 }
 
 /** The marker lines the writer's brief asks for. */
-export const MARKER_BRIEF_LINE = "End your final report with two lines: `APPROACH: <how you solved it, one sentence>` and `LESSON: <what the next writer should know>` (or `LESSON: none — <why there is nothing to learn>`). Questions you could not settle go one per line into the task folder's QUESTIONS.md, and where you stopped into its CHECKPOINT.md (.agents/plans/items/<task id>/ — Lane Pilot reads both, they are not your outputs).";
+export const MARKER_BRIEF_LINE = "End with `APPROACH:` and `LESSON:` lines; open questions go to QUESTIONS.md.";
 
 /** Stage questions from files (SMA): the lines of the task folder's QUESTIONS.md, each with its kind. */
 export function questionsFromFile(text: string): Array<{ question: string; kind: string }> {

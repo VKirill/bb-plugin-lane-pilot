@@ -69,6 +69,12 @@ export const TOOL_PRESENTATION: Record<string, Entry> = {
   lane_pilot_workflow_draft_test: row("Testing the workflow on stubs", "Tested the workflow on stubs", "Проверяю цепочку на заглушках", "Цепочка проверена на заглушках"),
   lane_pilot_workflow_draft_publish: row("Publishing the workflow", "Published the workflow", "Публикую цепочку", "Цепочка опубликована"),
   lane_pilot_schedule: row("Working with the schedule", "Worked with the schedule", "Работаю с расписанием", "С расписанием поработал"),
+  lane_pilot_phase: row("Moving the phase", "Moved the phase", "Веду фазу", "Фазу провёл"),
+  lane_pilot_queue: row("Working with the queue", "Worked with the queue", "Работаю с очередью", "С очередью поработал"),
+  lane_pilot_facts: row("Reading the facts", "Read the facts", "Читаю факты", "Факты прочитал"),
+  lane_pilot_check: row("Running a check", "Ran a check", "Запускаю проверку", "Проверку запустил"),
+  lane_pilot_permit: row("Answering a permit", "Answered a permit", "Отвечаю на разрешение", "На разрешение ответил"),
+  lane_pilot_forge: row("Working in the forge", "Worked in the forge", "Работаю в кузнице", "В кузнице поработал"),
   // The PM's folded tools (src/pm-tool-families.ts): one row per family, BB cannot label by action.
   lane_pilot_helpers: row("Calling a helper", "Called a helper", "Зову помощника", "Помощник отработал"),
   lane_pilot_council: row("Working with the council", "Worked with the council", "Работаю с советом", "С советом поработал"),
