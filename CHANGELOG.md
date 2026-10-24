@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.301
+
+A piece issued before the contract prints (0.1.299) takes as its print the contract it really went out with — the stored task — compared on acceptance and verification, instead of the plan's current contract. The live phase ph_ae0a8de9db showed why: the PM reworded the failing acceptance line before the first pass of 0.1.299, that pass printed the reworded contract as the issued one, and the changed piece was never issued again (the phase stopped at «unchanged»).
+
 ## 0.1.300
 
 The failed-verdict step of a phase has a new poke key, so a phase that stalled on the old one (the PM was told once, with the old advice) hears the new step — return to planning and change the failing piece — on the next pass.

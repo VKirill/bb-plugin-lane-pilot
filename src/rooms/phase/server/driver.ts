@@ -2,13 +2,13 @@ import { randomUUID } from "node:crypto";
 import { cancelAttemptById } from "../../runs/server";
 import { taskFamily } from "../../runs";
 import { getRunGoal } from "../../run-goal";
-import { getRun, getRunSettingsScopes, getRunWriterHost, listOpenAttempts, storeMemoryRecords } from "../../storage";
+import { getRun, getRunSettingsScopes, getRunWriterHost, getTask, listOpenAttempts, storeMemoryRecords } from "../../storage";
 import { postOwnerItem, closeOwnerItem } from "../../owner-waiting";
 import { isWholeConsent, spendReserve } from "../../tasks";
 import { hostContract } from "../../contracts";
 import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
 import {
-  PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceLines, blindVerdict, pieceSha, contextSignature, openQuestions, phaseFolder, planGate as planGateOf, piecesOfWave, waveCleared, waveLines, wavePackage, wavesOf, wordOf, designDecision, designGate, discussionGate,
+  PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceLines, blindVerdict, canonical, pieceSha, contextSignature, openQuestions, phaseFolder, planGate as planGateOf, piecesOfWave, waveCleared, waveLines, wavePackage, wavesOf, wordOf, designDecision, designGate, discussionGate,
   executionGate, issuable, lessonsNeeded, nextAction, planGate, planSignature, renderBook, sha256, staleAfterReturn,
   type ContextDoc, type Phase, type PhaseRecord, type PhaseStage, type PlanItem, type RiskKind, type TaskFact, type WordTurn,
 } from "../logic";
@@ -476,8 +476,16 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     const items = phase.record.plan?.items ?? [];
     const execution = { issued: { ...(phase.record.execution?.issued ?? {}) }, startedAt: phase.record.execution?.startedAt ?? now(), issueErrors: {} as Record<string, string>,
       issuedSha: { ...(phase.record.execution?.issuedSha ?? {}) } };
-    // A phase issued before the contract prints existed: its issued pieces are taken as issued with the contract they have now.
-    for (const item of items) if (execution.issued[item.id] && execution.issuedSha[item.id] === undefined) execution.issuedSha[item.id] = pieceSha(item);
+    // A piece issued before the contract prints existed: its print is the contract it really went out with (the stored task), compared
+    // on what proves the work — acceptance and verification. Taking the plan's current contract instead missed a change the PM made
+    // before the first pass of this version (live ph_ae0a8de9db: the reworded acceptance line was never issued).
+    for (const item of items) {
+      const taskId = execution.issued[item.id];
+      if (!taskId || execution.issuedSha[item.id] !== undefined) continue;
+      const sent = getTask(db, taskId)?.contract as Record<string, unknown> | undefined;
+      const same = !sent || (canonical(sent.acceptance ?? null) === canonical(item.task.acceptance ?? null) && canonical(sent.verification ?? null) === canonical(item.task.verification ?? null));
+      execution.issuedSha[item.id] = same ? pieceSha(item) : `issued-with:${taskId}`;
+    }
     if (phase.record.plan?.sha !== phase.record.plan?.admittedSha) throw new PhaseRefusal("the plan changed since it was checked: return the phase to planning");
     let runId = phase.runId;
     // Awaits the word «issue»: with owner.words on nothing is issued before the owner says so.
