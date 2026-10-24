@@ -276,3 +276,23 @@ Copyright 2025 Paul Bakaus. Licensed under the Apache License, Version 2.0. You 
    See the License for the specific language governing permissions and
    limitations under the License.
 ```
+
+## npm dependencies shipped in the bundle
+
+The shipped license ledger (`npx tsx scripts/lp-ship.ts licenses`) checks that every production dependency is named here.
+
+| Package | Version | License |
+|---|---|---|
+| @hugeicons/core-free-icons | 4.3.5 | MIT |
+| @hugeicons/react | 1.1.10 | MIT |
+| @radix-ui/react-checkbox | 1.3.11 | MIT |
+| @radix-ui/react-label | 2.1.15 | MIT |
+| @radix-ui/react-separator | 1.1.15 | MIT |
+| @radix-ui/react-slider | 1.4.7 | MIT |
+| @radix-ui/react-slot | 1.3.3 | MIT |
+| @radix-ui/react-tabs | 1.1.21 | MIT |
+| @xyflow/react | 12.12.0 | MIT |
+| elkjs | 0.12.0 | EPL-2.0 OR GPL-3.0-or-later — shipped under EPL-2.0 |
+| jsonc-parser | 3.3.1 | MIT |
+| three | 0.186.1 | MIT |
+| zod | 4.6.5 | MIT |

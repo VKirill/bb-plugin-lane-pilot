@@ -87,7 +87,7 @@ The hosts need the Lane Pilot host build with `runScript` and `jobStart.key`; an
 
 ## RPCs for the board and the calendar
 
-All times are ms since epoch. `ScheduleView` (`src/schedule/views.ts`): `id, projectId, name, description, task, when, missed, missedLimit,
+All times are ms since epoch. `ScheduleView` (`src/rooms/schedule/views.ts`): `id, projectId, name, description, task, when, missed, missedLimit,
 overlap, timeoutSec, maxFailures, state, pauseReason, consecutiveFailures, createdBy, createdAt, updatedAt, nextFires[], machine, lastRun,
 active[], column, model, cost, where`. `column` is where the card stands: `paused`; else `waiting` (a run waits for the owner), `running`; else `failed` (the last
 run failed or timed out, until one succeeds); else `done` (a one-time task that succeeded); else `scheduled`. The columns of the plan
@@ -115,7 +115,7 @@ resolved-model line and the text are in the edit form.
 
 ### Who runs an errand
 
-One pure function, `resolveErrandModel({task, settings, pm})` (`src/schedule/errand-model.ts`), answers for the executor (what is spawned) and for
+One pure function, `resolveErrandModel({task, settings, pm})` (`src/rooms/schedule/errand-model.ts`), answers for the executor (what is spawned) and for
 `ScheduleView.model` (what the card says). First level that has a model wins; the task's own `reasoning` and `serviceTier` then override the effort
 and tier of that level:
 
@@ -134,7 +134,7 @@ A chain lists the resolved executor of each step from `workflow_step_executors`,
 ### The Automation default (`schedule.errand_default`)
 
 Saved with the generic `save_setting` (project id of the open project, or `"*"` at the global page; `expectedVersion` from `errandDefault`), validated in
-`src/setting-validation.ts`. `schedule_list.errandDefault` is `{effective, source ("project" | "global" | null), project, global, projectVersion, globalVersion}`.
+`src/rooms/settings/setting-validation.ts`. `schedule_list.errandDefault` is `{effective, source ("project" | "global" | null), project, global, projectVersion, globalVersion}`.
 The collapsible block «Default executor» at the top of the schedule area edits the project's value inside a project (with «Inherit», which calls
 `reset_project_settings` and lets the global value show) and the global value at the global page («Clear» saves `null`). The key is allowed in
 `reset_project_settings` beside the catalog keys.
@@ -142,21 +142,21 @@ The collapsible block «Default executor» at the top of the schedule area edits
 ### Cost
 
 `ScheduleView.cost` (errand only) is `{perRunUsd, samples, priceInPer1M, priceOutPer1M}`: the average over the schedule's last 20 finished runs whose run thread has
-usage in `lane_pilot_token_cursor` and a priced model (`src/model-prices.ts`), and the resolved model's price per 1M tokens. The board prints «≈ $0.12 per run (average of 5)»,
+usage in `lane_pilot_token_cursor` and a priced model (`packages/models/src/model-prices.ts`), and the resolved model's price per 1M tokens. The board prints «≈ $0.12 per run (average of 5)»,
 with no history the price, and «cost unknown» when the model has no price. `RunView` carries `providerId`, `model`, `tokens`, `costUsd` and `usageKnown` (from the run
-thread, `src/server/schedule-usage.ts`): a run with no usage row (an ACP provider reports none, or the sync has not seen the thread yet) prints «unknown», never 0.
+thread, `src/rooms/schedule/server/schedule-usage.ts`): a run with no usage row (an ACP provider reports none, or the sync has not seen the thread yet) prints «unknown», never 0.
 Only `schedule_runs` and `schedule_get` fill these; `lastRun`, `active` and the calendar carry empty ones.
 
 ### Where it runs
 
-`ScheduleView.where` is `{projectName, sectionId, sectionName, sectionPath, hostId, hostName, cwd}` (`src/server/schedule-place.ts`). The project's name comes from BB;
+`ScheduleView.where` is `{projectName, sectionId, sectionName, sectionPath, hostId, hostName, cwd}` (`src/rooms/schedule/server/schedule-place.ts`). The project's name comes from BB;
 the Project Folders section is the one the project's PM chat is filed in (the thread's `sectionId`, else the deepest folder section whose path holds the chat's environment);
 the machine and folder of an errand and a chain are the PM chat's environment (the helper thread reuses it; the project's first source when no chat is open); a script names its own
 machine and folder. Whatever BB does not tell stays `null`. The card line reads «SelfyStudio › Marketing · Mac mini». The project, the section and an errand's machine are shown, not
 edited: a schedule cannot move to another project, and where a chat is filed is set in Project Folders. `RunView.hostName` is the machine the work ran on: the errand thread's own
 machine (its environment's host, read once per thread), a script's host; `RunView.hostId` stays the Browser QA machine used for conflict detection.
 
-A definition (`schedule_upsert.definition`, `src/schedule/model.ts`): `{id?, projectId, name, description?, task, when, missed?, missedLimit?,
+A definition (`schedule_upsert.definition`, `src/rooms/schedule/model.ts`): `{id?, projectId, name, description?, task, when, missed?, missedLimit?,
 overlap?, timeoutSec?, maxFailures?}` with `when` = `{type:"cron", cron, timezone?}` or `{type:"once", runAt? | delay?}`.
 
 **Conflicts.** A schedule that has a machine (a script's `hostId`, an errand's Browser QA machine) is compared with the other active schedules

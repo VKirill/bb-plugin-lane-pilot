@@ -16,7 +16,7 @@ What leaves for the Jev API is the already-redacted text (`redactKnownDeep` in `
 - **`shadow`** (the default): about one output in ten is asked about (`SHADOW_SAMPLE`; the same text always gets the same answer to
   "sampled?"), at most 2000 characters of it (start and end, `SHADOW_CHARS`), and never a text in which Lane Pilot redacted a known
   secret or that talks about secrets and the environment (`.env`, Env Catalog, `API_KEY=`, bearer tokens, `sk-…`, `ghp_…`, private
-  keys; `looksSensitive` in `src/jev/output-guard.ts`). The day's counts (asked, not sampled, sensitive) are in the plugin KV
+  keys; `looksSensitive` in `packages/jev/src/output-guard.ts`). The day's counts (asked, not sampled, sensitive) are in the plugin KV
   `output-guard:stats`.
 - **`active`**: every output is asked about, up to 6000 characters (start and end): the guard is the point there, so the redacted
   text of an output that touched a secret goes out as well.
@@ -35,7 +35,7 @@ FROM lane_pilot_jev_receipt GROUP BY 1,2,3,4 ORDER BY 1,2;
 SELECT subject, decision, answers_json, at FROM lane_pilot_jev_receipt WHERE judgment = 'failure.class' AND status = 'ok' ORDER BY at DESC LIMIT 50;
 ```
 
-The same grouping is `summarizeReceipts` in `src/jev/receipts.ts`. On the hub the database is `~/.bb/plugins/lane-pilot/data.db`.
+The same grouping is `summarizeReceipts` in `packages/jev/src/receipts.ts`. On the hub the database is `~/.bb/plugins/lane-pilot/data.db`.
 
 What to look at before switching a judgment to `active`:
 

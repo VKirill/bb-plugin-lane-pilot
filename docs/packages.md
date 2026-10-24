@@ -109,7 +109,7 @@ The small packages provide reusable contracts and utilities to root rooms; the w
 ## Business rules
 
 - Packages do not import from `src/`; rooms enter other rooms through public indices (`package.json:55-60`, `src/rooms/core/server/services.ts:1-20`).
-- Domain packages expose public APIs from `src/index.ts`; a name is usable outside the package only when that entry exports it (`packages/council/src/index.ts:1-32`, `packages/handoff/src/index.ts:1-48`).
+- Domain packages expose public APIs from each package's index (`packages/<name>/src/index.ts`); a name is usable outside the package only when that entry exports it (`packages/council/src/index.ts:1-32`, `packages/handoff/src/index.ts:1-48`).
 
 ## Root RPC registration
 

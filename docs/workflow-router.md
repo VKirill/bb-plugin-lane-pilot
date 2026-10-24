@@ -1,6 +1,6 @@
 # Workflow router (W4)
 
-The router maps a request to one of the published workflows of the catalog, or asks. Pure code in `src/workflow/router.ts` (no SDK, no database); the PM tools are in `src/server/workflow-tools.ts`. Source of the rules and of the evaluation set: `workflow-chains-spec.md`, sections 1 and 6.
+The router maps a request to one of the published workflows of the catalog, or asks. Pure code in `packages/workflow-engine/src/router.ts` (no SDK, no database); the PM tools are in `src/rooms/workflow/server/workflow-tools.ts`. Source of the rules and of the evaluation set: `workflow-chains-spec.md`, sections 1 and 6.
 
 ## What is offered
 
@@ -35,7 +35,7 @@ Only `published`, not `internal` workflows, and never `lp-task-pipeline` (how La
 
 ## The model step: Jev first, a thread for the unclear case
 
-`createJevRouterModel` (`src/jev/route-model.ts`, the judgment `route.workflow` in `src/jev/judgments/route-workflow.ts`) is the model of `lane_pilot_route`. One request to Jev (TypeSafe `systemone`, about 0.3 s and 2.6k input tokens) carries the top candidates and asks a Choice over them plus «none of these», a «too broad» question, and, for each candidate input that is an enum or a switch, a closed question; the chosen workflow's stated inputs fill `inputs`. Jev's answers are probabilities and code decides:
+`createJevRouterModel` (`src/rooms/workflow/route-model.ts`, the judgment `route.workflow` in `src/rooms/workflow/route-workflow.ts`) is the model of `lane_pilot_route`. One request to Jev (TypeSafe `systemone`, about 0.3 s and 2.6k input tokens) carries the top candidates and asks a Choice over them plus «none of these», a «too broad» question, and, for each candidate input that is an enum or a switch, a closed question; the chosen workflow's stated inputs fill `inputs`. Jev's answers are probabilities and code decides:
 
 - A clear pick (`min_p` 0.6, `min_margin` 0.25 over the runner-up, «none of these» under `max_none` 0.3, «too broad» under `max_broad` 0.9) is the answer. A very broad request (`broad_clarify` 0.95) is a `clarify` at once.
 - Anything else is **escalated to the helper thread** that decided every route before Jev (an Opus thread in the PM's run, tens of seconds). Its answer is stored next to Jev's as an `agree` / `disagree` label in `lane_pilot_jev_receipt`, the instrument for calibrating the thresholds. A chat without a run has no thread to escalate to: the scorer answers.

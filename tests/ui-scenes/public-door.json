@@ -1,0 +1,6 @@
+{
+  "url": "https://bb.vechkasov.pro/install/version",
+  "widths": [375, 1280],
+  "asserts": [{ "selector": "body", "minCount": 1 }, { "noOverflow": true }],
+  "judge": "Does the hub's door answer at both widths?"
+}

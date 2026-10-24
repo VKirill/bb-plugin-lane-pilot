@@ -2,7 +2,7 @@
 
 A workflow starts four ways. Every one of them goes through the same checks as the PM's `lane_pilot_run_workflow`: the workflow
 is runnable, its required inputs are whole, what it `requires` exists (W8), and the project has an open Lane Pilot PM chat to
-give helper threads and questions a parent. The code is `src/server/workflow-triggers.ts` (`start`).
+give helper threads and questions a parent. The code is `src/rooms/workflow/server/workflow-triggers.ts` (`start`).
 
 | Trigger | Who starts it | How |
 | --- | --- | --- |
