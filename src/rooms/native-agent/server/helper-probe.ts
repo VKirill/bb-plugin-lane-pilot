@@ -21,10 +21,22 @@ export type HelperProbeResult = {
 const PROMPT = "Lane Pilot helper probe. Reply with the single word OK and do nothing else: no tools, no files.";
 const WAIT_MS = 150_000;
 
+/**
+ * The probes of a capability (src/rooms/capability): answers — one word; documentary — a read-only helper reads the workspace and reports
+ * without writing (SMA: Documentary role cells, Claude documentary drill); pause — a helper waits in a long command and goes on in the same
+ * turn (SMA: Pause drill on the stand, Claude/Codex pause drill). Each names what its answer must hold.
+ */
+export const PROBES = {
+  answers: { prompt: PROMPT, expect: /\S/ },
+  documentary: { prompt: "Lane Pilot documentary probe. Read only: list the names of the top-level entries of the workspace folder, comma-separated, then end with the word LISTED. Do not create, change or delete any file.", expect: /LISTED/ },
+  pause: { prompt: "Lane Pilot pause probe. Run the shell command `sleep 40`; when it has finished, reply with the single word RESUMED. Do not create or change any file.", expect: /RESUMED/ },
+} as const;
+export type ProbeKind = keyof typeof PROBES;
+
 export function createHelperProbe(ctx: Pick<ServerCore, "bb" | "db">) {
   const { bb, db } = ctx;
 
-  async function startHelperProbe(projectId: string, runId: string, providerId: string, modelId: string): Promise<HelperProbeResult> {
+  async function startHelperProbe(projectId: string, runId: string, providerId: string, modelId: string, kind: ProbeKind = "answers"): Promise<HelperProbeResult> {
     const began = Date.now();
     let threadId: string | null = null;
     let started = false;
@@ -51,9 +63,9 @@ export function createHelperProbe(ctx: Pick<ServerCore, "bb" | "db">) {
         ...placement,
         ...requiredPolicyField(bb, helperPolicy, providerId, "pm-reader"),
         ...writerExecutionSelection(providerId, modelId, effort, "default"),
-        prompt: PROMPT,
+        prompt: PROBES[kind].prompt,
         environment: { type: "host", hostId: config.hostId, workspace: { type: "unmanaged", path: config.writerWorkspacePath } },
-        pluginMetadata: { role: "pm-reader", lanePilotRunId: runId, lanePilotTaskId: `helper-probe-${providerId}`, stageId: "pm-read", parentPmThreadId: run.pm_thread_id, helperMode: helperPolicy.mode, helperRequired: helperPolicy.policy?.required === true, helperProbe: true },
+        pluginMetadata: { role: "pm-reader", lanePilotRunId: runId, lanePilotTaskId: `helper-probe-${kind}-${providerId}`, stageId: "pm-read", parentPmThreadId: run.pm_thread_id, helperMode: helperPolicy.mode, helperRequired: helperPolicy.policy?.required === true, helperProbe: true },
       });
       threadId = stringAt(spawned, "id");
       if (!threadId) throw new Error("helper_probe_thread_id_missing");
@@ -61,6 +73,7 @@ export function createHelperProbe(ctx: Pick<ServerCore, "bb" | "db">) {
       await waitThreadIdle(bb, threadId, "helper_probe_timeout", WAIT_MS);
       const output = (await bb.sdk.threads.output({ threadId })).output;
       if (typeof output !== "string" || !output.trim()) throw new Error("helper_probe_output_empty");
+      if (!PROBES[kind].expect.test(output)) return result({ answered: true, output: output.trim().slice(0, 200), reason: `helper_probe_${kind}_unexpected: the answer lacks what the ${kind} probe asks for` });
       return result({ ok: true, answered: true, output: output.trim().slice(0, 200) });
     } catch (cause) {
       return result({ reason: (cause instanceof Error ? cause.message : String(cause)).replace(/\s+/g, " ").slice(0, 300) });

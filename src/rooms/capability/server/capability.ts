@@ -1,3 +1,4 @@
+import { CAPABILITIES } from "../logic";
 import { breakerKey } from "@lane-pilot/resilience";
 import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
 import { SANDBOX_PROJECT_ID } from "../../stability/server";
@@ -47,21 +48,27 @@ export function createCapabilities(ctx: ServerCore, services: Services) {
     const due = dueProbes(inUse, versions, listReceipts(db));
     const runId = due.length ? await probeRun() : null;
     const probed: Array<{ providerId: string; version: string; state: string; reason: string | null }> = [];
+    const have = new Set(listReceipts(db).map((row) => `${row.providerId}\u0000${row.version}\u0000${row.capability}`));
     for (const item of due) {
       if (ctx.isDisposed()) break;
       if (!runId) { ctx.log("capability: no sandbox run with a PM chat to probe in"); break; }
-      const result = await services.startHelperProbe(SANDBOX_PROJECT_ID, runId, item.providerId, item.model).catch((cause: unknown) => ({ ok: false, started: false, reason: cause instanceof Error ? cause.message : String(cause) }));
-      // A probe that could not even be set up (a dead parent, no such model) says nothing about the adapter: no receipt, no breaker.
-      if (!result.ok && probeSetupFailed(result.reason ?? null)) {
-        ctx.log(`capability: ${item.providerId} ${item.version} not probed: ${result.reason}`);
-        probed.push({ providerId: item.providerId, version: item.version, state: "not_probed", reason: result.reason ?? null });
-        continue;
+      // Every capability the installed version has no receipt for: answers first; documentary and pause only once it answers.
+      for (const capability of CAPABILITIES.filter((name) => !have.has(`${item.providerId}\u0000${item.version}\u0000${name}`))) {
+        const result = await services.startHelperProbe(SANDBOX_PROJECT_ID, runId, item.providerId, item.model, capability).catch((cause: unknown) => ({ ok: false, started: false, reason: cause instanceof Error ? cause.message : String(cause) }));
+        // A probe that could not even be set up (a dead parent, no such model) says nothing about the adapter: no receipt, no breaker.
+        if (!result.ok && probeSetupFailed(result.reason ?? null)) {
+          ctx.log(`capability: ${item.providerId} ${item.version} ${capability} not probed: ${result.reason}`);
+          probed.push({ providerId: item.providerId, version: item.version, state: "not_probed", reason: result.reason ?? null });
+          break;
+        }
+        const state = result.ok ? "supported" : "not_supported";
+        saveReceipt(db, { providerId: item.providerId, version: item.version, capability, state, model: item.model, detail: result.ok ? null : (result.reason ?? "no answer").slice(0, 500), at: now });
+        // Only a provider that does not answer at all is held off; a documentary or pause gap is a cell of the table.
+        if (!result.ok && capability === "answers") services.providerBreaker.record(breakerKey(item.providerId, item.model), "exhausted", now);
+        ctx.log(`capability: ${item.providerId} ${item.version} ${capability}=${state}${result.ok ? "" : ` (${result.reason ?? "no answer"})`}`);
+        probed.push({ providerId: item.providerId, version: item.version, state: `${capability}:${state}`, reason: result.ok ? null : result.reason ?? null });
+        if (!result.ok && capability === "answers") break;
       }
-      const state = result.ok ? "supported" : "not_supported";
-      saveReceipt(db, { providerId: item.providerId, version: item.version, capability: "answers", state, model: item.model, detail: result.ok ? null : (result.reason ?? "no answer").slice(0, 500), at: now });
-      if (!result.ok) services.providerBreaker.record(breakerKey(item.providerId, item.model), "exhausted", now);
-      ctx.log(`capability: ${item.providerId} ${item.version} answers=${state}${result.ok ? "" : ` (${result.reason ?? "no answer"})`}`);
-      probed.push({ providerId: item.providerId, version: item.version, state, reason: result.ok ? null : result.reason ?? null });
     }
     return probed;
   }

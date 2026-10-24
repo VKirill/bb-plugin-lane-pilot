@@ -5,7 +5,7 @@
  * yet (unproven). The probe is the drill's helper probe (one cheap helper answers «OK»); a provider whose new version fails it is held
  * off by the provider breaker until it answers again.
  */
-export const CAPABILITIES = ["answers"] as const;
+export const CAPABILITIES = ["answers", "documentary", "pause"] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 export type CapabilityState = "supported" | "not_supported";
 export type CapabilityReceipt = { providerId: string; version: string; capability: Capability; state: CapabilityState; model: string | null; detail: string | null; at: number };
