@@ -15,6 +15,7 @@ import {
 import { appendPart, getPhase, insertPhase, listParts, listPhases, notePoked, savePhase } from "../store";
 import { archiveDrawing, conclusionText, markRoadmap, nextRoadmapRow, stateText, uatState, uatText, waveTable } from "../stages";
 import { runOnHost } from "@lane-pilot/host-calls";
+import { createPhaseIntake } from "./intake";
 import { critiqueProblems, roleLine, type DesignJournalLine, type DrawingCritique } from "../../design-eval";
 
 export const DESIGN_JOURNAL = "lp.design.journal";
@@ -684,8 +685,9 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   /** Did the plan stay the admitted one (Plan unchanged since checking). */
   const planUnchanged = (phase: Phase) => !!phase.record.plan?.admittedSha && phase.record.plan.admittedSha === planSignature(phase.record.plan.items, phase.record.plan.contextSha);
 
-  return { phases: { open, context, plan, planCheck, drawing, goalAudit, lessons, question, answer, word, waveReview, withdraw, revise, correct, returnTo, setState, stopWave, compensate, tick, drive, status, facts, planUnchanged, writeBook,
-    list: (filter: Parameters<typeof listPhases>[1]) => listPhases(db, filter) } };
+  const phases = { open, context, plan, planCheck, drawing, goalAudit, lessons, question, answer, word, waveReview, withdraw, revise, correct, returnTo, setState, stopWave, compensate, tick, drive, status, facts, planUnchanged, writeBook,
+    list: (filter: Parameters<typeof listPhases>[1]) => listPhases(db, filter) };
+  return { phases, phaseIntake: createPhaseIntake(ctx, phases) };
 }
 export type PhaseApi = ReturnType<typeof createPhaseDriver>["phases"];
 

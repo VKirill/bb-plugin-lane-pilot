@@ -21,7 +21,7 @@ import { createRollback } from "./src/rooms/rollback/server";
 import { createPluginBench, mountBenchWeekly } from "./src/rooms/bench/server";
 import { createBaselineRoom, mountRegress } from "./src/rooms/baseline/server";
 import { createRunGoal, mountRunGoal } from "./src/rooms/run-goal/server";
-import { createPhaseDriver, mountPhaseDriver, registerPhaseTool } from "./src/rooms/phase/server";
+import { createPhaseDriver, mountPhaseDriver, mountPhaseIntake, registerPhaseTool } from "./src/rooms/phase/server";
 import { registerConversationTools, registerQueueTool } from "./src/rooms/tasks/server";
 import { mountOutbound } from "./src/rooms/outbound";
 import { createMoney } from "./src/rooms/money";
@@ -148,6 +148,8 @@ export default async function plugin(bb: BbPluginApi) {
   mountRunGoal(ctx, services.runGoal);
   // Every two minutes: each live phase is moved by its gates, the next wave of its plan is issued, and the PM gets the one thing the stage needs.
   mountPhaseDriver(ctx, services.phases);
+  // Rails by default: each turn in a PM chat starts with the owner's newest message read in code; a heavy goal opens its phase.
+  mountPhaseIntake(ctx, services.phaseIntake);
   // Each task that ends is posted to the project's webhook (events.webhook_url) with nine fields; the world version grows with every attempt change.
   mountOutbound(ctx);
   // Every hour: a provider whose adapter (BB plugin) version changed is probed once; a failing one is held off by the breaker.

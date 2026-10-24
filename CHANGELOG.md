@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.294
+
+**Rails by default.** In Matvey's system the machine drives: every heavy request of the owner goes through the phase graph, and the orchestrator is only switched on at its turns. Here the phase existed, but only the PM could open one, and no PM ever did (0 phases on the hub). Now each turn that starts in a PM chat begins with the owner's newest message read in code (`phase/intake.ts`): a whole-message consent and a short message are settled by rules, the rest by the Jev judgment `intake.weight` (heavy, small, batch, question, consent; without Jev a message over 700 characters is heavy). A heavy goal opens its phase at once and the driver wakes the PM with the discussion's one step; a second heavy message joins the live phase as the owner's correction. While that phase is active, `lane_pilot_dispatch_writer` refuses to hand out the request's work by hand (`phase_rails`) and names the stage's step; small jobs, batches and questions keep the usual road, a paused phase lets the PM dispatch, and closing the phase in words releases it. `phase.rails off` turns it off for a project.
+
 ## 0.1.293
 
 **An orphaned worktree folder no longer breaks a new attempt.** A `git worktree remove` that stopped half way drops git's admin dir and leaves the folder, whose `.git` still names that admin dir. git gives the free name to the next worktree, and a cleanup's `git add -A` in the old folder then wrote the new worktree's index. On OVH a 20.10 leftover did this twice on 2026-10-24: site-og-renderer and site-seo-blog-authors saw 14 880 files «deleted» and were blocked as out of scope. A new worktree now retires any folder under `~/.lane-pilot/worktrees` whose `.git` names the admin dir it just got. Releasing a worktree whose admin dir belongs to another folder never runs git there: the folder is cut off from git and removed.

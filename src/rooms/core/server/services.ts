@@ -8,7 +8,7 @@ import type { RollbackApi } from "../../rollback/server";
 import type { BenchApi } from "../../bench/server";
 import type { BaselineApi, RegressionApi } from "../../baseline/server";
 import type { RunGoalApi } from "../../run-goal/server";
-import type { PhaseApi } from "../../phase/server";
+import type { PhaseApi, PhaseIntake } from "../../phase/server";
 import type { MoneyApi } from "../../money";
 import type { FrontApi } from "../../front";
 import type { CapabilitiesApi } from "../../capability/server";
@@ -91,6 +91,8 @@ export interface Services {
   runGoal: RunGoalApi;
   /** Phases on rails: the driver that moves a phase through its stages by gates in code and wakes the PM at each turn (src/rooms/phase). */
   phases: PhaseApi;
+  /** Rails by default: the owner's newest message in a PM chat read before the PM acts; a heavy goal goes into a phase (src/rooms/phase/server/intake.ts). */
+  phaseIntake: PhaseIntake;
   /** The spend book, the money cap of paid lanes and the subscription windows (src/rooms/money). */
   money: MoneyApi;
   /** The front outside the graphs: first run, own helpers, peers, coordination, the door, the action journal (src/rooms/front). */
