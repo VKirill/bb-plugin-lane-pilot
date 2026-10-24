@@ -148,4 +148,5 @@ Invariants: update and delete triggers reject all changes, preserving append-onl
 ## Referenced by
 
 - [Workflow Engine Data Model](../data-model.md)
+- [Engine, Journal, and Pure Action Details](../features/engine-journal-actions.md)
 - [Workflow Execution Engine](../features/execution-engine.md)
