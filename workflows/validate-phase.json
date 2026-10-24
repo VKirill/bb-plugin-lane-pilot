@@ -1,0 +1,136 @@
+{
+  "id": "validate-phase",
+  "name": {
+    "en": "Validate a phase (check coverage)",
+    "ru": "Проверка покрытия фазы"
+  },
+  "description": {
+    "en": "Audits whether every promise and requirement of a phase has a check that would fail without the work, samples the checks against a broken copy, and writes VALIDATION.md with the gaps.",
+    "ru": "Проверяет, у каждого ли обещания и требования фазы есть проверка, которая упала бы без работы, пробует проверки на испорченной копии и пишет VALIDATION.md с пробелами."
+  },
+  "examples": {
+    "ru": [
+      "Проверь покрытие фазы проверками",
+      "Хватает ли тестов на обещания этой фазы?",
+      "Сделай VALIDATION.md для фазы",
+      "Найди обещания без настоящей проверки"
+    ],
+    "en": [
+      "Check the phase's check coverage",
+      "Are the phase promises really tested?",
+      "Write VALIDATION.md for the phase",
+      "Find promises without a real check"
+    ]
+  },
+  "not_for": [
+    "code-review",
+    "test-gen"
+  ],
+  "status": "published",
+  "inputs": {
+    "phase_id": {
+      "type": "string",
+      "required": true
+    }
+  },
+  "outputs": {
+    "status": "done|gaps",
+    "gaps": "string[]",
+    "validation_path": "string"
+  },
+  "quality_mode": {
+    "default": "standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ]
+  },
+  "budget": {
+    "max_steps": 8,
+    "max_minutes": 60
+  },
+  "entry": "audit",
+  "nodes": [
+    {
+      "id": "audit",
+      "type": "agent",
+      "role": "auditor",
+      "title": {
+        "en": "Coverage audit",
+        "ru": "Аудит покрытия"
+      },
+      "prompt": "Read the phase's SPEC.md, PLAN.md and the task contracts (lane_pilot_phase status). For each promise and requirement: which check proves it, would that check fail without the work (mutate one line in a throwaway copy and run it), is it existence-only. Write .agents/phases/<id>/VALIDATION.md from the template (lane-plan template fill VALIDATION --phase …) with one row per promise and the gaps.",
+      "out": {
+        "gaps": "string[]",
+        "validation_path": "string",
+        "sampled": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "gaps": "[]",
+        "validation_path": "audit.validation_path"
+      }
+    },
+    {
+      "id": "gaps",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "gaps",
+        "gaps": "audit.gaps",
+        "validation_path": "audit.validation_path"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "audit",
+      "to": "gaps",
+      "pass": "artifact",
+      "when": "audit.gaps.length > 0"
+    },
+    {
+      "from": "audit",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "vp-1",
+    "sim": {
+      "input": {
+        "phase_id": "ph_sample01"
+      },
+      "stubs": {
+        "audit": {
+          "gaps": [],
+          "validation_path": ".agents/phases/ph_sample01/VALIDATION.md",
+          "sampled": 3
+        }
+      },
+      "expect_path": [
+        "audit",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'"
+      ]
+    }
+  }
+}

@@ -1,0 +1,203 @@
+{
+  "id": "ai-integration-phase",
+  "name": {
+    "en": "AI integration phase",
+    "ru": "Фаза интеграции ИИ"
+  },
+  "description": {
+    "en": "Before a phase that ships model behaviour: selects the AI framework and model, researches it, and writes AI-SPEC.md with typed inputs and outputs, failure guards, the evaluation plan and the cost ceiling.",
+    "ru": "Перед фазой с поведением модели: выбирает ИИ-фреймворк и модель, исследует их и пишет AI-SPEC.md с типами входа и выхода, защитой от сбоев, планом оценки и потолком стоимости."
+  },
+  "examples": {
+    "ru": [
+      "Спланируй интеграцию ИИ в эту фичу",
+      "Какую модель и фреймворк взять для генерации?",
+      "Сделай AI-SPEC для фазы",
+      "Нужна оценка качества генерации до разработки"
+    ],
+    "en": [
+      "Plan the AI integration of this feature",
+      "Which model and framework for the generation?",
+      "Write the AI-SPEC for the phase",
+      "We need an eval plan before building"
+    ]
+  },
+  "not_for": [
+    "web-research"
+  ],
+  "status": "published",
+  "inputs": {
+    "goal": {
+      "type": "string",
+      "required": true
+    },
+    "phase_id": {
+      "type": "string"
+    }
+  },
+  "outputs": {
+    "status": "done",
+    "framework": "string",
+    "spec_path": "string"
+  },
+  "quality_mode": {
+    "default": "standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ]
+  },
+  "budget": {
+    "max_steps": 8,
+    "max_minutes": 90
+  },
+  "entry": "select",
+  "nodes": [
+    {
+      "id": "select",
+      "type": "agent",
+      "role": "analyst",
+      "title": {
+        "en": "Framework selection",
+        "ru": "Выбор фреймворка"
+      },
+      "prompt": "AI framework selector: from the goal, choose the kind of call (typed judgment, generation, retrieval, ranking), the framework and the model; 2–3 options with cost per call, latency and failure modes; recommend one.",
+      "out": {
+        "framework": "string",
+        "options": "any"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "research",
+      "type": "agent",
+      "role": "specialist:tavily",
+      "title": {
+        "en": "Framework research",
+        "ru": "Исследование фреймворка"
+      },
+      "prompt": "Framework researcher: current docs, limits and prices of the chosen framework and model, with links; pitfalls others hit.",
+      "out": {
+        "notes": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "select"
+        }
+      ]
+    },
+    {
+      "id": "spec",
+      "type": "agent",
+      "role": "planner",
+      "title": {
+        "en": "AI-SPEC",
+        "ru": "AI-SPEC"
+      },
+      "prompt": "Write .agents/phases/<id>/AI-SPEC.md (lane-plan template fill AI-SPEC --phase …): framework and model, typed inputs and outputs, failure modes and guards (timeout, fallback, ceiling), the evaluation (gold set written now, metric, threshold), cost per call. See templates/planning/references/ai-systems.md.",
+      "out": {
+        "spec_path": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "select"
+        },
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "research"
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "framework": "select.framework",
+        "spec_path": "spec.spec_path"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "select",
+      "to": "research",
+      "pass": "artifact"
+    },
+    {
+      "from": "research",
+      "to": "spec",
+      "pass": "artifact"
+    },
+    {
+      "from": "spec",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "ai-1",
+    "sim": {
+      "input": {
+        "goal": "rank photos"
+      },
+      "stubs": {
+        "select": {
+          "framework": "typesafe",
+          "options": []
+        },
+        "research": {
+          "notes": "ok"
+        },
+        "spec": {
+          "spec_path": "x/AI-SPEC.md"
+        }
+      },
+      "expect_path": [
+        "select",
+        "research",
+        "spec",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'"
+      ]
+    }
+  }
+}

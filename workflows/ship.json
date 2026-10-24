@@ -1,0 +1,177 @@
+{
+  "id": "ship",
+  "name": {
+    "en": "Ship a phase (PR)",
+    "ru": "Отгрузка фазы (PR)"
+  },
+  "description": {
+    "en": "Turns a verified phase into a pull request: checks the verification passed and the full gate marker, lists untriaged vendor updates, pushes the branch, writes the PR body from the phase book and opens it, records the shipment and runs the post-ship hooks.",
+    "ru": "Превращает проверенную фазу в pull request: проверяет, что проверка пройдена и есть метка полных ворот, перечисляет неразобранные обновления зависимостей, пушит ветку, пишет описание PR по книге фазы и открывает его, записывает отгрузку и запускает хуки после отгрузки."
+  },
+  "examples": {
+    "ru": [
+      "Отгрузи фазу пулл-реквестом",
+      "Сделай PR из работы этой фазы",
+      "Подготовь PR с описанием по книге фазы",
+      "Запушь ветку и открой PR"
+    ],
+    "en": [
+      "Ship the phase as a pull request",
+      "Make a PR from this phase's work",
+      "Prepare a PR with the body from the phase book",
+      "Push the branch and open the PR"
+    ]
+  },
+  "not_for": [
+    "deploy",
+    "milestone-close"
+  ],
+  "status": "published",
+  "inputs": {
+    "phase_id": {
+      "type": "string",
+      "required": true
+    },
+    "base": {
+      "type": "string",
+      "default": "main"
+    }
+  },
+  "outputs": {
+    "status": "shipped|held",
+    "pr_url": "string",
+    "held_by": "string[]"
+  },
+  "quality_mode": {
+    "default": "standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ]
+  },
+  "budget": {
+    "max_steps": 8,
+    "max_minutes": 60
+  },
+  "entry": "preflight",
+  "nodes": [
+    {
+      "id": "preflight",
+      "type": "agent",
+      "role": "auditor",
+      "title": {
+        "en": "Ready to ship?",
+        "ru": "Готово к отгрузке?"
+      },
+      "prompt": "Verification passed? (lane_pilot_phase status: acceptance lines all hold). Full-gate marker: the integration gate ran green on the head being shipped. Untriaged vendor updates: dependency bumps in the diff without a note. Return held_by with every missing item.",
+      "out": {
+        "ready": "bool",
+        "held_by": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "open_pr",
+      "type": "agent",
+      "role": "errand",
+      "title": {
+        "en": "Push and open the PR",
+        "ru": "Пуш и PR"
+      },
+      "prompt": "Push the phase branch (git push -u origin HEAD), write the PR body from the phase's SUMMARY.md and BOOK.md (what, why, how it was verified, receipts), open it with gh pr create, record the shipment in .agents/deploys.log, then run .agents/planning/hooks/post-ship*.md if any (lane-plan render-hooks post-ship).",
+      "out": {
+        "pr_url": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "preflight"
+        }
+      ]
+    },
+    {
+      "id": "shipped",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "shipped",
+        "pr_url": "open_pr.pr_url",
+        "held_by": "[]"
+      }
+    },
+    {
+      "id": "held",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "held",
+        "pr_url": "''",
+        "held_by": "preflight.held_by"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "preflight",
+      "to": "held",
+      "pass": "artifact",
+      "when": "!preflight.ready"
+    },
+    {
+      "from": "preflight",
+      "to": "open_pr",
+      "pass": "artifact"
+    },
+    {
+      "from": "open_pr",
+      "to": "shipped",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "sh-1",
+    "sim": {
+      "input": {
+        "phase_id": "ph_sample01"
+      },
+      "stubs": {
+        "preflight": {
+          "ready": true,
+          "held_by": []
+        },
+        "open_pr": {
+          "pr_url": "https://example/pr/1"
+        }
+      },
+      "expect_path": [
+        "preflight",
+        "open_pr",
+        "shipped"
+      ],
+      "expect_outputs": [
+        "status == 'shipped'"
+      ]
+    }
+  }
+}

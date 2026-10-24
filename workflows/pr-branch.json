@@ -1,0 +1,139 @@
+{
+  "id": "pr-branch",
+  "name": {
+    "en": "Clean PR branch",
+    "ru": "Чистая ветка для PR"
+  },
+  "description": {
+    "en": "Makes a review branch without the planning commits: the phase's code commits cherry-picked onto the base, .agents/planning and .agents/phases left out, so the reviewer sees only the product change.",
+    "ru": "Делает ветку для ревью без коммитов планирования: кодовые коммиты фазы переносятся на базу, .agents/planning и .agents/phases остаются вне, ревьюер видит только изменение продукта."
+  },
+  "examples": {
+    "ru": [
+      "Сделай ветку для PR без файлов планирования",
+      "Убери коммиты планирования из ветки ревью",
+      "Чистая ветка только с кодом фазы",
+      "Подготовь ветку для ревьюера"
+    ],
+    "en": [
+      "Make a PR branch without the planning files",
+      "Drop the planning commits from the review branch",
+      "A clean branch with only the phase code",
+      "Prepare a branch for the reviewer"
+    ]
+  },
+  "not_for": [
+    "ship"
+  ],
+  "status": "published",
+  "inputs": {
+    "phase_id": {
+      "type": "string",
+      "required": true
+    },
+    "base": {
+      "type": "string",
+      "default": "main"
+    }
+  },
+  "outputs": {
+    "status": "done|blocked",
+    "branch": "string",
+    "commits": "int"
+  },
+  "quality_mode": {
+    "default": "standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ]
+  },
+  "budget": {
+    "max_steps": 8,
+    "max_minutes": 60
+  },
+  "entry": "split",
+  "nodes": [
+    {
+      "id": "split",
+      "type": "agent",
+      "role": "errand",
+      "title": {
+        "en": "Split the branch",
+        "ru": "Разделить ветку"
+      },
+      "prompt": "List the phase's commits (the merge commits of its pieces, Lane-Pilot-Attempt trailers). Create review/<phase id> from the base and cherry-pick each commit with the paths .agents/planning/** and .agents/phases/** dropped (git cherry-pick -n, git restore --staged those paths, commit). Stop on a conflict and report it.",
+      "out": {
+        "branch": "string",
+        "commits": "int",
+        "conflict": "bool"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "branch": "split.branch",
+        "commits": "split.commits"
+      }
+    },
+    {
+      "id": "blocked",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "blocked",
+        "branch": "split.branch",
+        "commits": "split.commits"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "split",
+      "to": "blocked",
+      "pass": "artifact",
+      "when": "split.conflict"
+    },
+    {
+      "from": "split",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "pb-1",
+    "sim": {
+      "input": {
+        "phase_id": "ph_sample01"
+      },
+      "stubs": {
+        "split": {
+          "branch": "review/ph_sample01",
+          "commits": 3,
+          "conflict": false
+        }
+      },
+      "expect_path": [
+        "split",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'"
+      ]
+    }
+  }
+}

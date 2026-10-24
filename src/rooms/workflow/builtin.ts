@@ -40,6 +40,16 @@ import uiAudit from "../../../workflows/ui-audit.json";
 import webResearch from "../../../workflows/web-research.json";
 import xToTelegramDigest from "../../../workflows/x-to-telegram-digest.json";
 import yearReview from "../../../workflows/year-review.json";
+import validatePhase from "../../../workflows/validate-phase.json";
+import evalReview from "../../../workflows/eval-review.json";
+import aiIntegrationPhase from "../../../workflows/ai-integration-phase.json";
+import spike from "../../../workflows/spike.json";
+import ship from "../../../workflows/ship.json";
+import prBranch from "../../../workflows/pr-branch.json";
+import cleanup from "../../../workflows/cleanup.json";
+import newMilestone from "../../../workflows/new-milestone.json";
+import planReviewConvergence from "../../../workflows/plan-review-convergence.json";
+import projectStart from "../../../workflows/project-start.json";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import { parseWorkflow } from "@lane-pilot/workflow-engine";
 
@@ -87,6 +97,16 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "web-research.json", value: webResearch },
   { name: "x-to-telegram-digest.json", value: xToTelegramDigest },
   { name: "year-review.json", value: yearReview },
+  { name: "validate-phase.json", value: validatePhase },
+  { name: "eval-review.json", value: evalReview },
+  { name: "ai-integration-phase.json", value: aiIntegrationPhase },
+  { name: "spike.json", value: spike },
+  { name: "ship.json", value: ship },
+  { name: "pr-branch.json", value: prBranch },
+  { name: "cleanup.json", value: cleanup },
+  { name: "new-milestone.json", value: newMilestone },
+  { name: "plan-review-convergence.json", value: planReviewConvergence },
+  { name: "project-start.json", value: projectStart },
 ];
 
 /** The per-task pipeline every dispatch runs through (PM read, critiques, ownership base, writer). */

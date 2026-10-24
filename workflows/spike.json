@@ -1,0 +1,148 @@
+{
+  "id": "spike",
+  "name": {
+    "en": "Spike (time-boxed experiment)",
+    "ru": "Спайк (эксперимент с рамкой)"
+  },
+  "description": {
+    "en": "Answers one technical question by a throw-away experiment inside a time box: the question, the experiment, the result and the decision in .agents/planning/spikes/; a finished spike can be wrapped into a skill draft.",
+    "ru": "Отвечает на один технический вопрос одноразовым экспериментом в рамке времени: вопрос, опыт, результат и решение в .agents/planning/spikes/; готовый спайк можно свернуть в черновик скилла."
+  },
+  "examples": {
+    "ru": [
+      "Сделай спайк: потянет ли SQLite такой поиск",
+      "Проверь быстро, работает ли этот подход, код выкинем",
+      "Эксперимент на час: ленивая загрузка фото",
+      "Спайк и потом сверни его в скилл"
+    ],
+    "en": [
+      "Spike: can SQLite handle this search",
+      "Quickly check if this approach works, throw the code away",
+      "One-hour experiment: lazy photo loading",
+      "Spike it and wrap it into a skill"
+    ]
+  },
+  "not_for": [
+    "analyze-code",
+    "debug"
+  ],
+  "status": "published",
+  "inputs": {
+    "question": {
+      "type": "string",
+      "required": true
+    },
+    "box_minutes": {
+      "type": "int",
+      "default": 60
+    },
+    "wrap_skill": {
+      "type": "string"
+    }
+  },
+  "outputs": {
+    "status": "answered|inconclusive",
+    "decision": "string",
+    "spike_path": "string",
+    "skill_draft": "string"
+  },
+  "quality_mode": {
+    "default": "standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ]
+  },
+  "budget": {
+    "max_steps": 4,
+    "max_minutes": 120
+  },
+  "entry": "experiment",
+  "nodes": [
+    {
+      "id": "experiment",
+      "type": "agent",
+      "role": "analyst",
+      "title": {
+        "en": "Experiment",
+        "ru": "Эксперимент"
+      },
+      "prompt": "lane-plan spike new \"<question>\" opens the file. Inside the time box: the smallest experiment that answers the question, in a throwaway copy (never the project's main code). Write the result and the decision into the spike file. If wrap_skill is given and the decision is made, run lane-plan wrap spike <file> --skill <wrap_skill>.",
+      "out": {
+        "answered": "bool",
+        "decision": "string",
+        "spike_path": "string",
+        "skill_draft": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 90
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "answered",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "answered",
+        "decision": "experiment.decision",
+        "spike_path": "experiment.spike_path",
+        "skill_draft": "experiment.skill_draft"
+      }
+    },
+    {
+      "id": "inconclusive",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "inconclusive",
+        "decision": "experiment.decision",
+        "spike_path": "experiment.spike_path",
+        "skill_draft": "''"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "experiment",
+      "to": "answered",
+      "pass": "artifact",
+      "when": "experiment.answered"
+    },
+    {
+      "from": "experiment",
+      "to": "inconclusive",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "sp-1",
+    "sim": {
+      "input": {
+        "question": "can sqlite fts handle 1M rows"
+      },
+      "stubs": {
+        "experiment": {
+          "answered": true,
+          "decision": "yes",
+          "spike_path": "s.md",
+          "skill_draft": ""
+        }
+      },
+      "expect_path": [
+        "experiment",
+        "answered"
+      ],
+      "expect_outputs": [
+        "status == 'answered'"
+      ]
+    }
+  }
+}

@@ -1,0 +1,132 @@
+{
+  "id": "cleanup",
+  "name": {
+    "en": "Clean up closed phases",
+    "ru": "Уборка закрытых фаз"
+  },
+  "description": {
+    "en": "Archives what finished work leaves behind: closed phases' folders into the milestone archive, stale spikes and sketches, merged review branches and leftover worktrees; lists everything first and moves nothing it cannot name.",
+    "ru": "Убирает то, что оставила законченная работа: папки закрытых фаз — в архив этапа, устаревшие спайки и наброски, слитые ветки ревью и забытые worktree; сначала всё перечисляет и не трогает то, что не может назвать."
+  },
+  "examples": {
+    "ru": [
+      "Прибери закрытые фазы",
+      "Убери старые спайки и ветки ревью",
+      "Почисти мусор после этапа",
+      "Заархивируй законченные фазы"
+    ],
+    "en": [
+      "Clean up the closed phases",
+      "Remove old spikes and review branches",
+      "Clean the leftovers after the milestone",
+      "Archive the finished phases"
+    ]
+  },
+  "not_for": [
+    "milestone-close"
+  ],
+  "status": "published",
+  "inputs": {
+    "dry_run": {
+      "type": "bool",
+      "default": true
+    }
+  },
+  "outputs": {
+    "status": "planned|done",
+    "moved": "string[]"
+  },
+  "quality_mode": {
+    "default": "standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ]
+  },
+  "budget": {
+    "max_steps": 8,
+    "max_minutes": 60
+  },
+  "entry": "plan",
+  "nodes": [
+    {
+      "id": "plan",
+      "type": "agent",
+      "role": "errand",
+      "title": {
+        "en": "What to clean",
+        "ru": "Что убрать"
+      },
+      "prompt": "List: closed phases (lane_pilot_phase status, roadmap rows marked [x]) and their folders; spikes and sketches older than 30 days with a decision; review/* branches already merged; worktrees with no running attempt. With dry_run false, archive the phase folders under .agents/planning/milestones/archive/, move the rest to the Trash (agent-trash), delete merged branches; never touch an open phase.",
+      "out": {
+        "moved": "string[]",
+        "applied": "bool"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "moved": "plan.moved"
+      }
+    },
+    {
+      "id": "planned",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "planned",
+        "moved": "plan.moved"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "plan",
+      "to": "done",
+      "pass": "artifact",
+      "when": "plan.applied"
+    },
+    {
+      "from": "plan",
+      "to": "planned",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "cl-1",
+    "sim": {
+      "input": {
+        "dry_run": true
+      },
+      "stubs": {
+        "plan": {
+          "moved": [
+            "ph_a"
+          ],
+          "applied": false
+        }
+      },
+      "expect_path": [
+        "plan",
+        "planned"
+      ],
+      "expect_outputs": [
+        "status == 'planned'"
+      ]
+    }
+  }
+}

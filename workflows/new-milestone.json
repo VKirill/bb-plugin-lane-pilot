@@ -1,0 +1,118 @@
+{
+  "id": "new-milestone",
+  "name": {
+    "en": "New milestone",
+    "ru": "Новый этап"
+  },
+  "description": {
+    "en": "Starts the next milestone: its goals, the requirements it delivers (REQUIREMENTS.md rows), and the roadmap phases that get there (lane-plan phase add), after the previous milestone is archived.",
+    "ru": "Начинает следующий этап: его цели, требования (строки REQUIREMENTS.md) и фазы дорожной карты, которые к ним ведут (lane-plan phase add), после архивации прошлого этапа."
+  },
+  "examples": {
+    "ru": [
+      "Начни новый этап проекта",
+      "Спланируй следующий майлстоун",
+      "Какие фазы нужны для версии 2?",
+      "Новый этап: цели и фазы"
+    ],
+    "en": [
+      "Start a new milestone",
+      "Plan the next milestone",
+      "Which phases do we need for v2?",
+      "New milestone: goals and phases"
+    ]
+  },
+  "not_for": [
+    "milestone-close",
+    "roadmap-driven"
+  ],
+  "status": "published",
+  "inputs": {
+    "goal": {
+      "type": "string",
+      "required": true
+    }
+  },
+  "outputs": {
+    "status": "done",
+    "phases": "string[]"
+  },
+  "quality_mode": {
+    "default": "standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ]
+  },
+  "budget": {
+    "max_steps": 8,
+    "max_minutes": 60
+  },
+  "entry": "frame",
+  "nodes": [
+    {
+      "id": "frame",
+      "type": "agent",
+      "role": "planner",
+      "title": {
+        "en": "Milestone frame",
+        "ru": "Рамка этапа"
+      },
+      "prompt": "Archive the finished phases (lane-plan milestone archive <name> when the roadmap has [x] rows). From the goal: 3–7 requirements with ids into REQUIREMENTS.md, then the phases in order (lane-plan phase add <name> --goal …), each a vertical slice (templates/planning/references/mvp-stories.md).",
+      "out": {
+        "phases": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "phases": "frame.phases"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "frame",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "nm-1",
+    "sim": {
+      "input": {
+        "goal": "v2 billing"
+      },
+      "stubs": {
+        "frame": {
+          "phases": [
+            "1 billing",
+            "2 invoices"
+          ]
+        }
+      },
+      "expect_path": [
+        "frame",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "phases.length == 2"
+      ]
+    }
+  }
+}

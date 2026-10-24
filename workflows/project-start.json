@@ -1,0 +1,203 @@
+{
+  "id": "project-start",
+  "name": {
+    "en": "Project start (value map first)",
+    "ru": "Старт проекта (сначала карта ценности)"
+  },
+  "description": {
+    "en": "Starts work on a project: a value map before any question (who it is for, what they get, how we know), a preview of the stack, the tests and the memory it already has, the infra profile, the owner's working style and risk, then a recap with next steps and the roadmap skeleton.",
+    "ru": "Начинает работу над проектом: карта ценности до любых вопросов (для кого, что получают, как узнаем), обзор стека, тестов и уже накопленной памяти, профиль инфраструктуры, стиль работы владельца и риск, затем итог со следующими шагами и каркасом дорожной карты."
+  },
+  "examples": {
+    "ru": [
+      "Начни работу над новым проектом",
+      "Разберись в проекте с нуля и предложи план",
+      "Сделай карту ценности проекта",
+      "Подготовь старт: стек, тесты, память, инфраструктура"
+    ],
+    "en": [
+      "Start work on a new project",
+      "Get to know the project from scratch and propose a plan",
+      "Build the project's value map",
+      "Prepare the start: stack, tests, memory, infra"
+    ]
+  },
+  "not_for": [
+    "about-site",
+    "resume"
+  ],
+  "status": "published",
+  "inputs": {
+    "project_cwd": {
+      "type": "string"
+    }
+  },
+  "outputs": {
+    "status": "done",
+    "value_map": "string",
+    "next_steps": "string[]"
+  },
+  "quality_mode": {
+    "default": "standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ]
+  },
+  "budget": {
+    "max_steps": 8,
+    "max_minutes": 90
+  },
+  "entry": "value_map",
+  "nodes": [
+    {
+      "id": "value_map",
+      "type": "agent",
+      "role": "analyst",
+      "title": {
+        "en": "Value map",
+        "ru": "Карта ценности"
+      },
+      "prompt": "Value map builder, before asking anything: from README, the passport (project-onboard), the site and the code — who the product is for, the job they hire it for, what they get, how we would know it works. Write .agents/planning/VALUE-MAP.md.",
+      "out": {
+        "value_map": "string"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "preview",
+      "type": "agent",
+      "role": "analyst",
+      "title": {
+        "en": "Stack, tests, memory preview",
+        "ru": "Стек, тесты, память"
+      },
+      "prompt": "Stack and tests: languages, frameworks, the test command and whether it is green. Memory preview: lane-memory measure and emit (what the corpus already knows), the memory graph of notes by area. Infra profile: hosts, start, deploy, logs into lane-plan profile --set (the one profile writer).",
+      "out": {
+        "stack": "any",
+        "memory": "any"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "value_map"
+        }
+      ]
+    },
+    {
+      "id": "recap",
+      "type": "agent",
+      "role": "planner",
+      "title": {
+        "en": "Recap and next steps",
+        "ru": "Итог и шаги"
+      },
+      "prompt": "Working style and risk from the owner's anamnesis. Recap in five lines, three next steps, and the roadmap skeleton (lane-plan template fill ROADMAP, STATE; phases with lane-plan phase add).",
+      "out": {
+        "next_steps": "string[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "value_map"
+        },
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "preview"
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "done",
+        "value_map": "value_map.value_map",
+        "next_steps": "recap.next_steps"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "value_map",
+      "to": "preview",
+      "pass": "artifact"
+    },
+    {
+      "from": "preview",
+      "to": "recap",
+      "pass": "artifact"
+    },
+    {
+      "from": "recap",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "ps-1",
+    "sim": {
+      "input": {},
+      "stubs": {
+        "value_map": {
+          "value_map": "v"
+        },
+        "preview": {
+          "stack": {},
+          "memory": {}
+        },
+        "recap": {
+          "next_steps": [
+            "a",
+            "b",
+            "c"
+          ]
+        }
+      },
+      "expect_path": [
+        "value_map",
+        "preview",
+        "recap",
+        "done"
+      ],
+      "expect_outputs": [
+        "status == 'done'",
+        "next_steps.length == 3"
+      ]
+    }
+  }
+}

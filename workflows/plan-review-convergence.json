@@ -1,0 +1,216 @@
+{
+  "id": "plan-review-convergence",
+  "name": {
+    "en": "Plan review convergence",
+    "ru": "Сходимость ревью плана"
+  },
+  "description": {
+    "en": "Reviews a plan with two critics of different models, merges their findings, and repeats up to three rounds until both approve or the rounds run out; the phase driver gets the converged decision.",
+    "ru": "Ревьюит план двумя критиками разных моделей, сводит их находки и повторяет до трёх раундов, пока оба не одобрят или раунды не кончатся; водитель фазы получает сошедшееся решение."
+  },
+  "examples": {
+    "ru": [
+      "Пусть две модели проверят план до согласия",
+      "Сходимость ревью плана фазы",
+      "Проверь план внешними ИИ",
+      "Ревью плана в несколько раундов"
+    ],
+    "en": [
+      "Have two models review the plan until they agree",
+      "Converge the phase plan review",
+      "Bounce the plan off external AIs",
+      "Multi-round plan review"
+    ]
+  },
+  "not_for": [
+    "grill-plan",
+    "plan-only"
+  ],
+  "status": "published",
+  "inputs": {
+    "phase_id": {
+      "type": "string",
+      "required": true
+    }
+  },
+  "outputs": {
+    "status": "approve|changes_requested",
+    "findings": "Finding[]",
+    "rounds": "int"
+  },
+  "quality_mode": {
+    "default": "standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ]
+  },
+  "budget": {
+    "max_steps": 8,
+    "max_minutes": 60
+  },
+  "entry": "critic_a",
+  "nodes": [
+    {
+      "id": "critic_a",
+      "type": "agent",
+      "role": "plan-critic",
+      "title": {
+        "en": "Critic A",
+        "ru": "Критик A"
+      },
+      "prompt": "Review the phase plan (lane_pilot_phase status) against CONTEXT.md and SPEC.md: coverage of requirements and locked decisions, a check per promise that would fail without the work, waves by depends_on, risks. Decision approve or changes_requested with findings.",
+      "out": {
+        "decision": "string",
+        "findings": "Finding[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "critic_b",
+      "type": "agent",
+      "role": "specialist-reviewer",
+      "title": {
+        "en": "Critic B (another model)",
+        "ru": "Критик B (другая модель)"
+      },
+      "prompt": "External plan bounce: the same review by a model other than critic A's and the planner's; independent findings, do not read A's.",
+      "out": {
+        "decision": "string",
+        "findings": "Finding[]"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "converge",
+      "type": "agent",
+      "role": "plan-critic",
+      "title": {
+        "en": "Converge",
+        "ru": "Свести"
+      },
+      "prompt": "Merge A's and B's findings (dedupe by file and claim). approve only when both approve; otherwise changes_requested with the merged list. Report it to the phase driver with lane_pilot_phase plan_check (by: both critics); the driver counts the rounds (three at most).",
+      "out": {
+        "decision": "string",
+        "findings": "Finding[]",
+        "rounds": "int"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "critic_a"
+        },
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "critic_b"
+        }
+      ]
+    },
+    {
+      "id": "approve",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "approve",
+        "findings": "converge.findings",
+        "rounds": "converge.rounds"
+      }
+    },
+    {
+      "id": "changes",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "changes_requested",
+        "findings": "converge.findings",
+        "rounds": "converge.rounds"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "critic_a",
+      "to": "critic_b",
+      "pass": "artifact"
+    },
+    {
+      "from": "critic_b",
+      "to": "converge",
+      "pass": "artifact"
+    },
+    {
+      "from": "converge",
+      "to": "approve",
+      "pass": "artifact",
+      "when": "converge.decision == 'approve'"
+    },
+    {
+      "from": "converge",
+      "to": "changes",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "prc-1",
+    "sim": {
+      "input": {
+        "phase_id": "ph_sample01"
+      },
+      "stubs": {
+        "critic_a": {
+          "decision": "approve",
+          "findings": []
+        },
+        "critic_b": {
+          "decision": "approve",
+          "findings": []
+        },
+        "converge": {
+          "decision": "approve",
+          "findings": [],
+          "rounds": 1
+        }
+      },
+      "expect_path": [
+        "critic_a",
+        "critic_b",
+        "converge",
+        "approve"
+      ],
+      "expect_outputs": [
+        "status == 'approve'"
+      ]
+    }
+  }
+}

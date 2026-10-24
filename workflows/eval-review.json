@@ -1,0 +1,137 @@
+{
+  "id": "eval-review",
+  "name": {
+    "en": "AI eval review",
+    "ru": "Аудит ИИ-оценки"
+  },
+  "description": {
+    "en": "Audits the evaluation of an AI feature: is the gold set independent of the prompt, does the metric track the user goal, can the model game it, is there leakage; writes EVAL-REVIEW.md with a verdict.",
+    "ru": "Проверяет оценку ИИ-функции: независим ли золотой набор от промпта, отражает ли метрика цель пользователя, может ли модель её обмануть, нет ли утечки; пишет EVAL-REVIEW.md с вердиктом."
+  },
+  "examples": {
+    "ru": [
+      "Проверь, честно ли мы оцениваем генерацию",
+      "Сделай аудит ИИ-оценки этой фазы",
+      "Не подогнан ли золотой набор под промпт?",
+      "Напиши EVAL-REVIEW.md"
+    ],
+    "en": [
+      "Review how we evaluate the generation",
+      "Audit the AI eval of this phase",
+      "Is the gold set tuned to the prompt?",
+      "Write EVAL-REVIEW.md"
+    ]
+  },
+  "not_for": [
+    "code-review"
+  ],
+  "status": "published",
+  "inputs": {
+    "phase_id": {
+      "type": "string"
+    },
+    "eval_path": {
+      "type": "string"
+    }
+  },
+  "outputs": {
+    "status": "sound|flawed",
+    "findings": "Finding[]",
+    "review_path": "string"
+  },
+  "quality_mode": {
+    "default": "standard"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ]
+  },
+  "budget": {
+    "max_steps": 8,
+    "max_minutes": 60
+  },
+  "entry": "review",
+  "nodes": [
+    {
+      "id": "review",
+      "type": "agent",
+      "role": "auditor",
+      "title": {
+        "en": "Eval audit",
+        "ru": "Аудит оценки"
+      },
+      "prompt": "Read the AI-SPEC.md, the gold set and the scoring code. Answer each question of the EVAL-REVIEW template with evidence (file:line, a sample): gold set written before the prompt was tuned, metric tied to the user goal, gaming (a trivial output scoring high), leakage (test items in the prompt or few-shots), threshold justified. Write .agents/phases/<id>/EVAL-REVIEW.md.",
+      "out": {
+        "findings": "Finding[]",
+        "review_path": "string",
+        "flawed": "bool"
+      },
+      "guards": {
+        "maxVisits": 1,
+        "timeoutMin": 25
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "sound",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "sound",
+        "findings": "review.findings",
+        "review_path": "review.review_path"
+      }
+    },
+    {
+      "id": "flawed",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "flawed",
+        "findings": "review.findings",
+        "review_path": "review.review_path"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "review",
+      "to": "flawed",
+      "pass": "artifact",
+      "when": "review.flawed"
+    },
+    {
+      "from": "review",
+      "to": "sound",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "er-1",
+    "sim": {
+      "input": {
+        "phase_id": "ph_sample01"
+      },
+      "stubs": {
+        "review": {
+          "findings": [],
+          "review_path": "x/EVAL-REVIEW.md",
+          "flawed": false
+        }
+      },
+      "expect_path": [
+        "review",
+        "sound"
+      ],
+      "expect_outputs": [
+        "status == 'sound'"
+      ]
+    }
+  }
+}
