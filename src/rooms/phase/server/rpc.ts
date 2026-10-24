@@ -22,10 +22,10 @@ export function phaseRpc(api: PhaseApi) {
         : api.lessons({ phaseId: need(), analysis: p.analysis, author: p.author, reviewer: p.reviewer, reviewedHash: p.reviewedHash });
       return api.status(done.id);
     },
-    phase_control: async ({ phaseId, action, to, note, turn, decision }) => {
+    phase_control: async ({ phaseId, action, to, note, turn, decision, wave }) => {
       if (action === "word") {
         if (!turn || !decision) throw new Error("the owner's word names the turn and the decision");
-        return api.status((await api.word({ phaseId, turn, decision, text: note?.trim() || decision, by: "owner via screen" })).id);
+        return api.status((await api.word({ phaseId, turn, decision, text: note?.trim() || decision, wave, by: "owner via screen" })).id);
       }
       if (action === "return") {
         if (!to || !note?.trim()) throw new Error("a return names the stage and carries a note");

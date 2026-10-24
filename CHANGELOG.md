@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.292
+
+**The owner's word on every turn.** `phase_control` accepted the word only at planning, design, acceptance and UAT, while the driver also asks for it at the issue and at each wave: the word on those two turns was refused from the cockpit, and from Telegram. It now takes all six turns and the wave number of a wave turn (`wave`), which it passes to the driver. Telegram Projects 0.12.0 uses it: phase questions and words arrive in the project topic and are answered there.
+
 ## 0.1.291
 
 **The SMA map, all of it.** Matvey Maslov's product map (1768 nodes) is a registry in the code (`src/rooms/sma-map`, `bb lane-pilot sma-map`): every node names what Lane Pilot has for it and the file and symbol that prove it, and a test fails when a proof stops resolving. All 1768 are proven.

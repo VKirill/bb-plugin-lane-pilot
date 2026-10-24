@@ -272,7 +272,8 @@ export const rpcOps = {
   },
   phase_control: {
     input: z.object({ phaseId: z.string().min(1).max(40), action: z.enum(["pause", "resume", "return", "stop_wave", "close", "word"]), to: z.enum(["discussion", "planning", "design", "execution"]).optional(),
-      note: z.string().max(2000).optional(), turn: z.enum(["planning", "design", "acceptance", "uat"]).optional(), decision: z.enum(["yes", "no"]).optional() }).strict(),
+      note: z.string().max(2000).optional(), turn: z.enum(["planning", "design", "issue", "wave", "acceptance", "uat"]).optional(), decision: z.enum(["yes", "no"]).optional(),
+      wave: z.number().int().min(1).max(100).optional() }).strict(),
     output: z.unknown(),
   },
   /** The run-goal verdict of a run: every accepted task's checks together on the final main (src/rooms/run-goal). */
