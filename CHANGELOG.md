@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.293
+
+**An orphaned worktree folder no longer breaks a new attempt.** A `git worktree remove` that stopped half way drops git's admin dir and leaves the folder, whose `.git` still names that admin dir. git gives the free name to the next worktree, and a cleanup's `git add -A` in the old folder then wrote the new worktree's index. On OVH a 20.10 leftover did this twice on 2026-10-24: site-og-renderer and site-seo-blog-authors saw 14 880 files «deleted» and were blocked as out of scope. A new worktree now retires any folder under `~/.lane-pilot/worktrees` whose `.git` names the admin dir it just got. Releasing a worktree whose admin dir belongs to another folder never runs git there: the folder is cut off from git and removed.
+
 ## 0.1.292
 
 **The owner's word on every turn.** `phase_control` accepted the word only at planning, design, acceptance and UAT, while the driver also asks for it at the issue and at each wave: the word on those two turns was refused from the cockpit, and from Telegram. It now takes all six turns and the wave number of a wave turn (`wave`), which it passes to the driver. Telegram Projects 0.12.0 uses it: phase questions and words arrive in the project topic and are answered there.

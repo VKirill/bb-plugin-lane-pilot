@@ -132,6 +132,68 @@ export async function git(cwd:string,args:string[]) {
   return {ok:true as const,stdout:result.stdout,reason:""};
 }
 
+/**
+ * A linked worktree's folder whose `.git` names an admin dir that git no longer gives to it. `git worktree remove` that
+ * stopped half way drops the admin dir and leaves the folder; git then hands the free admin name to the next worktree,
+ * and a git command in the old folder works on the new worktree's index (SelfyStudio 2026-10-24: a cleanup's `git add -A`
+ * in a 20.10 leftover wrote its half-deleted tree into site-seo-blog-authors' index — 14 880 files «deleted», the
+ * attempt blocked as out of scope). Null when the folder is no linked worktree at all.
+ */
+export async function orphanedWorktree(path:string):Promise<{top:string;adminDir:string}|null> {
+  let top=path;
+  for(;;) {
+    const entry=await lstat(join(top,".git")).catch(()=>null);
+    if(entry) { if(!entry.isFile()) return null; break; }
+    const up=dirname(top);
+    if(up===top) return null;
+    top=up;
+  }
+  const adminDir=(await readFile(join(top,".git"),"utf8").catch(()=>"")).match(/^gitdir:\s*(.+)$/m)?.[1]?.trim();
+  if(!adminDir) return null;
+  const back=(await readFile(join(adminDir,"gitdir"),"utf8").catch(()=>"")).trim();
+  const [mine,theirs]=await Promise.all([realpath(join(top,".git")).catch(()=>join(top,".git")),back?realpath(back).catch(()=>back):Promise.resolve("")]);
+  return mine===theirs?null:{top,adminDir};
+}
+
+/** Lane Pilot's own worktree root on this host (`~/.lane-pilot/worktrees`), or null when `path` is not under it. */
+function laneWorktreeRootOf(path:string):string|null {
+  let dir=path;
+  for(;;) {
+    if(basename(dir)==="worktrees"&&basename(dirname(dir))===".lane-pilot") return dir;
+    const up=dirname(dir);
+    if(up===dir) return null;
+    dir=up;
+  }
+}
+
+/**
+ * An orphaned Lane Pilot worktree folder is cut off from git (its `.git` renamed) so no command reaches another
+ * worktree's index through it, then removed: what is left is the rest of a removal that already started.
+ */
+async function retireOrphanedWorktree(orphan:{top:string;adminDir:string}):Promise<boolean> {
+  await rename(join(orphan.top,".git"),join(orphan.top,".git.orphaned")).catch(()=>undefined);
+  if(!laneWorktreeRootOf(orphan.top)) return false;
+  console.warn(`lane-pilot: removed the orphaned worktree folder ${orphan.top} (its .git named ${orphan.adminDir}, which git gave to another worktree)`);
+  await rm(orphan.top,{recursive:true,force:true}).catch(()=>undefined);
+  await removeEmptyWorktreeParent(orphan.top);
+  return true;
+}
+
+/** Other folders under Lane Pilot's worktree root whose `.git` names the admin dir a new worktree just got are retired. */
+async function retireCollidingWorktrees(targetPath:string):Promise<void> {
+  const root=laneWorktreeRootOf(targetPath);
+  if(!root) return;
+  const own=await realpath(targetPath).catch(()=>targetPath);
+  for(const attempt of await readdir(root).catch(()=>[] as string[])) {
+    for(const name of await readdir(join(root,attempt)).catch(()=>[] as string[])) {
+      const folder=join(root,attempt,name);
+      if((await realpath(folder).catch(()=>folder))===own) continue;
+      const orphan=await orphanedWorktree(folder);
+      if(orphan&&orphan.top===folder) await retireOrphanedWorktree(orphan);
+    }
+  }
+}
+
 /** The repository's own identity when set, otherwise a writer identity, so commits never fail on a bare host. */
 export async function identity(cwd:string):Promise<string[]> {
   const email=await git(cwd,["config","user.email"]);
@@ -368,6 +430,8 @@ export async function createWorktree(input:{basePath:string;targetPath:string;na
   await recoverStaleGitLock(repoRoot);
   const added=await git(repoRoot,["worktree","add","-q","-b",branch,input.targetPath,input.commit??"HEAD"]);
   if(!added.ok) return {status:"failed",path:null,branch:null,baseSha:null,reason:added.reason};
+  // git may have given this worktree the admin name a half-removed old folder still points at.
+  await retireCollidingWorktrees(input.targetPath);
   const head=await git(input.targetPath,["rev-parse","HEAD"]);
   const path=layout.nested?join(input.targetPath,layout.prefix):input.targetPath;
   // A subfolder with no tracked file yet is not in the checkout.
@@ -777,6 +841,9 @@ async function worktreeTop(worktreePath:string):Promise<string> {
  * other branch has are saved by `snapshotWorktree`, and a snapshot that fails keeps the worktree.
  */
 export async function removeLaneWorktree(input:{basePath:string;worktreePath:string;releaseDir?:string}):Promise<{removed:boolean;saved?:{status:"clean"|"saved"|"missing"|"failed";path:string|null;dirty:number;ahead:number;reason:string|null}}> {
+  // A git command here would reach another worktree's index: the folder is retired, never snapshotted.
+  const orphan=await orphanedWorktree(input.worktreePath);
+  if(orphan) return {removed:await retireOrphanedWorktree(orphan)};
   const branch=(await git(input.worktreePath,["rev-parse","--abbrev-ref","HEAD"])).stdout.trim();
   if(!branch.startsWith("lane/")) return {removed:false};
   let saved:Awaited<ReturnType<typeof snapshotWorktree>>|undefined;
@@ -798,6 +865,7 @@ export async function removeLaneWorktree(input:{basePath:string;worktreePath:str
  */
 export async function snapshotWorktree(input:{worktreePath:string;name:string;dir:string}):Promise<{status:"clean"|"saved"|"missing"|"failed";path:string|null;dirty:number;ahead:number;reason:string|null}> {
   if(!(await stat(input.worktreePath).catch(()=>null))?.isDirectory()) return {status:"missing",path:null,dirty:0,ahead:0,reason:null};
+  if(await orphanedWorktree(input.worktreePath)) return {status:"missing",path:null,dirty:0,ahead:0,reason:"orphaned worktree folder: its git admin dir belongs to another worktree"};
   const status=await git(input.worktreePath,["status","--porcelain","--untracked-files=all"]);
   if(!status.ok) return {status:"failed",path:null,dirty:0,ahead:0,reason:status.reason};
   const dirty=status.stdout.split("\n").filter(Boolean).length;
