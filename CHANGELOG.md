@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.300
+
+The failed-verdict step of a phase has a new poke key, so a phase that stalled on the old one (the PM was told once, with the old advice) hears the new step — return to planning and change the failing piece — on the next pass.
+
 ## 0.1.299
 
 **A phase gets past a failed verification.** The live phase ph_ae0a8de9db reached verification and stalled: plan-fact could not prove «npm test is green» because `npm test` was not among the contract's checks, the PM returned the phase to execution as the driver advised, every piece was already accepted, so the phase went straight back to verification, met the same verdict on the same facts, and the poke for it was the one the PM had already been given — a silent loop. Four changes:
