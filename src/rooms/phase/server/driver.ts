@@ -13,6 +13,8 @@ import {
   type ContextDoc, type Phase, type PhaseRecord, type PhaseStage, type PlanItem, type RiskKind, type TaskFact, type WordTurn,
 } from "../logic";
 import { appendPart, getPhase, insertPhase, listParts, listPhases, notePoked, savePhase } from "../store";
+import { archiveDrawing, conclusionText, markRoadmap, nextRoadmapRow, stateText, uatState, uatText, waveTable } from "../stages";
+import { runOnHost } from "@lane-pilot/host-calls";
 
 /**
  * The phase driver: the machine above the PM (SMA map, Phase graph; Matvey Maslov 2026-10-22: «there is a machine above the orchestrator that
@@ -46,6 +48,33 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     }
   }
 
+  /** A file's text in the PM's workspace, or null when it does not exist. */
+  async function readText(phase: Phase, path: string): Promise<string | null> {
+    try {
+      const file = await services.readWriterWorkspaceFile({ threadId: phase.pmThreadId, projectId: phase.projectId, path, offset: 0, maxLines: 2000 }) as { content?: string };
+      return typeof file.content === "string" ? file.content : null;
+    } catch { return null; }
+  }
+
+  /** Writes phase documents and planning marks into the project, then commits exactly those files (SMA: Commit the plans / drawing / REVIEW / STATE). */
+  async function writeDocs(phase: Phase, files: Array<{ path: string; content: string }>, message: string): Promise<{ written: string[]; commit: string | null }> {
+    if (!phase.runId || !files.length) return { written: [], commit: null };
+    const run = getRun(db, phase.runId);
+    const hostId = getRunWriterHost(db, phase.runId);
+    if (!run?.writer_workspace_path || !hostId) return { written: [], commit: null };
+    const edits = [];
+    for (const file of files) {
+      const current = await readText(phase, file.path);
+      edits.push({ path: file.path, expectedSha256: current === null ? null : sha256(current), content: file.content });
+    }
+    const host = bb.hosts.experimental_client({ contract: hostContract });
+    const result = await host.call("writePhaseBook", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, previewSha256: sha256(JSON.stringify(edits)), edits }, { hostId, timeoutMs: 30_000 });
+    const written = result.writes.filter((row) => row.status === "applied").map((row) => row.path);
+    if (!written.length) return { written, commit: null };
+    const committed = await host.call("gitCommitDocs", { requestedHostId: hostId, projectCwd: run.writer_workspace_path, paths: written, message }, { hostId, timeoutMs: 60_000 }).catch(() => null);
+    return { written, commit: committed?.commit ?? null };
+  }
+
   function book(phase: Pick<Phase, "id">, section: Parameters<typeof appendPart>[2]["section"], kind: string, text: string) {
     appendPart(db, phase.id, { section, kind, text, at: now() });
   }
@@ -74,7 +103,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
 
   // ------------------------------------------------------------ what the PM reports
 
-  async function open(input: { projectId: string; pmThreadId: string; title: string; goal: string; legacy?: boolean }): Promise<Phase> {
+  async function open(input: { projectId: string; pmThreadId: string; title: string; goal: string; legacy?: boolean; roadmapRow?: string }): Promise<Phase> {
     const id = `ph_${randomUUID().replace(/-/g, "").slice(0, 10)}`;
     const runId = (db.prepare("SELECT id FROM lane_pilot_run WHERE pm_thread_id=? ORDER BY created_at DESC LIMIT 1").get(input.pmThreadId) as { id: string } | undefined)?.id ?? null;
     insertPhase(db, { id, projectId: input.projectId, pmThreadId: input.pmThreadId, runId, title: input.title.slice(0, 200), goal: input.goal.slice(0, 4000), at: now() });
@@ -85,7 +114,9 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     const issueCap = Number.isInteger(capSetting) && capSetting >= 1 && capSetting <= 50 ? capSetting : 8;
     let phase = mustGet(id);
     book(phase, "goal", "opened", `phase opened: ${input.title}${ownerWords ? " (the owner's word is asked at the turns: owner.words on)" : ""}`);
-    const record: PhaseRecord = { ownerWords, waveReview, issueCap, scope: { revisions: 0, withdrawn: [] } };
+    const record: PhaseRecord = { ownerWords, waveReview, issueCap, scope: { revisions: 0, withdrawn: [] },
+      autonomous: String(settings["phase.autonomous"] ?? "off") === "on", subagents: String(settings["phase.subagents"] ?? "on") !== "off",
+      branch: String(settings["phase.branch"] ?? "none") === "phase" ? "phase" : "none", ...(input.roadmapRow ? { roadmapRow: input.roadmapRow } : {}) };
     if (input.legacy) {
       // Legacy mode without signature: a plan written before the phase existed is admitted on its own; the book says so.
       record.context = { docs: [], sha: sha256(`legacy:${id}`), signedAt: now(), legacy: true };
@@ -95,7 +126,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     return phase;
   }
 
-  async function context(input: Reported & { docs: string[]; risks?: Partial<Record<RiskKind, string>> }): Promise<Phase> {
+  async function context(input: Reported & { docs: string[]; risks?: Partial<Record<RiskKind, string>>; requirements?: string[]; decisions?: string[] }): Promise<Phase> {
     const phase = mustGet(input.phaseId);
     if (phase.stage !== "discussion") throw new PhaseRefusal(`phase ${phase.id} is at ${phase.stage}: return it to discussion first to change its context`);
     const docs: ContextDoc[] = [];
@@ -104,7 +135,8 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       docs.push({ path, sha256: file.sha256, bytes: file.sizeBytes });
     }
     const risks = Object.fromEntries(RISK_KINDS.map((kind) => [kind, input.risks?.[kind]?.trim() ?? ""]).filter(([, text]) => text)) as Partial<Record<RiskKind, string>>;
-    const record: PhaseRecord = { ...phase.record, context: { docs, sha: contextSignature(docs), signedAt: now(), risks } };
+    const record: PhaseRecord = { ...phase.record, context: { docs, sha: contextSignature(docs), signedAt: now(), risks,
+      ...(input.requirements?.length ? { requirements: [...new Set(input.requirements)] } : {}), ...(input.decisions?.length ? { decisions: [...new Set(input.decisions)] } : {}) } };
     const check = discussionGate(record);
     if (!check.ok) { savePhase(db, phase.id, { record, at: now() }); throw new PhaseRefusal("the discussion is not complete", check.why); }
     book(phase, "discussion", "signed", `context signed ${record.context!.sha.slice(0, 12)}: ${docs.map((doc) => `${doc.path} (${doc.bytes} B)`).join(", ")}; risks — ${RISK_KINDS.map((kind) => `${kind}: ${risks[kind]}`).join("; ")}`);
@@ -114,11 +146,13 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
 
   function plan(input: Reported & { items: PlanItem[]; design?: boolean }): Phase {
     const phase = mustGet(input.phaseId);
+    // No replanning of a closed phase: its book is final; a new goal is a new phase.
+    if (phase.stage === "closed" || phase.state === "closed") throw new PhaseRefusal(`phase ${phase.id} is closed: open a new phase for new work`);
     if (phase.stage !== "planning") throw new PhaseRefusal(`phase ${phase.id} is at ${phase.stage}: a plan is submitted at planning (return the phase there first)`);
     if (!phase.record.context) throw new PhaseRefusal("the phase has no signed context");
     const items = input.items.map((item) => ({ ...item, task: { ...item.task, id: item.id } }));
     const contextSha = phase.record.context.sha;
-    const record: PhaseRecord = { ...phase.record, plan: { items, contextSha, sha: planSignature(items, contextSha) } };
+    const record: PhaseRecord = { ...phase.record, plan: { items, contextSha, sha: planSignature(items, contextSha), rounds: phase.record.plan?.rounds ?? 0 } };
     if (input.design) record.design = { decision: "needed", why: "the PM asked for a drawing" };
     savePhase(db, phase.id, { record, at: now() });
     book(phase, "plan", "submitted", `plan ${record.plan!.sha.slice(0, 12)}: ${items.length} piece(s) in ${new Set(items.map((item) => item.wave)).size} wave(s) — ${items.map((item) => `${item.id} (w${item.wave}): ${item.promise.then}`).join("; ")}`);
@@ -136,7 +170,8 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
         throw new PhaseRefusal(`${doc.path} changed after the context was signed: return the phase to discussion and sign it again`);
       }
     }
-    const record: PhaseRecord = { ...phase.record, plan: { ...phase.record.plan, critique: { decision: input.decision, by: input.by, ...(input.summary ? { summary: input.summary } : {}) } } };
+    const rounds = (phase.record.plan.rounds ?? 0) + (input.decision === "changes_requested" ? 1 : 0);
+    const record: PhaseRecord = { ...phase.record, plan: { ...phase.record.plan, rounds, critique: { decision: input.decision, by: input.by, ...(input.summary ? { summary: input.summary } : {}) } } };
     book(phase, "plan", "checked", `${input.by}: ${input.decision}${input.summary ? ` — ${input.summary}` : ""}`);
     savePhase(db, phase.id, { record, at: now() });
     const check = planGate(record);
@@ -159,8 +194,11 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       const file = await readFile(phase, path);
       hashes.push(`${path}:${file.sha256}`);
     }
-    const record: PhaseRecord = { ...phase.record, design: { ...(phase.record.design ?? { decision: "needed", why: "" }),
-      drawing: { paths: input.paths, sha256: sha256(hashes.join("\n")), designer: input.designer, feasible: input.feasible, ...(input.contradiction ? { contradiction: input.contradiction } : {}), ...(input.reviewer ? { reviewer: input.reviewer } : {}) } } };
+    const drawn = { paths: input.paths, sha256: sha256(hashes.join("\n")), designer: input.designer, feasible: input.feasible, ...(input.contradiction ? { contradiction: input.contradiction } : {}), ...(input.reviewer ? { reviewer: input.reviewer } : {}) };
+    // The previous contract to the archive: a replaced drawing stays in the record with its hash.
+    const archived = archiveDrawing(phase.record, drawn);
+    if (archived.length > (phase.record.design?.archived?.length ?? 0)) book(phase, "design", "archived", `previous drawing ${phase.record.design!.drawing!.sha256.slice(0, 12)} (${phase.record.design!.drawing!.paths.join(", ")}) archived`);
+    const record: PhaseRecord = { ...phase.record, design: { ...(phase.record.design ?? { decision: "needed", why: "" }), drawing: drawn, archived } };
     book(phase, "design", "drawing", `${input.paths.join(", ")} by ${input.designer}; ${input.feasible ? "feasible" : `contradiction: ${input.contradiction ?? "?"}`}${input.reviewer ? `; reviewed by ${input.reviewer}` : ""}`);
     if (!input.feasible) {
       savePhase(db, phase.id, { record, at: now() });
@@ -228,10 +266,17 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   }
 
   /** The owner's word at a turn (owner.words on). «no» sends the phase back: from planning or design to planning, from acceptance to execution. */
-  function word(input: Reported & { turn: WordTurn; decision: "yes" | "no"; text: string; wave?: number }): Phase {
+  async function word(input: Reported & { turn: WordTurn; decision: "yes" | "no"; text: string; wave?: number }): Promise<Phase> {
     const phase = mustGet(input.phaseId);
     // Consent is the whole message: «да» alone is consent; «да, но …» is a new word that goes back as words, not as yes.
     if (input.decision === "yes" && !isWholeConsent(input.text) && !/^owner via (screen|cli)$/.test(input.by ?? "")) throw new PhaseRefusal("the owner's message is not a whole consent: «да, но …» is a new word — record it as decision no with his words, or ask again");
+    if (input.turn === "uat" && input.decision === "yes") {
+      // Session complete: the owner's yes on UAT counts only when every line of UAT.md is marked passed.
+      const path = phase.record.uat?.path;
+      const text = path ? await readText(phase, path) : null;
+      const state = text ? uatState(text) : null;
+      if (!state || !state.lines || state.open.length || state.failed.length) throw new PhaseRefusal(`UAT is not complete: ${!state ? "no UAT.md" : `${state.open.length} open, ${state.failed.length} failed of ${state.lines}`} — the owner marks each line in ${path ?? "UAT.md"} first`);
+    }
     const record: PhaseRecord = { ...phase.record, words: [...(phase.record.words ?? []), { turn: input.turn, decision: input.decision, by: input.by ?? "owner", text: input.text.slice(0, 2000), at: now(), ...(input.wave !== undefined ? { wave: input.wave } : {}) }] };
     closeOwnerItem(db as never, `phase-word:${phase.id}:${input.turn}${input.wave !== undefined ? `:${input.wave}` : ""}`, input.by ?? "owner");
     book(phase, "decisions", `word_${input.turn}`, `${input.by ?? "owner"}: ${input.decision} — ${input.text}`);
@@ -392,7 +437,8 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     const next = issuable(items, execution.issued, facts(phase), (wave) => waveCleared(phase.record, wave));
     // Batch issue capacity and a free seat in the house: at most issueCap pieces a pass, none while the run already has that many at work.
     const atWork = phase.runId ? listOpenAttempts(db).filter((row) => row.run_id === phase.runId).length : 0;
-    const seats = Math.max(0, (phase.record.issueCap ?? 8) - atWork);
+    // Path with or without subagents: off, the pieces go one at a time, inline.
+    const seats = Math.max(0, (phase.record.subagents === false ? 1 : phase.record.issueCap ?? 8) - atWork);
     // Wave budget question: the wave's appetites must fit the run's budget reserve, or the PM is asked first.
     const waveTokens = next.reduce((sum, item) => sum + Number((item.task.appetite as { tokens?: number } | undefined)?.tokens ?? 0), 0);
     const budget = phase.runId ? services.runBudgets.get(phase.runId)?.snapshot() : undefined;
@@ -414,6 +460,12 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       } else {
         execution.issueErrors[item.id] = String(reply.reason ?? reply.error ?? "dispatch refused").slice(0, 300);
       }
+    }
+    // The wave table into the journal: written once per wave, when its first pieces are issued.
+    for (const wave of [...new Set(next.map((item) => item.wave))]) {
+      if (!next.some((item) => item.wave === wave && execution.issued[item.id])) continue;
+      if (listParts(db, phase.id).some((part) => part.kind === "wave_table" && part.text.startsWith(`wave ${wave}:`))) continue;
+      book(phase, "execution", "wave_table", waveTable(wave, piecesOfWave(items, wave), execution.issued));
     }
     // Phase base at start: the commit the first piece was cut from.
     const firstTask = Object.values(execution.issued)[0];
@@ -472,6 +524,17 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       }
       current = mustGet(current.id);
     }
+    if (current.stage === "acceptance" && current.record.ownerWords && !current.record.uat) {
+      // Create UAT.md: with owner.words on, the plan's promises become the lines the owner tests and answers.
+      const path = `${phaseFolder(current.id)}/UAT.md`;
+      const content = uatText(current);
+      const out = await writeDocs(current, [{ path, content }], `phase ${current.id}: UAT.md for the owner`).catch(() => ({ written: [] as string[], commit: null }));
+      if (out.written.includes(path)) {
+        book(current, "acceptance", "uat_written", `${path}: ${(current.record.plan?.items ?? []).length} line(s) for the owner`);
+        savePhase(db, current.id, { record: { ...current.record, uat: { path, sha256: sha256(content), at: now() } }, at: now() });
+        current = mustGet(current.id);
+      }
+    }
     if (current.stage === "acceptance") {
       const lastGoal = current.runId ? getRunGoal(db, current.runId) : null;
       const openDeferrals = (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_deferral WHERE project_id=? AND closed_at IS NULL").get(current.projectId) as { n: number } | undefined)?.n ?? 0;
@@ -499,6 +562,46 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     return current;
   }
 
+  /**
+   * A closed phase finishes its paperwork once (SMA: The daemon writes the conclusion, Phase closed in the roadmap, Marks in STATE and roadmap,
+   * Phase or milestone branch, transition / autonomous): SUMMARY.md, the roadmap row's [x], STATE's phase and stage, all committed; the marker
+   * branch phase/<id> when phase.branch is on; and with phase.autonomous on, the next open roadmap row is opened as the next phase.
+   */
+  async function finishClosed(phase: Phase): Promise<Phase> {
+    if (phase.stage !== "closed" || phase.record.closedDocs) return phase;
+    const files: Array<{ path: string; content: string }> = [{ path: `${phaseFolder(phase.id)}/SUMMARY.md`, content: conclusionText(phase, listParts(db, phase.id), facts(phase)) }];
+    const roadmap = await readText(phase, ".agents/planning/ROADMAP.md");
+    if (roadmap !== null && phase.record.roadmapRow) {
+      const marked = markRoadmap(roadmap, phase.record.roadmapRow);
+      if (marked !== roadmap) files.push({ path: ".agents/planning/ROADMAP.md", content: marked });
+    }
+    const stateNow = await readText(phase, ".agents/planning/STATE.md");
+    if (stateNow !== null || roadmap !== null) files.push({ path: ".agents/planning/STATE.md", content: stateText(stateNow, { phase: phase.record.roadmapRow ?? phase.id, stage: "closed", last_phase: phase.id }) });
+    const out = await writeDocs(phase, files, `phase ${phase.id}: closed — summary, roadmap and state`).catch((cause: unknown) => { ctx.log(`phase ${phase.id}: closing documents not written: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
+    if (!out) return phase;
+    book(phase, "lessons", "concluded", `SUMMARY.md written${out.written.length > 1 ? `, ${out.written.slice(1).join(", ")} marked` : ""}${out.commit ? ` (commit ${out.commit.slice(0, 12)})` : ""}`);
+    if (phase.record.branch === "phase" && phase.runId) {
+      const run = getRun(db, phase.runId);
+      const hostId = getRunWriterHost(db, phase.runId);
+      if (run?.writer_workspace_path && hostId) {
+        const host = bb.hosts.experimental_client({ contract: hostContract });
+        const made = await runOnHost(host, { hostId, cwd: run.writer_workspace_path, command: `git branch -f phase/${phase.id} HEAD`, timeoutSec: 30 }).catch(() => null);
+        book(phase, "decisions", "branch", made && made.exitCode === 0 ? `marker branch phase/${phase.id} at the accepted main` : "the marker branch could not be made");
+      }
+    }
+    savePhase(db, phase.id, { record: { ...phase.record, closedDocs: { at: now(), commit: out.commit } }, at: now() });
+    const next = roadmap !== null ? nextRoadmapRow(phase.record.roadmapRow ? markRoadmap(roadmap, phase.record.roadmapRow) : roadmap) : null;
+    if (next && phase.record.autonomous) {
+      // Autonomous mode: the next roadmap row becomes the next phase, and its discussion starts at once.
+      const opened = await open({ projectId: phase.projectId, pmThreadId: phase.pmThreadId, title: next.name, goal: next.goal || next.name, roadmapRow: next.n });
+      book(phase, "decisions", "transition", `autonomous: the next phase ${opened.id} «${next.name}» (roadmap ${next.n}) is open`);
+    } else if (next) {
+      await bb.sdk.threads.send({ threadId: phase.pmThreadId, mode: "queue-if-active", input: [{ type: "text", mentions: [], text:
+        `[Lane Pilot phase] Phase ${phase.id} «${phase.title}» is closed. Next on the roadmap: ${next.n} «${next.name}»${next.goal ? ` — ${next.goal}` : ""}. Open it with lane_pilot_phase {action:"open", title, goal, roadmapRow:"${next.n}"} when it is time.` }] } as never).catch(() => undefined);
+    }
+    return mustGet(phase.id);
+  }
+
   /** Sends the PM the one instruction the phase needs now, once per instruction key. */
   async function poke(phase: Phase & { pokedKey?: string | null }): Promise<void> {
     const action = nextAction(phase, facts(phase));
@@ -524,10 +627,12 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
 
   async function tick(signal?: AbortSignal): Promise<number> {
     let moved = 0;
-    for (const phase of listPhases(db, { live: true, limit: 100 })) {
+    // Closed phases that have not finished their paperwork yet are driven once more.
+    const unfinished = listPhases(db, { limit: 200 }).filter((row) => row.stage === "closed" && !row.record.closedDocs && Date.now() - row.updatedAt < 7 * 86_400_000);
+    for (const phase of [...listPhases(db, { live: true, limit: 100 }), ...unfinished]) {
       if (signal?.aborted || ctx.isDisposed()) break;
       try {
-        const after = await drive(phase);
+        const after = await finishClosed(await drive(phase));
         if (after.stage !== phase.stage || after.state !== phase.state) moved += 1;
         await poke(after);
         await writeBook(mustGet(after.id)).catch((cause: unknown) => ctx.log(`phase ${phase.id}: book not written: ${cause instanceof Error ? cause.message : String(cause)}`));

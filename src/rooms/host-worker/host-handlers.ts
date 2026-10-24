@@ -428,7 +428,7 @@ export const whichPrograms: ExperimentalHostRpcHandlers<typeof hostContract>["wh
 
 /** The phase book (BOOK.md) and the phase's own files, only inside `.agents/phases/<phase-id>/` (src/rooms/phase). */
 export const writePhaseBook: ExperimentalHostRpcHandlers<typeof hostContract>["writePhaseBook"] = async (input) =>
-  casWriteMarkdown({ ...input, confirmed:true }, 2_000_000, (path) => /^\.agents\/phases\/ph_[a-z0-9]{6,}\/[^/]+(\/[^/]+)*$/.test(path) && !path.includes(".."));
+  casWriteMarkdown({ ...input, confirmed:true }, 2_000_000, (path) => (/^\.agents\/phases\/ph_[a-z0-9]{6,}\/[^/]+(\/[^/]+)*$/.test(path) || /^\.agents\/planning\/(STATE|ROADMAP)\.md$/.test(path)) && !path.includes(".."));
 
 /** Writes one chain file into the project's own `.lane-pilot/workflows` folder, which must not be a link out of the project. */
 export const writeWorkflowFile: ExperimentalHostRpcHandlers<typeof hostContract>["writeWorkflowFile"] = async (input) => {

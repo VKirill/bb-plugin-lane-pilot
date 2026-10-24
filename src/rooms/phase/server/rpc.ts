@@ -10,7 +10,7 @@ export function phaseRpc(api: PhaseApi) {
     phase_control: async ({ phaseId, action, to, note, turn, decision }) => {
       if (action === "word") {
         if (!turn || !decision) throw new Error("the owner's word names the turn and the decision");
-        return api.status(api.word({ phaseId, turn, decision, text: note?.trim() || decision, by: "owner via screen" }).id);
+        return api.status((await api.word({ phaseId, turn, decision, text: note?.trim() || decision, by: "owner via screen" })).id);
       }
       if (action === "return") {
         if (!to || !note?.trim()) throw new Error("a return names the stage and carries a note");

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { ANIMATOR_LAW, PLAN_ROUNDS_MAX, coverageGaps, designMode, motionRows, rubricLine, stageInit, threatGap, uiContractGap, validationGaps } from "./stages";
 
 /**
  * The phase on rails (SMA map: Phase graph, Phase control work, Phase controls). Matvey Maslov, 2026-10-22: «the driver is the model in the
@@ -18,7 +19,7 @@ export const RETURN_STAGES: readonly PhaseStage[] = ["discussion", "planning", "
 export type Promise3 = { given: string; when: string; then: string };
 
 /** One piece of the plan: the work it becomes (a task-v2 contract, issued as is) and the promise it keeps. */
-export type PlanItem = { id: string; title: string; wave: number; promise: Promise3; task: Record<string, unknown> };
+export type PlanItem = { id: string; title: string; wave: number; promise: Promise3; task: Record<string, unknown>; /** Requirement ids and locked decision ids this piece carries out (coverage gates). */ covers?: string[] };
 
 export type ContextDoc = { path: string; sha256: string; bytes: number };
 export type PlanCritique = { decision: "approve" | "changes_requested"; by: string; summary?: string };
@@ -44,15 +45,27 @@ export type WaveRecord = { packageSha: string; lines: Array<{ id: string; ok: bo
 
 /** What the phase holds besides its row: one JSON record, each stage writes its part. */
 export type PhaseRecord = {
-  context?: { docs: ContextDoc[]; sha: string; signedAt: number; risks?: Partial<Record<RiskKind, string>>; legacy?: boolean };
+  context?: { docs: ContextDoc[]; sha: string; signedAt: number; risks?: Partial<Record<RiskKind, string>>; legacy?: boolean; /** REQUIREMENTS ids this phase delivers. */ requirements?: string[]; /** Locked decision ids of CONTEXT.md. */ decisions?: string[] };
   questions?: StageQuestion[];
   /** The project asked for the owner's word at the turns (owner.words = on when the phase opened). */
   ownerWords?: boolean;
   words?: OwnerWord[];
   /** Goal revisions and withdrawn pieces, each one a decision in the book. */
   scope?: { revisions: number; withdrawn: string[] };
-  plan?: { items: PlanItem[]; sha: string; contextSha: string; critique?: PlanCritique; admittedSha?: string; admittedAt?: number };
-  design?: { decision: "needed" | "not_needed"; why: string; drawing?: Drawing; confirmedAt?: number };
+  plan?: { items: PlanItem[]; sha: string; contextSha: string; critique?: PlanCritique; admittedSha?: string; admittedAt?: number; /** Rounds of the independent check that asked for changes. */ rounds?: number };
+  design?: { decision: "needed" | "not_needed"; why: string; drawing?: Drawing; confirmedAt?: number; mode?: "screens" | "system" | "mixed"; motion?: string[]; archived?: Drawing[] };
+  /** The roadmap row this phase is (lane-plan ROADMAP.md), marked done when the phase closes. */
+  roadmapRow?: string;
+  /** Autonomous mode (setting phase.autonomous): when the phase closes the driver opens the next open roadmap row itself. */
+  autonomous?: boolean;
+  /** Execution with or without parallel writers (setting phase.subagents; off issues one piece at a time, inline). */
+  subagents?: boolean;
+  /** A marker branch phase/<id> at the accepted main (setting phase.branch = phase). */
+  branch?: "none" | "phase";
+  /** UAT.md written for the owner at acceptance (owner.words on). */
+  uat?: { path: string; sha256: string; at: number };
+  /** The conclusion and the roadmap/STATE marks written when the phase closed. */
+  closedDocs?: { at: number; commit: string | null };
   execution?: { issued: Record<string, string>; startedAt?: number; baseSha?: string | null; issueErrors?: Record<string, string>; acceptedNoted?: string[]; waves?: Record<string, WaveRecord> };
   /** Each finished wave is verified by another model before the next one is issued (setting phase.wave_review, on by default). */
   waveReview?: boolean;
@@ -142,6 +155,10 @@ export function planGate(record: PhaseRecord): GateResult {
   if (new Set(ids).size !== ids.length) why.push("two pieces have the same id");
   if (!record.context || plan.contextSha !== record.context.sha) why.push("the plan was not built on the signed context (contextSha differs): read the context documents and plan again");
   if (plan.sha !== planSignature(plan.items, plan.contextSha)) why.push("the plan signature does not match its pieces");
+  why.push(...coverageGaps(record), ...validationGaps(plan.items));
+  const threat = threatGap(record);
+  if (threat) why.push(threat);
+  if ((plan.rounds ?? 0) >= PLAN_ROUNDS_MAX && plan.critique?.decision !== "approve") why.push(`${plan.rounds} rounds of the plan check asked for changes: stop revising — return the phase to discussion with what the checker keeps finding, or close it`);
   if (!plan.critique) why.push("no independent plan check: run the plan critic (workflow lp.plan or grill-plan) and report its decision");
   else if (plan.critique.decision !== "approve") why.push(`the plan checker asked for changes${plan.critique.summary ? `: ${plan.critique.summary}` : ""}`);
   why.push(...openQuestions(record, "planning").map((question) => `open question ${question.id}: ${question.text}`));
@@ -161,10 +178,11 @@ export const wordOf = (record: PhaseRecord, turn: WordTurn) => [...(record.words
 export const phaseFolder = (phaseId: string) => `.agents/phases/${phaseId}`;
 
 /** Is a drawing needed: a piece that changes a screen (UI files) needs one; the PM can ask for one on any plan. */
-export function designDecision(items: readonly PlanItem[], asked?: boolean): { decision: "needed" | "not_needed"; why: string } {
-  if (asked) return { decision: "needed", why: "the PM asked for a drawing" };
+export function designDecision(items: readonly PlanItem[], asked?: boolean): { decision: "needed" | "not_needed"; why: string; mode?: "screens" | "system" | "mixed"; motion?: string[] } {
+  const extra = { mode: designMode(items), motion: motionRows(items) };
+  if (asked) return { decision: "needed", why: "the PM asked for a drawing", ...extra };
   const ui = items.filter((item) => (Array.isArray(item.task.owns_paths) ? item.task.owns_paths as string[] : []).some((path) => UI_PATH.test(path)));
-  return ui.length ? { decision: "needed", why: `pieces that change screens: ${ui.map((item) => item.id).join(", ")}` } : { decision: "not_needed", why: "no piece changes a screen" };
+  return ui.length ? { decision: "needed", why: `pieces that change screens: ${ui.map((item) => item.id).join(", ")}`, ...extra } : { decision: "not_needed", why: "no piece changes a screen" };
 }
 
 /** Design → execution: the drawing exists, an answer on feasibility, and a reviewer other than the designer saw it. */
@@ -181,6 +199,8 @@ export function designGate(record: PhaseRecord): GateResult {
     if (!drawing.reviewer) why.push("the drawing is not reviewed by a separate role");
     else if (drawing.reviewer === drawing.designer) why.push("the reviewer of the drawing is its designer: it must be a separate role");
   }
+  const contract = uiContractGap(record);
+  if (contract) why.push(contract);
   if (record.ownerWords && wordOf(record, "design")?.decision !== "yes") why.push("the drawing awaits the owner's word (owner.words is on)");
   return gate(why);
 }
@@ -323,6 +343,7 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
     text: `${head} — open question(s) at ${phase.stage}: ${questions.map((question) => `${question.id}${question.blocking ? " (blocking)" : ""}: ${question.text}`).join("; ")}. Answer with ${tool("answer", `, phaseId:"${id}", questionId, answer`)}; ask the owner first (lane_pilot_ask_owner) if only he knows.` };
   const turn: WordTurn | null = !r.ownerWords ? null : phase.stage === "planning" && r.plan?.critique?.decision === "approve" && wordOf(r, "planning")?.decision !== "yes" ? "planning"
     : phase.stage === "design" && r.design?.drawing?.reviewer && wordOf(r, "design")?.decision !== "yes" ? "design"
+    : phase.stage === "acceptance" && r.uat && wordOf(r, "uat")?.decision !== "yes" ? "uat"
     : phase.stage === "acceptance" && wordOf(r, "acceptance")?.decision !== "yes" ? "acceptance" : null;
   if (turn) return { key: key(`word:${turn}`), stage: phase.stage, waitsForPm: true,
     text: `${head} awaits the owner's word at ${turn} (owner.words is on). Ask him with lane_pilot_ask_owner, then record it with ${tool("word", `, phaseId:"${id}", turn:"${turn}", decision:"yes"|"no", text`)}.` };
@@ -331,17 +352,17 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
     case "discussion": {
       const check = discussionGate(r);
       return { key: key(r.context?.sha ?? "none"), stage: phase.stage, waitsForPm: true,
-        text: `${head} — stage 1, discussion. Goal: ${phase.goal}\nWrite the discussion to files in the project (decisions locked/free/deferred, FAQ, ADR — workflow lp.brainstorm or lp.analyze writes them), name the four risks (${RISK_KINDS.join(", ")}), then ${tool("context", `, phaseId:"${id}", docs:["<path>", ...], risks:{technical, product, operations, security}`)}: Lane Pilot reads and signs them.${check.ok ? "" : `\nOpen: ${check.why.join("; ")}`}` };
+        text: `${head} — stage 1, discussion. Goal: ${phase.goal}\nWrite the discussion to files in the project (decisions locked/free/deferred, FAQ, ADR — workflow lp.brainstorm or lp.analyze writes them), name the four risks (${RISK_KINDS.join(", ")}), then ${tool("context", `, phaseId:"${id}", docs:["<path>", ...], risks:{technical, product, operations, security}`)}: Lane Pilot reads and signs them; pass requirements:[ids] and decisions:[locked ids] when the phase has them — the plan must cover each.\nRead first: ${stageInit(phase).join(", ")}. ${rubricLine("discussion")}${check.ok ? "" : `\nOpen: ${check.why.join("; ")}`}` };
     }
     case "planning": {
       const check = planGate(r);
       return { key: key(`${r.plan?.sha ?? "none"}:${r.plan?.critique?.decision ?? "-"}`), stage: phase.stage, waitsForPm: true,
-        text: `${head} — stage 2, planning, on context ${r.context?.sha.slice(0, 12) ?? "?"}.\nSubmit the plan with ${tool("plan", `, phaseId:"${id}", items:[{id, title, wave, promise:{given, when, then}, task:<task-v2>}]`)}; then run the independent plan checker (workflow lp.plan's critic or grill-plan) and report it with ${tool("plan_check", `, phaseId:"${id}", decision:"approve"|"changes_requested", by, summary`)}.${check.ok ? "" : `\nOpen: ${check.why.slice(0, 8).join("; ")}`}` };
+        text: `${head} — stage 2, planning, on context ${r.context?.sha.slice(0, 12) ?? "?"}.\nSubmit the plan with ${tool("plan", `, phaseId:"${id}", items:[{id, title, wave, promise:{given, when, then}, task:<task-v2>}]`)}; then run the independent plan checker (workflow lp.plan's critic or grill-plan) and report it with ${tool("plan_check", `, phaseId:"${id}", decision:"approve"|"changes_requested", by, summary`)} (round ${(r.plan?.rounds ?? 0) + 1} of ${PLAN_ROUNDS_MAX}; a checker of another model than the planner).\nRead first: ${stageInit(phase).join(", ")}. ${rubricLine("planning")}${check.ok ? "" : `\nOpen: ${check.why.slice(0, 8).join("; ")}`}` };
     }
     case "design": {
       const check = designGate(r);
       return { key: key(`${r.design?.drawing?.sha256 ?? "none"}:${r.design?.drawing?.feasible ?? "-"}:${r.design?.drawing?.reviewer ?? "-"}`), stage: phase.stage, waitsForPm: true,
-        text: `${head} — stage 3, design (${r.design?.why ?? ""}).\nHave design-lead draw the screens into ${phaseFolder(id)}/design/ (lane_pilot_helpers {action:"specialist", role:"design-lead"}), then ${tool("drawing", `, phaseId:"${id}", paths:[...], designer, feasible:true|false, contradiction?, reviewer`)} — the reviewer is a role other than the designer (ui-review / design-taste).${check.ok ? "" : `\nOpen: ${check.why.join("; ")}`}` };
+        text: `${head} — stage 3, design (${r.design?.why ?? ""}).\nHave design-lead draw the screens into ${phaseFolder(id)}/design/ (lane_pilot_helpers {action:"specialist", role:"design-lead"}), then ${tool("drawing", `, phaseId:"${id}", paths:[...], designer, feasible:true|false, contradiction?, reviewer`)} — the reviewer is a role other than the designer (ui-review / design-taste). Mode: ${r.design?.mode ?? "screens"}; the drawing's paths include its UI-SPEC.md (lane-plan template fill UI-SPEC).${r.design?.motion?.length ? ` Motion rows ${r.design.motion.join(", ")}: ${ANIMATOR_LAW}.` : ""}\nRead first: ${stageInit(phase).join(", ")}. ${rubricLine("design")}${check.ok ? "" : `\nOpen: ${check.why.join("; ")}`}` };
     }
     case "execution": {
       const items = r.plan?.items ?? [];

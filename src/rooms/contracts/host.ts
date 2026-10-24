@@ -236,7 +236,7 @@ export const hostContract = defineRpcContract({
     input: z.object({ requestedHostId:z.string().min(1), cwd:z.string().startsWith("/"), programs:z.array(z.string().regex(/^[A-Za-z0-9._+-]{1,80}$/)).max(40) }).strict(),
     output: z.object({ hostId:z.string(), found:z.record(z.string(), z.boolean()) }).strict(),
   },
-  /** The phase book and the phase's documents, written only under the project's `.agents/phases/<phase-id>/` (src/rooms/phase). */
+  /** The phase book and the phase's documents, written only under the project's `.agents/phases/<phase-id>/`, and the marks in `.agents/planning/STATE.md` / `ROADMAP.md` (src/rooms/phase). */
   writePhaseBook: {
     input: z.object({
       requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), previewSha256:z.string().regex(/^[a-f0-9]{64}$/),
