@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.297
+
+**No night repair waits for the owner.** A night repair whose files touch the judge (gates, plan-fact, the wall, verification) or the graph was held for the owner, and a held branch was released unread after a week: on 2026-10-24 two fixed repairs (a sandbox class and a merge class) sat in «held» while the owner takes no part in the loop. Now the night's gate is merge or reject. `night_decides` merges as before; a change of the judge or the graph (`judge_gates`, `judge_thresholds` and the `night_proposes` entries) merges on the strict proofs — the bench subset passed, the merge is revertible, and no existing test was changed or deleted (only new tests added; the changed files carry git's status for it) — Matvey's «only with your yes if you have no rollbacks», and the night has them. What the night never does (money, secrets, irreversible data, the bench set, the policy itself, access fences, outside the repository, the standing prohibitions) and a change without the proofs are rejected with the reason, and the class's round counts as failed so its ladder moves on. A hold stored before this version is decided again.
+
+**The map says what worked, not only what exists.** `bb lane-pilot sma-map --live [--days N] [--json]` reads, per group of the SMA map, what in the plugin's database shows the group worked on real work in the window (phase book parts, attempts, gates, stage receipts, workflow runs, Jev receipts, the wall, memory…), and names where to look for a group whose trace is elsewhere (Lane Stack hooks, the Telegram plugin, the deploy log). Every group has a source and every query runs on the real schema (tests/sma-live.test.ts).
+
 ## 0.1.296
 
 **A phase's step is not queued to a busy PM.** The driver queued the stage's step with `queue-if-active` whenever a pass found it unsent; to a PM in the middle of a turn it arrived after the turn, when the phase had moved on (live ph_9ed0f7f04b: the discussion's step reached the PM after the phase was closed, and the PM had to say it was late). Now a pass pokes only an idle PM; a busy one is poked by a later pass, two minutes on, once its turn ends. The intake no longer queues its own note about a heavy message joining the live phase: the PM reads that message in the same turn, and the dispatch refusal names the phase.
