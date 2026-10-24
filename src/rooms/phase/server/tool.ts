@@ -73,9 +73,10 @@ export function registerPhaseTool(ctx: ServerCore, services: Services): void {
           case "status": {
             if (!input.phaseId) return json({ phases: api.list({ pmThreadId: context.threadId, live: true }).map((phase) => ({ id: phase.id, title: phase.title, stage: phase.stage, state: phase.state })) });
             const status = api.status(input.phaseId);
-            return json({ phaseId: status.phase.id, stage: status.phase.stage, state: status.phase.state, next: status.next.text, gates: status.gates, book: status.book.slice(0, 6000) });
+            // bookHead: the last part's hash, the reviewedHash the lessons gate asks for (a PM could not read it anywhere, live ph_ae0a8de9db).
+            return json({ phaseId: status.phase.id, stage: status.phase.stage, state: status.phase.state, next: status.next.text, bookHead: status.bookHead, gates: status.gates, book: status.book.slice(0, 6000) });
           }
-          case "next": { const status = api.status(input.phaseId); return json({ phaseId: input.phaseId, stage: status.phase.stage, next: status.next.text, waitsForYou: status.next.waitsForPm }); }
+          case "next": { const status = api.status(input.phaseId); return json({ phaseId: input.phaseId, stage: status.phase.stage, next: status.next.text, waitsForYou: status.next.waitsForPm, bookHead: status.bookHead }); }
           case "rubric": {
             // Without a stage the phase's own stage is meant (a PM asked for the rubric of its phase by phaseId alone).
             const stage = input.stage ?? (input.phaseId ? api.status(input.phaseId).phase.stage : undefined);

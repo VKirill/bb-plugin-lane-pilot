@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.303
+
+The lessons gate asks for `reviewedHash` — the hash of the phase book's last part — but no surface showed it whole: `status` cut the book text, `phase show` gave BOOK.md's own hash, which the gate rejects (the live phase's PM had to ask for it). `lane_pilot_phase status` and `next` now return `bookHead`, and the lessons step carries the last part's hash.
+
 ## 0.1.302
 
 **A redone piece is judged on its whole work, and a stopped wave is named.** In the live phase ph_ae0a8de9db the piece was issued again as a redo, accepted, and the phase still stood still for an hour:

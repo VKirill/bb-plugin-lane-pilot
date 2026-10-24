@@ -702,7 +702,10 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     // discussion's step arrived after the phase was closed). The next pass, two minutes on, pokes it once it is idle.
     const thread = await bb.sdk.threads.get({ threadId: phase.pmThreadId }).catch(() => null) as { status?: unknown } | null;
     if (thread?.status !== "idle") return;
-    await bb.sdk.threads.send({ threadId: phase.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text: `[Lane Pilot phase] ${action.text}`, mentions: [] }] } as never).catch(() => undefined);
+    // The lessons' reviewer names the book it read by its last part's hash: the step carries it.
+    const head = action.stage === "lessons" ? listParts(db, phase.id).at(-1)?.hash : undefined;
+    const text = head ? `${action.text} The book's last part hash now (reviewedHash): ${head}.` : action.text;
+    await bb.sdk.threads.send({ threadId: phase.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text: `[Lane Pilot phase] ${text}`, mentions: [] }] } as never).catch(() => undefined);
     notePoked(db, phase.id, action.key, now());
   }
 
