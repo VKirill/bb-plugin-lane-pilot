@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.298
+
+**A phase issues its pieces.** The task-v2 schema had grown `promise`, `priority`, `clarify` and `drawing`, but the list the validator checks extra keys against had not, so every piece a phase issued (with its `priority: high`) was refused as «priority: additionalProperties is false» (live ph_ae0a8de9db stopped at execution). The list now holds them, and a test fails when the schema and the list part.
+
+**A new process becomes a small graph.** The intake has a sixth kind, `process`: a routine the system should run again and again («каждый раз…», «every week…»). The first time the PM hands out such a request's work by hand, the dispatch is refused once with the forge's road — a workflow draft (`lane_pilot_forge draft kind workflow`), its lint, enable, then `lane_pilot_route` — Matvey's «any new process becomes a small graph»; a second dispatch goes through, so a misread one-off job is not trapped.
+
 ## 0.1.297
 
 **No night repair waits for the owner.** A night repair whose files touch the judge (gates, plan-fact, the wall, verification) or the graph was held for the owner, and a held branch was released unread after a week: on 2026-10-24 two fixed repairs (a sandbox class and a merge class) sat in «held» while the owner takes no part in the loop. Now the night's gate is merge or reject. `night_decides` merges as before; a change of the judge or the graph (`judge_gates`, `judge_thresholds` and the `night_proposes` entries) merges on the strict proofs — the bench subset passed, the merge is revertible, and no existing test was changed or deleted (only new tests added; the changed files carry git's status for it) — Matvey's «only with your yes if you have no rollbacks», and the night has them. What the night never does (money, secrets, irreversible data, the bench set, the policy itself, access fences, outside the repository, the standing prohibitions) and a change without the proofs are rejected with the reason, and the class's round counts as failed so its ladder moves on. A hold stored before this version is decided again.
