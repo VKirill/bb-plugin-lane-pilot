@@ -7,7 +7,7 @@ import { isWholeConsent } from "../tasks";
  * and a heavy goal is driven by the daemon through the phase, the orchestrator only switched on at its turns. Here the code
  * settles what it can (a consent, a short message) and Jev the rest; without Jev a long message is heavy.
  */
-export const INTAKE_KINDS = ["heavy", "small", "batch", "question", "consent"] as const;
+export const INTAKE_KINDS = ["heavy", "small", "batch", "process", "question", "consent"] as const;
 export type IntakeKind = (typeof INTAKE_KINDS)[number];
 
 /** Lane Pilot's own notices, other threads' messages and system frames are not the owner's request. */
@@ -42,6 +42,7 @@ export const intakeJudgment = defineJudgment<{ text: string }, { kind: IntakeKin
         heavy: "A goal that needs several tasks that depend on each other, a design or architecture decision, a new feature or section, a redesign, a migration, or work whose result has to be planned and accepted as a whole.",
         small: "One concrete change a single task can make: a fix, a tweak, a copy or style edit, one page or one endpoint.",
         batch: "A list of several independent small fixes or edits, each one task, none needing a plan.",
+        process: "A new recurring routine or way of working the system itself should run again and again: a pipeline, a regular job, a checklist to repeat for every new item, «each time X do Y», «every week …».",
         question: "A question or a request for information, a report or a status; it asks for no change to the project.",
         consent: "Agreement, a yes, an approval of what was proposed, or a short go-ahead.",
       },
@@ -70,4 +71,11 @@ export function railsRefusal(phase: { id: string; title: string; stage: string }
   return `This request of the owner is a phase on rails: Lane Pilot opened phase ${phase.id} «${phase.title}» (stage ${phase.stage}) for it. ` +
     `Its pieces are issued by the phase once the plan is admitted, not dispatched by hand. Do the stage's step now: ${next} ` +
     `(lane_pilot_phase). If the owner's request is in fact one small task, close the phase in words (lane_pilot_phase {action:"close", phaseId, words}) and dispatch it.`;
+}
+
+/** What the dispatch tool tells a PM the first time it hands out the work of a request that is a new process (SMA: processes become small graphs). */
+export function processHint(): string {
+  return "This request of the owner is a new process: a routine the system should run again and again. In Matvey's system a new process becomes a small graph, not one-off code: " +
+    "have the forge write it as a workflow (lane_pilot_forge {action:\"draft\", kind:\"workflow\", name, brief}), lint it when the Creator's task is accepted, and enable it; then run it with lane_pilot_route. " +
+    "If the request is in fact one-off work, dispatch it again: this hint is given once per request.";
 }

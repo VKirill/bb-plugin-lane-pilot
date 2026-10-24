@@ -1,7 +1,7 @@
 import { jev, type JevSettings } from "@lane-pilot/jev";
 import { getRun, getRunSettingsScopes } from "../../storage";
 import type { ServerCore } from "../../core/server";
-import { intakeByRules, intakeJudgment, intakeTitle, isMachineMessage, railsRefusal, type IntakeKind } from "../intake";
+import { intakeByRules, intakeJudgment, intakeTitle, isMachineMessage, processHint, railsRefusal, type IntakeKind } from "../intake";
 import type { Phase } from "../logic";
 
 /** What the intake needs of the phase driver (its own type, so the driver can build the intake without a type cycle). */
@@ -13,7 +13,7 @@ export type IntakePhases = {
 };
 
 /** The last owner request of a PM chat as the intake read it. */
-export type IntakeRecord = { requestId: string; kind: IntakeKind; by: "rules" | "jev"; phaseId: string | null; at: number };
+export type IntakeRecord = { requestId: string; kind: IntakeKind; by: "rules" | "jev"; phaseId: string | null; at: number; hinted?: boolean };
 const KEY = (threadId: string) => `phase-intake:${threadId}`;
 
 type Deps = Pick<ServerCore, "bb" | "db" | "effectiveProjectSettings" | "log">;
@@ -93,6 +93,10 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases) {
    */
   async function dispatchRefusal(threadId: string): Promise<string | null> {
     const record = await take(threadId) ?? await bb.storage.kv.get(KEY(threadId)).catch(() => null) as IntakeRecord | null;
+    if (record?.kind === "process" && !record.hinted) {
+      await bb.storage.kv.set(KEY(threadId), { ...record, hinted: true });
+      return processHint();
+    }
     if (record?.kind !== "heavy" || !record.phaseId) return null;
     const phase = phases.list({ pmThreadId: threadId, live: true }).find((row) => row.id === record.phaseId);
     // A paused or stopped phase still holds the request: only a closed one releases it.

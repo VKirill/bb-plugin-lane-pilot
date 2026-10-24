@@ -102,3 +102,21 @@ describe("rails by default", () => {
     expect(await writer.intake.take(PM)).toBeNull();
   });
 });
+
+describe("a new process", () => {
+  it("is pointed at the forge once, then the PM may dispatch", async () => {
+    const { createPhaseIntake: create } = await import("../src/rooms/phase/server/intake");
+    const { createFakePluginHost: host } = await import("@get-bb/plugin-sdk/testing");
+    const { bb, harness } = host({ pluginId: "lane-pilot" });
+    harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
+    harness.sdk.stub("threads.events.list", async () => [{ type: "client/turn/requested", data: { requestId: "creq_p", initiator: "user", input: [{ type: "text", text: "x".repeat(300) }] } }]);
+    const db = openDatabase(bb);
+    createRun(db, "run1", "projA");
+    const phases = { open: async () => { throw new Error("no phase for a process"); }, tick: async () => 0, list: () => [], status: () => ({ next: { text: "" } }) };
+    const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: {} }) } as never, phases as never);
+    // The newest request was read earlier as a process (the record the reader keeps).
+    await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_p", kind: "process", by: "jev", phaseId: null, at: 1 });
+    expect(await intake.dispatchRefusal("thr_pm")).toMatch(/lane_pilot_forge/);
+    expect(await intake.dispatchRefusal("thr_pm")).toBeNull();
+  });
+});
