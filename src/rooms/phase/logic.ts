@@ -35,9 +35,12 @@ export type RiskKind = (typeof RISK_KINDS)[number];
 export type StageQuestion = { id: string; stage: PhaseStage; text: string; blocking: boolean; askedAt: number; answer?: string; answeredBy?: string; answeredAt?: number };
 
 /** The owner's word at a turn, when the project asks for it (setting owner.words = on; SMA: Plan row awaits a word, Drawing confirmation, Keyed decision, UAT line). */
-export const WORD_TURNS = ["planning", "design", "acceptance", "uat"] as const;
+export const WORD_TURNS = ["planning", "design", "issue", "wave", "acceptance", "uat"] as const;
 export type WordTurn = (typeof WORD_TURNS)[number];
-export type OwnerWord = { turn: WordTurn; decision: "yes" | "no"; by: string; text: string; at: number };
+export type OwnerWord = { turn: WordTurn; decision: "yes" | "no"; by: string; text: string; at: number; wave?: number };
+
+/** A wave of the plan once its pieces are in (SMA: Wave package with hash, Wave acceptance lines, Wave verified by another model, Wave written to the book). */
+export type WaveRecord = { packageSha: string; lines: Array<{ id: string; ok: boolean; detail: string }>; review?: { state: "passed" | "failed"; by: string; summary: string; at: number }; at: number };
 
 /** What the phase holds besides its row: one JSON record, each stage writes its part. */
 export type PhaseRecord = {
@@ -50,7 +53,13 @@ export type PhaseRecord = {
   scope?: { revisions: number; withdrawn: string[] };
   plan?: { items: PlanItem[]; sha: string; contextSha: string; critique?: PlanCritique; admittedSha?: string; admittedAt?: number };
   design?: { decision: "needed" | "not_needed"; why: string; drawing?: Drawing; confirmedAt?: number };
-  execution?: { issued: Record<string, string>; startedAt?: number; baseSha?: string | null; issueErrors?: Record<string, string>; acceptedNoted?: string[] };
+  execution?: { issued: Record<string, string>; startedAt?: number; baseSha?: string | null; issueErrors?: Record<string, string>; acceptedNoted?: string[]; waves?: Record<string, WaveRecord> };
+  /** Each finished wave is verified by another model before the next one is issued (setting phase.wave_review, on by default). */
+  waveReview?: boolean;
+  /** The most pieces the driver issues in one pass (Batch issue capacity; setting phase.issue_cap, 8 by default). */
+  issueCap?: number;
+  /** When the driver last said the phase is aging or stalled (once a day). */
+  agingSaidAt?: number;
   verification?: { verdict?: FrozenVerdict; model?: ModelVerdict };
   acceptance?: { lines: AcceptanceLine[]; at: number; accepted: boolean };
   lessons?: { needed: boolean; why: string; analysis?: string; author?: string; reviewer?: string; reviewedHash?: string; at?: number };
@@ -179,15 +188,47 @@ export function designGate(record: PhaseRecord): GateResult {
 export type TaskFact = { taskId: string; state: string | null; planFact: "passed" | "failed" | "skipped" | null; verification: "passed" | "failed" | "skipped" | null; codeCritique: "passed" | "blocked" | "skipped" | "failed" | null; browserQa?: "passed" | "failed" | "skipped" | null };
 
 /** The pieces that may be issued now: wave by wave, the next wave only once every piece of the earlier waves is accepted. */
-export function issuable(items: readonly PlanItem[], issued: Readonly<Record<string, string>>, facts: ReadonlyMap<string, TaskFact>): PlanItem[] {
-  const waves = [...new Set(items.map((item) => item.wave))].sort((a, b) => a - b);
-  for (const wave of waves) {
-    const pieces = items.filter((item) => item.wave === wave);
+export function issuable(items: readonly PlanItem[], issued: Readonly<Record<string, string>>, facts: ReadonlyMap<string, TaskFact>, cleared: (wave: number) => boolean = () => true): PlanItem[] {
+  for (const wave of wavesOf(items)) {
+    const pieces = piecesOfWave(items, wave);
     const waiting = pieces.filter((item) => !issued[item.id]);
     if (waiting.length) return waiting;
     if (!pieces.every((item) => facts.get(item.id)?.state === "accepted")) return [];
+    if (!cleared(wave)) return [];
   }
   return [];
+}
+
+/** The pieces of one wave. */
+export const piecesOfWave = (items: readonly PlanItem[], wave: number) => items.filter((item) => item.wave === wave);
+export const wavesOf = (items: readonly PlanItem[]) => [...new Set(items.map((item) => item.wave))].sort((a, b) => a - b);
+
+/** The wave's package: its pieces, their tasks and states, hashed — the same wave has the same package. */
+export const wavePackage = (pieces: readonly PlanItem[], facts: ReadonlyMap<string, TaskFact>) =>
+  sha256(canonical(pieces.map((item) => [item.id, facts.get(item.id)?.taskId ?? null, facts.get(item.id)?.state ?? null, facts.get(item.id)?.planFact ?? null])));
+
+/** The wave's acceptance lines, decided by code from what its pieces left. */
+export function waveLines(pieces: readonly PlanItem[], facts: ReadonlyMap<string, TaskFact>): WaveRecord["lines"] {
+  const bad = (pick: (fact: TaskFact | undefined) => boolean) => pieces.filter((item) => pick(facts.get(item.id))).map((item) => item.id);
+  const notIn = bad((fact) => fact?.state !== "accepted");
+  const unproved = bad((fact) => fact?.planFact === "failed");
+  const red = bad((fact) => fact?.verification === "failed");
+  const blocked = bad((fact) => fact?.codeCritique === "blocked");
+  return [
+    { id: "pieces_accepted", ok: !notIn.length, detail: notIn.length ? `not accepted: ${notIn.join(", ")}` : `${pieces.length} piece(s) accepted` },
+    { id: "promises_proved", ok: !unproved.length, detail: unproved.length ? `plan-fact failed: ${unproved.join(", ")}` : "every promise of the wave is proved" },
+    { id: "checks_passed", ok: !red.length, detail: red.length ? `checks failed: ${red.join(", ")}` : "the wave's checks pass" },
+    { id: "no_critic_block", ok: !blocked.length, detail: blocked.length ? `the code critic blocks: ${blocked.join(", ")}` : "no critic blocks" },
+  ];
+}
+
+/** Is a finished wave cleared for the next one: its lines hold, another model verified it (when asked), the owner said yes (when asked). */
+export function waveCleared(record: PhaseRecord, wave: number): boolean {
+  const done = record.execution?.waves?.[String(wave)];
+  if (!done || !done.lines.every((line) => line.ok)) return false;
+  if (record.waveReview && done.review?.state !== "passed") return false;
+  if (record.ownerWords && ![...(record.words ?? [])].reverse().find((word) => word.turn === "wave" && word.wave === wave && word.decision === "yes")) return false;
+  return true;
 }
 
 /** Execution → verification: every piece issued and accepted; a blocked piece is reported, not skipped. */
@@ -312,6 +353,14 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
       const errors = Object.entries(r.execution?.issueErrors ?? {});
       if (errors.length) return { key: key(`issue_error:${errors.map(([piece]) => piece).join(",")}`), stage: phase.stage, waitsForPm: true,
         text: `${head} — stage 4, execution: Lane Pilot could not issue ${errors.map(([piece, why]) => `${piece} (${why})`).join("; ")}. Correct the plan with ${tool("return", `, phaseId:"${id}", to:"planning", note`)}.` };
+      if (r.ownerWords && !wordOf(r, "issue")) return { key: key("word:issue"), stage: phase.stage, waitsForPm: true,
+        text: `${head} — stage 4, execution awaits the owner's word «issue» (owner.words is on). Ask him, then ${tool("word", `, phaseId:"${id}", turn:"issue", decision:"yes"|"no", text`)}.` };
+      const unreviewed = Object.entries(r.execution?.waves ?? {}).find(([, wave]) => wave.lines.every((line) => line.ok) && r.waveReview && !wave.review);
+      if (unreviewed) return { key: key(`wave_review:${unreviewed[0]}`), stage: phase.stage, waitsForPm: true,
+        text: `${head} — wave ${unreviewed[0]} is in (package ${unreviewed[1].packageSha.slice(0, 12)}). Have another model verify it (workflow lp.review on the wave's diff, a reviewer model other than the writers'), then ${tool("wave_review", `, phaseId:"${id}", wave:${unreviewed[0]}, state:"passed"|"failed", by, summary`)}; the next wave waits for it.` };
+      const unworded = Object.keys(r.execution?.waves ?? {}).find((wave) => r.ownerWords && !(r.words ?? []).some((word) => word.turn === "wave" && word.wave === Number(wave) && word.decision === "yes"));
+      if (unworded) return { key: key(`word:wave:${unworded}`), stage: phase.stage, waitsForPm: true,
+        text: `${head} — wave ${unworded} awaits the owner's word (owner.words is on). Ask him, then ${tool("word", `, phaseId:"${id}", turn:"wave", wave:${unworded}, decision:"yes"|"no", text`)}.` };
       return { key: key(`running:${Object.keys(issued).length}:${open.length}`), stage: phase.stage, waitsForPm: false,
         text: `${head} — stage 4, execution: ${Object.keys(issued).length} of ${items.length} pieces issued, ${open.length} at work. Lane Pilot issues the next wave itself once this one is accepted.` };
     }

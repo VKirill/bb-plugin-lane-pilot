@@ -19,7 +19,8 @@ const params = z.discriminatedUnion("action", [
   z.object({ action: z.literal("lessons"), phaseId, analysis: z.string().trim().min(1).max(4000), author: z.string().trim().min(1).max(120), reviewer: z.string().trim().min(1).max(120), reviewedHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
   z.object({ action: z.literal("question"), phaseId, text: z.string().trim().min(1).max(1000), blocking: z.boolean().default(true) }).strict(),
   z.object({ action: z.literal("answer"), phaseId, questionId: z.string().trim().min(1).max(20), answer: z.string().trim().min(1).max(2000) }).strict(),
-  z.object({ action: z.literal("word"), phaseId, turn: z.enum(["planning", "design", "acceptance", "uat"]), decision: z.enum(["yes", "no"]), text: z.string().trim().min(1).max(2000) }).strict(),
+  z.object({ action: z.literal("word"), phaseId, turn: z.enum(["planning", "design", "issue", "wave", "acceptance", "uat"]), decision: z.enum(["yes", "no"]), text: z.string().trim().min(1).max(2000), wave: z.number().int().min(1).max(20).optional() }).strict(),
+  z.object({ action: z.literal("wave_review"), phaseId, wave: z.number().int().min(1).max(20), state: z.enum(["passed", "failed"]), by: z.string().trim().min(1).max(120), summary: z.string().trim().min(1).max(2000) }).strict(),
   z.object({ action: z.literal("withdraw"), phaseId, pieces: z.array(z.string().trim().min(1).max(80)).min(1).max(60), note: z.string().trim().min(1).max(2000) }).strict(),
   z.object({ action: z.literal("revise"), phaseId, goal: z.string().trim().min(1).max(4000), note: z.string().trim().min(1).max(2000) }).strict(),
   z.object({ action: z.literal("correct"), phaseId, note: z.string().trim().min(1).max(4000), pieces: z.array(z.string().trim().min(1).max(80)).max(60).optional() }).strict(),
@@ -64,7 +65,8 @@ export function registerPhaseTool(ctx: ServerCore, services: Services): void {
           case "lessons": return json(summary(api.lessons({ phaseId: input.phaseId, analysis: input.analysis, author: input.author, reviewer: input.reviewer, reviewedHash: input.reviewedHash })));
           case "question": return json(summary(api.question({ phaseId: input.phaseId, text: input.text, blocking: input.blocking })));
           case "answer": return json(summary(api.answer({ phaseId: input.phaseId, questionId: input.questionId, answer: input.answer, by: "pm" })));
-          case "word": return json(summary(api.word({ phaseId: input.phaseId, turn: input.turn, decision: input.decision, text: input.text, by: "owner via pm" })));
+          case "word": return json(summary(api.word({ phaseId: input.phaseId, turn: input.turn, decision: input.decision, text: input.text, wave: input.wave, by: "owner via pm" })));
+          case "wave_review": return json(summary(api.waveReview({ phaseId: input.phaseId, wave: input.wave, state: input.state, by: input.by, summary: input.summary })));
           case "withdraw": return json(summary(api.withdraw({ phaseId: input.phaseId, pieces: input.pieces, note: input.note, by: "pm" })));
           case "revise": return json(summary(api.revise({ phaseId: input.phaseId, goal: input.goal, note: input.note, by: "pm" })));
           case "correct": { const out = await api.correct({ phaseId: input.phaseId, note: input.note, pieces: input.pieces }); return json({ ...summary(out.phase), sent: out.sent }); }

@@ -3,10 +3,12 @@ import { cancelAttemptById } from "../../runs/server";
 import { taskFamily } from "../../runs";
 import { getRunGoal } from "../../run-goal";
 import { getRun, getRunSettingsScopes, getRunWriterHost, listOpenAttempts, storeMemoryRecords } from "../../storage";
+import { postOwnerItem, closeOwnerItem } from "../../owner-waiting";
+import { spendReserve } from "../../tasks";
 import { hostContract } from "../../contracts";
 import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
 import {
-  PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceLines, blindVerdict, contextSignature, openQuestions, phaseFolder, planGate as planGateOf, wordOf, designDecision, designGate, discussionGate,
+  PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceLines, blindVerdict, contextSignature, openQuestions, phaseFolder, planGate as planGateOf, piecesOfWave, waveCleared, waveLines, wavePackage, wavesOf, wordOf, designDecision, designGate, discussionGate,
   executionGate, issuable, lessonsNeeded, nextAction, planGate, planSignature, renderBook, sha256, staleAfterReturn,
   type ContextDoc, type Phase, type PhaseRecord, type PhaseStage, type PlanItem, type RiskKind, type TaskFact, type WordTurn,
 } from "../logic";
@@ -78,9 +80,12 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     insertPhase(db, { id, projectId: input.projectId, pmThreadId: input.pmThreadId, runId, title: input.title.slice(0, 200), goal: input.goal.slice(0, 4000), at: now() });
     const settings = await ctx.effectiveProjectSettings(input.projectId).then((result) => result.values as Record<string, unknown>, () => ({} as Record<string, unknown>));
     const ownerWords = String(settings["owner.words"] ?? "off") === "on";
+    const waveReview = String(settings["phase.wave_review"] ?? "on") !== "off";
+    const capSetting = Number(settings["phase.issue_cap"] ?? 8);
+    const issueCap = Number.isInteger(capSetting) && capSetting >= 1 && capSetting <= 50 ? capSetting : 8;
     let phase = mustGet(id);
     book(phase, "goal", "opened", `phase opened: ${input.title}${ownerWords ? " (the owner's word is asked at the turns: owner.words on)" : ""}`);
-    const record: PhaseRecord = { ownerWords, scope: { revisions: 0, withdrawn: [] } };
+    const record: PhaseRecord = { ownerWords, waveReview, issueCap, scope: { revisions: 0, withdrawn: [] } };
     if (input.legacy) {
       // Legacy mode without signature: a plan written before the phase existed is admitted on its own; the book says so.
       record.context = { docs: [], sha: sha256(`legacy:${id}`), signedAt: now(), legacy: true };
@@ -223,9 +228,10 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   }
 
   /** The owner's word at a turn (owner.words on). «no» sends the phase back: from planning or design to planning, from acceptance to execution. */
-  function word(input: Reported & { turn: WordTurn; decision: "yes" | "no"; text: string }): Phase {
+  function word(input: Reported & { turn: WordTurn; decision: "yes" | "no"; text: string; wave?: number }): Phase {
     const phase = mustGet(input.phaseId);
-    const record: PhaseRecord = { ...phase.record, words: [...(phase.record.words ?? []), { turn: input.turn, decision: input.decision, by: input.by ?? "owner", text: input.text.slice(0, 2000), at: now() }] };
+    const record: PhaseRecord = { ...phase.record, words: [...(phase.record.words ?? []), { turn: input.turn, decision: input.decision, by: input.by ?? "owner", text: input.text.slice(0, 2000), at: now(), ...(input.wave !== undefined ? { wave: input.wave } : {}) }] };
+    closeOwnerItem(db as never, `phase-word:${phase.id}:${input.turn}${input.wave !== undefined ? `:${input.wave}` : ""}`, input.by ?? "owner");
     book(phase, "decisions", `word_${input.turn}`, `${input.by ?? "owner"}: ${input.decision} — ${input.text}`);
     savePhase(db, phase.id, { record, at: now() });
     if (input.decision === "no") {
@@ -233,6 +239,18 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       if (PHASE_STAGES.indexOf(to) < PHASE_STAGES.indexOf(phase.stage)) return returnTo({ phaseId: phase.id, to, note: `the owner said no at ${input.turn}: ${input.text}`, by: input.by ?? "owner" });
     }
     if (input.decision === "yes" && phase.stage === "planning" && input.turn === "planning") return admitIfReady(mustGet(phase.id));
+    return mustGet(phase.id);
+  }
+
+  /** Wave verified by another model: the PM reports the review of a finished wave; a failed one returns the phase to execution's fixes. */
+  function waveReview(input: Reported & { wave: number; state: "passed" | "failed"; by: string; summary: string }): Phase {
+    const phase = mustGet(input.phaseId);
+    const waves = { ...(phase.record.execution?.waves ?? {}) };
+    const done = waves[String(input.wave)];
+    if (!done) throw new PhaseRefusal(`wave ${input.wave} is not finished yet`);
+    waves[String(input.wave)] = { ...done, review: { state: input.state, by: input.by, summary: input.summary.slice(0, 2000), at: now() } };
+    book(phase, "execution", `wave_${input.state}`, `wave ${input.wave} reviewed by ${input.by}: ${input.state} — ${input.summary}`);
+    savePhase(db, phase.id, { record: { ...phase.record, execution: { ...phase.record.execution!, waves } }, at: now() });
     return mustGet(phase.id);
   }
 
@@ -367,7 +385,20 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     const execution = { issued: { ...(phase.record.execution?.issued ?? {}) }, startedAt: phase.record.execution?.startedAt ?? now(), issueErrors: {} as Record<string, string> };
     if (phase.record.plan?.sha !== phase.record.plan?.admittedSha) throw new PhaseRefusal("the plan changed since it was checked: return the phase to planning");
     let runId = phase.runId;
-    for (const item of issuable(items, execution.issued, facts(phase))) {
+    // Awaits the word «issue»: with owner.words on nothing is issued before the owner says so.
+    if (phase.record.ownerWords && wordOf(phase.record, "issue")?.decision !== "yes") return phase;
+    const next = issuable(items, execution.issued, facts(phase), (wave) => waveCleared(phase.record, wave));
+    // Batch issue capacity and a free seat in the house: at most issueCap pieces a pass, none while the run already has that many at work.
+    const atWork = phase.runId ? listOpenAttempts(db).filter((row) => row.run_id === phase.runId).length : 0;
+    const seats = Math.max(0, (phase.record.issueCap ?? 8) - atWork);
+    // Wave budget question: the wave's appetites must fit the run's budget reserve, or the PM is asked first.
+    const waveTokens = next.reduce((sum, item) => sum + Number((item.task.appetite as { tokens?: number } | undefined)?.tokens ?? 0), 0);
+    const budget = phase.runId ? services.runBudgets.get(phase.runId)?.snapshot() : undefined;
+    if (waveTokens && budget?.limits.maxTokens) {
+      const reserve = spendReserve({ budgetTokens: budget.limits.maxTokens, spentTokens: budget.tokens, openAppetites: [], appetite: waveTokens });
+      if (!reserve.ok) { execution.issueErrors.budget = `wave budget question: ${reserve.why}`; savePhase(db, phase.id, { record: { ...phase.record, execution }, at: now() }); return mustGet(phase.id); }
+    }
+    for (const item of next.slice(0, seats)) {
       const reply: Record<string, unknown> = await services.dispatchWriter({ threadId: phase.pmThreadId, projectId: phase.projectId, birth: "phase",
         // Stage above ordinary work: a phase's pieces start before the run's ordinary tasks when writers are scarce.
         task: { ...item.task, priority: (item.task.priority as string | undefined) ?? "high", ...(phase.record.design?.drawing ? { drawing: phase.record.design.drawing.paths } : {}) } as never,
@@ -407,6 +438,18 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
         savePhase(db, current.id, { record: { ...current.record, execution: { ...current.record.execution!, acceptedNoted: [...noted, ...fresh.map((item) => item.id)] } }, at: now() });
         current = mustGet(current.id);
       }
+      // Verify ready waves: a wave whose pieces are all in gets its package and its lines, once, written to the book.
+      const waves = { ...(current.record.execution?.waves ?? {}) };
+      let wrote = false;
+      for (const wave of wavesOf(items)) {
+        const pieces = piecesOfWave(items, wave);
+        if (waves[String(wave)] || !pieces.every((item) => current.record.execution?.issued[item.id] && f.get(item.id)?.state === "accepted")) continue;
+        const lines = waveLines(pieces, f);
+        waves[String(wave)] = { packageSha: wavePackage(pieces, f), lines, at: now() };
+        book(current, "execution", "wave_in", `wave ${wave} in, package ${waves[String(wave)]!.packageSha.slice(0, 12)}: ${lines.map((line) => `${line.ok ? "✓" : "✗"} ${line.id}`).join(", ")}`);
+        wrote = true;
+      }
+      if (wrote) { savePhase(db, current.id, { record: { ...current.record, execution: { ...current.record.execution!, waves } }, at: now() }); current = mustGet(current.id); }
       if (executionGate(items, current.record.execution?.issued ?? {}, facts(current)).ok) move(current, "verification", current.record, "every piece is issued and accepted");
       current = mustGet(current.id);
     }
@@ -457,6 +500,20 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   /** Sends the PM the one instruction the phase needs now, once per instruction key. */
   async function poke(phase: Phase & { pokedKey?: string | null }): Promise<void> {
     const action = nextAction(phase, facts(phase));
+    // Call about a waiting decision: a turn that needs the owner's word is also a row on «Ждут владельца» (and its Telegram digest).
+    const wordTurn = action.key.match(/:word:([a-z]+)(?::(\d+))?$/);
+    if (wordTurn) postOwnerItem(db as never, { key: `phase-word:${phase.id}:${wordTurn[1]}${wordTurn[2] ? `:${wordTurn[2]}` : ""}`, source: "phase", kind: "word", projectId: phase.projectId,
+      what: `Phase «${phase.title}»: your word at ${wordTurn[1]}${wordTurn[2] ? ` (wave ${wordTurn[2]})` : ""}`, why: action.text.slice(0, 600) });
+    // Aging said once a day; a stalled phase named: no part for three days (or twelve hours at execution with pieces at work).
+    const lastPart = listParts(db, phase.id).at(-1)?.at ?? phase.createdAt;
+    const quiet = now() - lastPart;
+    const stalled = phase.stage === "execution" ? quiet > 12 * 3_600_000 : quiet > 72 * 3_600_000;
+    if (stalled && phase.state !== "closed" && now() - (phase.record.agingSaidAt ?? 0) > 86_400_000) {
+      const days = Math.round(quiet / 86_400_000 * 10) / 10;
+      await bb.sdk.threads.send({ threadId: phase.pmThreadId, mode: "queue-if-active", input: [{ type: "text", mentions: [], text: `[Lane Pilot phase] Phase ${phase.id} «${phase.title}» has not moved for ${days} day(s) at ${phase.stage} (${phase.state}). ${action.text}` }] } as never).catch(() => undefined);
+      book(phase, "decisions", "aging", `no movement for ${days} day(s) at ${phase.stage}`);
+      savePhase(db, phase.id, { record: { ...mustGet(phase.id).record, agingSaidAt: now() }, at: now() });
+    }
     const last = getPhase(db, phase.id)?.pokedKey ?? null;
     if (!action.waitsForPm || action.key === last) return;
     await bb.sdk.threads.send({ threadId: phase.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text: `[Lane Pilot phase] ${action.text}`, mentions: [] }] } as never).catch(() => undefined);
@@ -488,7 +545,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   /** Did the plan stay the admitted one (Plan unchanged since checking). */
   const planUnchanged = (phase: Phase) => !!phase.record.plan?.admittedSha && phase.record.plan.admittedSha === planSignature(phase.record.plan.items, phase.record.plan.contextSha);
 
-  return { phases: { open, context, plan, planCheck, drawing, goalAudit, lessons, question, answer, word, withdraw, revise, correct, returnTo, setState, stopWave, compensate, tick, drive, status, facts, planUnchanged, writeBook,
+  return { phases: { open, context, plan, planCheck, drawing, goalAudit, lessons, question, answer, word, waveReview, withdraw, revise, correct, returnTo, setState, stopWave, compensate, tick, drive, status, facts, planUnchanged, writeBook,
     list: (filter: Parameters<typeof listPhases>[1]) => listPhases(db, filter) } };
 }
 export type PhaseApi = ReturnType<typeof createPhaseDriver>["phases"];
