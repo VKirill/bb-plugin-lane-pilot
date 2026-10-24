@@ -1,8 +1,7 @@
-import { CAPABILITIES } from "../logic";
 import { breakerKey } from "@lane-pilot/resilience";
 import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
 import { SANDBOX_PROJECT_ID } from "../../stability/server";
-import { adapterVersions, capabilityTable, dueProbes, probeSetupFailed, providersInUse } from "../logic";
+import { CAPABILITIES, adapterVersions, capabilityTable, dueProbes, probeSetupFailed, providersInUse } from "../logic";
 import { listReceipts, saveReceipt } from "../store";
 
 /**
