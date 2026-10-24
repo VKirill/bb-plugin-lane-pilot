@@ -234,6 +234,11 @@ export const rpcOps = {
     output: z.unknown(),
   },
   /** Controls of a phase from the screen or the CLI: pause, resume, return to an earlier stage with a note, stop the wave, close in words. */
+  /** The owner's word on a task (owner.words on): a verified task waiting to land gets yes or no (src/rooms/tasks/words.ts). */
+  task_word: {
+    input: z.object({ runId: z.string().min(1).max(200), taskId: z.string().min(1).max(200), decision: z.enum(["yes", "no"]), text: z.string().trim().min(1).max(600) }).strict(),
+    output: z.object({ ok: z.literal(true) }).strict(),
+  },
   phase_control: {
     input: z.object({ phaseId: z.string().min(1).max(40), action: z.enum(["pause", "resume", "return", "stop_wave", "close", "word"]), to: z.enum(["discussion", "planning", "design", "execution"]).optional(),
       note: z.string().max(2000).optional(), turn: z.enum(["planning", "design", "acceptance", "uat"]).optional(), decision: z.enum(["yes", "no"]).optional() }).strict(),

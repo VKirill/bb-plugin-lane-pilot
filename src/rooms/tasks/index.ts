@@ -15,5 +15,5 @@ export { PLAN_FACT_BRIEF_LINE, blindPlanFact, diffHunksCommand, hunksFromCommand
 export type { EvidenceCheck, ItemVerdict, PlanFactCheck, PlanFactFacts, PlanFactTable } from "./plan-fact";
 export { BIRTH_KINDS, CHECK_RECIPES, FACT_KINDS, HOLD_FOREVER, LANE_QUEUES, QUESTION_KINDS, WORKER_ENVELOPE, checkRecipe, factKind, isWholeConsent, questionKind, questionsFromFile, secretShaped, laneCap, laneQueueOf, MARKER_BRIEF_LINE, PRIORITIES, birthFindings, ownerWordFindings, blockingClass, checkProgram, deadLetters, priorityRank, queueOrder, referenceTestEdits, spendReserve, writerMarkers } from "./rails";
 export type { BirthKind, BlockingClass, CheckMeasure, CheckRecipe, FactKind, Priority, QuestionKind, WriterMarkers } from "./rails";
-export { TASK_WORDS_KEY, landingWordGap, taskWordKey } from "./words";
+export { TASK_WORDS_KEY, landingWordGap, recordTaskWord, taskWordKey } from "./words";
 export type { TaskWord } from "./words";

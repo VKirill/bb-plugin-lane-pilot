@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ToolError, registerObservedTool, type ServerCore } from "../../core/server";
 import { deadLetters, HOLD_FOREVER } from "../rails";
-import { TASK_WORDS_KEY, taskWordKey, type TaskWord } from "../words";
+import { recordTaskWord } from "../words";
 import { taskFamily } from "../../runs";
 import { hostContract } from "../../contracts";
 import { getRun, getRunWriterHost } from "../../storage";
@@ -37,10 +37,7 @@ export function registerQueueTool(ctx: ServerCore): void {
       }
       const runId = await runOf(context.threadId);
       if (input.action === "word") {
-        const all = ((await bb.storage.kv.get(TASK_WORDS_KEY).catch(() => null)) as Record<string, TaskWord[]> | null) ?? {};
-        const key = taskWordKey(runId, taskFamily(input.taskId));
-        all[key] = [...(all[key] ?? []), { turn: "land" as const, decision: input.decision, text: input.text, at: Date.now() }].slice(-10);
-        await bb.storage.kv.set(TASK_WORDS_KEY, all as never);
+        await recordTaskWord(bb.storage.kv as never, runId, taskFamily(input.taskId), input.decision, input.text);
         return JSON.stringify({ runId, taskId: input.taskId, word: input.decision, next: input.decision === "yes" ? "send the task again: it lands without a new writer pass" : "cancel the task with the owner's words, or change it and send again" });
       }
       if (input.action === "close_backlog") {

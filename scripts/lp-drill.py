@@ -79,12 +79,12 @@ OPEN_STATES = ("queued", "spawn_requested", "spawn_unknown", "running")
 TERMINAL = ("accepted", "blocked", "canceled")
 STAMP = time.strftime("%Y%m%d-%H%M%S")
 DATE = time.strftime("%Y-%m-%d")
-ALL = ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "reload", "nogit", "nogit_repo"]
+ALL = ["guard_hash", "deferrals", "checkers", "watchdog", "memory_paths", "helper_providers", "parallel3", "conflict", "main_moved", "provider", "provider_limit", "live_word", "no_code_exit", "skills", "reload", "nogit", "nogit_repo"]
 QUICK = ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3"]
 # What a provider runs when no setting of the sandbox project names a model for it.
 PROVIDER_FALLBACK_MODEL = {"claude-code": "claude-sonnet-5-5", "codex": "gpt-6-luna", "opencode2": "zai-coding-plan/glm-5.3-flash"}
 # Scenarios that need no PM and no run of their own: they run before the PM starts (guard_hash) or on a project of their own (nogit).
-STANDALONE = ("guard_hash", "deferrals", "checkers", "nogit", "nogit_repo")
+STANDALONE = ("guard_hash", "deferrals", "checkers", "watchdog", "nogit", "nogit_repo")
 
 
 def log(message: str) -> None:
@@ -694,6 +694,105 @@ def scenario_reload(ctx: Context) -> dict:
     return verdict("reload", problems, tasks=[row])
 
 
+def scenario_watchdog(tmp: Path) -> dict:
+    """Outage and lift drills, dry (SMA: Outage drill, Lift drill, Day rotation drill): the hub watchdog against a door that never answers
+    records the outage and a (dry) lift; against a door that answers, a lift does nothing; an old log rotates to its day."""
+    state = tmp / "watchdog"
+    state.mkdir()
+    env = {**os.environ, "LP_WATCH_STATE": str(state), "LP_WATCH_DRY": "1", "LP_WATCH_TG_ENV": "/nonexistent", "LP_WATCH_KNOCK_SEC": "1", "LP_WATCH_SUSPECT_AFTER": "2"}
+    script = str(ROOT / "scripts" / "hub-watchdog.sh")
+    problems: list[str] = []
+    proc = subprocess.Popen(["bash", script, "run"], env={**env, "LP_WATCH_DOOR": "http://127.0.0.1:9/"}, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(8)
+    proc.terminate()
+    proc.wait(timeout=10)
+    events = [json.loads(line).get("event") for line in (state / "outages.jsonl").read_text().splitlines() if line.strip()] if (state / "outages.jsonl").exists() else []
+    if "outage" not in events:
+        problems.append(f"no outage recorded against a silent door: {events}")
+    if "lift" not in events:
+        problems.append("no lift after the outage")
+    rc, out, _ = run(["bash", script, "lift"], env={**env, "LP_WATCH_DOOR": "https://bb.vechkasov.pro/install/version"}, timeout=60)
+    if "nothing to do" not in out:
+        problems.append(f"a lift with the door answering did something: {out.strip()[:200]}")
+    (state / "outages.jsonl").write_text('{"at":1700000000,"event":"lift","detail":"old"}\n')
+    run(["bash", script, "rotate"], env=env, timeout=30)
+    if not (state / "outages-2023-11-14.jsonl").exists():
+        problems.append("an old log did not rotate to its day")
+    return verdict("watchdog", problems, events=events)
+
+
+def owner_words(ctx: "Context", value: str) -> tuple[object, int]:
+    saved = hubsql(f"select value, version from lane_pilot_project_settings where project_id='{ctx.project}' and binding_id='' and key='owner.words';")
+    original, version = (json.loads(saved[0]["value"]), int(saved[0]["version"])) if saved else (None, 0)
+    changed = setting_rpc("save_setting", {"projectId": ctx.project, "key": "owner.words", "value": value, "expectedVersion": version})
+    return original, int(changed["version"])
+
+
+def scenario_live_word(ctx: "Context") -> dict:
+    """Live word drill (SMA: Live word drill, Approval drill): with owner.words on, a verified task waits for the owner's word, and lands once
+    the word is given (here through the task_word RPC, the path of the screen and the CLI)."""
+    original, version = owner_words(ctx, "on")
+    problems: list[str] = []
+    row: dict = {}
+    try:
+        spec = note_task(f"drill-word-{STAMP}", f"drills/word-{STAMP}.md", "owner word", ctx.cwd)
+        if not ctx.dispatch(spec):
+            problems.append("dispatch-bb exited with an error")
+        deadline, waiting = time.time() + 15 * 60, False
+        while time.time() < deadline and not waiting:
+            waiting = "waits for the owner's word before it lands" in thread_text(ctx.pm)
+            if not waiting:
+                time.sleep(POLL_SEC)
+        if not waiting:
+            problems.append("the verified task never said it waits for the owner's word")
+        else:
+            setting_rpc("task_word", {"runId": ctx.run_id, "taskId": spec["id"], "decision": "yes", "text": "да"})
+        rows = ctx.wait_ended([spec["id"]])
+        row = summarize(rows, spec["id"], ctx.cwd, spec["expected_outputs"][0])
+        if row["state"] != "accepted":
+            problems.append(f"the task did not land after the word: {row['states']} {row['reason']}")
+    finally:
+        if original is None:
+            setting_rpc("reset_project_settings", {"projectId": ctx.project, "keys": ["owner.words"], "expectedVersions": {"owner.words": version}})
+        else:
+            setting_rpc("save_setting", {"projectId": ctx.project, "key": "owner.words", "value": original, "expectedVersion": version})
+    return verdict("live_word", problems, tasks=[row] if row else [])
+
+
+def scenario_no_code_exit(ctx: "Context") -> dict:
+    """No-code exit drill (SMA): a writer that cannot do the task without the owner ends with NEEDS_HUMAN, changes nothing, and the task is
+    held with its question instead of a forced change."""
+    path = f"drills/needs-human-{STAMP}.md"
+    spec = task(f"drill-human-{STAMP}", "a question for the owner", [path],
+                f"Do not create or change any file. Your whole final report is one line: `NEEDS_HUMAN: which colour should {path} use?`",
+                [f"{path} exists"], ctx.cwd)
+    problems = [] if ctx.dispatch(spec) else ["dispatch-bb exited with an error"]
+    rows = ctx.wait_ended([spec["id"]])
+    row = summarize(rows, spec["id"], ctx.cwd, path)
+    if row["state"] == "accepted":
+        problems.append("a writer that asked a question was accepted")
+    if "needs_human" not in str(row.get("reason") or "").lower() and "needs human" not in str(row.get("reason") or "").lower():
+        problems.append(f"the task did not end with the writer's question: {row['states']} {row['reason']}")
+    if row.get("fileInSandbox"):
+        problems.append("a file was written although the writer had a question")
+    return verdict("no_code_exit", problems, tasks=[row])
+
+
+def scenario_skills(ctx: "Context") -> dict:
+    """Skills drill (SMA): a skill the PM names on a task reaches the writer's brief."""
+    spec = note_task(f"drill-skill-{STAMP}", f"drills/skill-{STAMP}.md", "skill check", ctx.cwd)
+    spec["skills"] = ["ru-text"]
+    problems = [] if ctx.dispatch(spec) else ["dispatch-bb exited with an error"]
+    rows = ctx.wait_ended([spec["id"]])
+    row = summarize(rows, spec["id"], ctx.cwd, spec["expected_outputs"][0])
+    writer = next((r.get("thread_id") for r in rows if r.get("thread_id")), None)
+    if not writer or "ru-text" not in thread_text(writer):
+        problems.append("the named skill ru-text is not in the writer's thread")
+    if row["state"] != "accepted":
+        problems.append(f"the task was not accepted: {row['states']} {row['reason']}")
+    return verdict("skills", problems, tasks=[row])
+
+
 GUARD_FILES = ("guard_shell.py", "lib_payload.py")
 GUARD_REPO = ROOT / "lane-stack" / "hooks"
 
@@ -1083,6 +1182,13 @@ def main() -> int:
             except Exception as cause:
                 scenarios.append(verdict("deferrals", [f"scenario raised: {cause}"]))
             log(f"scenario deferrals: {scenarios[-1]['result']} {scenarios[-1]['problems']}")
+        if "watchdog" in names:
+            log("scenario watchdog")
+            try:
+                scenarios.append(scenario_watchdog(tmp))
+            except Exception as cause:
+                scenarios.append(verdict("watchdog", [f"scenario raised: {cause}"]))
+            log(f"scenario watchdog: {scenarios[-1]['result']} {scenarios[-1]['problems']}")
         if "checkers" in names:
             log("scenario checkers")
             try:

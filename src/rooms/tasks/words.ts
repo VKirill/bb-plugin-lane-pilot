@@ -16,3 +16,13 @@ export function landingWordGap(ownerWords: boolean, words: readonly TaskWord[] |
   if (latest.decision === "no") return `owner_word: the owner said no to this task — ${latest.text}`;
   return null;
 }
+
+type Kv = { get(key: string): Promise<unknown>; set(key: string, value: never): Promise<unknown> };
+
+/** Records the owner's word on a task family (the PM's lane_pilot_queue word and the task_word RPC of a screen or the CLI write the same). */
+export async function recordTaskWord(kv: Kv, runId: string, family: string, decision: "yes" | "no", text: string, now = Date.now()): Promise<void> {
+  const all = ((await kv.get(TASK_WORDS_KEY).catch(() => null)) as Record<string, TaskWord[]> | null) ?? {};
+  const key = taskWordKey(runId, family);
+  all[key] = [...(all[key] ?? []), { turn: "land" as const, decision, text, at: now }].slice(-10);
+  await kv.set(TASK_WORDS_KEY, all as never);
+}
