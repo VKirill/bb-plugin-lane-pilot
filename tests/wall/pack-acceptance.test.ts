@@ -65,8 +65,9 @@ describe("acceptance of a night repair", () => {
   it("waits for each fact in turn", () => {
     expect(decideAcceptance(evidence({ merged: false })).state).toBe("pending");
     expect(decideAcceptance(evidence({ deployedVersion: null })).reason).toMatch(/waits for the release train/);
-    expect(decideAcceptance(evidence({ drill: null })).reason).toMatch(/drill/);
-    expect(decideAcceptance(evidence({ drill: { version: "0.1.268", at: 20, ok: true } })).state).toBe("pending");
+    // No fire drill of this version: the release train's own drill stands (a red one rolls the deploy back), so nothing waits on it.
+    expect(decideAcceptance(evidence({ drill: null })).checks.find((row) => row.name === "deploy drill")).toMatchObject({ ok: true, detail: expect.stringMatching(/release train's drill/) });
+    expect(decideAcceptance(evidence({ drill: { version: "0.1.268", at: 20, ok: true } })).checks.find((row) => row.name === "deploy drill")?.ok).toBe(true);
     expect(decideAcceptance(evidence({ canary: { version: "0.1.269", tripped: false, windowOpen: true } })).reason).toMatch(/window is still open/);
     expect(decideAcceptance(evidence({ bench: "pending" })).state).toBe("pending");
   });

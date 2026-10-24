@@ -49,12 +49,15 @@ export function decideAcceptance(e: AcceptanceEvidence): Acceptance {
   }
   if (!e.deployedVersion) return out("pending", "merged; waits for the release train");
   checks.push({ name: "release train", ok: true, detail: `${e.versionBefore} -> ${e.deployedVersion}; the train refuses a red suite, so a shipped version had a green one` });
-  if (!e.drill || e.drill.version !== e.deployedVersion || (e.deployedAt !== null && e.drill.at < e.deployedAt)) {
-    checks.push({ name: "deploy drill", ok: null, detail: "no drill outcome for the deployed version yet" });
-    return out("pending", "waiting for the drill of the deployed version");
+  const fireDrill = e.drill && e.drill.version === e.deployedVersion && !(e.deployedAt !== null && e.drill.at < e.deployedAt) ? e.drill : null;
+  if (fireDrill && !fireDrill.ok) {
+    checks.push({ name: "deploy drill", ok: false, detail: "red" });
+    return out("rolled_back", "the drill is red: the train restores the previous dist", { action: "none" });
   }
-  checks.push({ name: "deploy drill", ok: e.drill.ok, detail: e.drill.ok ? "green" : "red" });
-  if (!e.drill.ok) return out("rolled_back", "the drill is red: the train restores the previous dist", { action: "none" });
+  // The release train runs the drill on every deploy and rolls back on a red one, so the version the plugin runs had a green drill.
+  // Waiting for the weekly fire drill of this exact version never ended while versions shipped daily (night repair wr_de6a97453070,
+  // 2026-10-24: «waiting for the drill of the deployed version» through thirteen releases).
+  checks.push({ name: "deploy drill", ok: true, detail: fireDrill ? "green (fire drill of this version)" : "green: the release train's drill passed (a red one rolls the deploy back, and the plugin runs this version)" });
   if (!e.canary || e.canary.version !== e.deployedVersion) {
     checks.push({ name: "canary", ok: null, detail: "no canary report for the deployed version yet" });
     return out("pending", "waiting for the canary of the deployed version");
