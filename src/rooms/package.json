@@ -10,6 +10,7 @@
     "./learning/signals.ts",
     "./learning/judgment.ts",
     "./anamnesis/judgment.ts",
-    "./workflow/ui/workflow-graph-parts.tsx"
+    "./workflow/ui/workflow-graph-parts.tsx",
+    "./writer/writer-model-pick.ts"
   ]
 }
