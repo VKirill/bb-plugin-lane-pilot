@@ -58,6 +58,7 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number })
       return { goal: phase.goal, findings: { context: contextText, decisions: r.context?.decisions ?? [], requirements: r.context?.requirements ?? [], ...(current ? { current_pieces: current } : {}) },
         ...(gaps.length ? { mode: "gaps", gaps } : {}),
         extra_rules: ["every command an acceptance line names is one of the task's verification commands", "each task's id is the piece id; depends_on only on tasks of earlier waves",
+          "each task lists in a top-level field `covers` the ids of the requirements and locked decisions (findings.requirements, findings.decisions) it carries out; together the tasks cover every id",
           ...(current ? ["the plan after a failed verification: return every piece of findings.current_pieces the gaps do not name exactly as it is (same id, same contract); change only the failing pieces' contracts or add new pieces for what is missing"] : [])] };
     }
     case "review": {
@@ -113,10 +114,12 @@ export function planItems(phase: Phase, output: Record<string, unknown>): PlanIt
   const waveOf = (id: string) => { const index = waves.findIndex((wave) => Array.isArray(wave) && wave.map(String).includes(id)); return index >= 0 ? index + 1 : 1; };
   return tasks.filter((task) => typeof task.id === "string").map((task) => {
     const acceptance = Array.isArray(task.acceptance) ? (task.acceptance as unknown[]).map(String) : [];
+    const { covers, ...contract } = task;
+    const ids = Array.isArray(covers) ? (covers as unknown[]).map(String).filter(Boolean).slice(0, 40) : [];
     return {
       id: String(task.id), title: text(task.display_title ?? task.title, 200) || String(task.id), wave: waveOf(String(task.id)),
       promise: { given: text(task.objective ?? phase.goal, 600) || phase.title, when: text(task.title ?? task.id, 600), then: text(acceptance.join("; "), 600) || "its checks pass" },
-      task,
+      task: contract, ...(ids.length ? { covers: ids } : {}),
     };
   });
 }
@@ -168,13 +171,20 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       await deps.api.context({ phaseId: phase.id, docs: [path], risks: doc.risks, decisions: doc.decisions, by });
     } else if (auto.kind === "plan") {
       if (phase.stage !== "planning" || phase.record.plan?.admittedSha) return;
-      const items = planItems(phase, output);
-      if (!items.length) throw new Error(`lp.plan returned no tasks (status ${text(output.status, 30)})`);
+      const fresh = planItems(phase, output);
+      if (!fresh.length) throw new Error(`lp.plan returned no tasks (status ${text(output.status, 30)})`);
+      // After a failed verdict the planner returns the pieces it changed or added; the others stay as they were (a planner that dropped
+      // them dropped their coverage and the work they carry, live 2026-10-25). The new pieces run after the old waves.
+      const old = phase.record.replan?.gaps ? phase.record.plan?.items ?? [] : [];
+      const lastWave = Math.max(0, ...old.map((item) => item.wave));
+      const items = old.length ? [...old.filter((item) => !fresh.some((next) => next.id === item.id)), ...fresh.map((item) => ({ ...item, wave: lastWave + item.wave }))] : fresh;
       const planned = deps.api.plan({ phaseId: phase.id, items, design: output.has_ui === true, by });
-      if (planned.record.replan?.gaps) deps.save(planned.id, { ...planned.record, replan: { count: planned.record.replan.count } });
       // lp.plan has the whole plan critiqued by its own critic role: that is the independent check of this plan.
       const approved = output.status === "ok" && !/reject|changes|rework|fail/i.test(text(output.plan_verdict, 200));
       await deps.api.planCheck({ phaseId: planned.id, decision: approved ? "approve" : "changes_requested", by: `${by}, plan critic`, summary: text(output.plan_verdict, 2000) });
+      // The replan's gaps hold until the plan is admitted: a second round still merges into the pieces that were.
+      const checked = deps.get(planned.id);
+      if (checked.record.replan?.gaps && checked.record.plan?.admittedSha) deps.save(checked.id, { ...checked.record, replan: { count: checked.record.replan.count } });
     } else if (auto.kind === "draw") {
       if (phase.stage !== "design" || phase.record.design?.drawing) return;
       if (output.verdict !== "pass") throw new Error(`the drawing's checker asks for rework: ${text(output.notes, 300)}`);

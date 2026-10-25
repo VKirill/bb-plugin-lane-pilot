@@ -20,6 +20,12 @@ describe("a planner's task gets the task-v2 envelope", () => {
     const result = validateTaskV2({ ...filled, project_cwd: "/tmp/sandbox" });
     expect(result.ok ? [] : result.errors).toEqual([]);
   });
+  it("leaves a phase piece's covers out of the strict task-v2", () => {
+    const filled = withContractDefaults({ ...planner, covers: ["D1", "R2"] });
+    expect(filled.covers).toBeUndefined();
+    const result = validateTaskV2({ ...filled, project_cwd: "/tmp/sandbox" });
+    expect(result.ok ? [] : result.errors).toEqual([]);
+  });
   it("keeps what the planner wrote", () => {
     expect(withContractDefaults({ ...planner, risk: "low", lane: "ui", verify: "smoke" })).toMatchObject({ risk: "low", lane: "ui", verify: "smoke" });
   });

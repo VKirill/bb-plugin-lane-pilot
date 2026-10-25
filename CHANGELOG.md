@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.319
+
+**The machine's plan covers the locked decisions, and a replan keeps the pieces that were.** The first machine replan of the live phase was refused by the plan gate («locked decisions no piece carries out: D1…D6»): `lp.plan`'s tasks never said which requirements and decisions they carry out, and the planner returned only the two changed pieces, dropping the rest with their coverage. A phase's planner now lists `covers` on each task (moved onto the piece; the strict task-v2 never sees it), and after a failed verdict the returned pieces are merged into the plan: the pieces it did not return stay as they were, the changed and new ones run after the old waves. The replan's gaps hold until the plan is admitted.
+
 ## 0.1.318
 
 **A failed verdict is planned again by the machine.** The live phase in a real project reached verification, its goal audit found two pieces unmet, and the next step waited for the PM to return the phase to planning. The machine now does it: it returns the phase to planning with the verdict as the note, `lp.plan` runs in gaps mode with the verdict as the gaps and the current pieces in its findings («return every piece the gaps do not name exactly as it is; change only the failing pieces or add new ones»), so the unchanged pieces are not issued again. Twice per phase at most; then the PM decides. A scheduled report's notice tells the PM that its helper's own completion may follow and needs no answer.

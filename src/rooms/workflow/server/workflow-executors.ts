@@ -156,7 +156,9 @@ export function commandOf(check: string): string {
   return (span ? span[1]! : check).trim();
 }
 
-export function withContractDefaults(contract: Row): Row {
+export function withContractDefaults(input: Row): Row {
+  // `covers` (the requirement and decision ids a phase's piece carries out) belongs to the plan's piece, not to the strict task-v2.
+  const { covers: _covers, ...contract } = input;
   const files = asList(contract.files).map((file) => (file && typeof file === "object" ? str((file as Row).path) : "")).filter(Boolean);
   const owns = asList(contract.owns_paths).map(String);
   const outputs = asList(contract.expected_outputs).map(String);

@@ -119,6 +119,30 @@ describe("a failed verdict is planned again by the machine", () => {
   });
 });
 
+describe("a replan merges into the pieces that were", () => {
+  it("keeps the pieces the planner did not return, replaces the returned ones, puts them after the old waves, and carries covers", async () => {
+    const piece = (id: string, wave: number, covers?: string[]) => ({ id, title: id, wave, promise: { given: "g", when: "w", then: "t" }, task: { id }, ...(covers ? { covers } : {}) });
+    let phase = phaseAt("planning", { context: { docs: [], sha: "c", signedAt: 1 }, replan: { gaps: "unmet: [b]", count: 1 },
+      plan: { items: [piece("a", 1, ["D1"]), piece("b", 1, ["D2"])], sha: "s", contextSha: "c" } } as never);
+    let planned: Array<{ id: string; wave: number; covers?: string[]; task: Record<string, unknown> }> = [];
+    const runs = new Map<string, { status: string; output: Record<string, unknown> | null }>();
+    const auto = createAutoStages({ log: () => undefined }, {
+      workflowEngine: { start: () => { runs.set("wfrun_1", { status: "running", output: null }); return { runId: "wfrun_1", created: true, done: new Promise(() => undefined) }; },
+        get: (runId: string) => ({ runId, reason: null, error: null, failedNode: null, waiting: [], stopped: false, ...runs.get(runId)! }) } as never,
+    }, {
+      api: { context: async () => phase, plan: (input) => { planned = input.items as never; return phase; }, planCheck: async () => phase, question: () => phase, waveReview: () => phase,
+        goalAudit: () => phase, lessons: () => phase, drawing: async () => phase, returnTo: () => phase },
+      get: () => phase, save: (_id, record) => { phase = { ...phase, record }; }, book: () => undefined, writeDocs: async () => ({ written: [] }),
+      runtime: () => ({}), bookHead: () => "h".repeat(64), pmIdle: async () => true, now: () => 1,
+    });
+    await auto.step(phase);
+    runs.set("wfrun_1", { status: "succeeded", output: { status: "ok", tasks: [{ id: "b", title: "b again", covers: ["D2"] }, { id: "c", title: "c", covers: ["D3"] }], waves: [["b"], ["c"]] } });
+    await auto.step(phase);
+    expect(planned.map((item) => [item.id, item.wave, item.covers])).toEqual([["a", 1, ["D1"]], ["b", 2, ["D2"]], ["c", 3, ["D3"]]]);
+    expect(planned[1]!.task.covers).toBeUndefined();
+  });
+});
+
 describe("the machine's return after a failed verdict", () => {
   it("returns the phase to planning through the gates and notes what to plan", async () => {
     let phase = phaseAt("verification", { context: { docs: [], sha: "c", signedAt: 1 }, verification: { verdict: { state: "failed", detail: "goal audit: unmet: [p1]", inputSha: "x", at: 1, mainSha: null } } } as never);
