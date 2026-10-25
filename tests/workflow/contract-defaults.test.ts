@@ -17,3 +17,11 @@ describe("a planner's task gets the task-v2 envelope", () => {
     expect(withContractDefaults({ ...planner, risk: "low", lane: "ui", verify: "smoke" })).toMatchObject({ risk: "low", lane: "ui", verify: "smoke" });
   });
 });
+
+describe("a check written as prose", () => {
+  it("runs its first code span, not the sentence", async () => {
+    const { commandOf } = await import("../../src/rooms/workflow/server/workflow-executors");
+    expect(commandOf("`npm test > /tmp/t1-test.log 2>&1; echo $?` prints `0`")).toBe("npm test > /tmp/t1-test.log 2>&1; echo $?");
+    expect(commandOf("npm test")).toBe("npm test");
+  });
+});

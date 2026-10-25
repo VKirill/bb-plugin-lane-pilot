@@ -18,6 +18,7 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import { createPhaseIntake } from "./intake";
 import { createAutoStages } from "./auto-stages";
 import { builtinWorkflow } from "../../workflow";
+import { architectStarter } from "../../workflow/server";
 import { critiqueProblems, roleLine, type DesignJournalLine, type DrawingCritique } from "../../design-eval";
 
 export const DESIGN_JOURNAL = "lp.design.journal";
@@ -756,6 +757,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   });
   const phases = { open, context, plan, planCheck, drawing, goalAudit, lessons, question, answer, word, waveReview, withdraw, revise, correct, returnTo, setState, stopWave, compensate, tick, drive, status, facts, planUnchanged, writeBook,
     list: (filter: Parameters<typeof listPhases>[1]) => listPhases(db, filter) };
+  const architect = architectStarter(ctx, services);
   // The small-task graph for a small job or a batch of fixes: started by the machine, not chosen by the PM.
   const train = {
     start: (input: { projectId: string; pmThreadId: string; runId: string; requestId: string; text: string; kind: "small" | "batch" }) => {
@@ -773,6 +775,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       }
     },
     status: (wfRunId: string) => services.workflowEngine.get(wfRunId)?.status ?? null,
+    startProcess: async (input: { projectId: string; pmThreadId: string; text: string }) => (await architect.startOrder(input)).threadId,
   };
   return { phases, phaseIntake: createPhaseIntake(ctx, phases, train) };
 }

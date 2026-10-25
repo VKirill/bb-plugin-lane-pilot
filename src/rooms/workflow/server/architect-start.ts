@@ -26,11 +26,19 @@ type OpeningPart = { type: "text"; text: string; mentions: []; visibility?: "age
  * `agent-only`, so the chat opens with the architect's own greeting. The visible part comes first: a message that opens
  * with an agent-only part reads to BB as a seed.
  */
-export function architectOpening(input: { marker: string; projectId: string; projectName: string | null; draft: { id: string; name: string } | null }): OpeningPart[] {
+export function architectOpening(input: { marker: string; projectId: string; projectName: string | null; draft: { id: string; name: string } | null;
+  /** The machine's order: the owner described a new process in a PM chat; the chain is built without a conversation (src/rooms/phase/server/intake.ts). */
+  order?: { text: string; pmThreadId: string } }): OpeningPart[] {
   const part = (text: string, hide: boolean): OpeningPart => ({ type: "text", text, mentions: [], ...(hide ? { visibility: "agent-only" as const } : {}) });
   const brief = [
     `The owner pressed «Собрать с архитектором» in the Workflows tab of Lane Pilot (project ${input.projectName ? `${input.projectName}, ` : ""}${input.projectId}). Drafts you create belong to this project; offer scope global (the owner's library) unless the chain is only for this project.`,
-    ...(input.draft
+    ...(input.order
+      ? [
+        `The owner described a new process in the PM chat @thread:${input.order.pmThreadId}; Lane Pilot's intake took it as a process and started you to build it as a small graph (a workflow), without a conversation — the owner takes no part in the loop:`,
+        `<process>\n${input.order.text.slice(0, 6000)}\n</process>`,
+        "Build the chain yourself: create a draft for this project, make the validator clean, write its test cases and run them until they are green, then publish it. Decide what the text leaves open and say what you decided. Ask no one. When it is published (or cannot be built), send one line to the PM chat with lane_pilot_relay (or end with it): the chain's id, what starts it, and how the PM runs it (lane_pilot_route).",
+      ]
+      : input.draft
       ? [
         `The owner wants to continue the draft ${input.draft.id} («${input.draft.name}»). Read it first with lane_pilot_workflow_draft_get {draftId: "${input.draft.id}", history: true}, then open the conversation in Russian in two or three sentences: what the chain does now, what is missing (validator problems, tests) and the question of what to change. Patch that draft; do not start another one unless the owner asks.`,
       ]
@@ -51,7 +59,7 @@ export function architectOpening(input: { marker: string; projectId: string; pro
  * being `projectId`, else the draft's, else the Lane Pilot project of the hub (self-repair's `projectId`, where Lane Pilot's
  * own repository lives), so the button works with no setting at all.
  */
-export function architectStartRpc(ctx: ServerCore, services: Pick<Services, "docsPlaces">) {
+export function architectStarter(ctx: ServerCore, services: Pick<Services, "docsPlaces">) {
   const { bb, db } = ctx;
   const drafts = createDraftStore(db);
   const inflight = new Map<string, Promise<{ threadId: string; projectId: string; reused: boolean }>>();
@@ -80,12 +88,12 @@ export function architectStartRpc(ctx: ServerCore, services: Pick<Services, "doc
     }
   }
 
-  async function start(input: { projectId?: string; sectionId?: string; draftId?: string }) {
+  async function start(input: { projectId?: string; sectionId?: string; draftId?: string; order?: { text: string; pmThreadId: string } }) {
     const draft = input.draftId ? drafts.get(input.draftId) : null;
     if (input.draftId && !draft) throw new Error(`draft ${input.draftId} does not exist`);
     if (draft && input.projectId && draft.projectId !== input.projectId) throw new Error(`draft ${draft.id} belongs to another project`);
     const projectId = input.projectId ?? draft?.projectId ?? await lanePilotProjectId();
-    const key = keyOf(projectId, draft?.id ?? null);
+    const key = input.order ? `architect-order:${projectId}:${input.order.pmThreadId}:${input.order.text.length}` : keyOf(projectId, draft?.id ?? null);
     const reusedId = await liveThread(key, projectId);
     if (reusedId) return { threadId: reusedId, projectId, reused: true };
 
@@ -100,7 +108,8 @@ export function architectStartRpc(ctx: ServerCore, services: Pick<Services, "doc
       ...writerExecutionSelection(ARCHITECT_EXECUTION.providerId, ARCHITECT_EXECUTION.model, ARCHITECT_EXECUTION.reasoningLevel, "default"),
       title: WORKFLOW_ARCHITECT_NAME.ru,
       input: architectOpening({ marker: mentionContext(selection), projectId, projectName: typeof described?.name === "string" ? described.name : null,
-        draft: draft ? { id: draft.id, name: String((draft.definition.name as { ru?: unknown; en?: unknown } | undefined)?.ru ?? (draft.definition.name as { en?: unknown } | undefined)?.en ?? draft.workflowId ?? draft.id) } : null }),
+        draft: draft ? { id: draft.id, name: String((draft.definition.name as { ru?: unknown; en?: unknown } | undefined)?.ru ?? (draft.definition.name as { en?: unknown } | undefined)?.en ?? draft.workflowId ?? draft.id) } : null,
+        ...(input.order ? { order: input.order } : {}) }),
       environment: { type: "host", hostId: root.hostId, workspace: { type: "unmanaged", path: root.path } },
       visibility: "visible",
       pluginMetadata: { role: "workflow-architect", spawnId: `architect:${projectId}:${draft?.id ?? "new"}`, architectProjectId: projectId, ...(draft ? { architectDraftId: draft.id } : {}) },
@@ -112,6 +121,16 @@ export function architectStartRpc(ctx: ServerCore, services: Pick<Services, "doc
     return { threadId, projectId, reused: false };
   }
 
+  return {
+    start,
+    inflight,
+    /** The machine's start: a process the owner described in a PM chat goes to the architect as an order (no conversation). */
+    startOrder: (input: { projectId: string; text: string; pmThreadId: string }) => start({ projectId: input.projectId, order: { text: input.text, pmThreadId: input.pmThreadId } }),
+  };
+}
+
+export function architectStartRpc(ctx: ServerCore, services: Pick<Services, "docsPlaces">) {
+  const { start, inflight } = architectStarter(ctx, services);
   return {
     // One start per project and draft at a time: a double click joins the call in flight instead of spawning a second chat.
     workflow_architect_start: ({ projectId, sectionId, draftId }) => {

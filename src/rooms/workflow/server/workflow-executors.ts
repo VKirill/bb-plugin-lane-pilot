@@ -141,6 +141,15 @@ const asList = (value: unknown): unknown[] => (Array.isArray(value) ? value : va
  * not the envelope (schema_version, lane, risk, the empty lists, checks as plain command strings) was refused three times by the lint
  * and the small-task graph stopped for the owner (live issue-quick wfrun_8adbad9a…, 2026-10-25). What the planner did write wins.
  */
+/**
+ * The command of a check a planner wrote as prose: «`npm test` prints `0`» is the first code span, not the sentence — the shell ran the
+ * backticks as command substitution and the check failed with exit 127 (live issue-quick, 2026-10-25). A plain string is the command.
+ */
+export function commandOf(check: string): string {
+  const span = /`([^`]+)`/.exec(check);
+  return (span ? span[1]! : check).trim();
+}
+
 export function withContractDefaults(contract: Row): Row {
   const files = asList(contract.files).map((file) => (file && typeof file === "object" ? str((file as Row).path) : "")).filter(Boolean);
   const owns = asList(contract.owns_paths).map(String);
@@ -160,7 +169,7 @@ export function withContractDefaults(contract: Row): Row {
     expected_outputs: outputs.length ? outputs : files.length ? files : owns.filter((path) => !/[*?]/.test(path)),
     acceptance: asList(contract.acceptance).map((item) => (typeof item === "string" ? item : JSON.stringify(item))),
     verify: VERIFY.includes(str(contract.verify)) ? str(contract.verify) : "tests",
-    verification: asList(contract.verification).map((check) => (typeof check === "string" ? { command: check, cwd: "." } : check)),
+    verification: asList(contract.verification).map((check) => (typeof check === "string" ? { command: commandOf(check), cwd: "." } : check)),
   };
 }
 
