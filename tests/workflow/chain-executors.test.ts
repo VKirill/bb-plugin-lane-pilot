@@ -397,17 +397,26 @@ describe("the owner's question", () => {
     expect(humanOutput(rich, { choiceIndex: 2, text: "" })).toMatchObject({ answer_kind: "abort", resolutions: [] });
   });
 
+  it("the form shows the question a cheap helper wrote from the step's instruction, in the owner's language (live 2026-10-25)", async () => {
+    const t = await setup({ ask: [reply({ question: "Выпускаем релиз? go — выпустить, fix — сначала поправить, abort — отменить." })] });
+    dispose = t.dispose;
+    t.start(ask);
+    await waitFor(() => t.harness.pendingInteractions.length);
+    expect(JSON.stringify(t.harness.pendingInteractions[0]!.payload)).toContain("Выпускаем релиз?");
+    expect(JSON.stringify(t.harness.pendingInteractions[0]!.payload)).not.toContain("Ship it?");
+  });
+
   it("a typed answer that names no option does not settle the step: the owner is asked again with the options", async () => {
     const t = await setup({});
     dispose = t.dispose;
     const started = t.start(ask);
     await waitFor(() => t.harness.pendingInteractions.length);
     t.harness.behavior.submitInteraction(t.harness.pendingInteractions[0]!.id, { text: "no, wait, not yet" });
-    await waitFor(() => t.harness.pendingInteractions.length > 1 || t.harness.pendingInteractions[0]?.id !== undefined);
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // The notice is in the owner's language (Russian by default) and goes in front of the question once.
+    await waitFor(() => t.harness.pendingInteractions.some((item) => JSON.stringify(item.payload).includes("не выбрал вариант")));
     expect(t.engine.get(started.runId)?.status).toBe("waiting");
     const again = t.harness.pendingInteractions.at(-1)!;
-    expect(String(JSON.stringify(again.payload))).toContain("did not choose an option");
+    expect(JSON.stringify(again.payload).match(/не выбрал вариант/g)).toHaveLength(1);
     t.harness.behavior.submitInteraction(again.id, { choice: "3", text: "" });
     await waitFor(() => t.engine.get(started.runId)?.status === "succeeded");
     expect(t.engine.get(started.runId)).toMatchObject({ output: { kind: "abort" } });

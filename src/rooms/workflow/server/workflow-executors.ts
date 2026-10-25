@@ -6,6 +6,7 @@ import { agentPrompt, outputContract, parseAgentOutput } from "@lane-pilot/workf
 import type { NodeExecutor, PollResult, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { RunRow } from "../../storage";
 import { outputFields } from "@lane-pilot/workflow-engine";
+import { BUILTIN_PRESETS } from "@lane-pilot/models";
 import type { Field, GraphNode } from "@lane-pilot/workflow-engine";
 import { createTaskLinter } from "../../tasks/server";
 import { agentRequest, createWorkflowAgents, stepPacket, withResolvedModel } from "./workflow-agent";
@@ -225,18 +226,53 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
 
   // ---------------------------------------------------------------- human: the owner's question as a BB form
   const openForms = new Set<string>();
+  const composing = new Map<string, Promise<string>>();
+  /**
+   * A human step's text is an instruction to whoever asks («Show the findings and offer revise, proceed, abort»), in English. Shown as
+   * it is, the owner got the instruction instead of the question, with no findings in it (live 2026-10-25). A cheap helper writes the
+   * question from it and the run's results so far, in the owner's language; when it fails the instruction is shown as before.
+   */
+  const composeQuestion = (rt: ChainRuntime, runId: string, stepKey: string, node: Extract<GraphNode, { type: "human" }>, instruction: string): Promise<string> => {
+    const key = `${runId}|${stepKey}`;
+    const known = composing.get(key);
+    if (known) return known;
+    const job = (async () => {
+      const locale = await ownerLocale(rt.ctx.bb).catch(() => "ru");
+      const results = engine.journal.steps(runId).filter((step) => step.state === "succeeded" && step.output_json && step.output_json !== "{}").slice(-6)
+        .map((step) => `${step.node_id}: ${step.output_json!.slice(0, 1500)}`).join("\n");
+      const options = humanOptions(node).map((value) => value.replace(/_/g, " "));
+      const fields: Field[] = [{ name: "question", type: "string", required: true }];
+      const preset = BUILTIN_PRESETS["cheap-fast"]!;
+      const result = await agents.run({
+        rt, workflowRunId: runId, stepKey, nodeId: node.id, spawnKey: `${stepKey}:question`, role: "analyst", title: `question for the owner: ${node.id}`, fields,
+        provider: preset.providerId, model: preset.model, reasoning: preset.reasoning ?? "low",
+        prompt: [`Write the question the owner sees in a form, in ${locale === "ru" ? "Russian" : "English"}, from the step's instruction and the run's results so far. Plain words, no ids, no JSON, no English terms the owner would not know; say briefly what happened, what is being decided and what each option leads to.${options.length ? ` The form shows these buttons as they are: ${options.join(", ")}; name them the same way.` : ""} At most 900 characters. Read nothing else and change nothing.`,
+          `Instruction: ${instruction}`, `Results so far:\n${results || "(none)"}`, outputContract(fields)].join("\n\n"),
+      });
+      const text = str(result.output.question).trim();
+      return text || instruction;
+    })().catch((cause: unknown) => { bb.log.warn(`Lane Pilot could not word the question of ${node.id} (${cause instanceof Error ? cause.message : String(cause)}); the instruction is shown`); return instruction; });
+    composing.set(key, job);
+    return job;
+  };
   const ask = async (rt: ChainRuntime, runId: string, stepKey: string, node: Extract<GraphNode, { type: "human" }>, question: string, deadline?: number, base: string = question): Promise<void> => {
     const key = `${runId}|${stepKey}`;
     if (openForms.has(key)) return;
+    const worded = await composeQuestion(rt, runId, stepKey, node, base);
+    if (openForms.has(key)) return;
     const options = humanOptions(node);
-    const shown = await rt.ctx.ownerAsk.askInBackground(rt.pmThreadId, { source: "pm", question, detail: workflowHumanDetail(await ownerLocale(rt.ctx.bb), runId, node.id), options: options.map((value) => value.replace(/_/g, " ")), allowText: true },
+    // An answer can come before the form is reported shown: the form is then not marked open, or the re-ask would think it still is.
+    let answered = false;
+    const shown = await rt.ctx.ownerAsk.askInBackground(rt.pmThreadId, { source: "pm", question: question === base ? worded : `${question.slice(0, question.length - base.length)}${worded}`, detail: workflowHumanDetail(await ownerLocale(rt.ctx.bb), runId, node.id), options: options.map((value) => value.replace(/_/g, " ")), allowText: true },
       async (answer) => {
+        answered = true;
         openForms.delete(key);
         if (answer.outcome === "answered") {
           const output = humanOutput(node, { choiceIndex: answer.choice ? Number(answer.choice.id) : null, text: answer.text });
           // Words that name no option and fit no text kind decide nothing: the step keeps waiting and the owner is asked again, with the options listed.
           // The notice goes before the step's own question once, not once per wrong answer (it stacked up, live 2026-10-25).
-          if (!output) { await ask(rt, runId, stepKey, node, `Your answer did not choose an option (${options.map((value) => value.replace(/_/g, " ")).join(" / ")}). ${base}`, deadline, base); return; }
+          const listed = options.map((value) => value.replace(/_/g, " ")).join(" / ");
+          if (!output) { await ask(rt, runId, stepKey, node, `${(await ownerLocale(rt.ctx.bb).catch(() => "ru")) === "ru" ? `Ответ не выбрал вариант (${listed}).` : `Your answer did not choose an option (${listed}).`} ${base}`, deadline, base); return; }
           // The form opens while the step is being recorded as waiting: an answer that arrives first is retried until the step can take it.
           for (let tries = 0; tries < 50; tries += 1) {
             if (await engine.resolve(runId, stepKey, output)) return;
@@ -247,7 +283,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
         }
         // A dismissed or timed-out form leaves the step waiting: the next poll asks again, or the step's own timeout answers it.
       }, { timeoutMs: deadline ? Math.max(1000, deadline - Date.now()) : undefined });
-    if (shown) openForms.add(key);
+    if (shown && !answered) openForms.add(key);
   };
   engine.register<ChainRuntime>("builtin:human", {
     run: async (c) => {
