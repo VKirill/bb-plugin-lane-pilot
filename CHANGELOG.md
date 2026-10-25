@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.317
+
+**A scheduled report reaches the owner.** A run a schedule started sent no notice («nobody watches it live; the board keeps the result»), so the weekly report the owner asked to get in his chat reached no one: the PM saw only its helper's raw completion and said there was nothing to do. A scheduled run that succeeds with a report-like output (`report_md`, `summary`, `digest`, `message`, `text`…) now hands it to the PM chat to show the owner as it is; its failures stay the schedule board's to tell. The intake's log names the graph it started (issue-batch for a batch).
+
 ## 0.1.316
 
 **The owner's question is a question, in his language.** A human step's text is an instruction to whoever asks («Show the unresolved findings and offer revise, proceed, abort»), and it was shown to the owner as it was: English, no findings. A cheap helper (the `cheap-fast` preset) now writes the question from the instruction and the run's results so far, in the owner's language, naming the buttons as the form shows them; when it fails the instruction is shown as before. The notice for an answer that chose no option is in the owner's language too, and an answer that arrives before the form is reported shown no longer leaves the re-ask thinking the form is still open.
