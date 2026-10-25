@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, unlinkSync } from "node:fs";
-import { appendFile, cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, rmdir, stat, symlink, writeFile } from "node:fs/promises";
+import { appendFile, cp, lstat, mkdir, readdir, readFile, realpath, rename, rm, rmdir, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { spawnAsync } from "@lane-pilot/kit";
@@ -616,15 +616,46 @@ async function withInstallLock(basePath:string,work:()=>Promise<void>):Promise<v
  * and the offline verification sandbox finds the packages already in place.
  */
 async function installBaseDependencies(basePath:string):Promise<void> {
-  if((await stat(join(basePath,"node_modules")).catch(()=>null))?.isDirectory()) return;
+  const installed=async()=>(await stat(join(basePath,"node_modules")).catch(()=>null))?.isDirectory()??false;
   if(!(await stat(join(basePath,"package-lock.json")).catch(()=>null))?.isFile()) return;
+  if(await installed()&&!await dependenciesStale(basePath)) return;
   const install=async()=>{
-    if((await stat(join(basePath,"node_modules")).catch(()=>null))?.isDirectory()) return;
+    if(await installed()) { await refreshStaleDependencies(basePath); return; }
     await spawnAsync("npm",["ci","--no-audit","--no-fund"],{cwd:basePath,timeout:540_000,maxBuffer:16<<20});
   };
   const running=installing.get(basePath)??withInstallLock(basePath,install).finally(()=>installing.delete(basePath));
   installing.set(basePath,running);
   await running;
+}
+
+/**
+ * The packages of a checkout are older than its lockfile: npm writes node_modules/.package-lock.json on every install, and a merge
+ * that changes package-lock.json writes that file after it. Only a missing node_modules was installed, so a merged task's new
+ * dependency stayed out of main's packages and so out of every worktree mirrored from them: SelfyStudio's site-og-renderer added
+ * satori and @resvg/resvg-js at 11:54Z on 2026-10-24, and site-seo-shared, prepared a minute later, failed `npm run typecheck`
+ * with TS2307 in a file it did not own (its writer then shimmed the modules); main had them only after someone installed by hand.
+ */
+async function dependenciesStale(dir:string):Promise<boolean> {
+  const [lock,packages]=await Promise.all([stat(join(dir,"package-lock.json")).catch(()=>null),stat(join(dir,"node_modules",".package-lock.json")).catch(()=>null)]);
+  return Boolean(lock?.isFile()&&packages?.isFile()&&lock.mtimeMs>packages.mtimeMs);
+}
+
+/** A lockfile whose install failed, by its mtime: it is not tried again on every worktree until the lockfile changes. */
+const failedInstalls=new Map<string,number>();
+
+/**
+ * Installs what a newer lockfile adds to existing packages. `npm install --no-save` neither rewrites package-lock.json nor clears
+ * node_modules the way `npm ci` does, so the worktrees whose packages are links into this one keep working while it runs.
+ */
+async function refreshStaleDependencies(dir:string):Promise<void> {
+  if(!await dependenciesStale(dir)) return;
+  const lock=(await stat(join(dir,"package-lock.json"))).mtimeMs;
+  if(failedInstalls.get(dir)===lock) return;
+  const run=await spawnAsync("npm",["install","--no-save","--no-audit","--no-fund"],{cwd:dir,timeout:540_000,maxBuffer:16<<20});
+  if(run.status!==0) { failedInstalls.set(dir,lock); return; }
+  // npm leaves its record as it was when nothing had to change; touched, the checkout reads as installed until the next lockfile.
+  const now=new Date();
+  await utimes(join(dir,"node_modules",".package-lock.json"),now,now).catch(()=>undefined);
 }
 
 /**
@@ -714,12 +745,19 @@ const NODE_MODULES_WRITABLE_COPIES = new Set([".prisma", "@prisma/client"]);
  */
 const NODE_MODULES_NPM_STATE = new Set([".bin", ".package-lock.json"]);
 
-async function mirrorNodeModules(input:{baseReal:string;worktreePath:string;dir:string}):Promise<boolean> {
+/**
+ * `topUp` adds to a mirror made before what the base has installed since: the packages a merged lockfile brought in (see
+ * dependenciesStale) are missing from it, and a sticky writer's worktree, synced with main, kept failing on them.
+ */
+async function mirrorNodeModules(input:{baseReal:string;worktreePath:string;dir:string;topUp?:boolean}):Promise<boolean> {
   const base=join(input.baseReal,input.dir,"node_modules"), target=join(input.worktreePath,input.dir,"node_modules");
   if(!(await stat(base).catch(()=>null))?.isDirectory()) return false;
-  if(!(await stat(dirname(target)).catch(()=>null))?.isDirectory()||await lstat(target).catch(()=>null)) return false;
+  if(!(await stat(dirname(target)).catch(()=>null))?.isDirectory()) return false;
+  const existing=await lstat(target).catch(()=>null);
+  if(existing&&!(input.topUp&&existing.isDirectory())) return false;
   const inRepo=(path:string)=>(path===input.baseReal||path.startsWith(`${input.baseReal}/`))&&!path.startsWith(`${base}/`);
-  await mkdir(target);
+  const has=async(rel:string[])=>Boolean(existing&&await lstat(join(target,...rel)).catch(()=>null));
+  if(!existing) await mkdir(target);
   const linkEntry=async(rel:string[])=>{
     const source=join(base,...rel), destination=join(target,...rel);
     if(NODE_MODULES_WRITABLE_COPIES.has(rel.join("/"))) {
@@ -735,19 +773,22 @@ async function mirrorNodeModules(input:{baseReal:string;worktreePath:string;dir:
     await symlink(source,destination,followed?.isDirectory()?"dir":"file");
   };
   for(const name of await readdir(base)) {
-    if(NODE_MODULES_CACHE_DIRS.has(name)) { await mkdir(join(target,name)); continue; }
+    if(NODE_MODULES_CACHE_DIRS.has(name)) { if(!await has([name])) await mkdir(join(target,name)); continue; }
     if(NODE_MODULES_NPM_STATE.has(name)&&!(await lstat(join(base,name))).isSymbolicLink()) {
-      await cp(join(base,name),join(target,name),{recursive:true,dereference:false,verbatimSymlinks:true,errorOnExist:false});
+      if(!await has([name])) await cp(join(base,name),join(target,name),{recursive:true,dereference:false,verbatimSymlinks:true,errorOnExist:false});
+      else if(name===".bin") for(const bin of await readdir(join(base,name))) {
+        if(!await has([name,bin])) await cp(join(base,name,bin),join(target,name,bin),{dereference:false,verbatimSymlinks:true,errorOnExist:false});
+      }
       continue;
     }
     if(name.startsWith("@")&&!(await lstat(join(base,name))).isSymbolicLink()&&(await stat(join(base,name))).isDirectory()) {
-      await mkdir(join(target,name));
-      for(const child of await readdir(join(base,name))) await linkEntry([name,child]);
-    } else {
+      if(!await has([name])) await mkdir(join(target,name));
+      for(const child of await readdir(join(base,name))) if(!await has([name,child])) await linkEntry([name,child]);
+    } else if(!await has([name])) {
       await linkEntry([name]);
     }
   }
-  return true;
+  return !existing;
 }
 
 /** The checkout's real info/exclude, resolved by git itself: the repo root's, a linked worktree's shared one, or a subfolder workspace's. */
@@ -790,8 +831,18 @@ export async function prepareWorktree(input:{basePath:string;worktreePath:string
   const baseReal=await realpath(input.basePath).catch(()=>input.basePath);
   const workspaces=await workspaceDirs(baseReal);
   const nested=await nestedPackageDirs(baseReal,input.worktreePath,workspaces);
+  for(const dir of nested) {
+    const path=join(baseReal,dir);
+    if(await dependenciesStale(path)) await withInstallLock(path,()=>refreshStaleDependencies(path));
+  }
   const rootModules=(await stat(join(baseReal,"node_modules")).catch(()=>null))?.isDirectory()??false;
-  if(await lstat(join(input.worktreePath,"node_modules")).catch(()=>null)||(!rootModules&&!nested.length)) return {linked:[]};
+  if(await lstat(join(input.worktreePath,"node_modules")).catch(()=>null)) {
+    if(baseReal!==await realpath(input.worktreePath).catch(()=>input.worktreePath)) {
+      for(const dir of ["",...workspaces,...nested]) await mirrorNodeModules({baseReal,worktreePath:input.worktreePath,dir,topUp:true});
+    }
+    return {linked:[]};
+  }
+  if(!rootModules&&!nested.length) return {linked:[]};
   const exclude=await infoExcludePath(input.worktreePath);
   if(!exclude) return {linked:[]};
   const current=await readFile(exclude,"utf8").catch(()=>"");
