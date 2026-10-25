@@ -15,14 +15,15 @@ describe("priceFor", () => {
     expect(priceFor("opus")).toBeNull();
   });
 
-  it("has list prices including 5-minute cache writes for the 2026-10-06 table", () => {
-    expect(PRICES_CHECKED_AT).toBe("2026-10-06");
+  it("has list prices including 5-minute cache writes for the 2026-10-25 table", () => {
+    expect(PRICES_CHECKED_AT).toBe("2026-10-25");
     expect(MODEL_PRICES["claude-opus-5-5"]).toEqual({ input: 4, cacheRead: 0.2, cacheWrite: 5, output: 20 });
     expect(MODEL_PRICES["claude-opus-5"]).toEqual({ input: 5, cacheRead: 0.5, cacheWrite: 6.25, output: 25 });
     expect(MODEL_PRICES["claude-sonnet-5"]).toEqual({ input: 2, cacheRead: 0.2, cacheWrite: 2.5, output: 10 });
     expect(MODEL_PRICES["claude-sonnet-5-5"]).toEqual({ input: 2, cacheRead: 0.2, cacheWrite: 2.5, output: 10 });
     expect(MODEL_PRICES["claude-fable-5-1"]).toEqual({ input: 10, cacheRead: 0.25, cacheWrite: 12.5, output: 50 });
     expect(MODEL_PRICES["claude-haiku-4-5"]).toEqual({ input: 1, cacheRead: 0.1, cacheWrite: 1.25, output: 5 });
+    expect(MODEL_PRICES["claude-haiku-5-5"]).toEqual({ input: 0.1, cacheRead: 0.01, cacheWrite: 0.125, output: 0.5 });
     expect(MODEL_PRICES["gpt-6-astra"]).toEqual({ input: 10, cacheRead: 1, cacheWrite: 12.5, output: 50 });
     expect(MODEL_PRICES["gpt-6.1-sol"]).toEqual({ input: 2, cacheRead: 0.1, cacheWrite: 2.5, output: 10 });
     expect(MODEL_PRICES["gpt-6-luna"]).toEqual({ input: 0.1, cacheRead: 0.01, cacheWrite: 0.125, output: 0.5 });
