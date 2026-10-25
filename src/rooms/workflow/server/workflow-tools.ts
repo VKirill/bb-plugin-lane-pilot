@@ -12,7 +12,7 @@ import { preflightRefusal } from "@lane-pilot/workflow-engine";
 import type { PreflightResult } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import type { WorkflowStore } from "../../storage";
-import { fenceOutside, registerObservedTool } from "../../core/server";
+import { fenceOutside, registerObservedTool, ToolError } from "../../core/server";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 import { jev } from "@lane-pilot/jev";
@@ -230,7 +230,12 @@ export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
     description: "Match a request to a ready Lane Pilot workflow: the workflow, how sure the match is, a boundary contract and goals, or up to three questions.",
     instructions: "Use from a Lane Pilot PM chat when the owner asks for multi-step work (a feature end to end, a review and fix, a release, research, a post) before you plan it yourself. Pass `intent` (the owner's request, in their words) and `context` (what you know that the request does not say: the project, files, the state of the run). Returns `decision`: `route` with `workflowId`, `confidence` (0-100), `evidence` (pattern, rejected workflows and why, rules that fired), `boundary_contract` (in scope, out of scope, constraints; `guesses` lists what is inferred), `goals`, `inputs` and `missingInputs`; or `clarify` with at most three `questions` and no workflow. Published workflows are offered, and so are tested ones (they passed their stub tests but never ran for real: `notYetRunLive`; ask the owner before a first real run, which needs `liveTrial: true`); of candidates that match alike the one that has run well and lately comes first (`runRecord` 0 to 1 shows it). Nothing is started by this call. Show the owner the choice and the contract before lane_pilot_run_workflow. When no workflow fits, work the usual way.",
     parameters: z.object({ intent: z.string().min(3).max(4000), context: z.string().max(8000).optional() }).strict(),
-    execute: async (params, context) => routeTool(deps, params, context),
+    execute: async (params, context) => {
+      // The train: a request the machine took (a phase, the small-task graph, the architect) is not routed to another system by the PM.
+      const refusal = await services.phaseIntake.launchRefusal(context.threadId);
+      if (refusal) throw new ToolError(refusal, { code: "phase_rails", retryable: false, sideEffects: "none" });
+      return routeTool(deps, params, context);
+    },
   });
 
   registerObservedTool(bb.agents, {
@@ -238,7 +243,12 @@ export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
     description: "Start a published Lane Pilot workflow with its inputs and return the workflow run id at once.",
     instructions: "Use from a Lane Pilot PM chat after lane_pilot_route chose a workflow and the owner agreed. `workflowId` is the id it returned; `inputs` are the workflow's inputs by name (give every entry of `missingInputs`: a call without a required input is refused and lists them). Refused with a reason when the id is unknown, the workflow is not published (a tested one starts only with liveTrial: true, after the owner agreed to a first real run) or is a fragment, an input is missing, something it requires is missing (a secret: call env_request; a tool or login: tell the owner), or the engine cannot run it yet (the message says which executor is missing). Pass `goals` exactly as lane_pilot_route returned them (after the owner confirmed or corrected them): the run's helper briefs are told of them again (the first step and every third), and before the run closes it is audited against them; unmet goals leave it blocked with their ids (fix the work and re-run, or amend the goals with lane_pilot_workflow_amend). Returns `workflowRunId` and `status` at once; the run goes on in the background and reports its end to this chat. Call lane_pilot_workflow_status for details. The same workflow with the same inputs in this run is the same workflow run: calling again does not start it twice.",
     parameters: z.object({ workflowId: z.string().min(1).max(60), inputs: z.record(z.string(), z.unknown()).default({}), liveTrial: z.boolean().optional(), goals: goalsSchema.optional() }).strict(),
-    execute: async (params, context) => runWorkflowTool(deps, params, context),
+    execute: async (params, context) => {
+      // The train: a request the machine took (a phase, the small-task graph, the architect) is not routed to another system by the PM.
+      const refusal = await services.phaseIntake.launchRefusal(context.threadId);
+      if (refusal) throw new ToolError(refusal, { code: "phase_rails", retryable: false, sideEffects: "none" });
+      return runWorkflowTool(deps, params, context);
+    },
   });
 
   registerObservedTool(bb.agents, {

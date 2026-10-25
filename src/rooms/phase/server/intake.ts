@@ -1,6 +1,6 @@
 import { jev, type JevSettings } from "@lane-pilot/jev";
 import { getRun, getRunSettingsScopes } from "../../storage";
-import type { ServerCore } from "../../core/server";
+import { stringAt, type ServerCore } from "../../core/server";
 import { intakeByRules, intakeJudgment, intakeTitle, isMachineMessage, processHint, railsRefusal, type IntakeKind } from "../intake";
 import type { Phase } from "../logic";
 
@@ -114,20 +114,26 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     return job;
   }
 
+  /** Why the PM may not start a workflow for the owner's newest request (route, run): the machine already took it. The process hint is the dispatch's alone. */
+  const launchRefusal = (threadId: string) => dispatchRefusal(threadId, { hint: false });
+
   /**
    * Why the PM may not dispatch by hand now, or null: the owner's newest request was heavy and its phase is not closed. The reading of the newest message is finished first, so a quick dispatch cannot slip past it.
    */
-  async function dispatchRefusal(threadId: string): Promise<string | null> {
+  async function dispatchRefusal(threadId: string, options: { hint?: boolean } = {}): Promise<string | null> {
     const record = await take(threadId) ?? await bb.storage.kv.get(KEY(threadId)).catch(() => null) as IntakeRecord | null;
-    if (record?.kind === "process" && record.architectThreadId) {
-      return `This request of the owner is a new process: Lane Pilot started the workflow architect (@thread:${record.architectThreadId}) to build it as a small graph — draft, validator, tests, publish — without a conversation. Do not dispatch it by hand; tell the owner it is being built and that you will run it (lane_pilot_route) once it is published.`;
+    // A route or a run waits only while the architect builds: the chain it publishes is then run with lane_pilot_route.
+    const building = record?.kind === "process" && record.architectThreadId && (options.hint !== false
+      || await bb.sdk.threads.get({ threadId: record.architectThreadId }).then((info) => stringAt(info, "status") === "running", () => false));
+    if (record?.kind === "process" && record.architectThreadId && building) {
+      return `This request of the owner is a new process: Lane Pilot started the workflow architect (@thread:${record.architectThreadId}) to build it as a small graph — draft, validator, tests, publish — without a conversation. Do not dispatch it or start a workflow for it by hand; tell the owner it is being built and that you will run it (lane_pilot_route) once it is published.`;
     }
-    if (record?.kind === "process" && !record.hinted) {
+    if (record?.kind === "process" && !record.hinted && options.hint !== false) {
       await bb.storage.kv.set(KEY(threadId), { ...record, hinted: true });
       return processHint();
     }
     if (record?.wfRunId && ["running", "waiting"].includes(train?.status(record.wfRunId) ?? "")) {
-      return `This request of the owner went down the small-task graph: Lane Pilot runs it itself (workflow issue-quick, run ${record.wfRunId}: triage, plan, build, report), and the result comes to this chat. Do not dispatch it by hand; tell the owner it is under way. If the owner asks for something else, that is a new request.`;
+      return `This request of the owner went down the small-task graph: Lane Pilot runs it itself (workflow issue-quick, run ${record.wfRunId}: triage, plan, build, report), and the result comes to this chat. Do not dispatch it or start a workflow for it by hand; tell the owner it is under way. If the owner asks for something else, that is a new request.`;
     }
     if (record?.kind !== "heavy" || !record.phaseId) return null;
     const phase = phases.list({ pmThreadId: threadId, live: true }).find((row) => row.id === record.phaseId);
@@ -136,7 +142,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     return railsRefusal(phase, phases.status(phase.id).next.text);
   }
 
-  return { take, dispatchRefusal, classify };
+  return { take, dispatchRefusal, launchRefusal, classify };
 }
 export type PhaseIntake = ReturnType<typeof createPhaseIntake>;
 

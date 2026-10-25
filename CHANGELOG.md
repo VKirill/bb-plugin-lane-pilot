@@ -8,6 +8,8 @@
 
 **«Already done» is an honest end of a small task.** The third live small job (the README licence again) looped: the planner checked the repository, found the section already there and returned no tasks; the lint refused an empty plan, three rounds later the plan asked the owner. The planner of `lp.plan` may now answer `already_met` with the evidence in its handoff; the lint takes an empty plan only then, and `issue-quick` closes at once with «already met: nothing changed» instead of building. The edge takes `already_met` only together with an empty plan (`task_count == 0`): a plan with tasks is built whatever the flag says.
 
+**The PM does not pick another system for a request the machine took.** Until now only the hand dispatch was refused for a request on the rails; the PM could still route it to a workflow of its choice. `lane_pilot_route` and `lane_pilot_run_workflow` are now refused the same way while the machine works the owner's newest request: its open phase, the running small-task graph, or the workflow architect while it builds (the chain it publishes is then routed as usual). The process hint stays the dispatch's own.
+
 **The bench closes its own run.** The last two bench series (night 0.1.305, week 44) stopped at once on «Lane Pilot is already active in this project»: the bench PM of the 0.1.290 series queued a task of its own (`cabinet-quick-profile-gate-test-fix.2.2`), the bench cancelled only its own tasks, the run could not finish with an attempt queued and kept the project's activation. A bench run now cancels every open attempt of its Lane Pilot run before finishing it, and a series that finds a run an earlier series left open closes it before activating.
 
 ## 0.1.311

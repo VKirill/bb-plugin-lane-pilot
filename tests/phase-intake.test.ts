@@ -147,3 +147,31 @@ describe("the small-task graph", () => {
     expect(await intake.dispatchRefusal("thr_pm")).toMatch(/small-task graph[\s\S]*wfrun_1/);
   });
 });
+
+describe("the PM is the door: no other system for a request the machine took", () => {
+  it("refuses a route or a run while the graph or the architect works, and lets the architect's chain be routed once it is built", async () => {
+    const { createPhaseIntake: create } = await import("../src/rooms/phase/server/intake");
+    const { createFakePluginHost: host } = await import("@get-bb/plugin-sdk/testing");
+    const { bb, harness } = host({ pluginId: "lane-pilot" });
+    let architect = "running";
+    harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
+    harness.sdk.stub("threads.events.list", async () => [{ type: "client/turn/requested", data: { requestId: "creq_p", initiator: "user", input: [{ type: "text", text: "x".repeat(300) }] } }]);
+    harness.sdk.stub("threads.get", async () => ({ id: "thr_arch", status: architect }));
+    const db = openDatabase(bb);
+    createRun(db, "run1", "projA");
+    const phases = { open: async () => { throw new Error("no phase"); }, tick: async () => 0, list: () => [], status: () => ({ next: { text: "" } }) };
+    const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: {} }) } as never, phases as never,
+      { start: () => "wfrun_1", status: () => "running" });
+    await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_p", kind: "small", by: "jev", phaseId: null, at: 1, wfRunId: "wfrun_1" });
+    expect(await intake.launchRefusal("thr_pm")).toMatch(/small-task graph/);
+    await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_p", kind: "process", by: "jev", phaseId: null, at: 1, architectThreadId: "thr_arch" });
+    expect(await intake.launchRefusal("thr_pm")).toMatch(/workflow architect/);
+    architect = "idle";
+    expect(await intake.launchRefusal("thr_pm")).toBeNull();
+    expect(await intake.dispatchRefusal("thr_pm")).toMatch(/workflow architect/);
+    // The process hint is the dispatch's: a route does not use it up.
+    await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_p", kind: "process", by: "jev", phaseId: null, at: 1 });
+    expect(await intake.launchRefusal("thr_pm")).toBeNull();
+    expect(await intake.dispatchRefusal("thr_pm")).toMatch(/lane_pilot_forge/);
+  });
+});
