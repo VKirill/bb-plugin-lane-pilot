@@ -15,9 +15,15 @@ export function createBacklog(ctx: ServerCore) {
   const { db, bb, host } = ctx;
 
   /** The project's newest owner PM chat active in the last two weeks, or null. */
-  function pmOf(projectId: string, now: number): string | null {
-    return (db.prepare("SELECT pm_thread_id FROM lane_pilot_run WHERE project_id=? AND kind='cli' AND pm_thread_id IS NOT NULL AND updated_at>=? ORDER BY updated_at DESC LIMIT 1")
-      .get(projectId, now - 14 * DAY) as { pm_thread_id: string } | undefined)?.pm_thread_id ?? null;
+  async function pmOf(projectId: string, now: number): Promise<string | null> {
+    const rows = db.prepare("SELECT pm_thread_id FROM lane_pilot_run WHERE project_id=? AND kind='cli' AND pm_thread_id IS NOT NULL AND updated_at>=? ORDER BY updated_at DESC LIMIT 20")
+      .all(projectId, now - 14 * DAY) as Array<{ pm_thread_id: string }>;
+    // A workflow architect's chat has a run too; the backlog's task goes to a PM chat only.
+    for (const row of rows) {
+      const metadata = await bb.sdk.threads.getPluginMetadata({ threadId: row.pm_thread_id }).catch(() => null) as Record<string, unknown> | null;
+      if (metadata?.role === "pm") return row.pm_thread_id;
+    }
+    return null;
   }
 
   async function board(projectId: string): Promise<BacklogBoard & { error?: string }> {
@@ -36,7 +42,7 @@ export function createBacklog(ctx: ServerCore) {
     const out: Array<{ projectId: string; issued: string | null; board: { issuable: number; needsEstimate: number; decompose: number; blocked: number } }> = [];
     for (const { project_id: projectId } of projects) {
       if (ctx.isDisposed()) break;
-      const pm = pmOf(projectId, now);
+      const pm = await pmOf(projectId, now);
       const current = await board(projectId);
       const counts = { issuable: current.issuable.length, needsEstimate: current.needsEstimate.length, decompose: current.decompose.length, blocked: current.blocked.length };
       const projectToday = (db.prepare("SELECT count(*) AS n FROM lane_pilot_backlog_issue WHERE project_id=? AND issued_at>=?").get(projectId, now - DAY) as { n: number }).n;

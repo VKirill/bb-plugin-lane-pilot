@@ -284,6 +284,26 @@ describe("guards", () => {
     expect(rows<{ tokens_used: number; cost_micro_usd: number }>(db, "SELECT tokens_used, cost_micro_usd FROM lane_pilot_wf_run")[0]).toEqual({ tokens_used: 150, cost_micro_usd: 500_000 });
   });
 
+  it("budget: a money overrun still lets the end emit what was paid for, with a note; a paid step after it is stopped", async () => {
+    const paid: NodeExecutor = { reentrant: true, run: async () => ({ output: { n: 7 }, usage: { tokens: 10, costUsd: 0.9 } }) };
+    const emitAfter = wf({
+      budget: { maxCostUsd: 0.5 },
+      outputs: [{ name: "n", type: "number", required: false }],
+      nodes: [{ id: "collect", type: "action", action: "collect", output: [{ name: "n", type: "number" }] }, { id: "done", type: "action", action: "emit", map: { n: "collect.n" } }],
+      edges: [{ from: "start", to: "collect" }, { from: "collect", to: "done" }],
+    });
+    const db = journalDb();
+    const summary = await run(engineOn(db, { collect: paid }), emitAfter);
+    expect(summary).toMatchObject({ status: "succeeded", output: { n: 7 } });
+    expect(rows<{ kind: string }>(db, "SELECT kind FROM lane_pilot_wf_event WHERE kind='budget_overrun'")).toHaveLength(1);
+    const paidAfter = wf({
+      budget: { maxCostUsd: 0.5 },
+      nodes: [{ id: "collect", type: "action", action: "collect", output: [{ name: "n", type: "number" }] }, { id: "again", type: "action", action: "collect", output: [{ name: "n", type: "number" }] }],
+      edges: [{ from: "start", to: "collect" }, { from: "collect", to: "again" }, { from: "again", to: "end", with: { result: "input.query" } }],
+    });
+    expect(await run(engineOn(journalDb(), { collect: paid }), paidAfter)).toMatchObject({ status: "blocked", reason: "budget_exceeded:cost" });
+  });
+
   it("budget: a token or money budget with steps that report no usage holds the run to 40 steps, with a journal note", async () => {
     const workflow = wf({
       budget: { maxCostUsd: 2 },

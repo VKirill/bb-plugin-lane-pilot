@@ -88,14 +88,15 @@ function fakeAutomations(failures: { update?: Error; remove?: Error } = {}) {
 }
 
 function world(options: { items?: StoredWorkflow[]; project?: "ok" | "no_machine"; pm?: boolean; preflight?: TriggerDeps["preflight"]; automations?: AutomationsPort } = {}) {
-  const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+  const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+  harness.sdk.stub("threads.getPluginMetadata", async ({ threadId }: { threadId: string }) => ({ role: threadId === PM ? "pm" : "workflow-architect" }));
   const db: LanePilotDatabase = openDatabase(bb);
   if (options.pm !== false) { createRun(db, RUN, PROJECT, "cli"); setRunThread(db, RUN, PM); }
   const engine = new WorkflowEngine({ db, harnessVersion: "1.0.0" });
   let items = options.items ?? [stored(digest())];
   let project = options.project ?? "ok";
   const logs: string[] = [];
-  const ctx = { db, log: (message: string) => logs.push(message) } as unknown as ServerCore;
+  const ctx = { bb, db, log: (message: string) => logs.push(message) } as unknown as ServerCore;
   const triggers = createWorkflowTriggers(ctx, { workflowEngine: engine } as unknown as Services, {
     loadStore: async () => ({ store: storeOf(...items), project }),
     ...(options.preflight ? { preflight: options.preflight } : {}),
@@ -211,6 +212,17 @@ describe("starting a workflow from the tab, a schedule or Telegram", () => {
     expect(await start("daily-digest", { source: "telegram" })).toMatchObject({ ok: false, reason: "no_trigger" });
     expect(await start("no-schedule", { source: "schedule" })).toMatchObject({ ok: false, reason: "no_trigger" });
     expect(await triggers.start({ projectId: "proj_other", workflowId: "daily-digest", inputs: { query: "q" }, source: "manual" })).toMatchObject({ ok: false, reason: "no_pm_chat" });
+  });
+
+  it("runs in the PM chat, not in the newer chat of a workflow architect that has an open run too", async () => {
+    const { triggers, db, engine } = world();
+    createRun(db, "run_arch", PROJECT, "cli");
+    setRunThread(db, "run_arch", "thr_architect");
+    db.prepare("UPDATE lane_pilot_run SET created_at=created_at+60000 WHERE id='run_arch'").run();
+    const started = await triggers.start({ projectId: PROJECT, workflowId: "daily-digest", inputs: { query: "q" }, source: "schedule", key: "t" });
+    expect(started).toMatchObject({ ok: true });
+    expect(engine.snapshot((started as { runId: string }).runId)!.run).toMatchObject({ link_run_id: RUN });
+    await engine.idle();
   });
 
   it("a telegram start needs the workflow's telegram trigger", async () => {

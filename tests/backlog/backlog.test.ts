@@ -52,10 +52,15 @@ describe("the scanner", () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const sent: Array<{ threadId: string; text: string }> = [];
     harness.sdk.stub("threads.send", async (args: { threadId: string; input: Array<{ text: string }> }) => { sent.push({ threadId: args.threadId, text: args.input[0]!.text }); return undefined; });
+    harness.sdk.stub("threads.getPluginMetadata", async ({ threadId }: { threadId: string }) => ({ role: threadId === "thr_pm" ? "pm" : "workflow-architect" }));
     const db = openDatabase(bb);
     savePrototypeConfig(db, { projectId: "P", hostId: "h", pmWorkspacePath: "/repo", writerWorkspacePath: "/repo", pmProviderId: "p", pmModel: "m", writerProviderId: "p", writerModel: "m" });
     createRun(db, "run_cli", "P", "cli", "/repo");
     setRunThread(db, "run_cli", "thr_pm");
+    // A workflow architect's newer chat with a run of its own is not the owner's PM.
+    createRun(db, "run_arch", "P", "cli", "/repo");
+    setRunThread(db, "run_arch", "thr_arch");
+    db.prepare("UPDATE lane_pilot_run SET updated_at=updated_at+60000 WHERE id='run_arch'").run();
     const output = ["t-01", "t-02"].map((id) => `__lp_todo__ .agents/todos/items/${id}/meta.yaml\n${meta(id, "status: ready\npriority: high\nestimate: 3")}`).join("");
     const host = { call: async () => ({ exitCode: 0, stdout: output, stderr: "" }) };
     const api = createBacklog({ db, bb, host, log: () => undefined, isDisposed: () => false } as never).backlog;

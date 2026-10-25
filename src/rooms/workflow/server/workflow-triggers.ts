@@ -97,12 +97,17 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
   const now = deps.now ?? Date.now;
 
   /** The PM chat that gives a run its helper threads: the project's active one, else the newest open run that has a chat. */
-  function pmOf(projectId: string): { pmThreadId: string; runId: string } | null {
+  async function pmOf(projectId: string): Promise<{ pmThreadId: string; runId: string } | null> {
     const activation = getActivation(db, projectId);
     const active = activation ? getRun(db, activation.run_id) : undefined;
     if (active && !active.closed_at && active.pm_thread_id) return { pmThreadId: active.pm_thread_id, runId: active.id };
-    const row = db.prepare("SELECT id, pm_thread_id FROM lane_pilot_run WHERE kind='cli' AND project_id=? AND closed_at IS NULL AND pm_thread_id IS NOT NULL ORDER BY created_at DESC LIMIT 1").get(projectId) as { id: string; pm_thread_id: string } | undefined;
-    return row ? { pmThreadId: row.pm_thread_id, runId: row.id } : null;
+    const rows = db.prepare("SELECT id, pm_thread_id FROM lane_pilot_run WHERE kind='cli' AND project_id=? AND closed_at IS NULL AND pm_thread_id IS NOT NULL ORDER BY created_at DESC LIMIT 20").all(projectId) as Array<{ id: string; pm_thread_id: string }>;
+    // A workflow architect's chat has an open run too: a scheduled report sent there was read as someone else's (live, 2026-10-25). Only a PM chat takes a run.
+    for (const row of rows) {
+      const metadata = await ctx.bb.sdk.threads.getPluginMetadata({ threadId: row.pm_thread_id }).catch(() => null) as Record<string, unknown> | null;
+      if (metadata?.role === "pm") return { pmThreadId: row.pm_thread_id, runId: row.id };
+    }
+    return null;
   }
 
   const refuse = (reason: string, message: string, extra: Partial<Extract<TriggerResult, { ok: false }>> = {}): TriggerResult => ({ ok: false, reason, message, ...extra });
@@ -126,7 +131,7 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     const missing = workflow.inputs.filter((field) => field.required && field.default === undefined && (given[field.name] === undefined || given[field.name] === null || given[field.name] === "")).map((field) => field.name);
     if (missing.length) return refuse("missing_inputs", `Missing inputs: ${missing.join(", ")}.`, { missing });
 
-    const pm = pmOf(input.projectId);
+    const pm = await pmOf(input.projectId);
     if (!pm) return refuse("no_pm_chat", "This project has no open Lane Pilot PM chat: a workflow run needs one for its helper threads and questions. Enable Lane Pilot in a chat of the project, then start again.");
 
     let notChecked: string[] = [];

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.314
+
+**A scheduled workflow reports to the PM chat, not to an architect.** The first real run of the chain the architect built (weekly changed files) was started the way its schedule starts it. Its errand ran `git log` and wrote the report, and the report went to the chat of another workflow architect, which read it as someone else's: a run without the project's activation took «the newest open run with a chat», and every architect's chat has one. A triggered run (and the backlog's task of the day) now goes only to a chat whose role is PM.
+
+**A money overrun does not throw away what was paid for.** The same run stopped as `budget_exceeded:cost` after its only paid step: the errand cost $0.88 on a $0.50 budget (the architect meant a cheap model and did not name one), and the engine cancelled the free `emit` that hands the report on. A money or token overrun now lets an `emit` step pass with a `budget_overrun` note on the run; a paid step after the overrun is still stopped.
+
 ## 0.1.313
 
 **The door holds for schedules too.** In the live process check (a weekly report of changed files) the workflow architect built, tested and published the chain in three minutes — and meanwhile the PM built its own: a shell script in its chat folder and a schedule through `lane_pilot_schedule`, then through `bb lane-pilot schedule` in its shell. Creating, changing or running a schedule now gets the same refusal as a route while the machine works the owner's newest request (its phase, the small-task graph, the architect building), from the tool and from the CLI of that PM thread alike.

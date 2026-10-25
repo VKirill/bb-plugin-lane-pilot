@@ -17,7 +17,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | acceptance | — | 5 | 330 | tests (2) |
 | anamnesis | ANAMNESIS_USAGE, EventLike, OwnerMessage, OwnerMessageConsumer, OwnerMessageHub, OwnerMessageMeta, TURN_REQUESTED, ThreadLike, anamnesisFor, anamnesisHandler, anamnesisHostMethods, anamnesisRpcMethods, isOwnerThread, maskPii, mountAnamnesis, ownerCardBlock, ownerMessagesOf, registerAnamnesisActions, sensitiveReason | 32 | 4225 | tests (2) |
 | atlas | AtlasInput, AtlasRoom, atlasHash, atlasStructure, renderAtlas | 2 | 66 | tests (1) |
-| backlog | BacklogBoard, MAX_ESTIMATE, TodoMeta, backlogBoard, backlogMigrations, backlogReadCommand, issueMessage, parseBacklogOutput, parseTodoMeta | 5 | 157 | tests (1) |
+| backlog | BacklogBoard, MAX_ESTIMATE, TodoMeta, backlogBoard, backlogMigrations, backlogReadCommand, issueMessage, parseBacklogOutput, parseTodoMeta | 5 | 163 | tests (1) |
 | baseline | BaselineRecord, NO_RED_KINDS, RegressionRecord, baselineMigrations, getBaseline, listBaselines, listRegressions | 9 | 1063 | tests (4) |
 | bench | BenchProjectControl, benchMigrations, getBenchProject, saveVerdict, verdictForHarness | 17 | 1674 | tests (2) |
 | capability | CAPABILITIES, Capability, CapabilityReceipt, CapabilityState, adapterVersions, capabilityMigrations, capabilityTable, dueProbes, listReceipts, probeSetupFailed, providersInUse | 8 | 225 | drill: helper_providers |
@@ -83,7 +83,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | wall | wallDeferralKindMigrations, wallMigrations | 20 | 2321 | tests (4) |
 | wires | WIRE_MARK, Wire, WireHop, WireResult, brokenWireReason, readWires, wiresCommand | 2 | 52 | tests (2) |
 | work-graph | AttemptIn, CellState, CostState, ExecutorRow, GRAPH_STAGES, GraphStats, ModelStageStat, ReceiptIn, Role, StageBlock, StageCell, StageEventIn, StageStat, TaskGraph, TaskSummary, Tokens, UsageIn, graphStats, median, roleOf, stageCells, taskGraph | 11 | 642 | tests (2) |
-| workflow | DraftCheck, DraftOp, DraftScope, DraftTestResult, LP_TASK_PIPELINE, NodeExecutor, RawDefinition, Refusal, RunSummary, StepContext, ValidateOptions, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY, WORKFLOW_ARCHITECT_TOOLS, Workflow, WorkflowEngine, WorkflowProblem, builtinWorkflow | 51 | 8204 | tests (3) |
+| workflow | DraftCheck, DraftOp, DraftScope, DraftTestResult, LP_TASK_PIPELINE, NodeExecutor, RawDefinition, Refusal, RunSummary, StepContext, ValidateOptions, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY, WORKFLOW_ARCHITECT_TOOLS, Workflow, WorkflowEngine, WorkflowProblem, builtinWorkflow | 51 | 8209 | tests (3) |
 | world | worldMigrations | 7 | 534 | tests (4) |
 | world-assets | — | 2 | 65 | tests (4) |
 | writer | DirtSnapshot, attachStreamRetry, attemptProduced, buildCliInvocation, droppedStreamDetail, memoryLine, parseDirtSnapshots, pathAnchors, resolveStageWriterSelection, reviewerMemoryPicks, runCliOnHost, runCommandOnHost, writePmSettingsOnHost, writerBriefStats, writerFallbackChain, writerFallbackKeys, writerFallbacks, writerMemory, writerMemoryPicks, writerReuseStats | 41 | 7923 | drill: parallel3 |
@@ -181,7 +181,7 @@ States: (new), queued, spawn_requested, running, spawn_rejected, spawn_unknown, 
 | packages/i18n/src/i18n-fields.ts | 1946 |
 | src/rooms/sma-map/entries.ts | 1777 |
 | src/rooms/storage/database.ts | 1631 |
-| packages/workflow-engine/src/engine.ts | 1403 |
+| packages/workflow-engine/src/engine.ts | 1407 |
 | src/rooms/writer/server/start.ts | 1063 |
 | src/rooms/self-repair/server/self-repair.ts | 943 |
 | src/rooms/council/ui/council-office.tsx | 942 |
