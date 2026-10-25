@@ -4,6 +4,8 @@
 
 ## 0.1.326
 
+**A new core convention reaches the reviewers.** The code critic and the night reviewer get at most five memory notes, the core conventions among them ranked by usefulness (accepted uses over uses): a convention added today scores 0.5 and stayed behind the proven ones, and it gains use only by being there — so it never reached them. It showed when the sandbox's core grew: the drill's memory probe found the planted core missing on both paths and refused every deploy. A core convention younger than three days now goes first in its tier; after that it takes its place by usefulness.
+
 **The writer pick is asked.** In 0.1.325 the pick never reached Jev: a key the KV never held reads back `undefined`, and the check waited for `null`, so every task kept the project's writer (the first live task of the sandbox showed no `writer.model` receipt). The pick is now a function of its own with a test on a KV that answers `undefined`; each pick is logged. Haiku 5.5 joins the writers for short, well-scoped edits, from the reviews of 5.5 (SWE-Bench Pro 64.8%, a real production bug fixed in a hands-on test), with its weak side said: long multi-step work and prompts past 100K tokens.
 
 ## 0.1.325

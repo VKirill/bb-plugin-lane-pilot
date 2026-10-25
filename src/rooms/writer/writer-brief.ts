@@ -7,7 +7,7 @@ import type { TaskV2 } from "../contracts";
  * the same writer did the task as well from 1110 tokens as from 4130. Live run notes: `.bb/chats/thr_tev4nistgf/artifacts/tz-diet/REPORT.md`.
  */
 
-type MemoryNote = { content:string; concepts:string[]; kind?:string; id?:string; useCount?:number; acceptedCount?:number };
+type MemoryNote = { content:string; concepts:string[]; kind?:string; id?:string; useCount?:number; acceptedCount?:number; createdAt?:number };
 
 const MEMORY_LIMIT = 3;
 /** Folders that say nothing about a task: tool caches a contract sometimes lists. */
@@ -44,6 +44,8 @@ export function memoryLine(note:Pick<MemoryNote, "content">):string {
 }
 
 const REVIEW_LIMIT = 5;
+/** A core convention this young goes before the proven ones: by usefulness alone a new one never reached a reviewer (it gains use only by being there). */
+const FRESH_CORE_MS = 3 * 86_400_000;
 
 /**
  * The notes a reviewer or critic gets, at most five: review-tagged notes about the task's paths, then other notes about
@@ -51,7 +53,7 @@ const REVIEW_LIMIT = 5;
  * found pushed them out), then those found notes, and last the remaining review-tagged notes. `found` is the search for
  * the task's text, `always` the review-tagged notes and core conventions whatever the text; rules never go in.
  */
-export function reviewerMemoryPicks<T extends MemoryNote>(found:readonly T[], always:readonly T[], task:Pick<TaskV2, "owns_paths" | "read_first">, limit = REVIEW_LIMIT):T[] {
+export function reviewerMemoryPicks<T extends MemoryNote>(found:readonly T[], always:readonly T[], task:Pick<TaskV2, "owns_paths" | "read_first">, limit = REVIEW_LIMIT, now = Date.now()):T[] {
   const anchors = pathAnchors(task);
   const keyOf = (note:T) => note.id ?? note.content;
   const foundKeys = new Set(found.map(keyOf));
@@ -61,13 +63,16 @@ export function reviewerMemoryPicks<T extends MemoryNote>(found:readonly T[], al
   const isTagged = (note:T) => note.concepts.some((concept) => (REVIEWER_CONCEPTS as readonly string[]).includes(concept));
   const about = (note:T) => anchors.some((anchor) => note.content.includes(anchor));
   const byUse = (a:T, b:T) => memoryUsefulness(b) - memoryUsefulness(a);
+  const fresh = (note:T) => note.kind === "core" && typeof note.createdAt === "number" && now - note.createdAt < FRESH_CORE_MS;
+  // The core tier: the conventions added in the last days first (newest first), then the proven ones by usefulness.
+  const coreOrder = (a:T, b:T) => (fresh(a) === fresh(b) ? (fresh(a) ? (b.createdAt ?? 0) - (a.createdAt ?? 0) : byUse(a, b)) : fresh(a) ? -1 : 1);
   const tiers:T[][] = [
     usable.filter((note) => isTagged(note) && about(note)),
     usable.filter((note) => !isTagged(note) && about(note)),
     usable.filter((note) => !isTagged(note) && !about(note) && note.kind === "core"),
     usable.filter((note) => isTagged(note) && !about(note) && foundKeys.has(keyOf(note))),
     usable.filter((note) => isTagged(note) && !about(note) && !foundKeys.has(keyOf(note))),
-  ].map((tier) => tier.sort(byUse));
+  ].map((tier, index) => tier.sort(index === 2 ? coreOrder : byUse));
   return tiers.flat().slice(0, limit);
 }
 
