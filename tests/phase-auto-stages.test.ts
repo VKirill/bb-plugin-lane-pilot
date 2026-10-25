@@ -48,7 +48,7 @@ describe("the machine's pass", () => {
     const runs = new Map<string, { status: string; output: Record<string, unknown> | null }>();
     const auto = createAutoStages({ log: () => undefined }, {
       workflowEngine: { start: (input: { workflow: { id: string } }) => { const runId = `wfrun_${runs.size + 1}`; calls.push(`start ${input.workflow.id}`); runs.set(runId, { status: "running", output: null }); return { runId, created: true, done: new Promise(() => undefined) }; },
-        get: (runId: string) => ({ runId, ...runs.get(runId)!, reason: null, error: null, failedNode: null, waiting: [], stopped: false }) } as never,
+        get: (runId: string) => ({ runId, reason: null, error: null, failedNode: null, waiting: [], stopped: false, ...runs.get(runId)! }) } as never,
     }, {
       api: {
         context: async (input) => { calls.push(`context ${input.docs.join(",")}`); phase = phaseAt("planning", { ...phase.record, context: { docs: [], sha: "c", signedAt: 1 } }); return phase; },
@@ -73,6 +73,23 @@ describe("the machine's pass", () => {
     w.finish();
     expect(await w.auto.step(w.get())).toBe(true);
     expect(w.calls).toEqual(expect.arrayContaining(["question Tags?", "context .agents/phases/ph_1/CONTEXT.md", "book auto_done"]));
+    expect(w.get().record.auto).toBeUndefined();
+  });
+  it("failures counted under an older version are forgotten: the new one tries the stage again", async () => {
+    const w = world({ decisions: [] });
+    const phase = w.get();
+    (phase.record as Record<string, unknown>).autoFailures = { analyze: 2 };
+    (phase.record as Record<string, unknown>).autoFailuresVersion = "0.0.1";
+    expect(await w.auto.step(phase)).toBe(true);
+    expect(w.calls).toContain("start lp.analyze");
+    expect(w.calls).toContain("book auto_retry");
+  });
+  it("a run a reload stopped runs again without counting a try", async () => {
+    const w = world(null, "failed");
+    await w.auto.step(w.get());
+    w.runs.set("wfrun_1", { status: "failed", output: null, error: "thread_failed: workflow_plan_critic:plugin_stopped" } as never);
+    expect(await w.auto.step(w.get())).toBe(false);
+    expect(w.get().record.autoFailures).toBeUndefined();
     expect(w.get().record.auto).toBeUndefined();
   });
   it("a run that fails counts; after two the stage is the PM's", async () => {

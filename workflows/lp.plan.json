@@ -193,7 +193,7 @@
       "from": "lint",
       "to": "plan",
       "pass": "same-session",
-      "when": "!lint.ok && visits('lint') < 3",
+      "when": "!lint.ok && visits('lint') < 3 && visits('plan') < 4",
       "label": "contract errors",
       "with": {
         "gaps": "lint.errors"
@@ -226,7 +226,7 @@
       "from": "plan_critic",
       "to": "plan",
       "pass": "same-session",
-      "when": "plan_critic.status == 'rework' && visits('plan_critic') < 3",
+      "when": "plan_critic.status == 'rework' && visits('plan_critic') < 3 && visits('plan') < 4",
       "label": "revise",
       "with": {
         "gaps": "plan_critic.findings"

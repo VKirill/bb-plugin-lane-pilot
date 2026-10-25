@@ -64,6 +64,13 @@ describe("lp.plan", () => {
     expect(out(r)).toMatchObject({ status: "failed" });
   });
 
+  it("lint rounds and critique rounds share the plan's four visits: a rework past them goes on as low confidence, not a guard failure (live 2026-10-25)", async () => {
+    const lint = [{ ok: false, errors: ["e"] }, { ok: false, errors: ["e"] }, { ok: true, errors: [] }, { ok: true, errors: [] }];
+    const r = await runSim("lp.plan", { input: { goal: "g" }, mode: "full", stubs: { plan: { tasks: [task("a")], task_count: 1 }, lint, plan_critic: { status: "rework" } } });
+    expect(pathOf(r)).toBe("plan lint plan lint plan lint plan_critic plan lint plan_critic low");
+    expect(out(r)).toMatchObject({ status: "low_confidence" });
+  });
+
   it("the critique that keeps asking for rework goes on as a low-confidence plan after 3 rounds, without the owner", async () => {
     const r = await runSim("lp.plan", { input: { goal: "g" }, mode: "full", stubs: { plan: { tasks: [task("a")], task_count: 1 }, plan_critic: { status: "rework" } } });
     expect(pathOf(r)).toBe("plan lint plan_critic plan lint plan_critic plan lint plan_critic low");

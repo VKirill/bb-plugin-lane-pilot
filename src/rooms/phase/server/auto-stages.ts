@@ -1,6 +1,7 @@
 import { builtinWorkflow } from "../../workflow";
 import type { ServerCore, Services } from "../../core/server";
 import { phaseFolder, planGate, type Phase, type PhaseRecord, type PlanItem, type RiskKind } from "../logic";
+import packageJson from "../../../../package.json";
 
 /**
  * The machine drives the train (Matvey #31766, #31782): at a stage that needs work, the driver starts that stage's workflow itself —
@@ -136,11 +137,14 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
   /** Whether the PM chat is idle (no turn running). */
   pmIdle(phase: Phase): Promise<boolean>;
   now(): number;
+  /** The running Lane Pilot version (package.json when not given). */
+  version?: string;
 }) {
+  const version = deps.version ?? packageJson.version;
   const fail = (phase: Phase, kind: AutoKind, why: string) => {
     const failures = { ...(phase.record.autoFailures ?? {}), [kind]: (phase.record.autoFailures?.[kind] ?? 0) + 1 };
     deps.book(phase, "decisions", "auto_failed", `${AUTO_WORKFLOWS[kind]} did not finish (${why})${failures[kind]! >= AUTO_TRIES ? `: after ${AUTO_TRIES} runs the stage is the PM's` : ": run again on the next pass"}`);
-    deps.save(phase.id, { ...phase.record, auto: undefined, autoFailures: failures });
+    deps.save(phase.id, { ...phase.record, auto: undefined, autoFailures: failures, autoFailuresVersion: version });
   };
 
   async function apply(phase: Phase, auto: AutoRecord, output: Record<string, unknown>): Promise<void> {
@@ -187,11 +191,26 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
 
   /** One pass: settles a finished stage run, or starts the stage's workflow. True when the machine has the stage (the PM is not poked). */
   async function step(phase: Phase): Promise<boolean> {
+    // Failures counted under another version may be the ones it fixed: after a deploy the machine tries the stage again.
+    if (phase.record.autoFailures && phase.record.autoFailuresVersion !== version) {
+      deps.book(phase, "decisions", "auto_retry", `Lane Pilot ${version}: the stages the machine gave up on under ${phase.record.autoFailuresVersion ?? "an earlier version"} are tried again`);
+      deps.save(phase.id, { ...phase.record, autoFailures: undefined, autoFailuresVersion: undefined });
+      phase = deps.get(phase.id);
+    }
     const running = phase.record.auto;
     if (running) {
       const summary = services.workflowEngine.get(running.wfRunId);
       if (!summary || summary.status === "running" || summary.status === "waiting") return true;
-      if (summary.status !== "succeeded" || !summary.output) { fail(phase, running.kind, summary.error ?? summary.reason ?? summary.status); return false; }
+      if (summary.status !== "succeeded" || !summary.output) {
+        // A run a reload or deploy stopped (its helper thread died with the plugin) is not the stage's failure: it runs again and keeps its tries (live, 2026-10-25).
+        if (summary.status === "interrupted" || /plugin_stopped|interrupted by a reload/.test(`${summary.error ?? ""} ${summary.reason ?? ""}`)) {
+          deps.book(phase, "decisions", "auto_restart", `${AUTO_WORKFLOWS[running.kind]} was stopped by a reload (${summary.error ?? summary.reason ?? summary.status}): run again, the try is not counted`);
+          deps.save(phase.id, { ...phase.record, auto: undefined });
+          return false;
+        }
+        fail(phase, running.kind, summary.error ?? summary.reason ?? summary.status);
+        return false;
+      }
       try {
         await apply(phase, running, summary.output);
         const after = deps.get(phase.id);
