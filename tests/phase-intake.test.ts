@@ -36,7 +36,7 @@ function world(options: { settings?: Record<string, unknown>; role?: string } = 
 describe("phase intake rules", () => {
   it("settles a consent and a short message in code, and leaves a long one to the judgment", () => {
     expect(intakeByRules("да")).toEqual({ kind: "consent", confident: true });
-    expect(intakeByRules("поправь опечатку в футере")).toEqual({ kind: "small", confident: true });
+    expect(intakeByRules("поправь опечатку в футере")).toEqual({ kind: "small", confident: false });
     expect(intakeByRules("почему не грузится каталог?")).toEqual({ kind: "question", confident: true });
     expect(intakeByRules("x".repeat(HEAVY_WITHOUT_JEV + 1))).toEqual({ kind: "heavy", confident: false });
     expect(intakeByRules(`a\n${"b".repeat(200)}`)).toEqual({ kind: "small", confident: false });
@@ -118,5 +118,32 @@ describe("a new process", () => {
     await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_p", kind: "process", by: "jev", phaseId: null, at: 1 });
     expect(await intake.dispatchRefusal("thr_pm")).toMatch(/lane_pilot_forge/);
     expect(await intake.dispatchRefusal("thr_pm")).toBeNull();
+    // Read with the judgment's word, the request is the graph's: dispatching it by hand is refused while the run works.
+    await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_s", kind: "small", by: "jev", phaseId: null, at: 1, wfRunId: "wfrun_1" });
+    expect(await intake.dispatchRefusal("thr_pm")).toMatch(/small-task graph[\s\S]*wfrun_1/);
+  });
+});
+
+describe("the small-task graph", () => {
+  it("is started by the machine on the judgment's word, and the PM does not dispatch that request by hand", async () => {
+    const { createPhaseIntake: create } = await import("../src/rooms/phase/server/intake");
+    const { createFakePluginHost: host } = await import("@get-bb/plugin-sdk/testing");
+    const { bb, harness } = host({ pluginId: "lane-pilot" });
+    harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
+    harness.sdk.stub("threads.events.list", async () => [{ type: "client/turn/requested", data: { requestId: "creq_s", initiator: "user", input: [{ type: "text", text: "поправь опечатку в футере" }] } }]);
+    const db = openDatabase(bb);
+    createRun(db, "run1", "projA");
+    const started: string[] = [];
+    const phases = { open: async () => { throw new Error("no phase"); }, tick: async () => 0, list: () => [], status: () => ({ next: { text: "" } }) };
+    const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: {} }) } as never, phases as never,
+      { start: (input) => { started.push(input.text); return "wfrun_1"; }, status: () => "running" });
+    (intake as { classify: unknown }).classify = undefined;
+    // No Jev here: the length rule alone does not start a build.
+    expect(await intake.take("thr_pm")).toMatchObject({ kind: "small", by: "rules" });
+    expect(started).toEqual([]);
+    expect(await intake.dispatchRefusal("thr_pm")).toBeNull();
+    // Read with the judgment's word, the request is the graph's: dispatching it by hand is refused while the run works.
+    await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_s", kind: "small", by: "jev", phaseId: null, at: 1, wfRunId: "wfrun_1" });
+    expect(await intake.dispatchRefusal("thr_pm")).toMatch(/small-task graph[\s\S]*wfrun_1/);
   });
 });

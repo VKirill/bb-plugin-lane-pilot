@@ -22,7 +22,9 @@ export const HEAVY_WITHOUT_JEV = 700;
 export function intakeByRules(text: string): { kind: IntakeKind; confident: boolean } {
   const clean = text.trim();
   if (isWholeConsent(clean) || CONSENT.test(clean)) return { kind: "consent", confident: true };
-  if (clean.length <= 80 && !clean.includes("\n")) return { kind: clean.endsWith("?") ? "question" : "small", confident: true };
+  // A short line is settled only as a question; a short request goes to the judgment (it may be a remark, not a job).
+  if (clean.length <= 80 && !clean.includes("\n") && clean.endsWith("?")) return { kind: "question", confident: true };
+  if (clean.length <= 80 && !clean.includes("\n")) return { kind: "small", confident: false };
   return { kind: clean.length > HEAVY_WITHOUT_JEV ? "heavy" : "small", confident: false };
 }
 

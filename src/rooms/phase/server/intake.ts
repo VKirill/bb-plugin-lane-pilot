@@ -13,7 +13,15 @@ export type IntakePhases = {
 };
 
 /** The last owner request of a PM chat as the intake read it. */
-export type IntakeRecord = { requestId: string; kind: IntakeKind; by: "rules" | "jev"; phaseId: string | null; at: number; hinted?: boolean };
+export type IntakeRecord = { requestId: string; kind: IntakeKind; by: "rules" | "jev"; phaseId: string | null; at: number; hinted?: boolean;
+  /** The small-task graph the machine started for the request (issue-quick): the PM does not dispatch it by hand. */
+  wfRunId?: string };
+
+/** The machine's start of the small-task graph for a request, and the state of a run it started (src/rooms/phase/server/driver.ts wires them). */
+export type IntakeTrain = {
+  start(input: { projectId: string; pmThreadId: string; runId: string; requestId: string; text: string; kind: "small" | "batch" }): string | null;
+  status(wfRunId: string): string | null;
+};
 const KEY = (threadId: string) => `phase-intake:${threadId}`;
 
 type Deps = Pick<ServerCore, "bb" | "db" | "effectiveProjectSettings" | "log">;
@@ -24,7 +32,7 @@ type Deps = Pick<ServerCore, "bb" | "db" | "effectiveProjectSettings" | "log">;
  * hand out that request's work by hand. Small jobs, batches, questions and consents keep their own roads. `phase.rails off`
  * turns it off for a project.
  */
-export function createPhaseIntake(ctx: Deps, phases: IntakePhases) {
+export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: IntakeTrain) {
   const { bb, db } = ctx;
   const pending = new Map<string, Promise<IntakeRecord | null>>();
 
@@ -73,7 +81,15 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases) {
         await phases.tick().catch(() => 0);
       }
     }
-    const record: IntakeRecord = { requestId, kind, by, phaseId, at: Date.now() };
+    // A small job or a batch of fixes goes down the small-task graph (issue-quick: triage, plan, build, report), started by the machine:
+    // the orchestrator does not choose what runs (Matvey #31782). phase.train off leaves them to the PM as before.
+    let wfRunId: string | undefined;
+    // Only on the judgment's word: the length rule calls any short line «small», and a remark must not start a build.
+    if ((kind === "small" || kind === "batch") && by === "jev" && train && String(settings["phase.train"] ?? "on") !== "off") {
+      wfRunId = train.start({ projectId: run.project_id, pmThreadId: threadId, runId: run.id, requestId, text, kind }) ?? undefined;
+      if (wfRunId) ctx.log(`phase intake: ${threadId} — the owner's request is ${kind} (${by}); issue-quick ${wfRunId} started`);
+    }
+    const record: IntakeRecord = { requestId, kind, by, phaseId, at: Date.now(), ...(wfRunId ? { wfRunId } : {}) };
     await bb.storage.kv.set(KEY(threadId), record);
     return record;
   }
@@ -96,6 +112,9 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases) {
     if (record?.kind === "process" && !record.hinted) {
       await bb.storage.kv.set(KEY(threadId), { ...record, hinted: true });
       return processHint();
+    }
+    if (record?.wfRunId && ["running", "waiting"].includes(train?.status(record.wfRunId) ?? "")) {
+      return `This request of the owner went down the small-task graph: Lane Pilot runs it itself (workflow issue-quick, run ${record.wfRunId}: triage, plan, build, report), and the result comes to this chat. Do not dispatch it by hand; tell the owner it is under way. If the owner asks for something else, that is a new request.`;
     }
     if (record?.kind !== "heavy" || !record.phaseId) return null;
     const phase = phases.list({ pmThreadId: threadId, live: true }).find((row) => row.id === record.phaseId);
