@@ -22,6 +22,7 @@ import lpAnalyze from "../../../workflows/lp.analyze.json";
 import lpBrainstorm from "../../../workflows/lp.brainstorm.json";
 import lpBuild from "../../../workflows/lp.build.json";
 import lpClose from "../../../workflows/lp.close.json";
+import lpDraw from "../../../workflows/lp.draw.json";
 import lpPlan from "../../../workflows/lp.plan.json";
 import lpReview from "../../../workflows/lp.review.json";
 import milestoneClose from "../../../workflows/milestone-close.json";
@@ -79,6 +80,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "lp.brainstorm.json", value: lpBrainstorm },
   { name: "lp.build.json", value: lpBuild },
   { name: "lp.close.json", value: lpClose },
+  { name: "lp.draw.json", value: lpDraw },
   { name: "lp.plan.json", value: lpPlan },
   { name: "lp.review.json", value: lpReview },
   { name: "milestone-close.json", value: milestoneClose },

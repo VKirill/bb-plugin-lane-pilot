@@ -226,3 +226,17 @@ describe("ins.post", () => {
     expect(out(r)).toMatchObject({ status: "rework_failed", rejects_open: 2 });
   });
 });
+
+describe("lp.draw", () => {
+  const input = { goal: "a settings page", pieces: "settings-page: the form saves", folder: ".agents/phases/ph_1" };
+  it("the design lead draws, another role checks, the drawing comes out", async () => {
+    const r = await runSim("lp.draw", { input, stubs: { draw: { paths: [".agents/phases/ph_1/design/settings.html"], feasible: true, contradiction: "" }, check: { verdict: "pass", notes: "" } } });
+    expect(r.summary.status).toBe("succeeded");
+    expect(r.summary.output).toMatchObject({ paths: [".agents/phases/ph_1/design/settings.html"], feasible: true, verdict: "pass" });
+  });
+  it("a rework goes back to the design lead once", async () => {
+    const r = await runSim("lp.draw", { input, stubs: { draw: { paths: ["a.html"], feasible: true, contradiction: "" }, check: [{ verdict: "rework", notes: "no error state" }, { verdict: "pass", notes: "" }] } });
+    expect(r.called("draw")).toHaveLength(2);
+    expect(r.summary.output).toMatchObject({ verdict: "pass" });
+  });
+});

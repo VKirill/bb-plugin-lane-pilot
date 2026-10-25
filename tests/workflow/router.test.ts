@@ -26,7 +26,7 @@ describe("what is offered", () => {
     expect(drafts.candidates).toEqual([]);
     const published = await route("Build the lp.build fragment tasks waves and run the task pipeline for an attempt", {});
     const ids = new Set(published.candidates.map((candidate) => candidate.id));
-    for (const id of ["lp-task-pipeline", "lp.build", "lp.plan", "lp.analyze", "lp.review", "lp.close", "lp.brainstorm", "ins.post"]) expect(ids.has(id)).toBe(false);
+    for (const id of ["lp-task-pipeline", "lp.build", "lp.plan", "lp.analyze", "lp.review", "lp.close", "lp.draw", "lp.brainstorm", "ins.post"]) expect(ids.has(id)).toBe(false);
     const deprecated = catalog.map((workflow) => (workflow.id === "deploy" ? { ...workflow, status: "deprecated" as const } : workflow));
     const result = await routeIntent({ intent: "Вывези релиз на прод", workflows: deprecated });
     expect(result.candidates.map((candidate) => candidate.id)).not.toContain("deploy");

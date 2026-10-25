@@ -1,0 +1,129 @@
+{
+  "id": "lp.draw",
+  "internal": true,
+  "status": "published",
+  "name": {
+    "en": "Draw the screens",
+    "ru": "Чертёж экранов"
+  },
+  "description": {
+    "en": "The phase drawing: the design lead draws the screens the plan's pieces change as clickable HTML mock-ups in the phase folder; another role checks them against the pieces and the design system.",
+    "ru": "Чертёж фазы: дизайнер рисует экраны, которые меняют куски плана, кликабельными HTML-макетами в папке фазы; другая роль проверяет их по кускам и дизайн-системе."
+  },
+  "inputs": {
+    "goal": {
+      "type": "string",
+      "required": true
+    },
+    "pieces": {
+      "type": "string",
+      "required": true,
+      "note": "the plan's pieces that change a screen: id, title, promise"
+    },
+    "folder": {
+      "type": "string",
+      "required": true,
+      "note": "the phase folder relative to the project; mock-ups go to <folder>/design/"
+    }
+  },
+  "outputs": {
+    "paths": "string[]",
+    "feasible": "bool",
+    "contradiction": "string",
+    "verdict": "pass|rework",
+    "notes": "string"
+  },
+  "entry": "draw",
+  "budget": {
+    "max_steps": 6,
+    "max_minutes": 60
+  },
+  "nodes": [
+    {
+      "id": "draw",
+      "type": "agent",
+      "role": "specialist:design-lead",
+      "title": {
+        "en": "Draw the screens",
+        "ru": "Нарисовать экраны"
+      },
+      "prompt": "Draw every screen the pieces in `pieces` change, as a clickable gray HTML mock-up (one file per screen) under `<folder>/design/`, following the project's DESIGN.md when there is one. Each file names the piece ids it serves. Write nothing outside `<folder>/design/`.\nList the files you wrote in `paths` (relative to the project). Set `feasible` false and say why in `contradiction` when a piece cannot be drawn as asked (the pieces contradict each other or the design system).",
+      "out": {
+        "paths": "string[]",
+        "feasible": "bool",
+        "contradiction": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 40
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "check",
+      "type": "agent",
+      "role": "plan-critic",
+      "title": {
+        "en": "Check the drawing",
+        "ru": "Проверить чертёж"
+      },
+      "prompt": "Read the mock-ups in `draw.paths` and the pieces in `pieces`. You did not draw them. For each piece: is its screen there, does it show the promised behaviour, does it follow DESIGN.md. Answer `verdict` pass or rework, with `notes` naming what to change; rework only for a missing screen, a broken promise or a design-system break, not for taste.",
+      "out": {
+        "verdict": "pass|rework",
+        "notes": "string"
+      },
+      "guards": {
+        "maxVisits": 2,
+        "timeoutMin": 20
+      },
+      "consumes": [
+        {
+          "kind": "report",
+          "version": 1,
+          "from": "draw"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ]
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "paths": "draw.paths",
+        "feasible": "draw.feasible",
+        "contradiction": "draw.contradiction",
+        "verdict": "check.verdict",
+        "notes": "check.notes"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "draw",
+      "to": "check",
+      "pass": "artifact"
+    },
+    {
+      "from": "check",
+      "to": "draw",
+      "pass": "same-session",
+      "when": "check.verdict == 'rework'"
+    },
+    {
+      "from": "check",
+      "to": "done",
+      "pass": "artifact"
+    }
+  ]
+}

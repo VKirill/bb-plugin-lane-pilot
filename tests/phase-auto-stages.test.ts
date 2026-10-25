@@ -12,6 +12,7 @@ describe("what the machine runs at each stage", () => {
     expect(autoDue(phaseAt("execution", { waveReview: true, execution: { issued: {}, waves: { "1": { packageSha: "p", at: 1, lines: [{ id: "pieces_accepted", ok: true, detail: "" }] } } } } as never))).toEqual({ kind: "review", wave: 1 });
     expect(autoDue(phaseAt("verification", { verification: { verdict: { state: "passed", detail: "ok", inputSha: "x", at: 1, mainSha: null } } } as never))).toEqual({ kind: "close" });
     expect(autoDue(phaseAt("lessons", { lessons: { needed: true, why: "returns" } } as never))).toEqual({ kind: "lessons" });
+    expect(autoDue(phaseAt("design", { design: { decision: "needed", why: "screens" } } as never))).toEqual({ kind: "draw" });
   });
   it("after a return to discussion signs the documents again instead of analysing anew", () => {
     expect(autoDue(phaseAt("discussion", { signedBefore: { docs: [".agents/phases/ph_1/CONTEXT.md"] } }))).toEqual({ kind: "resign" });
@@ -51,7 +52,7 @@ describe("the machine's pass", () => {
     }, {
       api: {
         context: async (input) => { calls.push(`context ${input.docs.join(",")}`); phase = phaseAt("planning", { ...phase.record, context: { docs: [], sha: "c", signedAt: 1 } }); return phase; },
-        plan: () => phase, planCheck: async () => phase, question: (input) => { calls.push(`question ${input.text}`); return phase; }, waveReview: () => phase, goalAudit: () => phase, lessons: () => phase,
+        plan: () => phase, planCheck: async () => phase, question: (input) => { calls.push(`question ${input.text}`); return phase; }, waveReview: () => phase, goalAudit: () => phase, lessons: () => phase, drawing: async () => phase,
       },
       get: () => phase,
       save: (_id, record) => { phase = { ...phase, record }; },
@@ -91,7 +92,7 @@ describe("signing again after a return", () => {
     let idle = false;
     const auto = create({ log: () => undefined }, { workflowEngine: {} as never }, {
       api: { context: async (input) => { signed.push(input.docs); phase = phaseAt("planning", { ...phase.record, context: { docs: [], sha: "c", signedAt: 1 } }); return phase; },
-        plan: () => phase, planCheck: async () => phase, question: () => phase, waveReview: () => phase, goalAudit: () => phase, lessons: () => phase },
+        plan: () => phase, planCheck: async () => phase, question: () => phase, waveReview: () => phase, goalAudit: () => phase, lessons: () => phase, drawing: async () => phase },
       get: () => phase, save: (_id, record) => { phase = { ...phase, record }; }, book: () => undefined, writeDocs: async () => ({ written: [] }),
       runtime: () => ({}), bookHead: () => "h".repeat(64), pmIdle: async () => idle, now: () => 1,
     });

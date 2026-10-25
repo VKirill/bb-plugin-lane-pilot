@@ -9,10 +9,10 @@ import { phaseFolder, planGate, type Phase, type PhaseRecord, type PlanItem, typ
  * do a stage's work and to choose which workflow runs; a stage whose workflow failed twice goes back to the PM's hands, so the
  * train never stands without anyone named.
  */
-export type AutoKind = "analyze" | "plan" | "review" | "close" | "lessons";
+export type AutoKind = "analyze" | "plan" | "draw" | "review" | "close" | "lessons";
 /** Not a workflow: the machine signs again the documents a return to discussion left (the PM's or the owner's correction). */
 export type AutoDue = { kind: AutoKind; wave?: number } | { kind: "resign" };
-export const AUTO_WORKFLOWS: Record<AutoKind, string> = { analyze: "lp.analyze", plan: "lp.plan", review: "lp.review", close: "lp.close", lessons: "retrospective" };
+export const AUTO_WORKFLOWS: Record<AutoKind, string> = { analyze: "lp.analyze", plan: "lp.plan", draw: "lp.draw", review: "lp.review", close: "lp.close", lessons: "retrospective" };
 /** Failed runs of one stage's workflow before the stage is the PM's again. */
 export const AUTO_TRIES = 2;
 
@@ -29,6 +29,7 @@ export function autoDue(phase: Phase): AutoDue | null {
   // Also when the critic approved but the plan gate (code) still refuses: the gate's reasons are the gaps of the next round.
   const gateRefuses = !!r.plan?.critique && r.plan.critique.decision === "approve" && !planGate(r).ok && !r.plan.admittedSha;
   if (phase.stage === "planning" && r.context && (!r.plan || gateRefuses || (r.plan.critique?.decision === "changes_requested" && (r.plan.rounds ?? 0) < 3)) && !tried("plan")) return { kind: "plan" };
+  if (phase.stage === "design" && !r.design?.drawing && !tried("draw")) return { kind: "draw" };
   if (phase.stage === "execution" && r.waveReview) {
     const wave = Object.entries(r.execution?.waves ?? {}).find(([, done]) => done.lines.every((line) => line.ok) && !done.review);
     if (wave && !tried("review")) return { kind: "review", wave: Number(wave[0]) };
@@ -56,6 +57,8 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number })
       return { range: r.execution?.baseSha ? `${r.execution.baseSha}..HEAD` : "HEAD~1..HEAD", dimensions: ["correctness", "tests", "contract"],
         criteria: items.map((item) => `${item.id}: given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}`) };
     }
+    case "draw": return { goal: phase.goal, folder: phaseFolder(phase.id),
+      pieces: (r.plan?.items ?? []).map((item) => `${item.id} — ${item.title}: given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}`).join("\n").slice(0, 8000) };
     case "close": return { goal: phase.goal, summary: r.verification?.verdict?.detail ?? "" };
     case "lessons": return { run_id: phase.runId ?? "" };
   }
@@ -118,6 +121,7 @@ export type AutoApi = {
   waveReview(input: { phaseId: string; wave: number; state: "passed" | "failed"; by: string; summary: string }): Phase;
   goalAudit(input: { phaseId: string; state: "met" | "unmet"; by: string; summary: string }): Phase;
   lessons(input: { phaseId: string; analysis: string; author: string; reviewer: string; reviewedHash: string; by: string }): Phase;
+  drawing(input: { phaseId: string; paths: string[]; designer: string; feasible: boolean; contradiction?: string; reviewer?: string; by: string }): Promise<Phase>;
 };
 
 export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Services, "workflowEngine">, deps: {
@@ -158,6 +162,12 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       // lp.plan has the whole plan critiqued by its own critic role: that is the independent check of this plan.
       const approved = output.status === "ok" && !/reject|changes|rework|fail/i.test(text(output.plan_verdict, 200));
       await deps.api.planCheck({ phaseId: planned.id, decision: approved ? "approve" : "changes_requested", by: `${by}, plan critic`, summary: text(output.plan_verdict, 2000) });
+    } else if (auto.kind === "draw") {
+      if (phase.stage !== "design" || phase.record.design?.drawing) return;
+      if (output.verdict !== "pass") throw new Error(`the drawing's checker asks for rework: ${text(output.notes, 300)}`);
+      const paths = Array.isArray(output.paths) ? (output.paths as unknown[]).map(String) : [];
+      await deps.api.drawing({ phaseId: phase.id, paths, designer: "lp.draw: specialist design-lead", feasible: output.feasible !== false,
+        ...(output.contradiction ? { contradiction: text(output.contradiction, 2000) } : {}), reviewer: "lp.draw: plan-critic", by });
     } else if (auto.kind === "review") {
       const passed = output.status === "pass";
       deps.api.waveReview({ phaseId: phase.id, wave: auto.wave ?? 1, state: passed ? "passed" : "failed", by,
