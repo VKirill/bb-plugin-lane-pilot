@@ -60,7 +60,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | project-life | OnboardingAcceptedEvidence, OnboardingInputPage, ProjectLifeTaskSummary, acceptedOnboardingEvidence, isAllowedProjectLifePath | 6 | 669 | drill: parallel3 |
 | qa | QA_HOST_KEY, mapListedQaHosts, qaSpawnClaimed, runBrowserQaOnHost | 8 | 1169 | tests (1) |
 | receipts | — | 1 | 70 | tests (2) |
-| relay | OWNER_ASK_RENDERER_ID | 11 | 1323 | tests (2) |
+| relay | OWNER_ASK_RENDERER_ID | 11 | 1327 | tests (2) |
 | rollback | rollbackMigrations | 7 | 604 | tests (1) |
 | rule-forms | FormAsk, MECHANISMS, Mechanism, RULES_USAGE, RulesCliDeps, applyJevForms, buildMechanismTask, formDistribution, jevPickForms, listPromotions, mechanismFor, promotionWhy, proposePromotions, runRulesCli | 5 | 429 | tests (2) |
 | run-goal | GoalVerdict, MIN_ACCEPTED, RedCheck, RunGoalRecord, TaskState, getRunGoal, goalVerdict, pmGoalMessage, runGoalMigrations, runReady | 8 | 235 | tests (2) |
@@ -196,7 +196,7 @@ States: (new), queued, spawn_requested, running, spawn_rejected, spawn_unknown, 
 | src/rooms/council/ui/office-character.ts | 725 |
 | src/rooms/council/ui/office-behaviour.ts | 720 |
 | src/rooms/council/ui/office-props-b.ts | 703 |
-| src/rooms/relay/server/relay.ts | 692 |
+| src/rooms/relay/server/relay.ts | 696 |
 | src/rooms/council/ui/office-scene.ts | 685 |
 | src/rooms/council/ui/office-props-a.ts | 683 |
 | src/rooms/tools/server/cli.ts | 673 |

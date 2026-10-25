@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.323
+
+**A reload does not leave Lane Pilot degraded.** The rollback of a deploy whose drill went red (the opencode2 provider was briefly unavailable on the Mac mini) reloaded the plugin, and the `relay-sweep` service was still inside a sweep under load when BB's stop deadline came: the plugin stayed «degraded: service relay-sweep did not stop», not running, until a manual reload. The service now stops at once on abort: it no longer waits for a sweep or a watch refresh that is still going.
+
 ## 0.1.322
 
 **The plan is written by a strong model, not by the plan's cheap checker.** A generic agent step with the role `planner` took its model from the `plan_critique` stage, the one chosen to check plans: with it set to Haiku 5.5, Haiku wrote every phase plan and Haiku checked it. The planner now borrows no stage: it runs on the generic workflow-agent model, else the PM chat's model (Opus 5.5 in the live project), else Opus 5.5 high, and its step's model can be set in the Models table; the critic keeps `plan_critique`, so another model checks the plan. The judgment step of a phase's analysis (`lp.analyze` / assess: decisions, risks, scope) runs on the `strong` preset; gathering stays on the reading model.

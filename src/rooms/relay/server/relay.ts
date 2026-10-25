@@ -642,10 +642,14 @@ export function mountRelay(ctx:ServerContext):Relay {
   } }); } catch (cause) { ctx.log(`relay: no thread events, sweep only: ${cause instanceof Error ? cause.message : String(cause)}`); }
   if (unsubscribe) bb.onDispose(unsubscribe);
   bb.background.service("relay-sweep", { start:async (signal) => {
+    // A stop does not wait for a sweep that is still going: under load one outlived BB's stop deadline and the plugin was left
+    // degraded («service relay-sweep did not stop») after a rollback reload (2026-10-25).
+    const stopped = new Promise<null>((resolve) => { if (signal.aborted) resolve(null); else signal.addEventListener("abort", () => resolve(null), { once:true }); });
     while (!signal.aborted) {
-      const result = await relay.sweep().catch((cause) => { ctx.log(`relay sweep failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
+      const result = await Promise.race([relay.sweep().catch((cause) => { ctx.log(`relay sweep failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; }), stopped]);
+      if (signal.aborted) break;
       if (result && (result.fired || result.settled)) ctx.log(`relay: fired ${result.fired}, settled ${result.settled}`);
-      await refreshWatched();
+      await Promise.race([refreshWatched(), stopped]);
       await new Promise((wake) => { const timer = setTimeout(wake, 30_000); signal.addEventListener("abort", () => { clearTimeout(timer); wake(null); }, { once:true }); });
     }
   } });
