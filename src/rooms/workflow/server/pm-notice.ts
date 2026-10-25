@@ -60,6 +60,8 @@ export async function maybeNotifyWorkflowRun(input: {
   if (!isNoticeStatus(run.status)) return false;
   if (run.parent_run_id) return false;
   if (run.workflow_id === LP_TASK_PIPELINE || run.idem_key?.startsWith("lp-task:")) return false;
+  // A phase's stage run reports through the phase's gates and book; a notice of each one had the PM step into the machine's stage (live, 2026-10-25).
+  if (run.idem_key?.startsWith("phase:")) return false;
   if (!input.pmThreadId) return false;
   // A scheduled run is not watched live, but what it was scheduled for (a report, a digest) is the owner's: the PM shows it. Its
   // failures are the schedule board's to tell (the live weekly report reached no one, 2026-10-25).

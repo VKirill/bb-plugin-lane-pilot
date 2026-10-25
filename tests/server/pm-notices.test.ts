@@ -107,6 +107,12 @@ describe("workflow PM notices", () => {
     expect(await maybeNotifyWorkflowRun({ bb, log: () => undefined, run: runRow({ id: "wfrun_f", status: "failed", output_json: JSON.stringify({ report_md: "x" }) }), pmThreadId, startedBySchedule: true })).toBe(false);
   });
 
+  it("sends no notice for a phase's stage run: it reports through the phase's gates", async () => {
+    const { bb, sends } = noticeBb();
+    expect(await maybeNotifyWorkflowRun({ bb, log: () => undefined, run: runRow({ idem_key: "phase:ph_1:plan:1:1" }), pmThreadId, startedBySchedule: false })).toBe(false);
+    expect(sends).toEqual([]);
+  });
+
   it("sends no notice for a schedule-started run or a run with no PM chat", async () => {
     const { bb, sends } = noticeBb();
     expect(await maybeNotifyWorkflowRun({ bb, log: () => undefined, run: runRow(), pmThreadId, startedBySchedule: true })).toBe(false);
