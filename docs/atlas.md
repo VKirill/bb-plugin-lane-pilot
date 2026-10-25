@@ -19,7 +19,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | atlas | AtlasInput, AtlasRoom, atlasHash, atlasStructure, renderAtlas | 2 | 66 | tests (1) |
 | backlog | BacklogBoard, MAX_ESTIMATE, TodoMeta, backlogBoard, backlogMigrations, backlogReadCommand, issueMessage, parseBacklogOutput, parseTodoMeta | 5 | 157 | tests (1) |
 | baseline | BaselineRecord, NO_RED_KINDS, RegressionRecord, baselineMigrations, getBaseline, listBaselines, listRegressions | 9 | 1063 | tests (4) |
-| bench | BenchProjectControl, benchMigrations, getBenchProject, saveVerdict, verdictForHarness | 17 | 1664 | tests (2) |
+| bench | BenchProjectControl, benchMigrations, getBenchProject, saveVerdict, verdictForHarness | 17 | 1674 | tests (2) |
 | capability | CAPABILITIES, Capability, CapabilityReceipt, CapabilityState, adapterVersions, capabilityMigrations, capabilityTable, dueProbes, listReceipts, probeSetupFailed, providersInUse | 8 | 225 | drill: helper_providers |
 | checkers | checkerMigrations | 16 | 1493 | drill: checkers |
 | cockpit | cockpitRpc | 9 | 883 | tests (1) |
