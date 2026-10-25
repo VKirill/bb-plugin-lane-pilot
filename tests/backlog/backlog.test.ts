@@ -52,7 +52,7 @@ describe("the scanner", () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const sent: Array<{ threadId: string; text: string }> = [];
     harness.sdk.stub("threads.send", async (args: { threadId: string; input: Array<{ text: string }> }) => { sent.push({ threadId: args.threadId, text: args.input[0]!.text }); return undefined; });
-    harness.sdk.stub("threads.getPluginMetadata", async ({ threadId }: { threadId: string }) => ({ role: threadId === "thr_pm" ? "pm" : "workflow-architect" }));
+    harness.sdk.stub("threads.getPluginMetadata", async ({ threadId }: { threadId: string }) => (threadId === "thr_pm" ? { role: "pm" } : { role: "pm", architectProjectId: "P" }));
     const db = openDatabase(bb);
     savePrototypeConfig(db, { projectId: "P", hostId: "h", pmWorkspacePath: "/repo", writerWorkspacePath: "/repo", pmProviderId: "p", pmModel: "m", writerProviderId: "p", writerModel: "m" });
     createRun(db, "run_cli", "P", "cli", "/repo");

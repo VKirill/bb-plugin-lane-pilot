@@ -89,7 +89,7 @@ function fakeAutomations(failures: { update?: Error; remove?: Error } = {}) {
 
 function world(options: { items?: StoredWorkflow[]; project?: "ok" | "no_machine"; pm?: boolean; preflight?: TriggerDeps["preflight"]; automations?: AutomationsPort } = {}) {
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
-  harness.sdk.stub("threads.getPluginMetadata", async ({ threadId }: { threadId: string }) => ({ role: threadId === PM ? "pm" : "workflow-architect" }));
+  harness.sdk.stub("threads.getPluginMetadata", async ({ threadId }: { threadId: string }) => (threadId === PM ? { role: "pm" } : { role: "pm", architectProjectId: PROJECT }));
   const db: LanePilotDatabase = openDatabase(bb);
   if (options.pm !== false) { createRun(db, RUN, PROJECT, "cli"); setRunThread(db, RUN, PM); }
   const engine = new WorkflowEngine({ db, harnessVersion: "1.0.0" });

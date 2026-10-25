@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.315
+
+**The architect's chat is told apart by its mark, not its role.** The second real run of the weekly report went to an architect's chat again: an architect's thread carries the role pm too (its Lane Pilot tools need it), so the 0.1.314 filter let it through. The owner's PM chat is now a pm chat without `architectProjectId`, for triggered runs, schedule failure notices and the backlog's task alike.
+
 ## 0.1.314
 
 **A scheduled workflow reports to the PM chat, not to an architect.** The first real run of the chain the architect built (weekly changed files) was started the way its schedule starts it. Its errand ran `git log` and wrote the report, and the report went to the chat of another workflow architect, which read it as someone else's: a run without the project's activation took «the newest open run with a chat», and every architect's chat has one. A triggered run (and the backlog's task of the day) now goes only to a chat whose role is PM.

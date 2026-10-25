@@ -18,10 +18,10 @@ export function createBacklog(ctx: ServerCore) {
   async function pmOf(projectId: string, now: number): Promise<string | null> {
     const rows = db.prepare("SELECT pm_thread_id FROM lane_pilot_run WHERE project_id=? AND kind='cli' AND pm_thread_id IS NOT NULL AND updated_at>=? ORDER BY updated_at DESC LIMIT 20")
       .all(projectId, now - 14 * DAY) as Array<{ pm_thread_id: string }>;
-    // A workflow architect's chat has a run too; the backlog's task goes to a PM chat only.
+    // A workflow architect's chat has a run and the role pm too, marked by architectProjectId; the backlog's task goes to the owner's PM chat only.
     for (const row of rows) {
       const metadata = await bb.sdk.threads.getPluginMetadata({ threadId: row.pm_thread_id }).catch(() => null) as Record<string, unknown> | null;
-      if (metadata?.role === "pm") return row.pm_thread_id;
+      if (metadata?.role === "pm" && !metadata.architectProjectId) return row.pm_thread_id;
     }
     return null;
   }

@@ -102,10 +102,11 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     const active = activation ? getRun(db, activation.run_id) : undefined;
     if (active && !active.closed_at && active.pm_thread_id) return { pmThreadId: active.pm_thread_id, runId: active.id };
     const rows = db.prepare("SELECT id, pm_thread_id FROM lane_pilot_run WHERE kind='cli' AND project_id=? AND closed_at IS NULL AND pm_thread_id IS NOT NULL ORDER BY created_at DESC LIMIT 20").all(projectId) as Array<{ id: string; pm_thread_id: string }>;
-    // A workflow architect's chat has an open run too: a scheduled report sent there was read as someone else's (live, 2026-10-25). Only a PM chat takes a run.
+    // A workflow architect's chat has an open run and the role pm too (its tools need it), marked by architectProjectId: a scheduled
+    // report sent there was read as someone else's (live, 2026-10-25). Only the owner's PM chat takes a run.
     for (const row of rows) {
       const metadata = await ctx.bb.sdk.threads.getPluginMetadata({ threadId: row.pm_thread_id }).catch(() => null) as Record<string, unknown> | null;
-      if (metadata?.role === "pm") return { pmThreadId: row.pm_thread_id, runId: row.id };
+      if (metadata?.role === "pm" && !metadata.architectProjectId) return { pmThreadId: row.pm_thread_id, runId: row.id };
     }
     return null;
   }
