@@ -54,7 +54,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | owner-presence | PRESENCE_FILE, PRESENCE_WINDOW_MS, Presence, presenceHold, readPresence | 4 | 76 | tests (2) |
 | owner-waiting | Overnight, OwnerAction, OwnerEvidence, OwnerItem, OwnerWaiting, PostOwnerItem, closeOwnerItem, collectOwnerWaiting, ownerWaitingCounts, ownerWaitingMigrations, postOwnerItem | 9 | 598 | tests (3) |
 | permits | — | 1 | 54 | tests (1) |
-| phase | ACCEPTANCE_LINES, AcceptanceLine, BOOK_SECTIONS, BookPart, BookSection, ContextDoc, FrozenVerdict, GENESIS, GateResult, NextAction, PHASE_STAGES, Phase, PhaseRecord, PhaseStage, PhaseState, PlanItem, RETURN_STAGES, TaskFact, acceptanceLines, blindVerdict, brokenLink, canonical, contextSignature, designDecision, designGate, discussionGate, executionGate, getPhase, issuable, lessonsNeeded, listParts, listPhases, nextAction, partHash, phaseMigrations, pieceProblems, planGate, planSignature, renderBook, staleAfterReturn, waveProblems | 13 | 2278 | drill: phase |
+| phase | ACCEPTANCE_LINES, AcceptanceLine, BOOK_SECTIONS, BookPart, BookSection, ContextDoc, FrozenVerdict, GENESIS, GateResult, NextAction, PHASE_STAGES, Phase, PhaseRecord, PhaseStage, PhaseState, PlanItem, RETURN_STAGES, TaskFact, acceptanceLines, blindVerdict, brokenLink, canonical, contextSignature, designDecision, designGate, discussionGate, executionGate, getPhase, issuable, lessonsNeeded, listParts, listPhases, nextAction, partHash, phaseMigrations, pieceProblems, planGate, planSignature, renderBook, staleAfterReturn, waveProblems | 13 | 2294 | drill: phase |
 | pilot | PILOT_MIN_SIBLINGS, RunTask, pilotOf, runTasks | 3 | 51 | tests (2) |
 | policy | ChangeDescriptor, EXAM_RESULT_KEY, POLICY, POLICY_USAGE, StoredExam, TIERS, Tier, authorize, classifyChange, collectAndAppend, composeMorningList, explainChange, globMatch, loadLiveExam, recordOwnerDecision, runExam, runLiveExam, runPolicyCli, shouldStopCycle | 8 | 673 | tests (2) |
 | project-life | OnboardingAcceptedEvidence, OnboardingInputPage, ProjectLifeTaskSummary, acceptedOnboardingEvidence, isAllowedProjectLifePath | 6 | 669 | drill: parallel3 |
@@ -83,7 +83,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | wall | wallDeferralKindMigrations, wallMigrations | 20 | 2321 | tests (4) |
 | wires | WIRE_MARK, Wire, WireHop, WireResult, brokenWireReason, readWires, wiresCommand | 2 | 52 | tests (2) |
 | work-graph | AttemptIn, CellState, CostState, ExecutorRow, GRAPH_STAGES, GraphStats, ModelStageStat, ReceiptIn, Role, StageBlock, StageCell, StageEventIn, StageStat, TaskGraph, TaskSummary, Tokens, UsageIn, graphStats, median, roleOf, stageCells, taskGraph | 11 | 642 | tests (2) |
-| workflow | DraftCheck, DraftOp, DraftScope, DraftTestResult, LP_TASK_PIPELINE, NodeExecutor, RawDefinition, Refusal, RunSummary, StepContext, ValidateOptions, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY, WORKFLOW_ARCHITECT_TOOLS, Workflow, WorkflowEngine, WorkflowProblem, builtinWorkflow | 51 | 8159 | tests (3) |
+| workflow | DraftCheck, DraftOp, DraftScope, DraftTestResult, LP_TASK_PIPELINE, NodeExecutor, RawDefinition, Refusal, RunSummary, StepContext, ValidateOptions, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY, WORKFLOW_ARCHITECT_TOOLS, Workflow, WorkflowEngine, WorkflowProblem, builtinWorkflow | 51 | 8187 | tests (3) |
 | world | worldMigrations | 7 | 534 | tests (4) |
 | world-assets | — | 2 | 65 | tests (4) |
 | writer | DirtSnapshot, attachStreamRetry, attemptProduced, buildCliInvocation, droppedStreamDetail, memoryLine, parseDirtSnapshots, pathAnchors, resolveStageWriterSelection, reviewerMemoryPicks, runCliOnHost, runCommandOnHost, writePmSettingsOnHost, writerBriefStats, writerFallbackChain, writerFallbackKeys, writerFallbacks, writerMemory, writerMemoryPicks, writerReuseStats | 41 | 7923 | drill: parallel3 |
@@ -188,7 +188,7 @@ States: (new), queued, spawn_requested, running, spawn_rejected, spawn_unknown, 
 | src/rooms/verification/git-integrate.ts | 941 |
 | src/rooms/writer/server/finish.ts | 915 |
 | src/rooms/host-worker/host-handlers.ts | 884 |
-| src/rooms/phase/server/driver.ts | 787 |
+| src/rooms/phase/server/driver.ts | 790 |
 | src/rooms/council/ui/office-layout.ts | 786 |
 | src/rooms/native-install/coexistence.ts | 771 |
 | src/rooms/docs/server/docs-nightly.ts | 757 |

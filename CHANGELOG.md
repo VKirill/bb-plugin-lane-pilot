@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.1.311
+
+**A new process is built by the machine.** A request the Jev judgment reads as a new process (a routine the system should run again and again) now starts the workflow architect with the owner's words as its order: it builds the chain without a conversation — a draft, a clean validator, its test cases run green, publish — and sends one line to the PM chat. While it works, `lane_pilot_dispatch_writer` names the architect's chat instead of dispatching the request by hand (Matvey #31916: «any new process becomes a small graph»).
+
+**A check written as prose runs its command.** The second live small job (the README licence) was blocked: the planner wrote a check as «`npm test > /tmp/t1-test.log 2>&1; echo $?` prints `0`», the envelope turned the sentence into a command, and the shell ran the backticks as command substitution (exit 127). A check written as a string now runs its first code span; the planner of `lp.plan` is told the task-v2 envelope, checks as `{command, cwd}` objects.
+
+The SMA map's two proofs into the BB core follow the composer's move (ComposerBox, the composer plugin's AttachmentPreview).
+
 ## 0.1.310
 
 **The small-task graph does not stop on the planner's envelope or for the owner.** The first live small job down the machine-started graph (issue-quick, «add a license section to the README») stood for the owner after three plan rounds:
