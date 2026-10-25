@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.308
+
+**The PM is the door; it does not do the machine's stages.** In the first live phase under 0.1.307 (ph_e0fa42db85, the sandbox's timers) the machine ran the analysis, wrote CONTEXT.md and signed it, but the PM, faster than the next pass, submitted the plan itself. `lane_pilot_phase` now refuses a PM's `context`, `plan`, `plan_check`, `wave_review` or `goal_audit` for any stage the machine runs or would run on its next pass; the PM answers the stages' questions, relays the owner's corrections (`revise`, `return`, `correct`) and reports only what the machine leaves to it (the drawing, the lessons, a stage after two failed runs). Back at discussion after a return, the machine signs the returned documents again once the PM is idle (`signedBefore`) instead of analysing anew and writing over the PM's correction; a stage result is not written over a stage that moved meanwhile.
+
 ## 0.1.307
 
 **A small job goes down the small-task graph, started by the machine.** A small job or a batch of fixes, read as such by the Jev judgment `intake.weight`, now starts the small-task graph itself — workflow `issue-quick` (triage, plan, build, report) in the PM chat's run — instead of waiting for the PM to choose a way to do it; its result comes to the chat. While that run works, `lane_pilot_dispatch_writer` refuses to hand the same request out by hand. The length rule alone no longer calls a short line «small» for sure: a remark must not start a build, so only the judgment's word starts the graph. `phase.train off` leaves small jobs to the PM as before.
