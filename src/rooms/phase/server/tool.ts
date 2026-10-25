@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ToolError, registerObservedTool, type ServerCore, type Services } from "../../core/server";
 import { taskV2Schema } from "../../contracts";
 import { PhaseRefusal } from "./driver";
+import { autoDue } from "./auto-stages";
 import { STAGE_RUBRICS } from "../stages";
 
 /**
@@ -60,16 +61,21 @@ export function registerPhaseTool(ctx: ServerCore, services: Services): void {
   registerObservedTool(ctx.bb.agents, {
     name: "lane_pilot_phase",
     description: "A phase on rails: the owner's goal taken through discussion, planning, design, execution, verification, acceptance and lessons; Lane Pilot checks each stage in code and moves the phase.",
-    instructions: "Rails by default: when the owner's message is a heavy goal (several dependent tasks, a feature, a redesign), Lane Pilot opens its phase itself and tells you the stage's step; the work of that request is then not dispatched by hand. Small jobs, batches of fixes and questions keep the usual road. `open` (title, goal) starts a phase at discussion yourself. Lane Pilot then tells you, at every turn, the one thing the stage needs; do that and report it here: `context` (docs: the discussion's files in the project — Lane Pilot reads and signs them), `plan` (items: each {id, title, wave, promise:{given, when, then}, task:<task-v2 with the same id>}; depends_on only on pieces of earlier waves), `plan_check` (the independent checker's decision), `drawing` (paths, designer, feasible, reviewer — another role than the designer), `goal_audit` (the lp.close audit: met or unmet), `lessons` (analysis and its reviewer). You do not dispatch the plan's pieces: Lane Pilot issues each wave itself once the plan is admitted and the previous wave is accepted, runs the blind verification and the acceptance lines, and tells you what holds. A refusal lists exactly which gate failed. Controls: `return` (to an earlier stage with a note — from execution back to discussion is allowed), `pause` / `resume`, `stop_wave` (cancels the queued pieces), `compensate` (reverts the accepted pieces), `close` (with the words why it ends). `status` shows the phase, its next action and its book; `next` only the next step; `rubric` the order of work and the blocking antipatterns of a stage. Open a roadmap row with roadmapRow (lane-plan ROADMAP.md): when the phase closes Lane Pilot writes SUMMARY.md, marks the row and STATE, and names the next row (with phase.autonomous on it opens it). A piece may name covers:[requirement and locked decision ids] — the plan must cover every id given at context.",
+    instructions: "The machine drives the train: when the owner's message is a heavy goal, Lane Pilot opens its phase and runs the stages itself — the analysis and CONTEXT.md, the plan with its critic, the waves, the wave review, the goal audit — and reports them through the gates; a small job or a batch goes down the small-task graph on its own. You are the door: you talk with the owner, answer the stages' questions (`answer`), relay the owner's corrections (`revise`, `return`, `correct`) and report only what Lane Pilot leaves to you (the drawing, the lessons, a stage after two failed runs); a report of a stage the machine runs is refused. `open` (title, goal) starts a phase at discussion yourself. Lane Pilot then tells you, at every turn, the one thing the stage needs; do that and report it here: `context` (docs: the discussion's files in the project — Lane Pilot reads and signs them), `plan` (items: each {id, title, wave, promise:{given, when, then}, task:<task-v2 with the same id>}; depends_on only on pieces of earlier waves), `plan_check` (the independent checker's decision), `drawing` (paths, designer, feasible, reviewer — another role than the designer), `goal_audit` (the lp.close audit: met or unmet), `lessons` (analysis and its reviewer). You do not dispatch the plan's pieces: Lane Pilot issues each wave itself once the plan is admitted and the previous wave is accepted, runs the blind verification and the acceptance lines, and tells you what holds. A refusal lists exactly which gate failed. Controls: `return` (to an earlier stage with a note — from execution back to discussion is allowed), `pause` / `resume`, `stop_wave` (cancels the queued pieces), `compensate` (reverts the accepted pieces), `close` (with the words why it ends). `status` shows the phase, its next action and its book; `next` only the next step; `rubric` the order of work and the blocking antipatterns of a stage. Open a roadmap row with roadmapRow (lane-plan ROADMAP.md): when the phase closes Lane Pilot writes SUMMARY.md, marks the row and STATE, and names the next row (with phase.autonomous on it opens it). A piece may name covers:[requirement and locked decision ids] — the plan must cover every id given at context.",
     parameters: phaseToolParams,
     execute: async (input, context) => {
       const api = services.phases;
       try {
-        // A stage the machine runs is not reported by the PM: the workflow's result goes through the gates by itself.
-        const STAGE_REPORTS = ["context", "plan", "plan_check", "wave_review", "goal_audit"];
-        if (STAGE_REPORTS.includes(input.action) && "phaseId" in input && input.phaseId) {
-          const auto = api.status(input.phaseId).phase.record.auto;
-          if (auto) throw new PhaseRefusal(`Lane Pilot runs this stage itself (workflow ${auto.kind === "analyze" ? "lp.analyze" : auto.kind === "plan" ? "lp.plan" : auto.kind === "review" ? "lp.review" : "lp.close"}, run ${auto.wfRunId}); its result goes through the gates by itself and you get the next step. Do not report it; tell the owner where the phase is if he asks.`);
+        // A stage the machine runs — or would run on its next pass — is not reported by the PM: the machine drives the train, the PM is
+        // the door (Matvey #31766). It reports only what the machine leaves to it: the drawing, the lessons, a stage after two failed runs.
+        const OWN: Record<string, string[]> = { context: ["analyze", "resign"], plan: ["plan"], plan_check: ["plan"], wave_review: ["review"], goal_audit: ["close"] };
+        if (OWN[input.action] && "phaseId" in input && input.phaseId) {
+          const phase = api.status(input.phaseId).phase;
+          const auto = phase.record.auto;
+          const due = autoDue(phase);
+          if (auto || (due && OWN[input.action]!.includes(due.kind))) {
+            throw new PhaseRefusal(`Lane Pilot runs this stage itself${auto ? ` (run ${auto.wfRunId})` : " on its next pass"}; its result goes through the gates by itself and you get the next step. Do not report it; tell the owner where the phase is if he asks, and answer the stage's questions (answer) when they come.`);
+          }
         }
         switch (input.action) {
           case "open": {
