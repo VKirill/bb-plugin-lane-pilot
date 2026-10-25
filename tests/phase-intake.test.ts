@@ -118,9 +118,6 @@ describe("a new process", () => {
     await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_p", kind: "process", by: "jev", phaseId: null, at: 1 });
     expect(await intake.dispatchRefusal("thr_pm")).toMatch(/lane_pilot_forge/);
     expect(await intake.dispatchRefusal("thr_pm")).toBeNull();
-    // Read with the judgment's word, the request is the graph's: dispatching it by hand is refused while the run works.
-    await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_s", kind: "small", by: "jev", phaseId: null, at: 1, wfRunId: "wfrun_1" });
-    expect(await intake.dispatchRefusal("thr_pm")).toMatch(/small-task graph[\s\S]*wfrun_1/);
   });
 });
 
@@ -142,6 +139,9 @@ describe("the small-task graph", () => {
     expect(await intake.take("thr_pm")).toMatchObject({ kind: "small", by: "rules" });
     expect(started).toEqual([]);
     expect(await intake.dispatchRefusal("thr_pm")).toBeNull();
+    // Read with the judgment's word, the request is the graph's: dispatching it by hand is refused while the run works.
+    await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_s", kind: "small", by: "jev", phaseId: null, at: 1, wfRunId: "wfrun_1" });
+    expect(await intake.dispatchRefusal("thr_pm")).toMatch(/small-task graph[\s\S]*wfrun_1/);
     // Read with the judgment's word, the request is the graph's: dispatching it by hand is refused while the run works.
     await bb.storage.kv.set("phase-intake:thr_pm", { requestId: "creq_s", kind: "small", by: "jev", phaseId: null, at: 1, wfRunId: "wfrun_1" });
     expect(await intake.dispatchRefusal("thr_pm")).toMatch(/small-task graph[\s\S]*wfrun_1/);
