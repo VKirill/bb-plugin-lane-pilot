@@ -23,6 +23,8 @@ export type LintInput = {
   hostId:string;
   /** Kinds of lintProbePaths on the workspace's machine; null when that machine could not be asked (those rules then stay silent). */
   kinds:ReadonlyMap<string, PathKind> | null;
+  /** File names in the siblingTestFolders on the workspace's machine (absolute folder → names); absent or null when it was not asked. */
+  listings?:ReadonlyMap<string, readonly string[]> | null;
   sandboxUnsafe:readonly string[];
   /** Is the check command runnable: the programs the checks start, and whether the writer's machine finds them; null when it was not asked. */
   programs?:ReadonlyMap<string, boolean> | null;
@@ -147,6 +149,53 @@ export function siblingTestCandidates(task:Pick<TaskV2, "owns_paths">):Array<{ o
   return found;
 }
 
+const TEST_NAME = /\.(?:test|spec)\.[cm]?[jt]sx?$/, CODE_NAME = /\.(?:[cm]?[jt]sx?|vue)$/;
+const MAX_LISTED_FOLDERS = 64;
+
+/** The owned code files whose tests may carry a longer name: a plain path to a TS/JS/Vue file that is not a test or an index. */
+function ownedCodeFiles(task:Pick<TaskV2, "owns_paths">):Array<{ owned:string; dir:string; stem:string }> {
+  const found:Array<{ owned:string; dir:string; stem:string }> = [];
+  for (const raw of task.owns_paths) {
+    const owned = raw.replace(/^\.\//, "");
+    const slash = owned.lastIndexOf("/");
+    const dir = slash < 0 ? "" : owned.slice(0, slash + 1), name = owned.slice(slash + 1);
+    if (!name || /[*?[]/.test(owned) || TEST_FILE.test(owned) || !(TS_SOURCE.test(name) || JS_SOURCE.test(name))) continue;
+    const stem = name.replace(/\.[^.]+$/, "");
+    if (stem && stem !== "index") found.push({ owned, dir, stem });
+  }
+  return found;
+}
+
+/** Absolute folders the lint lists for tests named after an owned code file: the file's own folder and its «__tests__». */
+export function siblingTestFolders(task:Pick<TaskV2, "owns_paths">, workspacePath:string):string[] {
+  const folders = ownedCodeFiles(task).flatMap(({ dir }) => [resolve(workspacePath, dir || "."), resolve(workspacePath, `${dir}__tests__`)]);
+  return [...new Set(folders)].slice(0, MAX_LISTED_FOLDERS);
+}
+
+/**
+ * The tests next to an owned code file that carry a longer name: «composables/api/shoot.ts» → «composables/api/__tests__/shoot-seo-audit.test.ts»
+ * («shoot» and then «-», «_» or «.»), read from the folder listings. A test whose longer name is another code file's in that folder
+ * («tools-hubs.test.ts» beside «tools-hubs.ts») is that file's, not the owned one's.
+ */
+export function namedTestCandidates(task:Pick<TaskV2, "owns_paths">, workspacePath:string, listings:ReadonlyMap<string, readonly string[]>):Array<{ owned:string; test:string }> {
+  const found:Array<{ owned:string; test:string }> = [];
+  const stemOf = (name:string) => name.replace(/\.(?:test|spec)\.[^.]+$/, "").replace(/\.[^.]+$/, "");
+  const startsAs = (testStem:string, stem:string) => testStem === stem || ["-", "_", "."].some((sep) => testStem.startsWith(`${stem}${sep}`));
+  for (const { owned, dir, stem } of ownedCodeFiles(task)) {
+    const here = listings.get(resolve(workspacePath, dir || ".")) ?? [];
+    const codeStems = here.filter((name) => CODE_NAME.test(name) && !TEST_NAME.test(name)).map(stemOf);
+    for (const [where, names] of [[dir, here], [`${dir}__tests__/`, listings.get(resolve(workspacePath, `${dir}__tests__`)) ?? []]] as const) {
+      for (const name of names) {
+        if (!TEST_NAME.test(name)) continue;
+        const testStem = stemOf(name);
+        if (!startsAs(testStem, stem) || codeStems.some((other) => other.length > stem.length && startsAs(testStem, other))) continue;
+        found.push({ owned, test:`${where}${name}` });
+      }
+    }
+  }
+  return found;
+}
+
 /** Absolute paths whose kind the workspace's machine must report: the read_first files, the bare words of check filters, the tests next to owned files. */
 export function lintProbePaths(task:TaskV2, workspacePath:string):string[] {
   let hints:string[] = [];
@@ -248,13 +297,27 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
   // An owned code file's own test is the task's too: the writer updates it with the code, and an edit outside owns_paths
   // rejects the attempt (SelfyStudio cards-postpay-bind-v2, greeting-card-pages-en, en-hreflang-sitemap-fix, 2026-10-11…12:
   // each owned «x.ts» or «useGreetingCard*», not «__tests__/x.test.ts», and lost an attempt to it). never_touch says «leave it».
-  const flagged = new Set<string>();
-  for (const candidate of siblingTestCandidates(task)) {
-    const present = candidate.folder ? kindOf(resolve(input.workspacePath, candidate.folder)) === "directory" : kindOf(resolve(input.workspacePath, candidate.test)) === "file";
-    if (!present || flagged.has(candidate.test) || flagged.size >= 5) continue;
+  // A test named longer than the code («api/shoot.ts» → «api/__tests__/shoot-seo-audit.test.ts») comes from the folder listings: SelfyStudio
+  // site-en-shoot, site-seo-polish, site-vitest-alias-fix and site-en-hydration-fix (2026-10-24) each owned shoot.ts, cards.ts or models.ts,
+  // not the «shoot-seo-audit», «cards-seo-audit» or «models-en» test the change turned red, and lost an attempt to it.
+  // One finding per owned file names all of its unowned tests, so the PM fixes them in one pass (site-seo-polish had nine).
+  const flagged = new Map<string, { owned:string; folder?:string; tests:string[] }>();
+  const named = input.listings ? namedTestCandidates(task, input.workspacePath, input.listings).map((candidate) => ({ ...candidate, folder:undefined, listed:true })) : [];
+  const seen = new Set<string>();
+  for (const candidate of [...siblingTestCandidates(task).map((candidate) => ({ ...candidate, listed:false })), ...named]) {
+    const present = candidate.listed || (candidate.folder ? kindOf(resolve(input.workspacePath, candidate.folder)) === "directory" : kindOf(resolve(input.workspacePath, candidate.test)) === "file");
+    if (!present || seen.has(candidate.test) || seen.size >= 20) continue;
     if (fileAllowedByOwns(candidate.test, task.owns_paths) || fileBlockedByNeverTouch(candidate.test, task.never_touch)) continue;
-    flagged.add(candidate.test);
-    errors.push({ code:"test_unowned", message:`owns_paths ${candidate.owned} has ${candidate.folder ? "tests in" : "its test"} ${candidate.folder ?? candidate.test} outside owns_paths; the writer updates the tests of the code it changes and an edit there rejects the attempt, so add ${candidate.test} to owns_paths, or to never_touch if the writer must leave it as it is` });
+    const key = `${candidate.owned}\u0000${candidate.folder ?? ""}`;
+    if (!flagged.has(key) && flagged.size >= 5) continue;
+    seen.add(candidate.test);
+    const group = flagged.get(key) ?? { owned:candidate.owned, ...(candidate.folder ? { folder:candidate.folder } : {}), tests:[] };
+    group.tests.push(candidate.test);
+    flagged.set(key, group);
+  }
+  for (const { owned, folder, tests } of flagged.values()) {
+    const what = folder ? `tests in ${folder}` : tests.length > 1 ? `its tests ${tests.join(", ")}` : `its test ${tests[0]}`;
+    errors.push({ code:"test_unowned", message:`owns_paths ${owned} has ${what} outside owns_paths; the writer updates the tests of the code it changes and an edit there rejects the attempt, so add ${tests.join(", ")} to owns_paths, or to never_touch if the writer must leave ${tests.length > 1 ? "them" : "it"} as ${tests.length > 1 ? "they are" : "it is"}` });
   }
 
   // A check that cannot fail proves nothing; a task of medium risk or more needs one that fails until its work exists.

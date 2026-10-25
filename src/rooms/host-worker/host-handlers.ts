@@ -426,6 +426,18 @@ export const whichPrograms: ExperimentalHostRpcHandlers<typeof hostContract>["wh
   return { hostId: process.env.BB_HOST_ID ?? input.requestedHostId, found };
 };
 
+const LIST_FOLDER_MAX = 500;
+
+/** The file names in each folder, for the contract lint's tests next to owned code («shoot.ts» → «__tests__/shoot-seo-audit.test.ts»). */
+export const listFolders: ExperimentalHostRpcHandlers<typeof hostContract>["listFolders"] = async (input) => ({
+  hostId: process.env.BB_HOST_ID ?? input.requestedHostId,
+  entries: await Promise.all(input.paths.map(async (path) => {
+    const names = await readdir(path, { withFileTypes:true })
+      .then((entries) => entries.filter((entry) => entry.isFile() || entry.isSymbolicLink()).map((entry) => entry.name).sort(), () => [] as string[]);
+    return { path, names:names.slice(0, LIST_FOLDER_MAX), truncated:names.length > LIST_FOLDER_MAX };
+  })),
+});
+
 /** The phase book (BOOK.md) and the phase's own files, only inside `.agents/phases/<phase-id>/` (src/rooms/phase). */
 export const writePhaseBook: ExperimentalHostRpcHandlers<typeof hostContract>["writePhaseBook"] = async (input) =>
   casWriteMarkdown({ ...input, confirmed:true }, 2_000_000, (path) => (/^\.agents\/phases\/ph_[a-z0-9]{6,}\/[^/]+(\/[^/]+)*$/.test(path) || /^\.agents\/planning\/(STATE|ROADMAP)\.md$/.test(path)) && !path.includes(".."));

@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { snapshotDryRun } from "../src/rooms/host-worker/host-handlers";
+import { listFolders, snapshotDryRun } from "../src/rooms/host-worker/host-handlers";
 
 let dir = "";
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), "lp-dry-")); });
@@ -19,6 +19,22 @@ describe("snapshotDryRun symlinks", () => {
     const out = await snapshotDryRun({ requestedHostId:"h", paths } as never, {} as never);
     expect(out.entries.map((entry) => [entry.kind, (entry as { targetKind?:string }).targetKind])).toEqual([
       ["symlink", "file"], ["symlink", "directory"], ["symlink", "missing"], ["file", undefined],
+    ]);
+  });
+});
+
+describe("listFolders", () => {
+  it("names the files of each folder, sorted, and none for a folder that is not there", async () => {
+    await mkdir(join(dir, "__tests__"));
+    await writeFile(join(dir, "shoot.ts"), "x\n");
+    await writeFile(join(dir, "__tests__", "shoot-seo-audit.test.ts"), "x\n");
+    await writeFile(join(dir, "__tests__", "shoot-en.test.ts"), "x\n");
+    await mkdir(join(dir, "__tests__", "fixtures"));
+    const out = await listFolders({ requestedHostId:"h", paths:[dir, join(dir, "__tests__"), join(dir, "missing")] } as never, {} as never);
+    expect(out.entries).toEqual([
+      { path:dir, names:["shoot.ts"], truncated:false },
+      { path:join(dir, "__tests__"), names:["shoot-en.test.ts", "shoot-seo-audit.test.ts"], truncated:false },
+      { path:join(dir, "missing"), names:[], truncated:false },
     ]);
   });
 });
