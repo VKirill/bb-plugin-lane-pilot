@@ -85,13 +85,13 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
         await phases.tick().catch(() => 0);
       }
     }
-    // A small job or a batch of fixes goes down the small-task graph (issue-quick: triage, plan, build, report), started by the machine:
+    // A small job goes down the small-task graph (issue-quick), a batch of fixes down issue-batch, started by the machine:
     // the orchestrator does not choose what runs (Matvey #31782). phase.train off leaves them to the PM as before.
     let wfRunId: string | undefined;
     // Only on the judgment's word: the length rule calls any short line «small», and a remark must not start a build.
     if ((kind === "small" || kind === "batch") && by === "jev" && train && String(settings["phase.train"] ?? "on") !== "off") {
       wfRunId = train.start({ projectId: run.project_id, pmThreadId: threadId, runId: run.id, requestId, text, kind }) ?? undefined;
-      if (wfRunId) ctx.log(`phase intake: ${threadId} — the owner's request is ${kind} (${by}); issue-quick ${wfRunId} started`);
+      if (wfRunId) ctx.log(`phase intake: ${threadId} — the owner's request is ${kind} (${by}); ${kind === "batch" ? "issue-batch" : "issue-quick"} ${wfRunId} started`);
     }
     // A new process becomes a small graph: the workflow architect builds, tests and publishes it on the owner's words (Matvey #31916).
     let architectThreadId: string | undefined;
