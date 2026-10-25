@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.310
+
+**The small-task graph does not stop on the planner's envelope or for the owner.** The first live small job down the machine-started graph (issue-quick, «add a license section to the README») stood for the owner after three plan rounds:
+- the planner agent wrote the work but not the task-v2 envelope (schema_version, lane, risk, the empty lists, checks as plain command strings), and the lint refused it. A planner's task now gets the envelope filled the same way every time before the lint and before dispatch (`withContractDefaults`); what the planner wrote wins;
+- the revision rounds of `lp.plan` reached the planner with an empty brief («Inputs: none») and it returned an empty plan. The revision edges now carry what to fix: the lint's errors, the critic's findings or the owner's answer, as `gaps`;
+- the plan's «ask the owner» step waited two hours. In a run the machine started (the intake's small-task graph, a phase's stage) a human step's form is still shown, but its own timeout answers it after 15 minutes at most: nothing in the train stands for the owner.
+
 ## 0.1.309
 
 **The machine runs every stage of the phase.** Besides the analysis, the plan, the wave review and the goal audit, the driver now runs:

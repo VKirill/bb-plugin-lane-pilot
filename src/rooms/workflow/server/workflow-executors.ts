@@ -112,14 +112,57 @@ export function humanOutput(node: Extract<GraphNode, { type: "human" }>, answer:
   return kind !== undefined || !values.length ? humanFields(node, kind, answer.text) : null;
 }
 
+/** The longest a human step of a machine-started run waits for the owner's answer. */
+export const MACHINE_HUMAN_WAIT_SEC = 15 * 60;
+/** Whether the machine started the run (or the run it is a subworkflow of): keys `intake:` and `phase:`. */
+function machineStarted(engine: WorkflowEngine, runId: string): boolean {
+  let row = engine.journal.getRun(runId);
+  for (let hop = 0; row && hop < 8; hop += 1) {
+    if (row.idem_key?.startsWith("intake:") || row.idem_key?.startsWith("phase:")) return true;
+    row = row.parent_run_id ? engine.journal.getRun(row.parent_run_id) : undefined;
+  }
+  return false;
+}
+
 // ---------------------------------------------------------------- code tasks of a chain
 
 const TERMINAL_ATTEMPT = ["accepted", "blocked", "canceled"];
 const safeId = (text: string) => text.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "task";
 
 /** The task standard (the Tasks board): a workflow's own task fills what its contract leaves out, so the contract lint never refuses it. */
-const withTaskStandard = (contract: Row, key: string): Row => ({ ...contract,
+const withTaskStandard = (contract: Row, key: string): Row => ({ ...withContractDefaults(contract),
   display_title: str(contract.display_title).trim() || str(contract.title).slice(0, 60), kind: str(contract.kind) || "feature", area: str(contract.area).trim() || `workflow:${safeId(key)}` });
+
+const RISKS = ["low", "medium", "high", "critical"];
+const VERIFY = ["none", "smoke", "tests"];
+const asList = (value: unknown): unknown[] => (Array.isArray(value) ? value : value === undefined || value === null || value === "" ? [] : [value]);
+/**
+ * The structural fields of task-v2 a planner agent leaves out, filled the same way every time: a planner that wrote the work right but
+ * not the envelope (schema_version, lane, risk, the empty lists, checks as plain command strings) was refused three times by the lint
+ * and the small-task graph stopped for the owner (live issue-quick wfrun_8adbad9a…, 2026-10-25). What the planner did write wins.
+ */
+export function withContractDefaults(contract: Row): Row {
+  const files = asList(contract.files).map((file) => (file && typeof file === "object" ? str((file as Row).path) : "")).filter(Boolean);
+  const owns = asList(contract.owns_paths).map(String);
+  const outputs = asList(contract.expected_outputs).map(String);
+  return {
+    ...contract,
+    schema_version: 2,
+    risk: RISKS.includes(str(contract.risk)) ? str(contract.risk) : "medium",
+    lane: str(contract.lane).trim() || "default",
+    read_first: asList(contract.read_first).map(String),
+    interfaces: asList(contract.interfaces).map(String),
+    invariants: asList(contract.invariants).map(String),
+    out_of_scope: asList(contract.out_of_scope).map(String),
+    never_touch: asList(contract.never_touch).map(String),
+    depends_on: asList(contract.depends_on).map(String),
+    owns_paths: owns.length ? owns : files,
+    expected_outputs: outputs.length ? outputs : files.length ? files : owns.filter((path) => !/[*?]/.test(path)),
+    acceptance: asList(contract.acceptance).map((item) => (typeof item === "string" ? item : JSON.stringify(item))),
+    verify: VERIFY.includes(str(contract.verify)) ? str(contract.verify) : "tests",
+    verification: asList(contract.verification).map((check) => (typeof check === "string" ? { command: check, cwd: "." } : check)),
+  };
+}
 
 type HelperUsage = { tokens: number; costUsd: number; unknown?: true };
 type LpTaskNode = Extract<GraphNode, { type: "lp-task" }>;
@@ -191,7 +234,10 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     run: async (c) => {
       const node = c.node as Extract<GraphNode, { type: "human" }>;
       const question = c.render(node.question);
-      const deadline = node.timeoutSec ? Date.now() + node.timeoutSec * 1000 : undefined;
+      // A run the machine started (the intake's small-task graph, a phase's stage) does not stand for the owner (he takes no part in the
+      // loop): the form is still shown, but the step's own timeout answers it after MACHINE_HUMAN_WAIT_SEC at most.
+      const timeoutSec = machineStarted(engine, c.runId) ? Math.min(node.timeoutSec ?? MACHINE_HUMAN_WAIT_SEC, MACHINE_HUMAN_WAIT_SEC) : node.timeoutSec;
+      const deadline = timeoutSec ? Date.now() + timeoutSec * 1000 : undefined;
       const rt = runtimeOf(c, c.runId);
       if (rt) void ask(rt, c.runId, c.stepKey, node, question, deadline).catch((cause) => bb.log.warn(`Lane Pilot could not ask the owner (${node.id}): ${cause instanceof Error ? cause.message : String(cause)}`));
       return { wait: { kind: "human", detail: { question, options: humanOptions(node) }, ...(deadline ? { deadline } : {}) } };

@@ -50,9 +50,22 @@
   "nodes": [
     {
       "id": "plan",
-      "consumes": [{"kind": "verdict", "version": 1, "from": "plan_critic"}],
-      "produces": [{"kind": "plan", "version": 1}],
-      "gates": ["plan.confidence >= 0 && plan.confidence <= 100"],
+      "consumes": [
+        {
+          "kind": "verdict",
+          "version": 1,
+          "from": "plan_critic"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "plan",
+          "version": 1
+        }
+      ],
+      "gates": [
+        "plan.confidence >= 0 && plan.confidence <= 100"
+      ],
       "type": "agent",
       "role": "planner",
       "title": {
@@ -95,7 +108,12 @@
     },
     {
       "id": "plan_critic",
-      "produces": [{"kind": "verdict", "version": 1}],
+      "produces": [
+        {
+          "kind": "verdict",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "plan-critic",
       "title": {
@@ -191,7 +209,10 @@
       "to": "plan",
       "pass": "same-session",
       "when": "!lint.ok && visits('lint') < 3",
-      "label": "contract errors"
+      "label": "contract errors",
+      "with": {
+        "gaps": "lint.errors"
+      }
     },
     {
       "from": "lint",
@@ -221,7 +242,10 @@
       "to": "plan",
       "pass": "same-session",
       "when": "plan_critic.status == 'rework' && visits('plan_critic') < 3",
-      "label": "revise"
+      "label": "revise",
+      "with": {
+        "gaps": "plan_critic.findings"
+      }
     },
     {
       "from": "plan_critic",
@@ -232,7 +256,10 @@
       "from": "ask",
       "to": "plan",
       "pass": "same-session",
-      "when": "ask.answer_kind == 'revise'"
+      "when": "ask.answer_kind == 'revise'",
+      "with": {
+        "gaps": "ask.answer"
+      }
     },
     {
       "from": "ask",
