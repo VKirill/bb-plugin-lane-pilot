@@ -1116,10 +1116,11 @@ describe("BB writer validation on the server path", () => {
     setAttemptDirtBefore(db, "attempt-resume", ["hello.txt"]);
     await plugin(bb);
     harness.runService("startup-recovery");
-    await vi.waitFor(() => expect(getAttempt(db, "attempt-resume")?.state).toBe("validation_failed"));
-    // Since 0.1.92 the failed resumed attempt is retried (its start loop died with the reload); every snapshot,
-    // the retry's too, runs in the run's own workspace, not the changed project setting.
-    await vi.waitFor(() => expect(countAttempts(db, "run-resume", "resume-task")).toBeGreaterThanOrEqual(2));
+    // The resumed attempt is checked by the start loop, as any finished turn: the unverifiable dirt is Lane Pilot's fault,
+    // so the task is parked (blocked with the reason) instead of a fresh writer meeting the same fault. Every snapshot runs
+    // in the run's own workspace, not the changed project setting.
+    await vi.waitFor(() => expect(getAttempt(db, "attempt-resume")).toMatchObject({ state:"blocked", reason:"cannot compare pre-existing dirty file content: hello.txt" }));
+    expect(countAttempts(db, "run-resume", "resume-task")).toBe(1);
     expect(new Set(snapshotCwds)).toEqual(new Set([config.writerWorkspacePath]));
     await harness.lifecycle.dispose();
   });

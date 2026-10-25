@@ -64,6 +64,26 @@ export function familyFailureRecord(db:ReturnType<typeof openDatabase>, runId:st
   return last ? { state:last.state, reason:last.reason } : null;
 }
 
+/** A failure that was the task's own (a stray file, a red check), not its provider's, Lane Pilot's or the machine's. */
+const isOwnFailure = (outcome:Record<string, unknown>) =>
+  ["task", "contract"].includes(failureClass(String(outcome.status), typeof outcome.reason === "string" ? outcome.reason : null));
+
+/**
+ * The task's last own failure before this start (a retry from the board, a restart of a parked task, a reload): a writer
+ * that starts fresh was told nothing of it and redid it (vf-s4-items 2026-10-24, «owns_paths rejected …/Buffs.luau» twice).
+ * An acceptance since then clears it.
+ */
+function lastOwnFailure(db:ReturnType<typeof openDatabase>, runId:string, taskId:string, exceptAttemptId:string):Record<string, unknown>|null {
+  const rows = db.prepare("SELECT id, state, reason FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC, rowid DESC")
+    .all(runId, taskId) as Array<{ id:string; state:string; reason:string|null }>;
+  for (const row of rows) {
+    if (row.id === exceptAttemptId) continue;
+    if (row.state === "accepted") return null;
+    if (row.reason && isOwnFailure({ status:row.state, reason:row.reason })) return { status:row.state, reason:row.reason };
+  }
+  return null;
+}
+
 /** The tasks whose writer passed admission, per plugin instance: the files they own are theirs until their last attempt ends. */
 const admittedByCore = new WeakMap<object, Map<string, { runId:string; taskId:string; projectId:string }>>();
 
@@ -141,6 +161,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     // The class Jev (J-4, active) or the rules gave the last failure: parking reads the same one, not its own recount.
     let judged: { status: string; reason: string | null; klass: FailureClass } | null = null;
     let primaryFailure:Record<string,unknown>|null=null;
+    /** The last failure that was the task's own (a stray file, a red check), not its provider's: a fallback writer avoids it too. */
+    const own:{ failure:Record<string,unknown>|null } = { failure:lastOwnFailure(db, input.runId, input.taskId, input.firstAttemptId) };
+    const noteOwnFailure = (outcome:Record<string,unknown>) => { if (isOwnFailure(outcome)) own.failure = outcome; };
     // The PM reassigned the task: the next writer continues the stopped one's worktree and starts with the requested model.
     let pendingReassign:{from:ReturnType<typeof getAttempt>; request:ReassignRequest}|null=null;
     // The last failed attempt's worktree, kept until the next attempt starts or the fallback chain takes it over.
@@ -618,7 +641,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             projectId:input.projectId, runId:input.runId, taskId:input.taskId, attemptId,
             config:freshConfig, task:freshTask, plan:input.plan, pmThreadId:input.pmThreadId, pmReadContext,
             retryIndex:Math.max(0,countAttempts(db,input.runId,input.taskId)-1),
-            previousAttempt:previousAttemptBrief(last.status ? last : null, freshTask, undefined, liveFolder),
+            // A fresh writer starts from main: of the failures before it, the task's own is the one to avoid, not a provider's cut.
+            previousAttempt:previousAttemptBrief(last.status && isOwnFailure(last) ? last : own.failure ?? (last.status ? last : null), freshTask, undefined, liveFolder),
             ...(requested ? { emergency:{...requested, reason:"reassigned by the PM"} } : {}),
             ...(carried ? { continuation:carried } : {}),
           });
@@ -651,6 +675,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             environmentId:workspaceBinding.environment_id,decision:workspaceBinding.workspace_decision,
             ...(isLiveDecision(workspaceBinding.workspace_decision)?{mode:LIVE_FOLDER_RECEIPT}:{})}};
           await noteAttemptOutcome({ budget, writerThreadId, writerSelection, status:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
+          noteOwnFailure(last);
         }
         if (last.status === "accepted") { acceptedAttemptId = attemptId; break; }
         // The PM moved the task to a fresh writer (lane_pilot_reassign_task): the stop is not a failure, so no attempt is spent.
@@ -866,6 +891,9 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
               config:freshConfig,task:freshTask,plan:input.plan,pmThreadId:input.pmThreadId,pmReadContext,
               emergency:{...emergencySelection,reason:decision.reason,...(fallback.pm?{}:{reasoningLevel:fallback.reasoningLevel})},
               continuation,
+              // The handoff names only the provider's stop; a stray file or a red check of an earlier turn would be redone
+              // (vf-s4-items 2026-10-24: the fallback rewrote Buffs.luau, which the first turn had been rejected for).
+              ...(own.failure ? { previousAttempt:previousAttemptBrief({ ...own.failure, produced:[] }, freshTask, undefined, liveFolder) } : {}),
             });
             if (!spawned.ok) {
               const fallbackFailureReason=`emergency_fallback_failed:${spawned.reason}`;
@@ -904,6 +932,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
                 environmentId:workspaceBinding.environment_id,decision:workspaceBinding.workspace_decision,
                 ...(isLiveDecision(workspaceBinding.workspace_decision)?{mode:LIVE_FOLDER_RECEIPT}:{})}};
               await noteAttemptOutcome({ budget, writerThreadId, writerSelection, status:String(last.status), reason:typeof last.reason === "string" ? last.reason : null });
+              noteOwnFailure(last);
               if (last.status === "accepted") { acceptedAttemptId=emergencyAttemptId; break; }
               lastFallbackAttemptId=emergencyAttemptId;
               failure=last;
