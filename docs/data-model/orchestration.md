@@ -2,9 +2,9 @@
 title: Orchestration and execution data
 type: data-model
 created: 2026-10-10
-updated: 2026-10-19
+updated: 2026-10-25
 status: active
-confidence: medium
+confidence: low
 tags: [data-model, orchestration, execution]
 sources:
   - src/rooms/storage/database.ts

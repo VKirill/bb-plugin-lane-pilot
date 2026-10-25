@@ -1,6 +1,6 @@
 ---
 title: Lane Pilot project facts
-updated: 2026-10-20
+updated: 2026-10-25
 sources:
   - package.json
   - server.ts
@@ -11,6 +11,7 @@ sources:
   - src/rooms/storage/database.ts
   - src/rooms/writer/server/dispatch.ts
   - src/rooms/writer/server/start.ts
+  - src/rooms/stability/server/reconcile.ts
   - src/rooms/writer/server/reopen-attempt.ts
   - src/rooms/self-repair/server/self-repair.ts
   - src/rooms/relay/server/relay.ts
@@ -77,6 +78,9 @@ sources:
 - Host-prepared BB guard wrappers differ for new helpers, owner threads, and older hosts ([native agent](docs/native-agent.md#public-api-or-commands)).
 - Live-folder mode has explicit caps and rollback limits ([gotchas](docs/gotchas.md#writer-workspace-modes)).
 - Verification worktrees copy `node_modules/.bin` and `.package-lock.json` into the worktree so `npm install` writes inside it (`src/rooms/verification/git-integrate.ts:601-632`).
+- Verification preparation refreshes missing or stale npm dependencies in the base checkout, then mirrors root, workspace, and supported nested package dependencies into the attempt worktree (`src/rooms/verification/git-integrate.ts:613-629`, `:827-857`).
+- Sandboxed checks can read linked user tool installations and Playwright browser binaries through a temporary HOME (`src/rooms/verification/sandbox.ts:103-144`).
+- A reload that finds a running writer thread idle or errored restarts its writer loop in that same thread, preserving the attempt workspace and failure context (`src/rooms/stability/server/reconcile.ts:111-145`).
 
 ## Useful commands
 

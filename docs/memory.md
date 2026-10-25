@@ -20,6 +20,20 @@ sources:
   - src/rooms/memory/server/memory-conflicts.ts
   - packages/memory-core/src/conflicts.ts
   - packages/memory-core/src/conflict-store.ts
+  - src/rooms/memory/memory-paths.ts
+  - src/rooms/writer/server/writer-knowledge.ts
+  - src/rooms/writer/server/spawn.ts
+  - src/rooms/writer/server/start.ts
+  - src/rooms/learning/pm-rules.ts
+  - src/rooms/learning/service.ts
+  - src/rooms/memory/server/memory-mix.ts
+  - src/rooms/council/server/council.ts
+  - src/rooms/tools/server/cli.ts
+  - src/rooms/contracts/rpc-ops.ts
+  - src/rooms/memory-probe/server/memory-probe.ts
+  - src/rooms/learning/unanswered.ts
+  - scripts/lp-drill.py
+  - src/rooms/learning/housekeeping.ts
 ---
 
 # Project memory

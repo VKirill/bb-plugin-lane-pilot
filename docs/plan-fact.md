@@ -2,9 +2,9 @@
 title: Plan against fact and the acceptance card
 type: component
 created: 2026-10-22
-updated: 2026-10-22
+updated: 2026-10-25
 status: active
-confidence: medium
+confidence: low
 tags: [sma, acceptance, critic, ui]
 sources:
   - src/rooms/tasks/plan-fact.ts
@@ -18,11 +18,32 @@ sources:
   - packages/contracts/src/stage-proof.ts
   - tests/plan-fact.test.ts
   - tests/acceptance-card-ui.test.tsx
+  - packages/contracts/src/stage-contract.ts
+  - src/rooms/writer/server/dispatch.ts
+  - src/rooms/tools/server/cli.ts
+  - src/rooms/contracts/rpc-runs.ts
+  - src/rooms/usage/server/attempt-metrics.ts
+  - src/rooms/runs/ui/task-board.tsx
 ---
 
 # Plan against fact and the acceptance card
 
 TL;DR: the writer closes its answer with a table of its acceptance items and the evidence for each; code checks every piece of evidence against the diff and the check results without reading the writer's prose; the result is a `plan-fact` stage receipt and one block, the acceptance card, in the task page.
+
+## How it works
+
+1. The writer receives the `plan-fact` response format in its task brief (`src/rooms/tasks/plan-fact.ts:23`, `src/rooms/writer/server/writer-task.ts:273-337`).
+2. The parser reads the last fenced table, validates its JSON shape and returns missing or invalid status when no usable table exists (`src/rooms/tasks/plan-fact.ts:36-50`).
+3. The blind checker compares each evidence pointer with changed files, changed lines, contract checks, and verification results (`src/rooms/tasks/plan-fact.ts:53-134`).
+4. The stage records skipped, failed, or passed; in gate mode an unproven acceptance item returns the task for correction (`src/rooms/writer/server/plan-fact.ts:33-75`, `src/rooms/tasks/plan-fact.ts:161-190`).
+5. The acceptance card combines the contract, stage proofs, gate events, plan-fact findings, not-run stages, and attempt cost (`src/rooms/acceptance/card.ts:26-85`).
+
+| Mode or failure | Result |
+|---|---|
+| `record` mode | Records and displays findings; a missing or invalid table is skipped and does not refuse the task (`src/rooms/writer/server/plan-fact.ts:33-75`). |
+| `gate` mode | A blocking unproven item fails the stage and returns the task to the writer; missing table remains skipped (`src/rooms/writer/server/plan-fact.ts:33-75`). |
+| Missing or invalid table | Stores a skipped receipt with its reason (`src/rooms/tasks/plan-fact.ts:36-50`, `src/rooms/writer/server/plan-fact.ts:33-75`). |
+| Evidence does not match diff or checks | Marks the item unproven, which blocks only in gate mode (`src/rooms/tasks/plan-fact.ts:99-160`). |
 
 ## Purpose
 
@@ -32,7 +53,7 @@ SMA plan P1-3 and P1-4 (Maslov #30971, «never read the executor's story»): an 
 
 The writer is told the format by one line, `PLAN_FACT_BRIEF_LINE` (`src/rooms/tasks/plan-fact.ts:23`), added to its first brief and to every continuing turn of a task with acceptance items (`src/rooms/writer/server/writer-task.ts:273`, `src/rooms/writer/server/writer-task.ts:337`). It asks for a fenced block opened with ```plan-fact that holds a JSON array, one row per acceptance item in the contract's order:
 
-- `{"item":1,"status":"done","evidence":["src/a.ts:10-24","cmd:npm test"]}`: evidence is `path`, `path:first-last` or `cmd:<command>`;
+- `{"item":1,"status":"done","evidence":["src/rooms/tasks/plan-fact.ts:36-50","cmd:npm test"]}`: evidence is `path`, `path:first-last` or `cmd:<command>`;
 - `{"item":2,"status":"not_done","why":"..."}`.
 
 `parsePlanFact` (`src/rooms/tasks/plan-fact.ts:36`) reads the last such block of the answer and nothing around it. No block is `missing`; broken JSON, an unknown key, an empty array or a repeated item is `invalid` with the reason. A repair round's reply that has no table falls back to the table of the earlier answer (`src/rooms/writer/server/plan-fact.ts:17`).
@@ -76,7 +97,7 @@ The bench's arm hook is `dispatchWriter({ ..., criticCodeDefault })` (`src/rooms
 
 ## The acceptance card
 
-RPC `task_acceptance_card` (`src/rooms/contracts/rpc-runs.ts:60`) returns `buildAcceptanceCard` (`src/rooms/acceptance/card.ts:25`), read from the records that already exist:
+RPC `task_acceptance_card` (`src/rooms/contracts/rpc-runs.ts:60`) returns `buildAcceptanceCard` (`src/rooms/acceptance/card.ts:26-85`), read from the records that already exist:
 
 - the contract: objective, acceptance lines, owned paths; the risk; the base commit and branch (`lane_pilot_task_git_base`);
 - the stage receipts in pipeline order, each with its proof: `code` (and which kind: gate, command, file, receipt, schema) or `advisory`, a model's opinion (`STAGE_PROOF`);
@@ -92,3 +113,8 @@ The component is `AcceptanceCard` (`src/rooms/acceptance/ui/acceptance-card.tsx`
 - `tests/plan-fact.test.ts`: the table format, every evidence outcome, the diff reader, the stage on a database, the card, the risk default, the dispatch override.
 - `tests/acceptance-card-ui.test.tsx`: what the card shows, NOT RUN, partial cost, the fallback.
 - `tests/stages/server-stage/suite.ts`: the stage in a real native run (passed, failed in record mode, refused in gate mode) and the critic switched on by risk.
+
+<!-- lane-pilot:backlinks -->
+## Referenced by
+
+- [Tasks board and work graph](task-board.md)
