@@ -14,10 +14,10 @@ give helper threads and questions a parent. The code is `src/rooms/workflow/serv
 ## Schedule
 
 ```json
-"triggers": [{ "type": "schedule", "cron": "0 9 * * 1-5", "timezone": "Europe/Moscow", "projectId": "proj_...", "inputs": { "query": "cats" } }]
+"triggers": [{ "type": "schedule", "cron": "0 9 * * 1-5", "projectId": "proj_...", "inputs": { "query": "cats" } }]
 ```
 
-`cron` has five fields (minute hour day-of-month month day-of-week); `timezone` is an IANA name (the hub's own when absent);
+`cron` has five fields (minute hour day-of-month month day-of-week); `timezone` is an IANA name, given only when the owner names a zone (absent, the owner's time zone: `bb lane-pilot waiting config timezone=`);
 `projectId` is the project whose PM chat runs it (a project workflow uses its own project); `inputs` are the values of every
 scheduled run. A schedule without a cron creates nothing (it only says the workflow can be scheduled); a broken cron or zone is a validator warning and creates nothing.
 

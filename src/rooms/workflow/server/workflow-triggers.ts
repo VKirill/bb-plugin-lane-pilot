@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getActivation, getRun } from "../../storage";
 import { cronProblem, localTimezone, timezoneProblem } from "@lane-pilot/workflow-engine/ui";
 import { sha256 } from "../../storage";
+import { loadPushConfig } from "../../owner-waiting";
 import { preflightRefusal } from "@lane-pilot/workflow-engine";
 import type { PreflightResult } from "@lane-pilot/workflow-engine";
 import { isPipeline } from "@lane-pilot/workflow-engine";
@@ -65,7 +66,7 @@ const isGone = (cause: unknown): boolean => /not.?found|no such|does not exist/i
 type DesiredSchedule = { workflow: Workflow; slot: number; cron: string; timezone: string; inputs: Record<string, unknown>; signature: string };
 
 /** The schedules an own, published workflow asks for in one project: the project it runs in is the trigger's `projectId`, else the project of a project workflow. */
-export function desiredSchedules(items: StoredWorkflow[], projectId: string): DesiredSchedule[] {
+export function desiredSchedules(items: StoredWorkflow[], projectId: string, zone: string = localTimezone()): DesiredSchedule[] {
   const wanted: DesiredSchedule[] = [];
   for (const item of items) {
     if (item.origin === "builtin" || item.workflow.status !== "published" || item.workflow.internal) continue;
@@ -75,7 +76,7 @@ export function desiredSchedules(items: StoredWorkflow[], projectId: string): De
       const home = trigger.projectId ?? (workflow.scope.level === "project" ? workflow.scope.projectId : undefined);
       if (home !== projectId) return;
       if (cronProblem(trigger.cron) || (trigger.timezone && timezoneProblem(trigger.timezone))) return;
-      const timezone = trigger.timezone ?? localTimezone();
+      const timezone = trigger.timezone ?? zone;
       const inputs = trigger.inputs ?? {};
       wanted.push({ workflow, slot, cron: trigger.cron, timezone, inputs, signature: sha256(JSON.stringify([workflow.id, workflow.version, trigger.cron, timezone, inputs])).slice(0, 24) });
     });
@@ -164,7 +165,8 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     // Without the project's own files the list is short, and a short list would delete the schedules of workflows that are fine: then nothing is removed.
     const complete = project === "ok";
     result.complete = complete;
-    const wanted = desiredSchedules(store.list(), projectId);
+    // A trigger without a zone runs in the owner's, not in the hub's (UTC).
+    const wanted = desiredSchedules(store.list(), projectId, loadPushConfig(db).timezone);
     const rows = db.prepare("SELECT workflow_id, slot, automation_id, signature FROM lane_pilot_wf_trigger WHERE project_id=?").all(projectId) as Array<{ workflow_id: string; slot: number; automation_id: string; signature: string }>;
     const same = (row: { workflow_id: string; slot: number }, item: DesiredSchedule) => row.workflow_id === item.workflow.id && row.slot === item.slot;
     for (const item of wanted) {

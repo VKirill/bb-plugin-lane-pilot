@@ -194,7 +194,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"checkers", summary:"Checking the checkers: plant known defects in accepted candidates, run every checker on them and print the checker scorecard (score, scorecard, drill, defects)", usage:CHECKERS_USAGE },
       { name:"schedule", summary:"The schedule board: scheduled workflows, errands and scripts (list, show, history, preview, create, update, pause, resume, run-now, delete)", usage:SCHEDULE_USAGE },
     ],
-    async run(argv) {
+    async run(argv, invocation) {
       try {
         const [command, ...args] = argv;
         if (command === "reverify" || command === "revert" || command === "changes") {
@@ -334,6 +334,9 @@ export function registerCli(ctx: ServerCore, services: Services) {
           return await runCheckersCli(services.checkers, args);
         }
         if (command === "schedule") {
+          // The same door as the tool: a PM's shell does not schedule a request the machine took.
+          const refusal = invocation?.threadId && ["create", "update", "run-now"].includes(args[0] ?? "") ? await services.phaseIntake.launchRefusal(invocation.threadId) : null;
+          if (refusal) return { exitCode:1, stdout:JSON.stringify({ ok:false, error:refusal }) };
           return await runScheduleCli(services, args);
         }
         if (command === "configure" && args.length === 1) {

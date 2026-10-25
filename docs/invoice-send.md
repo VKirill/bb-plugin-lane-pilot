@@ -65,6 +65,6 @@ search did not give exactly one client; `send_unconfirmed` means read the chat b
 
 ## Scheduling it
 
-Once published, the schedule board can run it: a task `{"kind":"workflow","workflowId":"invoice-send","inputs":{...}}` with `when` `{"type":"cron","cron":"0 10 1 * *","timezone":"Europe/Moscow"}`.
+Once published, the schedule board can run it: a task `{"kind":"workflow","workflowId":"invoice-send","inputs":{...}}` with `when` `{"type":"cron","cron":"0 10 1 * *"} (the owner's time zone)`.
 A scheduled run still asks the owner before the send; it waits in the «waiting for you» column (up to 72 hours, then it is given up and nothing is sent), and the
 overlap policy `skip` keeps a second month from starting while the first waits.

@@ -111,3 +111,14 @@ describe("delays", () => {
     expect(parseDelay("0m")).toBeNull();
   });
 });
+
+describe("a cron without a time zone", () => {
+  it("runs in the zone it is given (the owner's), not the hub's; a named zone wins", async () => {
+    const { normalizeSchedule } = await import("../../src/rooms/schedule/model");
+    const definition = (when: Record<string, unknown>) => ({ projectId: "p", name: "n", task: { kind: "script", hostId: "h", command: "true", cwd: "/tmp", env: [] }, when });
+    const owner = normalizeSchedule(definition({ type: "cron", cron: "0 9 * * 1" }), Date.now(), "Europe/Madrid");
+    expect(owner.ok && owner.value.when).toMatchObject({ timezone: "Europe/Madrid" });
+    const named = normalizeSchedule(definition({ type: "cron", cron: "0 9 * * 1", timezone: "Asia/Tokyo" }), Date.now(), "Europe/Madrid");
+    expect(named.ok && named.value.when).toMatchObject({ timezone: "Asia/Tokyo" });
+  });
+});

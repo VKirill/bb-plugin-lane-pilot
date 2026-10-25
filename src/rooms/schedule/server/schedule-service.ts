@@ -10,6 +10,7 @@ import type { ScheduleConflict, ScheduleView } from "../views";
 import { configuredSetting } from "../../core/server";
 import type { ServerCore } from "../../core/server";
 import { allowedSecretNames } from "../../secrets/server";
+import { loadPushConfig } from "../../owner-waiting";
 import { errandModelView, readErrandDefault } from "./schedule-default";
 import { createThreadHosts, projectPlaces, whereOf, type ProjectPlace } from "./schedule-place";
 import { NO_USAGE, scheduleCost, threadUsage } from "./schedule-usage";
@@ -31,6 +32,8 @@ const CALENDAR_CAP = 300;
 
 export function createScheduleService(ctx: ServerCore, services: Services) {
   const { bb, db } = ctx;
+  // A cron without a time zone runs in the owner's, not in the hub's (UTC).
+  const ownerZone = () => loadPushConfig(db).timezone;
   const library = createWorkflowLibrary(ctx, services);
   const scheduler = createScheduler({
     db, executors: createScheduleExecutors(ctx, services), isDisposed: ctx.isDisposed,
@@ -149,7 +152,7 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
   }
 
   async function preview(raw: unknown, count = DEFAULT_NEXT): Promise<PreviewResult> {
-    const normalized = normalizeSchedule(raw, Date.now());
+    const normalized = normalizeSchedule(raw, Date.now(), ownerZone());
     if (!normalized.ok) return { ok: false, problems: normalized.problems, warnings: [], conflicts: [], nextFires: [], when: null, timeoutSec: null };
     const selfId = typeof (raw as { id?: unknown }).id === "string" ? (raw as { id: string }).id : undefined;
     const checked = await check(normalized.value, selfId);
@@ -161,7 +164,7 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
 
   /** Creates (no `id`) or replaces (`id`) a schedule. `by` names who asked: «owner», «ui», «cli» or an agent's thread. */
   async function save(raw: unknown, by: string): Promise<SaveResult> {
-    const normalized = normalizeSchedule(raw, Date.now());
+    const normalized = normalizeSchedule(raw, Date.now(), ownerZone());
     if (!normalized.ok) return { ok: false, problems: normalized.problems };
     const id = normalized.value.id;
     const existing = id ? store.get(id) : undefined;

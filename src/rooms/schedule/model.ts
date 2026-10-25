@@ -88,13 +88,13 @@ export const MAX_SCRIPT_TIMEOUT_SEC = 10_700;
 export type NormalizedWhen = { type: "cron"; cron: string; timezone: string } | { type: "once"; runAt: number };
 
 /** The definition with its defaults filled in and `when` made concrete, or the problems that stop it. Pure apart from the clock. */
-export function normalizeSchedule(raw: unknown, now: number): { ok: true; value: ScheduleDefinition & { when: NormalizedWhen; timeoutSec: number } } | { ok: false; problems: string[] } {
+export function normalizeSchedule(raw: unknown, now: number, zone: string = localTimezone()): { ok: true; value: ScheduleDefinition & { when: NormalizedWhen; timeoutSec: number } } | { ok: false; problems: string[] } {
   const parsed = scheduleInputSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, problems: parsed.error.issues.map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`) };
   const value = parsed.data;
   let when: NormalizedWhen;
   if (value.when.type === "cron") {
-    const timezone = value.when.timezone ?? localTimezone();
+    const timezone = value.when.timezone ?? zone;
     const problem = scheduleTimeProblem(value.when.cron, timezone);
     if (problem) return { ok: false, problems: [`when: ${problem}`] };
     when = { type: "cron", cron: value.when.cron.trim().replace(/\s+/gu, " "), timezone };
