@@ -119,6 +119,19 @@ describe("a failed verdict is planned again by the machine", () => {
   });
 });
 
+describe("a plan the gate refused", () => {
+  it("is planned again with the current pieces and their covers, to be returned whole with what the gate names fixed", async () => {
+    const { autoInputs } = await import("../src/rooms/phase/server/auto-stages");
+    const piece = { id: "a", title: "a", wave: 1, promise: { given: "g", when: "w", then: "t" }, task: { id: "a" }, covers: ["D1"] };
+    const phase = phaseAt("planning", { context: { docs: [], sha: "c", signedAt: 1, decisions: ["D1", "D2"] }, plan: { items: [piece], sha: "s", contextSha: "c", critique: { decision: "approve", by: "critic", summary: "ok", at: 1 } } } as never);
+    expect(autoDue(phase)).toEqual({ kind: "plan" });
+    const inputs = autoInputs(phase, { kind: "plan" }) as { gaps: string[]; findings: { current_pieces: Array<{ id: string; covers: string[] }> }; extra_rules: string[] };
+    expect(inputs.gaps.join(" ")).toMatch(/D2/);
+    expect(inputs.findings.current_pieces).toEqual([expect.objectContaining({ id: "a", covers: ["D1"] })]);
+    expect(inputs.extra_rules.join(" ")).toMatch(/return the whole plan again/);
+  });
+});
+
 describe("a replan merges into the pieces that were", () => {
   it("keeps the pieces the planner did not return, replaces the returned ones, puts them after the old waves, and carries covers", async () => {
     const piece = (id: string, wave: number, covers?: string[]) => ({ id, title: id, wave, promise: { given: "g", when: "w", then: "t" }, task: { id }, ...(covers ? { covers } : {}) });

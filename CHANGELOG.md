@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.320
+
+**A plan the gate refused is fixed, not redrawn.** When the critic approved a plan and the plan gate (code) still refused it, the next machine round got only the gate's reasons and drew a new, smaller plan (the live phase went from two pieces to one, still short of five locked decisions). That round now also sees the current pieces with their covers and is told to return the whole plan with only what the gate names fixed.
+
 ## 0.1.319
 
 **The machine's plan covers the locked decisions, and a replan keeps the pieces that were.** The first machine replan of the live phase was refused by the plan gate («locked decisions no piece carries out: D1…D6»): `lp.plan`'s tasks never said which requirements and decisions they carry out, and the planner returned only the two changed pieces, dropping the rest with their coverage. A phase's planner now lists `covers` on each task (moved onto the piece; the strict task-v2 never sees it), and after a failed verdict the returned pieces are merged into the plan: the pieces it did not return stay as they were, the changed and new ones run after the old waves. The replan's gaps hold until the plan is admitted.

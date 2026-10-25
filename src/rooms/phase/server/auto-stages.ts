@@ -54,12 +54,15 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number })
       const gate = r.plan ? planGate(r) : null;
       const gaps = [...(r.replan?.gaps ? [`the verification failed: ${r.replan.gaps}`] : []),
         ...(r.plan?.critique?.decision === "changes_requested" && r.plan.critique.summary ? [r.plan.critique.summary] : []), ...(gate && !gate.ok ? gate.why : [])];
-      const current = r.replan?.gaps && r.plan ? (r.plan.items ?? []).map((item) => ({ id: item.id, wave: item.wave, task: item.task })) : null;
+      // After a failed verdict, or when the plan gate (code) refused an approved plan, the planner sees the pieces as they are, with covers.
+      const gateRound = !!gate && !gate.ok && r.plan?.critique?.decision === "approve";
+      const current = (r.replan?.gaps || gateRound) && r.plan ? (r.plan.items ?? []).map((item) => ({ id: item.id, wave: item.wave, covers: item.covers ?? [], task: item.task })) : null;
       return { goal: phase.goal, findings: { context: contextText, decisions: r.context?.decisions ?? [], requirements: r.context?.requirements ?? [], ...(current ? { current_pieces: current } : {}) },
         ...(gaps.length ? { mode: "gaps", gaps } : {}),
         extra_rules: ["every command an acceptance line names is one of the task's verification commands", "each task's id is the piece id; depends_on only on tasks of earlier waves",
           "each task lists in a top-level field `covers` the ids of the requirements and locked decisions (findings.requirements, findings.decisions) it carries out; together the tasks cover every id",
-          ...(current ? ["the plan after a failed verification: return every piece of findings.current_pieces the gaps do not name exactly as it is (same id, same contract); change only the failing pieces' contracts or add new pieces for what is missing"] : [])] };
+          ...(current && r.replan?.gaps ? ["the plan after a failed verification: return every piece of findings.current_pieces the gaps do not name exactly as it is (same id, same contract); change only the failing pieces' contracts or add new pieces for what is missing"] : []),
+          ...(current && !r.replan?.gaps ? ["the plan gate refused the approved plan: return the whole plan again — every piece of findings.current_pieces with its id and contract — and fix only what the gaps name (a piece's covers, its wave, its checks), adding a piece only for an id no piece can carry"] : [])] };
     }
     case "review": {
       const items = (r.plan?.items ?? []).filter((item) => item.wave === due.wave);
