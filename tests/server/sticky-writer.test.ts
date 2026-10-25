@@ -14,7 +14,7 @@ const task = (id: string, area?: string) => ({
   objective: `Do ${id}`, acceptance: ["works"], verify: "none", verification: [], ...(area ? { area } : {}),
 }) as never;
 
-function setup(options: { threadStatus?: string; envArchived?: boolean; usedShare?: number; sync?: string } = {}) {
+function setup(options: { threadStatus?: string; envArchived?: boolean; usedShare?: number; sync?: string; sendFails?: boolean } = {}) {
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
   const db = openDatabase(bb);
   const sent: Array<{ threadId: string; text: string }> = [];
@@ -25,7 +25,7 @@ function setup(options: { threadStatus?: string; envArchived?: boolean; usedShar
       context: vi.fn(async () => ({ usage: { usedTokens: (options.usedShare ?? 0.2) * 200_000, modelContextWindow: 200_000 } })),
       compact: vi.fn(async () => { calls.push("compact"); return { ok: true }; }),
       updatePluginMetadata: vi.fn(async () => ({})),
-      send: vi.fn(async (args: { threadId: string; input: Array<{ text: string }> }) => { sent.push({ threadId: args.threadId, text: args.input[0]!.text }); return {}; }),
+      send: vi.fn(async (args: { threadId: string; input: Array<{ text: string }> }) => { if (options.sendFails) throw new Error("HTTP 409: The chat section is archived or moving."); sent.push({ threadId: args.threadId, text: args.input[0]!.text }); return {}; }),
     },
     environments: { get: vi.fn(async () => ({ id: "env_a", archivedAt: options.envArchived ? 1 : null })) },
   };
@@ -149,6 +149,17 @@ describe("continuing a writer thread", () => {
     expect(getReasoningTrace(env.db, "a2")).toMatchObject({ attemptId: "a2", threadId: "thr_w", model: "opus" });
     expect(await loadFollowUp(env.bb.storage.kv, "a2")).toBeGreaterThan(0);
     expect(env.calls).not.toContain("compact");
+  });
+
+  it("does not offer a thread again after a turn could not be sent to it (its section archived or moving)", async () => {
+    const env = setup({ sendFails: true });
+    await acceptedInArea(env);
+    createTask(env.db, { id: "gc-faq", runId: "run", kind: "bb", contract: task("gc-faq", "page:/cards") });
+    createAttempt(env.db, { id: "a2", runId: "run", taskId: "gc-faq" });
+    const hot = (await env.sticky.hotWriter("P", "run", "page:/cards"))!;
+    const turn = await env.sticky.continueInThread({ runId: "run", taskId: "gc-faq", attemptId: "a2", config: { hostId: "h" } as never, writer: hot, prompt: "next", kind: "next-task" });
+    expect(turn).toMatchObject({ ok: false, reason: expect.stringMatching(/^sticky_send_failed:HTTP 409/) });
+    expect(await env.sticky.hotWriter("P", "run", "page:/cards")).toBeNull();
   });
 
   it("compacts a nearly full thread before the turn", async () => {

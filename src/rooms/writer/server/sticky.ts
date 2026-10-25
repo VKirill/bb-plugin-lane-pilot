@@ -124,8 +124,12 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
    * The thread and its workspace are still there, idle, and not used up. A task's own session is bounded by its turn cap
    * instead of the area's: the feedback turns are the same work, and a full context is compacted before each.
    */
+  const deadKey = (threadId: string) => `sticky-dead:${threadId}`;
+
   async function threadUsable(attempt: { thread_id: string | null; workspace_path: string | null; environment_id: string | null }, inSession = false): Promise<boolean> {
     if (!attempt.thread_id || !attempt.workspace_path) return false;
+    // A thread a turn could not be sent to (its chat section archived or moving: HTTP 409) takes no more turns; the retry spawns.
+    if (await bb.storage.kv.get(deadKey(attempt.thread_id)).catch(() => null)) return false;
     if (!inSession && threadTurns(attempt.thread_id) >= STICKY_MAX_TURNS) return false;
     const thread = await bb.sdk.threads.get({ threadId:attempt.thread_id }).catch(() => null);
     if (stringAt(thread, "status") !== "idle" || (thread as { archivedAt?: unknown } | null)?.archivedAt) return false;
@@ -278,6 +282,8 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
         const text = [typeof input.prompt === "function" ? input.prompt(conflicts) : input.prompt, ...harnessLines].join("\n\n");
         await sendServiceMessage(bb, { threadId:writer.threadId, text, senderThreadId:getRun(db, input.runId)?.pm_thread_id });
       } catch (cause) {
+        // The task went round on the same thread before (live 2026-10-25: «sticky_send_failed: HTTP 409 … section is archived or moving»).
+        await bb.storage.kv.set(deadKey(writer.threadId), Date.now() as never).catch(() => undefined);
         return { ok:false, reason:`sticky_send_failed:${cause instanceof Error ? cause.message : String(cause)}`, bound:true };
       }
       transitionAttempt(db, input.attemptId, "running", { threadId:writer.threadId });
