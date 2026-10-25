@@ -11,11 +11,10 @@ const profile = (key: string) => WRITER_PROFILES.find((row) => row.key === key)!
 const task = { title: "Fix the jump button", objective: "the jump button sits under the thumb", kind: "fix", area: "ui", risk: "low", owns_paths: ["src/Hud.luau"], expected_outputs: ["src/Hud.luau"], acceptance: ["lune run tests passes"] };
 
 describe("the writers' anamnesis", () => {
-  it("offers only the models the subscriptions have: no Haiku as a writer, no Gemini Pro, Argon or MiniMax", () => {
+  it("offers only the models the subscriptions have and the owner keeps: no Gemini Pro, Argon or MiniMax", () => {
     const keys = writerCandidates({}).map((row) => row.key);
-    expect(keys).toEqual(expect.arrayContaining(["composer", "gemini-flash", "gpt-sol", "gpt-luna", "sonnet", "opus", "glm-flash"]));
-    expect(keys).not.toEqual(expect.arrayContaining(["haiku"]));
-    for (const off of ["haiku", "gemini-pro", "gemini-argon", "minimax-flash"]) expect(keys).not.toContain(off);
+    expect(keys).toEqual(expect.arrayContaining(["composer", "gemini-flash", "gpt-sol", "gpt-luna", "sonnet", "opus", "glm-flash", "haiku"]));
+    for (const off of ["gemini-pro", "gemini-argon", "minimax-flash"]) expect(keys).not.toContain(off);
     expect(writerCandidates({ "writer.models": ["composer", "gemini-flash"] }).map((row) => row.key)).toEqual(["composer", "gemini-flash"]);
     for (const row of WRITER_PROFILES.filter((item) => item.available)) expect(row.sources.length).toBeGreaterThan(0);
   });

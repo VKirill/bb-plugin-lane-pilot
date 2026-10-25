@@ -58,9 +58,9 @@ export const WRITER_PROFILES: readonly WriterProfile[] = [
     sources: ["https://docs.z.ai/guides/vlm/glm-5.3-flash", "https://www.datacamp.com/blog/glm-5-3-flash", "https://www.edenai.co/post/glm-5-3-flash-benchmark-vs-gemini-deepseek-gpt-5-6"],
   },
   {
-    key: "haiku", providerId: "claude-code", model: "claude-haiku-5-5", reasoning: "low", label: "Claude Haiku 5.5", tier: "light", available: false,
-    summary: "Fast and very cheap; good for bounded steps (summaries, classification, triage, read-only helpers). Terminal-Bench 4.0 39.2% against Sonnet's 70.6%: not for multi-step code edits.",
-    note: "not a writer: weak at multi-step code edits", sources: ["https://www.developersdigest.tech/blog/claude-opus-5-5-vs-sonnet-5-5-vs-haiku-5-5"],
+    key: "haiku", providerId: "claude-code", model: "claude-haiku-5-5", reasoning: "medium", label: "Claude Haiku 5.5", tier: "light", available: true,
+    summary: "Anthropic's fast, very cheap model ($0.10/$0.50 per M tokens up to a 100K prompt, five times that above), built as a coding sub-agent: SWE-Bench Pro 64.8% (Sonnet 5.5 81.3%), SWE-bench Multilingual 83.7%; in a hands-on test it fixed a real production bug. Fits short, well-scoped edits with clear checks: a small fix, a test, a config or copy change, a one-file feature. Weak on long multi-step work (Terminal-Bench 4.0 39.2% against Sonnet's 70.6%) and costly past 100K tokens of context: not for large features or a big repository's wide changes.",
+    sources: ["https://www.eesel.ai/blog/claude-haiku-5-5-review", "https://www.mindstudio.ai/blog/claude-haiku-5-5-real-world-test", "https://computingforgeeks.com/claude-haiku-5-5-released-features-benchmarks/", "https://www.developersdigest.tech/blog/claude-opus-5-5-vs-sonnet-5-5-vs-haiku-5-5"],
   },
   {
     key: "minimax-flash", providerId: "opencode2", model: "minimax/minimax-m3.1-flash", reasoning: "high", label: "MiniMax M3.1 Flash", tier: "light", available: false,
