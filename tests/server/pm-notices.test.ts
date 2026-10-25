@@ -98,6 +98,15 @@ describe("workflow PM notices", () => {
     expect(sends[0]!.text).toContain("Unmet goals: g2");
   });
 
+  it("hands the PM the report a scheduled run was for, to show the owner as it is; nothing for a scheduled run without one", async () => {
+    const { bb, sends } = noticeBb();
+    const report = runRow({ id: "wfrun_r", output_json: JSON.stringify({ status: "reported", report_md: "## Изменения за неделю\n- README.md" }) });
+    expect(await maybeNotifyWorkflowRun({ bb, log: () => undefined, run: report, pmThreadId, startedBySchedule: true })).toBe(true);
+    expect(sends[0]!.text).toContain("## Изменения за неделю");
+    expect(sends[0]!.text).toContain("as it is");
+    expect(await maybeNotifyWorkflowRun({ bb, log: () => undefined, run: runRow({ id: "wfrun_f", status: "failed", output_json: JSON.stringify({ report_md: "x" }) }), pmThreadId, startedBySchedule: true })).toBe(false);
+  });
+
   it("sends no notice for a schedule-started run or a run with no PM chat", async () => {
     const { bb, sends } = noticeBb();
     expect(await maybeNotifyWorkflowRun({ bb, log: () => undefined, run: runRow(), pmThreadId, startedBySchedule: true })).toBe(false);
