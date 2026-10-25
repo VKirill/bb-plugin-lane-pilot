@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.1.316
+
+**The owner's question is a question, in his language.** A human step's text is an instruction to whoever asks («Show the unresolved findings and offer revise, proceed, abort»), and it was shown to the owner as it was: English, no findings. A cheap helper (the `cheap-fast` preset) now writes the question from the instruction and the run's results so far, in the owner's language, naming the buttons as the form shows them; when it fails the instruction is shown as before. The notice for an answer that chose no option is in the owner's language too, and an answer that arrives before the form is reported shown no longer leaves the re-ask thinking the form is still open.
+
+**Haiku 5.5 is priced.** The price table had no `claude-haiku-5-5`, and a model without a price is counted as the dearest one: the weekly report's errand on the `cheap-fast` preset counted $0.88 instead of about $0.04 and stopped its run on a $0.50 budget. A test now holds every built-in preset's model, and the helpers' default, to a price.
+
+**A batch of fixes is one task per fix.** A request the judgment reads as a batch of independent small fixes went down the small-task graph, whose plan is bounded to one task. It now goes down `issue-batch`: one task per fix (at most 8), fixes in different files built together in one wave, closed, already met or partial.
+
+**The door holds in the PM's shell and for councils.** While the machine works the owner's newest request, `bb lane-pilot dispatch-cli|dispatch-bb|workflow-trigger|council` from that PM's thread are refused like the schedule commands, and so is `lane_pilot_council` start. Automations and drills call the CLI without a thread and are not touched.
+
+**A phase's machine does not give a stage up for the wrong reasons.** The live phase in a real project handed its plan to the PM after two «failures»: the first was a guard (lint rounds and critique rounds together asked the planner a fifth time), the second a critique thread a deploy stopped. The plan's return edges now count the plan's own visits, so a rework past them goes on as low confidence; a run a reload stopped runs again without counting a try; and failures counted under an older version are forgotten after a deploy, so the machine tries the stage again.
+
 ## 0.1.315
 
 **The plan does not ask the owner.** A phase's plan in a real project stopped on an English form — «Show the unresolved findings (max 5) and three choices…», the node's prompt shown as the question, with no findings in it — and the owner's «Сам решай» was refused again and again, the notice «Your answer did not choose an option» stacking up in front of the question. The owner takes no part in the loop: `lp.plan` has no owner step any more. Contracts that still do not lint after three rounds fail the plan (a phase's machine retries it, a small task ends honestly as partial); a critique that still asks for rework after three rounds goes on as a low-confidence plan. On every other human step, «сам решай» (or «на твоё усмотрение», «decide yourself»…) picks the step's default option, and a wrong answer puts the notice in front of the step's own question once.
