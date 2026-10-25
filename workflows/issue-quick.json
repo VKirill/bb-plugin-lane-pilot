@@ -242,7 +242,7 @@
       "from": "plan",
       "to": "already",
       "pass": "artifact",
-      "when": "plan.already_met == true"
+      "when": "plan.already_met == true && plan.task_count == 0"
     },
     {
       "from": "plan",

@@ -3,7 +3,7 @@ import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { taskV2Schema } from "../../contracts";
 import { fullAccessSpawn, stringAt, type ServerCore, type Services } from "../../core/server";
 import { cancelAttemptById, finishRunSafely } from "../../runs/server";
-import { loadPrototypeConfig, saveProjectSetting, savePrototypeConfig } from "../../storage";
+import { getActivation, getRun, listOpenAttempts, loadPrototypeConfig, saveProjectSetting, savePrototypeConfig } from "../../storage";
 import { isSandboxProjectName } from "../../stability/server";
 import { attemptMetrics, syncTokenUsage } from "../../usage/server";
 import { DEFAULT_BENCH_WRITER } from "../runner";
@@ -28,6 +28,12 @@ export function createPluginBench(ctx: ServerCore, services: Services): BenchApi
   };
 
   const keysKey = (projectId: string) => `bench:keys:${projectId}`;
+
+  // Every attempt of a bench run is the bench's, also the ones its PM queued on its own: they go before the run closes.
+  const closeRun = async (projectId: string, runId: string) => {
+    for (const row of listOpenAttempts(db).filter((attempt) => attempt.run_id === runId)) await cancelAttemptById(ctx, row.id).catch(() => undefined);
+    await finishRunSafely(bb, db, projectId, runId, "cli");
+  };
 
   const pipeline: PipelinePort = {
     async findProject(name) {
@@ -61,6 +67,10 @@ export function createPluginBench(ctx: ServerCore, services: Services): BenchApi
       const sourceId = stringAt(spawned, "id");
       if (!sourceId) throw new Error("the bench source thread did not start");
       await waitThreadIdle(bb, sourceId, "bench_source_timeout", 180_000);
+      // A run an earlier series could not close holds the project's activation and would refuse this one.
+      const left = getActivation(db, project.projectId);
+      const leftRun = left ? getRun(db, left.run_id) : undefined;
+      if (left && (leftRun?.state === "pending" || leftRun?.state === "running")) await closeRun(project.projectId, left.run_id);
       const activated = await services.activate(project.projectId, sourceId, "bb");
       // The PM prompt tells the PM to delegate a fixture task of its own; a bench run takes its tasks only from the bench, so the PM is stopped at once.
       await bb.sdk.threads.stop({ threadId: activated.threadId }).catch(() => undefined);
@@ -96,7 +106,7 @@ export function createPluginBench(ctx: ServerCore, services: Services): BenchApi
     },
 
     async finishRun(project, runId) {
-      await finishRunSafely(bb, db, project.projectId, runId, "cli");
+      await closeRun(project.projectId, runId);
     },
   };
 

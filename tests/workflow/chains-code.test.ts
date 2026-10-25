@@ -209,6 +209,12 @@ describe("issue-quick", () => {
     expect(firstInput(r, "plan")).toMatchObject({ goal: "Typo in button label", gaps: "The Send button says 'Sned'." });
   });
 
+  it("a goal the planner finds already met closes the issue without a build", async () => {
+    const r = await runSim("issue-quick", { input, stubs: { ...stubs("low"), "lp.plan": { status: "ok", task_count: 0, tasks: [], already_met: true } } });
+    expect(pathOf(r)).toBe("triage plan already");
+    expect(out(r)).toMatchObject({ status: "closed", resolution: "fixed" });
+  });
+
   it("a critical or high issue is proposed to issue-full, with the same issue as its inputs", async () => {
     const r = await runSim("issue-quick", { input: { ...input, context: "app.tsx" }, stubs: stubs("critical") });
     expect(pathOf(r)).toBe("triage escalate proposed");
