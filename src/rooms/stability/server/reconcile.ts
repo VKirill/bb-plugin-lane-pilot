@@ -1,10 +1,7 @@
 import { DISPATCH_STAGES_PENDING } from "../../runs";
 import { taskV2Schema } from "../../contracts";
-import { countAttempts, countChargedAttempts, createAttempt, endSpawnFailure, getAttempt, getRun, getTask, getTaskPlan, listOpenAttempts, setAttemptHolderThread, transitionAttempt } from "../../storage";
+import { countAttempts, endSpawnFailure, getAttempt, getRun, getTask, getTaskPlan, listOpenAttempts, setAttemptHolderThread, transitionAttempt } from "../../storage";
 import { closeHelperStages, closeWriterStages } from "../../runs/server/stage-records";
-import { FREE_RETRY_LIMIT } from "../../runs";
-import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, type AttemptState } from "../../runs";
-import { randomUUID } from "node:crypto";
 import { reconcile, reconcileHolder } from "../reconcile";
 import type { IdempotencyTriple } from "../reconcile";
 import { shouldReconcileAttemptThread, shouldResumeWorktreeHolder, shouldScanLostWorktreeHolder } from "../../tasks";
@@ -131,42 +128,20 @@ export function createReconcile(ctx: ServerCore, services: Services) {
     const parsed = taskV2Schema.safeParse(stored.contract);
     if (!parsed.success) return false;
     const taskWorkspace=acceptedTaskWorkspace(input.attempt.run_id,input.attempt.task_id,run.writer_workspace_path,parsed.data,input.attempt.id);
-    const last = await services.finishWriterAttempt({
-      projectId:input.projectId,
+    // The writer's turn ended while the plugin reloaded: the start loop checks it, as for a turn the PM's answer reopened.
+    // Finished here, a failure of the writer's own was retried by a fresh writer from main, in a new thread and without the
+    // reason: Vampirism Fire vf-s4-items (2026-10-24, a reload at 12:42) failed «owns_paths rejected …/Items/Use/Buffs.luau»,
+    // its retry rewrote Buffs.luau again, and the task ended «retry limit 2 exhausted». The loop redoes it in the same thread
+    // with the reason, and closes the stages, the limits and the area record as for any turn.
+    services.startWriterTask({
+      projectId:input.projectId, runId:input.attempt.run_id, taskId:input.attempt.task_id,
+      firstAttemptId:input.attempt.id, pmThreadId:run.pm_thread_id ?? "", writerThreadId:input.writerThreadId,
+      dirtBefore:input.attempt.dirt_before,
       config:{ ...config, writerWorkspacePath:taskWorkspace.path },
       task:taskWorkspace.task,
-      runId:input.attempt.run_id,
-      taskId:input.attempt.task_id,
-      attemptId:input.attempt.id,
-      pmThreadId:run.pm_thread_id ?? "",
-      writerThreadId:input.writerThreadId,
-      dirtBefore:input.attempt.dirt_before,
+      plan:getTaskPlan(db, input.attempt.task_id) ?? parsed.data.objective,
+      turnSent:true,
     });
-    // The start loop that would close the stages or retry died with the reload; do its ending here.
-    const outcome = String(last.status);
-    const plan = getTaskPlan(db, input.attempt.task_id) ?? parsed.data.objective;
-    const attempts = countAttempts(db, input.attempt.run_id, input.attempt.task_id);
-    const close = (terminal:"passed"|"failed"|"canceled", reason?:string) => closeWriterStages(db, { runId:input.attempt.run_id, taskId:input.attempt.task_id,
-      plan, terminal, attempt:attempts, reason, threadId:input.writerThreadId, result:last });
-    if (outcome === "accepted") {
-      close("passed");
-      services.maintainMemoryAfterAcceptance(input.projectId, input.attempt.run_id, input.attempt.task_id, run.pm_thread_id ?? "");
-      services.maintainProjectLifeAfterAcceptance(input.projectId, input.attempt.run_id, input.attempt.task_id, run.pm_thread_id ?? "");
-    } else if (outcome === "canceled") {
-      close("canceled", "writer attempt canceled");
-    } else if (RETRY_ELIGIBLE.includes(outcome as AttemptState) && countChargedAttempts(db, input.attempt.run_id, input.attempt.task_id) < MAIN_ATTEMPT_LIMIT
-      && attempts < MAIN_ATTEMPT_LIMIT + FREE_RETRY_LIMIT && run.pm_thread_id) {
-      const retryId = `lpattempt_${randomUUID().replaceAll("-", "")}`;
-      createAttempt(db, { id:retryId, runId:input.attempt.run_id, taskId:input.attempt.task_id });
-      const fresh = acceptedTaskWorkspace(input.attempt.run_id, input.attempt.task_id, run.writer_workspace_path, parsed.data);
-      services.startWriterTask({ projectId:input.projectId, runId:input.attempt.run_id, taskId:input.attempt.task_id, firstAttemptId:retryId,
-        pmThreadId:run.pm_thread_id, config:{ ...config, writerWorkspacePath:fresh.path }, task:fresh.task, plan });
-    } else {
-      const reason = `${RETRY_ELIGIBLE.includes(outcome as AttemptState) ? `retry limit ${MAIN_ATTEMPT_LIMIT} exhausted: ` : ""}${String(last.reason ?? outcome)}`;
-      if (getAttempt(db, input.attempt.id)?.state !== "blocked") transitionAttempt(db, input.attempt.id, "blocked", { reason });
-      close("failed", reason);
-    }
-    refreshRun(input.attempt.run_id);
     return true;
   }
 
