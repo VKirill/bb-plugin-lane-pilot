@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.321
+
+**A phase's stage runs do not notify the PM.** Each machine run of a phase's stage (`phase:` runs: the analysis, the plan, the reviews) sent the PM «Workflow run … of lp.plan is succeeded. Next: call lane_pilot_workflow_status», and the PM stepped in: in the live phase it read three replans in a row as churn and paused the phase. These runs report through the phase's gates and book only.
+
 ## 0.1.320
 
 **A plan the gate refused is fixed, not redrawn.** When the critic approved a plan and the plan gate (code) still refused it, the next machine round got only the gate's reasons and drew a new, smaller plan (the live phase went from two pieces to one, still short of five locked decisions). That round now also sees the current pieces with their covers and is told to return the whole plan with only what the gate names fixed.
