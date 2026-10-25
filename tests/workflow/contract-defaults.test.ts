@@ -13,6 +13,13 @@ describe("a planner's task gets the task-v2 envelope", () => {
     const result = validateTaskV2({ ...filled, project_cwd: "/tmp/sandbox" });
     expect(result.ok ? [] : result.errors).toEqual([]);
   });
+  it("takes the title for a missing objective and a criterion written as a check for its command (live small job, 2026-10-25)", () => {
+    const { objective: _objective, ...without } = planner;
+    const filled = withContractDefaults({ ...without, convergence: { criteria: [{ command: "grep -q '^## Участие$' README.md", cwd: "." }, "test -f README.md"] } });
+    expect(filled).toMatchObject({ objective: "Append license section", convergence: { criteria: ["grep -q '^## Участие$' README.md", "test -f README.md"] } });
+    const result = validateTaskV2({ ...filled, project_cwd: "/tmp/sandbox" });
+    expect(result.ok ? [] : result.errors).toEqual([]);
+  });
   it("keeps what the planner wrote", () => {
     expect(withContractDefaults({ ...planner, risk: "low", lane: "ui", verify: "smoke" })).toMatchObject({ risk: "low", lane: "ui", verify: "smoke" });
   });

@@ -170,6 +170,10 @@ export function withContractDefaults(contract: Row): Row {
     acceptance: asList(contract.acceptance).map((item) => (typeof item === "string" ? item : JSON.stringify(item))),
     verify: VERIFY.includes(str(contract.verify)) ? str(contract.verify) : "tests",
     verification: asList(contract.verification).map((check) => (typeof check === "string" ? { command: commandOf(check), cwd: "." } : check)),
+    objective: str(contract.objective).trim() || str(contract.title).trim(),
+    // The criteria are strings; a planner that wrote them like its checks ({command}) meant the command.
+    ...(contract.convergence && typeof contract.convergence === "object" ? { convergence: { ...(contract.convergence as Row),
+      criteria: asList((contract.convergence as Row).criteria).map((item) => (item && typeof item === "object" ? str((item as Row).command) || JSON.stringify(item) : String(item))) } } : {}),
   };
 }
 
