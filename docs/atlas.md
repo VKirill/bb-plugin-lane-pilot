@@ -54,7 +54,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | owner-presence | PRESENCE_FILE, PRESENCE_WINDOW_MS, Presence, presenceHold, readPresence | 4 | 76 | tests (2) |
 | owner-waiting | Overnight, OwnerAction, OwnerEvidence, OwnerItem, OwnerWaiting, PostOwnerItem, closeOwnerItem, collectOwnerWaiting, ownerWaitingCounts, ownerWaitingMigrations, postOwnerItem | 9 | 598 | tests (3) |
 | permits | — | 1 | 54 | tests (1) |
-| phase | ACCEPTANCE_LINES, AcceptanceLine, BOOK_SECTIONS, BookPart, BookSection, ContextDoc, FrozenVerdict, GENESIS, GateResult, NextAction, PHASE_STAGES, Phase, PhaseRecord, PhaseStage, PhaseState, PlanItem, RETURN_STAGES, TaskFact, acceptanceLines, blindVerdict, brokenLink, canonical, contextSignature, designDecision, designGate, discussionGate, executionGate, getPhase, issuable, lessonsNeeded, listParts, listPhases, nextAction, partHash, phaseMigrations, pieceProblems, planGate, planSignature, renderBook, staleAfterReturn, waveProblems | 13 | 2169 | drill: phase |
+| phase | ACCEPTANCE_LINES, AcceptanceLine, BOOK_SECTIONS, BookPart, BookSection, ContextDoc, FrozenVerdict, GENESIS, GateResult, NextAction, PHASE_STAGES, Phase, PhaseRecord, PhaseStage, PhaseState, PlanItem, RETURN_STAGES, TaskFact, acceptanceLines, blindVerdict, brokenLink, canonical, contextSignature, designDecision, designGate, discussionGate, executionGate, getPhase, issuable, lessonsNeeded, listParts, listPhases, nextAction, partHash, phaseMigrations, pieceProblems, planGate, planSignature, renderBook, staleAfterReturn, waveProblems | 13 | 2209 | drill: phase |
 | pilot | PILOT_MIN_SIBLINGS, RunTask, pilotOf, runTasks | 3 | 51 | tests (2) |
 | policy | ChangeDescriptor, EXAM_RESULT_KEY, POLICY, POLICY_USAGE, StoredExam, TIERS, Tier, authorize, classifyChange, collectAndAppend, composeMorningList, explainChange, globMatch, loadLiveExam, recordOwnerDecision, runExam, runLiveExam, runPolicyCli, shouldStopCycle | 8 | 673 | tests (2) |
 | project-life | OnboardingAcceptedEvidence, OnboardingInputPage, ProjectLifeTaskSummary, acceptedOnboardingEvidence, isAllowedProjectLifePath | 6 | 669 | drill: parallel3 |
@@ -189,8 +189,8 @@ States: (new), queued, spawn_requested, running, spawn_rejected, spawn_unknown, 
 | src/rooms/writer/server/finish.ts | 915 |
 | src/rooms/host-worker/host-handlers.ts | 884 |
 | src/rooms/council/ui/office-layout.ts | 786 |
+| src/rooms/phase/server/driver.ts | 782 |
 | src/rooms/native-install/coexistence.ts | 771 |
-| src/rooms/phase/server/driver.ts | 763 |
 | src/rooms/docs/server/docs-nightly.ts | 757 |
 | src/rooms/ui-shell/ui/use-lp-page.tsx | 735 |
 | src/rooms/council/ui/office-character.ts | 725 |

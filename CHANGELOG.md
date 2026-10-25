@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.307
+
+**A small job goes down the small-task graph, started by the machine.** A small job or a batch of fixes, read as such by the Jev judgment `intake.weight`, now starts the small-task graph itself — workflow `issue-quick` (triage, plan, build, report) in the PM chat's run — instead of waiting for the PM to choose a way to do it; its result comes to the chat. While that run works, `lane_pilot_dispatch_writer` refuses to hand the same request out by hand. The length rule alone no longer calls a short line «small» for sure: a remark must not start a build, so only the judgment's word starts the graph. `phase.train off` leaves small jobs to the PM as before.
+
 ## 0.1.306
 
 **The machine runs the phase's stages.** Matvey's rule is «the machinist is the model, the rails are code»: the machine drives the route and switches the model on at the turns, and the orchestrator does not choose what runs. Until now the phase driver checked the gates in code but poked the PM to do each stage's work and to pick a workflow for it. Now the driver runs the stage's workflow itself (`src/rooms/phase/server/auto-stages.ts`) and reports its result through the same gates a PM report goes through:
