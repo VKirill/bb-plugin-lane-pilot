@@ -1,5 +1,5 @@
 import { accessSync, constants as fsConstants, existsSync } from "node:fs";
-import { access, lstat, mkdir, mkdtemp, realpath, rm, rmdir, symlink } from "node:fs/promises";
+import { access, lstat, mkdir, mkdtemp, readdir, realpath, rm, rmdir, symlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createCapture, redactSecrets, sha256Hex } from "@lane-pilot/kit";
@@ -115,13 +115,31 @@ export function userToolBins(home:string = homedir()):string[] {
   return USER_TOOL_BINS.map((dir)=>join(home,dir)).filter((dir)=>existsSync(dir));
 }
 
-/** Links the user's tool homes that exist into the sandbox's temp HOME. */
+/**
+ * Playwright keeps its browsers in the user's cache (~/.cache/ms-playwright on Linux, ~/Library/Caches/ms-playwright on macOS), and
+ * under the temp HOME it looked there in vain: SelfyStudio's `node scripts/check-en-markup.mjs && node scripts/check-en-client.mjs`
+ * stopped at «Executable doesn't exist at …/lane-pilot-sandbox-…/.cache/ms-playwright/…», green in the writer's shell (2026-10-24),
+ * and cakekeeper's checks downloaded every browser again on each run. The temp HOME gets a cache folder of its own with a link per
+ * installed browser: a launch finds them, and `playwright install` of a version the user has not got still writes into the temp
+ * folder, as the user's cache is not writable from the sandbox.
+ */
+export const USER_BROWSER_CACHES = [".cache/ms-playwright", "Library/Caches/ms-playwright"] as const;
+
+/** Links the user's tool homes that exist into the sandbox's temp HOME, and the browsers of the user's browser caches. */
 export async function linkUserToolHomes(tempPath:string, home:string = homedir()):Promise<string[]> {
   const linked:string[]=[];
   for (const name of USER_TOOL_HOMES) {
     const source=join(home,name);
     if (!existsSync(source)) continue;
     await symlink(source,join(tempPath,name),"dir").then(()=>linked.push(name),()=>undefined);
+  }
+  for (const cache of USER_BROWSER_CACHES) {
+    const source=join(home,cache);
+    // Playwright's own lock (__dirlock) and link records (.links) stay the temp folder's.
+    const browsers=await readdir(source,{withFileTypes:true}).then((entries)=>entries.filter((entry)=>entry.isDirectory()&&!/^(\.|__)/.test(entry.name)),()=>[]);
+    if (!browsers.length) continue;
+    await mkdir(join(tempPath,cache),{recursive:true});
+    for (const browser of browsers) await symlink(join(source,browser.name),join(tempPath,cache,browser.name),"dir").then(()=>linked.push(join(cache,browser.name)),()=>undefined);
   }
   return linked;
 }
