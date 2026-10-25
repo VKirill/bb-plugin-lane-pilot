@@ -175,3 +175,14 @@ describe("the PM is the door: no other system for a request the machine took", (
     expect(await intake.dispatchRefusal("thr_pm")).toMatch(/lane_pilot_forge/);
   });
 });
+
+describe("a reply about work under way", () => {
+  it("is a kind of its own the judgment can choose, read against the PM's last message, and starts nothing", async () => {
+    const { intakeJudgment } = await import("../src/rooms/phase/intake");
+    const state = intakeJudgment.stateBuilder({ text: "так сам авторизовывайся, нажми sign in", previous: "Studio вышла из аккаунта. Войти через Chrome?" }) as Record<string, string>;
+    expect(state.pm_last_message).toMatch(/Studio/);
+    expect(JSON.stringify(intakeJudgment.questions({ text: "x" }))).toContain("reply");
+    const decided = intakeJudgment.decide({ weight: { type: "choice", probabilities: { reply: 0.8, small: 0.2 } } } as never, { min_p: 0.55 }, { text: "x" });
+    expect(decided.decision).toEqual({ kind: "reply" });
+  });
+});

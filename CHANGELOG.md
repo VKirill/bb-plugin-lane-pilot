@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.327
+
+**A reply is not a new task.** The owner's answers in a chat where work was under way («sign in yourself: press Sign in and confirm in the browser», said to a helper testing the game in Studio) were read by the intake as small requests: the small-task graph started each time and did nothing, and the PM had to explain it away («again it took your message about the Studio sign-in for a task»). The intake has a kind `reply` — an answer to the PM's question, a permission or instruction for a running helper or task, a correction of how it works — and the judgment reads the owner's message against the PM's last message in the chat. A reply starts nothing. MiniMax M3.1 Flash's profile names its OpenLux id and stays out of the writer pick (not in the subscriptions).
+
 ## 0.1.326
 
 **A new core convention reaches the reviewers.** The code critic and the night reviewer get at most five memory notes, the core conventions among them ranked by usefulness (accepted uses over uses): a convention added today scores 0.5 and stayed behind the proven ones, and it gains use only by being there — so it never reached them. It showed when the sandbox's core grew: the drill's memory probe found the planted core missing on both paths and refused every deploy. A core convention younger than three days now goes first in its tier; after that it takes its place by usefulness.

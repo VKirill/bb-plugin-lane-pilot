@@ -7,7 +7,7 @@ import { isWholeConsent } from "../tasks";
  * and a heavy goal is driven by the daemon through the phase, the orchestrator only switched on at its turns. Here the code
  * settles what it can (a consent, a short message) and Jev the rest; without Jev a long message is heavy.
  */
-export const INTAKE_KINDS = ["heavy", "small", "batch", "process", "question", "consent"] as const;
+export const INTAKE_KINDS = ["heavy", "small", "batch", "process", "question", "consent", "reply"] as const;
 export type IntakeKind = (typeof INTAKE_KINDS)[number];
 
 /** Lane Pilot's own notices, other threads' messages and system frames are not the owner's request. */
@@ -31,12 +31,13 @@ export function intakeByRules(text: string): { kind: IntakeKind; confident: bool
 export const INTAKE_JUDGMENT_ID = "intake.weight";
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
-export const intakeJudgment = defineJudgment<{ text: string }, { kind: IntakeKind }>({
+export const intakeJudgment = defineJudgment<{ text: string; previous?: string | null }, { kind: IntakeKind }>({
   id: INTAKE_JUDGMENT_ID,
   version: 1,
   defaultMode: "active",
   timeoutMs: 8_000,
-  stateBuilder: (input) => ({ owner_message: clip(input.text, 4_000) }),
+  // The PM's last words in the chat: «sign in yourself» is a reply to the PM's question about a sign-in, not a new task (live 2026-10-25).
+  stateBuilder: (input) => ({ owner_message: clip(input.text, 4_000), ...(input.previous ? { pm_last_message: clip(input.previous, 1_500) } : {}) }),
   questions: () => ({
     weight: choice(
       "The owner wrote `owner_message` to the project manager of a software project. What kind of request is it? Judge by the work it asks for, not by its length or tone.",
@@ -47,6 +48,7 @@ export const intakeJudgment = defineJudgment<{ text: string }, { kind: IntakeKin
         process: "A new recurring routine or way of working the system itself should run again and again: a pipeline, a regular job, a checklist to repeat for every new item, «each time X do Y», «every week …».",
         question: "A question or a request for information, a report or a status; it asks for no change to the project.",
         consent: "Agreement, a yes, an approval of what was proposed, or a short go-ahead.",
+        reply: "A reply about work already under way in this chat (`pm_last_message` shows what): an answer to the PM's question, a permission or an instruction for a helper or task that is running, a correction of how it does it. It asks for no new piece of work.",
       },
     ),
   }),

@@ -40,17 +40,27 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
   const { bb, db } = ctx;
   const pending = new Map<string, Promise<IntakeRecord | null>>();
 
-  async function classify(text: string, projectId: string, runId: string | null, settings: Record<string, unknown>): Promise<{ kind: IntakeKind; by: "rules" | "jev" }> {
+  async function classify(text: string, projectId: string, runId: string | null, settings: Record<string, unknown>, previous: string | null = null): Promise<{ kind: IntakeKind; by: "rules" | "jev" }> {
     const rules = intakeByRules(text);
     if (rules.confident) return { kind: rules.kind, by: "rules" };
     const instance = jev();
     try {
       if (instance?.enabled(settings as JevSettings)) {
-        const verdict = await instance.judge(intakeJudgment, { text }, { projectId, runId, subject: "intake", settings: settings as JevSettings });
+        const verdict = await instance.judge(intakeJudgment, { text, previous }, { projectId, runId, subject: "intake", settings: settings as JevSettings });
         if (verdict.by === "jev") return { kind: verdict.decision.kind, by: "jev" };
       }
     } catch { /* the rules' reading stands */ }
     return { kind: rules.kind, by: "rules" };
+  }
+
+  /** The PM's last message in the chat, or null: the judgment reads the owner's message against it. */
+  async function lastPmMessage(threadId: string): Promise<string | null> {
+    const events = await bb.sdk.threads.events.list({ threadId, types: ["item/completed"], order: "desc", limit: "40" }).catch(() => []);
+    for (const event of Array.isArray(events) ? events as Array<Record<string, unknown>> : []) {
+      const item = ((event.data as Record<string, unknown> | undefined)?.item ?? (event as Record<string, unknown>).item) as { type?: string; text?: string } | undefined;
+      if (item?.type === "agentMessage" && typeof item.text === "string" && item.text.trim()) return item.text;
+    }
+    return null;
   }
 
   async function read(threadId: string): Promise<IntakeRecord | null> {
@@ -69,7 +79,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     if (!requestId || !text || data.initiator === "agent" || isMachineMessage(text)) return null;
     const known = await bb.storage.kv.get(KEY(threadId)).catch(() => null) as IntakeRecord | null;
     if (known?.requestId === requestId) return known;
-    const { kind, by } = await classify(text, run.project_id, run.id, settings);
+    const { kind, by } = await classify(text, run.project_id, run.id, settings, await lastPmMessage(threadId));
     let phaseId: string | null = null;
     if (kind === "heavy") {
       const live = phases.list({ pmThreadId: threadId, live: true })[0];
