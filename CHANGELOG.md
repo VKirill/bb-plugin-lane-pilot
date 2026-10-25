@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.326
+
+**The writer pick is asked.** In 0.1.325 the pick never reached Jev: a key the KV never held reads back `undefined`, and the check waited for `null`, so every task kept the project's writer (the first live task of the sandbox showed no `writer.model` receipt). The pick is now a function of its own with a test on a KV that answers `undefined`; each pick is logged. Haiku 5.5 joins the writers for short, well-scoped edits, from the reviews of 5.5 (SWE-Bench Pro 64.8%, a real production bug fixed in a hands-on test), with its weak side said: long multi-step work and prompts past 100K tokens.
+
 ## 0.1.325
 
 **The model is picked for the task.** The writers now have an anamnesis (`packages/models/src/model-profiles.ts`): for Composer 2.5, Gemini 3.8 Flash (9router), GPT-6.1 Sol, GPT-6 Luna, Claude Sonnet 5.5, Claude Opus 5.5 and GLM-5.3 Flash, what they are good and bad at, from public benchmarks, reviews and developers' reports, with the sources. Before a task is written, a Jev judgment (`writer.model`) reads the task — its files and stack, objective, kind, risk and checks — and the profiles, and picks the writer; an unsure pick (below 0.45) keeps the project's writer. The picked model writes the task, the project's writer becomes its first fallback, and every attempt of the task stays on the pick. Haiku 5.5 is not a writer, MiniMax M3.1 Flash is in no provider yet, Gemini Pro is out by the owner's verdict and Gemini 4 Argon is not in the subscriptions. `writer.models` limits the choice; `writer.pick: off` turns it off (the rotation share then applies).

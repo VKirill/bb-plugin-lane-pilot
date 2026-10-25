@@ -1,5 +1,5 @@
-import { choice, choiceOf, defineJudgment } from "@lane-pilot/jev";
-import type { WriterProfile } from "@lane-pilot/models";
+import { choice, choiceOf, defineJudgment, type Jev } from "@lane-pilot/jev";
+import { writerCandidates, type WriterProfile } from "@lane-pilot/models";
 import { writerFallbackKeys, writerFallbackSlots, WRITER_FALLBACK_SLOTS } from "./writer-fallbacks";
 
 /**
@@ -66,4 +66,31 @@ export function pickedWriterOverlay(settings: Record<string, unknown>, profile: 
     overlay[keys.effort] = row?.reasoningLevel ?? "";
   });
   return overlay;
+}
+
+type PickTaskContract = { title: string; display_title?: string; objective?: string; kind?: string; area?: string; risk?: string;
+  owns_paths: readonly string[]; expected_outputs: readonly string[]; acceptance?: readonly string[] };
+
+/**
+ * The settings a task's writer changes, from Jev's pick; asked once per task and kept in the KV, so every attempt of the task runs on
+ * the same writer. Null keeps the project's writer: the pick is off, Jev is off or unsure, or it picked the project's writer.
+ */
+export async function writerPickOverlay(deps: { kv: { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> }; jev: Pick<Jev, "judge" | "enabled"> | null; log(line: string): void },
+  settings: Record<string, unknown>, input: { projectId: string; runId: string; taskId: string; task: PickTaskContract }): Promise<Record<string, unknown> | null> {
+  if (settings["writer.pick"] === false || settings["writer.pick"] === "off") return null;
+  const key = `writer-pick:${input.runId}:${input.taskId}`;
+  const candidates = writerCandidates(settings);
+  // A key never written reads back undefined, not null: with a null check only, the pick was never asked (live 2026-10-25).
+  let picked = ((await deps.kv.get(key).catch(() => null)) ?? null) as string | null;
+  if (picked === null && candidates.length > 1 && deps.jev?.enabled(settings as never)) {
+    const task = input.task;
+    const verdict = await deps.jev.judge(writerModelJudgment, { task: { title: task.display_title ?? task.title, objective: task.objective ?? "", kind: task.kind ?? null, area: task.area ?? null,
+      risk: task.risk ?? null, owns_paths: task.owns_paths, expected_outputs: task.expected_outputs, acceptance: task.acceptance ?? [] }, candidates },
+      { projectId: input.projectId, runId: input.runId, subject: input.taskId, settings: settings as never }).catch(() => null);
+    picked = verdict?.by === "jev" && verdict.decision.key ? verdict.decision.key : "";
+    await deps.kv.set(key, picked).catch(() => undefined);
+    deps.log(`Lane Pilot writer pick: ${input.taskId} → ${picked || "the project's writer"}`);
+  }
+  const profile = picked ? candidates.find((row) => row.key === picked) : undefined;
+  return profile ? pickedWriterOverlay(settings, profile) : null;
 }

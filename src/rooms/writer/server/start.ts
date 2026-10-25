@@ -10,8 +10,7 @@ import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
 import { reconcile } from "../../stability";
 import { emergencyFallbackDecision } from "../../night";
 import { rotatedWriterSettings, writerFallbackChain, writerFallbacks } from "../writer-fallbacks";
-import { pickedWriterOverlay, writerModelJudgment } from "../writer-model-pick";
-import { writerCandidates } from "@lane-pilot/models";
+import { writerPickOverlay } from "../writer-model-pick";
 import { reassignedReason, takeReassignRequest, type ReassignRequest } from "./reassign";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../runs";
@@ -128,23 +127,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
   }
 
   /** Jev's writer for a task, once per task (kept in the KV), as the settings it changes; null keeps the project's writer. */
-  async function pickWriter(settings:Record<string, unknown>, input:{ projectId:string; runId:string; taskId:string; task:TaskV2 }):Promise<Record<string, unknown> | null> {
-    if (settings["writer.pick"] === false || settings["writer.pick"] === "off") return null;
-    const key = `writer-pick:${input.runId}:${input.taskId}`;
-    const candidates = writerCandidates(settings);
-    let picked = await bb.storage.kv.get(key).catch(() => null) as string | null;
-    if (picked === null && candidates.length > 1 && jev()?.enabled(settings as never)) {
-      const task = input.task as TaskV2 & { kind?: string; area?: string };
-      const verdict = await jev()!.judge(writerModelJudgment, { task: { title:task.display_title ?? task.title, objective:task.objective ?? "", kind:task.kind ?? null, area:task.area ?? null, risk:task.risk ?? null,
-        owns_paths:task.owns_paths, expected_outputs:task.expected_outputs, acceptance:task.acceptance ?? [] }, candidates },
-        { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:settings as never }).catch(() => null);
-      picked = verdict?.by === "jev" && verdict.decision.key ? verdict.decision.key : "";
-      await bb.storage.kv.set(key, picked as never).catch(() => undefined);
-      if (picked) bb.log.info(`Lane Pilot writer pick: ${input.taskId} → ${picked}`);
-    }
-    const profile = picked ? candidates.find((row) => row.key === picked) : undefined;
-    return profile ? pickedWriterOverlay(settings, profile) : null;
-  }
+  const pickWriter = (settings:Record<string, unknown>, input:{ projectId:string; runId:string; taskId:string; task:TaskV2 }) =>
+    writerPickOverlay({ kv:bb.storage.kv as never, jev:jev(), log:(line) => bb.log.warn(line) }, settings, input);
 
   function startWriterTask(input:{
     projectId:string; runId:string; taskId:string; firstAttemptId:string; pmThreadId:string;

@@ -86,7 +86,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | workflow | DraftCheck, DraftOp, DraftScope, DraftTestResult, LP_TASK_PIPELINE, NodeExecutor, RawDefinition, Refusal, RunSummary, StepContext, ValidateOptions, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY, WORKFLOW_ARCHITECT_TOOLS, Workflow, WorkflowEngine, WorkflowProblem, builtinWorkflow | 51 | 8294 | tests (3) |
 | world | worldMigrations | 7 | 534 | tests (4) |
 | world-assets | — | 2 | 65 | tests (4) |
-| writer | DirtSnapshot, attachStreamRetry, attemptProduced, buildCliInvocation, droppedStreamDetail, memoryLine, parseDirtSnapshots, pathAnchors, resolveStageWriterSelection, reviewerMemoryPicks, runCliOnHost, runCommandOnHost, writePmSettingsOnHost, writerBriefStats, writerFallbackChain, writerFallbackKeys, writerFallbacks, writerMemory, writerMemoryPicks, writerReuseStats | 42 | 8049 | drill: parallel3 |
+| writer | DirtSnapshot, attachStreamRetry, attemptProduced, buildCliInvocation, droppedStreamDetail, memoryLine, parseDirtSnapshots, pathAnchors, resolveStageWriterSelection, reviewerMemoryPicks, runCliOnHost, runCommandOnHost, writePmSettingsOnHost, writerBriefStats, writerFallbackChain, writerFallbackKeys, writerFallbacks, writerMemory, writerMemoryPicks, writerReuseStats | 42 | 8060 | drill: parallel3 |
 
 ## Task stages (20)
 
@@ -182,7 +182,7 @@ States: (new), queued, spawn_requested, running, spawn_rejected, spawn_unknown, 
 | src/rooms/sma-map/entries.ts | 1777 |
 | src/rooms/storage/database.ts | 1631 |
 | packages/workflow-engine/src/engine.ts | 1407 |
-| src/rooms/writer/server/start.ts | 1089 |
+| src/rooms/writer/server/start.ts | 1073 |
 | src/rooms/self-repair/server/self-repair.ts | 943 |
 | src/rooms/council/ui/council-office.tsx | 942 |
 | src/rooms/verification/git-integrate.ts | 941 |
