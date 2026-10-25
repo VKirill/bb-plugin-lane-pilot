@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.318
+
+**A failed verdict is planned again by the machine.** The live phase in a real project reached verification, its goal audit found two pieces unmet, and the next step waited for the PM to return the phase to planning. The machine now does it: it returns the phase to planning with the verdict as the note, `lp.plan` runs in gaps mode with the verdict as the gaps and the current pieces in its findings («return every piece the gaps do not name exactly as it is; change only the failing pieces or add new ones»), so the unchanged pieces are not issued again. Twice per phase at most; then the PM decides. A scheduled report's notice tells the PM that its helper's own completion may follow and needs no answer.
+
 ## 0.1.317
 
 **A scheduled report reaches the owner.** A run a schedule started sent no notice («nobody watches it live; the board keeps the result»), so the weekly report the owner asked to get in his chat reached no one: the PM saw only its helper's raw completion and said there was nothing to do. A scheduled run that succeeds with a report-like output (`report_md`, `summary`, `digest`, `message`, `text`…) now hands it to the PM chat to show the owner as it is; its failures stay the schedule board's to tell. The intake's log names the graph it started (issue-batch for a batch).

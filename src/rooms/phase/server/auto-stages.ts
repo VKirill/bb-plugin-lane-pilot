@@ -12,7 +12,9 @@ import packageJson from "../../../../package.json";
  */
 export type AutoKind = "analyze" | "plan" | "draw" | "review" | "close" | "lessons";
 /** Not a workflow: the machine signs again the documents a return to discussion left (the PM's or the owner's correction). */
-export type AutoDue = { kind: AutoKind; wave?: number } | { kind: "resign" };
+export type AutoDue = { kind: AutoKind; wave?: number } | { kind: "resign" } | { kind: "replan" };
+/** How many times the machine returns a phase to planning after a failed verdict before the PM decides. */
+export const AUTO_REPLANS = 2;
 export const AUTO_WORKFLOWS: Record<AutoKind, string> = { analyze: "lp.analyze", plan: "lp.plan", draw: "lp.draw", review: "lp.review", close: "lp.close", lessons: "retrospective" };
 /** Failed runs of one stage's workflow before the stage is the PM's again. */
 export const AUTO_TRIES = 2;
@@ -29,13 +31,15 @@ export function autoDue(phase: Phase): AutoDue | null {
   // The plan, and the plan again in «gaps» mode while its critic asks for changes (at most three rounds, the plan gate's own limit).
   // Also when the critic approved but the plan gate (code) still refuses: the gate's reasons are the gaps of the next round.
   const gateRefuses = !!r.plan?.critique && r.plan.critique.decision === "approve" && !planGate(r).ok && !r.plan.admittedSha;
-  if (phase.stage === "planning" && r.context && (!r.plan || gateRefuses || (r.plan.critique?.decision === "changes_requested" && (r.plan.rounds ?? 0) < 3)) && !tried("plan")) return { kind: "plan" };
+  if (phase.stage === "planning" && r.context && (!r.plan || gateRefuses || !!r.replan?.gaps || (r.plan.critique?.decision === "changes_requested" && (r.plan.rounds ?? 0) < 3)) && !tried("plan")) return { kind: "plan" };
   if (phase.stage === "design" && !r.design?.drawing && !tried("draw")) return { kind: "draw" };
   if (phase.stage === "execution" && r.waveReview) {
     const wave = Object.entries(r.execution?.waves ?? {}).find(([, done]) => done.lines.every((line) => line.ok) && !done.review);
     if (wave && !tried("review")) return { kind: "review", wave: Number(wave[0]) };
   }
   if (phase.stage === "verification" && r.verification?.verdict?.state === "passed" && !r.verification.model && !tried("close")) return { kind: "close" };
+  // A failed verdict (red checks or an unmet goal audit) is planned again by the machine, with the verdict as the gaps, twice at most.
+  if (phase.stage === "verification" && r.verification?.verdict?.state === "failed" && (r.replan?.count ?? 0) < AUTO_REPLANS) return { kind: "replan" };
   if (phase.stage === "lessons" && !r.lessons?.analysis && phase.runId && !tried("lessons")) return { kind: "lessons" };
   return null;
 }
@@ -48,10 +52,13 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number })
     case "analyze": return { goal: phase.goal, depth: "standard" };
     case "plan": {
       const gate = r.plan ? planGate(r) : null;
-      const gaps = [...(r.plan?.critique?.decision === "changes_requested" && r.plan.critique.summary ? [r.plan.critique.summary] : []), ...(gate && !gate.ok ? gate.why : [])];
-      return { goal: phase.goal, findings: { context: contextText, decisions: r.context?.decisions ?? [], requirements: r.context?.requirements ?? [] },
+      const gaps = [...(r.replan?.gaps ? [`the verification failed: ${r.replan.gaps}`] : []),
+        ...(r.plan?.critique?.decision === "changes_requested" && r.plan.critique.summary ? [r.plan.critique.summary] : []), ...(gate && !gate.ok ? gate.why : [])];
+      const current = r.replan?.gaps && r.plan ? (r.plan.items ?? []).map((item) => ({ id: item.id, wave: item.wave, task: item.task })) : null;
+      return { goal: phase.goal, findings: { context: contextText, decisions: r.context?.decisions ?? [], requirements: r.context?.requirements ?? [], ...(current ? { current_pieces: current } : {}) },
         ...(gaps.length ? { mode: "gaps", gaps } : {}),
-        extra_rules: ["every command an acceptance line names is one of the task's verification commands", "each task's id is the piece id; depends_on only on tasks of earlier waves"] };
+        extra_rules: ["every command an acceptance line names is one of the task's verification commands", "each task's id is the piece id; depends_on only on tasks of earlier waves",
+          ...(current ? ["the plan after a failed verification: return every piece of findings.current_pieces the gaps do not name exactly as it is (same id, same contract); change only the failing pieces' contracts or add new pieces for what is missing"] : [])] };
     }
     case "review": {
       const items = (r.plan?.items ?? []).filter((item) => item.wave === due.wave);
@@ -123,6 +130,7 @@ export type AutoApi = {
   goalAudit(input: { phaseId: string; state: "met" | "unmet"; by: string; summary: string }): Phase;
   lessons(input: { phaseId: string; analysis: string; author: string; reviewer: string; reviewedHash: string; by: string }): Phase;
   drawing(input: { phaseId: string; paths: string[]; designer: string; feasible: boolean; contradiction?: string; reviewer?: string; by: string }): Promise<Phase>;
+  returnTo(input: { phaseId: string; to: "planning"; note: string; by: string }): Phase;
 };
 
 export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Services, "workflowEngine">, deps: {
@@ -163,6 +171,7 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       const items = planItems(phase, output);
       if (!items.length) throw new Error(`lp.plan returned no tasks (status ${text(output.status, 30)})`);
       const planned = deps.api.plan({ phaseId: phase.id, items, design: output.has_ui === true, by });
+      if (planned.record.replan?.gaps) deps.save(planned.id, { ...planned.record, replan: { count: planned.record.replan.count } });
       // lp.plan has the whole plan critiqued by its own critic role: that is the independent check of this plan.
       const approved = output.status === "ok" && !/reject|changes|rework|fail/i.test(text(output.plan_verdict, 200));
       await deps.api.planCheck({ phaseId: planned.id, decision: approved ? "approve" : "changes_requested", by: `${by}, plan critic`, summary: text(output.plan_verdict, 2000) });
@@ -223,6 +232,13 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
     }
     const due = autoDue(phase);
     if (!due) return false;
+    if (due.kind === "replan") {
+      const detail = phase.record.verification?.verdict?.detail ?? "the verification failed";
+      const count = (phase.record.replan?.count ?? 0) + 1;
+      const back = deps.api.returnTo({ phaseId: phase.id, to: "planning", note: `the verification failed (${count} of ${AUTO_REPLANS} machine returns): ${detail}`, by: "Lane Pilot (replan after a failed verdict)" });
+      deps.save(back.id, { ...back.record, replan: { gaps: detail, count } });
+      return true;
+    }
     if (due.kind === "resign") {
       // Signed when the PM's turn is over, so a file it is still editing is not signed half-way.
       if (!(await deps.pmIdle(phase))) return true;

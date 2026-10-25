@@ -55,6 +55,8 @@ export type PhaseRecord = {
   signedBefore?: { docs: string[]; risks?: Partial<Record<RiskKind, string>>; decisions?: string[] };
   /** Runs of a stage's workflow that did not finish; at two the stage is the PM's. */
   autoFailures?: Partial<Record<"analyze" | "plan" | "draw" | "review" | "close" | "lessons", number>>;
+  /** The machine's returns to planning after a failed verdict: what to plan for (cleared once planned) and how many so far. */
+  replan?: { gaps?: string; count: number };
   /** The Lane Pilot version the failures were counted under: a new version tries the stages again. */
   autoFailuresVersion?: string;
   context?: { docs: ContextDoc[]; sha: string; signedAt: number; risks?: Partial<Record<RiskKind, string>>; legacy?: boolean; /** REQUIREMENTS ids this phase delivers. */ requirements?: string[]; /** Locked decision ids of CONTEXT.md. */ decisions?: string[] };

@@ -745,7 +745,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   const planUnchanged = (phase: Phase) => !!phase.record.plan?.admittedSha && phase.record.plan.admittedSha === planSignature(phase.record.plan.items, phase.record.plan.contextSha);
 
   const auto = createAutoStages(ctx, services, {
-    api: { context, plan, planCheck, question, waveReview, goalAudit, lessons, drawing },
+    api: { context, plan, planCheck, question, waveReview, goalAudit, lessons, drawing, returnTo },
     get: mustGet,
     save: (phaseId, record) => savePhase(db, phaseId, { record, at: now() }),
     book: (phase, section, kind, text) => book(phase, section as never, kind, text),

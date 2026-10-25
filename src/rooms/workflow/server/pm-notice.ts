@@ -69,7 +69,7 @@ export async function maybeNotifyWorkflowRun(input: {
   if (await input.bb.storage.kv.get(key).catch(() => null)) return false;
   await input.bb.storage.kv.set(key, Date.now() as never).catch(() => undefined);
   const text = delivered
-    ? `Lane Pilot: the scheduled run ${run.id} of ${run.workflow_id} finished. Show the owner this result in this chat as it is (no summary, nothing to act on):\n\n${delivered}`
+    ? `Lane Pilot: the scheduled run ${run.id} of ${run.workflow_id} finished. Show the owner this result in this chat as it is (no summary, nothing to act on; its helper's own completion may follow: it is the same result, say nothing about it):\n\n${delivered}`
     : workflowEndedText({
       workflowRunId: run.id, workflowId: run.workflow_id, status: run.status, reason: run.reason,
       unmetGoalIds: run.status === "blocked" ? input.unmetGoalIds : undefined,
