@@ -1,0 +1,84 @@
+/**
+ * The writers' anamnesis: what each coding model is good and bad at, from public benchmarks, reviews and developers' reports
+ * (October 2026; the sources are listed per model). The writer pick (`writer.model`, a Jev judgment) reads `summary` and chooses the
+ * model for each task; `available: false` keeps a model out of the pick with the reason in `note`. The owner's words of 2026-10-25:
+ * pick the model for the task, not only the effort; Gemini Pro is weak, Argon and MiniMax are not in the subscriptions.
+ */
+import type { ModelTier } from "./model-tiers";
+
+export type WriterProfile = {
+  /** The key the pick answers with and the settings name. */
+  key: string;
+  providerId: string;
+  model: string;
+  reasoning: string;
+  label: string;
+  tier: ModelTier;
+  available: boolean;
+  /** For the pick: strengths, weaknesses and the tasks it fits, in a few sentences. */
+  summary: string;
+  note?: string;
+  sources: string[];
+};
+
+export const WRITER_PROFILES: readonly WriterProfile[] = [
+  {
+    key: "composer", providerId: "acp-cursor", model: "composer-2.5", reasoning: "medium", label: "Composer 2.5 (Cursor)", tier: "standard", available: true,
+    summary: "Cursor's own coding model (on Kimi K2.5): near the frontier on multi-language repository fixes (SWE-Bench Multilingual 79.8%, Terminal-Bench 2.0 69%) at about a tenth of Opus's cost per task, and fast. Fits everyday multi-file features, fixes and refactors in mainstream stacks (TypeScript, Vue/React, Node, Python). Behind the top models on the hardest design and architecture problems and on long autonomous terminal work; most of its strong numbers are Cursor's own.",
+    sources: ["https://www.datacamp.com/blog/composer-2-5", "https://chatforest.com/reviews/cursor-composer-2-5-coding-model-review/", "https://www.techtimes.com/articles/316917/20260520/cursor-composer-25-matches-claude-opus-47-coding-benchmarks-one-tenth-cost.htm"],
+  },
+  {
+    key: "gemini-flash", providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoning: "medium", label: "Gemini 3.8 Flash high (9router)", tier: "standard", available: true,
+    summary: "Google's fast, cheap model: DeepSWE about 74% (level with Claude Opus 5), SWE-Bench Pro 61.6%; Gemini Flash models are close to Opus on Roblox Luau code generation (OpenGameEval) and are recommended there for fast prototyping. Fits quick, well-described tasks, Roblox Luau scripts, UI tweaks and prototypes where speed matters. Its quality depends strongly on the harness; weaker on the hardest long-horizon agent tasks and dense extraction.",
+    sources: ["https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-8-flash", "https://www.mindstudio.ai/blog/gemini-3-8-flash-harness-demos", "https://bloxbot.ai/guide/best-ai-models-roblox-development"],
+  },
+  {
+    key: "gpt-sol", providerId: "codex", model: "gpt-6.1-sol", reasoning: "high", label: "GPT-6.1 Sol (Codex)", tier: "strong", available: true,
+    summary: "OpenAI's strong coding model: DeepSWE 75.2% at high effort, near GPT-6 Astra at a fifth of the price; reviewers praise polished front ends and it leads terminal-heavy agent work. Fits hard bugs, algorithmic and backend logic, tricky integrations, terminal and build work, and polished UI. Verbose (writes much more code than needed); costs more per task than Luna or Composer.",
+    sources: ["https://www.vellum.ai/blog/gpt-6-1-sol-benchmarks-explained", "https://www.sonarsource.com/blog/openai-gpt-6-1-sol-evaluation/", "https://www.layer3labs.io/guides/gpt-6-1-sol-for-coding"],
+  },
+  {
+    key: "gpt-luna", providerId: "codex", model: "gpt-6-luna", reasoning: "high", label: "GPT-6 Luna (Codex)", tier: "light", available: true,
+    summary: "OpenAI's cheap model: DeepSWE 66.6% at max effort for about $0.22 a task (Sol 68.8% at $2.74), but well behind Sol on broad agent work (Artificial Analysis coding index 41 vs 57). Fits small, well-scoped tasks with clear checks: tests, config, small fixes, scripts, mechanical edits, documentation. Not for open-ended features or architecture.",
+    sources: ["https://www.vellum.ai/blog/gpt-6-sol-and-luna-benchmarks-explained", "https://benchlm.ai/compare/gpt-6-luna-vs-gpt-6-sol"],
+  },
+  {
+    key: "sonnet", providerId: "claude-code", model: "claude-sonnet-5-5", reasoning: "medium", label: "Claude Sonnet 5.5", tier: "standard", available: true,
+    summary: "Anthropic's everyday coder: Terminal-Bench 4.0 70.6% (ahead of Opus 5.5), CursorBench within two points of Opus at half the price. Fits daily features, bug fixes, refactors and code that must follow the project's conventions closely; writes clear Russian and English text, so good for docs and UI copy changes too. Opus is clearly stronger on long, ambiguous work.",
+    sources: ["https://www.anthropic.com/claude-sonnet-5-5", "https://www.developersdigest.tech/blog/claude-opus-5-5-vs-sonnet-5-5-vs-haiku-5-5", "https://www.coderabbit.ai/blog/sonnet-5-5-model-review"],
+  },
+  {
+    key: "opus", providerId: "claude-code", model: "claude-opus-5-5", reasoning: "high", label: "Claude Opus 5.5", tier: "strong", available: true,
+    summary: "Anthropic's strongest everyday model: SWE-Bench Pro about 90%, catches more real bugs than Sonnet in review. Fits high-risk or open-ended changes: architecture, cross-cutting refactors, security-sensitive code, ambiguous bugs, migrations. The most expensive here: not for routine, well-scoped work.",
+    sources: ["https://www.developersdigest.tech/blog/claude-opus-5-5-vs-sonnet-5-5-vs-haiku-5-5", "https://www.coderabbit.ai/blog/sonnet-5-5-model-review"],
+  },
+  {
+    key: "glm-flash", providerId: "opencode2", model: "zai-coding-plan/glm-5.3-flash", reasoning: "high", label: "GLM-5.3 Flash (Z.AI)", tier: "light", available: true,
+    summary: "Z.AI's fast model on the coding plan's quota: DeepSWE 63% (confirmed on the public leaderboard), Terminal-Bench 2.1 84.3 by Z.AI's own count. Fits routine agentic coding, scripts, debugging of small failures and bulk mechanical work when the main writers' limits matter. Most of its strong numbers are the vendor's; less proven on large features.",
+    sources: ["https://docs.z.ai/guides/vlm/glm-5.3-flash", "https://www.datacamp.com/blog/glm-5-3-flash", "https://www.edenai.co/post/glm-5-3-flash-benchmark-vs-gemini-deepseek-gpt-5-6"],
+  },
+  {
+    key: "haiku", providerId: "claude-code", model: "claude-haiku-5-5", reasoning: "low", label: "Claude Haiku 5.5", tier: "light", available: false,
+    summary: "Fast and very cheap; good for bounded steps (summaries, classification, triage, read-only helpers). Terminal-Bench 4.0 39.2% against Sonnet's 70.6%: not for multi-step code edits.",
+    note: "not a writer: weak at multi-step code edits", sources: ["https://www.developersdigest.tech/blog/claude-opus-5-5-vs-sonnet-5-5-vs-haiku-5-5"],
+  },
+  {
+    key: "minimax-flash", providerId: "opencode2", model: "minimax/minimax-m3.1-flash", reasoning: "high", label: "MiniMax M3.1 Flash", tier: "light", available: false,
+    summary: "Very cheap ($0.15/$0.60 per M tokens), strong on agent workloads by its vendor (DeepSWE 73.7%), 73% on an independent long-session coding test against Opus 5.5's 87%; flagged for confident wrong answers.",
+    note: "no provider offers it yet: connect it in OpenCode to use it", sources: ["https://www.minimax.io/blog/minimax-m31f", "https://bito.ai/blog/minimax-m3-1-flash-benchmark-vs-claude/"],
+  },
+  {
+    key: "gemini-pro", providerId: "opencode2", model: "openrouter/~google/gemini-pro-latest", reasoning: "high", label: "Gemini Pro", tier: "strong", available: false,
+    summary: "Google's large model.", note: "the owner's verdict: weak for this work; not used", sources: [],
+  },
+  {
+    key: "gemini-argon", providerId: "opencode2", model: "openlux/gemini-4-argon", reasoning: "high", label: "Gemini 4 Argon", tier: "strong", available: false,
+    summary: "Google's newest large model.", note: "not in the owner's subscriptions", sources: [],
+  },
+];
+
+/** The profiles the pick may choose from: available, and in the project's list when it names one (`writer.models`). */
+export function writerCandidates(settings: Record<string, unknown>): WriterProfile[] {
+  const listed = Array.isArray(settings["writer.models"]) ? (settings["writer.models"] as unknown[]).map(String) : null;
+  return WRITER_PROFILES.filter((profile) => profile.available && (!listed || listed.includes(profile.key)));
+}

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.325
+
+**The model is picked for the task.** The writers now have an anamnesis (`packages/models/src/model-profiles.ts`): for Composer 2.5, Gemini 3.8 Flash (9router), GPT-6.1 Sol, GPT-6 Luna, Claude Sonnet 5.5, Claude Opus 5.5 and GLM-5.3 Flash, what they are good and bad at, from public benchmarks, reviews and developers' reports, with the sources. Before a task is written, a Jev judgment (`writer.model`) reads the task — its files and stack, objective, kind, risk and checks — and the profiles, and picks the writer; an unsure pick (below 0.45) keeps the project's writer. The picked model writes the task, the project's writer becomes its first fallback, and every attempt of the task stays on the pick. Haiku 5.5 is not a writer, MiniMax M3.1 Flash is in no provider yet, Gemini Pro is out by the owner's verdict and Gemini 4 Argon is not in the subscriptions. `writer.models` limits the choice; `writer.pick: off` turns it off (the rotation share then applies).
+
 ## 0.1.324
 
 **A deciding role never runs on a light model it inherits.** The planner wrote phase plans on Haiku because it inherited the plan critic's cheap stage (0.1.322 cut that link); this release guards the whole class. Models have a tier (`light`: Haiku, Luna, GLM Flash, a Flash at low; `standard`: Sonnet, a Gemini Flash, GPT-5.6, Composer; `strong`: Opus, Fable, GPT-6 Sol, Gemini Pro and Argon), and the deciding roles a least tier: the planner strong, the auditor, the code critic and the debugger standard. A model such a role inherits (a stage, the generic agent selection, the PM's model) that is below it is raised to the `strong` preset and logged; one the step or the owner's override names is kept and logged as light for the role. A test resolves the roles under the hub's settings: no plan or audit on Haiku or Luna, and the plan's critic is another model than its planner.

@@ -10,6 +10,8 @@ import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
 import { reconcile } from "../../stability";
 import { emergencyFallbackDecision } from "../../night";
 import { rotatedWriterSettings, writerFallbackChain, writerFallbacks } from "../writer-fallbacks";
+import { pickedWriterOverlay, writerModelJudgment } from "../writer-model-pick";
+import { writerCandidates } from "@lane-pilot/models";
 import { reassignedReason, takeReassignRequest, type ReassignRequest } from "./reassign";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../runs";
@@ -123,6 +125,25 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     const usable = chain.filter((_, index) => !holds[index]);
     if (usable.length) chain.forEach((entry, index) => { if (holds[index]) ctx.log(`writer ${taskId}: ${entry.providerId}/${entry.model} skipped, ${usageHoldReason(entry.providerId, entry.model, holds[index]!)}`); });
     return usable.length ? { chain:usable, room:true } : { chain, room:false };
+  }
+
+  /** Jev's writer for a task, once per task (kept in the KV), as the settings it changes; null keeps the project's writer. */
+  async function pickWriter(settings:Record<string, unknown>, input:{ projectId:string; runId:string; taskId:string; task:TaskV2 }):Promise<Record<string, unknown> | null> {
+    if (settings["writer.pick"] === false || settings["writer.pick"] === "off") return null;
+    const key = `writer-pick:${input.runId}:${input.taskId}`;
+    const candidates = writerCandidates(settings);
+    let picked = await bb.storage.kv.get(key).catch(() => null) as string | null;
+    if (picked === null && candidates.length > 1 && jev()?.enabled(settings as never)) {
+      const task = input.task as TaskV2 & { kind?: string; area?: string };
+      const verdict = await jev()!.judge(writerModelJudgment, { task: { title:task.display_title ?? task.title, objective:task.objective ?? "", kind:task.kind ?? null, area:task.area ?? null, risk:task.risk ?? null,
+        owns_paths:task.owns_paths, expected_outputs:task.expected_outputs, acceptance:task.acceptance ?? [] }, candidates },
+        { projectId:input.projectId, runId:input.runId, subject:input.taskId, settings:settings as never }).catch(() => null);
+      picked = verdict?.by === "jev" && verdict.decision.key ? verdict.decision.key : "";
+      await bb.storage.kv.set(key, picked as never).catch(() => undefined);
+      if (picked) bb.log.info(`Lane Pilot writer pick: ${input.taskId} → ${picked}`);
+    }
+    const profile = picked ? candidates.find((row) => row.key === picked) : undefined;
+    return profile ? pickedWriterOverlay(settings, profile) : null;
   }
 
   function startWriterTask(input:{
@@ -373,8 +394,11 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     };
     void (async () => {
       const policy=runPolicyFor(input.runId);
-      // A share of the tasks starts on writer fallback 1 (writer rotation); every attempt of the task sees the same pair.
-      const runSettings=rotatedWriterSettings((await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values, input.taskId);
+      // The writer for this task: Jev's pick from the writers' anamnesis, else the rotation's share, else the project's writer; every
+      // attempt of the task sees the same pair (the pick is kept per task).
+      const baseSettings=(await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values;
+      const writerOverlay=await pickWriter(baseSettings, input);
+      const runSettings=writerOverlay ? { ...baseSettings, ...writerOverlay } : rotatedWriterSettings(baseSettings, input.taskId);
       const budget=services.runBudgetFor(input.runId,runSettings);
       const wallOrTokenStop = () => runningWriterBudgetStop(budget.check());
       const blockBeforeWriter = (reason:string) => {
@@ -833,7 +857,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         last = { status:"blocked", reason:exhausted, attemptId };
       }
       if (last.status !== "accepted" && primaryFailure) {
-        const settings=rotatedWriterSettings(loadProjectSettings(db,input.projectId,getRunSettingsScopes(db,input.runId)), input.taskId);
+        const loadedSettings=loadProjectSettings(db,input.projectId,getRunSettingsScopes(db,input.runId));
+        const settings=writerOverlay ? { ...loadedSettings, ...writerOverlay } : rotatedWriterSettings(loadedSettings, input.taskId);
         const primaryProvider=typeof settings["writer.provider"] === "string" ? settings["writer.provider"] as string : input.config.writerProviderId;
         const primaryModel=typeof settings["writer.model"] === "string" && settings["writer.model"] ? settings["writer.model"] as string : input.config.writerModel;
         const pmSelection={providerId:input.config.pmProviderId,model:input.config.pmModel};
