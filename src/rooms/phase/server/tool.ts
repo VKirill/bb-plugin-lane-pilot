@@ -65,6 +65,12 @@ export function registerPhaseTool(ctx: ServerCore, services: Services): void {
     execute: async (input, context) => {
       const api = services.phases;
       try {
+        // A stage the machine runs is not reported by the PM: the workflow's result goes through the gates by itself.
+        const STAGE_REPORTS = ["context", "plan", "plan_check", "wave_review", "goal_audit"];
+        if (STAGE_REPORTS.includes(input.action) && "phaseId" in input && input.phaseId) {
+          const auto = api.status(input.phaseId).phase.record.auto;
+          if (auto) throw new PhaseRefusal(`Lane Pilot runs this stage itself (workflow ${auto.kind === "analyze" ? "lp.analyze" : auto.kind === "plan" ? "lp.plan" : auto.kind === "review" ? "lp.review" : "lp.close"}, run ${auto.wfRunId}); its result goes through the gates by itself and you get the next step. Do not report it; tell the owner where the phase is if he asks.`);
+        }
         switch (input.action) {
           case "open": {
             const phase = await api.open({ projectId: context.projectId, pmThreadId: context.threadId, title: input.title, goal: input.goal, legacy: input.legacy, roadmapRow: input.roadmapRow });
