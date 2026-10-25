@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.1.309
+
+**The machine runs every stage of the phase.** Besides the analysis, the plan, the wave review and the goal audit, the driver now runs:
+- the design stage — new workflow `lp.draw`: the design lead draws the screens the pieces change as HTML mock-ups in the phase folder's `design/`, another role (the plan critic) checks them, one rework round; a drawing its checker still sends back is a failed run;
+- the lessons — workflow `retrospective`: its «retro» role writes the analysis and its «stage» role weighs it; the machine reports them with the book it read.
+A PM report of a stage the machine runs is refused; the PM reports a stage only when Lane Pilot hands it back after two failed runs.
+
+**Every wave is reviewed before verification.** The machine's review of the last wave had no pass to start in: the phase went to verification in the same pass in which its pieces were accepted (live ph_e0fa42db85). With wave review on, the phase leaves execution only when every wave's review by another model passed; a failed review holds it with the review's words as a PM step.
+
 ## 0.1.308
 
 **The PM is the door; it does not do the machine's stages.** In the first live phase under 0.1.307 (ph_e0fa42db85, the sandbox's timers) the machine ran the analysis, wrote CONTEXT.md and signed it, but the PM, faster than the next pass, submitted the plan itself. `lane_pilot_phase` now refuses a PM's `context`, `plan`, `plan_check`, `wave_review` or `goal_audit` for any stage the machine runs or would run on its next pass; the PM answers the stages' questions, relays the owner's corrections (`revise`, `return`, `correct`) and reports only what the machine leaves to it (the drawing, the lessons, a stage after two failed runs). Back at discussion after a return, the machine signs the returned documents again once the PM is idle (`signedBefore`) instead of analysing anew and writing over the PM's correction; a stage result is not written over a stage that moved meanwhile.
