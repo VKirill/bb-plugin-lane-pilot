@@ -57,3 +57,14 @@ describe("a wave that is in with a failing line", () => {
     expect(next.text).toMatch(/wave 1 is in, but promises_proved \(plan-fact failed: a\)/);
   });
 });
+
+describe("a wave whose review failed", () => {
+  it("holds the phase with the review's words", () => {
+    const phase = { id: "ph_1", projectId: "p", pmThreadId: "t", runId: "r", title: "T", goal: "G", stage: "execution", state: "active", edition: 1, createdAt: 1, updatedAt: 1,
+      record: { plan: { items: [piece("a")] }, waveReview: true, execution: { issued: { a: "a" }, waves: { "1": { packageSha: "p".repeat(64), at: 1, lines: [{ id: "pieces_accepted", ok: true, detail: "" }],
+        review: { state: "failed", by: "lp.review", summary: "the CLI swallows errors", at: 1 } } } } } } as unknown as Phase;
+    const next = nextAction(phase, accepted(["a"]));
+    expect(next).toMatchObject({ waitsForPm: true });
+    expect(next.text).toMatch(/review of wave 1 by another model failed \(the CLI swallows errors\)/);
+  });
+});

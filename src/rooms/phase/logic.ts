@@ -417,6 +417,10 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
         && !items.some((item) => item.wave === Number(wave) && issued[item.id] && facts.get(item.id)?.state !== "accepted"));
       if (red) return { key: key(`wave_red:${red[0]}:${red[1].packageSha}`), stage: phase.stage, waitsForPm: true,
         text: `${head} — stage 4, execution: wave ${red[0]} is in, but ${red[1].lines.filter((line) => !line.ok).map((line) => `${line.id} (${line.detail})`).join("; ")}; the next wave waits. A failing promise needs new work: return the phase to planning (${tool("return", `, phaseId:"${id}", to:"planning", note`)}) and change the failing piece (it is issued again) or add one.` };
+      // A wave whose review by another model failed holds the phase at execution: said, with the review's words.
+      const rejected = Object.entries(r.execution?.waves ?? {}).find(([, wave]) => wave.review?.state === "failed");
+      if (rejected) return { key: key(`wave_review_failed:${rejected[0]}:${rejected[1].packageSha}`), stage: phase.stage, waitsForPm: true,
+        text: `${head} — stage 4, execution: the review of wave ${rejected[0]} by another model failed (${(rejected[1].review?.summary ?? "").slice(0, 600)}). Return the phase to planning (${tool("return", `, phaseId:"${id}", to:"planning", note`)}) and change the pieces it names (they are issued again), or add one.` };
       const unreviewed = Object.entries(r.execution?.waves ?? {}).find(([, wave]) => wave.lines.every((line) => line.ok) && r.waveReview && !wave.review);
       if (unreviewed) return { key: key(`wave_review:${unreviewed[0]}`), stage: phase.stage, waitsForPm: true,
         text: `${head} — wave ${unreviewed[0]} is in (package ${unreviewed[1].packageSha.slice(0, 12)}). Have another model verify it (workflow lp.review on the wave's diff, a reviewer model other than the writers'), then ${tool("wave_review", `, phaseId:"${id}", wave:${unreviewed[0]}, state:"passed"|"failed", by, summary`)}; the next wave waits for it.` };

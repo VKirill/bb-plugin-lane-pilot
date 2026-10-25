@@ -572,7 +572,10 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
         wrote = true;
       }
       if (wrote) { savePhase(db, current.id, { record: { ...current.record, execution: { ...current.record.execution!, waves } }, at: now() }); current = mustGet(current.id); }
-      if (executionGate(items, current.record.execution?.issued ?? {}, facts(current)).ok) {
+      // Every wave is verified by another model before the phase leaves execution, the last one too (Matvey: «волну проверяет другая
+      // модель»); the machine's review of the last wave had no pass to start in before the phase moved on.
+      const unreviewed = current.record.waveReview ? Object.entries(current.record.execution?.waves ?? {}).filter(([, done]) => done.review?.state !== "passed").map(([wave]) => wave) : [];
+      if (executionGate(items, current.record.execution?.issued ?? {}, facts(current)).ok && !unreviewed.length) {
         // Nothing changed since a verdict failed on these very facts: verifying again would fail the same way, and its poke is the
         // one the PM was already given — the phase stalled silently (live ph_ae0a8de9db). It waits for new work instead.
         const goal = current.runId ? getRunGoal(db, current.runId) : null;
