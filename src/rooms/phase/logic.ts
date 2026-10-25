@@ -47,6 +47,12 @@ export type WaveRecord = { packageSha: string; lines: Array<{ id: string; ok: bo
 export type PhaseRecord = {
   /** Opened by the rails for the owner's heavy request (src/rooms/phase/server/intake.ts): the PM cannot close it before acceptance. */
   rails?: boolean;
+  /** The machine runs the stages' workflows itself (setting phase.train, on by default); false leaves every stage to the PM. */
+  train?: boolean;
+  /** The stage workflow the machine runs now (src/rooms/phase/server/auto-stages.ts). */
+  auto?: { kind: "analyze" | "plan" | "review" | "close"; wfRunId: string; startedAt: number; wave?: number };
+  /** Runs of a stage's workflow that did not finish; at two the stage is the PM's. */
+  autoFailures?: Partial<Record<"analyze" | "plan" | "review" | "close", number>>;
   context?: { docs: ContextDoc[]; sha: string; signedAt: number; risks?: Partial<Record<RiskKind, string>>; legacy?: boolean; /** REQUIREMENTS ids this phase delivers. */ requirements?: string[]; /** Locked decision ids of CONTEXT.md. */ decisions?: string[] };
   questions?: StageQuestion[];
   /** The project asked for the owner's word at the turns (owner.words = on when the phase opened). */

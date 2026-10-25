@@ -16,6 +16,7 @@ import { appendPart, getPhase, insertPhase, listParts, listPhases, notePoked, sa
 import { archiveDrawing, conclusionText, markRoadmap, nextRoadmapRow, stateText, uatState, uatText, waveTable } from "../stages";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { createPhaseIntake } from "./intake";
+import { createAutoStages } from "./auto-stages";
 import { critiqueProblems, roleLine, type DesignJournalLine, type DrawingCritique } from "../../design-eval";
 
 export const DESIGN_JOURNAL = "lp.design.journal";
@@ -140,7 +141,8 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     book(phase, "goal", "opened", `phase opened: ${input.title}${ownerWords ? " (the owner's word is asked at the turns: owner.words on)" : ""}`);
     const record: PhaseRecord = { ownerWords, waveReview, issueCap, scope: { revisions: 0, withdrawn: [] },
       autonomous: String(settings["phase.autonomous"] ?? "off") === "on", subagents: String(settings["phase.subagents"] ?? "on") !== "off",
-      branch: String(settings["phase.branch"] ?? "none") === "phase" ? "phase" : "none", ...(input.roadmapRow ? { roadmapRow: input.roadmapRow } : {}), ...(input.rails ? { rails: true } : {}) };
+      branch: String(settings["phase.branch"] ?? "none") === "phase" ? "phase" : "none", ...(input.roadmapRow ? { roadmapRow: input.roadmapRow } : {}), ...(input.rails ? { rails: true } : {}),
+      ...(String(settings["phase.train"] ?? "on") === "off" ? { train: false } : {}) };
     if (input.legacy) {
       // Legacy mode without signature: a plan written before the phase existed is admitted on its own; the book says so.
       record.context = { docs: [], sha: sha256(`legacy:${id}`), signedAt: now(), legacy: true };
@@ -718,7 +720,8 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       try {
         const after = await finishClosed(await drive(phase));
         if (after.stage !== phase.stage || after.state !== phase.state) moved += 1;
-        await poke(after);
+        // The machine drives the train: a stage it can run is not poked to the PM.
+        if (!(await auto.step(mustGet(after.id)))) await poke(mustGet(after.id));
         await writeBook(mustGet(after.id)).catch((cause: unknown) => ctx.log(`phase ${phase.id}: book not written: ${cause instanceof Error ? cause.message : String(cause)}`));
       } catch (cause) {
         ctx.log(`phase ${phase.id}: ${cause instanceof Error ? cause.message : String(cause)}`);
@@ -736,6 +739,15 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   /** Did the plan stay the admitted one (Plan unchanged since checking). */
   const planUnchanged = (phase: Phase) => !!phase.record.plan?.admittedSha && phase.record.plan.admittedSha === planSignature(phase.record.plan.items, phase.record.plan.contextSha);
 
+  const auto = createAutoStages(ctx, services, {
+    api: { context, plan, planCheck, question, waveReview, goalAudit },
+    get: mustGet,
+    save: (phaseId, record) => savePhase(db, phaseId, { record, at: now() }),
+    book: (phase, section, kind, text) => book(phase, section as never, kind, text),
+    writeDocs,
+    runtime: (phase) => (phase.runId ? { ctx, services, pmThreadId: phase.pmThreadId, projectId: phase.projectId, runId: phase.runId } : null),
+    now,
+  });
   const phases = { open, context, plan, planCheck, drawing, goalAudit, lessons, question, answer, word, waveReview, withdraw, revise, correct, returnTo, setState, stopWave, compensate, tick, drive, status, facts, planUnchanged, writeBook,
     list: (filter: Parameters<typeof listPhases>[1]) => listPhases(db, filter) };
   return { phases, phaseIntake: createPhaseIntake(ctx, phases) };
