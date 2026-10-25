@@ -68,7 +68,7 @@ export function registerPhaseTool(ctx: ServerCore, services: Services): void {
       try {
         // A stage the machine runs — or would run on its next pass — is not reported by the PM: the machine drives the train, the PM is
         // the door (Matvey #31766). It reports only what the machine leaves to it: the drawing, the lessons, a stage after two failed runs.
-        const OWN: Record<string, string[]> = { context: ["analyze", "resign"], plan: ["plan"], plan_check: ["plan"], wave_review: ["review"], goal_audit: ["close"] };
+        const OWN: Record<string, string[]> = { context: ["analyze", "resign"], plan: ["plan"], plan_check: ["plan"], wave_review: ["review"], goal_audit: ["close"], lessons: ["lessons"] };
         if (OWN[input.action] && "phaseId" in input && input.phaseId) {
           const phase = api.status(input.phaseId).phase;
           const auto = phase.record.auto;

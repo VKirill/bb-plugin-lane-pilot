@@ -9,10 +9,10 @@ import { phaseFolder, planGate, type Phase, type PhaseRecord, type PlanItem, typ
  * do a stage's work and to choose which workflow runs; a stage whose workflow failed twice goes back to the PM's hands, so the
  * train never stands without anyone named.
  */
-export type AutoKind = "analyze" | "plan" | "review" | "close";
+export type AutoKind = "analyze" | "plan" | "review" | "close" | "lessons";
 /** Not a workflow: the machine signs again the documents a return to discussion left (the PM's or the owner's correction). */
 export type AutoDue = { kind: AutoKind; wave?: number } | { kind: "resign" };
-export const AUTO_WORKFLOWS: Record<AutoKind, string> = { analyze: "lp.analyze", plan: "lp.plan", review: "lp.review", close: "lp.close" };
+export const AUTO_WORKFLOWS: Record<AutoKind, string> = { analyze: "lp.analyze", plan: "lp.plan", review: "lp.review", close: "lp.close", lessons: "retrospective" };
 /** Failed runs of one stage's workflow before the stage is the PM's again. */
 export const AUTO_TRIES = 2;
 
@@ -34,6 +34,7 @@ export function autoDue(phase: Phase): AutoDue | null {
     if (wave && !tried("review")) return { kind: "review", wave: Number(wave[0]) };
   }
   if (phase.stage === "verification" && r.verification?.verdict?.state === "passed" && !r.verification.model && !tried("close")) return { kind: "close" };
+  if (phase.stage === "lessons" && !r.lessons?.analysis && phase.runId && !tried("lessons")) return { kind: "lessons" };
   return null;
 }
 
@@ -56,6 +57,7 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number })
         criteria: items.map((item) => `${item.id}: given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}`) };
     }
     case "close": return { goal: phase.goal, summary: r.verification?.verdict?.detail ?? "" };
+    case "lessons": return { run_id: phase.runId ?? "" };
   }
 }
 
@@ -115,6 +117,7 @@ export type AutoApi = {
   question(input: { phaseId: string; text: string; blocking: boolean; by: string }): Phase;
   waveReview(input: { phaseId: string; wave: number; state: "passed" | "failed"; by: string; summary: string }): Phase;
   goalAudit(input: { phaseId: string; state: "met" | "unmet"; by: string; summary: string }): Phase;
+  lessons(input: { phaseId: string; analysis: string; author: string; reviewer: string; reviewedHash: string; by: string }): Phase;
 };
 
 export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Services, "workflowEngine">, deps: {
@@ -123,6 +126,8 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
   save(phaseId: string, record: PhaseRecord): void;
   book(phase: Phase, section: string, kind: string, text: string): void;
   writeDocs(phase: Phase, files: Array<{ path: string; content: string }>, message: string): Promise<{ written: string[] }>;
+  /** The hash of the phase book's last part: what the machine read when it reports the lessons. */
+  bookHead(phase: Phase): string;
   runtime(phase: Phase): unknown | null;
   /** Whether the PM chat is idle (no turn running). */
   pmIdle(phase: Phase): Promise<boolean>;
@@ -157,6 +162,13 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       const passed = output.status === "pass";
       deps.api.waveReview({ phaseId: phase.id, wave: auto.wave ?? 1, state: passed ? "passed" : "failed", by,
         summary: text(`${output.status}; critical ${text(output.critical_count, 6)}, high ${text(output.high_count, 6)}; ${JSON.stringify(output.findings ?? []).slice(0, 1500)}`, 2000) });
+    } else if (auto.kind === "lessons") {
+      if (phase.stage !== "lessons" || phase.record.lessons?.analysis) return;
+      const insights = Array.isArray(output.insights) ? output.insights as unknown[] : [];
+      const analysis = [`Retrospective of the run (${text(output.status, 20)}; ${text(output.candidates_staged, 6) || 0} rule or note candidate(s) staged${output.retro_path ? `, ${text(output.retro_path, 200)}` : ""}).`,
+        ...insights.slice(0, 12).map((insight) => `- ${text((insight as { text?: unknown; title?: unknown })?.text ?? (insight as { title?: unknown })?.title ?? insight, 280)}`)].join("\n");
+      // The retrospective's two roles: «retro» writes the insights, «stage» weighs and stages them — the author and its reviewer.
+      deps.api.lessons({ phaseId: phase.id, analysis, author: "retrospective: retro", reviewer: "retrospective: stage", reviewedHash: deps.bookHead(phase), by });
     } else {
       const met = output.status === "closed";
       deps.api.goalAudit({ phaseId: phase.id, state: met ? "met" : "unmet", by, summary: text(met ? `every goal met; report ${text(output.report_path, 200)}` : `unmet: ${JSON.stringify(output.unmet_ids ?? [])}; ${text(output.status, 30)}`, 2000) || "goal audit" });

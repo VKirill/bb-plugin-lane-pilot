@@ -744,12 +744,13 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   const planUnchanged = (phase: Phase) => !!phase.record.plan?.admittedSha && phase.record.plan.admittedSha === planSignature(phase.record.plan.items, phase.record.plan.contextSha);
 
   const auto = createAutoStages(ctx, services, {
-    api: { context, plan, planCheck, question, waveReview, goalAudit },
+    api: { context, plan, planCheck, question, waveReview, goalAudit, lessons },
     get: mustGet,
     save: (phaseId, record) => savePhase(db, phaseId, { record, at: now() }),
     book: (phase, section, kind, text) => book(phase, section as never, kind, text),
     writeDocs,
     runtime: (phase) => (phase.runId ? { ctx, services, pmThreadId: phase.pmThreadId, projectId: phase.projectId, runId: phase.runId } : null),
+    bookHead: (phase) => listParts(db, phase.id).at(-1)?.hash ?? "",
     pmIdle: async (phase) => ((await bb.sdk.threads.get({ threadId: phase.pmThreadId }).catch(() => null)) as { status?: unknown } | null)?.status === "idle",
     now,
   });
