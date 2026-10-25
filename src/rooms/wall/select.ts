@@ -56,6 +56,10 @@ export function selectClasses(input: SelectInput): Selection {
     }
     if (input.openRepair.has(row.classKey)) { skip("a repair is already under way"); continue; }
     if (!lane && row.recur7 < input.recurrenceFloor) { skip(`origin ${row.origin} and ${row.recur7} in 7 days (below ${input.recurrenceFloor}): not Lane Pilot's to repair`); continue; }
+    // A writer's own red check is the task's road (red, the retry, green), not a fault a night move in Lane Pilot's code can take away:
+    // repaired every night, its recurrence never fell (task:3a88e7517c7a, nights 2026-10-24/25). Lane Pilot's share of red checks is its
+    // own class (classKeyOf) and is repaired as before.
+    if (!lane && row.failureClass === "task" && row.reasonNorm.startsWith("verification failed (<check>)")) { skip(`the writers' own red checks (origin ${row.origin}, ${row.recur7} in 7 days): the retry is their road; watched, not repaired`); continue; }
     if (picked.length >= input.max) { skip(`more than ${input.max} classes tonight: it waits for the next night`); continue; }
     const step = ladderStep({ failedMoves: row.failedMoves, hunt: row.hunt, afterHuntFailed: row.afterHuntFailed }, input.walks);
     if (step.step === "wait_hunt") { skip(step.why); continue; }

@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { logOrigin, logSignature, originOf, wallSignature } from "./signature";
+import { classKeyOf, logOrigin, logSignature, originOf, wallSignature } from "./signature";
 import { EMPTY_SOURCES, RUNGS, type Sources, type WallClass } from "./types";
 
 export type WallDb = Pick<Database.Database, "prepare" | "transaction">;
@@ -62,7 +62,7 @@ export function collectEntries(db: WallDb, options: JournalOptions): Entry[] {
     if (!options.isReal(row.project_id, row.task_id)) continue;
     const sig = wallSignature(row.state, row.reason);
     const origin = originOf(sig.failureClass, row.triage_origin);
-    const key = { classKey: sig.classKey, version: row.harness_version ?? "", projectId: row.project_id };
+    const key = { classKey: classKeyOf(sig, origin), version: row.harness_version ?? "", projectId: row.project_id };
     const entry = slot(key, () => ({ ...key, failureClass: sig.failureClass, reasonNorm: sig.reasonNorm, origin }), row.updated_at);
     entry.n += 1;
     entry.taskSet.add(`${row.run_id}:${row.task_id}`);
@@ -143,8 +143,8 @@ export function refreshClasses(db: WallDb, options: { now: number; isReal: Journ
     if (real.length >= 2000) break;
     const failed = (FAILED_STATES as readonly string[]).includes(row.state);
     const sig = failed ? wallSignature(row.state, row.reason) : null;
-    real.push({ ...row, classKey: sig?.classKey ?? null, failureClass: sig?.failureClass ?? "", reasonNorm: sig?.reasonNorm ?? "",
-      origin: sig ? originOf(sig.failureClass, row.triage_origin) : "" });
+    const origin = sig ? originOf(sig.failureClass, row.triage_origin) : "";
+    real.push({ ...row, classKey: sig ? classKeyOf(sig, origin) : null, failureClass: sig?.failureClass ?? "", reasonNorm: sig?.reasonNorm ?? "", origin });
   }
   const windows: [number, number, number] = [Math.min(RUNGS[0].window, real.length), Math.min(RUNGS[1].window, real.length), Math.min(RUNGS[2].window, real.length)];
   const byKey = new Map<string, { failureClass: string; reasonNorm: string; origins: Map<string, number>; counts: [number, number, number]; first: number; last: number; total: number; r7: number; r1: number }>();

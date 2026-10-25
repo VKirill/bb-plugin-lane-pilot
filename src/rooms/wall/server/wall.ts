@@ -13,6 +13,7 @@ import { DRILL_KEY, SANDBOX_PROJECT_ID, isDrillTask, isSandboxProjectName } from
 import type { DrillOutcome } from "../../stability/server";
 import { threadUsage } from "../../usage/server";
 import { id as newId } from "../../core/server";
+import { saveVerdict } from "../../bench";
 import { wallLogLines } from "../logs";
 import { createWall, type RepairView, type Scope, type ThreadRun, type WallApi, type WallPorts } from "../service";
 
@@ -190,6 +191,8 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
         if (!version) return "unavailable";
         try {
           const result = services.bench.compare({ version, armA: base, armB: arm });
+          // The night's comparison is a verdict on record like the harness's (the table stayed empty while the night compared).
+          try { saveVerdict(db, { setId: `benchset_${version}`, armA: base, armB: arm, harnessId: null, passed: result.comparison.verdict === "pass", report: result.comparison }); } catch { /* the verdict stands without its record */ }
           return result.comparison.verdict === "pass" ? "pass" : "fail";
         } catch { return "unavailable"; }
       },

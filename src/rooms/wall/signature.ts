@@ -69,6 +69,17 @@ export function originOf(cls: string, triageOrigin: string | null | undefined): 
   return "task";
 }
 
+/**
+ * The class a failed attempt belongs to, with its origin: within the «task» class, attempts on Lane Pilot's side (orchestrator,
+ * harness, infra) are a class of their own. Before, one such attempt among 46 red checks of writers made the whole class Lane Pilot's,
+ * the night repaired it every night, and its recurrence could not fall — most of it was writers' own red checks (night 2026-10-25,
+ * task:3a88e7517c7a; the engineer named it). The writers' side keeps the old key, so its history stays.
+ */
+export function classKeyOf(sig: Signature, origin: string): string {
+  return sig.failureClass === "task" && LANE_SIDE.includes(origin) ? `task:${sha12(`task|${sig.reasonNorm}|lane`)}` : sig.classKey;
+}
+const LANE_SIDE: readonly string[] = ["orchestrator", "harness", "infra"];
+
 /** The key of a night repair in the self-repair watcher's state, in its `kind:hash:text` shape: `night:<hash of the class>:<class and reason>`. */
 export const repairSignature = (cls: { classKey: string; failureClass: string; reasonNorm: string }): string =>
   `night:${sha12(cls.classKey)}:${cls.failureClass}: ${cls.reasonNorm}`.slice(0, 200);

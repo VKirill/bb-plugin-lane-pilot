@@ -134,3 +134,22 @@ describe("the brief a night repair gets", () => {
     expect(parseNightReport("nothing")).toEqual({ sites: 0, sitesOpen: 0, test: null, classKey: null });
   });
 });
+
+describe("red checks split by side", () => {
+  it("Lane Pilot's share of a task class is a class of its own; the writers' keep the old key", async () => {
+    const { classKeyOf, wallSignature } = await import("../../src/rooms/wall/signature");
+    const sig = wallSignature("validation_failed", "verification failed (cd game && python3 scripts/studio_test.py --filter Par037): exit 1");
+    expect(classKeyOf(sig, "writer")).toBe(sig.classKey);
+    expect(classKeyOf(sig, "orchestrator")).not.toBe(sig.classKey);
+    expect(classKeyOf(sig, "infra")).toBe(classKeyOf(sig, "orchestrator"));
+  });
+  it("the writers' own red checks are watched, not repaired by the night", async () => {
+    const { selectClasses } = await import("../../src/rooms/wall/select");
+    const row = (classKey: string, origin: string) => ({ classKey, failureClass: "task", reasonNorm: "verification failed (<check>)", origin, firstSeen: 0, lastSeen: 1, total: 60,
+      counts: [5, 30, 60], windows: [10, 100, 500], rung: 0, state: "open", recur7: 60, recur1: 29, failedMoves: 0, hunt: null, afterHuntFailed: 0, stage: "moves" }) as never;
+    const picked = selectClasses({ classes: [row("task:writers", "writer"), row("task:lane", "orchestrator")], max: 3, walks: 2, recurrenceFloor: 5,
+      openRepair: new Set(), roundsTonight: new Map(), roundsPerNight: 2, tokensLeft: 10_000_000, roundCost: 1_000_000 });
+    expect(picked.picked.map((row) => row.classKey)).toEqual(["task:lane"]);
+    expect(picked.morning.find((row) => row.classKey === "task:writers")?.why).toMatch(/writers' own red checks/);
+  });
+});
