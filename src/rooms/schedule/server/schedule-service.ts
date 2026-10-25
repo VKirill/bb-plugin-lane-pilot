@@ -44,9 +44,10 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
       // used to be visible in the log only); the pause-after-N rule stays as it was and is named in the message that triggers it.
       const notice = scheduleFailureNotice(schedule, run, paused);
       bb.log.warn(notice.split("\n", 1)[0]!);
-      const pm = services.workflowTriggers.pmOf(schedule.project_id);
-      if (pm) void ctx.ownerAsk?.sendToThread(pm.pmThreadId, notice).catch(() => undefined);
-      else bb.log.warn(`Lane Pilot schedule «${schedule.name}»: no open PM chat in the project to tell about the failure`);
+      void services.workflowTriggers.pmOf(schedule.project_id).then((pm) => {
+        if (pm) void ctx.ownerAsk?.sendToThread(pm.pmThreadId, notice).catch(() => undefined);
+        else bb.log.warn(`Lane Pilot schedule «${schedule.name}»: no open PM chat in the project to tell about the failure`);
+      }, () => undefined);
     },
   });
   const { store } = scheduler;
@@ -136,7 +137,7 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
       if (gate.wrongKind.length) problems.push(`${gate.wrongKind.join(", ")}: not a kind this task can take`);
       if (gate.denied.length) warnings.push(`${gate.denied.join(", ")}: the project list «Secrets checks may use» (secrets.allow) leaves it out; add it there or the run fails`);
     }
-    if ((task.kind === "workflow" || task.kind === "errand") && !services.workflowTriggers.pmOf(definition.projectId)) warnings.push("the project has no open Lane Pilot PM chat; a run needs one for its threads and questions");
+    if ((task.kind === "workflow" || task.kind === "errand") && !(await services.workflowTriggers.pmOf(definition.projectId))) warnings.push("the project has no open Lane Pilot PM chat; a run needs one for its threads and questions");
     // The same job scheduled twice (a PM that did not call list first, a retried create) runs twice: say so, the caller decides.
     const twins = store.list({ projectId: definition.projectId, states: ["active", "paused"] }).filter((row) => row.id !== selfId
       && (row.name.trim().toLowerCase() === definition.name.trim().toLowerCase()

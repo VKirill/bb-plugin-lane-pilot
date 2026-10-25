@@ -65,7 +65,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | rule-forms | FormAsk, MECHANISMS, Mechanism, RULES_USAGE, RulesCliDeps, applyJevForms, buildMechanismTask, formDistribution, jevPickForms, listPromotions, mechanismFor, promotionWhy, proposePromotions, runRulesCli | 5 | 429 | tests (2) |
 | run-goal | GoalVerdict, MIN_ACCEPTED, RedCheck, RunGoalRecord, TaskState, getRunGoal, goalVerdict, pmGoalMessage, runGoalMigrations, runReady | 8 | 235 | tests (2) |
 | runs | AttemptState, DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING, ENVIRONMENT_REASON, EXTERNAL_OPS, EXTERNAL_OPS_WARNING, FREE_CLASSES, FREE_RETRY_LIMIT, FailureClass, IllegalTransitionError, MAIN_ATTEMPT_LIMIT, NO_ANSWER_REASON, PARKED_CLASSES, REPLAY_CHECK_FAILED, RETRY_ELIGIBLE, S8_RELATIVE_PATHS, SESSION_MAX_MS, SESSION_MAX_TURNS, TARGET_SHA, TRANSITION_TABLE, UPSTREAM_REPO, WRITER_SILENT_REASON, acceptanceStats, aggregateRun, beginChecks, checksInFlight, checksMoved, cliReceiptAttemptKey, cliReceiptRunKey, failureClass, failureFingerprint, isEnvironmentCheckFailure, isKnownReason, isLegalMove, isWaitingSecret, isWriterSilent, judgedFailureClass, liveFolderLockNote, nextStep, repeatedFailureReason, taskFamily, turnFailureKey, unknownReasons | 35 | 3581 | drill: parallel3 |
-| schedule | ERRAND_BUILTIN, SCHEDULE_ERRAND_DEFAULT_KEY, errandDefaultProblem, scheduleMigrations, scheduleRpcContract | 30 | 3194 | tests (1) |
+| schedule | ERRAND_BUILTIN, SCHEDULE_ERRAND_DEFAULT_KEY, errandDefaultProblem, scheduleMigrations, scheduleRpcContract | 30 | 3195 | tests (1) |
 | secrets | — | 4 | 243 | tests (1) |
 | self-improve | — | 1 | 65 | tests (2) |
 | self-repair | — | 8 | 2195 | tests (4) |

@@ -22,7 +22,7 @@ const within = (path: string, folder: string) => { const target = resolve(path),
 async function placeOf(ctx: ServerCore, services: Services, projectId: string): Promise<ProjectPlace> {
   const { bb } = ctx;
   const project = await bb.sdk.projects.get({ projectId }).catch(() => null) as { name?: unknown; sources?: Array<{ hostId?: string; path?: string }> } | null;
-  const pm = services.workflowTriggers.pmOf(projectId);
+  const pm = await services.workflowTriggers.pmOf(projectId);
   const thread = pm ? await bb.sdk.threads.get({ threadId: pm.pmThreadId }).catch(() => null) : null;
   const environmentId = stringAt(thread, "environmentId");
   const environment = environmentId ? await bb.sdk.environments.get({ environmentId }).catch(() => null) : null;

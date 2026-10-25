@@ -51,7 +51,7 @@ export function createScheduleExecutors(ctx: ServerCore, services: Services): Re
   const errand: Executor = {
     async start({ schedule, task, run }: ExecutorInput) {
       if (task.kind !== "errand") return wrongKind(task, "errand");
-      const pm = services.workflowTriggers.pmOf(schedule.project_id);
+      const pm = await services.workflowTriggers.pmOf(schedule.project_id);
       if (!pm) throw new Error("no_pm_chat: the project has no open Lane Pilot PM chat to hold the errand's thread; enable Lane Pilot in a chat of the project");
       const resolved = await services.errands.resolveAccounts({ projectId: schedule.project_id, runId: pm.runId, pmThreadId: pm.pmThreadId, names: task.accounts });
       if (!resolved.ok) throw new Error(`${resolved.blocked.reason}: ${resolved.blocked.fix.join(" ")}`);

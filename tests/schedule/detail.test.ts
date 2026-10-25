@@ -28,7 +28,7 @@ async function setup(options: { threadSectionId?: string | null; noSdkProject?: 
         throw new Error(`unexpected rpc ${pluginId}.${method}`);
       } },
       threads: {
-        getPluginMetadata: async () => ({}),
+        getPluginMetadata: async ({ threadId }: { threadId: string }) => (threadId === "thr_pm" ? { role: "pm" } : {}),
         get: async ({ threadId }: { threadId: string }) => (threadId === "thr_pm"
           ? { id: threadId, status: "idle", projectId, environmentId: "env_pm", sectionId: options.threadSectionId ?? null }
           : { id: threadId, status: "idle", projectId, environmentId: "env_pm" }),

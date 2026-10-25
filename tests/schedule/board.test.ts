@@ -30,7 +30,7 @@ async function setup(options: { metadata?: Record<string, Record<string, unknown
         throw new Error(`unexpected env-catalog ${method}`);
       } },
       threads: {
-        getPluginMetadata: async ({ threadId }: { threadId: string }) => options.metadata?.[threadId] ?? {},
+        getPluginMetadata: async ({ threadId }: { threadId: string }) => options.metadata?.[threadId] ?? (threadId === "thr_pm" ? { role: "pm" } : {}),
         get: async ({ threadId }: { threadId: string }) => ({ id: threadId, status: "idle", projectId }),
         send: async (args: { threadId: string; input: Array<{ text: string }> }) => { sent.push({ threadId: args.threadId, text: args.input[0]!.text }); return {}; },
       },
