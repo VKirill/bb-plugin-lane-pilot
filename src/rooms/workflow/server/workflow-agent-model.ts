@@ -1,4 +1,4 @@
-import { presetSelection, presetSlug } from "@lane-pilot/models";
+import { belowTier, modelTier, presetSelection, presetSlug, type ModelTier } from "@lane-pilot/models";
 
 /**
  * Which model a generic workflow agent step runs on. ONE function answers it for the executor (what is spawned) and for the Models
@@ -71,6 +71,13 @@ const ROLE_STAGES: Record<string, string[]> = {
   auditor: ["code_critique", "night_review"], debugger: ["workflow.debugger", "specialist"],
 };
 const STAGE_EFFORT: Record<string, string> = { pm_read: "low", plan_critique: "medium", code_critique: "medium", night_review: "high", specialist: "high" };
+/**
+ * The least a deciding role needs. A model this role inherits (a stage, the generic agent selection, the PM's model) that is below it
+ * is raised to the `strong` preset, with the issue `escalated_for_role`; a model named on the step or in the owner's override is kept
+ * and marked `light_model_for_role`. The planner plans (strong); the auditor, the code critic and the debugger judge (standard).
+ */
+export const ROLE_LEAST_TIER: Record<string, ModelTier> = { planner: "strong", auditor: "standard", "code-critic": "standard", debugger: "standard" };
+
 export const roleStages = (role: string): string[] => (role.startsWith("specialist:") ? ["specialist"] : ROLE_STAGES[role] ?? []);
 
 const text = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value.trim() : null);
@@ -112,10 +119,19 @@ export function resolveAgentModel(input: AgentModelInput): AgentModel {
   }
   if (!level && input.pm) level = { providerId: input.pm.providerId, model: input.pm.model, effort: null, source: "pm", sourceKey: null };
   level ??= { providerId: DEFAULT_PROVIDER, model: DEFAULT_MODEL, effort: null, source: "role-default", sourceKey: null };
+  const least = ROLE_LEAST_TIER[input.role];
+  if (least && level.source !== "preset" && belowTier(modelTier(level.model), least)) {
+    const strong = presetSelection("strong", settings);
+    if (strong && here(strong.providerId, strong.model) && !belowTier(modelTier(strong.model), least)) {
+      issues.push("escalated_for_role");
+      level = { providerId: strong.providerId, model: strong.model, effort: strong.reasoning, source: "preset", sourceKey: "strong" };
+    }
+  }
 
   const key = input.at ? modelOverrideKey(input.at.workflowId, input.at.nodeId) : null;
   const override = key ? modelOverrideAt(settings, key) : null;
   if (override) {
+    if (least && belowTier(modelTier(override.model), least)) issues.push("light_model_for_role");
     return {
       providerId: override.provider, model: override.model, reasoningEffort: override.reasoning_effort ?? own.reasoning ?? level.effort ?? DEFAULT_REASONING,
       serviceTier: override.service_tier ?? null, source: "override", sourceKey: key, inherited: false,
@@ -123,6 +139,7 @@ export function resolveAgentModel(input: AgentModelInput): AgentModel {
     };
   }
   if (own.provider && !own.model) issues.push("provider_without_model");
+  if (least && own.model && belowTier(modelTier(own.model), least)) issues.push("light_model_for_role");
   const tier = text(node.service_tier);
   const set = Boolean(own.provider || own.model || own.reasoning || tier);
   // The step's own pair is its choice: it is kept, and said not to run here.

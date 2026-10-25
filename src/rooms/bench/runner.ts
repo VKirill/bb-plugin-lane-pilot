@@ -158,7 +158,7 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
     // «LP sandbox …» is accepted too: a plugin older than the bench only knows that prefix as sandbox traffic (see scripts/lp-bench.ts).
     if (!project.name.startsWith(BENCH_PROJECT_PREFIX) && !project.name.startsWith("LP sandbox")) throw new Error(`refusing to run in «${project.name}»: a bench project's name starts with «${BENCH_PROJECT_PREFIX}»`);
     const settings: Record<string, unknown> = {
-      "writer.provider": (input.writer ?? DEFAULT_BENCH_WRITER).providerId, "writer.model": (input.writer ?? DEFAULT_BENCH_WRITER).model,
+      "writer.rotation_share": 0, "writer.provider": (input.writer ?? DEFAULT_BENCH_WRITER).providerId, "writer.model": (input.writer ?? DEFAULT_BENCH_WRITER).model,
       "memory.enabled": false, "memory.inject": false, "memory.maintain": false,
       "plan_critique.enabled": false, "code_critique.enabled": false, "browser_qa.enabled": false,
       ...(input.settings ?? {}),

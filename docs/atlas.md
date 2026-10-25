@@ -83,10 +83,10 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | wall | wallDeferralKindMigrations, wallMigrations | 20 | 2321 | tests (4) |
 | wires | WIRE_MARK, Wire, WireHop, WireResult, brokenWireReason, readWires, wiresCommand | 2 | 52 | tests (2) |
 | work-graph | AttemptIn, CellState, CostState, ExecutorRow, GRAPH_STAGES, GraphStats, ModelStageStat, ReceiptIn, Role, StageBlock, StageCell, StageEventIn, StageStat, TaskGraph, TaskSummary, Tokens, UsageIn, graphStats, median, roleOf, stageCells, taskGraph | 11 | 642 | tests (2) |
-| workflow | DraftCheck, DraftOp, DraftScope, DraftTestResult, LP_TASK_PIPELINE, NodeExecutor, RawDefinition, Refusal, RunSummary, StepContext, ValidateOptions, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY, WORKFLOW_ARCHITECT_TOOLS, Workflow, WorkflowEngine, WorkflowProblem, builtinWorkflow | 51 | 8275 | tests (3) |
+| workflow | DraftCheck, DraftOp, DraftScope, DraftTestResult, LP_TASK_PIPELINE, NodeExecutor, RawDefinition, Refusal, RunSummary, StepContext, ValidateOptions, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY, WORKFLOW_ARCHITECT_TOOLS, Workflow, WorkflowEngine, WorkflowProblem, builtinWorkflow | 51 | 8294 | tests (3) |
 | world | worldMigrations | 7 | 534 | tests (4) |
 | world-assets | — | 2 | 65 | tests (4) |
-| writer | DirtSnapshot, attachStreamRetry, attemptProduced, buildCliInvocation, droppedStreamDetail, memoryLine, parseDirtSnapshots, pathAnchors, resolveStageWriterSelection, reviewerMemoryPicks, runCliOnHost, runCommandOnHost, writePmSettingsOnHost, writerBriefStats, writerFallbackChain, writerFallbackKeys, writerFallbacks, writerMemory, writerMemoryPicks, writerReuseStats | 41 | 7923 | drill: parallel3 |
+| writer | DirtSnapshot, attachStreamRetry, attemptProduced, buildCliInvocation, droppedStreamDetail, memoryLine, parseDirtSnapshots, pathAnchors, resolveStageWriterSelection, reviewerMemoryPicks, runCliOnHost, runCommandOnHost, writePmSettingsOnHost, writerBriefStats, writerFallbackChain, writerFallbackKeys, writerFallbacks, writerMemory, writerMemoryPicks, writerReuseStats | 41 | 7954 | drill: parallel3 |
 
 ## Task stages (20)
 
@@ -182,7 +182,7 @@ States: (new), queued, spawn_requested, running, spawn_rejected, spawn_unknown, 
 | src/rooms/sma-map/entries.ts | 1777 |
 | src/rooms/storage/database.ts | 1631 |
 | packages/workflow-engine/src/engine.ts | 1407 |
-| src/rooms/writer/server/start.ts | 1063 |
+| src/rooms/writer/server/start.ts | 1064 |
 | src/rooms/self-repair/server/self-repair.ts | 943 |
 | src/rooms/council/ui/council-office.tsx | 942 |
 | src/rooms/verification/git-integrate.ts | 941 |

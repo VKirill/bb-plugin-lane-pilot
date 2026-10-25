@@ -308,6 +308,8 @@ export async function withResolvedModel(request: HelperRequest): Promise<HelperR
     const where = findModelIn(read.providers.find((row) => row.id === chosen.providerId)?.models, chosen.model)?.hostIds.map((id) => read.hosts.find((row) => row.id === id)?.name ?? id).join(", ") ?? "";
     throw new HelperFailure("model_unavailable", `${chosen.providerId}/${chosen.model} is not offered by the machine this workflow's helpers run on (${read.hosts.find((row) => row.id === hostId)?.name ?? hostId})${where ? `; it is on ${where}` : ""}. Pick another model for the step.`);
   }
+  if (chosen.issues.includes("escalated_for_role")) rt.ctx.log?.(`Lane Pilot: the ${request.role} of ${request.workflowId ?? "a workflow"}/${request.nodeId} inherited a model too light for it; it runs on ${chosen.providerId}/${chosen.model} (the strong preset)`);
+  if (chosen.issues.includes("light_model_for_role")) rt.ctx.log?.(`Lane Pilot: the ${request.role} of ${request.workflowId ?? "a workflow"}/${request.nodeId} runs on ${chosen.model}, a light model for that role, as its step names it`);
   return { ...request, provider: chosen.providerId, model: chosen.model, reasoning: chosen.reasoningEffort, ...(chosen.serviceTier ? { serviceTier: chosen.serviceTier } : {}) };
 }
 

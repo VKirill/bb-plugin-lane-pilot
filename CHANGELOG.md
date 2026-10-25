@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.324
+
+**A deciding role never runs on a light model it inherits.** The planner wrote phase plans on Haiku because it inherited the plan critic's cheap stage (0.1.322 cut that link); this release guards the whole class. Models have a tier (`light`: Haiku, Luna, GLM Flash, a Flash at low; `standard`: Sonnet, a Gemini Flash, GPT-5.6, Composer; `strong`: Opus, Fable, GPT-6 Sol, Gemini Pro and Argon), and the deciding roles a least tier: the planner strong, the auditor, the code critic and the debugger standard. A model such a role inherits (a stage, the generic agent selection, the PM's model) that is below it is raised to the `strong` preset and logged; one the step or the owner's override names is kept and logged as light for the role. A test resolves the roles under the hub's settings: no plan or audit on Haiku or Luna, and the plan's critic is another model than its planner.
+
+**Gemini 3.8 writes part of the code.** The writer rotation sends a share of the tasks (`writer.rotation_share`, 25% by default) to writer fallback 1 — Gemini 3.8 through 9router on the hub — from their first attempt, with the writer's own model (Composer 2.5) as their first fallback; the pick is a stable hash of the task id, so every attempt of a task runs on the same writer. Before, Gemini wrote only when Composer failed. A bench arm names its writer and sets the share to 0.
+
 ## 0.1.323
 
 **A reload does not leave Lane Pilot degraded.** The rollback of a deploy whose drill went red (the opencode2 provider was briefly unavailable on the Mac mini) reloaded the plugin, and the `relay-sweep` service was still inside a sweep under load when BB's stop deadline came: the plugin stayed «degraded: service relay-sweep did not stop», not running, until a manual reload. The service now stops at once on abort: it no longer waits for a sweep or a watch refresh that is still going.

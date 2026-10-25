@@ -12,6 +12,8 @@ import { loadWorkflow, parseWorkflow } from "@lane-pilot/workflow-engine";
 import { workflow } from "./fixtures";
 
 const pm = { providerId: "codex", model: "gpt-6-luna" };
+/** A PM on a strong model: the planner keeps it (a light one is raised for the planner, see «a deciding role»). */
+const strongPm = { providerId: "claude-code", model: "claude-opus-5-5" };
 const pick = (role: string, node: Record<string, string> = {}, settings: Record<string, unknown> = {}, pair: typeof pm | null = null) =>
   resolveAgentModel({ role, node, settings, pm: pair });
 
@@ -225,12 +227,37 @@ describe("the Models view says what the executor spawns", () => {
   });
 });
 
+describe("a deciding role", () => {
+  // The hub's settings of 2026-10-25: the cheap stages are on Haiku 5.5.
+  const hub = { "pm_read.provider": "claude-code", "pm_read.model": "claude-haiku-5-5", "plan_critique.provider": "claude-code", "plan_critique.model": "claude-haiku-5-5",
+    "night_review.provider": "claude-code", "night_review.model": "claude-haiku-5-5", "code_critique.provider": "codex", "code_critique.model": "gpt-6-sol",
+    "specialist.provider": "claude-code", "specialist.model": "claude-haiku-5-5" };
+  it("never plans or audits on a light model it inherits, and the plan's critic is another model than its planner", () => {
+    for (const lightPm of [pm, { providerId: "claude-code", model: "claude-haiku-5-5" }]) {
+      const planner = resolveAgentModel({ role: "planner", node: {}, settings: hub, pm: lightPm });
+      expect(planner).toMatchObject({ model: "claude-opus-5-5", issues: expect.arrayContaining(["escalated_for_role"]) });
+      expect(resolveAgentModel({ role: "auditor", node: {}, settings: { ...hub, "code_critique.provider": "", "code_critique.model": "" }, pm: lightPm }).model).not.toMatch(/haiku|luna/);
+      const critic = resolveAgentModel({ role: "plan-critic", node: {}, settings: hub, pm: lightPm });
+      expect(critic.model).not.toBe(planner.model);
+    }
+  });
+  it("keeps a light model the step or the owner names, and says so", () => {
+    expect(resolveAgentModel({ role: "planner", node: { provider: "claude-code", model: "claude-haiku-5-5" }, settings: {}, pm: strongPm })).toMatchObject({ model: "claude-haiku-5-5", issues: ["light_model_for_role"] });
+  });
+  it("tiers the models the team uses", async () => {
+    const { modelTier } = await import("@lane-pilot/models");
+    expect(["claude-haiku-5-5", "gpt-6-luna", "zai-coding-plan/glm-5.3-flash", "router9/ag/gemini-3.8-flash-low"].map(modelTier)).toEqual(["light", "light", "light", "light"]);
+    expect(["claude-sonnet-5-5", "router9/ag/gemini-3.8-flash-high", "composer-2.5", "gpt-5.6-sol"].map(modelTier)).toEqual(["standard", "standard", "standard", "standard"]);
+    expect(["claude-opus-5-5", "gpt-6-sol", "gpt-6.1-sol", "openlux/gemini-4-argon", "openrouter/~google/gemini-pro-latest"].map(modelTier)).toEqual(["strong", "strong", "strong", "strong", "strong"]);
+  });
+});
+
 describe("the owner's model override of one step", () => {
   const at = { workflowId: "lp.plan", nodeId: "plan" };
   const key = modelOverrideKey("lp.plan", "plan");
   const overrideRow = { provider: "codex", model: "gpt-6-sol", reasoning_effort: "low", service_tier: "fast" };
   const pickAt = (node: Record<string, string>, settings: Record<string, unknown>, where: typeof at | null = at) =>
-    resolveAgentModel({ role: "planner", node, settings, pm, ...(where ? { at: where } : {}) });
+    resolveAgentModel({ role: "planner", node, settings, pm: strongPm, ...(where ? { at: where } : {}) });
 
   it("beats the node's fields, its preset, the role's stage, the generic selection and the PM, and names its key", () => {
     const settings = { [key]: overrideRow, "plan_critique.provider": "acp-opencode", "plan_critique.model": "zai/glm-5.3-flash", "workflow.agent.provider": "claude-code", "workflow.agent.model": "claude-sonnet-5-5" };
@@ -288,11 +315,11 @@ describe("the owner's model override of one step", () => {
   it("is told apart in the view: the project's own row is «project», one inherited from all projects is «global»", () => {
     const settings = { [key]: overrideRow };
     const nodes = [{ id: "plan", type: "agent", role: "planner" }, { id: "lint", type: "action", action: "lp.lint" }];
-    const view = (ownKeys: string[]) => resolveStepExecutors({ nodes, settings, pm, workflowId: "lp.plan", ownKeys: new Set(ownKeys) });
+    const view = (ownKeys: string[]) => resolveStepExecutors({ nodes, settings, pm: strongPm, workflowId: "lp.plan", ownKeys: new Set(ownKeys) });
     expect(view([key])[0]).toMatchObject({ source: "override", sourceKey: key, canOverride: true, overrideScope: "project" });
     expect(view([])[0]).toMatchObject({ source: "override", overrideScope: "global" });
     // Without a workflow id (a draft of a new workflow) nothing applies; a step with no model cannot be overridden.
-    expect(resolveStepExecutors({ nodes, settings, pm })[0]).toMatchObject({ source: "pm", canOverride: false, overrideScope: null });
+    expect(resolveStepExecutors({ nodes, settings, pm: strongPm })[0]).toMatchObject({ source: "pm", canOverride: false, overrideScope: null });
     expect(view([key])[1]).toMatchObject({ mode: "none", canOverride: false });
   });
 

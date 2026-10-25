@@ -9,7 +9,7 @@ import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
 import { reconcile } from "../../stability";
 import { emergencyFallbackDecision } from "../../night";
-import { writerFallbackChain, writerFallbacks } from "../writer-fallbacks";
+import { rotatedWriterSettings, writerFallbackChain, writerFallbacks } from "../writer-fallbacks";
 import { reassignedReason, takeReassignRequest, type ReassignRequest } from "./reassign";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../runs";
@@ -373,7 +373,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
     };
     void (async () => {
       const policy=runPolicyFor(input.runId);
-      const runSettings=(await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values;
+      // A share of the tasks starts on writer fallback 1 (writer rotation); every attempt of the task sees the same pair.
+      const runSettings=rotatedWriterSettings((await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values, input.taskId);
       const budget=services.runBudgetFor(input.runId,runSettings);
       const wallOrTokenStop = () => runningWriterBudgetStop(budget.check());
       const blockBeforeWriter = (reason:string) => {
@@ -832,7 +833,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
         last = { status:"blocked", reason:exhausted, attemptId };
       }
       if (last.status !== "accepted" && primaryFailure) {
-        const settings=loadProjectSettings(db,input.projectId,getRunSettingsScopes(db,input.runId));
+        const settings=rotatedWriterSettings(loadProjectSettings(db,input.projectId,getRunSettingsScopes(db,input.runId)), input.taskId);
         const primaryProvider=typeof settings["writer.provider"] === "string" ? settings["writer.provider"] as string : input.config.writerProviderId;
         const primaryModel=typeof settings["writer.model"] === "string" && settings["writer.model"] ? settings["writer.model"] as string : input.config.writerModel;
         const pmSelection={providerId:input.config.pmProviderId,model:input.config.pmModel};

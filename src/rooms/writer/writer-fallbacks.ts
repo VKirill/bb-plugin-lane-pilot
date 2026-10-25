@@ -53,3 +53,33 @@ export function writerFallbackChain(primary:{providerId:string;model:string}, fa
   }
   return chain;
 }
+
+/**
+ * Writer rotation: a share of the tasks (`writer.rotation_share`, 0-100, 25 by default) starts on fallback 1 instead of the writer's
+ * own model, and the writer's model becomes that task's first fallback. The owner's ask of 2026-10-25: Gemini 3.8 (9router) writes
+ * code as well as Composer 2.5, so it takes part of the work, not only the failures. The pick is a stable hash of the task id: every
+ * attempt of one task runs on the same writer. A bench arm names its writer and sets the share to 0.
+ */
+export const WRITER_ROTATION_SHARE_DEFAULT = 25;
+
+/** A stable 0-99 bucket of a text (FNV-1a), the same on the server and in the UI. */
+export function rotationBucket(text:string):number {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) { hash ^= text.charCodeAt(index); hash = Math.imul(hash, 0x01000193) >>> 0; }
+  return hash % 100;
+}
+
+/** The settings a task's writer runs on: the same settings, or, for a task in the rotation's share, fallback 1 and the writer swapped. */
+export function rotatedWriterSettings(settings:Record<string, unknown>, taskId:string):Record<string, unknown> {
+  const raw = Number(settings["writer.rotation_share"] ?? WRITER_ROTATION_SHARE_DEFAULT);
+  const share = Number.isFinite(raw) ? Math.max(0, Math.min(100, raw)) : WRITER_ROTATION_SHARE_DEFAULT;
+  const provider = settings["writer.provider"], model = settings["writer.model"];
+  const alternate = writerFallbackSlots(settings)[0];
+  if (!share || !alternate || typeof provider !== "string" || !provider || typeof model !== "string" || !model) return settings;
+  if (alternate.providerId === provider && alternate.model === model) return settings;
+  if (rotationBucket(taskId) >= share) return settings;
+  const keys = writerFallbackKeys(1);
+  return { ...settings,
+    "writer.provider":alternate.providerId, "writer.model":alternate.model, "writer.reasoning_effort":alternate.reasoningLevel, "writer.rotated":true,
+    [keys.provider]:provider, [keys.model]:model, [keys.effort]:settings["writer.reasoning_effort"] ?? "medium" };
+}
