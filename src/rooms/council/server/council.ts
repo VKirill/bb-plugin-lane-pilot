@@ -26,7 +26,7 @@ import {
 } from "@lane-pilot/council";
 import { getRun, loadPrototypeConfig, type LanePilotDatabase } from "../../storage";
 import { writerExecutionSelection, findModelIn } from "@lane-pilot/models";
-import { configuredSetting, requirePmRun } from "../../core/server";
+import { configuredSetting, requirePmRun, ToolError } from "../../core/server";
 import type { ServerCore } from "../../core/server";
 import { memorySettingsFor } from "../../self-repair/server";
 import { councilOwnerForm, ownerLocale, type OwnerAsk } from "../../relay/server";
@@ -424,7 +424,7 @@ export function createCouncil(ctx: ServerCore) {
 
 export type CouncilApi = ReturnType<typeof createCouncil>;
 
-export function mountCouncilTools(ctx: ServerCore, council: CouncilApi): void {
+export function mountCouncilTools(ctx: ServerCore, council: CouncilApi, launchRefusal: (threadId: string) => Promise<string | null> = async () => null): void {
   const { bb, db } = ctx;
   function fenceView(view: ReturnType<CouncilApi["councilView"]>) {
     return {
@@ -449,6 +449,9 @@ export function mountCouncilTools(ctx: ServerCore, council: CouncilApi): void {
     }).strict(),
     execute: async (params, context) => {
       requirePmRun(db, { runId: params.runId, threadId: context.threadId, projectId: context.projectId });
+      // The train: a request the machine works gets no council of the PM's choosing.
+      const refusal = await launchRefusal(context.threadId);
+      if (refusal) throw new ToolError(refusal, { code: "phase_rails", retryable: false, sideEffects: "none" });
       const session = await council.startCouncil({ projectId: context.projectId, runId: params.runId, pmThreadId: context.threadId, question: params.question, roles: params.roles, materials: params.materials, maxRounds: params.maxRounds, mode: params.mode, judge: params.judge });
       return JSON.stringify(fenceView(council.councilView(session)), null, 2);
     },

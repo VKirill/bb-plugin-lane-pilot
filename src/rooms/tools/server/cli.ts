@@ -197,6 +197,11 @@ export function registerCli(ctx: ServerCore, services: Services) {
     async run(argv, invocation) {
       try {
         const [command, ...args] = argv;
+        // The same door as the tools: a PM's shell does not start work (a schedule, a dispatch, a workflow, a council) for a request
+        // the machine took. Automations and drills call the CLI without a thread and are not touched.
+        const launches = command === "schedule" ? ["create", "update", "run-now"].includes(args[0] ?? "") : ["dispatch-cli", "dispatch-bb", "workflow-trigger", "council"].includes(command ?? "");
+        const refusal = invocation?.threadId && launches ? await services.phaseIntake.launchRefusal(invocation.threadId) : null;
+        if (refusal) return { exitCode:1, stdout:JSON.stringify({ ok:false, error:refusal }) };
         if (command === "reverify" || command === "revert" || command === "changes") {
           return await runRollbackCli(services.rollback, command, args);
         }
@@ -334,9 +339,6 @@ export function registerCli(ctx: ServerCore, services: Services) {
           return await runCheckersCli(services.checkers, args);
         }
         if (command === "schedule") {
-          // The same door as the tool: a PM's shell does not schedule a request the machine took.
-          const refusal = invocation?.threadId && ["create", "update", "run-now"].includes(args[0] ?? "") ? await services.phaseIntake.launchRefusal(invocation.threadId) : null;
-          if (refusal) return { exitCode:1, stdout:JSON.stringify({ ok:false, error:refusal }) };
           return await runScheduleCli(services, args);
         }
         if (command === "configure" && args.length === 1) {

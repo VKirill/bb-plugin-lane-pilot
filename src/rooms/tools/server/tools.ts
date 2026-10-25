@@ -388,7 +388,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   mountInsights(ctx);
   mountHealth(ctx, services);
   mountMemorySync(ctx);
-  mountCouncilTools(ctx, services.council);
+  mountCouncilTools(ctx, services.council, (threadId) => services.phaseIntake.launchRefusal(threadId));
   mountSpecialists(ctx);
   services.errands = mountErrands(ctx);
   mountRelay(ctx);
