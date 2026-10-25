@@ -63,9 +63,9 @@ export const WRITER_PROFILES: readonly WriterProfile[] = [
     sources: ["https://www.eesel.ai/blog/claude-haiku-5-5-review", "https://www.mindstudio.ai/blog/claude-haiku-5-5-real-world-test", "https://computingforgeeks.com/claude-haiku-5-5-released-features-benchmarks/", "https://www.developersdigest.tech/blog/claude-opus-5-5-vs-sonnet-5-5-vs-haiku-5-5"],
   },
   {
-    key: "minimax-flash", providerId: "opencode2", model: "minimax/minimax-m3.1-flash", reasoning: "high", label: "MiniMax M3.1 Flash", tier: "light", available: false,
+    key: "minimax-flash", providerId: "opencode2", model: "openlux/MiniMax-M3.1-Flash", reasoning: "high", label: "MiniMax M3.1 Flash", tier: "light", available: false,
     summary: "Very cheap ($0.15/$0.60 per M tokens), strong on agent workloads by its vendor (DeepSWE 73.7%), 73% on an independent long-session coding test against Opus 5.5's 87%; flagged for confident wrong answers.",
-    note: "no provider offers it yet: connect it in OpenCode to use it", sources: ["https://www.minimax.io/blog/minimax-m31f", "https://bito.ai/blog/minimax-m3-1-flash-benchmark-vs-claude/"],
+    note: "offered through OpenLux (pay per token), not in the owner's subscriptions: kept out of the pick", sources: ["https://www.minimax.io/blog/minimax-m31f", "https://bito.ai/blog/minimax-m3-1-flash-benchmark-vs-claude/"],
   },
   {
     key: "gemini-pro", providerId: "opencode2", model: "openrouter/~google/gemini-pro-latest", reasoning: "high", label: "Gemini Pro", tier: "strong", available: false,
