@@ -2,12 +2,13 @@
 title: i18n workspace overview
 type: overview
 created: 2026-10-24
-updated: 2026-10-24
+updated: 2026-10-25
 status: active
 confidence: medium
 tags: [i18n, localization, workspace]
 sources:
   - packages/i18n/src/i18n.ts
+  - packages/i18n/src/i18n-cockpit.ts
   - packages/i18n/src/index.ts
   - packages/i18n/package.json
   - app.tsx
@@ -23,22 +24,22 @@ TL;DR: `@lane-pilot/i18n` provides typed English and Russian UI dictionaries and
 
 ## What it is
 
-The workspace combines a base Lane Pilot dictionary with domain catalogs for settings fields, workflow editing and operations, schedules, boards, ownership, anamnesis, tabs, graph views, JEV, and improvement screens. `en` and `ru` are assembled from these catalogs, and the Russian dictionary is typed to the English key set (`packages/i18n/src/i18n.ts:2-16`, `packages/i18n/src/i18n.ts:2160-2165`). The graph catalog is one such pair and contains strings for stage and model views (`packages/i18n/src/i18n-graph.ts:1-2`, `packages/i18n/src/i18n-graph.ts:59-60`).
+The workspace combines a base Lane Pilot dictionary with domain catalogs for settings fields, workflow editing and operations, schedules, boards, ownership, anamnesis, tabs, graph views, JEV, improvement screens, and cockpit screens. `en` and `ru` are assembled from these catalogs, with the cockpit catalog spread last, and the Russian dictionary is typed to the English key set (`packages/i18n/src/i18n.ts:2-17`, `packages/i18n/src/i18n.ts:2161-2166`). The graph catalog is one such pair and contains strings for stage and model views (`packages/i18n/src/i18n-graph.ts:1-2`, `packages/i18n/src/i18n-graph.ts:59-60`). The cockpit pair defines strings for screen names, cockpit controls, and screen content (`packages/i18n/src/i18n-cockpit.ts:1-2`, `packages/i18n/src/i18n-cockpit.ts:18-30`, `packages/i18n/src/i18n-cockpit.ts:124-151`).
 
-The package has no application bootstrap. Importing its entry point loads the translation module, while consumers call the exported functions when rendering text (`packages/i18n/src/index.ts:1`, `packages/i18n/src/i18n.ts:2230-2232`). The root plugin app uses `detectLocale` and `t` directly (`app.tsx:3`).
+The package has no application bootstrap. Importing its entry point loads the translation module, while consumers call the exported functions when rendering text (`packages/i18n/src/index.ts:1`, `packages/i18n/src/i18n.ts:2231-2233`). The root plugin app uses `detectLocale` and `t` directly (`app.tsx:3`).
 
 ## Stack
 
 - TypeScript module package with a single `.` export to `src/index.ts` (`packages/i18n/package.json:1-13`).
-- `@lane-pilot/settings-catalog` supplies canonical unapplied-reason constants used by the translated reason helper (`packages/i18n/src/i18n.ts:1`, `packages/i18n/src/i18n.ts:2254-2269`).
+- `@lane-pilot/settings-catalog` supplies canonical unapplied-reason constants used by the translated reason helper (`packages/i18n/src/i18n.ts:1`, `packages/i18n/src/i18n.ts:2255-2270`).
 
 ## Configuration
 
-The package manifest exposes only the root import path; it declares no runtime options or environment variables (`packages/i18n/package.json:10-13`). Locale selection reads a shared explicit override first, then a Russianizer hint, browser language, document language, and English fallback (`packages/i18n/src/i18n.ts:2187-2205`). The detailed selection and translation rules belong to [Locale resolution and translation](features/locale-and-translation.md).
+The package manifest exposes only the root import path; it declares no runtime options or environment variables (`packages/i18n/package.json:10-13`). Locale selection reads a shared explicit override first, then a Russianizer hint, browser language, document language, and English fallback (`packages/i18n/src/i18n.ts:2188-2206`). The detailed selection and translation rules belong to [Locale resolution and translation](features/locale-and-translation.md).
 
 ## Public entry points
 
-The package root re-exports all declarations from `i18n.ts` (`packages/i18n/src/index.ts:1`). Its public API includes `en`, `ru`, `I18nKey`, `Locale`, `LocalePreference`, `setLocaleOverride`, `localeFromSources`, `detectLocale`, `detectLocaleHint`, `subscribeToLocaleHintChanges`, `t`, `validationMessage`, `stateLabel`, `unappliedReason`, and `currentStrings` (`packages/i18n/src/i18n.ts:2160-2165`, `packages/i18n/src/i18n.ts:2170-2233`, `packages/i18n/src/i18n.ts:2234-2287`).
+The package root re-exports all declarations from `i18n.ts` (`packages/i18n/src/index.ts:1`). Its public API includes `en`, `ru`, `I18nKey`, `Locale`, `LocalePreference`, `setLocaleOverride`, `localeFromSources`, `detectLocale`, `detectLocaleHint`, `subscribeToLocaleHintChanges`, `t`, `validationMessage`, `stateLabel`, `unappliedReason`, and `currentStrings` (`packages/i18n/src/i18n.ts:2161-2166`, `packages/i18n/src/i18n.ts:2171-2234`, `packages/i18n/src/i18n.ts:2235-2288`).
 
 ## Workspace consumers
 
