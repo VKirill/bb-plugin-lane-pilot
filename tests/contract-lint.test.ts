@@ -6,7 +6,7 @@ import {
   createAttempt, createRun, createTask, listAttemptsForTask, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread, transitionAttempt,
 } from "../src/rooms/storage/database";
 import { postMergeRepair } from "../src/rooms/writer/server/finish";
-import { lintContract, lintProbePaths, lintReply, runnerFilterArgs, type LintInput, type PathKind } from "../src/rooms/tasks/server/contract-lint";
+import { lintContract, lintProbePaths, lintReply, runnerFilterArgs, siblingTestFolders, type LintInput, type PathKind } from "../src/rooms/tasks/server/contract-lint";
 
 const root = "/tmp/writer";
 const baseTask: TaskV2 = {
@@ -136,6 +136,55 @@ describe("contract lint rules", () => {
         expect(codes(lint(task(owns), {}, null)), id).toEqual([]);
       }
     });
+    describe("tests named longer than the owned code (SelfyStudio, 2026-10-24)", () => {
+      // The real folder on OVH (apps/site/app/composables/api and its __tests__) and the owns_paths each contract went out with.
+      const api = "apps/site/app/composables/api";
+      const listings = new Map<string, string[]>([
+        [`${root}/${api}`, ["blog.ts", "cards.ts", "catalog.ts", "docs.ts", "home.ts", "models.ts", "quiz-inline-auth.ts", "service.ts", "share.ts", "shoot.ts", "site-image.ts", "stickers.ts", "teaser.ts", "tools-hubs.ts", "tools.ts"]],
+        [`${root}/${api}/__tests__`, ["blog-authors-legal-en.test.ts", "blog-authors-seo-audit.test.ts", "cards-seo-audit.test.ts", "home-feed-ribbon.test.ts", "home-models-seo-audit.test.ts", "models-en.test.ts", "quiz-inline-auth.test.ts", "seo-polish.test.ts", "shoot-en.test.ts", "shoot-seo-audit.test.ts", "site-image.test.ts", "teaser.test.ts", "tools-en.test.ts", "tools-seo-audit.test.ts"]],
+      ]);
+      const rejected = {
+        "site-en-shoot":{ owns:[`${api}/shoot.ts`, `${api}/__tests__/shoot-en.test.ts`, "apps/site/app/components/blocks/shoot/", "apps/site/app/utils/locale-routes.ts", "apps/site/app/utils/__tests__/locale-routes.test.ts", "apps/site/nuxt.config.ts"],
+          tests:[`${api}/__tests__/shoot-seo-audit.test.ts`] },
+        "site-seo-polish":{ owns:[`${api}/shoot.ts`, `${api}/cards.ts`, `${api}/models.ts`, `${api}/tools.ts`, `${api}/docs.ts`, `${api}/blog.ts`, `${api}/__tests__/seo-polish.test.ts`, "apps/site/app/components/blocks/cards/", "apps/site/app/utils/blog-schema.ts", "apps/site/app/utils/__tests__/blog-schema.test.ts"],
+          tests:[`${api}/__tests__/shoot-seo-audit.test.ts`, `${api}/__tests__/cards-seo-audit.test.ts`] },
+        "site-vitest-alias-fix":{ owns:["apps/site/vitest.config.mjs", "apps/site/shared/og/", `${api}/cards.ts`, `${api}/shoot.ts`, `${api}/models.ts`, `${api}/blog.ts`, "apps/site/app/composables/useOgImage.ts"],
+          tests:[`${api}/__tests__/cards-seo-audit.test.ts`] },
+        "site-en-hydration-fix":{ owns:["apps/site/app/pages/neiroseti/", `${api}/models.ts`, "apps/site/app/data/models/", "apps/site/scripts/check-hydration.mjs"],
+          tests:[`${api}/__tests__/models-en.test.ts`] },
+      };
+      it("sends back each contract that lost an attempt to such a test, naming that test", () => {
+        for (const [id, { owns, tests }] of Object.entries(rejected)) {
+          const { errors } = lint(task(owns), { listings }, {});
+          expect(errors.length, id).toBeGreaterThan(0);
+          expect(new Set(codes({ errors, warnings:[] })), id).toEqual(new Set(["test_unowned"]));
+          for (const test of tests) expect(errors.some((error) => new RegExp(`so add (\\S+, )*${test}(, \\S+)* to owns_paths, or to never_touch`).test(error.message)), `${id} ${test}`).toBe(true);
+        }
+      });
+      it("takes the contract the PM fixed in place, and stays silent without listings", () => {
+        // site-seo-polish as accepted: the PM added the audit tests of every owned file.
+        const fixed = [...rejected["site-seo-polish"].owns, ...["shoot-seo-audit", "cards-seo-audit", "tools-seo-audit", "home-models-seo-audit", "blog-authors-seo-audit", "shoot-en", "models-en", "tools-en", "blog-authors-legal-en"].map((name) => `${api}/__tests__/${name}.test.ts`)];
+        expect(codes(lint(task(fixed), { listings }, {}))).toEqual([]);
+        for (const { owns } of Object.values(rejected)) {
+          expect(codes(lint(task(owns), { listings:null }, {}))).toEqual([]);
+          expect(codes(lint(task(owns), {}, {}))).toEqual([]);
+          const flagged = lint(task(owns), { listings }, {}).errors.flatMap((error) => /so add (.+?) to owns_paths/.exec(error.message)![1]!.split(", "));
+          expect(codes(lint({ ...task(owns), never_touch:flagged }, { listings }, {}))).toEqual([]);
+        }
+      });
+      it("leaves a test of a longer-named code file to that file, and names only tests", () => {
+        const tools = lint(task([`${api}/tools.ts`]), { listings }, {}).errors.map((error) => error.message).join("\n");
+        expect(tools).toContain(`so add ${api}/__tests__/tools-en.test.ts, ${api}/__tests__/tools-seo-audit.test.ts to owns_paths, or to never_touch if the writer must leave them as they are`);
+        const own = (dir:Record<string, string[]>) => new Map(Object.entries(dir).map(([key, names]) => [`${root}/${key}`, names]));
+        expect(codes(lint(task(["src/tools.ts"]), { listings:own({ src:["tools.ts", "tools-hubs.ts", "tools-hubs.test.ts", "toolsy.test.ts", "tools-notes.md"] }) }, {}))).toEqual([]);
+        expect(codes(lint(task(["src/tools.ts"]), { listings:own({ src:["tools.ts", "tools.edge.spec.ts"] }) }, {}))).toEqual(["test_unowned"]);
+        expect(codes(lint(task(["src/index.ts", "src/a.test.ts", "src/*.ts"]), { listings:own({ src:["index.ts", "index-x.test.ts", "a.test.ts", "a-b.test.ts"] }) }, {}))).toEqual([]);
+      });
+      it("lists the owned code files' folder and its __tests__, once each", () => {
+        expect(siblingTestFolders(task(rejected["site-seo-polish"].owns), root)).toEqual([`${root}/${api}`, `${root}/${api}/__tests__`, `${root}/apps/site/app/utils`, `${root}/apps/site/app/utils/__tests__`]);
+        expect(siblingTestFolders(task(["src/", "src/*.ts", "README.md", "src/index.ts"]), root)).toEqual([]);
+      });
+    });
     it("looks next to the file and in __tests__, but not for a test, an index or a folder", () => {
       expect(codes(lint(task(["src/a.ts"]), {}, { "src/a.test.ts":"file" }))).toEqual(["test_unowned"]);
       expect(codes(lint(task(["lib/a.mjs"]), {}, { "lib/__tests__/a.test.mjs":"file" }))).toEqual(["test_unowned"]);
@@ -238,7 +287,7 @@ const config = {
 };
 
 /** The dispatch of a task through the real plugin; the host answers snapshotDryRun from `kinds` or fails when it is null. */
-async function setup(kinds:Record<string, PathKind> | null, targets:Record<string, "file" | "directory" | "missing"> = {}, probeOutput = "") {
+async function setup(kinds:Record<string, PathKind> | null, targets:Record<string, "file" | "directory" | "missing"> = {}, probeOutput = "", folders:Record<string, string[]> = {}) {
   const { bb, harness } = createFakePluginHost({
     pluginId:"lane-pilot",
     sdk:{ threads:{
@@ -255,6 +304,10 @@ async function setup(kinds:Record<string, PathKind> | null, targets:Record<strin
         const paths = (call.input as { paths:string[] }).paths;
         return { hostId:"host-test", entries:paths.map((path) => ({ path, kind:kinds[path.slice(root.length + 1)] ?? "missing", sha256:null, symlinkTarget:null,
           ...(targets[path.slice(root.length + 1)] ? { targetKind:targets[path.slice(root.length + 1)] } : {}) })) };
+      }
+      if (call.method === "listFolders") {
+        const paths = (call.input as { paths:string[] }).paths;
+        return { hostId:"host-test", entries:paths.map((path) => ({ path, names:folders[path.slice(root.length + 1)] ?? [], truncated:false })) };
       }
       if (call.method === "gitOwnershipBase") return new Promise(() => undefined);
       if (call.method === "runCommand" && String((call.input as { command?:string }).command ?? "").includes("@@package.json")) return { hostId:"host-test", exitCode:0, stdout:probeOutput, stderr:"" };
@@ -322,6 +375,20 @@ describe("contract lint at dispatch", () => {
     expect(taskCount(db)).toBe(0);
     saveProjectSetting(db, projectId, "integration.gate_command", "off");
     expect(await dispatch({ verification:[{ command:"npx vitest run", cwd:root }] })).toMatchObject({ taskId:"lint-task", state:"queued" });
+    await harness.lifecycle.dispose();
+  });
+
+  it("sends back an owned code file whose longer-named test the host lists (site-en-shoot, 2026-10-24), and takes it once owned", async () => {
+    const folders = { "src/__tests__":["shoot-en.test.ts", "shoot-seo-audit.test.ts"], src:["a.ts", "shoot.ts"] };
+    const { db, harness, dispatch } = await setup({ "src/a.ts":"file" }, {}, "", folders);
+    const owns = ["src/shoot.ts", "src/__tests__/shoot-en.test.ts", "src/b.ts"];
+    const reply = await dispatch({ owns_paths:owns });
+    expect(reply).toMatchObject({ runId, state:"validation_failed" });
+    expect((reply.findings as Array<{ code:string }>).map((finding) => finding.code)).toEqual(["test_unowned"]);
+    expect(String(reply.reason)).toContain("so add src/__tests__/shoot-seo-audit.test.ts to owns_paths");
+    expect(taskCount(db)).toBe(0);
+    const taken = await dispatch({ owns_paths:[...owns, "src/__tests__/shoot-seo-audit.test.ts"] });
+    expect(taken.state).not.toBe("validation_failed");
     await harness.lifecycle.dispose();
   });
 

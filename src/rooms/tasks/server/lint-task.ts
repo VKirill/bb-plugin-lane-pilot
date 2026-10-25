@@ -4,7 +4,7 @@ import { getRunSettingsScopes, getTask, latestTaskAttemptState, listOpenAttempts
 import { taskFamily } from "../../runs";
 import { parseSandboxUnsafePatterns } from "../../critique";
 import { isTaskSatisfied } from "../../runs/server";
-import { lintContract, lintProbePaths } from "./contract-lint";
+import { lintContract, lintProbePaths, siblingTestFolders } from "./contract-lint";
 import { checkProgram } from "../rails";
 import { allowedSecretNames } from "../../secrets/server";
 import { gateResolverFor } from "../../verification/server";
@@ -29,6 +29,15 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
       } catch {
         // Listing is best-effort; a spawn still fail-closes on a read_first it cannot read.
       }
+    }
+    // The file names next to owned code files, for their tests with a longer name (best-effort; an older host without listFolders stays silent).
+    let listings:Map<string, string[]> | null = null;
+    const folders = siblingTestFolders(task, workspacePath);
+    if (folders.length) {
+      try {
+        const answer = await host.call("listFolders", { requestedHostId:hostId, paths:folders }, { hostId, timeoutMs:15_000 });
+        if (Array.isArray(answer?.entries)) listings = new Map(answer.entries.map((entry) => [entry.path, entry.names]));
+      } catch { listings = null; }
     }
     const openTasks:LintOpenTask[] = [];
     for (const row of listOpenAttempts(db)) {
@@ -63,6 +72,6 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
       } catch { programs = null; }
     }
     const ownerWords = String(settings["owner.words"] ?? "off") === "on";
-    return lintContract({ task, workspacePath, hostId, kinds, sandboxUnsafe, gate, openTasks, deadDependencies, programs, ownerWords, ...(secrets ? { secrets } : {}) });
+    return lintContract({ task, workspacePath, hostId, kinds, listings, sandboxUnsafe, gate, openTasks, deadDependencies, programs, ownerWords, ...(secrets ? { secrets } : {}) });
   };
 }

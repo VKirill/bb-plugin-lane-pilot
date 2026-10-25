@@ -236,6 +236,11 @@ export const hostContract = defineRpcContract({
     input: z.object({ requestedHostId:z.string().min(1), cwd:z.string().startsWith("/"), programs:z.array(z.string().regex(/^[A-Za-z0-9._+-]{1,80}$/)).max(40) }).strict(),
     output: z.object({ hostId:z.string(), found:z.record(z.string(), z.boolean()) }).strict(),
   },
+  /** The file names in each folder (sorted, at most 500 per folder), for the contract lint's tests next to owned code; a folder that is not there has none. */
+  listFolders: {
+    input: z.object({ requestedHostId:z.string().min(1), paths:z.array(z.string().startsWith("/")).max(64) }).strict(),
+    output: z.object({ hostId:z.string(), entries:z.array(z.object({ path:z.string(), names:z.array(z.string()), truncated:z.boolean() }).strict()) }).strict(),
+  },
   /** The phase book and the phase's documents, written only under the project's `.agents/phases/<phase-id>/`, and the marks in `.agents/planning/STATE.md` / `ROADMAP.md` (src/rooms/phase). */
   writePhaseBook: {
     input: z.object({
