@@ -140,10 +140,13 @@ const NOT_A_FAULT = /needs_human|depends_on|workspace_not_repo_root|writer_strea
  * day are writers' mistakes, not a pattern of Lane Pilot's; a gate that rejected an owned or a bookkeeping file is still one
  * (codeVerdict, as in triage). The reason's path count is part of the repeat signature, so each count used to open a repair
  * of its own (proj_acpiaqf4wq 2026-10-19/20: «<path>» answered not-lane-pilot, then «<path>, <path>» was raised again).
+ * The run-scope gate (writer/server/verify.ts) words the same rejection «writer changed paths outside owns_paths or inside
+ * never_touch: …»; read only as «owns_paths rejected», its writers' strays raised repairs in three projects (2026-10-24/25).
  */
+const STRAY_REASON = /^(?:owns_paths rejected|writer changed paths outside owns_paths or inside never_touch:) [^;]+$/;
 export function writerStrayFiles(reason: string, contractJson: string | null | undefined): boolean {
   const text = reason.replace(/^retry limit \d+ exhausted:\s*/i, "").trim();
-  if (!/^owns_paths rejected [^;]+$/.test(text) || !contractJson) return false;
+  if (!STRAY_REASON.test(text) || !contractJson) return false;
   let contract: { owns_paths?: unknown; never_touch?: unknown };
   try { contract = JSON.parse(contractJson) as typeof contract; } catch { return false; }
   if (!Array.isArray(contract.owns_paths)) return false;

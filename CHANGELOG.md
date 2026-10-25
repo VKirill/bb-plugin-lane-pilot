@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+**A writer's stray files are not a repair, whatever the gate's wording.** The watcher skipped a writer's own files outside owns_paths only when the reason read «owns_paths rejected …»; the run-scope gate words the same rejection «writer changed paths outside owns_paths or inside never_touch: …», and six such tasks in three projects (2026-10-24/25: each file made by the writer's own edit, five accepted on the redo) opened a self-repair. Both wordings are read now: 27 of the 35 run-scope rejections of the last week are a writer's strays; a rejection that names an owned file, bookkeeping only, or trusted tooling still counts.
+
 ## 0.1.328
 
 **A writer thread that cannot take a turn is not offered again.** Two tasks of a real project ended blocked on `sticky_send_failed: HTTP 409: The chat section is archived or moving`: the area's writer thread lived in a section that was being archived, the turn could not be sent, and the retry picked the same thread again. A thread a sticky turn could not be sent to is now marked and never offered as the area's writer again, so the retry starts a fresh writer. The parked tasks restart with this release.

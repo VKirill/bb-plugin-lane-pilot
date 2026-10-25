@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/rooms/storage/database";
-import { createSelfRepair, firstSeenOnRunningVersion, isDue, lastPmOwnerMessageAt, logIncidents, parseVerdict, reasonSignature, repairPriority, repairPrompt, repairStatus, VERSION } from "../../src/rooms/self-repair/server/self-repair";
+import { createSelfRepair, firstSeenOnRunningVersion, isDue, lastPmOwnerMessageAt, logIncidents, parseVerdict, reasonSignature, repairPriority, repairPrompt, repairStatus, VERSION, writerStrayFiles } from "../../src/rooms/self-repair/server/self-repair";
 import { createJev } from "@lane-pilot/jev";
 import { setJevForTests } from "@lane-pilot/jev";
 import type { JevClient } from "@lane-pilot/jev";
@@ -369,6 +369,47 @@ describe("self-repair", () => {
     gate.attempt("lpattempt_6", "lprun_a", "validation_failed", "owns_paths rejected lib/c.ts, lib/d.ts");
     const rows = await createSelfRepair(gate.ctx).collect(0, await createSelfRepair(gate.ctx).config());
     expect(rows.filter((row) => row.kind === "repeat").map((row) => row.attemptId).sort()).toEqual(["lpattempt_4", "lpattempt_5", "lpattempt_6"]);
+  });
+
+  it("the run-scope gate's wording of a writer's stray files is not a pattern either", async () => {
+    // 2026-10-24/25, three projects: each writer's own fileChange made the named file, each task but one was accepted on
+    // the redo, and the watcher still opened a repair, because only «owns_paths rejected …» was read as a writer's stray.
+    const prefix = "writer changed paths outside owns_paths or inside never_touch: ";
+    const cases: Array<[string, string, string[], string[]]> = [
+      ["lpattempt_cfe0", "apps/site/scripts/en-markup-pair-scrub.mjs",
+        ["apps/site/app/data/chrome/", "apps/site/scripts/check-en-cyrillic.mjs", "apps/site/scripts/check-en-markup.mjs", "apps/site/package.json"],
+        ["apps/site/app/pages/**", "apps/site/server/**", ".claude/**"]],
+      ["lpattempt_7fac", "apps/api/vitest.shared-setup.ts",
+        ["apps/api/src/**/__tests__/", "apps/api/src/**/*.test.ts", "apps/api/vitest.config.ts", "apps/api/vitest.setup.ts", "apps/api/test/"], [".claude/**"]],
+      ["lpattempt_0b94", "game/src/shared/Data/Locale.json",
+        ["game/src/shared/Credits.luau", "game/src/client/Credits.luau", "game/src/shared/Locale.json", "docs/decisions.md"], ["docs/parity.md", ".claude/**"]],
+      ["lpattempt_5377", "apps/marketing/app/components/greeting-cards/__tests__/CardCatalogNav.spec.ts",
+        ["apps/marketing/app/components/greeting-cards/blocks/CardUpcomingBlock.vue", "apps/marketing/app/components/greeting-cards/__tests__/CardUpcomingBlock.spec.ts"], ["docs/", ".claude/**"]],
+      ["lpattempt_baf7", "apps/marketing/app/components/webapp/PhotoSlider.vue",
+        ["apps/marketing/app/components/webapp/home/", "apps/marketing/app/components/webapp/viewer/", "apps/marketing/app/components/webapp/__tests__/"], ["apps/marketing/server/", ".claude/**"]],
+      ["lpattempt_8ded", "game/src/client/_BadgesTestEnv.luau",
+        ["game/src/client/Hud.luau", "game/src/client/Badges.luau", "game/src/client/Layout.luau", "game/tests"], ["game/src/server", ".claude/**"]],
+    ];
+    const env = setup();
+    for (const [id, path, owns, never] of cases) {
+      env.attempt(id, "lprun_a", "validation_failed", `${prefix}${path}`);
+      env.db.prepare("INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES (?,'lprun_a','bb',?,?)")
+        .run(`task-${id}`, JSON.stringify({ owns_paths: owns, never_touch: never }), env.now);
+    }
+    expect((await createSelfRepair(env.ctx).collect(0, await createSelfRepair(env.ctx).config())).filter((row) => row.kind === "repeat")).toEqual([]);
+    // The same wording still counts when the gate rejected an owned file or only bookkeeping.
+    const gate = setup();
+    const own = JSON.stringify({ owns_paths: ["src/"], never_touch: [] });
+    for (const [id, reason] of [["lpattempt_g1", `${prefix}src/a.ts`], ["lpattempt_g2", `${prefix}.agents/PROGRESS.md`],
+      ["lpattempt_g3", `${prefix}src/b.ts`]] as const) {
+      gate.attempt(id, "lprun_a", "validation_failed", reason);
+      gate.db.prepare("INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES (?,'lprun_a','bb',?,?)").run(`task-${id}`, own, gate.now);
+    }
+    const rows = await createSelfRepair(gate.ctx).collect(0, await createSelfRepair(gate.ctx).config());
+    expect(rows.filter((row) => row.kind === "repeat").map((row) => row.attemptId).sort()).toEqual(["lpattempt_g1", "lpattempt_g2", "lpattempt_g3"]);
+    // A trusted-tooling hint after the paths is not read as a plain stray.
+    expect(writerStrayFiles(`${prefix}lib/x.ts; lib/x.ts is trusted tooling`, own)).toBe(false);
+    expect(writerStrayFiles(`retry limit 2 exhausted: ${prefix}lib/x.ts`, own)).toBe(true);
   });
 
   it("sees a task queued for hours while nothing runs, and a stage nobody will finish", async () => {
