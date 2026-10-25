@@ -1,0 +1,207 @@
+{
+  "id": "issue-batch",
+  "name": {
+    "en": "A batch of small fixes",
+    "ru": "Пачка мелких правок"
+  },
+  "description": {
+    "en": "Several independent small fixes given in one request - one task per fix, fixes in different files built together in one wave, the batch reported on green sandbox verifications. No analysis stage and no separate review.",
+    "ru": "Несколько независимых мелких правок одной просьбой - по задаче на правку, правки в разных файлах собираются вместе одной волной, итог по зелёным песочным проверкам. Без анализа и отдельного ревью."
+  },
+  "examples": {
+    "ru": [
+      "Поправь три вещи: опечатку в кнопке «Отправить», цвет иконки в шапке и подсказку в форме входа",
+      "Пачка мелочей: переименовать поле email, убрать лишний пробел в заголовке, поменять текст ошибки"
+    ],
+    "en": [
+      "Fix three things: the Submit button typo, the header icon color and the login form hint",
+      "A batch of small things: rename the email field, drop the extra space in the title, change the error text"
+    ]
+  },
+  "not_for": [
+    "issue-quick",
+    "issue-full",
+    "companion"
+  ],
+  "status": "published",
+  "tags": [
+    "code",
+    "issue"
+  ],
+  "inputs": {
+    "title": {
+      "type": "string",
+      "required": true,
+      "note": "one line: what is wrong"
+    },
+    "text": {
+      "type": "string",
+      "required": true,
+      "note": "the fixes, one per line or item: what to change and where"
+    },
+    "context": {
+      "type": "string",
+      "note": "file paths, URLs or notes that help find the place"
+    },
+    "task_ref": {
+      "type": "string",
+      "note": "an id from an outside tracker, only a label for the report"
+    }
+  },
+  "outputs": {
+    "status": "closed|partial",
+    "resolution": "fixed|open",
+    "comment": "string",
+    "merged_commits": "string[]"
+  },
+  "quality_mode": {
+    "default": "quick",
+    "effect": "всегда quick: без критики плана и кода; только песочная проверка контракта",
+    "fixed": "quick"
+  },
+  "requires": {
+    "plugins": [
+      "lane-pilot"
+    ],
+    "machines": [
+      "project writer host"
+    ],
+    "project": {
+      "git": true
+    }
+  },
+  "budget": {
+    "max_steps": 20,
+    "max_minutes": 90
+  },
+  "entry": "plan",
+  "nodes": [
+    {
+      "id": "plan",
+      "type": "subworkflow",
+      "workflow": "lp.plan",
+      "with": {
+        "goal": "{{$inputs.title}}",
+        "findings": "{{$inputs.text}}\n{{$inputs.context}}",
+        "mode": "gaps",
+        "gaps": "{{$inputs.text}}",
+        "boundary": {
+          "constraints": [
+            "batch: one task per independent fix, at most 8; fixes in different files go in one wave; existing tests only"
+          ]
+        }
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "build",
+      "type": "subworkflow",
+      "workflow": "lp.build",
+      "with": {
+        "tasks": "{{plan.tasks}}",
+        "waves": "{{plan.waves}}"
+      },
+      "guards": {
+        "maxVisits": 1
+      }
+    },
+    {
+      "id": "closed",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "closed",
+        "resolution": "fixed",
+        "comment": "'batch: every fix built and verified'",
+        "merged_commits": "ctx.merged_commits"
+      }
+    },
+    {
+      "id": "partial",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "partial",
+        "resolution": "open",
+        "comment": "'batch: not every fix reached a green verification; the merged ones stay'",
+        "merged_commits": "ctx.merged_commits"
+      }
+    },
+    {
+      "id": "already",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "closed",
+        "resolution": "fixed",
+        "comment": "'already met: the planner found the repository already does it; nothing changed'",
+        "merged_commits": "ctx.merged_commits"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "plan",
+      "to": "already",
+      "pass": "artifact",
+      "when": "plan.already_met == true && plan.task_count == 0"
+    },
+    {
+      "from": "plan",
+      "to": "build",
+      "pass": "artifact",
+      "when": "plan.status in ['ok','low_confidence']"
+    },
+    {
+      "from": "plan",
+      "to": "partial",
+      "pass": "artifact"
+    },
+    {
+      "from": "build",
+      "to": "closed",
+      "pass": "artifact",
+      "when": "build.status == 'done'"
+    },
+    {
+      "from": "build",
+      "to": "partial",
+      "pass": "artifact"
+    }
+  ],
+  "test": {
+    "id": "ib-1",
+    "sim": {
+      "input": {
+        "title": "Three small fixes",
+        "text": "Typo in the Send button in app.tsx; the header icon color in header.css; the login hint in login.tsx."
+      },
+      "stubs": {
+        "lp.plan": {
+          "status": "ok",
+          "task_count": 3
+        },
+        "lp.build": {
+          "status": "done",
+          "merged_commits": [
+            "b1",
+            "b2",
+            "b3"
+          ]
+        }
+      },
+      "expect_path": [
+        "plan",
+        "build",
+        "closed"
+      ],
+      "expect_outputs": [
+        "status == 'closed'",
+        "resolution == 'fixed'"
+      ]
+    },
+    "live": "пачка из трёх правок в песочнице: три задачи одной волной, все влиты, итог closed"
+  }
+}

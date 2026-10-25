@@ -761,16 +761,17 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   // The small-task graph for a small job or a batch of fixes: started by the machine, not chosen by the PM.
   const train = {
     start: (input: { projectId: string; pmThreadId: string; runId: string; requestId: string; text: string; kind: "small" | "batch" }) => {
-      const workflow = builtinWorkflow("issue-quick");
+      // A batch of independent fixes is one task per fix (issue-batch); a small job is one task (issue-quick).
+      const workflow = builtinWorkflow(input.kind === "batch" ? "issue-batch" : "issue-quick");
       if (!workflow) return null;
       const title = input.text.trim().split("\n").find((line) => line.trim())?.trim().slice(0, 120) ?? "Owner's request";
       try {
         const started = services.workflowEngine.start({ workflow, inputs: { title, text: input.text.slice(0, 8000) }, key: `intake:${input.pmThreadId}:${input.requestId}`,
           runtime: { ctx, services, pmThreadId: input.pmThreadId, projectId: input.projectId, runId: input.runId }, link: { projectId: input.projectId, runId: input.runId } });
-        started.done.catch((cause: unknown) => ctx.log(`intake: issue-quick ${started.runId} stopped: ${cause instanceof Error ? cause.message : String(cause)}`));
+        started.done.catch((cause: unknown) => ctx.log(`intake: ${workflow.id} ${started.runId} stopped: ${cause instanceof Error ? cause.message : String(cause)}`));
         return started.runId;
       } catch (cause) {
-        ctx.log(`intake: issue-quick did not start: ${cause instanceof Error ? cause.message : String(cause)}`);
+        ctx.log(`intake: ${workflow.id} did not start: ${cause instanceof Error ? cause.message : String(cause)}`);
         return null;
       }
     },

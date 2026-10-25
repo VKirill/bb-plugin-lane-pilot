@@ -133,7 +133,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
       return processHint();
     }
     if (record?.wfRunId && ["running", "waiting"].includes(train?.status(record.wfRunId) ?? "")) {
-      return `This request of the owner went down the small-task graph: Lane Pilot runs it itself (workflow issue-quick, run ${record.wfRunId}: triage, plan, build, report), and the result comes to this chat. Do not dispatch it or start a workflow for it by hand; tell the owner it is under way. If the owner asks for something else, that is a new request.`;
+      return `This request of the owner went down the small-task graph: Lane Pilot runs it itself (run ${record.wfRunId}: plan, build, report), and the result comes to this chat. Do not dispatch it or start a workflow for it by hand; tell the owner it is under way. If the owner asks for something else, that is a new request.`;
     }
     if (record?.kind !== "heavy" || !record.phaseId) return null;
     const phase = phases.list({ pmThreadId: threadId, live: true }).find((row) => row.id === record.phaseId);

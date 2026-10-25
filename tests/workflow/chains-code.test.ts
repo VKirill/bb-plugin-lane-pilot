@@ -197,6 +197,20 @@ describe("issue-full", () => {
   });
 });
 
+describe("issue-batch", () => {
+  const input = { title: "Three small fixes", text: "Typo in the Send button; the header icon color; the login hint." };
+  it("one task per fix, built together, closed; an already-done batch closes without a build; a red build is partial", async () => {
+    const tasks = [task("b1"), task("b2"), task("b3")];
+    const ok = await runSim("issue-batch", { input, stubs: { "lp.plan": { status: "ok", task_count: 3, tasks, waves: [["b1", "b2", "b3"]] }, "lp.build": { status: "done", merged_commits: ["b1", "b2", "b3"] } } });
+    expect(pathOf(ok)).toBe("plan build closed");
+    expect(out(ok)).toMatchObject({ status: "closed", resolution: "fixed" });
+    const already = await runSim("issue-batch", { input, stubs: { "lp.plan": { status: "ok", task_count: 0, tasks: [], already_met: true } } });
+    expect(pathOf(already)).toBe("plan already");
+    const red = await runSim("issue-batch", { input, stubs: { "lp.plan": { status: "ok", task_count: 3, tasks }, "lp.build": { status: "partial" } } });
+    expect(pathOf(red)).toBe("plan build partial");
+  });
+});
+
 describe("issue-quick", () => {
   const input = { title: "Typo in button label", text: "The Send button says 'Sned'." };
   const stubs = (severity: string) => ({ triage: { clear: true, severity }, "lp.plan": { status: "ok", task_count: 1, tasks: [task("q1")] }, "lp.build": { status: "done", merged_commits: ["q1"] } });

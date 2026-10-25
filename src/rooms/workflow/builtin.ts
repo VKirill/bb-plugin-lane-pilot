@@ -17,6 +17,7 @@ import invoiceSend from "../../../workflows/invoice-send.json";
 import issueDiscover from "../../../workflows/issue-discover.json";
 import issueFull from "../../../workflows/issue-full.json";
 import issueQuick from "../../../workflows/issue-quick.json";
+import issueBatch from "../../../workflows/issue-batch.json";
 import lpTaskPipeline from "../../../workflows/lp-task-pipeline.json";
 import lpAnalyze from "../../../workflows/lp.analyze.json";
 import lpBrainstorm from "../../../workflows/lp.brainstorm.json";
@@ -75,6 +76,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "issue-discover.json", value: issueDiscover },
   { name: "issue-full.json", value: issueFull },
   { name: "issue-quick.json", value: issueQuick },
+  { name: "issue-batch.json", value: issueBatch },
   { name: "lp-task-pipeline.json", value: lpTaskPipeline },
   { name: "lp.analyze.json", value: lpAnalyze },
   { name: "lp.brainstorm.json", value: lpBrainstorm },
