@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.1.313
+
+**The door holds for schedules too.** In the live process check (a weekly report of changed files) the workflow architect built, tested and published the chain in three minutes — and meanwhile the PM built its own: a shell script in its chat folder and a schedule through `lane_pilot_schedule`, then through `bb lane-pilot schedule` in its shell. Creating, changing or running a schedule now gets the same refusal as a route while the machine works the owner's newest request (its phase, the small-task graph, the architect building), from the tool and from the CLI of that PM thread alike.
+
+**A schedule runs in the owner's time zone.** Both the PM and the architect put the report at 09:00 Moscow time: the schedule tool's and the trigger docs' examples named Europe/Moscow, and a cron with no zone ran in the hub's (UTC). A cron or a workflow trigger without a zone now runs in the owner's time zone (`bb lane-pilot waiting config timezone=`, Europe/Madrid by default); the examples leave the zone out and say to give one only when the owner names it.
+
+**The planner's envelope takes two more slips.** The live small job lost a lint round to a task without `objective` and convergence criteria written as `{command}` objects: the title now stands for a missing objective, and a criterion written like a check is its command.
+
 ## 0.1.312
 
 **The workflow architect has its tools again.** The architect the machine starts for a new process stood without hands: its session listed the bridge tools by their old folded names (`lane_pilot_workflow_draft`, ...), which the bridge no longer serves since the tools were folded into families, and it had no loader for the deferred ones. Its tool list is now the family names plus the ToolSearch loader, and its session text names the tools the way the bridge serves them (`src/rooms/tools` holds the folded-name map).
