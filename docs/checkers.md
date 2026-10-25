@@ -2,7 +2,7 @@
 title: Checking the checkers (planted defects, the checker scorecard)
 type: component
 created: 2026-10-22
-updated: 2026-10-22
+updated: 2026-10-25
 status: active
 confidence: medium
 tags: [sma, checkers, critic, drill, evaluation]
@@ -14,13 +14,13 @@ sources:
   - src/rooms/checkers/workspace.ts
   - src/rooms/checkers/service.ts
   - src/rooms/checkers/score.ts
-  - src/rooms/checkers/history.ts
   - src/rooms/checkers/fixture.ts
   - src/rooms/checkers/drill.ts
   - src/rooms/checkers/api.ts
-  - src/rooms/checkers/store.ts
   - src/rooms/checkers/migrations.ts
   - src/rooms/checkers/server/plugin-ports.ts
+  - src/rooms/checkers/history.ts
+  - src/rooms/checkers/store.ts
   - scripts/lp-checkers.ts
   - scripts/lp-drill.py
   - tests/checkers/drill.test.ts
@@ -30,13 +30,27 @@ sources:
   - tests/checkers/history.test.ts
 ---
 
-# Checking the checkers
+# Checking the checkers (planted defects, the checker scorecard)
 
 TL;DR: known defects are planted in real accepted candidates, every checker runs on them, and the hit or miss of each checker per defect class is a scorecard. The same planted set, with code checkers only, is a scenario of the deploy drill: a checker that stops catching its class turns the drill red.
 
 ## Purpose
 
-SMA atlas D1-4 and the rule «which of your key checks have you seen go red on purpose?» (research note 01, wall 6). Lane Pilot has many checkers (the task's own `verification[]`, the contract lint, the ownership check, the plan→fact blind check, the plan critic, the code critic) and no evidence that any of them catches anything: the statistics in `critique/critic-stats.ts` count real tasks, where the right answer is unknown. A planted defect has a known right answer. It also answers the open owner question: is the code critic worth enabling by default for risk medium and up (`critic.code.default_for_risk`)?
+SMA atlas D1-4 asks whether key checks catch planted defects; the scorecard records which checker caught each class, where the right result is known.
+
+## How it works
+
+1. Candidate history is loaded from accepted tasks and filtered to contracts and diffs that can be replayed and planted (`src/rooms/checkers/history.ts:29-80`).
+2. Each eligible candidate is opened in a clone at its pre-acceptance base commit; mutators produce planted defects and configured checkers run against them (`src/rooms/checkers/history.ts:44-78`, `src/rooms/checkers/service.ts:1-80`).
+3. Results are scored by defect class and checker, then stored in a run record and result rows (`src/rooms/checkers/score.ts:1-100`, `src/rooms/checkers/store.ts:14-26`).
+
+| Mode or outcome | Behavior |
+|---|---|
+| Code checkers only | Runs deterministic checks without a model critic (`src/rooms/checkers/service.ts:1-80`). |
+| Critic enabled | Adds the configured provider/model critic to candidates selected for judgment (`src/rooms/checkers/service.ts:1-80`). |
+| Budget exhausted | The run ends as `stopped_budget` and records its spend (`src/rooms/checkers/store.ts:8-26`). |
+| Candidate cannot be replayed or planted | It is skipped with a reason; it is not scored as a checker miss (`src/rooms/checkers/history.ts:34-72`). |
+| Verification or critic error | Records an `error` outcome for that candidate/checker and continues scoring other work (`src/rooms/checkers/service.ts:74-89`, `:102-110`). |
 
 ## Defects
 
@@ -68,6 +82,8 @@ The designed catchers are one table, `EXPECTED_CATCHERS` (`types.ts`). `applies(
 `decideCodeCritic` answers the owner question from the numbers: `medium` when the critic caught at least 60% (`CRITIC_BAR`) of the escaped defects, judged at least 8 of them (`CRITIC_MIN_SAMPLE`), and raised a finding on at most 30% of clean candidates; `off` below the bar or above the false-alarm limit; `inconclusive` on a smaller sample. It is a recommendation: the setting stays the owner's.
 
 ## Where it runs
+
+`createPluginCheckers` connects the checker service to plugin storage, candidate discovery, host execution and result reporting; `startRun` inserts a generated `chk_` run with its serialized configuration and `running` state before results are saved (`src/rooms/checkers/server/plugin-ports.ts:13-67`, `src/rooms/checkers/store.ts:14-26`). `loadHistory` derives candidates from accepted commits, validates task-v2 contracts and parent commits, and excludes binary, generated, lockfile, oversized, and overly large diffs before opening a clone at the base commit (`src/rooms/checkers/history.ts:21-80`).
 
 - `bb lane-pilot checkers score [--tasks 6] [--only id,..] [--classes a,b] [--checkers a,b] [--critic provider/model] [--critic-on escapes|all] [--budget-tokens N] [--check-timeout sec] [--json]`: candidates from the hub history (accepted tasks the bench would take: `loadCandidates`, the commit that merged the attempt, a diff of at most 8 files and 600 lines, text only, no lockfiles; the ones that fit the most classes first, in a fixed order). Without `--critic` only the code checkers run. The rows are stored (`lane_pilot_checker_run`, `lane_pilot_checker_result`, appended last in `storage/database.ts`).
 - `bb lane-pilot checkers scorecard [run-id]`: the stored scorecard. `checkers defects`: the classes and their designed catchers.

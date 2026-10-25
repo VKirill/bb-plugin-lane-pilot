@@ -2,7 +2,7 @@
 title: The baseline before a writer and the regression pass after acceptance
 type: component
 created: 2026-10-22
-updated: 2026-10-22
+updated: 2026-10-25
 status: active
 confidence: medium
 tags: [baseline, regression, bisect, sma, acceptance]
@@ -31,7 +31,36 @@ sources:
 
 TL;DR: before a task's first writer starts, its `verification[]` runs once on the base, so the PM knows which checks were already green («already built?») and which are red; after the merge, the checks that were green on the base and are red on main are named. Every night the checks of the last accepted tasks run again on the current main, and a check that was green at acceptance and is red now is bisected to the commit and the task that broke it. Nothing here reverts or merges anything. SMA atlas delta D1-3 and D1-2.
 
+## How it works
+
+1. Before the first writer, preflight reads baseline settings and task checks, skips inapplicable attempts, and reserves the project's baseline slot (`src/rooms/writer/server/start.ts:560-565`, `src/rooms/baseline/server/baseline.ts:62-85`).
+2. It builds a throwaway worktree at the task's base, runs uncached eligible checks, then stores the check outcomes and verdict (`src/rooms/baseline/server/baseline.ts:82-92`, `:95-149`, `src/rooms/baseline/store.ts:1-80`).
+3. After merge, the finish path sends verification results to `afterMerge`, which records checks that turned red on main (`src/rooms/writer/server/finish.ts:882-910`, `src/rooms/baseline/server/baseline.ts:181-192`).
+4. The regression pass selects recent accepted tasks, runs eligible checks on current main, confirms a red check on the task's merge commit, then bisects within its configured bound and stores a finding (`src/rooms/baseline/server/regress.ts:95-132`, `:183-202`).
+5. The baseline and regression RPC methods expose status, run, list, and close operations (`src/rooms/baseline/server/rpc.ts:6-13`).
+
+| Mode or state | Branch and failure handling |
+|---|---|
+| `baseline.already_built=notify` | Reports that every check already passes and continues to the writer; this is the default (`src/rooms/baseline/server/baseline.ts:142-149`). |
+| `baseline.already_built=stop` | Blocks the attempt and returns the base evidence to the PM (`src/rooms/baseline/server/baseline.ts:142-149`). |
+| Red-on-base gate | For configured risk levels, all checks passing on base blocks the task; skipped or unknown checks prevent the all-green conclusion (`src/rooms/baseline/logic.ts:1-100`). |
+| Regression check red on task merge | Records `unstable`; it is not bisected (`src/rooms/baseline/server/regress.ts:183-193`). |
+| Worktree, host, or check trouble | Records an unknown result and allows writer start to continue (`src/rooms/baseline/server/baseline.ts:103-129`, `:150-152`). |
+
 ## The baseline (D1-3)
+
+### How it works
+
+1. Writer start invokes preflight before spawning a writer, except for resumed turns, live folders, and mainfix tasks (`src/rooms/writer/server/start.ts:560-565`).
+2. Preflight estimates check duration, filters checks that exceed the cap or need secrets, runs eligible checks on a throwaway base worktree, and stores the result (`src/rooms/baseline/server/baseline.ts:82-110`, `:132-149`).
+3. The already-built and red-on-base policies decide whether the writer proceeds or the attempt blocks; preflight errors are logged and do not throw (`src/rooms/baseline/server/baseline.ts:132-152`, `src/rooms/baseline/logic.ts:1-100`).
+
+| Mode or failure | Result |
+|---|---|
+| `notify` | Continues and tells the PM that all checks already passed on base (`src/rooms/baseline/server/baseline.ts:142-149`). |
+| `stop` | Blocks the attempt with the baseline evidence (`src/rooms/baseline/server/baseline.ts:142-149`). |
+| All required checks green for a gated task | Blocks under the red-on-base policy (`src/rooms/baseline/logic.ts:1-100`). |
+| Error or timeout | Records an unknown/partial result and lets writer start continue (`src/rooms/baseline/server/baseline.ts:113-129`, `:150-152`). |
 
 `services.baseline.preflight` is called in `startWriterTask` (`src/rooms/writer/server/start.ts`) right after the task passed the waits and before the area's hot writer or a fresh writer is asked. It is skipped for a mainfix (it has its own preflight: its checks must still be red), for a folder without git (no base to run on), and for an attempt that arrives with a writer thread already (a reload, a PM answer). It never throws: any trouble is a record and the attempt starts.
 
@@ -45,6 +74,19 @@ TL;DR: before a task's first writer starts, its `verification[]` runs once on th
 
 ## The regression pass (D1-2)
 
+### How it works
+
+1. Select recent accepted tasks and eligible checks, excluding tasks without a merge commit or usable checks (`src/rooms/baseline/server/regress.ts:95-132`).
+2. Run each check on current main within per-check and overall budgets; when a check is red, rerun it at the task's merge commit to distinguish an unstable check from a regression (`src/rooms/baseline/server/regress.ts:204-260`, `:183-202`).
+3. Bisect a confirmed regression within the configured commit limit, store the finding, and expose it through list/close routes (`src/rooms/baseline/server/regress.ts:138-158`, `:193-202`, `src/rooms/baseline/server/rpc.ts:7-13`).
+
+| Mode or failure | Result |
+|---|---|
+| `--plan` | Selects and prints candidates without running checks (`src/rooms/baseline/server/regress.ts:214-222`). |
+| `--dry-run` | Runs checks but writes no findings and does not bisect (`src/rooms/baseline/server/regress.ts:169-199`, `:204-221`). |
+| Red at task merge | Marks the check `unstable`; no regression bisect is run (`src/rooms/baseline/server/regress.ts:183-193`). |
+| Bisect range too large | Records the finding without a culprit commit (`src/rooms/baseline/server/regress.ts:138-152`). |
+
 `bb lane-pilot regress [project-id] [--dry-run] [--plan] [--force] [--last N] [--days K]`, RPC `regress_run`, and a nightly schedule `regress-nightly` at 03:25 (every project with accepted work in the last 60 days unless its `regress.nightly` is `off`).
 
 1. **Which tasks.** The last `regress.last_n` (30) distinct tasks with an accepted attempt in the last `regress.last_days` (14) days. A task is left out, with the reason in the report, when it was reverted (a merged `revert` receipt), has no `verification[]`, has no merge commit (`rollback.kit.changeOf`: the record, else the attempt trailer in main), or has no check that is both cheap and was green at acceptance (the verification stage receipt says which commands passed; without one, all of them).
@@ -55,6 +97,8 @@ TL;DR: before a task's first writer starts, its `verification[]` runs once on th
 6. **The morning list.** Line 2 of `composeMorningList` / `scripts/lp-morning.sql` ends with «Сломано после приёмки: N (task ← commit, …)» for the open `regression` findings (up to three named). The night loop reads `bb lane-pilot regressions [project]` (RPC `regress_list`) and may take a finding as a wall. The pass never reverts, merges or dispatches.
 
 ## Settings
+
+The baseline server API is assembled by `baselineRpc`: `baseline_status` returns a task's stored baseline rows, while `regress_run`, `regress_list`, and `regress_close` delegate to the regression service (`src/rooms/baseline/server/rpc.ts:6-13`). The baseline service compares checks before and after merge; regression creation selects recent accepted tasks, executes eligible checks, confirms red checks on the task merge, then bisects a bounded commit range (`src/rooms/baseline/server/baseline.ts:33-92`, `src/rooms/baseline/server/regress.ts:69-128`). The acceptance card reads the baseline receipt and derives the baseline display alongside stage evidence (`src/rooms/acceptance/card.ts:26-85`).
 
 `checks.require_red_on_base` has a catalog row (s478, section stages). Plain project settings (no catalog row yet): `baseline.already_built` (`notify` | `stop`), `baseline.time_cap_sec`, `regress.nightly` (`on` | `off`), `regress.last_n`, `regress.last_days`, `regress.check_cap_sec`, `regress.budget_sec`, `regress.bisect_steps`. A bad value is the default, never a stopped task (`parseBaselineSettings`, `parseRegressSettings`).
 

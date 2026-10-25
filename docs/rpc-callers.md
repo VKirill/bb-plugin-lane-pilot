@@ -2,7 +2,7 @@
 title: RPC and host-call contracts
 type: component
 created: 2026-09-30
-updated: 2026-10-20
+updated: 2026-10-25
 status: active
 confidence: medium
 tags: [rpc, contracts, host-api]
@@ -10,6 +10,7 @@ sources:
   - src/rooms/core/server/rpc.ts
   - src/rooms/core/server/rpc-timing.ts
   - src/rooms/contracts/index.ts
+  - src/rooms/cockpit/server.ts
   - src/rooms/contracts/host.ts
   - src/rooms/contracts/rpc-shell.ts
   - src/rooms/settings/server/rpc/preferences.ts
@@ -41,6 +42,7 @@ sources:
   - packages/contracts/src/schemas.ts
   - src/rooms/host-worker/host-handlers.ts
   - src/rooms/anamnesis/contract.ts
+  - src/rooms/baseline/server/rpc.ts
 ---
 
 # RPC and host-call contracts
@@ -110,6 +112,8 @@ These distinctions are declared by the schemas; they do not themselves authorize
 The spawn claim and terminal receipt make maintenance idempotent; a second call returns the saved terminal receipt instead of spawning another child (`src/rooms/memory/server/memory.ts:22-25`, `:61-64`, `:151-155`).
 
 ## Modes, variants and failures
+
+The cockpit RPC group is assembled from `cockpitRpc`; it serves the project's cockpit snapshot and screen data, owner-waiting state, event subscriptions, feedback and screen control operations (`src/rooms/cockpit/server.ts:17-76`). The baseline group similarly exposes baseline status plus regression run, list and close calls (`src/rooms/baseline/server/rpc.ts:6-13`).
 
 | Contract | Inputs and result | Failure handling |
 |---|---|---|

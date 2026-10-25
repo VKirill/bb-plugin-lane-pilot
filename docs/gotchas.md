@@ -2,7 +2,7 @@
 title: Cross-cutting gotchas
 type: gotchas
 created: 2026-10-10
-updated: 2026-10-17
+updated: 2026-10-25
 status: active
 confidence: medium
 tags: [gotchas, runtime, failure-modes]
@@ -10,6 +10,8 @@ sources:
   - src/rooms/writer/live-folder.ts
   - src/rooms/writer/server/dispatch.ts
   - src/rooms/writer/server/start.ts
+  - src/rooms/stability/server/reconcile.ts
+  - src/rooms/verification/git-integrate.ts
   - src/rooms/writer/server/reopen-attempt.ts
   - src/rooms/writer/server/verify.ts
   - src/rooms/writer/server/finish.ts
@@ -17,6 +19,9 @@ sources:
   - src/rooms/self-repair/server/self-repair.ts
   - src/rooms/relay/server/relay.ts
   - src/rooms/verification/sandbox.ts
+  - tests/server/resumed-attempt-redo.test.ts
+  - tests/verification/check-env-deps.test.ts
+  - tests/writer-validate.test.ts
   - packages/kit/src/spawn-async.ts
   - packages/kit/src/output-capture.ts
   - src/rooms/native-agent/server/helper-bb-shim.ts
@@ -24,7 +29,6 @@ sources:
   - src/rooms/core/server/lifecycle-events.ts
   - packages/thread-observe/src/signals.ts
   - packages/thread-observe/src/completion.ts
-  - src/rooms/writer/server/start.ts
   - packages/kit/src/pace.ts
   - scripts/record_and_guard.py
   - scripts/test-full.sh
@@ -32,6 +36,8 @@ sources:
   - tests/tmpdir-isolation.test.ts
   - tests/ui-matrix/helpers.tsx
   - vitest.config.ts
+  - src/rooms/core/server/pm-spawn.ts
+  - src/rooms/writer/server/skill-materialize.ts
 ---
 
 # Cross-cutting gotchas
@@ -55,6 +61,10 @@ If a reload interrupts dispatch before the ownership base is taken, recovery res
 
 After a task passes writer admission, it holds its ownership paths through its redo and fallback attempts. A queued task in the same project and checkout waits when its `owns_paths` overlap or its area matches; the hold is in memory and is released when the writer loop finishes (`src/rooms/writer/server/start.ts:63-70`, `:254-305`, `:422-423`, `:954-958`).
 
+On reload recovery, a writer thread found idle or errored while its attempt is still running is restarted through `startWriterTask` with `turnSent: true`; that re-enters the current writer turn in the same thread with its saved workspace and prior failure context. A cancellation observed during recovery becomes canceled; a missing matching thread ends as a spawn failure, and an ambiguous scan blocks the attempt (`src/rooms/stability/server/reconcile.ts:82-109`, `:111-145`).
+
+Writer-owned validation failures are included in the next writer's brief on an eligible retry or fallback, so the new attempt receives the rejected paths and reason. Provider failures do not become task-failure context, and an acceptance clears the remembered own failure (`src/rooms/writer/server/start.ts:56-83`, `:645`, `:896`). A resumed attempt whose worktree contains Lane Pilot's own receipt from a pass interrupted by reload continues through validation (`tests/writer-validate.test.ts:277-327`).
+
 ## Event and polling behavior
 
 BB thread lifecycle events wake watchers, but the thread's final status comes from a fresh read and a 20-second fallback poll covers missed events (`packages/thread-observe/src/signals.ts:3-10`). For a thread whose status is `error`, the completion detail appends a detected thread failure cause to `thread_status_error:`; without a detected cause it remains `thread_status_error` (`packages/thread-observe/src/completion.ts:86-90`, `:150-178`). `LANE_PILOT_THREAD_SIGNALS=0` disables signal subscriptions; it also leaves polling as the watcher path (`packages/thread-observe/src/signals.ts:84-99`, `src/rooms/core/server/lifecycle-events.ts:22-37`). Poll pauses can be scaled for test environments by `LANE_PILOT_POLL_SCALE` (`packages/kit/src/pace.ts:1-8`).
@@ -77,7 +87,9 @@ The self-repair prompt tells its agent to contact a live PM only when that PM mu
 
 Relay groups task outcomes for a PM. A canceled-only group is recorded as reported without sending a message; a mixed group includes canceled tasks as a count. Within the 24-hour notice window, a due group stays unreported when the PM thread is busy, the busy check fails, or sending fails, so a later sweep can retry it. Outcomes older than the window are marked reported without a notice. The background relay sweep runs every 30 seconds (`src/rooms/relay/server/relay.ts:88`, `:380-419`, `:614-620`).
 
-Sandboxed checks use `spawnAsync` with `keepEnds`, so excess stdout/stderr is truncated to head-and-tail captures instead of terminating the check; stderr is capped separately after process completion (`src/rooms/verification/sandbox.ts:20-30`, `:210-217`, `:222-242`). `spawnAsync` without `keepEnds` still enforces its 1 MiB per-stream `maxBuffer` default (`packages/kit/src/spawn-async.ts:17-21`, `:40-45`).
+Sandboxed checks use `spawnAsync` with `keepEnds`, so excess stdout/stderr is truncated to head-and-tail captures instead of terminating the check; stderr is capped separately after process completion (`src/rooms/verification/sandbox.ts:20-30`, `:210-217`, `:222-242`). The temporary sandbox HOME links installed user tool homes and Playwright browser binaries, while browser cache lock and link metadata remain local to that HOME (`src/rooms/verification/sandbox.ts:103-144`).
+
+Worktree preparation installs from a root lockfile when dependencies are missing and refreshes an existing install when npm's hidden lock is older than the project lock. It mirrors root workspaces and eligible nested packages, refreshing stale nested installs before mirroring; a failed refresh is remembered for that lockfile timestamp (`src/rooms/verification/git-integrate.ts:613-659`, `:685-720`, `:827-857`). The mirror keeps third-party packages linked to the base while copying npm's mutable state and selected generated packages into the worktree (`src/rooms/verification/git-integrate.ts:723-746`).
 
 ## Test isolation
 

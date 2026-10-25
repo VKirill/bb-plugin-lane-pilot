@@ -20,6 +20,8 @@ sources:
   - scripts/lp-drill.py
   - scripts/lp-metrics-daily.sh
   - tests/deferral-skips.test.ts
+  - src/rooms/storage/database.ts
+  - src/rooms/relay/server/relay.ts
 ---
 
 > [!important] Since 2026-10-22 the owner takes no part in the loop

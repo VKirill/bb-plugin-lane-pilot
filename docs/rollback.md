@@ -24,6 +24,20 @@ sources:
   - tests/trusted-tooling.test.ts
   - tests/run-pause-start.test.ts
   - tests/run-pause-stop.test.ts
+  - src/rooms/storage/database.ts
+  - src/rooms/writer/server/spawn.ts
+  - src/rooms/writer/server/sticky.ts
+  - src/rooms/writer/server/finish.ts
+  - src/rooms/writer/server/start.ts
+  - src/rooms/tasks/task-v2.ts
+  - src/rooms/tasks/task-base.ts
+  - src/rooms/writer/server/update-task.ts
+  - src/rooms/tasks/validate-output.ts
+  - src/rooms/writer/server/verify.ts
+  - src/rooms/tools/server/cli.ts
+  - src/rooms/stability/server/stability.ts
+  - server.ts
+  - src/rooms/contracts/host.ts
 ---
 
 # Rolling work back, trusted tooling and pause

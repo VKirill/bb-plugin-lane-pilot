@@ -2,7 +2,7 @@
 title: LP-Bench, the fixed task set
 type: component
 created: 2026-10-22
-updated: 2026-10-22
+updated: 2026-10-25
 status: active
 confidence: medium
 tags: [bench, sma, harness, evaluation]
@@ -24,6 +24,8 @@ sources:
   - tests/bench/build.test.ts
   - tests/bench/runner.test.ts
   - tests/bench/harness-adoption.test.ts
+  - src/rooms/bench/types.ts
+  - src/rooms/harness/server/store.ts
 ---
 
 # LP-Bench, the fixed task set
@@ -32,45 +34,86 @@ Matvey Maslov's rule (#31448): twenty to fifty real tasks from past runs whose r
 model or another edit; three numbers: how many stages passed, what it cost, how long it took; the set is not changed. This is that set
 (SMA plan P0-1). Code decides everything: a task passes when its `verification[]` passed and the gates accepted the attempt; no model judges.
 
+## How it works
+
+1. Build loads eligible accepted-task candidates, groups them by stratum and host, warms each candidate by running checks on the base and with the accepted solution applied, and stores a frozen manifest when tasks survive (`src/rooms/bench/build.ts:43-110`, `:125-150`, `src/rooms/bench/store.ts:25-39`).
+2. A series verifies the stored manifest, prepares a sandbox checkout at each task's base commit, configures the arm, dispatches each task through the normal pipeline, records outcomes, and finishes the run (`src/rooms/bench/runner.ts:124-137`, `:149-220`, `:229-239`).
+3. Comparison pairs task outcomes for two arms; an optional identical-arm noise run marks unstable tasks and adjusts cost/time tolerance (`src/rooms/bench/compare.ts:65-80`, `:85-110`). Harness trial evaluation reads the latest verdict and applies the configured adoption rule (`src/rooms/harness/server/harness.ts:499-523`, `src/rooms/harness/server/trial.ts:51-60`).
+
+| Mode or state | Branch and failure handling |
+|---|---|
+| Plan-only build | Counts candidates without warm-up or writes (`src/rooms/bench/build.ts:89`, `:137-142`). |
+| Dry-run build | Performs planning and warm-up but writes no set (`src/rooms/bench/build.ts:137-142`). |
+| Partial build | Warms only requested strata and writes that subset as a version (`src/rooms/bench/build.ts:43-47`, `:139-142`). |
+| Warm-up rejection | Stores the candidate's rejection reason; after three consecutive host errors on a host, it stops that host's chain and writes no set (`src/rooms/bench/build.ts:98-112`, `:139-142`). |
+| Missing or changed set | Series fails before starting if the version is absent or its stored manifest hash differs (`src/rooms/bench/runner.ts:127-134`). |
+| Run budget reached | Remaining tasks are stored as `skipped_budget`; a later run resumes unfinished tasks (`src/rooms/bench/runner.ts:173-182`, `:233-239`, `src/rooms/bench/store.ts:76-83`). |
+
 ## The set
 
-- **Selection** (`candidates.ts:47`): the accepted tasks with `initial_head_sha`, their first accepted attempt (`hard` when it is not
-  attempt 1), in the projects the owner allows (`types.ts:9`: SelfyStudio, BB-сервис plugins, cakekeeper; no client or IP folders). A
-  contract is refused with a reason (`candidates.ts:18`): fewer than two checks, `depends_on`, secrets, a check that needs the network or a login
+### How it works
+
+1. Load and filter candidates, partition by stratum, warm eligible tasks on their host, then save the ordered manifest and rejection report (`src/rooms/bench/build.ts:43-47`, `:65-110`, `:125-150`).
+2. Do not write in plan-only or dry-run mode; do not write a set when no task survives or any host is lost (`src/rooms/bench/build.ts:137-142`).
+
+| Build mode or failure | Result |
+|---|---|
+| Plan-only or dry-run | Returns a report without storing a set (`src/rooms/bench/build.ts:137-142`). |
+| Candidate rejection | Adds its reason to the build report and rejection list (`src/rooms/bench/build.ts:98-107`). |
+| Host lost | Stops that host after three consecutive host errors and suppresses set creation (`src/rooms/bench/build.ts:76-112`, `:137-142`). |
+
+`buildSet` loads candidate history, assigns each task to the first matching requested stratum, and serializes warm-up work per host while different hosts run concurrently. It stops a stratum after quota and hard-candidate needs are met, its trial cap is reached, free disk falls below the configured floor, or the host reports three consecutive host errors. It writes a set only outside plan-only and dry-run modes, when at least one task survives and no host was lost; a requested partial build is persisted as its own version. `insertSet` stores the version, manifest hash, build report and task rows transactionally, and the server ports provide host, project-name, sandbox-name, and host-resolution inputs (`src/rooms/bench/build.ts:43-110`, `:111-150`, `src/rooms/bench/store.ts:26-41`, `src/rooms/bench/server/plugin-ports.ts:15-74`).
+
+- **Selection** (`src/rooms/bench/candidates.ts:47`): the accepted tasks with `initial_head_sha`, their first accepted attempt (`hard` when it is not
+  attempt 1), in the projects the owner allows (`src/rooms/bench/types.ts:11-20`: SelfyStudio, BB-сервис plugins, cakekeeper; no client or IP folders). A
+  contract is refused with a reason (`src/rooms/bench/candidates.ts:18`): fewer than two checks, `depends_on`, secrets, a check that needs the network or a login
   (curl, ssh, docker, `npm install`, playwright …), an empty check (`emptyCheckReason` of the contract lint), drill tasks, sandbox projects
   (`isSandboxProjectName`).
-- **Strata** (`stratify.ts:10`): 10 SelfyStudio pages, 8 features, 2 other, 6 BB-сервис, 4 cakekeeper. At least 30% of each stratum is «hard»
-  (`chooseFinal`, `stratify.ts:47`) and the risks rotate low, medium, high. Candidates are tried hard and easy interleaved (`warmOrder`, 4 hard in 10).
+- **Strata** (`src/rooms/bench/stratify.ts:10`): 10 SelfyStudio pages, 8 features, 2 other, 6 BB-сервис, 4 cakekeeper. At least 30% of each stratum is «hard»
+  (`chooseFinal`, `src/rooms/bench/stratify.ts:47`) and the risks rotate low, medium, high. Candidates are tried hard and easy interleaved (`warmOrder`, 4 hard in 10).
   A hash of the seed, not a random number, orders them: the same build picks the same tasks.
-- **Warm-up** (`warmup.ts:67`): the solution is the merge commit of the accepted attempt (found by its `Lane-Pilot-Attempt:` trailer, else by the
+- **Warm-up** (`src/rooms/bench/warmup.ts:67`): the solution is the merge commit of the accepted attempt (found by its `Lane-Pilot-Attempt:` trailer, else by the
   `<task id>: ` subject). In a fresh clone at `initial_head_sha` the contract's checks run on the bare base, then again with the solution applied
   (`git apply`, `--3way` as the second try). The task enters only when at least one check fails on the bare base and every check passes with the
-  solution. Every other outcome is recorded with its reason (`WarmReason`, `warmup.ts:14`): `base_unreachable`, `solution_commit_not_found`,
+  solution. Every other outcome is recorded with its reason (`WarmReason`, `src/rooms/bench/warmup.ts:14`): `base_unreachable`, `solution_commit_not_found`,
   `solution_ambiguous`, `solution_empty`, `solution_too_large`, `clone_failed`, `passes_on_base`, `solution_does_not_apply`, `solution_fails_checks`,
   `host_error`. Dependencies: a copy-on-write copy of `node_modules` on macOS (a symlink that leaves the checkout is refused by Turbopack), a copy on Linux.
-- **A host that stops answering** (`build.ts`): three `host_error` in a row stop that host's chain and the build writes no set (a plugin reload
+- **A host that stops answering** (`src/rooms/bench/build.ts:76-112`): three `host_error` in a row stop that host's chain and the build writes no set (a plugin reload
   mid-build once froze v1 with 5 tasks: every remaining candidate became a host error). Run the build again under a new version.
-- **Disk**: a machine with less than 25 GB free (`MIN_FREE_GB`, `warmup.ts:112`) is not touched: Lane Pilot's own writers hold at min(15 GB, 5%)
+- **Disk**: a machine with less than 25 GB free (`MIN_FREE_GB`, `src/rooms/bench/warmup.ts:112`) is not touched: Lane Pilot's own writers hold at min(15 GB, 5%)
   (memory `mac-mini-disk-test-temp`).
-- **Frozen** (`migrations.ts`): `lane_pilot_bench_set` and `lane_pilot_bench_task` refuse UPDATE and DELETE by trigger; `manifest_sha256` is the hash of
-  the tasks (contract, base commit, solution patch hash; `types.ts:67`) and `runSeries` recomputes it before every run (`store.ts:54`). A different set is a new version.
+- **Frozen** (`src/rooms/bench/migrations.ts:14-46`): `lane_pilot_bench_set` and `lane_pilot_bench_task` refuse UPDATE and DELETE by trigger; `manifest_sha256` is the hash of
+  the tasks (contract, base commit, solution patch hash; `src/rooms/bench/types.ts:67`) and `runSeries` recomputes it before every run (`src/rooms/bench/store.ts:54`). A different set is a new version.
 
 ## A series (`bb lane-pilot bench run`)
 
-`runner.ts:124`. For one arm and repeat, the repositories of the set go side by side, one repository's tasks one after the other:
+### How it works
 
-1. The sandbox project «LP bench <project>» (`defaultProjectName`, `runner.ts:59`; the plugin cannot create a BB project, `bench prepare` prints the
-   `bb project create` command) holds a clone; before each task it is reset to that task's `initial_head_sha` (`prepareCheckoutCommand`, `runner.ts:112`).
+1. Verify the immutable set, start or resume the run row, then prepare each repository checkout at each task's base commit (`src/rooms/bench/runner.ts:124-149`, `src/rooms/bench/runner.ts:184-194`).
+2. Configure the sandbox arm, dispatch tasks, wait for terminal outcomes, gather attempt metrics, and persist results (`src/rooms/bench/runner.ts:160-220`).
+3. Stop before another task when projected token/time budget or disk guard is reached; record remaining tasks as skipped and mark the run state (`src/rooms/bench/runner.ts:173-182`, `:233-239`).
+
+| Series mode or failure | Result |
+|---|---|
+| Resume same arm and configuration | Keeps finished task rows and continues unfinished tasks (`src/rooms/bench/store.ts:76-91`, `src/rooms/bench/runner.ts:137-143`). |
+| Arm config changed under an existing name | Refuses the run and requires a new arm name (`src/rooms/bench/store.ts:76-83`). |
+| Missing BB project or checkout failure | Records an error result; project-not-found also stops that repository group (`src/rooms/bench/runner.ts:149-187`). |
+| Budget exhausted | Marks remaining tasks `skipped_budget` and run `stopped_budget` (`src/rooms/bench/runner.ts:233-239`). |
+
+`src/rooms/bench/runner.ts:124`. For one arm and repeat, the repositories of the set go side by side, one repository's tasks one after the other:
+
+1. The sandbox project «LP bench <project>» (`defaultProjectName`, `src/rooms/bench/runner.ts:59`; the plugin cannot create a BB project, `bench prepare` prints the
+   `bb project create` command) holds a clone; before each task it is reset to that task's `initial_head_sha` (`prepareCheckoutCommand`, `src/rooms/bench/runner.ts:112`).
 2. The same contract is dispatched through the normal pipeline (`dispatchWriter`) with `project_cwd` and the checks' folders moved to the clone
-   (`benchContract`, `runner.ts:66`). The arm names the writer (`--writer provider/model`, default codex/gpt-6-luna), the harness tree
+   (`benchContract`, `src/rooms/bench/runner.ts:66`). The arm names the writer (`--writer provider/model`, default codex/gpt-6-luna), the harness tree
    (`--harness none|tree|<tree id>`), its own settings (`--setting key=value`) and, to prove the bench can go red, a fault (`--fault owns|read_first`).
 3. **Memory and rules are frozen**: the project is new (no memory, no rules of its own), `memory.enabled|inject|maintain` and the critics are off, and every
    task gets an area of its own (`<area>~b<position><arm>r<n>`), so no area history crosses from one arm to another. The harness tree is the one the arm
-   names (`forBenchAttempt`, `harness.ts:220`, called from `forAttempt`, `harness.ts:195`), never the live alternation.
+   names (`forBenchAttempt`, `src/rooms/harness/server/harness.ts:220`, called from `forAttempt`, `src/rooms/harness/server/harness.ts:195`), never the live alternation.
 4. The contract is the stored one with three deterministic touch-ups, the same on every arm: `display_title` and `kind` filled in when the old contract lacks them (today's
-   lint refuses it otherwise), and the `read_first` files that are not in the base commit (untracked in the live checkout) dropped (`existingFiles`, `runner.ts:99`). The PM that
+   lint refuses it otherwise), and the `read_first` files that are not in the base commit (untracked in the live checkout) dropped (`existingFiles`, `src/rooms/bench/runner.ts:99`). The PM that
    `activate` opens is stopped at once: its prompt tells it to delegate a fixture task of its own.
-5. Per task: stages passed, cost, seconds and whether the attempt was accepted, from `lp_attempt_metrics` (`aggregateAttempts`, `runner.ts:83`). Cost
+5. Per task: stages passed, cost, seconds and whether the attempt was accepted, from `lp_attempt_metrics` (`aggregateAttempts`, `src/rooms/bench/runner.ts:83`). Cost
    keeps `cost_state`: a provider that reports no usage is `not_measured`, never 0. The plugin writes a thread's token row minutes after the attempt, so the
    cost is read after a usage sync (`syncTokenUsage`), not before.
 6. **Budget** (`bench.budget_tokens`, `bench.budget_hours`; `bench config budget_tokens=N budget_hours=H`; defaults 120 M tokens, 6 h per arm): before each
@@ -79,19 +122,40 @@ model or another edit; three numbers: how many stages passed, what it cost, how 
 
 ## Comparison (`bench compare A B`)
 
-`compare.ts:90`. Paired by task: tasks passed, stages passed, total cost on the tasks where both arms measured it (the rest are listed as not measured),
+### How it works
+
+1. Pair results by task, calculate pass, stage, cost, and time changes, and apply the default tolerance or the latest noise record (`src/rooms/bench/compare.ts:90-128`).
+2. An identical-arm noise comparison records flipped tasks as unstable and measures relative cost/time spread (`src/rooms/bench/compare.ts:65-80`).
+3. Return pass or fail; unstable task flips do not fail the comparison (`src/rooms/bench/compare.ts:85-120`).
+
+| Comparison state | Result |
+|---|---|
+| No paired measured cost | Cost comparison is reported as not measured (`src/rooms/bench/compare.ts:90-110`). |
+| Identical-arm flip | Marks the task unstable and excludes it from the failing regression rule (`src/rooms/bench/compare.ts:65-80`, `:103-110`). |
+
+`src/rooms/bench/compare.ts:90`. Paired by task: tasks passed, stages passed, total cost on the tasks where both arms measured it (the rest are listed as not measured),
 median time, the list of flips. A task passes on an arm when it was accepted in more than half of that arm's repeats. The change is accepted when stages are
 not worse, cost and time are not worse by more than 10%, and no task that passed on A fails on B.
 
-`bench noise X Y` (`computeNoise`, `compare.ts:66`) compares two identical arms: the tasks that flipped become *unstable* (reported, they cannot fail the rule), and the
+`bench noise X Y` (`computeNoise`, `src/rooms/bench/compare.ts:66`) compares two identical arms: the tasks that flipped become *unstable* (reported, they cannot fail the rule), and the
 relative spread of cost and time widens the 10% tolerance. `compare` uses the newest noise record of the set, or `--noise X,Y`.
 
 ## Harness adoption (`harness.adopt_by`)
 
-`HarnessConfig.adoptBy` (`harness.ts:43`, default `bench`; `bb plugin rpc call lane-pilot harness_configure` with `{"patch":{"adoptBy":"live"}}` restores the old
-rule). `decideTrial` (`trial.ts:51`) with `bench`: the live alternation stays as an observation and can still retire a tree that is worse or unused, but it can
+### How it works
+
+1. The configured `adoptBy` value determines whether bench verdicts can adopt harness trees; the default is bench (`src/rooms/harness/server/harness.ts:43`).
+2. A comparison with a harness id stores a passed or failed verdict; the harness trial decision reads it to adopt or retire the tested tree (`src/rooms/bench/service.ts:104-111`, `src/rooms/harness/server/harness.ts:499-523`, `src/rooms/harness/server/trial.ts:51-60`).
+
+| State or failure | Result |
+|---|---|
+| Bench adoption mode with passed verdict | Candidate is adopted (`src/rooms/harness/server/trial.ts:51-60`, `src/rooms/harness/server/harness.ts:506-524`). |
+| Failed verdict or insufficient live span | Failed verdict retires the candidate; night editor does not start before minimum attempt and span requirements (`src/rooms/harness/server/trial.ts:51-60`, `src/rooms/harness/server/store.ts:138`). |
+
+`HarnessConfig.adoptBy` (`src/rooms/harness/server/harness.ts:43`, default `bench`; `bb plugin rpc call lane-pilot harness_configure` with `{"patch":{"adoptBy":"live"}}` restores the old
+rule). `decideTrial` (`src/rooms/harness/server/trial.ts:51`) with `bench`: the live alternation stays as an observation and can still retire a tree that is worse or unused, but it can
 no longer adopt. A tree is adopted when `bench compare <baseline arm> <arm that ran the tree> --harness-id <tree id>` recorded a passed verdict
-(`lane_pilot_bench_verdict`, read by `benchInput`, `harness.ts:492`), retired when it recorded a failed one. `minSpanDays` (3) joins `minAttempts` (5): the night starts no editor for an area whose
+(`lane_pilot_bench_verdict`, read by `benchInput`, `src/rooms/harness/server/harness.ts:492`), retired when it recorded a failed one. `minSpanDays` (3) joins `minAttempts` (5): the night starts no editor for an area whose
 attempts in the window span less than three days (`teachingKeys`, `src/rooms/harness/server/store.ts:138`).
 
 ## Running it before the plugin is deployed
@@ -105,7 +169,7 @@ plugin knows only «LP sandbox …» as sandbox traffic, so set `LP_BENCH_LEGACY
 - Every bench project is created by hand with `bb project create` (one per repository).
 - A series runs one task at a time per repository: tasks have different base commits and share one clone.
 - SelfyStudio (73% of the candidates) lives on the OVH machine, whose disk is 98% full; the bench refuses it until 25 GB are free.
-- The in-process runner (`server/plugin-ports.ts`) is unit tested through the ports, not run live; the live proof used the external driver.
+- The in-process runner (`src/rooms/bench/server/plugin-ports.ts`) is unit tested through the ports, not run live; the live proof used the external driver.
 
 ## Live proof, 2026-10-22 (hub 0.1.263, Mac mini writers, codex/gpt-6-luna)
 
