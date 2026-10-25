@@ -10,6 +10,8 @@ import { phaseFolder, planGate, type Phase, type PhaseRecord, type PlanItem, typ
  * train never stands without anyone named.
  */
 export type AutoKind = "analyze" | "plan" | "review" | "close";
+/** Not a workflow: the machine signs again the documents a return to discussion left (the PM's or the owner's correction). */
+export type AutoDue = { kind: AutoKind; wave?: number } | { kind: "resign" };
 export const AUTO_WORKFLOWS: Record<AutoKind, string> = { analyze: "lp.analyze", plan: "lp.plan", review: "lp.review", close: "lp.close" };
 /** Failed runs of one stage's workflow before the stage is the PM's again. */
 export const AUTO_TRIES = 2;
@@ -17,10 +19,11 @@ export const AUTO_TRIES = 2;
 export type AutoRecord = { kind: AutoKind; wfRunId: string; startedAt: number; wave?: number };
 
 /** What the phase needs the machine to do now, or null when the stage is the PM's or nothing is due. */
-export function autoDue(phase: Phase): { kind: AutoKind; wave?: number } | null {
+export function autoDue(phase: Phase): AutoDue | null {
   const r = phase.record;
   if (phase.state !== "active" || r.train === false) return null;
   const tried = (kind: AutoKind) => (r.autoFailures?.[kind] ?? 0) >= AUTO_TRIES;
+  if (phase.stage === "discussion" && !r.context && r.signedBefore?.docs.length) return { kind: "resign" };
   if (phase.stage === "discussion" && !r.context && !tried("analyze")) return { kind: "analyze" };
   // The plan, and the plan again in «gaps» mode while its critic asks for changes (at most three rounds, the plan gate's own limit).
   // Also when the critic approved but the plan gate (code) still refuses: the gate's reasons are the gaps of the next round.
@@ -121,6 +124,8 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
   book(phase: Phase, section: string, kind: string, text: string): void;
   writeDocs(phase: Phase, files: Array<{ path: string; content: string }>, message: string): Promise<{ written: string[] }>;
   runtime(phase: Phase): unknown | null;
+  /** Whether the PM chat is idle (no turn running). */
+  pmIdle(phase: Phase): Promise<boolean>;
   now(): number;
 }) {
   const fail = (phase: Phase, kind: AutoKind, why: string) => {
@@ -132,6 +137,8 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
   async function apply(phase: Phase, auto: AutoRecord, output: Record<string, unknown>): Promise<void> {
     const by = `Lane Pilot ${AUTO_WORKFLOWS[auto.kind]} (${auto.wfRunId})`;
     if (auto.kind === "analyze") {
+      // The PM may have signed a context meanwhile: then the analysis is not written over its documents.
+      if (phase.stage !== "discussion" || phase.record.context) return;
       const doc = contextDoc(phase, output);
       const path = `${phaseFolder(phase.id)}/CONTEXT.md`;
       const written = await deps.writeDocs(phase, [{ path, content: doc.content }], `phase ${phase.id}: CONTEXT.md from the analysis`);
@@ -139,6 +146,7 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       for (const question of doc.questions.slice(0, 5)) deps.api.question({ phaseId: phase.id, text: question, blocking: false, by });
       await deps.api.context({ phaseId: phase.id, docs: [path], risks: doc.risks, decisions: doc.decisions, by });
     } else if (auto.kind === "plan") {
+      if (phase.stage !== "planning" || phase.record.plan?.admittedSha) return;
       const items = planItems(phase, output);
       if (!items.length) throw new Error(`lp.plan returned no tasks (status ${text(output.status, 30)})`);
       const planned = deps.api.plan({ phaseId: phase.id, items, design: output.has_ui === true, by });
@@ -174,6 +182,21 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
     }
     const due = autoDue(phase);
     if (!due) return false;
+    if (due.kind === "resign") {
+      // Signed when the PM's turn is over, so a file it is still editing is not signed half-way.
+      if (!(await deps.pmIdle(phase))) return true;
+      const before = phase.record.signedBefore!;
+      try {
+        await deps.api.context({ phaseId: phase.id, docs: before.docs, risks: before.risks ?? {}, ...(before.decisions ? { decisions: before.decisions } : {}), by: "Lane Pilot (signed again after the return)" });
+        const after = deps.get(phase.id);
+        deps.save(after.id, { ...after.record, signedBefore: undefined });
+      } catch (cause) {
+        // A document that is gone or empty: the stage is analysed anew.
+        deps.book(phase, "decisions", "auto_failed", `signing the returned documents again failed (${cause instanceof Error ? cause.message : String(cause)}): the discussion is analysed anew`);
+        deps.save(phase.id, { ...deps.get(phase.id).record, signedBefore: undefined });
+      }
+      return true;
+    }
     const workflow = builtinWorkflow(AUTO_WORKFLOWS[due.kind]);
     const runtime = deps.runtime(phase);
     if (!workflow || !runtime) return false;

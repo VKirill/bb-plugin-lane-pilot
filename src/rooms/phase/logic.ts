@@ -51,6 +51,8 @@ export type PhaseRecord = {
   train?: boolean;
   /** The stage workflow the machine runs now (src/rooms/phase/server/auto-stages.ts). */
   auto?: { kind: "analyze" | "plan" | "review" | "close"; wfRunId: string; startedAt: number; wave?: number };
+  /** The context signed before a return to discussion: the machine signs these documents again instead of analysing anew. */
+  signedBefore?: { docs: string[]; risks?: Partial<Record<RiskKind, string>>; decisions?: string[] };
   /** Runs of a stage's workflow that did not finish; at two the stage is the PM's. */
   autoFailures?: Partial<Record<"analyze" | "plan" | "review" | "close", number>>;
   context?: { docs: ContextDoc[]; sha: string; signedAt: number; risks?: Partial<Record<RiskKind, string>>; legacy?: boolean; /** REQUIREMENTS ids this phase delivers. */ requirements?: string[]; /** Locked decision ids of CONTEXT.md. */ decisions?: string[] };
@@ -452,7 +454,8 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
 export function staleAfterReturn(to: PhaseStage, record: PhaseRecord): PhaseRecord {
   const next: PhaseRecord = { ...record };
   const order = PHASE_STAGES.indexOf(to);
-  if (order <= PHASE_STAGES.indexOf("discussion")) delete next.context;
+  // The signed documents are kept aside: back at discussion they are the PM's or the owner's correction to sign again, not a reason to analyse anew.
+  if (order <= PHASE_STAGES.indexOf("discussion")) { if (next.context) next.signedBefore = { docs: next.context.docs.map((doc) => doc.path), risks: next.context.risks, decisions: next.context.decisions }; delete next.context; }
   if (order <= PHASE_STAGES.indexOf("planning") && next.plan) next.plan = { ...next.plan, critique: undefined, admittedSha: undefined, admittedAt: undefined };
   if (order <= PHASE_STAGES.indexOf("design")) delete next.design;
   if (order <= PHASE_STAGES.indexOf("execution")) { delete next.verification; delete next.acceptance; }

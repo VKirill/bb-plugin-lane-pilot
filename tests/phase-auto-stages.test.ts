@@ -12,6 +12,9 @@ describe("what the machine runs at each stage", () => {
     expect(autoDue(phaseAt("execution", { waveReview: true, execution: { issued: {}, waves: { "1": { packageSha: "p", at: 1, lines: [{ id: "pieces_accepted", ok: true, detail: "" }] } } } } as never))).toEqual({ kind: "review", wave: 1 });
     expect(autoDue(phaseAt("verification", { verification: { verdict: { state: "passed", detail: "ok", inputSha: "x", at: 1, mainSha: null } } } as never))).toEqual({ kind: "close" });
   });
+  it("after a return to discussion signs the documents again instead of analysing anew", () => {
+    expect(autoDue(phaseAt("discussion", { signedBefore: { docs: [".agents/phases/ph_1/CONTEXT.md"] } }))).toEqual({ kind: "resign" });
+  });
   it("leaves the stage to the PM when paused, when train is off, or after two failed runs", () => {
     expect(autoDue(phaseAt("discussion", {}, "paused"))).toBeNull();
     expect(autoDue(phaseAt("discussion", { train: false }))).toBeNull();
@@ -54,6 +57,7 @@ describe("the machine's pass", () => {
       book: (_phase, _section, kind) => { calls.push(`book ${kind}`); },
       writeDocs: async (_phase, files) => ({ written: files.map((file) => file.path) }),
       runtime: () => ({}),
+      pmIdle: async () => true,
       now: () => 1,
     });
     return { auto, calls, runs, get: () => phase, finish: () => { runs.set("wfrun_1", { status, output }); } };
@@ -74,5 +78,26 @@ describe("the machine's pass", () => {
     w.finish();
     expect(await w.auto.step(w.get())).toBe(false);
     expect(w.get().record.autoFailures).toEqual({ analyze: 1 });
+  });
+});
+
+describe("signing again after a return", () => {
+  it("signs the documents the return left, once the PM is idle", async () => {
+    const { createAutoStages: create } = await import("../src/rooms/phase/server/auto-stages");
+    let phase = phaseAt("discussion", { signedBefore: { docs: ["CONTEXT.md"], risks: { technical: "t" } } });
+    const signed: string[][] = [];
+    let idle = false;
+    const auto = create({ log: () => undefined }, { workflowEngine: {} as never }, {
+      api: { context: async (input) => { signed.push(input.docs); phase = phaseAt("planning", { ...phase.record, context: { docs: [], sha: "c", signedAt: 1 } }); return phase; },
+        plan: () => phase, planCheck: async () => phase, question: () => phase, waveReview: () => phase, goalAudit: () => phase },
+      get: () => phase, save: (_id, record) => { phase = { ...phase, record }; }, book: () => undefined, writeDocs: async () => ({ written: [] }),
+      runtime: () => ({}), pmIdle: async () => idle, now: () => 1,
+    });
+    expect(await auto.step(phase)).toBe(true);
+    expect(signed).toEqual([]);
+    idle = true;
+    await auto.step(phase);
+    expect(signed).toEqual([["CONTEXT.md"]]);
+    expect(phase.record.signedBefore).toBeUndefined();
   });
 });
