@@ -9,7 +9,9 @@ import { presetSelection, presetSlug } from "@lane-pilot/models";
  *
  *  0. the override (provider + model; the effort and fast mode as the picker gave them);
  *  1. the node's `model_preset` (a named setting `workflow.preset.<name>.*`, else the built-in default of that preset);
- *  2. the role's stage selection in project settings: analyst and pm-reader on `pm_read`, planner and plan-critic on `plan_critique`,
+ *  2. the role's stage selection in project settings: analyst and pm-reader on `pm_read`, plan-critic on `plan_critique` (the planner
+ *     borrows none: on `plan_critique` the cheap model chosen to check plans wrote them too, live 2026-10-25; its step's model is set in
+ *     the Models table),
  *     code-critic on `code_critique`, auditor on `code_critique` then `night_review`, debugger on `workflow.debugger` then `specialist`,
  *     `specialist:<x>` on `specialist` (only the stage's own keys; the writer's profile is not borrowed);
  *  3. the generic `workflow.agent.*` selection for agent steps;
@@ -65,7 +67,7 @@ export function modelOverrideAt(settings: Record<string, unknown>, key: string):
 
 /** The settings prefixes of the stages a role borrows its model from, in order, with the effort the stage runs on when it sets none. */
 const ROLE_STAGES: Record<string, string[]> = {
-  analyst: ["pm_read"], "pm-reader": ["pm_read"], planner: ["plan_critique"], "plan-critic": ["plan_critique"], "code-critic": ["code_critique"],
+  analyst: ["pm_read"], "pm-reader": ["pm_read"], "plan-critic": ["plan_critique"], "code-critic": ["code_critique"],
   auditor: ["code_critique", "night_review"], debugger: ["workflow.debugger", "specialist"],
 };
 const STAGE_EFFORT: Record<string, string> = { pm_read: "low", plan_critique: "medium", code_critique: "medium", night_review: "high", specialist: "high" };

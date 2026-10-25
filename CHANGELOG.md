@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.322
+
+**The plan is written by a strong model, not by the plan's cheap checker.** A generic agent step with the role `planner` took its model from the `plan_critique` stage, the one chosen to check plans: with it set to Haiku 5.5, Haiku wrote every phase plan and Haiku checked it. The planner now borrows no stage: it runs on the generic workflow-agent model, else the PM chat's model (Opus 5.5 in the live project), else Opus 5.5 high, and its step's model can be set in the Models table; the critic keeps `plan_critique`, so another model checks the plan. The judgment step of a phase's analysis (`lp.analyze` / assess: decisions, risks, scope) runs on the `strong` preset; gathering stays on the reading model.
+
 ## 0.1.321
 
 **A phase's stage runs do not notify the PM.** Each machine run of a phase's stage (`phase:` runs: the analysis, the plan, the reviews) sent the PM «Workflow run … of lp.plan is succeeded. Next: call lane_pilot_workflow_status», and the PM stepped in: in the live phase it read three replans in a row as churn and paused the phase. These runs report through the phase's gates and book only.

@@ -39,7 +39,9 @@ describe("which model a workflow agent step runs on", () => {
     };
     expect(pick("analyst", {}, settings, pm)).toMatchObject({ providerId: "acp-opencode", model: "zai/glm-5.3-flash", reasoningEffort: "high", source: "stage", sourceKey: "pm_read.model" });
     expect(pick("pm-reader", {}, settings).model).toBe("zai/glm-5.3-flash");
-    expect(pick("planner", {}, settings)).toMatchObject({ model: "gpt-6-sol", reasoningEffort: "medium", source: "stage", sourceKey: "plan_critique.model" });
+    expect(pick("plan-critic", {}, settings)).toMatchObject({ model: "gpt-6-sol", reasoningEffort: "medium", source: "stage", sourceKey: "plan_critique.model" });
+    // The planner writes the plan: it does not borrow the model chosen to check plans.
+    expect(pick("planner", {}, settings)).not.toMatchObject({ sourceKey: "plan_critique.model" });
     expect(pick("auditor", {}, settings)).toMatchObject({ model: "gpt-6-terra", sourceKey: "code_critique.model" });
     // The auditor goes on to the night review when the code critique is not set.
     expect(pick("auditor", {}, { ...settings, "code_critique.model": "" }).model).toBe("claude-opus-5");

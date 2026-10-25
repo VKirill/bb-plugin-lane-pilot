@@ -43,8 +43,19 @@
   "nodes": [
     {
       "id": "gather",
-      "consumes": [{"kind": "analysis", "version": 1, "from": "assess"}],
-      "produces": [{"kind": "summary", "version": 1}],
+      "consumes": [
+        {
+          "kind": "analysis",
+          "version": 1,
+          "from": "assess"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "summary",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "title": {
@@ -66,9 +77,22 @@
     },
     {
       "id": "assess",
-      "consumes": [{"kind": "summary", "version": 1, "from": "gather"}],
-      "produces": [{"kind": "analysis", "version": 1}],
-      "gates": ["assess.confidence >= 0 && assess.confidence <= 100"],
+      "consumes": [
+        {
+          "kind": "summary",
+          "version": 1,
+          "from": "gather"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "analysis",
+          "version": 1
+        }
+      ],
+      "gates": [
+        "assess.confidence >= 0 && assess.confidence <= 100"
+      ],
       "type": "agent",
       "role": "analyst",
       "title": {
@@ -92,12 +116,24 @@
       "guards": {
         "maxVisits": 3,
         "timeoutMin": 20
-      }
+      },
+      "model_preset": "strong"
     },
     {
       "id": "second_opinion",
-      "consumes": [{"kind": "analysis", "version": 1, "from": "assess"}],
-      "produces": [{"kind": "report", "version": 1}],
+      "consumes": [
+        {
+          "kind": "analysis",
+          "version": 1,
+          "from": "assess"
+        }
+      ],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "council",
       "title": {
