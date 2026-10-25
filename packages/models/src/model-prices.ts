@@ -1,4 +1,4 @@
-export const PRICES_CHECKED_AT = "2026-10-06";
+export const PRICES_CHECKED_AT = "2026-10-25";
 
 export type ModelPrice = { input: number; cacheRead: number; cacheWrite: number; output: number };
 
@@ -10,6 +10,8 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
   "claude-sonnet-5-5": { input: 2, cacheRead: 0.2, cacheWrite: 2.5, output: 10 },
   "claude-fable-5-1": { input: 10, cacheRead: 0.25, cacheWrite: 12.5, output: 50 },
   "claude-haiku-4-5": { input: 1, cacheRead: 0.1, cacheWrite: 1.25, output: 5 },
+  // Prompts up to 100K tokens ($0.50 / $2.50 beyond). Missing, it was priced as the dearest model: a $0.04 errand counted $0.88 (2026-10-25).
+  "claude-haiku-5-5": { input: 0.1, cacheRead: 0.01, cacheWrite: 0.125, output: 0.5 },
   "gpt-6-astra": { input: 10, cacheRead: 1, cacheWrite: 12.5, output: 50 },
   "gpt-6.1-sol": { input: 2, cacheRead: 0.1, cacheWrite: 2.5, output: 10 },
   "gpt-6-luna": { input: 0.1, cacheRead: 0.01, cacheWrite: 0.125, output: 0.5 },
