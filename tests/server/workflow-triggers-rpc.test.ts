@@ -38,6 +38,8 @@ async function setup(options: { pm?: boolean } = {}) {
       throw new Error(`unexpected rpc ${pluginId}.${method}`);
     } } } as never,
   });
+  // The run's chat is a PM chat (role pm): a triggered run goes to no other.
+  harness.sdk.stub("threads.getPluginMetadata", async ({ threadId }: { threadId: string }) => (threadId === "thr_pm" ? { role: "pm", lanePilotRunId: "lprun_s" } : {}));
   await plugin(bb);
   dispose = () => harness.lifecycle.dispose();
   const db = openDatabase(bb);
