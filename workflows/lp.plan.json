@@ -146,24 +146,6 @@
       }
     },
     {
-      "id": "ask",
-      "type": "human",
-      "role": "owner",
-      "title": {
-        "en": "Plan needs the owner",
-        "ru": "Плану нужен владелец"
-      },
-      "prompt": "Show the unresolved findings (max 5) and three choices - revise the plan with my notes, proceed with the plan as is (low confidence), abort.",
-      "out": {
-        "answer": "string",
-        "answer_kind": "revise|proceed|abort|timeout"
-      },
-      "guards": {
-        "maxVisits": 1,
-        "timeoutMin": 120
-      }
-    },
-    {
       "id": "ok",
       "type": "action",
       "action": "emit",
@@ -219,7 +201,7 @@
     },
     {
       "from": "lint",
-      "to": "ask",
+      "to": "failed",
       "pass": "artifact",
       "when": "!lint.ok"
     },
@@ -252,27 +234,7 @@
     },
     {
       "from": "plan_critic",
-      "to": "ask",
-      "pass": "artifact"
-    },
-    {
-      "from": "ask",
-      "to": "plan",
-      "pass": "same-session",
-      "when": "ask.answer_kind == 'revise'",
-      "with": {
-        "gaps": "ask.answer"
-      }
-    },
-    {
-      "from": "ask",
       "to": "low",
-      "pass": "artifact",
-      "when": "ask.answer_kind == 'proceed'"
-    },
-    {
-      "from": "ask",
-      "to": "failed",
       "pass": "artifact"
     }
   ],

@@ -4,6 +4,8 @@
 
 ## 0.1.315
 
+**The plan does not ask the owner.** A phase's plan in a real project stopped on an English form — «Show the unresolved findings (max 5) and three choices…», the node's prompt shown as the question, with no findings in it — and the owner's «Сам решай» was refused again and again, the notice «Your answer did not choose an option» stacking up in front of the question. The owner takes no part in the loop: `lp.plan` has no owner step any more. Contracts that still do not lint after three rounds fail the plan (a phase's machine retries it, a small task ends honestly as partial); a critique that still asks for rework after three rounds goes on as a low-confidence plan. On every other human step, «сам решай» (or «на твоё усмотрение», «decide yourself»…) picks the step's default option, and a wrong answer puts the notice in front of the step's own question once.
+
 **The architect's chat is told apart by its mark, not its role.** The second real run of the weekly report went to an architect's chat again: an architect's thread carries the role pm too (its Lane Pilot tools need it), so the 0.1.314 filter let it through. The owner's PM chat is now a pm chat without `architectProjectId`, for triggered runs, schedule failure notices and the backlog's task alike.
 
 ## 0.1.314

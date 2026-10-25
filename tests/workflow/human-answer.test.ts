@@ -24,4 +24,12 @@ describe("a free-text answer on a human step", () => {
     const approvalOnly = { out: [{ name: "answer", type: "string" }, { name: "answer_kind", type: "enum", values: ["approved", "deferred", "timeout"] }], options: [] } as never;
     expect(humanOutput(approvalOnly, { choiceIndex: null, text: "looks fine" })).toBeNull();
   });
+
+  it("«сам решай» picks the step's default option; without a default it decides nothing (live 2026-10-25)", () => {
+    const node = { out: [{ name: "answer", type: "string" }, { name: "answer_kind", type: "enum", values: ["revise", "proceed", "abort", "timeout"] }], options: [], defaultOption: "proceed" } as never;
+    expect((humanOutput(node, { choiceIndex: null, text: "Сам решай" }) as Record<string, unknown>).answer_kind).toBe("proceed");
+    expect((humanOutput(node, { choiceIndex: null, text: "на твоё усмотрение" }) as Record<string, unknown>).answer_kind).toBe("proceed");
+    const without = { out: [{ name: "answer", type: "string" }, { name: "answer_kind", type: "enum", values: ["revise", "proceed", "abort", "timeout"] }], options: [] } as never;
+    expect(humanOutput(without, { choiceIndex: null, text: "Сам решай" })).toBeNull();
+  });
 });

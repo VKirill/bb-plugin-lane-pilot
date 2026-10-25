@@ -105,12 +105,17 @@ export function humanOutput(node: Extract<GraphNode, { type: "human" }>, answer:
   const options = humanOptions(node);
   const values = node.out.find((field) => field.name === "answer_kind")?.values ?? [];
   const index = answer.choiceIndex ?? (answer.text ? namedOption(options, answer.text) : null);
-  const chosen = index !== null ? options[index - 1] : undefined;
+  // «Decide yourself» hands the choice back: the step's default option is the machine's answer.
+  const delegated = index === null && node.defaultOption && DELEGATE.test(answer.text.trim()) ? options.indexOf(node.defaultOption) + 1 || null : null;
+  const chosen = (index ?? delegated) !== null ? options[(index ?? delegated)! - 1] : undefined;
   if (chosen !== undefined) return humanFields(node, chosen, answer.text);
   if (!answer.text) return options.length ? null : humanFields(node, undefined, "");
   const kind = TEXT_KINDS.find((value) => values.includes(value));
   return kind !== undefined || !values.length ? humanFields(node, kind, answer.text) : null;
 }
+
+/** Words that hand the decision back to the machine. */
+const DELEGATE = /^(сам[аи]? реша[йи]|реша[йи] сам[аи]?|на (тво[её]|ваше) усмотрение|как (считаешь|хочешь|лучше)|выбери сам|decide (yourself|for me)|your call|up to you|whatever you think)[.!]?$/iu;
 
 /** The longest a human step of a machine-started run waits for the owner's answer. */
 export const MACHINE_HUMAN_WAIT_SEC = 15 * 60;
@@ -220,7 +225,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
 
   // ---------------------------------------------------------------- human: the owner's question as a BB form
   const openForms = new Set<string>();
-  const ask = async (rt: ChainRuntime, runId: string, stepKey: string, node: Extract<GraphNode, { type: "human" }>, question: string, deadline?: number): Promise<void> => {
+  const ask = async (rt: ChainRuntime, runId: string, stepKey: string, node: Extract<GraphNode, { type: "human" }>, question: string, deadline?: number, base: string = question): Promise<void> => {
     const key = `${runId}|${stepKey}`;
     if (openForms.has(key)) return;
     const options = humanOptions(node);
@@ -230,7 +235,8 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
         if (answer.outcome === "answered") {
           const output = humanOutput(node, { choiceIndex: answer.choice ? Number(answer.choice.id) : null, text: answer.text });
           // Words that name no option and fit no text kind decide nothing: the step keeps waiting and the owner is asked again, with the options listed.
-          if (!output) { await ask(rt, runId, stepKey, node, `Your answer did not choose an option (${options.map((value) => value.replace(/_/g, " ")).join(" / ")}). ${question}`, deadline); return; }
+          // The notice goes before the step's own question once, not once per wrong answer (it stacked up, live 2026-10-25).
+          if (!output) { await ask(rt, runId, stepKey, node, `Your answer did not choose an option (${options.map((value) => value.replace(/_/g, " ")).join(" / ")}). ${base}`, deadline, base); return; }
           // The form opens while the step is being recorded as waiting: an answer that arrives first is retried until the step can take it.
           for (let tries = 0; tries < 50; tries += 1) {
             if (await engine.resolve(runId, stepKey, output)) return;

@@ -57,19 +57,17 @@ describe("lp.plan", () => {
     expect(pathOf(r)).toBe("plan lint ok");
   });
 
-  it("a contract that does not lint three times asks the owner; proceeding gives a low-confidence plan, aborting fails it", async () => {
+  it("a contract that does not lint three times fails the plan without asking the owner (he takes no part in the loop)", async () => {
     const stubs = { plan: { tasks: [task("a")], task_count: 1 }, lint: { ok: false, errors: ["owns_paths overlap"] } };
-    const proceed = await runSim("lp.plan", { input: { goal: "g" }, stubs, humans: { ask: { answer_kind: "proceed" } } });
-    expect(pathOf(proceed)).toBe("plan lint plan lint plan lint ask low");
-    expect(out(proceed)).toMatchObject({ status: "low_confidence" });
-    const abort = await runSim("lp.plan", { input: { goal: "g" }, stubs, humans: { ask: { answer_kind: "abort" } } });
-    expect(pathOf(abort)).toBe("plan lint plan lint plan lint ask failed");
-    expect(out(abort)).toMatchObject({ status: "failed" });
+    const r = await runSim("lp.plan", { input: { goal: "g" }, stubs });
+    expect(pathOf(r)).toBe("plan lint plan lint plan lint failed");
+    expect(out(r)).toMatchObject({ status: "failed" });
   });
 
-  it("the critique that keeps asking for rework ends at the owner after 3 rounds", async () => {
-    const r = await runSim("lp.plan", { input: { goal: "g" }, mode: "full", stubs: { plan: { tasks: [task("a")], task_count: 1 }, plan_critic: { status: "rework" } }, humans: { ask: { answer_kind: "proceed" } } });
-    expect(pathOf(r)).toBe("plan lint plan_critic plan lint plan_critic plan lint plan_critic ask low");
+  it("the critique that keeps asking for rework goes on as a low-confidence plan after 3 rounds, without the owner", async () => {
+    const r = await runSim("lp.plan", { input: { goal: "g" }, mode: "full", stubs: { plan: { tasks: [task("a")], task_count: 1 }, plan_critic: { status: "rework" } } });
+    expect(pathOf(r)).toBe("plan lint plan_critic plan lint plan_critic plan lint plan_critic low");
+    expect(out(r)).toMatchObject({ status: "low_confidence" });
   });
 });
 
