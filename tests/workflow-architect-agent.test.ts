@@ -1,3 +1,4 @@
+import { rewriteFoldedToolNames } from "../src/rooms/tools/pm-tool-families";
 import { afterEach, describe, expect, it } from "vitest";
 import { createFakePluginHost, makePluginAgentConfigurationContext } from "@get-bb/plugin-sdk/testing";
 import plugin from "../server";
@@ -31,7 +32,7 @@ describe("Workflow architect profile", () => {
   it("builds chains and does not write code or dispatch writers: its tools are reading, the web and the workflow tools", () => {
     const profile = compileMainAgentProfile(WORKFLOW_ARCHITECT_ID);
     const tools = profile.tools ?? [];
-    expect(tools).toEqual(expect.arrayContaining(["Read", "Glob", "Grep", "mcp__bb-bridge__lane_pilot_workflow_draft_patch", "mcp__bb-bridge__lane_pilot_workflow_draft_publish", "mcp__bb-bridge__lane_pilot_ask_owner"]));
+    expect(tools).toEqual(expect.arrayContaining(["Read", "Glob", "Grep", "mcp__bb-bridge__lane_pilot_workflow_draft", "mcp__bb-bridge__lane_pilot_relay", "mcp__bb-bridge__lane_pilot_ask_owner"]));
     for (const forbidden of ["Write", "Edit", "Bash", "mcp__bb-bridge__lane_pilot_dispatch_writer", "mcp__bb-bridge__lane_pilot_errand", "mcp__bb-bridge__lane_pilot_browser"]) expect(tools).not.toContain(forbidden);
     expect(tools.filter((tool) => tool.startsWith("mcp__bb-bridge__lane_pilot_")).map((tool) => tool.replace("mcp__bb-bridge__", "")).sort()).toEqual([...NATIVE_LP_BRIDGE_ARCHITECT_TOOLS].sort());
     // A saved definition that lists other bridge tools gets exactly the architect's.
@@ -40,7 +41,9 @@ describe("Workflow architect profile", () => {
   });
 
   it("names only tools it has, and knows the interview, the format, the availability sources and the secrets rule", () => {
-    const mentioned = new Set([...WORKFLOW_ARCHITECT_SESSION.matchAll(/\blane_pilot_[a-z_]+/g)].map((match) => match[0]));
+    // The session the architect gets: written with the old per-action names, rewritten to the family calls it has.
+    const session = rewriteFoldedToolNames(WORKFLOW_ARCHITECT_SESSION);
+    const mentioned = new Set([...session.matchAll(/\blane_pilot_[a-z_]+/g)].map((match) => match[0]));
     expect([...mentioned].filter((name) => !(NATIVE_LP_BRIDGE_ARCHITECT_TOOLS as readonly string[]).includes(name))).toEqual([]);
     for (const tool of NATIVE_LP_BRIDGE_ARCHITECT_TOOLS) if (tool.startsWith("lane_pilot_workflow_")) expect(mentioned.has(tool), tool).toBe(true);
     for (const phrase of ["Interview, briefly", "lane_pilot_workflow_capabilities", "browser-automation", "computer-use", "tavily", "Env Catalog", "env_request", "never ask for the value in chat", "lp-task",
@@ -75,7 +78,7 @@ describe("Workflow architect profile", () => {
     const selection = await fake.bb.storage.kv.get<{ agentsJson: string | null }>(`native-selection:${prepared.token}`);
     const definition = (JSON.parse(selection!.agentsJson!) as Record<string, { description: string; prompt: string; tools: string[] }>)[WORKFLOW_ARCHITECT_ID]!;
     expect(definition.prompt).toContain("Workflow architect session");
-    expect(definition.tools).toContain("mcp__bb-bridge__lane_pilot_workflow_draft_create");
+    expect(definition.tools).toContain("mcp__bb-bridge__lane_pilot_workflow_draft");
     expect(definition.tools).not.toContain("mcp__bb-bridge__lane_pilot_dispatch_writer");
   });
 

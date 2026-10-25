@@ -1,6 +1,7 @@
 import bundledAgents from "./bundled-agents.json";
 import { NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, unionLpBridgeTools, withoutLpBridgeTools } from "./native-session-hooks";
 import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY } from "../workflow";
+import { rewriteFoldedToolNames } from "../tools";
 
 /** Official `--agents` JSON fields from https://code.claude.com/docs/en/sub-agents */
 export const AGENTS_JSON_FIELDS = [
@@ -334,7 +335,7 @@ The Tavily key and the tavily skill are already available in this BB session, so
 ## Handoff
 H1 / audience → copy-lead. SEO keys / SERP → seo-specialist. Product source → PM / writer.`,
 
-  [WORKFLOW_ARCHITECT_ID]: WORKFLOW_ARCHITECT_SESSION,
+  [WORKFLOW_ARCHITECT_ID]: rewriteFoldedToolNames(WORKFLOW_ARCHITECT_SESSION),
 
   "browser-qa": `This chat is a Lane Pilot browser-qa session in BB.
 
@@ -422,7 +423,11 @@ export function withoutCodeWritingSubagents(agentId: string, tools: string[]): s
 
 export function overlaySessionTools(agentId: string, tools: string[]): string[] {
   const base = withoutLpBridgeTools(dropCliSessionTools(withoutCodeWritingSubagents(agentId, tools)));
-  if (nativeAgentName(agentId) === WORKFLOW_ARCHITECT_ID) return unionLpBridgeTools(base, NATIVE_LP_BRIDGE_ARCHITECT_TOOLS);
+  if (nativeAgentName(agentId) === WORKFLOW_ARCHITECT_ID) {
+    // The bridge's tools are deferred: without the loader the architect could not load the draft tools it is allowed.
+    const architect = unionLpBridgeTools(base, NATIVE_LP_BRIDGE_ARCHITECT_TOOLS);
+    return architect.includes(DEFERRED_MCP_LOADER) ? architect : [...architect, DEFERRED_MCP_LOADER];
+  }
   if (!isLanePmAgent(agentId)) return base;
   const withBridge = unionLpBridgeTools(base, NATIVE_LP_BRIDGE_PM_TOOLS);
   return withBridge.includes(DEFERRED_MCP_LOADER) ? withBridge : [...withBridge, DEFERRED_MCP_LOADER];

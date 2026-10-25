@@ -120,12 +120,12 @@ export const NATIVE_LP_BRIDGE_PM_TOOLS = [
 export const NATIVE_LP_BRIDGE_ARCHITECT_TOOLS = [
   "lane_pilot_read",
   "lane_pilot_ask_owner",
-  "lane_pilot_workflow_draft_create",
-  "lane_pilot_workflow_draft_patch",
-  "lane_pilot_workflow_draft_get",
-  "lane_pilot_workflow_capabilities",
-  "lane_pilot_workflow_draft_test",
-  "lane_pilot_workflow_draft_publish",
+  // The families the old per-action names were folded into (src/rooms/tools/pm-tool-families.ts): with the old names the architect had
+  // only read and ask_owner and could build nothing (live architect order thr_ucanjpsgn5, 2026-10-25). Its session text is rewritten
+  // to the family calls the same way as the PM's.
+  "lane_pilot_workflow_draft",
+  "lane_pilot_relay",
+  "lane_pilot_tool_search",
 ] as const;
 
 export function lpBridgeCatalogNames(tools: readonly string[] = NATIVE_LP_BRIDGE_TOOLS): string[] {

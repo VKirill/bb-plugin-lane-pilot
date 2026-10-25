@@ -91,7 +91,12 @@
   "nodes": [
     {
       "id": "triage",
-      "produces": [{"kind": "report", "version": 1}],
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
       "type": "agent",
       "role": "analyst",
       "title": {
@@ -196,6 +201,18 @@
         "resolution": "open",
         "comment": "'the issue is too vague to act on; see the triage handoff'"
       }
+    },
+    {
+      "id": "already",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "closed",
+        "severity": "triage.severity",
+        "resolution": "fixed",
+        "comment": "'already met: the planner found the repository already does it; nothing changed'",
+        "merged_commits": "ctx.merged_commits"
+      }
     }
   ],
   "edges": [
@@ -220,6 +237,12 @@
       "from": "escalate",
       "to": "proposed",
       "pass": "artifact"
+    },
+    {
+      "from": "plan",
+      "to": "already",
+      "pass": "artifact",
+      "when": "plan.already_met == true"
     },
     {
       "from": "plan",

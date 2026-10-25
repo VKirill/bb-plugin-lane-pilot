@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.312
+
+**The workflow architect has its tools again.** The architect the machine starts for a new process stood without hands: its session listed the bridge tools by their old folded names (`lane_pilot_workflow_draft`, ...), which the bridge no longer serves since the tools were folded into families, and it had no loader for the deferred ones. Its tool list is now the family names plus the ToolSearch loader, and its session text names the tools the way the bridge serves them (`src/rooms/tools` holds the folded-name map).
+
+**«Already done» is an honest end of a small task.** The third live small job (the README licence again) looped: the planner checked the repository, found the section already there and returned no tasks; the lint refused an empty plan, three rounds later the plan asked the owner. The planner of `lp.plan` may now answer `already_met` with the evidence in its handoff; the lint takes an empty plan only then, and `issue-quick` closes at once with «already met: nothing changed» instead of building.
+
 ## 0.1.311
 
 **A new process is built by the machine.** A request the Jev judgment reads as a new process (a routine the system should run again and again) now starts the workflow architect with the owner's words as its order: it builds the chain without a conversation — a draft, a clean validator, its test cases run green, publish — and sends one line to the PM chat. While it works, `lane_pilot_dispatch_writer` names the architect's chat instead of dispatching the request by hand (Matvey #31916: «any new process becomes a small graph»).

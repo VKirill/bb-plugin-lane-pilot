@@ -462,7 +462,8 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
         if (clash !== undefined) errors.push(`${a.id} and ${b.id} run in the same wave but both own ${clash || "the repository root"}`);
       }
     }
-    if (!tasks.length) errors.push("the plan has no tasks");
+    // An empty plan is right when the planner checked that the repository already does what the goal asks (already_met).
+    if (!tasks.length && c.resolve("plan.already_met") !== true) errors.push("the plan has no tasks");
     return { ok: errors.length === 0, errors };
   });
 

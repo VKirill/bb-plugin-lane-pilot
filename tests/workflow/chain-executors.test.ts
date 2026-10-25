@@ -500,6 +500,22 @@ describe("files, diffs and the plugin's own state", () => {
     expect(errors).not.toMatch(/display_title|kind_missing|area_missing/);
     expect(errors).toContain("t1 and t2 run in the same wave but both own src");
   });
+
+  it("lp.lint_contract takes an empty plan only when the planner says the goal is already met", async () => {
+    const t = await setup({});
+    dispose = t.dispose;
+    const lintOf = async (alreadyMet: boolean) => {
+      const workflow = chain({
+        outputs: [{ name: "ok", type: "boolean", required: false }],
+        nodes: [{ id: "plan", type: "action", action: "make_plan", output: [{ name: "tasks", type: "array" }, { name: "waves", type: "array" }, { name: "already_met", type: "boolean" }] }, { id: "lint", type: "action", action: "lp.lint_contract", reads: ["plan.tasks"], out: { ok: "bool", errors: "string[]" } }, { id: "done", type: "action", action: "emit", map: { ok: "lint.ok" } }],
+        edges: [{ from: "start", to: "plan" }, { from: "plan", to: "lint" }, { from: "lint", to: "done" }],
+      });
+      t.engine.register("make_plan", { reentrant: true, run: async () => ({ output: { tasks: [], waves: [], already_met: alreadyMet } }) });
+      return (await t.start(workflow).done).output!.ok;
+    };
+    expect(await lintOf(true)).toBe(true);
+    expect(await lintOf(false)).toBe(false);
+  });
 });
 
 describe("a code task of a chain", () => {
