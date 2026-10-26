@@ -50,21 +50,37 @@ const RISK_RANK: Record<string, number> = { low: 0, medium: 1, high: 2, critical
 export function requiresRedOnBase(setting: RequireRed, task: { risk: string; kind?: string | undefined }): boolean {
   if (setting === "off") return false;
   if (task.kind && NO_RED_KINDS.includes(task.kind)) return false;
+  // A fix has a failure to show, so its risk does not excuse it: five low-risk vf-fix-b1-* of Vampirism Fire (2026-10-26) were accepted on a
+  // check.sh that was green on the base, and the first batch run on main found 39 failures. Only the owner's «high» raises the bar above it.
+  if (task.kind === "fix" && setting === "medium") return true;
   return (RISK_RANK[task.risk] ?? 0) >= (setting === "high" ? 2 : 1);
 }
 
-/** The checks that cannot fail the work: when every check ran green on the base and none is red, they all are. Otherwise nothing is claimed. */
-export function vacuousChecks(checks: readonly BaselineCheck[]): BaselineCheck[] {
-  return checks.length > 0 && checks.every((check) => check.status === "green") ? [...checks] : [];
+/** A check that only says a file or a word exists (`test -f`, `grep -q`, `ls`): red before a new file, it proves no behaviour. */
+const EXISTENCE_ONLY = /^\s*(?:cd [^&;|]+&&\s*)?(?:(?:test|\[) -[efsd] \S+\s*\]?|grep -[qcFE]+[qcFE]* .+|ls \S+)\s*$/;
+export const isExistenceOnly = (command: string): boolean => command.split(/\s*(?:&&|;)\s*/).filter(Boolean).every((part) => EXISTENCE_ONLY.test(part));
+
+/**
+ * The checks that cannot fail the work: when every check ran green on the base and none is red, they all are. Otherwise nothing is claimed.
+ * For a fix, a red check that only looks for a new file or symbol does not count either: vf-s7-restock.2 and four other Vampirism Fire fixes
+ * (2026-10-26) passed red-before-green on `test -f Tests/ParNNN.luau` and shipped behaviour no check ran.
+ */
+export function vacuousChecks(checks: readonly BaselineCheck[], options: { behaviour?: boolean } = {}): BaselineCheck[] {
+  if (!checks.length) return [];
+  if (checks.every((check) => check.status === "green")) return [...checks];
+  if (!options.behaviour) return [];
+  const ranAll = checks.every((check) => check.status === "green" || check.status === "red");
+  return ranAll && !checks.some((check) => check.status === "red" && !isExistenceOnly(check.command)) ? [...checks] : [];
 }
 
 /** What the PM reads when the attempt does not start because no check is red on the base: which checks are vacuous and what to add. */
-export function vacuousMessage(taskId: string, vacuous: readonly BaselineCheck[], risk: string, baseSha: string | null): string {
+export function vacuousMessage(taskId: string, vacuous: readonly BaselineCheck[], risk: string, baseSha: string | null, kind?: string): string {
   const list = vacuous.map((check) => `- ${check.command}`).join("\n");
   return `все ${vacuous.length} проверок(и) задачи ${taskId} (риск ${risk}) уже проходят на базе${baseSha ? ` ${baseSha.slice(0, 10)}` : ""}, до писателя:\n${list}\n`
     + `Такие проверки зелёные при любой работе писателя, поэтому не доказывают её. Добавьте хотя бы одну, которая сейчас красная и позеленеет только когда работа сделана: `
     + `проверку, называющую новый файл или поведение (test -f <новый файл>; grep -q '<новый символ>' <файл>; точечный тест, который падает сейчас), и отправьте задачу снова. `
-    + `Если у работы нельзя написать красную проверку (чистый рефакторинг, документация), укажите kind refactor или docs.`;
+    + `Если у работы нельзя написать красную проверку (чистый рефакторинг, документация), укажите kind refactor или docs.`
+    + (kind === "fix" ? ` Для починки (kind fix) проверка наличия файла или слова (test -f, grep -q) не считается: нужен тест поведения, который падает сейчас и проходит после починки.` : "");
 }
 
 export type RegressSettings = {

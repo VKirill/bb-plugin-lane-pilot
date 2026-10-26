@@ -131,7 +131,7 @@ export function createBaseline(ctx: ServerCore, services: Services) {
 
       const verdict = baselineVerdict(checks);
       // Red before green: a task of medium risk or more whose every check is already green on the base has no check that can tell its work.
-      const vacuous = requiresRedOnBase(settings.requireRed, input.task) ? vacuousChecks(checks) : [];
+      const vacuous = requiresRedOnBase(settings.requireRed, input.task) ? vacuousChecks(checks, { behaviour: input.task.kind === "fix" }) : [];
       if (vacuous.length) {
         const summary = `${baselineSummary(verdict, checks, baseSha)}; no check is red on the base (checks.require_red_on_base=${settings.requireRed}, risk ${input.task.risk})`;
         record(input, { baseSha, state: "ran", verdict, mode: settings.mode, action: "stopped", summary, checks, durationMs: Date.now() - started });
@@ -170,7 +170,7 @@ export function createBaseline(ctx: ServerCore, services: Services) {
 
   async function tellPmVacuous(input: BaselineInput, vacuous: BaselineCheck[], baseSha: string | null): Promise<void> {
     if (!input.pmThreadId) return;
-    const text = `Lane Pilot: задача ${input.taskId} не запущена: ${vacuousMessage(input.taskId, vacuous, input.task.risk, baseSha)}`;
+    const text = `Lane Pilot: задача ${input.taskId} не запущена: ${vacuousMessage(input.taskId, vacuous, input.task.risk, baseSha, input.task.kind)}`;
     noteToldPmDirectly(input.pmThreadId, input.taskId);
     await bb.sdk.threads.send({ threadId: input.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never).catch(() => undefined);
   }

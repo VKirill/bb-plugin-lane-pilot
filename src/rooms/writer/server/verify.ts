@@ -19,13 +19,29 @@ import { beginChecks, checksMoved, taskFamily } from "../../runs";
 import { bookkeepingSetting, filterOwnershipNoise } from "@lane-pilot/settings-catalog";
 import { findUnownedChanges, findUnownedRunChanges, flakyEvidence as machineEvidence, outputTail, readingFrom, resolveRunOwnershipScope } from "../../verification";
 import type { FlakyEvidence, MachineReading } from "../../verification";
-import { noTestRanReason } from "../../tasks/server";
+import { noTestRanReason, testSummaries } from "../../tasks/server";
 import { recordGateEvaluation } from "../../runs/server";
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import { stringAt } from "../../core/server";
 import { outputText, writerPatchFromOutput } from "./writer-task";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
+
+/** A sandbox that refused the runner its own files: macOS python3 shim «couldn't create cache file … Operation not permitted». */
+const SANDBOX_DENIAL=/couldn't create cache file|Operation not permitted/i;
+
+/**
+ * Why a re-run that exited 0 still proves nothing, or null. Vampirism Fire 2026-10-24: `studio_test.py` failed, then «passed»
+ * on the re-run printing only the macOS python3 shim's «couldn't create cache file (Operation not permitted)», no report; that
+ * empty green was accepted as flaky. A re-run counts only when it shows the check ran: it prints a test/check summary, or it
+ * is not a command known to print one (the first run did not) and shows no sandbox refusal.
+ */
+function hollowRerun(first:{stdout?:string;stderr?:string},again:{stdout?:string;stderr?:string}):string|null {
+  const printed=(run:{stdout?:string;stderr?:string})=>`${run.stdout??""}\n${run.stderr??""}`;
+  if(testSummaries(printed(again)).length) return null;
+  if(testSummaries(printed(first)).length) return "printed no test or check summary, which this command printed on its first run";
+  return SANDBOX_DENIAL.test(printed(again)) ? "printed only a sandbox refusal and no test or check summary" : null;
+}
 
 /**
  * A verification command that fails is run once more: a check that fails once and passes on a re-run (a cold cache, a
@@ -43,6 +59,11 @@ export async function runWithFlakyRerun<T extends {exitCode:number;stdout?:strin
   const beforeRerun=await sample?.();
   const again=await run();
   if(again.exitCode!==0) return first;
+  const hollow=hollowRerun(first,again);
+  if(hollow) {
+    log(`verification command exited 0 on re-run but did not run (${hollow}): ${command} — the first failure (exit ${first.exitCode}) stands`);
+    return {...first,stderr:`${first.stderr??""}\nthe re-run exited 0 but ${hollow}; it is not a flaky pass, the first failure stands`.trim()};
+  }
   const flakyEvidence=machineEvidence({exitCode:first.exitCode,outputTail:outputTail(first)},beforeFirst??null,beforeRerun??null);
   log(`verification command passed on re-run (flaky): ${command} — first exit ${first.exitCode}, ${flakyEvidence.classification}: ${flakyEvidence.basis}`);
   return {...again,flaky:true,flakyEvidence};

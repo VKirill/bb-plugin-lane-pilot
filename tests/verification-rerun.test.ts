@@ -70,6 +70,38 @@ describe("verification command re-run", () => {
     expect(s.calls()).toBe(2); expect(log).toEqual([]);
   });
 
+  const XCRUN = "python3: error: couldn't create cache file '/var/folders/gs/T/xcrun_db-WOHYd8bg' (errno=Operation not permitted)\r\n";
+  const twoRuns = (first: { exitCode: number; stdout: string }, again: { exitCode: number; stdout: string }) => { let n = 0; return async () => ({ ...(n++ === 0 ? first : again), stderr: "" }); };
+
+  it("Vampirism Fire 2026-10-24: a re-run that exits 0 with only the sandbox's refusal and no report is not a flaky pass", async () => {
+    const log: string[] = [];
+    const result = await runWithFlakyRerun("cd game && python3 -I scripts/studio_test.py --filter Par042",
+      twoRuns({ exitCode: 1, stdout: "FAIL Par042\n1 checks, 1 failed\r\n" }, { exitCode: 0, stdout: XCRUN }), (l) => log.push(l));
+    expect(result).toMatchObject({ exitCode: 1 });
+    expect(result.flaky).toBeUndefined();
+    expect(result.stdout).toContain("1 checks, 1 failed");
+    expect(result.stderr).toContain("the re-run exited 0 but");
+    expect(log).toHaveLength(1);
+    expect(log[0]).toContain("did not run");
+  });
+
+  it("a re-run without the summary the first run printed is not a flaky pass", async () => {
+    const result = await runWithFlakyRerun("npm test", twoRuns({ exitCode: 1, stdout: " Tests  1 failed | 2 passed (3)\n" }, { exitCode: 0, stdout: "" }), () => undefined);
+    expect(result).toMatchObject({ exitCode: 1 });
+    expect(result.flaky).toBeUndefined();
+  });
+
+  it("a re-run that prints its report is still a flaky pass, even beside a sandbox warning", async () => {
+    const result = await runWithFlakyRerun("cd game && python3 -I scripts/studio_test.py --filter Par042",
+      twoRuns({ exitCode: 1, stdout: "boom" }, { exitCode: 0, stdout: `${XCRUN}12 checks, 0 failed\r\n` }), () => undefined);
+    expect(result).toMatchObject({ exitCode: 0, flaky: true });
+  });
+
+  it("a silent tool (tsc) that failed once and passes silently on the re-run stays a flaky pass", async () => {
+    const result = await runWithFlakyRerun("npx tsc --noEmit", twoRuns({ exitCode: 2, stdout: "a.ts(1,1): error TS2322" }, { exitCode: 0, stdout: "" }), () => undefined);
+    expect(result).toMatchObject({ exitCode: 0, flaky: true });
+  });
+
   it("does not re-run a command killed by timeout (exit 124)", async () => {
     const s = sequence(124, 0);
     expect(await runWithFlakyRerun("npm test", s.run, () => undefined)).toMatchObject({ exitCode: 124 });
@@ -94,6 +126,14 @@ describe("a green check that ran no test fails", () => {
     expect(failIfNoTestRan(red)).toBe(red);
     const tsc = { exitCode: 0, stdout: "", stderr: "" };
     expect(failIfNoTestRan(tsc)).toBe(tsc);
+  });
+
+  it("a Studio report with no checks fails; a real one passes", () => {
+    const empty = failIfNoTestRan({ exitCode: 0, stdout: "0 checks, 0 failed\r\n", stderr: "" });
+    expect(empty.exitCode).toBe(1);
+    expect(empty.stderr).toContain("(studio)");
+    const real = { exitCode: 0, stdout: "python3: error: couldn't create cache file\r\n12 checks, 0 failed\r\n", stderr: "" };
+    expect(failIfNoTestRan(real)).toBe(real);
   });
 
   it("a flaky pass that ran no test is still not a pass", async () => {

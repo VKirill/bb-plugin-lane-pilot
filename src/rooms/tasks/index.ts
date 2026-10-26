@@ -17,3 +17,8 @@ export { BIRTH_KINDS, CHECK_RECIPES, FACT_KINDS, HOLD_FOREVER, LANE_QUEUES, QUES
 export type { BirthKind, BlockingClass, CheckMeasure, CheckRecipe, FactKind, Priority, QuestionKind, WriterMarkers } from "./rails";
 export { TASK_WORDS_KEY, landingWordGap, recordTaskWord, taskWordKey } from "./words";
 export type { TaskWord } from "./words";
+export { SHARED_PATH_TASKS, batchShapeAdvice } from "./batch-shape";
+export type { OpenShape } from "./batch-shape";
+export { TOPIC_LOOP, testNames, topicLoop, topicLoopMessage } from "./topic-loop";
+export type { LoopTask, TopicLoop } from "./topic-loop";
+export { CHECK_HISTORY_MIN_RUNS, p95 } from "./check-history";

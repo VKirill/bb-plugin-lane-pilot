@@ -173,6 +173,23 @@ describe("red before green (checks.require_red_on_base)", () => {
     await off.dispose();
   });
 
+  it("asks a fix of low risk for a red check too: check.sh green on the base is no proof of a fix (Vampirism Fire vf-fix-b1-*)", async () => {
+    const w = await world();
+    const stopped = await w.services.baseline.preflight(at(w.pendingTask("fix1", ["test -f keep.txt"]), { risk: "low", kind: "fix" }));
+    expect(stopped.stop).toMatch(/no_red_on_base: .*risk low/);
+    expect(getBaseline(w.db, "run1", "fix1")).toMatchObject({ action: "stopped" });
+    // A red check that only looks for the new file proves no behaviour of a fix; one that runs something does.
+    expect((await w.services.baseline.preflight(at(w.pendingTask("fix2", ["test -f keep.txt", "test -f feature.txt"]), { risk: "low", kind: "fix" }))).stop).toMatch(/no_red_on_base/);
+    expect((await w.services.baseline.preflight(at(w.pendingTask("fix2b", ["test -f keep.txt", "cat feature.txt"]), { risk: "low", kind: "fix" }))).stop).toBeNull();
+    await w.dispose();
+    const high = await world({ settings: { "checks.require_red_on_base": "high" } });
+    expect((await high.services.baseline.preflight(at(high.pendingTask("fix3", ["test -f keep.txt"]), { risk: "low", kind: "fix" }))).stop).toBeNull();
+    await high.dispose();
+    const off = await world({ settings: { "checks.require_red_on_base": "off" } });
+    expect((await off.services.baseline.preflight(at(off.pendingTask("fix4", ["test -f keep.txt"]), { risk: "low", kind: "fix" }))).stop).toBeNull();
+    await off.dispose();
+  });
+
   it("asks again when the PM sends the task back with a red check, and does not claim «all green» for checks it could not run", async () => {
     const w = await world();
     const first = at(w.pendingTask("t1", ["test -f keep.txt"]), { risk: "medium" });

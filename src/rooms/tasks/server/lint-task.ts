@@ -1,6 +1,6 @@
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
-import { getRunSettingsScopes, getTask, latestTaskAttemptState, listOpenAttempts, loadProjectSettings } from "../../storage";
+import { getRunSettingsScopes, getTask, latestTaskAttemptState, listCheckDurations, listCheckTimeouts, listOpenAttempts, loadProjectSettings } from "../../storage";
 import { taskFamily } from "../../runs";
 import { parseSandboxUnsafePatterns } from "../../critique";
 import { isTaskSatisfied } from "../../runs/server";
@@ -72,6 +72,8 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
       } catch { programs = null; }
     }
     const ownerWords = String(settings["owner.words"] ?? "off") === "on";
-    return lintContract({ task, workspacePath, hostId, kinds, listings, sandboxUnsafe, gate, openTasks, deadDependencies, programs, ownerWords, ...(secrets ? { secrets } : {}) });
+    // What the project recorded of each check: its green durations (the store checkTimeoutSec reads) and the limits it timed out at.
+    const checkHistory = (command:string) => ({ greenMs:listCheckDurations(db, projectId, command), timedOutSec:listCheckTimeouts(db, projectId, command) });
+    return lintContract({ task, workspacePath, hostId, kinds, listings, sandboxUnsafe, gate, openTasks, deadDependencies, programs, ownerWords, checkHistory, ...(secrets ? { secrets } : {}) });
   };
 }

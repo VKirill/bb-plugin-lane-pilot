@@ -47,6 +47,47 @@ describe("a permission error is the machine's only when the code is not red", ()
     expect(isEnvironmentCheckFailure({ stdout:"== Par030 ==\nFAIL BG4 leak feed on pickup\n12 checks, 1 failed\nUnable to reach Roblox Studio right now." })).toBe(false);
   });
 
+  it("reads the other ways a Studio runner dies of the machine as the environment, and a free attempt (live audit 2026-10-26, Vampirism Fire)", () => {
+    const cache = "python3: error: couldn't create cache file '/var/folders/gs/T/xcrun_db-4Qqb8Tvs' (errno=Operation not permitted)\n";
+    const lines = [
+      "studio_test error: MCP execute_luau error: The requested `studio_id` is not connected — that Roblox Studio instance may have been closed or its place unloaded. Call `list_roblox_studios` for the current instances.",
+      "studio_test error: MCP execute_luau: timeout",
+      "studio_test error: MCP execute_luau error: Network action ExecuteLuau.runCode sent to DMN_ID_PLAYSERVER failed - Target is not reachable (ExecuteLuau.runCode, DMN_ID_PLAYSERVER). No OnInvoke handler responded for this action.",
+      "studio_test error: MCP execute_luau error: Server datamodel is not available in Edit mode",
+      "studio_test error: vf-tests-2.rbxl did not load MapData within 180s",
+      "studio_test error: MCP start_stop_play error: Stop play hasn't finished yet",
+      "studio_test: Studio MCP lists no Studio; waiting for it to come back …",
+      "studio_test error: [Errno 1] Operation not permitted: 'ps'",
+      "RuntimeError: timed out waiting for lock /tmp/vf-tests/studio.lock",
+      "test window unusable: restart it",
+    ];
+    for (const line of lines) {
+      expect(isEnvironmentCheckFailure({ stderr:line }), line).toBe(true);
+      expect(isEnvironmentCheckFailure({ stdout:`Using Studio window: vf-tests.rbxl (2c6189dd)\n${line}\n`, stderr:cache }), line).toBe(true);
+      // A red test next to it stays the task's.
+      expect(isEnvironmentCheckFailure({ stdout:`== Par030 ==\nFAIL BG4 leak feed on pickup\n12 checks, 1 failed\n${line}` }), line).toBe(false);
+    }
+    // The same words in a test's own output, with no runner error line, are not the environment.
+    expect(isEnvironmentCheckFailure({ stderr:"expected the request to time out and the target to be reachable" })).toBe(false);
+    expect(isEnvironmentCheckFailure({ stdout:"FAIL spawn waits for MapData" })).toBe(false);
+    const reason = reasonOf({ stdout:"Using Studio window: vf-tests.rbxl\nstudio_test error: MCP execute_luau: timeout", stderr:cache });
+    expect(reason).toContain("verification failed (npm run build): environment: ");
+    expect(failureClass("validation_failed", reason)).toBe("infra");
+  });
+
+  it("reads a runner report whose only failure is «DebugHook missing» as the environment, never a real red next to it", () => {
+    const hook = "Using Studio window: vf-tests.rbxl (2c6189dd)\n0 checks, 1 failed\nFAIL DebugHook missing\nerror: no checks ran\n";
+    expect(isEnvironmentCheckFailure({ stdout:hook })).toBe(true);
+    expect(isEnvironmentCheckFailure({ stdout:"error: no checks ran\n\n0 checks, 1 failed\nFAIL DebugHook missing\n" })).toBe(true);
+    expect(isEnvironmentCheckFailure({ stderr:"python3: error: couldn't create cache file '/x' (errno=Operation not permitted)", stdout:hook })).toBe(true);
+    expect(failureClass("validation_failed", reasonOf({ stdout:hook, stderr:"" }))).toBe("infra");
+    // Other failures in the same report, or checks that ran, keep it the task's.
+    expect(isEnvironmentCheckFailure({ stdout:"0 checks, 2 failed\nFAIL DebugHook missing\nFAIL revive keeps XP\n" })).toBe(false);
+    expect(isEnvironmentCheckFailure({ stdout:"5 checks, 1 failed\nFAIL DebugHook missing\n" })).toBe(false);
+    expect(isEnvironmentCheckFailure({ stdout:"0 checks, 1 failed\nFAIL revive keeps XP\n" })).toBe(false);
+    expect(isEnvironmentCheckFailure({ stdout:"FAIL revive keeps XP\n0 checks, 1 failed\nFAIL DebugHook missing\n" })).toBe(false);
+  });
+
   it("keeps a red test that logs EACCES a task failure, with its two attempts", () => {
     expect(isEnvironmentCheckFailure({ stdout:vitestRed })).toBe(false);
     expect(isEnvironmentCheckFailure({ stderr:"Error: EPERM: operation not permitted, unlink '/x'", stdout:"FAIL src/b.test.ts\n Tests  2 failed (5)" })).toBe(false);

@@ -1623,6 +1623,21 @@ export function recordCheckDuration(db: LanePilotDatabase, input: { projectId: s
     .run(input.projectId, key, input.projectId, key, CHECK_DURATION_KEPT);
 }
 
+/**
+ * The limits (seconds) one command timed out at in one project, newest first. A timeout is not kept in lane_pilot_check_duration
+ * (it says nothing about how long the check takes), so its trace is the attempt's final reason «verification failed (cmd): verification
+ * timed out after 120s» (live 2026-10-26, Vampirism Fire: the whole Studio suite, no timeout_sec, killed five times at 120 s).
+ */
+export function listCheckTimeouts(db: LanePilotDatabase, projectId: string, command: string, limit = 20): number[] {
+  const head = `verification failed (${command}): verification timed out after `;
+  const rows = db.prepare("SELECT a.reason FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.project_id=? AND instr(a.reason, ?) > 0 ORDER BY a.created_at DESC, a.attempt_no DESC LIMIT ?")
+    .all(projectId, head, limit) as Array<{ reason: string }>;
+  return rows.flatMap((row) => {
+    const seconds = /^(\d+)s/.exec(row.reason.slice(row.reason.indexOf(head) + head.length));
+    return seconds ? [Number(seconds[1])] : [];
+  });
+}
+
 /** Durations (ms) of the last green runs of one command in one project, newest first. */
 export function listCheckDurations(db: LanePilotDatabase, projectId: string, command: string, limit = 20): number[] {
   return (db.prepare("SELECT duration_ms FROM lane_pilot_check_duration WHERE project_id=? AND command_key=? AND exit_code=0 ORDER BY at DESC, rowid DESC LIMIT ?")

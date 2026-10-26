@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import plugin from "../server";
 import type { TaskV2 } from "../src/rooms/contracts";
 import {
-  createAttempt, createRun, createTask, listAttemptsForTask, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread, transitionAttempt,
+  createAttempt, createRun, createTask, listAttemptsForTask, openDatabase, recordCheckDuration, saveProjectSetting, savePrototypeConfig, setRunThread, transitionAttempt,
 } from "../src/rooms/storage/database";
 import { postMergeRepair } from "../src/rooms/writer/server/finish";
 import { lintContract, lintProbePaths, lintReply, runnerFilterArgs, siblingTestFolders, type LintInput, type PathKind } from "../src/rooms/tasks/server/contract-lint";
@@ -258,6 +258,72 @@ describe("contract lint rules", () => {
     });
   });
 
+  describe("a check that is the gate's own command (Vampirism Fire: the whole Studio suite as a task check)", () => {
+    const gate = { command:"python3 -I scripts/studio_test.py" };
+    const folder = { "src/a.ts":"file" as const };
+    const withGate = (command:string, input:Partial<LintInput> = {}) => lint({ verification:[{ command, cwd:root }] }, { gate, ...input }, folder);
+    it("rejects the gate command whole, behind a cd, or as one step of a chain, whatever the runner is", () => {
+      for (const command of ["python3 -I scripts/studio_test.py", "cd game && python3 -I scripts/studio_test.py", "  python3   -I scripts/studio_test.py ", "test -f a && python3 -I scripts/studio_test.py; echo done"]) {
+        const { errors } = withGate(command);
+        expect(codes({ errors, warnings:[] }), command).toEqual(["whole_suite_with_gate"]);
+        expect(errors[0]!.message).toContain("the integration gate (python3 -I scripts/studio_test.py) runs the whole suite once per batch");
+      }
+      expect(codes(withGate("python3 -I scripts/studio_test.py", { gate:{ command:"cd game && python3 -I scripts/studio_test.py" } }))).toEqual(["whole_suite_with_gate"]);
+    });
+    it("lets a filtered run, another script and a project without a gate through", () => {
+      for (const command of ["cd game && python3 -I scripts/studio_test.py --filter Par010", "python3 -I scripts/studio_test.py --self-check", "python3 -I scripts/studio_test_helper.py"]) {
+        expect(codes(withGate(command)), command).toEqual([]);
+      }
+      expect(codes(withGate("python3 -I scripts/studio_test.py", { gate:null }))).toEqual([]);
+      expect(codes(withGate("python3 -I scripts/studio_test.py", {}))).toEqual(["whole_suite_with_gate"]);
+      expect(codes(lint({ verification:[{ command:"python3 -I scripts/studio_test.py", cwd:root }] }, {}, folder))).toEqual([]);
+    });
+  });
+
+  describe("a check with a history of running out of time", () => {
+    const folder = { "src/a.ts":"file" as const };
+    const suite = "cd game && python3 -I scripts/studio_test.py --filter Par";
+    const history = (greenMs:number[], timedOutSec:number[]) => ({ checkHistory:(command:string) => command === suite ? { greenMs, timedOutSec } : { greenMs:[], timedOutSec:[] } });
+    const lintCheck = (timeout_sec:number | undefined, input:Partial<LintInput>) => lint({ verification:[{ command:suite, cwd:root, ...(timeout_sec ? { timeout_sec } : {}) }] }, input, folder);
+    it("asks for a timeout_sec with a number when the command timed out at the default limit", () => {
+      const { errors } = lintCheck(undefined, history([], [120, 120, 120]));
+      expect(codes({ errors, warnings:[] })).toEqual(["verification_timeout"]);
+      expect(errors[0]!.message).toContain("timed out in this project at 120 s (3 attempts)");
+      expect(errors[0]!.message).toContain("no timeout_sec (the default is 120 s)");
+      expect(errors[0]!.message).toContain("set timeout_sec to 600 or more");
+    });
+    it("asks again when the contract's own limit is no more than the one it timed out at, and takes a larger one", () => {
+      expect(lintCheck(120, history([], [120])).errors[0]!.message).toContain("this contract has timeout_sec 120");
+      expect(codes(lintCheck(600, history([], [120])))).toEqual([]);
+      expect(lintCheck(600, history([], [600])).errors[0]!.message).toContain("set timeout_sec to 3000 or more");
+      expect(lintCheck(5400, history([], [5400])).errors[0]!.message).toContain("set timeout_sec to 7200 or more");
+    });
+    it("asks for a timeout_sec above the p95 of its recorded green runs, from three runs on", () => {
+      const green = [300_000, 310_000, 320_000, 330_000, 340_000];
+      const { errors } = lintCheck(120, history(green, []));
+      expect(codes({ errors, warnings:[] })).toEqual(["verification_timeout"]);
+      expect(errors[0]!.message).toContain("took up to 340 s in its last 5 green runs");
+      expect(errors[0]!.message).toContain("set timeout_sec to 720 or more");
+      expect(codes(lintCheck(undefined, history(green, [])))).toEqual(["verification_timeout"]);
+      expect(codes(lintCheck(400, history(green, [])))).toEqual([]);
+      expect(codes(lintCheck(undefined, history([300_000, 310_000], [])))).toEqual([]);
+    });
+    it("leaves a check with no history, a quick check and a lint without history alone", () => {
+      expect(codes(lintCheck(undefined, history([], [])))).toEqual([]);
+      expect(codes(lintCheck(undefined, history([4_000, 5_000, 6_000], [])))).toEqual([]);
+      expect(codes(lintCheck(undefined, {}))).toEqual([]);
+    });
+  });
+
+  describe("red before green for a fix", () => {
+    it("warns a low-risk fix whose checks all name files the base already has, as it does for medium risk", () => {
+      const kinds = { "src/a.ts":"file" as const, "src/b.ts":"file" as const };
+      const verification = [{ command:"grep -q x src/b.ts", cwd:root }];
+      expect(lint({ risk:"low", kind:"fix", verification }, {}, kinds).warnings.map((warning) => warning.code)).toEqual(["no_red_before_green"]);
+      expect(lint({ risk:"low", kind:"feature", verification }, {}, kinds).warnings).toEqual([]);
+    });
+  });
+
   describe("depends_on", () => {
     it("sends the PM back to replan when a dependency ended blocked or canceled", () => {
       const { errors } = lint({ depends_on:["P1", "P2"] }, { deadDependencies:[{ id:"P1", state:"blocked" }, { id:"P2", state:"canceled" }] }, { "src/a.ts":"file" });
@@ -331,6 +397,22 @@ const taskCount = (db:ReturnType<typeof openDatabase>) => (db.prepare("SELECT CO
 describe("contract lint at dispatch", () => {
   beforeEach(() => { process.env.LANE_PILOT_DISPATCH_ANSWER_MS = "50"; });
   afterEach(() => { delete process.env.LANE_PILOT_DISPATCH_ANSWER_MS; });
+
+  it("reads the project's gate command and its recorded check history into the lint (Vampirism Fire: the whole Studio suite with the default 120 s)", async () => {
+    const { db, harness, dispatch } = await setup({ "src/a.ts":"file" });
+    saveProjectSetting(db, projectId, "integration.gate_command", "python3 -I scripts/studio_test.py");
+    const whole = await dispatch({ verification:[{ command:"cd game && python3 -I scripts/studio_test.py", cwd:root }] });
+    expect(whole).toMatchObject({ state:"validation_failed" });
+    expect(String(whole.reason)).toContain("the integration gate (python3 -I scripts/studio_test.py) runs the whole suite once per batch");
+    const slow = "cd game && python3 -I scripts/studio_test.py --filter Par010";
+    for (const seconds of [300, 320, 340]) recordCheckDuration(db, { projectId, command:slow, durationMs:seconds * 1000, exitCode:0 });
+    const timeout = await dispatch({ verification:[{ command:slow, cwd:root }] });
+    expect(timeout).toMatchObject({ state:"validation_failed" });
+    expect(String(timeout.reason)).toContain("took up to 340 s in its last 3 green runs");
+    expect(String(timeout.reason)).toContain("set timeout_sec to 720 or more");
+    expect(taskCount(db)).toBe(0);
+    await harness.lifecycle.dispose();
+  });
 
   it("sends every contract error back in one message and creates no task and no attempt", async () => {
     const { db, harness, dispatch } = await setup({ "src/a.ts":"missing", tests:"directory" });

@@ -150,14 +150,25 @@ const ENVIRONMENT_LINE = new RegExp([
   // -mainfix for a green main (live 2026-10-26, Vampirism Fire vf-fix-b3-last7b.2: «19 checks, 0 failed», then these two lines).
   /\(errno=Operation not permitted\)/.source,
   /\bUnable to reach Roblox Studio\b|\bNo Roblox Studio instances are connected\b/.source,
+  // The rest of the Studio runner's ways to die before a test ran (audit 2026-10-26, Vampirism Fire: 60% of the Studio reds were these): the
+  // MCP instance gone or not answering, the test window unusable, a play session not up yet, the sandbox denying the runner's `ps`, a queue
+  // on its lock, and the runner's fake report «0 checks, 1 failed / FAIL DebugHook missing» (see isEnvironmentCheckFailure).
+  /`studio_id` is not connected\b|\bMCP \w+: (?:Request )?timeout\s*$|\bTarget is not reachable\b|\bServer datamodel is not available in Edit mode\b/.source,
+  /\bdid not load MapData within \d+s\b|\b(?:Stop|Start) play hasn't finished yet\b|\bStudio MCP lists no Studio\b|\btest window unusable: restart it\b/.source,
+  /\[Errno 1\] Operation not permitted: '|\btimed out waiting for lock \S*studio\.lock\b|^FAIL DebugHook missing\s*$/.source,
 ].join("|"), "im");
 // A test runner reporting failing tests (vitest/jest «1 failed», node --test «fail 1», TAP «not ok», assertions, compiler errors): the
 // code is red whatever else the output says, and a test that logs an EACCES string is not an environment fault.
 const TEST_REPORT_RED = /\b[1-9]\d* (?:failed|failing)\b|^\W*(?:#|ℹ)?\s*fail [1-9]|^\s*not ok \d+|^\s*(?:FAIL|✗|×|✖)\s|\bAssertionError\b|\berror TS\d+\b/im;
+const DEBUG_HOOK_FAIL = /^FAIL DebugHook missing\s*$/m;
+const DEBUG_HOOK_REPORT = /^0 checks, 1 failed\s*$/gm;
 /** A failing check whose output shows the environment broke it: no writer can fix that in owns_paths. */
 export const isEnvironmentCheckFailure = (check:{ stdout?:string; stderr?:string }):boolean => {
   const output = `${check.stderr ?? ""}\n${check.stdout ?? ""}`;
-  return ENVIRONMENT_LINE.test(output) && !TEST_REPORT_RED.test(output);
+  // The Studio runner without its server hook prints a report of no checks and that one failure («0 checks, 1 failed» + «FAIL DebugHook
+  // missing»): no test ran, so it is not a red one. Only that exact pair is set aside; any other count or FAIL line next to it stays red.
+  const report = DEBUG_HOOK_FAIL.test(output) ? output.replace(DEBUG_HOOK_REPORT, "").replace(DEBUG_HOOK_FAIL, "") : output;
+  return ENVIRONMENT_LINE.test(output) && !TEST_REPORT_RED.test(report);
 };
 
 /** Failures that do not spend one of the task's attempts. */

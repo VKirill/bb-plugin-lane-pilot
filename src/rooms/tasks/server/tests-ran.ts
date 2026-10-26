@@ -10,7 +10,7 @@
 import { cleanCheckOutput } from "@lane-pilot/kit";
 
 export type TestSummary = {
-  runner: "vitest" | "jest" | "node" | "pytest";
+  runner: "vitest" | "jest" | "node" | "pytest" | "studio";
   /** Tests that ran: passed + failed. */
   executed: number;
   /** Tests that were counted but did not run: skipped, todo, pending, cancelled, deselected. */
@@ -69,6 +69,9 @@ export function testSummaries(output: string): TestSummary[] {
     // `vitest run nofile` with passWithNoTests in the config, and jest's twin.
     const none = /^(No test files found|No tests found), exiting with code 0\b/.exec(line);
     if (none) { found.push({ runner: none[1] === "No tests found" ? "jest" : "vitest", executed: 0, notRun: 0, detail: none[1]!.toLowerCase() }); continue; }
+    // A Roblox Studio test runner's report (Vampirism Fire studio_test.py): `12 checks, 0 failed`; executed checks are all N.
+    const studio = /^(\d+)\s+checks?,\s+(\d+)\s+failed$/.exec(line.trim());
+    if (studio) { found.push({ runner: "studio", executed: Number(studio[1]), notRun: 0, detail: "0 checks" }); continue; }
     // pytest's last line: `===== 3 passed, 1 skipped in 0.12s =====`, `1 passed, 4 deselected in 0.02s`, `no tests ran in 0.01s`.
     const pytest = /^(?:=+\s*)?((?:\d+\s+(?:passed|failed|skipped|deselected|xfailed|xpassed|errors?|warnings?|rerun)(?:,\s*)?)+|no tests ran)\s+in\s+\d+(?:\.\d+)?s\b/i.exec(line);
     if (pytest) {

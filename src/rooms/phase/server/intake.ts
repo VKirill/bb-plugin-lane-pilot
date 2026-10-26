@@ -1,6 +1,7 @@
 import { jev, type JevSettings } from "@lane-pilot/jev";
 import { getRun, getRunSettingsScopes } from "../../storage";
 import { stringAt, type ServerCore } from "../../core/server";
+import { isRunHalted, isRunPaused } from "../../runs/server";
 import { intakeByRules, intakeJudgment, intakeTitle, isMachineMessage, processHint, railsRefusal, type IntakeKind } from "../intake";
 import type { Phase } from "../logic";
 
@@ -98,14 +99,17 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     // A small job goes down the small-task graph (issue-quick), a batch of fixes down issue-batch, started by the machine:
     // the orchestrator does not choose what runs (Matvey #31782). phase.train off leaves them to the PM as before.
     let wfRunId: string | undefined;
+    // A run the owner stopped or paused starts no build on the machine's own: the PM reads the message instead (live 2026-10-26,
+    // Vampirism Fire: work was stopped and issue-quick still built and merged wcebffdb8-T1).
+    const stopped = await isRunHalted(bb.storage.kv as never, run.id) || await isRunPaused(bb.storage.kv as never, run.id);
     // Only on the judgment's word: the length rule calls any short line «small», and a remark must not start a build.
-    if ((kind === "small" || kind === "batch") && by === "jev" && train && String(settings["phase.train"] ?? "on") !== "off") {
+    if ((kind === "small" || kind === "batch") && by === "jev" && train && !stopped && String(settings["phase.train"] ?? "on") !== "off") {
       wfRunId = train.start({ projectId: run.project_id, pmThreadId: threadId, runId: run.id, requestId, text, kind }) ?? undefined;
       if (wfRunId) ctx.log(`phase intake: ${threadId} — the owner's request is ${kind} (${by}); ${kind === "batch" ? "issue-batch" : "issue-quick"} ${wfRunId} started`);
     }
     // A new process becomes a small graph: the workflow architect builds, tests and publishes it on the owner's words (Matvey #31916).
     let architectThreadId: string | undefined;
-    if (kind === "process" && by === "jev" && train?.startProcess && String(settings["phase.train"] ?? "on") !== "off") {
+    if (kind === "process" && by === "jev" && train?.startProcess && !stopped && String(settings["phase.train"] ?? "on") !== "off") {
       architectThreadId = await train.startProcess({ projectId: run.project_id, pmThreadId: threadId, text }).catch(() => null) ?? undefined;
       if (architectThreadId) ctx.log(`phase intake: ${threadId} — the owner's request is a process; the workflow architect builds it in ${architectThreadId}`);
     }

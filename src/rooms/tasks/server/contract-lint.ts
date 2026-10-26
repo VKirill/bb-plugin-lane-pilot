@@ -12,6 +12,7 @@ import { mapVerificationCwd } from "../verification-cwd";
 import { SANDBOX_OWN_ENV } from "../../verification";
 import type { CatalogEntry, SecretCheck } from "../../secrets/server";
 import { safeRelative, validateOwnershipContract } from "../../verification";
+import { CHECK_HISTORY_MIN_RUNS, p95 } from "../check-history";
 
 /** One problem in a task contract, with the concrete fix; `data` rides along in the answer to the PM. */
 export type LintFinding = { code:string; message:string; data?:Record<string, unknown> };
@@ -30,6 +31,8 @@ export type LintInput = {
   programs?:ReadonlyMap<string, boolean> | null;
   /** The project's integration gate (explicit or detected) runs the whole suite once per batch; absent or null when there is none. */
   gate?:{ command:string } | null;
+  /** What the project has recorded of one check command: the durations of its green runs and the limits it timed out at; absent when the history was not asked. */
+  checkHistory?:(command:string) => { greenMs:readonly number[]; timedOutSec:readonly number[] };
   /** The project asks for the owner's word (setting owner.words = on): a clarification counts only with his answer. */
   ownerWords?:boolean;
   /** Other open tasks of the project. */
@@ -41,6 +44,20 @@ export type LintInput = {
 };
 
 export { runnerFilterArgs };
+
+/** The timeout a check without timeout_sec gets (the sandbox's default, writer/server/verify.ts). */
+const DEFAULT_CHECK_TIMEOUT_SEC = 120;
+
+/**
+ * Whether a check runs the gate's own command: the check is the gate command, or one `&&` / `;` step of it (after `cd dir &&`) is. The gate
+ * is whatever the project's integration.gate_command says, so this holds for a runner the lint has no name for (Vampirism Fire:
+ * `python3 -I scripts/studio_test.py`, the whole Studio suite, used as a task check 40 times).
+ */
+export function runsGateCommand(command:string, gateCommand:string):boolean {
+  const squash = (text:string) => text.trim().replace(/\s+/g, " ");
+  const gate = squash(gateCommand);
+  return squash(command) === gate || command.split(/&&|;|\n/).map(squash).some((part) => part === gate.replace(/^cd \S+ && /, ""));
+}
 
 /** The catalog name closest to a declared one when they differ by case or a typo (at most two edits); null when none is near. */
 export function nearSecretName(name:string, catalog:readonly CatalogEntry[]):string | null {
@@ -345,7 +362,7 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
       if (allVacuous && task.risk !== "low" && !NO_RED_KINDS.includes(task.kind ?? "")) errors.push(finding); else warnings.push(finding);
     }
   }
-  if (task.risk !== "low" && task.verification.length > 0 && kinds && !isMainfixTask(task.id) && !errors.some((error) => error.code === "verification_empty_check")
+  if ((task.risk !== "low" || task.kind === "fix") && task.verification.length > 0 && kinds && !isMainfixTask(task.id) && !errors.some((error) => error.code === "verification_empty_check")
     && !checkNamedPaths(task).some((path) => kindOf(path) === "missing")) {
     warnings.push({ code:"no_red_before_green", message:`risk ${task.risk}: no verification command names a file that is missing on the base commit, so every check may already pass before the work; add one that fails until the task is done (a test for the new behaviour in a file the task creates, grep -q for the expected string, test -f on a new output). This is a warning: the task goes on` });
   }
@@ -358,7 +375,7 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
   }
   for (const check of task.verification) {
     // With a gate, a task's check is its own files: the whole suite is the gate's, once per batch (so no exclusions to add either).
-    if (input.gate && runsWholeSuite(check.command)) {
+    if (input.gate && (runsWholeSuite(check.command) || runsGateCommand(check.command, input.gate.command))) {
       errors.push({ code:"whole_suite_with_gate", message:`verification command "${check.command}" runs the whole test suite; the integration gate (${input.gate.command}) runs the whole suite once per batch, so check only this task's files, e.g. npx vitest run <its test files>, plus the typecheck`,
         data:{ gateCommand:input.gate.command } });
       continue;
@@ -368,6 +385,24 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
     const suggestedFlags = missing.map((pattern) => `--exclude "${pattern}"`).join(" ");
     errors.push({ code:"sandbox_unsafe", message:`verification command "${check.command}" runs a full test suite without excluding sandbox-unsafe tests; add missing exclusions: ${suggestedFlags}`,
       data:{ missingExcludes:missing, suggestedFlags } });
+  }
+
+  // A check that has outrun its limit in this project fails whatever the writer does: the recorded timeouts and green runs say how long it needs.
+  // (Vampirism Fire 2026-10-26: wc35ef88c-T1 ran the whole Studio suite, 5–10 min, with no timeout_sec: killed at 120 s five times.)
+  for (const [index, check] of task.verification.entries()) {
+    const history = input.checkHistory?.(check.command);
+    if (!history) continue;
+    const limit = check.timeout_sec ?? DEFAULT_CHECK_TIMEOUT_SEC;
+    const timedOut = Math.max(0, ...history.timedOutSec);
+    const green = history.greenMs.length >= CHECK_HISTORY_MIN_RUNS ? Math.ceil(p95(history.greenMs) / 1000) : 0;
+    const limitText = check.timeout_sec ? `timeout_sec ${limit}` : `no timeout_sec (the default is ${DEFAULT_CHECK_TIMEOUT_SEC} s)`;
+    // The timed-out run says only «longer than its limit»: 5× that; the green runs say how long it takes: twice the p95, as the check's own widening does.
+    const needed = Math.min(7200, Math.ceil(Math.max(limit <= timedOut ? timedOut * 5 : 0, limit < green ? green * 2 : 0) / 60) * 60);
+    if (limit <= timedOut) {
+      errors.push({ code:"verification_timeout", message:`verification[${index}] command "${check.command}" timed out in this project at ${timedOut} s (${history.timedOutSec.length} attempt${history.timedOutSec.length > 1 ? "s" : ""}) and this contract has ${limitText}, so it is killed again whatever the writer does; set timeout_sec to ${needed} or more${green ? ` (its green runs take up to ${green} s)` : ""}, or narrow the command to this task's tests` });
+    } else if (limit < green) {
+      errors.push({ code:"verification_timeout", message:`verification[${index}] command "${check.command}" took up to ${green} s in its last ${history.greenMs.length} green runs in this project and this contract has ${limitText}; set timeout_sec to ${needed} or more, or narrow the command to this task's tests` });
+    }
   }
 
   // Secrets a check declares: a valid name, left open by the project list, of a kind a check can take, and in Env Catalog.

@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { listCheckDurations, openDatabase, recordCheckDuration } from "../src/rooms/storage/database";
+import { createAttempt, createRun, listCheckDurations, listCheckTimeouts, openDatabase, recordCheckDuration, transitionAttempt } from "../src/rooms/storage/database";
 import { CHECK_TIMEOUT_CAP_SEC, checkTimeoutSec, historyTimeoutSec, p95 } from "../src/rooms/writer/check-timing";
 
 describe("check timeout from history", () => {
@@ -20,6 +20,24 @@ describe("check timeout from history", () => {
     expect(historyTimeoutSec(120, [100_000, 110_000, 90_000, 95_000])).toBe(220);
     expect(historyTimeoutSec(120, [2_000_000, 2_000_000, 2_000_000])).toBe(CHECK_TIMEOUT_CAP_SEC);
     expect(historyTimeoutSec(3600, [2_000_000, 2_000_000, 2_000_000])).toBe(3600);
+  });
+
+  it("reads the limits a command timed out at from the final reasons of its attempts, per project (a timeout is kept in no duration row)", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    createRun(db, "runA", "A");
+    createRun(db, "runB", "B");
+    const attempt = (run:string, id:string, reason:string) => { createAttempt(db, { id, runId:run, taskId:id }); transitionAttempt(db, id, "blocked", { reason }); };
+    attempt("runA", "a1", "verification failed (python3 -I scripts/studio_test.py): verification timed out after 120s");
+    attempt("runA", "a2", "turn limit 5 reached: verification failed (python3 -I scripts/studio_test.py): verification timed out after 600s");
+    attempt("runA", "a3", "verification failed (python3 -I scripts/studio_test.py): exit 1");
+    attempt("runA", "a4", "verification failed (python3 -I scripts/studio_test.py --filter X): verification timed out after 90s");
+    attempt("runB", "b1", "verification failed (python3 -I scripts/studio_test.py): verification timed out after 30s");
+    expect(listCheckTimeouts(db, "A", "python3 -I scripts/studio_test.py").sort((a, b) => a - b)).toEqual([120, 600]);
+    expect(listCheckTimeouts(db, "A", "python3 -I scripts/studio_test.py --filter X")).toEqual([90]);
+    expect(listCheckTimeouts(db, "B", "python3 -I scripts/studio_test.py")).toEqual([30]);
+    expect(listCheckTimeouts(db, "A", "npm test")).toEqual([]);
+    await harness.lifecycle.dispose();
   });
 
   it("stores each passing run per project and command and reads the last 20, newest first", async () => {

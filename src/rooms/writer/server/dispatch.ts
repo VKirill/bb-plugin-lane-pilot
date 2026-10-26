@@ -25,6 +25,7 @@ import { closeWriterStages, recordStage, resetHelperStages } from "../../runs/se
 import { id, stringAt, valueAt } from "../../core/server";
 import { buildTask } from "./writer-task";
 import { dispatchReply, dispatchRunKey, endedAttemptReply, startDispatchRun, workflowEngineEnabled } from "./dispatch-workflow";
+import { batchAdviceFor, topicLoopGuard } from "./dispatch-guards";
 import { countRunNudges } from "./writer-silence";
 import { isAbsolute, relative, resolve } from "node:path";
 import type { ServerCore } from "../../core/server";
@@ -194,9 +195,16 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     // A family the wall ladder ended in the backlog is not sent again; one whose hunters found the ask itself wrong is not sent again unchanged.
     const walled = args.task && !isMainfixTask(args.task.id) ? services.wall?.dispatchGuard({ runId, family:taskFamily(args.task.id), task, plan:canonicalPlan }) ?? null : null;
     if (walled) return { ok:false, error:{ code:"wall_stop", retryable:false, sideEffects:"none", hint:walled }, hint:walled };
+    // A fourth try on a topic the run's earlier tasks already worked on (the same file patched, the same test red again) is not sent:
+    // the PM dispatches one research task on the whole picture first (Vampirism Fire 2026-10: nine runner patches, one flaky test through eight tasks).
+    const looped = args.task && !isMainfixTask(args.task.id) && (args.birth ?? "pm") === "pm" ? topicLoopGuard(db, runId, task) : null;
+    if (looped) return { ok:false, error:{ code:"topic_loop", retryable:false, sideEffects:"none", hint:looped }, hint:looped };
     // Contract lint: every contract mistake a helper or writer would only trip over later goes back to the PM now,
     // in one message with the fix, before a task or an attempt exists.
     const lint = await lintTask(args.projectId, runId, task, taskBase, config.hostId);
+    // The queue the task joins, said once in the answer: which open tasks hold it and on what, and how to cut the batch if three own one path.
+    const batchAdvice = batchAdviceFor(db, args.projectId, task);
+    const withAdvice = (reply:Record<string,unknown>): Record<string,unknown> => batchAdvice.length && reply.state === "queued" ? { ...reply, batchAdvice } : reply;
     // The run's objective (the Tasks board groups by it) comes with the PM's first dispatch; Lane Pilot's own dispatches (mainfix, workflows) need none.
     const noObjective:LintFinding[] = args.requireObjective && !getRunObjective(db, runId)
       ? [{ code:"objective_missing", message:"objective is missing: this run has none yet; add objective to this first dispatch, one phrase in the language the owner writes in saying what the whole batch is for (later dispatches may leave it out)" }] : [];
@@ -360,8 +368,8 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const early = await Promise.race([work, new Promise<null>((done) => { timer = setTimeout(() => done(null), dispatchAnswerMs()); })]);
     clearTimeout(timer);
-    if (early) return early;
-    return pendingReply();
+    if (early) return withAdvice(early);
+    return withAdvice(pendingReply());
   }
 
   /**

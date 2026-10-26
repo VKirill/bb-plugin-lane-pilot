@@ -85,10 +85,25 @@ describe("red before green", () => {
     expect(requiresRedOnBase("medium", { risk: "high", kind: "refactor" })).toBe(false);
     expect(requiresRedOnBase("medium", { risk: "high", kind: "feature" })).toBe(true);
   });
+  it("asks a fix of any risk for a red check, unless the setting is off or raised to high (Vampirism Fire 2026-10-26: five low-risk vf-fix-b1-* passed on a check.sh that was green on the base)", () => {
+    expect(requiresRedOnBase("medium", { risk: "low", kind: "fix" })).toBe(true);
+    expect(requiresRedOnBase("medium", { risk: "low", kind: "feature" })).toBe(false);
+    expect(requiresRedOnBase("medium", { risk: "low" })).toBe(false);
+    expect(requiresRedOnBase("high", { risk: "low", kind: "fix" })).toBe(false);
+    expect(requiresRedOnBase("high", { risk: "high", kind: "fix" })).toBe(true);
+    expect(requiresRedOnBase("off", { risk: "low", kind: "fix" })).toBe(false);
+  });
   it("calls vacuous only checks that all ran green", () => {
     expect(vacuousChecks([check("a", "green"), check("b", "green")])).toHaveLength(2);
     expect(vacuousChecks([check("a", "green"), check("b", "red")])).toEqual([]);
     expect(vacuousChecks([check("a", "green"), check("b", "skipped")])).toEqual([]);
     expect(vacuousChecks([])).toEqual([]);
+    // A fix proves behaviour: a red check that only looks for a new file or symbol does not count (vf-s7-restock.2, 2026-10-26).
+    const red = (command: string) => ({ ...check(command, "red"), command });
+    const green = (command: string) => ({ ...check(command, "green"), command });
+    expect(vacuousChecks([green("bash scripts/check.sh"), red("test -f game/src/server/Tests/Par077.luau")], { behaviour: true })).toHaveLength(2);
+    expect(vacuousChecks([green("bash scripts/check.sh"), red("grep -q 'restockMinute' game/src/server/Items/Shop/Stock.luau")], { behaviour: true })).toHaveLength(2);
+    expect(vacuousChecks([green("bash scripts/check.sh"), red("cd game && python3 -I scripts/studio_test.py --filter Par077")], { behaviour: true })).toEqual([]);
+    expect(vacuousChecks([green("bash scripts/check.sh"), red("test -f game/src/server/Tests/Par077.luau")])).toEqual([]);
   });
 });

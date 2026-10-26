@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.334
+
+The rest of the Vampirism Fire audit (2026-10-26: 74 h, 165 tasks, 223 h of queue against 140 h of work).
+
+**Three tries at one topic stop the fourth; one look at the whole picture comes first** (Matvey Maslov's loop rule). Lane Pilot's stops saw one task family only, and the PM sent the same work under new ids: nine tasks patching the Studio runner, the batch-suite reds chased through last7 → last7b → last7b.2 → hygiene. A new PM dispatch is refused (`topic_loop`) when three earlier families of the run worked on the same specific file as fixes, or failed on the same named test, within 72 hours; a `research` or `check` task that looks at the whole picture is let through, and once it is accepted the topic counts from zero (`src/rooms/tasks/topic-loop.ts`, `src/rooms/writer/server/dispatch-guards.ts`). Replayed over the run it fires at the 4th runner fix and at the last7b chain, never on the 54 mechanic tasks; a folder most tasks share (`scripts/gamedata/`) is no topic.
+
+**The dispatch answer says when a task will queue, and why.** A queued dispatch carries `batchAdvice`: which open tasks hold it and on which paths, and when three or more own the same path, how to unblock the wave (narrow owns_paths, one task for the shared generator, merge tiny tasks of one area) (`src/rooms/tasks/batch-shape.ts`). The PM prompt says not to give every task a shared generated-data folder.
+
+**More Studio failures are the machine's, not the writer's.** `studio_id … is not connected`, `MCP execute_luau: timeout`, `Target is not reachable`, `Server datamodel is not available in Edit mode`, `did not load MapData within Ns`, `Stop/Start play hasn't finished yet`, `Studio MCP lists no Studio`, `test window unusable`, `[Errno 1] Operation not permitted: '…'`, a `studio.lock` wait timeout, and a report whose only failure is `FAIL DebugHook missing` now mark an environment failure (free attempt, no `-mainfix`); a real `FAIL` beside them stays the task's.
+
+**A re-run that ran nothing is not a flaky pass.** vf-s5-inventory's check failed, then re-ran with exit 0 and only the sandbox's `couldn't create cache file … (errno=Operation not permitted)` — no report — and was accepted as flaky. A re-run without the summary the first run printed, or with only a sandbox refusal, keeps the first failure; Studio's `N checks, M failed` is read as a test summary, and `0 checks` is «no test ran».
+
+**Contract lint.** A check equal to the project's integration gate command (the whole suite) is refused for a task, for any runner. A check that timed out before, or whose green runs take longer than its `timeout_sec`, must set `timeout_sec` (the lint names the number). A `fix` must show a check red on the base at any risk, and for a fix a red check that only looks for a new file or word (`test -f`, `grep -q`, `ls`) does not count: five Vampirism Fire fixes passed on `test -f Tests/ParNNN.luau` and on a `check.sh` already green.
+
+**The intake starts no build in a stopped or paused run** (wcebffdb8-T1 was built and merged after the owner had stopped the work).
+
 ## 0.1.333
 
 **The machine no longer starts a build on its own notices and on remarks.** In the Vampirism Fire chat 13 issue-quick runs were started from the PM chat on 2026-10-25/26 and 8 ended «too vague».

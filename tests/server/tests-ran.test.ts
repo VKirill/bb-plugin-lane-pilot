@@ -86,4 +86,10 @@ describe("noTestRanReason: a check that exited 0 must have run a test", () => {
   it("terminal escapes around the summary do not hide it", () => {
     expect(noTestRanReason("\x1b[2m      Tests \x1b[22m \x1b[33m4 skipped\x1b[39m\x1b[90m (4)\x1b[39m\r\n")).toContain("4 skipped");
   });
+
+  it("reads a Studio runner's «N checks, M failed» report as checks", () => {
+    expect(testSummaries("12 checks, 0 failed\r\n")).toEqual([{ runner: "studio", executed: 12, notRun: 0, detail: "0 checks" }]);
+    expect(noTestRanReason("12 checks, 0 failed\n")).toBeNull();
+    expect(noTestRanReason("0 checks, 0 failed\n")).toContain("0 checks (studio)");
+  });
 });

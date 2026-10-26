@@ -151,6 +151,30 @@ describe("the small-task graph", () => {
   });
 });
 
+describe("a stopped or paused run", () => {
+  it("starts no build on the judgment's word: the PM reads the message instead (live 2026-10-26, Vampirism Fire)", async () => {
+    const { createPhaseIntake: create } = await import("../src/rooms/phase/server/intake");
+    const { createFakePluginHost: host } = await import("@get-bb/plugin-sdk/testing");
+    const { setJevForTests } = await import("@lane-pilot/jev");
+    const { setRunPaused } = await import("../src/rooms/runs/server/runs-halt");
+    const { bb, harness } = host({ pluginId: "lane-pilot" });
+    harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
+    harness.sdk.stub("threads.events.list", async () => [{ type: "client/turn/requested", data: { requestId: "creq_x", initiator: "user", input: [{ type: "text", text: "проверь скриптами, что осталось" }] } }]);
+    const db = openDatabase(bb);
+    createRun(db, "run1", "projA");
+    const started: string[] = [];
+    const phases = { open: async () => { throw new Error("no phase"); }, tick: async () => 0, list: () => [], status: () => ({ next: { text: "" } }) };
+    setJevForTests({ enabled: () => true, judge: async () => ({ by: "jev", decision: { kind: "small" } }) } as never);
+    try {
+      const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: {} }) } as never, phases as never,
+        { start: (input) => { started.push(input.text); return "wfrun_1"; }, status: () => "running" });
+      await setRunPaused(bb.storage.kv as never, "run1", true);
+      expect(await intake.take("thr_pm")).toMatchObject({ kind: "small", by: "jev" });
+      expect(started).toEqual([]);
+    } finally { setJevForTests(null); }
+  });
+});
+
 describe("the PM is the door: no other system for a request the machine took", () => {
   it("refuses a route or a run while the graph or the architect works, and lets the architect's chain be routed once it is built", async () => {
     const { createPhaseIntake: create } = await import("../src/rooms/phase/server/intake");
