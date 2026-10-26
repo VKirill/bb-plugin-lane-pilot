@@ -11,6 +11,9 @@
 **An attempt in its merge, or resumed after a reload with its writer at work, is no longer «running» with nobody moving it.** Vampirism Fire on 2026-10-25: six attempts were reported «running 47–63 min while its writer thread is idle», for two reasons.
 - Three (vf-s7-cosmetics, vf-s7-cosmetics.2 twice) had green checks and were in the merge: queued for the main checkout and replaying `studio_test` on the moved main for 7–18 minutes. The watcher knew only the checks before the merge. The merge now counts as a check in flight (`merge:<base>` in `src/rooms/runs/checks-in-flight.ts`), and the pool moves with every `gitIntegrate` call.
 - Three (vf-s7-minion-aura, vf-s7-restock twice) were in a writer's turn when the plugin reloaded. The start-up recovery (`resumeOrphans`) started the task loop again without the turn, so the attempt passed the admission waits once more. Its row was newer than a sibling's queued row, and the in-memory list of admitted tasks was gone after the reload. So it waited «for owns_paths» 50–100 minutes after its writer had finished, until another reload freed it. The sibling was let in beside it on the same `economy.luau`, and both ended in merge_conflict. A running attempt with a writer thread is now resumed with its turn (`turnSent`), and the admission treats any open attempt whose writer is at work as holding its files, whatever the row order.
+## 0.1.329
+
+**The night's readers do not litter the project.** The night loop's read-only readers (the three hunters of a wall, the informed round, the analysis) were spawned as visible threads at the project's root and left there: the first night that used them put six «Lane Pilot wall hunter» threads, unread, in the owner's list of BB-сервис. They are now hidden threads, archived once their answer is read; the night's repair threads stay visible. The six were archived.
 
 ## 0.1.328
 

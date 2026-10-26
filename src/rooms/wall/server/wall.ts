@@ -67,6 +67,8 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
       projectId: cfg.projectId,
       environment: { type: "host", hostId, workspace: { type: "unmanaged", path: basePath } },
       title: `Lane Pilot wall ${who}`,
+      // A reader only reads and answers once: hidden, and archived once its answer is read (the first night's six hunters sat unread in the project's list, 2026-10-26).
+      visibility: "hidden",
       prompt,
       ...writerExecutionSelection(wcfg.hunterProviderId, wcfg.hunterModel, who === "analysis" ? "high" : wcfg.hunterReasoningLevel, "default"),
       pluginMetadata: { role: `wall-${who}` },
@@ -83,6 +85,8 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
     } catch {
       await bb.sdk.threads.stop({ threadId }).catch(() => undefined);
       return { text: null, tokens: estimateTokens(prompt) };
+    } finally {
+      await bb.sdk.threads.archive({ threadId }).catch(() => undefined);
     }
   };
 
