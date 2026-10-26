@@ -146,6 +146,10 @@ const ENVIRONMENT_LINE = new RegExp([
   /\b(?:EACCES|EPERM|EEXIST)\b[^\n]*(?:['"`]\/|['"`][A-Za-z]:\\|\bsyscall\b|\b(?:rm|rmSync|rmdir|rmdirSync|unlink|unlinkSync|mkdir|mkdirSync|mkdtemp|open|openSync|opendir|scandir|copyfile|cp|rename|symlink|link|chmod|chown|access|lstat|utime)\b)/.source,
   /^[^\n]*: (?:\S+: )?permission denied\s*$/.source,
   /\bnpm (?:error|ERR!) (?:code )?(?:EACCES|EPERM)\b/.source,
+  // The macOS sandbox refusing a tool's own cache, and Roblox Studio's MCP not answering: no writer can fix either, yet each started a
+  // -mainfix for a green main (live 2026-10-26, Vampirism Fire vf-fix-b3-last7b.2: «19 checks, 0 failed», then these two lines).
+  /\(errno=Operation not permitted\)/.source,
+  /\bUnable to reach Roblox Studio\b|\bNo Roblox Studio instances are connected\b/.source,
 ].join("|"), "im");
 // A test runner reporting failing tests (vitest/jest «1 failed», node --test «fail 1», TAP «not ok», assertions, compiler errors): the
 // code is red whatever else the output says, and a test that logs an EACCES string is not an environment fault.

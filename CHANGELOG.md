@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.333
+
+**The machine no longer starts a build on its own notices and on remarks.** In the Vampirism Fire chat 13 issue-quick runs were started from the PM chat on 2026-10-25/26 and 8 ended «too vague».
+- A workflow run's end notice («Workflow run wfrun_… of issue-quick is succeeded.», `pm-notice.ts`) reached the intake as the owner's request: each notice started the next issue-quick, whose notice started the next (wfrun_400875d6 → wfrun_71f91820, wfrun_a018031b → wfrun_415a6ca4 → wfrun_02ba2124). It is now a machine message (`MACHINE_TEXT`, `src/rooms/phase/intake.ts`).
+- An unsure intake judgment (top kind below `min_p`) was «small», which starts issue-quick; it is now «reply», which starts nothing and leaves the message to the PM. A remark, complaint or feedback on how the work goes («why do you ask me?», «it takes too long») is a reply.
+
+**A Studio MCP that does not answer is the machine's fault, not main's.** The post-merge check of vf-fix-b3-last7b.2 printed «19 checks, 0 failed», then `couldn't create cache file … (errno=Operation not permitted)` and `Unable to reach Roblox Studio`: it was read as main red and a `-mainfix` was dispatched. Both lines (and «No Roblox Studio instances are connected») now mark an environment failure, unless a test is red in the same output (`isEnvironmentCheckFailure`): one message to the PM, no repair task, and a writer's check that dies this way is not charged to the writer.
+
 ## 0.1.332
 
 **A phase no longer reissues accepted work and then fails to prove it.** The Roblox UI phase (ph_26f65b142d) went round three times. Its blind replans («unmet: []», fixed in 0.1.331) could only rewrite the last piece, so the planner changed the contract of the accepted `hud-lvlabel-gap`, which issued it again as `hud-lvlabel-gap.2`. The redo's writer re-proved «Bar stays horizontally centred with 12 pt side margins as now» with the test file the first member had changed, and plan-fact called it «not among the changed files»: the wave stopped on an unproved promise, the PM had nothing left to do.

@@ -46,6 +46,9 @@ describe("phase intake rules", () => {
     expect(isMachineMessage("[Lane Pilot phase] Phase ph_1 …")).toBe(true);
     expect(isMachineMessage("[bb message from thread:thr_x]\n…")).toBe(true);
     expect(isMachineMessage("надо сделать вход")).toBe(false);
+    // A workflow run's end notice started the next issue-quick, whose notice started the next (live 2026-10-26, Vampirism Fire).
+    expect(isMachineMessage("Workflow run wfrun_a018031b894f42758ee7767e61b7debc of issue-quick is succeeded.\nNext: call lane_pilot_workflow_status")).toBe(true);
+    expect(isMachineMessage("Workflow run in the docs is broken, fix it")).toBe(false);
   });
 });
 
@@ -184,5 +187,11 @@ describe("a reply about work under way", () => {
     expect(JSON.stringify(intakeJudgment.questions({ text: "x" }))).toContain("reply");
     const decided = intakeJudgment.decide({ weight: { type: "choice", probabilities: { reply: 0.8, small: 0.2 } } } as never, { min_p: 0.55 }, { text: "x" });
     expect(decided.decision).toEqual({ kind: "reply" });
+  });
+  it("an unsure judgment starts nothing: a remark it cannot place is a reply, not a small job", async () => {
+    const { intakeJudgment } = await import("../src/rooms/phase/intake");
+    const unsure = intakeJudgment.decide({ weight: { type: "choice", probabilities: { small: 0.4, reply: 0.35, question: 0.25 } } } as never, { min_p: 0.55 }, { text: "а меня зачем спрашиваешь?" });
+    expect(unsure.decision).toEqual({ kind: "reply" });
+    expect(JSON.stringify(intakeJudgment.questions({ text: "x" }))).toMatch(/complaint or feedback on how the work goes/);
   });
 });

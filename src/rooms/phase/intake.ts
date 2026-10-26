@@ -11,7 +11,9 @@ export const INTAKE_KINDS = ["heavy", "small", "batch", "process", "question", "
 export type IntakeKind = (typeof INTAKE_KINDS)[number];
 
 /** Lane Pilot's own notices, other threads' messages and system frames are not the owner's request. */
-const MACHINE_TEXT = [/^\s*\[?lane pilot\b/i, /^\s*\[bb message from/i, /^\s*<task-notification/i, /^\s*\[system/i, /^\s*\[lane pilot phase\]/i];
+// The end notice of a workflow run (pm-notice.ts) too: read as the owner's request, each one started another issue-quick, whose own end notice
+// started the next (live 2026-10-26, Vampirism Fire: wfrun_400875d6… → wfrun_71f91820… → …, every one «too vague»).
+const MACHINE_TEXT = [/^\s*\[?lane pilot\b/i, /^\s*\[bb message from/i, /^\s*<task-notification/i, /^\s*\[system/i, /^\s*\[lane pilot phase\]/i, /^\s*Workflow run wfrun_[\w-]+ of /i];
 export const isMachineMessage = (text: string) => MACHINE_TEXT.some((pattern) => pattern.test(text));
 
 const CONSENT = /^(да|ага|угу|ок|окей|ok|okay|yes|yep|го|гоу|давай|делай|согласен|согласна|принято|подтверждаю|поехали|\+|\+\+)[\s.!)]*$/i;
@@ -48,7 +50,7 @@ export const intakeJudgment = defineJudgment<{ text: string; previous?: string |
         process: "A new recurring routine or way of working the system itself should run again and again: a pipeline, a regular job, a checklist to repeat for every new item, «each time X do Y», «every week …».",
         question: "A question or a request for information, a report or a status; it asks for no change to the project.",
         consent: "Agreement, a yes, an approval of what was proposed, or a short go-ahead.",
-        reply: "A reply about work already under way in this chat (`pm_last_message` shows what): an answer to the PM's question, a permission or an instruction for a helper or task that is running, a correction of how it does it. It asks for no new piece of work.",
+        reply: "A reply about work already under way in this chat (`pm_last_message` shows what): an answer to the PM's question, a permission or an instruction for a helper or task that is running, a correction of how it does it, or a remark, complaint or feedback on how the work goes («why do you ask me?», «it takes too long»). It asks for no new piece of work.",
       },
     ),
   }),
@@ -57,7 +59,9 @@ export const intakeJudgment = defineJudgment<{ text: string; previous?: string |
   },
   decide(answers, t) {
     const pick = choiceOf(answers, "weight");
-    if (!pick || pick.p < t.min_p!) return { decision: { kind: "small" } };
+    // Unsure is not a job: «small» here started a build on remarks the judgment could not place (live 2026-10-26: 8 of 13 issue-quick
+    // runs of one chat ended «too vague»). A reply starts nothing; the PM reads the message in its turn.
+    if (!pick || pick.p < t.min_p!) return { decision: { kind: "reply" } };
     return { decision: { kind: (INTAKE_KINDS as readonly string[]).includes(pick.top) ? (pick.top as IntakeKind) : "small" } };
   },
   fallback: () => ({ kind: "small" }),

@@ -39,6 +39,14 @@ describe("a permission error is the machine's only when the code is not red", ()
     return result.reason;
   };
 
+  it("reads a Studio MCP that does not answer and the sandbox refusing a tool's cache as the environment, unless a test is red (live 2026-10-26)", () => {
+    const studioDown = "== Par028 ==\n19 checks, 0 failed\npython3: error: couldn't create cache file '/var/folders/gs/T/xcrun_db-BzY6ivJ7' (errno=Operation not permitted)\n" +
+      "studio_test error: MCP list_roblox_studios error: Unable to reach Roblox Studio right now. Ask the user to confirm that Studio is running with the MCP server enabled in Assistant settings.";
+    expect(isEnvironmentCheckFailure({ stdout:studioDown })).toBe(true);
+    expect(isEnvironmentCheckFailure({ stderr:"studio_test error: No Roblox Studio instances are connected" })).toBe(true);
+    expect(isEnvironmentCheckFailure({ stdout:"== Par030 ==\nFAIL BG4 leak feed on pickup\n12 checks, 1 failed\nUnable to reach Roblox Studio right now." })).toBe(false);
+  });
+
   it("keeps a red test that logs EACCES a task failure, with its two attempts", () => {
     expect(isEnvironmentCheckFailure({ stdout:vitestRed })).toBe(false);
     expect(isEnvironmentCheckFailure({ stderr:"Error: EPERM: operation not permitted, unlink '/x'", stdout:"FAIL src/b.test.ts\n Tests  2 failed (5)" })).toBe(false);
