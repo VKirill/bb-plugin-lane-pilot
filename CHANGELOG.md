@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+**A writer's own red checks in several tasks are not a repair.** The watcher's «same unfamiliar reason in three tasks» pattern blanks numbers, so different tasks' own tests read as one reason: Vampirism Fire on 2026-10-25, `studio_test.py --filter Par031`, `Par037`, `Par038` and `Par070` in four tasks opened a self-repair. Each was triaged writer (0.87–0.97): real FAILs in the task's test, or the shared Studio window lost mid-run, and three tasks were accepted on the redo. A red check is now skipped by the pattern unless its triage puts it on Lane Pilot's side (orchestrator, environment) or the check gate marked it environment; the night wall already skipped them (`wall/select.ts`). On the hub's data of that day no pattern is left (one environment-triaged attempt, below three tasks).
+
 **A writer's stray files are not a repair, whatever the gate's wording.** The watcher skipped a writer's own files outside owns_paths only when the reason read «owns_paths rejected …»; the run-scope gate words the same rejection «writer changed paths outside owns_paths or inside never_touch: …», and six such tasks in three projects (2026-10-24/25: each file made by the writer's own edit, five accepted on the redo) opened a self-repair. Both wordings are read now: 27 of the 35 run-scope rejections of the last week are a writer's strays; a rejection that names an owned file, bookkeeping only, or trusted tooling still counts.
 
 **An attempt in its merge, or resumed after a reload with its writer at work, is no longer «running» with nobody moving it.** Vampirism Fire on 2026-10-25: six attempts were reported «running 47–63 min while its writer thread is idle», for two reasons.
