@@ -83,3 +83,4 @@ TL;DR: The store reads built-ins and workflow files, filters parse and local val
 ## Referenced by
 
 - [Workflow Definitions and Validation](definitions-validation.md)
+- [Workflow Validation and Expression Internals](workflow-validation-internals.md)

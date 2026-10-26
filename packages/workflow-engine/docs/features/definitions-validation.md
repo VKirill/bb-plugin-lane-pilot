@@ -2,7 +2,7 @@
 title: Workflow Definitions and Validation
 type: component
 created: 2026-10-10
-updated: 2026-10-24
+updated: 2026-10-26
 status: active
 confidence: medium
 tags: [workflow-engine, schema, validation]
@@ -25,7 +25,7 @@ This capability defines the JSONC workflow format, its typed nodes and edges, th
 1. `loadWorkflow` accepts an object or JSONC text, parses text with trailing commas enabled, and reports syntax errors as structured problems (`packages/workflow-engine/src/validate.ts:459-465`).
 2. `parseWorkflowObject` normalizes supported authoring spellings, then validates against the closed Zod schema; unknown keys and malformed field definitions are rejected (`packages/workflow-engine/src/schema.ts:3-8`, `packages/workflow-engine/src/schema.ts:25-38`, `packages/workflow-engine/src/validate.ts:466-471`).
 3. `validateWorkflow` checks node and edge references, graph reachability, loops, subworkflow depth, contracts, and lowered graph constraints; errors make `loadWorkflow` return `ok: false` (`packages/workflow-engine/src/validate.ts:67-130`, `packages/workflow-engine/src/validate.ts:470-472`).
-4. `loadWorkflowStore` loads built-ins and files, chooses the narrowest valid definition by origin, then validates subworkflow references against the merged set (`packages/workflow-engine/src/store.ts:45-48`, `packages/workflow-engine/src/store.ts:71-93`).
+4. `loadWorkflowStore` loads built-ins and files, chooses the narrowest valid definition by origin, then validates subworkflow references against the merged set; its two passes and lookup results are detailed in [Workflow Validation and Expression Internals](workflow-validation-internals.md) (`packages/workflow-engine/src/store.ts:71-104`).
 5. `lowerWorkflow` expands shorthand such as `for_each` and parallel constructs into graph nodes used by the engine (`packages/workflow-engine/src/lower.ts:52-101`).
 
 ## Modes and variants
@@ -33,7 +33,7 @@ This capability defines the JSONC workflow format, its typed nodes and edges, th
 | Variant | Behavior |
 |---|---|
 | Definition input as object or JSONC string | Both pass through object parsing and graph checks; JSONC allows trailing commas (`packages/workflow-engine/src/validate.ts:459-471`). |
-| Built-in, global, and project files | Parse/schema-invalid files are omitted before origin precedence is applied; structurally valid files are ranked built-in < global < project and then checked for graph/reference errors (`packages/workflow-engine/src/store.ts:39-48`, `packages/workflow-engine/src/store.ts:71-89`). |
+| Built-in, global, and project files | Definitions that fail per-definition loading checks are omitted before origin precedence is applied; the highest-ranked remaining definition is then checked for merged subworkflow references (`packages/workflow-engine/src/store.ts:71-90`). |
 | Workflow graph node | Typed node forms have node-specific schemas; node IDs use lowercase letters, digits, `_` and `-`, start with a letter, and are at most 48 characters (`packages/workflow-engine/src/schema.ts:19-20`, `packages/workflow-engine/src/schema.ts:223`). |
 | Expression condition or structured condition | Conditions accept bounded recursive `all`, `any`, `not` trees or expression strings; operators include equality, ordering, membership, and existence (`packages/workflow-engine/src/schema.ts:41-57`). |
 | Subworkflow call | Resolver checks the requested workflow and optional version; nesting depth is capped at three (`packages/workflow-engine/src/schema.ts:17`, `packages/workflow-engine/src/validate.ts:50-66`). |
@@ -45,7 +45,7 @@ This capability defines the JSONC workflow format, its typed nodes and edges, th
 - A workflow's entry and exit are represented internally by `$start` and `$end`; they are reserved unless the definition has corresponding ordinary node names under the documented normalization rules (`packages/workflow-engine/src/schema.ts:11-17`).
 - Field names begin with a letter or underscore and permit letters, digits, and underscores up to 48 characters. Enum fields require a `values` list, while non-enum fields reject it (`packages/workflow-engine/src/schema.ts:25-38`).
 - Workflow schema version is `1`; quality modes are `quick`, `standard`, and `full`; pass modes are `artifact`, `same-session`, `read-prior-session`, and `fork` (`packages/workflow-engine/src/schema.ts:10`, `packages/workflow-engine/src/schema.ts:59-64`).
-- Parse/schema-invalid files are omitted before origin precedence is applied. A structurally valid higher-precedence definition is selected before merged graph/reference validation; if that validation fails, the ID is omitted from the final store rather than falling back to a lower-precedence definition (`packages/workflow-engine/src/store.ts:71-93`).
+- Definitions that fail `loadWorkflow` checks without a merged resolver are omitted before origin precedence is applied. The highest-ranked remaining definition per ID is checked against the merged set for subworkflow references; if that check fails, the ID is omitted rather than falling back (`packages/workflow-engine/src/store.ts:71-90`).
 
 ## Public API
 
@@ -101,13 +101,17 @@ The function does not catch errors from a supplied resolver. Invalid generated g
 
 Runnable nodes may declare a step contract: up to 12 consumed artifacts, up to 8 produced artifacts, up to 10 output gates, and a stage proof definition. Each consumed or produced artifact has a kind and version; production may select an output field or check each item. Gates are expressions over the node's own output, and `proof` uses the shared stage-proof schema (`packages/workflow-engine/src/schema.ts:87-95`, `packages/workflow-engine/src/schema.ts:77-83`).
 
-`edgeSchema` requires nonempty `from` and `to` strings no longer than 48 characters; `when` is optional; `label` is optional and capped at 80 characters; `with` maps strings to strings; `pass` defaults to `artifact` and accepts the pass-mode enum. The object is strict, so extra fields fail schema parsing (`packages/workflow-engine/src/schema.ts:229-238`).
+`edgeSchema` requires nonempty `from` and `to` strings no longer than 48 characters; `when` is optional; `label` is optional and capped at 80 characters; `with` maps strings to strings; `pass` defaults to `artifact` and accepts the pass-mode enum. The object is strict, so extra fields fail schema parsing (`packages/workflow-engine/src/schema.ts:234-242`).
 
 `consumesSchema` accepts a strict object with a lowercase artifact kind, version 1–99, `required` defaulting to true, optional nonempty `from` string up to 48 characters, and optional `as` field name. It validates this declaration's shape; graph validation checks that the source node declares the consumed artifact (`packages/workflow-engine/src/schema.ts:64-76`, `packages/workflow-engine/src/validate.ts:304-330`).
+
+Detailed schema branches for conditions, nodes, edges, and consumed artifacts are in [Workflow Validation and Expression Internals](workflow-validation-internals.md) (`packages/workflow-engine/src/schema.ts:51-58`, `packages/workflow-engine/src/schema.ts:77-82`, `packages/workflow-engine/src/schema.ts:228-242`).
 
 `refOf` maps `$inputs` and `input` to workflow inputs, `$mode` to run mode, `ctx` to context, `item` and `index` to loop values, and bare names in item scope to fields on the current item. Other names become node references with the remaining dotted path (`packages/workflow-engine/src/expr.ts:57-69`).
 
 `conditionToExpr` recursively turns `all`, `any`, and `not` conditions into boolean expression nodes. A leaf condition reads its field from the supplied source node and maps comparison operators directly; `exists: false` becomes a negated null comparison, while `exists: true` becomes a non-null comparison. `toExpr` parses string conditions, forwarding `itemScope`, and converts structured conditions through `conditionToExpr` (`packages/workflow-engine/src/expr.ts:133-155`).
+
+The parser precedence, reference classes, structured-condition conversion, and their syntax failures are detailed in [Workflow Validation and Expression Internals](workflow-validation-internals.md) (`packages/workflow-engine/src/expr.ts:57-155`).
 
 ### Expression type checking
 
@@ -115,9 +119,13 @@ Runnable nodes may declare a step contract: up to 12 consumed artifacts, up to 8
 
 `checkExpr` recursively visits literals, refs, visits, negation, lists, and binary expressions. It returns the resulting type while collecting diagnostics: arithmetic and ordering require numeric operands; `in []` is diagnosed; list equality, incompatible types, and enum literals outside the declared set are diagnosed. Logical operators return boolean, and unknown `any` types avoid a false incompatibility report (`packages/workflow-engine/src/expr.ts:233-266`).
 
+The full reference-resolution and operator-check branches, including diagnostic fallback types, are detailed in [Workflow Validation and Expression Internals](workflow-validation-internals.md) (`packages/workflow-engine/src/expr.ts:203-269`).
+
 ### Expression evaluation and value specs
 
 `evalExpr` evaluates literal, visit-count, negation, list, reference, and binary nodes. `&&` and `||` short-circuit using the engine's truth rule (arrays count as true, including empty arrays); ordinary references throw `MissingValueError` if their `read` result says the value has not run. Equality uses strict equality plus null/undefined/empty-string equivalence and JSON equality for non-null objects. `in` requires an array on the right; `+` and `-` throw `condition_type` unless both values are numbers; ordering comparisons with nonnumeric values return false (`packages/workflow-engine/src/expr.ts:270-310`).
+
+Evaluation outcomes, failure codes, recursive template rendering, and `by_mode` selection are detailed in [Workflow Validation and Expression Internals](workflow-validation-internals.md) (`packages/workflow-engine/src/expr.ts:280-362`).
 
 `evalCondition` applies that same truth rule to the result, so nonempty strings/numbers/objects and all arrays are true while false, zero, empty string, null, and undefined are false (`packages/workflow-engine/src/expr.ts:276-278`, `packages/workflow-engine/src/expr.ts:312`). Missing references and invalid arithmetic propagate as `MissingValueError`; callers decide whether to surface the issue as validation/runtime failure (`packages/workflow-engine/src/expr.ts:286-301`).
 
@@ -126,4 +134,5 @@ Runnable nodes may declare a step contract: up to 12 consumed artifacts, up to 8
 <!-- lane-pilot:backlinks -->
 ## Referenced by
 
+- [Workflow Validation and Expression Internals](workflow-validation-internals.md)
 - [Workflow Engine — Overview](../overview.md)

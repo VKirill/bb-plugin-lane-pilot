@@ -64,3 +64,4 @@ The expression module parses conditions, skip rules, loop filters, and value exp
 ## Referenced by
 
 - [Workflow Definitions and Validation](definitions-validation.md)
+- [Workflow Validation and Expression Internals](workflow-validation-internals.md)
