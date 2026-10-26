@@ -211,6 +211,10 @@ export function createReconcile(ctx: ServerCore, services: Services) {
               config:{ ...config, writerWorkspacePath:taskWorkspace.path },
               task:taskWorkspace.task,
               plan:getTaskPlan(db, current.task_id) ?? parsed.data.objective,
+              // A running attempt with a writer thread has its turn in that thread: the writer works through the reload, so
+              // the start loop must not queue it again behind tasks that were waiting for it (Vampirism Fire 2026-10-25:
+              // vf-s7-minion-aura and vf-s7-restock waited 50–100 minutes «for owns_paths» with their writers long idle).
+              ...(current.state === "running" && writerThreadId ? { turnSent:true } : {}),
             });
           }
         }

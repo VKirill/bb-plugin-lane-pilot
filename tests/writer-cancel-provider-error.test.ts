@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { PrototypeConfig, TaskV2 } from "../src/rooms/contracts";
 import { createAttempt, createRun, createTask, getAttempt, openDatabase, saveProjectSetting, saveStageReceipt, transitionAttempt } from "../src/rooms/storage/database";
 import { createWriterFinish } from "../src/rooms/writer/server/finish";
+import { checksInFlight } from "../src/rooms/runs";
 
 const config: PrototypeConfig = {
   projectId:"P", hostId:"h", pmWorkspacePath:"/repo", writerWorkspacePath:"/repo",
@@ -155,5 +156,31 @@ describe("a stop requested while the writer's result is checked or merged", () =
     const result = await w.run();
     expect(result).toMatchObject({ status:"validation_failed" });
     expect(getAttempt(w.db, "a1")).toMatchObject({ state:"validation_failed" });
+  });
+});
+
+// Vampirism Fire 2026-10-25: vf-s7-cosmetics.2 (lpattempt_21d8c51414294771a27607aa16bb2512) had green checks at 21:40:53 and
+// was merged at 21:48:11 after the replay of studio_test on the moved main; the watcher saw it at 21:45:05, «running» 63
+// minutes with an idle writer and no check in flight, and reported it stuck. The merge counts as a check in flight.
+describe("the merge is a check in flight for the watcher", () => {
+  it("marks the writer's thread while the replay on main runs, and clears it after", async () => {
+    const seen:Array<ReturnType<typeof checksInFlight>> = [];
+    const w = world({ threadStatus:"idle", cancel:false, merge:() => { seen.push(checksInFlight("writer-1")); return { status:"merged", commit:"c1", conflicts:[] }; } });
+    w.db.prepare("UPDATE lane_pilot_attempt SET workspace_path='/repo-worktrees/a1' WHERE id='a1'").run();
+    const before = Date.now();
+    await w.run();
+    expect(getAttempt(w.db, "a1")).toMatchObject({ state:"accepted" });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ pool:"merge:/repo" });
+    expect(seen[0]!.movedAt).toBeGreaterThanOrEqual(before);
+    expect(checksInFlight("writer-1")).toBeNull();
+  });
+
+  it("clears it when the replay on main is red", async () => {
+    const w = world({ threadStatus:"idle", cancel:false, merge:() => ({ status:"conflict", conflicts:[], commit:null,
+      reason:"checks red after the replay on main: verification failed (cd game && python3 -I scripts/studio_test.py --filter Par070)" }) });
+    w.db.prepare("UPDATE lane_pilot_attempt SET workspace_path='/repo-worktrees/a1' WHERE id='a1'").run();
+    expect(await w.run()).toMatchObject({ status:"validation_failed" });
+    expect(checksInFlight("writer-1")).toBeNull();
   });
 });

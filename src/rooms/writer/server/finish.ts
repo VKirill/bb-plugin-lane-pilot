@@ -33,7 +33,7 @@ import { shouldMergeAttemptWorktree } from "./spawn";
 import { loadWriterNudge } from "./writer-silence";
 import { recordedWriterSkills } from "./skill-pick";
 import { createSkillMaterializer, recordedMaterializedSkills } from "./skill-materialize";
-import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON, failureFingerprint, isEnvironmentCheckFailure, taskFamily } from "../../runs";
+import { REPLAY_CHECK_FAILED, WRITER_SILENT_REASON, beginChecks, checksMoved, failureFingerprint, isEnvironmentCheckFailure, taskFamily } from "../../runs";
 import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { attemptMergeMessage, clearMergeIntent, recordMergeIntent } from "../../verification/server";
 import { sendServiceMessage } from "../../relay/server";
@@ -146,6 +146,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const trace = getReasoningTrace(db, input.attemptId);
       if (trace) services.providerBreaker.record(breakerKey(trace.providerId, trace.model), "exhausted", Date.now(), until);
     };
+    let endMerge = () => undefined as void;
     try {
       const budget = services.runBudgetFor(input.runId, loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)));
       // The task's own appetite (contract `appetite`) is watched next to the run's budget: this writer's tokens and the time since the
@@ -746,7 +747,13 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           commands:input.task.verification.filter((command) => !command.secrets?.length).slice(0, 20).map((command) => ({ command:command.command, cwd:command.cwd, timeoutSec:command.timeout_sec ?? 120 })),
         } : null;
         const replayMs = (replayChecks?.commands ?? []).reduce((sum, command) => sum + 2 * command.timeoutSec * 1000, 0);
-        const integrate = () => host.call("gitIntegrate", {
+        // The merge is acceptance too: the attempt stays «running» with its writer idle while it queues behind another task's
+        // merge or replays its checks on a moved main, which the watcher reads like a check in flight (self-repair.ts).
+        // Vampirism Fire 2026-10-25: vf-s7-cosmetics and vf-s7-cosmetics.2 were reported «stuck» 47–63 minutes, each in its
+        // 7–18 minute replay of studio_test after green checks.
+        const mergePool = `merge:${basePath}`;
+        endMerge = beginChecks(input.writerThreadId, mergePool);
+        const integrate = () => (checksMoved(mergePool), host.call("gitIntegrate", {
           requestedHostId:input.config.hostId, basePath, worktreePath:bound.workspace_path!,
           message:attemptMergeMessage(input.task, input.attemptId),
           // Only Lane Pilot's own worktree (no BB environment) is removed; a BB managed one belongs to BB. An area task
@@ -756,7 +763,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           ownsPaths:input.task.owns_paths.slice(0, 200),
           // When main moved and the attempt is replayed on it, the host runs these checks in the worktree before the merge.
           ...(replayChecks ? { replayChecks } : {}),
-        }, { hostId:input.config.hostId, timeoutMs:180_000 + replayMs });
+        }, { hostId:input.config.hostId, timeoutMs:180_000 + replayMs }).finally(() => checksMoved(mergePool)));
         // Written before the merge: a reply lost to a reload leaves main updated and this attempt «running»; the recovery
         // asks the machine's repository whether the work landed (merge-intent.ts). Dropped once the attempt's state caught up.
         await recordMergeIntent(bb.storage.kv as never, (hostId, cwd, command) => runOnHost(host, { hostId, cwd, command, timeoutSec: 30 }),
@@ -855,7 +862,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         return providerFailed(cause instanceof Error ? cause.message : String(cause));
       }
       throw cause;
-    }
+    } finally { endMerge(); }
   }
 
   /**
