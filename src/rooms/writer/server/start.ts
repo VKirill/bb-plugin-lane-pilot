@@ -317,6 +317,12 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           ahead.push(open.find((row) => row.run_id === held.runId && row.task_id === held.taskId)
             ?? { id:`${held.runId}:${held.taskId}`, run_id:held.runId, task_id:held.taskId, thread_id:null, state:"running", project_id:held.projectId });
         }
+        // `admitted` lives in memory and a reload empties it: an attempt whose writer is at work holds its files whatever the
+        // row order (Vampirism Fire 2026-10-25: after a reload vf-s7-restock started beside vf-s7-minion-aura's running merge
+        // turn on the same economy.luau, and both ended merge_conflict).
+        for (const row of open.slice(mine + 1)) {
+          if (row.state === "running" && row.thread_id && row.task_id !== input.taskId && !ahead.some((held) => held.run_id === row.run_id && held.task_id === row.task_id)) ahead.push(row);
+        }
         const blocker = ahead.find((row) => {
           if (row.task_id === input.taskId || row.project_id !== input.projectId) return false;
           const rowBase = taskBasePath(db, row.run_id, row.task_id);
