@@ -61,7 +61,9 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number })
         ...(gaps.length ? { mode: "gaps", gaps } : {}),
         extra_rules: ["every command an acceptance line names is one of the task's verification commands", "each task's id is the piece id; depends_on only on tasks of earlier waves",
           "each task lists in a top-level field `covers` the ids of the requirements and locked decisions (findings.requirements, findings.decisions) it carries out; together the tasks cover every id",
-          ...(current && r.replan?.gaps ? ["the plan after a failed verification: return every piece of findings.current_pieces the gaps do not name exactly as it is (same id, same contract); change only the failing pieces' contracts or add new pieces for what is missing"] : []),
+          ...(current && r.replan?.gaps ? ["the plan after a failed verification: return every piece of findings.current_pieces the gaps do not name exactly as it is (same id, same contract); change only the failing pieces' contracts or add new pieces for what is missing",
+            // A changed contract issues the piece again: its writer redid accepted work and the proof check failed on what it no longer touched (live ph_26f65b142d).
+            "a goal that lacks only proof of work already accepted (current screenshots, a live run, a smoke on the current build) gets a new check piece whose writer produces that proof on the current main; never change an accepted piece's contract to re-prove it"] : []),
           ...(current && !r.replan?.gaps ? ["the plan gate refused the approved plan: return the whole plan again — every piece of findings.current_pieces with its id and contract — and fix only what the gaps name (a piece's covers, its wave, its checks), adding a piece only for an id no piece can carry"] : [])] };
     }
     case "review": {

@@ -8,6 +8,7 @@ import { buildAcceptanceCard } from "../src/rooms/acceptance/card";
 import { applyCodeCriticDefault, resolveCodeCriticDefault } from "../src/rooms/critique/quality-mode";
 import { createAttempt, createRun, createTask, openDatabase, saveTaskGitBase } from "../src/rooms/storage/database";
 import { taskV2Schema } from "../src/rooms/contracts";
+import { upsertAttemptChange } from "../src/rooms/rollback/store";
 
 const fence = (json: unknown, tag = "plan-fact") => `Done.\n\n\`\`\`${tag}\n${JSON.stringify(json)}\n\`\`\`\n`;
 const facts = (extra: Partial<PlanFactFacts> = {}): PlanFactFacts => ({
@@ -250,6 +251,22 @@ describe("the plan-fact stage and the acceptance card on a database", () => {
     expect(card.notRun.some((row) => row.why.includes("line ranges"))).toBe(true);
   });
 
+  it("a redo may cite a file its family's merged member changed: that work is already in its base (live ph_26f65b142d)", async () => {
+    const w = world();
+    w.db.prepare("UPDATE lane_pilot_attempt SET state='accepted' WHERE id='att1'").run();
+    upsertAttemptChange(w.db, { attemptId: "att1", runId: "run", taskId: "t1" }, { outcome: "merged", changed: [{ path: "tests/bar_spec.luau", status: "M" }] as never });
+    createTask(w.db, { id: "t1.2", runId: "run", kind: "bb", contract: { ...w.task, id: "t1.2" } });
+    createAttempt(w.db, { id: "att2", runId: "run", taskId: "t1.2" });
+    const result = await runPlanFactStage(w.ctx as never, {
+      projectId: "proj", runId: "run", taskId: "t1.2", attempt: 1, hostId: "h", task: { ...w.task, id: "t1.2" },
+      answers: [fence([{ item: 1, status: "done", evidence: ["src/a.ts:4-5"] }, { item: 2, status: "done", evidence: ["tests/bar_spec.luau"] }])],
+      produced: ["src/a.ts"], verification: [{ command: "npm test", exitCode: 0 }],
+    });
+    expect(w.commands[0]).toContain(`${BASE} -- 'src/a.ts' 'tests/bar_spec.luau'`);
+    expect(result.check.items[1]).toMatchObject({ verdict: "proven" });
+    expect(result.check.items[1]!.evidence[0]!.code).not.toBe("file_not_in_diff");
+  });
+
   it("reads plan_fact.mode as record unless it says gate", () => {
     expect(planFactMode({})).toBe("record");
     expect(planFactMode({ "plan_fact.mode": "gate" })).toBe("gate");
@@ -285,6 +302,12 @@ describe("an acceptance item that says something stays as it was", () => {
   it("is proven, as a warning, by a file the candidate did not touch", () => {
     const check = blindPlanFact(["Старый адрес работает по-прежнему"], table(["src/legacy.ts"]), facts);
     expect(check.items[0]).toMatchObject({ verdict: "proven", severity: "warning" });
+  });
+
+  it("«as now» is such an item too: an untouched file proves it, as a warning (live ph_26f65b142d)", () => {
+    const check = blindPlanFact(["Bar stays horizontally centred with 12 pt side margins as now, on the four sizes"], table(["tests/lvbar_spec.luau:26-42"]), facts);
+    expect(check.items[0]).toMatchObject({ verdict: "proven", severity: "warning" });
+    expect(check.items[0]!.evidence[0]!.code).toBe("file_untouched");
   });
 
   it("an ordinary item still needs changed lines", () => {

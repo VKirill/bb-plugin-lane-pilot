@@ -41,20 +41,38 @@ function familyBase(db: ServerCore["db"], runId: string, taskId: string) {
   return first ? getTaskGitBase(db, first) : undefined;
 }
 
+/**
+ * Files the earlier merged members of a redo's family changed. Their work is already in the redo's base, so a redo that re-proves it
+ * cites those files without touching them again (live ph_26f65b142d, hud-lvlabel-gap.2: «game/tests/lvbar_spec.luau is not among the
+ * changed files», the file hud-lvlabel-gap had changed, and the phase stopped on an unproved promise).
+ */
+function familyPaths(db: ServerCore["db"], runId: string, taskId: string): string[] {
+  const family = taskFamily(taskId);
+  if (family === taskId) return [];
+  const rows = db.prepare("SELECT task_id, changed_json FROM lane_pilot_attempt_change WHERE run_id=? AND outcome='merged'").all(runId) as Array<{ task_id: string; changed_json: string }>;
+  const paths = new Set<string>();
+  for (const row of rows) {
+    if (row.task_id === taskId || taskFamily(row.task_id) !== family) continue;
+    try { for (const entry of JSON.parse(row.changed_json) as Array<{ path?: unknown }>) if (typeof entry?.path === "string") paths.add(entry.path); } catch { /* an unreadable row adds nothing */ }
+  }
+  return [...paths];
+}
+
 export async function runPlanFactStage(ctx: ServerCore, input: {
   projectId: string; runId: string; taskId: string; attempt: number; hostId: string; task: TaskV2;
   answers: readonly string[]; produced: readonly string[]; verification: ReadonlyArray<{ command: string; exitCode: number }>;
 }): Promise<{ refusal: string | null; check: PlanFactCheck }> {
   const { db, host, bb } = ctx;
   const table = tableFromAnswers(input.answers);
-  const produced = [...input.produced];
+  const gitBaseFamily = familyBase(db, input.runId, input.taskId);
+  const produced = [...new Set([...input.produced, ...(gitBaseFamily ? familyPaths(db, input.runId, input.taskId) : [])])];
   let hunks: Pick<PlanFactFacts, "hunksKnown" | "changed"> = { hunksKnown: false, changed: {} };
   const lineCount: Record<string, number> = {};
   // A working-tree base (compare_committed off) records no base commit, only the head the writer started from: the diff is against it.
   // A redo of a piece whose earlier member was accepted (piece.2 after piece): the piece's work is already merged, so the redo's own
   // diff holds little of it. The family's base is the base, so lines this same piece wrote earlier count as its proof (live
   // ph_ae0a8de9db: the redo's evidence in scripts/notes.js was «not in a changed hunk»).
-  const gitBase = familyBase(db, input.runId, input.taskId) ?? getTaskGitBase(db, input.taskId);
+  const gitBase = gitBaseFamily ?? getTaskGitBase(db, input.taskId);
   const base = gitBase ? gitBase.base_sha ?? gitBase.initial_head_sha : null;
   if (table.status === "ok" && base && produced.length > 0 && produced.length <= MAX_DIFF_PATHS) {
     try {

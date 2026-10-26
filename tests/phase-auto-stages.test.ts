@@ -140,6 +140,7 @@ describe("a failed verdict is planned again by the machine", () => {
     expect(inputs.gaps[0]).toMatch(/verification failed: goal audit: unmet/);
     expect(inputs.findings.current_pieces.map((piece) => piece.id)).toEqual(["ph-ui-panels"]);
     expect(inputs.extra_rules.join(" ")).toMatch(/exactly as it is/);
+    expect(inputs.extra_rules.join(" ")).toMatch(/never change an accepted piece's contract to re-prove it/);
   });
 });
 

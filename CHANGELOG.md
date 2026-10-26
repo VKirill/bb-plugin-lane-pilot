@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.332
+
+**A phase no longer reissues accepted work and then fails to prove it.** The Roblox UI phase (ph_26f65b142d) went round three times. Its blind replans («unmet: []», fixed in 0.1.331) could only rewrite the last piece, so the planner changed the contract of the accepted `hud-lvlabel-gap`, which issued it again as `hud-lvlabel-gap.2`. The redo's writer re-proved «Bar stays horizontally centred with 12 pt side margins as now» with the test file the first member had changed, and plan-fact called it «not among the changed files»: the wave stopped on an unproved promise, the PM had nothing left to do.
+- plan-fact counts, for a redo, the files its family's merged members changed: their work is already in the redo's base, which plan-fact already diffs against (`familyPaths`, `src/rooms/writer/server/plan-fact.ts`).
+- «as now», «as before», «as it is», «remains the same» and «как сейчас» mark an acceptance item that keeps something as it was, proven by code the candidate left alone (`INVARIANT_ITEM`).
+- A replan after a failed verification is told that a goal lacking only proof of accepted work (current screenshots, a live run, a smoke on the current build) gets a new check piece, never a changed contract of an accepted piece.
+
 ## 0.1.331
 
 **The goal audit no longer asks the owner, and a replan knows what is missing.** A Roblox UI phase went round twice: the audit (`lp.close`) found unmet goals and drift and asked the owner «proceed / halt / amend» (a human step, `reground_ask`), the owner pressed halt, and the replan received `goal audit: unmet: []; halted` — no goal ids and nothing of what each lacked (current Studio screenshots of every screen at four sizes). The planner fixed something else, the screenshots went stale again, and the audit asked again. Every answer but proceed, and the four-hour timeout, ended the same way, so the question waited on the owner for a decision the machine already had (see «the owner is not a step of the loop»).

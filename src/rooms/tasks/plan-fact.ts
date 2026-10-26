@@ -98,7 +98,9 @@ export type PlanFactCheck = {
 const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
 
 /** An acceptance item that claims something stays as it was; its proof is code the candidate did not change. */
-export const INVARIANT_ITEM = /\b(unchanged|not changed|untouched|stays? the same|still (?:works?|returns?|passes|serves?)|no (?:other )?changes?)\b|не (?:меня|трога|измен)|без изменений|по-прежнему|как раньше/i;
+// «Stays centred … as now», «remains», «keeps its margins» say the same thing (live ph_26f65b142d: «Bar stays horizontally centred with
+// 12 pt side margins as now» was read as new work, and the untouched test that proves it as «not among the changed files»).
+export const INVARIANT_ITEM = /\b(unchanged|not changed|untouched|stays? the same|still (?:works?|returns?|passes|serves?)|no (?:other )?changes?|as (?:now|before|today|it (?:is|was))|remains? (?:as|the same|unchanged))\b|не (?:меня|трога|измен)|без изменений|по-прежнему|как раньше|как сейчас/i;
 const relativePath = (path: string, root?: string) => {
   let clean = path.trim().replace(/^\.\//, "");
   if (root && clean.startsWith(`${root.replace(/\/$/, "")}/`)) clean = clean.slice(root.replace(/\/$/, "").length + 1);
