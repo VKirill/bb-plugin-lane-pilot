@@ -2,7 +2,7 @@
 title: Plan against fact and the acceptance card
 type: component
 created: 2026-10-22
-updated: 2026-10-25
+updated: 2026-10-26
 status: active
 confidence: low
 tags: [sma, acceptance, critic, ui]
@@ -51,12 +51,12 @@ SMA plan P1-3 and P1-4 (Maslov #30971, «never read the executor's story»): an 
 
 ## The table
 
-The writer is told the format by one line, `PLAN_FACT_BRIEF_LINE` (`src/rooms/tasks/plan-fact.ts:23`), added to its first brief and to every continuing turn of a task with acceptance items (`src/rooms/writer/server/writer-task.ts:273`, `src/rooms/writer/server/writer-task.ts:337`). It asks for a fenced block opened with ```plan-fact that holds a JSON array, one row per acceptance item in the contract's order:
+The writer is told the format by `PLAN_FACT_BRIEF_LINE` (`src/rooms/tasks/plan-fact.ts:26-32`), added to its first brief and to every continuing turn of a task with acceptance items (`src/rooms/writer/server/writer-task.ts:268-276`, `:343-345`). It asks for a fenced block opened with ```plan-fact that holds a JSON array, one row per acceptance item in the contract's order:
 
-- `{"item":1,"status":"done","evidence":["src/rooms/tasks/plan-fact.ts:36-50","cmd:npm test"]}`: evidence is `path`, `path:first-last` or `cmd:<command>`;
+- `{"item":1,"status":"done","evidence":["<path>:10-24","cmd:npm test"]}`: evidence is a path, `path:first-last` or `cmd:<command>` (`src/rooms/tasks/plan-fact.ts:27-32`);
 - `{"item":2,"status":"not_done","why":"..."}`.
 
-`parsePlanFact` (`src/rooms/tasks/plan-fact.ts:36`) reads the last such block of the answer and nothing around it. No block is `missing`; broken JSON, an unknown key, an empty array or a repeated item is `invalid` with the reason. A repair round's reply that has no table falls back to the table of the earlier answer (`src/rooms/writer/server/plan-fact.ts:17`).
+`parsePlanFact` (`src/rooms/tasks/plan-fact.ts:39-53`) reads the last such block of the answer and nothing around it. No block is `missing`; broken JSON, an invalid row, an empty array or a repeated item is `invalid` with the reason. A repair round's reply that has no readable table falls back to the first readable table from the candidate answers (`src/rooms/writer/server/plan-fact.ts:18-26`).
 
 ## The blind check
 
@@ -79,7 +79,7 @@ The changed hunks come from one shell command run in the task's workspace (`diff
 
 ## The stage
 
-`plan-fact` is a stage (`packages/contracts/src/stage-contract.ts:5`) with a code proof of kind `file` (`packages/contracts/src/stage-proof.ts:36`); it is listed in the writer node of `workflows/lp-task-pipeline.json`. `runPlanFactStage` (`src/rooms/writer/server/plan-fact.ts:33`) is called after the code critic and before the proof gap check (`src/rooms/writer/server/finish.ts:617`). `planFactOutcome` (`src/rooms/tasks/plan-fact.ts:161`) decides the receipt, with the result (the items, the evidence checks, `notChecked`, the mode) stored in it:
+`plan-fact` is a stage (`packages/contracts/src/stage-contract.ts:5`) with a code proof of kind `file` (`packages/contracts/src/stage-proof.ts:36`); it is listed in the writer node of `workflows/lp-task-pipeline.json`. `runPlanFactStage` (`src/rooms/writer/server/plan-fact.ts:44-49`) runs after code critique and before the proof-gap check (`src/rooms/writer/server/finish.ts:635-646`). `planFactOutcome` decides the receipt, with the result (items, evidence checks, `notChecked`, mode) stored in it (`src/rooms/writer/server/plan-fact.ts:44-49`, `src/rooms/tasks/plan-fact.ts:161`):
 
 - no table, or an unreadable one: `skipped`, reason `plan_fact_table_missing` or `plan_fact_table_invalid`. It is recorded and shown as not run; it never refuses the task;
 - a blocking item: `failed`, reason `plan_fact_unproven: acceptance item N ...`;
@@ -93,7 +93,7 @@ A retry of the task replaces the receipt (its earlier events stay in `lane_pilot
 
 `critic.code.default_for_risk` is `off` (default), `medium` or `high`: with `code_critique.enabled` not set, the critic runs for tasks of that risk or higher. `applyCodeCriticDefault` (`src/rooms/critique/quality-mode.ts:53`) turns the switch on only in `standard` quality mode and only when the project did not set the switch itself. The default stays `off` until the bench has measured the critic on and off.
 
-The bench's arm hook is `dispatchWriter({ ..., criticCodeDefault })` (`src/rooms/writer/server/dispatch.ts:149`), also `bb lane-pilot dispatch-bb <project> <pm-thread> <task-json> <base-ref> <off|medium|high>` (`src/rooms/tools/server/cli.ts:388`). It is stored per task (`src/rooms/writer/server/critic-override.ts`) and read when the attempt finishes (`src/rooms/writer/server/finish.ts:293`), where it wins over the project setting for that task only. Both the finish step and the critic run read the same value (`src/rooms/critique/server/critique-runs.ts`).
+The bench's arm hook is `dispatchWriter({ ..., criticCodeDefault })` (`src/rooms/writer/server/dispatch.ts:149`), also `bb lane-pilot dispatch-bb <project> <pm-thread> <task-json> <base-ref> <off|medium|high>` (`src/rooms/tools/server/cli.ts:388`). It is stored per task (`src/rooms/writer/server/critic-override.ts:12-18`) and read when the attempt finishes (`src/rooms/writer/server/finish.ts:313`), where it wins over the project setting for that task only. Both the finish step and the critic run read the same value (`src/rooms/critique/server/critique-runs.ts`).
 
 ## The acceptance card
 
@@ -104,9 +104,9 @@ RPC `task_acceptance_card` (`src/rooms/contracts/rpc-runs.ts:60`) returns `build
 - the gate events of the task;
 - the plan→fact table with the blind check's verdict per acceptance item and per piece of evidence;
 - `notRun`: stages with no receipt or a skipped one, and what the plan→fact check could not look at;
-- the cost of the task's attempts from `attemptMetrics` (`src/rooms/usage/server/attempt-metrics.ts:66`, narrowed by `taskId`): measured, partial («1 of 2 attempts measured») or `not measured`, never 0.
+- the cost of the task's attempts from `attemptMetrics` (`src/rooms/usage/server/attempt-metrics.ts:66-126`, filtered by `taskId`): measured, partial («1 of 2 attempts measured») or `not measured`, never 0.
 
-The component is `AcceptanceCard` (`src/rooms/acceptance/ui/acceptance-card.tsx`), shown in the task page of the board (`src/rooms/runs/ui/task-board.tsx:373`) in place of the plain objective and acceptance list; when the RPC fails it falls back to that list. Verified at 375 and 1280 px on the real component and the built CSS (`.bb/tmp/p13-live`), without horizontal overflow.
+The component is `AcceptanceCard` (`src/rooms/acceptance/ui/acceptance-card.tsx`), shown in the task page of the board (`src/rooms/runs/ui/task-board.tsx:379`) in place of the plain objective and acceptance list; when the RPC fails it falls back to that list. Verified at 375 and 1280 px on the real component and the built CSS (`.bb/tmp/p13-live`), without horizontal overflow.
 
 ## Tests
 

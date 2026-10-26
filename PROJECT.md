@@ -1,6 +1,6 @@
 ---
 title: Lane Pilot project facts
-updated: 2026-10-25
+updated: 2026-10-26
 sources:
   - package.json
   - server.ts
@@ -80,7 +80,7 @@ sources:
 - Verification worktrees copy `node_modules/.bin` and `.package-lock.json` into the worktree so `npm install` writes inside it (`src/rooms/verification/git-integrate.ts:601-632`).
 - Verification preparation refreshes missing or stale npm dependencies in the base checkout, then mirrors root, workspace, and supported nested package dependencies into the attempt worktree (`src/rooms/verification/git-integrate.ts:613-629`, `:827-857`).
 - Sandboxed checks can read linked user tool installations and Playwright browser binaries through a temporary HOME (`src/rooms/verification/sandbox.ts:103-144`).
-- A reload that finds a running writer thread idle or errored restarts its writer loop in that same thread, preserving the attempt workspace and failure context (`src/rooms/stability/server/reconcile.ts:111-145`).
+- A reload resumes a running attempt in its existing writer thread when that thread is idle or errored and the saved run, task, contract and workspace are usable; a pending cancellation closes as canceled (`src/rooms/stability/server/reconcile.ts:111-145`).
 
 ## Useful commands
 

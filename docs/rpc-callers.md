@@ -2,7 +2,7 @@
 title: RPC and host-call contracts
 type: component
 created: 2026-09-30
-updated: 2026-10-25
+updated: 2026-10-26
 status: active
 confidence: medium
 tags: [rpc, contracts, host-api]
@@ -84,7 +84,7 @@ The route families, input validation, result variants, and failure behavior are 
 | Route branch | Inputs and limits | Result or failure |
 |---|---|---|
 | Locale | Preference `auto|en|ru`; suggested locale `en|ru`. | Returns resolved locale and preference; extra fields or invalid enums fail strict validation. |
-| Inventory | Nullable project/host ids; resource mode `inherit`, `none`, or `selected`. | Each group is `ready`, `unavailable`, or `error`, keeping catalog failure distinct from empty results (`packages/contracts/src/schemas.ts:152-156`). |
+| Inventory | Nullable project/host ids; resource mode `inherit`, `none`, or `selected`. | Each group is `ready`, `unavailable`, or `error`, with an optional error string (`packages/contracts/src/schemas.ts:193-197`). |
 | Global defaults | Strict defaults object plus nonnegative `expectedRevision`. | Revision conflict returns `ok:false` with the current snapshot; success increments revision. |
 | Agent profile | Lowercase id pattern, prompt 1–32,000 characters, description up to 400, lists up to 64, expected source hash, optional resource modes. | Hash/corrupt/compile failures return `ok:false`; success returns source hash. |
 
@@ -118,7 +118,7 @@ The cockpit RPC group is assembled from `cockpitRpc`; it serves the project's co
 | Contract | Inputs and result | Failure handling |
 |---|---|---|
 | App RPC | Strict Zod schemas; method input and output shape are declared in each `rpc-*` module (`src/rooms/contracts/rpc-shell.ts:8-18`, `src/rooms/contracts/rpc-runs.ts:55-70`, `src/rooms/contracts/rpc-ops.ts:5-129`). | Invalid payloads fail contract validation before the handler result reaches the UI. |
-| Jev provider settings | Status by provider, save a key, and test the configured provider (`src/rooms/contracts/rpc-knowledge.ts:189-200`). | Status returns key presence only; saving rejects empty or whitespace-containing keys and test returns a structured failure when no key is available (`src/rooms/secrets/server/rpc/jev.ts:19-48`). |
+| Jev provider settings | Status by provider, save a key, and test the configured provider (`src/rooms/contracts/rpc-knowledge.ts:215-226`). | Status returns key presence only; saving rejects empty or whitespace-containing keys and test returns a structured failure when no key is available (`src/rooms/secrets/server/rpc/jev.ts:19-48`). |
 
 ## Business rules
 

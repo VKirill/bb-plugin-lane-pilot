@@ -14,7 +14,7 @@ Built by Lane Pilot from page frontmatter.
 | [Lane Pilot architecture](architecture.md) | architecture | active | 2026-10-19 |
 | [Atlas of Lane Pilot (generated)](atlas.md) | map | generated | — |
 | [Backlog to tasks by readiness](backlog.md) | component | active | 2026-10-23 |
-| [The baseline before a writer and the regression pass after acceptance](baseline.md) | component | active | 2026-10-25 |
+| [The baseline before a writer and the regression pass after acceptance](baseline.md) | component | active | 2026-10-26 |
 | [Capability table of providers](capability.md) | component | active | 2026-10-25 |
 | [Checking the checkers (planted defects, the checker scorecard)](checkers.md) | component | active | 2026-10-25 |
 | [Coverage registry, graph and drill](coverage.md) | component | active | 2026-10-22 |
@@ -22,35 +22,35 @@ Built by Lane Pilot from page frontmatter.
 | [Schedules and Pixel World persistence](data-model/automation.md) | data-model | active | 2026-10-10 |
 | [Council, handoff, Jev and run-insight data](data-model/governance.md) | data-model | active | 2026-10-19 |
 | [Owner profile and learning data](data-model/knowledge.md) | data-model | active | 2026-10-10 |
-| [Orchestration and execution data](data-model/orchestration.md) | data-model | active | 2026-10-25 |
-| [Architectural decisions](decisions.md) | decisions | active | 2026-10-17 |
+| [Orchestration and execution data](data-model/orchestration.md) | data-model | active | 2026-10-26 |
+| [Architectural decisions](decisions.md) | decisions | active | 2026-10-26 |
 | [Protecting Lane Pilot database access](decisions/2026-10-08-lane-pilot-data-db-access.md) | decisions | active | 2026-10-19 |
 | [Register of deferrals](deferrals.md) | component | active | 2026-10-22 |
 | [Build and deploy Lane Pilot](deployment.md) | deployment | active | 2026-10-19 |
 | [Design evaluation rubric](design-eval.md) | component | active | 2026-10-25 |
 | [Plan forecast and calibration](forecast.md) | component | active | 2026-10-23 |
-| [Cross-cutting gotchas](gotchas.md) | gotchas | active | 2026-10-25 |
+| [Cross-cutting gotchas](gotchas.md) | gotchas | active | 2026-10-26 |
 | [Writer harness](harness.md) | component | active | 2026-10-20 |
 | [Hypotheses checked on the bench](hypotheses.md) | component | active | 2026-10-23 |
 | [docs/invoice-send.md](invoice-send.md) | — | — | — |
 | [Jev adapter for native writer reasoning](jev-adapter.md) | component | active | 2026-10-13 |
 | [docs/jev-judgments.md](jev-judgments.md) | — | — | — |
 | [docs/learning.md](learning.md) | — | — | — |
-| [LP-Bench, the fixed task set](lp-bench.md) | component | active | 2026-10-25 |
+| [LP-Bench, the fixed task set](lp-bench.md) | component | active | 2026-10-26 |
 | [Memory tiers — cold tier, episodes, misses](memory-tiers.md) | component | active | 2026-10-23 |
 | [Project memory](memory.md) | component | active | 2026-10-22 |
 | [Native agent activation and dispatch](native-agent.md) | component | active | 2026-10-14 |
 | [Night policy: what the night may decide without the owner](night-policy.md) | component | active | 2026-10-22 |
 | [Outage record and the conveyor switch](outage-conveyor.md) | component | active | 2026-10-23 |
-| [Lane Pilot overview](overview.md) | overview | active | 2026-10-25 |
+| [Lane Pilot overview](overview.md) | overview | active | 2026-10-26 |
 | [The owner at the keyboard](owner-presence.md) | component | active | 2026-10-25 |
 | [Waiting for the owner](owner-waiting.md) | component | active | 2026-10-22 |
 | [Package operation details](package-operations.md) | component | active | 2026-10-17 |
 | [Shared packages](packages.md) | component | active | 2026-10-20 |
 | [Pilot, then fan-out](pilot.md) | component | active | 2026-10-23 |
-| [Plan against fact and the acceptance card](plan-fact.md) | component | active | 2026-10-25 |
+| [Plan against fact and the acceptance card](plan-fact.md) | component | active | 2026-10-26 |
 | [Rolling work back, trusted tooling and pause](rollback.md) | component | active | 2026-10-22 |
-| [RPC and host-call contracts](rpc-callers.md) | component | active | 2026-10-25 |
+| [RPC and host-call contracts](rpc-callers.md) | component | active | 2026-10-26 |
 | [RPC contract composition and route families](rpc-callers/contract-map.md) | component | active | 2026-10-20 |
 | [Server core construction](rpc-callers/create-core.md) | component | active | 2026-10-20 |
 | [Handoff message](rpc-callers/handoff-message.md) | component | active | 2026-10-17 |
