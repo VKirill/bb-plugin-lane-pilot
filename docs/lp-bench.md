@@ -2,7 +2,7 @@
 title: LP-Bench, the fixed task set
 type: component
 created: 2026-10-22
-updated: 2026-10-25
+updated: 2026-10-26
 status: active
 confidence: medium
 tags: [bench, sma, harness, evaluation]
@@ -80,7 +80,7 @@ model or another edit; three numbers: how many stages passed, what it cost, how 
   `host_error`. Dependencies: a copy-on-write copy of `node_modules` on macOS (a symlink that leaves the checkout is refused by Turbopack), a copy on Linux.
 - **A host that stops answering** (`src/rooms/bench/build.ts:76-112`): three `host_error` in a row stop that host's chain and the build writes no set (a plugin reload
   mid-build once froze v1 with 5 tasks: every remaining candidate became a host error). Run the build again under a new version.
-- **Disk**: a machine with less than 25 GB free (`MIN_FREE_GB`, `src/rooms/bench/warmup.ts:112`) is not touched: Lane Pilot's own writers hold at min(15 GB, 5%)
+- **Disk**: a machine with less than 25 GB free (`MIN_FREE_GB`) is not touched: Lane Pilot's own writers hold at min(15 GB, 5%) free, and the bench reserves another 10 GB (`src/rooms/bench/warmup.ts:114-118`)
   (memory `mac-mini-disk-test-temp`).
 - **Frozen** (`src/rooms/bench/migrations.ts:14-46`): `lane_pilot_bench_set` and `lane_pilot_bench_task` refuse UPDATE and DELETE by trigger; `manifest_sha256` is the hash of
   the tasks (contract, base commit, solution patch hash; `src/rooms/bench/types.ts:67`) and `runSeries` recomputes it before every run (`src/rooms/bench/store.ts:54`). A different set is a new version.
