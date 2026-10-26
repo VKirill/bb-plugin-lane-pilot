@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-lane-pilot",
-  "version": "0.1.334",
+  "version": "0.1.335",
   "type": "module",
   "engines": {
     "node": "^22.19.0 || ^24.0.0 || ^26.0.0",

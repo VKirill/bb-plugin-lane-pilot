@@ -234,7 +234,10 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
   const have = new Set(results.map((row) => row.taskId));
   for (const task of tasks) if (!have.has(task.taskId)) saveResult(deps.db, { runId: run.id, taskId: task.taskId, position: task.position, state: "skipped_budget", accepted: false, benchTaskId: null, lpRunId: null, attempts: 0, stagesPassed: 0, stagesFailed: 0, tokens: null, costUsd: null, costState: "not_measured", seconds: null, reason: stopReason ?? "not run", recordedAt: clock.now() });
   const final = listResults(deps.db, run.id);
-  const state: BenchRun["state"] = failures.length && !final.some((row) => row.state === "accepted" || row.state === "not_accepted") ? "failed" : stopReason && final.some((row) => row.state === "skipped_budget") ? "stopped_budget" : "done";
+  // `done` is a series in which every selected task was judged. A task that errored (no project, checkout failed, dispatch refused) was not: the
+  // series is `failed`, so a comparison and the night's `ensureArm` do not take it for a finished measurement (the CHECK of the column has no other word).
+  const state: BenchRun["state"] = (failures.length && !final.some((row) => row.state === "accepted" || row.state === "not_accepted")) || final.some((row) => row.state === "error") ? "failed"
+    : stopReason && final.some((row) => row.state === "skipped_budget") ? "stopped_budget" : "done";
   finishRunRow(deps.db, run.id, state, failures[0] ?? stopReason, clock.now());
   const saved = getRun(deps.db, set.id, input.arm, repeat)!;
   return {

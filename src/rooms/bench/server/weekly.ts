@@ -27,7 +27,7 @@ export function mountBenchWeekly(ctx: ServerCore, bench: () => BenchApi): void {
     await bench().run({ version: newest.version, arm, wait: true });
     if (newest.runs.some((row) => row.arm === previous)) {
       const result = bench().compare({ version: newest.version, armA: previous, armB: arm });
-      ctx.log(`bench-weekly: ${newest.version} ${previous} → ${arm}: ${result.text.split("\n")[0]}`);
+      ctx.log(`bench-weekly: ${newest.version} ${previous} → ${arm}: ${result.comparison.verdict}; ${result.text.split("\n")[0]}`);
     }
   }, { timeoutMs: 6 * 3_600_000 });
 }

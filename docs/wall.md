@@ -148,8 +148,11 @@ rolled back); the guard (hunts, backlog, re-runs).
 
 ## Known limits
 
-- The bench cannot run before the deploy: it compares arms of different Lane Pilot versions. The policy's `bench_subset_passed` is therefore claimed
-  when a runnable bench set exists and enforced after the deploy by the revert; the owner should confirm that reading.
+- The bench cannot run before the deploy: it compares arms of different Lane Pilot versions. The policy's `bench_subset_passed` is therefore a claim
+  (a runnable bench set exists) for the ordinary tier, enforced after the deploy; the descriptor also carries `bench_available` and `rollback_path_ok`
+  under their own names. A change of the judge or the graph merges only provisionally and is accepted only on a passed bench subset of the version it
+  shipped in. Acceptance needs evidence (a passed bench or ten attempts of the new version); without it the repair waits 72 hours and ends `unproven`,
+  as it does when a later release came in. A failed revert is `rollback_pending`, retried every ten minutes up to six times, then given up into the backlog.
 - Nothing ships a merged repair by itself: the release train (`bb-plugin-push`) runs where the checkout is. The loop merges, then waits for a release.
 - The hunters see only the pack. For a class the pack holds the source files that emit the failure's wording (`git grep`), not the whole repository.
 - Task walls start from `repeated_failure:` only; a task that ends `retry_budget_exhausted:` without it is not in the ladder.

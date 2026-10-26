@@ -50,10 +50,14 @@ export type WallClass = {
 
 export const sha12 = (text: string): string => createHash("sha256").update(text).digest("hex").slice(0, 12);
 
-/** Statuses of one repair row. `queued` waits for the self-repair tick, `merged` waits for a release, `deployed` for its acceptance. */
-export const REPAIR_STATES = ["queued", "running", "fixed", "merged", "deployed", "accepted", "rolled_back", "red", "held", "released", "failed"] as const;
+/**
+ * Statuses of one repair row. `queued` waits for the self-repair tick, `merged` waits for a release, `deployed` for its acceptance.
+ * `rollback_pending`: the acceptance is red and the revert of the merge did not go through yet; the tick tries it again (open, so the class
+ * is not repaired on top of a merge that should come out). `unproven`: no evidence came, neither for nor against the repair (closed, not accepted).
+ */
+export const REPAIR_STATES = ["queued", "running", "fixed", "merged", "deployed", "accepted", "rolled_back", "red", "held", "released", "failed", "rollback_pending", "unproven"] as const;
 export type RepairState = (typeof REPAIR_STATES)[number];
-export const OPEN_REPAIR_STATES: readonly RepairState[] = ["queued", "running", "fixed", "merged", "deployed", "held"];
+export const OPEN_REPAIR_STATES: readonly RepairState[] = ["queued", "running", "fixed", "merged", "deployed", "held", "rollback_pending"];
 
 export type NightPick = { classKey: string; why: string; round: number; role: "engineer" | "informed" };
 export type NightSummary = {

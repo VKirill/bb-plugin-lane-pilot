@@ -90,7 +90,9 @@ export function createBench(deps: BenchDeps) {
     if (!set) throw new Error(`no bench set ${version}`);
     const runs = listRuns(deps.db, set.id).filter((row) => row.arm === arm).sort((a, b) => a.repeat - b.repeat);
     if (!runs.length) throw new Error(`no series for arm ${arm} on set ${version}; ran: ${[...new Set(listRuns(deps.db, set.id).map((row) => row.arm))].join(", ") || "none"}`);
-    return summarizeArm(arm, runs.map((row) => listResults(deps.db, row.id)));
+    // A series that is still running or failed is not a finished measurement, whatever its rows say (a `done` state used to cover errored tasks).
+    const unfinished = runs.filter((row) => row.state === "running" || row.state === "failed").map((row) => `repeat ${row.repeat} is ${row.state}${row.stopReason ? ` (${row.stopReason.slice(0, 160)})` : ""}`);
+    return summarizeArm(arm, runs.map((row) => listResults(deps.db, row.id)), unfinished);
   }
 
   /** Two identical arms: the tasks that flipped between them and how far apart cost and time were. The threshold of `compare` is calibrated on the newest one. */
@@ -107,7 +109,8 @@ export function createBench(deps: BenchDeps) {
     const noiseRecord = latestNoise(deps.db, set.id, input.noiseArms);
     const comparison = compareArms(armSummary(input.version, input.armA), armSummary(input.version, input.armB), noiseRecord);
     // Naming a harness tree turns the comparison into the word `harness.adopt_by=bench` waits for.
-    const verdict = input.harnessId ? saveVerdict(deps.db, { setId: set.id, armA: input.armA, armB: input.armB, harnessId: input.harnessId, passed: comparison.verdict === "pass", report: comparison }) : null;
+    // An inconclusive comparison decides nothing: recorded as a pass or as a fail it would adopt or retire a harness tree on too little.
+    const verdict = input.harnessId && comparison.verdict !== "inconclusive" ? saveVerdict(deps.db, { setId: set.id, armA: input.armA, armB: input.armB, harnessId: input.harnessId, passed: comparison.verdict === "pass", report: comparison }) : null;
     return { comparison, text: renderComparison(comparison), verdictId: verdict?.id ?? null };
   }
 

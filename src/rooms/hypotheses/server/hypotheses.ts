@@ -47,6 +47,8 @@ export function createHypotheses(ctx: ServerCore, services: Services) {
     const hypothesis = get(id);
     if (!hypothesis?.setVersion) throw new Error(`hypothesis ${id} has not been benched: bb lane-pilot hypothesis test ${id}`);
     const { comparison, text } = services.bench.compare({ version: hypothesis.setVersion, armA: hypothesis.arms.base, armB: hypothesis.arms.test });
+    // Too little measured is neither a rejection nor a pass: the hypothesis stays on the bench until the arms are run to completion.
+    if (comparison.verdict === "inconclusive") { setState(id, "benching", { verdict: comparison }); return { id, state: "benching" as const, text }; }
     if (comparison.verdict !== "pass") { setState(id, "rejected", { verdict: comparison }); return { id, state: "rejected" as const, text }; }
     const decision = authorize({ kind: "setting_change", settings: Object.keys(hypothesis.settings), attrs: { bench_passed: true, auto_revertible: true } });
     if (decision.tier !== "night_decides") { setState(id, "held", { verdict: { comparison, policy: decision } }); return { id, state: "held" as const, text, policy: decision.reason }; }

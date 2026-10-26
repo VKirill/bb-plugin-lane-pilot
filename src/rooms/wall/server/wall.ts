@@ -15,6 +15,7 @@ import { threadUsage } from "../../usage/server";
 import { id as newId } from "../../core/server";
 import { saveVerdict } from "../../bench";
 import { wallLogLines } from "../logs";
+import { revertMerge, type RevertHost } from "../revert";
 import { createWall, type RepairView, type Scope, type ThreadRun, type WallApi, type WallPorts } from "../service";
 
 const LOG_TAIL_BYTES = 1_000_000;
@@ -146,18 +147,7 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
         const state = await host.call("gitWorktreeState", { requestedHostId: hostId, basePath, worktreePath: view.worktreePath }, { hostId, timeoutMs: 60_000 });
         return state.status === "ready" ? state.changed.map((file) => ({ path: file.path, status: file.status })) : null;
       },
-      revert: async (commit) => {
-        const { hostId, basePath } = await environmentOf();
-        const created = await host.call("gitCreateWorktree", { requestedHostId: hostId, basePath, name: `night-revert-${commit.slice(0, 8)}-${Date.now().toString(36)}` }, { hostId, timeoutMs: 120_000 });
-        if (created.status !== "ready" || !created.path) return { ok: false, detail: `worktree not created: ${created.reason ?? "unknown"}` };
-        const reverted = await host.call("gitRevertCommits", { requestedHostId: hostId, worktreePath: created.path, commits: [commit] }, { hostId, timeoutMs: 120_000 });
-        if (reverted.status !== "reverted") {
-          await host.call("gitRemoveWorktree", { requestedHostId: hostId, basePath, worktreePath: created.path }, { hostId, timeoutMs: 120_000 }).catch(() => null);
-          return { ok: false, detail: `${reverted.status}: ${reverted.reason ?? reverted.conflicts.join(", ")}` };
-        }
-        const merged = await host.call("gitIntegrate", { requestedHostId: hostId, basePath, worktreePath: created.path, message: `night loop: revert ${commit.slice(0, 12)} (canary or bench red)`, removeWorktree: true }, { hostId, timeoutMs: 300_000 });
-        return { ok: merged.status === "merged", detail: `${merged.status}${merged.commit ? ` ${merged.commit.slice(0, 12)}` : ""}${merged.reason ? `: ${merged.reason}` : ""}` };
-      },
+      revert: async (commit) => revertMerge(host as unknown as RevertHost, await environmentOf(), commit),
     },
     release: {
       drill: async () => {
@@ -196,8 +186,9 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
         try {
           const result = services.bench.compare({ version, armA: base, armB: arm });
           // The night's comparison is a verdict on record like the harness's (the table stayed empty while the night compared).
-          try { saveVerdict(db, { setId: `benchset_${version}`, armA: base, armB: arm, harnessId: null, passed: result.comparison.verdict === "pass", report: result.comparison }); } catch { /* the verdict stands without its record */ }
-          return result.comparison.verdict === "pass" ? "pass" : "fail";
+          // An inconclusive comparison is no verdict: it is neither recorded as a pass nor as a fail.
+          if (result.comparison.verdict !== "inconclusive") try { saveVerdict(db, { setId: `benchset_${version}`, armA: base, armB: arm, harnessId: null, passed: result.comparison.verdict === "pass", report: result.comparison }); } catch { /* the verdict stands without its record */ }
+          return result.comparison.verdict;
         } catch { return "unavailable"; }
       },
       score: async (arm) => {

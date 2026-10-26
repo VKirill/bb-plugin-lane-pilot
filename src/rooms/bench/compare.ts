@@ -10,6 +10,15 @@ import type { NoiseRecord } from "./store";
  * never read as 0. Time is the seconds from the attempt's creation to its end, summed over the task's attempts.
  */
 export const COST_TIME_TOLERANCE = 0.1;
+/**
+ * What a comparison needs before it may say pass or fail. Fewer paired tasks than the floor, or fewer than half of what the arms were asked
+ * to run, is too little to judge: two paired tasks of eight, with the cost on one of them, once ruled three night repairs (benchverdict_a86c7f125849 and its two twins).
+ * The floor is three because one flip is then at most a third of the evidence, and the share keeps a subset that lost most of its tasks to
+ * errors or the budget from standing for the whole set. A cost or a time measured on fewer than two pairs compares nothing: a median or a sum of one.
+ */
+export const MIN_PAIRED_TASKS = 3;
+export const MIN_PAIRED_SHARE = 0.5;
+export const MIN_MEASURED_PAIRS = 2;
 
 export type TaskStat = {
   taskId: string; repeats: number; accepted: number; passed: boolean;
@@ -18,7 +27,12 @@ export type TaskStat = {
   costUsd: number | null; costState: "measured" | "partial" | "not_measured"; tokens: number | null; seconds: number | null;
 };
 
-export type ArmSummary = { arm: string; repeats: number; tasks: Map<string, TaskStat> };
+/**
+ * `selected`: the tasks the arm was asked to run (judged, skipped by the budget and errored alike). `errored`: tasks whose run broke before a writer
+ * could be judged (no project, checkout failed, dispatch refused): the arm did not complete, and they are not read as failures of the change.
+ * `incomplete`: why the series is not a finished measurement (still running, failed).
+ */
+export type ArmSummary = { arm: string; repeats: number; tasks: Map<string, TaskStat>; selected: number; errored: string[]; incomplete: string[] };
 
 const mean = (values: number[]): number => values.reduce((sum, value) => sum + value, 0) / values.length;
 export const median = (values: number[]): number | null => {
@@ -28,11 +42,14 @@ export const median = (values: number[]): number | null => {
 };
 
 /** One arm from its repeats: `byRepeat[i]` are the results of the i-th series (skipped-by-budget rows count as not run). */
-export function summarizeArm(arm: string, byRepeat: readonly (readonly BenchResult[])[]): ArmSummary {
-  const ids = new Set(byRepeat.flatMap((results) => results.filter((row) => row.state !== "skipped_budget").map((row) => row.taskId)));
+export function summarizeArm(arm: string, byRepeat: readonly (readonly BenchResult[])[], incomplete: readonly string[] = []): ArmSummary {
+  const judged = (row: BenchResult) => row.state !== "skipped_budget" && row.state !== "error";
+  const ids = new Set(byRepeat.flatMap((results) => results.filter(judged).map((row) => row.taskId)));
+  const selected = new Set(byRepeat.flatMap((results) => results.map((row) => row.taskId)));
+  const errored = [...new Set(byRepeat.flatMap((results) => results.filter((row) => row.state === "error").map((row) => row.taskId)))];
   const tasks = new Map<string, TaskStat>();
   for (const taskId of ids) {
-    const rows = byRepeat.flatMap((results) => results.filter((row) => row.taskId === taskId && row.state !== "skipped_budget"));
+    const rows = byRepeat.flatMap((results) => results.filter((row) => row.taskId === taskId && judged(row)));
     const accepted = rows.filter((row) => row.accepted).length;
     const measured = rows.filter((row) => row.costState === "measured" && row.costUsd !== null);
     const costState = measured.length === rows.length ? "measured" : measured.length ? "partial" : "not_measured";
@@ -45,11 +62,12 @@ export function summarizeArm(arm: string, byRepeat: readonly (readonly BenchResu
       seconds: seconds.length ? mean(seconds) : null,
     });
   }
-  return { arm, repeats: byRepeat.length, tasks };
+  return { arm, repeats: byRepeat.length, tasks, selected: selected.size, errored, incomplete: [...incomplete] };
 }
 
 export type Flip = { taskId: string; from: "pass" | "fail"; to: "pass" | "fail"; a: string; b: string; unstable: boolean };
-export type Check = { name: string; ok: boolean; detail: string };
+/** `ok: null`: the check could not be made (no measurement); it is neither a pass nor a fail. */
+export type Check = { name: string; ok: boolean | null; detail: string };
 export type Comparison = {
   armA: string; armB: string; pairedTasks: number; onlyA: string[]; onlyB: string[];
   passed: { a: number; b: number };
@@ -59,7 +77,8 @@ export type Comparison = {
   flips: Flip[];
   tolerance: { cost: number; time: number; stages: number; calibratedOn: string | null };
   checks: Check[];
-  verdict: "pass" | "fail";
+  /** `inconclusive`: too little was measured to say better or worse; it is never read as a pass or as a fail. */
+  verdict: "pass" | "fail" | "inconclusive";
 };
 
 /** Noise from two identical arms: which tasks flipped between them, and how far apart their cost, time and stage counts were. */
@@ -85,7 +104,8 @@ const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
 /**
  * The acceptance rule for a change (arm B against the baseline A): stages not worse; cost and time not worse by more than the
  * tolerance (10%, or the noise of two identical runs when that is larger); no task that passed on A fails on B. Tasks that flipped
- * between the two identical runs are unstable: they are reported but cannot fail the rule.
+ * between the two identical runs are unstable: they are reported but cannot fail the rule. When too little was measured (see MIN_PAIRED_TASKS)
+ * the verdict is `inconclusive`: no answer, and no pass or fail for anyone to act on.
  */
 export function compareArms(a: ArmSummary, b: ArmSummary, noise?: NoiseRecord | null): Comparison {
   const idsA = [...a.tasks.keys()], idsB = [...b.tasks.keys()];
@@ -107,23 +127,34 @@ export function compareArms(a: ArmSummary, b: ArmSummary, noise?: NoiseRecord | 
     flips.push({ taskId: id, from: x.passed ? "pass" : "fail", to: y.passed ? "pass" : "fail", a: `${x.accepted}/${x.repeats}`, b: `${y.accepted}/${y.repeats}`, unstable: unstable.has(id) });
   }
   const regressions = flips.filter((flip) => flip.from === "pass" && flip.to === "fail" && !flip.unstable);
+  const asked = Math.max(a.selected, b.selected);
+  const needed = Math.max(MIN_PAIRED_TASKS, Math.ceil(asked * MIN_PAIRED_SHARE));
+  const unfinished = [...a.incomplete.map((why) => `${a.arm}: ${why}`), ...b.incomplete.map((why) => `${b.arm}: ${why}`),
+    ...(a.errored.length ? [`${a.arm}: ${a.errored.length} task(s) errored before they could be judged (${a.errored.slice(0, 5).join(", ")})`] : []),
+    ...(b.errored.length ? [`${b.arm}: ${b.errored.length} task(s) errored before they could be judged (${b.errored.slice(0, 5).join(", ")})`] : [])];
+  const enough = paired.length >= needed && unfinished.length === 0;
   const checks: Check[] = [
+    { name: "coverage", ok: enough ? true : null,
+      detail: `${paired.length} paired tasks of ${asked} asked (at least ${needed} needed)${unfinished.length ? `; unfinished: ${unfinished.join("; ")}` : ""}` },
     { name: "stages", ok: stagesB + stagesTol + 1e-9 >= stagesA, detail: `stages passed ${stagesB.toFixed(1)} vs ${stagesA.toFixed(1)} (B vs A), slack ${stagesTol.toFixed(1)} from noise` },
-    costA === null || costB === null
-      ? { name: "cost", ok: true, detail: `cost not measured for ${notMeasured.length} of ${paired.length} paired tasks on at least one arm: not compared` }
+    costA === null || costB === null || bothCost.length < MIN_MEASURED_PAIRS
+      ? { name: "cost", ok: null, detail: `cost not measured on both arms for ${paired.length - bothCost.length} of ${paired.length} paired tasks (${MIN_MEASURED_PAIRS} measured pairs needed, ${bothCost.length} found): not compared` }
       : { name: "cost", ok: costB <= costA * (1 + costTol) + 1e-12, detail: `${usd(costB)} vs ${usd(costA)} on ${bothCost.length} tasks measured on both arms (${notMeasured.length} not measured); tolerance ${pct(costTol)}` },
-    secondsA === null || secondsB === null
-      ? { name: "time", ok: true, detail: "no recorded time to compare" }
+    secondsA === null || secondsB === null || timed.length < MIN_MEASURED_PAIRS
+      ? { name: "time", ok: null, detail: `time not recorded on both arms for ${paired.length - timed.length} of ${paired.length} paired tasks (${MIN_MEASURED_PAIRS} recorded pairs needed, ${timed.length} found): not compared` }
       : { name: "time", ok: secondsB <= secondsA * (1 + timeTol) + 1e-9, detail: `median ${Math.round(secondsB)}s vs ${Math.round(secondsA)}s over ${timed.length} tasks; tolerance ${pct(timeTol)}` },
     { name: "no_regression", ok: regressions.length === 0, detail: regressions.length ? `passed on A and not on B: ${regressions.map((flip) => flip.taskId).join(", ")}` : `no task that passed on A fails on B${flips.some((flip) => flip.unstable) ? " (unstable tasks excluded)" : ""}` },
   ];
+  // Without the coverage nothing below it is evidence, even a regression: it stands on a few tasks. A real regression with enough coverage fails
+  // whatever else is unmeasured; a check that could not be made keeps the rest from passing.
+  const verdict: Comparison["verdict"] = !enough ? "inconclusive" : checks.some((check) => check.ok === false) ? "fail" : checks.some((check) => check.ok === null) ? "inconclusive" : "pass";
   return {
     armA: a.arm, armB: b.arm, pairedTasks: paired.length, onlyA: idsA.filter((id) => !b.tasks.has(id)), onlyB: idsB.filter((id) => !a.tasks.has(id)),
     passed: { a: paired.filter((id) => a.tasks.get(id)!.passed).length, b: paired.filter((id) => b.tasks.get(id)!.passed).length },
     stages: { a: stagesA, b: stagesB }, cost: { a: costA, b: costB, pairedTasks: bothCost.length, notMeasured },
     seconds: { a: secondsA, b: secondsB }, flips,
     tolerance: { cost: costTol, time: timeTol, stages: stagesTol, calibratedOn: noise ? `${noise.armA} vs ${noise.armB}` : null },
-    checks, verdict: checks.every((check) => check.ok) ? "pass" : "fail",
+    checks, verdict,
   };
 }
 
@@ -134,8 +165,8 @@ export function renderComparison(c: Comparison): string {
     `Tasks passed: A ${c.passed.a}, B ${c.passed.b}. Stages passed: A ${c.stages.a.toFixed(1)}, B ${c.stages.b.toFixed(1)}. Cost: A ${usd(c.cost.a)}, B ${usd(c.cost.b)} (${c.cost.pairedTasks} tasks measured on both). Median time: A ${c.seconds.a === null ? "-" : `${Math.round(c.seconds.a)}s`}, B ${c.seconds.b === null ? "-" : `${Math.round(c.seconds.b)}s`}.`,
     c.cost.notMeasured.length ? `Cost not measured on at least one arm for: ${c.cost.notMeasured.join(", ")}.` : "",
     `Flips: ${c.flips.length ? c.flips.map((flip) => `${flip.taskId} ${flip.from}->${flip.to} (${flip.a} vs ${flip.b})${flip.unstable ? " [unstable in noise]" : ""}`).join("; ") : "none"}.`,
-    ...c.checks.map((check) => `${check.ok ? "ok  " : "FAIL"} ${check.name}: ${check.detail}`),
-    `Verdict: ${c.verdict.toUpperCase()}.`,
+    ...c.checks.map((check) => `${check.ok === null ? "n/a " : check.ok ? "ok  " : "FAIL"} ${check.name}: ${check.detail}`),
+    `Verdict: ${c.verdict.toUpperCase()}${c.verdict === "inconclusive" ? " (too little was measured to call it better or worse)" : ""}.`,
   ];
   return lines.filter(Boolean).join("\n");
 }

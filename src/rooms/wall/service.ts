@@ -11,7 +11,7 @@ import { afterFailedMove, ladderStep } from "./ladder";
 import { composeWallMorning } from "./morning";
 import { HUNT_ANGLES, buildClassPack, buildTaskPack, judgeHunt, parseFinding, type CheckedFinding, type EvidencePack, type HuntOutcome, type PackFile } from "./pack";
 import { executable, headPartsOf, planClassRerun, recordRerun, type RerunPlan, type RerunScope } from "./rerun";
-import { selectClasses } from "./select";
+import { cycleScoresOf, selectClasses } from "./select";
 import { repairSignature, wallSignature } from "./signature";
 import {
   getWall, insertRepair, insertWall, listRepairs, listWalls, nightSpend, openRepairs, recentNights, refreshNightSpend, saveNight, updateClassLadder, updateRepair, updateWall, type RepairRow, type WallRow,
@@ -20,6 +20,10 @@ import { OPEN_REPAIR_STATES, type NightSummary, type WallClass } from "./types";
 
 const DAY = 86_400_000;
 const QUEUED_STALE_MS = 12 * 3_600_000;
+/** A revert that did not go through is tried again at most this often and this many times; then the diagnosis goes to the backlog. */
+const ROLLBACK_RETRY_MS = 10 * 60_000;
+export const ROLLBACK_TRIES = 6;
+type Rollback = { attempts: number; lastError: string; lastAt: number; reason: string; gaveUp?: boolean };
 
 export type Scope = { isReal(projectId: string, taskId: string): boolean; scopeOf(projectId: string): RerunScope };
 export type ThreadRun = { text: string | null; tokens: number };
@@ -51,7 +55,7 @@ export type WallPorts = {
   bench: {
     available(): Promise<boolean>;
     ensureArm(arm: string): Promise<"done" | "running" | "unavailable">;
-    compare(base: string, arm: string): Promise<"pass" | "fail" | "pending" | "unavailable">;
+    compare(base: string, arm: string): Promise<"pass" | "fail" | "inconclusive" | "pending" | "unavailable">;
     score(arm: string): Promise<number | null>;
   };
   restart(plan: RerunPlan): Promise<{ ok: boolean; note: string }>;
@@ -88,12 +92,7 @@ export function createWall(deps: WallDeps) {
   }
 
   /** The class's cycle history for `shouldStopCycle`: the bench score before the first repair, then after each repair that was judged. */
-  function cycleScores(): number[] {
-    const rows = listRepairs(db).filter((row) => row.acceptance && typeof (row.acceptance as { benchScore?: unknown }).benchScore === "number");
-    if (!rows.length) return [];
-    const first = rows[0]!.acceptance as { baselineScore?: number };
-    return [first.baselineScore ?? 0, ...rows.map((row) => (row.acceptance as { benchScore: number }).benchScore)];
-  }
+  const cycleScores = (): number[] => cycleScoresOf(listRepairs(db));
 
   // ---------------------------------------------------------------- the hunt
   function recordHuntOutcome(outcome: HuntOutcome): unknown {
@@ -328,6 +327,17 @@ export function createWall(deps: WallDeps) {
     log(`wall: round ${row.round} of ${row.classKey} failed (${outcome}); moves ${next.failedMoves}, after the hunt ${next.afterHuntFailed}`);
   }
 
+  /**
+   * Whether a merge can be taken back: no revert is stuck, and none gave up in the last week. The constant `true` this replaced hid three reverts that
+   * never ran (wr_8462ad860c03, wr_16de9a4704de, wr_662642de0aa6); a rollback that failed and was left is not a rollback path.
+   */
+  function rollbackPathOk(now: number): boolean {
+    return !listRepairs(db).some((row) => {
+      const rollback = (row.acceptance as { rollback?: Rollback } | null)?.rollback;
+      return row.state === "rollback_pending" || (row.state === "red" && rollback?.gaveUp === true && now - row.updatedAt < 7 * DAY);
+    });
+  }
+
   /** The self-repair watcher asks before it merges a fixed night repair. The answer is stored once per repair; a hold is released after a week. */
   async function mergeGate(signature: string, info: { threadId: string }): Promise<"merge" | "hold" | "release"> {
     const row = listRepairs(db, { states: OPEN_REPAIR_STATES }).filter((item) => item.signature === signature).at(-1);
@@ -343,9 +353,10 @@ export function createWall(deps: WallDeps) {
     if (!files) return "hold";
     const cfg = await config();
     const benchOk = cfg.benchSubset > 0 && await ports.bench.available().catch(() => false);
-    const change: ChangeDescriptor = repairChange(files, { benchSubset: benchOk, revertible: true });
+    const change: ChangeDescriptor = repairChange(files, { benchAvailable: benchOk, rollbackOk: rollbackPathOk(now) });
     const decision = gateRepair(change);
-    updateRepair(db, row.id, { state: "fixed", verdict: "fixed", policy: { ...decision, change, benchEnforcedAfterDeploy: benchOk } }, now);
+    // `requireBench`: a merge on the strict path is accepted later only on a passed bench subset of the shipped version (acceptance.ts).
+    updateRepair(db, row.id, { state: "fixed", verdict: "fixed", policy: { ...decision, change, benchEnforcedAfterDeploy: benchOk, requireBench: decision.provisional === true } }, now);
     if (decision.decision === "reject") log(`wall: repair ${row.id} of ${row.classKey} is rejected by the policy (${decision.tier}): ${decision.reason}`);
     void info;
     return decision.decision === "merge" ? "merge" : "release";
@@ -390,6 +401,7 @@ export function createWall(deps: WallDeps) {
   async function advance(now: number = ports.now()): Promise<string[]> {
     const notes: string[] = [];
     const cfg = await config();
+    notes.push(...resumeStuckRollbacks(now));
     for (const row of listRepairs(db, { states: OPEN_REPAIR_STATES })) {
       if (row.state === "queued" && now - row.createdAt > QUEUED_STALE_MS) {
         updateRepair(db, row.id, { state: "failed", outcome: "never started within 12 hours" }, now);
@@ -413,6 +425,7 @@ export function createWall(deps: WallDeps) {
         }
       }
       if (row.state === "merged" || row.state === "deployed") notes.push(...await followRelease(row, cfg, now));
+      if (row.state === "rollback_pending") notes.push(...await retryRollback(row, now));
     }
     notes.push(...await advanceTaskWalls(cfg, now));
     const night = nightOf(now), from = Date.parse(`${night}T00:00:00Z`);
@@ -434,24 +447,32 @@ export function createWall(deps: WallDeps) {
       updateRepair(db, row.id, { state: "deployed", shippedVersion: ports.version, acceptance: { ...acceptance, deployedAt: now } }, now);
       return [`${row.id}: deployed as ${ports.version}`];
     }
+    // The repair is judged by the release that carried it, not by whatever runs now: repairs shipped in 0.1.307 were compared with 0.1.328 and the
+    // many changes between them were charged to three repairs. A later release means the candidate's own evidence is gone (the canary and the bench
+    // arm describe the running version); the experiment is then inconclusive, not decided on the newer one.
+    const shipped = row.shippedVersion ?? ports.version;
+    const superseded = ports.version !== shipped ? ports.version : null;
     const deployedAt = acceptance.deployedAt ?? now;
     const drill = await ports.release.drill().catch(() => null);
     const canary = await ports.release.canary().catch(() => null);
-    const benchOk = cfg.benchSubset > 0 && await ports.bench.available().catch(() => false);
+    const benchOk = cfg.benchSubset > 0 && !superseded && await ports.bench.available().catch(() => false);
     let bench: AcceptanceEvidence["bench"] = "unavailable";
     let benchScore: number | undefined, baselineScore: number | undefined;
-    if (benchOk && canary && !canary.windowOpen) {
-      const base = `night-${mergedAt}`, arm = `night-${ports.version}`;
+    let benchCompare: { base: string; arm: string } | undefined;
+    if (benchOk && canary && canary.version === shipped && !canary.windowOpen) {
+      const base = `night-${mergedAt}`, arm = `night-${shipped}`;
       const state = await ports.bench.ensureArm(arm).catch(() => "unavailable" as const);
       bench = state === "done" ? await ports.bench.compare(base, arm).catch(() => "unavailable" as const) : state === "running" ? "pending" : "unavailable";
       if (bench === "pass" || bench === "fail") {
         benchScore = (await ports.bench.score(arm).catch(() => null)) ?? undefined;
         baselineScore = (await ports.bench.score(base).catch(() => null)) ?? undefined;
+        benchCompare = { base, arm };
       }
     }
-    const recurrence = recurrenceOn(row.classKey, ports.version, deployedAt);
-    const result = decideAcceptance({ merged: true, versionBefore: mergedAt, deployedVersion: ports.version, drill, deployedAt, canary, bench, recurrence, trainRolledBack: false });
-    return await settleAcceptance(row, result, { ...acceptance, deployedAt, ...(benchScore !== undefined ? { benchScore } : {}), ...(baselineScore !== undefined ? { baselineScore } : {}) }, now);
+    const recurrence = recurrenceOn(row.classKey, shipped, deployedAt);
+    const requireBench = (row.policy as { requireBench?: boolean } | null)?.requireBench === true;
+    const result = decideAcceptance({ merged: true, versionBefore: mergedAt, deployedVersion: shipped, drill, deployedAt, canary, bench, recurrence, trainRolledBack: false, requireBench, supersededBy: superseded, now });
+    return await settleAcceptance(row, result, { ...acceptance, deployedAt, ...(benchScore !== undefined ? { benchScore } : {}), ...(baselineScore !== undefined ? { baselineScore } : {}), ...(benchCompare ? { benchCompare } : {}) }, now, recurrence);
   }
 
   function recurrenceOn(classKey: string, version: string, since: number): { failures: number; attempts: number } | null {
@@ -461,7 +482,7 @@ export function createWall(deps: WallDeps) {
     return { attempts: attempts.length, failures: attempts.filter((row) => row.state !== "accepted" && wallSignature(row.state, row.reason).classKey === classKey).length };
   }
 
-  async function settleAcceptance(row: RepairRow, result: Acceptance, acceptance: Record<string, unknown>, now: number): Promise<string[]> {
+  async function settleAcceptance(row: RepairRow, result: Acceptance, acceptance: Record<string, unknown>, now: number, recurrence: { failures: number; attempts: number } | null = null): Promise<string[]> {
     const payload: Record<string, unknown> = { ...acceptance, checks: result.checks, reason: result.reason, recurred: result.recurred };
     if (result.state === "pending") { updateRepair(db, row.id, { acceptance: payload }, now); return []; }
     if (result.state === "accepted") {
@@ -471,15 +492,82 @@ export function createWall(deps: WallDeps) {
       const planned = await rerunClass(row, now);
       return [`${row.id}: accepted (${result.reason}); ${planned} re-run(s) planned`];
     }
+    if (result.state === "inconclusive") {
+      // No evidence for the repair and none against it: it is not accepted (no `fixedIn`, no re-runs) and it is not reverted. The ladder moves only
+      // when the class kept failing on the shipped version, which is evidence the move did not help.
+      updateRepair(db, row.id, { state: "unproven", acceptance: payload, outcome: result.reason.slice(0, 400) }, now);
+      if (recurrence && recurrence.failures > 0) failMove(row, "unproven, and the class still failed on the shipped version", now);
+      return [`${row.id}: unproven (${result.reason})`];
+    }
     let detail = result.reason;
     if (result.action === "revert" && row.mergedCommit && !(acceptance as { revertedAt?: number }).revertedAt) {
-      const reverted = await ports.repair.revert(row.mergedCommit).catch((cause: unknown) => ({ ok: false, detail: cause instanceof Error ? cause.message : String(cause) }));
-      payload.revertedAt = reverted.ok ? now : undefined;
-      detail = `${result.reason}; revert ${reverted.ok ? "committed" : "failed"}: ${reverted.detail}`;
+      const reverted = await tryRevert(row.mergedCommit);
+      if (!reverted.ok) {
+        // Red, and the merge is still in the checkout: the repair stays open so the tick tries the revert again. `red` here once ended the repair for good.
+        const rollback: Rollback = { attempts: 1, lastError: reverted.detail.slice(0, 300), lastAt: now, reason: result.reason };
+        updateRepair(db, row.id, { state: "rollback_pending", acceptance: { ...payload, rollback }, outcome: `${result.reason}; revert failed (try 1 of ${ROLLBACK_TRIES}): ${reverted.detail}`.slice(0, 400) }, now);
+        log(`wall: revert of ${row.mergedCommit.slice(0, 12)} for ${row.id} failed, try 1 of ${ROLLBACK_TRIES}: ${reverted.detail}`);
+        return [`${row.id}: ${result.state}; revert failed, tried again later (${reverted.detail})`];
+      }
+      payload.revertedAt = now;
+      detail = `${result.reason}; revert committed: ${reverted.detail}`;
     }
     updateRepair(db, row.id, { state: result.state === "rolled_back" ? "rolled_back" : "red", acceptance: payload, outcome: detail.slice(0, 400) }, now);
     failMove(row, detail, now);
     return [`${row.id}: ${result.state} (${detail})`];
+  }
+
+  const tryRevert = async (commit: string): Promise<{ ok: boolean; detail: string }> =>
+    await ports.repair.revert(commit).catch((cause: unknown) => ({ ok: false, detail: cause instanceof Error ? cause.message : String(cause) }));
+
+  /**
+   * A red repair whose revert could not run was left `red` by the first version of this code and never revisited. Those rows (merged commit known,
+   * never reverted, outcome says the revert failed, no rollback record) are put back in the retry state once; the revert resolves a short SHA with git.
+   */
+  function resumeStuckRollbacks(now: number): string[] {
+    const notes: string[] = [];
+    for (const row of listRepairs(db, { states: ["red"] })) {
+      const acceptance = (row.acceptance ?? {}) as { revertedAt?: number; rollback?: Rollback; reason?: string };
+      if (!row.mergedCommit || acceptance.revertedAt || acceptance.rollback || !/revert failed/.test(row.outcome ?? "")) continue;
+      // Judged red by the bench alone before a comparison could say «inconclusive»: the three October rows rest on 305→328, two paired tasks.
+      // That is no proof the repair made things worse, so it is not undone now; it is unproven, and the class's recurrence judges it again.
+      if (/bench subset is worse/.test(acceptance.reason ?? "")) {
+        const reason = "judged red only by a bench comparison made before inconclusive comparisons existed (too few paired tasks): not reverted, unproven";
+        updateRepair(db, row.id, { state: "unproven", acceptance: { ...acceptance, reason }, outcome: reason }, now);
+        notes.push(`${row.id}: red rested on an inconclusive bench comparison; left in place as unproven`);
+        continue;
+      }
+      const rollback: Rollback = { attempts: 0, lastError: (row.outcome ?? "").slice(-300), lastAt: 0, reason: acceptance.reason ?? "red acceptance" };
+      updateRepair(db, row.id, { state: "rollback_pending", acceptance: { ...acceptance, rollback } }, now);
+      notes.push(`${row.id}: revert of ${row.mergedCommit.slice(0, 12)} never ran; tried again`);
+    }
+    return notes;
+  }
+
+  /** A pending revert: tried again every `ROLLBACK_RETRY_MS`; after `ROLLBACK_TRIES` it is given up with its diagnosis in the backlog, not left quiet. */
+  async function retryRollback(row: RepairRow, now: number): Promise<string[]> {
+    const acceptance = (row.acceptance ?? {}) as Record<string, unknown> & { rollback?: Rollback };
+    const rollback = acceptance.rollback;
+    if (!rollback || !row.mergedCommit || now - rollback.lastAt < ROLLBACK_RETRY_MS) return [];
+    const reverted = await tryRevert(row.mergedCommit);
+    const attempts = rollback.attempts + 1;
+    if (reverted.ok) {
+      const detail = `${rollback.reason}; revert committed on try ${attempts}: ${reverted.detail}`;
+      updateRepair(db, row.id, { state: "red", acceptance: { ...acceptance, revertedAt: now, rollback: { ...rollback, attempts, lastError: "", lastAt: now } }, outcome: detail.slice(0, 400) }, now);
+      failMove(row, detail, now);
+      return [`${row.id}: reverted on try ${attempts}`];
+    }
+    const next: Rollback = { ...rollback, attempts, lastError: reverted.detail.slice(0, 300), lastAt: now };
+    if (attempts < ROLLBACK_TRIES) {
+      updateRepair(db, row.id, { acceptance: { ...acceptance, rollback: next }, outcome: `${rollback.reason}; revert failed (try ${attempts} of ${ROLLBACK_TRIES}): ${reverted.detail}`.slice(0, 400) }, now);
+      return [`${row.id}: revert failed again (${attempts} of ${ROLLBACK_TRIES}): ${reverted.detail}`];
+    }
+    const detail = `${rollback.reason}; revert failed ${attempts} times, last: ${reverted.detail}`;
+    next.gaveUp = true;
+    updateRepair(db, row.id, { state: "red", acceptance: { ...acceptance, rollback: next }, outcome: detail.slice(0, 400) }, now);
+    failMove(row, detail, now);
+    await escalateBacklog(`rollback:${row.id}`, `the merge ${row.mergedCommit.slice(0, 12)} of repair ${row.id} (${row.classKey}) stays in the checkout: ${detail}`.slice(0, 300), "", `its revert failed ${attempts} times`, now);
+    return [`${row.id}: revert given up after ${attempts} tries; in the backlog`];
   }
 
   // ---------------------------------------------------------------- re-run on the new head (D1-1)

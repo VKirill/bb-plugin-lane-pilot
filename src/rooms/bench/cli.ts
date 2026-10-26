@@ -107,7 +107,8 @@ export async function runBenchCli(bench: BenchApi, argv: string[]): Promise<Resu
       const noiseArms = flags.noise ? flags.noise.split(",") as [string, string] : undefined;
       if (noiseArms && noiseArms.length !== 2) throw new Error("--noise wants two arm names: X,Y");
       const result = bench.compare({ version: flags.set ?? defaultVersion(bench, "newest"), armA: positional[0]!, armB: positional[1]!, ...(noiseArms ? { noiseArms } : {}), ...(flags["harness-id"] ? { harnessId: flags["harness-id"] } : {}) });
-      return { exitCode: result.comparison.verdict === "pass" ? 0 : 1, stdout: flags.json === "true" ? JSON.stringify(result.comparison, null, 2) : `${result.text}${result.verdictId ? `\nRecorded as ${result.verdictId} for harness ${flags["harness-id"]}.` : ""}` };
+      // 0 pass, 1 fail, 2 inconclusive: a script must not read too little data as either answer.
+      return { exitCode: result.comparison.verdict === "pass" ? 0 : result.comparison.verdict === "fail" ? 1 : 2, stdout: flags.json === "true" ? JSON.stringify(result.comparison, null, 2) : `${result.text}${result.verdictId ? `\nRecorded as ${result.verdictId} for harness ${flags["harness-id"]}.` : ""}` };
     }
     if (sub === "status") {
       const { flags } = parseBenchArgs(rest, ["set"]);

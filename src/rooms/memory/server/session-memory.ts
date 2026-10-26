@@ -53,8 +53,10 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       return { records: searchMemoryRecords(db, projectId, query, limit ?? 8, settings.searchEngine, "subagent", settings.personalBot, { includeObserved: true })
         .map((record) => ({ id: record.id, kind: record.kind, content: record.content, concepts: record.concepts })) };
     },
+    // The proven facts first: the terminal client keeps only its byte budget of the CORE (Lane Stack inject_core), so the order decides
+    // what a session sees (BB-сервис 2026-10-26: 48 always-on facts, 15 KB against a 3 KB budget, the oldest first).
     session_memory_core: async ({ projectId }) => {
-      const rows = db.prepare(`SELECT id, content FROM lane_pilot_memory WHERE project_id=? AND kind='core' AND audience='subagent' AND status='active' AND (valid_until IS NULL OR valid_until>?)${heldClause(db, "lane_pilot_memory")} ORDER BY created_at`)
+      const rows = db.prepare(`SELECT id, content FROM lane_pilot_memory WHERE project_id=? AND kind='core' AND audience='subagent' AND status='active' AND (valid_until IS NULL OR valid_until>?)${heldClause(db, "lane_pilot_memory")} ORDER BY accepted_count DESC, use_count DESC, created_at DESC`)
         .all(projectId, Date.now()) as Array<{ id: string; content: string }>;
       return { records: rows };
     },

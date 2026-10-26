@@ -209,6 +209,15 @@ describe("issue-batch", () => {
     const red = await runSim("issue-batch", { input, stubs: { "lp.plan": { status: "ok", task_count: 3, tasks }, "lp.build": { status: "partial" } } });
     expect(pathOf(red)).toBe("plan build partial");
   });
+  it("tells the planner to group edits of one component or sharing a slow check, and to split a failure list by cause (not one task per tiny edit)", async () => {
+    const r = await runSim("issue-batch", { input, stubs: { "lp.plan": { status: "ok", task_count: 0, tasks: [], already_met: true } } });
+    const constraints = JSON.stringify(firstInput(r, "plan"));
+    expect(constraints).toMatch(/group the edits of one component, page or file/);
+    expect(constraints).toMatch(/share one slow check/);
+    expect(constraints).toMatch(/separate tasks only for edits in independent areas/);
+    expect(constraints).toMatch(/verifiable cause, not by the number of red lines/);
+    expect(constraints).not.toMatch(/one task per independent fix/);
+  });
 });
 
 describe("issue-quick", () => {

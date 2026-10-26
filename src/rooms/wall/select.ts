@@ -30,6 +30,26 @@ export type SelectInput = {
   roundCost: number;
 };
 
+/**
+ * The cycle history `shouldStopCycle` reads: the bench score before the first judged repair, then the score after each COMPARISON. Repairs that
+ * shipped in one release are judged by one comparison and carry the same numbers, so they are one cycle: three repairs of a night counted as
+ * three cycles and stopped the series on [.5, .125, .625, .625, .625] (nights of 2026-10-26), while the cycles were [.5, .125, .625].
+ * A comparison is told apart by the arms it compared (`benchCompare`); a repair judged before the arms were kept falls back to its two scores.
+ */
+export function cycleScoresOf(rows: ReadonlyArray<{ acceptance: Record<string, unknown> | null }>): number[] {
+  const judged = rows.map((row) => row.acceptance as { benchScore?: unknown; baselineScore?: unknown; benchCompare?: { base?: unknown; arm?: unknown } } | null).filter((acceptance) => typeof acceptance?.benchScore === "number");
+  if (!judged.length) return [];
+  const seen = new Set<string>();
+  const scores: number[] = [];
+  for (const acceptance of judged) {
+    const key = acceptance!.benchCompare ? `${String(acceptance!.benchCompare.base)}>${String(acceptance!.benchCompare.arm)}` : `${String(acceptance!.baselineScore ?? "-")}>${String(acceptance!.benchScore)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    scores.push(acceptance!.benchScore as number);
+  }
+  return [typeof judged[0]!.baselineScore === "number" ? judged[0]!.baselineScore : 0, ...scores];
+}
+
 export type Chosen = { classKey: string; why: string; round: number; role: "engineer" | "informed" };
 export type Skip = { classKey: string; why: string };
 export type Selection = { picked: Chosen[]; morning: Skip[]; stoppedBy: string | null };

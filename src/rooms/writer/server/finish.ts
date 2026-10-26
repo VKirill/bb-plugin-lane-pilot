@@ -844,7 +844,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             void noteMergedForGate(input, basePath, merged.commit ?? "", candidate.produced, false);
           } else {
             void checkMainAfterMerge({ projectId:input.projectId, pmThreadId:input.pmThreadId, config:input.config,
-              runId:input.runId, task:input.task, basePath, worktreePath:bound.workspace_path, attemptId:input.attemptId, mergeCommit:merged.commit ?? undefined });
+              runId:input.runId, task:input.task, basePath, worktreePath:bound.workspace_path, attemptId:input.attemptId, mergeCommit:merged.commit ?? undefined,
+              greenInWorktree:(candidate.verification ?? []).filter((check) => check.exitCode === 0).map((check) => check.command) });
           }
         }
       } else if (bound && basePath && isLiveDecision(bound.workspace_decision)) {
@@ -873,7 +874,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
    */
   async function checkMainAfterMerge(input:{ projectId:string; pmThreadId:string; config:Parameters<typeof services.runVerification>[0];
     runId:string; task:TaskV2; basePath:string; worktreePath:string;
-    /** The merge this check follows: one merge commit of one attempt is one check, never another's. */ attemptId?:string; mergeCommit?:string }) {
+    /** The merge this check follows: one merge commit of one attempt is one check, never another's. */ attemptId?:string; mergeCommit?:string;
+    /** Checks this attempt ran green in its own worktree: red on the base, green there and red on main again is a clash of the merge. */ greenInWorktree?:readonly string[] }) {
     if (!input.task.verification.length || !input.pmThreadId || await isRunHalted(bb.storage.kv as never, input.runId)) return;
     const onBase = (cwd:string) => resolve(cwd).startsWith(resolve(input.worktreePath)) ? join(input.basePath, relative(input.worktreePath, cwd)) : cwd;
     const onMain = { ...input.task, project_cwd:input.basePath, verification:input.task.verification.map((command) => ({ ...command, cwd:onBase(command.cwd) })) };
@@ -907,14 +909,36 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       await tell(`Lane Pilot: ${input.task.id} fixed main once already and main is red again after it (${red[0]!.command}). Look at what else merged meanwhile and dispatch the fix yourself.`);
       return;
     }
-    const { fix, plan, logs } = postMergeRepair(onMain, red);
+    // Only a reproducible regression of this task gets a writer: a red that was red on the base too is not its doing, and one
+    // that passes on a re-run is flaky. Without a baseline record for a check, the re-run alone decides.
+    // A fix turns a check red on the base green: green in its own worktree and red again on main is the merge's doing, not an old red.
+    const ownGreen = new Set(input.greenInWorktree ?? []);
+    const redBefore = (services.baseline?.redBefore?.({ runId:input.runId, taskId:input.task.id, checks:checks ?? [] }) ?? []).filter((command) => !ownGreen.has(command));
+    const candidates = red.filter((check) => !redBefore.includes(check.command));
+    let confirmed = candidates;
+    let flaky:string[] = [];
+    if (candidates.length) {
+      const names = new Set(candidates.map((check) => check.command));
+      const again = await services.runVerification(input.config, { ...onMain, verification:onMain.verification.filter((command) => names.has(command.command)) }, input.runId, undefined,
+        { background:true, jobKey:`post-merge:${input.attemptId ?? input.task.id}:${input.mergeCommit ?? ""}:rerun` }).catch(() => null);
+      // A re-run the host could not run says nothing: the first red stands.
+      const passed = new Set((again ?? []).filter((check) => check.exitCode === 0 && !check.hostError).map((check) => check.command));
+      flaky = candidates.filter((check) => passed.has(check.command)).map((check) => check.command);
+      confirmed = candidates.filter((check) => !passed.has(check.command));
+    }
+    if (flaky.length || redBefore.length) {
+      ctx.log(`post-merge check of ${input.task.id} on main: no repair task for ${[...flaky, ...redBefore].join(", ")} (${flaky.length ? "flaky" : "red before this task too"})`);
+      await tell(`Lane Pilot: ${input.task.id} is merged.${flaky.length ? ` ${flaky.join(", ")} failed on main once and passed on a re-run (flaky), so it is not this task's regression.` : ""}${redBefore.length ? ` ${redBefore.join(", ")} is red on main, but it was red before this task too (on the base), so it is not this task's regression.` : ""} No repair task was created for ${flaky.length && redBefore.length ? "them" : "it"}${confirmed.length ? "" : "; look at it yourself if it matters"}.`);
+    }
+    if (!confirmed.length) return;
+    const { fix, plan, logs } = postMergeRepair(onMain, confirmed);
     // The writer reads the failure from its task folder; a full log per failing check, best-effort.
     for (const log of logs) {
       await bb.sdk.files.write({ hostId:input.config.hostId, rootPath:input.basePath, path:`${input.basePath}/${log.path}`,
         content:log.content, contentEncoding:"utf8", createParents:true, expectedSha256:null }).catch(() => undefined);
     }
     const sent = await services.dispatchWriter({ threadId:input.pmThreadId, projectId:input.projectId, task:fix, plan }).catch((cause:unknown) => ({ state:"rejected", reason:cause instanceof Error ? cause.message : String(cause) }));
-    await tell(`Lane Pilot: ${input.task.id} is merged, but ${red.map((check) => check.command).join(", ")} fails on main with it${turnedRed.length ? ` (${turnedRed.join(", ")} passed on the base before this task)` : ""}. The work stays in main; ${String(sent.state) === "rejected" || String(sent.state) === "blocked" ? `the repair task could not start (${String((sent as { reason?:unknown }).reason ?? sent.state)}), dispatch it yourself` : `repair task ${fix.id} is on its way — no action needed`}.`);
+    await tell(`Lane Pilot: ${input.task.id} is merged, but ${confirmed.map((check) => check.command).join(", ")} fails on main with it${turnedRed.length ? ` (${turnedRed.join(", ")} passed on the base before this task)` : ""}. The work stays in main; ${String(sent.state) === "rejected" || String(sent.state) === "blocked" ? `the repair task could not start (${String((sent as { reason?:unknown }).reason ?? sent.state)}), dispatch it yourself` : `repair task ${fix.id} is on its way — no action needed`}.`);
   }
 
   return { finishWriterAttempt, checkMainAfterMerge, noteMergedForGate };

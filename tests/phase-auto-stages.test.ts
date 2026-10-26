@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AUTO_TRIES, autoDue, contextDoc, createAutoStages, planItems } from "../src/rooms/phase/server/auto-stages";
+import { AUTO_LIFETIME_TRIES, AUTO_TRIES, autoDue, contextDoc, createAutoStages, planItems } from "../src/rooms/phase/server/auto-stages";
 import type { Phase, PhaseRecord } from "../src/rooms/phase/logic";
 
 const phaseAt = (stage: string, record: PhaseRecord = {}, state = "active"): Phase => ({ id: "ph_1", projectId: "p", pmThreadId: "thr_pm", runId: "run1", title: "Notes",
@@ -44,6 +44,7 @@ describe("what the machine makes of a workflow's output", () => {
 describe("the machine's pass", () => {
   function world(output: Record<string, unknown> | null, status = "succeeded", start: Phase = phaseAt("discussion")) {
     let phase = start;
+    let stopped = false;
     const calls: string[] = [];
     const runs = new Map<string, { status: string; output: Record<string, unknown> | null }>();
     const engine: Record<string, unknown> = {};
@@ -53,7 +54,7 @@ describe("the machine's pass", () => {
     }, {
       api: {
         context: async (input) => { calls.push(`context ${input.docs.join(",")}`); phase = phaseAt("planning", { ...phase.record, context: { docs: [], sha: "c", signedAt: 1 } }); return phase; },
-        plan: () => phase, planCheck: async () => phase, question: (input) => { calls.push(`question ${input.text}`); return phase; }, waveReview: () => phase, goalAudit: (input) => { calls.push(`goalAudit ${input.state}\n${input.summary}`); return phase; }, lessons: () => phase, drawing: async () => phase,
+        plan: (input) => { calls.push(`plan ${input.items.length}${input.alreadyMet ? ` already_met: ${input.alreadyMet}` : ""}`); return phase; }, planCheck: async (input) => { calls.push(`planCheck ${input.decision}`); return phase; }, question: (input) => { calls.push(`question ${input.text}`); return phase; }, waveReview: () => phase, goalAudit: (input) => { calls.push(`goalAudit ${input.state}\n${input.summary}`); return phase; }, lessons: () => phase, drawing: async () => phase,
         returnTo: (input) => { calls.push(`return ${input.to}`); phase = { ...phase, stage: input.to } as Phase; return phase; },
       },
       get: () => phase,
@@ -64,9 +65,20 @@ describe("the machine's pass", () => {
       bookHead: () => "h".repeat(64),
       pmIdle: async () => true,
       now: () => 1,
+      runStopped: async () => stopped,
     });
-    return { auto, calls, runs, engine, get: () => phase, finish: () => { runs.set("wfrun_1", { status, output }); } };
+    return { auto, calls, runs, engine, stop: (value = true) => { stopped = value; }, get: () => phase, finish: () => { runs.set("wfrun_1", { status, output }); } };
   }
+  it("starts no stage workflow while the run is halted or paused, and starts it once the run goes on", async () => {
+    const w = world({ decisions: [], risks: [], open_questions: [] });
+    w.stop();
+    // True: the machine holds the stage, so the PM is not poked with a step meanwhile.
+    expect(await w.auto.step(w.get())).toBe(true);
+    expect(w.calls).not.toContain("start lp.analyze");
+    w.stop(false);
+    expect(await w.auto.step(w.get())).toBe(true);
+    expect(w.calls).toContain("start lp.analyze");
+  });
   it("starts the analysis, then reports it through the gates; the PM is not poked meanwhile", async () => {
     const w = world({ decisions: [{ id: "D1", text: "store in JSON" }], risks: [], open_questions: ["Tags?"] });
     expect(await w.auto.step(w.get())).toBe(true);
@@ -108,6 +120,63 @@ describe("the machine's pass", () => {
     expect(await w.auto.step(phase)).toBe(true);
     expect(w.calls).toContain("start lp.analyze");
     expect(w.calls).toContain("book auto_retry");
+  });
+  // Review 2026-10-26 §1: lp.plan answers «already met» with no tasks; apply() threw on the empty list and the phase demanded work again.
+  it("an empty plan with already_met is booked and reported through the gates, not failed", async () => {
+    const planning = phaseAt("planning", { context: { docs: [], sha: "c", signedAt: 1 } });
+    const w = world({ status: "ok", tasks: [], waves: [], task_count: 0, already_met: true, objective: "notes module with a CLI exists", has_ui: false }, "succeeded", planning);
+    await w.auto.step(w.get());
+    expect(w.calls).toContain("start lp.plan");
+    w.finish();
+    expect(await w.auto.step(w.get())).toBe(true);
+    expect(w.calls).toContain("plan 0 already_met: the planner checked the repository: notes module with a CLI exists");
+    expect(w.calls).toContain("planCheck approve");
+    expect(w.calls).toContain("book auto_done");
+    expect(w.calls).not.toContain("book auto_failed");
+    expect(w.get().record.autoFailures).toBeUndefined();
+  });
+  it("an empty plan without already_met, or after a failed verdict, is still a failure", async () => {
+    const planning = (record: PhaseRecord) => phaseAt("planning", { context: { docs: [], sha: "c", signedAt: 1 }, ...record });
+    for (const [output, record] of [[{ status: "ok", tasks: [] }, {}], [{ status: "ok", tasks: [], already_met: true }, { replan: { gaps: "goal audit: unmet", count: 1 } }]] as const) {
+      const w = world(output, "succeeded", planning(record));
+      await w.auto.step(w.get());
+      w.finish();
+      await w.auto.step(w.get());
+      expect(w.calls).toContain("book auto_failed");
+      expect(w.calls.some((call) => call.startsWith("plan "))).toBe(false);
+    }
+  });
+  it("a new version forgets the stage's tries but not its lifetime total: six failed runs and the stage stays the PM's", async () => {
+    const w = world(null, "failed");
+    const phase = w.get();
+    (phase.record as Record<string, unknown>).autoFailures = { analyze: 2 };
+    (phase.record as Record<string, unknown>).autoFailuresTotal = { analyze: AUTO_LIFETIME_TRIES - 2 };
+    (phase.record as Record<string, unknown>).autoFailuresVersion = "0.0.1";
+    // Under 6 in all: the new version tries again.
+    expect(await w.auto.step(phase)).toBe(true);
+    expect(w.calls).toContain("start lp.analyze");
+    // The cap reached: the same reset leaves the stage to the PM.
+    const capped = world({ decisions: [] });
+    const old = capped.get();
+    (old.record as Record<string, unknown>).autoFailures = { analyze: 2 };
+    (old.record as Record<string, unknown>).autoFailuresTotal = { analyze: AUTO_LIFETIME_TRIES };
+    (old.record as Record<string, unknown>).autoFailuresVersion = "0.0.1";
+    expect(await capped.auto.step(old)).toBe(false);
+    expect(capped.calls).not.toContain("start lp.analyze");
+    expect(autoDue(phaseAt("discussion", { autoFailuresTotal: { analyze: AUTO_LIFETIME_TRIES } }))).toBeNull();
+    expect(autoDue(phaseAt("discussion", { autoFailuresTotal: { analyze: AUTO_LIFETIME_TRIES - 1 } }))).toEqual({ kind: "analyze" });
+  });
+  it("every failed run adds to the lifetime total, which the version reset leaves alone", async () => {
+    const w = world(null, "failed");
+    await w.auto.step(w.get());
+    w.finish();
+    await w.auto.step(w.get());
+    expect(w.get().record.autoFailuresTotal).toEqual({ analyze: 1 });
+    const record = w.get().record as Record<string, unknown>;
+    record.autoFailuresVersion = "0.0.1";
+    await w.auto.step(w.get());
+    expect(w.get().record.autoFailures).toBeUndefined();
+    expect(w.get().record.autoFailuresTotal).toEqual({ analyze: 1 });
   });
   it("a run a reload stopped runs again without counting a try", async () => {
     const w = world(null, "failed");

@@ -33,6 +33,14 @@ describe("session memory on the hub", () => {
     expect((await rpc.session_memory_core({ projectId:"P" })).records.map((row) => row.content)).toEqual(["Ship only from the PM chat."]);
   });
 
+  it("gives the proven CORE facts first, so a client keeping only its byte budget keeps the useful ones", async () => {
+    const { rpc, db } = setup();
+    await rpc.session_memory_write({ projectId:"P", kind:"core", content:"Old fact nobody uses.", concepts:["old"] });
+    await rpc.session_memory_write({ projectId:"P", kind:"core", content:"Proven fact writers accept.", concepts:["proven"] });
+    db.prepare("UPDATE lane_pilot_memory SET accepted_count=5, use_count=9 WHERE content='Proven fact writers accept.'").run();
+    expect((await rpc.session_memory_core({ projectId:"P" })).records.map((row) => row.content)).toEqual(["Proven fact writers accept.", "Old fact nobody uses."]);
+  });
+
   it("a lesson becomes a rule on trial; the same lesson again is a repeat, not a new rule", async () => {
     const { rpc, db } = setup();
     const first = await rpc.session_lesson({ projectId:"P", rule:"Run npm ci in a writer worktree, never npm install, the lockfile stays untouched", evidence:"owner corrected 2026-10-03" });

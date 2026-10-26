@@ -15,7 +15,7 @@ describe("the writer's brief mode (SMA P2-11, contracts between roles)", () => {
 });
 
 describe("the register of hypotheses (SMA P2-10)", () => {
-  function world(verdict: "pass" | "fail") {
+  function world(verdict: "pass" | "fail" | "inconclusive") {
     const db = openDatabase(createFakePluginHost({ pluginId: "lane-pilot" }).bb);
     const runs: Array<{ arm: string; settings: unknown }> = [];
     const bench = {
@@ -50,6 +50,15 @@ describe("the register of hypotheses (SMA P2-10)", () => {
     await model.api.test(other);
     expect(model.api.verdict(other)).toMatchObject({ state: "held" });
     expect(loadProjectSettings(model.db, "*")["writer.model"]).toBeUndefined();
+  });
+
+  it("an inconclusive comparison neither rejects nor adopts: the hypothesis stays on the bench", async () => {
+    const thin = world("inconclusive");
+    const id = thin.api.add({ title: "Plan critic on", source: "repo X", settings: { "plan_critique.enabled": true } }).id;
+    await thin.api.test(id);
+    expect(thin.api.verdict(id)).toMatchObject({ state: "benching" });
+    expect(thin.api.list().find((item) => item.id === id)).toMatchObject({ state: "benching" });
+    expect(loadProjectSettings(thin.db, "*")["plan_critique.enabled"]).toBeUndefined();
   });
 
   it("the command line adds with settings and refuses what is missing", async () => {

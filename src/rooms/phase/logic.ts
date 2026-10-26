@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { NO_CODE_KINDS } from "../tasks";
 import { ANIMATOR_LAW, PLAN_ROUNDS_MAX, coverageGaps, designMode, motionRows, rubricLine, stageInit, threatGap, uiContractGap, validationGaps } from "./stages";
 
 /**
@@ -25,6 +26,8 @@ export type ContextDoc = { path: string; sha256: string; bytes: number };
 export type PlanCritique = { decision: "approve" | "changes_requested"; by: string; summary?: string };
 export type Drawing = { paths: string[]; sha256: string; designer: string; reviewer?: string; feasible?: boolean; contradiction?: string };
 export type FrozenVerdict = { state: "passed" | "failed"; detail: string; mainSha: string | null; at: number; inputSha: string };
+/** What blindVerdict returns while the run's goal check is still running; it is never stored. */
+export type PendingVerdict = Omit<FrozenVerdict, "state"> & { state: "pending" };
 export type AcceptanceLine = { id: AcceptanceLineId; ok: boolean; detail: string };
 export type ModelVerdict = { state: "met" | "unmet"; by: string; summary: string; at: number };
 
@@ -55,6 +58,8 @@ export type PhaseRecord = {
   signedBefore?: { docs: string[]; risks?: Partial<Record<RiskKind, string>>; decisions?: string[] };
   /** Runs of a stage's workflow that did not finish; at two the stage is the PM's. */
   autoFailures?: Partial<Record<"analyze" | "plan" | "draw" | "review" | "close" | "lessons", number>>;
+  /** Failed runs of each stage's workflow over the phase's whole life, across versions (a new version forgets autoFailures, not this). */
+  autoFailuresTotal?: Partial<Record<"analyze" | "plan" | "draw" | "review" | "close" | "lessons", number>>;
   /** The machine's returns to planning after a failed verdict: what to plan for (cleared once planned) and how many so far. */
   replan?: { gaps?: string; count: number };
   /** The Lane Pilot version the failures were counted under: a new version tries the stages again. */
@@ -66,7 +71,8 @@ export type PhaseRecord = {
   words?: OwnerWord[];
   /** Goal revisions and withdrawn pieces, each one a decision in the book. */
   scope?: { revisions: number; withdrawn: string[] };
-  plan?: { items: PlanItem[]; sha: string; contextSha: string; critique?: PlanCritique; admittedSha?: string; admittedAt?: number; /** Rounds of the independent check that asked for changes. */ rounds?: number };
+  plan?: { items: PlanItem[]; sha: string; contextSha: string; critique?: PlanCritique; admittedSha?: string; admittedAt?: number; /** Rounds of the independent check that asked for changes. */ rounds?: number;
+    /** The planner checked that the repository already does what the goal asks: no pieces, no execution; the goal audit checks the claim. */ alreadyMet?: { evidence: string } };
   design?: { decision: "needed" | "not_needed"; why: string; drawing?: Drawing; confirmedAt?: number; mode?: "screens" | "system" | "mixed"; motion?: string[]; archived?: Drawing[] };
   /** The roadmap row this phase is (lane-plan ROADMAP.md), marked done when the phase closes. */
   roadmapRow?: string;
@@ -183,13 +189,14 @@ export function acceptanceCommands(line: string): string[] {
 /** Planning → admission: every piece becomes a work, waves are computable, the plan was built on the signed context, and an independent checker approved it. */
 export function planGate(record: PhaseRecord): GateResult {
   const plan = record.plan;
-  if (!plan?.items.length) return { ok: false, why: ["no plan: submit the plan's pieces (each a task-v2 contract with a Given/When/Then promise and its wave)"] };
+  if (!plan?.items.length && !plan?.alreadyMet) return { ok: false, why: ["no plan: submit the plan's pieces (each a task-v2 contract with a Given/When/Then promise and its wave)"] };
   const why = [...plan.items.flatMap(pieceProblems), ...waveProblems(plan.items)];
   const ids = plan.items.map((item) => item.id);
   if (new Set(ids).size !== ids.length) why.push("two pieces have the same id");
   if (!record.context || plan.contextSha !== record.context.sha) why.push("the plan was not built on the signed context (contextSha differs): read the context documents and plan again");
   if (plan.sha !== planSignature(plan.items, plan.contextSha)) why.push("the plan signature does not match its pieces");
-  why.push(...coverageGaps(record), ...validationGaps(plan.items));
+  // A goal the repository already meets has no pieces to cover its requirements; the goal audit checks each of them.
+  why.push(...(plan.alreadyMet ? [] : coverageGaps(record)), ...validationGaps(plan.items));
   const threat = threatGap(record);
   if (threat) why.push(threat);
   if ((plan.rounds ?? 0) >= PLAN_ROUNDS_MAX && plan.critique?.decision !== "approve") why.push(`${plan.rounds} rounds of the plan check asked for changes: stop revising — return the phase to discussion with what the checker keeps finding, or close it`);
@@ -302,22 +309,41 @@ export function executionGate(items: readonly PlanItem[], issued: Readonly<Recor
   return gate(why);
 }
 
+const listOf = (value: unknown) => (Array.isArray(value) ? value : []);
+/** A piece that makes acceptance promises about code must show plan-fact for them: a skipped stage proves nothing. */
+const needsPlanFact = (item: PlanItem) => listOf(item.task?.acceptance).length > 0 && !NO_CODE_KINDS.has(String(item.task?.kind ?? ""));
+/** A piece with verification commands must show the checks ran: skipped means they did not. */
+const needsChecks = (item: PlanItem) => listOf(item.task?.verification).length > 0;
+
+/** The run's goal check is still at work: the verdict waits for it, it neither passes nor fails. */
+export const runGoalPending = (runGoal: { state: string } | null) => runGoal?.state === "running";
+
 /**
  * The frozen blind verdict of the phase: decided by code from what the checks left (plan-fact of every piece, the run's goal check),
  * never from what the writer says. Its input hash freezes it: the same facts give the same verdict, new facts a new verdict.
+ * `pending`: only the run's goal check is still running; the driver records nothing and asks again.
  */
-export function blindVerdict(items: readonly PlanItem[], facts: ReadonlyMap<string, TaskFact>, runGoal: { state: string; detail?: string | null; headSha?: string | null } | null, now: number): FrozenVerdict {
+export function blindVerdict(items: readonly PlanItem[], facts: ReadonlyMap<string, TaskFact>, runGoal: { state: string; detail?: string | null; headSha?: string | null } | null, now: number): FrozenVerdict | PendingVerdict {
   const problems: string[] = [];
   for (const item of items) {
     const fact = facts.get(item.id);
     if (fact?.state !== "accepted") problems.push(`${item.id} not accepted`);
     if (fact?.planFact === "failed") problems.push(`${item.id}: plan-fact failed — the promise is not proved`);
+    else if (fact?.planFact === "skipped" && needsPlanFact(item)) problems.push(`${item.id}: plan-fact was skipped — its acceptance items were not checked against the diff`);
     if (fact?.verification === "failed") problems.push(`${item.id}: its checks failed`);
+    else if (fact?.verification === "skipped" && needsChecks(item)) problems.push(`${item.id}: its checks were skipped — nothing ran`);
   }
+  const waiting = runGoalPending(runGoal);
   if (!runGoal) problems.push("the run's goal check has not run yet");
   else if (runGoal.state === "failed") problems.push(`the run's goal check failed${runGoal.detail ? `: ${runGoal.detail}` : ""}`);
   const inputSha = sha256(canonical({ items: items.map((item) => item.id), facts: items.map((item) => facts.get(item.id) ?? null), runGoal }));
-  return { state: problems.length ? "failed" : "passed", detail: problems.join("; ") || "every piece accepted and proved; the composition passes on main", mainSha: runGoal?.headSha ?? null, at: now, inputSha };
+  const state = problems.length ? "failed" : waiting ? "pending" : "passed";
+  return { state, detail: problems.join("; ") || (waiting ? "the run's goal check is still running" : "every piece accepted and proved; the composition passes on main"), mainSha: runGoal?.headSha ?? null, at: now, inputSha } as FrozenVerdict | PendingVerdict;
+}
+
+/** The verdict of a plan that found the goal already met: nothing was built, so nothing is composed; the goal audit weighs the evidence next. */
+export function alreadyMetVerdict(alreadyMet: { evidence: string }, now: number): FrozenVerdict {
+  return { state: "passed", detail: `already met, nothing to build: ${alreadyMet.evidence}`.slice(0, 1000), mainSha: null, at: now, inputSha: sha256(canonical({ alreadyMet })) };
 }
 
 export const ACCEPTANCE_LINES = ["contract_current", "promises_proved", "checks_passed", "independent_check", "landed", "composition_verified", "main_unmoved", "qa_read", "goal_met", "limits_acknowledged", "owner_word"] as const;
@@ -329,7 +355,7 @@ export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFac
   const verdict = phase.record.verification?.verdict;
   const line = (id: AcceptanceLineId, ok: boolean, detail: string): AcceptanceLine => ({ id, ok, detail });
   const failed = (pick: (fact: TaskFact | undefined) => boolean) => items.filter((item) => pick(facts.get(item.id))).map((item) => item.id);
-  const notProved = failed((fact) => fact?.planFact !== "passed" && fact?.planFact !== "skipped");
+  const notProved = items.filter((item) => { const fact = facts.get(item.id); return fact?.planFact !== "passed" && !(fact?.planFact === "skipped" && !needsPlanFact(item)); }).map((item) => item.id);
   const notChecked = failed((fact) => fact?.verification === "failed");
   const blockedByCritic = failed((fact) => fact?.codeCritique === "blocked");
   const notLanded = failed((fact) => fact?.state !== "accepted");

@@ -230,6 +230,94 @@ describe("bench compare", () => {
   });
 });
 
+describe("bench compare: too little measured is inconclusive (review section 4)", () => {
+  type Row = Parameters<typeof summarizeArm>[1][number][number];
+  const row = (taskId: string, extra: Partial<Row> = {}): Row => ({
+    runId: "r", taskId, position: 1, state: "accepted", accepted: true, benchTaskId: null, lpRunId: null, attempts: 1, stagesPassed: 5, stagesFailed: 0, tokens: 1000, costUsd: 1,
+    costState: "measured", seconds: 100, reason: null, recordedAt: 1, ...extra,
+  });
+  const ids = (n: number) => Array.from({ length: n }, (_, i) => `t${i + 1}`);
+  const all = (n: number, extra: Partial<Row> = {}) => ids(n).map((id) => row(id, extra));
+  const skipped = (id: string) => row(id, { state: "skipped_budget", accepted: false, costState: "not_measured", costUsd: null, tokens: null, seconds: null });
+
+  it("two empty arms: no pass on zero pairs", () => {
+    const result = compareArms(summarizeArm("A", [[]]), summarizeArm("B", [[]]));
+    expect(result).toMatchObject({ verdict: "inconclusive", pairedTasks: 0 });
+    expect(result.checks.find((check) => check.name === "coverage")).toMatchObject({ ok: null });
+    expect(renderComparison(result)).toMatch(/Verdict: INCONCLUSIVE/);
+  });
+
+  it("the night's comparison of the review: 8 asked, 2 paired, cost on 1: inconclusive, not a fail that blames three repairs", () => {
+    const a = summarizeArm("night-0.1.305", [[row("t1"), row("t2", { costState: "not_measured", costUsd: null, tokens: null }), ...ids(8).slice(2).map(skipped)]]);
+    const b = summarizeArm("night-0.1.328", [all(8)]);
+    // B costs more than A on the one task measured on both, and passes fewer stages than a full A: a fail on that evidence alone.
+    const result = compareArms(a, summarizeArm("night-0.1.328", [all(8, { costUsd: 5 })]));
+    expect(result.pairedTasks).toBe(2);
+    expect(result.cost.pairedTasks).toBe(1);
+    expect(result.verdict).toBe("inconclusive");
+    expect(result.checks.find((check) => check.name === "coverage")!.detail).toMatch(/2 paired tasks of 8 asked \(at least 4 needed\)/);
+    expect(compareArms(a, b).verdict).toBe("inconclusive");
+  });
+
+  it("a cost or a time measured on fewer than two pairs compares nothing; a real regression with enough coverage still fails", () => {
+    const base = summarizeArm("A", [all(4)]);
+    const noCost = summarizeArm("B", [ids(4).map((id, i) => row(id, i === 0 ? {} : { costState: "not_measured", costUsd: null, tokens: null }))]);
+    const result = compareArms(base, noCost);
+    expect(result.checks.find((check) => check.name === "cost")).toMatchObject({ ok: null });
+    expect(result.verdict).toBe("inconclusive");
+    const noTime = summarizeArm("B", [ids(4).map((id, i) => row(id, i === 0 ? {} : { seconds: null }))]);
+    expect(compareArms(base, noTime).checks.find((check) => check.name === "time")).toMatchObject({ ok: null });
+    const regressed = summarizeArm("B", [ids(4).map((id, i) => row(id, i === 1 ? { state: "not_accepted", accepted: false } : {}))]);
+    expect(compareArms(base, regressed).verdict).toBe("fail");              // four paired tasks, one regressed: enough to say worse
+    expect(compareArms(base, regressed).checks.find((check) => check.name === "no_regression")).toMatchObject({ ok: false });
+  });
+
+  it("enough pairs with every measurement: pass and fail are as before", () => {
+    const base = summarizeArm("A", [all(4)]);
+    expect(compareArms(base, summarizeArm("B", [all(4)])).verdict).toBe("pass");
+    expect(compareArms(base, summarizeArm("B", [all(4, { costUsd: 2 })])).verdict).toBe("fail");
+  });
+
+  it("an errored task is not a failure of the change, and an arm with one is not a finished measurement", () => {
+    const base = summarizeArm("A", [all(4)]);
+    const errored = summarizeArm("B", [[...all(3), row("t4", { state: "error", accepted: false, costState: "not_measured", costUsd: null, tokens: null, seconds: null })]]);
+    expect(errored.errored).toEqual(["t4"]);
+    expect(errored.tasks.has("t4")).toBe(false);
+    const result = compareArms(base, errored);
+    expect(result.verdict).toBe("inconclusive");
+    expect(result.checks.find((check) => check.name === "no_regression")!.ok).toBe(true);
+    expect(result.checks.find((check) => check.name === "coverage")!.detail).toMatch(/B: 1 task\(s\) errored/);
+    const running = summarizeArm("B", [all(4)], ["repeat 1 is running"]);
+    expect(compareArms(base, running).verdict).toBe("inconclusive");
+  });
+});
+
+describe("a series with errored tasks is not done (review section 4)", () => {
+  it("no bench project: every task errors and the series is failed, not done", async () => {
+    const w = await builtSet();
+    const project: BenchProjectRef = { projectId: "proj_bench", name: "LP bench missing", hostId: "local", path: w.projectPath };
+    const pipeline: PipelinePort = { ...fakePipeline(project, () => ({ accepted: true })).pipeline, findProject: async () => null };
+    const report = await runSeries({ db: w.db as never, host: localHost, pipeline, clock: clock(), projectNameFor: () => project.name }, { minFreeGb: 0, version: "v1", arm: "noproject", pollMs: 1 });
+    expect(report).toMatchObject({ state: "failed", ran: 0, accepted: 0 });
+    expect(getRun(w.db as never, getSet(w.db as never, "v1")!.id, "noproject", 1)!.state).toBe("failed");
+  });
+
+  it("the comparison of a stored series that failed or still runs says so", async () => {
+    const w = await builtSet();
+    const project: BenchProjectRef = { projectId: "proj_bench", name: "LP bench s2", hostId: "local", path: w.projectPath };
+    const bench = createBench({ db: w.db as never, kv: { get: async () => undefined, set: async () => undefined }, host: localHost,
+      pipeline: { ...fakePipeline(project, () => ({ accepted: true })).pipeline, findProject: async () => project }, projectNames: async () => new Map(), isSandboxName: () => false, log: () => undefined });
+    await bench.run({ version: "v1", arm: "A", wait: true, pollMs: 1, minFreeGb: 0 } as never);
+    await bench.run({ version: "v1", arm: "B", wait: true, pollMs: 1, minFreeGb: 0 } as never);
+    expect(bench.compare({ version: "v1", armA: "A", armB: "B" }).comparison.verdict).toBe("pass");
+    w.db.prepare("UPDATE lane_pilot_bench_run SET state='running' WHERE arm='B'").run();
+    const midway = bench.compare({ version: "v1", armA: "A", armB: "B", harnessId: "harness_1" });
+    expect(midway.comparison.verdict).toBe("inconclusive");
+    expect(midway.text).toMatch(/B: repeat 1 is running/);
+    expect(midway.verdictId).toBeNull();                        // no verdict is recorded: a harness tree is neither adopted nor retired on it
+  });
+});
+
 describe("bench service", () => {
   it("records a verdict for a harness tree, and the status lists the series", async () => {
     const w = await builtSet();

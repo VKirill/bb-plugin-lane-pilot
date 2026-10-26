@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.335
+
+An independent review of Lane Pilot (GPT-6 Astra, 2026-10-26, `.bb/chats/thr_grntj73eg5/artifacts/astra-review/REVIEW.md`) found the self-improvement loop deciding on evidence it never had. This release closes its local defects.
+
+**A revert of a red night repair runs.** Self-repair kept `merged <12 chars>` in prose and parsed it back; the host takes 40–64 hex, so all three October reverts (wr_8462ad860c03, wr_16de9a4704de, wr_662642de0aa6) failed validation and went quiet as terminal `red`. The full SHA has its own field; a revert resolves a short SHA with git, removes its worktree on failure, and a failed revert is `rollback_pending`, retried every 10 minutes six times, then backlogged with its diagnosis (`src/rooms/wall/revert.ts`). The three October rows were judged red only by a bench comparison of two paired tasks: they are not undone now but set `unproven`.
+
+**A bench comparison can say «not enough».** Two empty arms compared PASS on zero pairs, and three verdicts rested on 2 paired tasks with cost on one. Verdicts are `pass | fail | inconclusive`: fewer than 3 paired tasks or under half of the asked tasks, cost or time on fewer than 2 pairs, an unfinished or errored arm → inconclusive, never read as pass or fail; a run with errored tasks ends `failed`.
+
+**One comparison is one cycle; availability is not proof.** One bench verdict shared by three repairs counted as three cycles and stopped the night series (`[.5,.125,.625,.625,.625]`); cycles are counted per comparison. `bench_subset_passed` was set from «the bench projects exist», and a judge/graph change merged on it; that is now `bench_available`, and such a change merges provisionally until its own shipped version passes the bench. With no bench and no recurrence evidence a repair stays `pending`, then `unproven` after 72 hours or a later release; a repair is judged by its shipped version, never by whatever runs now.
+
+**A phase does not pass on missing proof.** The blind verdict passed with a skipped plan-fact and verification and a running goal check: a running goal check now waits, and a skipped proof is not proved for a piece with acceptance items (docs/research/check excepted). plan-fact: an «unchanged» item cited with a file that does not exist is not proved; in gate mode a code task with no readable plan-fact table is sent back. An `already_met` plan with no tasks is accepted (execution skipped, the goal audit checks the claim) instead of throwing. A stage's machine tries are capped at 6 for the phase's life — a deploy no longer gives fresh tries.
+
+**A -mainfix only for a reproducible regression.** A red check on main gets a writer only if it reproduces on one re-run and was not already red on the base; a re-run pass is flaky and a red-before check is reported to the PM, without a writer. A fix's check that was red on the base, green in its own worktree and red again after the merge is the merge's clash and is repaired.
+
+**Stop means stop for the whole machine.** A halted or paused run opens no phase, starts no graph, no architect and no phase stage workflow.
+
+**The batch graph groups small edits** of one component, page or file, or ones sharing a slow check, into one task, and splits a failure list by verifiable cause, not by red lines.
+
+**The hub gives CORE memory facts most-proven first**, so Lane Stack 1.67.2's byte budget keeps the useful ones.
+
 ## 0.1.334
 
 The rest of the Vampirism Fire audit (2026-10-26: 74 h, 165 tasks, 223 h of queue against 140 h of work).

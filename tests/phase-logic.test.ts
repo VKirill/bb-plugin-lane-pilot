@@ -86,10 +86,43 @@ describe("execution and verification", () => {
     expect(blindVerdict(items, all, null, 10).detail).toContain("goal check has not run");
   });
 
+  // The review's reproduction (Astra review §1): one accepted piece, plan-fact and checks skipped, the goal check still running.
+  it("waits while the run's goal check is running and never calls a skipped proof proved", () => {
+    const bare = [{ id: "p1" }] as unknown as PlanItem[];
+    const skipped = facts([["p1", { planFact: "skipped", verification: "skipped" }]]);
+    expect(blindVerdict(bare, skipped, { state: "running", headSha: "abc" }, 1).state).toBe("pending");
+    expect(blindVerdict(bare, facts([["p1", {}]]), { state: "running", headSha: "abc" }, 1).state).toBe("pending");
+    const promised = [piece("p1", 1, { acceptance: ["the sum skips an empty cell"], kind: "fix" })];
+    const verdict = blindVerdict(promised, skipped, { state: "passed", headSha: "abc" }, 1);
+    expect(verdict.state).toBe("failed");
+    expect(verdict.detail).toContain("plan-fact was skipped");
+    expect(verdict.detail).toContain("checks were skipped");
+    // A failed piece is a verdict at once, a still running goal check does not turn it into a wait.
+    expect(blindVerdict(promised, skipped, { state: "running" }, 1).state).toBe("failed");
+  });
+
+  it("keeps a piece that has nothing to cite from the diff passing: no acceptance items, or a docs, research or check piece", () => {
+    const noCode = facts([["a", { planFact: "skipped" }], ["b", { planFact: "skipped" }], ["c", { planFact: "skipped" }]]);
+    const items = [piece("a", 1), piece("b", 1, { acceptance: ["the note names the cause"], kind: "research" }), piece("c", 1, { acceptance: ["the doc lists the flags"], kind: "docs" })];
+    expect(blindVerdict(items, noCode, { state: "passed", headSha: "h" }, 1).state).toBe("passed");
+    expect(blindVerdict(items, noCode, { state: "skipped" }, 1).state).toBe("passed");
+  });
+
+  it("does not count a skipped plan-fact as a proved promise in the acceptance lines", () => {
+    const code = [piece("a", 1, { acceptance: ["the sum skips an empty cell"] }), piece("b", 1)];
+    const record = planned(code);
+    record.plan!.admittedSha = record.plan!.sha;
+    record.verification = { verdict: blindVerdict(code, facts([["a", {}], ["b", {}]]), { state: "passed", headSha: "h1" }, 1) as never, model: { state: "met", by: "lp.close", summary: "ok", at: 2 } };
+    const phase = phaseWith({ ...record, execution: { issued: { a: "a", b: "b" } } }, "acceptance");
+    const lines = (rows: Array<[string, Partial<TaskFact>]>) => acceptanceLines(phase, facts(rows), { mainSha: "h1", openDeferrals: 0 }).find((line) => line.id === "promises_proved")!;
+    expect(lines([["a", { planFact: "skipped" }], ["b", {}]])).toMatchObject({ ok: false, detail: expect.stringContaining("a") });
+    expect(lines([["a", {}], ["b", { planFact: "skipped" }]]).ok).toBe(true);
+  });
+
   it("accepts only when every line holds, and sees main move after the verdict", () => {
     const record = planned(items);
     record.plan!.admittedSha = record.plan!.sha;
-    record.verification = { verdict: blindVerdict(items, facts([["a", {}], ["b", {}], ["c", {}]]), { state: "passed", headSha: "h1" }, 1), model: { state: "met", by: "lp.close", summary: "sums are right", at: 2 } };
+    record.verification = { verdict: blindVerdict(items, facts([["a", {}], ["b", {}], ["c", {}]]), { state: "passed", headSha: "h1" }, 1) as never, model: { state: "met", by: "lp.close", summary: "sums are right", at: 2 } };
     const phase = phaseWith({ ...record, execution: { issued: { a: "a", b: "b", c: "c" } } }, "acceptance");
     const ok = acceptanceLines(phase, facts([["a", {}], ["b", {}], ["c", {}]]), { mainSha: "h1", openDeferrals: 0 });
     expect(ok.every((line) => line.ok)).toBe(true);

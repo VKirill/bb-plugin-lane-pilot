@@ -18,6 +18,8 @@ export const AUTO_REPLANS = 2;
 export const AUTO_WORKFLOWS: Record<AutoKind, string> = { analyze: "lp.analyze", plan: "lp.plan", draw: "lp.draw", review: "lp.review", close: "lp.close", lessons: "retrospective" };
 /** Failed runs of one stage's workflow before the stage is the PM's again. */
 export const AUTO_TRIES = 2;
+/** Failed runs of one stage's workflow over the phase's whole life: a new version forgets AUTO_TRIES, not this, so frequent releases do not give endless tries. */
+export const AUTO_LIFETIME_TRIES = 3 * AUTO_TRIES;
 
 export type AutoRecord = { kind: AutoKind; wfRunId: string; startedAt: number; wave?: number };
 
@@ -25,7 +27,7 @@ export type AutoRecord = { kind: AutoKind; wfRunId: string; startedAt: number; w
 export function autoDue(phase: Phase): AutoDue | null {
   const r = phase.record;
   if (phase.state !== "active" || r.train === false) return null;
-  const tried = (kind: AutoKind) => (r.autoFailures?.[kind] ?? 0) >= AUTO_TRIES;
+  const tried = (kind: AutoKind) => (r.autoFailures?.[kind] ?? 0) >= AUTO_TRIES || (r.autoFailuresTotal?.[kind] ?? 0) >= AUTO_LIFETIME_TRIES;
   if (phase.stage === "discussion" && !r.context && r.signedBefore?.docs.length) return { kind: "resign" };
   if (phase.stage === "discussion" && !r.context && !tried("analyze")) return { kind: "analyze" };
   // The plan, and the plan again in «gaps» mode while its critic asks for changes (at most three rounds, the plan gate's own limit).
@@ -131,7 +133,7 @@ export function planItems(phase: Phase, output: Record<string, unknown>): PlanIt
 
 export type AutoApi = {
   context(input: { phaseId: string; docs: string[]; risks: Partial<Record<RiskKind, string>>; decisions?: string[]; by: string }): Promise<Phase>;
-  plan(input: { phaseId: string; items: PlanItem[]; design?: boolean; by: string }): Phase;
+  plan(input: { phaseId: string; items: PlanItem[]; design?: boolean; alreadyMet?: string; by: string }): Phase;
   planCheck(input: { phaseId: string; decision: "approve" | "changes_requested"; by: string; summary?: string }): Promise<Phase>;
   question(input: { phaseId: string; text: string; blocking: boolean; by: string }): Phase;
   waveReview(input: { phaseId: string; wave: number; state: "passed" | "failed"; by: string; summary: string }): Phase;
@@ -153,6 +155,8 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
   /** Whether the PM chat is idle (no turn running). */
   pmIdle(phase: Phase): Promise<boolean>;
   now(): number;
+  /** Whether the phase's run is halted or paused: the machine starts nothing for it meanwhile. */
+  runStopped?(phase: Phase): Promise<boolean>;
   /** The running Lane Pilot version (package.json when not given). */
   version?: string;
   /** Git's verdicts on whether the run's recorded proofs still cover the code (proof-currency), as text for the goal audit; null when none. */
@@ -161,8 +165,10 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
   const version = deps.version ?? packageJson.version;
   const fail = (phase: Phase, kind: AutoKind, why: string) => {
     const failures = { ...(phase.record.autoFailures ?? {}), [kind]: (phase.record.autoFailures?.[kind] ?? 0) + 1 };
-    deps.book(phase, "decisions", "auto_failed", `${AUTO_WORKFLOWS[kind]} did not finish (${why})${failures[kind]! >= AUTO_TRIES ? `: after ${AUTO_TRIES} runs the stage is the PM's` : ": run again on the next pass"}`);
-    deps.save(phase.id, { ...phase.record, auto: undefined, autoFailures: failures, autoFailuresVersion: version });
+    const total = { ...(phase.record.autoFailuresTotal ?? {}), [kind]: (phase.record.autoFailuresTotal?.[kind] ?? 0) + 1 };
+    const lifetime = total[kind]! >= AUTO_LIFETIME_TRIES;
+    deps.book(phase, "decisions", "auto_failed", `${AUTO_WORKFLOWS[kind]} did not finish (${why})${lifetime ? `: ${total[kind]} failed runs in the life of the phase — the stage is the PM's, a new version does not give more` : failures[kind]! >= AUTO_TRIES ? `: after ${AUTO_TRIES} runs the stage is the PM's` : ": run again on the next pass"}`);
+    deps.save(phase.id, { ...phase.record, auto: undefined, autoFailures: failures, autoFailuresTotal: total, autoFailuresVersion: version });
   };
 
   async function apply(phase: Phase, auto: AutoRecord, output: Record<string, unknown>): Promise<void> {
@@ -179,13 +185,16 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
     } else if (auto.kind === "plan") {
       if (phase.stage !== "planning" || phase.record.plan?.admittedSha) return;
       const fresh = planItems(phase, output);
-      if (!fresh.length) throw new Error(`lp.plan returned no tasks (status ${text(output.status, 30)})`);
+      // An empty plan with already_met is the planner's answer that the repository does the goal: booked as such, nothing is executed,
+      // the goal audit checks the claim. After a failed verdict (replan gaps) it is not believed: the verdict said the goal is not met.
+      const met = !fresh.length && output.already_met === true && !phase.record.replan?.gaps;
+      if (!fresh.length && !met) throw new Error(`lp.plan returned no tasks (status ${text(output.status, 30)})`);
       // After a failed verdict the planner returns the pieces it changed or added; the others stay as they were (a planner that dropped
       // them dropped their coverage and the work they carry, live 2026-10-25). The new pieces run after the old waves.
       const old = phase.record.replan?.gaps ? phase.record.plan?.items ?? [] : [];
       const lastWave = Math.max(0, ...old.map((item) => item.wave));
       const items = old.length ? [...old.filter((item) => !fresh.some((next) => next.id === item.id)), ...fresh.map((item) => ({ ...item, wave: lastWave + item.wave }))] : fresh;
-      const planned = deps.api.plan({ phaseId: phase.id, items, design: output.has_ui === true, by });
+      const planned = deps.api.plan({ phaseId: phase.id, items, design: output.has_ui === true, ...(met ? { alreadyMet: `the planner checked the repository: ${text(output.objective, 600) || phase.goal}` } : {}), by });
       // lp.plan has the whole plan critiqued by its own critic role: that is the independent check of this plan.
       const approved = output.status === "ok" && !/reject|changes|rework|fail/i.test(text(output.plan_verdict, 200));
       await deps.api.planCheck({ phaseId: planned.id, decision: approved ? "approve" : "changes_requested", by: `${by}, plan critic`, summary: text(output.plan_verdict, 2000) });
@@ -265,6 +274,8 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
     }
     const due = autoDue(phase);
     if (!due) return false;
+    // A run the owner stopped or paused starts no stage on the machine's own; the stage is held (the PM is not poked) until it goes on.
+    if (await deps.runStopped?.(phase)) return true;
     if (due.kind === "replan") {
       const detail = phase.record.verification?.verdict?.detail ?? "the verification failed";
       const count = (phase.record.replan?.count ?? 0) + 1;

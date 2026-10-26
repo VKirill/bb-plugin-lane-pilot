@@ -175,6 +175,44 @@ describe("a stopped or paused run", () => {
   });
 });
 
+describe("one stop check guards every machine start in the intake", () => {
+  const texts = { heavy: goal, small: "поправь цвет кнопки", batch: "исправь список: 1) футер 2) шапка 3) меню", process: "сделай процесс: каждый день собирай отчёт и отправляй" };
+  async function stage(kind: keyof typeof texts, mode: "paused" | "halted" | "running") {
+    const { createPhaseIntake: create } = await import("../src/rooms/phase/server/intake");
+    const { createFakePluginHost: host } = await import("@get-bb/plugin-sdk/testing");
+    const { setJevForTests } = await import("@lane-pilot/jev");
+    const { setRunPaused, setRunHalted } = await import("../src/rooms/runs/server/runs-halt");
+    const { bb, harness } = host({ pluginId: "lane-pilot" });
+    let request = { requestId: "creq_1", initiator: "user", input: [{ type: "text", text: texts[kind] }] } as Record<string, unknown>;
+    harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: "pm", lanePilotRunId: "run1" }));
+    harness.sdk.stub("threads.events.list", async () => [{ type: "client/turn/requested", data: request }]);
+    const db = openDatabase(bb);
+    createRun(db, "run1", "projA");
+    const starts: string[] = [];
+    const phases = { open: async () => { starts.push("phase"); return { id: "ph_1" }; }, tick: async () => { starts.push("tick"); return 0; }, list: () => [], status: () => ({ next: { text: "" } }) };
+    setJevForTests({ enabled: () => true, judge: async () => ({ by: "jev", decision: { kind } }) } as never);
+    const intake = create({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: {} }) } as never, phases as never,
+      { start: (input) => { starts.push(input.kind); return "wfrun_1"; }, status: () => "running", startProcess: async () => { starts.push("architect"); return "thr_arch"; } });
+    if (mode === "paused") await setRunPaused(bb.storage.kv as never, "run1", true);
+    if (mode === "halted") await setRunHalted(bb.storage.kv as never, "run1", true);
+    return { intake, starts, bb, resume: async () => { await setRunPaused(bb.storage.kv as never, "run1", false); await setRunHalted(bb.storage.kv as never, "run1", false); request = { requestId: "creq_2", initiator: "user", input: [{ type: "text", text: texts[kind] }] }; }, done: () => setJevForTests(null) };
+  }
+  for (const mode of ["paused", "halted"] as const) {
+    for (const kind of ["heavy", "small", "batch", "process"] as const) {
+      it(`${kind} while the run is ${mode}: nothing starts, and a new request after resume does`, async () => {
+        const w = await stage(kind, mode);
+        try {
+          expect(await w.intake.take("thr_pm")).toMatchObject({ kind });
+          expect(w.starts).toEqual([]);
+          await w.resume();
+          expect(await w.intake.take("thr_pm")).toMatchObject({ requestId: "creq_2", kind });
+          expect(w.starts.length).toBeGreaterThan(0);
+        } finally { w.done(); }
+      });
+    }
+  }
+});
+
 describe("the PM is the door: no other system for a request the machine took", () => {
   it("refuses a route or a run while the graph or the architect works, and lets the architect's chain be routed once it is built", async () => {
     const { createPhaseIntake: create } = await import("../src/rooms/phase/server/intake");

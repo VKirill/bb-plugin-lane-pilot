@@ -5,8 +5,8 @@
     "ru": "Пачка мелких правок"
   },
   "description": {
-    "en": "Several independent small fixes given in one request - one task per fix, fixes in different files built together in one wave, the batch reported on green sandbox verifications. No analysis stage and no separate review.",
-    "ru": "Несколько независимых мелких правок одной просьбой - по задаче на правку, правки в разных файлах собираются вместе одной волной, итог по зелёным песочным проверкам. Без анализа и отдельного ревью."
+    "en": "Several independent small fixes given in one request - edits of one component or file are one task, edits in independent areas are separate tasks built together in one wave, the batch reported on green sandbox verifications. No analysis stage and no separate review.",
+    "ru": "Несколько независимых мелких правок одной просьбой - правки одного компонента или файла - одна задача, правки в независимых областях - отдельные задачи, собираются вместе одной волной, итог по зелёным песочным проверкам. Без анализа и отдельного ревью."
   },
   "examples": {
     "ru": [
@@ -87,7 +87,7 @@
         "gaps": "{{$inputs.text}}",
         "boundary": {
           "constraints": [
-            "batch: one task per independent fix, at most 8; fixes in different files go in one wave; existing tests only"
+            "batch: at most 8 tasks; group the edits of one component, page or file, and edits that share one slow check or resource, into one task; make separate tasks only for edits in independent areas, and those go in one wave; a list of failures is split by verifiable cause, not by the number of red lines; existing tests only"
           ]
         }
       },

@@ -81,6 +81,9 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     const known = await bb.storage.kv.get(KEY(threadId)).catch(() => null) as IntakeRecord | null;
     if (known?.requestId === requestId) return known;
     const { kind, by } = await classify(text, run.project_id, run.id, settings, await lastPmMessage(threadId));
+    // A run the owner stopped or paused starts nothing on the machine's own (no phase, graph or architect): the PM reads the
+    // message instead (live 2026-10-26, Vampirism Fire: work was stopped and issue-quick still built and merged wcebffdb8-T1).
+    const stopped = await isRunHalted(bb.storage.kv as never, run.id) || await isRunPaused(bb.storage.kv as never, run.id);
     let phaseId: string | null = null;
     if (kind === "heavy") {
       const live = phases.list({ pmThreadId: threadId, live: true })[0];
@@ -88,7 +91,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
         // A new heavy message while a phase runs is the owner's correction of it (SMA: the owner may return 4 → 1); the PM reads it
         // in this very turn, and the dispatch refusal names the phase if it tries to hand the work out.
         phaseId = live.id;
-      } else {
+      } else if (!stopped) {
         const phase = await phases.open({ projectId: run.project_id, pmThreadId: threadId, title: intakeTitle(text), goal: text, rails: true });
         phaseId = phase.id;
         ctx.log(`phase intake: ${threadId} — the owner's request is heavy (${by}); phase ${phase.id} opened`);
@@ -99,9 +102,6 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     // A small job goes down the small-task graph (issue-quick), a batch of fixes down issue-batch, started by the machine:
     // the orchestrator does not choose what runs (Matvey #31782). phase.train off leaves them to the PM as before.
     let wfRunId: string | undefined;
-    // A run the owner stopped or paused starts no build on the machine's own: the PM reads the message instead (live 2026-10-26,
-    // Vampirism Fire: work was stopped and issue-quick still built and merged wcebffdb8-T1).
-    const stopped = await isRunHalted(bb.storage.kv as never, run.id) || await isRunPaused(bb.storage.kv as never, run.id);
     // Only on the judgment's word: the length rule calls any short line «small», and a remark must not start a build.
     if ((kind === "small" || kind === "batch") && by === "jev" && train && !stopped && String(settings["phase.train"] ?? "on") !== "off") {
       wfRunId = train.start({ projectId: run.project_id, pmThreadId: threadId, runId: run.id, requestId, text, kind }) ?? undefined;

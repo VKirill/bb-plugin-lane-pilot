@@ -212,9 +212,8 @@ describe("the plan-fact stage and the acceptance card on a database", () => {
     expect(refused.refusal).toBe("plan_fact_unproven: acceptance item 1 has no evidence that holds in the diff");
   });
 
-  it("a missing table is a skipped stage, listed as not run on the card, and never a refusal", async () => {
+  it("a missing table is a skipped stage in record mode, listed as not run on the card, and never a refusal", async () => {
     const w = world();
-    w.db.prepare("INSERT INTO lane_pilot_project_settings(project_id,binding_id,key,value,version,updated_at) VALUES('proj','','plan_fact.mode','\"gate\"',1,1)").run();
     const result = await run(w, ["All done, see the diff."]);
     expect(result.refusal).toBeNull();
     expect(w.commands).toHaveLength(0);
@@ -223,6 +222,35 @@ describe("the plan-fact stage and the acceptance card on a database", () => {
     expect(card.notRun.map((row) => row.stageId)).toEqual(expect.arrayContaining(["plan-critique", "code-critique", "plan-fact"]));
     expect(card.notRun.find((row) => row.stageId === "plan-fact")!.why).toContain("plan-fact");
     expect(card.cost).toMatchObject({ state: "not_measured", usd: null });
+  });
+
+  it("in gate mode a code task with acceptance items and no readable table fails and is sent back; a docs task does not", async () => {
+    const gate = (w: ReturnType<typeof world>) => w.db.prepare("INSERT INTO lane_pilot_project_settings(project_id,binding_id,key,value,version,updated_at) VALUES('proj','','plan_fact.mode','\"gate\"',1,1)").run();
+    const code = world();
+    gate(code);
+    const missing = await run(code, ["All done, see the diff."]);
+    expect(missing.refusal).toContain("plan_fact_table_missing");
+    expect(buildAcceptanceCard(code.db, { runId: "run", taskId: "t1" })!.planFact).toMatchObject({ state: "failed", table: "missing", mode: "gate" });
+    expect((await run(code, ["```plan-fact\nnot json\n```"])).refusal).toContain("plan_fact_table_invalid");
+
+    const docs = world({ kind: "docs" });
+    gate(docs);
+    expect((await run(docs, ["Written."])).refusal).toBeNull();
+    expect(buildAcceptanceCard(docs.db, { runId: "run", taskId: "t1" })!.planFact).toMatchObject({ state: "skipped" });
+  });
+
+  // Review of 2026-10-26, §1: «Payments stay unchanged» was proven by `does-not-exist.ts:999`, a path that is in no diff and in no repository.
+  it("an item that says something stays as it was is not proven by a file that does not exist in the repository", async () => {
+    const w = world({ acceptance: ["the form saves", "Payments stay unchanged"] });
+    const host = w.ctx.host as { call: (method: string, input: { command: string }) => Promise<unknown> };
+    w.ctx.host = { call: async (method: string, input: { command: string }) => input.command.includes("[ -f ")
+      ? { hostId: "h", exitCode: 0, stdout: "yes src/payments.ts\nno does-not-exist.ts\n", stderr: "" } : host.call(method, input) } as never;
+    const ghost = await run(w, [fence([{ item: 1, status: "done", evidence: ["src/a.ts:4-5"] }, { item: 2, status: "done", evidence: ["does-not-exist.ts:999"] }])]);
+    expect(ghost.check.items[1]).toMatchObject({ verdict: "unproven", severity: "blocking" });
+    expect(ghost.check.items[1]!.evidence[0]).toMatchObject({ ok: false, code: "file_missing" });
+    expect(ghost.check.blocking).toEqual([2]);
+    const real = await run(w, [fence([{ item: 1, status: "done", evidence: ["src/a.ts:4-5"] }, { item: 2, status: "done", evidence: ["src/payments.ts:10-20"] }])]);
+    expect(real.check.items[1]).toMatchObject({ verdict: "proven" });
   });
 
   it("a working-tree base (no base commit, only the head the writer started from) is diffed against that head", async () => {
@@ -292,6 +320,18 @@ describe("the per-task override a dispatch carries for the code critic", () => {
 describe("an acceptance item that says something stays as it was", () => {
   const facts = { produced: ["src/handler.ts"], changed: { "src/handler.ts": [[80, 90]] as Array<[number, number]> }, lineCount: {}, hunksKnown: true, contractCommands: [], ran: [] };
   const table = (evidence: string[]) => ({ status: "ok" as const, rows: [{ item: 1, status: "done" as const, evidence }] });
+
+  it("is not proven by a file that is nowhere in the repository (review 2026-10-26: does-not-exist.ts:999)", () => {
+    const item = ["Payments stay unchanged"];
+    const ghost = blindPlanFact(item, table(["does-not-exist.ts:999"]), { ...facts, exists: { "does-not-exist.ts": false } });
+    expect(ghost.items[0]).toMatchObject({ verdict: "unproven", severity: "blocking" });
+    expect(ghost.items[0]!.evidence[0]!.code).toBe("file_missing");
+    expect(planFactOutcome(ghost).state).toBe("failed");
+    const real = blindPlanFact(item, table(["src/payments.ts"]), { ...facts, exists: { "src/payments.ts": true } });
+    expect(real.items[0]).toMatchObject({ verdict: "proven", severity: "warning" });
+    // Existence not read at all: nothing is claimed either way.
+    expect(blindPlanFact(item, table(["src/payments.ts"]), facts).items[0]!.verdict).toBe("proven");
+  });
 
   it("is proven by the lines the candidate left out of its changes", () => {
     const check = blindPlanFact(["Legacy and error responses unchanged"], table(["src/handler.ts:60-72"]), facts);

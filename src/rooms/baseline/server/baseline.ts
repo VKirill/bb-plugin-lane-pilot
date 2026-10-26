@@ -3,7 +3,7 @@ import { getRunSettingsScopes, listCheckDurations, noteToldPmDirectly, taskBaseP
 import type { RollbackApi, RollbackTarget } from "../../rollback/server";
 import type { ServerCore, Services } from "../../core/server";
 import {
-  baselineSummary, baselineVerdict, estimateSec, parseBaselineSettings, planChecks, requiresRedOnBase, turnedRed, vacuousChecks, vacuousMessage,
+  baselineSummary, baselineVerdict, estimateSec, parseBaselineSettings, planChecks, redBeforeAndAfter, requiresRedOnBase, turnedRed, vacuousChecks, vacuousMessage,
   type BaselineCheck, type BaselineSettings,
 } from "../logic";
 import { cachedChecks, checkKey, getBaseline, insertBaseline, listBaselines, setBaselineAfter, type BaselineRecord } from "../store";
@@ -193,10 +193,18 @@ export function createBaseline(ctx: ServerCore, services: Services) {
     }
   }
 
+  /** Of the red checks on main, those that were red on the base before the task too. Nothing is returned for a task with no baseline. */
+  function redBefore(input: { runId: string; taskId: string; checks: ReadonlyArray<{ command: string; exitCode: number; hostError?: true | undefined }> }): string[] {
+    try {
+      const row = getBaseline(db, input.runId, input.taskId);
+      return !row || row.state !== "ran" ? [] : redBeforeAndAfter(row.checks, input.checks);
+    } catch { return []; }
+  }
+
   /** What is on record for a task: every baseline it started with and what turned red after its merge. */
   const status = (taskId: string) => listBaselines(db, taskId);
 
-  return { baseline: { preflight, afterMerge, status } };
+  return { baseline: { preflight, afterMerge, redBefore, status } };
 }
 
 export type BaselineApi = ReturnType<typeof createBaseline>["baseline"];

@@ -5,7 +5,7 @@ import type { TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../core/server";
 import { deleteStageReceipt, getRunSettingsScopes, getTaskGitBase, loadProjectSettings } from "../../storage";
 import { recordStage } from "../../runs/server";
-import { blindPlanFact, diffHunksCommand, hunksFromCommandOutput, parsePlanFact, planFactOutcome, sha256 } from "../../tasks";
+import { NO_CODE_KINDS, blindPlanFact, diffHunksCommand, existsCommand, existsFromCommandOutput, hunksFromCommandOutput, parsePlanFact, planFactOutcome, sha256, untouchedCitations } from "../../tasks";
 import type { PlanFactCheck, PlanFactFacts, PlanFactTable } from "../../tasks";
 
 export const PLAN_FACT_MODE_SETTING = "plan_fact.mode";
@@ -29,8 +29,8 @@ export function tableFromAnswers(answers: readonly string[]): PlanFactTable {
 /**
  * The plan→fact stage of an accepted candidate: reads the writer's table, checks every piece of evidence against the diff and the
  * check results (never the writer's prose), and records the code-decided result as the `plan-fact` receipt. A missing or unreadable
- * table is a skipped stage with its reason, never a refusal. Returns the refusal reason only in `gate` mode, for an acceptance item
- * with no evidence that holds.
+ * table is a skipped stage with its reason in `record` mode. Returns the refusal reason only in `gate` mode: for an acceptance item
+ * with no evidence that holds, or for a code task with acceptance items and no readable table.
  */
 /** The git base of the first accepted member of a redo's family in the run, or undefined for a task that is no redo. */
 function familyBase(db: ServerCore["db"], runId: string, taskId: string) {
@@ -86,8 +86,14 @@ export async function runPlanFactStage(ctx: ServerCore, input: {
       if (file && typeof file.content === "string") lineCount[path] = file.content.split("\n").length;
     }
   }
+  // A file the table cites but the candidate did not change is shown to exist before an "unchanged" item may rest on it; unread, nothing is known.
+  let exists: Record<string, boolean> | undefined;
+  const cited = table.status === "ok" ? untouchedCitations(table.rows, produced, input.task.project_cwd) : [];
+  if (cited.length) {
+    try { exists = existsFromCommandOutput((await runOnHost(host, { hostId: input.hostId, cwd: input.task.project_cwd, command: existsCommand(cited), timeoutSec: 30 })).stdout, cited); } catch { /* unknown: the report says so */ }
+  }
   const check = blindPlanFact(input.task.acceptance, table, {
-    produced, ...hunks, lineCount, root: input.task.project_cwd,
+    produced, ...hunks, lineCount, ...(exists ? { exists } : {}), root: input.task.project_cwd,
     contractCommands: input.task.verification.map((row) => row.command), ran: input.verification,
   });
   if (input.task.wires?.length) {
@@ -96,8 +102,9 @@ export async function runPlanFactStage(ctx: ServerCore, input: {
     else check.notChecked.push("wires: the search in the worktree could not run, so the declared wires were not checked");
   }
   if (table.status === "ok" && base === null) check.notChecked.push("line ranges: the task has no recorded base commit (a folder without git), so only the files were checked");
-  const outcome = planFactOutcome(check);
   const mode = planFactMode(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)));
+  // In gate mode a code task that promises something must hand in a readable table: «not checked» is not «proved».
+  const outcome = planFactOutcome(check, mode === "gate" && input.task.acceptance.length > 0 && !NO_CODE_KINDS.has(input.task.kind ?? ""));
   // A retry of the task reaches this stage again with a new answer: the receipt is the latest one, its earlier events stay.
   deleteStageReceipt(db, input.runId, input.taskId, "plan-fact");
   recordStage(db, {

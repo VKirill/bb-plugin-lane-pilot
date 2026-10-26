@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideAcceptance, gateRepair, repairChange, type AcceptanceEvidence } from "../../src/rooms/wall/acceptance";
+import { EVIDENCE_WAIT_MS, decideAcceptance, gateRepair, repairChange, type AcceptanceEvidence } from "../../src/rooms/wall/acceptance";
 import { parseNightReport, repairBrief, recurrenceSql } from "../../src/rooms/wall/brief";
 import { checkFinding, judgeHunt, parseFinding, type EvidencePack, type Finding } from "../../src/rooms/wall/pack";
 import type { WallClass } from "../../src/rooms/wall/types";
@@ -86,28 +86,74 @@ describe("acceptance of a night repair", () => {
   });
 });
 
+describe("acceptance asks for evidence, absence is not proof (review of 2026-10-26, section 2)", () => {
+  it("a quiet canary with no bench and no attempts is not an acceptance: the review's input stays pending", () => {
+    // The review's call: merged, shipped, no drill, quiet closed canary, bench unavailable, recurrence null. It was `accepted, all checks green`.
+    const result = decideAcceptance({ merged: true, versionBefore: "a", deployedVersion: "b", deployedAt: 1, drill: null, canary: { version: "b", tripped: false, windowOpen: false },
+      bench: "unavailable", recurrence: null, trainRolledBack: false });
+    expect(result.state).toBe("pending");
+    expect(result.reason).toMatch(/no proof yet/);
+  });
+
+  it("an inconclusive bench is no evidence either: only enough attempts of the new version, or a passed bench, accept", () => {
+    expect(decideAcceptance(evidence({ bench: "inconclusive", recurrence: { failures: 0, attempts: 3 } })).state).toBe("pending");
+    expect(decideAcceptance(evidence({ bench: "inconclusive", recurrence: { failures: 0, attempts: 3 } })).checks.find((row) => row.name === "bench subset")).toMatchObject({ ok: null });
+    expect(decideAcceptance(evidence({ bench: "inconclusive", recurrence: { failures: 0, attempts: 12 } })).state).toBe("accepted");
+    expect(decideAcceptance(evidence({ bench: "pass", recurrence: null })).state).toBe("accepted");
+  });
+
+  it("a repair of the judge or the graph needs the passed bench itself; attempts alone do not accept it", () => {
+    expect(decideAcceptance(evidence({ requireBench: true, bench: "unavailable", recurrence: { failures: 0, attempts: 40 } })).state).toBe("pending");
+    expect(decideAcceptance(evidence({ requireBench: true, bench: "inconclusive" })).state).toBe("pending");
+    expect(decideAcceptance(evidence({ requireBench: true, bench: "pass" })).state).toBe("accepted");
+    expect(decideAcceptance(evidence({ requireBench: true, bench: "fail" }))).toMatchObject({ state: "red", action: "revert" });
+  });
+
+  it("waiting ends: past the limit, or after a later release, the repair is inconclusive, never accepted and never reverted", () => {
+    const quiet = { bench: "unavailable" as const, recurrence: null };
+    expect(decideAcceptance(evidence({ ...quiet, now: 10 + EVIDENCE_WAIT_MS - 1 })).state).toBe("pending");
+    const late = decideAcceptance(evidence({ ...quiet, now: 10 + EVIDENCE_WAIT_MS }));
+    expect(late).toMatchObject({ state: "inconclusive", action: "none" });
+    // 0.1.307 shipped the repair and 0.1.328 runs now: the canary of 0.1.307 is gone, what is measured now is 0.1.328's.
+    const later = decideAcceptance(evidence({ deployedVersion: "0.1.307", canary: { version: "0.1.328", tripped: false, windowOpen: false }, supersededBy: "0.1.328", now: 11 }));
+    expect(later).toMatchObject({ state: "inconclusive", action: "none" });
+    expect(later.reason).toMatch(/0\.1\.328 was released after 0\.1\.307/);
+  });
+});
+
 describe("the policy gate of a night repair", () => {
   it("an LP-fault repair with the bench proof and a one-step revert is night_decides: the night merges it", () => {
-    const change = repairChange(["src/rooms/relay/server/relay.ts", "tests/relay.test.ts"], { benchSubset: true, revertible: true });
+    const change = repairChange(["src/rooms/relay/server/relay.ts", "tests/relay.test.ts"], { benchAvailable: true, rollbackOk: true });
     expect(gateRepair(change)).toMatchObject({ requested: "night_decides", tier: "night_decides", decision: "merge" });
   });
 
   it("without the bench proof a repair is rejected, never held for the owner", () => {
-    expect(gateRepair(repairChange(["src/rooms/relay/server/relay.ts"], { benchSubset: false, revertible: true }))).toMatchObject({ requested: "night_proposes", decision: "reject" });
+    expect(gateRepair(repairChange(["src/rooms/relay/server/relay.ts"], { benchAvailable: false, rollbackOk: true }))).toMatchObject({ requested: "night_proposes", decision: "reject" });
   });
 
-  it("a change of the judge merges on the strict proofs and is rejected without them", () => {
-    const judge = (files: Parameters<typeof repairChange>[0], benchSubset = true) => gateRepair(repairChange(files, { benchSubset, revertible: true }));
-    expect(judge([{ path: "src/rooms/verification/gate-output.ts", status: "M" }, { path: "tests/gate-output-new.test.ts", status: "A" }])).toMatchObject({ tier: "owner_only", decision: "merge", strict: true });
+  it("a change of the judge merges provisionally and is rejected without its conditions", () => {
+    const judge = (files: Parameters<typeof repairChange>[0], benchAvailable = true, rollbackOk = true) => gateRepair(repairChange(files, { benchAvailable, rollbackOk }));
+    expect(judge([{ path: "src/rooms/verification/gate-output.ts", status: "M" }, { path: "tests/gate-output-new.test.ts", status: "A" }])).toMatchObject({ tier: "owner_only", decision: "merge", strict: true, provisional: true });
     expect(judge([{ path: "src/rooms/verification/gate-output.ts", status: "M" }, { path: "tests/gate-output.test.ts", status: "M" }]).reason).toMatch(/existing test was changed/);
     expect(judge([{ path: "src/rooms/verification/gate-output.ts", status: "M" }], false)).toMatchObject({ decision: "reject" });
     // A bare path has no known status: a test among them is not proven new.
     expect(judge(["src/rooms/verification/gate-output.ts", "tests/gate-output.test.ts"])).toMatchObject({ decision: "reject" });
   });
 
+  it("availability is recorded as availability: a runnable bench is never a passed one, and a rollback that failed is not a rollback path", () => {
+    const change = repairChange([{ path: "src/rooms/verification/gate-output.ts", status: "M" }, { path: "tests/gate-output-new.test.ts", status: "A" }], { benchAvailable: true, rollbackOk: true });
+    expect(change.attrs).toMatchObject({ bench_available: true, rollback_path_ok: true });
+    const decision = gateRepair(change);
+    expect(decision).toMatchObject({ decision: "merge", strict: true, provisional: true });
+    expect(decision.reason).toMatch(/accepted only on a passed bench subset/);
+    // The old claim alone (the attrs the table asks for) no longer opens the strict path: it is not what the bench or the revert did.
+    expect(gateRepair({ ...change, attrs: { bench_subset_passed: true, auto_revertible: true, tests_untouched: true } })).toMatchObject({ decision: "reject" });
+    expect(gateRepair(repairChange([{ path: "src/rooms/verification/gate-output.ts", status: "M" }], { benchAvailable: true, rollbackOk: false }))).toMatchObject({ decision: "reject", reason: expect.stringMatching(/revert is not in working order/) });
+  });
+
   it("what the night never does is rejected whatever the proofs", () => {
-    expect(gateRepair(repairChange([{ path: "src/rooms/policy/exam.ts", status: "M" }], { benchSubset: true, revertible: true }))).toMatchObject({ tier: "owner_only", decision: "reject" });
-    expect(gateRepair(repairChange([{ path: "src/rooms/policy/exam.ts", status: "M" }], { benchSubset: true, revertible: true })).reason).toMatch(/never does policy_itself/);
+    expect(gateRepair(repairChange([{ path: "src/rooms/policy/exam.ts", status: "M" }], { benchAvailable: true, rollbackOk: true }))).toMatchObject({ tier: "owner_only", decision: "reject" });
+    expect(gateRepair(repairChange([{ path: "src/rooms/policy/exam.ts", status: "M" }], { benchAvailable: true, rollbackOk: true })).reason).toMatch(/never does policy_itself/);
   });
 });
 

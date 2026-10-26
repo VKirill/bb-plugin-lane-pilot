@@ -4,6 +4,10 @@ import { openDatabase } from "../../src/rooms/storage/database";
 import { createSelfRepair, readRepairRecord } from "../../src/rooms/self-repair/server/self-repair";
 import { setRepairHooks, type NightAssignment, type RepairHooks } from "../../src/rooms/self-repair/server/hooks";
 import type { ServerCore } from "../../src/rooms/core/server/core";
+import { hostContract } from "../../src/rooms/contracts/host";
+
+/** What the real host answers to a merge: the whole SHA. The fake used to answer 16 characters, which hid that only 12 of them were handed on. */
+const MERGE_SHA = "abcdef1234567890abcdef1234567890abcdef12";
 
 /** The watcher's tick with the night loop's hooks: the loop queues, the watcher spawns and merges, the loop is asked before every merge. */
 function setup(threadStatus: Record<string, string> = {}, outputs: Record<string, string> = {}) {
@@ -28,7 +32,7 @@ function setup(threadStatus: Record<string, string> = {}, outputs: Record<string
     call: async (method: string, input: Record<string, unknown>) => {
       hostCalls.push({ method, input });
       if (method === "gitCreateWorktree") return { status: "ready", path: `/wt/${String(input.name)}/lane-pilot`, branch: `lane/${String(input.name)}`, reason: null };
-      if (method === "gitIntegrate") return { status: "merged", commit: "abcdef1234567890", conflicts: [], reason: null };
+      if (method === "gitIntegrate") return { status: "merged", commit: MERGE_SHA, conflicts: [], reason: null };
       return { ok: true };
     },
   };
@@ -113,7 +117,11 @@ describe("the night loop on the self-repair path", () => {
       expect(log.gate, decision).toEqual(["night:abc123def456:harness: internal_error: lock"]);
       expect(hostCalls.some((call) => call.method === "gitIntegrate"), decision).toBe(expectMerge);
       expect(hostCalls.some((call) => call.method === "gitRemoveWorktree"), decision).toBe(expectRemove);
-      if (decision === "merge") expect(log.settled).toEqual([expect.objectContaining({ commit: "abcdef123456", verdict: "fixed" })]);
+      if (decision === "merge") {
+        // The loop gets the full SHA (the outcome text keeps 12 characters for people); `gitRevertCommits` takes nothing shorter.
+        expect(log.settled).toEqual([expect.objectContaining({ commit: MERGE_SHA, outcome: "merged abcdef123456", verdict: "fixed" })]);
+        expect(() => (hostContract as unknown as Record<string, { input: { parse(value: unknown): unknown } }>).gitRevertCommits!.input.parse({ requestedHostId: "h", worktreePath: "/wt/x", commits: [log.settled[0]!.commit] })).not.toThrow();
+      }
       if (decision === "release") expect(log.settled).toEqual([expect.objectContaining({ outcome: expect.stringMatching(/released/), commit: null })]);
       if (decision === "hold") {
         expect(log.settled).toEqual([]);

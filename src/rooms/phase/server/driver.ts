@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { cancelAttemptById } from "../../runs/server";
+import { cancelAttemptById, isRunHalted, isRunPaused } from "../../runs/server";
 import { taskFamily } from "../../runs";
 import { getRunGoal } from "../../run-goal";
 import { getRun, getRunSettingsScopes, getRunWriterHost, getTask, listOpenAttempts, storeMemoryRecords } from "../../storage";
@@ -8,7 +8,7 @@ import { isWholeConsent, spendReserve } from "../../tasks";
 import { hostContract } from "../../contracts";
 import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
 import {
-  PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceLines, blindVerdict, canonical, pieceSha, contextSignature, openQuestions, phaseFolder, planGate as planGateOf, piecesOfWave, waveCleared, waveLines, wavePackage, wavesOf, wordOf, designDecision, designGate, discussionGate,
+  PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceLines, alreadyMetVerdict, blindVerdict, canonical, pieceSha, contextSignature, openQuestions, phaseFolder, planGate as planGateOf, piecesOfWave, waveCleared, waveLines, wavePackage, wavesOf, wordOf, designDecision, designGate, discussionGate,
   executionGate, issuable, lessonsNeeded, nextAction, planGate, planSignature, renderBook, sha256, staleAfterReturn,
   type ContextDoc, type Phase, type PhaseRecord, type PhaseStage, type PlanItem, type RiskKind, type TaskFact, type WordTurn,
 } from "../logic";
@@ -173,7 +173,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     return mustGet(phase.id);
   }
 
-  function plan(input: Reported & { items: PlanItem[]; design?: boolean }): Phase {
+  function plan(input: Reported & { items: PlanItem[]; design?: boolean; alreadyMet?: string }): Phase {
     const phase = mustGet(input.phaseId);
     // No replanning of a closed phase: its book is final; a new goal is a new phase.
     if (phase.stage === "closed" || phase.state === "closed") throw new PhaseRefusal(`phase ${phase.id} is closed: open a new phase for new work`);
@@ -181,10 +181,12 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     if (!phase.record.context) throw new PhaseRefusal("the phase has no signed context");
     const items = input.items.map((item) => ({ ...item, task: { ...item.task, id: item.id } }));
     const contextSha = phase.record.context.sha;
-    const record: PhaseRecord = { ...phase.record, plan: { items, contextSha, sha: planSignature(items, contextSha), rounds: phase.record.plan?.rounds ?? 0 } };
+    // `alreadyMet`: the planner found the repository already doing what the goal asks, a plan with no pieces that the plan gate admits as such.
+    const record: PhaseRecord = { ...phase.record, plan: { items, contextSha, sha: planSignature(items, contextSha), rounds: phase.record.plan?.rounds ?? 0, ...(input.alreadyMet ? { alreadyMet: { evidence: input.alreadyMet.slice(0, 1000) } } : {}) } };
     if (input.design) record.design = { decision: "needed", why: "the PM asked for a drawing" };
     savePhase(db, phase.id, { record, at: now() });
-    book(phase, "plan", "submitted", `plan ${record.plan!.sha.slice(0, 12)}: ${items.length} piece(s) in ${new Set(items.map((item) => item.wave)).size} wave(s) — ${items.map((item) => `${item.id} (w${item.wave}): ${item.promise.then}`).join("; ")}`);
+    if (input.alreadyMet) book(phase, "plan", "already_met", `the planner found the goal already met, no pieces to build: ${input.alreadyMet.slice(0, 1000)}`);
+    else book(phase, "plan", "submitted", `plan ${record.plan!.sha.slice(0, 12)}: ${items.length} piece(s) in ${new Set(items.map((item) => item.wave)).size} wave(s) — ${items.map((item) => `${item.id} (w${item.wave}): ${item.promise.then}`).join("; ")}`);
     return mustGet(phase.id);
   }
 
@@ -592,10 +594,19 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       }
       current = mustGet(current.id);
     }
+    // A plan that found the goal already met built nothing: its verdict is the claim itself, and the goal audit weighs it next.
+    if (current.stage === "verification" && !current.record.verification?.verdict && current.record.plan?.alreadyMet) {
+      const verdict = alreadyMetVerdict(current.record.plan.alreadyMet, now());
+      book(current, "verification", "blind_verdict", `${verdict.state}: ${verdict.detail} (input ${verdict.inputSha.slice(0, 12)})`);
+      savePhase(db, current.id, { record: { ...current.record, verification: { ...current.record.verification, verdict } }, at: now() });
+      current = mustGet(current.id);
+    }
     if (current.stage === "verification" && !current.record.verification?.verdict && current.runId) {
       const goal = getRunGoal(db, current.runId) ?? await services.runGoal.check(current.runId).catch(() => null);
       if (goal) {
         const verdict = blindVerdict(current.record.plan?.items ?? [], facts(current), goal, now());
+        // The goal check is still running: nothing is frozen, the next pass asks again.
+        if (verdict.state === "pending") return current;
         book(current, "verification", "blind_verdict", `${verdict.state}: ${verdict.detail} (input ${verdict.inputSha.slice(0, 12)})`);
         savePhase(db, current.id, { record: { ...current.record, verification: { ...current.record.verification, verdict } }, at: now() });
         current = mustGet(current.id);
@@ -768,6 +779,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     bookHead: (phase) => listParts(db, phase.id).at(-1)?.hash ?? "",
     pmIdle: async (phase) => ((await bb.sdk.threads.get({ threadId: phase.pmThreadId }).catch(() => null)) as { status?: unknown } | null)?.status === "idle",
     now,
+    runStopped: async (phase) => !!phase.runId && (await isRunHalted(bb.storage.kv as never, phase.runId) || await isRunPaused(bb.storage.kv as never, phase.runId)),
     proofCurrency,
   });
   const phases = { open, context, plan, planCheck, drawing, goalAudit, lessons, question, answer, word, waveReview, withdraw, revise, correct, returnTo, setState, stopWave, compensate, tick, drive, status, facts, planUnchanged, writeBook,

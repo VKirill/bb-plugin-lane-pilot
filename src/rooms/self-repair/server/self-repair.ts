@@ -104,6 +104,11 @@ type SignatureRecord = {
   /** What became of the repair's branch: «merged <sha>», «up-to-date», «released», or why it was left. */
   outcome?: string | null;
   /**
+   * The full SHA of the merge `outcome` names («merged <12 chars>» is for people). The night loop reverts by this value; a revert needs 40-64
+   * hex, so the short text can never be its input (wall repairs wr_8462ad860c03, wr_16de9a4704de, wr_662642de0aa6: every revert refused).
+   */
+  mergedCommit?: string | null;
+  /**
    * A spawn that threw, so whether the thread exists is unknown. Its worktree is kept and the next pass repeats the spawn
    * under the same key (the same thread comes back when it was made); only a spawn that cannot be settled releases it.
    */
@@ -641,6 +646,7 @@ export function createSelfRepair(ctx: ServerCore) {
       if (result.status === "merged" || result.status === "up-to-date") {
         record.worktree = null;
         record.outcome = result.status === "merged" ? `merged ${String(result.commit ?? "").slice(0, 12)}` : "up-to-date";
+        record.mergedCommit = result.status === "merged" && result.commit ? String(result.commit) : null;
         ctx.log(`self-repair: ${record.outcome} from ${worktree.branch}; it ships with the next release`);
         return;
       }
@@ -787,7 +793,10 @@ export function createSelfRepair(ctx: ServerCore) {
         }
         await settleWorktree(record, signature, now);
         if (night && !record.worktree) {
-          night.settled(signature, { outcome: record.outcome ?? "", verdict: record.verdict ?? null, commit: /^merged (\S+)/.exec(record.outcome ?? "")?.[1] ?? null });
+          // The full SHA kept beside the outcome; the text is only the fallback for a merge recorded before it existed (the wall resolves a short one before it reverts).
+          const merged = /^merged (\S+)/.exec(record.outcome ?? "")?.[1] ?? null;
+          night.settled(signature, { outcome: record.outcome ?? "", verdict: record.verdict ?? null, commit: merged ? record.mergedCommit ?? merged : null });
+          record.mergedCommit = null;
         }
       }
     }

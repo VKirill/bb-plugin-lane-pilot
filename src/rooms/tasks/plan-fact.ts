@@ -61,6 +61,8 @@ export type PlanFactFacts = {
   changed: Readonly<Record<string, ReadonlyArray<readonly [number, number]> | "all">>;
   /** Line counts of the files in `all`. */
   lineCount: Readonly<Record<string, number>>;
+  /** Whether each cited file the candidate did not change exists in the repository. Absent when the repository could not be read: a file the item says stays as it was is then not shown to exist. */
+  exists?: Readonly<Record<string, boolean>>;
   /** False when the diff against the task's base could not be read: line ranges are then not checked, and the report says so. */
   hunksKnown: boolean;
   /** The contract's `verification[].command` values. */
@@ -95,6 +97,9 @@ export type PlanFactCheck = {
   wires?: WireResult[];
 };
 
+/** Kinds of task that cite no changed code (a note, a finding, a check run): a missing plan-fact table is not a hole in their proof. */
+export const NO_CODE_KINDS: ReadonlySet<string> = new Set(["docs", "research", "check"]);
+
 const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
 
 /** An acceptance item that claims something stays as it was; its proof is code the candidate did not change. */
@@ -128,9 +133,10 @@ function checkEvidence(evidence: string, facts: PlanFactFacts, invariant = false
   if (!match || /\s/.test(match[1]!)) return { evidence, kind: "unparsed", ok: false, code: "unparsed", note: "neither path[:lines] nor cmd:<command>" };
   const path = relativePath(match[1]!, facts.root);
   if (!facts.produced.includes(path)) {
-    return invariant
-      ? { evidence, kind: "file", ok: true, code: "file_untouched", note: `${path} is not among the changed files, as the item says` }
-      : { evidence, kind: "file", ok: false, code: "file_not_in_diff", note: `${path} is not among the changed files` };
+    if (!invariant) return { evidence, kind: "file", ok: false, code: "file_not_in_diff", note: `${path} is not among the changed files` };
+    // A path that is nowhere in the repository is not code that stays as it was: it proves nothing.
+    if (facts.exists && facts.exists[path] !== true) return { evidence, kind: "file", ok: false, code: "file_missing", note: `${path} is not among the changed files and does not exist in the repository` };
+    return { evidence, kind: "file", ok: true, code: "file_untouched", note: `${path} is not among the changed files, as the item says` };
   }
   if (match[2] === undefined) return { evidence, kind: "file", ok: true, code: "file_changed", note: "among the changed files" };
   const from = Number(match[2]);
@@ -179,13 +185,15 @@ export function blindPlanFact(acceptance: readonly string[], table: PlanFactTabl
   };
 }
 
-/** The stage result the code decides from the check: a missing or unreadable table is not run, never a refusal by itself. */
-export function planFactOutcome(check: PlanFactCheck): { state: "passed" | "failed" | "skipped"; reason: string | null } {
+/** The stage result the code decides from the check: a missing or unreadable table is not run (a refusal only when the gate requires the table). */
+export function planFactOutcome(check: PlanFactCheck, tableRequired = false): { state: "passed" | "failed" | "skipped"; reason: string | null } {
   // A broken wire is a code fact about the finished work, whatever the writer's table says.
   const wire = brokenWireReason(check.wires ?? []);
   if (wire) return { state: "failed", reason: wire };
-  if (check.table === "missing") return { state: "skipped", reason: "plan_fact_table_missing: the writer's answer has no plan-fact block, so no acceptance item was checked against the diff" };
-  if (check.table === "invalid") return { state: "skipped", reason: `plan_fact_table_invalid: ${check.tableReason ?? "unreadable"}; no acceptance item was checked against the diff` };
+  // `tableRequired` (gate mode, a code task with acceptance items): no readable table leaves every item unchecked, which is not a pass.
+  const without = tableRequired ? "failed" : "skipped";
+  if (check.table === "missing") return { state: without, reason: `plan_fact_table_missing: the writer's answer has no plan-fact block, so no acceptance item was checked against the diff${tableRequired ? "; end the answer with the plan-fact table" : ""}` };
+  if (check.table === "invalid") return { state: without, reason: `plan_fact_table_invalid: ${check.tableReason ?? "unreadable"}; no acceptance item was checked against the diff${tableRequired ? "; fix the plan-fact table" : ""}` };
   if (check.blocking.length) return { state: "failed", reason: `plan_fact_unproven: acceptance item ${check.blocking.join(", ")} ${check.blocking.length === 1 ? "has" : "have"} no evidence that holds in the diff` };
   return { state: "passed", reason: null };
 }
@@ -236,4 +244,28 @@ export function hunksFromCommandOutput(output: string, produced: readonly string
     if (path && produced.includes(path)) changed[path] = "all";
   }
   return { hunksKnown: true, changed };
+}
+
+/** The files the table cites that the candidate did not change: whether they exist is a fact the stage reads from the repository. */
+export function untouchedCitations(rows: readonly PlanFactRow[], produced: readonly string[], root?: string): string[] {
+  const out = new Set<string>();
+  for (const row of rows) for (const entry of row.evidence ?? []) {
+    const raw = entry.trim();
+    const match = /^(.+?)(?::(\d+)(?:-(\d+))?)?$/.exec(raw);
+    if (/^cmd:/i.test(raw) || !match || /\s/.test(match[1]!)) continue;
+    const path = relativePath(match[1]!, root);
+    if (!produced.includes(path)) out.add(path);
+  }
+  return [...out].slice(0, 40);
+}
+
+/** One shell command that prints `yes <path>` or `no <path>` for each file; a path that leaves the repository is `no`. */
+export function existsCommand(paths: readonly string[]): string {
+  return paths.map((path) => /(^|\/)\.\.(\/|$)|^\//.test(path) ? `echo no ${quote(path)}` : `if [ -f ${quote(path)} ]; then echo yes ${quote(path)}; else echo no ${quote(path)}; fi`).join("; ");
+}
+
+/** The existence facts the command's output gives; a path the output does not name does not exist. */
+export function existsFromCommandOutput(output: string, paths: readonly string[]): Record<string, boolean> {
+  const yes = new Set(output.split("\n").filter((line) => line.startsWith("yes ")).map((line) => line.slice(4).trim()));
+  return Object.fromEntries(paths.map((path) => [path, yes.has(path)]));
 }

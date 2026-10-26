@@ -4,6 +4,8 @@ import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../src/rooms/core/server/services";
 import { createPhaseDriver } from "../src/rooms/phase/server/driver";
 import { phaseToolParams } from "../src/rooms/phase/server/tool";
+import { contextSignature, acceptanceLines } from "../src/rooms/phase/logic";
+import { savePhase } from "../src/rooms/phase/store";
 import { createRun, openDatabase } from "../src/rooms/storage";
 
 function driver(status = "idle") {
@@ -14,7 +16,7 @@ function driver(status = "idle") {
   harness.sdk.stub("threads.list", async () => []);
   const db = openDatabase(bb);
   createRun(db, "run1", "projA");
-  return Object.assign(createPhaseDriver(createCore(bb, db), {} as Services).phases, { sent });
+  return Object.assign(createPhaseDriver(createCore(bb, db), {} as Services).phases, { sent, db });
 }
 
 describe("a phase the rails opened", () => {
@@ -55,5 +57,37 @@ describe("the phase tool takes JSON text for its lists and objects", () => {
   it("still refuses text that is not JSON of the field's type, and takes a rubric by phaseId", () => {
     expect(phaseToolParams.safeParse({ action: "context", phaseId: "ph_1", docs: "CONTEXT.md", risks: {} }).success).toBe(false);
     expect(phaseToolParams.safeParse({ action: "rubric", phaseId: "ph_1" }).success).toBe(true);
+  });
+});
+
+// Review 2026-10-26 §1: lp.plan may return already_met with no tasks; the phase refused that and demanded work again.
+describe("a plan that found the goal already met", () => {
+  it("is admitted without pieces, skips execution, and reaches the goal audit with the planner's evidence", async () => {
+    const phases = driver();
+    const phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Stats", goal: "stats module" });
+    const risks = { technical: "none", product: "none", operations: "none", security: "none" };
+    savePhase(phases.db, phase.id, { stage: "planning", record: { context: { docs: [], sha: contextSignature([]), signedAt: 1, risks, requirements: ["R1"] } }, at: 1 });
+    phases.plan({ phaseId: phase.id, items: [], alreadyMet: "the planner checked the repository: stats already exist", by: "lp.plan" });
+    const admitted = await phases.planCheck({ phaseId: phase.id, decision: "approve", by: "lp.plan, plan critic" });
+    expect(admitted.stage).toBe("execution");
+    expect(admitted.record.plan).toMatchObject({ items: [], alreadyMet: { evidence: expect.stringContaining("stats already exist") } });
+    expect(admitted.record.plan!.admittedSha).toBe(admitted.record.plan!.sha);
+    // Execution has nothing to issue; the next pass leaves it, and the verification stage freezes the claim as its verdict.
+    let now = await phases.drive(admitted);
+    now = await phases.drive(now);
+    expect(now.stage).toBe("verification");
+    expect(now.record.verification?.verdict).toMatchObject({ state: "passed", detail: expect.stringContaining("already met") });
+    const lines = acceptanceLines(now, new Map(), { mainSha: null, openDeferrals: 0 });
+    // Everything that needs a piece holds vacuously; the goal audit is what is still owed.
+    expect(lines.filter((line) => !line.ok).map((line) => line.id)).toEqual(["goal_met"]);
+  });
+
+  it("an empty plan without already_met is still refused by the plan gate", async () => {
+    const phases = driver();
+    const phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Stats", goal: "stats module" });
+    const risks = { technical: "none", product: "none", operations: "none", security: "none" };
+    savePhase(phases.db, phase.id, { stage: "planning", record: { context: { docs: [], sha: contextSignature([]), signedAt: 1, risks } }, at: 1 });
+    phases.plan({ phaseId: phase.id, items: [], by: "lp.plan" });
+    await expect(phases.planCheck({ phaseId: phase.id, decision: "approve", by: "critic" })).rejects.toThrow(/not admitted/);
   });
 });

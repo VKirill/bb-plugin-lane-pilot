@@ -180,6 +180,12 @@ export function turnedRed(baseline: readonly BaselineCheck[], after: ReadonlyArr
   return after.filter((check) => check.exitCode !== 0 && !check.hostError && green.has(check.command)).map((check) => check.command);
 }
 
+/** Checks that were already red on the base and are red after the change too: not this change's regression. */
+export function redBeforeAndAfter(baseline: readonly BaselineCheck[], after: ReadonlyArray<{ command: string; exitCode: number; hostError?: true | undefined }>): string[] {
+  const red = new Set(baseline.filter((check) => check.status === "red").map((check) => check.command));
+  return after.filter((check) => check.exitCode !== 0 && !check.hostError && red.has(check.command)).map((check) => check.command);
+}
+
 export function baselineSummary(verdict: BaselineVerdict, checks: readonly BaselineCheck[], baseSha: string | null): string {
   const count = (status: BaselineCheck["status"]) => checks.filter((check) => check.status === status).length;
   const at = baseSha ? ` on base ${baseSha.slice(0, 10)}` : "";
