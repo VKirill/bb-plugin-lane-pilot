@@ -477,10 +477,15 @@ export function createSelfRepair(ctx: ServerCore) {
     }
     // Queued for hours in a run where nothing runs: whatever it waits for will never come. An attempt being spawned or
     // canceled is at work too (proj_a35nni238u 2026-10-12: ck-13 queued behind ck-14's 30-minute cancel was reported).
+    // Nothing has run for hours, not only at this pass: an attempt that ended within the window freed the queue, whose
+    // dispatch still runs the baseline with the attempt «queued» (Vampirism Fire 2026-10-24/26: six attempts queued behind
+    // a depends_on or an owns_paths overlap were reported 1–4 min after that attempt was accepted, and ran minutes later).
     const queued = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.updated_at, r.project_id, t.contract_json FROM lane_pilot_attempt a
       JOIN lane_pilot_run r ON r.id=a.run_id LEFT JOIN lane_pilot_task t ON t.id=a.task_id
       WHERE a.state='queued' AND a.updated_at < ? AND r.state='running'
-        AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.state IN (${WORKING_ATTEMPT_STATES}))`).all(now - QUEUED_MS) as Array<{ id: string; run_id: string; task_id: string; updated_at: number; project_id: string; contract_json: string | null }>;
+        AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.state IN (${WORKING_ATTEMPT_STATES}))
+        AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.state<>'queued' AND b.updated_at >= ?)`)
+      .all(now - QUEUED_MS, now - QUEUED_MS) as Array<{ id: string; run_id: string; task_id: string; updated_at: number; project_id: string; contract_json: string | null }>;
     for (const row of queued) {
       if (ignored.has(row.project_id)) continue;
       // A task that waits for a depends_on that ended blocked waits for the PM to send it again, by design up to six hours
