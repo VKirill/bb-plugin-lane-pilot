@@ -35,12 +35,14 @@
     }
   },
   "outputs": {
-    "status": "closed|unmet|halted",
+    "status": "closed|unmet",
     "unmet_ids": "string[]",
     "intent_aligned": "bool",
     "staged": "int",
     "candidate_ids": "string[]",
-    "report_path": "string"
+    "report_path": "string",
+    "goals": "GoalResult[]",
+    "drift_items": "string[]"
   },
   "entry": "goal_audit",
   "budget": {
@@ -77,24 +79,6 @@
       "guards": {
         "maxVisits": 1,
         "timeoutMin": 20
-      }
-    },
-    {
-      "id": "reground_ask",
-      "type": "human",
-      "role": "owner",
-      "title": {
-        "en": "Result drifts from the intent",
-        "ru": "Результат ушёл от замысла"
-      },
-      "prompt": "List drift_items; choices - proceed (accept the drift), halt (stop and fix), amend goal.",
-      "out": {
-        "answer": "string",
-        "answer_kind": "proceed|halt|amend|timeout"
-      },
-      "guards": {
-        "maxVisits": 1,
-        "timeoutMin": 240
       }
     },
     {
@@ -159,46 +143,22 @@
       "map": {
         "status": "unmet",
         "unmet_ids": "goal_audit.unmet_ids",
-        "intent_aligned": "goal_audit.intent_aligned"
-      }
-    },
-    {
-      "id": "halted",
-      "type": "action",
-      "action": "emit",
-      "map": {
-        "status": "halted",
-        "intent_aligned": false
+        "intent_aligned": "goal_audit.intent_aligned",
+        "goals": "goal_audit.goals",
+        "drift_items": "goal_audit.drift_items"
       }
     }
   ],
   "edges": [
     {
       "from": "goal_audit",
-      "to": "reground_ask",
-      "pass": "artifact",
-      "when": "!goal_audit.intent_aligned"
-    },
-    {
-      "from": "goal_audit",
       "to": "unmet",
       "pass": "artifact",
-      "when": "!goal_audit.all_met"
+      "when": "!goal_audit.intent_aligned || !goal_audit.all_met"
     },
     {
       "from": "goal_audit",
       "to": "memory",
-      "pass": "artifact"
-    },
-    {
-      "from": "reground_ask",
-      "to": "memory",
-      "pass": "artifact",
-      "when": "reground_ask.answer_kind == 'proceed'"
-    },
-    {
-      "from": "reground_ask",
-      "to": "halted",
       "pass": "artifact"
     },
     {

@@ -42,17 +42,18 @@ describe("what the machine makes of a workflow's output", () => {
 });
 
 describe("the machine's pass", () => {
-  function world(output: Record<string, unknown> | null, status = "succeeded") {
-    let phase = phaseAt("discussion");
+  function world(output: Record<string, unknown> | null, status = "succeeded", start: Phase = phaseAt("discussion")) {
+    let phase = start;
     const calls: string[] = [];
     const runs = new Map<string, { status: string; output: Record<string, unknown> | null }>();
+    const engine: Record<string, unknown> = {};
     const auto = createAutoStages({ log: () => undefined }, {
-      workflowEngine: { start: (input: { workflow: { id: string } }) => { const runId = `wfrun_${runs.size + 1}`; calls.push(`start ${input.workflow.id}`); runs.set(runId, { status: "running", output: null }); return { runId, created: true, done: new Promise(() => undefined) }; },
-        get: (runId: string) => ({ runId, reason: null, error: null, failedNode: null, waiting: [], stopped: false, ...runs.get(runId)! }) } as never,
+      workflowEngine: Object.assign(engine, { start: (input: { workflow: { id: string } }) => { const runId = `wfrun_${runs.size + 1}`; calls.push(`start ${input.workflow.id}`); runs.set(runId, { status: "running", output: null }); return { runId, created: true, done: new Promise(() => undefined) }; },
+        get: (runId: string) => ({ runId, reason: null, error: null, failedNode: null, waiting: [], stopped: false, ...runs.get(runId)! }) }) as never,
     }, {
       api: {
         context: async (input) => { calls.push(`context ${input.docs.join(",")}`); phase = phaseAt("planning", { ...phase.record, context: { docs: [], sha: "c", signedAt: 1 } }); return phase; },
-        plan: () => phase, planCheck: async () => phase, question: (input) => { calls.push(`question ${input.text}`); return phase; }, waveReview: () => phase, goalAudit: () => phase, lessons: () => phase, drawing: async () => phase,
+        plan: () => phase, planCheck: async () => phase, question: (input) => { calls.push(`question ${input.text}`); return phase; }, waveReview: () => phase, goalAudit: (input) => { calls.push(`goalAudit ${input.state}\n${input.summary}`); return phase; }, lessons: () => phase, drawing: async () => phase,
         returnTo: (input) => { calls.push(`return ${input.to}`); phase = { ...phase, stage: input.to } as Phase; return phase; },
       },
       get: () => phase,
@@ -64,7 +65,7 @@ describe("the machine's pass", () => {
       pmIdle: async () => true,
       now: () => 1,
     });
-    return { auto, calls, runs, get: () => phase, finish: () => { runs.set("wfrun_1", { status, output }); } };
+    return { auto, calls, runs, engine, get: () => phase, finish: () => { runs.set("wfrun_1", { status, output }); } };
   }
   it("starts the analysis, then reports it through the gates; the PM is not poked meanwhile", async () => {
     const w = world({ decisions: [{ id: "D1", text: "store in JSON" }], risks: [], open_questions: ["Tags?"] });
@@ -75,6 +76,29 @@ describe("the machine's pass", () => {
     expect(await w.auto.step(w.get())).toBe(true);
     expect(w.calls).toEqual(expect.arrayContaining(["question Tags?", "context .agents/phases/ph_1/CONTEXT.md", "book auto_done"]));
     expect(w.get().record.auto).toBeUndefined();
+  });
+  it("an unmet goal audit reports each unmet goal with what it lacks and the drift, so the replan knows what to plan", async () => {
+    const verified = phaseAt("verification", { verification: { verdict: { state: "passed", detail: "ok", inputSha: "x", at: 1, mainSha: null } } } as never);
+    const w = world({ status: "unmet", unmet_ids: [], intent_aligned: false, drift_items: ["server gift policy merged outside the UI phase"],
+      goals: [{ id: "R1", status: "MET" }, { id: "R2", status: "UNMET", missing: "Studio screenshots of the current HUD at all four sizes" }] }, "succeeded", verified);
+    expect(await w.auto.step(w.get())).toBe(true);
+    expect(w.calls).toContain("start lp.close");
+    w.finish();
+    expect(await w.auto.step(w.get())).toBe(true);
+    const audit = w.calls.find((call) => call.startsWith("goalAudit"))!;
+    expect(audit).toContain("goalAudit unmet");
+    expect(audit).toContain("- R2: Studio screenshots of the current HUD at all four sizes");
+    expect(audit).toContain("- drift: server gift policy merged outside the UI phase");
+    expect(audit).not.toContain("- R1");
+  });
+  it("a close halted by the old owner form still hands the replan its goals, read from the audit step", async () => {
+    const verified = phaseAt("verification", { verification: { verdict: { state: "passed", detail: "ok", inputSha: "x", at: 1, mainSha: null } } } as never);
+    const w = world({ status: "halted", intent_aligned: false }, "succeeded", verified);
+    expect(await w.auto.step(w.get())).toBe(true);
+    w.finish();
+    w.engine.snapshot = () => ({ run: {}, events: [], steps: [{ node_id: "goal_audit", output_json: JSON.stringify({ goals: [{ id: "R3", status: "UNMET", missing: "current Pig screenshots" }], drift_items: [] }) }] });
+    expect(await w.auto.step(w.get())).toBe(true);
+    expect(w.calls.find((call) => call.startsWith("goalAudit"))).toContain("- R3: current Pig screenshots");
   });
   it("failures counted under an older version are forgotten: the new one tries the stage again", async () => {
     const w = world({ decisions: [] });

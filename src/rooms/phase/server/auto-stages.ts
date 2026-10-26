@@ -209,11 +209,27 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       deps.api.lessons({ phaseId: phase.id, analysis, author: "retrospective: retro", reviewer: "retrospective: stage", reviewedHash: deps.bookHead(phase), by });
     } else {
       const met = output.status === "closed";
-      deps.api.goalAudit({ phaseId: phase.id, state: met ? "met" : "unmet", by, summary: text(met ? `every goal met; report ${text(output.report_path, 200)}` : `unmet: ${JSON.stringify(output.unmet_ids ?? [])}; ${text(output.status, 30)}`, 2000) || "goal audit" });
+      // The replan reads this summary as its gaps: each unmet goal with what it lacks, and the drift. Ids alone left the planner
+      // blind (2026-10-26, a Roblox UI phase: «unmet: []; halted» twice, the planner fixed something else, the audit asked again).
+      const goals = Array.isArray(output.goals) ? output.goals as Array<{ id?: unknown; status?: unknown; missing?: unknown }> : [];
+      const lacking = goals.filter((goal) => String(goal?.status ?? "").toUpperCase() !== "MET").map((goal) => `- ${text(goal.id, 80)}: ${text(goal.missing, 400) || "not met"}`);
+      const drift = (Array.isArray(output.drift_items) ? output.drift_items : []).map((item) => `- drift: ${text(item, 400)}`);
+      const unmetSummary = [`unmet: ${JSON.stringify(output.unmet_ids ?? [])}; ${text(output.status, 30)}`, ...lacking, ...drift].join("\n");
+      deps.api.goalAudit({ phaseId: phase.id, state: met ? "met" : "unmet", by, summary: text(met ? `every goal met; report ${text(output.report_path, 200)}` : unmetSummary, 2000) || "goal audit" });
     }
   }
 
   /** One pass: settles a finished stage run, or starts the stage's workflow. True when the machine has the stage (the PM is not poked). */
+  /** A close run started before 0.1.331 ends «halted» from the owner's form with no goals: its audit step still has them. */
+  function withAuditGoals(runId: string, output: Record<string, unknown>): Record<string, unknown> {
+    if (output.status === "closed" || Array.isArray(output.goals)) return output;
+    const audit = services.workflowEngine.snapshot?.(runId)?.steps.find((row) => row.node_id === "goal_audit" && row.output_json);
+    try {
+      const found = audit?.output_json ? JSON.parse(audit.output_json) as Record<string, unknown> : null;
+      return found ? { ...output, goals: found.goals, drift_items: found.drift_items } : output;
+    } catch { return output; }
+  }
+
   async function step(phase: Phase): Promise<boolean> {
     // Failures counted under another version may be the ones it fixed: after a deploy the machine tries the stage again.
     if (phase.record.autoFailures && phase.record.autoFailuresVersion !== version) {
@@ -236,7 +252,7 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
         return false;
       }
       try {
-        await apply(phase, running, summary.output);
+        await apply(phase, running, running.kind === "close" ? withAuditGoals(running.wfRunId, summary.output) : summary.output);
         const after = deps.get(phase.id);
         deps.save(after.id, { ...after.record, auto: undefined });
         deps.book(after, "decisions", "auto_done", `${AUTO_WORKFLOWS[running.kind]} done (${running.wfRunId}) and reported through the gates`);

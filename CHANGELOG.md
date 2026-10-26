@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.331
+
+**The goal audit no longer asks the owner, and a replan knows what is missing.** A Roblox UI phase went round twice: the audit (`lp.close`) found unmet goals and drift and asked the owner «proceed / halt / amend» (a human step, `reground_ask`), the owner pressed halt, and the replan received `goal audit: unmet: []; halted` — no goal ids and nothing of what each lacked (current Studio screenshots of every screen at four sizes). The planner fixed something else, the screenshots went stale again, and the audit asked again. Every answer but proceed, and the four-hour timeout, ended the same way, so the question waited on the owner for a decision the machine already had (see «the owner is not a step of the loop»).
+- `lp.close` has no human step: drift or an unmet goal ends the fragment as `unmet`, with the audit's `goals` and `drift_items` in its output. `halted` is gone from its statuses; milestone-close stops on any status but `closed`, as before.
+- The phase's goal audit summary, which the replan reads as its gaps, lists each unmet goal with what it lacks and each drift item (`src/rooms/phase/server/auto-stages.ts`).
+- A close run started before this version and halted from the old form hands its goals over too: they are read from its audit step.
+
 ## 0.1.330
 
 Ideas from Matvey Maslov's `agent-dev-tools` (MIT), ported into Lane Pilot's own code: each starts from a failure a coding-agent setup hits.

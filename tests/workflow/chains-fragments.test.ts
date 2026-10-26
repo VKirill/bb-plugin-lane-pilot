@@ -163,13 +163,11 @@ describe("lp.close", () => {
     expect(out(r)).toMatchObject({ status: "unmet", unmet_ids: ["g2"] });
   });
 
-  it("intent drift asks the owner; proceeding continues, anything else halts", async () => {
-    const stubs = { goal_audit: { intent_aligned: false, drift_items: ["scope grew"] } };
-    const go = await runSim("lp.close", { input: { goals: [{ id: "g1" }, { id: "g2" }] }, stubs, humans: { reground_ask: { answer_kind: "proceed" } } });
-    expect(pathOf(go)).toBe("goal_audit reground_ask memory life report closed");
-    const halt = await runSim("lp.close", { input: { goals: [{ id: "g1" }, { id: "g2" }] }, stubs, humans: { reground_ask: { answer_kind: "halt" } } });
-    expect(pathOf(halt)).toBe("goal_audit reground_ask halted");
-    expect(out(halt)).toMatchObject({ status: "halted", intent_aligned: false });
+  it("intent drift ends the fragment as unmet with the goals and the drift, without asking the owner", async () => {
+    const stubs = { goal_audit: { all_met: true, intent_aligned: false, unmet_ids: [], goals: [{ id: "g1", status: "UNMET", missing: "no current screenshots" }], drift_items: ["scope grew"] } };
+    const r = await runSim("lp.close", { input: { goals: [{ id: "g1" }, { id: "g2" }] }, stubs });
+    expect(pathOf(r)).toBe("goal_audit unmet");
+    expect(out(r)).toMatchObject({ status: "unmet", intent_aligned: false, drift_items: ["scope grew"], goals: [{ id: "g1", missing: "no current screenshots" }] });
   });
 
   it("quick mode with one goal skips the audit", async () => {

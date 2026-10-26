@@ -109,8 +109,8 @@ describe("milestone-close", () => {
     expect(out(stop)).toMatchObject({ status: "not_ready" });
   });
 
-  it("a close that halts (intent drift refused) archives nothing", async () => {
-    const r = await runSim("milestone-close", { input, stubs: { "lp.run_status": ready, "lp.close": { status: "halted", report_path: "reports/h.md" } } });
+  it("a close with unmet goals or drift archives nothing", async () => {
+    const r = await runSim("milestone-close", { input, stubs: { "lp.run_status": ready, "lp.close": { status: "unmet", report_path: "reports/h.md" } } });
     expect(pathOf(r)).toBe("status retro close halted");
     expect(out(r)).toMatchObject({ status: "halted" });
   });
