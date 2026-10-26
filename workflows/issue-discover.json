@@ -83,7 +83,7 @@
         "type": "agent",
         "role": "analyst",
         "src": "maestro-flow:workflows/issue-discover.md",
-        "prompt": "Perspective {{item}}. Read the project coding standards first so severity matches them. Return findings [{title, severity, description, location file:line, fix_direction, affected_components}]; nothing without a location.",
+        "prompt": "Perspective {{item}}. Read the project coding standards first so severity matches them. Return findings [{title, severity (critical|high|medium|low|info), description, location file:line, fix_direction, affected_components}]; nothing without a location.",
         "out": {
           "perspective": "string",
           "findings": "Finding[]"

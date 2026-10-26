@@ -1,6 +1,9 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
+import { enumCoverage } from "@lane-pilot/kit/prompt-coverage";
 import { agendaPrompt, chairPrompt, seatPrompt } from "../../packages/council/src/prompts";
+import { decisionRecordSchema } from "../../packages/council/src/contract";
 import { memoryMaintenancePrompt, parseMemoryCandidates, parseMemorySettings } from "../../packages/memory-core/src/index";
 import { errandPrompt, errandVerdict } from "../../src/rooms/qa/server/errands";
 import { analyzerPrompt } from "../../src/rooms/self-repair/server/rule-scan";
@@ -8,18 +11,18 @@ import { repairPrompt } from "../../src/rooms/self-repair/server/self-repair";
 import { specialistPrompt } from "../../src/rooms/critique/server/specialists";
 import { qaThreadPrompt } from "../../src/rooms/qa/server/qa-thread";
 import { WRITER_SETUP_LINES, buildTask, writerContextBlocks, writerPrompt } from "../../src/rooms/writer/server/writer-task";
-import { actionableFindings, buildCandidateEvidence, codeCritiquePrompt, codeRepairPrompt, parseCodeCritique, parseWriterRepairReply, sameUnresolvedFindings, shouldRequestRepair, parseCodeCritiqueSettings } from "../../src/rooms/critique/code-critique";
+import { actionableFindings, buildCandidateEvidence, codeCritiquePrompt, codeRepairPrompt, parseCodeCritique, parseWriterRepairReply, writerRepairReplySchema, sameUnresolvedFindings, shouldRequestRepair, parseCodeCritiqueSettings } from "../../src/rooms/critique/code-critique";
 import { critiquePrompt, parseCritique } from "../../src/rooms/critique/critique";
 import { STAGE_IDS } from "@lane-pilot/contracts";
 import { docsMaintenancePrompt, nightlyDocsPrompt } from "../../src/rooms/docs/docs";
-import { gateTriagePrompt, parseGateTriageResult } from "../../src/rooms/verification/gate-triage";
-import { extractModelJson } from "@lane-pilot/workflow-engine";
+import { gateTriagePrompt, gateTriageResultSchema, parseGateTriageResult } from "../../src/rooms/verification/gate-triage";
+import { extractModelJson, verdictSchema } from "@lane-pilot/workflow-engine";
 import { nightFixBlockedReason, nightFixPrompt } from "../../src/rooms/night/night-fix";
-import { nightReviewPrompt, parseNightReviewResult } from "../../src/rooms/night/night";
+import { nightReviewPrompt, nightReviewResultSchema, parseNightReviewResult } from "../../src/rooms/night/night";
 import { onboardingPrompt, parseOnboardingPreview } from "../../src/rooms/project-life/onboarding";
 import { parsePmReadResult, pmReadPrompt } from "../../src/rooms/critique/pm-read";
 import { projectLifePrompt } from "../../src/rooms/project-life/project-life";
-import { parseSpecialistResult, specialistPrompt as reviewerPrompt } from "../../src/rooms/critique/specialist";
+import { parseSpecialistResult, specialistPrompt as reviewerPrompt, specialistResultSchema } from "../../src/rooms/critique/specialist";
 
 const NO_TOOLS = "open no files, run no commands and call no tools";
 const fenced = (json: string) => `Here is my review:\n\`\`\`json\n${json}\n\`\`\`\nHope this helps.`;
@@ -143,6 +146,40 @@ describe("JSON-answering prompts state the exact contract", () => {
     expect(prompt).toContain("rejects the whole array");
     expect(prompt).toContain("bytes / 4");
     expect(prompt).not.toContain("Audience=");
+  });
+});
+
+/** The enum members a parser's schema accepts that the prompt never names, as `path: "member"`; empty when the prompt names all of them. */
+const unnamed = (schema: z.ZodType, prompt: string) => enumCoverage(z.toJSONSchema(schema, { unrepresentable: "any" }), prompt).flatMap((group) => group.missing.map((value) => `${group.path}: "${value}"`));
+
+describe("a prompt names every literal its parser accepts", () => {
+  const evidence = buildCandidateEvidence({ produced: [], hashes: {}, verification: [], output: "", ownsPaths: [], neverTouch: [], dirtOk: true });
+  const report = { schemaVersion: 1 as const, projectId: "p", from: 0, to: 1, totalEvents: 0, totalGateEvents: 0, byStage: [], byGate: [], recentBlockers: [], recentGateBlockers: [] };
+
+  it("plan and code critique ask for the verdict shape: every status and every severity", () => {
+    expect(unnamed(verdictSchema, critiquePrompt({ plan: "p", task: {} }))).toEqual([]);
+    expect(unnamed(verdictSchema, codeCritiquePrompt({ evidence, task: {} }))).toEqual([]);
+  });
+
+  it("specialist review asks for the verdict statuses and only the two serious severities", () => {
+    const prompt = reviewerPrompt({ task: {}, plan: "p" });
+    // The reviewer reports no lower risk, so the lower verdict severities are left out on purpose; the parser's own severities are not.
+    expect(unnamed(verdictSchema, prompt)).toEqual(['#/properties/findings/items/properties/severity/enum: "medium"', '#/properties/findings/items/properties/severity/enum: "low"', '#/properties/findings/items/properties/severity/enum: "info"']);
+    expect(unnamed(specialistResultSchema.shape.risks, prompt)).toEqual([]);
+  });
+
+  it("night review, gate triage, the writer repair reply and the council chair", () => {
+    expect(unnamed(nightReviewResultSchema, nightReviewPrompt({ agent: "n", task: {}, acceptedResult: {}, workspace: "/w", maxFindings: 5 }))).toEqual([]);
+    expect(unnamed(gateTriageResultSchema, gateTriagePrompt(report))).toEqual([]);
+    const task = buildTask({ writerWorkspacePath: "/tmp/w" } as never, "T-1");
+    const repair = codeRepairPrompt({ task, findings: [], agent: "Lane Pilot writer", setupLines: WRITER_SETUP_LINES, contextBlocks: writerContextBlocks(task, "", "", "", "") });
+    expect(unnamed(writerRepairReplySchema, repair)).toEqual([]);
+    const session = { question: "q", agenda: ["a"], criteria: ["c"], seats: [{ id: "s", title: "S" }] } as never;
+    expect(unnamed(decisionRecordSchema, chairPrompt({ session, evidence: "E", feed: [] }))).toEqual([]);
+  });
+
+  it("reports a literal the prompt leaves out", () => {
+    expect(unnamed(writerRepairReplySchema, "status is fixed or blocked")).toEqual(['#/properties/replies/items/properties/status/enum: "disputed"']);
   });
 });
 

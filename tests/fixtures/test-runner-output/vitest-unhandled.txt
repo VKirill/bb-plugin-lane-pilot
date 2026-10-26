@@ -1,0 +1,32 @@
+
+ RUN  v4.1.11 /work/unh
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯ Unhandled Rejection ⎯⎯⎯⎯⎯
+Error: boom outside test
+ ❯ Timeout._onTimeout u.test.ts:3:71
+      1| import { it, expect } from "vitest";
+      2| it("fine", () => { expect(1).toBe(1); });
+      3| it("schedules a rejection", () => { setTimeout(() => { Promise.reject(…
+       |                                                                       ^
+      4|
+ ❯ listOnTimeout node:internal/timers:605:17
+ ❯ processTimers node:internal/timers:541:7
+
+This error originated in "u.test.ts" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The latest test that might've caused the error is "schedules a rejection". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+     Errors  1 error
+   Start at  16:44:18
+   Duration  169ms (transform 10ms, setup 0ms, import 17ms, tests 32ms, environment 0ms)
+

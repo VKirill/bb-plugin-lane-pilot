@@ -11,7 +11,8 @@ import { isEnvironmentCheckFailure } from "../../runs";
 import { gateLabel, gateResolverFor, type ResolvedGate } from "./gate-detect";
 import { continuesEpisode, fixesInFlight, type GateEpisode } from "./gate-episode";
 import { attributeFailures, testLabel } from "./gate-attribution";
-import { cacheHitsNote, extractCacheHits, extractFailingFiles, extractFailingTests, type FailingTest } from "../gate-output";
+import { cacheHitsNote, extractCacheHits, extractFailingFiles, extractFailingTests, unhandledErrorBlock, type FailingTest } from "../gate-output";
+import { flakyEvidence, outputTail, readingFrom } from "../machine-pressure";
 import type { GateAttributeResult } from "../integration-gate-host";
 import { join } from "node:path";
 
@@ -188,12 +189,14 @@ export function formatFixTurnPrompt(input: {
   failingTests?: string[];
   /** Failing tests that also fail on the base commit: not this task's, to be left alone. */
   preexistingTests?: string[];
+  /** The run's own «Unhandled Errors» block (gate-output.ts `unhandledErrorBlock`): it fails the run with every test green and sits above the 800-char tail. */
+  unhandled?: string | null;
 }): string {
   const tail = `${input.stderr}\n${input.stdout}`.trim().slice(-800);
   return `Result: integration gate failed after merging your task ${input.taskId}.
 Full check log: ${input.logPath}
 
-→ The integration gate command \`${input.gateCommand}\` exited with code ${input.exitCode}.${input.failingTests?.length ? `\n→ Failing tests your change can have broken: ${input.failingTests.join(", ")}.` : ""}${input.preexistingTests?.length ? `\n→ Also red, but they fail without your change too (not yours, leave them): ${input.preexistingTests.join(", ")}.` : ""}
+→ The integration gate command \`${input.gateCommand}\` exited with code ${input.exitCode}.${input.failingTests?.length ? `\n→ Failing tests your change can have broken: ${input.failingTests.join(", ")}.` : ""}${input.preexistingTests?.length ? `\n→ Also red, but they fail without your change too (not yours, leave them): ${input.preexistingTests.join(", ")}.` : ""}${input.unhandled ? `\n→ The run reported an unhandled error outside any test (it fails the run even with every test green): ${input.unhandled}` : ""}
 → Output tail:
 ${tail}
 
@@ -371,6 +374,12 @@ export class IntegrationGateRunner {
     const hasTaskInDb = Boolean(db.prepare("SELECT 1 FROM lane_pilot_task WHERE id=?").get(runTaskId));
 
     this.ctx.log(`integration-gate: running \`${gateCommand}\` on ${basePath}`);
+    // The machine the gate runs on, read right before a run (never during it): a timeout that passes on the recheck is called «load» only on a reading.
+    const sampleMachine = async () => {
+      try { return readingFrom(await host.call("diskFree", { requestedHostId: configHostId, path: basePath, machine: true }, { hostId: configHostId, timeoutMs: 5_000 })); }
+      catch { return null; }
+    };
+    const beforeGate = await sampleMachine();
 
     const ran = await host.call("gateRun", { requestedHostId: configHostId, basePath, command: gateCommand, timeoutSec: GATE_TIMEOUT_SEC },
       { hostId: configHostId, timeoutMs: (GATE_TIMEOUT_SEC + 60) * 1000 }).catch((cause: unknown) => {
@@ -443,7 +452,8 @@ export class IntegrationGateRunner {
     if (allFailuresAreTimeouts(`${stderr}\n${stdout}`, failingTests)) {
       const initialFailingFiles = [...new Set(failingTests.map((t) => t.file))];
       const recheckCmd = buildRecheckGateCommand(gateCommand, initialFailingFiles);
-      this.ctx.log(`integration-gate: all failures are timeouts under load; rechecking with \`${recheckCmd}\``);
+      this.ctx.log(`integration-gate: all failures are timeouts; rechecking with \`${recheckCmd}\``);
+      const beforeRecheck = await sampleMachine();
 
       const rechecked = await host.call("gateRun", { requestedHostId: configHostId, basePath, command: recheckCmd, timeoutSec: GATE_TIMEOUT_SEC },
         { hostId: configHostId, timeoutMs: (GATE_TIMEOUT_SEC + 60) * 1000 }).catch((cause: unknown) => {
@@ -452,7 +462,9 @@ export class IntegrationGateRunner {
       });
 
       if (rechecked && rechecked.exitCode === 0) {
-        this.ctx.log(`integration-gate: ${failingTests.length} timeouts passed on recheck (load), gate green`);
+        // The first run's failure is kept with the readings, so «load» is a measured verdict or «unexplained», not the log's guess.
+        const evidence = flakyEvidence({ exitCode, outputTail: outputTail({ stdout, stderr }) }, beforeGate, beforeRecheck);
+        this.ctx.log(`integration-gate: ${failingTests.length} timeouts passed on recheck, gate green (${evidence.classification}: ${evidence.basis})`);
         if (hasTaskInDb) {
           const recheckReceiptResult = {
             command: recheckCmd,
@@ -462,7 +474,8 @@ export class IntegrationGateRunner {
             exitCode: 0,
             passed: true,
             mergesChecked: this.mergesSinceLastGate,
-            note: "rechecked: timeouts under load",
+            note: `rechecked: timeouts passed on the second run (${evidence.classification})`,
+            flakyEvidence: evidence,
             recheckedTests: failingTests.map(testLabel),
           };
           try {
@@ -560,6 +573,9 @@ export class IntegrationGateRunner {
     this.mergesSinceLastGate = 0;
     this.mergedTasksSinceLastGate = [];
 
+    // An unhandled error outside any test fails the run with every test green; its block sits above the summary the log tail ends with.
+    const unhandled = unhandledErrorBlock(`${activeStderr}\n${activeStdout}`);
+
     // Write log file
     const logRelativePath = `.agents/plans/items/${culprit ? culprit.taskId : "integration-gate"}/logs/integration-gate.log`;
     const logFullPath = join(basePath, logRelativePath);
@@ -585,6 +601,7 @@ export class IntegrationGateRunner {
         stderr: activeStderr,
         logPath: logRelativePath,
         ...(attribution.strict ? { failingTests: attribution.remaining.map(testLabel), preexistingTests: attribution.preexisting.map(testLabel) } : {}),
+        unhandled,
       });
 
       if (culprit.attemptId) {
@@ -605,7 +622,9 @@ export class IntegrationGateRunner {
     // Tell PM with log; the owner is asked what to do (a form in the PM chat and a push on the phone), once per red-gate episode.
     const tasks = tasksToCheck.map((task) => task.taskId).join(", ");
     const allPreexisting = attribution.strict && failingTests.length > 0 && attribution.remaining.length === 0;
-    const why = input.live
+    const why = !failingTests.length && unhandled
+      ? `The run exited ${activeExitCode} with no failing test listed: it reported an unhandled error outside any test (the tests themselves may be green): ${unhandled}.${preexistingNote}`
+      : input.live
       ? `This folder has no git, so no culprit can be searched${tasks ? ` (tasks since the last gate: ${tasks})` : ""}.`
       : allPreexisting
         ? `All ${failingTests.length} failing tests also fail on the base from before this batch (pre-existing), so no merged task is to blame.`

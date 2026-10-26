@@ -1,0 +1,12 @@
+✔ alpha (1.283667ms)
+✔ beta (0.082583ms)
+﹣ gamma skipped (0.07325ms) # SKIP
+✔ delta todo (0.050084ms) # TODO
+ℹ tests 4
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 1
+ℹ duration_ms 132.488625

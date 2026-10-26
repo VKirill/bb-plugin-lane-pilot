@@ -18,6 +18,7 @@ export * from "./reducers";
 export * from "./router";
 export * from "./run-stats";
 export * from "./schema";
+export * from "./prompt-coverage";
 export * from "./validate";
 export * from "./values";
 export * from "./view";

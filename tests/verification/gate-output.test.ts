@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { cacheHitsNote, extractCacheHits, extractFailingFiles, extractFailingTests } from "../../src/rooms/verification/gate-output";
+import { cacheHitsNote, extractCacheHits, extractFailingFiles, extractFailingTests, unhandledErrorBlock } from "../../src/rooms/verification/gate-output";
 
 // An excerpt of the SelfyStudio gate log of 2026-10-09 (turbo + vitest, with colour codes).
 const TURBO_RUN = [
@@ -51,5 +52,24 @@ describe("turbo cache hits", () => {
 
   it("says nothing when no task was a cache hit", () => {
     expect(cacheHitsNote(extractCacheHits("npm test\n 3 passed"))).toBe("");
+  });
+});
+
+describe("unhandledErrorBlock", () => {
+  // A real vitest 4.1 run (2026-10-26) that exited 1 with both tests passed: a promise rejected from a timer outside any test.
+  const real = readFileSync(new URL("../fixtures/test-runner-output/vitest-unhandled.txt", import.meta.url), "utf8");
+
+  it("names the error and its first frame; no failing test is listed in that run", () => {
+    expect(extractFailingTests(real).map((test) => test.file)).toEqual(["u.test.ts"]);
+    const block = unhandledErrorBlock(real)!;
+    expect(block).toMatch(/^Unhandled Rejection \| Error: boom outside test \| ❯ Timeout\._onTimeout u\.test\.ts:3:71/);
+    expect(block).not.toContain("⎯");
+    expect(block).not.toContain("Vitest caught");
+    expect(block.length).toBeLessThanOrEqual(600);
+  });
+
+  it("is null for a run without that block, and works through terminal colours", () => {
+    expect(unhandledErrorBlock("FAIL tests/a.test.ts > x\nAssertionError: expected 1 to be 2\n")).toBeNull();
+    expect(unhandledErrorBlock("\u001b[31m⎯⎯⎯ Unhandled Rejection ⎯⎯⎯\u001b[39m\nError: late\n")).toBe("Unhandled Rejection | Error: late");
   });
 });

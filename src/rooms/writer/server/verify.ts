@@ -17,7 +17,9 @@ import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
 import { isLiveDecision, LIVE_FOLDER_RECEIPT } from "../live-folder";
 import { beginChecks, checksMoved, taskFamily } from "../../runs";
 import { bookkeepingSetting, filterOwnershipNoise } from "@lane-pilot/settings-catalog";
-import { findUnownedChanges, findUnownedRunChanges, resolveRunOwnershipScope } from "../../verification";
+import { findUnownedChanges, findUnownedRunChanges, flakyEvidence as machineEvidence, outputTail, readingFrom, resolveRunOwnershipScope } from "../../verification";
+import type { FlakyEvidence, MachineReading } from "../../verification";
+import { noTestRanReason } from "../../tasks/server";
 import { recordGateEvaluation } from "../../runs/server";
 import { listThreadEventsRaw } from "@lane-pilot/thread-observe";
 import { stringAt } from "../../core/server";
@@ -29,14 +31,32 @@ import type { Services } from "../../core/server";
  * A verification command that fails is run once more: a check that fails once and passes on a re-run (a cold cache, a
  * port still held by the previous run) is flaky, not the writer's fault. Exit 124 is a timeout (the terminal and the
  * host sandbox both report it so) and is not repeated: it would only double the wait.
+ * The pass used to replace the failure, and «load» was a guess nobody measured. Now the result keeps the first failure
+ * (exit code, output tail) and a machine reading taken just before each attempt (`sample`, on the host the check runs
+ * on), with a verdict that names its basis: `machine_pressure` only when a reading crossed a limit, else `unexplained`.
  */
-export async function runWithFlakyRerun<T extends {exitCode:number}>(command:string,run:()=>Promise<T>,log:(line:string)=>void):Promise<T&{flaky?:true}> {
+export async function runWithFlakyRerun<T extends {exitCode:number;stdout?:string;stderr?:string}>(command:string,run:()=>Promise<T>,log:(line:string)=>void,
+  sample?:()=>Promise<MachineReading|null>):Promise<T&{flaky?:true;flakyEvidence?:FlakyEvidence}> {
+  const beforeFirst=await sample?.();
   const first=await run();
   if(first.exitCode===0||first.exitCode===124) return first;
+  const beforeRerun=await sample?.();
   const again=await run();
   if(again.exitCode!==0) return first;
-  log(`verification command passed on re-run (flaky): ${command}`);
-  return {...again,flaky:true};
+  const flakyEvidence=machineEvidence({exitCode:first.exitCode,outputTail:outputTail(first)},beforeFirst??null,beforeRerun??null);
+  log(`verification command passed on re-run (flaky): ${command} — first exit ${first.exitCode}, ${flakyEvidence.classification}: ${flakyEvidence.basis}`);
+  return {...again,flaky:true,flakyEvidence};
+}
+
+/**
+ * A check that exited 0 but whose runner counted no executed test (a mistyped `-t`, a `passWithNoTests` in the config, a
+ * filter that matches no file) proves nothing: it fails, and the writer reads why in the check's stderr (the retry brief
+ * quotes it). Output that is not a test runner's summary (tsc, lint, a script) is left as it is.
+ */
+export function failIfNoTestRan<T extends {exitCode:number;stdout:string;stderr:string}>(result:T):T {
+  if(result.exitCode!==0) return result;
+  const reason=noTestRanReason(`${result.stdout}\n${result.stderr}`);
+  return reason ? {...result,exitCode:1,stderr:`check failed: ${reason}\n${result.stderr}`.trim()} : result;
 }
 
 /**
@@ -100,7 +120,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
   }
 
   async function runVerification(config: PrototypeConfig, task: TaskV2, runId?:string, writerThreadId?:string, options?:{ background?:boolean; jobKey?:string }): Promise<Array<VerifyResult & {
-    sandboxBackend:string|null; policySha256:string|null; workspacePath:string; flaky?:true;
+    sandboxBackend:string|null; policySha256:string|null; workspacePath:string; flaky?:true; flakyEvidence?:FlakyEvidence;
     /** The host call itself failed (worker killed, host offline): the command's own verdict is unknown. */
     hostError?:true;
   }>> {
@@ -122,7 +142,12 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       const release=await services.runWriterPool.acquire(pool,policy.pools.verification);
       checksMoved(pool);
       try {
-      return await runWithFlakyRerun(command.command,async()=>{
+      // The machine the check runs on, read right before each attempt (never during it): the host that runs it, not this process.
+      const sampleMachine=async():Promise<MachineReading|null>=>{
+        try { return readingFrom(await host.call("diskFree",{requestedHostId:config.hostId,path:task.project_cwd,machine:true},{hostId:config.hostId,timeoutMs:5_000})); }
+        catch { return null; }
+      };
+      return failIfNoTestRan(await runWithFlakyRerun(command.command,async()=>{
       const backend=(loadProjectSettings(db,config.projectId,verificationScopes)["sandbox.backend"] as "auto"|"macos-seatbelt"|"linux-bubblewrap"|undefined) ?? "auto";
       // The sandbox gives a command 120 s when the task names no limit; waiting only 30 s cut longer checks short.
       // History widens it for a check that is slow in this project: max(that, p95 of its last 20 green runs x 2), capped.
@@ -182,7 +207,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       const mask=(text:string)=>redactKnown(hasSecrets?redactSecrets(text,Object.values(env)):text);
       return recorded({command:command.command,exitCode:ran.exitCode,stdout:typeof ran.stdout==="string"?mask(ran.stdout):"",stderr:typeof ran.stderr==="string"?mask(ran.stderr):"",
         sandboxBackend:ran.backend,policySha256:ran.policySha256,workspacePath:ran.workspacePath,...("hostError" in ran?{hostError:true as const}:{})});
-      },(line)=>bb.log.info(line));
+      },(line)=>bb.log.info(line),sampleMachine));
       } finally { checksMoved(pool); release(); }
     });
     } finally { endChecks(); }

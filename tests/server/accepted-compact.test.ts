@@ -87,4 +87,13 @@ describe("compactAcceptedResult edge cases", () => {
     expect(compactAcceptedResult("text")).toBe("text");
     expect(compactAcceptedResult({})).toEqual({ output: "", produced: [], verification: [] });
   });
+  it("keeps the verdict of a check that passed only on the re-run, not its log", () => {
+    const compact = compactAcceptedResult({ status: "accepted", verification: [
+      { command: "npm test", exitCode: 0, stdout: "Tests  1 passed (1)", stderr: "", flaky: true, flakyEvidence: { classification: "unexplained", firstFailure: { exitCode: 1, outputTail: "x".repeat(900) } } },
+      { command: "npm run lint", exitCode: 0, stdout: "ok", stderr: "" },
+    ] }) as { verification: Array<Record<string, unknown>> };
+    expect(compact.verification[0]).toMatchObject({ flaky: "unexplained" });
+    expect(JSON.stringify(compact.verification[0])).not.toContain("xxxx");
+    expect(compact.verification[1]).not.toHaveProperty("flaky");
+  });
 });

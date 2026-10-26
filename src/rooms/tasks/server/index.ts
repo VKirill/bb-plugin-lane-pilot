@@ -4,5 +4,7 @@ export { compactAcceptedResult } from "./accepted-compact";
 export { emptyCheckReason, lintContract, lintReply } from "./contract-lint";
 export type { LintFinding, LintInput } from "./contract-lint";
 export { createTaskLinter } from "./lint-task";
+export { noTestRanReason, testSummaries } from "./tests-ran";
+export type { TestSummary } from "./tests-ran";
 export { registerQueueTool } from "./queue-tool";
 export { registerConversationTools } from "./conversation-tools";

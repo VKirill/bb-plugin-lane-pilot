@@ -287,7 +287,7 @@
         "en": "Cocoon audit",
         "ru": "Аудит кокона"
       },
-      "prompt": "Verdict on the whole cocoon from the files only: every audience pain/intent has a page; no two pages target one intent (cannibalization, quote both); no orphan pages; link graph depth <= 3; every brief states the decision the reader makes. Findings cite the page slug and the passage.",
+      "prompt": "Verdict on the whole cocoon from the files only: every audience pain/intent has a page; no two pages target one intent (cannibalization, quote both); no orphan pages; link graph depth <= 3; every brief states the decision the reader makes. Findings cite the page slug and the passage. Severity is one of critical, high, medium, low, info.",
       "out": {
         "status": "pass|rework|block",
         "findings": "Finding[]",

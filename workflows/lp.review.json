@@ -94,7 +94,7 @@
         "role": "code-critic",
         "session": "new",
         "src": "maestro-flow:workflows/review.md, odyssey-security.md, odyssey-defensive.md",
-        "prompt": "CODE_CRITIC_METHOD for exactly one dimension ({{item}}). Every finding has file:line, severity, evidence (quoted code), impact, suggestion; severity is not softened without new evidence.\nsecurity: OWASP A01-A10, dependencies, secrets (report by location, never the value), a false positive is closed only with counter-evidence.\nsilent_failures: swallowed exceptions, defaults that hide an error, log-only handlers - does the caller learn about the failure?\nDo not report what a prior review already closed.\n",
+        "prompt": "CODE_CRITIC_METHOD for exactly one dimension ({{item}}). Every finding has file:line, severity (critical|high|medium|low|info), evidence (quoted code), impact, suggestion; severity is not softened without new evidence.\nsecurity: OWASP A01-A10, dependencies, secrets (report by location, never the value), a false positive is closed only with counter-evidence.\nsilent_failures: swallowed exceptions, defaults that hide an error, log-only handlers - does the caller learn about the failure?\nDo not report what a prior review already closed.\n",
         "out": {
           "dimension": "string",
           "findings": "Finding[]"

@@ -4,6 +4,7 @@ import { applyEdits, findNodeAtLocation, modify, parse, parseTree, type ParseErr
 import { defaultGuardSource } from "@lane-pilot/kit";
 import { hashPath } from "@lane-pilot/kit";
 import { compareAndSwapText, readTextState } from "./cas";
+import { hookCommandShape } from "@lane-pilot/kit";
 
 export type GuardAppliedFile = { path: string; sha256Before: string | null; sha256After: string };
 
@@ -49,20 +50,50 @@ function commandFor(path: string): string {
   return `python3 '${path.replaceAll("'", "'\\''")}'`;
 }
 
-function existingPreToolUseCommand(parsed: unknown, command: string): boolean {
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+const GUARD_MATCHER = "*";
+
+type GuardHit = { group: number; hook: number };
+
+/** Guard handlers already in PreToolUse, in file order: same matcher, program and script path as `command`, whatever its quoting. */
+function existingGuardHits(parsed: unknown, command: string): GuardHit[] {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
   const hooks = (parsed as Record<string, unknown>).hooks;
-  if (!hooks || typeof hooks !== "object" || Array.isArray(hooks)) return false;
+  if (!hooks || typeof hooks !== "object" || Array.isArray(hooks)) return [];
   const entries = (hooks as Record<string, unknown>).PreToolUse;
-  if (!Array.isArray(entries)) return false;
-  return entries.some((entry) => {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
+  if (!Array.isArray(entries)) return [];
+  const shape = hookCommandShape(command);
+  const hits: GuardHit[] = [];
+  entries.forEach((entry, group) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return;
+    const matcher = (entry as Record<string, unknown>).matcher;
+    if ((typeof matcher === "string" ? matcher : "") !== GUARD_MATCHER) return;
     const nested = (entry as Record<string, unknown>).hooks;
-    return Array.isArray(nested) && nested.some((item) =>
-      item && typeof item === "object" && !Array.isArray(item)
-      && (item as Record<string, unknown>).command === command,
-    );
+    if (!Array.isArray(nested)) return;
+    nested.forEach((item, hook) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return;
+      const row = item as Record<string, unknown>;
+      if ((row.type !== undefined && row.type !== "command") || typeof row.command !== "string") return;
+      const same = shape ? hookCommandShape(row.command) === shape : row.command.trim() === command.trim();
+      if (same) hits.push({ group, hook });
+    });
   });
+  return hits;
+}
+
+function removeExtraGuardHits(raw: string, command: string): string {
+  const options = { formattingOptions: { insertSpaces: true, tabSize: 2, eol: "\n" } };
+  let text = raw;
+  for (;;) {
+    const parsed = parse(text, [], { allowTrailingComma: true, disallowComments: false });
+    const hits = existingGuardHits(parsed, command);
+    const last = hits.at(-1);
+    if (hits.length < 2 || !last) return text;
+    const group = (parsed as { hooks: { PreToolUse: Array<{ hooks: unknown[] }> } }).hooks.PreToolUse[last.group]!;
+    const path = group.hooks.length === 1
+      ? ["hooks", "PreToolUse", last.group]
+      : ["hooks", "PreToolUse", last.group, "hooks", last.hook];
+    text = applyEdits(text, modify(text, path, undefined, options));
+  }
 }
 
 function addPreToolUseGuard(raw: string, command: string): string {
@@ -74,9 +105,12 @@ function addPreToolUseGuard(raw: string, command: string): string {
   const preToolUseNode = findNodeAtLocation(tree, ["hooks", "PreToolUse"]);
   if (preToolUseNode && preToolUseNode.type !== "array") throw new Error("Claude PreToolUse hooks are not an array; preserving settings");
   const parsed = parse(raw, [], { allowTrailingComma: true, disallowComments: false });
-  if (existingPreToolUseCommand(parsed, command)) return raw;
+  const present = existingGuardHits(parsed, command).length;
+  if (present === 1) return raw;
+  // A second copy runs the guard twice: keep the first verbatim and drop the rest.
+  if (present > 1) return removeExtraGuardHits(raw, command);
 
-  const entry = { matcher: "*", hooks: [{ type: "command", command }] };
+  const entry = { matcher: GUARD_MATCHER, hooks: [{ type: "command", command }] };
   const edits = preToolUseNode
     ? modify(raw, ["hooks", "PreToolUse", -1], entry, {
       isArrayInsertion: true,
@@ -148,5 +182,6 @@ export async function isOwnedPmGuardApplied(input: {
   if (!settings.text) return false;
   const errors: ParseError[] = [];
   const parsed = parse(settings.text, errors, { allowTrailingComma: true, disallowComments: false });
-  return errors.length === 0 && existingPreToolUseCommand(parsed, commandFor(guardPath));
+  // Exactly one copy: a duplicate is not "applied", so the install path runs and repairs it.
+  return errors.length === 0 && existingGuardHits(parsed, commandFor(guardPath)).length === 1;
 }

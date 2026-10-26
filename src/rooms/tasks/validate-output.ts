@@ -2,6 +2,7 @@ import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
 import { ENVIRONMENT_REASON, NO_ANSWER_REASON, isEnvironmentCheckFailure } from "../runs";
 import { cleanCheckOutput } from "@lane-pilot/kit";
 import type { TaskV2 } from "../contracts";
+import type { FlakyEvidence } from "../verification";
 import { trustedToolingHint } from "./trusted-tooling";
 
 export function isTaskFolderFile(path:string):boolean {
@@ -13,7 +14,8 @@ export type OutputCheck =
   | { ok:true; warnings?:string[] }
   | { ok:false; state:"empty_output"|"validation_failed"; reason:string };
 
-export type VerifyResult = { command:string; exitCode:number; stdout:string; stderr:string; flaky?:true };
+/** `flakyEvidence`: with `flaky`, the first failure and the machine reading before it (src/rooms/verification/machine-pressure.ts). */
+export type VerifyResult = { command:string; exitCode:number; stdout:string; stderr:string; flaky?:true; flakyEvidence?:FlakyEvidence };
 
 export function parseGitChangedPaths(stdout: string): string[] {
   const paths = new Set<string>();

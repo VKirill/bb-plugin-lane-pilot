@@ -142,6 +142,8 @@ describe("the regression pass over accepted tasks (D1-2)", () => {
     const result = await w.services.regression.run({ projectId: "projA" });
     expect(result.projects[0]!.findings).toHaveLength(1);
     expect(result.projects[0]!.findings[0]).toMatchObject({ taskId: "F", kind: "unstable", bisect: "skipped" });
+    // «flaky or the machine» now carries the reading taken before that run, or says there was none (this world's host cannot answer diskFree)
+    expect(result.projects[0]!.findings[0]!.note).toMatch(/flaky or the machine, not later work; (?:no machine reading was available|no limit crossed|machine pressure)/);
     expect(listRegressions(w.db, { projectId: "projA", kind: "regression" })).toHaveLength(0);
     expect(composeMorningList(w.db)[1]).not.toContain("Сломано");
     expect(w.calls).not.toContain("gateBisect");

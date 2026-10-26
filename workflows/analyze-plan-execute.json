@@ -266,7 +266,7 @@
         "findings": "[]"
       },
       "src": "maestro-flow:ref/frontend-verify.md",
-      "prompt": "FRONTEND_VERIFY_METHOD - per feature three layers (entry in UI exists, the write request is observed with the right payload, the result is in the DOM); a write endpoint without a UI entry is a defect; a check that did not run is rework, silence is never pass. Viewports 375 and 1280.",
+      "prompt": "FRONTEND_VERIFY_METHOD - per feature three layers (entry in UI exists, the write request is observed with the right payload, the result is in the DOM); a write endpoint without a UI entry is a defect; a check that did not run is rework, silence is never pass. Viewports 375 and 1280. Severity is one of critical, high, medium, low, info.",
       "out": {
         "status": "pass|rework|block",
         "findings": "Finding[]"

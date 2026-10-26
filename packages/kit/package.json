@@ -10,6 +10,7 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./owns-paths": "./src/owns-paths.ts"
+    "./owns-paths": "./src/owns-paths.ts",
+    "./prompt-coverage": "./src/prompt-coverage.ts"
   }
 }

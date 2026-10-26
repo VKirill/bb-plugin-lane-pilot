@@ -224,7 +224,7 @@
         "findings": "[]"
       },
       "src": "maestro-flow:ref/frontend-verify.md",
-      "prompt": "FRONTEND_VERIFY_METHOD over the merged result: three layers per feature, 375 and 1280 px, silence is never pass.",
+      "prompt": "FRONTEND_VERIFY_METHOD over the merged result: three layers per feature, 375 and 1280 px, silence is never pass. Severity is one of critical, high, medium, low, info.",
       "out": {
         "status": "pass|rework|block",
         "findings": "Finding[]"

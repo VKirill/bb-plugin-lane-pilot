@@ -535,6 +535,56 @@ AssertionError: expected 1 to be 2
       expect(events.map((e) => e.status)).toEqual(["failed", "passed"]);
     });
 
+    it("logs the machine verdict of a recheck that went green, from a reading taken on the project's host", async () => {
+      const timeoutErr = " FAIL  tests/timeout.test.ts\nError: Test timed out in 5000ms.";
+      let gateRuns = 0;
+      let readings = 0;
+      const logs: string[] = [];
+      const GB = 1024 ** 3;
+      const coreWithGate = { ...mockCore, log: (line: string) => logs.push(line), host: { call: async (method: string, input: any) => {
+        if (method === "gateRun") return ++gateRuns === 1 ? { hostId: "host-1", exitCode: 1, stdout: "", stderr: timeoutErr, head: "h" } : { hostId: "host-1", exitCode: 0, stdout: "passed", stderr: "", head: "h" };
+        // The first reading (before the gate) is a machine at load 25 on 10 CPUs; the second (before the recheck) is quiet.
+        if (method === "diskFree") return { hostId: "host-1", path: input.path, freeBytes: 200 * GB, totalBytes: 500 * GB, machine: { load1: ++readings === 1 ? 25 : 1, cpuCount: 10, memFreeBytes: 8 * GB, memTotalBytes: 16 * GB } };
+        return (hostHandlers as any)[method]?.(input);
+      } } } as unknown as ServerCore;
+      saveProjectSetting(db, "proj-1", "integration.gate_command", "npx vitest run");
+      db.prepare(`INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES ('task-1', 'run-1', 'bb', '{}', 0)`).run();
+      const runner = new IntegrationGateRunner(coreWithGate, mockServices);
+      runner.noteMergedTask({ taskId: "task-1", commitSha: "sha-1", threadId: "thr-1", attemptId: "att-1", produced: ["tests/timeout.test.ts"] });
+
+      const res = await runner.maybeRunGate({ runId: "run-1", projectId: "proj-1", pmThreadId: "pm-thread-999", basePath: "/tmp/project", configHostId: "host-1", trigger: "drain" });
+
+      expect(res).toMatchObject({ ran: true, passed: true });
+      expect(readings).toBe(2);
+      const line = logs.find((entry) => entry.includes("passed on recheck"))!;
+      expect(line).toContain("machine_pressure");
+      expect(line).toContain("load average 25.0 on 10 CPUs");
+      expect(line).toContain("on host-1");
+      expect(line).not.toContain("under load");
+    });
+
+    it("names the unhandled error when the run exits 1 with no failing test listed", async () => {
+      const unhandledOnly = "RUN v4.1.11\n⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯\nVitest caught 1 unhandled error during the test run.\n⎯⎯⎯ Unhandled Rejection ⎯⎯⎯\nError: db pool closed twice\n ❯ Pool.close src/db/pool.ts:41:11\n\n Test Files  1 passed (1)\n      Tests  2 passed (2)\n     Errors  1 error\n";
+      const coreWithGate = { ...mockCore, host: { call: async (method: string, input: any) => {
+        if (method === "gateRun") return { hostId: "host-1", exitCode: 1, stdout: unhandledOnly, stderr: "", head: "h" };
+        if (method === "readBoundedFile") return { content: "" };
+        return (hostHandlers as any)[method]?.(input);
+      } } } as unknown as ServerCore;
+      saveProjectSetting(db, "proj-1", "integration.gate_command", "npx vitest run");
+      db.prepare(`INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES ('task-1', 'run-1', 'bb', '{}', 0)`).run();
+      const runner = new IntegrationGateRunner(coreWithGate, mockServices);
+      runner.noteMergedTask({ taskId: "task-1", commitSha: "sha-1", threadId: "thr-1", attemptId: "att-1", produced: ["src/a.ts"] });
+      runner.noteMergedTask({ taskId: "task-2", commitSha: "sha-2", threadId: "thr-2", attemptId: "att-2", produced: ["src/b.ts"] });
+
+      await runner.maybeRunGate({ runId: "run-1", projectId: "proj-1", pmThreadId: "pm-thread-999", basePath: "/tmp/project", configHostId: "host-1", trigger: "drain" });
+
+      const pm = sentMessages.find((m) => m.threadId === "pm-thread-999")?.text ?? "";
+      expect(pm).toContain("no failing test listed");
+      expect(pm).toContain("unhandled error outside any test");
+      expect(pm).toContain("Error: db pool closed twice | ❯ Pool.close src/db/pool.ts:41:11");
+      expect(pm).not.toContain("Could not unambiguously identify culprit.");
+    });
+
     it("a recheck that fails with an assertion error leads to normal culprit flow", async () => {
       const timeoutErr = " FAIL  tests/timeout.test.ts\nError: Test timed out in 5000ms.";
       const assertionErr = " FAIL  tests/timeout.test.ts\nAssertionError: expected false to be true";

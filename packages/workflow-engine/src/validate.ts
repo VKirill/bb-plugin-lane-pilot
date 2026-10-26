@@ -6,6 +6,7 @@ import { artifactDef, artifactId } from "./artifacts";
 import { cronProblem, timezoneProblem } from "./cron";
 import { EMIT, executorKey, lowerWorkflow, outputFields } from "./lower";
 import { PRESET_SLUGS, presetSlug } from "@lane-pilot/models";
+import { promptCoverageProblems } from "./prompt-coverage";
 import { END, MAX_SUBWORKFLOW_DEPTH, QUALITY_MODES, START, parseWorkflowObject } from "./schema";
 import type { Field, GraphNode, Workflow, WorkflowNode } from "./schema";
 
@@ -360,6 +361,8 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
       const handoff = node.out.find((field) => field.name === "handoff");
       if (handoff && handoff.type !== "string") error("handoff_type", `${node.id}: handoff must be a string`, extra);
       if (!node.prompt.trim() && !node.uses) warn("empty_prompt", `agent "${node.id}" has an empty prompt`, extra);
+      // The vocabulary the answer is checked against (the enums of what it produces) is in the prompt, or the model must guess it. A warning: a skill or a role method may say it.
+      for (const message of promptCoverageProblems(node, outputFields(L, node, options.resolve) as Field[])) warn("prompt_vocabulary", message, extra);
     }
     checkStepContract(node, extra);
     if (node.type === "human" && node.onTimeout === "default" && !(node.defaultOption && node.options.includes(node.defaultOption))) error("human_default", `${node.id}: onTimeout "default" needs defaultOption from options`, extra);

@@ -206,7 +206,7 @@
         "ru": "Проверка в браузере"
       },
       "src": "maestro-flow:ref/frontend-verify.md",
-      "prompt": "FRONTEND_VERIFY_METHOD at 375 and 1280 px - entry in UI, write request observed, result in DOM; states from the pack (empty, error, loading) are exercised; screenshots saved. Not run means NEEDS_RETRY, never pass.",
+      "prompt": "FRONTEND_VERIFY_METHOD at 375 and 1280 px - entry in UI, write request observed, result in DOM; states from the pack (empty, error, loading) are exercised; screenshots saved. Not run means NEEDS_RETRY, never pass. Severity is one of critical, high, medium, low, info.",
       "out": {
         "status": "pass|rework|block",
         "findings": "Finding[]",

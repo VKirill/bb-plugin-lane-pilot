@@ -8,3 +8,5 @@ export * from "./jsonc";
 export * from "./paths";
 export * from "./owns-paths";
 export * from "./pace";
+export * from "./prompt-coverage";
+export * from "./hook-shape";

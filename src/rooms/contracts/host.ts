@@ -70,8 +70,10 @@ export const hostContract = defineRpcContract({
   },
   ...anamnesisHostMethods,
   diskFree: {
-    input: z.object({ requestedHostId:z.string().min(1), path:z.string().startsWith("/") }).strict(),
-    output: z.object({ hostId:z.string(), path:z.string(), freeBytes:z.number().nonnegative(), totalBytes:z.number().nonnegative() }).strict(),
+    // `machine`: also answer with the host's load, CPU count and memory, for the reading taken before a check (additive; an older host rejects the flag, and the caller then has no reading).
+    input: z.object({ requestedHostId:z.string().min(1), path:z.string().startsWith("/"), machine:z.boolean().optional() }).strict(),
+    output: z.object({ hostId:z.string(), path:z.string(), freeBytes:z.number().nonnegative(), totalBytes:z.number().nonnegative(),
+      machine:z.object({ load1:z.number().nonnegative().nullable(), cpuCount:z.number().int().positive().nullable(), memFreeBytes:z.number().nonnegative().nullable(), memTotalBytes:z.number().nonnegative().nullable() }).strict().optional() }).strict(),
   },
   gitCreateWorktree: {
     // `commit`: start from it instead of HEAD; `baseSha` in the answer: the commit the worktree started from (both additive; an older host ignores the first and omits the second).

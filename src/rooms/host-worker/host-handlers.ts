@@ -3,7 +3,7 @@ import { createWorktree, integrateWorktree, mergeInfo, prepareWorktree, removeLa
 import { attributeGateOnHost, bisectGateOnHost, runGateOnHost } from "../verification";
 import { buildDocsAnchors, docsDepth as readDocsDepth, docsStaleness, jevApiKey, jevProviderOfKey, provideJevKey, verifyDocsCitations } from "../verification";
 import { buildDocsFlows } from "../verification";
-import { runStabilityDrill, userToolBins } from "../verification";
+import { readMachineFacts, runStabilityDrill, userToolBins } from "../verification";
 import { commitDocs, docsLineCounts as readDocsLineCounts, docsWorthinessFacts as readDocsWorthinessFacts, gitDocsScope as readGitDocsScope, revertPaths } from "../verification";
 import { randomUUID } from "node:crypto";
 import { request as httpRequest } from "node:http";
@@ -176,10 +176,11 @@ export const gitSyncWorktree: ExperimentalHostRpcHandlers<typeof hostContract>["
   ...await syncWorktree({basePath:input.basePath,worktreePath:input.worktreePath,keepConflicts:input.keepConflicts}),
 });
 
-/** Free space for whoever decides before a spawn: a full disk (OVH, 2026-10-03) killed the BB host daemon. */
+/** Free space for whoever decides before a spawn: a full disk (OVH, 2026-10-03) killed the BB host daemon. With `machine`: the host's load and memory too, the reading taken before a check. */
 export const diskFree: ExperimentalHostRpcHandlers<typeof hostContract>["diskFree"] = async (input) => {
   const fs = await statfs(input.path);
-  return { hostId:process.env.BB_HOST_ID??input.requestedHostId, path:input.path, freeBytes:Number(fs.bavail)*Number(fs.bsize), totalBytes:Number(fs.blocks)*Number(fs.bsize) };
+  return { hostId:process.env.BB_HOST_ID??input.requestedHostId, path:input.path, freeBytes:Number(fs.bavail)*Number(fs.bsize), totalBytes:Number(fs.blocks)*Number(fs.bsize),
+    ...(input.machine ? { machine:await readMachineFacts() } : {}) };
 };
 
 /**

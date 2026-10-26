@@ -153,6 +153,8 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
   now(): number;
   /** The running Lane Pilot version (package.json when not given). */
   version?: string;
+  /** Git's verdicts on whether the run's recorded proofs still cover the code (proof-currency), as text for the goal audit; null when none. */
+  proofCurrency?(phase: Phase): Promise<string | null>;
 }) {
   const version = deps.version ?? packageJson.version;
   const fail = (phase: Phase, kind: AutoKind, why: string) => {
@@ -271,7 +273,9 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
     const runtime = deps.runtime(phase);
     if (!workflow || !runtime) return false;
     try {
-      const started = services.workflowEngine.start({ workflow, inputs: autoInputs(phase, due), key: `phase:${phase.id}:${due.kind}:${phase.edition}:${deps.now()}`, runtime,
+      // The goal audit is told from git which recorded proofs are stale, so it does not work currency out by hand; a failed lookup only leaves the facts out.
+      const currency = due.kind === "close" && deps.proofCurrency ? await deps.proofCurrency(phase).catch(() => null) : null;
+      const started = services.workflowEngine.start({ workflow, inputs: { ...autoInputs(phase, due), ...(currency ? { proof_currency: currency } : {}) }, key: `phase:${phase.id}:${due.kind}:${phase.edition}:${deps.now()}`, runtime,
         link: { projectId: phase.projectId, ...(phase.runId ? { runId: phase.runId } : {}) } });
       started.done.catch((cause: unknown) => ctx.log(`phase ${phase.id}: ${AUTO_WORKFLOWS[due.kind]} stopped: ${cause instanceof Error ? cause.message : String(cause)}`));
       deps.save(phase.id, { ...phase.record, auto: { kind: due.kind, wfRunId: started.runId, startedAt: deps.now(), ...(due.wave ? { wave: due.wave } : {}) } });

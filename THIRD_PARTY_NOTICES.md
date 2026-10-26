@@ -277,6 +277,37 @@ Copyright 2025 Paul Bakaus. Licensed under the Apache License, Version 2.0. You 
    limitations under the License.
 ```
 
+## agent-dev-tools / prompt-covers-schema, MIT
+
+The prompt coverage check (`packages/kit/src/prompt-coverage.ts`, used by `packages/workflow-engine/src/prompt-coverage.ts`
+and `tests/stages/helper-prompt-contracts.test.ts`) follows `prompt-covers-schema` from Matvey Maslov's `agent-dev-tools`
+(MIT): whole-word literal matching of a schema's enum members against the instructions, texts examined separately, partial
+enum reporting. It is rewritten for Lane Pilot (string enums and constants only; patterns and required names are not audited).
+
+```
+MIT License
+
+Copyright (c) 2026 Matvey Maslov
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## npm dependencies shipped in the bundle
 
 The shipped license ledger (`npx tsx scripts/lp-ship.ts licenses`) checks that every production dependency is named here.

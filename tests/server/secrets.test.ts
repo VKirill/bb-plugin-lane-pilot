@@ -106,8 +106,10 @@ describe("secrets in a check", () => {
   it("keeps a background check with secrets out of the host's job store", async () => {
     const { calls, verify } = verifier({ allow:"STRIPE_TEST_KEY" });
     await verify.runVerification(config, task([{ command:"node e2e.js", cwd:root, secrets:["STRIPE_TEST_KEY"] }]), undefined, undefined, { background:true, jobKey:"k" });
-    expect(calls[0]!.options).not.toHaveProperty("job");
-    expect(hostContract.runSandboxedCommand.input.safeParse(calls[0]!.input).success).toBe(true);
+    // The machine reading before the attempt is a diskFree call of its own; the check is the sandboxed one.
+    const ran = calls.find((call) => call.method === "runSandboxedCommand")!;
+    expect(ran.options).not.toHaveProperty("job");
+    expect(hostContract.runSandboxedCommand.input.safeParse(ran.input).success).toBe(true);
   });
 
   it("a secret the project list leaves out is not fetched, and the check does not run", async () => {

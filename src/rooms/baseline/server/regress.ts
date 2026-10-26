@@ -2,6 +2,7 @@ import { relative } from "node:path";
 import { getAttempt, getTask, listCheckDurations, listStageReceipts } from "../../storage";
 import type { RollbackApi, RollbackItem, RollbackTarget } from "../../rollback/server";
 import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
+import { readingFrom, readingNote } from "../../verification";
 import {
   bisectCommand, bisectStepsFor, estimateSec, messageOwner, parseRegressSettings, planChecks,
   type RegressSettings, type VerificationItem,
@@ -186,8 +187,10 @@ export function createRegression(ctx: ServerCore, services: Services) {
     const made = await kit().makeWorktree(c.target, `regress-merge-${c.target.taskId}-${Date.now().toString(36)}`, c.mergeCommit);
     if ("path" in made) {
       try {
+        // «Flaky or the machine» was a guess: the project's host says how loaded it is right before this run (not during it).
+        const reading = readingFrom(await host.call("diskFree", { requestedHostId: c.target.hostId, path: c.target.basePath, machine: true }, { hostId: c.target.hostId, timeoutMs: 5_000 }).catch(() => null));
         const [again] = await kit().runChecks(c.target, made.path, [item]);
-        if (again && !again.ok && !again.hostError) { kind = "unstable"; note = `red at its own merge commit ${c.mergeCommit.slice(0, 10)} as well: flaky or the machine, not later work`; }
+        if (again && !again.ok && !again.hostError) { kind = "unstable"; note = `red at its own merge commit ${c.mergeCommit.slice(0, 10)} as well: flaky or the machine, not later work; ${readingNote(reading)}`; }
       } finally { await kit().dropWorktree(c.target, made.path); }
     } else { note = `not confirmed at the merge commit (${made.error})`; }
     const found = kind === "regression" ? await bisect(c, item, headSha, settings) : { status: "skipped" as const, commit: null, task: null, subject: null, note: null };

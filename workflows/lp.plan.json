@@ -133,7 +133,7 @@
         "evidence": "skipped"
       },
       "src": "maestro-flow:workflows/plan.md (plan-checker), grill.md",
-      "prompt": "PLAN_CRITIC_METHOD over all tasks together - goals coverage, dependency correctness (no cycle, depends_on names a real task), size, collisions across tasks, boundary violations. A finding without file:line (or PLAN/TASK + field) does not count. Approve the good, not the perfect.",
+      "prompt": "PLAN_CRITIC_METHOD over all tasks together - goals coverage, dependency correctness (no cycle, depends_on names a real task), size, collisions across tasks, boundary violations. A finding without file:line (or PLAN/TASK + field) does not count. Approve the good, not the perfect. Severity is one of critical, high, medium, low, info.",
       "out": {
         "status": "pass|rework|block",
         "summary": "string",

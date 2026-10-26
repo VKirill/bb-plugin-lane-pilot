@@ -113,7 +113,7 @@
         "role": "code-critic",
         "session": "new",
         "src": "maestro-flow:odyssey-security.md",
-        "prompt": "Scan phase {{item}}. OWASP A01-A10 per entry point; dependencies by the package manager's audit (an unavailable audit is a warning, not a failure); secrets by LOCATION only, never print a value; STRIDE per trust boundary; git history for committed secrets. Do not lower an OWASP severity without a stated reason; a false positive is closed only with counter-evidence. Every finding: file:line, severity, remediation.",
+        "prompt": "Scan phase {{item}}. OWASP A01-A10 per entry point; dependencies by the package manager's audit (an unavailable audit is a warning, not a failure); secrets by LOCATION only, never print a value; STRIDE per trust boundary; git history for committed secrets. Do not lower an OWASP severity without a stated reason; a false positive is closed only with counter-evidence. Every finding: file:line, severity (critical|high|medium|low|info), remediation.",
         "out": {
           "phase": "string",
           "findings": "Finding[]",

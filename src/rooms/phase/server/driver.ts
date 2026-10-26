@@ -17,6 +17,7 @@ import { archiveDrawing, conclusionText, markRoadmap, nextRoadmapRow, stateText,
 import { runOnHost } from "@lane-pilot/host-calls";
 import { createPhaseIntake } from "./intake";
 import { createAutoStages } from "./auto-stages";
+import { checkProofs, hostGit, phaseProofRecords, renderProofCurrency } from "./proof-currency";
 import { builtinWorkflow } from "../../workflow";
 import { architectStarter } from "../../workflow/server";
 import { critiqueProblems, roleLine, type DesignJournalLine, type DrawingCritique } from "../../design-eval";
@@ -744,6 +745,19 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   /** Did the plan stay the admitted one (Plan unchanged since checking). */
   const planUnchanged = (phase: Phase) => !!phase.record.plan?.admittedSha && phase.record.plan.admittedSha === planSignature(phase.record.plan.items, phase.record.plan.contextSha);
 
+  /** What git says of each proof the run recorded with a commit (accepted merges, the verdicts): still about the code, or stale; for the goal audit. */
+  async function proofCurrency(phase: Phase): Promise<string | null> {
+    if (!phase.runId) return null;
+    const run = getRun(db, phase.runId);
+    const hostId = getRunWriterHost(db, phase.runId);
+    if (!run?.writer_workspace_path || !hostId) return null;
+    const records = phaseProofRecords(db, phase, getRunGoal(db, phase.runId));
+    if (!records.length) return null;
+    const host = bb.hosts.experimental_client({ contract: hostContract });
+    const git = hostGit((command) => runOnHost(host, { hostId, cwd: run.writer_workspace_path!, command, timeoutSec: 60 }));
+    return renderProofCurrency(await checkProofs(records, git)) || null;
+  }
+
   const auto = createAutoStages(ctx, services, {
     api: { context, plan, planCheck, question, waveReview, goalAudit, lessons, drawing, returnTo },
     get: mustGet,
@@ -754,6 +768,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     bookHead: (phase) => listParts(db, phase.id).at(-1)?.hash ?? "",
     pmIdle: async (phase) => ((await bb.sdk.threads.get({ threadId: phase.pmThreadId }).catch(() => null)) as { status?: unknown } | null)?.status === "idle",
     now,
+    proofCurrency,
   });
   const phases = { open, context, plan, planCheck, drawing, goalAudit, lessons, question, answer, word, waveReview, withdraw, revise, correct, returnTo, setState, stopWave, compensate, tick, drive, status, facts, planUnchanged, writeBook,
     list: (filter: Parameters<typeof listPhases>[1]) => listPhases(db, filter) };

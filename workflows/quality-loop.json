@@ -240,7 +240,7 @@
         "status": "pass",
         "findings": "[]"
       },
-      "prompt": "FRONTEND_VERIFY_METHOD over the fixed UI; silence is never pass.",
+      "prompt": "FRONTEND_VERIFY_METHOD over the fixed UI; silence is never pass. Severity is one of critical, high, medium, low, info.",
       "out": {
         "status": "pass|rework|block",
         "findings": "Finding[]"

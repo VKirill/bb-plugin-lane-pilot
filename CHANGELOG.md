@@ -1,6 +1,22 @@
 # Changelog
 
-## Unreleased
+## 0.1.330
+
+Ideas from Matvey Maslov's `agent-dev-tools` (MIT), ported into Lane Pilot's own code: each starts from a failure a coding-agent setup hits.
+
+**A green check that ran no test is red** (`tests-ran`). `npx vitest run <file> -t <typo>` prints «30 skipped» and exits 0, so a writer's check with a mistyped filter, a `passWithNoTests` hidden in a config, or a file that matches nothing was accepted. After a check exits 0, its runner summary (vitest, jest, node --test, pytest) is read; with no executed test (skipped, todo and cancelled do not count) the check fails with «the check exited 0 but ran no test: N skipped — the filter, file or test name matches nothing» (`src/rooms/tasks/server/tests-ran.ts`, applied in `runVerification`). Known gap: node's default-isolation `--test-name-pattern` that matches nothing still counts the file as one passing test.
+
+**A flaky pass keeps its first failure and a reading of the machine** (`flaky-evidence`). A check that failed and passed on its rerun came back as the rerun alone. It now carries the first exit code and output tail, and a reading taken on the check's host just before each attempt (load per CPU, available memory via `vm_stat` on macOS, free disk of the workspace): `machine_pressure` only when a reading crossed a limit, else `unexplained` — never «load» without a measurement. The accepted receipt, the integration gate's recheck log and the regress note carry it (`src/rooms/verification/machine-pressure.ts`, `machine-reading.ts`; `diskFree` takes `machine`).
+
+**An unhandled error outside any test is named** (`vitest-loud-json`). A gate red with no failing test listed («Could not unambiguously identify culprit», fix turn shown only the summary) now quotes vitest's «Unhandled Errors» block to the PM and in the fix turn (`unhandledErrorBlock`, `src/rooms/verification/gate-output.ts`).
+
+**A prompt names every word its validator demands** (`prompt-covers-schema`). Workflow validation warns (`prompt_vocabulary`) when an agent node produces an artifact whose enum members its prompt never names; ten shipped steps produced findings without naming `critical|high|medium|low|info` and now do (analyze-plan-execute, full-lifecycle, impeccable-build, quality-loop, ui-audit, seo-cocoon, lp.plan, issue-discover, lp.review, security-audit). The prompt/parser contract tests assert each prompt names the literals its parser accepts (`packages/kit/src/prompt-coverage.ts`, `packages/workflow-engine/src/prompt-coverage.ts`).
+
+**The goal audit knows which proofs are stale** (`proof-currency`). The auditor of a Roblox run had to work out by hand that «the publication smoke covers place v21, main is 457a8a4». `lp.close` now gets `proof_currency`: for each accepted attempt's merge commit with its changed files, and for the verification and run-goal verdicts, whether it is current, stale (with every changed covered path), not on this history or an unknown commit (`src/rooms/phase/server/proof-currency.ts`, git through the project's host).
+
+**A hook is installed once, whatever its quoting** (`hook-entry-by-shape`). The PM guard install recognised its entry by the exact command string, so a re-quoted or re-saved settings file got a second guard, and a duplicate was never repaired. Identity is now event + matcher + program + script path; duplicates are removed keeping the first verbatim; a hook listed in both `.claude/settings.json` and `settings.local.json` runs once in a native session (`packages/kit/src/hook-shape.ts`).
+
+Not ported: `memory-index-lint`, `agent-rules-gen` and `wait-for-line` have no consumer in Lane Pilot (the auto-memory index and the AGENTS.md/CLAUDE.md core block are written by Lane Stack's `lane_memory.py`, which writes the core block into both files; no log-pattern waits); `bash-path-guard` and `hookify-encoding-lint` are Windows-only.
 
 **A task queued behind work that has just ended is not «queued for hours while nothing runs».** The watcher counted the queue from the attempt's creation and looked for work in the run only at its own pass. Vampirism Fire on 2026-10-24/26: six attempts that waited 3–9 hours behind a depends_on or an owns_paths overlap (vf-s6-auras behind vf-s6-vision, vf-s6-towers behind vf-s6-auras, vf-fix-b2-flow behind vf-fix-b2-towers) were reported 1–4 minutes after that attempt was accepted, while the dispatch ran their baseline (up to 306 s) with the attempt still «queued»; each ran minutes later. Now the run must also have had nothing end in the last two hours: an attempt that ended inside the window has just freed the queue.
 

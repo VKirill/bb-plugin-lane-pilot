@@ -12,6 +12,8 @@ Small helpers every part of the plugin uses, with no dependency on the plugin it
 | `jsonc` | Edits of the OpenCode `plugin` list that keep comments |
 | `paths` | Home, `.agents`, the plugin root from a module URL (`pluginRootFromModule`) |
 | `owns-paths` (also `@lane-pilot/kit/owns-paths`) | `owns_paths` / `never_touch` glob matching; the subpath has no `node:` import and is the one the UI may use |
+| `literalCoverage`, `schemaEnums`, `enumCoverage` (`prompt-coverage`, also `@lane-pilot/kit/prompt-coverage`) | Which accepted literals (enum members of a schema) a prompt never names, matched as whole words; ported from `prompt-covers-schema` (MIT) |
+| `hookCommandWords`, `hookCommandShape`, `hookCommandIdentity` (`hook-shape`) | A Claude Code hook's identity by program + script path with quoting normalised, so an installer never appends a second copy; ported from `hook-entry-by-shape` (MIT) |
 
 The index imports `node:` modules: the browser bundle must use the subpath above and nothing else from here.
 Depends on nothing; every other package and room may use it.

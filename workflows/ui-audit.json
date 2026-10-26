@@ -76,7 +76,7 @@
       "produces": [{"kind": "qa-report", "version": 1}],
       "type": "agent",
       "role": "browser-qa",
-      "prompt": "FRONTEND_VERIFY_METHOD: open the URL and the listed flows at 375 and 1280, exercise default/hover/focus/disabled/loading/empty/error states, save screenshots. Report what could not be exercised as blocked, never as passed.",
+      "prompt": "FRONTEND_VERIFY_METHOD: open the URL and the listed flows at 375 and 1280, exercise default/hover/focus/disabled/loading/empty/error states, save screenshots. Report what could not be exercised as blocked, never as passed. Severity is one of critical, high, medium, low, info.",
       "out": {
         "screenshots": "string[]",
         "states_seen": "string[]",

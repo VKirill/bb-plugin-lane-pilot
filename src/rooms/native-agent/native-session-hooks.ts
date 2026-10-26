@@ -3,6 +3,7 @@ import { cp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join } from "node:path";
 import { parse } from "jsonc-parser/lib/esm/main.js";
 import { NATIVE_HOOK_SOURCES } from "../native-install";
+import { hookCommandIdentity } from "@lane-pilot/kit";
 
 function shellQuote(s: string) {
   return "'" + s.replace(/'/g, "'\\''") + "'";
@@ -230,7 +231,14 @@ export async function materializeNativeHookSession(input: {
   const cwd = input.cwd?.trim() && input.cwd.startsWith("/") ? input.cwd : null;
   const project = cwd ? await readSettingsFile(join(cwd, ".claude/settings.json")) : null;
   const local = cwd ? await readSettingsFile(join(cwd, ".claude/settings.local.json")) : null;
-  const originals = [...hookCommands(project), ...hookCommands(local)];
+  // The same hook listed in both project and local settings (any quoting) must run once, not twice.
+  const seenHooks = new Set<string>();
+  const originals = [...hookCommands(project), ...hookCommands(local)].filter((command) => {
+    const identity = hookCommandIdentity(command);
+    if (seenHooks.has(identity)) return false;
+    seenHooks.add(identity);
+    return true;
+  });
   const wrapped: string[] = [];
   let index = 0;
   for (const command of originals) {

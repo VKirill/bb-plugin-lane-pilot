@@ -38,7 +38,9 @@ function compactCheck(check: unknown): Record<string, unknown> {
   const exitCode = typeof row.exitCode === "number" ? row.exitCode : null;
   const raw = `${text(row.stdout)}\n${text(row.stderr)}`;
   const tail = exitCode === 0 ? passTail(raw) : failureExcerpt(scrub(`${text(row.stderr)}\n${text(row.stdout)}`), TAIL_CAP);
-  return { command: clip(text(row.command), COMMAND_CAP), exitCode, ...(tail ? { tail } : {}),
+  // A check that failed once and passed on the re-run: the audit needs to tell the machine from a race (the verdict, not the log).
+  const flaky = row.flaky === true ? text(record(row.flakyEvidence).classification) || true : undefined;
+  return { command: clip(text(row.command), COMMAND_CAP), exitCode, ...(tail ? { tail } : {}), ...(flaky ? { flaky } : {}),
     outputChars: text(row.stdout).length + text(row.stderr).length };
 }
 

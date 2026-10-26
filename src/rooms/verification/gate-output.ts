@@ -78,3 +78,25 @@ export function cacheHitsNote(report: CacheReport, max = 12): string {
   const rest = report.hits.length > max ? ` and ${report.hits.length - max} more` : "";
   return `Cache hits (turbo replayed these results instead of running them): ${shown}${rest}${report.summary ? ` (${report.summary})` : ""}.`;
 }
+
+/**
+ * The «Unhandled Errors» block of a vitest/jest run: an error thrown or a promise rejected outside any test exits the run 1 with
+ * every test green, so no failing test is listed and the log tail shows only the summary («Errors  1 error»). The block itself,
+ * a few lines from the `Unhandled Rejection`/`Unhandled Exception` header (the error and its first frames), or null when there is none.
+ */
+export function unhandledErrorBlock(output: string, limit = 600): string | null {
+  const lines = stripAnsi(output).split("\n");
+  const header = lines.findIndex((line) => /Unhandled (?:Rejection|Exception)|Uncaught Exception/i.test(line));
+  const start = header >= 0 ? header : lines.findIndex((line) => /Unhandled Errors?\b/.test(line));
+  if (start < 0) return null;
+  const kept: string[] = [];
+  for (const raw of lines.slice(start, start + 14)) {
+    const line = raw.replace(/⎯+/g, "").trim();
+    if (/^This error originated|^The latest test that might/.test(line)) break;
+    if (!line || /^(?:Vitest caught \d+ unhandled|This might cause false positive)/.test(line)) continue;
+    kept.push(line);
+    if (kept.join(" | ").length >= limit) break;
+  }
+  const block = kept.join(" | ").slice(0, limit);
+  return block || null;
+}

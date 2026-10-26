@@ -28,6 +28,10 @@
     "insights": {
       "type": "any",
       "note": "кандидаты из ретроспективы, если есть"
+    },
+    "proof_currency": {
+      "type": "string",
+      "note": "git: какие записанные доказательства ещё покрывают код, а какие устарели (машина считает перед аудитом)"
     }
   },
   "outputs": {
@@ -62,7 +66,7 @@
         "drift_items": "[]"
       },
       "src": "maestro-flow:prepare/ralph.md (post-goal-audit, post-reground)",
-      "prompt": "For each goal check `done_when` against evidence (command output, file:line, test result); met only with evidence you re-checked now.\nintent_aligned=false when the result drifts from the original goal: two or more in_scope items missing or one out_of_scope item violated (confident drift at 80%+).\nDifferent model from the writer. Never ask the owner for what the repository can answer.\n",
+      "prompt": "For each goal check `done_when` against evidence (command output, file:line, test result); met only with evidence you re-checked now.\n`proof_currency`, when given, is git's own verdict on whether each recorded proof still covers the code: use it, do not work currency out from git by hand. A proof marked STALE, NOT ON THIS HISTORY or UNKNOWN COMMIT is not current evidence: re-check that goal on the code as it is now and name the changed paths in the evidence.\nintent_aligned=false when the result drifts from the original goal: two or more in_scope items missing or one out_of_scope item violated (confident drift at 80%+).\nDifferent model from the writer. Never ask the owner for what the repository can answer.\n",
       "out": {
         "goals": "GoalResult[]",
         "all_met": "bool",

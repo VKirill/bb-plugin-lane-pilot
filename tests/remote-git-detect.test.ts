@@ -76,8 +76,11 @@ describe("the integration gate runs on the project's host", () => {
     const res = await run(runner);
 
     expect(res).toMatchObject({ ran: true, passed: true });
-    expect(hostCalls).toHaveLength(1);
-    expect(hostCalls[0]).toMatchObject({ method: "gateRun", options: { hostId: "ovh" }, input: { requestedHostId: "ovh", basePath: REMOTE, command: "npm run gate" } });
+    // The machine reading before the run (flaky evidence) is a host call too, on the same host.
+    expect(hostCalls.filter((call) => call.method === "diskFree").every((call) => call.options?.hostId === "ovh")).toBe(true);
+    const runs = hostCalls.filter((call) => call.method !== "diskFree");
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ method: "gateRun", options: { hostId: "ovh" }, input: { requestedHostId: "ovh", basePath: REMOTE, command: "npm run gate" } });
     expect(touchedRemotePath()).toEqual([]);
   });
 
@@ -127,7 +130,7 @@ describe("the integration gate runs on the project's host", () => {
     const res = await run(runner);
 
     expect(res).toMatchObject({ ran: true, passed: false, culpritTaskId: null });
-    expect(hostCalls.map((call) => call.method)).toEqual(["gateRun"]);
+    expect(hostCalls.map((call) => call.method).filter((method) => method !== "diskFree")).toEqual(["gateRun"]);
     expect(sent.map((message) => message.threadId)).toEqual(["pm-1"]);
     expect(sent[0]!.text).toContain("because of the machine");
     expect(sent[0]!.text).toContain("EACCES");
