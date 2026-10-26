@@ -171,10 +171,15 @@ export function topicLoop(candidate: LoopTask, earlier: readonly LoopTask[]): To
   return found.reduce<TopicLoop | null>((best, loop) => (!best || loop.families.length > best.families.length ? loop : best), null);
 }
 
-/** The refusal the PM reads: the topic, who already tried, and the one move that is allowed. */
-export function topicLoopMessage(found: TopicLoop): string {
+/**
+ * The refusal the PM reads: the topic, who already tried, and what the machine does about it. The machine ends the loop itself (the wall's
+ * hunters and a backlog item, see src/rooms/wall `loopExhausted`); `hunt` is its wall key. Without it (no wall) the old way stands: one research task.
+ */
+export function topicLoopMessage(found: TopicLoop, hunt?: string): string {
   const what = found.topic === "file" ? `the file ${found.key}` : `the test ${found.key}`;
   const tried = `${found.families.length} earlier tasks of this run (${found.families.slice(-5).join(", ")}${found.families.length > 5 ? ", ..." : ""}) already worked on ${what} in the last ${found.hours} h, and it is still being patched, not solved`;
+  const running = found.openAnalysis?.startsWith("loop:") ? found.openAnalysis : undefined;
+  if (running || (hunt && !found.openAnalysis)) return `topic_loop: ${tried}. A fourth try is not sent. Lane Pilot took the big picture itself: three read-only hunters read ${what} from other sides (hunt ${running ?? hunt}), and their analysis with the proposed next step lands in the backlog. Tasks on ${what} go out again once the hunt is done, and they follow its finding (bb lane-pilot wall show ${running ?? hunt}). You need not send a research task and nothing waits for the owner.`;
   if (found.openAnalysis) return `topic_loop: ${tried}. The analysis task ${found.openAnalysis} is still open: wait for its receipt (lane_pilot_wait_writer); tasks on ${what} go out again once it is accepted, and they follow its finding.`;
   return `topic_loop: ${tried}. A fourth try is not sent. Step back: dispatch ONE research task (kind research, or check) that looks at the whole picture, i.e. what each of those tasks changed, why it did not hold, and the root cause, and writes the finding to a file; name ${found.key} in it. Once it is accepted, tasks on ${what} go out again and follow its finding. This needs no owner: it is the next move for you.`;
 }

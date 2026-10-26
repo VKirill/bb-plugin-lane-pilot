@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.1.336
+
+The machine, not the PM chat, ends its own loops (Fable's review against Matvey Maslov's system, `.bb/chats/thr_grntj73eg5/artifacts/fable-review/`, and Astra's Vampirism Fire audit).
+
+**The phase train can reach the end on a real project.** Stage helpers ran read-only and were refused for writing the phase's own files (`repo_edited` on CONTEXT.md, plan-items.json, design fonts), so after two tries every stage of the one real phase went to the PM. A helper of a phase run may write `.agents/phases/<id>/**` and `.agents/plans/**` (from the run's `phase:<id>:` key) and is told so in its brief; any other edit is still refused. A design PNG no longer fails the drawing (it is fingerprinted by the host). The drill has a `phase_route` scenario (full set): a phase through discussion → execution with a pause and a stopped wave holding.
+
+**One machine end for an exhausted loop (`loop_exhausted`).** A stage out of tries, a phase out of replans, a `topic_loop` and a night class used to end with «the stage is the PM's» or «waits for a person». Now: the wall's three hunters read the subject (attempts, receipts, contracts, the phase book), the analysis goes to the wall backlog and one line to the owner's morning list (nothing waits for him); a phase withdraws its unproved pieces (`scope_withdrawn`) and closes on what is proved, or stops. A `topic_loop` refusal starts the hunt itself. The PM chat is not woken for it. Replayed over Vampirism Fire: 2 hunts (the runner, par028), 8 dispatches refused, no new tasks on either topic.
+
+**Questions before a paid start.** Of 120 writer questions ever, 36 were visible on the base. The baseline now stops an attempt before any writer, uncharged, when a check cannot run at all (exit 127, «command not found» for the check's own command, ENOENT, an unknown CLI option) or, for a feature/refactor/chore, is red on the base only in files outside the task's. A writer's open question is answered by the machine with the safest default after an hour (the same writer continues); a second question ends the attempt with the question in its reason.
+
+**Gate words reach the agents they judge.** The writer brief and the planner get a generated «gate vocabulary»: the words that make an acceptance item an invariant, which red checks do not count for a fix, and the lint and baseline codes (`src/rooms/tasks/gate-vocabulary.ts`, covered by a test).
+
+**A wave that shares files has a pilot.** Tasks dispatched together that overlap on owns_paths run their first as the pilot; the others wait for its acceptance and, if it fails, for its fix (Vampirism Fire: 46 of 99 tasks, the waves on `scripts/gamedata/` and the runner). A queued attempt canceled and sent again with the same contract comes back instead of a new task; hold/release keeps the attempt.
+
+**The chosen writer is the one that starts.** The start passed Jev's pick (or the rotation's) nowhere: the spawn read the stored settings again, so all four non-default picks in Vampirism Fire (gemini-flash, sonnet, sonnet, haiku) ran as composer-2.5. The choice now reaches the spawn.
+
+**The merge replay judges like the writer's check.** It re-ran timeouts, accepted a hollow re-run (only a sandbox refusal, no report) and a zero-test green, and one environment line made the whole set «ok» without running the rest. Now a timeout is not repeated, a hollow re-run keeps the first failure, `0 checks` is red, an environment failure skips only its own check, and the replay's limit comes from the check's history, not a raw 120 s.
+
+**The Roblox Studio runner is a project's gate.** `scripts/studio_test.py` / `game/scripts/studio_test.py` is detected as the integration gate (Vampirism Fire had none, so its tasks used the whole suite as their own check unnoticed). A check's timing and timeout history is one with or without a leading `cd <dir> &&`.
+
+**A post-merge red of a fix is the merge's clash** when the check was red on the base but green in the fix's own worktree.
+
 ## 0.1.335
 
 An independent review of Lane Pilot (GPT-6 Astra, 2026-10-26, `.bb/chats/thr_grntj73eg5/artifacts/astra-review/REVIEW.md`) found the self-improvement loop deciding on evidence it never had. This release closes its local defects.

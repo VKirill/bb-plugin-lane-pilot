@@ -17,7 +17,7 @@ describe("what the machine runs at each stage", () => {
   it("after a return to discussion signs the documents again instead of analysing anew", () => {
     expect(autoDue(phaseAt("discussion", { signedBefore: { docs: [".agents/phases/ph_1/CONTEXT.md"] } }))).toEqual({ kind: "resign" });
   });
-  it("leaves the stage to the PM when paused, when train is off, or after two failed runs", () => {
+  it("is due for nothing when paused, when train is off, or after two failed runs (then the machine ends the loop itself, see `exhausted`)", () => {
     expect(autoDue(phaseAt("discussion", {}, "paused"))).toBeNull();
     expect(autoDue(phaseAt("discussion", { train: false }))).toBeNull();
     expect(autoDue(phaseAt("discussion", { autoFailures: { analyze: AUTO_TRIES } }))).toBeNull();
@@ -52,6 +52,7 @@ describe("the machine's pass", () => {
       workflowEngine: Object.assign(engine, { start: (input: { workflow: { id: string } }) => { const runId = `wfrun_${runs.size + 1}`; calls.push(`start ${input.workflow.id}`); runs.set(runId, { status: "running", output: null }); return { runId, created: true, done: new Promise(() => undefined) }; },
         get: (runId: string) => ({ runId, reason: null, error: null, failedNode: null, waiting: [], stopped: false, ...runs.get(runId)! }) }) as never,
     }, {
+      exhausted: async (_phase, input) => { calls.push(`exhausted ${input.kind} ${input.stage}`); },
       api: {
         context: async (input) => { calls.push(`context ${input.docs.join(",")}`); phase = phaseAt("planning", { ...phase.record, context: { docs: [], sha: "c", signedAt: 1 } }); return phase; },
         plan: (input) => { calls.push(`plan ${input.items.length}${input.alreadyMet ? ` already_met: ${input.alreadyMet}` : ""}`); return phase; }, planCheck: async (input) => { calls.push(`planCheck ${input.decision}`); return phase; }, question: (input) => { calls.push(`question ${input.text}`); return phase; }, waveReview: () => phase, goalAudit: (input) => { calls.push(`goalAudit ${input.state}\n${input.summary}`); return phase; }, lessons: () => phase, drawing: async () => phase,
@@ -186,12 +187,19 @@ describe("the machine's pass", () => {
     expect(w.get().record.autoFailures).toBeUndefined();
     expect(w.get().record.auto).toBeUndefined();
   });
-  it("a run that fails counts; after two the stage is the PM's", async () => {
+  it("a run that fails counts and is run again on the next pass; the second failure ends the loop (the machine's outcome, not the PM's)", async () => {
     const w = world(null, "failed");
     await w.auto.step(w.get());
     w.finish();
     expect(await w.auto.step(w.get())).toBe(false);
     expect(w.get().record.autoFailures).toEqual({ analyze: 1 });
+    expect(w.calls.filter((call) => call.startsWith("exhausted"))).toEqual([]);
+    expect(await w.auto.step(w.get())).toBe(true);
+    w.runs.set("wfrun_2", { status: "failed", output: null });
+    expect(await w.auto.step(w.get())).toBe(true);
+    expect(w.get().record.autoFailures).toEqual({ analyze: AUTO_TRIES });
+    expect(w.calls.filter((call) => call.startsWith("exhausted"))).toEqual(["exhausted stage analyze"]);
+    expect(JSON.stringify(w.calls)).not.toMatch(/PM's|waits for a person/);
   });
 });
 
@@ -237,6 +245,7 @@ describe("a replan merges into the pieces that were", () => {
       workflowEngine: { start: () => { runs.set("wfrun_1", { status: "running", output: null }); return { runId: "wfrun_1", created: true, done: new Promise(() => undefined) }; },
         get: (runId: string) => ({ runId, reason: null, error: null, failedNode: null, waiting: [], stopped: false, ...runs.get(runId)! }) } as never,
     }, {
+      exhausted: async () => undefined,
       api: { context: async () => phase, plan: (input) => { planned = input.items as never; return phase; }, planCheck: async () => phase, question: () => phase, waveReview: () => phase,
         goalAudit: () => phase, lessons: () => phase, drawing: async () => phase, returnTo: () => phase },
       get: () => phase, save: (_id, record) => { phase = { ...phase, record }; }, book: () => undefined, writeDocs: async () => ({ written: [] }),
@@ -255,6 +264,7 @@ describe("the machine's return after a failed verdict", () => {
     let phase = phaseAt("verification", { context: { docs: [], sha: "c", signedAt: 1 }, verification: { verdict: { state: "failed", detail: "goal audit: unmet: [p1]", inputSha: "x", at: 1, mainSha: null } } } as never);
     const returns: string[] = [];
     const auto = createAutoStages({ log: () => undefined }, { workflowEngine: {} as never }, {
+      exhausted: async () => undefined,
       api: { context: async () => phase, plan: () => phase, planCheck: async () => phase, question: () => phase, waveReview: () => phase, goalAudit: () => phase, lessons: () => phase, drawing: async () => phase,
         returnTo: (input) => { returns.push(`${input.to}: ${input.note}`); phase = { ...phase, stage: input.to } as Phase; return phase; } },
       get: () => phase, save: (_id, record) => { phase = { ...phase, record }; }, book: () => undefined, writeDocs: async () => ({ written: [] }),
@@ -273,6 +283,7 @@ describe("signing again after a return", () => {
     const signed: string[][] = [];
     let idle = false;
     const auto = create({ log: () => undefined }, { workflowEngine: {} as never }, {
+      exhausted: async () => undefined,
       api: { context: async (input) => { signed.push(input.docs); phase = phaseAt("planning", { ...phase.record, context: { docs: [], sha: "c", signedAt: 1 } }); return phase; },
         plan: () => phase, planCheck: async () => phase, question: () => phase, waveReview: () => phase, goalAudit: () => phase, lessons: () => phase, drawing: async () => phase, returnTo: () => phase },
       get: () => phase, save: (_id, record) => { phase = { ...phase, record }; }, book: () => undefined, writeDocs: async () => ({ written: [] }),

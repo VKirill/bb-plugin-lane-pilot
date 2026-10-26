@@ -15,6 +15,7 @@ import { homedir } from "node:os";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { hostContract } from "../contracts";
 import { isEnvironmentCheckFailure } from "../runs";
+import { hollowRerun, noTestRanReason } from "../tasks/server";
 import { readBoundedWorkspaceFile, sha256Hex } from "@lane-pilot/kit";
 import { casWriteWorkflowFile } from "../storage";
 import { inventoryCoexistence, runCoexistenceOperation } from "../native-install";
@@ -85,17 +86,27 @@ export const gitIntegrate: ExperimentalHostRpcHandlers<typeof hostContract>["git
  * says nothing about the code, so it blocks nothing; the post-merge check on main still runs.
  */
 async function runReplayChecks(requestedHostId:string,checks:NonNullable<Parameters<ExperimentalHostRpcHandlers<typeof hostContract>["gitIntegrate"]>[0]["replayChecks"]>):Promise<ReplayCheckOutcome> {
+  // The same reading of a result as the writer's own check (verify.ts): a timeout is not run again, an empty re-run is not a pass,
+  // a zero-test green is red, and the machine's own failure skips only that check — the rest still run. Before, one environment
+  // line made the whole set «ok», a hollow re-run passed and a timeout ran twice (Astra's Vampirism Fire audit, 2026-10-27).
   for(const check of checks.commands) {
     const run=()=>runSandboxedCommandOnHost({requestedHostId,workspacePath:checks.workspacePath,cwd:check.cwd,backend:checks.backend,command:check.command,timeoutSec:check.timeoutSec});
+    const red=(result:{exitCode:number;stdout:string;stderr:string},why?:string):ReplayCheckOutcome=>({ok:false,failed:[{command:check.command,exitCode:result.exitCode||1,stdout:result.stdout,stderr:why?`${why}\n${result.stderr}`:result.stderr}]});
     try {
-      let result=await run();
-      if(result.exitCode!==0) result=await run();
-      // The machine broke the check (root-owned files): no writer can fix that, so it does not hold the merge back.
-      if(result.exitCode!==0&&isEnvironmentCheckFailure(result)) return {ok:true};
-      if(result.exitCode!==0) return {ok:false,failed:[{command:check.command,exitCode:result.exitCode,stdout:result.stdout,stderr:result.stderr}]};
+      const first=await run();
+      let result=first;
+      if(first.exitCode!==0&&first.exitCode!==124) {
+        const again=await run();
+        const hollow=again.exitCode===0?hollowRerun(first,again):null;
+        result=hollow?first:again;
+      }
+      // The machine broke the check (root-owned files, Studio not answering): no writer can fix that; the post-merge check on main still runs it.
+      if(result.exitCode!==0&&isEnvironmentCheckFailure(result)) { console.warn(`lane-pilot: replay check failed from the environment, not held against the merge: ${check.command}`); continue; }
+      if(result.exitCode!==0) return red(result);
+      const none=noTestRanReason(`${result.stdout}\n${result.stderr}`);
+      if(none) return red(result,`check failed: ${none}`);
     } catch(cause) {
-      console.warn(`lane-pilot: replay check could not run, the merge goes on: ${check.command}: ${cause instanceof Error?cause.message:String(cause)}`);
-      return {ok:true};
+      console.warn(`lane-pilot: replay check could not run, the next one still runs: ${check.command}: ${cause instanceof Error?cause.message:String(cause)}`);
     }
   }
   return {ok:true};

@@ -134,3 +134,13 @@ describe("gate resolver: explicit setting, off, detection and its cache", () => 
     expect(probes).toBe(2);
   });
 });
+
+describe("the owner's Roblox Studio runner", () => {
+  it("is the project's gate when no other runner is there (Vampirism Fire had none, 2026-10-26)", async () => {
+    const { detectGateCommand } = await import("../src/rooms/verification/server/gate-detect");
+    expect(detectGateCommand("@@studio game/scripts/studio_test.py\n")).toMatchObject({ command:"cd game && python3 -I scripts/studio_test.py" });
+    expect(detectGateCommand("@@studio scripts/studio_test.py\n")).toMatchObject({ command:"python3 -I scripts/studio_test.py" });
+    expect(detectGateCommand("@@pytest\n@@studio scripts/studio_test.py\n")).toMatchObject({ command:"pytest -q" });
+  });
+});
+

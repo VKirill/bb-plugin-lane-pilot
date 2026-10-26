@@ -1,3 +1,5 @@
+import { posix } from "node:path";
+import { fileAllowedByOwns } from "@lane-pilot/kit";
 import type { TaskV2 } from "../contracts";
 
 /**
@@ -58,6 +60,8 @@ export function requiresRedOnBase(setting: RequireRed, task: { risk: string; kin
 
 /** A check that only says a file or a word exists (`test -f`, `grep -q`, `ls`): red before a new file, it proves no behaviour. */
 const EXISTENCE_ONLY = /^\s*(?:cd [^&;|]+&&\s*)?(?:(?:test|\[) -[efsd] \S+\s*\]?|grep -[qcFE]+[qcFE]* .+|ls \S+)\s*$/;
+/** The forms EXISTENCE_ONLY reads, one example of each, for the briefs (tasks/gate-vocabulary.ts); a test holds each one against the pattern. */
+export const EXISTENCE_ONLY_WORDS: readonly string[] = ["test -f", "test -e", "test -s", "test -d", "grep -q", "grep -c", "ls"];
 export const isExistenceOnly = (command: string): boolean => command.split(/\s*(?:&&|;)\s*/).filter(Boolean).every((part) => EXISTENCE_ONLY.test(part));
 
 /**
@@ -81,6 +85,97 @@ export function vacuousMessage(taskId: string, vacuous: readonly BaselineCheck[]
     + `проверку, называющую новый файл или поведение (test -f <новый файл>; grep -q '<новый символ>' <файл>; точечный тест, который падает сейчас), и отправьте задачу снова. `
     + `Если у работы нельзя написать красную проверку (чистый рефакторинг, документация), укажите kind refactor или docs.`
     + (kind === "fix" ? ` Для починки (kind fix) проверка наличия файла или слова (test -f, grep -q) не считается: нужен тест поведения, который падает сейчас и проходит после починки.` : "");
+}
+
+// ---- a check the base itself shows to be broken: stopped before any writer, with the contract fix named ----
+
+/** How much of a red check's output the baseline keeps. */
+export const CHECK_NOTE_TAIL = 600;
+
+type TaskFiles = Pick<TaskV2, "owns_paths" | "expected_outputs" | "project_cwd">;
+
+/**
+ * Project-local tools (node_modules/.bin): a baseline worktree whose dependencies could not be linked misses them while the writer's
+ * tree has them, so «vitest: command not found» on the base is not proof that the check cannot run.
+ */
+const LOCAL_TOOLS = new Set(["vitest", "jest", "mocha", "tsc", "tsx", "ts-node", "eslint", "prettier", "stylelint", "vite", "nuxt", "next", "webpack", "rollup",
+  "esbuild", "playwright", "prisma", "turbo", "nx", "vue-tsc", "biome", "oxlint"]);
+
+const taskOwns = (path: string, task: TaskFiles): boolean => fileAllowedByOwns(path, task.owns_paths) || task.expected_outputs.some((entry) => entry.replace(/^\.\//, "") === path);
+const cwdPrefix = (check: BaselineCheck, task: TaskFiles): string => {
+  const relative = posix.relative(task.project_cwd, check.cwd);
+  return relative && !relative.startsWith("..") ? relative : "";
+};
+const inRepo = (check: BaselineCheck, task: TaskFiles, path: string): string => posix.join(cwdPrefix(check, task), path.replace(/^\.\//, ""));
+const mentions = (command: string, word: string): boolean => command.split(/[\s;&|()`"']+/).includes(word);
+
+/**
+ * Why a check that is red on the base cannot run at all, or null. Only certain signs count: exit 127, a command or folder the shell
+ * could not find, npm without a package.json, a flag the runner rejects. Whatever the task itself creates (a script, a package.json
+ * under owns_paths) is not missing, it is the work.
+ */
+export function unrunnableReason(check: BaselineCheck, task: TaskFiles): string | null {
+  if (check.status !== "red") return null;
+  const note = check.note;
+  const missing = /(?:bash|sh|zsh): (?:line \d+: )?(?:\d+: )?([^\s:]+): (?:command not found|No such file or directory)/.exec(note)
+    ?? /(?:^|\n)\/?(?:\S*\/)?(?:bash|sh|zsh): (?:\d+: )?([^\s:]+): not found/.exec(note);
+  if (check.exitCode === 127 || missing) {
+    const name = missing?.[1] ?? null;
+    if (name && (LOCAL_TOOLS.has(name) || !mentions(check.command, name))) return null;
+    if (name?.includes("/") && taskOwns(inRepo(check, task, name), task)) return null;
+    return `exit ${check.exitCode ?? "127"}: ${name ? `\`${name}\` is not found on the machine that runs the checks` : "the shell did not find the command"}`;
+  }
+  const spawned = /spawn (\S+) ENOENT/.exec(note);
+  if (spawned && !LOCAL_TOOLS.has(spawned[1]!) && mentions(check.command, spawned[1]!)) return `\`${spawned[1]}\` cannot be started (spawn ENOENT)`;
+  if (/npm (?:error|ERR!) (?:code )?ENOENT/i.test(note) && /package\.json/.test(note)) {
+    return taskOwns(inRepo(check, task, "package.json"), task) ? null : `no package.json in ${check.cwd} (npm ENOENT), and the task does not own one`;
+  }
+  const cd = /\bcd: ([^\s:]+): No such file or directory/.exec(note);
+  if (cd) return taskOwns(inRepo(check, task, cd[1]!), task) ? null : `the folder ${cd[1]} does not exist on the base and the task does not create it`;
+  if (/CACError: Unknown option `([^`]+)`/.test(note)) return `the runner rejects the option ${/Unknown option `([^`]+)`/.exec(note)![1]}, so the check fails before any test runs`;
+  return null;
+}
+
+const FILE_IN_OUTPUT = /(?<![\w@./-])((?:\.{1,2}\/)?[\w@.-]+(?:\/[\w@.[\]()-]+)*\.(?:tsx?|jsx?|mjs|cjs|mts|vue|py|rs|go|luau?|php|s?css|json|md|sh|rb|java|kt|swift))(?![\w/-])/g;
+
+/**
+ * The files a red check names in its output when ALL of them lie outside the task (not under owns_paths, not an expected output) and the
+ * check's own command does not name them: the base is red for reasons the task cannot touch. Empty when the output names no file, names
+ * an owned one, or shows a path it cannot place: nothing is claimed then.
+ */
+export function redOutsideTaskFiles(check: BaselineCheck, task: TaskFiles): string[] {
+  if (check.status !== "red" || /(?:^|[\s(])\/[\w.-]+\//.test(check.note)) return [];
+  const cut = check.note.length >= CHECK_NOTE_TAIL;
+  const files = new Set<string>();
+  for (const found of check.note.matchAll(FILE_IN_OUTPUT)) {
+    // The tail may begin in the middle of a path.
+    if (cut && found.index === 0) continue;
+    if (/(^|\/)node_modules\//.test(found[1]!)) continue;
+    files.add(found[1]!.replace(/^\.\//, ""));
+  }
+  if (!files.size) return [];
+  const inRepoFiles = [...files].map((file) => inRepo(check, task, file));
+  const outside = [...files].every((file, index) => !taskOwns(inRepoFiles[index]!, task) && !taskOwns(file, task) && !check.command.includes(file));
+  return outside ? inRepoFiles : [];
+}
+
+/** Kinds whose work may be what turns a red check green only through the task's own files; a fix is expected to start red. */
+export const RED_OUTSIDE_KINDS: readonly string[] = ["feature", "refactor", "chore"];
+
+/** What the PM reads when a check cannot run on the base: which check, why, what to change. */
+export function unrunnableMessage(taskId: string, items: ReadonlyArray<{ check: BaselineCheck; why: string }>, baseSha: string | null): string {
+  const list = items.map((item) => `- ${item.check.command} (cwd ${item.check.cwd}): ${item.why}`).join("\n");
+  return `проверка(и) задачи ${taskId} не могут выполниться на базе${baseSha ? ` ${baseSha.slice(0, 10)}` : ""}, до писателя:\n${list}\n`
+    + `Писатель не сможет её ни пройти, ни починить: упрётся в тот же отказ и задаст вопрос. Исправьте команду или cwd (путь к инструменту, каталог пакета, поддерживаемые флаги) `
+    + `либо уберите проверку из verification и отправьте задачу снова. Попытка не потрачена.`;
+}
+
+/** What the PM reads when a check of a non-fix task is red on the base in files the task does not own. */
+export function redOutsideMessage(taskId: string, items: ReadonlyArray<{ check: BaselineCheck; files: string[] }>, baseSha: string | null): string {
+  const list = items.map((item) => `- ${item.check.command}: красная на базе в ${item.files.join(", ")}`).join("\n");
+  return `проверка(и) задачи ${taskId} красные на базе${baseSha ? ` ${baseSha.slice(0, 10)}` : ""} вне файлов задачи (owns_paths), до писателя:\n${list}\n`
+    + `Писатель этого не исправит и не имеет права: он остановится с вопросом. Сузьте проверку до файлов задачи (запускайте только её тесты или каталог пакета) `
+    + `либо расширьте owns_paths на эти файлы, и отправьте задачу снова. Попытка не потрачена.`;
 }
 
 export type RegressSettings = {

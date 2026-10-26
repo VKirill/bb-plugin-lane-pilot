@@ -2,8 +2,10 @@ import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
 import { batchShapeAdvice, topicLoop, topicLoopMessage } from "../../tasks";
 import type { LoopTask, OpenShape } from "../../tasks";
+import { taskFamily } from "../../runs";
 import { getTask, listOpenAttempts } from "../../storage";
 import type { LanePilotDatabase } from "../../storage";
+import type { Services } from "../../core/server";
 
 /** The shape the loop stopper reads of a task contract; null for a contract that does not parse. */
 export function loopTaskOf(id: string, createdAt: number, contract: unknown, attempts: LoopTask["attempts"]): LoopTask | null {
@@ -17,9 +19,9 @@ export function loopTaskOf(id: string, createdAt: number, contract: unknown, att
 
 /**
  * The refusal for a task that would be another try on a topic of its run (see tasks/topic-loop.ts), or null. Reads the run's
- * tasks and their attempts from the database; nothing is stored for it.
+ * tasks and their attempts from the database; see `topicLoopStop` for what the refusal does.
  */
-export function topicLoopGuard(db: LanePilotDatabase, runId: string, task: TaskV2, now = Date.now()): string | null {
+export async function topicLoopGuard(db: LanePilotDatabase, runId: string, task: TaskV2, opts: { wall?: Services["wall"]; projectId?: string; pmThreadId?: string; now?: number } = {}): Promise<string | null> {
   const attempts = new Map<string, LoopTask["attempts"]>();
   for (const row of db.prepare("SELECT task_id, state, reason FROM lane_pilot_attempt WHERE run_id=? ORDER BY created_at").all(runId) as Array<{ task_id: string; state: string; reason: string | null }>) {
     attempts.set(row.task_id, [...(attempts.get(row.task_id) ?? []), { state: row.state, reason: row.reason }]);
@@ -31,9 +33,38 @@ export function topicLoopGuard(db: LanePilotDatabase, runId: string, task: TaskV
     const loopTask = loopTaskOf(row.id, row.created_at, contract, attempts.get(row.id) ?? []);
     if (loopTask) earlier.push(loopTask);
   }
-  const candidate = loopTaskOf(task.id, now, task, []);
-  const found = candidate ? topicLoop(candidate, earlier) : null;
-  return found ? topicLoopMessage(found) : null;
+  const candidate = loopTaskOf(task.id, opts.now ?? Date.now(), task, []);
+  return candidate ? topicLoopStop(opts.wall, runId, candidate, earlier, { projectId: opts.projectId, pmThreadId: opts.pmThreadId, contract: task }) : null;
+}
+
+/**
+ * The first refusal of a topic also ends its loop: the wall (loop_exhausted) puts the big picture to three read-only hunters and writes the
+ * backlog item. That hunt stands for the research task the stopper lets through (open while it runs, done after it), so tasks on the topic
+ * go out again once it is done; one hunt per topic and round. Without a wall the PM is told to send the research task itself.
+ */
+export async function topicLoopStop(wall: Services["wall"] | undefined, runId: string, candidate: LoopTask, earlier: readonly LoopTask[], opts: { projectId?: string; pmThreadId?: string; contract?: unknown } = {}): Promise<string | null> {
+  const hunts = wall?.loopTopics(runId) ?? [];
+  const research: LoopTask[] = hunts.map((hunt) => {
+    const open = hunt.state === "stopped" || hunt.state === "hunting";
+    return { id: hunt.key, createdAt: open ? hunt.createdAt : hunt.updatedAt, kind: "research", title: hunt.topic, files: [], commands: [], text: hunt.topic, attempts: [{ state: open ? "running" : "accepted", reason: null }] };
+  });
+  const found = topicLoop(candidate, [...earlier, ...research]);
+  if (!found) return null;
+  if (!wall || !opts.projectId) return topicLoopMessage(found);
+  let hunt = found.openAnalysis?.startsWith("loop:") ? found.openAnalysis : undefined;
+  if (!found.openAnalysis) {
+    const tried = earlier.filter((other) => found.families.includes(taskFamily(other.id)));
+    hunt = (await wall.loopExhausted({
+      kind: "topic", id: `${runId}:${found.topic}:${found.key}:${hunts.filter((row) => row.topic === found.key).length}`, topic: found.key, projectId: opts.projectId, runId, pmThreadId: opts.pmThreadId ?? null,
+      title: `run ${runId}: ${found.topic} ${found.key}, ${found.families.length} tasks in ${found.hours} h`,
+      taskIds: found.families,
+      facts: [`topic ${found.topic} ${found.key}: ${found.families.length} earlier tasks of the run (${found.families.join(", ")}) worked on it in ${found.hours} h and it is still patched, not solved`,
+        `the fourth try, ${candidate.id} «${candidate.title}», was refused`, ...tried.slice(-6).map((other) => `${other.id} (${other.kind ?? "task"}): ${other.title}; attempts ${other.attempts.map((attempt) => attempt.state).join(", ") || "none"}`)],
+      texts: [{ path: `TASK:${candidate.id}`, text: JSON.stringify(opts.contract ?? { id: candidate.id, title: candidate.title, files: candidate.files, commands: candidate.commands }) }],
+      done: `the fourth task on ${found.key} (${candidate.id}) was refused; the hunters took the big picture instead and nothing was handed to the PM`,
+    })).key;
+  }
+  return topicLoopMessage(found, hunt);
 }
 
 /** Advice on the queue the new task joins: the open tasks of its project it waits for, and the fix when three or more own one path. */

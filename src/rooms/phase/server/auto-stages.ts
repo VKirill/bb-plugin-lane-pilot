@@ -13,17 +13,17 @@ import packageJson from "../../../../package.json";
 export type AutoKind = "analyze" | "plan" | "draw" | "review" | "close" | "lessons";
 /** Not a workflow: the machine signs again the documents a return to discussion left (the PM's or the owner's correction). */
 export type AutoDue = { kind: AutoKind; wave?: number } | { kind: "resign" } | { kind: "replan" };
-/** How many times the machine returns a phase to planning after a failed verdict before the PM decides. */
+/** How many times the machine returns a phase to planning after a failed verdict before the loop is spent. */
 export const AUTO_REPLANS = 2;
 export const AUTO_WORKFLOWS: Record<AutoKind, string> = { analyze: "lp.analyze", plan: "lp.plan", draw: "lp.draw", review: "lp.review", close: "lp.close", lessons: "retrospective" };
-/** Failed runs of one stage's workflow before the stage is the PM's again. */
+/** Failed runs of one stage's workflow before the loop is spent. */
 export const AUTO_TRIES = 2;
 /** Failed runs of one stage's workflow over the phase's whole life: a new version forgets AUTO_TRIES, not this, so frequent releases do not give endless tries. */
 export const AUTO_LIFETIME_TRIES = 3 * AUTO_TRIES;
 
 export type AutoRecord = { kind: AutoKind; wfRunId: string; startedAt: number; wave?: number };
 
-/** What the phase needs the machine to do now, or null when the stage is the PM's or nothing is due. */
+/** What the phase needs the machine to do now, or null when nothing is due (or the tries are spent: see `replansSpent` and `fail`). */
 export function autoDue(phase: Phase): AutoDue | null {
   const r = phase.record;
   if (phase.state !== "active" || r.train === false) return null;
@@ -44,6 +44,12 @@ export function autoDue(phase: Phase): AutoDue | null {
   if (phase.stage === "verification" && r.verification?.verdict?.state === "failed" && (r.replan?.count ?? 0) < AUTO_REPLANS) return { kind: "replan" };
   if (phase.stage === "lessons" && !r.lessons?.analysis && phase.runId && !tried("lessons")) return { kind: "lessons" };
   return null;
+}
+
+/** A failed verdict the machine already planned again AUTO_REPLANS times: the loop of replans is spent. */
+export function replansSpent(phase: Phase): boolean {
+  const r = phase.record;
+  return phase.state === "active" && r.train !== false && phase.stage === "verification" && r.verification?.verdict?.state === "failed" && (r.replan?.count ?? 0) >= AUTO_REPLANS;
 }
 
 /** The inputs of a stage's workflow, from the phase record. */
@@ -145,6 +151,8 @@ export type AutoApi = {
 
 export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Services, "workflowEngine">, deps: {
   api: AutoApi;
+  /** The machine's one outcome when a loop of tries is spent (loop_exhausted): scope cut or stop, hunters, backlog item, morning-list line, one notice to the PM. */
+  exhausted(phase: Phase, input: { kind: "stage" | "replan"; stage: string; why: string }): Promise<void>;
   get(phaseId: string): Phase;
   save(phaseId: string, record: PhaseRecord): void;
   book(phase: Phase, section: string, kind: string, text: string): void;
@@ -163,12 +171,18 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
   proofCurrency?(phase: Phase): Promise<string | null>;
 }) {
   const version = deps.version ?? packageJson.version;
-  const fail = (phase: Phase, kind: AutoKind, why: string) => {
+  /** Counts a failed run of a stage's workflow. True when that spent the stage's tries: the loop is ended by the machine (scope cut, hunters, backlog), not handed to the PM. */
+  const fail = async (phase: Phase, kind: AutoKind, why: string): Promise<boolean> => {
     const failures = { ...(phase.record.autoFailures ?? {}), [kind]: (phase.record.autoFailures?.[kind] ?? 0) + 1 };
     const total = { ...(phase.record.autoFailuresTotal ?? {}), [kind]: (phase.record.autoFailuresTotal?.[kind] ?? 0) + 1 };
     const lifetime = total[kind]! >= AUTO_LIFETIME_TRIES;
-    deps.book(phase, "decisions", "auto_failed", `${AUTO_WORKFLOWS[kind]} did not finish (${why})${lifetime ? `: ${total[kind]} failed runs in the life of the phase — the stage is the PM's, a new version does not give more` : failures[kind]! >= AUTO_TRIES ? `: after ${AUTO_TRIES} runs the stage is the PM's` : ": run again on the next pass"}`);
+    const spent = lifetime || failures[kind]! >= AUTO_TRIES;
+    deps.book(phase, "decisions", "auto_failed", `${AUTO_WORKFLOWS[kind]} did not finish (${why})${spent ? `: ${lifetime ? `${total[kind]} failed runs in the life of the phase` : `${AUTO_TRIES} runs`} — the loop is spent, the machine ends it: scope cut, hunters, backlog` : ": run again on the next pass"}`);
     deps.save(phase.id, { ...phase.record, auto: undefined, autoFailures: failures, autoFailuresTotal: total, autoFailuresVersion: version });
+    if (!spent) return false;
+    await deps.exhausted(deps.get(phase.id), { kind: "stage", stage: kind, why: `${AUTO_WORKFLOWS[kind]} failed ${failures[kind]} time(s) in this version, ${total[kind]} in the life of the phase; the last: ${why}` })
+      .catch((cause: unknown) => ctx.log(`phase ${phase.id}: the ended ${kind} loop could not be closed out: ${cause instanceof Error ? cause.message : String(cause)}`));
+    return true;
   };
 
   async function apply(phase: Phase, auto: AutoRecord, output: Record<string, unknown>): Promise<void> {
@@ -259,8 +273,7 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
           deps.save(phase.id, { ...phase.record, auto: undefined });
           return false;
         }
-        fail(phase, running.kind, summary.error ?? summary.reason ?? summary.status);
-        return false;
+        return fail(phase, running.kind, summary.error ?? summary.reason ?? summary.status);
       }
       try {
         await apply(phase, running, running.kind === "close" ? withAuditGoals(running.wfRunId, summary.output) : summary.output);
@@ -268,12 +281,20 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
         deps.save(after.id, { ...after.record, auto: undefined });
         deps.book(after, "decisions", "auto_done", `${AUTO_WORKFLOWS[running.kind]} done (${running.wfRunId}) and reported through the gates`);
       } catch (cause) {
-        fail(deps.get(phase.id), running.kind, cause instanceof Error ? cause.message : String(cause));
+        await fail(deps.get(phase.id), running.kind, cause instanceof Error ? cause.message : String(cause));
       }
       return true;
     }
     const due = autoDue(phase);
-    if (!due) return false;
+    if (!due) {
+      // Two machine replans did not make the verification pass: the loop of replans is spent and the machine ends it.
+      if (!replansSpent(phase)) return false;
+      if (await deps.runStopped?.(phase)) return true;
+      deps.book(phase, "decisions", "replans_spent", `the verification failed again after ${AUTO_REPLANS} machine replans — the loop is spent, the machine ends it: scope cut, hunters, backlog`);
+      await deps.exhausted(phase, { kind: "replan", stage: "replan", why: `${AUTO_REPLANS} replans did not make the verification pass; now: ${phase.record.verification?.verdict?.detail ?? "failed"}` })
+        .catch((cause: unknown) => ctx.log(`phase ${phase.id}: the ended replan loop could not be closed out: ${cause instanceof Error ? cause.message : String(cause)}`));
+      return true;
+    }
     // A run the owner stopped or paused starts no stage on the machine's own; the stage is held (the PM is not poked) until it goes on.
     if (await deps.runStopped?.(phase)) return true;
     if (due.kind === "replan") {
@@ -311,8 +332,7 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       deps.book(phase, "decisions", "auto_started", `Lane Pilot runs ${AUTO_WORKFLOWS[due.kind]} for the ${phase.stage} stage (${started.runId})`);
       return true;
     } catch (cause) {
-      fail(phase, due.kind, cause instanceof Error ? cause.message : String(cause));
-      return false;
+      return fail(phase, due.kind, cause instanceof Error ? cause.message : String(cause));
     }
   }
 

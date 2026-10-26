@@ -1,4 +1,5 @@
 import { appetiteStop, breakerKey, runningWriterBudgetStop, tokenUsageFromEvent } from "@lane-pilot/resilience";
+import { checkTimeoutSec } from "../check-timing";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { countAttempts, countThreadTurns, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt, taskBasePath } from "../../storage";
 import { saveBlockedBy, type BlockedBy } from "../../runs/server";
@@ -15,6 +16,7 @@ import { fullAccessSpawn } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { closeWriterStages, recordGateEvaluation, recordStage } from "../../runs/server";
 import { stringAt } from "../../core/server";
+import { wasAnsweredByDefault } from "./question-default";
 import { needsHumanQuestion, outputText, providerLimitNotice, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines } from "./writer-task";
 import { isLiveDecision } from "../live-folder";
 import { TASK_WORDS_KEY, acceptanceProofGap, isMainfixTask, landingWordGap, questionsFromFile, referenceTestEdits, taskWordKey, writerMarkers } from "../../tasks";
@@ -275,7 +277,9 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       if (dropped) return providerFailed(`${WRITER_STREAM_ERROR}: ${dropped}`);
       const question = needsHumanQuestion(answer);
       if (question) {
-        const reason = `needs_human: ${question}`;
+        // Asked again after the machine's default answer (question-timeout.ts): nobody is coming, the attempt ends and frees the task.
+        const askedAgain = await wasAnsweredByDefault(bb.storage.kv as never, input.runId, input.taskId);
+        const reason = askedAgain ? `verdict_block: question_unanswered: the writer asked again after the default answer. It asked: ${question}` : `needs_human: ${question}`;
         recordGateEvaluation(db,{projectId:input.projectId,runId:input.runId,taskId:input.taskId,gate:"accept",status:"skipped",
           attempt:countAttempts(db,input.runId,input.taskId),input:JSON.stringify(input.task),summary:{reason:"needs_human"}});
         transitionAttempt(db, input.attemptId, "blocked", { reason });
@@ -744,7 +748,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           workspacePath:input.task.project_cwd,
           backend:(checkSettings["sandbox.backend"] as "auto" | "macos-seatbelt" | "linux-bubblewrap" | undefined) ?? "auto",
           // A check with secrets cannot run on the host's replay (it has no Env Catalog); the post-merge check on main still runs it.
-          commands:input.task.verification.filter((command) => !command.secrets?.length).slice(0, 20).map((command) => ({ command:command.command, cwd:command.cwd, timeoutSec:command.timeout_sec ?? 120 })),
+          // The same limit as the writer's own check: its history widens it (a replay at a raw 120 s killed checks the attempt had passed).
+          commands:input.task.verification.filter((command) => !command.secrets?.length).slice(0, 20).map((command) => ({ command:command.command, cwd:command.cwd, timeoutSec:checkTimeoutSec(db, input.projectId, command.command, command.timeout_sec ?? 120) })),
         } : null;
         const replayMs = (replayChecks?.commands ?? []).reduce((sum, command) => sum + 2 * command.timeoutSec * 1000, 0);
         // The merge is acceptance too: the attempt stays «running» with its writer idle while it queues behind another task's

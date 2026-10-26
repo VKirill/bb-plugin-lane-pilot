@@ -5,7 +5,7 @@ import { providerLimitNotice } from "../../writer/server";
 import { ROLE_PROFILES } from "../../native-agent";
 import type { ExtraAccess, HelperRole } from "../../native-agent";
 import { redactKnown } from "@lane-pilot/kit";
-import { agentPrompt, outputContract, parseAgentOutput } from "@lane-pilot/workflow-engine";
+import { READ_ONLY_LINE, agentPrompt, outputContract, parseAgentOutput } from "@lane-pilot/workflow-engine";
 import { contractProblems, contractRepairPrompt, describeProblems, hasContractProblems } from "@lane-pilot/workflow-engine";
 import type { ContractNode, ContractProblems } from "@lane-pilot/workflow-engine";
 import type { AgentOutputError } from "@lane-pilot/workflow-engine";
@@ -16,6 +16,8 @@ import type { PacketInput, PacketPlan } from "@lane-pilot/workflow-engine";
 import { outputFields } from "@lane-pilot/workflow-engine";
 import type { Field, GraphNode } from "@lane-pilot/workflow-engine";
 import { roleMethod } from "../../critique";
+import { phaseFolder } from "../../phase";
+import type { LanePilotDatabase } from "../../storage";
 import { fullAccessSpawn } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { detectRepoEdits, gitRepoStatus } from "../../verification/server";
@@ -55,6 +57,35 @@ export function roleSpec(role: string): RoleSpec {
   if (helper === "project-life") return { helper, metadata: "project-life", readOnly: false, editable: (file) => BASE_ALLOWED(file) || file.startsWith(".agents/") || file === "CHANGELOG.md" };
   return { helper, metadata: helper, readOnly: true, editable: BASE_ALLOWED };
 }
+
+/**
+ * The stage workflows of a phase (lp.analyze, lp.plan, lp.draw, lp.close, lp.review, retrospective) are started by the phase driver under the
+ * key `phase:<phaseId>:<kind>:…` (auto-stages.ts). A read-only helper of such a run may write the phase's own folder and the plans folder,
+ * where the stage's documents live; every other edit is still `repo_edited` (live ph_26f65b142d: the stages failed on their own files).
+ */
+const PHASE_RUN_KEY = /^phase:(ph_[0-9a-z]+):/;
+
+/** The phase a workflow run belongs to, from its key or the key of the run it is a subworkflow of; null for any other run. */
+export function phaseOfWorkflowRun(db: LanePilotDatabase, runId: string): string | null {
+  let current: string | null = runId;
+  for (let hop = 0; current && hop < 8; hop += 1) {
+    const row = db.prepare("SELECT idem_key, parent_run_id FROM lane_pilot_wf_run WHERE id=?").get(current) as { idem_key: string | null; parent_run_id: string | null } | undefined;
+    const phaseId = row?.idem_key ? PHASE_RUN_KEY.exec(row.idem_key)?.[1] : undefined;
+    if (phaseId) return phaseId;
+    current = row?.parent_run_id ?? null;
+  }
+  return null;
+}
+
+/** Whether a stage helper of this phase may write the file: the phase's folder and the plans folder only. */
+export const phaseWritable = (phaseId: string) => (file: string): boolean =>
+  !file.split("/").includes("..") && (file.startsWith(`${phaseFolder(phaseId)}/`) || file.startsWith(".agents/plans/"));
+
+/** The read-only line of a phase stage's prompt, with the folders the stage writes (the brief said «write nothing» while the check expected files). */
+export const phaseWriteNote = (prompt: string, phaseId: string): string => {
+  const line = `Write the step's documents only under ${phaseFolder(phaseId)}/ and .agents/plans/; do not change, commit or push any other file of the repository (reports and scratch files go under .bb/chats/ or /tmp).`;
+  return prompt.includes(READ_ONLY_LINE) ? prompt.replace(READ_ONLY_LINE, line) : `${prompt}\n\n${line}`;
+};
 
 export type HelperRequest = {
   rt: ChainRuntime;
@@ -108,10 +139,13 @@ export function createWorkflowAgents() {
     return found?.[0]?.id ?? null;
   }
 
-  async function run(request: HelperRequest): Promise<HelperResult> {
-    const { rt } = request;
+  async function run(asked: HelperRequest): Promise<HelperResult> {
+    const { rt } = asked;
     const { bb, db, host } = rt.ctx;
-    const spec = roleSpec(request.role);
+    const spec = roleSpec(asked.role);
+    // A phase stage writes its documents: its helper is told which folders it may write, the same ones the check below allows.
+    const phaseId = spec.readOnly ? phaseOfWorkflowRun(db, asked.workflowRunId) : null;
+    const request = phaseId ? { ...asked, prompt: phaseWriteNote(asked.prompt, phaseId) } : asked;
     const pm = await bb.sdk.threads.get({ threadId: rt.pmThreadId });
     const environmentId = stringAt(pm, "environmentId");
     if (!environmentId) throw new HelperFailure("no_pm_environment", "the PM chat has no environment to run the helper in");
@@ -206,7 +240,8 @@ export function createWorkflowAgents() {
     }
     if (checkoutPath && checkoutHostId && before) {
       const after = await gitRepoStatus(host, checkoutHostId, checkoutPath);
-      const edited = after ? detectRepoEdits(before, after, spec.editable) : [];
+      const editable = phaseId ? (file: string) => spec.editable(file) || phaseWritable(phaseId)(file) : spec.editable;
+      const edited = after ? detectRepoEdits(before, after, editable) : [];
       if (edited.length) throw new HelperFailure("repo_edited", `the ${request.role} helper edited repository files it may not touch: ${edited.slice(0, 8).join(", ")}`);
     }
     if (!output) throw new HelperFailure(broken ? "artifact_invalid" : "output_invalid", broken ? `the ${request.role} helper's answer breaks the step's contract: ${problem}` : `the ${request.role} helper's final message could not be read: ${problem}`);

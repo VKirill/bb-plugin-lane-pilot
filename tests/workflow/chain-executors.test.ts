@@ -305,6 +305,30 @@ describe("the agent step", () => {
     expect(ok.spawned[0]!.pluginMetadata).toMatchObject({ specialist: "copy-lead" });
   });
 
+  // Live ph_26f65b142d: the stages failed with repo_edited on their own files (CONTEXT.md, plan-items.json, the drawing's fonts).
+  it("a helper of a phase stage may write its phase's folder and the plans folder, nothing else", async () => {
+    const write = (...files: string[]) => (checkout: string) => {
+      for (const file of files) { mkdirSync(dirname(join(checkout, file)), { recursive: true }); writeFileSync(join(checkout, file), "x"); }
+      return reply({ count: 1, summary: "s", handoff: "h" });
+    };
+    const stage = async (files: string[], key = "phase:ph_abc123:analyze:1:1") => {
+      const t = await setup({ look: [write(...files)] });
+      const summary = await t.engine.start({ workflow: oneAgent(), inputs: {}, key, runtime: t.rt, link: { projectId: PROJECT, runId: RUN } }).done;
+      await t.dispose();
+      return summary;
+    };
+    expect((await stage([".agents/phases/ph_abc123/CONTEXT.md", ".agents/phases/ph_abc123/design/src/fonts/a.ttf", ".agents/plans/ui3/plan-items.json"])).status).toBe("succeeded");
+    const source = await stage([".agents/phases/ph_abc123/CONTEXT.md", "src/app.ts"]);
+    expect(source.status).toBe("failed");
+    expect(source.error).toContain("repo_edited");
+    expect(source.error).toContain("src/app.ts");
+    expect(source.error).not.toContain("CONTEXT.md");
+    const other = await stage([".agents/phases/ph_other/CONTEXT.md"]);
+    expect(other.error).toContain("repo_edited");
+    // A run that is not a phase stage keeps the old rule, plans folder included.
+    expect((await stage([".agents/plans/ui3/plan-items.json"], "wf-manual:proj:w:k")).error).toContain("repo_edited");
+  });
+
   it("a step in the same session sends into the earlier helper's thread instead of spawning a new one", async () => {
     const t = await setup({ plan: [reply({ plan: "v1", handoff: "first" }), reply({ plan: "v2", handoff: "revised" })] });
     dispose = t.dispose;
@@ -766,3 +790,15 @@ describe("handoff by reference and the start packet (W0)", () => {
     expect(t.writes.some((write) => write.content.includes("Unique tail marker 4711"))).toBe(true);
   });
 });
+
+describe("a phase stage's helper is told the folders it writes", () => {
+  it("replaces «write nothing» with the phase folder and the plans folder", async () => {
+    const { phaseWriteNote } = await import("../../src/rooms/workflow/server/workflow-agent");
+    const { READ_ONLY_LINE } = await import("@lane-pilot/workflow-engine");
+    const told = phaseWriteNote(`brief\n${READ_ONLY_LINE}\ncontract`, "ph_abc123");
+    expect(told).not.toContain(READ_ONLY_LINE);
+    expect(told).toContain(".agents/phases/ph_abc123/ and .agents/plans/");
+    expect(phaseWriteNote("no line here", "ph_abc123")).toContain(".agents/phases/ph_abc123/");
+  });
+});
+

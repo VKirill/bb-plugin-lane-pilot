@@ -5,11 +5,12 @@ import type { ChangeDescriptor } from "../policy";
 import { decideAcceptance, gateRepair, repairChange, type Acceptance, type AcceptanceEvidence, type GateDecision, type RepairFile } from "./acceptance";
 import { analysisPrompt, hunterPrompt, parseNightReport, repairBrief, taskWallMessage } from "./brief";
 import { hubFields, writeHubFields } from "../improvement";
+import { postOwnerItem } from "../owner-waiting";
 import { WALL_CONFIG_KEY, parseWallConfig, type WallConfig } from "./config";
 import { classVersions, collectEntries, getClass, listClasses, nightOf, refreshClasses, writeEntries, type WallDb } from "./journal";
 import { afterFailedMove, ladderStep } from "./ladder";
 import { composeWallMorning } from "./morning";
-import { HUNT_ANGLES, buildClassPack, buildTaskPack, judgeHunt, parseFinding, type CheckedFinding, type EvidencePack, type HuntOutcome, type PackFile } from "./pack";
+import { HUNT_ANGLES, buildClassPack, buildLoopPack, buildTaskPack, judgeHunt, parseFinding, type CheckedFinding, type EvidencePack, type HuntOutcome, type LoopEvidence, type PackFile } from "./pack";
 import { executable, headPartsOf, planClassRerun, recordRerun, type RerunPlan, type RerunScope } from "./rerun";
 import { cycleScoresOf, selectClasses } from "./select";
 import { repairSignature, wallSignature } from "./signature";
@@ -75,6 +76,27 @@ export function askSha(task: unknown, plan: string): string {
 }
 export const taskWallKey = (family: string, runId: string, classKey: string): string => `task:${sha(`${runId}|${family}|${classKey}`).slice(0, 12)}`;
 export const classWallKey = (classKey: string): string => `class:${classKey}`;
+
+/** Loop walls (a phase stage, a failed verification, a topic) are walls of kind task whose key starts with this. */
+export const LOOP_PREFIX = "loop:";
+export const loopWallKey = (kind: LoopSubject["kind"], id: string): string => `${LOOP_PREFIX}${kind}:${sha(id).slice(0, 12)}`;
+
+/** A loop of tries that ended (see `loopExhausted`). */
+export type LoopSubject = Omit<LoopEvidence, "subject"> & {
+  /** A phase stage's workflow that failed, the machine's replans after a failed verification, or a topic of a run the stopper refused. */
+  kind: "stage" | "replan" | "topic";
+  /** Names the subject within its kind; one id, one wall, one hunt, one backlog item. */
+  id: string;
+  title: string;
+  projectId: string;
+  /** What the caller already did about it (a scope cut, a stop), for the morning-list line and the backlog item. */
+  done: string;
+  /** The topic stopper's key (a file or a test), read back by `loopTopics`. */
+  topic?: string;
+  pmThreadId?: string | null;
+  /** The one notice for the PM chat, sent at once; omitted when the caller's own answer already is that notice. */
+  notice?: string;
+};
 
 export function createWall(deps: WallDeps) {
   const { db, kv, ports, log } = deps;
@@ -151,6 +173,15 @@ export function createWall(deps: WallDeps) {
         updateWall(db, key, { analysis: { text: run.text, at: ports.now() }, tokensUsed: (wall.tokensUsed ?? 0) + run.tokens }, ports.now());
       }
     }
+    // One line on the morning list per subject that reached the backlog: what the machine did and where the analysis is. It informs; nothing waits for the owner.
+    const done = getWall(db, key)!;
+    const verdicts = ((done.findings as { findings?: CheckedFinding[] } | null)?.findings ?? []).filter((row) => row.verdict !== "unknown").map((row) => `${row.angle}: ${row.verdict} -> ${row.action}`);
+    const ran = Boolean(done.findings);
+    postOwnerItem(db, { key: `wall:${key}`, source: "wall", kind: "loop_exhausted", projectId: projectId || null, wake: false,
+      what: `Машина закончила петлю: ${subject.slice(0, 240)}`,
+      why: [(done.pack as EvidencePack | null)?.meta?.done, why.slice(0, 160) + ".",
+        ran ? (verdicts.length ? `Охотники (три угла): ${verdicts.join("; ")}.` : "Охотники не нашли ничего, что держится на цитатах.") : "Охотники не запускались.",
+        `Разбор и предложенный шаг в беклоге: ${id}, bb lane-pilot wall show ${key}. Ничего не ждёт тебя; решай, только если нужен другой объём.`].filter(Boolean).join(" ") }, now);
     log(`wall: ${subject} went to the backlog (${why}) as ${id}`);
     return id;
   }
@@ -183,6 +214,7 @@ export function createWall(deps: WallDeps) {
   async function advanceTaskWalls(cfg: WallConfig, now: number): Promise<string[]> {
     const notes: string[] = [];
     for (const wall of listWalls(db, { kind: "task", states: ["stopped", "hunted", "backlog"] })) {
+      if (wall.key.startsWith(LOOP_PREFIX)) continue;
       const pack = wall.pack as EvidencePack | null;
       const family = pack?.meta?.family;
       const accepted = family && pack?.meta?.runId ? (db.prepare("SELECT id FROM lane_pilot_attempt WHERE run_id=? AND (task_id=? OR task_id LIKE ?) AND state='accepted' AND updated_at>? LIMIT 1")
@@ -216,13 +248,63 @@ export function createWall(deps: WallDeps) {
     for (const wall of listWalls(db, { kind: "task", states: ["stopped", "hunted", "backlog"] })) {
       const meta = (wall.pack as EvidencePack | null)?.meta;
       if (!meta || meta.family !== input.family || meta.runId !== input.runId) continue;
-      if (wall.state === "backlog") return `wall_backlog: ${input.family} failed the same way after the normal moves and the hunters' message; it is in the backlog (${wall.deferralId ?? wall.key}) and waits for a person. See bb lane-pilot wall show ${wall.key}.`;
+      if (wall.state === "backlog") return `wall_backlog: ${input.family} failed the same way after the normal moves and the hunters' message; it is in the backlog (${wall.deferralId ?? wall.key}) with the hunters' analysis; the machine ended this loop and does not send the family again. See bb lane-pilot wall show ${wall.key}.`;
       const findings = ((wall.findings as { findings?: CheckedFinding[] } | null)?.findings ?? []).filter((row) => ["contract_wrong", "impossible_as_stated", "approach_wrong", "split_needed"].includes(row.verdict));
       if (wall.state === "hunted" && findings.length && meta.askSha === askSha(input.task, input.plan)) {
         return `wall_unchanged_ask: ${input.family} stopped after two identical failures and the hunters found the ask itself wrong (${findings.map((row) => row.verdict).join(", ")}). Dispatch it again only with a changed contract or plan (their findings were sent to you).`;
       }
     }
     return null;
+  }
+
+  // ---------------------------------------------------------------- the exhausted loop (one machine outcome for every place a loop of tries ends)
+  /**
+   * `loop_exhausted` (Maslov: «3 ходки; не помогло - меняется перспектива, подключаются охотники; не помогло - беклог, дальше по полной»; at the
+   * ceiling: escalation, scope cut or stop). A phase stage, the replans of a failed verification and a topic of a run end here instead of
+   * in the PM chat: the subject becomes ONE wall (idempotent on its id), the same three read-only hunters read it on the next pass of
+   * `advance`, and a backlog item with the full analysis, the morning-list line and the register entry follow. The caller does what only it can
+   * (a phase cuts its scope), says it in `done`, and a PM that must know gets one notice.
+   */
+  async function loopExhausted(input: LoopSubject): Promise<{ key: string; created: boolean }> {
+    const key = loopWallKey(input.kind, input.id);
+    if (getWall(db, key)) return { key, created: false };
+    const now = ports.now();
+    insertWall(db, { key, kind: "task", subject: input.title.slice(0, 300), projectId: input.projectId, state: "stopped", moves: 0, now });
+    const pack = buildLoopPack(db, { subject: `${input.kind} ${input.id}`, runId: input.runId ?? null, taskIds: input.taskIds ?? [], facts: input.facts, texts: input.texts ?? [] });
+    pack.meta = { loop: input.kind, subjectId: input.id, runId: input.runId ?? "", pmThreadId: input.pmThreadId ?? "", done: input.done.slice(0, 600), ...(input.topic ? { topic: input.topic } : {}) };
+    updateWall(db, key, { pack }, now);
+    if (input.notice && input.pmThreadId) {
+      const sent = await ports.tellPm(input.pmThreadId, input.notice).catch(() => false);
+      if (sent) updateWall(db, key, { messageSentAt: ports.now() }, ports.now());
+    }
+    log(`wall: loop ${key} exhausted (${input.kind} ${input.id}); the hunters read it on the next pass`);
+    return { key, created: true };
+  }
+
+  /** The hunt, then the backlog item with the analysis, of every loop wall that waits for it. A spent hunt budget does not hold the item back: it says so. */
+  async function advanceLoopWalls(cfg: WallConfig, now: number): Promise<string[]> {
+    const notes: string[] = [];
+    for (const wall of listWalls(db, { kind: "task", states: ["stopped"] })) {
+      const pack = wall.pack as EvidencePack | null;
+      if (!wall.key.startsWith(LOOP_PREFIX) || !pack) continue;
+      if (huntBudgetLeft(cfg, now) <= 0) {
+        await escalateBacklog(wall.key, wall.subject, wall.projectId, "the hunt budget of the day is spent, so no hunters read it", now);
+        notes.push(`${wall.key}: backlog without a hunt (budget)`);
+        continue;
+      }
+      updateWall(db, wall.key, { state: "hunting", hunt: "running" }, now);
+      const { outcome, tokens } = await hunt(pack, cfg);
+      updateWall(db, wall.key, { state: "hunted", hunt: outcome.state, findings: recordHuntOutcome(outcome), tokensUsed: tokens }, ports.now());
+      await escalateBacklog(wall.key, wall.subject, wall.projectId, outcome.state === "usable" ? `${outcome.usable.length} hunter finding(s) held` : "every hunter ended unknown or without a citation that holds", now);
+      notes.push(`${wall.key}: hunted (${outcome.state}), backlog`);
+    }
+    return notes;
+  }
+
+  /** The loop walls of a run's topics: the stopper reads them as the research that answers a topic (open while the hunt runs, done after). */
+  function loopTopics(runId: string): Array<{ key: string; topic: string; state: WallRow["state"]; createdAt: number; updatedAt: number }> {
+    return listWalls(db, { kind: "task" }).filter((wall) => wall.key.startsWith(`${LOOP_PREFIX}topic:`) && (wall.pack as EvidencePack | null)?.meta?.runId === runId)
+      .map((wall) => ({ key: wall.key, topic: (wall.pack as EvidencePack).meta?.topic ?? "", state: wall.state, createdAt: wall.createdAt, updatedAt: wall.updatedAt }));
   }
 
   // ---------------------------------------------------------------- the night
@@ -428,6 +510,7 @@ export function createWall(deps: WallDeps) {
       if (row.state === "rollback_pending") notes.push(...await retryRollback(row, now));
     }
     notes.push(...await advanceTaskWalls(cfg, now));
+    notes.push(...await advanceLoopWalls(cfg, now));
     const night = nightOf(now), from = Date.parse(`${night}T00:00:00Z`);
     refreshNightSpend(db, night, { from, to: from + DAY });
     return notes;
@@ -634,7 +717,7 @@ export function createWall(deps: WallDeps) {
     return getWall(db, key)!;
   }
 
-  return { config, setConfig, runNight, advance, mergeGate, settled, started, startFailed, nextAssignment, noteTaskStop, dispatchGuard, rerun, status, show, close,
+  return { config, setConfig, runNight, advance, mergeGate, settled, started, startFailed, nextAssignment, noteTaskStop, dispatchGuard, loopExhausted, loopTopics, rerun, status, show, close,
     morning: (now?: number) => composeWallMorning(db, now ?? ports.now()), classes: () => listClasses(db) };
 }
 

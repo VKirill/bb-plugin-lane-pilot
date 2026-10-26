@@ -18,6 +18,7 @@ export const GATE_PROBE = [
   "grep -qs '^\\[tool\\.pytest' pyproject.toml && echo '@@pytest'",
   "grep -qs '^\\[tool:pytest\\]' set[u]p.cfg && echo '@@pytest'",
   "grep -qs '^\\[pytest\\]' tox.ini && echo '@@pytest'",
+  "for f in scripts/studio_test.py game/scripts/studio_test.py; do [ -f $f ] && echo \"@@studio $f\"; done",
   "true",
 ].join("\n");
 
@@ -57,6 +58,10 @@ export function detectGateCommand(probe:string):{ command:string; detail:string 
   if (bins.has("vitest") || declared("vitest")) return { command:"npx vitest run", detail:"vitest is installed" };
   if (bins.has("jest") || declared("jest")) return { command:"npx jest", detail:"jest is installed" };
   if (lines.includes("@@pytest")) return { command:"pytest -q", detail:"pytest config in the project" };
+  // The owner's Roblox toolkit: the whole Studio suite is the project's one full run (Vampirism Fire had no gate, so its tasks used the
+  // whole suite as their own check and the lint could not tell; 2026-10-26).
+  const studio = lines.find((line) => line.startsWith("@@studio "))?.slice(9).trim();
+  if (studio) return { command:studio.startsWith("game/") ? "cd game && python3 -I scripts/studio_test.py" : "python3 -I scripts/studio_test.py", detail:`Roblox Studio test runner ${studio}` };
   return null;
 }
 

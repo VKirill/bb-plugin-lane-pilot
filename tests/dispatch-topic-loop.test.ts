@@ -64,7 +64,8 @@ async function setup() {
     "lane_pilot_dispatch_writer", { confirm: true, objective: "Проверка диспетча", plan: "Plan", task: { ...base, ...next } }, { threadId: pmThreadId, projectId },
   ))) as Record<string, unknown>;
   const taskCount = () => (db.prepare("SELECT COUNT(*) count FROM lane_pilot_task WHERE run_id=?").get(runId) as { count: number }).count;
-  return { seed, dispatch, taskCount };
+  const loopWalls = () => db.prepare("SELECT wall_key, state, subject FROM lane_pilot_wall WHERE wall_key LIKE 'loop:topic:%'").all().map((row) => ({ key: (row as { wall_key: string }).wall_key, state: (row as { state: string }).state, subject: (row as { subject: string }).subject }));
+  return { seed, dispatch, taskCount, loopWalls, db };
 }
 
 describe("dispatch: loop stopper and batch advice", () => {
@@ -72,12 +73,15 @@ describe("dispatch: loop stopper and batch advice", () => {
   afterEach(() => { delete process.env.LANE_PILOT_DISPATCH_ANSWER_MS; });
 
   it("refuses the fourth fix of one file under a new id, creating nothing, and lets one research task through", async () => {
-    const { seed, dispatch, taskCount } = await setup();
+    const { seed, dispatch, taskCount, loopWalls } = await setup();
     for (const [index, id] of ["runner-a", "runner-b", "runner-c"].entries()) seed({ id, title: `Fix the runner: ${id}` }, 10 - index, ["accepted"]);
     const refused = await dispatch({ id: "runner-d", title: "Fix the runner again" });
     expect(refused).toMatchObject({ ok: false, error: { code: "topic_loop", retryable: false, sideEffects: "none" } });
-    expect(String(refused.hint)).toMatch(/runner-a, runner-b, runner-c.*tools\/runner\.py.*dispatch ONE research task/s);
+    expect(String(refused.hint)).toMatch(/runner-a, runner-b, runner-c.*tools\/runner\.py.*Lane Pilot took the big picture itself.*three read-only hunters/s);
+    expect(String(refused.hint)).not.toMatch(/dispatch ONE research task|PM's|waits for a person/);
     expect(taskCount()).toBe(3);
+    // The machine started the hunt itself: one wall of the topic, waiting for the hunters.
+    expect(loopWalls()).toEqual([expect.objectContaining({ state: "stopped", subject: expect.stringContaining("tools/runner.py") })]);
     // The redo of a family the run has is not a new try; the research task on the whole picture is the allowed move.
     expect(await dispatch({ id: "runner-c.2" })).toMatchObject({ taskId: "runner-c.2", state: "queued" });
     const research = await dispatch({ id: "why-runner", kind: "research", area: "research:runner", title: "Why tools/runner.py keeps breaking", expected_outputs: ["docs/runner-why.md"], owns_paths: ["docs/runner-why.md"] });
@@ -87,6 +91,21 @@ describe("dispatch: loop stopper and batch advice", () => {
     const held = await dispatch({ id: "runner-e", title: "Fix the runner once more" });
     expect(held).toMatchObject({ ok: false, error: { code: "topic_loop" } });
     expect(String(held.hint)).toMatch(/why-runner is still open: wait for its receipt/);
+  });
+
+  it("the machine's hunt stands for the research: other tries wait while it runs, one hunt per topic, and the topic reopens when it is done", async () => {
+    const { seed, dispatch, taskCount, loopWalls, db } = await setup();
+    for (const [index, id] of ["runner-a", "runner-b", "runner-c"].entries()) seed({ id, title: `Fix the runner: ${id}` }, 10 - index, ["accepted"]);
+    expect(await dispatch({ id: "runner-d", title: "Fix the runner again" })).toMatchObject({ ok: false, error: { code: "topic_loop" } });
+    const held = await dispatch({ id: "runner-e", title: "Fix the runner once more" });
+    expect(held).toMatchObject({ ok: false, error: { code: "topic_loop" } });
+    expect(String(held.hint)).toMatch(/hunt loop:topic:[0-9a-f]+.*Tasks on the file tools\/runner\.py go out again once the hunt is done/s);
+    expect(loopWalls()).toHaveLength(1);
+    expect(taskCount()).toBe(3);
+    // The hunters finished (the backlog item stands): the topic counts from there, and the next task goes out and follows the finding.
+    db.prepare("UPDATE lane_pilot_wall SET state='backlog', updated_at=? WHERE wall_key LIKE 'loop:topic:%'").run(Date.now());
+    expect(await dispatch({ id: "runner-f", title: "Fix the runner per the finding" })).toMatchObject({ taskId: "runner-f", state: "queued" });
+    expect(loopWalls()).toHaveLength(1);
   });
 
   it("answers a task that joins a queue with the open tasks that hold it and, from three, how to cut the batch", async () => {

@@ -9,11 +9,11 @@ import { hostContract } from "../../contracts";
 import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
 import {
   PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceLines, alreadyMetVerdict, blindVerdict, canonical, pieceSha, contextSignature, openQuestions, phaseFolder, planGate as planGateOf, piecesOfWave, waveCleared, waveLines, wavePackage, wavesOf, wordOf, designDecision, designGate, discussionGate,
-  executionGate, issuable, lessonsNeeded, nextAction, planGate, planSignature, renderBook, sha256, staleAfterReturn,
+  executionGate, issuable, lessonsNeeded, nextAction, planGate, planSignature, provenPieces, renderBook, sha256, staleAfterReturn,
   type ContextDoc, type Phase, type PhaseRecord, type PhaseStage, type PlanItem, type RiskKind, type TaskFact, type WordTurn,
 } from "../logic";
 import { appendPart, getPhase, insertPhase, listParts, listPhases, notePoked, savePhase } from "../store";
-import { archiveDrawing, conclusionText, markRoadmap, nextRoadmapRow, stateText, uatState, uatText, waveTable } from "../stages";
+import { archiveDrawing, binaryFileCommand, binaryFileFingerprint, conclusionText, markRoadmap, nextRoadmapRow, stateText, uatState, uatText, waveTable } from "../stages";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { createPhaseIntake } from "./intake";
 import { createAutoStages } from "./auto-stages";
@@ -53,8 +53,22 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     try {
       return await services.readWriterWorkspaceFile({ threadId: phase.pmThreadId, projectId: phase.projectId, path, offset: 0, maxLines: 2000 }) as { sha256: string; sizeBytes: number };
     } catch (cause) {
+      // A binary file the stage itself produced (the drawing's PNG): the text reader refuses it, so its hash and size come from the host.
+      if (cause instanceof Error && cause.message.includes("lane_pilot_read_binary_rejected")) {
+        const fingerprint = await binaryFingerprint(phase, path);
+        if (fingerprint) return fingerprint;
+      }
       throw new PhaseRefusal(`cannot read ${path}: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
+  }
+
+  async function binaryFingerprint(phase: Phase, path: string): Promise<{ sha256: string; sizeBytes: number } | null> {
+    const command = binaryFileCommand(path);
+    const run = phase.runId ? getRun(db, phase.runId) : null;
+    const hostId = phase.runId ? getRunWriterHost(db, phase.runId) : null;
+    if (!command || !run?.writer_workspace_path || !hostId) return null;
+    const ran = await runOnHost(bb.hosts.experimental_client({ contract: hostContract }), { hostId, cwd: run.writer_workspace_path, command, timeoutSec: 30 }).catch(() => null);
+    return ran && ran.exitCode === 0 ? binaryFileFingerprint(ran.stdout) : null;
   }
 
   /** The design measurement journal (src/rooms/design-eval/training.ts) and the designer's role lines, in the plugin's store. */
@@ -769,7 +783,53 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     return renderProofCurrency(await checkProofs(records, git)) || null;
   }
 
+  /**
+   * The machine's one outcome when a loop of tries is spent (`loop_exhausted`, src/rooms/wall; Maslov: «at the ceiling: escalation, scope cut
+   * or stop»). The scope is cut to what is proven: the pieces that are not proved are withdrawn with their reasons (scope_withdrawn) and the
+   * phase closes on the proved ones, or stops when nothing is proved. Then the wall takes the subject: three read-only hunters, the backlog
+   * item with the analysis and the next step, one line on the owner's morning list, one notice to the PM. Nothing is handed back to the PM.
+   */
+  async function exhaust(phase0: Phase, input: { kind: "stage" | "replan"; stage: string; why: string }): Promise<void> {
+    const phase = mustGet(phase0.id);
+    const plan = phase.record.plan;
+    const issued = phase.record.execution?.issued ?? {};
+    const { proven, unproven } = provenPieces(plan?.items ?? [], facts(phase), phase.record.waveReview ? phase.record.execution?.waves ?? {} : undefined);
+    const canceled: string[] = [];
+    for (const { item } of unproven) {
+      const family = issued[item.id] ? taskFamily(issued[item.id]!) : null;
+      if (!family) continue;
+      for (const attempt of listOpenAttempts(db).filter((row) => row.run_id === phase.runId && taskFamily(row.task_id) === family)) {
+        if ((await cancelAttemptById(ctx, attempt.id, services.rollback)).ok) canceled.push(attempt.task_id);
+      }
+    }
+    const verdict = phase.record.verification?.model?.state === "unmet" ? `the goal audit: ${phase.record.verification.model.summary}` : phase.record.verification?.verdict?.state === "failed" ? `the verification: ${phase.record.verification.verdict.detail}` : "";
+    const cut = unproven.length ? `${unproven.map(({ item }) => item.id).join(", ")} withdrawn (${unproven.map(({ why }) => why).join(" | ").slice(0, 600)})` : "no piece to withdraw";
+    const outcome = proven.length ? `the phase closes on its ${proven.length} proved piece(s) (${proven.map((item) => item.id).join(", ")})` : "no piece is proved, so the phase stops (empty scope)";
+    const done = `${input.stage} ran out of tries (${input.why.slice(0, 300)}). Scope cut: ${cut}${canceled.length ? `; canceled: ${canceled.join(", ")}` : ""}${verdict ? `; not proved: ${verdict.slice(0, 500)}` : ""}; ${outcome}.`;
+    book(phase, "decisions", "scope_withdrawn", `${unproven.length ? unproven.map(({ item }) => item.id).join(", ") : "nothing"} withdrawn by Lane Pilot (loop exhausted at ${input.stage}): ${done}`.slice(0, 1800));
+    const scope = { revisions: phase.record.scope?.revisions ?? 0, withdrawn: [...(phase.record.scope?.withdrawn ?? []), ...unproven.map(({ item }) => item.id)] };
+    if (proven.length) {
+      const sha = plan ? planSignature(proven, plan.contextSha) : "";
+      const record: PhaseRecord = { ...phase.record, scope, auto: undefined, closing: { by: "Lane Pilot (loop exhausted)", words: done.slice(0, 1000), at: now() },
+        lessons: { needed: false, why: "closed by the machine on what is proved; the analysis of the cut is in the backlog" },
+        ...(plan ? { plan: { ...plan, items: proven, sha, ...(plan.admittedSha ? { admittedSha: sha } : {}) } } : {}) };
+      book(phase, "decisions", "exhausted_close", outcome);
+      savePhase(db, phase.id, { stage: "closed", state: "closed", record, at: now() });
+    } else {
+      book(phase, "decisions", "exhausted_stop", outcome);
+      savePhase(db, phase.id, { state: "stopped", record: { ...phase.record, scope, auto: undefined, closing: { by: "Lane Pilot (loop exhausted)", words: done.slice(0, 1000), at: now() } }, at: now() });
+    }
+    await services.wall?.loopExhausted({
+      kind: input.kind, id: `${phase.id}:${input.stage}`, title: `phase ${phase.id} «${phase.title}»: the ${input.stage} loop ran out of tries`, projectId: phase.projectId, runId: phase.runId,
+      taskIds: Object.values(issued), facts: [`goal: ${phase.goal}`, `why the loop ended: ${input.why}`, `what the machine did: ${done}`, ...(verdict ? [verdict] : [])],
+      texts: [{ path: "PHASE-BOOK", text: renderBook(mustGet(phase.id), listParts(db, phase.id)).slice(-18_000) }],
+      done, pmThreadId: phase.pmThreadId,
+      // No notice to the PM chat: an informational message wakes an idle chat for nothing; the book and the owner's morning list carry it.
+    });
+  }
+
   const auto = createAutoStages(ctx, services, {
+    exhausted: exhaust,
     api: { context, plan, planCheck, question, waveReview, goalAudit, lessons, drawing, returnTo },
     get: mustGet,
     save: (phaseId, record) => savePhase(db, phaseId, { record, at: now() }),

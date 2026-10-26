@@ -68,7 +68,7 @@ export function selectClasses(input: SelectInput): Selection {
     const skip = (why: string) => { morning.push({ classKey: row.classKey, why }); };
     const lane = LANE_ORIGINS.includes(row.origin);
     if (row.state === "closed" && row.recur7 < input.recurrenceFloor) { skip(`within the bar (${row.counts[0]}/${row.windows[0]}, ${row.counts[1]}/${row.windows[1]}, ${row.counts[2]}/${row.windows[2]}): watched, not repaired`); continue; }
-    if (row.stage === "backlog") { skip("in the backlog: waits for a person"); continue; }
+    if (row.stage === "backlog") { skip("in the backlog: the hunt and the full analysis are done, the item has its proposed step; the night picks no more rounds for it"); continue; }
     const seen = input.seenVersions?.get(row.classKey);
     if (input.runningVersion && seen && seen.size && ![...seen].some((version) => version === "" || compareVersions(version, input.runningVersion!) >= 0)) {
       skip(`seen only under ${[...seen].sort(compareVersions).at(-1)}, ${input.runningVersion} runs now: a release since may have fixed it, it waits to happen again`);

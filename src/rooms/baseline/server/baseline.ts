@@ -3,7 +3,8 @@ import { getRunSettingsScopes, listCheckDurations, noteToldPmDirectly, taskBaseP
 import type { RollbackApi, RollbackTarget } from "../../rollback/server";
 import type { ServerCore, Services } from "../../core/server";
 import {
-  baselineSummary, baselineVerdict, estimateSec, parseBaselineSettings, planChecks, redBeforeAndAfter, requiresRedOnBase, turnedRed, vacuousChecks, vacuousMessage,
+  baselineSummary, baselineVerdict, CHECK_NOTE_TAIL, estimateSec, parseBaselineSettings, planChecks, RED_OUTSIDE_KINDS, redBeforeAndAfter, redOutsideMessage, redOutsideTaskFiles,
+  requiresRedOnBase, turnedRed, unrunnableMessage, unrunnableReason, vacuousChecks, vacuousMessage,
   type BaselineCheck, type BaselineSettings,
 } from "../logic";
 import { cachedChecks, checkKey, getBaseline, insertBaseline, listBaselines, setBaselineAfter, type BaselineRecord } from "../store";
@@ -27,8 +28,7 @@ export type BaselineInput = {
   config: PrototypeConfig; task: TaskV2;
 };
 
-const CHECK_TAIL = 300;
-const tail = (text: string) => text.trim().slice(-CHECK_TAIL);
+const tail = (text: string) => text.trim().slice(-CHECK_NOTE_TAIL);
 
 export function createBaseline(ctx: ServerCore, services: Services) {
   const { bb, db, host } = ctx;
@@ -130,6 +130,25 @@ export function createBaseline(ctx: ServerCore, services: Services) {
       }
 
       const verdict = baselineVerdict(checks);
+      // A check the base itself shows cannot run (exit 127, a missing tool or folder), or one that is red in files the task does not own:
+      // the writer would only ask the owner about it after a paid start (120 attempts ended that way). The PM fixes the contract first.
+      const unrunnable = checks.flatMap((check) => { const why = unrunnableReason(check, input.task); return why ? [{ check, why }] : []; });
+      const outside = unrunnable.length || !RED_OUTSIDE_KINDS.includes(input.task.kind ?? "") ? []
+        : checks.flatMap((check) => { const files = redOutsideTaskFiles(check, input.task); return files.length ? [{ check, files }] : []; });
+      if (unrunnable.length || outside.length) {
+        const code = unrunnable.length ? "check_cannot_run" : "red_outside_task";
+        const detail = unrunnable.length ? unrunnable.map((item) => `${item.check.command}: ${item.why}`).join("; ")
+          : outside.map((item) => `${item.check.command}: red in ${item.files.join(", ")}`).join("; ");
+        const summary = `${baselineSummary(verdict, checks, baseSha)}; ${code}`;
+        record(input, { baseSha, state: "ran", verdict, mode: settings.mode, action: "stopped", summary, checks, durationMs: Date.now() - started });
+        log(`baseline ${input.taskId}: ${summary} (${detail}); the attempt does not start`);
+        const text = unrunnable.length ? unrunnableMessage(input.taskId, unrunnable, baseSha) : redOutsideMessage(input.taskId, outside, baseSha);
+        if (input.pmThreadId) {
+          noteToldPmDirectly(input.pmThreadId, input.taskId);
+          await bb.sdk.threads.send({ threadId: input.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text: `Lane Pilot: задача ${input.taskId} не запущена: ${text}`, mentions: [] }] } as never).catch(() => undefined);
+        }
+        return { stop: `verdict_block: ${code}: ${detail.slice(0, 600)}. ${unrunnable.length ? "Fix the command or cwd, or drop the check" : "Narrow the check to the task's files or widen owns_paths"}; nothing was started and no attempt was spent`, record: getBaseline(db, input.runId, input.taskId) ?? null };
+      }
       // Red before green: a task of medium risk or more whose every check is already green on the base has no check that can tell its work.
       const vacuous = requiresRedOnBase(settings.requireRed, input.task) ? vacuousChecks(checks, { behaviour: input.task.kind === "fix" }) : [];
       if (vacuous.length) {

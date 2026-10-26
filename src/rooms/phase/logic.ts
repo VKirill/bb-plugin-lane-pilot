@@ -56,7 +56,7 @@ export type PhaseRecord = {
   auto?: { kind: "analyze" | "plan" | "draw" | "review" | "close" | "lessons"; wfRunId: string; startedAt: number; wave?: number };
   /** The context signed before a return to discussion: the machine signs these documents again instead of analysing anew. */
   signedBefore?: { docs: string[]; risks?: Partial<Record<RiskKind, string>>; decisions?: string[] };
-  /** Runs of a stage's workflow that did not finish; at two the stage is the PM's. */
+  /** Runs of a stage's workflow that did not finish; at two the loop is spent and the machine ends it (scope cut, hunters, backlog). */
   autoFailures?: Partial<Record<"analyze" | "plan" | "draw" | "review" | "close" | "lessons", number>>;
   /** Failed runs of each stage's workflow over the phase's whole life, across versions (a new version forgets autoFailures, not this). */
   autoFailuresTotal?: Partial<Record<"analyze" | "plan" | "draw" | "review" | "close" | "lessons", number>>;
@@ -323,16 +323,32 @@ export const runGoalPending = (runGoal: { state: string } | null) => runGoal?.st
  * never from what the writer says. Its input hash freezes it: the same facts give the same verdict, new facts a new verdict.
  * `pending`: only the run's goal check is still running; the driver records nothing and asks again.
  */
+/** What keeps one piece from being proved: not accepted, its promise unproved against the diff, its checks red or never run. Empty when it is proved. */
+function pieceProof(item: PlanItem, fact: TaskFact | undefined): string[] {
+  const problems: string[] = [];
+  if (fact?.state !== "accepted") problems.push(`${item.id} not accepted`);
+  if (fact?.planFact === "failed") problems.push(`${item.id}: plan-fact failed — the promise is not proved`);
+  else if (fact?.planFact === "skipped" && needsPlanFact(item)) problems.push(`${item.id}: plan-fact was skipped — its acceptance items were not checked against the diff`);
+  if (fact?.verification === "failed") problems.push(`${item.id}: its checks failed`);
+  else if (fact?.verification === "skipped" && needsChecks(item)) problems.push(`${item.id}: its checks were skipped — nothing ran`);
+  return problems;
+}
+
+/** The pieces a scope cut keeps (proved) and the ones it withdraws, each with why; a piece of a wave the other model did not pass is not proved when waves are reviewed. */
+export function provenPieces(items: readonly PlanItem[], facts: ReadonlyMap<string, TaskFact>, waves?: Record<string, WaveRecord>): { proven: PlanItem[]; unproven: Array<{ item: PlanItem; why: string }> } {
+  const proven: PlanItem[] = [];
+  const unproven: Array<{ item: PlanItem; why: string }> = [];
+  for (const item of items) {
+    const problems = pieceProof(item, facts.get(item.id));
+    if (waves && waves[String(item.wave)]?.review?.state !== "passed") problems.push(`${item.id}: wave ${item.wave} was not passed by the other model's review`);
+    if (problems.length) unproven.push({ item, why: problems.join("; ") }); else proven.push(item);
+  }
+  return { proven, unproven };
+}
+
 export function blindVerdict(items: readonly PlanItem[], facts: ReadonlyMap<string, TaskFact>, runGoal: { state: string; detail?: string | null; headSha?: string | null } | null, now: number): FrozenVerdict | PendingVerdict {
   const problems: string[] = [];
-  for (const item of items) {
-    const fact = facts.get(item.id);
-    if (fact?.state !== "accepted") problems.push(`${item.id} not accepted`);
-    if (fact?.planFact === "failed") problems.push(`${item.id}: plan-fact failed — the promise is not proved`);
-    else if (fact?.planFact === "skipped" && needsPlanFact(item)) problems.push(`${item.id}: plan-fact was skipped — its acceptance items were not checked against the diff`);
-    if (fact?.verification === "failed") problems.push(`${item.id}: its checks failed`);
-    else if (fact?.verification === "skipped" && needsChecks(item)) problems.push(`${item.id}: its checks were skipped — nothing ran`);
-  }
+  for (const item of items) problems.push(...pieceProof(item, facts.get(item.id)));
   const waiting = runGoalPending(runGoal);
   if (!runGoal) problems.push("the run's goal check has not run yet");
   else if (runGoal.state === "failed") problems.push(`the run's goal check failed${runGoal.detail ? `: ${runGoal.detail}` : ""}`);

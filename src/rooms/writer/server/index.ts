@@ -10,6 +10,7 @@ export { createWriterSpawn } from "./spawn";
 export { createWriterStart } from "./start";
 export { createWriterState } from "./state";
 export { loadFollowUp, markFollowUpCancelled } from "./sticky";
+export { createWriterQuestionTimeout } from "./question-timeout";
 export { createWriterReassign } from "./reassign";
 export { createAttemptReopen } from "./reopen-attempt";
 export { createWriterUpdateTask } from "./update-task";

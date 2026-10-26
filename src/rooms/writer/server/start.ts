@@ -22,6 +22,7 @@ import { parseMemorySettings } from "../../memory";
 import { isMainfixTask, ownsFromOuterBase, retargetTask , priorityRank, HOLD_FOREVER, laneCap, laneQueueOf } from "../../tasks";
 import { openDatabase } from "../../storage";
 import { createWriterSticky } from "./sticky";
+import { WRITER_QUESTION_WAIT_TEXT } from "./question-default";
 import { failureClass, type FailureClass } from "../../runs";
 import { jev } from "@lane-pilot/jev";
 import { judgedFailureClass } from "../../runs";
@@ -389,6 +390,8 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       const baseSettings=(await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values;
       const writerOverlay=await pickWriter(baseSettings, input);
       const runSettings=writerOverlay ? { ...baseSettings, ...writerOverlay } : rotatedWriterSettings(baseSettings, input.taskId);
+      // Only the writer keys travel to the spawn: the spawn reads the stored settings again, and must see this choice, not the project's.
+      const writerChoice=Object.fromEntries(Object.entries(runSettings).filter(([key, value]) => key.startsWith("writer.") && value !== baseSettings[key]));
       const budget=services.runBudgetFor(input.runId,runSettings);
       const wallOrTokenStop = () => runningWriterBudgetStop(budget.check());
       const blockBeforeWriter = (reason:string) => {
@@ -424,7 +427,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
               reason:`waiting: held until ${held >= HOLD_FOREVER ? "released" : new Date(held).toISOString()}` });
           }
-          await new Promise((wake) => setTimeout(wake, 60_000));
+          await new Promise((wake) => setTimeout(wake, pollPause(10_000)));
         }
         const dependency = await waitForDependencies(wallOrTokenStop);
         if (dependency) {
@@ -654,7 +657,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           pendingReassign=null;
           const spawned = await services.spawnWriterAttempt({
             projectId:input.projectId, runId:input.runId, taskId:input.taskId, attemptId,
-            config:freshConfig, task:freshTask, plan:input.plan, pmThreadId:input.pmThreadId, pmReadContext,
+            config:freshConfig, task:freshTask, plan:input.plan, pmThreadId:input.pmThreadId, pmReadContext, writerSettings:writerChoice,
             retryIndex:Math.max(0,countAttempts(db,input.runId,input.taskId)-1),
             // A fresh writer starts from main: of the failures before it, the task's own is the one to avoid, not a provider's cut.
             previousAttempt:previousAttemptBrief(last.status && isOwnFailure(last) ? last : own.failure ?? (last.status ? last : null), freshTask, undefined, liveFolder),
@@ -979,7 +982,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       if (!accepted && reason && failureClass(String(last.status), reason) === "judgment" && input.pmThreadId) {
         noteToldPmDirectly(input.pmThreadId, input.taskId);
         void sendServiceMessage(bb, { threadId:input.pmThreadId, senderThreadId:writerThreadId || undefined,
-          text:`Lane Pilot: ${input.taskId} stopped with a question from its writer. Answer it with lane_pilot_answer_writer (taskId, answer) — from the code or docs if they settle it, else ask the owner once; the writer continues in its own thread and no attempt is spent. Send the task again only when the contract itself must change; tasks that depend on it wait for that.${liveFolder ? " This folder has no git, so the writer's files stay where they are and the folder stays locked: other tasks for it queue until this question is answered (or the task is sent again)." : ""}\n${reason.slice(0, 1200)}` }).catch(() => undefined);
+          text:`Lane Pilot: ${input.taskId} stopped with a question from its writer. Answer it with lane_pilot_answer_writer (taskId, answer) — from the code or docs if they settle it, else ask the owner once; the writer continues in its own thread and no attempt is spent. ${WRITER_QUESTION_WAIT_TEXT} Send the task again only when the contract itself must change; tasks that depend on it wait for that.${liveFolder ? " This folder has no git, so the writer's files stay where they are and the folder stays locked: other tasks for it queue until this question is answered (or the task is sent again)." : ""}\n${reason.slice(0, 1200)}` }).catch(() => undefined);
       }
       if (!accepted && last.status !== "canceled") {
         void services.stability.onTaskFailed({ projectId:input.projectId, runId:input.runId, taskId:input.taskId,

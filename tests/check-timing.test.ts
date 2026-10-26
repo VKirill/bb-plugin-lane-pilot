@@ -37,6 +37,8 @@ describe("check timeout from history", () => {
     expect(listCheckTimeouts(db, "A", "python3 -I scripts/studio_test.py --filter X")).toEqual([90]);
     expect(listCheckTimeouts(db, "B", "python3 -I scripts/studio_test.py")).toEqual([30]);
     expect(listCheckTimeouts(db, "A", "npm test")).toEqual([]);
+    // The same check started from its folder is the same history.
+    expect(listCheckTimeouts(db, "A", "cd game && python3 -I scripts/studio_test.py").sort((a, b) => a - b)).toEqual([120, 600]);
     await harness.lifecycle.dispose();
   });
 
@@ -67,3 +69,12 @@ describe("check timeout from history", () => {
     await harness.lifecycle.dispose();
   });
 });
+
+describe("one check whatever folder starts it", () => {
+  it("shares its durations and timeouts with and without a leading cd (wc35ef88c-T1, 2026-10-26)", async () => {
+    const { checkHistoryKey } = await import("../src/rooms/storage/database");
+    expect(checkHistoryKey("cd game && python3 -I scripts/studio_test.py")).toBe(checkHistoryKey("python3  -I scripts/studio_test.py"));
+    expect(checkHistoryKey("cd game && python3 -I scripts/studio_test.py --filter Par030")).not.toBe(checkHistoryKey("python3 -I scripts/studio_test.py"));
+  });
+});
+

@@ -54,6 +54,13 @@ import planReviewConvergence from "../../../workflows/plan-review-convergence.js
 import projectStart from "../../../workflows/project-start.json";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import { parseWorkflow } from "@lane-pilot/workflow-engine";
+import { gateVocabularyLines } from "../tasks";
+
+/** The planner's instructions with the gate vocabulary: the plan's acceptance items are judged by those words (tasks/gate-vocabulary.ts). */
+const withGateVocabulary = (workflow: { nodes: Array<{ id: string; prompt?: string }> }): unknown => ({
+  ...workflow,
+  nodes: workflow.nodes.map((node) => node.id === "plan" && node.prompt ? { ...node, prompt: `${node.prompt}\n\n${gateVocabularyLines().join("\n")}` } : node),
+});
 
 /** The workflows that ship with Lane Pilot (`workflows/*.json`, inlined by the bundler). Add a file here to add one (a test checks that every file is listed). */
 export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = [
@@ -83,7 +90,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "lp.build.json", value: lpBuild },
   { name: "lp.close.json", value: lpClose },
   { name: "lp.draw.json", value: lpDraw },
-  { name: "lp.plan.json", value: lpPlan },
+  { name: "lp.plan.json", value: withGateVocabulary(lpPlan as never) },
   { name: "lp.review.json", value: lpReview },
   { name: "milestone-close.json", value: milestoneClose },
   { name: "plan-only.json", value: planOnly },

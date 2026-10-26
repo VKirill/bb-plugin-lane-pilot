@@ -100,11 +100,11 @@ export function parseFinding(raw: unknown, angle: HuntAngle): Finding | null {
   return parsed.success ? parsed.data : null;
 }
 
-type AttemptRow = { id: string; run_id: string; task_id: string; state: string; reason: string | null; updated_at: number; harness_version: string | null; project_id: string };
+export type AttemptRow = { id: string; run_id: string; task_id: string; state: string; reason: string | null; updated_at: number; harness_version: string | null; project_id: string };
 
-const attemptView = (row: AttemptRow): PackAttempt => ({ id: row.id, state: row.state, reason: (row.reason ?? "").slice(0, 1200), project: row.project_id, version: row.harness_version ?? "", at: row.updated_at });
+export const attemptView = (row: AttemptRow): PackAttempt => ({ id: row.id, state: row.state, reason: (row.reason ?? "").slice(0, 1200), project: row.project_id, version: row.harness_version ?? "", at: row.updated_at });
 
-function receiptsOf(db: WallDb, attempts: readonly AttemptRow[]): PackReceipt[] {
+export function receiptsOf(db: WallDb, attempts: readonly AttemptRow[]): PackReceipt[] {
   const stmt = db.prepare("SELECT stage_id, state, reason FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND state IN ('failed','blocked')");
   const out: PackReceipt[] = [];
   const seen = new Set<string>();
@@ -157,5 +157,39 @@ export function buildTaskPack(db: WallDb, input: { runId: string; taskId: string
   return {
     kind: "task", subject: `${input.runId}/${input.family}`, facts: [`task family ${input.family} in run ${input.runId}: ${attempts.length} attempts, the last ones failed the same way`],
     attempts: attempts.map(attemptView), receipts: receiptsOf(db, attempts), files, checkOutputs: attempts.map((row) => row.reason ?? ""), queries,
+  };
+}
+
+/** What a loop that ran out of tries is made of: the attempts of the tasks that tried, the facts the caller knows, and texts the hunters may cite (the phase book, the verdict). */
+export type LoopEvidence = {
+  subject: string;
+  runId?: string | null;
+  /** Task ids or families (`P1` also reads `P1.2`): their attempts, failed receipts and contracts are the evidence. */
+  taskIds?: readonly string[];
+  facts: readonly string[];
+  texts?: ReadonlyArray<{ path: string; text: string }>;
+};
+
+/** The pack of an exhausted loop (a phase stage, the replans of a failed verification, a topic of a run). */
+export function buildLoopPack(db: WallDb, input: LoopEvidence): EvidencePack {
+  const attempts: AttemptRow[] = [];
+  const files: PackFile[] = [];
+  if (input.runId) {
+    const byFamily = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.updated_at, a.harness_version, r.project_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+      WHERE a.run_id=? AND (a.task_id=? OR a.task_id LIKE ?) ORDER BY a.created_at`);
+    const contract = db.prepare("SELECT contract_json FROM lane_pilot_task WHERE id=? AND run_id=?");
+    for (const id of [...new Set(input.taskIds ?? [])].slice(0, 12)) {
+      const rows = byFamily.all(input.runId, id, `${id}.%`) as AttemptRow[];
+      attempts.push(...rows.slice(-6));
+      const latest = rows.at(-1)?.task_id ?? id;
+      const task = contract.get(latest, input.runId) as { contract_json: string } | undefined;
+      if (task) files.push({ path: `TASK:${latest}`, lines: task.contract_json.split("\n").length, text: task.contract_json.slice(0, 8_000) });
+    }
+  }
+  for (const text of input.texts ?? []) files.push({ path: text.path, lines: text.text.split("\n").length, text: text.text.slice(0, 20_000) });
+  const kept = attempts.slice(-30);
+  return {
+    kind: "task", subject: input.subject, facts: [...input.facts], attempts: kept.map(attemptView), receipts: receiptsOf(db, kept), files: files.slice(0, 14),
+    checkOutputs: kept.map((row) => row.reason ?? ""), queries: [],
   };
 }

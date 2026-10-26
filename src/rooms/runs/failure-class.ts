@@ -65,6 +65,9 @@ const VERDICT_BLOCK = /^verdict_block:/;
 /** A task waits for an Env Catalog secret its checks declare (J6): the PM's to ask the owner for, never the writer's fault. */
 const WAITING_SECRET = /^waiting_secret:/;
 export const isWaitingSecret = (reason:string | null | undefined):boolean => WAITING_SECRET.test(reason ?? "");
+/** The baseline stopped the task before any writer: a check that cannot run on the base, or one red outside the task's files (baseline.ts). Nothing ran, so no attempt is spent. */
+const PRE_START_STOP = /^verdict_block: (?:check_cannot_run|red_outside_task):/;
+export const isPreStartStop = (reason:string | null | undefined):boolean => PRE_START_STOP.test(reason ?? "");
 /** The task spent its overall writer-attempt budget (retry-budget.ts): ends for the PM, never parked or redriven. */
 const RETRY_BUDGET = /^retry_budget_exhausted:/;
 const LIMIT = /writer_provider_limit:|^writer_provider_unavailable:(breaker_open|usage_window|owner_present)/;

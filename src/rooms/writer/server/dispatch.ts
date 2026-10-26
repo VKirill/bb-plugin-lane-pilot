@@ -26,6 +26,7 @@ import { id, stringAt, valueAt } from "../../core/server";
 import { buildTask } from "./writer-task";
 import { dispatchReply, dispatchRunKey, endedAttemptReply, startDispatchRun, workflowEngineEnabled } from "./dispatch-workflow";
 import { batchAdviceFor, topicLoopGuard } from "./dispatch-guards";
+import { reviveCanceledTask } from "./revive";
 import { countRunNudges } from "./writer-silence";
 import { isAbsolute, relative, resolve } from "node:path";
 import type { ServerCore } from "../../core/server";
@@ -185,6 +186,11 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     // The PM sending the same task again (its call ended «terminated» while the stages went on) gets the task it already has.
     const duplicate = args.task ? findLiveDuplicate(runId, args.task.id, task, canonicalPlan) : null;
     if (duplicate) return duplicate;
+    // The same task sent again after its queued attempt was canceled (a replan) is that task and attempt, not a new one.
+    const revived = args.task && !isMainfixTask(args.task.id) ? reviveCanceledTask({ ctx, services, live:liveDispatches,
+      sameWork:(storedId, contract) => canonicalJson(contract) === canonicalJson({ ...task, id:storedId }) && sha256(getTaskPlan(db, storedId) ?? "") === sha256(canonicalPlan) },
+    { projectId:args.projectId, runId, requestedId:args.task.id, pmThreadId:args.threadId, config:taskConfig, task, plan:canonicalPlan }) : null;
+    if (revived) return revived;
     // A task is one writer session that restarts itself after a machinery fault: sending another member of its family
     // (`<id>.N`) while one runs or is parked would start a second writer on the same work.
     const inProgress = args.task && !isMainfixTask(args.task.id) ? await runningFamilyMember(args.projectId, args.task.id) : null;
@@ -196,8 +202,8 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     const walled = args.task && !isMainfixTask(args.task.id) ? services.wall?.dispatchGuard({ runId, family:taskFamily(args.task.id), task, plan:canonicalPlan }) ?? null : null;
     if (walled) return { ok:false, error:{ code:"wall_stop", retryable:false, sideEffects:"none", hint:walled }, hint:walled };
     // A fourth try on a topic the run's earlier tasks already worked on (the same file patched, the same test red again) is not sent:
-    // the PM dispatches one research task on the whole picture first (Vampirism Fire 2026-10: nine runner patches, one flaky test through eight tasks).
-    const looped = args.task && !isMainfixTask(args.task.id) && (args.birth ?? "pm") === "pm" ? topicLoopGuard(db, runId, task) : null;
+    // the machine puts the whole picture to its hunters and the backlog first (Vampirism Fire 2026-10: nine runner patches, one flaky test through eight tasks).
+    const looped = args.task && !isMainfixTask(args.task.id) && (args.birth ?? "pm") === "pm" ? await topicLoopGuard(db, runId, task, { wall:services.wall, projectId:args.projectId, pmThreadId:args.threadId }) : null;
     if (looped) return { ok:false, error:{ code:"topic_loop", retryable:false, sideEffects:"none", hint:looped }, hint:looped };
     // Contract lint: every contract mistake a helper or writer would only trip over later goes back to the PM now,
     // in one message with the fix, before a task or an attempt exists.

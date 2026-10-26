@@ -1,6 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { isAbsolute, relative, resolve } from "node:path";
-import { FREE_CLASSES, failureClass, isWaitingSecret, isWriterSilent, taskFamily } from "../runs";
+import { FREE_CLASSES, failureClass, isPreStartStop, isWaitingSecret, isWriterSilent, taskFamily } from "../runs";
 import { handoffMigrations } from "@lane-pilot/handoff";
 import { councilMigrations } from "@lane-pilot/council";
 import { ruleAudienceMigrations, ruleFormMigrations, ruleMechanismMigrations, ruleMigrations, ruleTrialMigrations, triageMigrations } from "@lane-pilot/run-insights";
@@ -847,6 +847,20 @@ export function createAttempt(db: LanePilotDatabase, ids: { id:string; runId:str
   attemptChanged(ids.id);
 }
 
+/**
+ * A canceled attempt whose writer never started goes back to queued: the PM sent the same task again (a replan), and that task keeps its attempt
+ * instead of adding another row. Refused for an attempt that had a writer thread or a workspace.
+ */
+export function reviveCanceledAttempt(db: LanePilotDatabase, attemptId: string, reason: string): boolean {
+  const now = Date.now();
+  const changed = db.prepare("UPDATE lane_pilot_attempt SET state='queued', reason=?, updated_at=? WHERE id=? AND state='canceled' AND thread_id IS NULL AND workspace_path IS NULL")
+    .run(reason, now, attemptId).changes === 1;
+  if (!changed) return false;
+  db.prepare("INSERT INTO lane_pilot_attempt_transition(attempt_id,from_state,to_state,reason,refused,at) VALUES(?,?,?,?,0,?)").run(attemptId, "canceled", "queued", reason, now);
+  attemptChanged(attemptId);
+  return true;
+}
+
 /** The Lane Pilot build the task's latest attempt was created by; null when it predates the column or the task has none. */
 export function latestAttemptHarnessVersion(db: LanePilotDatabase, runId: string, taskId: string): string | null {
   const row = db.prepare("SELECT harness_version FROM lane_pilot_attempt WHERE run_id=? AND task_id=? ORDER BY created_at DESC, attempt_no DESC LIMIT 1")
@@ -895,7 +909,7 @@ export function countChargedAttempts(db: LanePilotDatabase, runId: string, taskI
   const rows = db.prepare("SELECT state, reason, thread_id FROM lane_pilot_attempt WHERE run_id=? AND task_id=?").all(runId, taskId) as
     Array<{ state:string; reason:string|null; thread_id:string|null }>;
   // One writer session is one attempt: the feedback turns sent into the same thread are not charged again.
-  return new Set(rows.filter((row) => !(row.reason && (FREE_CLASSES.has(failureClass(row.state, row.reason)) || isWriterSilent(row.reason) || isWaitingSecret(row.reason))))
+  return new Set(rows.filter((row) => !(row.reason && (FREE_CLASSES.has(failureClass(row.state, row.reason)) || isWriterSilent(row.reason) || isWaitingSecret(row.reason) || isPreStartStop(row.reason))))
     .map((row, index) => row.thread_id ?? `#${index}`)).size;
 }
 
@@ -1035,13 +1049,13 @@ export function listOpenAttempts(db: LanePilotDatabase): Array<{
  * edits are still in the files where the folder has no git, so such a task still holds its folder.
  */
 export function listUnansweredWriterQuestions(db: LanePilotDatabase): Array<{
-  id:string; run_id:string; task_id:string; thread_id:string|null; project_id:string; reason:string|null;
+  id:string; run_id:string; task_id:string; thread_id:string|null; project_id:string; reason:string|null; updated_at:number;
 }> {
-  return db.prepare(`SELECT a.id,a.run_id,a.task_id,a.thread_id,a.reason,r.project_id
+  return db.prepare(`SELECT a.id,a.run_id,a.task_id,a.thread_id,a.reason,a.updated_at,r.project_id
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     WHERE a.state='blocked' AND a.reason LIKE 'needs_human:%' AND r.closed_at IS NULL
       AND a.created_at=(SELECT MAX(b.created_at) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)
-    ORDER BY a.created_at`).all() as Array<{ id:string; run_id:string; task_id:string; thread_id:string|null; project_id:string; reason:string|null }>;
+    ORDER BY a.created_at`).all() as Array<{ id:string; run_id:string; task_id:string; thread_id:string|null; project_id:string; reason:string|null; updated_at:number }>;
 }
 
 /** A section's settings live under binding_id "section:<id>"; the project's own under "". */
@@ -1613,9 +1627,15 @@ export function listSecretIssuance(db: LanePilotDatabase, projectId: string, lim
       secretName: row.secret_name as string, hostId: (row.host_id as string | null) ?? null, network: (row.network as string | null) ?? null }));
 }
 
+/**
+ * One check whatever folder it is started from: `cd game && python3 -I scripts/studio_test.py` and `python3 -I scripts/studio_test.py`
+ * time out alike, yet as two keys the second had no history and was killed five times at 120 s (Vampirism Fire, wc35ef88c-T1).
+ */
+export const checkHistoryKey = (command: string): string => command.trim().replace(/^cd\s+\S+\s*&&\s*/, "").replace(/\s+/g, " ");
+
 /** One finished verification command run. The command is keyed by its hash: it can be long and may carry a secret name. */
 export function recordCheckDuration(db: LanePilotDatabase, input: { projectId: string; command: string; durationMs: number; exitCode: number; now?: number }): void {
-  const key = sha256Buffer(input.command.trim());
+  const key = sha256Buffer(checkHistoryKey(input.command));
   db.prepare("INSERT INTO lane_pilot_check_duration(project_id,command_key,duration_ms,exit_code,at) VALUES (?,?,?,?,?)")
     .run(input.projectId, key, Math.max(0, Math.round(input.durationMs)), input.exitCode, input.now ?? Date.now());
   db.prepare(`DELETE FROM lane_pilot_check_duration WHERE project_id=? AND command_key=? AND rowid NOT IN
@@ -1629,17 +1649,17 @@ export function recordCheckDuration(db: LanePilotDatabase, input: { projectId: s
  * timed out after 120s» (live 2026-10-26, Vampirism Fire: the whole Studio suite, no timeout_sec, killed five times at 120 s).
  */
 export function listCheckTimeouts(db: LanePilotDatabase, projectId: string, command: string, limit = 20): number[] {
-  const head = `verification failed (${command}): verification timed out after `;
-  const rows = db.prepare("SELECT a.reason FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.project_id=? AND instr(a.reason, ?) > 0 ORDER BY a.created_at DESC, a.attempt_no DESC LIMIT ?")
-    .all(projectId, head, limit) as Array<{ reason: string }>;
+  const want = checkHistoryKey(command);
+  const rows = db.prepare("SELECT a.reason FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.project_id=? AND instr(a.reason, '): verification timed out after ') > 0 ORDER BY a.created_at DESC, a.attempt_no DESC LIMIT ?")
+    .all(projectId, limit * 10) as Array<{ reason: string }>;
   return rows.flatMap((row) => {
-    const seconds = /^(\d+)s/.exec(row.reason.slice(row.reason.indexOf(head) + head.length));
-    return seconds ? [Number(seconds[1])] : [];
-  });
+    const found = /verification failed \((.+?)\): verification timed out after (\d+)s/.exec(row.reason);
+    return found && checkHistoryKey(found[1]!) === want ? [Number(found[2])] : [];
+  }).slice(0, limit);
 }
 
 /** Durations (ms) of the last green runs of one command in one project, newest first. */
 export function listCheckDurations(db: LanePilotDatabase, projectId: string, command: string, limit = 20): number[] {
   return (db.prepare("SELECT duration_ms FROM lane_pilot_check_duration WHERE project_id=? AND command_key=? AND exit_code=0 ORDER BY at DESC, rowid DESC LIMIT ?")
-    .all(projectId, sha256Buffer(command.trim()), limit) as Array<{ duration_ms: number }>).map((row) => row.duration_ms);
+    .all(projectId, sha256Buffer(checkHistoryKey(command)), limit) as Array<{ duration_ms: number }>).map((row) => row.duration_ms);
 }

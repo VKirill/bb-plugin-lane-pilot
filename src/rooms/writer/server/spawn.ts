@@ -115,6 +115,8 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
     emergency?:{providerId:string;model:string;reason:string;reasoningLevel?:string}; retryIndex?:number;
     /** The previous attempt's failure, for a retry (`previousAttemptBrief`). */
     previousAttempt?:string;
+    /** The writer the start chose for this task (Jev's pick or the rotation's share): read here over the stored settings, or the pick is lost. */
+    writerSettings?:Record<string, unknown>;
     /**
      * A fallback that continues an interrupted attempt: it works in that attempt's worktree with the edits left there, against
      * the dirt baseline the attempt was measured with, and starts from the handoff brief.
@@ -129,7 +131,9 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
     let lastExecution:{reasoningLevel:string;serviceTier:"default"|"fast"|null;selectionSource:{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;reasoningLevelSource:"explicit"|"client-preference"}}|null=null;
     transitionAttempt(db, input.attemptId, "spawn_requested");
     try {
-      const settings = (await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values;
+      // The stored settings with the start's writer choice on top: before this every Jev pick that differed from the project's writer
+      // was dropped here (Vampirism Fire 2026-10-25/26: picks gemini-flash, sonnet, sonnet, haiku all ran as composer-2.5).
+      const settings = { ...(await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values, ...(input.writerSettings ?? {}) };
       const workspaceMode = parseWorkspaceMode(settings["adoc.040"]);
       const minScoreValue = settings["adoc.041"];
       const minScore = minScoreValue === undefined || minScoreValue === null || minScoreValue === "" ? 4 : Number(minScoreValue);

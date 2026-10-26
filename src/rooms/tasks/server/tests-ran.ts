@@ -92,3 +92,20 @@ export function noTestRanReason(output: string): string | null {
   const detail = [...new Set(summaries.map((summary) => summary.detail).filter(Boolean))].join("; ") || "no test was counted";
   return `the check exited 0 but ran no test: ${detail} (${summaries[0]!.runner}) — the filter, file or test name matches nothing, or every test is skipped; a skipped, todo or pending test does not count, so fix the command or the test until at least one test runs`;
 }
+
+/** A sandbox's refusal of a tool's own files: the command did not run what it was asked to. */
+export const SANDBOX_DENIAL=/couldn't create cache file|Operation not permitted/i;
+
+/**
+ * Why a re-run that exited 0 still proves nothing, or null. Vampirism Fire 2026-10-24: `studio_test.py` failed, then «passed»
+ * on the re-run printing only the macOS python3 shim's «couldn't create cache file (Operation not permitted)», no report; that
+ * empty green was accepted as flaky. A re-run counts only when it shows the check ran: it prints a test/check summary, or it
+ * is not a command known to print one (the first run did not) and shows no sandbox refusal.
+ */
+export function hollowRerun(first:{stdout?:string;stderr?:string},again:{stdout?:string;stderr?:string}):string|null {
+  const printed=(run:{stdout?:string;stderr?:string})=>`${run.stdout??""}\n${run.stderr??""}`;
+  if(testSummaries(printed(again)).length) return null;
+  if(testSummaries(printed(first)).length) return "printed no test or check summary, which this command printed on its first run";
+  return SANDBOX_DENIAL.test(printed(again)) ? "printed only a sandbox refusal and no test or check summary" : null;
+}
+

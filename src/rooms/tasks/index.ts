@@ -11,6 +11,8 @@ export { classifyWriterOutput, isMainfixTask, isOutputPath, unownedExpectedOutpu
 export type { VerifyResult } from "./validate-output";
 export { commonTaskFolder, isTaskBase, ownsFromOuterBase, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask } from "./task-base";
 export { TRUSTED_TOOLING_PATTERNS, applyTrustedTooling, trustedToolingFor, trustedToolingHint, trustedToolingHits, verificationScriptPaths } from "./trusted-tooling";
+export { GATE_CODES, gateVocabularyLines } from "./gate-vocabulary";
+export { INVARIANT_ITEM, INVARIANT_WORDS } from "./plan-fact";
 export { NO_CODE_KINDS, PLAN_FACT_BRIEF_LINE, blindPlanFact, diffHunksCommand, existsCommand, existsFromCommandOutput, hunksFromCommandOutput, parsePlanFact, planFactOutcome, untouchedCitations } from "./plan-fact";
 export type { EvidenceCheck, ItemVerdict, PlanFactCheck, PlanFactFacts, PlanFactTable } from "./plan-fact";
 export { BIRTH_KINDS, CHECK_RECIPES, FACT_KINDS, HOLD_FOREVER, LANE_QUEUES, QUESTION_KINDS, WORKER_ENVELOPE, checkRecipe, factKind, isWholeConsent, questionKind, questionsFromFile, secretShaped, laneCap, laneQueueOf, MARKER_BRIEF_LINE, PRIORITIES, birthFindings, ownerWordFindings, blockingClass, checkProgram, deadLetters, priorityRank, queueOrder, referenceTestEdits, spendReserve, writerMarkers } from "./rails";

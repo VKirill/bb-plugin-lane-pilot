@@ -81,6 +81,34 @@ describe("gitIntegrate with replayChecks (the host runs the task's checks in the
     expect(await integrate()).toMatchObject({ status: "merged" });
   });
 
+  // The same reading as the writer's own check (Astra's Vampirism Fire audit, 2026-10-27): before, each of these merged.
+  const integrateTwo = () => gitIntegrate({ requestedHostId: "h", basePath: base, worktreePath: two, message: "two",
+    replayChecks: { workspacePath: two, backend: "auto", commands: [{ command: "python3 -I scripts/studio_test.py", cwd: two, timeoutSec: 90 }, { command: "npm test", cwd: two, timeoutSec: 90 }] } } as never, undefined as never);
+
+  it("holds the merge when the re-run printed only a sandbox refusal and no report (a hollow green)", async () => {
+    sandbox.run.mockResolvedValueOnce(ran(1, "FAIL BG4 leak feed on pickup\n19 checks, 1 failed")).mockResolvedValueOnce(ran(0, "python3: error: couldn't create cache file '/var/folders/x/xcrun_db' (errno=Operation not permitted)"));
+    expect(await integrate()).toMatchObject({ status: "conflict", checks: [{ command: "npm test", exitCode: 1 }] });
+  });
+
+  it("holds the merge on a green that ran no test", async () => {
+    sandbox.run.mockResolvedValue(ran(0, "0 checks, 0 failed"));
+    const res = await integrate();
+    expect(res).toMatchObject({ status: "conflict" });
+    expect(JSON.stringify(res)).toMatch(/ran no test/);
+  });
+
+  it("an environment failure skips only its own check: the next check still runs and can hold the merge", async () => {
+    sandbox.run.mockResolvedValueOnce(ran(1, "", "studio_test error: Unable to reach Roblox Studio right now.")).mockResolvedValueOnce(ran(1, "", "studio_test error: Unable to reach Roblox Studio right now."))
+      .mockResolvedValue(ran(1, "1 failed", "AssertionError: y"));
+    expect(await integrateTwo()).toMatchObject({ status: "conflict", checks: [{ command: "npm test", exitCode: 1 }] });
+  });
+
+  it("does not run a timed-out check twice", async () => {
+    sandbox.run.mockResolvedValue(ran(124, "", "verification timed out after 90s"));
+    expect(await integrate()).toMatchObject({ status: "conflict" });
+    expect(sandbox.run).toHaveBeenCalledTimes(1);
+  });
+
   it("merges when no sandbox is available for the check", async () => {
     sandbox.run.mockRejectedValue(new Error("sandbox_backend_unavailable: Seatbelt launch was denied by the host"));
     expect(await integrate()).toMatchObject({ status: "merged" });

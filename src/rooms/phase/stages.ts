@@ -183,3 +183,21 @@ export function stateText(previous: string | null, marks: Record<string, string>
 }
 
 export const sha = (text: string) => createHash("sha256").update(text).digest("hex");
+
+/**
+ * The fingerprint of a file the text reader refuses (a PNG of the drawing, a font): read with the host's own tools, since only its hash
+ * and size go into the phase record (live ph_26f65b142d: «cannot read …/design/00-kit.png: lane_pilot_read_binary_rejected» failed lp.draw).
+ * Null for a path that is not a plain relative one inside the checkout.
+ */
+export function binaryFileCommand(path: string): string | null {
+  if (!path || path.includes("\0") || path.startsWith("/") || path.split(/[\\/]/).includes("..")) return null;
+  return `f='${path.replace(/'/g, `'\\''`)}'; (sha256sum -- "$f" 2>/dev/null || shasum -a 256 -- "$f") && wc -c < "$f"`;
+}
+
+/** What `binaryFileCommand` printed: the hash line, then the size. */
+export function binaryFileFingerprint(stdout: string): { sha256: string; sizeBytes: number } | null {
+  const lines = stdout.trim().split("\n");
+  const hash = /^([0-9a-f]{64})\b/i.exec(lines[0] ?? "")?.[1];
+  const size = Number((lines.at(-1) ?? "").trim());
+  return hash && lines.length >= 2 && Number.isInteger(size) && size >= 0 ? { sha256: hash.toLowerCase(), sizeBytes: size } : null;
+}

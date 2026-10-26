@@ -2,4 +2,4 @@
 export { baselineMigrations } from "./migrations";
 export { getBaseline, listBaselines, listRegressions } from "./store";
 export type { BaselineRecord, RegressionRecord } from "./store";
-export { NO_RED_KINDS } from "./logic";
+export { EXISTENCE_ONLY_WORDS, NO_RED_KINDS, isExistenceOnly } from "./logic";

@@ -4,7 +4,7 @@ import { deadLetters, HOLD_FOREVER } from "../rails";
 import { recordTaskWord } from "../words";
 import { taskFamily } from "../../runs";
 import { hostContract } from "../../contracts";
-import { getRun, getRunWriterHost } from "../../storage";
+import { getRun, getRunWriterHost, latestTaskAttemptState } from "../../storage";
 
 /**
  * The PM's queue controls (SMA map: Durable queue row): hold a task out of the queue until a date or until released (Held until year 2999),
@@ -20,8 +20,8 @@ export function registerQueueTool(ctx: ServerCore): void {
   };
   registerObservedTool(bb.agents, {
     name: "lane_pilot_queue",
-    description: "The run's queue: hold tasks out of it until a date or until released, release them, list the dead letters (tasks that ended blocked and were not sent again).",
-    instructions: "`hold` (taskIds, until? ISO date; without it the task waits until `release`): a queued task takes no writer while held. `release` (taskIds). `close_backlog` (id): the backlog item the accepted work came from gets status done in its meta.yaml — exactly that item. `word` (taskId, decision yes|no, text): the owner's word on a task, written only after he answered (lane_pilot_ask_owner) — with owner.words on a verified task lands on main only after his yes. `dead_letters`: the tasks of this project whose latest attempt ended blocked or rejected more than a day ago and that nobody sent again — fix and send each again, or cancel it with the words why.",
+    description: "The run's queue: hold tasks out of it until a date or until released, release them, list the dead letters (tasks that ended blocked and were not sent again). Replanning queued tasks = hold them, not cancel and resend.",
+    instructions: "`hold` (taskIds, until? ISO date; without it the task waits until `release`): a queued task takes no writer while held and keeps its task and attempt, so a replan holds the wave, fixes the contracts (lane_pilot_update_task) and releases it; canceling and sending again redoes pm-read and plan critique for nothing. `release` (taskIds). `close_backlog` (id): the backlog item the accepted work came from gets status done in its meta.yaml — exactly that item. `word` (taskId, decision yes|no, text): the owner's word on a task, written only after he answered (lane_pilot_ask_owner) — with owner.words on a verified task lands on main only after his yes. `dead_letters`: the tasks of this project whose latest attempt ended blocked or rejected more than a day ago and that nobody sent again — fix and send each again, or cancel it with the words why.",
     parameters: z.discriminatedUnion("action", [
       z.object({ action: z.literal("hold"), taskIds: z.array(z.string().min(1)).min(1).max(50), until: z.string().datetime().optional() }).strict(),
       z.object({ action: z.literal("release"), taskIds: z.array(z.string().min(1)).min(1).max(50) }).strict(),
@@ -54,7 +54,10 @@ export function registerQueueTool(ctx: ServerCore): void {
         const result = db.prepare("UPDATE lane_pilot_task SET held_until=? WHERE id=? AND run_id=?").run(until, taskId, runId);
         if (result.changes) changed.push(taskId);
       }
-      return JSON.stringify({ runId, action: input.action, tasks: changed, until: until === null ? null : until >= HOLD_FOREVER ? "released by hand" : new Date(until).toISOString() });
+      // A hold stops a queued task only: one whose writer already works goes on, and the PM must stop it (cancel) if it is not wanted.
+      const working = input.action === "hold" ? changed.filter((taskId) => ["spawn_requested", "running"].includes(latestTaskAttemptState(db, context.projectId, taskId) ?? "")) : [];
+      return JSON.stringify({ runId, action: input.action, tasks: changed, until: until === null ? null : until >= HOLD_FOREVER ? "released by hand" : new Date(until).toISOString(),
+        ...(working.length ? { notHeld: working, note: `${working.join(", ")}: the writer already works, a hold does not stop it` } : {}) });
     },
   });
 }
