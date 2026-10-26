@@ -472,6 +472,22 @@ describe("self-repair", () => {
     }
   });
 
+  it("a queued task is not reported minutes after the attempt it waited behind ended", async () => {
+    // Vampirism Fire 2026-10-26: vf-fix-b2-flow queued 224 min behind its depends_on vf-fix-b2-towers, accepted at 02:13:22;
+    // the watcher's 02:15:00 pass saw nothing running while the dispatch ran flow's 306-second baseline, and flow ran at 02:19.
+    const queuedBehind = (endedAgo: number) => {
+      const env = setup();
+      env.attempt("lpattempt_q", "lprun_a", "queued", null, env.now - 224 * 60_000);
+      env.attempt("lpattempt_dep", "lprun_a", "accepted", null, env.now - endedAgo);
+      return env;
+    };
+    const queuedRows = async (env: ReturnType<typeof setup>) =>
+      (await createSelfRepair(env.ctx).collect(0, await createSelfRepair(env.ctx).config())).filter((row) => row.kind === "queued").map((row) => row.attemptId);
+    expect(await queuedRows(queuedBehind(98_000))).toEqual([]);
+    // Two hours with nothing run and nothing ended in the run: whatever it waits for will not come.
+    expect(await queuedRows(queuedBehind(3 * 3_600_000))).toEqual(["lpattempt_q"]);
+  });
+
   it("a queued task waiting for a blocked depends_on is the PM's move until the redo wait has passed", async () => {
     // proj_a35nni238u 2026-10-12: ck-13/ck-05c/ck-14 depend on ck-12-e2e-v2, which blocked at 06:04; the watcher reported
     // them at 06:15, and they ran within a minute of the PM's ck-12-e2e-v2.2 being accepted at 10:57.
