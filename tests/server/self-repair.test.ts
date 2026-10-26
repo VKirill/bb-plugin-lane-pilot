@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { openDatabase } from "../../src/rooms/storage/database";
-import { createSelfRepair, firstSeenOnRunningVersion, isDue, lastPmOwnerMessageAt, logIncidents, parseVerdict, reasonSignature, repairPriority, repairPrompt, repairStatus, VERSION, writerStrayFiles } from "../../src/rooms/self-repair/server/self-repair";
+import { createSelfRepair, firstSeenOnRunningVersion, isDue, lastPmOwnerMessageAt, logIncidents, parseVerdict, reasonSignature, repairPriority, repairPrompt, repairStatus, VERSION, writerRedCheck, writerStrayFiles } from "../../src/rooms/self-repair/server/self-repair";
 import { createJev } from "@lane-pilot/jev";
 import { setJevForTests } from "@lane-pilot/jev";
 import type { JevClient } from "@lane-pilot/jev";
@@ -410,6 +410,38 @@ describe("self-repair", () => {
     // A trusted-tooling hint after the paths is not read as a plain stray.
     expect(writerStrayFiles(`${prefix}lib/x.ts; lib/x.ts is trusted tooling`, own)).toBe(false);
     expect(writerStrayFiles(`retry limit 2 exhausted: ${prefix}lib/x.ts`, own)).toBe(true);
+  });
+
+  it("writers' own red checks in several tasks are not a pattern; red checks triaged to Lane Pilot's side still are", async () => {
+    // Vampirism Fire 2026-10-25: four tasks' own Studio tests (Par031, Par037, Par038, Par070) read as one signature once the
+    // numbers were blanked; each was triaged writer (0.87–0.97) — real FAILs or a lost Studio window — and three were accepted on the redo.
+    const cases: Array<[string, string, string]> = [
+      ["lpattempt_e73b", "verification failed (cd game && python3 -I scripts/studio_test.py --filter Par031): exit 1", "writer"],
+      ["lpattempt_398a", "retry limit 2 exhausted: verification failed (cd game && python3 -I scripts/studio_test.py --filter Par070): exit 1", "writer"],
+      ["lpattempt_b973", "verification failed (cd game && python3 -I scripts/studio_test.py --filter Par037): exit 1", "writer"],
+      ["lpattempt_d506", "verification failed (cd game && python3 -I scripts/studio_test.py --filter Par038): exit 1", "task"],
+      ["lpattempt_34ad", "verification failed (cd game && python3 -I scripts/studio_test.py --filter Par070): exit 1", "writer"],
+    ];
+    const env = setup();
+    for (const [id, reason, origin] of cases) { env.attempt(id, "lprun_a", "validation_failed", reason); env.triage(id, "proj_real", "lprun_a", reason, origin); }
+    // Not triaged yet: the writer's side by default, as on the night wall (originOf).
+    env.attempt("lpattempt_new", "lprun_a", "validation_failed", "verification failed (cd game && python3 -I scripts/studio_test.py --filter Par040): exit 1");
+    expect((await createSelfRepair(env.ctx).collect(0, await createSelfRepair(env.ctx).config())).filter((row) => row.kind === "repeat")).toEqual([]);
+    // The same checks red from the machine in three tasks stay a pattern: triaged environment, or an environment-marked reason.
+    const machine = setup();
+    for (const n of [1, 2]) {
+      const reason = `verification failed (npm test -- t${n}): exit 1`;
+      machine.attempt(`lpattempt_m${n}`, "lprun_a", "validation_failed", reason);
+      machine.triage(`lpattempt_m${n}`, "proj_real", "lprun_a", reason, "environment");
+    }
+    machine.attempt("lpattempt_m3", "lprun_a", "validation_failed", "verification failed (npm test -- t3): environment: EACCES: permission denied, rmSync '/x/.output'");
+    machine.attempt("lpattempt_m4", "lprun_a", "validation_failed", "verification failed (npm test -- t4): environment: EACCES: permission denied, rmSync '/y/.output'");
+    machine.attempt("lpattempt_m5", "lprun_a", "validation_failed", "verification failed (npm test -- t5): environment: EACCES: permission denied, rmSync '/z/.output'");
+    const rows = (await createSelfRepair(machine.ctx).collect(0, await createSelfRepair(machine.ctx).config())).filter((row) => row.kind === "repeat");
+    expect(rows.map((row) => row.attemptId).sort()).toEqual(["lpattempt_m3", "lpattempt_m4", "lpattempt_m5"]);
+    expect(writerRedCheck("verification failed (x): exit 1", "writer")).toBe(true);
+    expect(writerRedCheck("verification failed (x): exit 1", "orchestrator")).toBe(false);
+    expect(writerRedCheck("merge_conflict: main changed since this attempt started: checks red after the replay on main: verification failed (x)", null)).toBe(false);
   });
 
   it("sees a task queued for hours while nothing runs, and a stage nobody will finish", async () => {
