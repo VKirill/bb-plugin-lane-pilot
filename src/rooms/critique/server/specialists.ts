@@ -1,3 +1,4 @@
+import { MAIN_AGENT_ID, compileEffectiveMainAgent, isCustomAgentId } from "../../native-agent";
 import type { HelperRole } from "../../native-agent";
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { z } from "zod";
@@ -15,7 +16,7 @@ import { detectRepoEdits, gitRepoStatus } from "../../verification/server";
 import type { ServerCore } from "../../core/server";
 
 /** The specialists a PM may hand work to; Explore and Plan stay Claude Code subagents inside the PM session. */
-export const SPECIALIST_ROLES = ["design-lead", "copy-lead", "seo-specialist", "tavily"] as const;
+export const SPECIALIST_ROLES = ["design-lead", "copy-lead", "seo-specialist", "tavily", "video-lead"] as const;
 const SPECIALIST_MODEL = "claude-opus-5-5";
 const WAIT_STEP_MS = 5_000;
 
@@ -42,7 +43,7 @@ export function mountSpecialists(ctx: ServerCore): void {
   const { bb, db, host } = ctx;
   const specialistSnapshots = new Map<string, { hostId: string; cwd: string; before: Set<string> }>();
 
-  async function start(input: { projectId: string; pmThreadId: string; role: (typeof SPECIALIST_ROLES)[number]; task: string; title?: string }) {
+  async function start(input: { projectId: string; pmThreadId: string; role: string; task: string; title?: string }) {
     const runId = findOpenNativeRun(db, input.projectId, input.pmThreadId);
     const run = runId ? getRun(db, runId) : undefined;
     if (!runId || !run) throw new Error("specialist_needs_open_pm_run: call this from a Lane Pilot PM chat with an open run");
@@ -53,13 +54,20 @@ export function mountSpecialists(ctx: ServerCore): void {
     const checkoutPath = stringAt(envObj, "path") ?? "";
     const checkoutHostId = stringAt(envObj, "hostId") ?? "";
     const beforeStatus = checkoutPath && checkoutHostId ? await gitRepoStatus(host, checkoutHostId, checkoutPath) : null;
-    const { selection } = await storeNativeSelection(ctx, { projectId: input.projectId, agentId: input.role, parentRunId: runId });
+    // A bundled specialist, or an agent the owner defined (agents create): the same profile path starts both.
+    const owned = await ctx.ownedAgents();
+    const custom = !(SPECIALIST_ROLES as readonly string[]).includes(input.role);
+    if (custom && !(isCustomAgentId(input.role) && owned[input.role] && !owned[input.role]?.compiledCorrupt)) throw new Error(`unknown_specialist:${input.role} — use one of ${SPECIALIST_ROLES.join(", ")} or an agent the owner created (bb lane-pilot agents list --custom)`);
+    const { selection, meta } = await storeNativeSelection(ctx, { projectId: input.projectId, agentId: input.role, parentRunId: runId });
+    // The skills and MCP servers an owner's specialist asks for join its role profile (a bundled one has them in ROLE_PROFILES).
+    const profile = custom ? compileEffectiveMainAgent(input.role, owned[input.role]) : null;
+    const extra = profile ? { skills: profile.skills, mcpServers: profile.mcpServers } : undefined;
     const helperPolicy = requireHelperSpawn({ bb, db, projectId: input.projectId, runId });
     const placement = await helperChildPlacement({ bb, db, projectId: input.projectId, runId, role: "specialist", taskTitle: input.title ?? `${input.role}: ${input.task.slice(0, 60)}` });
     const spawned = await fullAccessSpawn(bb, {
       ...placement,
-      ...requiredPolicyField(bb, helperPolicy, "claude-code", `specialist:${input.role}` as HelperRole),
-      ...writerExecutionSelection("claude-code", SPECIALIST_MODEL, "high", null),
+      ...requiredPolicyField(bb, helperPolicy, "claude-code", `specialist:${input.role}` as HelperRole, extra),
+      ...writerExecutionSelection("claude-code", meta?.model ?? SPECIALIST_MODEL, meta?.effort ?? "high", null),
       prompt: specialistPrompt(mentionContext(selection), input.role, input.task, ((await bb.storage.kv.get(`lp.role.lines:${input.projectId}:${input.role}`).catch(() => null)) as string[] | null) ?? []),
       environment: { type: "reuse", environmentId },
       pluginMetadata: { role: "specialist", specialist: input.role, spawnId: `${runId}:${input.role}:${spawnTextId(input.task)}`, lanePilotRunId: runId, parentPmThreadId: input.pmThreadId, helperMode: helperPolicy.mode },
@@ -97,10 +105,10 @@ export function mountSpecialists(ctx: ServerCore): void {
 
   registerObservedTool(bb.agents, {
     name: "lane_pilot_specialist",
-    description: "Hand work to a specialist (design-lead, copy-lead, seo-specialist, tavily) as a child thread of this PM chat that the owner can open.",
-    instructions: "Use from a Lane Pilot PM chat instead of the Agent tool for these four roles. Give the whole task: goal, context, files to read, the deliverable and where to write it. Returns at once with the thread; then call lane_pilot_wait_specialist with that threadId, again while it reports running. Show the owner the returned @thread link. Specialists never change product code; implementation still goes through lane_pilot_dispatch_writer.",
+    description: "Hand work to a specialist (design-lead, copy-lead, seo-specialist, tavily, video-lead, or an agent the owner created) as a child thread of this PM chat that the owner can open.",
+    instructions: "Use from a Lane Pilot PM chat instead of the Agent tool for these roles; an agent the owner created is named by its id. Give the whole task: goal, context, files to read, the deliverable and where to write it. Returns at once with the thread; then call lane_pilot_wait_specialist with that threadId, again while it reports running. Show the owner the returned @thread link. Specialists never change product code; implementation still goes through lane_pilot_dispatch_writer.",
     parameters: z.object({
-      role: z.enum(SPECIALIST_ROLES),
+      role: z.string().regex(MAIN_AGENT_ID),
       task: z.string().min(1).max(20_000),
       title: z.string().min(1).max(120).optional(),
     }).strict(),

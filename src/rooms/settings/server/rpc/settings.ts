@@ -1,7 +1,7 @@
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import { SCHEDULE_ERRAND_DEFAULT_KEY } from "../../../schedule";
 import { ACCESS_GROUPS, ACCESS_SWITCHES, CORE_PROVIDER_GROUPS, HELPER_ROLES, MANDATORY_BB_PLUGINS, MANDATORY_MCP_SERVERS, effectiveGroup, effectiveSwitch, parseHelperContextSettings, parseRoleAccess, roleAccessKey } from "../../../native-agent";
-import { detectCompiledMainAgentCapability } from "../../../native-agent";
+import { detectCompiledMainAgentCapability, pickableAgent } from "../../../native-agent";
 import { buildCliInvocation } from "../../../writer";
 import { cliReceiptAttemptKey, cliReceiptRunKey } from "../../../runs";
 import { casResetSettings, casUpsertSetting, casUpsertSettings, getReasoningTrace, countStageReceipts, getSettingVersions, getStageReceiptResult, listOwnSettingLevels, listRunsPage, listSettingRows, listStageReceiptSummaries, loadProjectSettings, loadPrototypeConfig, removeOwnSettings, sectionBindingId } from "../../../storage";
@@ -235,7 +235,7 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
         compiledMainAgent: detectCompiledMainAgentCapability(
           (bb as { agents?: { experimental_vkCompiledMainAgent?: unknown } }).agents ?? {},
         ),
-        mainAgents: (await services.listedAgentProfiles()).map((row) => ({ id: row.id, description: row.description })),
+        mainAgents: (await services.listedAgentProfiles()).map(pickableAgent),
         lastWriterTrace: (() => {
           for (const run of listed) {
             for (const attempt of [...run.attempts].reverse()) {

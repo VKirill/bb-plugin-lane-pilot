@@ -2,7 +2,10 @@
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { agentPickerLabel } from "./agent-display";
 export { applyResourceMode, collectAgentInventory } from "./agent-inventory";
-export { MAIN_AGENT_PROFILE_IDS, compileEffectiveMainAgent, compileMainAgentProfile, detectCompiledMainAgentCapability, parseOwnedAgents } from "./agent-profile";
+export { MAIN_AGENT_ID, MAIN_AGENT_PROFILE_IDS, agentKind, isStockProfileId, compileEffectiveMainAgent, compileMainAgentProfile, detectCompiledMainAgentCapability, parseOwnedAgents } from "./agent-profile";
+export type { AgentKind, CustomAgentMeta } from "./agent-profile";
+export { agentListItem, createAgentInputSchema, isCustomAgentId, isReservedAgentId, parseAgentFile, pickableAgent, updateAgentInputSchema } from "./custom-agent";
+export type { AgentFailure, AgentListItem } from "./custom-agent";
 export { prepareBbShim } from "./bb-shim";
 export { ACCESS_GROUPS, ACCESS_SWITCHES, CORE_PROVIDER_GROUPS, HELPER_ROLES, MANDATORY_BB_PLUGINS, MANDATORY_MCP_SERVERS, ROLE_PROFILES, detectRequiredSessionPolicyCapability, effectiveGroup, effectiveSwitch, parseHelperContextSettings, parseRoleAccess, roleAccessKey } from "./helper-context";
 export type { ExtraAccess, HelperPolicySnapshot, HelperRole } from "./helper-context";

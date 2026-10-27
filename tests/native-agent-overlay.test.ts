@@ -102,8 +102,12 @@ it("unions LP tools onto an edited --agents JSON without replacing a custom prom
   expect(body.tools).not.toContain("*");
 });
 
-it("gives specialists no bb-bridge tools and keeps the folded PM list (core tools, family tools, search)", () => {
-  expect(overlaySessionTools("copy-lead", ["Read", "mcp__bb-bridge__lane_pilot_read"])).toEqual(["Read"]);
+it("gives specialists the schedule and no other bb-bridge tool, and keeps the folded PM list (core tools, family tools, search)", () => {
+  expect(overlaySessionTools("copy-lead", ["Read", "mcp__bb-bridge__lane_pilot_read"])).toEqual(["Read", "mcp__bb-bridge__lane_pilot_schedule", "ToolSearch"]);
+  // The owner's own agents are specialists too; Lane Pilot's internal sessions get nothing from the bridge.
+  expect(overlaySessionTools("video-lead", ["Read"])).toEqual(["Read", "mcp__bb-bridge__lane_pilot_schedule", "ToolSearch"]);
+  expect(overlaySessionTools("my-own-agent", ["Read", "ToolSearch"])).toEqual(["Read", "ToolSearch", "mcp__bb-bridge__lane_pilot_schedule"]);
+  expect(overlaySessionTools("project-onboarder", ["Read", "mcp__bb-bridge__lane_pilot_read"])).toEqual(["Read"]);
   expect(overlaySessionTools("dev-orchestrator", ["Read", "mcp__bb-bridge__lane_pilot_night_review"])).toEqual([
     "Read",
     "mcp__bb-bridge__lane_pilot_read",
@@ -138,7 +142,7 @@ it("gives specialists no bb-bridge tools and keeps the folded PM list (core tool
     // Without ToolSearch Claude Code sends every MCP schema at the start; with it the schemas load when the PM asks.
     "ToolSearch",
   ]);
-  expect(overlaySessionTools("copy-lead", ["Read"])).not.toContain("ToolSearch");
+  expect(overlaySessionTools("project-onboarder", ["Read"])).not.toContain("ToolSearch");
   expect(overlaySessionTools("dev-orchestrator", ["Read", "ToolSearch"]).filter((tool) => tool === "ToolSearch")).toHaveLength(1);
   const overlay = stockAgentsOverlayFromInstalled({
     agentId: "dev-orchestrator",

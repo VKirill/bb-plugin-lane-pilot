@@ -36,7 +36,8 @@ describe("Lane Pilot owned main-agent profiles", () => {
       }
       if (id === "copy-lead") {
         expect(spawned.prompt).toContain("docs/audiences/copy.md");
-        expect(JSON.stringify(spawned.tools ?? [])).not.toMatch(/mcp__bb-bridge__/);
+        // A specialist gets one bridge tool: the schedule.
+        expect((spawned.tools ?? []).filter((tool) => tool.startsWith("mcp__bb-bridge__"))).toEqual(["mcp__bb-bridge__lane_pilot_schedule"]);
       }
       if (id === "seo-specialist") expect(spawned.prompt).toContain("docs/audiences/seo.md");
     }

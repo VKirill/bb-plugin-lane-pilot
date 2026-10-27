@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pickableAgentSchema } from "./rpc-shell";
 import { runViewSchema, stageSummarySchema } from "@lane-pilot/contracts";
 
 /** Run cards, stages, helper access and the screen snapshot. */
@@ -185,7 +186,7 @@ export const rpcRuns = {
         id: z.string(), name: z.string(), status: z.string(), connected: z.boolean(),
       }).strict()),
       compiledMainAgent: z.enum(["supported", "none"]).optional(),
-      mainAgents: z.array(z.object({ id: z.string(), description: z.string() }).strict()).optional(),
+      mainAgents: z.array(pickableAgentSchema).optional(),
       lastWriterTrace: z.object({
         providerId: z.string(),
         model: z.string(),

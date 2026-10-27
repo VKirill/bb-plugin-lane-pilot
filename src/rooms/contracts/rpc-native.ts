@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pickableAgentSchema } from "./rpc-shell";
 
 /** Activating the PM, the native session, helper threads. */
 export const rpcNative = {
@@ -89,7 +90,7 @@ export const rpcNative = {
       projects: z.array(z.object({ id: z.string(), name: z.string() }).strict()),
       bindingStatus: z.enum(["resolved", "ambiguous", "setup_required", "offline", "catalog_unavailable"]).nullable(),
       compiledMainAgent: z.enum(["supported", "none"]),
-      mainAgents: z.array(z.object({ id: z.string(), description: z.string() }).strict()),
+      mainAgents: z.array(pickableAgentSchema),
       writer: z.object({
         providerId: z.string().nullable(),
         model: z.string().nullable(),

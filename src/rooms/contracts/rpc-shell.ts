@@ -2,6 +2,36 @@ import { z } from "zod";
 import { scheduleRpcContract } from "../schedule";
 import { inventoryGroupSchema } from "@lane-pilot/contracts";
 
+/**
+ * One agent of the pickable list (`listedAgentProfiles`): `id` and `description` (the label) were there first; the rest only adds.
+ * `kind`: coordinator is the Lane Pilot PM, internal is a session Lane Pilot runs itself (not for the owner to pick), specialist is every other agent.
+ */
+export const pickableAgentSchema = z.object({
+  id: z.string(),
+  description: z.string(),
+  displayName: z.string().optional(),
+  summary: z.string().optional(),
+  kind: z.enum(["coordinator", "specialist", "internal"]).optional(),
+  custom: z.boolean().optional(),
+}).strict();
+
+/** The settings view of an agent: the pickable fields plus the whole profile. */
+export const agentListItemSchema = pickableAgentSchema.extend({
+  prompt: z.string(),
+  sourceHash: z.string(),
+  sourceVersion: z.string(),
+  edited: z.boolean(),
+  tools: z.array(z.string()).optional(),
+  disallowedTools: z.array(z.string()).optional(),
+  skills: z.array(z.string()).optional(),
+  mcpServers: z.array(z.string()).optional(),
+  model: z.string().optional(),
+  effort: z.string().optional(),
+}).strict();
+
+const agentNames = z.array(z.string().min(1)).max(64);
+const agentOutcome = z.object({ ok: z.boolean(), id: z.string(), error: z.string().optional(), detail: z.string().optional() }).strict();
+
 /** Preferences, projects and sections, global settings and agent profiles. */
 export const rpcShell = {
   ...scheduleRpcContract,
@@ -41,18 +71,7 @@ export const rpcShell = {
         qaHostId: z.string().optional(),
       }).strict(),
       revision: z.number().int().nonnegative(),
-      agents: z.array(z.object({
-        id: z.string(),
-        description: z.string(),
-        prompt: z.string(),
-        sourceHash: z.string(),
-        sourceVersion: z.string(),
-        edited: z.boolean(),
-        tools: z.array(z.string()).optional(),
-        disallowedTools: z.array(z.string()).optional(),
-        skills: z.array(z.string()).optional(),
-        mcpServers: z.array(z.string()).optional(),
-      }).strict()),
+      agents: z.array(agentListItemSchema),
       hosts: z.array(z.object({
         id: z.string(), name: z.string(), status: z.string(), connected: z.boolean(),
       }).strict()).optional(),
@@ -106,5 +125,43 @@ export const rpcShell = {
       }).strict().optional(),
     }).strict(),
     output: z.object({ ok: z.boolean(), id: z.string(), sourceHash: z.string() }).strict(),
+  },
+  list_agents: {
+    input: z.object({ custom: z.boolean().optional() }).strict(),
+    output: z.object({ agents: z.array(agentListItemSchema) }).strict(),
+  },
+  create_agent: {
+    input: z.object({
+      id: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
+      displayName: z.string().min(1).max(120),
+      description: z.string().max(400).optional(),
+      prompt: z.string().min(1).max(32_000),
+      tools: agentNames.optional(),
+      disallowedTools: agentNames.optional(),
+      skills: agentNames.optional(),
+      mcpServers: agentNames.optional(),
+      model: z.string().min(1).max(100).optional(),
+      effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
+    }).strict(),
+    output: agentOutcome,
+  },
+  update_agent: {
+    input: z.object({
+      id: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
+      displayName: z.string().min(1).max(120).optional(),
+      description: z.string().max(400).optional(),
+      prompt: z.string().min(1).max(32_000).optional(),
+      tools: agentNames.optional(),
+      disallowedTools: agentNames.optional(),
+      skills: agentNames.optional(),
+      mcpServers: agentNames.optional(),
+      model: z.string().min(1).max(100).nullable().optional(),
+      effort: z.enum(["low", "medium", "high", "xhigh", "max"]).nullable().optional(),
+    }).strict(),
+    output: agentOutcome,
+  },
+  delete_agent: {
+    input: z.object({ id: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/) }).strict(),
+    output: agentOutcome,
   },
 };

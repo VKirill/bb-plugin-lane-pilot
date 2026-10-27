@@ -42,7 +42,7 @@ const SECTIONS: Array<{ id: "code" | "check" | "project" | "browser" | "speciali
   { id: "check", roles: ["plan-critic", "code-critic", "specialist-reviewer", "night-reviewer", "gate-triage", "pm-reader", "council-seat", "rules-analyzer"] },
   { id: "project", roles: ["docs-maintainer", "onboarder", "memory-maintainer", "project-life"] },
   { id: "browser", roles: ["browser-qa", "errand"] },
-  { id: "specialists", roles: ["specialist:design-lead", "specialist:copy-lead", "specialist:seo-specialist", "specialist:tavily"] },
+  { id: "specialists", roles: ["specialist:design-lead", "specialist:copy-lead", "specialist:seo-specialist", "specialist:tavily", "specialist:video-lead"] },
   { id: "workflow", roles: ["analyst", "planner", "auditor", "debugger"] },
 ];
 export const roleKey = (role: string) => role.replace(/[:-]/g, "_");

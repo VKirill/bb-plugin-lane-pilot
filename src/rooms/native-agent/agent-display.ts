@@ -8,6 +8,7 @@ export const STOCK_AGENT_SEED_DESCRIPTIONS: Readonly<Record<string, string>> = {
   "project-onboarder": "Lane Pilot project onboarder",
   tavily: "Lane Pilot Tavily research agent",
   "workflow-architect": "Lane Pilot workflow architect",
+  "video-lead": "Lane Pilot video lead",
 };
 
 const BUNDLED_DISPLAY_NAMES: Readonly<Record<string, string>> = {
@@ -18,6 +19,7 @@ const BUNDLED_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   "project-onboarder": "Project onboarding",
   tavily: "Researcher",
   "workflow-architect": "Workflow architect",
+  "video-lead": "Video",
 };
 
 const STOCK_LABEL_KEYS: Readonly<Record<string, I18nKey>> = {
@@ -28,6 +30,7 @@ const STOCK_LABEL_KEYS: Readonly<Record<string, I18nKey>> = {
   "project-onboarder": "agentDisplayProjectOnboarder",
   tavily: "agentDisplayTavily",
   "workflow-architect": "agentDisplayWorkflowArchitect",
+  "video-lead": "agentDisplayVideoLead",
 };
 
 function stockDescriptions(id: string): string[] {
@@ -55,6 +58,7 @@ const STOCK_CHART: Readonly<Record<string, 1 | 2 | 3 | 4 | 5>> = {
   "project-onboarder": 5,
   tavily: 3,
   "workflow-architect": 5,
+  "video-lead": 4,
 };
 
 export function agentBadgeChart(id: string): 1 | 2 | 3 | 4 | 5 {

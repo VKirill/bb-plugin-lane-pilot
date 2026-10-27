@@ -1,6 +1,6 @@
 import { z } from "zod";
 import bundledAgents from "./bundled-agents.json";
-import { isCliLaneAgentPrompt, laneSessionOverlayPrompt, overlaySessionTools } from "./native-agent-overlay";
+import { isCliLaneAgentPrompt, isInternalAgent, isLanePmAgent, laneSessionOverlayPrompt, overlaySessionTools } from "./native-agent-overlay";
 import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_TOOLS } from "../workflow";
 import { sha256Hex } from "@lane-pilot/kit";
 
@@ -12,6 +12,7 @@ export const MAIN_AGENT_PROFILE_IDS = [
   "design-lead",
   "project-onboarder",
   "tavily",
+  "video-lead",
   WORKFLOW_ARCHITECT_ID,
 ] as const;
 
@@ -31,11 +32,23 @@ export type CompiledMainAgent = z.infer<typeof compiledMainAgentSchema>;
 export const PROFILE_SOURCE_VERSION = "bb-session-1";
 export type ProfileResources = Pick<CompiledMainAgent, "tools" | "disallowedTools" | "skills" | "mcpServers">;
 
+/** What the compiled profile has no room for: a custom agent's own label and summary, its model and effort, its dates. */
+export const customAgentMetaSchema = z.object({
+  displayName: z.string().min(1).max(120).optional(),
+  summary: z.string().max(400).optional(),
+  model: z.string().min(1).max(100).optional(),
+  effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
+  createdAt: z.number().int().optional(),
+  updatedAt: z.number().int().optional(),
+}).strict();
+export type CustomAgentMeta = z.infer<typeof customAgentMetaSchema>;
+
 export type StoredAgentRow = {
   prompt?: string;
   description?: string;
   compiled?: CompiledMainAgent;
   compiledCorrupt?: true;
+  meta?: CustomAgentMeta;
 };
 
 function sha256(text: string): string {
@@ -100,6 +113,10 @@ export const LEGACY_STOCK_TEMPLATES: Readonly<Record<string, { description: stri
     description: "Lane Pilot project onboarder",
     prompt: "You are the Lane Pilot project onboarder. Write bounded onboarding and orientation material for this repository.",
   },
+  "video-lead": {
+    description: "Lane Pilot video lead",
+    prompt: "You are the Lane Pilot video lead. Plan and produce videos with the owner. Do not change product code: hand it to Lane Pilot as a task.",
+  },
   [WORKFLOW_ARCHITECT_ID]: {
     description: "Lane Pilot workflow architect",
     prompt: "You are the Lane Pilot workflow architect. Interview the owner about a repeatable process and build it as a tested workflow with the lane_pilot_workflow tools.",
@@ -122,6 +139,18 @@ type BundledAgent = {
 
 /** Lane Pilot's own profiles: they are not in the Claude Lane Stack catalog the JSON is generated from. */
 const OWNED_PROFILES: Record<string, BundledAgent> = {
+  "video-lead": {
+    displayName: "Video",
+    prompt: laneSessionOverlayPrompt("video-lead"),
+    tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"],
+    skills: [
+      "hyperframes", "hyperframes-cli", "hyperframes-registry", "media-use", "procedural-film", "video-to-reels", "business-motion-film",
+      "remotion:remotion-best-practices", "remotion:remotion-render", "remotion:remotion-create",
+    ],
+    mcpServers: [],
+    omittedNativeFields: ["model", "effort", "permissionMode"],
+    provenance: { package: "bb-plugin-lane-pilot", version: "bb-session-1", file: "src/rooms/native-agent/native-agent-overlay.ts", sha256: "", bytes: 0 },
+  },
   [WORKFLOW_ARCHITECT_ID]: {
     displayName: WORKFLOW_ARCHITECT_NAME.en,
     prompt: laneSessionOverlayPrompt(WORKFLOW_ARCHITECT_ID),
@@ -152,6 +181,14 @@ function bundledTemplate(id: string): { description: string; prompt: string } & 
 
 export function isStockProfileId(id: string): boolean {
   return (MAIN_AGENT_PROFILE_IDS as readonly string[]).includes(id);
+}
+
+/** coordinator: the Lane Pilot PM; internal: a session Lane Pilot runs itself (the owner does not pick it); specialist: every other agent, the owner's own included. */
+export type AgentKind = "coordinator" | "specialist" | "internal";
+
+export function agentKind(id: string): AgentKind {
+  if (isLanePmAgent(id)) return "coordinator";
+  return isInternalAgent(id) ? "internal" : "specialist";
 }
 
 export function isUnchangedStockStub(id: string, stored?: StoredAgentRow): boolean {
@@ -249,9 +286,11 @@ export function parseOwnedAgents(raw: unknown): Record<string, StoredAgentRow> {
   for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
     if (!isMainAgentProfileId(id) || !value || typeof value !== "object") continue;
     const row = value as Record<string, unknown>;
+    const meta = customAgentMetaSchema.safeParse(row.meta);
     const base: StoredAgentRow = {
       ...(typeof row.prompt === "string" ? { prompt: row.prompt } : {}),
       ...(typeof row.description === "string" ? { description: row.description } : {}),
+      ...(meta.success ? { meta: meta.data } : {}),
     };
     if (!("compiled" in row) || row.compiled === undefined) {
       owned[id] = base;

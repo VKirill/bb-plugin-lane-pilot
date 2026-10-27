@@ -217,7 +217,7 @@ describe("workflow architect tools", () => {
     expect(JSON.stringify(all.secrets.items)).not.toMatch(/value/);
     expect(all.hosts.items.map((row: { id: string }) => row.id)).toEqual(["host_arch", "mini"]);
     expect(all.browser).toMatchObject({ browserAutomationPlugin: true, skills: { "browser-automation": true, "computer-use": false }, browserMachine: null });
-    expect(all.specialists.roles).toEqual(["design-lead", "copy-lead", "seo-specialist", "tavily"]);
+    expect(all.specialists.roles).toEqual(["design-lead", "copy-lead", "seo-specialist", "tavily", "video-lead"]);
     const filtered = await call("lane_pilot_workflow_capabilities", { sections: ["skills"], query: "telegram" });
     expect(filtered.skills.items.map((row: { name: string }) => row.name)).toEqual(["telegram-user"]);
     expect(filtered.plugins).toBeUndefined();

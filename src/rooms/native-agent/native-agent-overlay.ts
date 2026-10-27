@@ -1,5 +1,5 @@
 import bundledAgents from "./bundled-agents.json";
-import { NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, unionLpBridgeTools, withoutLpBridgeTools } from "./native-session-hooks";
+import { NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_SPECIALIST_TOOLS, unionLpBridgeTools, withoutLpBridgeTools } from "./native-session-hooks";
 import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY } from "../workflow";
 import { rewriteFoldedToolNames } from "../tools";
 
@@ -169,6 +169,13 @@ export function isLanePmAgent(agentId: string): boolean {
   return PM_AGENT_IDS.has(nativeAgentName(agentId));
 }
 
+/** Sessions Lane Pilot runs itself for its own work: the owner does not pick them and they never schedule anything. */
+const INTERNAL_AGENT_IDS = new Set(["project-onboarder", "browser-qa"]);
+
+export function isInternalAgent(agentId: string): boolean {
+  return INTERNAL_AGENT_IDS.has(nativeAgentName(agentId));
+}
+
 const BB_LANGUAGE = `## Language
 Chat with the human in plain Russian. Every file you write is English.`;
 
@@ -257,6 +264,10 @@ Lane Pilot keeps one project memory on the hub, writes it after each accepted ta
 ## Done
 Code work: every task accepted, main pushed, the project running and checked, or the exact blocked step reported. Planning-only turn: the plan in \`.agents/plans/\`. Errand, browser or specialist work: its result passed on with the @thread link and the proof (URL, screenshot path, quoted value). Say which of these you reached.`;
 
+/** Every specialist can set up work the owner wants on a rhythm; `lane_pilot_schedule` is the one bridge tool it gets (overlaySessionTools). */
+const BB_SPECIALIST_SCHEDULE = `## Schedule
+Work the owner wants on a rhythm («every Monday collect…») is a scheduled task: \`lane_pilot_schedule\` with \`action: list\` first, then \`create\` (name, task, when). Say in your reply what you scheduled. A thread that a schedule started cannot create schedules: write in your report that a follow-up is needed.`;
+
 export const BB_AGENT_SESSIONS: Record<string, string> = {
   "copy-lead": `This chat is a Lane Pilot copy-lead session in BB.
 
@@ -272,7 +283,9 @@ Also read \`docs/capabilities.md\` for what the product actually does.
 Load skill \`copy-project-life\` (hats). \`locked\` files stay locked. SEO keys stay with seo-specialist. Russian: site-copy-* first, \`ru-text\` while writing, \`ru-check\` before a deliverable; \`ru-score\` only if asked. Write for the product's audience from the docs, not for the owner's own profile or occupation.
 
 ## Disk
-Working notes under \`.agents/copy/\` when that pack exists. Deliver the copy the human asked for. Do not run-init, seo-init, or spawn writers.`,
+Working notes under \`.agents/copy/\` when that pack exists. Deliver the copy the human asked for. Do not run-init, seo-init, or spawn writers.
+
+${BB_SPECIALIST_SCHEDULE}`,
 
   "seo-specialist": `This chat is a Lane Pilot seo-specialist session in BB.
 
@@ -288,7 +301,9 @@ Public routes, titles, meta, locales and sitemaps come from the code and those p
 If \`.agents/seo/\` exists, keep it structured. Otherwise work from the code and docs. Originals stay 1:1 when a skill provides them. Never invent metrics. Never strategy without a passport unless the user skips and you log the gaps.
 
 ## Secrets
-Use secrets already in this BB session. Do not read \`~/secrets\` or print keys.`,
+Use secrets already in this BB session. Do not read \`~/secrets\` or print keys.
+
+${BB_SPECIALIST_SCHEDULE}`,
 
   "design-lead": `This chat is a Lane Pilot design-lead session in BB.
 
@@ -305,7 +320,9 @@ Read \`PROJECT.md\`, \`docs/index.md\`, \`docs/audiences/design.md\`, and flow p
 - \`prototype\`: skill \`page-prototype\`, gray HTML under \`.agents/prototypes/\`. Does not rewrite brand.
 - \`mockup\`: skill \`web-design\`, page-local \`visual/\` under \`.agents/prototypes/\`.
 
-Live click / viewports: ${BB_LIVE_BROWSER_QA}`,
+Live click / viewports: ${BB_LIVE_BROWSER_QA}
+
+${BB_SPECIALIST_SCHEDULE}`,
 
   "project-onboarder": `This chat is a Lane Pilot orientation session in BB.
 
@@ -334,7 +351,24 @@ The Tavily key and the tavily skill are already available in this BB session, so
 \`.agents/copy/research/inbox/\` when the copy pack exists, otherwise \`.agents/research/inbox/\`. One file per query: \`YYYY-MM-DD-<slug>.md\`. Each note: claim + URL + snippet. Invented source = delete. Never one \`web.md\`.
 
 ## Handoff
-H1 / audience → copy-lead. SEO keys / SERP → seo-specialist. Product source → PM / writer.`,
+H1 / audience → copy-lead. SEO keys / SERP → seo-specialist. Product source → PM / writer.
+
+${BB_SPECIALIST_SCHEDULE}`,
+
+  "video-lead": `This chat is a Lane Pilot video-lead session in BB.
+
+${BB_LANGUAGE}
+
+## Role
+You plan and produce videos with the owner: explainers, reels, launch films, procedural films. You also plan with him how repeated video work gets automated. You never edit product source: a code change goes to Lane Pilot as a task, which the owner gives to the PM chat.
+
+## Craft
+Choose the route from the brief. \`hyperframes\` (with \`hyperframes-cli\`, \`hyperframes-registry\`): video from HTML. \`remotion:remotion-best-practices\`, \`remotion:remotion-create\`, \`remotion:remotion-render\`: video from React. \`procedural-film\`: a film rendered by code. \`business-motion-film\`: product and launch motion. \`video-to-reels\`: cut a long video into reels. \`media-use\`: images, audio, voice, stock. Ask for audience, length, format and the one message first, show a storyboard, then render a short draft before the full cut.
+
+## Disk
+Scripts, storyboards and renders under \`.agents/video/<slug>/\`. Name the final files and their paths in your reply.
+
+${BB_SPECIALIST_SCHEDULE}`,
 
   [WORKFLOW_ARCHITECT_ID]: rewriteFoldedToolNames(WORKFLOW_ARCHITECT_SESSION),
 
@@ -359,6 +393,7 @@ export const BB_AGENT_SUMMARIES: Readonly<Record<string, string>> = {
   "design-lead": "Designer: user flows, UX/UI audits, gray clickable prototypes, branded mockups, DESIGN.md; no product implementation.",
   "project-onboarder": "Orientation: explains what the repository is and where to start; no documentation generation.",
   tavily: "Web research with cited sources (claim + URL + snippet notes); no copy or code.",
+  "video-lead": "Video: plans and produces explainers, reels, launch and procedural films, plans automation of video work; no product code.",
   [WORKFLOW_ARCHITECT_ID]: WORKFLOW_ARCHITECT_SUMMARY,
 };
 
@@ -429,7 +464,12 @@ export function overlaySessionTools(agentId: string, tools: string[]): string[] 
     const architect = unionLpBridgeTools(base, NATIVE_LP_BRIDGE_ARCHITECT_TOOLS);
     return architect.includes(DEFERRED_MCP_LOADER) ? architect : [...architect, DEFERRED_MCP_LOADER];
   }
-  if (!isLanePmAgent(agentId)) return base;
+  if (!isLanePmAgent(agentId)) {
+    if (isInternalAgent(agentId)) return base;
+    // A specialist (bundled or the owner's own) gets the schedule and the loader that defers its schema.
+    const specialist = unionLpBridgeTools(base, NATIVE_LP_BRIDGE_SPECIALIST_TOOLS);
+    return specialist.includes(DEFERRED_MCP_LOADER) ? specialist : [...specialist, DEFERRED_MCP_LOADER];
+  }
   const withBridge = unionLpBridgeTools(base, NATIVE_LP_BRIDGE_PM_TOOLS);
   return withBridge.includes(DEFERRED_MCP_LOADER) ? withBridge : [...withBridge, DEFERRED_MCP_LOADER];
 }

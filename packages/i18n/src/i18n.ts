@@ -198,6 +198,9 @@ const chromeEn = {
   agentDisplayProjectOnboarder: "Project onboarding",
   agentDisplayTavily: "Researcher",
   agentDisplayWorkflowArchitect: "Workflow architect",
+  agentDisplayVideoLead: "Video",
+  agentDelete: "Delete agent",
+  agentDeleteConfirm: "Delete this agent? Chats already started with it keep working.",
   inheritedFromGlobal: "Inherited",
   inheritedFromSession: "From this session environment",
   inheritedFromProject: "From the project folder binding",
@@ -1085,6 +1088,8 @@ const chromeEn = {
   accessPurpose_specialist_seo_specialist: "Semantics, topical cluster, technical and content SEO.",
   accessName_specialist_tavily: "Web search",
   accessPurpose_specialist_tavily: "Searches the web and writes cited reports.",
+  accessName_specialist_video_lead: "Video",
+  accessPurpose_specialist_video_lead: "Plans and produces videos: explainers, reels, launch and procedural films.",
 };
 
 const chromeRu: { [K in keyof typeof chromeEn]: string } = {
@@ -1269,6 +1274,9 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   agentDisplayProjectOnboarder: "Знакомство с проектом",
   agentDisplayTavily: "Исследователь",
   agentDisplayWorkflowArchitect: "Архитектор цепочек",
+  agentDisplayVideoLead: "Видео",
+  agentDelete: "Удалить агента",
+  agentDeleteConfirm: "Удалить этого агента? Уже начатые с ним чаты продолжат работать.",
   inheritedFromGlobal: "Унаследовано",
   inheritedFromSession: "Из среды этой сессии",
   inheritedFromProject: "Из привязки папки проекта",
@@ -2156,6 +2164,8 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   accessPurpose_specialist_seo_specialist: "Семантика, кокон, технический и контентный SEO.",
   accessName_specialist_tavily: "Поиск в интернете",
   accessPurpose_specialist_tavily: "Ищет в сети и собирает отчёты с источниками.",
+  accessName_specialist_video_lead: "Видео",
+  accessPurpose_specialist_video_lead: "Планирует и делает видео: ролики-объяснения, рилсы, ролики запуска, процедурные фильмы.",
 };
 
 export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...boardEn, ...ownerEn, ...anamnesisEn, ...tabsEn, ...ownedEn, ...jevEn, ...improvementEn, ...graphEn, ...cockpitEn };

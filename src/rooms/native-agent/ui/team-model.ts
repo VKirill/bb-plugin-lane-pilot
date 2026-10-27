@@ -50,7 +50,7 @@ export const ROLE_GROUPS: Array<{ id: RoleGroupId; roles: RoleSpec[] }> = [
     { id: "browser-qa", testId: "browser-qa-host", detail: "browser", enabled: { key: "browser_qa.enabled", fallback: false, label: "globalQaHost" }, keys: ["browser_qa.enabled", "browser_qa.provider", "browser_qa.model", "browser_qa.backend", "browser_qa.approve", "browser_qa.reasoning_effort"] },
     { id: "errand", keys: [] },
   ] },
-  { id: "specialists", roles: ["specialist:design-lead", "specialist:copy-lead", "specialist:seo-specialist", "specialist:tavily"].map((id) => ({ id, keys: [] })) },
+  { id: "specialists", roles: ["specialist:design-lead", "specialist:copy-lead", "specialist:seo-specialist", "specialist:tavily", "specialist:video-lead"].map((id) => ({ id, keys: [] })) },
   { id: "workflow", roles: ["analyst", "planner", "auditor", "debugger"].map((id) => ({ id, keys: [] })) },
 ];
 

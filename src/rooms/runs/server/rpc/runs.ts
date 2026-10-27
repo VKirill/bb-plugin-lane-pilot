@@ -1,7 +1,7 @@
 import { t } from "@lane-pilot/i18n";
 import { setRunHalted } from "../runs-halt";
 import { PARKED_KEY } from "../../../stability/server";
-import { agentPickerLabel } from "../../../native-agent";
+import { agentPickerLabel, pickableAgent } from "../../../native-agent";
 import { compileEffectiveMainAgent, detectCompiledMainAgentCapability } from "../../../native-agent";
 import { countAttempts, createAttempt, getActivation, getAttempt, transitionAttempt } from "../../../storage";
 import { detectRequiredSessionPolicyCapability } from "../../../native-agent";
@@ -287,7 +287,7 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
         threadStatus = stringAt(thread, "status");
       }
-      const mainAgents = (await services.listedAgentProfiles()).map((row) => ({ id: row.id, description: row.description }));
+      const mainAgents = (await services.listedAgentProfiles()).map(pickableAgent);
       return {
         projectId,
         projects,

@@ -2,7 +2,8 @@ import { applyResourceMode, collectAgentInventory } from "../../../native-agent"
 import { compileEffectiveMainAgent, compileMainAgentProfile } from "../../../native-agent";
 import { detectRequiredSessionPolicyCapability } from "../../../native-agent";
 import { LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, packStoredDefaults, parseDefaultsRevision, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
-import { userVisibleProjects } from "../../../native-agent";
+import { isCustomAgentId, isReservedAgentId, isStockProfileId, userVisibleProjects } from "../../../native-agent";
+import { agentRegistry } from "../../../native-agent/server";
 import { mapListedQaHosts } from "../../../qa";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { rpcContract } from "../../../contracts";
@@ -12,6 +13,7 @@ import { recordResolvedLocale } from "../../../relay/server";
 
 export function preferencesRpc(ctx: ServerCore, services: Services) {
   const { bb, host, listProjectSections, ownedAgents, serializedKv } = ctx;
+  const registry = agentRegistry(ctx);
   return {
     get_preferences: async ({ suggestedLocale }) => {
       const storedLocale = await bb.storage.kv.get<string>("preferences:locale");
@@ -115,6 +117,7 @@ export function preferencesRpc(ctx: ServerCore, services: Services) {
       return { ok: true, revision: nextRevision, defaults: next };
     }),
     save_agent_profile: async ({ id, prompt, description, expectedSourceHash, tools, disallowedTools, skills, mcpServers, resourceModes }) => serializedKv(async () => {
+      if (isReservedAgentId(id) && !isStockProfileId(id)) return { ok: false, id, sourceHash: "" };
       const owned = await ownedAgents();
       if (owned[id]?.compiledCorrupt) return { ok: false, id, sourceHash: "" };
       const previous = owned[id]?.compiled;
@@ -140,9 +143,17 @@ export function preferencesRpc(ctx: ServerCore, services: Services) {
       } catch {
         return { ok: false, id, sourceHash: currentHash };
       }
-      owned[id] = { prompt, ...(description ? { description } : {}), compiled };
+      // An owner's agent keeps its summary, model and dates; the profile editor's description is its label.
+      const now = Date.now();
+      const old = owned[id]?.meta;
+      const meta = isCustomAgentId(id) ? { ...old, displayName: description ?? old?.displayName ?? compiled.description, createdAt: old?.createdAt ?? now, updatedAt: now } : old;
+      owned[id] = { prompt, ...(description ? { description } : {}), compiled, ...(meta ? { meta } : {}) };
       await bb.storage.kv.set(LP_AGENT_OVERRIDES_KEY, owned);
       return { ok: true, id, sourceHash: compiled.sourceHash };
     }),
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "get_preferences" | "set_locale" | "remember_project" | "list_sections" | "list_projects" | "get_globals" | "get_agent_inventory" | "save_globals" | "save_agent_profile">;
+    list_agents: async ({ custom }) => ({ agents: (await services.listedAgentProfiles()).filter((row) => !custom || row.custom) }),
+    create_agent: async (input) => registry.create(input),
+    update_agent: async (input) => registry.update(input),
+    delete_agent: async ({ id }) => registry.remove(id),
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "get_preferences" | "set_locale" | "remember_project" | "list_sections" | "list_projects" | "get_globals" | "get_agent_inventory" | "save_globals" | "save_agent_profile" | "list_agents" | "create_agent" | "update_agent" | "delete_agent">;
 }
