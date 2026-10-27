@@ -154,19 +154,14 @@ export function createProviderUsage(bb: BbPluginApi, now: () => number = Date.no
     return rows;
   }
 
-  /**
-   * The hold on a provider/model for a writer on this machine, or null (nothing known, room left, the check is off, the
-   * lookup failed or took too long). Never throws.
-   */
-  async function hold(input: { providerId: string; model: string; hostId: string; threshold: number }): Promise<UsageHold | null> {
-    if (input.threshold <= 0 || !input.providerId || !input.model) return null;
+  /** The lookup of one decision, held at most HOLD_TIMEOUT_MS: null when it is slow or fails. */
+  async function bounded(input: { providerId: string; model: string; hostId: string }): Promise<Array<{ resource: UsageResource; measurement: UsageMeasurement | null }> | null> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const rows = await Promise.race([
+      return await Promise.race([
         lookup(input),
         new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), HOLD_TIMEOUT_MS); }),
       ]);
-      return rows ? usageHold(rows, { ...input, now: now() }) : null;
     } catch {
       return null;
     } finally {
@@ -174,7 +169,67 @@ export function createProviderUsage(bb: BbPluginApi, now: () => number = Date.no
     }
   }
 
-  return { hold };
+  /**
+   * The hold on a provider/model for a writer on this machine, or null (nothing known, room left, the check is off, the
+   * lookup failed or took too long). Never throws.
+   */
+  async function hold(input: { providerId: string; model: string; hostId: string; threshold: number }): Promise<UsageHold | null> {
+    if (input.threshold <= 0 || !input.providerId || !input.model) return null;
+    const rows = await bounded(input);
+    return rows ? usageHold(rows, { ...input, now: now() }) : null;
+  }
+
+  const refreshing = new Map<string, Promise<unknown>>();
+  /** Fills the caches for a provider on a machine in the background, one lookup at a time per pair. */
+  function refresh(input: { providerId: string; hostId: string }): void {
+    const key = JSON.stringify([input.providerId, input.hostId]);
+    if (refreshing.has(key)) return;
+    refreshing.set(key, bounded({ ...input, model: "" }).finally(() => refreshing.delete(key)));
+  }
+
+  /**
+   * The same answer as `hold` from what is cached, without waiting (the spawn resolvers are synchronous, as the Models view is): a
+   * cache that is missing or older than its time to live is refreshed in the background, so the next decision sees it. Without a usage
+   * source, nothing cached or a stale window that has since reset: null. Never throws, never calls a source itself.
+   */
+  function peek(input: { providerId: string; model: string; hostId: string; threshold: number }): UsageHold | null {
+    if (input.threshold <= 0 || !input.providerId || !plugins?.experimental_discoverRpc || !plugins.callRpc) return null;
+    try {
+      const at = now();
+      let stale = !sources || at - sources.at >= DISCOVERY_TTL_MS;
+      const rows: Array<{ resource: UsageResource; measurement: UsageMeasurement | null }> = [];
+      for (const pluginId of sources?.ids ?? []) {
+        const listed = inventories.get(pluginId);
+        if (!listed || at - listed.at >= INVENTORY_TTL_MS) stale = true;
+        for (const resource of listed?.resources ?? []) {
+          if (resource.providerId !== input.providerId || !(resource.scope.kind === "shared" || resource.scope.hostId === input.hostId)) continue;
+          const seen = measurements.get(JSON.stringify([pluginId, resource.id]));
+          if (!seen || at - seen.at >= MEASUREMENT_TTL_MS) stale = true;
+          rows.push({ resource, measurement: seen?.value ?? null });
+        }
+      }
+      if (stale) refresh(input);
+      return usageHold(rows, { ...input, now: at });
+    } catch {
+      return null;
+    }
+  }
+
+  /** Reads the usage of these providers on a machine into the caches before a decision, held at most HOLD_TIMEOUT_MS in all; never throws. */
+  async function warm(input: { providerIds: readonly string[]; hostId: string }): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        // One after the other: the second provider reads the inventory the first one cached instead of asking the source again.
+        (async () => { for (const providerId of input.providerIds) await lookup({ providerId, model: "", hostId: input.hostId }); })(),
+        new Promise<void>((resolve) => { timer = setTimeout(resolve, HOLD_TIMEOUT_MS); }),
+      ]);
+    } catch { /* unknown usage moves nothing */ } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  return { hold, peek, warm };
 }
 
 export type ProviderUsage = ReturnType<typeof createProviderUsage>;

@@ -3,7 +3,7 @@ import type { stepExecutorSchema } from "../../contracts";
 import { automaticEffortRoutingEnabled, writerServiceTier } from "@lane-pilot/models";
 import { resolveStageWriterSelection } from "../../writer";
 import { writerFallbackChain, writerFallbacks } from "../../writer";
-import { costTier, offeredOnHost, resolveRoleModel, roleModelKey, roleRowOf, validateChoice, type ModelCatalog } from "@lane-pilot/models";
+import { costTier, offeredOnHost, peerOffSpent, resolveRoleModel, roleModelKey, roleRowOf, validateChoice, type ModelCatalog, type SpentProbe } from "@lane-pilot/models";
 import { roleSpec } from "./workflow-agent";
 import { pmAuthorOf, resolveAgentModel } from "./workflow-agent-model";
 
@@ -52,12 +52,16 @@ const CODE_CRITIQUE: StageDef = { stage: "code_critique", label: "Code critique"
 
 const tierWord = (value: unknown): "fast" | "standard" | null => (value === "fast" || value === "standard" ? value : null);
 
-function stageSelection(settings: Settings, def: StageDef) {
-  const picked = resolveRoleModel(def.role, settings);
+function stageSelection(settings: Settings, def: StageDef, offered?: Offered, spent?: SpentProbe) {
+  const table = resolveRoleModel(def.role, settings);
+  // The stage asks the same limit rule as the executor (critic-pair.ts criticOffSpent): a nearly spent provider's pick moves to the other family.
+  const moved = peerOffSpent(table, spent, (providerId, model) => offered?.(providerId, model) !== false);
+  const picked = moved ? { ...table, providerId: moved.providerId, model: moved.model } : table;
   const tier = tierWord(settings[`${def.stage}.service_tier`]) ?? (def.tier === "writer" ? writerServiceTier(settings) : "standard");
   return {
     providerId: picked.providerId, model: picked.model, reasoningEffort: picked.effort, serviceTier: tier,
     source: (picked.source === "default" ? "role-default" : picked.source) as StepExecutor["source"], sourceKey: picked.sourceKey,
+    issues: moved ? [moved.issue] : [],
   };
 }
 
@@ -69,11 +73,11 @@ const none = (node: Raw, id: string, kind: string, label: string, extra: Partial
 
 type Offered = ((providerId: string, model: string) => boolean | null) | undefined;
 
-function agentNode(node: Raw, id: string, settings: Settings, pm: PmPair | null, offered?: Offered): StepExecutor {
+function agentNode(node: Raw, id: string, settings: Settings, pm: PmPair | null, offered?: Offered, spent?: SpentProbe): StepExecutor {
   const role = text(node.role) ?? "worker";
   const helper = roleSpec(role).helper;
   // The same function the executor calls (withResolvedModel, workflow-agent.ts): the card says what will be spawned.
-  const chosen = resolveAgentModel({ role, settings, pm, author: pmAuthorOf(role, pm), ...(offered ? { offered } : {}) });
+  const chosen = resolveAgentModel({ role, settings, pm, author: pmAuthorOf(role, pm), ...(offered ? { offered } : {}), ...(spent ? { spent } : {}) });
   return {
     nodeId: id, kind: "agent", uses: text(node.uses), mode: "model", agent: { role, helper, label: role },
     providerId: chosen.providerId, model: chosen.model, reasoningEffort: chosen.reasoningEffort, serviceTier: chosen.serviceTier,
@@ -82,16 +86,16 @@ function agentNode(node: Raw, id: string, settings: Settings, pm: PmPair | null,
   };
 }
 
-function stageNode(node: Raw, id: string, def: StageDef, settings: Settings): StepExecutor {
-  const picked = stageSelection(settings, def);
+function stageNode(node: Raw, id: string, def: StageDef, settings: Settings, offered?: Offered, spent?: SpentProbe): StepExecutor {
+  const picked = stageSelection(settings, def, offered, spent);
   return {
     nodeId: id, kind: "agent", uses: text(node.uses), mode: "model", agent: { role: text(node.role) ?? def.helper, helper: def.helper, label: def.label },
     providerId: picked.providerId, model: picked.model, reasoningEffort: picked.reasoningEffort, serviceTier: picked.serviceTier, source: picked.source, sourceKey: picked.sourceKey,
-    inherited: picked.source !== "table", fallbacks: [], parts: [], settingsKey: roleModelKey(def.role), costTier: costTier(picked.model), issues: [],
+    inherited: picked.source !== "table", fallbacks: [], parts: [], settingsKey: roleModelKey(def.role), costTier: costTier(picked.model), issues: picked.issues,
   };
 }
 
-function codeTask(node: Raw, id: string, settings: Settings, pm: PmPair | null): StepExecutor {
+function codeTask(node: Raw, id: string, settings: Settings, pm: PmPair | null, offered?: Offered, spent?: SpentProbe): StepExecutor {
   const providerId = text(settings["writer.provider"]), model = text(settings["writer.model"]);
   const effort = text(settings["writer.reasoning_effort"]) ?? "medium";
   const tier = writerServiceTier(settings);
@@ -101,7 +105,7 @@ function codeTask(node: Raw, id: string, settings: Settings, pm: PmPair | null):
   const stages = Array.isArray(node.stages) ? node.stages.filter((item): item is string => typeof item === "string") : [];
   const parts: StepExecutor["parts"] = [];
   if (!stages.length || stages.includes("code-critique")) {
-    const critic = stageSelection(settings, CODE_CRITIQUE);
+    const critic = stageSelection(settings, CODE_CRITIQUE, offered, spent);
     parts.push({ stage: "code-critique", providerId: critic.providerId, model: critic.model, reasoningEffort: critic.reasoningEffort, serviceTier: critic.serviceTier, source: critic.source, sourceKey: critic.sourceKey });
   }
   const issues: string[] = [];
@@ -114,20 +118,20 @@ function codeTask(node: Raw, id: string, settings: Settings, pm: PmPair | null):
   };
 }
 
-function stepOf(node: Raw, id: string, settings: Settings, pm: PmPair | null, offered?: Offered): StepExecutor | null {
+function stepOf(node: Raw, id: string, settings: Settings, pm: PmPair | null, offered?: Offered, spent?: SpentProbe): StepExecutor | null {
   const kind = text(node.type) ?? "agent";
   const uses = text(node.uses);
   switch (kind) {
     case "note": case "join": case "parallel": return null;
     case "agent": {
       const stage = uses ? STAGE_NODES[uses] : undefined;
-      return stage ? stageNode(node, id, stage, settings) : agentNode(node, id, settings, pm, offered);
+      return stage ? stageNode(node, id, stage, settings, offered, spent) : agentNode(node, id, settings, pm, offered, spent);
     }
-    case "lp-task": return codeTask(node, id, settings, pm);
+    case "lp-task": return codeTask(node, id, settings, pm, offered, spent);
     case "action": {
       const key = uses ?? text(node.action);
       if (key && (DELEGATED_ACTIONS as readonly string[]).includes(key)) {
-        return { ...agentNode({ role: "errand" }, id, settings, pm, offered), kind: "action", uses, mode: "helper", agent: { role: "errand", helper: "errand", label: key }, source: "helper" as const, sourceKey: "errand", inherited: true };
+        return { ...agentNode({ role: "errand" }, id, settings, pm, offered, spent), kind: "action", uses, mode: "helper", agent: { role: "errand", helper: "errand", label: key }, source: "helper" as const, sourceKey: "errand", inherited: true };
       }
       return none(node, id, kind, text(node.action) ?? "action");
     }
@@ -151,6 +155,8 @@ export type ResolveInput = WorkflowShape & {
   workflowId?: string;
   /** The workflows the subworkflow nodes call, by id: their steps are listed right after the call, with the fragment they belong to. */
   fragments?: ReadonlyMap<string, WorkflowShape>;
+  /** Whether a provider's usage window is nearly spent, read from the cache without waiting (spawnUsageOf): a pick on it shows its move to the other family. Absent: the table's pick. */
+  spent?: SpentProbe;
 };
 
 /** Marks a step whose provider, model or effort the hub's machines do not offer. */
@@ -213,10 +219,10 @@ export function resolveStepExecutors(input: ResolveInput): StepExecutor[] {
     for (const raw of raws) {
       const id = text(raw.id);
       if (!id) continue;
-      const found = stepOf(raw, id, input.settings, input.pm, offered);
+      const found = stepOf(raw, id, input.settings, input.pm, offered, input.spent);
       if (found) { steps.set(id, found); order.push(id); }
       if (text(raw.type) === "parallel" && isRaw(raw.child)) {
-        const body = stepOf(raw.child, `${id}:child`, input.settings, input.pm, offered);
+        const body = stepOf(raw.child, `${id}:child`, input.settings, input.pm, offered, input.spent);
         if (body) { steps.set(`${id}:child`, body); order.push(`${id}:child`); }
       }
       const callee = text(raw.type) === "subworkflow" ? text(raw.workflow) : null;

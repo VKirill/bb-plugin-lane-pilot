@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { criticAcrossFamilies, criticPairCandidates, pairApartFromWriter, roleSelection, type CriticCatalog } from "../src/rooms/critique/critic-pair";
+import { criticAcrossFamilies, criticOffSpent, criticPairCandidates, pairApartFromWriter, roleSelection, type CriticCatalog } from "../src/rooms/critique/critic-pair";
 
 const config = { pmProviderId: "claude-code", pmModel: "opus" };
 
@@ -106,5 +106,35 @@ describe("the pipeline stages take their model from the role table", () => {
     expect(await criticAcrossFamilies({ critic: sol, writer: { providerId: "codex", model: "gpt-6-luna" }, effort: "high", tier: "standard", catalog: onlyCodex })).toEqual({ pair: sol, changed: false });
     const broken: CriticCatalog = { provider: async () => { throw new Error("host offline"); }, models: async () => [] };
     expect(await criticAcrossFamilies({ critic: sol, writer: { providerId: "codex", model: "gpt-6-luna" }, effort: "high", tier: "standard", catalog: broken })).toEqual({ pair: sol, changed: false });
+  });
+});
+
+describe("a nearly spent provider moves the stage's critic to the other family", () => {
+  const sol = { providerId: "codex", model: "gpt-6.1-sol" };
+  const opus = { providerId: "claude-code", model: "claude-opus-5-5" };
+  const both = catalog({ codex: { "gpt-6.1-sol": ["high"] }, "claude-code": { "claude-opus-5-5": ["high"] } });
+  const spentOn = (...ids: string[]) => (providerId: string) => (ids.includes(providerId) ? { percent: 94, window: "weekly" } : null);
+
+  it("the code critic on Sol (codex at 94%) takes Opus; the writer's family is allowed and said", async () => {
+    const input = { effort: "high", tier: "standard" as const, catalog: both };
+    expect(await criticOffSpent({ ...input, critic: sol, writer: { providerId: "codex", model: "gpt-6-luna" }, spent: spentOn("codex") }))
+      .toEqual({ pair: opus, issues: ["usage_moved: codex weekly 94% → claude-code/claude-opus-5-5"] });
+    expect((await criticOffSpent({ ...input, critic: sol, writer: { providerId: "claude-code", model: "claude-sonnet-5-5" }, spent: spentOn("codex") })).issues)
+      .toEqual(["usage_moved: codex weekly 94% → claude-code/claude-opus-5-5", "same_family_judge_by_limit"]);
+  });
+
+  it("stays when both are spent, when the host lacks the peer, when usage is unknown, and never blocks", async () => {
+    const input = { effort: "high", tier: "standard" as const, critic: sol, writer: null };
+    expect(await criticOffSpent({ ...input, catalog: both, spent: spentOn("codex", "claude-code") })).toEqual({ pair: sol, issues: [] });
+    expect(await criticOffSpent({ ...input, catalog: catalog({ codex: { "gpt-6.1-sol": ["high"] } }), spent: spentOn("codex") })).toEqual({ pair: sol, issues: [] });
+    expect(await criticOffSpent({ ...input, catalog: both, spent: undefined })).toEqual({ pair: sol, issues: [] });
+    const broken: CriticCatalog = { provider: async () => { throw new Error("host offline"); }, models: async () => [] };
+    expect(await criticOffSpent({ ...input, catalog: broken, spent: spentOn("codex") })).toEqual({ pair: sol, issues: [] });
+  });
+
+  it("the pm-reader row of the table (Haiku) goes to Luna when Claude is nearly spent", async () => {
+    const cat = catalog({ codex: { "gpt-6-luna": ["low"] }, "claude-code": { "claude-haiku-5-5": ["low"] } });
+    const picked = await roleSelection({ catalog: cat, settings: {}, role: "pm-reader", fallback: { providerId: "x", model: "y" }, spent: spentOn("claude-code") });
+    expect(picked).toMatchObject({ providerId: "codex", model: "gpt-6-luna", source: "default", issues: ["usage_moved: claude-code weekly 94% → codex/gpt-6-luna"] });
   });
 });

@@ -7,7 +7,7 @@ import { docsInputHash, docsMaintenancePrompt, docsSelection, parseDocsSettings,
 import type { DocsPage } from "../docs";
 import { boundedAgentName } from "../../critique";
 import { DocsChildSnapshot, docsChildSnapshot, docsResultObject, resolveDocsSnapshotPageCap } from "../../runs/server";
-import { configuredSetting, modelCatalogOf, resolveSpawnModel, stageHelperSettings } from "../../core/server";
+import { configuredSetting, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage, stageHelperSettings } from "../../core/server";
 import { fullAccessSpawn, graphStepMetadata } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { recordStage } from "../../runs/server";
@@ -30,7 +30,9 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
     if (listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="acceptance-receipt")?.state !== "passed") throw new Error("docs maintenance requires an accepted writer receipt first");
     const settings = await stageHelperSettings(bb,db,args.projectId,args.runId);
     const docsAgent=boundedAgentName(settings["docs.agent"],"docs-maintainer");
-    const docsRole=resolveSpawnModel({role:"docs-maintainer",settings,catalog:modelCatalogOf(ctx).peek(),hostId:config.hostId});
+    const spawnUsage=spawnUsageOf(ctx);
+    await warmSpawnUsage(spawnUsage,config.hostId);
+    const docsRole=resolveSpawnModel({role:"docs-maintainer",settings,catalog:modelCatalogOf(ctx).peek(), usage: spawnUsage,hostId:config.hostId});
     const docsChoice=docsSelection(settings,docsRole);
     const docsProviderId=docsChoice.providerId;
     const docsModelId=docsChoice.model;

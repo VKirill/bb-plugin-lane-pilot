@@ -8,7 +8,7 @@ import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { outputText } from "../../writer/server/writer-task";
 import { adoptRuleProposal, refreshRuleProposals, retireAdoptedRule, rewordAdoptedRule } from "./insights";
-import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel } from "../../core/server";
+import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../core/server";
 import { spawnTextId } from "../../core/server";
 import { builtinWorkflow } from "../../workflow";
 import type { ChainRuntime } from "../../workflow/server";
@@ -128,7 +128,9 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     // (2026-10-01) it set aside three failures that were not the writers' (foreign specs, untouched files) where Grok 4.6 wrote a
     // rule that would have sent writers outside their owns_paths; it is also the cheaper model. Fast tier, as it always ran.
     const settings = (await ctx.effectiveProjectSettings(projectId).catch(() => null))?.values ?? {};
-    const role = resolveSpawnModel({ role: "rules-analyzer", settings, catalog: modelCatalogOf(ctx).peek() });
+    const spawnUsage=spawnUsageOf(ctx);
+    await warmSpawnUsage(spawnUsage,null);
+    const role = resolveSpawnModel({ role: "rules-analyzer", settings, catalog: modelCatalogOf(ctx).peek(), usage: spawnUsage });
     return { providerId: role.providerId, model: role.model, reasoningLevel: role.reasoningEffort, serviceTier: DEFAULT_ANALYZER.serviceTier };
   }
 

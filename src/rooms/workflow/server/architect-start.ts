@@ -7,7 +7,7 @@ import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME } from "../workflow-arch
 import { createDraftStore } from "../../storage";
 import type { ServerCore } from "../../core/server";
 import { storeNativeSelection } from "../../native-agent/server";
-import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel } from "../../core/server";
+import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../core/server";
 import { CONFIG_KEY, SELF_REPAIR_DEFAULTS } from "../../self-repair/server";
 import type { Services } from "../../core/server";
 import { stringAt } from "../../core/server";
@@ -15,7 +15,9 @@ import { stringAt } from "../../core/server";
 /** The architect runs on the `workflow-architect` row of the role table (Claude Opus 5.5, high, unless the owner changed it), whatever the owner's remembered chat choice says. */
 const architectExecution = async (ctx: ServerCore, projectId: string) => {
   const settings = (await ctx.effectiveProjectSettings(projectId).catch(() => ({ values: {} }))).values;
-  const picked = resolveSpawnModel({ role: "workflow-architect", settings, catalog: modelCatalogOf(ctx).peek() });
+  const spawnUsage=spawnUsageOf(ctx);
+  await warmSpawnUsage(spawnUsage,null);
+  const picked = resolveSpawnModel({ role: "workflow-architect", settings, catalog: modelCatalogOf(ctx).peek(), usage: spawnUsage });
   return { providerId: picked.providerId, model: picked.model, reasoningLevel: picked.reasoningEffort };
 };
 

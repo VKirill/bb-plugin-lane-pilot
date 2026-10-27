@@ -1,6 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { getReasoningTrace, listAttemptsForTask, type LanePilotDatabase } from "../storage";
-import { bbServiceTier, findModelIn, judgeAgainstAuthor, resolveRoleModel, type RoleModelSource } from "@lane-pilot/models";
+import { bbServiceTier, findModelIn, judgeAgainstAuthor, modelFamily, peerOffSpent, resolveRoleModel, SAME_FAMILY_JUDGE_BY_LIMIT, type RoleModelSource, type SpentProbe } from "@lane-pilot/models";
 
 /**
  * G9: the code critic is another model than the writer. Reviewing the writer's own work with the writer's own model
@@ -57,7 +57,23 @@ export async function pairApartFromWriter(input: {
   return keep;
 }
 
-export type RoleSelection = { providerId: string; model: string; effort: string | null; source: RoleModelSource | "fallback" };
+export type RoleSelection = { providerId: string; model: string; effort: string | null; source: RoleModelSource | "fallback"; issues?: string[] };
+
+/**
+ * A critic pair whose provider is nearly spent (`spent`) takes its peer in the other family when the host offers it (`usage_moved`). For a
+ * code critic the work's author is the writer: a move that puts the critic into the writer's family is allowed and says
+ * `same_family_judge_by_limit`. Returns the pair unchanged when nothing moves.
+ */
+export async function criticOffSpent(input: { critic: Pair; writer?: Pair | null; spent: SpentProbe | undefined; effort: string; tier: "fast" | "standard"; catalog: CriticCatalog }): Promise<{ pair: Pair; issues: string[] }> {
+  if (!input.spent?.(input.critic.providerId, input.critic.model)) return { pair: input.critic, issues: [] };
+  // The probe and the catalog answer separately: the peer must be offered by the host (asked first) and have room.
+  const peer = peerOffSpent(input.critic, input.spent);
+  if (!peer) return { pair: input.critic, issues: [] };
+  try { if (!(await usable(input.catalog, peer, input.effort, input.tier))) return { pair: input.critic, issues: [] }; } catch { return { pair: input.critic, issues: [] }; }
+  const issues = [peer.issue];
+  if (input.writer && modelFamily(peer.model) && modelFamily(peer.model) === modelFamily(input.writer.model)) issues.push(SAME_FAMILY_JUDGE_BY_LIMIT);
+  return { pair: { providerId: peer.providerId, model: peer.model }, issues };
+}
 
 /**
  * The model of a pipeline stage (pm-reader, plan-critic, code-critic, specialist-reviewer) from the one role table: the owner's row, else the
@@ -66,11 +82,15 @@ export type RoleSelection = { providerId: string; model: string; effort: string 
  * stage never stops for it. `effort` is null for the fallback: the stage's own effort rules apply then.
  */
 export async function roleSelection(input: {
-  catalog: CriticCatalog; settings: Record<string, unknown>; role: string; fallback: Pair; tier?: "fast" | "standard";
+  catalog: CriticCatalog; settings: Record<string, unknown>; role: string; fallback: Pair; tier?: "fast" | "standard"; spent?: SpentProbe | undefined;
 }): Promise<RoleSelection> {
   const chosen = resolveRoleModel(input.role, input.settings);
   try {
-    if (await usable(input.catalog, chosen, chosen.effort, input.tier ?? "standard")) return { providerId: chosen.providerId, model: chosen.model, effort: chosen.effort, source: chosen.source };
+    if (await usable(input.catalog, chosen, chosen.effort, input.tier ?? "standard")) {
+      // The limit of the table pick's provider moves the stage to the other family (the stage's author is not known here: only the code critic is judged against one).
+      const off = await criticOffSpent({ critic: chosen, spent: input.spent, effort: chosen.effort, tier: input.tier ?? "standard", catalog: input.catalog });
+      return { providerId: off.pair.providerId, model: off.pair.model, effort: chosen.effort, source: chosen.source, ...(off.issues.length ? { issues: off.issues } : {}) };
+    }
   } catch { /* the catalog cannot be read: the stage's old pick stands */ }
   return { providerId: input.fallback.providerId, model: input.fallback.model, effort: null, source: "fallback" };
 }

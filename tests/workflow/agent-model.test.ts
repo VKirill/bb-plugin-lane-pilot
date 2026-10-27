@@ -261,6 +261,20 @@ describe("a node names no model", () => {
   });
 });
 
+describe("the Models view shows the move a nearly spent provider causes", () => {
+  const spent = (providerId: string) => (providerId === "claude-code" ? { percent: 93, window: "weekly" } : null);
+  it("an agent node and a pipeline stage read the cached usage the executor reads; unknown usage shows the table's pick", () => {
+    const nodes = [{ id: "a", type: "agent", role: "analyst" }, { id: "b", type: "agent", role: "pm-reader", uses: "lp.pm-read" }, { id: "c", type: "agent", role: "plan-critic" }];
+    const shown = resolveStepExecutors({ nodes, settings: {}, pm, spent });
+    expect(shown[0]).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", issues: ["usage_moved: claude-code weekly 93% → codex/gpt-6.1-sol"] });
+    expect(shown[1]).toMatchObject({ providerId: "codex", model: "gpt-6-luna", issues: ["usage_moved: claude-code weekly 93% → codex/gpt-6-luna"] });
+    // The PM (the plan's author here) is a GPT model, so the critic crossed to Opus; Opus is spent, and the limit puts it back in the author's family.
+    expect(shown[2]).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol" });
+    expect(shown[2]!.issues).toEqual(["crossed_family", "same_family_judge_by_limit", "usage_moved: claude-code weekly 93% → codex/gpt-6.1-sol"]);
+    expect(resolveStepExecutors({ nodes, settings: {}, pm })[0]).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", issues: [] });
+  });
+});
+
 // ---------------------------------------------------------------- resolver == executor
 
 const rtFor = (settings: Record<string, unknown>, pair: typeof pm | null) => ({

@@ -14,7 +14,7 @@ import { getRun } from "../../storage";
 import { builtinWorkflow } from "../../workflow";
 import type { ChainRuntime } from "../../workflow/server";
 import { withUsage } from "../../usage/server";
-import { configuredSetting, fullAccessSpawn, graphStepMetadata, findThreadsByMetadata, keyedSpawnSupported, modelCatalogOf, resolveSpawnModel, stringAt } from "../../core/server";
+import { configuredSetting, fullAccessSpawn, graphStepMetadata, findThreadsByMetadata, keyedSpawnSupported, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage, stringAt } from "../../core/server";
 import type { ServerCore, Services } from "../../core/server";
 import { councilOwnerForm, ownerLocale } from "../../relay/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
@@ -100,7 +100,9 @@ export function mountCouncilGraph(ctx: ServerCore, services: Services, council: 
     const seatFamilies = new Set(seatModels.map((seat) => (seat ? modelFamily(seat.model) : null)));
     const seatAuthor = seatModels.length && seatFamilies.size === 1 && !seatFamilies.has(null) ? seatModels[0]! : null;
     // The one resolver (core/server/spawn-model.ts): the table's chair, passed over for what the machine offers, then judged against the seats.
-    const chairRole = resolveSpawnModel({ role: "council", settings, author: seatAuthor, catalog: modelCatalogOf(ctx).peek(), hostId: config.hostId,
+    const spawnUsage=spawnUsageOf(ctx);
+    await warmSpawnUsage(spawnUsage,config.hostId);
+    const chairRole = resolveSpawnModel({ role: "council", settings, author: seatAuthor, catalog: modelCatalogOf(ctx).peek(), usage: spawnUsage, hostId: config.hostId,
       ...(chairOwn ? { pinned: { provider: chairOwn.providerId, model: chairOwn.model, reasoning: chairOwn.effort } } : {}) });
     const chair: ChairPair = { providerId: chairRole.providerId, model: chairRole.model, effort: chairRole.reasoningEffort };
     const place = { hostId: config.hostId, workspace: config.writerWorkspacePath };

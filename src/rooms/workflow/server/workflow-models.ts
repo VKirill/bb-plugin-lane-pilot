@@ -3,7 +3,7 @@ import type { rpcContract } from "../../contracts";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { DraftStore } from "../../storage";
 import type { ModelCatalog } from "@lane-pilot/models";
-import { CATALOG_WAIT_MS, createModelCatalog, modelCatalogOf, pmHostOf, within, type ModelCatalogReader } from "../../core/server";
+import { CATALOG_WAIT_MS, createModelCatalog, modelCatalogOf, pmHostOf, spawnUsageOf, within, type ModelCatalogReader } from "../../core/server";
 import type { ServerCore } from "../../core/server";
 import { stringAt } from "../../core/server";
 import { resolveStepExecutors, type PmPair, type WorkflowShape } from "./workflow-step-executors";
@@ -71,7 +71,11 @@ export function createWorkflowModels(ctx: ServerCore, deps: { drafts: Pick<Draft
       ]);
       const offered = read ? await catalogFor(projectId, read) : null;
       // A catalog that lists nothing (no machine answered) is no evidence that a model is missing.
-      return { found: true, executors: resolveStepExecutors({ nodes: shape.nodes, edges: shape.edges, entry: shape.entry, fragments, settings, pm, catalog: offered?.providers.length ? offered : null, workflowId }), pm };
+      // The limits the executor moves a helper on, as cached (never waited for): unknown usage shows the table's pick.
+      const usage = spawnUsageOf(ctx);
+      const hostId = offered?.runHostId ?? null;
+      const spent = usage ? (providerId: string, model: string) => usage.peek({ providerId, model, hostId, settings }) : undefined;
+      return { found: true, executors: resolveStepExecutors({ nodes: shape.nodes, edges: shape.edges, entry: shape.entry, fragments, settings, pm, catalog: offered?.providers.length ? offered : null, workflowId, ...(spent ? { spent } : {}) }), pm };
     },
     modelCatalog: async (input: { refresh?: boolean; projectId?: string }): Promise<Output<"workflow_model_catalog">> => {
       const read = await catalog.get(input.refresh === true);

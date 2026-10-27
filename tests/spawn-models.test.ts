@@ -2,7 +2,9 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { ROLE_IDS, ROLE_TABLE, consistentProvider, modelFamily, roleModelKey, type ModelCatalog } from "@lane-pilot/models";
-import { resolveSpawnModel } from "../src/rooms/core/server/spawn-model";
+import { resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../src/rooms/core/server/spawn-model";
+import { createWriterState } from "../src/rooms/writer/server/state";
+import { USAGE_FETCH_METHOD, USAGE_LIST_METHOD } from "../src/rooms/usage/server/provider-usage";
 
 /**
  * F4 of Astra's review (2026-10-27): the role -> model table must be what really spawns. Every place that starts a model thread is listed
@@ -123,6 +125,150 @@ describe("the resolver's table of inputs (F4: R2, R3, R4)", () => {
     expect(answer).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", source: "pm" });
     expect(answer.issues).toContain("same_family_judge");
     expect(modelFamily(answer.model)).toBe("claude");
+  });
+});
+
+// ---------------------------------------------------------------- provider limits move a table pick to the other family
+
+/** A fake usage source (the contract of provider-usage.ts): one shared resource per provider, one window each; null = the source cannot be read. */
+const usageSource = (percent: Record<string, number | null>, calls: string[] = []) => {
+  const resetsAt = new Date(Date.now() + 3600_000).toISOString();
+  return {
+    sdk: { plugins: {
+      experimental_discoverRpc: async () => [{ pluginId: "usage-src" }],
+      callRpc: async ({ method, input }: { method: string; input?: { resourceId: string } }) => {
+        calls.push(method);
+        if (method === USAGE_LIST_METHOD) return { resources: Object.keys(percent).map((id) => ({ id: `r-${id}`, providerId: id, scope: { kind: "shared" } })) };
+        const used = percent[input!.resourceId.slice(2)];
+        return used === null ? { usage: { status: "error" } } : { usage: { status: "ok", windows: [{ label: "weekly", usedPercent: used, resetsAt, model: null }] } };
+      },
+    } },
+    events: { on: () => () => undefined },
+    log: () => undefined,
+  };
+};
+/** The registration the plugin makes (writer state), over a fake source; returns what a spawn wrapper gets from `spawnUsageOf`. */
+const usageOf = async (percent: Record<string, number | null>, calls: string[] = [], log: string[] = []) => {
+  const bb = usageSource(percent, calls) as never;
+  createWriterState({ bb, log: () => undefined } as never);
+  const usage = spawnUsageOf({ bb, log: (line) => log.push(line) });
+  await warmSpawnUsage(usage, "h1");
+  return usage;
+};
+const base = { settings: {}, pm: opus, catalog: catalog(true, true), hostId: "h1" };
+
+describe("a provider's nearly spent limit moves the helpers to the other family", () => {
+  it("Opus at 93% weekly: the analyst takes Sol, the result says why and one log line is written", async () => {
+    const log: string[] = [];
+    const answer = resolveSpawnModel({ role: "analyst", ...base, usage: await usageOf({ "claude-code": 93, codex: 20 }, [], log) });
+    expect({ providerId: answer.providerId, model: answer.model }).toEqual(sol);
+    expect(answer.issues).toEqual(["usage_moved: claude-code weekly 93% → codex/gpt-6.1-sol"]);
+    expect(log).toHaveLength(1);
+    expect(log[0]).toContain("claude-code weekly 93%");
+    expect(consistentProvider(answer.providerId, answer.model)).toBe(answer.providerId);
+  });
+
+  it("the same peers for the small models: Haiku -> Luna, Sonnet -> Terra, and Sol -> Opus the other way", async () => {
+    const usage = await usageOf({ "claude-code": 95, codex: 10 });
+    expect(resolveSpawnModel({ role: "memory", ...base, usage })).toMatchObject({ providerId: "codex", model: "gpt-6-luna" });
+    expect(resolveSpawnModel({ role: "errand", ...base, usage })).toMatchObject({ providerId: "codex", model: "gpt-6.1-terra" });
+    const gpt = await usageOf({ "claude-code": 10, codex: 95 });
+    expect(resolveSpawnModel({ role: "council", ...base, usage: gpt })).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", issues: ["usage_moved: codex weekly 95% → claude-code/claude-opus-5-5"] });
+  });
+
+  it("both families spent: the table's pick stays, no issue", async () => {
+    const answer = resolveSpawnModel({ role: "analyst", ...base, usage: await usageOf({ "claude-code": 93, codex: 96 }) });
+    expect({ providerId: answer.providerId, model: answer.model }).toEqual(opus);
+    expect(answer.issues).toEqual([]);
+  });
+
+  it("room left (below the threshold) moves nothing; the owner's threshold applies, and 0 turns the check off", async () => {
+    const usage = await usageOf({ "claude-code": 93, codex: 20 });
+    expect(resolveSpawnModel({ role: "analyst", ...base, usage, settings: { "usage.skip_percent": 95 } })).toMatchObject({ ...opus, issues: [] });
+    expect(resolveSpawnModel({ role: "analyst", ...base, usage, settings: { "usage.skip_percent": 0 } })).toMatchObject({ ...opus, issues: [] });
+    expect(resolveSpawnModel({ role: "analyst", ...base, usage, settings: { "usage.skip_percent": 90 } })).toMatchObject({ ...sol });
+  });
+
+  it("the machine does not offer the peer: the pick stays", async () => {
+    const answer = resolveSpawnModel({ role: "analyst", ...base, catalog: catalog(false, true), usage: await usageOf({ "claude-code": 93, codex: 20 }) });
+    expect({ providerId: answer.providerId, model: answer.model }).toEqual(opus);
+    expect(answer.issues).not.toContain(expect.stringContaining("usage_moved"));
+  });
+
+  it("a judge that the limit puts into its author's family stays allowed and records same_family_judge_by_limit", async () => {
+    const answer = resolveSpawnModel({ role: "plan-critic", ...base, author: opus, usage: await usageOf({ "claude-code": 20, codex: 95 }) });
+    expect({ providerId: answer.providerId, model: answer.model }).toEqual(opus);
+    expect(answer.issues).toEqual(["same_family_judge_by_limit", "usage_moved: codex weekly 95% → claude-code/claude-opus-5-5"]);
+  });
+
+  it("the cross-family rule comes first: the author on Sol puts the critic on Opus, and Opus spent moves it back to Sol with the issue", async () => {
+    const settings = { [roleModelKey("planner")]: { model: "gpt-6.1-sol" } };
+    const answer = resolveSpawnModel({ role: "plan-critic", ...base, settings, author: sol, usage: await usageOf({ "claude-code": 94, codex: 10 }) });
+    expect({ providerId: answer.providerId, model: answer.model }).toEqual(sol);
+    expect(answer.issues).toEqual(expect.arrayContaining(["crossed_family", "same_family_judge_by_limit"]));
+  });
+
+  it("a judge whose limit moves it away from its author's family stops being flagged as not independent", async () => {
+    // Sol is gone from the machine, so the judge would stay on the author's Opus; Opus is spent but Sol is not on offer: it stays and says so.
+    const answer = resolveSpawnModel({ role: "plan-critic", ...base, catalog: catalog(false, true), author: opus, usage: await usageOf({ "claude-code": 95, codex: 10 }) });
+    expect(answer.issues).toContain("same_family_judge");
+    expect(answer.issues).not.toContain("same_family_judge_by_limit");
+  });
+
+  it("the deliberate exceptions are not moved: a pinned run keeps its pair; the writer and the seats never come through the resolver", async () => {
+    const usage = await usageOf({ "claude-code": 99, codex: 10 });
+    const pinned = resolveSpawnModel({ role: "specialist:mine", ...base, pinned: opus, usage });
+    expect(pinned).toMatchObject({ source: "pinned" });
+    expect(pinned.issues).toEqual([]);
+    const pins = resolveSpawnModel({ role: "repairer", ...base, pinned: { provider: "claude-code", model: "claude-opus-5-5" }, usage });
+    expect({ providerId: pins.providerId, model: pins.model }).toEqual(opus);
+    for (const [file, wrapper] of Object.entries(WRAPPERS)) if (wrapper.via === "exception") expect(read(file), file).not.toMatch(/spawnUsageOf|resolveSpawnModel/);
+  });
+
+  it("unknown usage moves nothing: no usage source, a source that cannot be read, a cold cache", async () => {
+    expect(resolveSpawnModel({ role: "analyst", ...base })).toMatchObject({ ...opus, issues: [] });
+    expect(resolveSpawnModel({ role: "analyst", ...base, usage: await usageOf({ "claude-code": null, codex: 10 }) })).toMatchObject({ ...opus, issues: [] });
+    // Nothing warmed: the first decision does not wait for the source, and does not guess.
+    const bb = usageSource({ "claude-code": 99, codex: 1 }) as never;
+    createWriterState({ bb, log: () => undefined } as never);
+    expect(resolveSpawnModel({ role: "analyst", ...base, usage: spawnUsageOf({ bb }) })).toMatchObject({ ...opus, issues: [] });
+    expect(spawnUsageOf({ bb: {} })).toBeUndefined();
+  });
+
+  it("a slow source never holds a decision", async () => {
+    const bb = { events: { on: () => () => undefined }, sdk: { plugins: { experimental_discoverRpc: () => new Promise(() => undefined), callRpc: async () => ({}) } } } as never;
+    createWriterState({ bb, log: () => undefined } as never);
+    const usage = spawnUsageOf({ bb });
+    vi.useFakeTimers();
+    try {
+      const warmed = warmSpawnUsage(usage, "h1");
+      await vi.advanceTimersByTimeAsync(13_000);
+      await warmed;
+    } finally { vi.useRealTimers(); }
+    expect(resolveSpawnModel({ role: "analyst", ...base, usage })).toMatchObject({ ...opus, issues: [] });
+  });
+
+  it("the cache is respected: decisions inside the time to live read the source no more", async () => {
+    const calls: string[] = [];
+    const usage = await usageOf({ "claude-code": 93, codex: 20 }, calls);
+    const asked = calls.length;
+    expect(asked).toBeGreaterThan(0);
+    for (let n = 0; n < 5; n += 1) resolveSpawnModel({ role: "analyst", ...base, usage });
+    await warmSpawnUsage(usage, "h1");
+    expect(calls).toHaveLength(asked);
+    expect(calls.filter((method) => method === USAGE_LIST_METHOD)).toHaveLength(1);
+    expect(calls.filter((method) => method === USAGE_FETCH_METHOD)).toHaveLength(2);
+  });
+
+  it("a provider that just hit its limit: the author row goes to its peer, from either family; with no peer on offer the pair is flagged", async () => {
+    const fromClaude = resolveSpawnModel({ role: "analyst", ...base, avoidProvider: "claude-code" });
+    expect({ providerId: fromClaude.providerId, model: fromClaude.model }).toEqual(sol);
+    expect(fromClaude.issues[0]).toMatch(/^usage_moved: claude-code provider limit 100% → codex\/gpt-6.1-sol/);
+    const fromCodex = resolveSpawnModel({ role: "council", ...base, avoidProvider: "codex" });
+    expect({ providerId: fromCodex.providerId, model: fromCodex.model }).toEqual(opus);
+    const alone = resolveSpawnModel({ role: "analyst", ...base, catalog: catalog(false, true), avoidProvider: "claude-code" });
+    expect(alone.providerId).toBe("claude-code");
+    expect(alone.issues).toContain("model_unavailable_here");
   });
 });
 

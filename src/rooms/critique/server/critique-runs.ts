@@ -2,8 +2,8 @@ import { unownedExpectedOutputs } from "../../tasks";
 import { hostContract, taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { claimStageSpawn, countAttempts, getRun, getTask, listLiveTasksForRun, listOpenAttempts, listStageReceipts, openDatabase } from "../../storage";
-import { criticAcrossFamilies, criticPairCandidates, latestWriterPair, pairApartFromWriter, roleSelection, sdkCriticCatalog } from "../critic-pair";
-import { bbServiceTier, writerExecutionSelection, writerServiceTier, findModelIn, modelFamily } from "@lane-pilot/models";
+import { criticAcrossFamilies, criticOffSpent, criticPairCandidates, latestWriterPair, pairApartFromWriter, roleSelection, sdkCriticCatalog } from "../critic-pair";
+import { bbServiceTier, writerExecutionSelection, writerServiceTier, findModelIn, modelFamily, type SpentProbe } from "@lane-pilot/models";
 import { qaSpawnClaimed } from "../../qa";
 import { reconcileCritic } from "../../stability";
 import { resolveStageWriterSelection } from "../../writer";
@@ -24,7 +24,7 @@ import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefau
 import type { CodeCriticDefault } from "../quality-mode";
 import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { MAIN_ATTEMPT_LIMIT } from "../../runs";
-import { configuredSetting, stageHelperSettings } from "../../core/server";
+import { configuredSetting, spawnUsageOf, stageHelperSettings, warmSpawnUsage } from "../../core/server";
 import { fullAccessSpawn, graphStepMetadata } from "../../core/server";
 import { reviewerMemoryFor } from "../../memory/server";
 import { clearSpawnMarker } from "../../core/server";
@@ -35,6 +35,18 @@ import { dependsOnTask } from "../../writer/server/start";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";
+/** Whether a provider's usage window is nearly spent, read from the cache the writers share (a bounded warm-up first); undefined without a usage source. */
+async function limitProbe(bb: BbPluginApi, hostId: string, settings: Record<string, unknown>): Promise<SpentProbe | undefined> {
+  const usage = spawnUsageOf({ bb });
+  if (!usage) return undefined;
+  await warmSpawnUsage(usage, hostId);
+  return (providerId, model) => usage.peek({ providerId, model, hostId, settings });
+}
+/** One log line per limit move of a stage's model. */
+const logLimitMove = (bb: BbPluginApi, what: string, issues: readonly string[] | undefined) => {
+  for (const issue of issues ?? []) bb.log.info(`${what}: ${issue}`);
+};
+
 export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;pmThreadId:string;config:PrototypeConfig;task:TaskV2;workflow?:{runId:string;stepKey:string;nodeId:string}})
   :Promise<{state:"skipped"|"passed"|"failed";summary:string;reason?:string}> {
   const settings=await stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
@@ -43,7 +55,8 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
   ].map((key)=>[key,configuredSetting(settings,key)])));
   const fallback=resolveStageWriterSelection({settings,config:input.config});
   // One role table (packages/models/src/role-models.ts): the owner's row, else the pm_read selection, else the default; the old pick stands when the host lacks it.
-  const picked=await roleSelection({catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:"pm-reader",fallback:{providerId:parsedSettings.provider??fallback.providerId,model:parsedSettings.model??fallback.model}});
+  const picked=await roleSelection({catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:"pm-reader",fallback:{providerId:parsedSettings.provider??fallback.providerId,model:parsedSettings.model??fallback.model},spent:await limitProbe(input.bb,input.config.hostId,settings)});
+  logLimitMove(input.bb,`pm read for ${input.taskId}`,picked.issues);
   const providerId=picked.providerId;
   const modelId=picked.model;
   parsedSettings.effort=picked.effort??parsedSettings.effort;
@@ -159,7 +172,8 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   const qualityMode = resolveQualityMode(input.task,projectSettings[QUALITY_MODE_SETTING]);
   const settings = applyQualityMode(projectSettings,qualityMode);
   const legacy=resolveStageWriterSelection({settings,config:input.config,stageProviderKey:"plan_critique.provider",stageModelKey:"plan_critique.model"});
-  const selection=await roleSelection({catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:"plan-critic",fallback:{providerId:legacy.providerId,model:legacy.model}});
+  const selection=await roleSelection({catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:"plan-critic",fallback:{providerId:legacy.providerId,model:legacy.model},spent:await limitProbe(input.bb,input.config.hostId,settings)});
+  logLimitMove(input.bb,`plan critic for ${input.taskId}`,selection.issues);
   const providerId=selection.providerId;
   const modelId=selection.model;
   const mode = settings["plan_critique.mode"] === "advisory" ? "advisory" : "gate";
@@ -435,8 +449,11 @@ export async function runCodeCritique(input:{
     tier:criticTier, catalog:criticCatalog,
   });
   if (apart?.changed) input.bb.log.info(`code critic for ${input.taskId}: ${apart.pair.providerId}/${apart.pair.model} instead of the writer's own pair`);
-  const providerId = frozen?.providerId ?? apart?.pair.providerId ?? liveSelection.providerId;
-  const modelId = frozen?.model ?? apart?.pair.model ?? liveSelection.model;
+  // The provider's limit comes last: a critic whose provider is nearly spent takes the other family, even the writer's (said, never silent).
+  const offSpent = frozen ? null : await criticOffSpent({ critic:apart?.pair ?? across?.pair ?? liveSelection, writer:writerPair, spent:await limitProbe(input.bb, input.config.hostId, settings), effort:configuredEffort, tier:criticTier, catalog:criticCatalog });
+  logLimitMove(input.bb, `code critic for ${input.taskId}`, offSpent?.issues);
+  const providerId = frozen?.providerId ?? offSpent?.pair.providerId ?? apart?.pair.providerId ?? liveSelection.providerId;
+  const modelId = frozen?.model ?? offSpent?.pair.model ?? apart?.pair.model ?? liveSelection.model;
   // The independence the rule promises is checked on the pair that will really run, after every fallback: not met is said, never silent (F4/R4).
   if (!frozen && writerPair && modelFamily(modelId) && modelFamily(modelId) === modelFamily(writerPair.model)) input.bb.log.warn(`code critic for ${input.taskId}: ${providerId}/${modelId} is of the writer's own family (${writerPair.providerId}/${writerPair.model}); the other family has no usable model here, so the review is not independent`);
   const policy = frozen ?? freezeCritiquePolicy({
@@ -585,7 +602,8 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
   }
 
   const legacy=resolveStageWriterSelection({settings,config:input.config,stageProviderKey:"specialist.provider",stageModelKey:"specialist.model"});
-  const selection=await roleSelection({catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:"specialist-reviewer",fallback:{providerId:legacy.providerId,model:legacy.model}});
+  const selection=await roleSelection({catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:"specialist-reviewer",fallback:{providerId:legacy.providerId,model:legacy.model},spent:await limitProbe(input.bb,input.config.hostId,settings)});
+  logLimitMove(input.bb,`specialist review for ${input.taskId}`,selection.issues);
   const providerId=selection.providerId;
   const modelId=selection.model;
   const effort = selection.effort ?? (typeof settings["specialist.reasoning_effort"] === "string" && settings["specialist.reasoning_effort"]

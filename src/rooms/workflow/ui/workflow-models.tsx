@@ -106,7 +106,9 @@ export function sourceText(executor: Pick<StepExecutor, "source" | "sourceKey" |
 
 const COST_PILL: Record<StepExecutor["costTier"], string> = { none: "lp-pill-muted", low: "lp-pill-success", medium: "lp-pill-neutral", high: "lp-pill-warning", unknown: "lp-pill-muted" };
 const ISSUE_INFO = new Set(["effort_auto"]);
-export const realIssues = (executor: StepExecutor): string[] => executor.issues.filter((code) => !ISSUE_INFO.has(code));
+/** A note, not a problem: the effort routing, and a move to the other family because the provider's limit is nearly spent (`usage_moved: claude-code weekly 93% → codex/gpt-6.1-sol`). */
+const isInfoIssue = (code: string): boolean => ISSUE_INFO.has(code) || code.startsWith("usage_moved:");
+export const realIssues = (executor: StepExecutor): string[] => executor.issues.filter((code) => !isInfoIssue(code));
 export const issueText = (code: string): string => {
   const key = `wfModelIssue_${code}` as I18nKey;
   try { const text = t(key); return text === key ? code : text; } catch { return code; }
@@ -135,6 +137,7 @@ export function ModelBadge({ executor, providers, id }: { executor: StepExecutor
     t("wfModelFrom").replace("{source}", sourceText(executor)),
     ...(executor.mode === "chain" ? [`${t("wfModelChain")}: ${[executor, ...executor.fallbacks].map((row) => ("pm" in row && row.pm ? t("wfModelChainPm") : `${providerShort(row.providerId)}/${modelShort(row.model)}`)).join(" → ")}`] : []),
     ...problems.map(issueText),
+    ...executor.issues.filter((code) => code.startsWith("usage_moved:")),
   ].join("\n");
   return (
     <div className="lp-wf-models" data-testid={`wf-model-${id}`} data-source={executor.source} data-inherited={executor.inherited ? "1" : "0"} data-issue={problems.length ? "1" : "0"} data-mode={executor.mode} title={title}>
@@ -173,7 +176,7 @@ function ModelsRow({ executor, view, locale, wide }: { executor: StepExecutor; v
   const title = view ? nodeTitle(view, locale) : executor.nodeId;
   const rid = rowId(executor);
   const problems = realIssues(executor);
-  const notes = executor.issues.filter((code) => ISSUE_INFO.has(code));
+  const notes = executor.issues.filter(isInfoIssue);
   return (
     <li className="lp-model-row" data-testid={`wf-model-row-${rid}`} data-wide={wide ? "1" : "0"} data-inherited={executor.inherited ? "1" : "0"} data-issue={problems.length ? "1" : "0"}>
       <div className="min-w-0" data-label={t("wfModelsColStep")}>

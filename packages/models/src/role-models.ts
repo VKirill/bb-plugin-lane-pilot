@@ -204,3 +204,25 @@ export function judgeAgainstAuthor(judge: { providerId: string; model: string },
   const peer = crossFamilyPeer(judge.model);
   return peer ? { ...peer, changed: true } : kept;
 }
+
+/** A provider window that is nearly spent: how full it is and which window (`weekly`, `5-hour`). */
+export type SpentWindow = { percent: number; window: string };
+/** Whether the provider a pair runs on has a window at or above the owner's threshold; null/undefined when it has room or nothing is known. */
+export type SpentProbe = (providerId: string, model: string) => SpentWindow | null | undefined;
+/** The issue a helper's result carries when its provider's limit moved it to the other family. */
+export const USAGE_MOVED_ISSUE = "usage_moved";
+/** The issue a judge carries when that move put it into the family of the work it judges (allowed: the limit is the stronger reason). */
+export const SAME_FAMILY_JUDGE_BY_LIMIT = "same_family_judge_by_limit";
+
+/**
+ * A pair whose provider is nearly spent takes its peer in the other family (Opus <-> Sol, Sonnet <-> Terra, Haiku <-> Luna, Fable <-> Astra),
+ * when the machine offers the peer (`usable`) and the peer's own provider is not spent as well. Null when it stays: no limit hit, no peer,
+ * the peer not on offer or also spent (then the original is kept, the limit is only an ordering).
+ */
+export function peerOffSpent(pick: { providerId: string; model: string }, spent: SpentProbe | undefined, usable?: (providerId: string, model: string) => boolean): { providerId: string; model: string; issue: string } | null {
+  const hit = spent?.(pick.providerId, pick.model);
+  if (!hit) return null;
+  const peer = crossFamilyPeer(pick.model);
+  if (!peer || (usable && !usable(peer.providerId, peer.model)) || spent?.(peer.providerId, peer.model)) return null;
+  return { ...peer, issue: `${USAGE_MOVED_ISSUE}: ${pick.providerId} ${hit.window} ${Math.round(hit.percent)}% → ${peer.providerId}/${peer.model}` };
+}

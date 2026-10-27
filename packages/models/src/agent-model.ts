@@ -1,5 +1,5 @@
 import { belowTier, modelTier, type ModelTier } from "./model-tiers";
-import { consistentProvider, judgeAgainstAuthor, resolveRoleModel, roleDefaultModel, roleRow, ROLE_TABLE } from "./role-models";
+import { SAME_FAMILY_JUDGE_BY_LIMIT, consistentProvider, judgeAgainstAuthor, modelFamily, peerOffSpent, resolveRoleModel, roleDefaultModel, roleRow, ROLE_TABLE, type SpentProbe } from "./role-models";
 
 /**
  * Which model a generic workflow agent step runs on. ONE function answers it for the executor (what is spawned) and for the Models
@@ -53,6 +53,12 @@ export type AgentModelInput = {
   author?: { providerId: string; model: string } | null;
   /** The provider the catalog says lists a model (null when none or several do): a pinned model with no provider takes it. */
   providerOf?: (model: string) => string | null | undefined;
+  /**
+   * Whether a provider's usage window is nearly spent (provider-usage, `usage.skip_percent`). The pick of the table (never a pinned run) whose provider
+   * is spent takes its peer in the other family when the machine offers it and that provider has room (`usage_moved`); a judge that the move puts into
+   * its author's family keeps going and says `same_family_judge_by_limit`. Absent or unknown: the table's pick stands.
+   */
+  spent?: SpentProbe;
 };
 
 /** The author rows each judge row is judged against, in order: the first one whose model is known is the author. Other roles judge no one. */
@@ -127,6 +133,18 @@ export function resolveAgentModel(input: AgentModelInput): AgentModel {
   if (unavailable) issues.push("selection_unavailable");
   const base = { serviceTier, inherited: !text(pin?.reasoning) };
   if (picked) {
+    // The limit comes after the cross-family rule: the move may put a judge back into its author's family (allowed, and said).
+    const moved = peerOffSpent(picked, input.spent, here);
+    if (moved) {
+      const wasIndependent = !judges || !degraded;
+      picked = { ...picked, providerId: moved.providerId, model: moved.model };
+      if (judges) {
+        const sameFamily = modelFamily(moved.model) === modelFamily(input.author!.model);
+        if (degraded && !sameFamily) degraded = false;
+        else if (wasIndependent && sameFamily) issues.push(SAME_FAMILY_JUDGE_BY_LIMIT);
+      }
+      issues.push(moved.issue);
+    }
     if (degraded) issues.push("same_family_judge");
     return { providerId: picked.providerId, model: picked.model, reasoningEffort: text(pin?.reasoning) ?? picked.effort, ...base, source: picked.source, sourceKey: picked.sourceKey, issues };
   }

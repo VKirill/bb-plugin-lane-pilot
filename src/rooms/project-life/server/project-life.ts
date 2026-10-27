@@ -4,7 +4,7 @@ import { claimStageSpawn, getRun, getTask, listStageReceipts } from "../../stora
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
 import { findOutOfScopeProjectLifeWrites, foldCoveredTaskIds, parseProjectLifeFinalMessage, parseProjectLifeSettings, projectLifePrompt, projectLifeServiceTier } from "../project-life";
 import { ProjectLifeChildSnapshot, childResultObject, projectLifeChildSnapshot, spawnRefused } from "../../runs/server";
-import { configuredSetting, modelCatalogOf, resolveSpawnModel, stageHelperSettings } from "../../core/server";
+import { configuredSetting, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage, stageHelperSettings } from "../../core/server";
 import { fullAccessSpawn, graphStepMetadata } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { recordStage } from "../../runs/server";
@@ -34,7 +34,9 @@ export function createProjectLifeStage(ctx: ServerCore, services: Services) {
     const settings=await stageHelperSettings(bb,db,args.projectId,args.runId);
     const projectLifeSettings=parseProjectLifeSettings({"project_life.enabled":configuredSetting(settings,"project_life.enabled")});
     // The project-life row of the role table (the stage's own project_life.* settings still win), through the one resolver.
-    const projectLifeRole=resolveSpawnModel({role:"project-life",settings,catalog:modelCatalogOf(ctx).peek(),hostId:config.hostId});
+    const spawnUsage=spawnUsageOf(ctx);
+    await warmSpawnUsage(spawnUsage,config.hostId);
+    const projectLifeRole=resolveSpawnModel({role:"project-life",settings,catalog:modelCatalogOf(ctx).peek(), usage: spawnUsage,hostId:config.hostId});
     const projectLifeProviderId=projectLifeRole.providerId;
     const projectLifeModel=projectLifeRole.model;
     const projectLifeEffort=projectLifeRole.reasoningEffort;

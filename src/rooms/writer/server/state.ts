@@ -1,8 +1,9 @@
 import { createProviderBreaker, createRunBudget, parseRunBudgetLimits, type RunBudget } from "@lane-pilot/resilience";
 import { RunWriterPool } from "../../tasks";
-import { createProviderUsage } from "../../usage/server";
+import { createProviderUsage, usageSkipPercent } from "../../usage/server";
 import { createProviderRetryGuard } from "../../stability/server";
 import { createConcurrencyLimit } from "./concurrency-limit";
+import { registerSpawnUsage } from "../../core/server";
 import type { ServerCore } from "../../core/server";
 
 /** State shared by the writer modules: the live task set, the provider pool, the provider breaker and one budget per run. */
@@ -16,6 +17,11 @@ export function createWriterState(ctx: ServerCore) {
 
   /** Provider usage windows read from BB's usage sources; a writer pair whose window is nearly spent is skipped, never failed. */
   const providerUsage = createProviderUsage(ctx.bb);
+  // The helpers' resolver (resolveSpawnModel) reads the same cache, under the same threshold, to move a table pick off a nearly spent provider.
+  registerSpawnUsage(ctx.bb, {
+    peek: (query) => providerUsage.peek({ providerId: query.providerId, model: query.model, hostId: query.hostId ?? "", threshold: usageSkipPercent(query.settings) }),
+    warm: (query) => providerUsage.warm({ providerIds: query.providerIds, hostId: query.hostId ?? "" }),
+  });
 
   /** Cancels the retry BB's provider-retry queued in a writer thread once the task moved on to another writer. */
   const providerRetry = createProviderRetryGuard(ctx.bb);

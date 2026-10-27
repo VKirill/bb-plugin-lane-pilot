@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRun, createTask, createAttempt, openDatabase, saveProjectSetting, setRunThread, transitionAttempt } from "../../src/rooms/storage/database";
 import { runCommand } from "../../src/rooms/host-worker/host-handlers";
 import { createCore } from "../../src/rooms/core/server/core";
+import { modelCatalogOf } from "../../src/rooms/core/server/model-catalog-reader";
 import type { Services } from "../../src/rooms/core/server/services";
 import { createWorkflowAgents } from "../../src/rooms/workflow/server/workflow-agent";
 import { chainRuntimeFor, humanOptions, humanOutput, registerChainExecutors } from "../../src/rooms/workflow/server/workflow-executors";
@@ -31,7 +32,7 @@ const reply = (body: Row, lead = "Done.") => `${lead}\n\n\`\`\`json\n${JSON.stri
 
 /** What a helper thread of a node spent, as BB reports it: one token-usage event of one turn, on this model. */
 type Spent = { input: number; output: number; model?: string };
-async function setup(script: Script, options: { dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean } = {}) {
+async function setup(script: Script, options: { dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean; offers?: Array<{ providerId: string; model: string; host?: string }> } = {}) {
   const checkout = mkdtempSync(join(tmpdir(), "lp-chain-"));
   execFileSync("git", ["init", "-q"], { cwd: checkout });
   writeFileSync(join(checkout, "README.md"), "hello\n");
@@ -74,6 +75,14 @@ async function setup(script: Script, options: { dirty?: boolean; spent?: Record<
           return { output: text };
         },
       },
+      // The machine's catalog, when a test says which models it offers (otherwise the catalog is cold and every model counts as offered).
+      ...(options.offers ? {
+        hosts: { list: async () => [...new Set(options.offers!.map((row) => row.host ?? "local"))].map((id) => ({ id, name: id, status: "connected" })) },
+        providers: {
+          list: async (args?: { hostId?: string }) => [...new Set(options.offers!.filter((row) => (row.host ?? "local") === args?.hostId).map((row) => row.providerId))].map((id) => ({ id, displayName: id, available: true, capabilities: {}, serviceTiers: [] })),
+          models: async (args?: { providerId?: string; hostId?: string }) => ({ models: options.offers!.filter((row) => row.providerId === args?.providerId && (row.host ?? "local") === args?.hostId).map((row) => ({ id: row.model, model: row.model, displayName: row.model, supportedReasoningEfforts: [{ reasoningEffort: "high" }], defaultReasoningEffort: "high", isDefault: true })) }),
+        },
+      } : {}),
       environments: { get: async () => ({ id: "env-pm", hostId: "local", path: checkout, status: "ready" }) },
       projects: { get: async () => ({ id: PROJECT, name: "Project", sources: [{ hostId: "local", path: checkout }] }) },
       files: {
@@ -231,12 +240,38 @@ describe("the agent step", () => {
     expect(String((t.spawned[1]!.pluginMetadata as Row).spawnId)).toMatch(/:limit$/);
   });
 
-  it("a plan-limit notice on the default model is not retried: the step fails as before", async () => {
-    const t = await setup({ look: ["Upgrade your plan to continue"] });
+  it("a Claude helper that hits its plan limit reruns once on the other family, as a Codex one reruns on Claude (no asymmetry)", async () => {
+    let calls = 0;
+    const answer = () => ((calls += 1) === 1 ? "Upgrade your plan to continue" : reply({ count: 3, summary: "three", handoff: "counted" }));
+    const t = await setup({ look: [answer] });
     dispose = t.dispose;
+    // The analyst's row of the role table is Claude Opus by default: its limit sends the step to GPT-6.1 Sol.
+    const summary = await t.start(oneAgent()).done;
+    expect(summary).toMatchObject({ status: "succeeded", output: { count: 3 } });
+    expect(t.spawned).toHaveLength(2);
+    expect(t.spawned[0]).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5" });
+    expect(t.spawned[1]).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol" });
+    expect(String((t.spawned[1]!.pluginMetadata as Row).spawnId)).toMatch(/:limit$/);
+  });
+
+  it("a limit notice with the other family not on offer fails the step with the notice, it does not run the same pair twice", async () => {
+    const t = await setup({ look: ["Upgrade your plan to continue"] }, { offers: [{ providerId: "claude-code", model: "claude-opus-5-5" }, { providerId: "codex", model: "gpt-6.1-sol", host: "other" }] });
+    dispose = t.dispose;
+    await modelCatalogOf(t.rt.ctx).get();
     const summary = await t.start(oneAgent()).done;
     expect(summary.status).toBe("failed");
+    expect(JSON.stringify(summary)).toMatch(/provider_limit.*no other model family/);
     expect(t.spawned).toHaveLength(1);
+  });
+
+  it("the limit rerun asks for a peer that is on offer: Claude to Sol when the machine has it", async () => {
+    let calls = 0;
+    const answer = () => ((calls += 1) === 1 ? "Upgrade your plan to continue" : reply({ count: 1, summary: "one", handoff: "counted" }));
+    const t = await setup({ look: [answer] }, { offers: [{ providerId: "claude-code", model: "claude-opus-5-5" }, { providerId: "codex", model: "gpt-6.1-sol" }] });
+    dispose = t.dispose;
+    await modelCatalogOf(t.rt.ctx).get();
+    expect((await t.start(oneAgent()).done).status).toBe("succeeded");
+    expect(t.spawned.map((row) => row.providerId)).toEqual(["claude-code", "codex"]);
   });
 
   it("spawns a helper thread of the PM chat with the node's role, prompt and typed answer, and reads the JSON block back", async () => {

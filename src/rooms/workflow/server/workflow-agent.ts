@@ -24,7 +24,7 @@ import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from ".
 import { detectRepoEdits, gitRepoStatus } from "../../verification/server";
 import { SPECIALIST_GRAPH, SPECIALIST_ROLES, rememberSpecialistThread } from "../../critique/server";
 import { findThreadsByMetadata, keyedSpawnSupported } from "../../core/server";
-import { modelCatalogOf, pmHostOf, resolveSpawnModel } from "../../core/server";
+import { modelCatalogOf, pmHostOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage } from "../../core/server";
 import { roleRowOf } from "@lane-pilot/models";
 import { threadUsage } from "../../usage/server";
 import { stringAt } from "../../core/server";
@@ -319,14 +319,16 @@ export function createWorkflowAgents() {
     await wait(sentAt);
     let text = await read();
     // A provider out of plan or quota answers with its notice and does no work (insights-post critic on acp-cursor, 2026-10-09:
-    // «Upgrade your plan to continue»). The step runs once more in a fresh thread on the default model instead of failing the run.
+    // «Upgrade your plan to continue»). The step runs once more in a fresh thread on another provider instead of failing the run.
+    // Any provider, Claude included: the resolver answers with the failed provider taken out of the offer (the peer of the other family).
     const limit = providerLimitNotice(text);
-    if (limit && !request.intoThread && (request.provider ?? DEFAULT_PROVIDER) !== DEFAULT_PROVIDER) {
-      // The same resolver, with the provider that just failed taken out of the offer: the role's next model, judged against its author again.
-      // Nothing else on offer: the old fixed pair, flagged in the log when that puts a judge back in its author's family.
-      const again = await withResolvedModel({ ...request, provider: undefined as never, model: undefined as never, reasoning: undefined as never, resolved: undefined as never }, { avoidProvider: request.provider ?? null }).catch(() => null);
-      const fallback = { ...request, ...(again ? { provider: again.provider, model: again.model, reasoning: again.reasoning } : { provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL, reasoning: DEFAULT_REASONING }), serviceTier: undefined, spawnKey: `${request.spawnKey}:limit` };
-      rt.ctx.bb.log.warn(`workflow step ${request.stepKey}: ${request.provider}/${request.model} hit a provider limit (${limit}); rerunning on ${fallback.provider}/${fallback.model}${again ? "" : " (nothing else on offer: the default pair)"}`);
+    if (limit && !request.intoThread) {
+      const failed = request.provider ?? DEFAULT_PROVIDER;
+      const again = await withResolvedModel({ ...request, provider: undefined as never, model: undefined as never, reasoning: undefined as never, resolved: undefined as never }, { avoidProvider: failed }).catch(() => null);
+      // Nothing else on offer (the answer is the failed provider again): the step fails with the limit notice, it does not run the same pair twice.
+      if (!again || again.provider === failed) throw new HelperFailure("provider_limit", `${failed}/${request.model ?? ""} hit a provider limit (${limit}) and no other model family is on offer on this machine`);
+      const fallback = { ...request, provider: again.provider, model: again.model, reasoning: again.reasoning, serviceTier: undefined, spawnKey: `${request.spawnKey}:limit` };
+      rt.ctx.bb.log.warn(`workflow step ${request.stepKey}: ${request.provider}/${request.model} hit a provider limit (${limit}); rerunning on ${fallback.provider}/${fallback.model}`);
       // A fresh thread starts with the prompt: its first turn is the one to wait for, as for the first spawn.
       sentAt = undefined;
       threadId = await lookup(rt, fallback) ?? await spawn(fallback);
@@ -491,7 +493,10 @@ export async function withResolvedModel(request: HelperRequest, options: { avoid
   const pinned = { provider: request.provider, model: request.model ?? agentMeta?.model, reasoning: request.reasoning ?? agentMeta?.effort, service_tier: request.serviceTier };
   const row = roleRowOf(request.role);
   const author = await authorOf(rt, request.workflowRunId, row, pm);
-  const chosen = resolveSpawnModel({ role: request.role, pinned, settings, pm, author, catalog: read, hostId, avoidProvider: avoid });
+  // Provider limits: the usage of both table providers is read first (bounded, never blocks), then the resolver moves a pick off a nearly spent one.
+  const usage = spawnUsageOf({ bb: rt.ctx.bb, log: rt.ctx.log });
+  await warmSpawnUsage(usage, hostId);
+  const chosen = resolveSpawnModel({ role: request.role, pinned, settings, pm, author, catalog: read, hostId, avoidProvider: avoid, usage });
   if (AUTHOR_ROW_IDS.includes(row)) await rememberAuthor(rt, request.workflowRunId, row, chosen);
   const where = `the ${request.role} of ${request.workflowId ?? "a workflow"}/${request.nodeId}`;
   if (chosen.issues.includes("crossed_family")) rt.ctx.log?.(`Lane Pilot: ${where} would have judged work of its own model family; it runs on ${chosen.providerId}/${chosen.model} (the other family)`);

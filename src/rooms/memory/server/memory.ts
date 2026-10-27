@@ -8,7 +8,7 @@ import { pmMemoryContext } from "./memory-mix";
 import { boundedAgentName } from "../../critique";
 import { MemoryChildSnapshot, childResultObject, memoryChildSnapshot, spawnRefused } from "../../runs/server";
 import { compactAcceptedResult } from "../../tasks/server";
-import { configuredSetting, modelCatalogOf, resolveSpawnModel, stageHelperSettings } from "../../core/server";
+import { configuredSetting, modelCatalogOf, resolveSpawnModel, spawnUsageOf, warmSpawnUsage, stageHelperSettings } from "../../core/server";
 import { fullAccessSpawn, graphStepMetadata } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { recordStage } from "../../runs/server";
@@ -37,7 +37,9 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       "memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget",
     ].map((key)=>[key,configuredSetting(settings,key)])));
     // The memory row of the role table (the project's own memory.* settings still win), through the one resolver: never the project writer.
-    const memoryRole=resolveSpawnModel({role:"memory",settings,catalog:modelCatalogOf(ctx).peek(),hostId:config.hostId});
+    const spawnUsage=spawnUsageOf(ctx);
+    await warmSpawnUsage(spawnUsage,config.hostId);
+    const memoryRole=resolveSpawnModel({role:"memory",settings,catalog:modelCatalogOf(ctx).peek(), usage: spawnUsage,hostId:config.hostId});
     const memoryProviderId=memoryRole.providerId;
     const memoryModel=memoryRole.model;
     const memoryEffort=memoryRole.reasoningEffort;
