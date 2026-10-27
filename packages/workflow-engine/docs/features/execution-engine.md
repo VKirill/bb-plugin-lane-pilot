@@ -2,7 +2,7 @@
 title: Workflow Execution Engine
 type: component
 created: 2026-10-10
-updated: 2026-10-26
+updated: 2026-10-27
 status: active
 confidence: medium
 tags: [workflow-engine, execution, journal]
@@ -17,6 +17,8 @@ sources:
   - packages/workflow-engine/src/values.ts
   - packages/workflow-engine/src/actions.ts
   - packages/workflow-engine/src/reducers.ts
+  - packages/workflow-engine/src/validate.ts
+  - packages/workflow-engine/src/prompt-coverage.ts
 ---
 # Workflow Execution Engine
 TL;DR: `WorkflowEngine` drives lowered workflow graphs by claiming journaled steps, calling registered executors, validating outputs, and recording completion, waits, or failures.
@@ -28,7 +30,7 @@ The engine runs a workflow against caller-provided node executors and persists r
 ## How it works
 
 1. The caller constructs `WorkflowEngine` with a database and `harnessVersion`; construction creates the journal and registers built-in executors (`packages/workflow-engine/src/engine.ts:94-118`, `packages/workflow-engine/src/engine.ts:168-174`).
-2. The host registers custom executors by key. An executor implements `run`, may declare itself reentrant, and may implement `poll` for waiting steps (`packages/workflow-engine/src/engine.ts:68-74`, `packages/workflow-engine/src/engine.ts:176-177`).
+2. The host registers custom executors by key. An executor implements `run`, may declare itself reentrant, and may implement `poll` for waiting steps. Optional `specialistKnown` is passed into preflight validation to reject literal unknown `specialist:<id>` agent roles (`packages/workflow-engine/src/engine.ts:68-74`, `packages/workflow-engine/src/engine.ts:94-105`, `packages/workflow-engine/src/engine.ts:210-220`, `packages/workflow-engine/src/validate.ts:357-365`).
 3. At start, workflow nodes are lowered into executable nodes and `for_each`/parallel forms; the run stores its workflow identity, version, hash, definition, mode, inputs, and usage counters (`packages/workflow-engine/src/lower.ts:52-101`, `packages/workflow-engine/src/engine.ts:151-177`, `packages/workflow-engine/src/journal.ts:11-39`).
 4. The driver claims pending steps, resolves mapped inputs and references, then calls the selected executor with a `StepContext` containing run/step identity, attempt, goals, input, mode, and effect support (`packages/workflow-engine/src/engine.ts:18-66`).
 5. A done result passes declared output fields and node contracts; a wait result persists partial output and wait details; thrown step errors move the step and run to failure unless classified as an engine/process bug (`packages/workflow-engine/src/engine.ts:35-38`, `packages/workflow-engine/src/engine.ts:124-145`).
@@ -56,6 +58,7 @@ The engine runs a workflow against caller-provided node executors and persists r
 - When usage is unknown for a token- or money-budgeted run, the engine uses a floor of 40 steps and two hours as bounds (`packages/workflow-engine/src/engine.ts:30-34`).
 - A built-in `emit` step can run after a token or cost budget is exceeded; the engine records `budget_overrun` once per run. This exception does not bypass step, wall-time, or unknown-usage limits (`packages/workflow-engine/src/engine.ts:730-735`, `packages/workflow-engine/src/engine.ts:545-555`).
 - Compatibility is distinct from package release version; `ENGINE_COMPAT_VERSION` is the stamp compared when deciding whether an in-flight step can resume (`packages/workflow-engine/src/engine.ts:86-93`, `packages/workflow-engine/src/engine.ts:165-166`).
+- Agent prompt coverage validation warns when produced-artifact schema enums are absent from both the prompt and generated output contract; it does not block preflight because it is a warning (`packages/workflow-engine/src/prompt-coverage.ts:17-31`, `packages/workflow-engine/src/validate.ts:366-372`).
 
 ## Public API
 
@@ -89,6 +92,7 @@ The engine consumes the workspace's schema, expression, validation, lowering, ou
 ### `WorkflowEngine`
 
 Detailed construction, compilation, preflight, journal transitions, and pure action execution branches are in [Engine, Journal, and Pure Action Details](engine-journal-actions.md).
+Reducer branch outputs and the runtime internals of engine setup, journal writes, and pure action dispatch are expanded in [Workflow Execution Runtime Internals](execution-runtime-internals.md).
 
 Construction chooses the clock, creates a journal bound to the supplied database and event callback, assigns the caller's instance ID or a generated one, chooses the lease duration, and registers built-in executors (`packages/workflow-engine/src/engine.ts:151-174`). `register` replaces the executor stored under a key and returns the engine for chaining; `hasExecutor` checks that map (`packages/workflow-engine/src/engine.ts:176-177`).
 
@@ -143,11 +147,11 @@ The executor path catches this error as an attempt failure and, after retries ar
 
 The factory closes over the database and clock, then provides `getRun`, `getStep`, and `steps` reads. Its event writer inserts a timeline row before invoking `onEvent`; exceptions from the notification callback are swallowed so they do not undo a journal transition (`packages/workflow-engine/src/journal.ts:150-160`).
 
-`moveStep` first checks the requested transition against `STEP_TRANSITIONS`; an illegal transition throws. It then conditionally updates only rows whose current state is in the caller's `from` set. A stale/missing row returns `false` after recording a refusal event; a successful update records a step event and returns `true` (`packages/workflow-engine/src/journal.ts:162-179`). `setRunStatus` similarly conditionally updates from expected statuses, records a run event on success, and returns false without an event if no row changed (`packages/workflow-engine/src/journal.ts:181-187`). Database errors from writes propagate to the caller.
+`moveStep` first checks the requested transition against `STEP_TRANSITIONS`; an illegal transition throws. It then conditionally updates only step rows whose current state is in the caller's `from` set. A missing or stale step row returns `false` after recording a refusal event; a successful update records a step event and returns `true` (`packages/workflow-engine/src/journal.ts:162-179`). `setRunStatus` conditionally updates a run from expected statuses, records a run event on success, and returns false without an event if no run row changed (`packages/workflow-engine/src/journal.ts:181-187`). Database errors from writes propagate to the caller.
 
 ### `workflowMigrations`
 
-This export is an ordered array of SQL strings; it does not execute them or open a database (`packages/workflow-engine/src/journal.ts:10-105`, `packages/workflow-engine/src/db.ts:1-4`). The order creates the run table and its child/status/link indexes, then the step table and origin/state indexes, followed by arrival, effect, and event tables. The final event statements add the run/sequence index and triggers that abort event updates and deletes (`packages/workflow-engine/src/journal.ts:11-105`).
+This export is an ordered array of SQL strings; it does not execute them or open a database (`packages/workflow-engine/src/journal.ts:10-105`, `packages/workflow-engine/src/db.ts:1-4`). The event table is followed by its `(run_id, seq)` index and separate triggers that abort event updates and deletes (`packages/workflow-engine/src/journal.ts:92-105`).
 
 The run table constrains run status and stores workflow identity, snapshots, linkage, usage totals, ownership, and timestamps; the step table constrains step state and stores attempt, input/output, wait, receipt, and timing data. Arrival and effect tables constrain their keys, and effect state is checked against its four-state vocabulary. These DDL checks reject invalid status/state values and duplicate constrained keys when the host executes the statements (`packages/workflow-engine/src/journal.ts:11-90`). The table meanings and fields live in the [run journal data model](../data-model/run-journal.md).
 
@@ -156,4 +160,5 @@ The run table constrains run status and stores workflow identity, snapshots, lin
 
 - [Workflow Run Journal Data](../data-model/run-journal.md)
 - [Engine, Journal, and Pure Action Details](engine-journal-actions.md)
+- [Workflow Execution Runtime Internals](execution-runtime-internals.md)
 - [Workflow Engine — Overview](../overview.md)
