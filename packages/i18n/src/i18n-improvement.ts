@@ -217,7 +217,7 @@ export const improvementRu: { [K in keyof typeof improvementEn]: string } = {
   imp_pol_rule_always_on: "Правило, которое едет в каждом промпте",
   imp_pol_default_model_change: "Новая модель, провайдер, рассуждение, тариф или агент по умолчанию для роли",
   imp_pol_new_pipeline_stage: "Добавление, удаление или перестановка стадии конвейера",
-  imp_pol_graph_edit: "Любая правка графа работ (цепочки и их движок)",
+  imp_pol_graph_edit: "Любая правка графов и их движка",
   imp_pol_memory_core_edit: "Изменение ядра памяти проекта",
   imp_pol_spending_caps: "Деньги, квоты и лимиты (попытки, токены, время, дочерние треды)",
   imp_pol_secrets_env_catalog: "Секреты и кто может читать каталог окружения",

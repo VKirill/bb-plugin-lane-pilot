@@ -69,7 +69,7 @@ describe("owner form copy", () => {
 
   it("localizes the workflow human-step wrapper", () => {
     expect(workflowHumanDetail("en", "wfrun_1", "approve")).toBe("Workflow run wfrun_1, step approve.");
-    expect(workflowHumanDetail("ru", "wfrun_1", "approve")).toBe("Запуск сценария wfrun_1, шаг approve.");
+    expect(workflowHumanDetail("ru", "wfrun_1", "approve")).toBe("Запуск графа wfrun_1, шаг approve.");
   });
 });
 

@@ -6,7 +6,7 @@
   },
   "description": {
     "en": "Writes missing tests for named gaps in the test paths only, runs them layer by layer, classifies failures (test/code/env defect) and iterates up to three times. Never edits source code or existing tests. The tests are the whole task, for code that already exists; tests that come with a new feature belong to that feature's workflow.",
-    "ru": "Пишет недостающие тесты по названным пробелам только в тестовых путях, прогоняет по слоям, классифицирует провалы (дефект теста / кода / окружения) и итерирует до трёх раз. Исходники и существующие тесты не трогает. Тесты - вся задача, для уже существующего кода; тесты к новой функции идут в её цепочке."
+    "ru": "Пишет недостающие тесты по названным пробелам только в тестовых путях, прогоняет по слоям, классифицирует провалы (дефект теста / кода / окружения) и итерирует до трёх раз. Исходники и существующие тесты не трогает. Тесты - вся задача, для уже существующего кода; тесты к новой функции идут в её графе."
   },
   "examples": {
     "ru": [

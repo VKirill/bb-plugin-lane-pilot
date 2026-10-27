@@ -40,8 +40,8 @@ describe("tool presentation", () => {
 
   it("labels the workflow architect's tools in English and Russian; reads are quiet, changes and publishing are shown", () => {
     expect(presentationFor("lane_pilot_workflow_draft_patch", "en")).toEqual({ label: { pending: "Changing the workflow draft", completed: "Changed the workflow draft" } });
-    expect(presentationFor("lane_pilot_workflow_draft_patch", "ru")).toEqual({ label: { pending: "Дорабатываю цепочку", completed: "Цепочка доработана" } });
-    expect(presentationFor("lane_pilot_workflow_draft_test", "ru")?.label.completed).toBe("Цепочка проверена на заглушках");
+    expect(presentationFor("lane_pilot_workflow_draft_patch", "ru")).toEqual({ label: { pending: "Дорабатываю граф", completed: "Граф доработан" } });
+    expect(presentationFor("lane_pilot_workflow_draft_test", "ru")?.label.completed).toBe("Граф проверен на заглушках");
     expect(presentationFor("lane_pilot_workflow_draft_publish", "en")?.label.pending).toBe("Publishing the workflow");
     expect(presentationFor("lane_pilot_workflow_capabilities", "en")?.suppress).toBe(true);
     expect(presentationFor("lane_pilot_workflow_draft_get", "ru")?.suppress).toBe(true);

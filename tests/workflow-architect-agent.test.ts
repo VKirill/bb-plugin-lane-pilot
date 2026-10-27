@@ -23,8 +23,8 @@ describe("Workflow architect profile", () => {
     setLocaleOverride("en");
     expect(agentPickerLabel({ id: WORKFLOW_ARCHITECT_ID, description: profile.description }, t)).toBe("Workflow architect");
     setLocaleOverride("ru");
-    expect(agentPickerLabel({ id: WORKFLOW_ARCHITECT_ID, description: profile.description }, t)).toBe("Архитектор цепочек");
-    expect(agentPickerLabel({ id: WORKFLOW_ARCHITECT_ID, description: "Lane Pilot workflow architect" }, t)).toBe("Архитектор цепочек");
+    expect(agentPickerLabel({ id: WORKFLOW_ARCHITECT_ID, description: profile.description }, t)).toBe("Архитектор графов");
+    expect(agentPickerLabel({ id: WORKFLOW_ARCHITECT_ID, description: "Lane Pilot workflow architect" }, t)).toBe("Архитектор графов");
     expect(agentPickerLabel({ id: WORKFLOW_ARCHITECT_ID, description: "My own architect" }, t)).toBe("My own architect");
     expect(BB_AGENT_SUMMARIES[WORKFLOW_ARCHITECT_ID]).toContain("Workflow architect");
   });

@@ -5,7 +5,7 @@
  */
 export const WORKFLOW_ARCHITECT_ID = "workflow-architect";
 
-export const WORKFLOW_ARCHITECT_NAME = { en: "Workflow architect", ru: "Архитектор цепочек" } as const;
+export const WORKFLOW_ARCHITECT_NAME = { en: "Workflow architect", ru: "Архитектор графов" } as const;
 
 export const WORKFLOW_ARCHITECT_SUMMARY = "Workflow architect: interviews the owner about a repeatable process and builds it as a tested chain (agent, action, human and code steps) live; does not edit product code or dispatch writers.";
 
