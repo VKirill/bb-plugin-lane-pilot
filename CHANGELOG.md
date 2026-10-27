@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.343
+
+**A project setting save is judged on the key it changes.** The save validated the whole merged settings, so an inherited value the older catalog no longer lists — the global `writer.provider` «acp-cursor» — refused every project save of another writer key (the full drill's provider_limit, and the same in the settings screen). Only the saved key, and the provider/effort pair when the key is one of them, are judged now.
+
+**The drill**: the phase scenario gets 35 minutes (two waves, each with an lp.review on GPT-6.1 Sol; 20 left it 7 s short of verification). The no-git sandbox was deleted on 2026-10-23 and its two scenarios were skipped unseen since; it is recreated, and a missing sandbox now fails the scenario.
+
 ## 0.1.342
 
 The third review round (Astra's and Fable's RECHECK-341) and the full drill against 0.1.341 found these; all are fixed with reproducing tests.
