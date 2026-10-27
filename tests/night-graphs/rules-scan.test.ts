@@ -118,4 +118,28 @@ describe("the rules scan graph", () => {
     expect(w.state.spawned[0]!.pluginMetadata).toMatchObject({ role: "rules-analyzer", learning: true, lanePilotWorkflowNode: "ask" });
     expect(w.state.spawned[0]!.pluginMetadata).not.toHaveProperty("parentPmThreadId");
   });
+
+  it("the same question of the same day is the same run (a reload or a repeat asks nothing twice); another question is another run; a failed run is retried", async () => {
+    const { w, scan } = setup(["{\"a\":1}", "{\"b\":2}", "{\"c\":3}"]);
+    const place = { hostId: "host-1", path: "/proj" };
+    const analyzer = (await scan.analyzerFor(PROJECT))!;
+    const ask = (prompt: string) => scan.runAnalyzer(PROJECT, "Learning from owner messages · 2 owner messages", prompt, place, analyzer, { learning: true });
+    expect(await ask("Extract")).toBe("{\"a\":1}");
+    expect(await ask("Extract")).toBe("{\"a\":1}");
+    expect(w.state.spawned).toHaveLength(1);
+    expect(w.runs("lp.rules-ask")).toHaveLength(1);
+    expect(w.runs("lp.rules-ask")[0]).toMatchObject({ idem_key: expect.stringMatching(/^rules-ask:[^:]+:\d{4}-\d{2}-\d{2}:[0-9a-f]{16}$/) });
+    expect(await ask("Extract differently")).toBe("{\"b\":2}");
+    expect(w.runs("lp.rules-ask")).toHaveLength(2);
+  });
+
+  it("a failed run of the question does not stand in the way of asking it again", async () => {
+    const { w, scan } = setup([new Error("spawn_failed"), "{\"ok\":true}"]);
+    const place = { hostId: "host-1", path: "/proj" };
+    const analyzer = (await scan.analyzerFor(PROJECT))!;
+    const ask = () => scan.runAnalyzer(PROJECT, "Learning from owner messages · 1 owner message", "Extract", place, analyzer, { learning: true });
+    await expect(ask()).rejects.toThrow();
+    expect(await ask()).toBe("{\"ok\":true}");
+    expect(w.runs("lp.rules-ask").map((row) => row.status)).toEqual(["failed", "succeeded"]);
+  });
 });

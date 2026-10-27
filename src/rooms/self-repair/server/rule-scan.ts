@@ -494,8 +494,17 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     const workflow = builtinWorkflow(RULES_ASK_WORKFLOW);
     if (!workflow) throw new Error(`built-in workflow ${RULES_ASK_WORKFLOW} is not loaded`);
     const runtime: ChainRuntime = { ctx, services, pmThreadId: null, projectId, runId: null };
+    // The key is the question itself (project, day, title and prompt): a reload or a repeat finds the run it already made. A run that ended
+    // badly is closed for good under its key, so the retry of the same question takes the next numbered key.
+    const base = `rules-ask:${projectId}:${new Date().toISOString().slice(0, 10)}:${spawnTextId(`${title}\n${prompt}`)}`;
+    let key = base;
+    for (let attempt = 1; attempt < 20; attempt += 1) {
+      const prior = db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(key) as { status: string } | undefined;
+      if (!prior || !["failed", "blocked", "interrupted", "canceled"].includes(prior.status)) break;
+      key = `${base}:${attempt}`;
+    }
     const started = services.workflowEngine.start({
-      workflow, runtime, key: `rules-ask:${projectId}:${Date.now()}:${spawnTextId(title)}`, link: { projectId },
+      workflow, runtime, key, link: { projectId },
       inputs: { project_id: projectId, title, prompt, host_id: place.hostId, path: place.path, analyzer, metadata },
     });
     const summary = await started.done;
