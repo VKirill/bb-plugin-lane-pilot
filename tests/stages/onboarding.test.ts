@@ -1,4 +1,5 @@
 import { describe,expect,it } from "vitest";
+import { STAGE_IDS } from "@lane-pilot/contracts";
 import { acceptedOnboardingEvidence,onboardingPrompt,parseOnboardingPreview } from "../../src/rooms/project-life/onboarding";
 
 const hash="a".repeat(64);
@@ -57,5 +58,12 @@ describe("bounded onboarding preview",()=>{
   it("rejects duplicate edits",()=>{
     const edit={path:"docs/guide.md",expectedSha256:hash,content:"x"};
     expect(()=>parseOnboardingPreview(JSON.stringify({summary:"Preview",edits:[edit,edit]}),[{path:edit.path,sha256:hash,content:"old"}])).toThrow("duplicate");
+  });
+});
+
+describe("the onboarding stages after their PM tools were removed (0.1.341)",()=>{
+  it("keeps onboarding-preview and onboarding-apply as stage ids, so old receipts still read",()=>{
+    expect(STAGE_IDS).toContain("onboarding-preview");
+    expect(STAGE_IDS).toContain("onboarding-apply");
   });
 });

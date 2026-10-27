@@ -1662,7 +1662,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n1654: ["have", "подушка git", "lane-stack:hooks/sma_hooks.py#def stream_git_airbag("],
   n1655: ["have", "траты", "src/rooms/money/logic.ts#export function spendBook("],
   n1656: ["have", "прерыватель", "src/rooms/capability/server/capability.ts#providerBreaker"],
-  n1657: ["have", "ворота, отчёт, подтверждение", "src/rooms/night/server/night.ts#gateTriagePrompt"],
+  n1657: ["have", "ворота, отчёт, подтверждение", "src/rooms/verification/gate-triage.ts#gateTriagePrompt"],
   n1658: ["have", "доказательства", "src/rooms/runs/server/stage-records.ts#recordStage"],
   n1659: ["have", "целостность: хеш охранника на 3 машинах", "scripts/lp-drill.py#guard_hash"],
   n1660: ["have", "подушка git", "lane-stack:hooks/sma_hooks.py#refs/lane-airbag/"],

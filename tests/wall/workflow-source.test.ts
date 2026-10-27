@@ -52,6 +52,9 @@ describe("the journal reads graph failures", () => {
     run("web-research", "blocked", "budget_exceeded:cost", NOW - HOUR, { project: "proj_sand" });
     run("web-research", "succeeded", null, NOW - HOUR);
     run("lp-task-pipeline", "failed", "step_failed:writer", NOW - HOUR);
+    // The wall's own machinery: a failed repair or hunt must not open a class whose repair is another repair.
+    for (let i = 0; i < 3; i += 1) run("lp.self-repair", "failed", "step_failed:repair", NOW - (i + 1) * HOUR);
+    for (let i = 0; i < 3; i += 1) run("lp.wall-hunt", "failed", "step_failed:judge", NOW - (i + 1) * HOUR);
     run("web-research", "blocked", "budget_exceeded:cost", NOW - 2 * DAY);
     // A parent and the child that failed it are one failure, named by the child.
     const parent = run("analyze-plan-execute", "failed", "step_failed:build", NOW - HOUR);
@@ -64,7 +67,7 @@ describe("the journal reads graph failures", () => {
     expect(byReason["insights-post failed: output_invalid"]!.n).toBe(5);
     expect(byReason["insights-post interrupted: interrupted"]!.n).toBe(1);
     expect(byReason["lp.build failed: output_invalid"]!.n).toBe(1);
-    expect(Object.keys(byReason).some((reason) => reason.startsWith("lp-task-pipeline") || reason.startsWith("analyze-plan-execute"))).toBe(false);
+    expect(Object.keys(byReason).some((reason) => reason.startsWith("lp-task-pipeline") || reason.startsWith("analyze-plan-execute") || reason.startsWith("lp.self-repair") || reason.startsWith("lp.wall-hunt"))).toBe(false);
     expect(entries.some((entry) => entry.projectId === "proj_sand")).toBe(false);
     expect(byReason["insights-post failed: output_invalid"]!.samples[0]).toMatch(/^wf:wfrun_/);
   });

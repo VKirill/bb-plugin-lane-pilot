@@ -12,8 +12,12 @@ const quoted = (list: readonly string[]) => list.map((item) => `'${item}'`).join
 
 /** Graph run statuses that are a failure of the run (the others are running, waiting, succeeded or canceled by the owner). */
 export const WF_FAILED = ["failed", "blocked", "interrupted"] as const;
-/** The per-task pipeline is not read here: its failure is the attempt's, counted from the attempt already. */
-const WF_SKIPPED = ["lp-task-pipeline"] as const;
+/**
+ * Not read here: the per-task pipeline (its failure is the attempt's, counted from the attempt already), and the wall's own machinery —
+ * a failed self-repair or wall hunt would otherwise open a class whose repair is another self-repair: a loop. Those report through
+ * the self-repair watcher and the wall row itself.
+ */
+export const WF_SKIPPED = ["lp-task-pipeline", "lp.self-repair", "lp.wall-hunt"] as const;
 
 const DAY = 86_400_000;
 export const nightOf = (at: number): string => new Date(at).toISOString().slice(0, 10);
