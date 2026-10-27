@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.349
+
+**Reviews run on Gemini 3.8 Flash.** The plan critic, code critic, specialist review (and the lp.review steps that use the code-critic role) and the triager default to Gemini 3.8 Flash through 9router, a third model family, so the judge never shares the author's family whether Claude or GPT wrote the code. If 9router is not offered, spent, or answers with a limit (its «Unavailable (reset after …)» text now counts as one), the review falls to GPT-6.1 Sol, then Opus (the triager to GPT-6 Luna). The goal audit, the debugger and the council chair stay on Sol.
+
 ## 0.1.348
 
 **The specialist rule of 0.1.347 now catches the real role.** The specialist graph names its step's role `specialist:<id>` (`specialist:copy-lead`), and the exemption compared it with the table row `specialist`, so a specialist could still be moved to GPT and refused with 409. It now reads the role's table row; the test covers the `specialist:<id>` form.
