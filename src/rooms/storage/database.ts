@@ -1373,7 +1373,11 @@ export function casUpsertSetting(
   // A section's value is validated on top of its project's settings.
   const settings = loadProjectSettings(db, args.projectId, bindingId ? [bindingId] : []);
   settings[args.key] = args.value;
-  const validation = validateSettingsObject(settings)[0];
+  // Only what this save changes is judged: the key itself, and the provider/effort pair when the key is one of them. An inherited value
+  // that an older catalog no longer lists (the global writer.provider «acp-cursor») must not refuse every other save of the project
+  // (live 2026-10-27: saving writer.model failed on writer.provider).
+  const PAIR = new Set(["writer.provider", "writer.reasoning_effort"]);
+  const validation = validateSettingsObject(settings).find((error) => error.key === args.key || (PAIR.has(args.key) && PAIR.has(error.key)));
   if (validation) {
     let value: unknown = current?.value ?? null;
     if (current) {
