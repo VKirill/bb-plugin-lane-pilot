@@ -148,7 +148,11 @@ export function createStability(ctx:ServerCore, services:Services) {
     const waitingSecret = isWaitingSecret(input.reason);
     if (!(PARKED_CLASSES.has(klass) || waitingSecret) || await isRunHalted(bb.storage.kv as never, input.runId)) return false;
     const fingerprint = failureFingerprint(input.reason);
-    if (klass === "harness") noteHarnessFailure(input.projectId, fingerprint, now);
+    // A fault of a run that is no longer going (blocked or closed) — leftover attempts the reload reconciles — says nothing about
+    // this version: counting it opened the sandbox breaker on 0.1.340's own drill (live 2026-10-27).
+    const run = getRun(db, input.runId);
+    const live = !!run && !run.closed_at && (run.state === "pending" || run.state === "running");
+    if (klass === "harness" && live) noteHarnessFailure(input.projectId, fingerprint, now);
     const list = await loadParked();
     const previous = list.find((row) => row.runId === input.runId && row.taskId === input.taskId);
     const memo = previous ? undefined : (await loadRedrives())[`${input.runId}:${input.taskId}`];

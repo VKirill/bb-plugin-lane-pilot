@@ -1,7 +1,7 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { failureClass, failureFingerprint } from "../src/rooms/runs/failure-class";
-import { countAttempts, countChargedAttempts, createAttempt, createRun, openDatabase, transitionAttempt } from "../src/rooms/storage/database";
+import { countAttempts, countChargedAttempts, createAttempt, createRun, openDatabase, setRunState, transitionAttempt } from "../src/rooms/storage/database";
 import { createStability } from "../src/rooms/stability/server/stability";
 
 // Reasons copied from SelfyStudio attempts of 2026-10-03/04: each must land on the side that caused it.
@@ -149,6 +149,17 @@ describe("breaker", () => {
     expect(stability.breakerHolds("other", 4000)).toBeNull();
     expect(stability.breakerHolds("proj", 3000 + 31 * 60_000)).toBeNull(); // half-open: one task may try
     expect(stability.breakerHolds("proj", 3000 + 32 * 60_000)).toContain("page_cap");
+  });
+});
+
+describe("breaker and dead runs", () => {
+  it("does not count faults of a run that is blocked or closed (leftovers the reload reconciles)", async () => {
+    const { db, stability } = setup();
+    setRunState(db, "run", "blocked");
+    for (const [task, n] of [["T1", 1], ["T2", 2], ["T3", 3]] as const) {
+      await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:task, pmThreadId:"pm", state:"blocked", reason:"internal_error: writer spawn was not created after a complete reconcile scan" }, n * 1000);
+    }
+    expect(stability.breakerHolds("proj", 4000)).toBeNull();
   });
 });
 

@@ -24,6 +24,8 @@
 
 **A blocked run can be freed.** A run that ended `blocked` with attempts still queued could neither cancel them («cancel is not legal for blocked run») nor be finished («running attempts remain»), so it held the project's activation for good — it stopped the 0.1.340 deploy drill. Attempts of an unclosed blocked run can now be cancelled, and the drill frees a leftover sandbox run before it starts.
 
+**The Lane Pilot fault breaker ignores dead runs.** After a reload, leftover attempts of a blocked drill run were reconciled as «writer spawn was not created» faults and opened the sandbox breaker for the new version, so no writer of the deploy drill started. Faults of a run that is blocked or closed no longer count toward the breaker.
+
 **GPT-6.1 Terra** (released 2026-10-26, $1/$5) joins the writers Jev picks from, as a standard-tier model for well-specified mid-size work.
 
 ## 0.1.339
