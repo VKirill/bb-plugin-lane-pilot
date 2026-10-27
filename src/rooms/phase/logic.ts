@@ -190,6 +190,9 @@ export function acceptanceCommands(line: string): string[] {
   return [...found];
 }
 
+/** The plan gate's last refusal when the project asks for the owner's word: it is the owner's to give, not a gap of the plan the machine could plan away. */
+export const PLAN_WORD_GAP = "the plan awaits the owner's word (owner.words is on)";
+
 /** Planning → admission: every piece becomes a work, waves are computable, the plan was built on the signed context, and an independent checker approved it. */
 export function planGate(record: PhaseRecord): GateResult {
   const plan = record.plan;
@@ -207,7 +210,7 @@ export function planGate(record: PhaseRecord): GateResult {
   if (!plan.critique) why.push("no independent plan check: run the plan critic (workflow lp.plan or grill-plan) and report its decision");
   else if (plan.critique.decision !== "approve") why.push(`the plan checker asked for changes${plan.critique.summary ? `: ${plan.critique.summary}` : ""}`);
   why.push(...openQuestions(record, "planning").map((question) => `open question ${question.id}: ${question.text}`));
-  if (record.ownerWords && wordOf(record, "planning")?.decision !== "yes") why.push("the plan awaits the owner's word (owner.words is on)");
+  if (record.ownerWords && wordOf(record, "planning")?.decision !== "yes") why.push(PLAN_WORD_GAP);
   return gate(why);
 }
 

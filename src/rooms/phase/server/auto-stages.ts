@@ -1,7 +1,7 @@
 import { builtinWorkflow } from "../../workflow";
 import type { ServerCore, Services } from "../../core/server";
 import { threatGap } from "../stages";
-import { phaseFolder, planGate, type Phase, type PhaseRecord, type PlanItem, type RiskKind } from "../logic";
+import { PLAN_WORD_GAP, phaseFolder, planGate, type Phase, type PhaseRecord, type PlanItem, type RiskKind } from "../logic";
 import packageJson from "../../../../package.json";
 
 /**
@@ -27,6 +27,12 @@ export const AUTO_LIFETIME_TRIES = 3 * AUTO_TRIES;
 
 export type AutoRecord = { kind: AutoKind; wfRunId: string; startedAt: number; wave?: number };
 
+/** The plan gate's reasons the machine can plan away: all of them but the wait for the owner's word. */
+function planGaps(record: PhaseRecord): string[] {
+  const gate = planGate(record);
+  return gate.ok ? [] : gate.why.filter((reason) => reason !== PLAN_WORD_GAP);
+}
+
 /** What the phase needs the machine to do now, or null when nothing is due (or the tries are spent: see `replansSpent` and `fail`). */
 export function autoDue(phase: Phase): AutoDue | null {
   const r = phase.record;
@@ -36,7 +42,8 @@ export function autoDue(phase: Phase): AutoDue | null {
   if (phase.stage === "discussion" && !r.context && !tried("analyze")) return { kind: "analyze" };
   // The plan, and the plan again in «gaps» mode while its critic asks for changes (at most three rounds, the plan gate's own limit).
   // Also when the critic approved but the plan gate (code) still refuses: the gate's reasons are the gaps of the next round.
-  const gateRefuses = !!r.plan?.critique && r.plan.critique.decision === "approve" && !planGate(r).ok && !r.plan.admittedSha;
+  // The owner's word is not such a gap: with owner.words on an approved plan waits for it (the PM is told), the machine does not plan again.
+  const gateRefuses = !!r.plan?.critique && r.plan.critique.decision === "approve" && !r.plan.admittedSha && planGaps(r).length > 0;
   if (phase.stage === "planning" && r.context && (!r.plan || gateRefuses || !!r.replan?.gaps || (r.plan.critique?.decision === "changes_requested" && (r.plan.rounds ?? 0) < 3)) && !tried("plan")) return { kind: "plan" };
   if (phase.stage === "design" && !r.design?.drawing && !tried("draw")) return { kind: "draw" };
   if (phase.stage === "execution" && r.waveReview) {
@@ -82,11 +89,11 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number })
   switch (due.kind) {
     case "analyze": return { goal: phase.goal, depth: "standard" };
     case "plan": {
-      const gate = r.plan ? planGate(r) : null;
+      const gateGaps = r.plan ? planGaps(r) : [];
       const gaps = [...(r.replan?.gaps ? [`the verification failed: ${r.replan.gaps}`] : []),
-        ...(r.plan?.critique?.decision === "changes_requested" && r.plan.critique.summary ? [r.plan.critique.summary] : []), ...(gate && !gate.ok ? gate.why : [])];
+        ...(r.plan?.critique?.decision === "changes_requested" && r.plan.critique.summary ? [r.plan.critique.summary] : []), ...gateGaps];
       // After a failed verdict, or when the plan gate (code) refused an approved plan, the planner sees the pieces as they are, with covers.
-      const gateRound = !!gate && !gate.ok && r.plan?.critique?.decision === "approve";
+      const gateRound = gateGaps.length > 0 && r.plan?.critique?.decision === "approve";
       const current = (r.replan?.gaps || gateRound) && r.plan ? (r.plan.items ?? []).map((item) => ({ id: item.id, wave: item.wave, covers: item.covers ?? [], task: item.task })) : null;
       return { goal: phase.goal, findings: { context: contextText, decisions: r.context?.decisions ?? [], requirements: r.context?.requirements ?? [], ...(current ? { current_pieces: current } : {}) },
         ...(gaps.length ? { mode: "gaps", gaps } : {}),
