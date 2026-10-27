@@ -364,13 +364,16 @@ export const NATIVE_ENV_REFRESH_BUDGET_MS = 2_500;
 export async function nativeContributedEnv(
   bb: BbPluginApi,
   host: HostClient,
-  ctx: { threadId: string; hostId: string },
+  ctx: { threadId: string | null; hostId: string },
 ): Promise<ExperimentalPluginProviderEnvEntry[]> {
+  // BB's model catalog asks with threadId null (helper-bb-shim.ts ProviderEnvContext): no thread, no native session.
+  const threadId = ctx.threadId;
+  if (!threadId) return [];
   try {
-    const selected = await bb.storage.kv.get<NativeSelection>(`native-thread:${ctx.threadId}`);
+    const selected = await bb.storage.kv.get<NativeSelection>(`native-thread:${threadId}`);
     if (!selected) return [];
-    const cached = await bb.storage.kv.get<ExperimentalPluginProviderEnvEntry[]>(`native-env:${ctx.threadId}`);
-    const thread = await bb.sdk.threads.get({ threadId: ctx.threadId }).catch(() => null);
+    const cached = await bb.storage.kv.get<ExperimentalPluginProviderEnvEntry[]>(`native-env:${threadId}`);
+    const thread = await bb.sdk.threads.get({ threadId }).catch(() => null);
     const environmentId = thread && typeof thread.environmentId === "string" ? thread.environmentId.trim() : "";
     const environment = environmentId
       ? await bb.sdk.environments.get({ environmentId }).catch(() => null)
@@ -382,7 +385,7 @@ export async function nativeContributedEnv(
     if (path.startsWith("/") && envHost && (!ctx.hostId || envHost === ctx.hostId)) {
       try {
         traceNativeDispatch(bb.log, "host.call", {
-          thread: ctx.threadId,
+          thread: threadId,
           token: selected.token,
           reason: "prepareNativeClaude",
           host: envHost,
@@ -397,8 +400,8 @@ export async function nativeContributedEnv(
             env: ExperimentalPluginProviderEnvEntry[];
             agentId: string;
           };
-          await bb.storage.kv.set(`native-env:${ctx.threadId}`, prepared.env);
-          await bb.storage.kv.set(`native-agent-type:${ctx.threadId}`, prepared.agentId);
+          await bb.storage.kv.set(`native-env:${threadId}`, prepared.env);
+          await bb.storage.kv.set(`native-agent-type:${threadId}`, prepared.agentId);
           return prepared.env;
         })();
         if (!cached?.length) return await refresh;

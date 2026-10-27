@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { BB_SHIM_PROVIDER_IDS, createBbShimEnv, createRoleMarkerEnv, mountBbShim } from "../../src/rooms/native-agent/server/helper-bb-shim";
+import { nativeContributedEnv } from "../../src/rooms/native-agent/native-dispatch";
 
 // Audit 2026-10-08 round 3, P0-2: Codex, OpenCode and Cursor threads of Lane Pilot get the bb guard wrappers first on PATH.
 const SHIM = { dir: "/data/bb-shim", path: "/data/bb-shim:/usr/local/bin:/usr/bin" };
@@ -70,6 +71,38 @@ describe("the bb guard wrappers of a Codex, OpenCode or Cursor thread", () => {
     const { contribute, warns, host } = setup(undefined, { metadataFails: true });
     expect(await contribute({ threadId: "thr_1", hostId: "ovh" })).toEqual([]);
     expect(warns.join("\n")).toContain("without the bb guard wrappers");
+    expect(host.call).not.toHaveBeenCalled();
+  });
+});
+
+// Night repair 2026-10-27 (class log:ebdc80fdb6ec, 194 warnings a day): BB's model catalog (core resolveCatalogLaunch) runs every provider
+// env resolver with threadId null, projectId null to fingerprint the catalog launch. No thread starts there, so there is nothing to mark
+// or wrap; asking for the metadata of thread null only got HTTP 404 and a warning that a thread starts without the guard wrappers.
+describe("a provider launch with no thread (BB's model catalog)", () => {
+  const catalogLaunch = { threadId: null, projectId: null, hostId: "host_rwrxyi39aw" } as never;
+  const notFound = vi.fn(async () => { throw new Error("HTTP 404: Thread not found"); });
+
+  it("Codex, OpenCode and Cursor contribute nothing, quietly, and ask neither BB nor the machine", async () => {
+    const warns: string[] = [];
+    const host = { call: vi.fn(async () => SHIM) };
+    const contribute = createBbShimEnv({ bb: { log: { warn: (line: string) => warns.push(line), info: () => undefined }, sdk: { threads: { getPluginMetadata: notFound } } }, host } as never);
+    expect(await contribute(catalogLaunch, "opencode2")).toEqual([]);
+    expect(warns).toEqual([]);
+    expect(notFound).not.toHaveBeenCalled();
+    expect(host.call).not.toHaveBeenCalled();
+  });
+
+  it("Claude Code's lane marker contributes nothing and does not ask BB", async () => {
+    const getPluginMetadata = vi.fn(async () => { throw new Error("HTTP 404: Thread not found"); });
+    expect(await createRoleMarkerEnv({ bb: { sdk: { threads: { getPluginMetadata } } } } as never)(catalogLaunch)).toEqual([]);
+    expect(getPluginMetadata).not.toHaveBeenCalled();
+  });
+
+  it("Claude Code's native session env contributes nothing and reads no thread state", async () => {
+    const kvGet = vi.fn(async () => null);
+    const host = { call: vi.fn(async () => ({ env: [], agentId: "x" })) };
+    expect(await nativeContributedEnv({ storage: { kv: { get: kvGet } }, sdk: { threads: { get: notFound } } } as never, host as never, catalogLaunch)).toEqual([]);
+    expect(kvGet).not.toHaveBeenCalled();
     expect(host.call).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+**No more «thread null» guard warnings.** BB's model catalog runs every provider's env resolver with no thread (threadId null) to fingerprint the catalog launch. Lane Pilot's Codex/OpenCode/Cursor resolver then asked BB for the metadata of thread null, got HTTP 404 and logged «could not tell whether thread null is a helper … starts without the bb guard wrappers» about 190 times a day, though no thread was starting. The env resolvers (guard wrappers, the Claude Code lane marker, the native session env) now contribute nothing to a launch with no thread, without a call to BB or the machine. Real threads are unchanged.
+
 ## 0.1.340
 
 0.1.339 (the agent dropdown) never went live: its drill ran out of disk on the Mac mini and the deploy rolled back to 0.1.338. This release carries it.

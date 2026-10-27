@@ -33,6 +33,13 @@ async function within<T>(ms: number, label: string, work: Promise<T>): Promise<T
 
 type Shim = { dir: string; path: string } | null;
 
+/**
+ * What BB hands an env resolver. The SDK types threadId as a string, but BB's model catalog (core resolveCatalogLaunch) runs every
+ * provider's resolver with threadId null to fingerprint the catalog launch: no thread starts there, so a resolver contributes nothing
+ * (night repair 2026-10-27, class log:ebdc80fdb6ec: 194 "thread null ... HTTP 404" warnings a day).
+ */
+export type ProviderEnvContext = { threadId: string | null; hostId: string };
+
 export function createBbShimEnv(ctx: Pick<ServerCore, "bb" | "host"> & { db?: ServerCore["db"] }, now: () => number = Date.now) {
   const { bb, host } = ctx;
   const cache = new Map<string, { at: number; value: Shim }>();
@@ -61,7 +68,8 @@ export function createBbShimEnv(ctx: Pick<ServerCore, "bb" | "host"> & { db?: Se
     return await work;
   }
 
-  return async (context: { threadId: string; hostId: string }, providerId?: string): Promise<ExperimentalPluginProviderEnvEntry[]> => {
+  return async (context: ProviderEnvContext, providerId?: string): Promise<ExperimentalPluginProviderEnvEntry[]> => {
+    if (!context.threadId) return [];
     let metadata: unknown = null;
     try { metadata = await within(CALL_MS, "getPluginMetadata", Promise.resolve(bb.sdk.threads.getPluginMetadata({ threadId: context.threadId }))); } catch (cause) {
       bb.log.warn(`Lane Pilot: could not tell whether thread ${context.threadId} is a helper (${reasonOf(cause)}); it starts without the bb guard wrappers`);
@@ -98,7 +106,8 @@ export function createBbShimEnv(ctx: Pick<ServerCore, "bb" | "host"> & { db?: Se
  */
 export function createRoleMarkerEnv(ctx: Pick<ServerCore, "bb">) {
   const { bb } = ctx;
-  return async (context: { threadId: string; hostId: string }): Promise<ExperimentalPluginProviderEnvEntry[]> => {
+  return async (context: ProviderEnvContext): Promise<ExperimentalPluginProviderEnvEntry[]> => {
+    if (!context.threadId) return [];
     let metadata: unknown = null;
     try { metadata = await within(CALL_MS, "getPluginMetadata", Promise.resolve(bb.sdk.threads.getPluginMetadata({ threadId: context.threadId }))); } catch { return []; }
     const role = stringAt(metadata, "role");
