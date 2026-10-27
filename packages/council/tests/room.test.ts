@@ -4,28 +4,28 @@ import {
   addCouncilMessage,
   chooseSpeaker,
   councilMigrations,
+  councilRunMigrations,
   createCouncilSession,
   getCouncilSession,
   listCouncilMessages,
   resolveRoles,
+  DECIDE_REQUEST_TEXT,
+  decideRequestedIn,
+  maxTurnsOf,
+  roomPlan,
   ruleImpulse,
-  runRoom,
-  setCouncilAgenda,
   setCouncilState,
   type CouncilMessage,
   type CouncilSeat,
-  type RoomIo,
 } from "../src/index";
 
 function openDb() {
   const db = new Database(":memory:");
-  for (const sql of councilMigrations) db.exec(sql);
+  for (const sql of [...councilMigrations, ...councilRunMigrations]) db.exec(sql);
   return db;
 }
 
 const seats: CouncilSeat[] = resolveRoles(["product", "demand", "skeptic"]).map((role) => ({ id: role.role, role: role.role, title: role.title, instruction: role.instruction, aliases: role.aliases, providerId: "codex", model: "m" }));
-const agendaJson = JSON.stringify({ agenda: ["Where do buyers stop?"], criteria: ["effect on sales", "effort"] });
-const decisionJson = JSON.stringify({ summary: "s", options: [{ title: "Guest checkout", expectedImpact: "more first purchases", effort: "low", confidence: "high" }], recommendation: "Ship guest checkout.", dissent: [], experiments: [], nextTasks: [] });
 
 describe("impulse and the floor", () => {
   const session = { id: "c", projectId: "p", runId: "r", question: "q", agenda: [], criteria: [], seats, state: "discussion" as const, round: 2, maxRounds: 3, decision: null, decisionPath: null, reason: null, createdAt: 0, updatedAt: 0 };
@@ -45,76 +45,39 @@ describe("impulse and the floor", () => {
   });
 });
 
-describe("the boardroom", () => {
-  it("lets seats speak on impulse, answers the owner, and decides when the room goes quiet", async () => {
+describe("the boardroom, read from the feed", () => {
+  it("is in its opening lap until every seat has stated a position, then counts turns and laps", () => {
     const db = openDb();
-    const session = createCouncilSession(db, { id: "room", projectId: "p", runId: "r", question: "How to raise repeat purchases?", seats, maxRounds: 3 });
-    const prompts: Array<{ seat: string; round: number; prompt: string }> = [];
-    let ownerSaid = false;
-    const pending: CouncilMessage[] = [];
-    const io: RoomIo = {
-      spawnTurn: async ({ seat, round, prompt }) => {
-        prompts.push({ seat: seat?.id ?? "chair", round, prompt });
-        if (!seat) return round === 0 ? agendaJson : decisionJson;
-        if (round === 1) return seat.role === "skeptic" ? "Skeptic: opening position. Product director, what evidence do you have?" : `${seat.title}: opening position.`;
-        if (seat.role === "skeptic" && prompt.includes("Что с ценами")) return "On prices: the owner is right, the evidence is thin.";
-        if (seat.role === "product" && prompt.includes("what evidence do you have")) return "Here is the evidence: 12 of 40 queries mention saving.";
-        return "PASS";
-      },
-      evidence: async () => "PROJECT.md: cabinet",
-      save: {
-        agenda: (agenda, criteria) => setCouncilAgenda(db, "room", agenda, criteria),
-        message: (message) => addCouncilMessage(db, { councilId: "room", ...message }),
-        state: (patch) => setCouncilState(db, "room", patch),
-      },
-      isStopped: () => false,
-      pollOwner: (afterSeq) => pending.filter((message) => message.seq > afterSeq),
-      waitForOwner: async () => {
-        if (ownerSaid) return null;
-        ownerSaid = true;
-        const saved = addCouncilMessage(db, { councilId: "room", seatId: "owner", round: 0, kind: "owner", text: "Что с ценами? Скептик, ответь." });
-        pending.push(saved);
-        return saved;
-      },
-      decideRequested: () => false,
-      maxTurns: 12,
-    };
-    const decision = await runRoom(session, io);
-    expect(decision?.recommendation).toBe("Ship guest checkout.");
-    const after = getCouncilSession(db, "room")!;
-    expect(after.state).toBe("done");
-    const feed = listCouncilMessages(db, "room");
-    const trail = feed.map((message) => `${message.seatId}:${message.kind}`);
-    expect(trail.slice(0, 4)).toEqual(["chair:agenda", "product:position", "demand:position", "skeptic:position"]);
-    // The skeptic addressed the product director in the opening lap, so the product director replies first, on impulse.
-    expect(trail[4]).toBe("moderator:status");
-    expect(feed[4]!.text).toContain("Floor: Product director (addressed, rule");
-    expect(trail[5]).toBe("product:reply");
-    expect(feed[5]!.text).toContain("Here is the evidence");
-    expect(trail).toContain("owner:owner");
-    const ownerIndex = trail.indexOf("owner:owner");
-    expect(feed[ownerIndex + 1]!.text).toContain("Floor: Skeptic (addressed");
-    expect(trail[ownerIndex + 2]).toBe("skeptic:reply");
-    expect(feed[ownerIndex + 2]!.text).toContain("On prices");
-    expect(trail.at(-1)).toBe("chair:decision");
-    expect(prompts.some((item) => item.seat === "skeptic" && item.prompt.includes("Что с ценами"))).toBe(true);
+    createCouncilSession(db, { id: "room", projectId: "p", runId: "r", question: "How to raise repeat purchases?", seats, maxRounds: 3 });
+    const say = (seatId: string, round: number, kind: CouncilMessage["kind"], text: string) => addCouncilMessage(db, { councilId: "room", seatId, round, kind, text });
+    const plan = () => roomPlan(getCouncilSession(db, "room")!, listCouncilMessages(db, "room"));
+    expect(plan().opening?.id).toBe("product");
+    say("product", 1, "position", "Product: opening position.");
+    say("demand", 1, "position", "Demand: opening position.");
+    expect(plan()).toMatchObject({ opening: { id: "skeptic" }, turns: 2, lap: 2 });
+    say("skeptic", 1, "position", "Skeptic: opening position.");
+    expect(plan()).toMatchObject({ opening: null, turns: 3, lap: 2, replies: [] });
+    say("product", 2, "reply", "Product reply.");
+    say("demand", 2, "status", "PASS (turn)");
+    say("skeptic", 2, "reply", "Skeptic reply.");
+    const lap = plan();
+    expect(lap.turns).toBe(6);
+    expect(lap.replies.map((message) => message.seatId)).toEqual(["product", "skeptic"]);
+    expect(lap.earlier).toHaveLength(3);
+    // A verdict bumps the lap: the replies are weighed and the next lap starts empty.
+    setCouncilState(db, "room", { round: 3 });
+    expect(plan()).toMatchObject({ lap: 3, replies: [], turns: 6 });
+    expect(plan().earlier).toHaveLength(5);
   });
 
-  it("stops the moment the owner asks for the decision", async () => {
+  it("finds a request for the decision in the feed, and caps the turns of a room", () => {
     const db = openDb();
-    const session = createCouncilSession(db, { id: "quick", projectId: "p", runId: "r", question: "q", seats, maxRounds: 3 });
-    let decide = false;
-    const io: RoomIo = {
-      spawnTurn: async ({ seat, round }) => (!seat ? (round === 0 ? agendaJson : decisionJson) : (decide = true, "position")),
-      evidence: async () => "e",
-      save: { agenda: (a, c) => setCouncilAgenda(db, "quick", a, c), message: (m) => addCouncilMessage(db, { councilId: "quick", ...m }), state: (p) => setCouncilState(db, "quick", p) },
-      isStopped: () => false,
-      pollOwner: () => [],
-      waitForOwner: async () => null,
-      decideRequested: () => decide,
-    };
-    await runRoom(session, io);
-    const trail = listCouncilMessages(db, "quick").map((message) => `${message.seatId}:${message.kind}`);
-    expect(trail).toEqual(["chair:agenda", "product:position", "demand:position", "skeptic:position", "moderator:status", "chair:decision"]);
+    createCouncilSession(db, { id: "room2", projectId: "p", runId: "r", question: "q", seats, maxRounds: 3 });
+    expect(decideRequestedIn(listCouncilMessages(db, "room2"))).toBe(false);
+    addCouncilMessage(db, { councilId: "room2", seatId: "moderator", round: 2, kind: "status", text: DECIDE_REQUEST_TEXT });
+    expect(decideRequestedIn(listCouncilMessages(db, "room2"))).toBe(true);
+    const session = getCouncilSession(db, "room2")!;
+    expect(maxTurnsOf(session)).toBe(9);
+    expect(maxTurnsOf({ maxRounds: 6, seats: Array.from({ length: 9 }, () => seats[0]!) })).toBe(48);
   });
 });

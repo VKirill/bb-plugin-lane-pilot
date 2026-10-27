@@ -2,7 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { isAbsolute, relative, resolve } from "node:path";
 import { FREE_CLASSES, failureClass, isOwnerDecision, isPreStartStop, isWaitingSecret, isWriterSilent, taskFamily } from "../runs";
 import { handoffMigrations } from "@lane-pilot/handoff";
-import { councilMigrations } from "@lane-pilot/council";
+import { councilMigrations, councilRunMigrations } from "@lane-pilot/council";
 import { ruleAudienceMigrations, ruleFormMigrations, ruleMechanismMigrations, ruleMigrations, ruleTrialMigrations, triageMigrations } from "@lane-pilot/run-insights";
 import type Database from "better-sqlite3";
 import type { PrototypeConfig } from "../contracts";
@@ -415,6 +415,8 @@ export const migrations = [
   `ALTER TABLE lane_pilot_task ADD COLUMN closed_words TEXT`,
   // Schedule board: the `agent` kind (the kind CHECK of lane_pilot_schedule is rebuilt, rows and ids kept; src/rooms/schedule/store.ts). Append only.
   ...scheduleAgentMigrations,
+  // The council is a graph (workflows/council.json): the run that drives a session (src/rooms/council). Append only.
+  ...councilRunMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

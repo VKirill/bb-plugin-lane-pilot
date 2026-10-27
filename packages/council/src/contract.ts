@@ -33,6 +33,8 @@ export type CouncilSession = {
   decision: DecisionRecord | null;
   decisionPath: string | null;
   reason: string | null;
+  /** The run of the `council` graph that drives the session; null for a session made before the council was a graph. */
+  wfRunId?: string | null;
   createdAt: number;
   updatedAt: number;
 };

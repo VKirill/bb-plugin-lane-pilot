@@ -2,7 +2,9 @@
 
 A council is a bounded meeting of model seats, each with a role and ideally its own provider and
 model, that works one product or business question to a decision. The package holds the
-protocol; the host plugin supplies the seats (threads), the evidence and the storage.
+prompts, the contract, the storage and the rules that read the next step from the stored feed; the host
+plugin supplies the seats (threads), the evidence and the run: Lane Pilot runs a council as the `council`
+graph, so a run that a plugin reload cut off resumes from the feed.
 
 ```text
 question ─► chair sets the agenda ─► round 1: every seat's position
@@ -18,8 +20,9 @@ question ─► chair sets the agenda ─► round 1: every seat's position
 | `agendaPrompt`, `seatPrompt`, `chairPrompt` | The three prompts; seats receive the evidence pack and only the feed since their last turn |
 | `parseAgenda`, `parseDecisionRecord` | Strict JSON parsing of the chair's answers, fenced or not |
 | `moderatorDecision`, `roundNovelty` | Continue while a round still adds new terms and rounds remain; otherwise synthesize. A `Moderator` (Jev) may override |
-| `runCouncil(session, io)` | The whole protocol over an `io` of `spawnTurn`, `evidence`, `save`, `moderator`, `isStopped` |
-| `councilMigrations`, `createCouncilSession`, `addCouncilMessage`, `listCouncilMessages`, `setCouncilState`, `getCouncilSession`, `listCouncilSessions` | SQLite storage of sessions, seats and the feed |
+| `roundsPlan(session, feed)`, `roomPlan(session, feed)`, `verdictWritten`, `decideRequestedIn`, `maxTurnsOf` | What the next step is, read from the stored feed alone: the seat due in a fixed round, the opening lap, the lap and its replies of the boardroom, the verdict already written, a request for the decision |
+| `chooseSpeaker`, `ruleImpulse` | The floor of the boardroom: a seat's impulse to speak (a judge's, else the rule's) and who gets it |
+| `councilMigrations`, `councilRunMigrations`, `createCouncilSession`, `setCouncilRun`, `addCouncilMessage`, `listCouncilMessages`, `setCouncilState`, `getCouncilSession`, `listCouncilSessions` | SQLite storage of sessions, seats and the feed |
 | `decisionMarkdown` | The decision page for `docs/decisions/` |
 
 ## Who may use it

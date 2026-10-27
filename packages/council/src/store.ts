@@ -33,19 +33,24 @@ export const councilMigrations: readonly string[] = [
   )`,
 ];
 
+/** The graph run that drives a session (workflows/council.json). Appended to the plugin's migrations after everything else, never in the middle. */
+export const councilRunMigrations: readonly string[] = [
+  `ALTER TABLE lane_pilot_council ADD COLUMN wf_run_id TEXT`,
+];
+
 type Row = {
   id: string; project_id: string; run_id: string; question: string; agenda_json: string; criteria_json: string; seats_json: string;
-  state: CouncilState; round: number; max_rounds: number; decision_json: string | null; decision_path: string | null; reason: string | null; created_at: number; updated_at: number;
+  state: CouncilState; round: number; max_rounds: number; decision_json: string | null; decision_path: string | null; reason: string | null; wf_run_id?: string | null; created_at: number; updated_at: number;
 };
 
-const SELECT = "SELECT id,project_id,run_id,question,agenda_json,criteria_json,seats_json,state,round,max_rounds,decision_json,decision_path,reason,created_at,updated_at FROM lane_pilot_council";
+const SELECT = "SELECT id,project_id,run_id,question,agenda_json,criteria_json,seats_json,state,round,max_rounds,decision_json,decision_path,reason,wf_run_id,created_at,updated_at FROM lane_pilot_council";
 
 function toSession(row: Row): CouncilSession {
   return {
     id: row.id, projectId: row.project_id, runId: row.run_id, question: row.question,
     agenda: JSON.parse(row.agenda_json) as string[], criteria: JSON.parse(row.criteria_json) as string[], seats: JSON.parse(row.seats_json) as CouncilSeat[],
     state: row.state, round: row.round, maxRounds: row.max_rounds,
-    decision: row.decision_json ? (JSON.parse(row.decision_json) as DecisionRecord) : null, decisionPath: row.decision_path, reason: row.reason,
+    decision: row.decision_json ? (JSON.parse(row.decision_json) as DecisionRecord) : null, decisionPath: row.decision_path, reason: row.reason, wfRunId: row.wf_run_id ?? null,
     createdAt: row.created_at, updatedAt: row.updated_at,
   };
 }
@@ -67,6 +72,10 @@ export function listCouncilSessions(db: CouncilDatabase, filter: { projectId: st
     ? db.prepare(`${SELECT} WHERE project_id=? AND run_id=? ORDER BY updated_at DESC LIMIT ?`).all(filter.projectId, filter.runId, filter.limit ?? 50) as Row[]
     : db.prepare(`${SELECT} WHERE project_id=? ORDER BY updated_at DESC LIMIT ?`).all(filter.projectId, filter.limit ?? 50) as Row[];
   return rows.map(toSession);
+}
+
+export function setCouncilRun(db: CouncilDatabase, id: string, wfRunId: string, now = Date.now()): void {
+  db.prepare("UPDATE lane_pilot_council SET wf_run_id=?, updated_at=? WHERE id=?").run(wfRunId, now, id);
 }
 
 export function setCouncilAgenda(db: CouncilDatabase, id: string, agenda: string[], criteria: string[], now = Date.now()): void {

@@ -4,7 +4,7 @@ import { createActivation } from "./src/rooms/native-agent/server";
 import { registerCli } from "./src/rooms/tools/server/cli";
 import { createCore } from "./src/rooms/core/server/core";
 import { createCanary, mountCanary } from "./src/rooms/stability/server";
-import { createCouncil } from "./src/rooms/council/server";
+import { createCouncil, mountCouncilGraph } from "./src/rooms/council/server";
 import { createWorldService } from "./src/rooms/world/server";
 import { createDocsNightly } from "./src/rooms/docs/server";
 import { mountNativeWiring } from "./src/rooms/core/server/native-wiring";
@@ -139,6 +139,8 @@ export default async function plugin(bb: BbPluginApi) {
   registerAgentRoutineActions(services.workflowEngine, ctx, services);
   // The brief step of `specialist`, the graph behind lane_pilot_specialist.
   registerSpecialistActions(services.workflowEngine, ctx);
+  // The council is the `council` graph: its steps (open, next, the seats' turns, decide) run on the engine, the PM tools start and stop it.
+  mountCouncilGraph(ctx, services, services.council);
   mountLifecycleEvents(ctx, { onQueued: (name, entry) => {
     const id = entry && typeof entry === "object" ? Reflect.get(entry, "id") : undefined;
     if (typeof id === "string") return relayFor(ctx).queueEvent(name, id).then(() => undefined);
