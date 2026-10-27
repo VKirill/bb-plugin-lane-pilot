@@ -35,7 +35,8 @@ describe("bundled BB session profiles", () => {
     expect(orchestrator.prompt).not.toContain("Boot solo dev-orchestrator");
     expect(compileMainAgentProfile("seo-specialist").mcpServers).toHaveLength(9);
     expect(compileMainAgentProfile("video-lead").skills).toEqual([
-      "hyperframes", "hyperframes-cli", "hyperframes-registry", "media-use", "procedural-film", "video-to-reels", "business-motion-film",
+      "video-lead-playbook", "hyperframes", "hyperframes-cli", "hyperframes-registry", "media-use", "procedural-film", "video-to-reels", "business-motion-film",
+      "video-transcribe", "video-sound", "manimgx", "anatomy", "claude-video",
       "remotion:remotion-best-practices", "remotion:remotion-render", "remotion:remotion-create",
     ]);
   });
