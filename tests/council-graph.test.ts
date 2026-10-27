@@ -319,6 +319,6 @@ describe("the council graph", () => {
     expect(feedOf(view).at(-1)).toMatchObject({ seatId: "moderator", kind: "status", text: expect.stringContaining("Failed: ") });
     expect(wfRuns(w.view.db)).toEqual([expect.objectContaining({ status: "failed" })]);
     await until(() => w.state.sends.some((text) => text.includes("council") && text.includes("failed")), "the end notice");
-    expect(w.state.sends.find((text) => text.includes("failed"))).toContain("lane_pilot_council_status");
+    expect(w.state.sends.find((text) => text.includes("failed"))).toContain("lane_pilot_council, action status");
   });
 });

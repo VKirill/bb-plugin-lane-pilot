@@ -6,12 +6,12 @@
     "ru": "Совет"
   },
   "description": {
-    "en": "A council of directors on a product or business question: the chair sets an agenda from the project's files and materials, role-bound seats, each on its own model, speak in turn or when they have something to add (the owner may join at any time, ask for the decision or stop it), a judge or the round order picks who speaks next, and the chair ends with a decision record: a page under docs/decisions and handoffs for the next tasks. The talk is stored in the council tables the Council office reads; a plugin reload resumes it where the feed stopped. Started by lane_pilot_council_start; works under a Lane Pilot run.",
-    "ru": "Совет директоров по вопросу о продукте или бизнесе: председатель составляет повестку по файлам проекта и материалам, места с ролями, каждое на своей модели, говорят по кругу или когда есть что добавить (владелец может вступить в любой момент, попросить решение или остановить совет), судья или порядок кругов выбирает следующего, а председатель заканчивает записью решения: страница в docs/decisions и поручения на следующие задачи. Разговор хранится в таблицах совета, которые читает офис совета; перезагрузка плагина продолжает совет с места, где остановилась лента. Запускается через lane_pilot_council_start; работает под запуском Lane Pilot."
+    "en": "A council of directors on a product or business question: the chair sets an agenda from the project's files and materials, role-bound seats, each on its own model, speak in turn or when they have something to add (the owner may join at any time, ask for the decision or stop it), a judge or the round order picks who speaks next, and the chair ends with a decision record: a page under docs/decisions and handoffs for the next tasks. The talk is stored in the council tables the Council office reads; a plugin reload resumes it where the feed stopped. Started by lane_pilot_council (action start); works under a Lane Pilot run.",
+    "ru": "Совет директоров по вопросу о продукте или бизнесе: председатель составляет повестку по файлам проекта и материалам, места с ролями, каждое на своей модели, говорят по кругу или когда есть что добавить (владелец может вступить в любой момент, попросить решение или остановить совет), судья или порядок кругов выбирает следующего, а председатель заканчивает записью решения: страница в docs/decisions и поручения на следующие задачи. Разговор хранится в таблицах совета, которые читает офис совета; перезагрузка плагина продолжает совет с места, где остановилась лента. Запускается через lane_pilot_council (action start); работает под запуском Lane Pilot."
   },
   "not_for": [
     "a code change: that goes through lane_pilot_dispatch_writer",
-    "anything a person asks for in a chat: the PM starts this with lane_pilot_council_start"
+    "anything a person asks for in a chat: the PM starts this with lane_pilot_council (action start)"
   ],
   "status": "published",
   "tags": [
@@ -340,6 +340,6 @@
         "state": "done"
       }
     },
-    "live": "from a PM chat call lane_pilot_council_start with two roles and maxRounds 1, then lane_pilot_council_status; the Council office shows the same session"
+    "live": "from a PM chat call lane_pilot_council (action start) with two roles and maxRounds 1, then lane_pilot_council (action status); the Council office shows the same session"
   }
 }

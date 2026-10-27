@@ -6,11 +6,11 @@
     "ru": "Проверка принятой задачи в браузере"
   },
   "description": {
-    "en": "The browser check of an accepted task: a child thread drives the BB browser on the project's Browser QA machine and returns a verdict per case and viewport. The stage receipt browser-qa is written as always. Lane Pilot starts it from lane_pilot_browser_qa.",
-    "ru": "Проверка принятой задачи в браузере: дочерний тред ведёт браузер BB на браузерной машине проекта и возвращает вердикт по каждому случаю и ширине экрана. Квитанция этапа browser-qa пишется как всегда. Запускается инструментом lane_pilot_browser_qa."
+    "en": "The browser check of an accepted task: a child thread drives the BB browser on the project's Browser QA machine and returns a verdict per case and viewport. The stage receipt browser-qa is written as always. Lane Pilot starts it from lane_pilot_helpers (action browser_qa).",
+    "ru": "Проверка принятой задачи в браузере: дочерний тред ведёт браузер BB на браузерной машине проекта и возвращает вердикт по каждому случаю и ширине экрана. Квитанция этапа browser-qa пишется как всегда. Запускается инструментом lane_pilot_helpers (action browser_qa)."
   },
   "not_for": [
-    "anything a person asks in a chat: the PM starts it with lane_pilot_browser_qa"
+    "anything a person asks in a chat: the PM starts it with lane_pilot_helpers (action browser_qa)"
   ],
   "status": "published",
   "tags": [

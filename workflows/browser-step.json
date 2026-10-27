@@ -6,11 +6,11 @@
     "ru": "Шаг в браузере"
   },
   "description": {
-    "en": "One goal in the owner's signed-in Chrome on the browser machine through jev-ultrafast, then the page it ends on: its address, a status, the number of actions and the visible text. Lane Pilot starts it from lane_pilot_browser; the action browser.goal can be used in any graph.",
-    "ru": "Одна цель в браузере владельца (с его входами) на браузерной машине через jev-ultrafast и страница, на которой всё закончилось: адрес, статус, число действий и видимый текст. Запускается инструментом lane_pilot_browser; действие browser.goal можно ставить в любой граф."
+    "en": "One goal in the owner's signed-in Chrome on the browser machine through jev-ultrafast, then the page it ends on: its address, a status, the number of actions and the visible text. Lane Pilot starts it from lane_pilot_helpers (action browser); the action browser.goal can be used in any graph.",
+    "ru": "Одна цель в браузере владельца (с его входами) на браузерной машине через jev-ultrafast и страница, на которой всё закончилось: адрес, статус, число действий и видимый текст. Запускается инструментом lane_pilot_helpers (action browser); действие browser.goal можно ставить в любой граф."
   },
   "not_for": [
-    "anything a person asks in a chat: the PM starts it with lane_pilot_browser"
+    "anything a person asks in a chat: the PM starts it with lane_pilot_helpers (action browser)"
   ],
   "status": "published",
   "tags": [

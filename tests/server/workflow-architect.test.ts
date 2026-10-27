@@ -82,16 +82,16 @@ describe("workflow architect tools", () => {
     // The frame alone is unfinished: problems come back with the next step, and it is saved all the same.
     expect(patches[0]).toMatchObject({ ok: true, applied: true, valid: false, version: 2 });
     expect(patches[0]!.problems.some((problem: { level: string }) => problem.level === "error")).toBe(true);
-    expect(patches[0]!.next).toContain("lane_pilot_workflow_draft_patch");
+    expect(patches[0]!.next).toContain("lane_pilot_workflow_draft, action patch");
     const last = patches.at(-1)!;
     expect(last).toMatchObject({ valid: true, errors: 0, nodes: 7, version: 1 + BROWSER_DIGEST_STEPS.length });
-    expect(last.next).toContain("lane_pilot_workflow_draft_test");
+    expect(last.next).toContain("lane_pilot_workflow_draft, action test");
 
     const tested = await call("lane_pilot_workflow_draft_test", { draftId });
     expect(tested).toMatchObject({ ran: true, green: true, status: "tested", allCasesRun: true });
     expect(tested.cases.map((row: { caseId: string }) => row.caseId)).toEqual(["digest", "digest/blocked", "digest/declined"]);
     expect(tested.cases[0].stubbedCalls).toEqual(expect.arrayContaining(["send (action: telegram.send_rich)", "search (agent)"]));
-    expect(tested.next).toContain("lane_pilot_workflow_draft_publish");
+    expect(tested.next).toContain("lane_pilot_workflow_draft, action publish");
 
     const published = await call("lane_pilot_workflow_draft_publish", { draftId, confirm: true });
     // Since W3 the agent step and the Telegram send have live executors, so the published chain can run for real.

@@ -44,7 +44,7 @@ export function architectOpening(input: { marker: string; projectId: string; pro
       ]
       : input.draft
       ? [
-        `The owner wants to continue the draft ${input.draft.id} («${input.draft.name}»). Read it first with lane_pilot_workflow_draft_get {draftId: "${input.draft.id}", history: true}, then open the conversation in Russian in two or three sentences: what the chain does now, what is missing (validator problems, tests) and the question of what to change. Patch that draft; do not start another one unless the owner asks.`,
+        `The owner wants to continue the draft ${input.draft.id} («${input.draft.name}»). Read it first with lane_pilot_workflow_draft, action get (draftId "${input.draft.id}", history true), then open the conversation in Russian in two or three sentences: what the chain does now, what is missing (validator problems, tests) and the question of what to change. Patch that draft; do not start another one unless the owner asks.`,
       ]
       : [
         "Open the conversation yourself, in Russian: a short greeting (one or two sentences) and one question about the chain the owner wants to build - the goal in a sentence, what starts it, where the information comes from, what comes out and where it goes. Do not call tools before the owner answers.",

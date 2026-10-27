@@ -38,7 +38,7 @@ export function workflowEndedText(input: {
   lines.push(input.workflowId === "errand"
     ? "Next: call lane_pilot_wait_errand with this workflowRunId for the report."
     : input.workflowId === "council"
-      ? "Next: call lane_pilot_council_status (with runId) for the feed and the reason."
+      ? "Next: call lane_pilot_council, action status (with runId) for the feed and the reason."
       : "Next: call lane_pilot_workflow_status with this workflowRunId for details.");
   return lines.join("\n");
 }

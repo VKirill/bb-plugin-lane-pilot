@@ -147,15 +147,15 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
   }
 
   function nextStep(draft: DraftRow, check: DraftCheck): string {
-    if (check.errors) return "fix the errors above with lane_pilot_workflow_draft_patch (they say which node or edge); an unfinished draft is normal while you build it";
+    if (check.errors) return "fix the errors above with lane_pilot_workflow_draft, action patch (they say which node or edge); an unfinished draft is normal while you build it";
     if (draft.status === "published") return "the draft is published; further patches start a new version that must be tested and published again";
-    if (testedState(draft) !== "green") return "run lane_pilot_workflow_draft_test; the test case lives in set_meta {test:{id, sim:{input, stubs, human_answers, expect_path, expect_output}}}";
-    return "show the owner the graph and what the test did, ask for approval, then lane_pilot_workflow_draft_publish with confirm: true";
+    if (testedState(draft) !== "green") return "run lane_pilot_workflow_draft, action test; the test case lives in set_meta {test:{id, sim:{input, stubs, human_answers, expect_path, expect_output}}}";
+    return "show the owner the graph and what the test did, ask for approval, then lane_pilot_workflow_draft, action publish with confirm: true";
   }
 
   function own(draftId: string, projectId: string): DraftRow {
     const draft = drafts.get(draftId);
-    if (!draft || draft.projectId !== projectId) throw new ToolError(`draft ${draftId} does not exist in this project`, { code: "not_found", retryable: false, sideEffects: "none", next: "lane_pilot_workflow_draft_get without a draftId lists the drafts of this project" });
+    if (!draft || draft.projectId !== projectId) throw new ToolError(`draft ${draftId} does not exist in this project`, { code: "not_found", retryable: false, sideEffects: "none", next: "lane_pilot_workflow_draft, action get without a draftId lists the drafts of this project" });
     return draft;
   }
 
@@ -164,7 +164,7 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
     const draft = drafts.create({ projectId: input.projectId, threadId: input.threadId, scope: input.scope, name: input.name, description: input.description, workflowId: input.workflowId });
     changed(draft, input.threadId);
     return { draftId: draft.id, workflowId: draft.workflowId, version: draft.version, scope: draft.scope, status: draft.status,
-      next: "ask the owner the short questions, then build with lane_pilot_workflow_draft_patch: set_meta (inputs, outputs, requires), then the nodes and edges a step at a time" };
+      next: "ask the owner the short questions, then build with lane_pilot_workflow_draft, action patch: set_meta (inputs, outputs, requires), then the nodes and edges a step at a time" };
   }
 
   function patch(input: { projectId: string; threadId?: string; draftId: string; ops: z.input<typeof draftOpSchema>[]; expectedVersion?: number }) {
@@ -172,7 +172,7 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
     const result = drafts.patch(input.draftId, input.ops, { expectedVersion: input.expectedVersion, validate: validation });
     if (!result.ok) {
       if (result.reason === "refused") return { ok: false, applied: false, refused: result.refused, note: "nothing was changed: fix the refused operations and send the patch again" };
-      if (result.reason === "version_conflict") return { ok: false, applied: false, reason: "version_conflict", currentVersion: result.currentVersion, note: "the draft changed since you read it (the owner or another chat): lane_pilot_workflow_draft_get, then patch again" };
+      if (result.reason === "version_conflict") return { ok: false, applied: false, reason: "version_conflict", currentVersion: result.currentVersion, note: "the draft changed since you read it (the owner or another chat): lane_pilot_workflow_draft, action get, then patch again" };
       throw new ToolError("draft does not exist", { code: "not_found", retryable: false, sideEffects: "none" });
     }
     changed(result.draft, input.threadId);
@@ -182,7 +182,7 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
 
   function get(input: { projectId: string; draftId?: string; history?: boolean }) {
     if (!input.draftId) {
-      return { drafts: drafts.list(input.projectId).map((draft) => summary(draft)), next: "pass a draftId to read one; lane_pilot_workflow_draft_create starts a new one" };
+      return { drafts: drafts.list(input.projectId).map((draft) => summary(draft)), next: "pass a draftId to read one; lane_pilot_workflow_draft, action create starts a new one" };
     }
     const draft = own(input.draftId, input.projectId);
     const check = checkOf(draft);
@@ -220,7 +220,7 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
   async function test(input: { projectId: string; threadId?: string; draftId: string; testCaseId?: string }) {
     const draft = own(input.draftId, input.projectId);
     const load = loaded(draft);
-    if (!load.ok) return { draftId: draft.id, version: draft.version, green: false, ran: false, reason: "invalid", problems: load.problems.filter((problem) => problem.level === "error").slice(0, MAX_SHOWN_PROBLEMS), next: "fix the errors with lane_pilot_workflow_draft_patch first" };
+    if (!load.ok) return { draftId: draft.id, version: draft.version, green: false, ran: false, reason: "invalid", problems: load.problems.filter((problem) => problem.level === "error").slice(0, MAX_SHOWN_PROBLEMS), next: "fix the errors with lane_pilot_workflow_draft, action patch first" };
     const cases = testCasesOf(load.workflow);
     const selected = input.testCaseId ? cases.filter((item) => item.id === input.testCaseId) : cases;
     if (!selected.length) throw new ToolError(`no test case "${input.testCaseId}"; the draft has: ${cases.map((item) => item.id).join(", ")}`, { code: "not_found", retryable: false, sideEffects: "none" });
@@ -238,8 +238,8 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
       cases: results.map((row) => ({ caseId: row.caseId, green: row.green, status: row.status, path: row.path, output: row.output, failures: row.failures, runId: row.runId, failedNode: row.failedNode,
         stubbedCalls: row.stubbed.map((call) => `${call.node} (${call.type}${call.executor !== call.type ? `: ${call.executor}` : ""})`), ...(row.notChecked.length ? { notChecked: row.notChecked } : {}) })),
       note: "agents, code tasks and actions ran on stubs: nothing was sent, searched or changed outside",
-      next: !green ? "read the failures, fix the draft or the case with lane_pilot_workflow_draft_patch, test again"
-        : complete ? "all cases are green: show the owner the result, then lane_pilot_workflow_draft_publish" : "this case is green; run the others (lane_pilot_workflow_draft_test without testCaseId) before publishing",
+      next: !green ? "read the failures, fix the draft or the case with lane_pilot_workflow_draft, action patch, test again"
+        : complete ? "all cases are green: show the owner the result, then lane_pilot_workflow_draft, action publish" : "this case is green; run the others (lane_pilot_workflow_draft, action test without testCaseId) before publishing",
     };
   }
 
@@ -247,9 +247,9 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
     const draft = own(input.draftId, input.projectId);
     const refuse = (reason: string, next: string, extra: Record<string, unknown> = {}) => ({ draftId: draft.id, published: false, reason, next, ...extra });
     const load = loaded(draft);
-    if (!load.ok) return refuse("invalid", "fix the errors with lane_pilot_workflow_draft_patch", { problems: load.problems.filter((problem) => problem.level === "error").slice(0, MAX_SHOWN_PROBLEMS) });
-    if (!draft.tests) return refuse("no_tests", "run lane_pilot_workflow_draft_test first");
-    if (draft.tests.version !== draft.version) return refuse("tests_stale", "the draft changed after its last test: run lane_pilot_workflow_draft_test again");
+    if (!load.ok) return refuse("invalid", "fix the errors with lane_pilot_workflow_draft, action patch", { problems: load.problems.filter((problem) => problem.level === "error").slice(0, MAX_SHOWN_PROBLEMS) });
+    if (!draft.tests) return refuse("no_tests", "run lane_pilot_workflow_draft, action test first");
+    if (draft.tests.version !== draft.version) return refuse("tests_stale", "the draft changed after its last test: run lane_pilot_workflow_draft, action test again");
     const cases = testCasesOf(load.workflow);
     if (!draft.tests.green || !cases.every((item) => draft.tests!.results.some((row) => row.caseId === item.id && row.green))) {
       return refuse("tests_not_green", "fix the failing cases and test again; a draft is published only when every case is green", { failing: draft.tests.results.filter((row) => !row.green).map((row) => ({ caseId: row.caseId, failures: row.failures })) });
