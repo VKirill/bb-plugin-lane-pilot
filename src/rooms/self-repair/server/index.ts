@@ -8,3 +8,4 @@ export { CONFIG_KEY, SELF_REPAIR_DEFAULTS, VERSION, logIncidents, mountSelfRepai
 export type { Incident, RepairWorktree, SelfRepairConfig, Verdict } from "./self-repair";
 export { getRepairHooks, setRepairHooks } from "./hooks";
 export type { MergeDecision, NightAssignment, RepairHooks } from "./hooks";
+export type { AnalyzerSelection, JobResult, ScanJob } from "./rule-scan";

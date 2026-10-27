@@ -1,6 +1,5 @@
 import { runOnHost } from "@lane-pilot/host-calls";
 import { writerExecutionSelection } from "@lane-pilot/models";
-import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { upsertLessonProposal, type RuleForm } from "@lane-pilot/run-insights";
 import {
   HarnessValidationError, LANE_PILOT_SURFACE, alwaysOnText, checkNames, composePrompt, experienceIsSupported, experiencePrompt, inventory, isBase, missionPointer,
@@ -18,6 +17,16 @@ import {
 } from "./store";
 import { TRIAL_DEFAULTS, decideTrial, type AdoptBy, type TrialConfig, type TrialDecision } from "./trial";
 import { getBenchProject, verdictForHarness } from "../../bench";
+import { builtinWorkflow } from "../../workflow";
+import type { StepContext } from "../../workflow";
+import type { ChainRuntime, GraphHelperRun } from "../../workflow/server";
+
+/** The graphs that run the model work of the harness: an improvement round for a key (prepare, edit, validate) and the reflection on a decided trial. */
+export const HARNESS_EDIT_WORKFLOW = "lp.harness-edit";
+export const HARNESS_REFLECT_WORKFLOW = "lp.harness-reflect";
+/** Runs one helper thread of a graph step (workflow/server's `runGraphHelper` bound to the step); passed in so this room does not import the workflow room's server. */
+export type GraphHelperFn = (input: { key: string; spawn: (graph: { spawnId: string; metadata: Record<string, unknown> }) => Promise<string>; waitMs?: number; label: string; projectId: string | null; archive?: boolean }) => Promise<GraphHelperRun>;
+export type HarnessStep = { c: StepContext<ChainRuntime>; helper: GraphHelperFn; runs: GraphHelperRun[] };
 
 /**
  * The writer harness that learns (the Harness² port, phases 1–5). Per (project, area, writer model) one tree is active:
@@ -73,6 +82,8 @@ const EVENT_PAGES_MAX = 60;
 const TRAJECTORY_MAX_CHARS = 120_000;
 /** The second editor of a round starts this much later than the first (OpenCode startup holds its database). */
 const EDITOR_STAGGER_MS = 15_000;
+/** The waits of a round, in one place so a test can shorten them: the second editor starts later, and a session that ended early is retried after a pause. */
+export const HARNESS_TUNING = { editorStaggerMs: EDITOR_STAGGER_MS, retryDelayMs: 20_000 };
 
 export type BriefParts = { harnessId: string; arm: "new" | "old" | null; alwaysOn: string; memory: string; skillNames: string[]; checkNames: string[]; tree: Tree };
 
@@ -387,110 +398,182 @@ export function createHarness(ctx: ServerCore, services: Services) {
 
   type Session = StageSession;
 
-  /** One agentic session over a folder: spawn, wait until idle, read the reply and harvest `context/harness/`. */
-  async function session(input: { projectId: string; where: { hostId: string; path: string }; folder: string; title: string; mission: string; role: string; cfg: HarnessConfig; harvest: boolean; model?: HarnessRole }): Promise<Session> {
+  /** A step of a graph run that starts helper threads: its context, the helper runner (workflow/server's, passed in), and the runs it made (for the usage the step reports). */
+  type GraphStep = HarnessStep;
+  const stopped = (step: GraphStep): boolean => ctx.isDisposed() || step.c.signal.aborted;
+
+  /**
+   * One agentic session over a folder, as a helper of the graph step that asked: spawn (a journal effect named by `key`), wait until idle, read the
+   * reply and harvest `context/harness/`. A session that fails gives `error` (the stage loop decides what to do), unless the plugin is going away.
+   */
+  async function session(input: { projectId: string; where: { hostId: string; path: string }; folder: string; title: string; mission: string; role: string; cfg: HarnessConfig; harvest: boolean; model?: HarnessRole; step: GraphStep; key: string }): Promise<Session> {
     const selection = roleSelection(input.cfg, input.model ?? "inv");
     const cwd = `${input.where.path}/${input.folder}`;
     let threadId: string | null = null;
     try {
-      const spawned = await fullAccessSpawn(bb, {
-        projectId: input.projectId,
-        environment: { type: "host", hostId: input.where.hostId, workspace: { type: "unmanaged", path: cwd } },
-        title: input.title, prompt: input.mission,
-        ...writerExecutionSelection(selection.providerId, selection.model, selection.reasoningLevel, "default"),
-        pluginMetadata: { role: input.role, lanePilotProjectId: input.projectId, harnessFolder: input.folder, model: `${selection.providerId}/${selection.model}` },
-      } as Parameters<typeof fullAccessSpawn>[1]);
-      threadId = stringAt(spawned, "id") ?? null;
-      if (!threadId) return { threadId, text: "", tree: null, error: "spawn returned no thread id" };
-      await waitThreadIdle(bb, threadId, "harness_session_timeout", input.cfg.waitMinutes * 60_000);
-      const output = await bb.sdk.threads.output({ threadId }).then((result) => { const value = (result as { output?: unknown; text?: unknown }).output ?? (result as { text?: unknown }).text; return typeof value === "string" ? value : ""; }).catch(() => "");
+      // A finished session is a record, not a conversation: it leaves the project's thread list (the owner saw a dozen
+      // «Lane Pilot harness editor …» rows on 2026-10-19). The notes, the tree and the decision are stored on the hub.
+      const run = await input.step.helper({
+        key: input.key, label: "harness_session_timeout", waitMs: input.cfg.waitMinutes * 60_000, projectId: input.projectId, archive: true,
+        spawn: async (graph) => {
+          const spawned = await fullAccessSpawn(bb, {
+            projectId: input.projectId,
+            environment: { type: "host", hostId: input.where.hostId, workspace: { type: "unmanaged", path: cwd } },
+            title: input.title, prompt: input.mission,
+            ...writerExecutionSelection(selection.providerId, selection.model, selection.reasoningLevel, "default"),
+            pluginMetadata: { role: input.role, lanePilotProjectId: input.projectId, harnessFolder: input.folder, model: `${selection.providerId}/${selection.model}`, ...graph.metadata, spawnId: graph.spawnId },
+          } as Parameters<typeof fullAccessSpawn>[1]);
+          const id = stringAt(spawned, "id");
+          if (!id) throw new Error("spawn returned no thread id");
+          threadId = id;
+          return id;
+        },
+      });
+      threadId = run.threadId;
+      input.step.runs.push(run);
       let tree: Tree | null = null;
       if (input.harvest) {
         const harvested = await runOnHost(host, { hostId: input.where.hostId, cwd, command: harvestCommand(), timeoutSec: 60 });
         tree = parseHarvest(harvested.stdout);
       }
-      return { threadId, text: output, tree, error: null };
+      return { threadId, text: run.text, tree, error: null };
     } catch (cause) {
+      if (stopped(input.step)) throw cause;
       return { threadId, text: "", tree: null, error: cause instanceof Error ? cause.message : String(cause) };
-    } finally {
-      // A finished session is a record, not a conversation: it leaves the project's thread list (the owner saw a dozen
-      // «Lane Pilot harness editor …» rows on 2026-10-19). The notes, the tree and the decision are stored on the hub.
-      if (threadId) await bb.sdk.threads.archive({ threadId }).catch(() => undefined);
     }
   }
 
-  /** A stage with its one retry on a rejected tree and one on a session that ended early (`runStage`). */
-  async function stage(input: Omit<Parameters<typeof session>[0], "harvest"> & { fallback: Tree }): Promise<StageResult> {
+  /** A stage with its one retry on a rejected tree and one on a session that ended early (`runStage`); each session of it is a helper named `<label>:<n>`. */
+  async function stage(input: Omit<Parameters<typeof session>[0], "harvest" | "key"> & { fallback: Tree; label: string }): Promise<StageResult> {
+    let sessions = 0;
     return runStage({ mission: input.mission, fallback: input.fallback, title: input.title },
-      (mission) => session({ ...input, mission, harvest: true }), (line) => ctx.log(line));
+      (mission) => session({ ...input, mission, harvest: true, key: `${input.label}:${++sessions}` }), (line) => ctx.log(line), HARNESS_TUNING.retryDelayMs);
   }
 
   /**
-   * One improvement round for a key: evidence on disk, two editors (invariant, domain) in parallel, one composer, and
-   * the composed tree on trial. KEEP_BASE at any stage ends the round with nothing on trial.
+   * Step `prepare` of `lp.harness-edit`: whether a round may start for the key, and where it works. Nothing is written yet.
+   * A key with no reachable folder fails the step (the editor has nowhere to work: that is a failure of the setup, not a quiet skip).
    */
-  async function runEditor(input: { projectId: string; area: string; writerKey: string; reason?: string }): Promise<{ status: "started" | "trial" | "keep_base" | "skipped" | "failed"; detail: string; candidateId?: string; threadIds: string[] }> {
+  async function prepareEdit(input: { projectId: string; area: string; writerKey: string }): Promise<{ status: "ready" | "skipped"; detail: string; hostId: string; path: string }> {
+    const none = { hostId: "", path: "" };
+    const cfg = await config(input.projectId);
+    if (!cfg.enabled) return { status: "skipped", detail: "harness editing is off for this project", ...none };
+    if (trialHarness(db, input.projectId, input.area, input.writerKey)) return { status: "skipped", detail: "a candidate is already on trial for this key", ...none };
+    const where = await place(input.projectId, input.area);
+    if (!where) throw new Error("no reachable folder for the editor: the key's runs name no host and workspace, and the project binding has no folder");
+    return { status: "ready", detail: "", hostId: where.hostId, path: where.path };
+  }
+
+  /**
+   * Step `edit` of `lp.harness-edit`, the model work of one improvement round for a key: evidence on disk, two editors (invariant, domain) in
+   * parallel, one composer. KEEP_BASE at any stage ends the round with nothing to put on trial. Every session is a helper thread of the step; the
+   * step returns what the round made (the composed tree, the editors' notes) and `validate` decides what to do with it.
+   */
+  async function editRound(step: GraphStep, input: { projectId: string; area: string; writerKey: string; where: { hostId: string; path: string }; stamp: string }): Promise<Record<string, unknown>> {
+    const { projectId, area, writerKey, where } = input;
+    const key = `${projectId}:${area}:${writerKey}`;
+    const cfg = await config(projectId);
+    const active = activeHarness(db, projectId, area, writerKey);
+    const attempts = await collectEvidence(projectId, area, writerKey, cfg.attemptsPerEvidence, Date.now() - cfg.windowDays * 86_400_000);
+    if (attempts.length === 0) return { status: "skipped", detail: "no finished attempts of this key in the window", tree: {}, inv_notes: "", dom_notes: "", compose_notes: "", thread_ids: [] };
+    const library = libraryEntries(projectId, area);
+    const round = `${HARNESS_DIR}-edit/${slug(area || "project")}__${slug(writerKey)}/${input.stamp}`;
+    await runOnHost(host, { hostId: where.hostId, cwd: where.path, command: ensureExcludeLinesCommand([".lane-pilot/"]), timeoutSec: 30 }).catch(() => undefined);
+    const base = evidenceFiles({ area, writerKey, attempts, harness: active.tree, library, repoPath: where.path });
+    const promptCtx = { area: area || "(whole project)", writerKey };
+    await Promise.all(["inv", "dom"].map((label) => writeFiles(where, `${round}/${label}`, base)));
+    const layout = evidenceLayout(base);
+    // The two editors run side by side, the second one started a little later: two OpenCode processes starting on the
+    // same host within two seconds collided on OpenCode's database («thread.start failed … database is locked»,
+    // BB-сервис feature:shell, 2026-10-19 04:10 UTC). The self-repair's second session covers the rest.
+    const [inv, dom] = await Promise.all((["INV", "DOM"] as const).map(async (dim, index) => { if (index > 0) await new Promise((resolve) => setTimeout(resolve, HARNESS_TUNING.editorStaggerMs)); return stage({
+      projectId, where, folder: `${round}/${dim.toLowerCase()}`, cfg, fallback: active.tree, step, label: dim.toLowerCase(),
+      title: `Lane Pilot harness editor (${dim}): ${area || "project"} / ${writerKey}`, role: "harness-editor", model: dim === "INV" ? "inv" : "dom",
+      mission: missionPointer(proposePrompt(dim, promptCtx), layout),
+    }); }));
+    const threadIds = [...inv.threadIds, ...dom.threadIds];
+    const common = { inv_notes: inv.notes, dom_notes: dom.notes, compose_notes: "" };
+    for (const [label, result] of [["inv", inv], ["dom", dom]] as const) if (result.error) ctx.log(`harness ${key}: ${label} editor failed: ${result.error}`);
+    // Two failed editors kept nothing: the nightly line said «keep_base: both editors kept the current harness» for a
+    // round where neither got to edit (BB-сервис feature:shell, 2026-10-19).
+    if (inv.error && dom.error) return { status: "failed", detail: `both editors failed: inv ${inv.error}; dom ${dom.error}`, tree: {}, ...common, thread_ids: threadIds };
+    if (inv.keptBase && dom.keptBase) return { status: "keep_base", detail: "both editors kept the current harness", tree: {}, ...common, thread_ids: threadIds };
+    const pool: PoolCandidate[] = [{ label: "inv", tree: inv.tree, diff: treeDiff(active.tree, inv.tree), notes: inv.notes }, { label: "dom", tree: dom.tree, diff: treeDiff(active.tree, dom.tree), notes: dom.notes }];
+    const composeFiles = evidenceFiles({ area, writerKey, attempts, harness: active.tree, library, pool, decisions: { inv: inv.notes || inv.error || "", dom: dom.notes || dom.error || "" }, repoPath: where.path });
+    await writeFiles(where, `${round}/compose`, composeFiles);
+    const composed = await stage({
+      projectId, where, folder: `${round}/compose`, cfg, fallback: active.tree, step, label: "compose",
+      title: `Lane Pilot harness composer: ${area || "project"} / ${writerKey}`, role: "harness-composer", model: "compose",
+      mission: missionPointer(composePrompt(promptCtx, 2), evidenceLayout(composeFiles)),
+    });
+    threadIds.push(...composed.threadIds);
+    if (composed.error) ctx.log(`harness ${key}: composer failed: ${composed.error}`);
+    const notes = { ...common, compose_notes: composed.notes };
+    if (composed.keptBase) return { status: "keep_base", detail: composed.error ? `composer failed (${composed.error}); the current harness stays` : "the composer kept the current harness", tree: {}, ...notes, thread_ids: threadIds };
+    return { status: "edited", detail: "", tree: composed.tree, ...notes, thread_ids: threadIds };
+  }
+
+  /**
+   * Step `validate` of `lp.harness-edit`: what the round made goes on trial as a candidate tree (alternating with the active one on the key's next
+   * tasks), or is recorded as «kept the base». A round that failed (both editors, or the composer's spawn) fails the step. Run again after a reload it
+   * finds the candidate it already made.
+   */
+  async function validateEdit(input: { projectId: string; area: string; writerKey: string; reason: string | null }, edit: Record<string, unknown>): Promise<{ status: "trial" | "keep_base" | "skipped"; detail: string; candidateId: string }> {
+    const { projectId, area, writerKey } = input;
+    const key = `${projectId}:${area}:${writerKey}`;
+    const status = typeof edit.status === "string" ? edit.status : "failed";
+    const detail = typeof edit.detail === "string" ? edit.detail : "";
+    const notes = { inv: String(edit.inv_notes ?? ""), dom: String(edit.dom_notes ?? ""), ...(String(edit.compose_notes ?? "") ? { compose: String(edit.compose_notes) } : {}) };
+    if (status === "skipped") return { status: "skipped", detail, candidateId: "" };
+    if (status === "keep_base") {
+      await bb.storage.kv.set(LAST_EDIT_KEY(projectId, area, writerKey), { at: Date.now(), result: "keep_base", notes } as never);
+      return { status: "keep_base", detail, candidateId: "" };
+    }
+    if (status !== "edited") throw new Error(detail || "the harness round failed");
+    const tree = edit.tree as Tree;
+    try { validate(tree); } catch (cause) { throw new Error(`the composed tree is not valid: ${cause instanceof Error ? cause.message : String(cause)}`); }
+    const open = trialHarness(db, projectId, area, writerKey);
+    if (open) return { status: "trial", detail: inventory(open.tree), candidateId: open.id };
+    const active = activeHarness(db, projectId, area, writerKey);
+    const candidate = insertHarness(db, { projectId, area, writerKey, tree, state: "trial", createdBy: "editor", parentId: active.id,
+      notes: [`## inv\n${notes.inv}`, `## dom\n${notes.dom}`, `## compose\n${notes.compose ?? ""}`].join("\n\n").slice(0, 20_000), reason: input.reason });
+    await bb.storage.kv.set(LAST_EDIT_KEY(projectId, area, writerKey), { at: Date.now(), result: "trial", candidateId: candidate.id } as never);
+    ctx.log(`harness ${key}: candidate ${candidate.id} on trial (${inventory(candidate.tree)}) from threads ${(edit.thread_ids as string[] | undefined ?? []).join(", ")}`);
+    ctx.realtime.notify(projectId, "harness");
+    return { status: "trial", detail: inventory(candidate.tree), candidateId: candidate.id };
+  }
+
+  const TERMINAL_RUN = ["succeeded", "failed", "blocked", "interrupted", "canceled"];
+
+  /**
+   * One improvement round for a key, as a run of the graph `lp.harness-edit` (prepare, edit, validate). The key's lock, the switch and the open-trial
+   * check stay here; `night` makes the run the night's own (a second start the same night finds it), a manual round has none.
+   */
+  async function runEditor(input: { projectId: string; area: string; writerKey: string; reason?: string; night?: string }): Promise<{ status: "started" | "trial" | "keep_base" | "skipped" | "failed"; detail: string; candidateId?: string; threadIds: string[] }> {
     const area = input.area.trim(), writerKey = input.writerKey || ANY_WRITER;
     const key = `${input.projectId}:${area}:${writerKey}`;
     if (running.has(key)) return { status: "skipped", detail: "an editor is already running for this key", threadIds: [] };
     const cfg = await config(input.projectId);
     if (!cfg.enabled) return { status: "skipped", detail: "harness editing is off for this project", threadIds: [] };
     if (trialHarness(db, input.projectId, area, writerKey)) return { status: "skipped", detail: "a candidate is already on trial for this key", threadIds: [] };
-    const where = await place(input.projectId, area);
-    if (!where) return { status: "failed", detail: "no reachable folder for the editor: the key's runs name no host and workspace, and the project binding has no folder", threadIds: [] };
+    const runKey = `harness-edit:${key}:${input.night ?? Date.now()}`;
+    const prior = db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(runKey) as { status: string } | undefined;
+    if (prior && TERMINAL_RUN.includes(prior.status)) return { status: "skipped", detail: "the round of this night already ran", threadIds: [] };
+    const workflow = builtinWorkflow(HARNESS_EDIT_WORKFLOW);
+    if (!workflow) return { status: "failed", detail: `built-in workflow ${HARNESS_EDIT_WORKFLOW} is not loaded`, threadIds: [] };
     running.add(key);
-    const threadIds: string[] = [];
     try {
-      const active = activeHarness(db, input.projectId, area, writerKey);
-      const attempts = await collectEvidence(input.projectId, area, writerKey, cfg.attemptsPerEvidence, Date.now() - cfg.windowDays * 86_400_000);
-      if (attempts.length === 0) return { status: "skipped", detail: "no finished attempts of this key in the window", threadIds };
-      const library = libraryEntries(input.projectId, area);
-      const stamp = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15);
-      const round = `${HARNESS_DIR}-edit/${slug(area || "project")}__${slug(writerKey)}/${stamp}`;
-      await runOnHost(host, { hostId: where.hostId, cwd: where.path, command: ensureExcludeLinesCommand([".lane-pilot/"]), timeoutSec: 30 }).catch(() => undefined);
-      const base = evidenceFiles({ area, writerKey, attempts, harness: active.tree, library, repoPath: where.path });
-      const promptCtx = { area: area || "(whole project)", writerKey };
-      await Promise.all(["inv", "dom"].map((label) => writeFiles(where, `${round}/${label}`, base)));
-      const layout = evidenceLayout(base);
-      // The two editors run side by side, the second one started a little later: two OpenCode processes starting on the
-      // same host within two seconds collided on OpenCode's database («thread.start failed … database is locked»,
-      // BB-сервис feature:shell, 2026-10-19 04:10 UTC). The self-repair's second session covers the rest.
-      const [inv, dom] = await Promise.all((["INV", "DOM"] as const).map(async (dim, index) => { if (index > 0) await new Promise((resolve) => setTimeout(resolve, EDITOR_STAGGER_MS)); return stage({
-        projectId: input.projectId, where, folder: `${round}/${dim.toLowerCase()}`, cfg, fallback: active.tree,
-        title: `Lane Pilot harness editor (${dim}): ${area || "project"} / ${writerKey}`, role: "harness-editor", model: dim === "INV" ? "inv" : "dom",
-        mission: missionPointer(proposePrompt(dim, promptCtx), layout),
-      }); }));
-      threadIds.push(...inv.threadIds, ...dom.threadIds);
-      for (const [label, result] of [["inv", inv], ["dom", dom]] as const) if (result.error) ctx.log(`harness ${key}: ${label} editor failed: ${result.error}`);
-      // Two failed editors kept nothing: the nightly line said «keep_base: both editors kept the current harness» for a
-      // round where neither got to edit (BB-сервис feature:shell, 2026-10-19).
-      if (inv.error && dom.error) return { status: "failed", detail: `both editors failed: inv ${inv.error}; dom ${dom.error}`, threadIds };
-      if (inv.keptBase && dom.keptBase) {
-        await bb.storage.kv.set(LAST_EDIT_KEY(input.projectId, area, writerKey), { at: Date.now(), result: "keep_base", notes: { inv: inv.notes, dom: dom.notes } } as never);
-        return { status: "keep_base", detail: "both editors kept the current harness", threadIds };
-      }
-      const pool: PoolCandidate[] = [{ label: "inv", tree: inv.tree, diff: treeDiff(active.tree, inv.tree), notes: inv.notes }, { label: "dom", tree: dom.tree, diff: treeDiff(active.tree, dom.tree), notes: dom.notes }];
-      const composeFiles = evidenceFiles({ area, writerKey, attempts, harness: active.tree, library, pool, decisions: { inv: inv.notes || inv.error || "", dom: dom.notes || dom.error || "" }, repoPath: where.path });
-      await writeFiles(where, `${round}/compose`, composeFiles);
-      const composed = await stage({
-        projectId: input.projectId, where, folder: `${round}/compose`, cfg, fallback: active.tree,
-        title: `Lane Pilot harness composer: ${area || "project"} / ${writerKey}`, role: "harness-composer", model: "compose",
-        mission: missionPointer(composePrompt(promptCtx, 2), evidenceLayout(composeFiles)),
+      const started = services.workflowEngine.start({
+        workflow, key: runKey, link: { projectId: input.projectId }, runtime: { ctx, services, pmThreadId: null, projectId: input.projectId, runId: null } satisfies ChainRuntime,
+        inputs: { project_id: input.projectId, area, writer_key: writerKey, reason: input.reason ?? "" },
       });
-      threadIds.push(...composed.threadIds);
-      if (composed.error) ctx.log(`harness ${key}: composer failed: ${composed.error}`);
-      if (composed.keptBase) {
-        await bb.storage.kv.set(LAST_EDIT_KEY(input.projectId, area, writerKey), { at: Date.now(), result: "keep_base", notes: { inv: inv.notes, dom: dom.notes, compose: composed.notes } } as never);
-        return { status: "keep_base", detail: composed.error ? `composer failed (${composed.error}); the current harness stays` : "the composer kept the current harness", threadIds };
-      }
-      const candidate = insertHarness(db, { projectId: input.projectId, area, writerKey, tree: composed.tree, state: "trial", createdBy: "editor", parentId: active.id,
-        notes: [`## inv\n${inv.notes}`, `## dom\n${dom.notes}`, `## compose\n${composed.notes}`].join("\n\n").slice(0, 20_000), reason: input.reason ?? null });
-      await bb.storage.kv.set(LAST_EDIT_KEY(input.projectId, area, writerKey), { at: Date.now(), result: "trial", candidateId: candidate.id } as never);
-      ctx.log(`harness ${key}: candidate ${candidate.id} on trial (${inventory(candidate.tree)}) from threads ${threadIds.join(", ")}`);
-      ctx.realtime.notify(input.projectId, "harness");
-      return { status: "trial", detail: inventory(candidate.tree), candidateId: candidate.id, threadIds };
+      const summary = await started.done;
+      if (summary.status !== "succeeded") return { status: "failed", detail: summary.error ?? summary.reason ?? `the harness round ${summary.status}`, threadIds: [] };
+      const out = summary.output ?? {};
+      const status = out.status === "trial" || out.status === "keep_base" ? out.status : "skipped";
+      return { status, detail: String(out.detail ?? ""), ...(typeof out.candidate_id === "string" && out.candidate_id ? { candidateId: out.candidate_id } : {}), threadIds: Array.isArray(out.thread_ids) ? out.thread_ids.map(String) : [] };
     } catch (cause) {
-      return { status: "failed", detail: cause instanceof Error ? cause.message : String(cause), threadIds };
+      return { status: "failed", detail: cause instanceof Error ? cause.message : String(cause), threadIds: [] };
     } finally {
       running.delete(key);
     }
@@ -528,13 +611,17 @@ export function createHarness(ctx: ServerCore, services: Services) {
     return out;
   }
 
-  /** After a trial decided: what each edit did, and the one lesson that transfers, into the library and the rules pipeline. */
-  async function reflect(trialId: string): Promise<{ status: "done" | "skipped" | "failed"; detail: string }> {
+  /**
+   * Step `prepare` of `lp.harness-reflect`: the evidence of both arms of a decided trial is written beside the repository and the reflection's mission
+   * is made. A trial that has not decided is skipped; one with no reachable folder fails the step.
+   */
+  async function prepareReflect(trialId: string): Promise<{ status: "ready" | "skipped"; detail: string; projectId: string; hostId: string; path: string; folder: string; mission: string }> {
+    const none = { projectId: "", hostId: "", path: "", folder: "", mission: "" };
     const trial = getHarness(db, trialId);
-    if (!trial || !["adopted", "retired"].includes(trial.state)) return { status: "skipped", detail: "the trial has not decided" };
+    if (!trial || !["adopted", "retired"].includes(trial.state)) return { status: "skipped", detail: "the trial has not decided", ...none };
     const cfg = await config(trial.projectId);
     const where = await place(trial.projectId, trial.area);
-    if (!where) return { status: "failed", detail: "no reachable folder for the reflection" };
+    if (!where) throw new Error("no reachable folder for the reflection");
     const parent = trial.parentId ? getHarness(db, trial.parentId) : null;
     const rows = trialAttempts(db, trial);
     const pick = (arm: "new" | "old") => rows.filter((row) => row.arm === arm).slice(-3).map((row) => row.attemptId);
@@ -547,12 +634,26 @@ export function createHarness(ctx: ServerCore, services: Services) {
     });
     const folder = `${HARNESS_DIR}-edit/${slug(trial.area || "project")}__${slug(trial.writerKey)}/reflect-${trial.id}`;
     await writeFiles(where, folder, files);
-    const result = await session({ projectId: trial.projectId, where, folder, cfg, harvest: false, role: "harness-reflection", model: "reflect",
-      title: `Lane Pilot harness reflection: ${trial.area || "project"} / ${trial.writerKey}`,
-      mission: missionPointer(`${experiencePrompt({ area: trial.area || "(whole project)", writerKey: trial.writerKey })}\n\n# WHAT HAPPENED\n\nThe candidate (context/pool/candidate/, also context/harness/) was ${trial.state}: ${trial.reason ?? ""}. Attempts of both arms are under context/attempts/ (brief.md names the tree and arm). Compare context/harness/ with context/base_harness/.`, evidenceLayout(files)) });
-    if (result.error) return { status: "failed", detail: result.error };
-    const edits = parseEdits(result.text);
-    const experience = parseExperience(result.text);
+    const mission = missionPointer(`${experiencePrompt({ area: trial.area || "(whole project)", writerKey: trial.writerKey })}\n\n# WHAT HAPPENED\n\nThe candidate (context/pool/candidate/, also context/harness/) was ${trial.state}: ${trial.reason ?? ""}. Attempts of both arms are under context/attempts/ (brief.md names the tree and arm). Compare context/harness/ with context/base_harness/.`, evidenceLayout(files));
+    return { status: "ready", detail: "", projectId: trial.projectId, hostId: where.hostId, path: where.path, folder, mission };
+  }
+
+  /** Step `reflect` of `lp.harness-reflect`: the one session that reads both arms. A session that fails fails the step. */
+  async function reflectSession(step: GraphStep, trialId: string, prepared: { projectId: string; hostId: string; path: string; folder: string; mission: string }): Promise<string> {
+    const trial = getHarness(db, trialId);
+    if (!trial) throw new Error(`harness ${trialId} is gone`);
+    const result = await session({ projectId: prepared.projectId, where: { hostId: prepared.hostId, path: prepared.path }, folder: prepared.folder, cfg: await config(prepared.projectId), harvest: false, role: "harness-reflection", model: "reflect",
+      title: `Lane Pilot harness reflection: ${trial.area || "project"} / ${trial.writerKey}`, mission: prepared.mission, step, key: "reflect" });
+    if (result.error) throw new Error(result.error);
+    return result.text;
+  }
+
+  /** Step `record` of `lp.harness-reflect`: what each edit did and the one lesson that transfers, into the library and the rules pipeline. */
+  function recordReflect(trialId: string, answer: string): { status: "done"; detail: string } {
+    const trial = getHarness(db, trialId);
+    if (!trial) throw new Error(`harness ${trialId} is gone`);
+    const edits = parseEdits(answer);
+    const experience = parseExperience(answer);
     const supported = experienceIsSupported(experience, edits);
     let ruleId: string | null = null;
     if (experience && supported) {
@@ -563,6 +664,26 @@ export function createHarness(ctx: ServerCore, services: Services) {
     saveExperience(db, { harnessId: trial.id, editsMd, cue: supported ? experience!.cue : null, lesson: supported ? experience!.lesson : null, evidence: supported ? experience!.evidence : null, confidence: supported ? experience!.confidence || null : null, ruleId });
     ctx.realtime.notify(trial.projectId, "harness");
     return { status: "done", detail: `${edits.length} edit rows, ${supported ? `lesson → ${ruleId}` : "NO_ENTRY"}` };
+  }
+
+  /** After a trial decided: what each edit did, and the one lesson that transfers, as a run of the graph `lp.harness-reflect` (named by the trial: it runs once). */
+  async function reflect(trialId: string): Promise<{ status: "done" | "skipped" | "failed"; detail: string }> {
+    const trial = getHarness(db, trialId);
+    if (!trial || !["adopted", "retired"].includes(trial.state)) return { status: "skipped", detail: "the trial has not decided" };
+    const workflow = builtinWorkflow(HARNESS_REFLECT_WORKFLOW);
+    if (!workflow) return { status: "failed", detail: `built-in workflow ${HARNESS_REFLECT_WORKFLOW} is not loaded` };
+    try {
+      const started = services.workflowEngine.start({
+        workflow, key: `harness-reflect:${trialId}`, link: { projectId: trial.projectId }, runtime: { ctx, services, pmThreadId: null, projectId: trial.projectId, runId: null } satisfies ChainRuntime,
+        inputs: { project_id: trial.projectId, trial_id: trialId },
+      });
+      const summary = await started.done;
+      if (summary.status !== "succeeded") return { status: "failed", detail: summary.error ?? summary.reason ?? `the reflection ${summary.status}` };
+      const out = summary.output ?? {};
+      return { status: out.status === "done" ? "done" : "skipped", detail: String(out.detail ?? "") };
+    } catch (cause) {
+      return { status: "failed", detail: cause instanceof Error ? cause.message : String(cause) };
+    }
   }
 
   async function teachingProjects(since: number): Promise<string[]> {
@@ -578,7 +699,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
   }
 
   /** One night's work for a project: judge the trials, then start editors for the keys with enough new attempts. */
-  async function tick(projectId: string, options: { dryRun?: boolean } = {}): Promise<{ trials: Awaited<ReturnType<typeof evaluateTrials>>; editors: Array<{ area: string; writerKey: string; attempts: number; result: string }> }> {
+  async function tick(projectId: string, options: { dryRun?: boolean; night?: string } = {}): Promise<{ trials: Awaited<ReturnType<typeof evaluateTrials>>; editors: Array<{ area: string; writerKey: string; attempts: number; result: string }> }> {
     const cfg = await config(projectId);
     const trials = await evaluateTrials(projectId, { dryRun: options.dryRun });
     const editors: Array<{ area: string; writerKey: string; attempts: number; result: string }> = [];
@@ -591,7 +712,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
       const last = await bb.storage.kv.get(LAST_EDIT_KEY(projectId, key.area, key.writerKey)).catch(() => null) as { at?: number } | null;
       if (last?.at && Date.now() - last.at < cfg.windowDays * 86_400_000) { editors.push({ ...key, result: "edited recently" }); continue; }
       if (options.dryRun) { editors.push({ ...key, result: "would start an editor" }); started++; continue; }
-      const result = await runEditor({ projectId, area: key.area, writerKey: key.writerKey, reason: `nightly: ${key.attempts} attempts in ${cfg.windowDays} days` });
+      const result = await runEditor({ projectId, area: key.area, writerKey: key.writerKey, ...(options.night ? { night: options.night } : {}), reason: `nightly:${key.attempts} attempts in ${cfg.windowDays} days` });
       editors.push({ ...key, result: `${result.status}: ${result.detail}` });
       started++;
     }
@@ -617,12 +738,14 @@ export function createHarness(ctx: ServerCore, services: Services) {
     if (ctx.isDisposed() || signal?.aborted) return;
     for (const projectId of await teachingProjects(Date.now() - 30 * 86_400_000)) {
       if (ctx.isDisposed() || signal?.aborted) return;
-      const result = await tick(projectId).catch((cause) => { ctx.log(`harness nightly for ${projectId} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
+      const result = await tick(projectId, { night: new Date().toISOString().slice(0, 10) }).catch((cause) => { ctx.log(`harness nightly for ${projectId} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
       if (result) bb.log.info(`Lane Pilot harness nightly ${projectId}: ${result.trials.length} trials judged, editors: ${result.editors.map((row) => `${row.area || "project"}/${row.writerKey}=${row.result}`).join("; ") || "none"}`);
     }
   }, { timeoutMs: 5 * 3_600_000 });
 
-  return { config, setConfig, forAttempt, materialize, checksForAttempt, checksForWriterThread, runEditor, evaluateTrials, reflect, tick, status, trajectory };
+  /** The code and session steps the graphs `lp.harness-edit` and `lp.harness-reflect` wrap (night-graphs/server/harness-graph.ts). */
+  const graph = { prepareEdit, editRound, validateEdit, prepareReflect, reflectSession, recordReflect };
+  return { config, setConfig, forAttempt, materialize, checksForAttempt, checksForWriterThread, runEditor, evaluateTrials, reflect, tick, status, trajectory, graph };
 }
 
 export type HarnessApi = ReturnType<typeof createHarness>;

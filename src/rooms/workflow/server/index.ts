@@ -11,3 +11,5 @@ export type { ChainRuntime } from "./workflow-runtime";
 export { mountWorkflowTools } from "./workflow-tools";
 export { createWorkflowTriggersService } from "./workflow-triggers-live";
 export { createWorkflowEngine } from "./workflow";
+export { runGraphHelper, sumUsage } from "./graph-helper";
+export type { GraphHelperRun } from "./graph-helper";

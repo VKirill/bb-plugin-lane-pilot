@@ -3,17 +3,18 @@ import {
   classifyUnformed, codeVerdict, decideRuleTrial, scopeApplies, getRuleProposal, listRuleProposals, logRuleEvent, ruleTrialStats, saveTriage, setRuleTrial, splitRejectedPaths, triageQuestions, triageState, triageSummary, untriagedAttempts, upsertModelProposal, writerGroups,
   type FailedAttempt, type RuleEvidence, type TriageSummary, type WriterGroup,
 } from "@lane-pilot/run-insights";
-import { observeStageChild } from "@lane-pilot/thread-observe";
 import { getRun, getRunSettingsScopes } from "../../storage";
 import { fileAllowedByOwns, fileBlockedByNeverTouch } from "@lane-pilot/kit";
-import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
+import { bbServiceTier, resolveRoleModel, writerExecutionSelection } from "@lane-pilot/models";
+import { outputText } from "../../writer/server/writer-task";
 import { adoptRuleProposal, refreshRuleProposals, retireAdoptedRule, rewordAdoptedRule } from "./insights";
 import { fullAccessSpawn } from "../../core/server";
 import { spawnTextId } from "../../core/server";
+import { builtinWorkflow } from "../../workflow";
+import type { ChainRuntime } from "../../workflow/server";
 import { scheduleIsolated } from "../../core/server";
 import { stringAt } from "../../core/server";
 import { SANDBOX_PROJECT_ID, isSandboxProjectName } from "../../stability/server";
-import { outputText } from "../../writer/server/writer-task";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 
@@ -25,6 +26,10 @@ const ANALYZER_LIMIT_MS = 20 * 60_000;
 /** Rewrites of rules on trial one scan may spend the analyzer on. */
 const MAX_REVISIONS_PER_SCAN = 2;
 
+/** The graphs that run the rules analyzer: a scan of one project (collect, analyze, apply) and the one-step ask the learning review makes. */
+export const RULES_SCAN_WORKFLOW = "lp.rules-scan";
+export const RULES_ASK_WORKFLOW = "lp.rules-ask";
+
 export const DEFAULT_ANALYZER = { providerId: "codex", model: "gpt-6-luna", reasoningLevel: "high", serviceTier: "fast" } as const;
 export type AnalyzerSelection = { providerId: string; model: string; reasoningLevel: string; serviceTier: "default" | "fast" | null };
 export type RuleScanState = {
@@ -34,6 +39,15 @@ export type RuleScanState = {
   /** What the trial did in this scan: rules adopted, confirmed, rewritten, retired. */
   adopted?: number; confirmed?: number; revised?: number; retired?: number;
 };
+
+/** The evidence of one failure an analyzer may cite: enough to write a proposal's evidence row without the group in hand. */
+export type ScanCite = { taskId: string; runId: string; attemptId: string; failedAt: number; reason: string };
+/** One model call of a scan, planned by `collectScan`: a writer group to find a rule in, or a rule on trial to rewrite. */
+export type ScanJob =
+  | { id: string; kind: "analyze"; title: string; prompt: string; category: string; scope: string[]; known: ScanCite[] }
+  | { id: string; kind: "rewrite"; title: string; prompt: string; ruleId: string };
+export type ScanPlan = { state: "ok" | "fallback"; triaged: number; groups: number; jobs: ScanJob[]; hostId: string; path: string; analyzer: AnalyzerSelection | null };
+export type JobResult = { id: string; text: string | null; error: string | null };
 
 const ANALYZER_KEY = (projectId: string) => `rules-analyzer:${projectId}`;
 const SCAN_KEY = (projectId: string) => `rules-scan:${projectId}`;
@@ -110,10 +124,12 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
   async function analyzerFor(projectId: string): Promise<AnalyzerSelection | null> {
     const stored = await bb.storage.kv.get(ANALYZER_KEY(projectId)) as AnalyzerSelection | undefined;
     if (stored?.providerId && stored.model) return stored;
-    // Until the owner picks one: Codex GPT-6 Luna, high, fast. On the SelfyStudio group (2026-10-01) it set aside
-    // three failures that were not the writers' (foreign specs, untouched files) where Grok 4.6 wrote a rule that
-    // would have sent writers outside their owns_paths; it is also the cheaper model.
-    return { ...DEFAULT_ANALYZER };
+    // Until the owner picks one: the `rules-analyzer` row of the role table (Codex GPT-6 Luna, high). On the SelfyStudio group
+    // (2026-10-01) it set aside three failures that were not the writers' (foreign specs, untouched files) where Grok 4.6 wrote a
+    // rule that would have sent writers outside their owns_paths; it is also the cheaper model. Fast tier, as it always ran.
+    const settings = (await ctx.effectiveProjectSettings(projectId).catch(() => null))?.values ?? {};
+    const role = resolveRoleModel("rules-analyzer", settings);
+    return { providerId: role.providerId, model: role.model, reasoningLevel: role.effort, serviceTier: DEFAULT_ANALYZER.serviceTier };
   }
 
   async function saveAnalyzer(projectId: string, selection: AnalyzerSelection): Promise<AnalyzerSelection> {
@@ -124,7 +140,10 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
   /** A scan stored as running that no live process drives was cut off by a reload or a server restart. */
   async function scanState(projectId: string): Promise<RuleScanState> {
     const stored: RuleScanState = { ...IDLE, ...(await bb.storage.kv.get(SCAN_KEY(projectId)) as Partial<RuleScanState> | undefined) };
-    return stored.state === "running" && !running.has(projectId) ? { ...stored, state: "failed", reason: "interrupted_by_restart" } : stored;
+    // A graph run that a reload resumed drives the scan though this process did not start it.
+    const resumed = stored.state === "running" && !running.has(projectId)
+      && Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_run WHERE workflow_id=? AND project_id=? AND status IN ('running','waiting') LIMIT 1").get(RULES_SCAN_WORKFLOW, projectId));
+    return stored.state === "running" && !running.has(projectId) && !resumed ? { ...stored, state: "failed", reason: "interrupted_by_restart" } : stored;
   }
 
   async function setScan(projectId: string, patch: Partial<RuleScanState>): Promise<RuleScanState> {
@@ -269,62 +288,63 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     };
   }
 
-  async function runAnalyzer(projectId: string, title: string, prompt: string, place: { hostId: string; path: string }, analyzer: AnalyzerSelection, metadata: Record<string, unknown>): Promise<string> {
+  /** The thread of one analyzer job: hidden, parentless, tied to the graph step that asked for it (so it is quiet and counted as graph work). */
+  async function spawnAnalyzer(input: { projectId: string; title: string; prompt: string; place: { hostId: string; path: string }; analyzer: AnalyzerSelection; metadata: Record<string, unknown> }, graph: { spawnId: string; metadata: Record<string, unknown> }): Promise<string> {
+    const { analyzer, place } = input;
     const spawned = await fullAccessSpawn(bb, {
-      projectId, visibility: "hidden", title,
-      ...projectRoleField(bb, db, projectId, analyzer.providerId, "rules-analyzer"),
+      projectId: input.projectId, visibility: "hidden", title: input.title,
+      ...projectRoleField(bb, db, input.projectId, analyzer.providerId, "rules-analyzer"),
       ...writerExecutionSelection(analyzer.providerId, analyzer.model, analyzer.reasoningLevel, analyzer.serviceTier ? bbServiceTier(analyzer.serviceTier === "fast" ? "fast" : "standard") : "default"),
-      prompt,
+      prompt: input.prompt,
       environment: { type: "host", hostId: place.hostId, workspace: { type: "unmanaged", path: place.path } },
-      pluginMetadata: { role: "rules-analyzer", stageId: "rules-analyzer", spawnId: `${projectId}:${spawnTextId(title)}`, ...metadata },
+      pluginMetadata: { role: "rules-analyzer", stageId: "rules-analyzer", ...input.metadata, ...graph.metadata, spawnId: graph.spawnId },
     } as Parameters<typeof fullAccessSpawn>[1]);
     const threadId = stringAt(spawned, "id");
     if (!threadId) throw new Error("rules_analyzer_thread_id_missing");
-    const deadline = Date.now() + ANALYZER_LIMIT_MS;
-    while (Date.now() < deadline && !ctx.isDisposed()) {
-      const observed = await observeStageChild(bb, threadId, 30_000);
-      if (observed.kind === "completed") return outputText(await bb.sdk.threads.output({ threadId }));
-      if (observed.kind === "product_failure") throw new Error(`rules analyzer failed: ${observed.via}:${observed.detail}`);
-    }
-    await bb.sdk.threads.stop({ threadId }).catch(() => undefined);
-    throw new Error("rules analyzer did not finish in time");
+    return threadId;
   }
 
-  async function analyzeGroup(projectId: string, group: WriterGroup, others: WriterGroup["failures"], place: { hostId: string; path: string }, analyzer: AnalyzerSelection, locale: "ru" | "en"): Promise<string[]> {
+  type Locale = "ru" | "en";
+
+  /** The evidence of one failure the analyzer may cite: enough to write the proposal's evidence row without the group in hand. */
+  const citeOf = (row: WriterGroup["failures"][number]): ScanCite => ({ taskId: row.taskId, runId: row.runId, attemptId: row.attemptId, failedAt: row.failedAt, reason: row.reason.slice(0, 600) });
+
+  /** What the model is asked for each group: the prompt, with the evidence read now (the analyzer is a hidden thread that only reads). */
+  async function analyzeJob(projectId: string, group: WriterGroup, others: WriterGroup["failures"], locale: Locale): Promise<ScanJob> {
     const evidence = await Promise.all(group.failures.slice(0, 8).map(evidenceFor));
+    const rest = others.filter((row) => !group.failures.some((own) => own.taskId === row.taskId)).slice(0, 40);
     const prompt = analyzerPrompt({
       category: group.category, locale, group: evidence, scopeLabel: await scopeLabel(projectId, group.scope),
-      others: others.filter((row) => !group.failures.some((own) => own.taskId === row.taskId)).slice(0, 40).map((row) => ({ taskId: row.taskId, failureReason: row.reason.slice(0, 300) })),
+      others: rest.map((row) => ({ taskId: row.taskId, failureReason: row.reason.slice(0, 300) })),
       rules: listRuleProposals(db, projectId).filter((row) => row.state === "accepted" && scopeApplies(row.scope, group.scope)).map((row) => row.rule),
     });
     const title = analyzerThreadTitle({ kind: "analyze", locale, place: await placeLabel(projectId, group.scope), taskIds: group.failures.map((row) => row.taskId) });
-    const text = await runAnalyzer(projectId, title, prompt, place, analyzer, { category: group.category });
-    const parsed = parseAnalyzerOutput(text);
-    const known = new Map([...group.failures, ...others].map((row) => [row.taskId, row]));
-    for (const taskId of parsed.notWriter) {
-      const row = known.get(taskId);
-      if (row) db.prepare("UPDATE lane_pilot_failure_triage SET detail='model:not_writer' WHERE project_id=? AND attempt_id=?").run(projectId, row.attemptId);
+    return { id: `analyze:${spawnTextId(`${group.category}|${group.scope.join(",")}|${group.failures.map((row) => row.taskId).join(",")}`)}`, kind: "analyze", title, prompt, category: group.category, scope: [...group.scope], known: [...group.failures, ...rest].map(citeOf) };
+  }
+
+  /** The rules on trial that did not work: one rewrite job each (at most `MAX_REVISIONS_PER_SCAN` a scan), the same decisions `evaluateRules` takes. */
+  async function rewriteJobs(projectId: string, locale: Locale, now: number): Promise<ScanJob[]> {
+    const jobs: ScanJob[] = [];
+    for (const rule of listRuleProposals(db, projectId, { state: "accepted", limit: 500 }).filter((row) => row.decidedBy === "auto")) {
+      if (jobs.length >= MAX_REVISIONS_PER_SCAN) break;
+      const stats = ruleTrialStats(db, projectId, rule.id, rule.revisionStartedAt ?? rule.decidedAt ?? now);
+      if (decideRuleTrial(rule, stats, now).action !== "revise") continue;
+      const failures = stats.recurrences.map((row) => ({ ...row, runId: (db.prepare("SELECT run_id FROM lane_pilot_attempt WHERE id=?").get(row.attemptId) as { run_id?: string } | undefined)?.run_id ?? "",
+        threadId: (db.prepare("SELECT thread_id FROM lane_pilot_attempt WHERE id=?").get(row.attemptId) as { thread_id?: string | null } | undefined)?.thread_id ?? null, failedAt: now }));
+      const evidence = await Promise.all(failures.slice(0, 6).map(evidenceFor));
+      const title = analyzerThreadTitle({ kind: "rewrite", locale, place: await placeLabel(projectId, rule.scope), taskIds: stats.recurrences.map((row) => row.taskId) });
+      jobs.push({ id: `rewrite:${rule.id}`, kind: "rewrite", title, prompt: rewritePrompt({ rule: rule.rule, locale, evidence }), ruleId: rule.id });
     }
-    const stored: string[] = [];
-    for (const rule of parsed.rules) {
-      const cited = [...new Set([...rule.evidence, ...rule.alsoSeen])].flatMap((taskId) => {
-        const row = known.get(taskId);
-        return row ? [{ runId: row.runId, taskId: row.taskId, attemptId: row.attemptId, reason: row.reason.slice(0, 600) } satisfies RuleEvidence] : [];
-      });
-      if (cited.length === 0) continue;
-      const times = cited.map((ref) => known.get(ref.taskId)!.failedAt);
-      stored.push(upsertModelProposal(db, projectId, { category: group.category, rule: rule.rule, evidence: cited, firstSeenAt: Math.min(...times), lastSeenAt: Math.max(...times), scope: group.scope }).id);
-    }
-    return stored;
+    return jobs;
   }
 
   /**
-   * The trial: every rule the system adopted is judged on what happened to the writers who were given it.
-   * Owner decisions are not touched. A rewrite goes through the analyzer with the failures the rule missed.
+   * The trial: every rule the system adopted is judged on what happened to the writers who were given it. Owner decisions are not touched.
+   * A rule that did not work is rewritten from the analyzer's answer to its rewrite job (`rewrites`, by rule id); a rule whose job did not
+   * answer (the thread failed, the scan's cap) waits for the next scan.
    */
-  async function evaluateRules(projectId: string, place: { hostId: string; path: string } | null, analyzer: AnalyzerSelection | null, locale: "ru" | "en", now = Date.now()): Promise<{ confirmed: number; revised: number; retired: number }> {
+  function evaluateRules(projectId: string, rewrites: ReadonlyMap<string, string | null>, now = Date.now()): { confirmed: number; revised: number; retired: number } {
     const result = { confirmed: 0, revised: 0, retired: 0 };
-    let rewrites = 0;
     for (const rule of listRuleProposals(db, projectId, { state: "accepted", limit: 500 }).filter((row) => row.decidedBy === "auto")) {
       if (ctx.isDisposed()) break;
       const since = rule.revisionStartedAt ?? rule.decidedAt ?? now;
@@ -337,14 +357,8 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
       } else if (decision.action === "retire") {
         retireAdoptedRule(db, projectId, rule.id, decision.reason === "unused" ? "unused" : `kept_recurring after ${rule.revision} wordings`, now);
         result.retired++;
-      } else if (decision.action === "revise" && place && analyzer && rewrites < MAX_REVISIONS_PER_SCAN) {
-        rewrites++;
-        const failures = stats.recurrences.map((row) => ({ ...row, runId: (db.prepare("SELECT run_id FROM lane_pilot_attempt WHERE id=?").get(row.attemptId) as { run_id?: string } | undefined)?.run_id ?? "",
-          threadId: (db.prepare("SELECT thread_id FROM lane_pilot_attempt WHERE id=?").get(row.attemptId) as { thread_id?: string | null } | undefined)?.thread_id ?? null, failedAt: now }));
-        const evidence = await Promise.all(failures.slice(0, 6).map(evidenceFor));
-        const title = analyzerThreadTitle({ kind: "rewrite", locale, place: await placeLabel(projectId, rule.scope), taskIds: stats.recurrences.map((row) => row.taskId) });
-        const text = await runAnalyzer(projectId, title, rewritePrompt({ rule: rule.rule, locale, evidence }), place, analyzer, { ruleId: rule.id });
-        const rewritten = parseAnalyzerOutput(text).rules[0]?.rule;
+      } else if (decision.action === "revise" && rewrites.has(rule.id)) {
+        const rewritten = rewrites.get(rule.id);
         if (!rewritten) {
           // The analyzer found no rule that would have helped: a rule that cannot help leaves.
           retireAdoptedRule(db, projectId, rule.id, "analyzer: no rule would prevent these failures", now);
@@ -355,66 +369,138 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     return result;
   }
 
-  /** The «Rescan» button: triage the last 30 days, then let the analyzer model write rules for each big enough writer group. */
-  async function startScan(projectId: string, locale: "ru" | "en"): Promise<{ started: boolean; scan: RuleScanState }> {
-    if (running.has(projectId)) return { started: false, scan: await scanState(projectId) };
-    running.add(projectId);
-    await bb.storage.kv.set(LOCALE_KEY(projectId), locale);
-    const scan = await setScan(projectId, { state: "running", startedAt: Date.now(), finishedAt: null, triaged: 0, groups: 0, proposals: 0, reason: null });
-    void (async () => {
-      try {
-        const triage = await triageNew(projectId);
-        if (triage.state === "jev_unavailable") {
-          // Without System One the masked-text grouping is the fallback; it cannot tell whose fault a failure is.
-          const fallback = refreshRuleProposals(db, projectId);
-          await setScan(projectId, { state: "done", finishedAt: Date.now(), triaged: triage.triaged, proposals: fallback.created, reason: `jev_unavailable:${triage.reason ?? ""}` });
-          return;
-        }
-        if (triage.state !== "ok") {
-          await setScan(projectId, { state: "failed", finishedAt: Date.now(), triaged: triage.triaged, reason: triage.reason ?? triage.state });
-          return;
-        }
-        // With System One answering, the text-grouping drafts of the fallback are noise; decided ones stay.
-        db.prepare("DELETE FROM lane_pilot_rule_proposal WHERE project_id=? AND author='sweep' AND state='proposed'").run(projectId);
-        await setScan(projectId, { triaged: triage.triaged });
-        const since = Date.now() - RULE_SCAN_WINDOW_MS;
-        const chains = await projectChains(projectId);
-        const groups = writerGroups(db, projectId, since, { chains }).slice(0, MAX_GROUPS_PER_SCAN);
-        await setScan(projectId, { groups: groups.length });
-        const place = await projectPlace(projectId);
-        const analyzer = await analyzerFor(projectId);
-        if (groups.length > 0 && (!place || !analyzer)) {
-          await setScan(projectId, { state: "failed", finishedAt: Date.now(), reason: !place ? "no_host" : "no_analyzer_model" });
-          return;
-        }
-        const others = writerGroups(db, projectId, since, { minTasks: 1, chains }).flatMap((group) => group.failures);
-        let proposals = 0, adopted = 0;
-        for (const group of groups) {
-          if (ctx.isDisposed()) return;
-          const written = await analyzeGroup(projectId, group, others, place!, analyzer!, locale);
-          proposals += written.length;
-          // Rules adopt themselves: on trial right away, judged by what happens to the writers who get them.
-          for (const id of written) if (getRuleProposal(db, projectId, id)?.state === "proposed" && adoptRuleProposal(db, projectId, id)) adopted++;
-          await setScan(projectId, { proposals, adopted });
-        }
-        // Proposals written earlier (by the analyzer or the PM) that waited for a slot join the trial too. Shortest
-        // first, and the first one that finds no room ends the pass: a longer one cannot fit where a shorter one did
-        // not, and trying all of them wrote 939 «cap_reached» events in a month for three projects (hub, 2026-10-18).
-        const waiting = listRuleProposals(db, projectId, { state: "proposed", limit: 100 }).sort((a, b) => a.rule.length - b.rule.length);
-        for (const row of waiting) {
-          if (!adoptRuleProposal(db, projectId, row.id)) break;
-          adopted++;
-        }
-        await setScan(projectId, { adopted });
-        const trial = await evaluateRules(projectId, place, analyzer, locale);
-        await setScan(projectId, { state: "done", finishedAt: Date.now(), proposals, adopted, ...trial });
-      } catch (cause) {
-        await setScan(projectId, { state: "failed", finishedAt: Date.now(), reason: cause instanceof Error ? cause.message : String(cause) }).catch(() => undefined);
-      } finally {
-        running.delete(projectId);
+  async function failScan(projectId: string, reason: string): Promise<void> {
+    await setScan(projectId, { state: "failed", finishedAt: Date.now(), reason: reason.slice(0, 500) }).catch(() => undefined);
+  }
+
+  /**
+   * Step `collect` of the scan graph: triage the last 30 days, then plan the model calls: one per big enough writer group, one per rule on trial that
+   * did not work. A scan that cannot go on is recorded as failed here and the step fails, so the run is a failed graph run the wall sees.
+   */
+  async function collectScan(projectId: string, locale: Locale): Promise<ScanPlan> {
+    const empty: ScanPlan = { state: "ok", triaged: 0, groups: 0, jobs: [], hostId: "", path: "", analyzer: null };
+    try {
+      const triage = await triageNew(projectId);
+      if (triage.state === "jev_unavailable") {
+        // Without System One the masked-text grouping is the fallback; it cannot tell whose fault a failure is.
+        const fallback = refreshRuleProposals(db, projectId);
+        await setScan(projectId, { state: "done", finishedAt: Date.now(), triaged: triage.triaged, proposals: fallback.created, reason: `jev_unavailable:${triage.reason ?? ""}` });
+        return { ...empty, state: "fallback", triaged: triage.triaged };
       }
-    })();
-    return { started: true, scan };
+      if (triage.state !== "ok") throw new Error(triage.reason ?? triage.state);
+      // With System One answering, the text-grouping drafts of the fallback are noise; decided ones stay.
+      db.prepare("DELETE FROM lane_pilot_rule_proposal WHERE project_id=? AND author='sweep' AND state='proposed'").run(projectId);
+      await setScan(projectId, { triaged: triage.triaged });
+      const since = Date.now() - RULE_SCAN_WINDOW_MS;
+      const chains = await projectChains(projectId);
+      const groups = writerGroups(db, projectId, since, { chains }).slice(0, MAX_GROUPS_PER_SCAN);
+      await setScan(projectId, { groups: groups.length });
+      const place = await projectPlace(projectId);
+      const analyzer = await analyzerFor(projectId);
+      if (groups.length > 0 && (!place || !analyzer)) throw new Error(!place ? "no_host" : "no_analyzer_model");
+      const others = writerGroups(db, projectId, since, { minTasks: 1, chains }).flatMap((group) => group.failures);
+      const jobs: ScanJob[] = [];
+      for (const group of groups) jobs.push(await analyzeJob(projectId, group, others, locale));
+      if (place && analyzer) jobs.push(...await rewriteJobs(projectId, locale, Date.now()));
+      return { state: "ok", triaged: triage.triaged, groups: groups.length, jobs, hostId: place?.hostId ?? "", path: place?.path ?? "", analyzer };
+    } catch (cause) {
+      await failScan(projectId, cause instanceof Error ? cause.message : String(cause));
+      throw cause;
+    }
+  }
+
+  /**
+   * Step `apply` of the scan graph: the analyzers' answers become proposals (rules adopt themselves: on trial right away, judged by what happens to
+   * the writers who get them), waiting proposals join the trial, and the trial judges the rules already on it. An answer that is missing or not JSON
+   * is counted; the rest is applied, and the scan ends failed with the count (the step then fails the run) so nothing is lost and nothing is hidden.
+   */
+  async function applyScan(projectId: string, plan: Pick<ScanPlan, "state">, jobs: readonly ScanJob[], results: readonly JobResult[]): Promise<{ proposals: number; adopted: number; errors: number; reason: string | null }> {
+    if (plan.state === "fallback") return { proposals: 0, adopted: 0, errors: 0, reason: null };
+    const byId = new Map(results.map((row) => [row.id, row]));
+    const errors: string[] = [];
+    let proposals = 0, adopted = 0;
+    const rewrites = new Map<string, string | null>();
+    for (const job of jobs) {
+      const answer = byId.get(job.id);
+      if (!answer || answer.text === null) { errors.push(`${job.id}: ${answer?.error ?? "no answer"}`); continue; }
+      let parsed: ReturnType<typeof parseAnalyzerOutput>;
+      try { parsed = parseAnalyzerOutput(answer.text); } catch (cause) { errors.push(`${job.id}: ${cause instanceof Error ? cause.message : String(cause)}`); continue; }
+      if (job.kind === "rewrite") { rewrites.set(job.ruleId, parsed.rules[0]?.rule ?? null); continue; }
+      const known = new Map(job.known.map((row) => [row.taskId, row]));
+      for (const taskId of parsed.notWriter) {
+        const row = known.get(taskId);
+        if (row) db.prepare("UPDATE lane_pilot_failure_triage SET detail='model:not_writer' WHERE project_id=? AND attempt_id=?").run(projectId, row.attemptId);
+      }
+      const written: string[] = [];
+      for (const rule of parsed.rules) {
+        const cited = [...new Set([...rule.evidence, ...rule.alsoSeen])].flatMap((taskId) => {
+          const row = known.get(taskId);
+          return row ? [{ runId: row.runId, taskId: row.taskId, attemptId: row.attemptId, reason: row.reason } satisfies RuleEvidence] : [];
+        });
+        if (cited.length === 0) continue;
+        const times = cited.map((ref) => known.get(ref.taskId)!.failedAt);
+        written.push(upsertModelProposal(db, projectId, { category: job.category, rule: rule.rule, evidence: cited, firstSeenAt: Math.min(...times), lastSeenAt: Math.max(...times), scope: job.scope }).id);
+      }
+      proposals += written.length;
+      for (const id of written) if (getRuleProposal(db, projectId, id)?.state === "proposed" && adoptRuleProposal(db, projectId, id)) adopted++;
+      await setScan(projectId, { proposals, adopted });
+    }
+    // Proposals written earlier (by the analyzer or the PM) that waited for a slot join the trial too. Shortest
+    // first, and the first one that finds no room ends the pass: a longer one cannot fit where a shorter one did
+    // not, and trying all of them wrote 939 «cap_reached» events in a month for three projects (hub, 2026-10-18).
+    const waiting = listRuleProposals(db, projectId, { state: "proposed", limit: 100 }).sort((a, b) => a.rule.length - b.rule.length);
+    for (const row of waiting) {
+      if (!adoptRuleProposal(db, projectId, row.id)) break;
+      adopted++;
+    }
+    const trial = evaluateRules(projectId, rewrites);
+    const reason = errors.length ? `analyzer_failed: ${errors.join("; ")}`.slice(0, 500) : null;
+    await setScan(projectId, { state: reason ? "failed" : "done", finishedAt: Date.now(), proposals, adopted, ...trial, ...(reason ? { reason } : {}) });
+    return { proposals, adopted, errors: errors.length, reason };
+  }
+
+  /** What the nightly and the «Rescan» button start: the `lp.rules-scan` graph of the project. `night` makes the run the night's own (a second start finds it). */
+  async function startScan(projectId: string, locale: Locale, options: { night?: string } = {}): Promise<{ started: boolean; scan: RuleScanState }> {
+    if (running.has(projectId)) return { started: false, scan: await scanState(projectId) };
+    const key = `rules-scan:${projectId}:${options.night ?? Date.now()}`;
+    const prior = db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(key) as { status: string } | undefined;
+    if (prior && ["succeeded", "failed", "blocked", "interrupted", "canceled"].includes(prior.status)) return { started: false, scan: await scanState(projectId) };
+    const workflow = builtinWorkflow(RULES_SCAN_WORKFLOW);
+    if (!workflow) throw new Error(`built-in workflow ${RULES_SCAN_WORKFLOW} is not loaded`);
+    running.add(projectId);
+    try {
+      await bb.storage.kv.set(LOCALE_KEY(projectId), locale);
+      const scan = await setScan(projectId, { state: "running", startedAt: Date.now(), finishedAt: null, triaged: 0, groups: 0, proposals: 0, reason: null });
+      const runtime: ChainRuntime = { ctx, services, pmThreadId: null, projectId, runId: null };
+      const started = services.workflowEngine.start({ workflow, key, runtime, link: { projectId }, inputs: { project_id: projectId, locale } });
+      void started.done.then(async (summary) => {
+        // A run that ended without its apply step saying so (a step failed, a budget stopped it) leaves the scan failed with the run's own reason.
+        if (["failed", "blocked", "interrupted", "canceled"].includes(summary.status)) await failScan(projectId, summary.error ?? summary.reason ?? summary.status);
+      }).catch((cause: unknown) => failScan(projectId, cause instanceof Error ? cause.message : String(cause)))
+        .finally(() => { running.delete(projectId); });
+      return { started: true, scan };
+    } catch (cause) {
+      running.delete(projectId);
+      await failScan(projectId, cause instanceof Error ? cause.message : String(cause));
+      throw cause;
+    }
+  }
+
+  /**
+   * One prompt to the rules analyzer, for a caller that wants the answer in hand (the learning review of the owner's messages): a run of the
+   * one-step graph `lp.rules-ask`. A thread that fails or does not finish in 20 minutes fails the run and the call throws, as it always did.
+   */
+  async function runAnalyzer(projectId: string, title: string, prompt: string, place: { hostId: string; path: string }, analyzer: AnalyzerSelection, metadata: Record<string, unknown>): Promise<string> {
+    const workflow = builtinWorkflow(RULES_ASK_WORKFLOW);
+    if (!workflow) throw new Error(`built-in workflow ${RULES_ASK_WORKFLOW} is not loaded`);
+    const runtime: ChainRuntime = { ctx, services, pmThreadId: null, projectId, runId: null };
+    const started = services.workflowEngine.start({
+      workflow, runtime, key: `rules-ask:${projectId}:${Date.now()}:${spawnTextId(title)}`, link: { projectId },
+      inputs: { project_id: projectId, title, prompt, host_id: place.hostId, path: place.path, analyzer, metadata },
+    });
+    const summary = await started.done;
+    if (summary.status !== "succeeded") throw new Error(summary.error ?? summary.reason ?? `rules analyzer run ${summary.status}`);
+    return typeof summary.output?.text === "string" ? summary.output.text : "";
   }
 
   async function summary(projectId: string): Promise<TriageSummary & { pendingGroups: number }> {
@@ -432,7 +518,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
       const stored = await bb.storage.kv.get<string>(LOCALE_KEY(projectId));
       const preferred = await bb.storage.kv.get<string>("preferences:locale");
       const locale = stored === "ru" || stored === "en" ? stored : preferred === "ru" ? "ru" : "en";
-      await startScan(projectId, locale);
+      await startScan(projectId, locale, { night: new Date().toISOString().slice(0, 10) });
       for (let i = 0; i < 180 && running.has(projectId) && !ctx.isDisposed() && !signal?.aborted; i++) await new Promise((resolve) => setTimeout(resolve, 10_000));
       // SMA block 6: a rule the night just proposed or adopted gets its form (check, hook, skill, memory, always) from the heuristics.
       try { classifyUnformed(db, projectId); } catch (cause) { bb.log.info(`Lane Pilot rule forms for ${projectId}: ${cause instanceof Error ? cause.message : String(cause)}`); }
@@ -452,7 +538,9 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     }
   }, { timeoutMs: 10 * 60_000 });
 
-  return { analyzerFor, chainForRun, evaluateRules, runAnalyzer, saveAnalyzer, scanLabel: scopeLabel, scanState, startScan, summary, triageNew };
+  /** The pieces the `lp.rules-scan` and `lp.rules-ask` graphs wrap as their steps (rules-scan-graph.ts). */
+  const graph = { collectScan, applyScan, failScan, spawnAnalyzer, ANALYZER_LIMIT_MS };
+  return { analyzerFor, chainForRun, graph, runAnalyzer, saveAnalyzer, scanLabel: scopeLabel, scanState, startScan, summary, triageNew };
 }
 
 export type RuleScanApi = ReturnType<typeof createRuleScan>;

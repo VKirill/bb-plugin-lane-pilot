@@ -19,6 +19,8 @@ import {
 } from "./store";
 import { OPEN_REPAIR_STATES, type NightSummary, type WallClass } from "./types";
 
+/** The graph that runs the hunters and the analysis of a wall. */
+export const WALL_HUNT_WORKFLOW = "lp.wall-hunt";
 const DAY = 86_400_000;
 const QUEUED_STALE_MS = 12 * 3_600_000;
 /** A revert that did not go through is tried again at most this often and this many times; then the diagnosis goes to the backlog. */
@@ -38,8 +40,18 @@ export type WallPorts = {
   logLines(since: number, until: number): Array<{ message: string; at: number; projectId: string }>;
   /** Source files that emit a failure's wording, as the hunters' evidence (empty when the checkout is out of reach). */
   codeFiles(fragments: readonly string[]): Promise<PackFile[]>;
-  /** A read-only reader with no tools (a hunter or the full analysis) in another model's seat. */
-  reader(prompt: string, who: "hunter" | "analysis"): Promise<ThreadRun>;
+  /** A read-only reader with no tools (a hunter or the full analysis) in another model's seat. Used when `graph` is not set (the tests' fakes). */
+  reader?(prompt: string, who: "hunter" | "analysis"): Promise<ThreadRun>;
+  /**
+   * The model work as a graph run (`lp.wall-hunt`, night-graphs/server/wall-hunt-graph.ts): the hunters side by side, or the analysis, as a run of that
+   * graph that records its result in the wall row. When set it replaces `reader`; a run that fails gives null and the hunt reads as «unknown».
+   */
+  graph?: {
+    hunt(input: { wallKey: string; pack: EvidencePack; angles: readonly string[] }): Promise<{ outcome: HuntOutcome; tokens: number } | null>;
+    analysis(input: { wallKey: string; prompt: string }): Promise<ThreadRun | null>;
+  };
+  /** The hidden thread of one reader of the graph, tied to the step that asks (its spawn id and metadata); returns the thread's id. */
+  spawnReader?(input: { who: "hunter" | "analysis"; prompt: string; graph: { spawnId: string; metadata: Record<string, unknown> } }): Promise<string>;
   tellPm(threadId: string, text: string): Promise<boolean>;
   repair: {
     view(signature: string): Promise<RepairView | null>;
@@ -121,16 +133,52 @@ export function createWall(deps: WallDeps) {
     return { state: outcome.state, demoted: outcome.demoted, findings: outcome.findings };
   }
 
-  /** Three read-only hunters from other sides over one pack; their citations are held against it by code. The tokens are the wall's spend. */
-  async function hunt(pack: EvidencePack, cfg: WallConfig): Promise<{ outcome: HuntOutcome; tokens: number }> {
+  /** The findings of the hunters' texts, held against the pack by code: a text that is not a finding counts as «unknown». */
+  function judgeRuns(pack: EvidencePack, runs: ReadonlyArray<{ angle: (typeof HUNT_ANGLES)[number]; text: string | null; tokens: number }>): { outcome: HuntOutcome; tokens: number } {
+    const findings = runs.map((run) => {
+      try { return run.text ? parseFinding(extractModelJson(run.text), run.angle) : null; } catch { return null; }
+    });
+    return { outcome: judgeHunt(pack, findings), tokens: runs.reduce((sum, row) => sum + row.tokens, 0) };
+  }
+
+  /**
+   * Three read-only hunters from other sides over one pack; their citations are held against it by code. The tokens are the wall's spend.
+   * In the plugin this is a run of the graph `lp.wall-hunt` (named by the wall's key); a run that fails reads as hunters that found nothing.
+   */
+  async function hunt(pack: EvidencePack, cfg: WallConfig, wallKey: string): Promise<{ outcome: HuntOutcome; tokens: number }> {
     const angles = HUNT_ANGLES.slice(0, cfg.hunters);
+    if (ports.graph) {
+      const ran = await ports.graph.hunt({ wallKey, pack, angles }).catch((cause: unknown) => { log(`wall: the hunt graph of ${wallKey} failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
+      return ran ?? judgeRuns(pack, angles.map((angle) => ({ angle, text: null, tokens: 0 })));
+    }
     const runs = await Promise.all(angles.map(async (angle) => {
-      const run = await ports.reader(hunterPrompt(angle, pack), "hunter").catch(() => ({ text: null, tokens: 0 } as ThreadRun));
-      let finding = null;
-      try { finding = run.text ? parseFinding(extractModelJson(run.text), angle) : null; } catch { finding = null; }
-      return { finding, tokens: run.tokens };
+      const run = await ports.reader!(hunterPrompt(angle, pack), "hunter").catch(() => ({ text: null, tokens: 0 } as ThreadRun));
+      return { angle, text: run.text, tokens: run.tokens };
     }));
-    return { outcome: judgeHunt(pack, runs.map((row) => row.finding)), tokens: runs.reduce((sum, row) => sum + row.tokens, 0) };
+    return judgeRuns(pack, runs);
+  }
+
+  /** The code steps of the graph `lp.wall-hunt`: the hunter's prompt, the judgment of the hunters' answers (recorded in the wall row), the analysis's record. */
+  const graphSteps = {
+    angles: (hunters: number) => HUNT_ANGLES.slice(0, hunters) as readonly string[],
+    hunterPrompt: (angle: string, pack: EvidencePack): string => hunterPrompt(angle as (typeof HUNT_ANGLES)[number], pack),
+    judge(wallKey: string, pack: EvidencePack, runs: ReadonlyArray<{ angle: string; text: string | null; tokens: number }>): { outcome: HuntOutcome; tokens: number } {
+      const judged = judgeRuns(pack, runs.map((run) => ({ ...run, angle: run.angle as (typeof HUNT_ANGLES)[number] })));
+      // The findings are on record the moment they are judged, so a reload before the caller goes on loses nothing; the caller sets the wall's state.
+      updateWall(db, wallKey, { hunt: judged.outcome.state, findings: recordHuntOutcome(judged.outcome), tokensUsed: judged.tokens }, ports.now());
+      return judged;
+    },
+    spawnReader: (input: Parameters<NonNullable<WallPorts["spawnReader"]>>[0]): Promise<string> => {
+      if (!ports.spawnReader) throw new Error("this wall has no reader threads");
+      return ports.spawnReader(input);
+    },
+    recordAnalysis(wallKey: string, text: string): void { updateWall(db, wallKey, { analysis: { text, at: ports.now() } }, ports.now()); },
+  };
+
+  /** The full analysis: a strong reader in the wall's night budget (a graph run in the plugin). */
+  async function readAnalysis(wallKey: string, prompt: string): Promise<ThreadRun> {
+    if (ports.graph) return await ports.graph.analysis({ wallKey, prompt }).catch(() => null) ?? { text: null, tokens: 0 };
+    return await ports.reader!(prompt, "analysis").catch(() => ({ text: null, tokens: 0 } as ThreadRun));
   }
 
   const huntBudgetLeft = (cfg: WallConfig, now: number): number => {
@@ -146,7 +194,7 @@ export function createWall(deps: WallDeps) {
     updateClassLadder(db, cls.classKey, { hunt: "running" }, now);
     const files = await ports.codeFiles(cls.reasonNorm.split(/<[a-z]+>/).map((part) => part.trim()).filter((part) => part.length >= 12).slice(0, 3)).catch(() => []);
     const pack = buildClassPack(db, cls.classKey, { files, facts: [`moves spent: ${cls.failedMoves}; the engineer's rounds did not end the class`] });
-    const { outcome, tokens } = await hunt(pack, cfg);
+    const { outcome, tokens } = await hunt(pack, cfg, key);
     updateWall(db, key, { state: "hunted", hunt: outcome.state, pack, findings: recordHuntOutcome(outcome), tokensUsed: tokens }, ports.now());
     updateClassLadder(db, cls.classKey, { hunt: outcome.state, stage: outcome.state === "usable" ? "informed" : "backlog" }, ports.now());
     log(`wall: hunt of ${cls.classKey}: ${outcome.state} (${outcome.usable.length} usable of ${outcome.findings.length}, ${outcome.demoted} lowered), ${tokens} tokens`);
@@ -170,7 +218,7 @@ export function createWall(deps: WallDeps) {
       const pack = (wall.pack as EvidencePack | null) ?? (extra.classKey ? buildClassPack(db, extra.classKey) : null);
       if (pack) {
         const history = [`wall ${key}`, ...listRepairs(db, extra.classKey ? { classKey: extra.classKey } : {}).map((row) => `round ${row.round} (${row.role}) ${row.state}: ${row.outcome ?? ""}`)];
-        const run = await ports.reader(analysisPrompt({ subject, pack, findings: ((wall.findings as { findings?: CheckedFinding[] } | null)?.findings) ?? [], history }), "analysis").catch(() => ({ text: null, tokens: 0 } as ThreadRun));
+        const run = await readAnalysis(key, analysisPrompt({ subject, pack, findings: ((wall.findings as { findings?: CheckedFinding[] } | null)?.findings) ?? [], history }));
         updateWall(db, key, { analysis: { text: run.text, at: ports.now() }, tokensUsed: (wall.tokensUsed ?? 0) + run.tokens }, ports.now());
       }
     }
@@ -229,7 +277,7 @@ export function createWall(deps: WallDeps) {
       if (wall.state !== "stopped" || !pack) continue;
       if (huntBudgetLeft(cfg, now) <= 0) { notes.push(`hunt of ${wall.key} waits: the hunt budget is spent`); continue; }
       updateWall(db, wall.key, { state: "hunting", hunt: "running" }, now);
-      const { outcome, tokens } = await hunt(pack, cfg);
+      const { outcome, tokens } = await hunt(pack, cfg, wall.key);
       updateWall(db, wall.key, { state: "hunted", hunt: outcome.state, findings: recordHuntOutcome(outcome), tokensUsed: tokens }, ports.now());
       if (outcome.state === "unknown") { await escalateBacklog(wall.key, wall.subject, wall.projectId, "every hunter ended unknown or without a citation that holds", now); notes.push(`${wall.key}: backlog`); continue; }
       const pm = pack.meta?.pmThreadId;
@@ -304,7 +352,7 @@ export function createWall(deps: WallDeps) {
         continue;
       }
       updateWall(db, wall.key, { state: "hunting", hunt: "running" }, now);
-      const { outcome, tokens } = await hunt(pack, cfg);
+      const { outcome, tokens } = await hunt(pack, cfg, wall.key);
       updateWall(db, wall.key, { state: "hunted", hunt: outcome.state, findings: recordHuntOutcome(outcome), tokensUsed: tokens }, ports.now());
       await escalateBacklog(wall.key, wall.subject, wall.projectId, outcome.state === "usable" ? `${outcome.usable.length} hunter finding(s) held` : "every hunter ended unknown or without a citation that holds", now);
       notes.push(`${wall.key}: hunted (${outcome.state}), backlog`);
@@ -740,7 +788,7 @@ export function createWall(deps: WallDeps) {
     return getWall(db, key)!;
   }
 
-  return { config, setConfig, runNight, advance, mergeGate, settled, started, startFailed, nextAssignment, noteTaskStop, dispatchGuard, loopExhausted, loopTopics, rerun, status, show, close,
+  return { graph: graphSteps, config, setConfig, runNight, advance, mergeGate, settled, started, startFailed, nextAssignment, noteTaskStop, dispatchGuard, loopExhausted, loopTopics, rerun, status, show, close,
     morning: (now?: number) => composeWallMorning(db, now ?? ports.now()), classes: () => listClasses(db) };
 }
 

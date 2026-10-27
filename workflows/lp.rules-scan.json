@@ -1,0 +1,184 @@
+{
+  "id": "lp.rules-scan",
+  "startedBy": "rules-nightly",
+  "name": {
+    "en": "Rules scan",
+    "ru": "Разбор ошибок и правил"
+  },
+  "description": {
+    "en": "The night scan of one project's writer failures: System One sorts the failed attempts of the last 30 days, the analyzer reads the writer groups big enough to teach something and writes project rules for them, and the rules already on trial are judged (confirmed, rewritten by the analyzer, or retired). Planning and judging are code; the analyzer is one hidden thread per planned call. Started by the cron rules-nightly and by the Rescan button of the rules page; works in a project that has no PM chat. A failed analyzer call makes the run a failed one, after the usable answers were applied.",
+    "ru": "Ночной разбор ошибок писателей одного проекта: System One сортирует упавшие попытки за 30 дней, анализатор читает группы писателей, из которых можно чему-то научиться, и пишет для них правила проекта, а правила, уже стоящие на испытании, получают решение (подтверждены, переписаны анализатором или сняты). Планирование и решения делает код; анализатор это по одному скрытому треду на каждый запланированный вызов. Запускается кроном rules-nightly и кнопкой «Пересканировать» на странице правил; работает и в проекте без PM-чата. Упавший вызов анализатора делает запуск упавшим, после того как пригодные ответы применены."
+  },
+  "not_for": [
+    "anything a person asks in a chat: Lane Pilot starts this itself every night"
+  ],
+  "status": "published",
+  "tags": [
+    "rules",
+    "night"
+  ],
+  "triggers": [
+    "manual"
+  ],
+  "inputs": {
+    "project_id": {
+      "type": "string",
+      "note": "the project whose failures are scanned"
+    },
+    "locale": {
+      "type": "string",
+      "default": "en",
+      "note": "ru or en: the language the rules are written in"
+    }
+  },
+  "outputs": {
+    "proposals": "int",
+    "adopted": "int",
+    "errors": "int"
+  },
+  "budget": {
+    "max_steps": 6,
+    "max_minutes": 180
+  },
+  "nodes": [
+    {
+      "id": "collect",
+      "type": "action",
+      "action": "lp.rules_collect",
+      "title": {
+        "en": "Triage and plan",
+        "ru": "Разобрать и спланировать"
+      },
+      "rule": "code: System One sorts the new failures; the writer groups big enough and the rules on trial that did not work become analyzer calls. Without System One the text-grouping fallback runs and the scan ends here",
+      "out": {
+        "state": "ok|fallback",
+        "triaged": "int",
+        "groups": "int",
+        "jobs": "any",
+        "host_id": "string",
+        "path": "string",
+        "analyzer": "any"
+      },
+      "guards": {
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "analyze",
+      "type": "agent",
+      "role": "rules-analyzer",
+      "uses": "lp.rules-analyzer",
+      "title": {
+        "en": "Find the rules",
+        "ru": "Найти правила"
+      },
+      "proof": {
+        "kind": "advisory",
+        "reason": "the analyzer's own answer; the apply step parses it and holds every citation against the failures it was given",
+        "form": "parseAnalyzerOutput: JSON with rules (each at least 8 characters) and not_writer"
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "out": {
+        "results": "any",
+        "failed": "int"
+      },
+      "guards": {
+        "timeoutMin": 130
+      }
+    },
+    {
+      "id": "apply",
+      "type": "action",
+      "action": "lp.rules_apply",
+      "title": {
+        "en": "Apply the answers",
+        "ru": "Применить ответы"
+      },
+      "rule": "code: proposals from the answers (a citation must name a failure the analyzer was shown), adoption into the trial, the trial's verdicts, rewrites; the scan state is written here",
+      "out": {
+        "proposals": "int",
+        "adopted": "int",
+        "errors": "int",
+        "reason": "string"
+      },
+      "guards": {
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "proposals": "apply.proposals",
+        "adopted": "apply.adopted",
+        "errors": "apply.errors"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "collect"
+    },
+    {
+      "from": "collect",
+      "to": "analyze"
+    },
+    {
+      "from": "analyze",
+      "to": "apply"
+    },
+    {
+      "from": "apply",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "rules-scan-1",
+    "sim": {
+      "input": {
+        "project_id": "proj-1"
+      },
+      "stubs": {
+        "collect": {
+          "state": "ok",
+          "triaged": 3,
+          "groups": 1,
+          "jobs": [],
+          "host_id": "host-1",
+          "path": "/proj",
+          "analyzer": {},
+          "handoff": "planned"
+        },
+        "analyze": {
+          "results": [],
+          "failed": 0,
+          "handoff": "none"
+        },
+        "apply": {
+          "proposals": 0,
+          "adopted": 0,
+          "errors": 0,
+          "reason": "",
+          "handoff": "applied"
+        }
+      },
+      "expect_path": [
+        "collect",
+        "analyze",
+        "apply",
+        "done"
+      ],
+      "expect_output": {
+        "errors": 0
+      }
+    },
+    "live": "run the cron rules-nightly (or press Rescan on the rules page) and read the run of lp.rules-scan"
+  }
+}
