@@ -58,7 +58,7 @@ describe("schedule_list: who runs it", () => {
   it("an errand with no model resolves to the built-in errand role; a script and a chain have no model", async () => {
     const { rpc } = await setup();
     const made = (await rpc("schedule_upsert", { definition: errand() })).schedule;
-    expect(made.model).toEqual({ providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: "high", serviceTier: null, source: "errand-role", sourceKey: null, issues: [] });
+    expect(made.model).toEqual({ providerId: "claude-code", model: "claude-sonnet-5-5", reasoningEffort: "medium", serviceTier: null, source: "errand-role", sourceKey: null, issues: [] });
     expect((await rpc("schedule_upsert", { definition: script() })).schedule.model).toBeNull();
     expect((await rpc("schedule_upsert", { definition: script() })).schedule.cost).toBeNull();
   });
@@ -133,7 +133,7 @@ describe("schedule_list: cost per run", () => {
   it("the price of the resolved model with no history, the average of the runs with known usage after", async () => {
     const { rpc, db } = await setup();
     const made = (await rpc("schedule_upsert", { definition: errand() })).schedule;
-    expect(made.cost).toEqual({ perRunUsd: null, samples: 0, priceInPer1M: 4, priceOutPer1M: 20 });
+    expect(made.cost).toEqual({ perRunUsd: null, samples: 0, priceInPer1M: 2, priceOutPer1M: 10 });
     const insertRun = db.prepare("INSERT INTO lane_pilot_schedule_run (id, schedule_id, run_key, scheduled_at, trigger, status, queued_at, ref_kind, ref_id) VALUES (?,?,?,?,?,?,?,?,?)");
     insertRun.run("srun_1", made.id, `${made.id}:1`, 1000, "tick", "succeeded", 1000, "thread", "thr_1");
     insertRun.run("srun_2", made.id, `${made.id}:2`, 2000, "tick", "succeeded", 2000, "thread", "thr_2");
@@ -141,7 +141,7 @@ describe("schedule_list: cost per run", () => {
     db.prepare(cursorSql).run("thr_1", projectId, "claude-code", 1, "{}", tokens(1_000_000, 0), "claude-opus-5-5", "claude-code", "t", 0);
     db.prepare(cursorSql).run("thr_2", projectId, "claude-code", 1, "{}", tokens(0, 100_000), "claude-opus-5-5", "claude-code", "t", 0);
     const listed = await rpc("schedule_list", { projectId });
-    expect(listed.schedules[0].cost).toEqual({ perRunUsd: 3, samples: 2, priceInPer1M: 4, priceOutPer1M: 20 });
+    expect(listed.schedules[0].cost).toEqual({ perRunUsd: 3, samples: 2, priceInPer1M: 2, priceOutPer1M: 10 });
   });
 
   it("a model without a price: no price and no cost", async () => {

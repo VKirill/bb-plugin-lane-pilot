@@ -391,7 +391,7 @@ describe("the Default executor block", () => {
 
   it("with no default at all the summary names the errand role default", async () => {
     const slot = await mount();
-    expect((await slot.findByTestId("sch-default-summary")).textContent).toBe("no default set: claude-code · claude-opus-5-5 · high");
+    expect((await slot.findByTestId("sch-default-summary")).textContent).toBe("no default set: claude-code · claude-sonnet-5-5 · medium");
   });
 
   it("on the global page a choice is saved at the global level (project «*») with the global version, and «Clear» empties it", async () => {

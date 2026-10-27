@@ -77,7 +77,7 @@ export const ROLE_TABLE: readonly RoleRow[] = [
   { id: "memory", default: { model: "claude-haiku-5-5", effort: "medium", why: "Distils notes and facts into the memory: a small, careful text job." }, legacy: ["memory"] },
   { id: "project-life", default: { model: "claude-haiku-5-5", effort: "medium", why: "Keeps PROGRESS and CHANGELOG up to date from what happened: short factual text." }, legacy: ["project_life"] },
   { id: "errand", default: { model: "claude-sonnet-5-5", effort: "medium", why: "Runs a script, a send or a check as told: tool use, no deep thinking." }, legacy: ["errand"] },
-  { id: "browser-qa", default: { model: "claude-sonnet-5-5", effort: "medium", why: "Drives a browser and reports what it sees: fast, steady tool use." }, legacy: ["browser_qa"] },
+  { id: "browser-qa", default: { model: "claude-sonnet-5-5", effort: "medium", why: "Drives a browser and reports what it sees: fast, steady tool use." } },
   { id: "docs-maintainer", default: { model: "gpt-6-luna", effort: "high", why: "Writes and refreshes the repository docs overnight from the code diff, many pages, each held to cited lines and then checked by code and Jev; Luna is cheap and, at high effort, careful enough for a text job with a hard checker behind it (a docs.* selection set before the table keeps working until the table gets its own row)." }, legacy: ["docs"] },
   { id: "repairer", default: { model: "claude-opus-5-5", effort: "high", why: "The self-repair engineer: reads logs and the hub's data, finds the cause of Lane Pilot's own fault, fixes the code and adds the test that fails without the fix; an author of code, so the strongest author we have." } },
 ];

@@ -1,4 +1,4 @@
-import { PRESET_SLUGS, presetSelection, presetSlug } from "@lane-pilot/models";
+import { PRESET_SLUGS, consistentProvider, presetSelection, presetSlug, roleDefaultModel, tableRowAt } from "@lane-pilot/models";
 
 /**
  * Which model a scheduled errand runs on. ONE pure function answers it for the executor (what is spawned) and for the board (what the
@@ -9,12 +9,13 @@ import { PRESET_SLUGS, presetSelection, presetSlug } from "@lane-pilot/models";
  *  2. the task's `preset` (a model preset name: `workflow.preset.<slug>.*` in Settings, else the built-in preset);
  *  3. the Automation default (`schedule.errand_default` of the project, else of the global level): a pair or a preset;
  *  4. the errand role default: `errand.provider` / `errand.model` / `errand.reasoning_effort` when set, else the built-in default
- *     (claude-code, claude-opus-5-5, high), which is what every errand ran on before;
+ *     (the errand row of the role table: claude-code, claude-sonnet-5-5, medium), and the owner's own row `role_model.errand` over both;
  *  5. the model of the project's PM chat, used only when level 4 has no model. The built-in default always has one, so today this
  *     level cannot be reached from a caller; it stays as the last resort for a build that ships no built-in (`builtin: null`).
  */
 export const SCHEDULE_ERRAND_DEFAULT_KEY = "schedule.errand_default";
-export const ERRAND_BUILTIN = { providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: "high" } as const;
+/** The errand row of the role table (packages/models/src/role-models.ts): the one place the built-in default is written. */
+export const ERRAND_BUILTIN = (() => { const row = roleDefaultModel("errand"); return { providerId: row.providerId, model: row.model, reasoningEffort: row.effort }; })();
 export const ERRAND_ROLE_KEYS = { provider: "errand.provider", model: "errand.model", effort: "errand.reasoning_effort" } as const;
 /** The efforts the native picker can answer with, and what the errand spawn takes. */
 export const ERRAND_EFFORTS = ["low", "medium", "high", "xhigh", "ultracode", "max"] as const;
@@ -81,7 +82,7 @@ export function resolveErrandModel(input: {
   };
 
   const model = text(task.model), providerId = text(task.providerId);
-  if (model) level = { providerId: providerId ?? ERRAND_BUILTIN.providerId, model, effort: null, tier: null, source: "task", sourceKey: null };
+  if (model) level = { providerId: consistentProvider(providerId, model) ?? ERRAND_BUILTIN.providerId, model, effort: null, tier: null, source: "task", sourceKey: null };
   else if (providerId) issues.push("provider_without_model");
 
   if (!level && text(task.preset)) {
@@ -97,9 +98,11 @@ export function resolveErrandModel(input: {
     else level = { providerId: parsed.provider, model: parsed.model, effort: parsed.reasoning_effort ?? null, tier: parsed.service_tier ?? null, source: "schedule-default", sourceKey: SCHEDULE_ERRAND_DEFAULT_KEY };
   }
 
+  const ownRow = !level ? tableRowAt(settings, "errand") : null;
+  if (ownRow) level = { providerId: ownRow.option.providerId, model: ownRow.option.id, effort: ownRow.effort, tier: null, source: "errand-role", sourceKey: "role_model.errand" };
   if (!level) {
     const roleProvider = text(settings[ERRAND_ROLE_KEYS.provider]), roleModel = text(settings[ERRAND_ROLE_KEYS.model]);
-    if (roleModel) level = { providerId: roleProvider ?? ERRAND_BUILTIN.providerId, model: roleModel, effort: text(settings[ERRAND_ROLE_KEYS.effort]), tier: null, source: "errand-role", sourceKey: ERRAND_ROLE_KEYS.model };
+    if (roleModel) level = { providerId: consistentProvider(roleProvider, roleModel) ?? ERRAND_BUILTIN.providerId, model: roleModel, effort: text(settings[ERRAND_ROLE_KEYS.effort]), tier: null, source: "errand-role", sourceKey: ERRAND_ROLE_KEYS.model };
     else {
       if (roleProvider) issues.push("provider_without_model");
       if (builtin) level = { providerId: builtin.providerId, model: builtin.model, effort: text(settings[ERRAND_ROLE_KEYS.effort]) ?? builtin.reasoningEffort, tier: null, source: "errand-role", sourceKey: null };

@@ -15,7 +15,7 @@ describe("resolveErrandModel: the chain, level by level", () => {
 
   it("1. a legacy model without a provider means claude-code, and the effort is the task's or the claude-code default", () => {
     expect(resolve({ model: "claude-sonnet-5-5", reasoning: "low" })).toMatchObject({ providerId: "claude-code", model: "claude-sonnet-5-5", reasoningEffort: "low", source: "task" });
-    expect(resolve({ model: "claude-sonnet-5-5" })).toMatchObject({ providerId: "claude-code", reasoningEffort: "high", source: "task" });
+    expect(resolve({ model: "claude-sonnet-5-5" })).toMatchObject({ providerId: "claude-code", reasoningEffort: "medium", source: "task" });
   });
 
   it("1. a pair of another provider without an effort takes none, not a level it may not offer", () => {
@@ -24,7 +24,7 @@ describe("resolveErrandModel: the chain, level by level", () => {
 
   it("1. a provider without a model is no pair: it is reported and the next level decides", () => {
     const got = resolve({ providerId: "codex" });
-    expect(got).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", source: "errand-role" });
+    expect(got).toMatchObject({ providerId: "claude-code", model: "claude-sonnet-5-5", source: "errand-role" });
     expect(got.issues).toContain("provider_without_model");
   });
 
@@ -57,28 +57,28 @@ describe("resolveErrandModel: the chain, level by level", () => {
 
   it("3. a stored default that is not valid is reported and passed over", () => {
     const got = resolve({}, { [KEY]: { provider: "codex" } });
-    expect(got).toMatchObject({ source: "errand-role", model: "claude-opus-5-5" });
+    expect(got).toMatchObject({ source: "errand-role", model: "claude-sonnet-5-5" });
     expect(got.issues).toContain("invalid_schedule_default");
   });
 
   it("4. the errand role keys, and the built-in default when they are not set", () => {
     expect(resolve({}, { "errand.provider": "codex", "errand.model": "gpt-6-sol", "errand.reasoning_effort": "low" }))
       .toEqual({ providerId: "codex", model: "gpt-6-sol", reasoningEffort: "low", serviceTier: null, source: "errand-role", sourceKey: "errand.model", issues: [] });
-    expect(resolve({}, { "errand.model": "claude-sonnet-5" })).toMatchObject({ providerId: "claude-code", model: "claude-sonnet-5", reasoningEffort: "high", sourceKey: "errand.model" });
-    expect(resolve()).toEqual({ providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: "high", serviceTier: null, source: "errand-role", sourceKey: null, issues: [] });
-    expect(resolve({}, { "errand.reasoning_effort": "max" })).toMatchObject({ model: "claude-opus-5-5", reasoningEffort: "max", sourceKey: null });
+    expect(resolve({}, { "errand.model": "claude-sonnet-5" })).toMatchObject({ providerId: "claude-code", model: "claude-sonnet-5", reasoningEffort: "medium", sourceKey: "errand.model" });
+    expect(resolve()).toEqual({ providerId: "claude-code", model: "claude-sonnet-5-5", reasoningEffort: "medium", serviceTier: null, source: "errand-role", sourceKey: null, issues: [] });
+    expect(resolve({}, { "errand.reasoning_effort": "max" })).toMatchObject({ model: "claude-sonnet-5-5", reasoningEffort: "max", sourceKey: null });
   });
 
   it("4. a role provider without a model is reported and the built-in default is used", () => {
     const got = resolve({}, { "errand.provider": "codex" });
-    expect(got).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5" });
+    expect(got).toMatchObject({ providerId: "claude-code", model: "claude-sonnet-5-5" });
     expect(got.issues).toContain("provider_without_model");
   });
 
   it("5. the PM's model is the last resort, reached only when the role default has no model", () => {
     const pm = { providerId: "pm-p", model: "pm-m" };
     // The built-in default always has a model, so a caller never gets here today...
-    expect(resolve({}, {}, pm)).toMatchObject({ source: "errand-role", model: "claude-opus-5-5" });
+    expect(resolve({}, {}, pm)).toMatchObject({ source: "errand-role", model: "claude-sonnet-5-5" });
     // ...but a build without one falls through to the PM, and the effort is the provider's none (or high for claude-code).
     expect(resolveErrandModel({ task: {}, settings: {}, pm, builtin: null })).toEqual({ providerId: "pm-p", model: "pm-m", reasoningEffort: "none", serviceTier: null, source: "pm", sourceKey: null, issues: [] });
     expect(resolveErrandModel({ task: { reasoning: "high" }, settings: {}, pm, builtin: null })).toMatchObject({ source: "pm", reasoningEffort: "high" });
@@ -91,7 +91,7 @@ describe("resolveErrandModel: the chain, level by level", () => {
   });
 
   it("an effort the spawn does not know is dropped for the provider's default", () => {
-    expect(resolve({ model: "claude-sonnet-5", reasoning: "bogus" as never })).toMatchObject({ reasoningEffort: "high" });
+    expect(resolve({ model: "claude-sonnet-5", reasoning: "bogus" as never })).toMatchObject({ reasoningEffort: "medium" });
   });
 });
 

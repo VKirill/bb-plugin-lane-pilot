@@ -3,7 +3,7 @@ import { hostContract, taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { claimStageSpawn, countAttempts, getRun, getTask, listLiveTasksForRun, listOpenAttempts, listStageReceipts, openDatabase } from "../../storage";
 import { criticAcrossFamilies, criticPairCandidates, latestWriterPair, pairApartFromWriter, roleSelection, sdkCriticCatalog } from "../critic-pair";
-import { bbServiceTier, writerExecutionSelection, writerServiceTier, findModelIn } from "@lane-pilot/models";
+import { bbServiceTier, writerExecutionSelection, writerServiceTier, findModelIn, modelFamily } from "@lane-pilot/models";
 import { qaSpawnClaimed } from "../../qa";
 import { reconcileCritic } from "../../stability";
 import { resolveStageWriterSelection } from "../../writer";
@@ -437,6 +437,8 @@ export async function runCodeCritique(input:{
   if (apart?.changed) input.bb.log.info(`code critic for ${input.taskId}: ${apart.pair.providerId}/${apart.pair.model} instead of the writer's own pair`);
   const providerId = frozen?.providerId ?? apart?.pair.providerId ?? liveSelection.providerId;
   const modelId = frozen?.model ?? apart?.pair.model ?? liveSelection.model;
+  // The independence the rule promises is checked on the pair that will really run, after every fallback: not met is said, never silent (F4/R4).
+  if (!frozen && writerPair && modelFamily(modelId) && modelFamily(modelId) === modelFamily(writerPair.model)) input.bb.log.warn(`code critic for ${input.taskId}: ${providerId}/${modelId} is of the writer's own family (${writerPair.providerId}/${writerPair.model}); the other family has no usable model here, so the review is not independent`);
   const policy = frozen ?? freezeCritiquePolicy({
     settings:parsed, providerId, model:modelId, reasoningEffort:configuredEffort,
     serviceTier:typeof savedTier === "string" && savedTier ? String(savedTier) : "standard",

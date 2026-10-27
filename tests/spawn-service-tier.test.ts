@@ -348,6 +348,7 @@ describe("spawn service tier", () => {
         authorized: false,
         accounts: [],
         providerId: "acp-opencode",
+        model: "router9/x",
       });
 
       expect(spawned).toHaveLength(1);

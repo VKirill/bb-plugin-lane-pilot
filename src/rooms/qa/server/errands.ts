@@ -2,8 +2,7 @@ import { z } from "zod";
 import { findOpenNativeRun, recordSecretIssuance, getRun, getRunSettingsScopes, loadProjectSettings } from "../../storage";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { QA_HOST_KEY } from "../qa-host";
-import { ERRAND_BUILTIN } from "../../schedule";
-import { configuredSetting } from "../../core/server";
+import { configuredSetting, modelCatalogOf, resolveSpawnModel } from "../../core/server";
 import { fullAccessSpawn, folderEnvironment, hiddenPlacement, projectFolder } from "../../core/server";
 import { spawnTextId } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
@@ -203,11 +202,15 @@ function mountErrandCore(ctx: ServerCore) {
     const placement = detached
       ? hiddenPlacement(input.projectId, `Lane Pilot errand: ${title}`, place.section)
       : await helperChildPlacement({ bb, db, projectId: input.projectId, runId: input.runId!, role: "errand", taskTitle: title });
-    const providerId = input.providerId ?? ERRAND_BUILTIN.providerId;
+    // The one resolver: what the caller named (the schedule's / the tool's resolved model) is a pin, kept as a consistent provider+model pair;
+    // nothing named is the errand row of the role table.
+    const errandRole = resolveSpawnModel({ role: "errand", settings: loadProjectSettings(db, input.projectId), catalog: modelCatalogOf(ctx).peek(), hostId: place.hostId,
+      ...(input.model ? { pinned: { provider: input.providerId ?? null, model: input.model, reasoning: input.reasoning ?? null } } : input.reasoning ? { pinned: { reasoning: input.reasoning } } : {}) });
+    const providerId = errandRole.providerId;
     const spawned = await fullAccessSpawn(bb, {
       ...placement,
       ...requiredPolicyField(bb, helperPolicy, providerId, "errand"),
-      ...writerExecutionSelection(providerId, input.model ?? ERRAND_BUILTIN.model, input.reasoning ?? ERRAND_BUILTIN.reasoningEffort, input.serviceTier ?? "default"),
+      ...writerExecutionSelection(providerId, errandRole.model, errandRole.reasoningEffort, input.serviceTier ?? "default"),
       prompt: errandPrompt({ task: input.task, browserHostId: setup.hostId, authorized: input.authorized, accounts: [...input.accounts] }),
       environment: place.environment,
       pluginMetadata: { role: "errand", spawnId: input.spawnId ?? `${input.runId ?? input.projectId}:${spawnTextId(input.task)}`, ...(input.runId ? { lanePilotRunId: input.runId } : {}), ...(detached ? {} : { parentPmThreadId: input.pmThreadId }), helperMode: helperPolicy.mode, ...input.metadata },
