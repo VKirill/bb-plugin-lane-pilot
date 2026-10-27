@@ -159,9 +159,9 @@ export function mountErrands(ctx: ServerCore) {
    * The accounts a PM or a schedule hands to an errand (J7): only the names the project list leaves open, only they are named to the helper.
    * Left out or missing: nothing starts and `blocked` says what to do.
    */
-  async function resolveAccounts(input: { projectId: string; runId: string; pmThreadId: string; names: readonly string[] }): Promise<{ ok: true; accounts: CatalogEntry[] } | { ok: false; blocked: Blocked }> {
+  async function resolveAccounts(input: { projectId: string; runId: string | null; pmThreadId: string | null; names: readonly string[] }): Promise<{ ok: true; accounts: CatalogEntry[] } | { ok: false; blocked: Blocked }> {
     if (!input.names.length) return { ok: true, accounts: [] };
-    const gate = await ctx.secrets.check({ declared: [...input.names], allowed: allowedSecretNames(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId))), kinds: ["secret", "login", "ssh", "ftp"] }, { fresh: true });
+    const gate = await ctx.secrets.check({ declared: [...input.names], allowed: allowedSecretNames(loadProjectSettings(db, input.projectId, input.runId ? getRunSettingsScopes(db, input.runId) : [])), kinds: ["secret", "login", "ssh", "ftp"] }, { fresh: true });
     const problem = secretProblem(gate);
     if (problem.length || gate.unavailable) {
       return { ok: false, blocked: { state: "blocked", reason: waitingSecretReason(problem.length ? problem : [...input.names]), next: "No helper was started. Fix the access below, then call lane_pilot_errand again with the same arguments:", fix: secretFixLines(gate) } };
@@ -170,7 +170,7 @@ export function mountErrands(ctx: ServerCore) {
     // Fetched only to be masked: whatever the helper prints of them never reaches the PM's view of its report.
     for (const account of accounts) {
       await ctx.secrets.record(account.name);
-      try { recordSecretIssuance(db, { projectId: input.projectId, runId: input.runId, consumer: "errand", threadId: input.pmThreadId, secretName: account.name }); } catch (cause) { bb.log.warn(`secret issuance journal: ${cause instanceof Error ? cause.message : String(cause)}`); }
+      try { recordSecretIssuance(db, { projectId: input.projectId, ...(input.runId ? { runId: input.runId } : {}), consumer: "errand", ...(input.pmThreadId ? { threadId: input.pmThreadId } : {}), secretName: account.name }); } catch (cause) { bb.log.warn(`secret issuance journal: ${cause instanceof Error ? cause.message : String(cause)}`); }
     }
     return { ok: true, accounts };
   }

@@ -64,7 +64,7 @@ import { createWriterStart } from "./src/rooms/writer/server";
 import { createWriterDispatch } from "./src/rooms/writer/server";
 import { createWorkflowEngine } from "./src/rooms/workflow/server";
 import { createWorkflowTriggersService } from "./src/rooms/workflow/server";
-import { createScheduleService } from "./src/rooms/schedule/server";
+import { createScheduleService, registerAgentRoutineActions } from "./src/rooms/schedule/server";
 import { relayFor } from "./src/rooms/relay/server";
 import { mountLearning } from "./src/rooms/learning";
 import { installThreadSignals } from "@lane-pilot/thread-observe";
@@ -134,6 +134,8 @@ export default async function plugin(bb: BbPluginApi) {
     createStability(ctx, services),
     createScheduleService(ctx, services),
   );
+  // The two code steps of `agent-routine`, the graph a schedule of kind agent runs (registered here: the schedule room imports the workflow room, not the other way).
+  registerAgentRoutineActions(services.workflowEngine, ctx, services);
   mountLifecycleEvents(ctx, { onQueued: (name, entry) => {
     const id = entry && typeof entry === "object" ? Reflect.get(entry, "id") : undefined;
     if (typeof id === "string") return relayFor(ctx).queueEvent(name, id).then(() => undefined);

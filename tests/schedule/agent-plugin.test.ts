@@ -14,9 +14,10 @@ const projectId = "proj_agent";
 let dispose: (() => Promise<void> | void) | null = null;
 afterEach(async () => { await dispose?.(); dispose = null; });
 
-const OUTCOME = (summary: string, extra = "") => `Checked the positions.\nOUTCOME\nsummary: ${summary}\ndecision: queued a title test\nfollow-ups: re-check next Monday\ncode-change: none\nurgent: no\nstatus: done${extra}`;
+/** The agent's answer: findings, then the typed fields of the routine graph's agent step as the engine reads them (one fenced JSON block). */
+const OUTCOME = (summary: string, extra: Record<string, unknown> = {}) => `Checked the positions.\n\n\`\`\`json\n${JSON.stringify({ report: "Looked at the positions.", summary, decision: "queued a title test", follow_ups: "re-check next Monday", code_change: "", urgent: false, status: "done", blocked_reason: "", handoff: "done", ...extra })}\n\`\`\``;
 
-async function setup() {
+async function setup(options: { pm?: boolean } = {}) {
   const spawned: Array<Record<string, any>> = [];
   const registered = new Map<string, (context: { signal: AbortSignal }) => unknown>();
   const state = { report: OUTCOME("first look") };
@@ -40,14 +41,17 @@ async function setup() {
         send: async () => ({}),
       },
       environments: { get: async () => ({ id: "env-pm", hostId: "local-host", path: process.cwd(), status: "ready" }) },
+      projects: { get: async () => ({ id: projectId, name: "Site", sources: [{ hostId: "local-host", path: process.cwd() }] }) },
     } as never,
   });
   (bb.background as unknown as Record<string, unknown>).experimental_vkSchedule = (name: string, _cron: string, fn: (context: { signal: AbortSignal }) => unknown) => { registered.set(name, fn); };
   await plugin(bb);
   dispose = () => harness.lifecycle.dispose();
   const db = openDatabase(bb);
-  createRun(db, "lprun_a", projectId, "cli");
-  setRunThread(db, "lprun_a", "thr_pm");
+  if (options.pm !== false) {
+    createRun(db, "lprun_a", projectId, "cli");
+    setRunThread(db, "lprun_a", "thr_pm");
+  }
   const rpc = async (name: string, params: Record<string, unknown>) => await harness.behavior.callRpc(name, params) as Record<string, any>;
   const tool = async (params: Record<string, unknown>, threadId = "thr_pm") => JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_schedule", params, { threadId, projectId }))) as Record<string, any>;
   const tick = async () => { await registered.get("schedule-board-tick")!({ signal: new AbortController().signal }); };
@@ -85,7 +89,7 @@ describe("a scheduled agent", () => {
     const first = spawned[0]!;
     expect(first.visibility).toBe("hidden");
     expect(first.parentThreadId).toBeUndefined();
-    expect(first.pluginMetadata).toMatchObject({ role: "specialist", specialist: "seo-specialist", origin: "schedule", scheduleId: id, lanePilotRunId: "lprun_a" });
+    expect(first.pluginMetadata).toMatchObject({ role: "specialist", specialist: "seo-specialist", origin: "schedule", lanePilotRunId: "lprun_a", lanePilotWorkflowNode: "work", lanePilotWorkflowRunId: expect.stringMatching(/^wfrun_/) });
     expect(first.prompt).toMatch(/^.*lane-pilot.*\nNative Lane profile seo-specialist/s);
     expect(first.prompt).toContain("Check the positions of the main queries in Yandex");
     expect(first.prompt).toContain("no previous runs to read");
@@ -95,7 +99,7 @@ describe("a scheduled agent", () => {
     expect(await kv(`native-selection:${marker}`)).toMatchObject({ agentId: "seo-specialist", projectId, parentRunId: "lprun_a" });
 
     let runs = (await rpc("schedule_runs", { id })).runs as Array<Record<string, any>>;
-    expect(runs[0]).toMatchObject({ status: "succeeded", refKind: "thread", refId: "thr_agent_1", output: expect.stringContaining("summary: first look") });
+    expect(runs[0]).toMatchObject({ status: "succeeded", refKind: "workflow_run", refId: expect.stringMatching(/^wfrun_/), output: expect.stringContaining("summary: first look") });
     const items = db.prepare("SELECT source,kind,what,wake FROM lane_pilot_owner_item").all();
     expect(items).toEqual([{ source: "schedule", kind: "agent_outcome", what: "«SEO positions» (seo-specialist): first look", wake: 0 }]);
 
@@ -111,6 +115,30 @@ describe("a scheduled agent", () => {
     expect(db.prepare("SELECT count(*) AS n FROM lane_pilot_owner_item").get()).toEqual({ n: 2 });
   });
 
+  it("runs in a project without Lane Pilot: a hidden thread of the project in its own folder, no Lane Pilot run behind it, the report kept and one line on the owner's list", async () => {
+    const { tool, rpc, tick, spawned, state, db } = await setup({ pm: false });
+    state.report = OUTCOME("first look", { code_change: "Add the canonical tag to /pricing: the template omits it." });
+    const made = await tool({ action: "create", definition: definition() });
+    expect(made.warnings ?? []).not.toContainEqual(expect.stringContaining("PM chat"));
+    const id = made.schedule.id as string;
+    expect((await rpc("schedule_run_now", { id, key: "one" })).ok).toBe(true);
+    await tick();
+    expect(spawned).toHaveLength(1);
+    const first = spawned[0]!;
+    expect(first).toMatchObject({ visibility: "hidden", projectId, environment: { type: "host", hostId: "local-host", workspace: { type: "unmanaged", path: process.cwd() } } });
+    expect(first.parentThreadId).toBeUndefined();
+    expect(first.pluginMetadata).toMatchObject({ role: "specialist", specialist: "seo-specialist", origin: "schedule" });
+    expect(first.pluginMetadata).not.toHaveProperty("lanePilotRunId");
+    expect(first.prompt).toContain("This project does not use Lane Pilot");
+    const runs = (await rpc("schedule_runs", { id })).runs as Array<Record<string, any>>;
+    expect(runs[0]).toMatchObject({ status: "succeeded", output: expect.stringContaining("summary: first look") });
+    const items = db.prepare("SELECT source,kind,what,why,wake FROM lane_pilot_owner_item").all() as Array<Record<string, any>>;
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ source: "schedule", kind: "agent_outcome", wake: 0 });
+    expect(items[0]!.why).toContain("Add the canonical tag to /pricing");
+    expect(items[0]!.why).toContain("нет Lane Pilot");
+  });
+
   it("fails the run with a clear reason, not a crash, when the agent no longer exists", async () => {
     const { tick, db, rpc, spawned } = await setup();
     const normalized = normalizeSchedule({ projectId, name: "Orphan", task: { kind: "agent", agentId: "ghost-agent", task: "Do something regularly and report." }, when: { type: "cron", cron: "0 9 * * 1", timezone: "UTC" } }, Date.now());
@@ -119,8 +147,8 @@ describe("a scheduled agent", () => {
     await rpc("schedule_run_now", { id: row.id, key: "x" });
     await tick();
     const run = ((await rpc("schedule_runs", { id: row.id })).runs as Array<Record<string, any>>)[0]!;
-    expect(run).toMatchObject({ status: "failed", reason: "start_failed" });
-    expect(run.error).toMatch(/agent_unknown: there is no agent "ghost-agent"/);
+    expect(run).toMatchObject({ status: "failed" });
+    expect(`${run.error} ${run.reason}`).toMatch(/unknown_specialist: there is no agent "ghost-agent"/);
     expect(spawned).toEqual([]);
   });
 

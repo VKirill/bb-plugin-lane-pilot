@@ -108,8 +108,9 @@ export function criticReconcilePort(bb: BbPluginApi, projectId: string) {
 
 export const CRITIC_OUTCOME_UNKNOWN = "code_critique_outcome_unknown";
 
-export function resolveHelperDispatch(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string}): ReturnType<typeof decideHelperDispatch> {
-  const stored = loadRunHelperPolicyJson(input.db, input.runId);
+/** `runId` is null for a helper of a project with no Lane Pilot run (a standalone workflow run): the policy then comes from the project's settings alone and nothing is stored. */
+export function resolveHelperDispatch(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string | null}): ReturnType<typeof decideHelperDispatch> {
+  const stored = input.runId ? loadRunHelperPolicyJson(input.db, input.runId) : null;
   let snapshot: HelperPolicySnapshot | null = null;
   if (stored) {
     try { snapshot = JSON.parse(stored) as HelperPolicySnapshot; }
@@ -118,16 +119,16 @@ export function resolveHelperDispatch(input:{bb:BbPluginApi;db:ReturnType<typeof
       return { ok: false, reason: "helper_context_snapshot_invalid" };
     }
   }
-  const parsed = parseHelperContextSettings(loadProjectSettings(input.db,input.projectId,getRunSettingsScopes(input.db,input.runId)));
+  const parsed = parseHelperContextSettings(loadProjectSettings(input.db,input.projectId,input.runId ? getRunSettingsScopes(input.db,input.runId) : []));
   if (!parsed.ok && !snapshot) return { ok: false, reason: parsed.reason };
   const settings = snapshot?.settings ?? (parsed.ok ? parsed.settings : { mode: "inherit" as const, skills: [], mcpServers: [], bbPlugins: [], nativePlugins: [] });
   const capability = detectVkCapability((input.bb as { agents?: { experimental_vkSessionPolicy?: unknown; experimental_vkRequiredSessionPolicy?: unknown } }).agents ?? {});
   const decision = decideHelperDispatch({ settings, capability, snapshot });
-  if (decision.ok && !stored) persistRunHelperPolicyJson(input.db, input.runId, JSON.stringify(decision.snapshot));
+  if (decision.ok && !stored && input.runId) persistRunHelperPolicyJson(input.db, input.runId, JSON.stringify(decision.snapshot));
   return decision;
 }
 
-export function requireHelperSpawn(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string}): HelperPolicySnapshot {
+export function requireHelperSpawn(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string | null}): HelperPolicySnapshot {
   const decision = resolveHelperDispatch(input);
   if (!decision.ok) throw new Error(decision.reason);
   return decision.snapshot;

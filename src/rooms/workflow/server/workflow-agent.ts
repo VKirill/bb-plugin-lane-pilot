@@ -2,8 +2,9 @@ import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, waitThreadIdle } from "@
 import { getRunSettingsScopes } from "../../storage";
 import { writerExecutionSelection, findModelIn } from "@lane-pilot/models";
 import { providerLimitNotice } from "../../writer/server";
-import { ROLE_PROFILES } from "../../native-agent";
+import { MAIN_AGENT_ID, ROLE_PROFILES, compileEffectiveMainAgent, isCustomAgentId, mentionContext } from "../../native-agent";
 import type { ExtraAccess, HelperRole } from "../../native-agent";
+import { storeNativeSelection } from "../../native-agent/server";
 import { redactKnown } from "@lane-pilot/kit";
 import { READ_ONLY_LINE, agentPrompt, outputContract, parseAgentOutput } from "@lane-pilot/workflow-engine";
 import { contractProblems, contractRepairPrompt, describeProblems, hasContractProblems } from "@lane-pilot/workflow-engine";
@@ -18,7 +19,7 @@ import type { Field, GraphNode } from "@lane-pilot/workflow-engine";
 import { roleMethod } from "../../critique";
 import { phaseFolder } from "../../phase";
 import type { LanePilotDatabase } from "../../storage";
-import { fullAccessSpawn } from "../../core/server";
+import { folderEnvironment, fullAccessSpawn, hiddenPlacement, projectFolder } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { detectRepoEdits, gitRepoStatus } from "../../verification/server";
 import { SPECIALIST_ROLES } from "../../critique/server";
@@ -47,10 +48,27 @@ const ROLE_MAP: Record<string, HelperRole> = {
   triager: "gate-triage", memory: "memory-maintainer", "browser-qa": "browser-qa", errand: "errand", council: "council-seat", "project-life": "project-life", "pm-reader": "pm-reader",
 };
 
+/** A bundled specialist; any other `specialist:<id>` names an agent the owner created, which must exist when the step runs (`ownSpecialist`). */
+export const isBundledSpecialist = (id: string): boolean => (SPECIALIST_ROLES as readonly string[]).includes(id);
+
+/** The graph a schedule of kind agent runs (workflows/agent-routine.json). */
+export const AGENT_ROUTINE = "agent-routine";
+
+/** The model the schedule names for its agent (the task's `model`, `reasoning`, `serviceTier`): they stand over the settings, as the thread the old runner started did. */
+function routineModel(inputs: Record<string, unknown>): Pick<HelperRequest, "model" | "reasoning" | "serviceTier"> {
+  const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
+  const reasoning = text(inputs.reasoning), tier = text(inputs.serviceTier);
+  return {
+    ...(text(inputs.model) ? { model: text(inputs.model) } : {}),
+    ...(reasoning ? { reasoning } : {}),
+    serviceTier: tier === "fast" ? "fast" : "default",
+  };
+}
+
 /** What a node's `role` means here: the profile of the helper, the role in its metadata, and which repository files it may touch (none, except the notes of its own chat). */
 export function roleSpec(role: string): RoleSpec {
   const specialist = role.startsWith("specialist:") ? role.slice("specialist:".length) : null;
-  if (specialist && (SPECIALIST_ROLES as readonly string[]).includes(specialist)) {
+  if (specialist && (isBundledSpecialist(specialist) || (MAIN_AGENT_ID.test(specialist) && isCustomAgentId(specialist)))) {
     return { helper: `specialist:${specialist}` as HelperRole, metadata: "specialist", specialist, readOnly: false, editable: (file) => BASE_ALLOWED(file) || file === ".agents" || file.startsWith(".agents/") };
   }
   const helper = ROLE_MAP[role] ?? "analyst";
@@ -136,6 +154,31 @@ export function extraAccessOf(request: Pick<HelperRequest, "skills" | "plugins" 
   return Object.keys(extra).length ? extra : undefined;
 }
 
+/** A step's own extra access and an agent's profile as one: each group is the union, so both load. */
+function withProfileAccess(step: ExtraAccess | undefined, profile: ExtraAccess | undefined): ExtraAccess | undefined {
+  if (!profile) return step;
+  const merged: ExtraAccess = {};
+  for (const group of ["bbPlugins", "skills", "mcpServers"] as const) {
+    const names = [...new Set([...(step?.[group] ?? []), ...(profile[group] ?? [])])];
+    if (names.length) merged[group] = names;
+  }
+  return Object.keys(merged).length ? merged : undefined;
+}
+
+/**
+ * The profile of an agent the owner created, named by a node's `specialist:<id>` role: the stored selection a chat started with that agent
+ * gets (its prompt), the skills and MCP servers its profile asks for, its model and effort. An id that is no agent of the owner stops the
+ * step with a clear code (the validator says the same when the draft is saved).
+ */
+export async function ownSpecialist(rt: ChainRuntime, id: string): Promise<{ marker: string; access: ExtraAccess }> {
+  const row = (await rt.ctx.ownedAgents())[id];
+  if (!isBundledSpecialist(id) && (!row || row.compiledCorrupt)) throw new HelperFailure("unknown_specialist", `there is no agent "${id}" (deleted or renamed?): a node with role specialist:${id} needs a bundled specialist or an agent you created (bb lane-pilot agents list --custom)`);
+  const { selection } = await storeNativeSelection(rt.ctx, { projectId: rt.projectId, agentId: id, ...(rt.runId ? { parentRunId: rt.runId } : {}) });
+  // A bundled specialist's skills and servers come from its role profile; an agent of the owner brings its own.
+  const profile = row && !isBundledSpecialist(id) ? compileEffectiveMainAgent(id, row) : { skills: [], mcpServers: [] };
+  return { marker: mentionContext(selection), access: { ...(profile.skills?.length ? { skills: [...profile.skills] } : {}), ...(profile.mcpServers?.length ? { mcpServers: [...profile.mcpServers] } : {}) } };
+}
+
 /** Whether the thread shows a follow-up turn requested at or after `at`. */
 async function followUpRequested(bb: ServerCore["bb"], threadId: string, at: number): Promise<boolean> {
   const listed = await listThreadEventsRaw(bb, { threadId, types: THREAD_WATCH_EVENT_TYPES, order: "desc", limit: "50" });
@@ -153,28 +196,52 @@ export function createWorkflowAgents() {
     const { rt } = asked;
     const { bb, db, host } = rt.ctx;
     const spec = roleSpec(asked.role);
+    // A `specialist:` role that names no specialist (a role taken from an input, a reserved id) must not quietly run as an analyst.
+    if (asked.role.startsWith("specialist:") && !spec.specialist) throw new HelperFailure("unknown_specialist", `"${asked.role.slice("specialist:".length)}" is neither a bundled specialist nor an agent you created (bb lane-pilot agents list)`);
+    // An agent the owner created runs with its own profile: its marker leads the first message, its skills and MCP servers join the session's.
+    // A scheduled agent's routine runs a bundled specialist as itself too (its stored profile selection, as a chat started with it gets).
+    const own = spec.specialist && (!isBundledSpecialist(spec.specialist) || asked.workflowId === AGENT_ROUTINE) ? await ownSpecialist(rt, spec.specialist) : null;
     // A phase stage writes its documents: its helper is told which folders it may write, the same ones the check below allows.
     const phaseId = spec.readOnly && isPhaseAuthor(spec.helper) ? phaseOfWorkflowRun(db, asked.workflowRunId) : null;
-    const request = phaseId ? { ...asked, prompt: phaseWriteNote(asked.prompt, phaseId, spec.helper) } : asked;
-    const pm = await bb.sdk.threads.get({ threadId: rt.pmThreadId });
-    const environmentId = stringAt(pm, "environmentId");
-    if (!environmentId) throw new HelperFailure("no_pm_environment", "the PM chat has no environment to run the helper in");
-    const envObj = await bb.sdk.environments.get({ environmentId }).catch(() => null);
-    const checkoutPath = stringAt(envObj, "path") ?? "", checkoutHostId = stringAt(envObj, "hostId") ?? "";
+    const noted = phaseId ? phaseWriteNote(asked.prompt, phaseId, spec.helper) : asked.prompt;
+    const request = { ...asked, prompt: own && !asked.intoThread ? `${own.marker}\n\n${noted}` : noted };
+    // With a PM chat the helper reuses the chat's environment; with none, it works in the project's own first folder.
+    let environment: ReturnType<typeof folderEnvironment> | { type: "reuse"; environmentId: string };
+    let checkoutPath = "", checkoutHostId = "", chatSection: string | null = null;
+    if (rt.pmThreadId) {
+      const pm = await bb.sdk.threads.get({ threadId: rt.pmThreadId });
+      chatSection = stringAt(pm, "sectionId");
+      const environmentId = stringAt(pm, "environmentId");
+      if (!environmentId) throw new HelperFailure("no_pm_environment", "the PM chat has no environment to run the helper in");
+      const envObj = await bb.sdk.environments.get({ environmentId }).catch(() => null);
+      checkoutPath = stringAt(envObj, "path") ?? "";
+      checkoutHostId = stringAt(envObj, "hostId") ?? "";
+      environment = { type: "reuse", environmentId };
+    } else {
+      const folder = await projectFolder(bb, rt.projectId);
+      if (!folder) throw new HelperFailure("no_project_folder", "the project has no folder on a machine to run the helper in; add one to the project in BB");
+      checkoutPath = folder.path;
+      checkoutHostId = folder.hostId;
+      environment = folderEnvironment(folder);
+    }
     const before = checkoutPath && checkoutHostId ? await gitRepoStatus(host, checkoutHostId, checkoutPath) : null;
 
     async function spawn(req: HelperRequest): Promise<string> {
       const providerId = req.provider ?? DEFAULT_PROVIDER;
       const policy = requireHelperSpawn({ bb, db, projectId: rt.projectId, runId: rt.runId });
-      const placement = await helperChildPlacement({ bb, db, projectId: rt.projectId, runId: rt.runId, role: spec.metadata, taskTitle: `${req.title}`.slice(0, 80) });
+      // With no PM chat the helper is a hidden thread of the project. A scheduled agent's thread is one too even with a chat: as the chat's child its
+      // end would wake whichever chat happened to be open (scheduled errands learned that, 2026-10-19); the schedule board keeps the report.
+      const detached = !rt.runId || req.workflowId === AGENT_ROUTINE;
+      const placement = !detached ? await helperChildPlacement({ bb, db, projectId: rt.projectId, runId: rt.runId!, role: spec.metadata, taskTitle: `${req.title}`.slice(0, 80) })
+        : hiddenPlacement(rt.projectId, `Lane Pilot ${req.workflowId === AGENT_ROUTINE ? "scheduled agent" : "workflow"}: ${req.title}`, chatSection);
       const spawned = await fullAccessSpawn(bb, {
         ...placement,
-        ...requiredPolicyField(bb, policy, providerId, spec.helper, extraAccessOf(req)),
+        ...requiredPolicyField(bb, policy, providerId, spec.helper, withProfileAccess(extraAccessOf(req), own?.access)),
         ...writerExecutionSelection(providerId, req.model ?? DEFAULT_MODEL, req.reasoning ?? DEFAULT_REASONING, req.serviceTier ?? "default"),
         prompt: req.prompt,
-        environment: { type: "reuse", environmentId },
+        environment,
         pluginMetadata: {
-          role: spec.metadata, ...(spec.specialist ? { specialist: spec.specialist } : {}), ...(rt.origin ? { origin: rt.origin } : {}), spawnId: req.spawnKey, lanePilotRunId: rt.runId, parentPmThreadId: rt.pmThreadId, helperMode: policy.mode,
+          role: spec.metadata, ...(spec.specialist ? { specialist: spec.specialist } : {}), ...(rt.origin ? { origin: rt.origin } : {}), spawnId: req.spawnKey, ...(rt.runId ? { lanePilotRunId: rt.runId } : {}), ...(rt.pmThreadId && !detached ? { parentPmThreadId: rt.pmThreadId } : {}), helperMode: policy.mode,
           lanePilotWorkflowRunId: req.workflowRunId, lanePilotWorkflowStep: req.stepKey, lanePilotWorkflowSpawn: req.spawnKey, lanePilotWorkflowNode: req.nodeId,
         },
       } as Parameters<typeof fullAccessSpawn>[1]);
@@ -292,34 +359,39 @@ export function stepPacket(ctx: StepContext<ChainRuntime>, node: Extract<GraphNo
   if (ctx.input.via.handoff) inputs.push({ name: "previous_handoff", value: ctx.input.via.handoff });
   const goalName = GOAL_INPUTS.find((name) => typeof values[name] === "string" && String(values[name]).trim());
   const kinds = Object.fromEntries((node.consumes ?? []).flatMap((spec) => (spec.as ? [[spec.as, `${spec.kind}/${spec.version}`] as const] : [])));
-  return planPacket({ step: { id: node.id, role: node.role, mode: ctx.mode }, ...(goalName ? { goal: String(values[goalName]), goalInput: goalName } : {}), inputs, produces: node.produces, gates: node.gates, kinds, chatId: ctx.runtime?.pmThreadId ?? "chat", runId: ctx.runId, byReference });
+  return planPacket({ step: { id: node.id, role: ctx.render(node.role), mode: ctx.mode }, ...(goalName ? { goal: String(values[goalName]), goalInput: goalName } : {}), inputs, produces: node.produces, gates: node.gates, kinds, chatId: ctx.runtime?.pmThreadId ?? "chat", runId: ctx.runId, byReference });
 }
 
 /** The data a node hands its helper: the mapped edge fields and the node's own `with`, and the item of its branch. */
 export function agentRequest(ctx: StepContext<ChainRuntime>, node: Extract<GraphNode, { type: "agent" }>, options: { byReference?: boolean } = {}): HelperRequest {
   const rt = ctx.runtime!;
   const fields = outputFields(ctx.workflow, node) as Field[];
-  const spec = roleSpec(node.role);
+  // The role may be taken from an input (`specialist:{{$inputs.agentId}}`: the scheduled agent's routine runs whichever agent the schedule names).
+  const role = ctx.render(node.role);
+  const spec = roleSpec(role);
   const via = ctx.input.via;
   const prior = via.mode === "same-session" || via.mode === "read-prior-session" ? { mode: via.mode, threadId: via.fromThreadId ?? null } : undefined;
   const task = ctx.render(node.prompt);
-  const method = roleMethod(spec.helper.startsWith("specialist:") ? "" : node.role);
+  const method = roleMethod(spec.helper.startsWith("specialist:") ? "" : role);
   const title = node.title?.en ?? node.label ?? node.id;
   const intoThread = intoThreadOf(ctx, node);
   const packet = stepPacket(ctx, node, options.byReference !== false)?.packet;
   // The step's own `with` over the workflow's `$inputs`: a fragment's goal reaches its helper even where no edge or node maps it. A step that
   // continues a thread was given the workflow's inputs earlier in it.
-  const inputs = { ...(intoThread ? {} : ctx.inputs), ...ctx.input.with };
+  // The routine graph of a scheduled agent carries everything the agent needs in its first message already (its `brief` step): the inputs are not repeated.
+  const routine = ctx.workflow.id === AGENT_ROUTINE;
+  const inputs = routine ? {} : { ...(intoThread ? {} : ctx.inputs), ...ctx.input.with };
   // K7: the first step and every third remind the helper what the whole run is for.
   const goals = ctx.reground ? goalsBlock(ctx.goals) : undefined;
   const body = intoThread
     ? `Continue the workflow step "${node.id}". New material for you:\n\n${packet ?? JSON.stringify(inputs, null, 1).slice(0, 20_000)}\n\n${task}${goals ? `\n\n${goals}` : ""}\n\n${outputContract(fields)}`
-    : agentPrompt({ workflow: ctx.workflow.id, node: node.id, title, role: node.role, mode: ctx.mode, ...(method.length ? { method: method.join("\n") } : {}), task, inputs,
+    : agentPrompt({ workflow: ctx.workflow.id, node: node.id, title, role, mode: ctx.mode, ...(method.length ? { method: method.join("\n") } : {}), task, inputs,
       ...(ctx.input.item !== undefined ? { item: ctx.input.item } : {}), handoff: via.handoff ?? null, ...(prior ? { prior } : {}), contract: outputContract(fields),
       readOnly: spec.readOnly, skills: [...(node.skills ?? []), ...(node.profile?.skills ?? [])], ...(goals ? { goals } : {}), ...(packet ? { packet } : {}), ...(node.authorized !== undefined ? { authorized: node.authorized } : {}) });
   return {
-    rt, workflowRunId: ctx.runId, workflowId: ctx.workflow.id, stepKey: ctx.stepKey, nodeId: node.id, spawnKey: ctx.spawnKey, role: node.role, title, prompt: body, fields,
+    rt, workflowRunId: ctx.runId, workflowId: ctx.workflow.id, stepKey: ctx.stepKey, nodeId: node.id, spawnKey: ctx.spawnKey, role, title, prompt: body, fields,
     ...(node.provider ? { provider: node.provider } : {}), ...(node.model ? { model: node.model } : {}), ...(node.reasoning ? { reasoning: node.reasoning } : {}), ...(node.service_tier ? { serviceTier: node.service_tier } : {}), ...(node.model_preset ? { preset: node.model_preset } : {}),
+    ...(routine ? routineModel(ctx.inputs ?? {}) : {}),
     skills: [...new Set([...(node.skills ?? []), ...(node.profile?.skills ?? [])])], plugins: [...new Set(node.plugins ?? [])], mcp: [...new Set(node.mcp ?? [])], intoThread, signal: ctx.signal,
     ...(node.produces?.length || node.gates?.length ? { contract: { id: node.id, produces: node.produces, gates: node.gates } } : {}),
   };
@@ -341,14 +413,18 @@ export async function pmPairOfThread(bb: ServerCore["bb"], threadId: string): Pr
  */
 export async function withResolvedModel(request: HelperRequest): Promise<HelperRequest> {
   const { rt } = request;
-  const settings = (await rt.ctx.effectiveProjectSettings(rt.projectId, getRunSettingsScopes(rt.ctx.db, rt.runId)).catch(() => ({ values: {} }))).values;
-  const pm = await pmPairOfThread(rt.ctx.bb, rt.pmThreadId);
+  const settings = (await rt.ctx.effectiveProjectSettings(rt.projectId, rt.runId ? getRunSettingsScopes(rt.ctx.db, rt.runId) : []).catch(() => ({ values: {} }))).values;
+  const pm = rt.pmThreadId ? await pmPairOfThread(rt.ctx.bb, rt.pmThreadId) : null;
   // The helper starts in the PM chat's environment, on one machine: a model that machine does not offer is passed over (a preset, a Settings
   // selection) or, when the step names it itself, refused here with the machines that do have it, instead of failing inside the spawn.
-  const hostId = await pmHostOf(rt.ctx.bb, rt.pmThreadId).catch(() => null);
+  const hostId = rt.pmThreadId ? await pmHostOf(rt.ctx.bb, rt.pmThreadId).catch(() => null) : (await projectFolder(rt.ctx.bb, rt.projectId))?.hostId ?? null;
   const read = hostId ? modelCatalogOf(rt.ctx).peek() : null;
   const offered = read && hostId ? (providerId: string, model: string) => offeredOnHost(read, providerId, model, hostId) : undefined;
-  const chosen = resolveAgentModel({ role: request.role, node: { provider: request.provider, model: request.model, reasoning: request.reasoning, service_tier: request.serviceTier, model_preset: request.preset }, settings, pm, ...(offered ? { offered } : {}), ...(request.workflowId ? { at: { workflowId: request.workflowId, nodeId: request.nodeId } } : {}) });
+  // An agent the owner created may name its own model and effort: they stand where the node names none (the node's own fields win).
+  const specialist = request.role.startsWith("specialist:") ? request.role.slice("specialist:".length) : "";
+  const agentMeta = specialist && !isBundledSpecialist(specialist) ? (await (async () => rt.ctx.ownedAgents())().catch(() => ({} as Awaited<ReturnType<typeof rt.ctx.ownedAgents>>)))[specialist]?.meta : undefined;
+  const agentPair = agentMeta?.model && !request.preset && !request.model ? { provider: request.provider ?? DEFAULT_PROVIDER, model: agentMeta.model } : null;
+  const chosen = resolveAgentModel({ role: request.role, node: { provider: agentPair?.provider ?? request.provider, model: agentPair?.model ?? request.model, reasoning: request.reasoning ?? agentMeta?.effort, service_tier: request.serviceTier, model_preset: request.preset }, settings, pm, ...(offered ? { offered } : {}), ...(request.workflowId ? { at: { workflowId: request.workflowId, nodeId: request.nodeId } } : {}) });
   if (chosen.issues.includes("model_unavailable_here") && read) {
     const where = findModelIn(read.providers.find((row) => row.id === chosen.providerId)?.models, chosen.model)?.hostIds.map((id) => read.hosts.find((row) => row.id === id)?.name ?? id).join(", ") ?? "";
     throw new HelperFailure("model_unavailable", `${chosen.providerId}/${chosen.model} is not offered by the machine this workflow's helpers run on (${read.hosts.find((row) => row.id === hostId)?.name ?? hostId})${where ? `; it is on ${where}` : ""}. Pick another model for the step.`);

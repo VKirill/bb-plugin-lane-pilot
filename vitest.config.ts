@@ -12,6 +12,7 @@ const mocking = [
   "tests/remote-git-detect.test.ts",
   "tests/qa-login.test.ts",
   "tests/stage-helper-live-settings.test.ts",
+  "tests/schedule/agent.test.ts",
   "tests/schedule/executors.test.ts",
   "tests/schedule/workflow-outcome.test.ts",
   "tests/server/helper-probe.test.ts",

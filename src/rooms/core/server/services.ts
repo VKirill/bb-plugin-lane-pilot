@@ -1,6 +1,5 @@
 import type { CouncilApi } from "../../council/server";
 import type { ErrandsApi } from "../../qa/server";
-import type { ScheduledAgentsApi } from "../../critique/server";
 import type { ScheduleService } from "../../schedule/server";
 import type { RuleScanApi } from "../../self-repair/server";
 import type { HarnessApi } from "../../harness/server";
@@ -201,7 +200,6 @@ export interface Services {
   /** The errand starter of the PM tools (also used by scheduled errands); set when the tools are mounted. */
   errands: ErrandsApi;
   /** Starts a named agent for a scheduled `agent` run and reads its report; set when the tools are mounted. */
-  agentRuns: ScheduledAgentsApi;
   /** The schedule board: scheduler, definitions, previews (src/server/schedule-service.ts). */
   schedules: ScheduleService;
 }

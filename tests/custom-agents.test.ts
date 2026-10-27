@@ -7,12 +7,13 @@ import { BB_AGENT_SESSIONS, unionLpBridgeToolsOnAgentsJson } from "../src/rooms/
 import { NATIVE_LP_BRIDGE_SPECIALIST_TOOLS } from "../src/rooms/native-agent/native-session-hooks";
 import { roleProfilePolicy, type HelperRole } from "../src/rooms/native-agent/helper-context";
 import { LP_AGENT_OVERRIDES_KEY } from "@lane-pilot/settings-catalog";
+import { listSettingRows, openDatabase } from "../src/rooms/storage/database";
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const fn of cleanup.splice(0)) await fn(); });
 
-async function host() {
-  const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+async function host(sdk: Record<string, unknown> = {}) {
+  const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot", sdk: sdk as never });
   await plugin(bb);
   cleanup.push(() => harness.lifecycle.dispose());
   const rpc = <T,>(name: string, input: Record<string, unknown> = {}) => harness.behavior.callRpc(name as never, input as never) as Promise<T>;
@@ -132,6 +133,36 @@ describe("the agent registry: an agent is data", () => {
     const policy = roleProfilePolicy("specialist:context-lead" as HelperRole, {}, { skills: ["lane-memory"], mcpServers: ["gitnexus"] });
     expect(policy.skills).toMatchObject({ mode: "allow", names: expect.arrayContaining(["env-catalog", "lane-memory"]) });
     expect(policy.mcpServers).toMatchObject({ names: expect.arrayContaining(["gitnexus"]) });
+  });
+});
+
+describe("deleting an agent that is in use", () => {
+  const schedule = (agentId: string) => ({ projectId: "proj_custom", name: "Context desk", task: { kind: "agent", agentId, task: "Keep the project context in order and report what changed." }, when: { type: "cron", cron: "0 9 * * 1", timezone: "UTC" } });
+
+  it("sets a project's main agent back to the default when the agent is deleted, and leaves the other projects alone", async () => {
+    const { rpc, bb } = await host();
+    const db = openDatabase(bb);
+    await rpc("create_agent", video);
+    await rpc("create_agent", { ...video, id: "other-lead" });
+    for (const [projectId, value] of [["proj_custom", "context-lead"], ["proj_other", "other-lead"]] as const) {
+      expect(await rpc("save_setting", { projectId, key: "main.agent", value, expectedVersion: 0 })).toMatchObject({ ok: true });
+    }
+    expect(await rpc("delete_agent", { id: "context-lead" })).toMatchObject({ ok: true });
+    const read = (projectId: string) => listSettingRows(db, projectId).find((row) => row.key === "main.agent")?.value;
+    expect(read("proj_custom")).toBeUndefined();
+    expect(read("proj_other")).toBe("other-lead");
+  });
+
+  it("refuses to delete an agent an active schedule runs, naming the schedule, and deletes it once the schedule is paused", async () => {
+    const { rpc } = await host({ hosts: { list: async () => [] } });
+    await rpc("create_agent", video);
+    const made = await rpc<{ ok: boolean; schedule: { id: string } | null; problems: string[] }>("schedule_upsert", { definition: schedule("context-lead") });
+    expect(made.problems).toEqual([]);
+    const refused = await rpc<{ ok: boolean; error?: string; detail?: string }>("delete_agent", { id: "context-lead" });
+    expect(refused).toMatchObject({ ok: false, error: "agent_in_use", detail: expect.stringContaining(`«Context desk» (${made.schedule!.id})`) });
+    expect((await rpc<{ agents: Item[] }>("list_agents", { custom: true })).agents.map((row) => row.id)).toEqual(["context-lead"]);
+    await rpc("schedule_pause", { id: made.schedule!.id });
+    expect(await rpc("delete_agent", { id: "context-lead" })).toMatchObject({ ok: true });
   });
 });
 

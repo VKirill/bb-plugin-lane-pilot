@@ -191,9 +191,15 @@ describe("the auditor", () => {
     expect(requests[0]!.spawnKey).toBe(`goal-audit:wfrun_1:${goalsSha(GOALS)}:0`);
   });
 
-  it("cannot audit a run that has no PM chat", async () => {
+  it("audits a run that has no PM chat with a runtime of its own (the helper is a hidden thread of the project)", async () => {
+    const { audit, requests } = auditor({ verdicts: [] });
+    await expect(audit({ link_run_id: null, project_id: "p" })).resolves.toMatchObject({ met: [] });
+    expect(requests).toHaveLength(1);
+  });
+
+  it("cannot audit a run that belongs to no project", async () => {
     const { audit } = auditor({ verdicts: [] });
-    await expect(audit({ link_run_id: null })).rejects.toThrow("no PM chat");
+    await expect(audit({ link_run_id: null, project_id: null })).rejects.toThrow("no PM chat");
   });
 });
 

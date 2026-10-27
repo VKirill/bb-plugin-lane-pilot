@@ -64,6 +64,26 @@ export const AGENT_OUTCOME_FORMAT = [
   "status: done   (or: status: blocked: <what is needed>)",
 ];
 
+/** The outcome of the routine graph's agent step (its typed fields) in the shape the history and the owner's line use. */
+export function agentOutcomeOf(fields: Record<string, unknown>): AgentOutcome {
+  const text = (value: unknown, max: number) => { const out = typeof value === "string" ? value.trim() : ""; return NONE.test(out) ? "" : out.slice(0, max); };
+  const blocked = /^blocked\b/iu.test(typeof fields.status === "string" ? fields.status : "");
+  return {
+    summary: text(fields.summary, 400) || "no summary given", decision: text(fields.decision, 600), followUps: text(fields.follow_ups, 600), codeChange: text(fields.code_change, 1500),
+    urgent: fields.urgent === true || /^(yes|true|да)\b/iu.test(String(fields.urgent ?? "")), status: blocked ? "blocked" : "done",
+    blockedReason: blocked ? text(fields.blocked_reason, 400) || "blocked without a reason" : "",
+  };
+}
+
+/** The outcome as the text block the history reads back (the same lines the agent used to end its report with). */
+export function renderAgentOutcome(outcome: AgentOutcome): string {
+  const none = (value: string) => value.trim() || "none";
+  return [
+    "OUTCOME", `summary: ${outcome.summary}`, `decision: ${none(outcome.decision)}`, `follow-ups: ${none(outcome.followUps)}`, `code-change: ${none(outcome.codeChange)}`,
+    `urgent: ${outcome.urgent ? "yes" : "no"}`, outcome.status === "blocked" ? `status: blocked: ${outcome.blockedReason || "blocked without a reason"}` : "status: done",
+  ].join("\n");
+}
+
 const FIELD = /^\s*[-*]?\s*(summary|decision|follow[-_ ]?ups?|code[-_ ]?change|urgent|status)\s*:\s*(.*)$/iu;
 const NONE = /^(none|no|nothing|n\/a|-|—|нет|ничего)\.?$/iu;
 

@@ -74,13 +74,13 @@ describe("schedule triggers end to end", () => {
     expect(again).toMatchObject({ ok: true, created: false, runId: started.runId });
   });
 
-  it("the tick fails loudly when the project has no PM chat, so the automation shows a failed run", async () => {
+  it("the tick starts the run in a project that has no PM chat, on its own", async () => {
     write(file());
     const { harness, rpc } = await setup({ pm: false });
     await rpc("workflow_run_tests", { id: "daily-digest", projectId });
     const tick = await harness.behavior.runCli(["workflow-trigger", projectId, "daily-digest", '{"query":"cats"}', "autorun_2"]);
-    expect(tick.exitCode).toBe(1);
-    expect(JSON.parse(String(tick.stdout))).toMatchObject({ ok: false, reason: "no_pm_chat" });
+    expect(tick.exitCode).toBe(0);
+    expect(JSON.parse(String(tick.stdout))).toMatchObject({ ok: true, created: true });
     expect((await harness.behavior.runCli(["workflow-trigger", projectId, "daily-digest", "[1]"])).exitCode).not.toBe(0);
   });
 

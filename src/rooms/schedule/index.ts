@@ -2,4 +2,4 @@
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { scheduleRpcContract } from "./contract";
 export { ERRAND_BUILTIN, SCHEDULE_ERRAND_DEFAULT_KEY, errandDefaultProblem } from "./errand-model";
-export { scheduleAgentMigrations, scheduleMigrations } from "./store";
+export { createScheduleStore, scheduleAgentMigrations, scheduleMigrations, taskOf } from "./store";

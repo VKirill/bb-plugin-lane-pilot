@@ -10,6 +10,8 @@ import { createCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../src/rooms/core/server/services";
 import { createWorkflowAgents } from "../../src/rooms/workflow/server/workflow-agent";
 import { chainRuntimeFor, humanOptions, humanOutput, registerChainExecutors } from "../../src/rooms/workflow/server/workflow-executors";
+import { answerWorkflowQuestion } from "../../src/rooms/workflow/server/workflow-answer";
+import { reportEndToOwner } from "../../src/rooms/workflow/server/pm-notice";
 import type { ChainRuntime } from "../../src/rooms/workflow/server/workflow-runtime";
 import { registerPureActions } from "@lane-pilot/workflow-engine";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
@@ -29,7 +31,7 @@ const reply = (body: Row, lead = "Done.") => `${lead}\n\n\`\`\`json\n${JSON.stri
 
 /** What a helper thread of a node spent, as BB reports it: one token-usage event of one turn, on this model. */
 type Spent = { input: number; output: number; model?: string };
-async function setup(script: Script, options: { dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean } = {}) {
+async function setup(script: Script, options: { dirty?: boolean; spent?: Record<string, Spent>; failWrites?: boolean; noPm?: boolean } = {}) {
   const checkout = mkdtempSync(join(tmpdir(), "lp-chain-"));
   execFileSync("git", ["init", "-q"], { cwd: checkout });
   writeFileSync(join(checkout, "README.md"), "hello\n");
@@ -73,6 +75,7 @@ async function setup(script: Script, options: { dirty?: boolean; spent?: Record<
         },
       },
       environments: { get: async () => ({ id: "env-pm", hostId: "local", path: checkout, status: "ready" }) },
+      projects: { get: async () => ({ id: PROJECT, name: "Project", sources: [{ hostId: "local", path: checkout }] }) },
       files: {
         write: async (args: unknown) => {
           if (options.failWrites) throw new Error("disk full");
@@ -86,8 +89,11 @@ async function setup(script: Script, options: { dirty?: boolean; spent?: Record<
     },
   });
   const db = openDatabase(bb);
-  createRun(db, RUN, PROJECT, "bb", checkout, "none", undefined, "local");
-  setRunThread(db, RUN, PM);
+  // A project without Lane Pilot has no PM chat and no run of the plugin: the workflow run stands alone.
+  if (!options.noPm) {
+    createRun(db, RUN, PROJECT, "bb", checkout, "none", undefined, "local");
+    setRunThread(db, RUN, PM);
+  }
   const ctx = createCore(bb, db);
   const dispatched: Row[] = [];
   const services = { dispatchWriter: vi.fn(async (args: Row) => { dispatched.push(args); return { runId: RUN, taskId: (args.task as Row).id, state: "queued" }; }), stability: { loadParked: async () => [] } } as unknown as Services;
@@ -95,8 +101,8 @@ async function setup(script: Script, options: { dirty?: boolean; spent?: Record<
   registerPureActions(engine);
   registerReducers(engine);
   registerChainExecutors(engine, ctx, services, createWorkflowAgents());
-  const rt: ChainRuntime = { ctx, services, pmThreadId: PM, projectId: PROJECT, runId: RUN };
-  const start = (workflow: Workflow, inputs: Row = {}) => engine.start({ workflow, inputs, runtime: rt, link: { projectId: PROJECT, runId: RUN } });
+  const rt: ChainRuntime = { ctx, services, pmThreadId: options.noPm ? null : PM, projectId: PROJECT, runId: options.noPm ? null : RUN };
+  const start = (workflow: Workflow, inputs: Row = {}) => engine.start({ workflow, inputs, runtime: rt, link: options.noPm ? { projectId: PROJECT } : { projectId: PROJECT, runId: RUN } });
   void options;
   return { bb, harness, db, engine, checkout, spawned, sent, writes, dispatched, services, start, rt, dispose: () => harness.lifecycle.dispose() };
 }
@@ -815,3 +821,137 @@ describe("a phase stage's helper is told the folders it writes", () => {
   });
 });
 
+
+describe("a node that runs as an agent the owner created", () => {
+  const node = (role: string) => chain({
+    nodes: [{ id: "write", type: "agent", role, prompt: "Write the post.", output: [{ name: "text", type: "string" }] }, { id: "done", type: "action", action: "emit", map: { text: "write.text" } }],
+    outputs: [{ name: "text", type: "string", required: false }],
+    edges: [{ from: "start", to: "write" }, { from: "write", to: "done" }],
+  });
+  const mine = { prompt: "You write posts for the owner's blog.", description: "Blog writer", meta: { displayName: "Blog writer", createdAt: 1, updatedAt: 1 } };
+
+  it("runs the agent's own profile: its stored selection leads the first message, and the thread is marked as that specialist", async () => {
+    const t = await setup({ write: [reply({ text: "A post.", handoff: "done" })] });
+    dispose = t.dispose;
+    const { compileMainAgentProfile } = await import("../../src/rooms/native-agent/agent-profile");
+    await t.rt.ctx.saveOwnedAgents({ "blog-writer": { ...mine, compiled: compileMainAgentProfile("blog-writer", { prompt: mine.prompt, description: mine.description, skills: ["ru-text"] }) } } as never);
+    const summary = await t.start(node("specialist:blog-writer")).done;
+    expect(summary).toMatchObject({ status: "succeeded", output: { text: "A post." } });
+    const started = t.spawned[0]!;
+    expect(started.pluginMetadata).toMatchObject({ role: "specialist", specialist: "blog-writer" });
+    expect(String(started.prompt)).toMatch(/Native Lane profile blog-writer \(session-override\)\.\n\n/);
+    expect(String(started.prompt)).toContain("Write the post.");
+    const marker = /([0-9a-f]{8}-[0-9a-f-]{27})/u.exec(String(started.prompt))?.[1] ?? "";
+    expect(await t.bb.storage.kv.get(`native-selection:${marker}`)).toMatchObject({ agentId: "blog-writer", projectId: PROJECT });
+  });
+
+  const named = chain({
+    inputs: [{ name: "who", type: "string", required: false, default: "blog-writer" }],
+    nodes: [{ id: "write", type: "agent", role: "specialist:{{$inputs.who}}", prompt: "Write the post.", output: [{ name: "text", type: "string" }] }, { id: "done", type: "action", action: "emit", map: { text: "write.text" } }],
+    outputs: [{ name: "text", type: "string", required: false }],
+    edges: [{ from: "start", to: "write" }, { from: "write", to: "done" }],
+  });
+
+  it("takes the agent from an input when the role is a template, and refuses an id that is no specialist instead of running it as an analyst", async () => {
+    const t = await setup({ write: [reply({ text: "A post.", handoff: "done" })] });
+    dispose = t.dispose;
+    const { compileMainAgentProfile } = await import("../../src/rooms/native-agent/agent-profile");
+    await t.rt.ctx.saveOwnedAgents({ "blog-writer": { ...mine, compiled: compileMainAgentProfile("blog-writer", { prompt: mine.prompt, description: mine.description }) } } as never);
+    expect(await t.start(named).done).toMatchObject({ status: "succeeded", output: { text: "A post." } });
+    expect(t.spawned[0]!.pluginMetadata).toMatchObject({ role: "specialist", specialist: "blog-writer" });
+    const bundled = await t.start(named, { who: "seo-specialist" }).done;
+    expect(bundled.status).toBe("succeeded");
+    expect(t.spawned[1]!.pluginMetadata).toMatchObject({ specialist: "seo-specialist" });
+    const reserved = await t.start(named, { who: "dev-orchestrator" }).done;
+    expect(reserved.status).not.toBe("succeeded");
+    expect(reserved.error).toContain('"dev-orchestrator" is neither a bundled specialist nor an agent you created');
+    expect(t.spawned).toHaveLength(2);
+  });
+
+  it("stops the step with unknown_specialist when the agent does not exist (any more), and starts no thread", async () => {
+    const t = await setup({ write: [reply({ text: "x", handoff: "x" })] });
+    dispose = t.dispose;
+    const summary = await t.start(node("specialist:ghost-writer")).done;
+    expect(summary.status).not.toBe("succeeded");
+    expect(JSON.stringify(summary)).toContain("unknown_specialist");
+    expect(t.spawned).toHaveLength(0);
+  });
+});
+
+describe("a run in a project that has no PM chat", () => {
+  const agent = chain({
+    nodes: [{ id: "look", type: "agent", role: "analyst", prompt: "Look.", output: [{ name: "n", type: "number" }] }, { id: "done", type: "action", action: "emit", map: { n: "look.n" } }],
+    outputs: [{ name: "n", type: "number", required: false }],
+    edges: [{ from: "start", to: "look" }, { from: "look", to: "done" }],
+  });
+
+  it("starts its helper as a hidden thread of the project with no parent, in the project's own folder, and no Lane Pilot run behind it", async () => {
+    const t = await setup({ look: [reply({ n: 3, handoff: "looked" })] }, { noPm: true });
+    dispose = t.dispose;
+    const summary = await t.start(agent).done;
+    expect(summary).toMatchObject({ status: "succeeded", output: { n: 3 } });
+    const started = t.spawned[0]!;
+    expect(started).toMatchObject({ visibility: "hidden", projectId: PROJECT, environment: { type: "host", hostId: "local", workspace: { type: "unmanaged", path: t.checkout } } });
+    expect(started.parentThreadId).toBeUndefined();
+    expect(started.pluginMetadata).not.toHaveProperty("lanePilotRunId");
+    expect(started.pluginMetadata).not.toHaveProperty("parentPmThreadId");
+    expect(t.db.prepare("SELECT link_run_id FROM lane_pilot_wf_run").all()).toEqual([{ link_run_id: null }]);
+  });
+
+  it("is rebuilt without a chat after a reload, and a step that builds code says it needs Lane Pilot", async () => {
+    const t = await setup({}, { noPm: true });
+    dispose = t.dispose;
+    const row = { id: "wfrun_x", workflow_id: "chain-under-test", idem_key: null, project_id: PROJECT, link_run_id: null } as never;
+    expect(chainRuntimeFor(t.rt.ctx, t.services)(row)).toMatchObject({ pmThreadId: null, runId: null, projectId: PROJECT });
+    const code = chain({
+      outputs: [{ name: "state", type: "string", required: false }],
+      nodes: [{ id: "build", type: "lp-task", contract: { id: "t1", objective: "x" }, quality_mode: "quick", output: [{ name: "state", type: "string" }] }, { id: "done", type: "action", action: "emit", map: { state: "build.state" } }],
+      edges: [{ from: "start", to: "build" }, { from: "build", to: "done" }],
+    });
+    const summary = await t.start(code).done;
+    expect(summary.status).not.toBe("succeeded");
+    expect(JSON.stringify(summary)).toContain("needs_lane_pilot");
+  });
+
+  const ask = chain({
+    nodes: [
+      { id: "ask", type: "human", role: "owner", question: "Ship it?", output: [{ name: "answer", type: "string" }, { name: "answer_kind", type: "enum", values: ["go", "fix", "timeout"] }], timeoutSec: 600 },
+      { id: "done", type: "action", action: "emit", map: { kind: "ask.answer_kind" } },
+    ],
+    outputs: [{ name: "kind", type: "string", required: false }],
+    edges: [{ from: "start", to: "ask" }, { from: "ask", to: "done" }],
+  });
+  const waitFor = async (read: () => unknown) => { for (let tries = 0; tries < 200 && !read(); tries += 1) await new Promise((resolve) => setTimeout(resolve, 5)); };
+
+  it("puts the owner's question on his list with a push instead of a form, and his answer settles the step and closes the line", async () => {
+    const t = await setup({}, { noPm: true });
+    dispose = t.dispose;
+    const started = t.start(ask);
+    const items = () => t.db.prepare("SELECT key, source, kind, project_id, what, why, wake, state, actions_json FROM lane_pilot_owner_item").all() as Array<Record<string, any>>;
+    await waitFor(() => items().length);
+    expect(t.harness.pendingInteractions).toEqual([]);
+    const [item] = items();
+    expect(item).toMatchObject({ source: "workflow", kind: "workflow_question", project_id: PROJECT, wake: 1, state: "open", what: expect.stringContaining("Ship it?") });
+    expect(item!.why).toContain("bb lane-pilot workflow-answer");
+    const actions = JSON.parse(item!.actions_json) as Array<{ id: string; rpc: { method: string; input: Record<string, unknown> } }>;
+    expect(actions.map((action) => action.id)).toEqual(["go", "fix"]);
+    expect(actions[0]!.rpc).toMatchObject({ method: "workflow_answer", input: { runId: started.runId, choice: "go" } });
+
+    expect(await answerWorkflowQuestion(t.rt.ctx, { workflowEngine: t.engine } as never, { runId: started.runId, choice: "maybe later" })).toMatchObject({ ok: false, reason: "answer_decides_nothing", options: ["go", "fix"] });
+    expect(await answerWorkflowQuestion(t.rt.ctx, { workflowEngine: t.engine } as never, { runId: started.runId, stepKey: String(actions[0]!.rpc.input.stepKey), choice: "go" })).toMatchObject({ ok: true });
+    expect(await started.done).toMatchObject({ status: "succeeded", output: { kind: "go" } });
+    expect(items()[0]).toMatchObject({ state: "closed" });
+    expect(await answerWorkflowQuestion(t.rt.ctx, { workflowEngine: t.engine } as never, { runId: started.runId, choice: "go" })).toMatchObject({ ok: false, reason: "not_waiting" });
+  });
+
+  it("tells the owner how it ended on his list, with a push when it went wrong", async () => {
+    const t = await setup({ look: ["no json at all", "still none"] }, { noPm: true });
+    dispose = t.dispose;
+    const summary = await t.start(agent).done;
+    expect(summary.status).not.toBe("succeeded");
+    const run = t.db.prepare("SELECT * FROM lane_pilot_wf_run WHERE id=?").get(summary.runId) as never;
+    expect(reportEndToOwner(t.db, run, false)).toBe(true);
+    expect(t.db.prepare("SELECT source, kind, wake, project_id FROM lane_pilot_owner_item WHERE key LIKE 'workflow-end:%'").all()).toEqual([{ source: "workflow", kind: `workflow_${(run as { status: string }).status}`, wake: 1, project_id: PROJECT }]);
+    expect(reportEndToOwner(t.db, run, false)).toBe(false);
+  });
+});

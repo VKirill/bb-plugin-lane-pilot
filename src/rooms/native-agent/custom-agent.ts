@@ -80,7 +80,8 @@ export type AgentFailure =
   | "agent_id_reserved"
   | "agent_exists"
   | "agent_not_found"
-  | "agent_not_custom";
+  | "agent_not_custom"
+  | "agent_in_use";
 
 const RESERVED_IDS = new Set(["browser-qa", "default", "general-purpose", "explore", "plan"]);
 

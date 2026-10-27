@@ -1,4 +1,4 @@
-import { parseOwnedAgents } from "../../native-agent";
+import { isCustomAgentId, parseOwnedAgents } from "../../native-agent";
 import { redactKnown } from "@lane-pilot/kit";
 import { createSecrets } from "../../secrets/server";
 import { bindDrainTarget, createDeployDrain } from "../../stability/server";
@@ -141,8 +141,23 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
     return next;
   }
 
+  // The ids of the owner's own agents as last read or written: the workflow validator asks for them synchronously. Null until the first read.
+  let customAgentIds: ReadonlySet<string> | null = null;
+  const rememberAgents = (owned: ReturnType<typeof parseOwnedAgents>) => {
+    customAgentIds = new Set(Object.entries(owned).filter(([id, row]) => isCustomAgentId(id) && !row.compiledCorrupt).map(([id]) => id));
+    return owned;
+  };
+
   async function ownedAgents() {
-    return parseOwnedAgents(await bb.storage.kv.get(LP_AGENT_OVERRIDES_KEY));
+    return rememberAgents(parseOwnedAgents(await bb.storage.kv.get(LP_AGENT_OVERRIDES_KEY)));
+  }
+
+  void ownedAgents().catch(() => undefined);
+
+  /** The one place the owner's agents are written, so the id set above never lags behind the store. */
+  async function saveOwnedAgents(owned: ReturnType<typeof parseOwnedAgents>) {
+    await bb.storage.kv.set(LP_AGENT_OVERRIDES_KEY, owned);
+    rememberAgents(owned);
   }
 
   async function effectiveProjectSettings(projectId: string, scopes: readonly string[] = []) {
@@ -378,7 +393,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
   // J-11: a second look (Jev, shadow by default) at what a helper or writer produced, before it is stored or shown.
   const outputGuard = createOutputGuard({ jev, settings: async (projectId) => (await effectiveProjectSettings(projectId)).values, kv: bb.storage.kv, log: (message) => bb.log.warn(message) });
 
-  return { bb, db, state, realtime, ownerAsk, secrets, catalogKey, forgetCatalogKey, outputGuard, isDisposed: () => state.disposed, log: (message: string) => bb.log.warn(message), host, deployDrain, nativeInstaller, nativeHost, serializedKv, ownedAgents, effectiveProjectSettings, screenWriterBinding, coexistenceInventory, coexistenceOperation, getThreadBounded, acceptedTaskWorkspace, workspaceExecutionEnvironment, refreshRun, markCanceledWriterStages, cancelQueuedAttempt, isRuntimeSettingKey, cliSettingsFor, runPolicyFor, nativeRunConfig, sectionRowSchema, listProjectSections, sectionChain, settingsAbove, scopesForWorkspace, ensureRunScopes, configForRun, writerBindingKey };
+  return { bb, db, state, realtime, ownerAsk, secrets, catalogKey, forgetCatalogKey, outputGuard, isDisposed: () => state.disposed, log: (message: string) => bb.log.warn(message), host, deployDrain, nativeInstaller, nativeHost, serializedKv, ownedAgents, saveOwnedAgents, knownCustomAgentIds: () => customAgentIds, effectiveProjectSettings, screenWriterBinding, coexistenceInventory, coexistenceOperation, getThreadBounded, acceptedTaskWorkspace, workspaceExecutionEnvironment, refreshRun, markCanceledWriterStages, cancelQueuedAttempt, isRuntimeSettingKey, cliSettingsFor, runPolicyFor, nativeRunConfig, sectionRowSchema, listProjectSections, sectionChain, settingsAbove, scopesForWorkspace, ensureRunScopes, configForRun, writerBindingKey };
 }
 
 export type ServerCore = ReturnType<typeof createCore>;

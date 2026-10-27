@@ -1,4 +1,5 @@
 import aboutSite from "../../../workflows/about-site.json";
+import agentRoutine from "../../../workflows/agent-routine.json";
 import analyzeCode from "../../../workflows/analyze-code.json";
 import analyzePlanExecute from "../../../workflows/analyze-plan-execute.json";
 import blueprintDriven from "../../../workflows/blueprint-driven.json";
@@ -65,6 +66,7 @@ const withGateVocabulary = (workflow: { nodes: Array<{ id: string; prompt?: stri
 /** The workflows that ship with Lane Pilot (`workflows/*.json`, inlined by the bundler). Add a file here to add one (a test checks that every file is listed). */
 export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = [
   { name: "about-site.json", value: aboutSite },
+  { name: "agent-routine.json", value: agentRoutine },
   { name: "analyze-code.json", value: analyzeCode },
   { name: "analyze-plan-execute.json", value: analyzePlanExecute },
   { name: "blueprint-driven.json", value: blueprintDriven },

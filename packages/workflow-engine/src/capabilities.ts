@@ -21,7 +21,8 @@ export type CapabilityPorts = {
   models?: () => Promise<{ catalog: ModelCatalog; settings: Record<string, unknown> } | null>;
   /** The Browser QA machine of the project (setting browser_qa.host_id). */
   browserHostId?: () => string | null;
-  specialists?: readonly string[];
+  /** The ids a node may name as `specialist:<id>`: the bundled specialists and the agents the owner created. */
+  specialists?: readonly string[] | (() => Promise<readonly string[]>);
 };
 
 export type CapabilityQuery = { sections?: string[]; query?: string };
@@ -116,7 +117,7 @@ export const WORKFLOW_REFERENCE = {
     errand: "work outside the code: the owner's browser (browser-automation, computer-use), Env Catalog accounts by name (env_get), mail, consoles",
     "browser-qa": "a browser check of a URL with cases; browser-automation only",
     "project-life": "may write .agents/ and CHANGELOG.md",
-    "specialist:design-lead, specialist:copy-lead, specialist:seo-specialist, specialist:tavily": "the specialists with their skills; may write .agents/",
+    "specialist:design-lead, specialist:copy-lead, specialist:seo-specialist, specialist:tavily, specialist:video-lead, specialist:<id of an agent the owner created>": "the specialists with their skills (an owner's agent runs with its own prompt, skills, MCP servers and model; the ids are in the specialists section of the capabilities); may write .agents/",
     note: "every role but project-life and the specialists is read-only for the repository: a changed file fails the step (repo_edited). A file the chain must leave in the project goes through an `fs.write` action or an lp-task node; notes go under .bb/chats/",
   },
   models: {
@@ -173,7 +174,15 @@ export async function collectCapabilities(ports: CapabilityPorts, query: Capabil
       result.models = { status: "error", error: cause instanceof Error ? cause.message : String(cause) };
     }
   }
-  if (wanted("specialists")) result.specialists = { roles: [...(ports.specialists ?? [])], note: "specialist profiles that exist in Lane Pilot; name one as the role of an agent node whose job matches it. Code changes go through an lp-task node, never an agent" };
+  if (wanted("specialists")) {
+    const note = "agents a node may run as: bundled specialists and agents the owner created (`custom`); set the node's role to `specialist:<id>`. An id that is not in this list fails validation. Code changes go through an lp-task node, never an agent";
+    try {
+      const roles = typeof ports.specialists === "function" ? await ports.specialists() : ports.specialists ?? [];
+      result.specialists = { roles: [...roles], note };
+    } catch (cause) {
+      result.specialists = { status: "error", error: cause instanceof Error ? cause.message : String(cause) };
+    }
+  }
   if (wanted("reference")) result.reference = WORKFLOW_REFERENCE;
   return result;
 }

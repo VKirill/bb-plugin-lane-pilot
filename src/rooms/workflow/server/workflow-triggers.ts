@@ -132,12 +132,13 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     const missing = workflow.inputs.filter((field) => field.required && field.default === undefined && (given[field.name] === undefined || given[field.name] === null || given[field.name] === "")).map((field) => field.name);
     if (missing.length) return refuse("missing_inputs", `Missing inputs: ${missing.join(", ")}.`, { missing });
 
+    // A project that does not use Lane Pilot has no PM chat: the run then works on its own (hidden helper threads of the project, the owner's
+    // questions and the end on his list). Steps that build code say so when they are reached.
     const pm = await pmOf(input.projectId);
-    if (!pm) return refuse("no_pm_chat", "This project has no open Lane Pilot PM chat: a workflow run needs one for its helper threads and questions. Enable Lane Pilot in a chat of the project, then start again.");
 
     let notChecked: string[] = [];
     if (deps.preflight) {
-      const check = await deps.preflight(workflow, { projectId: input.projectId, threadId: pm.pmThreadId });
+      const check = await deps.preflight(workflow, { projectId: input.projectId, ...(pm ? { threadId: pm.pmThreadId } : {}) });
       if (!check.ok) return refuse("requirements_missing", preflightRefusal(check), { issues: check.issues, envRequests: check.envRequests });
       notChecked = check.issues.map((issue) => issue.message);
     }
@@ -146,9 +147,9 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     const fromSchedule = input.source === "schedule" || input.origin === "schedule";
     const prefix = fromSchedule ? SCHEDULE_RUN_KEY_PREFIX : `wf-${input.source}:`;
     const key = input.key ? `${prefix}${input.projectId}:${workflow.id}:${input.key}` : `${prefix}${randomUUID()}`;
-    const runtime: ChainRuntime = { ctx, services: services as Services, pmThreadId: pm.pmThreadId, projectId: input.projectId, runId: pm.runId, ...(fromSchedule ? { origin: "schedule" as const } : {}) };
+    const runtime: ChainRuntime = { ctx, services: services as Services, pmThreadId: pm?.pmThreadId ?? null, projectId: input.projectId, runId: pm?.runId ?? null, ...(fromSchedule ? { origin: "schedule" as const } : {}) };
     try {
-      const started = services.workflowEngine.start({ workflow, inputs: given, key, runtime, link: { projectId: input.projectId, runId: pm.runId } });
+      const started = services.workflowEngine.start({ workflow, inputs: given, key, runtime, link: { projectId: input.projectId, ...(pm ? { runId: pm.runId } : {}) } });
       started.done.catch((cause: unknown) => ctx.log(`Lane Pilot workflow run ${started.runId} (${workflow.id}) stopped with an error: ${cause instanceof Error ? cause.message : String(cause)}`));
       return { ok: true, runId: started.runId, created: started.created, status: services.workflowEngine.get(started.runId)?.status ?? "running", notChecked };
     } catch (cause) {

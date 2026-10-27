@@ -12,7 +12,7 @@ import type { ServerCore } from "../../core/server";
 import { allowedSecretNames } from "../../secrets/server";
 import { agentPickerLabel } from "../../native-agent";
 import { t } from "@lane-pilot/i18n";
-import { loadPushConfig } from "../../owner-waiting";
+import { loadPushConfig, postOwnerItem } from "../../owner-waiting";
 import { errandModelView, readErrandDefault } from "./schedule-default";
 import { createThreadHosts, projectPlaces, whereOf, type ProjectPlace } from "./schedule-place";
 import { NO_USAGE, scheduleCost, threadUsage } from "./schedule-usage";
@@ -48,7 +48,11 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
       bb.log.warn(notice.split("\n", 1)[0]!);
       void services.workflowTriggers.pmOf(schedule.project_id).then((pm) => {
         if (pm) void ctx.ownerAsk?.sendToThread(pm.pmThreadId, notice).catch(() => undefined);
-        else bb.log.warn(`Lane Pilot schedule «${schedule.name}»: no open PM chat in the project to tell about the failure`);
+        else {
+          // No Lane Pilot in the project: the failure is a line of the owner's list, with a push.
+          bb.log.warn(`Lane Pilot schedule «${schedule.name}»: no open PM chat in the project; the failure goes to the owner's list`);
+          try { postOwnerItem(db, { key: `schedule-failure:${run.id}`, source: "schedule", kind: "schedule_failed", projectId: schedule.project_id, wake: true, what: `«${schedule.name}» failed`, why: notice.slice(0, 560) }); } catch { /* the log has it */ }
+        }
       }, () => undefined);
     },
   });
@@ -152,7 +156,7 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
       if (gate.wrongKind.length) problems.push(`${gate.wrongKind.join(", ")}: not a kind this task can take`);
       if (gate.denied.length) warnings.push(`${gate.denied.join(", ")}: the project list «Secrets checks may use» (secrets.allow) leaves it out; add it there or the run fails`);
     }
-    if ((task.kind === "workflow" || task.kind === "errand" || task.kind === "agent") && !(await services.workflowTriggers.pmOf(definition.projectId))) warnings.push("the project has no open Lane Pilot PM chat; a run needs one for its threads and questions");
+    if ((task.kind === "workflow" || task.kind === "errand") && !(await services.workflowTriggers.pmOf(definition.projectId))) warnings.push("the project has no open Lane Pilot PM chat; a run needs one for its threads and questions");
     // The same job scheduled twice (a PM that did not call list first, a retried create) runs twice: say so, the caller decides.
     const twins = store.list({ projectId: definition.projectId, states: ["active", "paused"] }).filter((row) => row.id !== selfId
       && (row.name.trim().toLowerCase() === definition.name.trim().toLowerCase()

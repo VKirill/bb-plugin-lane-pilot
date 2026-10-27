@@ -8,6 +8,7 @@ import { createStatusResolver } from "../../storage";
 import { registerPureActions } from "@lane-pilot/workflow-engine";
 import { registerReducers } from "@lane-pilot/workflow-engine";
 import { createWorkflowAgents } from "./workflow-agent";
+import { SPECIALIST_ROLES } from "../../critique/server";
 import { createGoalAuditor } from "./workflow-goal-audit";
 import { chainRuntimeFor, registerChainExecutors } from "./workflow-executors";
 import { notifyWorkflowIfEnded } from "./pm-notice";
@@ -49,6 +50,8 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
     instanceId: (bb as unknown as { vk?: { instanceId?: string } }).vk?.instanceId,
     log: (message) => bb.log.info(`Lane Pilot ${message}`),
     resolveWorkflow: (id, version) => workflowCatalog.peek()?.resolve(id, version) ?? builtinWorkflow(id, version),
+    // A node that runs as an agent the owner deleted is refused at the start with a message, not after the earlier steps ran.
+    specialistKnown: (id) => (SPECIALIST_ROLES.includes(id as never) ? true : ctx.knownCustomAgentIds()?.has(id) ?? null),
     isDisposed: ctx.isDisposed,
     onEvent,
     // A run that has goals is judged against them before it closes (K7).

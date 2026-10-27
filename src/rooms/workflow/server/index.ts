@@ -4,6 +4,7 @@ export { architectStartRpc, architectStarter } from "./architect-start";
 export { workflowOpsRpc } from "./rpc/workflow-ops";
 export { workflowsRpc } from "./rpc/workflows";
 export { createWorkflowArchitect, mountWorkflowArchitect } from "./workflow-architect";
+export { answerWorkflowQuestion } from "./workflow-answer";
 export { createWorkflowLibrary } from "./workflow-library";
 export type { ChainRuntime } from "./workflow-runtime";
 export { mountWorkflowTools } from "./workflow-tools";
