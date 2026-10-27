@@ -6,6 +6,7 @@ export type { OwnerAsk, OwnerAnswer } from "./owner-ask";
 export {
   councilOwnerForm,
   englishSelfRepairChoice,
+  knownOwnerLocale,
   ownerLocale,
   recordResolvedLocale,
   selfRepairOwnerForm,

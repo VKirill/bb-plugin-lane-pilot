@@ -13,15 +13,20 @@ function isOwnerLocale(value: unknown): value is OwnerLocale {
   return value === "ru" || value === "en";
 }
 
+/** The owner's explicit ru/en choice, else the locale the UI last resolved (Auto); null when neither is known yet. */
+export async function knownOwnerLocale(bb: { storage: { kv: { get: (key: string) => Promise<unknown> } } }): Promise<OwnerLocale | null> {
+  const stored = await bb.storage.kv.get(OWNER_LOCALE_PREFERENCE_KEY).catch(() => null);
+  if (isOwnerLocale(stored)) return stored;
+  const resolved = await bb.storage.kv.get(OWNER_RESOLVED_LOCALE_KEY).catch(() => null);
+  return isOwnerLocale(resolved) ? resolved : null;
+}
+
 /**
  * The language of owner-facing forms: an explicit ru/en preference, else the last locale the UI
  * resolved (Auto), else Russian.
  */
 export async function ownerLocale(bb: { storage: { kv: { get: (key: string) => Promise<unknown> } } }): Promise<OwnerLocale> {
-  const stored = await bb.storage.kv.get(OWNER_LOCALE_PREFERENCE_KEY).catch(() => null);
-  if (isOwnerLocale(stored)) return stored;
-  const resolved = await bb.storage.kv.get(OWNER_RESOLVED_LOCALE_KEY).catch(() => null);
-  return isOwnerLocale(resolved) ? resolved : "ru";
+  return (await knownOwnerLocale(bb)) ?? "ru";
 }
 
 export async function recordResolvedLocale(bb: { storage: { kv: { set: (key: string, value: string) => Promise<unknown> } } }, locale: OwnerLocale): Promise<void> {

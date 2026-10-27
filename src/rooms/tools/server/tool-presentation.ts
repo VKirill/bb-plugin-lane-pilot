@@ -4,7 +4,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
  * How Lane Pilot's agent tools read in a chat timeline (BB grammar v3, `registerTool({ presentation })`). Without it
  * every call shows as «Ran lane_pilot_wait_writer», which tells the owner nothing. A label is capped at 80 characters
  * and BB has no locale hook for it, so the language is fixed when the plugin starts, from the owner's stored choice;
- * on «Auto» (the browser language is only known to the app) both languages stand in one label.
+ * on «Auto» it is the locale the app last resolved, and both languages stand in one label only when none is known yet.
  * `quiet` rows are collapsed by default: calls the PM repeats in a loop or that only read.
  */
 type Labels = { pending: string; completed: string };
@@ -92,11 +92,11 @@ export function presentationFor(name: string, locale: ToolLocale): ToolPresentat
   return { label, ...(entry.quiet ? { suppress: true as const } : {}) };
 }
 
-/** The language of the labels: the owner's stored choice, both on «Auto» or when nothing is stored. */
-export async function toolLocale(bb: Pick<BbPluginApi, "storage">): Promise<ToolLocale> {
-  const stored = await bb.storage.kv.get<string>("preferences:locale").catch(() => null);
-  return stored === "ru" || stored === "en" ? stored : "both";
-}
+/**
+ * The language of the labels: the owner's stored choice; on «Auto» the locale the app last resolved (`recordResolvedLocale`);
+ * both languages only when nothing is known yet (a fresh install, before the app first opened). `known` is that locale, or null.
+ */
+export const toolLocale = (known: "en" | "ru" | null): ToolLocale => known ?? "both";
 
 const localeByApi = new WeakMap<object, ToolLocale>();
 

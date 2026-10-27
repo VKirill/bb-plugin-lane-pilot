@@ -66,7 +66,7 @@ import { createWorkflowEngine } from "./src/rooms/workflow/server";
 import { createWorkflowTriggersService } from "./src/rooms/workflow/server";
 import { createScheduleService, registerAgentRoutineActions } from "./src/rooms/schedule/server";
 import { registerSpecialistActions } from "./src/rooms/critique/server";
-import { relayFor } from "./src/rooms/relay/server";
+import { knownOwnerLocale, relayFor } from "./src/rooms/relay/server";
 import { mountLearning } from "./src/rooms/learning";
 import { installThreadSignals } from "@lane-pilot/thread-observe";
 import { mountLifecycleEvents } from "./src/rooms/core/server/lifecycle-events";
@@ -81,7 +81,7 @@ export default async function plugin(bb: BbPluginApi) {
   // BB's thread events wake the watchers of writers and helper threads; without them they poll as before.
   installThreadSignals(bb);
   const ctx = createCore(bb, db);
-  bindToolLocale(bb, await toolLocale(bb));
+  bindToolLocale(bb, toolLocale(await knownOwnerLocale(bb)));
   // The register of deferrals: the first entries (skipped tests, old plan decisions) are written once; terms come only from the owner's messages.
   const deferrals = createDeferrals({ db, port: sdkOwnerMessagePort(bb), log: ctx.log });
   // A failing seed must not keep the plugin from starting: the register only adds the morning list.
