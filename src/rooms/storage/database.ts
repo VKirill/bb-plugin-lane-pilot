@@ -1,6 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { isAbsolute, relative, resolve } from "node:path";
-import { FREE_CLASSES, failureClass, isPreStartStop, isWaitingSecret, isWriterSilent, taskFamily } from "../runs";
+import { FREE_CLASSES, failureClass, isOwnerDecision, isPreStartStop, isWaitingSecret, isWriterSilent, taskFamily } from "../runs";
 import { handoffMigrations } from "@lane-pilot/handoff";
 import { councilMigrations } from "@lane-pilot/council";
 import { ruleAudienceMigrations, ruleFormMigrations, ruleMechanismMigrations, ruleMigrations, ruleTrialMigrations, triageMigrations } from "@lane-pilot/run-insights";
@@ -909,7 +909,7 @@ export function countChargedAttempts(db: LanePilotDatabase, runId: string, taskI
   const rows = db.prepare("SELECT state, reason, thread_id FROM lane_pilot_attempt WHERE run_id=? AND task_id=?").all(runId, taskId) as
     Array<{ state:string; reason:string|null; thread_id:string|null }>;
   // One writer session is one attempt: the feedback turns sent into the same thread are not charged again.
-  return new Set(rows.filter((row) => !(row.reason && (FREE_CLASSES.has(failureClass(row.state, row.reason)) || isWriterSilent(row.reason) || isWaitingSecret(row.reason) || isPreStartStop(row.reason))))
+  return new Set(rows.filter((row) => !(row.reason && (FREE_CLASSES.has(failureClass(row.state, row.reason)) || isWriterSilent(row.reason) || isWaitingSecret(row.reason) || isPreStartStop(row.reason) || isOwnerDecision(row.reason))))
     .map((row, index) => row.thread_id ?? `#${index}`)).size;
 }
 

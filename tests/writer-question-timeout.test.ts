@@ -7,7 +7,8 @@ import { classifyFailure } from "../src/rooms/runs/failure-class";
 import { recordStage } from "../src/rooms/runs/server/stage-records";
 import { countChargedAttempts, createAttempt, createRun, createTask, getAttempt, listUnansweredWriterQuestions, openDatabase, savePrototypeConfig, saveTaskPlan, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
 import { createWriterFinish } from "../src/rooms/writer/server/finish";
-import { markAnsweredByDefault, SAFE_DEFAULT_ANSWER, WRITER_QUESTION_WAIT_MS } from "../src/rooms/writer/server/question-default";
+import { collectOwnerWaiting } from "../src/rooms/owner-waiting";
+import { isProductDecision, markAnsweredByDefault, SAFE_DEFAULT_ANSWER, WRITER_QUESTION_WAIT_MS } from "../src/rooms/writer/server/question-default";
 import { createWriterQuestionTimeout } from "../src/rooms/writer/server/question-timeout";
 
 const WORKSPACE = "/ws";
@@ -19,7 +20,8 @@ const task: TaskV2 = {
   expected_outputs:["a.txt"], owns_paths:["a.txt"], never_touch:[], depends_on:[], objective:"Make a.txt", acceptance:["a.txt exists"], verify:"tests", verification:[],
 };
 
-function sweepWorld(options: { threadStatus?: string } = {}) {
+function sweepWorld(options: { threadStatus?: string; reason?: string } = {}) {
+  const reason = options.reason ?? REASON;
   const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot" });
   const sends: Array<{ threadId: string; input: Array<{ text: string }> }> = [];
   harness.sdk.stub("threads.get", async (args:{ threadId:string }) => args.threadId === "thr_w" ? { id:args.threadId, status:options.threadStatus ?? "idle" } : null);
@@ -35,8 +37,8 @@ function sweepWorld(options: { threadStatus?: string } = {}) {
   createTask(db, { id:"T1", runId:"run1", kind:"bb", contract:task });
   saveTaskPlan(db, "T1", "Plan for T1");
   createAttempt(db, { id:"a1", runId:"run1", taskId:"T1" });
-  db.prepare("UPDATE lane_pilot_attempt SET state='blocked', reason=?, thread_id='thr_w', workspace_path='/ws/worktrees/a1', updated_at=? WHERE id='a1'").run(REASON, T0);
-  for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) recordStage(db, { runId:"run1", taskId:"T1", stageId, state:"failed", input:"Plan for T1", reason:REASON });
+  db.prepare("UPDATE lane_pilot_attempt SET state='blocked', reason=?, thread_id='thr_w', workspace_path='/ws/worktrees/a1', updated_at=? WHERE id='a1'").run(reason, T0);
+  for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) recordStage(db, { runId:"run1", taskId:"T1", stageId, state:"failed", input:"Plan for T1", reason });
   const abandoned: string[] = [];
   const startWriterTask = vi.fn();
   const services = { activeWriterTasks:new Set<string>(), startWriterTask, providerRetry:{ abandon:async (id:string) => { abandoned.push(id); } } } as unknown as Services;
@@ -86,6 +88,39 @@ describe("a writer's question nobody answers", () => {
     busy.services.activeWriterTasks.add("run1:T1");
     expect(await busy.timeout.sweepWriterQuestions(T0 + 5 * WRITER_QUESTION_WAIT_MS)).toEqual([]);
     expect(getAttempt(busy.db, "a1")?.state).toBe("blocked");
+  });
+});
+
+describe("a writer's question that is a product decision", () => {
+  const DECISION = "needs_human: Should a pending payment be cancelled when the customer switches the payment method?";
+
+  it("is never answered by default: after the hour the attempt ends with the question in its reason, uncharged, and the owner gets one line", async () => {
+    const w = sweepWorld({ reason:DECISION });
+    expect(await w.timeout.sweepWriterQuestions(T0 + WRITER_QUESTION_WAIT_MS)).toEqual([{ taskId:"T1", action:"left_to_owner" }]);
+    expect(w.sends).toEqual([]);
+    const row = getAttempt(w.db, "a1")!;
+    expect(row.state).toBe("blocked");
+    expect(row.reason).toMatch(/^verdict_block: question_unanswered: product decision.*pending payment be cancelled/);
+    expect(classifyFailure("blocked", row.reason).cls).toBe("contract");
+    expect(countChargedAttempts(w.db, "run1", "T1")).toBe(0);
+    expect(listUnansweredWriterQuestions(w.db)).toEqual([]);
+    expect(w.abandoned).toEqual(["thr_w"]);
+    const items = collectOwnerWaiting(w.db, T0 + WRITER_QUESTION_WAIT_MS).items;
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ source:"writer", kind:"product_decision", projectId:"proj1", wake:true });
+    expect(items[0]!.what).toContain("pending payment be cancelled");
+    // A second sweep adds nothing.
+    expect(await w.timeout.sweepWriterQuestions(T0 + 3 * WRITER_QUESTION_WAIT_MS)).toEqual([]);
+    expect(collectOwnerWaiting(w.db, T0).items).toHaveLength(1);
+  });
+
+  it("is told apart from a contract or sandbox question, which keeps the safe default", () => {
+    expect(isProductDecision("Should a pending payment be cancelled when the customer switches the payment method?")).toBe(true);
+    expect(isProductDecision("Какой текст согласия записывать при регистрации?")).toBe(true);
+    expect(isProductDecision("Which six routes are live?")).toBe(true);
+    expect(isProductDecision("May I add tests/x.test.ts to owns_paths?")).toBe(false);
+    expect(isProductDecision("check `npm test` cannot run in the sandbox; which command should I use?")).toBe(false);
+    expect(isProductDecision("Should I retry in a git-backed checkout, and if so which one?")).toBe(false);
   });
 });
 

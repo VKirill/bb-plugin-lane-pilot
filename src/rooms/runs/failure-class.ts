@@ -68,6 +68,9 @@ export const isWaitingSecret = (reason:string | null | undefined):boolean => WAI
 /** The baseline stopped the task before any writer: a check that cannot run on the base, or one red outside the task's files (baseline.ts). Nothing ran, so no attempt is spent. */
 const PRE_START_STOP = /^verdict_block: (?:check_cannot_run|red_outside_task):/;
 export const isPreStartStop = (reason:string | null | undefined):boolean => PRE_START_STOP.test(reason ?? "");
+/** A writer's product question nobody answered (writer/server/question-timeout.ts): the owner's to decide; the attempt that asked it is not spent. */
+const OWNER_DECISION = /^verdict_block: question_unanswered: product decision/;
+export const isOwnerDecision = (reason:string | null | undefined):boolean => OWNER_DECISION.test(reason ?? "");
 /** The task spent its overall writer-attempt budget (retry-budget.ts): ends for the PM, never parked or redriven. */
 const RETRY_BUDGET = /^retry_budget_exhausted:/;
 const LIMIT = /writer_provider_limit:|^writer_provider_unavailable:(breaker_open|usage_window|owner_present)/;
