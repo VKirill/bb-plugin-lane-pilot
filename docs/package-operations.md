@@ -2,7 +2,7 @@
 title: Package operation details
 type: component
 created: 2026-10-14
-updated: 2026-10-17
+updated: 2026-10-27
 status: active
 confidence: medium
 tags: [jev, pixel-world, batching, navigation]
@@ -20,6 +20,9 @@ sources:
   - src/rooms/contracts/index.ts
   - src/rooms/core/server/rpc-timing.ts
   - packages/jev/src/index.ts
+  - packages/jev/src/runtime.ts
+  - packages/host-calls/src/run-on-host.ts
+  - packages/handoff/src/messages.ts
 ---
 
 # Package operation details
@@ -31,6 +34,18 @@ TL;DR: `createJev` batches judgment requests and resolves fallback/shadow/escala
 Describe the execution and failure behavior of selected package APIs summarized in [Packages](packages.md).
 
 ## How it works
+
+### Jev runtime accessor
+
+1. `jev()` reads a module-level installed value and returns either the current `Jev` instance or `null`; it performs no initialization (`packages/jev/src/runtime.ts:5-12`).
+2. `installJev({endpoint, db, log})` creates a Jev client whose endpoint is resolved when needed, passes it with the database and optional logger to `createJev`, stores that instance, and returns a disposer (`packages/jev/src/runtime.ts:14-17`).
+3. The disposer clears the singleton only if that same instance is still installed, so disposing an older installation does not clear a replacement. `setJevForTests` directly installs or clears the test instance (`packages/jev/src/runtime.ts:14-21`).
+
+| State or failure | Result |
+|---|---|
+| No installation | `jev()` returns `null`; the accessor has no failure branch (`packages/jev/src/runtime.ts:10-12`). |
+| Installed instance | `jev()` returns the instance until replacement or its matching disposer (`packages/jev/src/runtime.ts:10-17`). |
+| Endpoint/client failure | The accessor does not catch failures; the later judgment call owns client and fallback behavior (`packages/jev/src/runtime.ts:14-17`, `packages/jev/src/run.ts:82-97`). |
 
 ### `createJev`
 
@@ -80,14 +95,39 @@ Describe the execution and failure behavior of selected package APIs summarized 
 
 1. `createNavGrid` captures bounds and obstacle rectangles once, applies defaults of 0.5 world-unit step, 0.15 point margin, and 0.08 segment margin, then indexes each rectangle into 2-unit buckets (`packages/pixel-world/src/nav.ts:1-16`, `:27-50`).
 2. `isBlocked` first checks bounds, then tests only obstacle rectangles in nearby buckets with the requested/default margin. `isSegmentBlocked` samples the line with at least three intervals and no interval larger than 0.18 units (`packages/pixel-world/src/nav.ts:53-75`).
-3. `findPath` returns the exact target as one waypoint when the direct segment is clear. Otherwise it lazily computes and caches blocked cells, maps blocked start/target cells to the nearest free cell within radius three when possible, then runs A* with eight directions and diagonal corner checks (`packages/pixel-world/src/nav.ts:84-94`, `:107-180`).
-4. When a route is found, grid cells become world waypoints. String-pulling skips waypoints visible from the current point and includes the exact original target as the final point (`packages/pixel-world/src/nav.ts:185-212`).
+3. `findPath` returns the exact target as one waypoint when the direct segment is clear. Otherwise it lazily caches blocked grid cells at the default point margin and maps blocked start/target cells to the nearest free cell within three cells when available (`packages/pixel-world/src/nav.ts:84-94`, `:107-139`).
+4. A* expands four cardinal and four diagonal neighbors, uses straight/diagonal costs and Euclidean distance, forbids diagonal corner cutting, and stops when it reaches the target cell or exhausts 8,000 iterations (`packages/pixel-world/src/nav.ts:96-105`, `:141-183`).
+5. A found cell chain is converted to world points and string-pulled by checking the farthest visible waypoint from each current point; the exact requested target is included at the end (`packages/pixel-world/src/nav.ts:185-212`).
 
 | Branch | Result | Failure behavior |
 |---|---|---|
 | Direct clear segment | One waypoint at the exact target; no grid search. | No explicit failure status. |
 | Obstructed segment | A* route, then string-pulled waypoints. | Search stops after 8,000 iterations; no-path is not exposed as a status and fallback smoothing still returns a sequence. |
 | Blocked endpoint cell | Searches outward up to three cells for a free cell. | If none is found, retains the original cell; final smoothing still targets the original exact point, so it may remain blocked. |
+| Search exhausts without a route | The cell chain is empty and smoothing still includes the original start and target (`packages/pixel-world/src/nav.ts:150-195`, `:197-212`). | The API returns a waypoint list ending at the target and has no explicit no-path status; the list does not certify that the target is reachable. |
+
+### `runOnHost`
+
+1. `runOnHost(host, args)` takes host id, cwd, command, command timeout and an optional hub transport timeout (`packages/host-calls/src/run-on-host.ts:8-24`).
+2. It calls `runCommand` with the host id duplicated as `requestedHostId` in the request and `hostId` in options, and forwards command, cwd and `timeoutSec` (`packages/host-calls/src/run-on-host.ts:26-31`).
+3. An explicit `timeoutMs` is used as the transport timeout; otherwise the transport gets command timeout plus five seconds. The host promise and result are returned unchanged (`packages/host-calls/src/run-on-host.ts:22-31`).
+
+| Branch | Outcome or failure |
+|---|---|
+| Explicit transport timeout | Forwards the caller's `timeoutMs`. |
+| No transport timeout | Computes `(timeoutSec + 5) * 1000`. |
+| Host rejects | Rejection propagates; the wrapper does not catch or translate it. |
+
+### `handoffMessage`
+
+1. `handoffMessage(card)` assembles a recipient prompt in fixed order: handoff identity/title, objective, numbered acceptance criteria, inputs, budget and receipt instructions (`packages/handoff/src/messages.ts:12-37`).
+2. Inputs render as `- kind: ref` with an optional note, or `- none`. The budget includes truthy minutes, turns, tokens and deadline values, or `none stated` (`packages/handoff/src/messages.ts:3-16`).
+3. The final fenced JSON asks for `done`, `blocked`, or `rejected`, with summary, outputs and evidence. The formatter returns a string and does not parse or validate a recipient response (`packages/handoff/src/messages.ts:31-37`).
+
+| Condition | Output | Failure behavior |
+|---|---|---|
+| Empty inputs or budget | Emits `- none` or `none stated`. | Not an error. |
+| Non-empty card | Includes input details, truthy budget fields and receipt template. | The formatter has no catch or failure result; invalid runtime data can throw during formatting. |
 
 ## Business rules
 
