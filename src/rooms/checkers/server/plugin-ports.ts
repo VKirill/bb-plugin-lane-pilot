@@ -1,15 +1,11 @@
 import { runOnHost } from "@lane-pilot/host-calls";
-import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { loadCandidates, findSolutionCommit, type Candidate, type HostPort } from "../../bench/server";
-import { fullAccessSpawn, stringAt, type ServerCore } from "../../core/server";
+import type { ServerCore } from "../../core/server";
 import { isSandboxProjectName } from "../../stability/server";
 import { createCheckers, type CheckersApi } from "../api";
-import type { ModelPort } from "../checkers";
 import { loadHistory } from "../history";
 
-const CRITIC_WAIT_MS = 240_000;
-
-/** The checker scorecard inside the plugin: candidates from the hub's history, checks on the machines through `runCommand`, critics as hidden threads. */
+/** The checker scorecard inside the plugin: candidates from the hub's history, checks on the machines through `runCommand`, no critics (see `model`). */
 export function createPluginCheckers(ctx: ServerCore): CheckersApi {
   const { bb, db, host } = ctx;
   const hostPort: HostPort = {
@@ -37,31 +33,8 @@ export function createPluginCheckers(ctx: ServerCore): CheckersApi {
         scratch: () => "/tmp/lp-checkers/clones",
       }, options);
     },
-    model({ providerId, model }): ModelPort {
-      return {
-        async ask(prompt, kind, where) {
-          if (!where) throw new Error("a critic thread needs the candidate's project and folder");
-          let threadId: string | null = null;
-          try {
-            const spawned = await fullAccessSpawn(bb, {
-              projectId: where.projectId, providerId, model, prompt,
-              environment: { type: "host", hostId: where.hostId, workspace: { type: "unmanaged", path: where.path } },
-              visibility: "hidden", pluginMetadata: { role: `checker-${kind}` },
-            } as never);
-            threadId = stringAt(spawned, "id");
-            if (!threadId) throw new Error("the critic thread did not start");
-            await waitThreadIdle(bb, threadId, "checker_critic_timeout", CRITIC_WAIT_MS);
-            const output = (await bb.sdk.threads.output({ threadId })).output;
-            if (typeof output !== "string" || !output.trim()) throw new Error("the critic gave no output");
-            return { text: output, tokens: null, costUsd: null };
-          } finally {
-            if (threadId) {
-              await bb.sdk.threads.stop({ threadId }).catch(() => undefined);
-              await bb.sdk.threads.archive({ threadId }).catch(() => undefined);
-            }
-          }
-        },
-      };
-    },
+    // The plugin starts no critic threads: model work is a graph, and the checker critics have none (no live scoring run has ever used them). The
+    // code checkers and the drill need no model; the critics run from scripts/lp-checkers.ts (`--critic`), which asks through `bb thread spawn`.
+    model: () => null,
   });
 }
