@@ -28,6 +28,10 @@ export type IntakeTrain = {
   startProcess?(input: { projectId: string; pmThreadId: string; text: string }): Promise<string | null>;
 };
 const KEY = (threadId: string) => `phase-intake:${threadId}`;
+/** What a hand-over key started, kept for good: the key maps to the phase or graph run whether it is alive or finished. */
+const HANDOVER_KEY = (projectId: string, key: string) => `phase-handover:${projectId}:${key}`;
+type HandOverStarted = { started: true; via: "phase" | "issue-quick" | "issue-batch"; id: string };
+type HandOverResult = HandOverStarted | { started: false; kind: IntakeKind | null; reason: string };
 
 type Deps = Pick<ServerCore, "bb" | "db" | "effectiveProjectSettings" | "log">;
 
@@ -126,7 +130,28 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
    * text is no work (a question, a process, a consent). The agent's text is a declared piece of work, so the rules' reading of its size
    * is enough where an owner's short line would wait for the judgment.
    */
-  async function handOver(input: { projectId: string; pmThreadId: string; runId: string; text: string; key: string; origin: string }): Promise<{ started: true; via: "phase" | "issue-quick" | "issue-batch"; id: string } | { started: false; kind: IntakeKind | null; reason: string }> {
+  const handingOver = new Map<string, Promise<HandOverResult>>();
+  /**
+   * One start per key, whatever the state of what it started (RECHECK-341 F7): a repeat of a key that started something returns that very
+   * phase or run, live or finished, before anything is classified or opened; a repeat racing the first call waits for it. Only a start is
+   * remembered: a refusal may be lifted later (the run resumed, the live phase closed) and the key then starts once.
+   */
+  function handOver(input: { projectId: string; pmThreadId: string; runId: string; text: string; key: string; origin: string }): Promise<HandOverResult> {
+    const slot = HANDOVER_KEY(input.projectId, input.key);
+    const running = handingOver.get(slot);
+    if (running) return running;
+    const job = (async (): Promise<HandOverResult> => {
+      const known = await bb.storage.kv.get(slot).catch(() => null) as Partial<HandOverStarted> | null;
+      if (known && typeof known.id === "string" && (known.via === "phase" || known.via === "issue-quick" || known.via === "issue-batch")) return { started: true, via: known.via, id: known.id };
+      const result = await startHandOver(input);
+      if (result.started) await bb.storage.kv.set(slot, { via: result.via, id: result.id, at: Date.now() });
+      return result;
+    })().finally(() => handingOver.delete(slot));
+    handingOver.set(slot, job);
+    return job;
+  }
+
+  async function startHandOver(input: { projectId: string; pmThreadId: string; runId: string; text: string; key: string; origin: string }): Promise<HandOverResult> {
     const run = getRun(db, input.runId);
     if (!run) return { started: false, kind: null, reason: "the PM run is gone" };
     const settings = await ctx.effectiveProjectSettings(run.project_id, getRunSettingsScopes(db, run.id)).then((result) => result.values as Record<string, unknown>, () => ({} as Record<string, unknown>));

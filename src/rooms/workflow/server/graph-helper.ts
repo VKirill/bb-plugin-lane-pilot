@@ -45,7 +45,9 @@ export async function runGraphHelper(ctx: ServerCore, c: StepContext<ChainRuntim
     const text = outputText(await bb.sdk.threads.output({ threadId: started.threadId }));
     return { threadId: started.threadId, text, usage: await withUsage(bb, started.threadId) };
   } catch (cause) {
-    await bb.sdk.threads.stop({ threadId: started.threadId }).catch(() => undefined);
+    // A reload is no cancel (RECHECK-341 F2): the thread goes on running and the next instance finds it again through the spawn effect. Only a
+    // real abort, or a wait that failed here (deadline, thread error), stops it.
+    if (c.signal.aborted || !ctx.isDisposed()) await bb.sdk.threads.stop({ threadId: started.threadId }).catch(() => undefined);
     throw cause;
   } finally {
     // A reload ends the step where it stands and the next instance reads the thread again: only a step that ends here archives it.
