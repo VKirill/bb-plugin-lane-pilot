@@ -17,7 +17,7 @@ const at = (day: number, hour: number, minute = 0, month = 9) => new Date(2026, 
 
 const run = (id: string, scheduleId: string, status: RunView["status"], extra: Partial<RunView> = {}): RunView => ({
   id, scheduleId, scheduledAt: at(7, 9), trigger: "tick", status, reason: null, queuedAt: at(7, 9), startedAt: at(7, 9), finishedAt: at(7, 9, 1), durationMs: 60_000,
-  refKind: null, refId: null, hostId: null, exitCode: null, output: null, error: null, truncated: false,
+  refKind: null, refId: null, hostId: null, threadId: null, exitCode: null, output: null, error: null, truncated: false,
   providerId: null, model: null, tokens: null, costUsd: null, usageKnown: false, hostName: null, ...extra,
 });
 
@@ -33,7 +33,7 @@ function schedule(id: string, column: ScheduleView["column"], extra: Partial<Sch
 
 const fixtures = () => [
   schedule("s1", "scheduled", { lastRun: run("r1", "s1", "succeeded") }),
-  schedule("s2", "running", { active: [run("r2", "s2", "running", { refKind: "thread", refId: "thr_errand", finishedAt: null })], lastRun: run("r2", "s2", "running") }),
+  schedule("s2", "running", { active: [run("r2", "s2", "running", { refKind: "thread", refId: "thr_errand", threadId: "thr_errand", finishedAt: null })], lastRun: run("r2", "s2", "running") }),
   schedule("s3", "waiting", { active: [run("r3", "s3", "waiting", { finishedAt: null })] }),
   schedule("s4", "done", { when: { type: "once", runAt: at(6, 10) }, nextFires: [], state: "done", lastRun: run("r4", "s4", "succeeded") }),
   schedule("s5", "failed", { consecutiveFailures: 2, lastRun: run("r5", "s5", "failed", { error: "boom" }) }),
@@ -131,6 +131,20 @@ describe("schedule board", () => {
     expect(slot.navigateCalls.length).toBeGreaterThan(0);
   });
 
+  it("opens the thread of a run that is a graph run (an errand), and names the run when it has no thread", async () => {
+    const errand = run("e1", "s5", "succeeded", { refKind: "workflow_run", refId: "wfrun_errand", threadId: "thr_errand" });
+    const chain = run("e2", "s5", "succeeded", { refKind: "workflow_run", refId: "wfrun_chain" });
+    const slot = await mount({ schedule_runs: () => ({ runs: [errand, chain], total: 2 }) });
+    await slot.findByTestId("sch-card-s5");
+    fireEvent.click(slot.getByTestId("sch-history-s5"));
+    await slot.findByTestId("sch-history-list");
+    fireEvent.click(slot.getByTestId("sch-run-open-e1"));
+    expect(slot.navigateCalls.length).toBeGreaterThan(0);
+    expect(slot.queryByTestId("sch-run-ref-e1")).toBeNull();
+    expect(slot.queryByTestId("sch-run-open-e2")).toBeNull();
+    expect(slot.getByTestId("sch-run-ref-e2").textContent).toBe("workflow_run wfrun_chain");
+  });
+
   it("shows the reason when a run is refused", async () => {
     const slot = await mount({ schedule_run_now: () => ({ ok: false, run: null, created: false, reason: "workflow_not_published" }) });
     await slot.findByTestId("sch-card-s1");
@@ -139,7 +153,7 @@ describe("schedule board", () => {
   });
 
   it("shows the history: statuses, trigger, error, output, the errand's thread, and older runs on demand", async () => {
-    const first = Array.from({ length: 20 }, (_, i) => run(`h${i}`, "s5", i === 0 ? "failed" : "succeeded", i === 0 ? { error: "exit 2", exitCode: 2, output: "line one\nline two", refKind: "thread", refId: "thr_x" } : { trigger: i === 1 ? "manual" : "tick" }));
+    const first = Array.from({ length: 20 }, (_, i) => run(`h${i}`, "s5", i === 0 ? "failed" : "succeeded", i === 0 ? { error: "exit 2", exitCode: 2, output: "line one\nline two", refKind: "thread", refId: "thr_x", threadId: "thr_x" } : { trigger: i === 1 ? "manual" : "tick" }));
     const slot = await mount({ schedule_runs: (input: { offset?: number }) => input.offset ? { runs: [run("older", "s5", "timed_out")], total: 21 } : { runs: first, total: 21 } });
     await slot.findByTestId("sch-card-s5");
     fireEvent.click(slot.getByTestId("sch-history-s5"));

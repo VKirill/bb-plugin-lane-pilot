@@ -59,7 +59,7 @@ function Card({ schedule, projectName, busy, onRun, onTogglePause, onEdit, onHis
         <Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs" data-testid={`sch-detail-${schedule.id}`} onClick={onDetail}>{t("schDetail")}</Button>
         <Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs" data-testid={`sch-edit-${schedule.id}`} onClick={onEdit}>{t("schEdit")}</Button>
         <Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs" data-testid={`sch-history-${schedule.id}`} onClick={onHistory}>{t("schHistory")}</Button>
-        {live?.refKind === "thread" && live.refId ? <Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs" data-testid={`sch-open-${schedule.id}`} onClick={() => openThread(live.refId!, schedule.name)}>{t("schOpenThread")}</Button> : null}
+        {live?.threadId ? <Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs" data-testid={`sch-open-${schedule.id}`} onClick={() => openThread(live.threadId!, schedule.name)}>{t("schOpenThread")}</Button> : null}
         {live ? <Button type="button" size="sm" variant="ghost" className="h-8 px-2 text-xs" data-testid={`sch-cancel-${schedule.id}`} onClick={() => onCancel(live.id)}>{t("schCancelRun")}</Button> : null}
       </div>
     </article>

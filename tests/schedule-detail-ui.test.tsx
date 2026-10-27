@@ -21,7 +21,7 @@ const at = (day: number, hour: number, minute = 0) => new Date(2026, 9, day, hou
 
 const run = (id: string, scheduleId: string, extra: Partial<RunView> = {}): RunView => ({
   id, scheduleId, scheduledAt: at(7, 9), trigger: "tick", status: "succeeded", reason: null, queuedAt: at(7, 9), startedAt: at(7, 9), finishedAt: at(7, 9, 1), durationMs: 60_000,
-  refKind: null, refId: null, hostId: null, exitCode: null, output: null, error: null, truncated: false,
+  refKind: null, refId: null, hostId: null, threadId: null, exitCode: null, output: null, error: null, truncated: false,
   providerId: null, model: null, tokens: null, costUsd: null, usageKnown: false, hostName: null, ...extra,
 });
 const modelView = (extra: Partial<ModelView> = {}): ModelView => ({ providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: "high", serviceTier: null, source: "errand-role", sourceKey: null, issues: [], ...extra });
@@ -316,9 +316,9 @@ describe("where it runs", () => {
 
 describe("the history of runs", () => {
   const history = [
-    run("r1", "s1", { refKind: "thread", refId: "thr_1", providerId: "claude-code", model: "claude-opus-5-5", tokens: 1_100_000, costUsd: 6, usageKnown: true, hostName: "Mac mini" }),
-    run("r2", "s1", { refKind: "thread", refId: "thr_2", usageKnown: false, hostName: "Hub" }),
-    run("r3", "s1", { refKind: "thread", refId: "thr_3", providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", tokens: 5000, costUsd: null, usageKnown: true }),
+    run("r1", "s1", { refKind: "thread", refId: "thr_1", threadId: "thr_1", providerId: "claude-code", model: "claude-opus-5-5", tokens: 1_100_000, costUsd: 6, usageKnown: true, hostName: "Mac mini" }),
+    run("r2", "s1", { refKind: "thread", refId: "thr_2", threadId: "thr_2", usageKnown: false, hostName: "Hub" }),
+    run("r3", "s1", { refKind: "thread", refId: "thr_3", threadId: "thr_3", providerId: "acp-opencode", model: "router9/ag/gemini-3.8-flash-high", tokens: 5000, costUsd: null, usageKnown: true }),
     run("r4", "s1", { refKind: "workflow_run", refId: "wfrun_1" }),
   ];
 

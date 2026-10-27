@@ -28,7 +28,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | core | — | 19 | 1775 | drill: parallel3 |
 | council | — | 16 | 6575 | tests (4) |
 | coverage | COVERAGE, COVERAGE_USAGE, CoverageEntry, CoverageRow, CoverageStatus, CoverageSummary, DrillReceipt, NODE_KINDS, NodeKind, REQUIRED_MECHANISMS, checkReceipt, codeNodes, coverageRows, holes, renderCoverage, runCoverageCli, summarize, transitionId, untermedGaps | 4 | 318 | tests (1) |
-| critique | CODE_CRITIC_DEFAULTS, CODE_CRITIC_DEFAULT_SETTING, CodeCriticDefault, FAILURE_TRIAGE_METHOD, FRONTEND_VERIFY_METHOD, MAX_FILE_EXCERPT_BYTES, NO_TOOLS_LINE, QUALITY_MODE_SETTING, SCIENTIFIC_DEBUG_METHOD, SUBJECTIVE_WORDS, Verdict, VerdictFinding, VerdictStatus, WriterIdentity, actionableFindings, applyCodeCriticDefault, applyQualityMode, boundedAgentName, browserQaRequired, buildCandidateEvidence, clipped, codeCritiquePrompt, codeCritiqueSource, codeRepairPrompt, criticStats, critiquePrompt, extractModelJson, findSandboxUnsafeMissingExcludes, findingsHash, isCodeCriticDefault, nextRepairAction, parseCodeCritique, parseCodeCritiqueSettings, parseCritique, parseSandboxUnsafePatterns, parseWriterRepairReply, qaStateToStatus, repairLedgerFromResult, resolveCodeCriticDefault, resolveQualityMode, resolveRetryEffort, roleMethod, runnerFilterArgs, runsWholeSuite, sameUnresolvedFindings, sameWriterIdentity, scanCritiqueCoverage, settingsFromFrozenPolicy, settleVerdict, shouldRequestRepair, verdictSchema, verdictSummary | 19 | 2562 | tests (2) |
+| critique | CODE_CRITIC_DEFAULTS, CODE_CRITIC_DEFAULT_SETTING, CodeCriticDefault, FAILURE_TRIAGE_METHOD, FRONTEND_VERIFY_METHOD, MAX_FILE_EXCERPT_BYTES, NO_TOOLS_LINE, QUALITY_MODE_SETTING, SCIENTIFIC_DEBUG_METHOD, SUBJECTIVE_WORDS, Verdict, VerdictFinding, VerdictStatus, WriterIdentity, actionableFindings, applyCodeCriticDefault, applyQualityMode, boundedAgentName, browserQaRequired, buildCandidateEvidence, clipped, codeCritiquePrompt, codeCritiqueSource, codeRepairPrompt, criticStats, critiquePrompt, extractModelJson, findSandboxUnsafeMissingExcludes, findingsHash, isCodeCriticDefault, nextRepairAction, parseCodeCritique, parseCodeCritiqueSettings, parseCritique, parseSandboxUnsafePatterns, parseWriterRepairReply, qaStateToStatus, repairLedgerFromResult, resolveCodeCriticDefault, resolveQualityMode, resolveRetryEffort, roleMethod, runnerFilterArgs, runsWholeSuite, sameUnresolvedFindings, sameWriterIdentity, scanCritiqueCoverage, settingsFromFrozenPolicy, settleVerdict, shouldRequestRepair, verdictSchema, verdictSummary | 19 | 2565 | tests (2) |
 | deferral | deferralKindMigrations, deferralMigrations | 11 | 735 | drill: deferrals |
 | design-eval | CRITIQUE_AXES, Criterion, CritiqueAxis, DesignJournalLine, DrawingCritique, MEASURE_SCRIPT, Measurement, RUBRIC, compareDesigns, critiqueProblems, designScore, mergeFrames, readinessWords, roleLine, scoreMeasurement, trainedConditions, trainingRatios | 3 | 159 | tests (1) |
 | docs | CITATION_SOURCE, DocsPage, expandCitationLists, parseDocsSettings | 10 | 1814 | tests (4) |
@@ -65,7 +65,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | rule-forms | FormAsk, MECHANISMS, Mechanism, RULES_USAGE, RulesCliDeps, applyJevForms, buildMechanismTask, formDistribution, jevPickForms, listPromotions, mechanismFor, promotionWhy, proposePromotions, runRulesCli | 5 | 429 | tests (2) |
 | run-goal | GoalVerdict, MIN_ACCEPTED, RedCheck, RunGoalRecord, TaskState, getRunGoal, goalVerdict, pmGoalMessage, runGoalMigrations, runReady | 8 | 235 | tests (2) |
 | runs | AttemptState, DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING, ENVIRONMENT_REASON, EXTERNAL_OPS, EXTERNAL_OPS_WARNING, FREE_CLASSES, FREE_RETRY_LIMIT, FailureClass, IllegalTransitionError, MAIN_ATTEMPT_LIMIT, NO_ANSWER_REASON, PARKED_CLASSES, REPLAY_CHECK_FAILED, RETRY_ELIGIBLE, S8_RELATIVE_PATHS, SESSION_MAX_MS, SESSION_MAX_TURNS, TARGET_SHA, TRANSITION_TABLE, UPSTREAM_REPO, WRITER_SILENT_REASON, acceptanceStats, aggregateRun, beginChecks, checksInFlight, checksMoved, cliReceiptAttemptKey, cliReceiptRunKey, failureClass, failureFingerprint, isEnvironmentCheckFailure, isKnownReason, isLegalMove, isOwnerDecision, isPreStartStop, isWaitingSecret, isWriterSilent, judgedFailureClass, liveFolderLockNote, nextStep, repeatedFailureReason, taskFamily, turnFailureKey, unknownReasons | 35 | 3561 | drill: parallel3 |
-| schedule | ERRAND_BUILTIN, SCHEDULE_ERRAND_DEFAULT_KEY, createScheduleStore, errandDefaultProblem, scheduleAgentMigrations, scheduleMigrations, scheduleRpcContract, taskOf | 32 | 3672 | tests (1) |
+| schedule | ERRAND_BUILTIN, SCHEDULE_ERRAND_DEFAULT_KEY, createScheduleStore, errandDefaultProblem, scheduleAgentMigrations, scheduleMigrations, scheduleRpcContract, taskOf | 32 | 3679 | tests (1) |
 | secrets | — | 4 | 243 | tests (1) |
 | self-improve | — | 1 | 65 | tests (2) |
 | self-repair | — | 8 | 2225 | tests (4) |
@@ -83,10 +83,10 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | wall | wallDeferralKindMigrations, wallMigrations | 21 | 2726 | tests (4) |
 | wires | WIRE_MARK, Wire, WireHop, WireResult, brokenWireReason, readWires, wiresCommand | 2 | 52 | tests (2) |
 | work-graph | AttemptIn, CellState, CostState, ExecutorRow, GRAPH_STAGES, GraphStats, ModelStageStat, ReceiptIn, Role, StageBlock, StageCell, StageEventIn, StageStat, TaskGraph, TaskSummary, Tokens, UsageIn, graphStats, median, roleOf, stageCells, taskGraph | 11 | 642 | tests (2) |
-| workflow | DraftCheck, DraftOp, DraftScope, DraftTestResult, LP_TASK_PIPELINE, NodeExecutor, RawDefinition, Refusal, RunSummary, StepContext, ValidateOptions, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY, WORKFLOW_ARCHITECT_TOOLS, Workflow, WorkflowEngine, WorkflowProblem, builtinWorkflow | 53 | 8272 | tests (3) |
+| workflow | DraftCheck, DraftOp, DraftScope, DraftTestResult, LP_TASK_PIPELINE, NodeExecutor, RawDefinition, Refusal, RunSummary, StepContext, ValidateOptions, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY, WORKFLOW_ARCHITECT_TOOLS, Workflow, WorkflowEngine, WorkflowProblem, builtinWorkflow | 53 | 8273 | tests (3) |
 | world | worldMigrations | 7 | 534 | tests (4) |
 | world-assets | — | 2 | 65 | tests (4) |
-| writer | DirtSnapshot, attachStreamRetry, attemptProduced, buildCliInvocation, droppedStreamDetail, memoryLine, parseDirtSnapshots, pathAnchors, resolveStageWriterSelection, reviewerMemoryPicks, runCliOnHost, runCommandOnHost, writePmSettingsOnHost, writerBriefStats, writerFallbackChain, writerFallbackKeys, writerFallbacks, writerMemory, writerMemoryPicks, writerReuseStats | 47 | 8384 | drill: parallel3 |
+| writer | DirtSnapshot, attachStreamRetry, attemptProduced, buildCliInvocation, droppedStreamDetail, memoryLine, parseDirtSnapshots, pathAnchors, resolveStageWriterSelection, reviewerMemoryPicks, runCliOnHost, runCommandOnHost, writePmSettingsOnHost, writerBriefStats, writerFallbackChain, writerFallbackKeys, writerFallbacks, writerMemory, writerMemoryPicks, writerReuseStats | 47 | 8442 | drill: parallel3 |
 
 ## Task stages (20)
 
@@ -182,10 +182,10 @@ States: (new), queued, spawn_requested, running, spawn_rejected, spawn_unknown, 
 | packages/i18n/src/i18n-fields.ts | 1946 |
 | src/rooms/sma-map/entries.ts | 1777 |
 | src/rooms/storage/database.ts | 1730 |
-| packages/workflow-engine/src/engine.ts | 1409 |
+| packages/workflow-engine/src/engine.ts | 1411 |
 | src/rooms/writer/server/start.ts | 1103 |
 | src/rooms/self-repair/server/self-repair.ts | 973 |
-| src/rooms/writer/server/finish.ts | 957 |
+| src/rooms/writer/server/finish.ts | 959 |
 | src/rooms/verification/git-integrate.ts | 944 |
 | src/rooms/council/ui/council-office.tsx | 942 |
 | src/rooms/host-worker/host-handlers.ts | 910 |
