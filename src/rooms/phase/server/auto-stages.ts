@@ -1,5 +1,6 @@
 import { builtinWorkflow } from "../../workflow";
 import type { ServerCore, Services } from "../../core/server";
+import { threatGap } from "../stages";
 import { phaseFolder, planGate, type Phase, type PhaseRecord, type PlanItem, type RiskKind } from "../logic";
 import packageJson from "../../../../package.json";
 
@@ -15,7 +16,7 @@ export type AutoKind = "analyze" | "plan" | "draw" | "review" | "close" | "lesso
 export type AutoDue = { kind: AutoKind; wave?: number } | { kind: "resign" } | { kind: "replan" };
 /** How many times the machine returns a phase to planning after a failed verdict before the loop is spent. */
 /** A stage run that failed for Lane Pilot's own reasons (its guard, its output contract, its runtime, a provider), not because of the work. */
-export const MACHINE_STAGE_FAILURE = /repo_edited|artifact_invalid|output_invalid|output field "[^"]+" is missing|thread_failed|thread_id_missing|plugin_stopped|interrupted by a reload|budget_exceeded|provider_error|writer_stream_error|read_binary_rejected|guard:|no_pm_environment|internal_error|timed out waiting/i;
+export const MACHINE_STAGE_FAILURE = /repo_edited|artifact_invalid|output_invalid|output field "[^"]+" is missing|thread_failed|thread_id_missing|plugin_stopped|interrupted by a reload|budget_exceeded|provider_error|writer_stream_error|read_binary_rejected|guard:|no_pm_environment|internal_error|timed out waiting|(?:CONTEXT|SECURITY)\.md was not written|needs a threat model/i;
 
 export const AUTO_REPLANS = 2;
 export const AUTO_WORKFLOWS: Record<AutoKind, string> = { analyze: "lp.analyze", plan: "lp.plan", draw: "lp.draw", review: "lp.review", close: "lp.close", lessons: "retrospective" };
@@ -47,6 +48,25 @@ export function autoDue(phase: Phase): AutoDue | null {
   if (phase.stage === "verification" && r.verification?.verdict?.state === "failed" && (r.replan?.count ?? 0) < AUTO_REPLANS) return { kind: "replan" };
   if (phase.stage === "lessons" && !r.lessons?.analysis && phase.runId && !tried("lessons")) return { kind: "lessons" };
   return null;
+}
+
+const LOOP_STOP = "Lane Pilot (loop exhausted)";
+
+/**
+ * A phase the machine stopped (loop exhausted) for a gap of its own that a later release closes: the record to resume it with, or null.
+ * Only a stop by the machine itself, at planning, after a release other than the one that counted the failures, while the approved plan's one
+ * refusal is the threat model (the machine writes that now, see `repairThreatModel`). A stop by a person, or a plan refused for the work, stays stopped.
+ */
+export function recoverStopped(phase: Phase, version: string = packageJson.version): { record: PhaseRecord; note: string } | null {
+  const r = phase.record;
+  if (phase.state !== "stopped" || phase.stage !== "planning" || r.closing?.by !== LOOP_STOP || !r.plan || r.plan.critique?.decision !== "approve" || r.autoFailuresVersion === version) return null;
+  const threat = threatGap(r);
+  const gate = planGate(r);
+  if (!threat || gate.ok || gate.why.length !== 1 || gate.why[0] !== threat) return null;
+  const restored = new Set(r.partial?.unproven.map((piece) => piece.id) ?? (r.scope?.revisions ? [] : r.scope?.withdrawn ?? []));
+  const { closing: _closing, partial: _partial, lessons: _lessons, ...rest } = r;
+  return { record: { ...rest, scope: { revisions: r.scope?.revisions ?? 0, withdrawn: (r.scope?.withdrawn ?? []).filter((id) => !restored.has(id)) }, auto: undefined, autoFailures: undefined, autoFailuresTotal: undefined, autoFailuresVersion: undefined },
+    note: `Lane Pilot ${version}: the phase was stopped because its plan lacked a threat model, a gap of Lane Pilot's (stopped under ${r.autoFailuresVersion ?? "an earlier version"}); the machine writes it now, so the phase goes on and its cut pieces return` };
 }
 
 /** A failed verdict the machine already planned again AUTO_REPLANS times: the loop of replans is spent. */
@@ -92,6 +112,16 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number })
 const text = (value: unknown, max: number) => String(typeof value === "string" ? value : value === undefined || value === null ? "" : JSON.stringify(value)).trim().slice(0, max);
 const RISK_WORDS: Array<[RiskKind, RegExp]> = [["security", /secur|secret|auth|token|permission|безопас|секрет/i], ["operations", /deploy|ops|operat|backup|monitor|выкат|эксплуат/i], ["product", /user|product|ux|owner|пользоват|продукт/i]];
 
+/** SECURITY.md: the threat model the plan gate (threatGap) asks for when the analysis names a security risk. */
+export function securityDoc(phase: Pick<Phase, "title" | "goal">, risks: readonly string[]): string {
+  return [
+    `# Threat model — ${phase.title}`, "", `Goal: ${phase.goal}`, "",
+    "## Security risks named by the analysis", ...risks.map((risk) => `- ${risk}`), "",
+    "## What the plan must hold", "- every piece that touches these risks names them in its acceptance and carries a check for them", "- no secret, credential or permission is widened without a check that would fail if it were", "",
+    "Written by Lane Pilot from the analysis (lp.analyze); the planner and the plan critic read it with CONTEXT.md.",
+  ].join("\n");
+}
+
 /** CONTEXT.md of the discussion, written by the machine from the analysis. */
 export function contextDoc(phase: Phase, output: Record<string, unknown>): { content: string; risks: Record<RiskKind, string>; decisions: string[]; questions: string[]; security: string | null } {
   const decisions = Array.isArray(output.decisions) ? output.decisions as unknown[] : [];
@@ -122,12 +152,7 @@ export function contextDoc(phase: Phase, output: Record<string, unknown>): { con
   const risksText = Object.fromEntries((["technical", "product", "operations", "security"] as RiskKind[]).map((kind) => [kind, (byKind[kind].join("; ") || "none seen").slice(0, 600)])) as Record<RiskKind, string>;
   // A security risk needs a signed threat model before the plan is admitted (threatGap), and no machine stage wrote one: the plan failed
   // its gate every time and the loop ended the phase (live drill ph_5cd09d1c7a, Fable 2026-10-27). The analysis writes it with the context.
-  const security = byKind.security.length ? [
-    `# Threat model — ${phase.title}`, "", `Goal: ${phase.goal}`, "",
-    "## Security risks named by the analysis", ...byKind.security.map((risk) => `- ${risk}`), "",
-    "## What the plan must hold", "- every piece that touches these risks names them in its acceptance and carries a check for them", "- no secret, credential or permission is widened without a check that would fail if it were", "",
-    "Written by Lane Pilot from the analysis (lp.analyze); the planner and the plan critic read it with CONTEXT.md.",
-  ].join("\n") : null;
+  const security = byKind.security.length ? securityDoc(phase, byKind.security) : null;
   return { content, risks: risksText, decisions: ids, questions, security };
 }
 
@@ -157,7 +182,7 @@ export type AutoApi = {
   goalAudit(input: { phaseId: string; state: "met" | "unmet"; by: string; summary: string }): Phase;
   lessons(input: { phaseId: string; analysis: string; author: string; reviewer: string; reviewedHash: string; by: string }): Phase;
   drawing(input: { phaseId: string; paths: string[]; designer: string; feasible: boolean; contradiction?: string; reviewer?: string; by: string }): Promise<Phase>;
-  returnTo(input: { phaseId: string; to: "planning"; note: string; by: string }): Phase;
+  returnTo(input: { phaseId: string; to: "planning" | "discussion"; note: string; by: string }): Phase;
 };
 
 export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Services, "workflowEngine">, deps: {
@@ -281,6 +306,22 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
     } catch { return output; }
   }
 
+  /** True: the machine took the stage (it repaired the context, or waits for a release); the plan runs once the context is signed again. */
+  async function repairThreatModel(phase: Phase): Promise<boolean> {
+    const context = phase.record.context!;
+    const path = `${phaseFolder(phase.id)}/SECURITY.md`;
+    try {
+      const written = await deps.writeDocs(phase, [{ path, content: securityDoc(phase, [context.risks?.security ?? ""]) }], `phase ${phase.id}: SECURITY.md for the signed security risk`);
+      if (!written.written.includes(path)) throw new Error("SECURITY.md was not written");
+    } catch (cause) {
+      return fail(phase, "plan", cause instanceof Error ? cause.message : String(cause));
+    }
+    const back = deps.api.returnTo({ phaseId: phase.id, to: "discussion", note: "the signed security risk needs a threat model: Lane Pilot wrote SECURITY.md and signs the context again with it", by: "Lane Pilot (threat model)" });
+    const before = back.record.signedBefore;
+    deps.save(back.id, { ...back.record, plan: undefined, signedBefore: { ...(before ?? { docs: [] }), docs: [...new Set([...(before?.docs ?? []), path])] } });
+    return true;
+  }
+
   async function step(phase: Phase): Promise<boolean> {
     // Failures counted under another version may be the ones it fixed: after a deploy the machine tries the stage again.
     if (phase.record.autoFailures && phase.record.autoFailuresVersion !== version) {
@@ -356,6 +397,9 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       }
       return true;
     }
+    // A context signed without the threat model its security risk needs can never pass the plan gate, and replanning cannot give it one: the machine
+    // writes SECURITY.md from the signed risk, signs the context again with it and plans anew (drill ph_5cd09d1c7a: two plans, both refused for it alone).
+    if (due.kind === "plan" && threatGap(phase.record)) return repairThreatModel(phase);
     const workflow = builtinWorkflow(AUTO_WORKFLOWS[due.kind]);
     const runtime = deps.runtime(phase);
     if (!workflow || !runtime) return false;

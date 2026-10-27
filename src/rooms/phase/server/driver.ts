@@ -17,7 +17,7 @@ import { appendPart, getPhase, insertPhase, listParts, listPhases, notePoked, sa
 import { archiveDrawing, binaryFileCommand, binaryFileFingerprint, conclusionText, markRoadmap, nextRoadmapRow, stateText, uatState, uatText, waveTable } from "../stages";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { createPhaseIntake } from "./intake";
-import { createAutoStages } from "./auto-stages";
+import { createAutoStages, recoverStopped } from "./auto-stages";
 import { checkProofs, hostGit, phaseProofRecords, renderProofCurrency } from "./proof-currency";
 import { builtinWorkflow } from "../../workflow";
 import { architectStarter } from "../../workflow/server";
@@ -745,6 +745,14 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
 
   async function tick(signal?: AbortSignal): Promise<number> {
     let moved = 0;
+    // A phase the machine stopped for a gap of its own goes on once a release closes the gap (not one a person stopped).
+    for (const row of listPhases(db, { limit: 200 }).filter((candidate) => candidate.state === "stopped")) {
+      const back = recoverStopped(row);
+      if (!back) continue;
+      savePhase(db, row.id, { state: "active", record: back.record, at: now() });
+      book(row, "decisions", "resume_after_fix", back.note);
+      moved += 1;
+    }
     // Closed phases that have not finished their paperwork yet are driven once more.
     const unfinished = listPhases(db, { limit: 200 }).filter((row) => row.stage === "closed" && !row.record.closedDocs && Date.now() - row.updatedAt < 7 * 86_400_000);
     for (const phase of [...listPhases(db, { live: true, limit: 100 }), ...unfinished]) {
