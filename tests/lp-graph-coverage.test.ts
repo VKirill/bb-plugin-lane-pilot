@@ -8,7 +8,7 @@ const NOW = Date.UTC(2026, 9, 27, 9, 0, 0);
 const HOUR = 3_600_000;
 
 /** The slice of BB's core database the line reads: thread_plugin_metadata and threads. */
-function core(threads: Array<{ id: string; role: string | null; graph?: boolean; plugin?: string; at?: number }>) {
+function core(threads: Array<{ id: string; role: string | null; graph?: boolean; probe?: boolean; plugin?: string; at?: number }>) {
   const db = new Database(":memory:");
   db.exec(`attach ':memory:' as core;
     create table core.threads(id text primary key, created_at integer not null);
@@ -17,7 +17,7 @@ function core(threads: Array<{ id: string; role: string | null; graph?: boolean;
   db.prepare("insert into lp_cover values (?)").run(NOW - 24 * HOUR);
   for (const thread of threads) {
     db.prepare("insert into core.threads values (?, ?)").run(thread.id, thread.at ?? NOW - HOUR);
-    const metadata = { ...(thread.role ? { role: thread.role } : {}), ...(thread.graph ? { lanePilotWorkflowRunId: "wfrun_1" } : {}) };
+    const metadata = { ...(thread.role ? { role: thread.role } : {}), ...(thread.graph ? { lanePilotWorkflowRunId: "wfrun_1" } : {}), ...(thread.probe ? { helperProbe: true } : {}) };
     db.prepare("insert into core.thread_plugin_metadata values (?, ?, ?)").run(thread.id, thread.plugin ?? "lane-pilot", JSON.stringify(metadata));
   }
   return db;
@@ -33,6 +33,8 @@ describe("the graph coverage line of the daily report", () => {
       // Not counted: a PM chat, a workspace holder, a thread of another plugin, one older than a day, one with no role.
       { id: "pm", role: "pm" }, { id: "wp", role: "workspace-provisioner" }, { id: "x", role: "writer", plugin: "other-plugin" },
       { id: "old", role: "errand", at: NOW - 30 * HOUR }, { id: "norole", role: null },
+      // Not counted: the provider probes of a PM chat start (role pm-reader, helperProbe): a check that a helper can start, not work to move into a graph.
+      ...[1, 2, 3].map((n) => ({ id: `probe${n}`, role: "pm-reader", probe: true })),
     ];
     expect(line(core(rows))).toEqual(["Покрытие графами за сутки (потоков вне графа из всех, по ролям): memory-maintainer 3/3, writer 1/3, errand 0/1; всего вне графа 4 из 7."]);
   });
