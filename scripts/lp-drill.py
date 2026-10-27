@@ -70,6 +70,7 @@ HUB = os.environ.get("BB_HUB_HOST", "ubuntu@10.8.0.1")
 KEY = os.environ.get("BB_HUB_KEY", str(Path.home() / ".ssh/oracle_bb"))
 HUB_DB = os.environ.get("LP_DRILL_HUB_DB", "/home/ubuntu/.bb/plugins/lane-pilot/data.db")
 TIMEOUT_MIN = int(os.environ.get("LP_DRILL_TIMEOUT_MIN", "20"))
+PHASE_TIMEOUT_MIN = int(os.environ.get("LP_DRILL_PHASE_TIMEOUT_MIN", "35"))
 POLL_SEC = int(os.environ.get("LP_DRILL_POLL_SEC", "20"))
 BAD_MODEL = os.environ.get("LP_DRILL_BAD_MODEL", "lp-drill-model-that-does-not-exist")
 SANDBOX = dict(project=os.environ.get("LP_DRILL_PROJECT", "proj_3tb652jpsi"),
@@ -842,7 +843,9 @@ def scenario_phase(ctx: "Context") -> dict:
                   "promise": {"given": "the sandbox", "when": "the piece runs", "then": f"{spec['expected_outputs'][0]} holds its two lines"}} for n, spec in enumerate(notes)]
         act("plan", phase_id, items=items)
         act("plan_check", phase_id, decision="approve", by="lp-drill", summary="drill plan")
-        deadline, stage = time.time() + TIMEOUT_MIN * 60, ""
+        # Two waves, each with a writer and an lp.review on the judge's model (GPT-6.1 Sol, ~4 min): 20 minutes left it 7 s short of
+        # verification (live 2026-10-27, ph_b89812541d). The phase gets its own limit.
+        deadline, stage = time.time() + max(TIMEOUT_MIN, PHASE_TIMEOUT_MIN) * 60, ""
         while time.time() < deadline:
             stage = setting_rpc("phase_get", {"phaseId": phase_id})["phase"]["stage"]
             if stage in ("verification", "acceptance", "lessons", "closed"):
