@@ -658,6 +658,19 @@ def setting_rpc(method: str, payload: dict) -> dict:
     return data.get("result", data) if isinstance(data, dict) else {}
 
 
+def put_setting(project: str, key: str, value) -> dict:
+    """Save one project setting, retrying once with the version a conflict names; value None resets the row."""
+    rows = hubsql(f"select version from lane_pilot_project_settings where project_id='{project}' and binding_id='' and key='{key}';")
+    version = int(rows[0]["version"]) if rows else 0
+    for _ in range(2):
+        out = (setting_rpc("reset_project_settings", {"projectId": project, "keys": [key], "expectedVersions": {key: version}}) if value is None
+               else setting_rpc("save_setting", {"projectId": project, "key": key, "value": value, "expectedVersion": version}))
+        if out.get("ok") or not out.get("conflict"):
+            return out
+        version = int(out.get("version") or (out.get("versions") or {}).get(key) or 0)
+    return out
+
+
 def scenario_provider_limit(ctx: Context) -> dict:
     key = "writer.model"
     saved = hubsql(f"select value, version from lane_pilot_project_settings where project_id='{ctx.project}' and binding_id='' and key='{key}';")
@@ -674,6 +687,10 @@ def scenario_provider_limit(ctx: Context) -> dict:
         if not changed.get("ok"):
             return verdict("provider_limit", [f"could not set {key}: {json.dumps(changed)[:200]}"])
         version = int(changed["version"])
+        # Jev picks a writer per task and would never try the project's writer.model (live 2026-10-27: «the bad model was never tried»).
+        pick_off = put_setting(ctx.project, "writer.pick", "off")
+        if not pick_off.get("ok"):
+            problems.append(f"could not turn writer.pick off: {json.dumps(pick_off)[:200]}")
         spec = task_limit(ctx.cwd)
         if not ctx.dispatch(spec):
             problems.append("dispatch-bb exited with an error")
@@ -686,13 +703,11 @@ def scenario_provider_limit(ctx: Context) -> dict:
         if row["state"] == "accepted" and not row["fileInSandbox"]:
             problems.append("the accepted task's file is not on main")
     finally:
-        if original is None:
-            back = setting_rpc("reset_project_settings", {"projectId": ctx.project, "keys": [key], "expectedVersions": {key: version}})
-        else:
-            back = setting_rpc("save_setting", {"projectId": ctx.project, "key": key, "value": original, "expectedVersion": version})
+        put_setting(ctx.project, "writer.pick", "on")  # reset refuses a non-catalog key; "on" is the default
+        back = put_setting(ctx.project, key, original)
         now = hubsql(f"select value from lane_pilot_project_settings where project_id='{ctx.project}' and binding_id='' and key='{key}';")
         restored = (json.loads(now[0]["value"]) if now else None) == original
-        if not (back.get("ok") and restored):
+        if not restored:
             problems.append(f"{key} was NOT restored to {original!r}: {json.dumps(back)[:200]}")
     return verdict("provider_limit", problems, tasks=[row] if row else [], badModel=BAD_MODEL, restored=original)
 
