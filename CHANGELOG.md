@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.338
+
+**The composer separates Lane Pilot from the agent you talk to.** The popover used to be one dropdown «Агент Lane Pilot» with «Координатор разработки» and the specialists, plus «Включить / Отключить для этого чата». Now it has a «Lane Pilot» switch on top (on: the chat is the door to the development machine, the coordinator profile) and a separate «Агент» list below: «Без агента», the copy editor, SEO specialist, designer, researcher, workflow architect. Picking a specialist turns Lane Pilot off and the chat runs that specialist with its own skills and MCP servers; one chat is one agent. The badge above the composer says «Lane Pilot» for the coordinator and the specialist's name otherwise. Internal agents Lane Pilot runs itself (project onboarding) are no longer offered. The choice still applies when the message is sent; the folder and draft text are kept. Works at 375 px.
+
+Not yet: switching the agent of a chat that already exists (new chats only), owner-defined agents and scheduled agents — they come next.
+
 ## 0.1.337
 
 The second review round (Fable's and Astra's rechecks of 0.1.330–0.1.336, `.bb/chats/thr_grntj73eg5/artifacts/*/RECHECK-336.md`) found that some fixes of 0.1.336 were made unsafely. This release corrects them.
