@@ -79,7 +79,7 @@ export function mountSpecialists(ctx: ServerCore, services: Services): void {
 
   registerObservedTool(bb.agents, {
     name: "lane_pilot_specialist",
-    description: "Hand work to a specialist (design-lead, copy-lead, seo-specialist, tavily, video-lead, or an agent the owner created) as a child thread of this PM chat that the owner can open.",
+    description: "Start the `specialist` graph: work for a specialist (design-lead, copy-lead, seo-specialist, tavily, video-lead, or an agent the owner created) as a child thread of this PM chat that the owner can open.",
     instructions: "Use from a Lane Pilot PM chat instead of the Agent tool for these roles; an agent the owner created is named by its id. Give the whole task: goal, context, files to read, the deliverable and where to write it. Returns at once with the thread; then call lane_pilot_wait_specialist with that threadId, again while it reports running. Show the owner the returned @thread link. Specialists never change product code; implementation still goes through lane_pilot_dispatch_writer.",
     parameters: z.object({
       role: z.string().regex(MAIN_AGENT_ID),
@@ -94,7 +94,7 @@ export function mountSpecialists(ctx: ServerCore, services: Services): void {
 
   registerObservedTool(bb.agents, {
     name: "lane_pilot_wait_specialist",
-    description: "Wait for a specialist thread started with lane_pilot_specialist and return its answer.",
+    description: "Wait for a specialist graph run started with lane_pilot_specialist and return its answer.",
     instructions: "Call with the threadId from lane_pilot_specialist (timeoutSec at most 240). While state is running, call it again.",
     parameters: z.object({ threadId: z.string().min(1), timeoutSec: z.number().int().min(5).max(240).default(240) }).strict(),
     execute: async (params, context) => {

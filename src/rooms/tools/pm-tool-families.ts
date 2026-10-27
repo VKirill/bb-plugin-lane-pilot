@@ -16,7 +16,7 @@ export type ToolFamily = {
 
 export const PM_TOOL_FAMILIES = {
   lane_pilot_helpers: {
-    summary: "Helpers outside the writer lane: a specialist thread (design-lead, copy-lead, seo-specialist, tavily, video-lead, or an agent the owner created: its id), one step in the owner's Chrome, a browser check of an accepted task.",
+    summary: "Graphs that need no writer: the `specialist` graph (design-lead, copy-lead, seo-specialist, tavily, video-lead, or an agent the owner created: its id), the `browser-step` graph (one step in the owner's Chrome), the `lp.browser-qa` graph (a browser check of an accepted task).",
     actions: { specialist: "lane_pilot_specialist", wait_specialist: "lane_pilot_wait_specialist", browser: "lane_pilot_browser", browser_qa: "lane_pilot_browser_qa" },
   },
   lane_pilot_council: {

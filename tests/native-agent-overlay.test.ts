@@ -194,10 +194,11 @@ it("is a unified BB PM instruction, not a CLI orchestrator patch", () => {
   expect(LANE_PILOT_PM_SESSION).toContain("design-lead");
   expect(LANE_PILOT_PM_SESSION).toContain("copy-lead");
   expect(LANE_PILOT_PM_SESSION).toContain("seo-specialist");
-  expect(LANE_PILOT_PM_SESSION).toContain("action: \"browser_qa\"");
-  expect(LANE_PILOT_PM_SESSION).toContain("Mac mini");
-  expect(LANE_PILOT_PM_SESSION).toContain("Checking a task of ours after acceptance");
-  expect(LANE_PILOT_PM_SESSION).toContain("action: \"browser_qa\"");
+  // The browser check of a task is its own graph's step: the PM gives qa_url next to qa_cases and never calls the check by hand.
+  expect(LANE_PILOT_PM_SESSION).toContain("every task that has qa_cases also needs qa_url");
+  expect(LANE_PILOT_PM_SESSION).toContain("so do not call the browser check by hand");
+  expect(LANE_PILOT_PM_SESSION).toContain("send a follow-up task with the same qa_url and qa_cases");
+  expect(LANE_PILOT_PM_SESSION).not.toContain("lane_pilot_browser_qa");
   expect(LANE_PILOT_PM_SESSION).toContain("PROJECT.md");
   expect(LANE_PILOT_PM_SESSION).toContain("docs/audiences/");
   expect(LANE_PILOT_PM_SESSION).toContain("specialized agents");
@@ -278,5 +279,6 @@ it("PM routes non-code requests to lane_pilot_route before searching (thr_n6ukbh
   expect(act).toBeGreaterThan(0);
   expect(route).toBeGreaterThan(act);
   expect(route).toBeLessThan(src.indexOf("## Dispatch"));
-  expect(src).toContain("research after \\`lane_pilot_route\\` found no workflow");
+  expect(src).toContain("the router names the graph to start (\\`web-research\\`, \\`errand\\`, \\`specialist\\`)");
+  expect(src).not.toContain("work the usual way");
 });
