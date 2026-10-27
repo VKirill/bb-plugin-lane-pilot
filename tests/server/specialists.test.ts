@@ -53,6 +53,43 @@ describe("specialist threads", () => {
     expect(waited.output).toContain("Mockup written to .agents/design/wizard.html");
   });
 
+  it("starts an agent the owner created, and refuses an id that is no specialist", async () => {
+    const spawned: Array<Record<string, unknown>> = [];
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "lane-pilot",
+      sdk: {
+        threads: {
+          getPluginMetadata: async ({ threadId }) => threadId === pmThreadId ? { role: "pm", lanePilotRunId: runId } : {},
+          spawn: async (args) => { spawned.push(args as unknown as Record<string, unknown>); return { id: "spec-thread" }; },
+          get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId, environmentId: "env-pm", sourceThreadId: pmThreadId, lifecycleOwnerThreadId: pmThreadId }),
+        },
+        environments: { get: async () => ({ id: "env-pm", hostId: "local-host", path: process.cwd(), status: "ready" }) },
+      },
+    });
+    await plugin(bb);
+    dispose = () => harness.lifecycle.dispose();
+    const db = openDatabase(bb);
+    createRun(db, runId, projectId, "cli");
+    setRunThread(db, runId, pmThreadId);
+    const call = async (name: string, params: Record<string, unknown>) =>
+      JSON.parse(String(await harness.behavior.callAgentTool(name, params, { threadId: pmThreadId, projectId }))) as Record<string, any>;
+
+    expect(await call("lane_pilot_specialist", { role: "context-lead", task: "Tidy the context." })).toMatchObject({ ok: false, error: { message: expect.stringMatching(/unknown_specialist:context-lead/) } });
+    expect(await call("lane_pilot_specialist", { role: "project-onboarder", task: "x" })).toMatchObject({ ok: false });
+    expect(spawned).toHaveLength(0);
+
+    await harness.behavior.callRpc("create_agent", { id: "context-lead", displayName: "Context", prompt: "You keep the context.", skills: ["lane-memory"], model: "claude-sonnet-5-5", effort: "medium" });
+    const started = await call("lane_pilot_specialist", { role: "context-lead", task: "Tidy the context." });
+    expect(started).toMatchObject({ threadId: "spec-thread", role: "context-lead", state: "running" });
+    const request = spawned[0]!;
+    expect(request.pluginMetadata).toMatchObject({ role: "specialist", specialist: "context-lead", lanePilotRunId: runId });
+    expect(request).toMatchObject({ model: "claude-sonnet-5-5" });
+    const [token] = tokensFrom(request.prompt);
+    const selection = await bb.storage.kv.get<{ agentId: string; agentsJson: string }>(`native-selection:${token}`);
+    expect(selection).toMatchObject({ agentId: "context-lead", parentRunId: runId });
+    expect(JSON.parse(selection!.agentsJson)["context-lead"]).toMatchObject({ prompt: "You keep the context.", skills: ["lane-memory"], model: "claude-sonnet-5-5" });
+  });
+
   it("refuses outside a PM chat with an open run", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     await plugin(bb);

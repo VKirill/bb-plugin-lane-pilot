@@ -90,7 +90,7 @@ export type HelperRole =
   | "docs-maintainer" | "onboarder" | "memory-maintainer" | "project-life"
   | "browser-qa" | "errand" | "council-seat" | "rules-analyzer"
   | "analyst" | "planner" | "auditor" | "debugger"
-  | "specialist:design-lead" | "specialist:copy-lead" | "specialist:seo-specialist" | "specialist:tavily";
+  | "specialist:design-lead" | "specialist:copy-lead" | "specialist:seo-specialist" | "specialist:tavily" | "specialist:video-lead";
 
 type RoleProfile = { bbPlugins: string[]; skills: string[]; mcpServers: string[] };
 const CODER: RoleProfile = { bbPlugins: [], skills: ["writer-practices", "karpathy-guidelines"], mcpServers: ["gitnexus", "metamcp"] };
@@ -136,7 +136,11 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "specialist:copy-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "copy-project-life", "site-copy-audience", "site-copy-headlines", "site-copy-ux", "copy-research", "tavily", "page-prototype", "ru-text", "ru-check", "ru-score"], mcpServers: [] },
   "specialist:seo-specialist": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "seo-project-life", "seo-drmax-orchestrator", "cocoon-chainsmith", "drmax-cocoon-engine-x4", "drmax-brandcore", "drmax-text-humanization", "ai-detect", "drmax-signalforge", "drmax-latent-intent", "drmax-market-scoped", "google", "yandex", "seo-tools", "page-prototype", "ru-text", "ru-check", "ru-score"], mcpServers: [] },
   "specialist:tavily": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "tavily"], mcpServers: [] },
+  "specialist:video-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "hyperframes", "hyperframes-cli", "hyperframes-registry", "media-use", "procedural-film", "video-to-reels", "business-motion-film", "remotion:remotion-best-practices", "remotion:remotion-render", "remotion:remotion-create"], mcpServers: [] },
 };
+
+/** The profile of a specialist the owner defined: it has no entry above, so it starts with Env Catalog; its own skills and MCP servers come in as `extra` on the spawn. */
+const CUSTOM_SPECIALIST_PROFILE: RoleProfile = { bbPlugins: ["env-catalog"], skills: ["env-catalog"], mcpServers: [] };
 
 export const HELPER_ROLES = Object.keys(ROLE_PROFILES) as HelperRole[];
 export const ACCESS_GROUPS = ["bbPlugins", "skills", "mcpServers", "nativePlugins"] as const;
@@ -192,7 +196,7 @@ export function effectiveGroup(role: HelperRole, group: AccessGroup, access: Rol
   const mandatory = group === "bbPlugins" ? MANDATORY_BB_PLUGINS : group === "mcpServers" ? MANDATORY_MCP_SERVERS : [];
   if (own?.mode === "all") return { names: null, source: "owner" };
   if (own?.mode === "allow") return { names: withMandatory(own.names ?? [], mandatory), source: "owner" };
-  const profile = ROLE_PROFILES[role];
+  const profile = ROLE_PROFILES[role] ?? CUSTOM_SPECIALIST_PROFILE;
   const base = group === "nativePlugins" ? [] : profile[group];
   return { names: withMandatory(base, mandatory), source: "role" };
 }

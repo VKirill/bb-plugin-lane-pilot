@@ -9,6 +9,7 @@ import { RUN_BUDGET_SETTINGS, runHealth } from "../../stability/server";
 import { configuredSetting } from "../../core/server";
 import { getCouncilSession } from "@lane-pilot/council";
 import { SCHEDULE_USAGE, runScheduleCli } from "../../schedule/server";
+import { AGENTS_USAGE, agentRegistry, runAgentsCli } from "../../native-agent/server";
 import type { Services } from "../../core/server";
 import { ANAMNESIS_USAGE } from "../../anamnesis";
 import { anamnesisFor } from "../../anamnesis";
@@ -90,6 +91,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
     "bb lane-pilot wait-thread <thread-id>",
     "bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]",
     SCHEDULE_USAGE,
+    AGENTS_USAGE,
     ANAMNESIS_USAGE,
     DEFERRAL_USAGE,
     POLICY_USAGE,
@@ -193,6 +195,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"wall", summary:"The wall journal and the night loop: failures grouped by class, the 3/10-5/100-6/500 recurrence, the night's repairs, hunters and the backlog, re-runs on the new head", usage:WALL_USAGE },
       { name:"checkers", summary:"Checking the checkers: plant known defects in accepted candidates, run every checker on them and print the checker scorecard (score, scorecard, drill, defects)", usage:CHECKERS_USAGE },
       { name:"schedule", summary:"The schedule board: scheduled workflows, errands and scripts (list, show, history, preview, create, update, pause, resume, run-now, delete)", usage:SCHEDULE_USAGE },
+      { name:"agents", summary:"The agents the owner can pick: list and show the bundled ones, create, update and delete his own (a JSON or a markdown file with frontmatter)", usage:AGENTS_USAGE },
     ],
     async run(argv, invocation) {
       try {
@@ -340,6 +343,9 @@ export function registerCli(ctx: ServerCore, services: Services) {
         }
         if (command === "schedule") {
           return await runScheduleCli(services, args);
+        }
+        if (command === "agents") {
+          return await runAgentsCli({ list: () => services.listedAgentProfiles(), registry: agentRegistry(ctx) }, args);
         }
         if (command === "configure" && args.length === 1) {
           const config = prototypeConfigSchema.parse(JSON.parse(args[0]!));

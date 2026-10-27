@@ -9,9 +9,9 @@ import {
 import bundledAgents from "../src/rooms/native-agent/bundled-agents.json";
 
 describe("bundled BB session profiles", () => {
-  it("loads all seven profiles under schema limits with resources and no model fields", () => {
+  it("loads all eight profiles under schema limits with resources and no model fields", () => {
     for (const id of MAIN_AGENT_PROFILE_IDS) {
-      const bundled = (bundledAgents as unknown as Record<string, { displayName: string; skills: string[]; mcpServers: string[] } | undefined>)[id] ?? { displayName: "Workflow architect", skills: [], mcpServers: [] };
+      const bundled = (bundledAgents as unknown as Record<string, { displayName: string; skills: string[]; mcpServers: string[] } | undefined>)[id] ?? (id === "video-lead" ? { displayName: "Video", skills: compileMainAgentProfile(id).skills ?? [], mcpServers: [] } : { displayName: "Workflow architect", skills: [], mcpServers: [] });
       const compiled = compileMainAgentProfile(id);
       expect(compiled.sourceVersion).toBe(PROFILE_SOURCE_VERSION);
       expect(compiled.description).toBe(bundled.displayName);
@@ -34,6 +34,10 @@ describe("bundled BB session profiles", () => {
     expect(orchestrator.prompt).toContain("lane_pilot_dispatch_writer");
     expect(orchestrator.prompt).not.toContain("Boot solo dev-orchestrator");
     expect(compileMainAgentProfile("seo-specialist").mcpServers).toHaveLength(9);
+    expect(compileMainAgentProfile("video-lead").skills).toEqual([
+      "hyperframes", "hyperframes-cli", "hyperframes-registry", "media-use", "procedural-film", "video-to-reels", "business-motion-film",
+      "remotion:remotion-best-practices", "remotion:remotion-render", "remotion:remotion-create",
+    ]);
   });
 
   it("upgrades unchanged stubs and CLI dumps and keeps edited compiled snapshots plus resource overlays", () => {

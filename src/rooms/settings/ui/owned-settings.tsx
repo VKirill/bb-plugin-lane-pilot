@@ -27,6 +27,8 @@ const CONTROL = `${FIELD} box-border`;
 type Agent = {
   id: string; prompt: string; description: string; sourceHash: string; sourceVersion: string; edited: boolean;
   tools?: string[]; disallowedTools?: string[]; skills?: string[]; mcpServers?: string[];
+  /** True for an agent the owner created: only these can be deleted. */
+  custom?: boolean;
   resourceModes?: Partial<Record<ResourceKey, ResourceMode>>;
 };
 type HostOption = { id: string; name: string; status: string; connected: boolean };
@@ -237,6 +239,21 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(false); }
   };
+  const isDraft = Boolean(agent && snapshot && !snapshot.agents.some((item) => item.id === agent.id));
+  const removeAgent = async () => {
+    if (!snapshot || !agent || busy || !window.confirm(t("agentDeleteConfirm"))) return;
+    setBusy(true); setError(""); setSaved(false);
+    try {
+      if (!isDraft) {
+        const result = await rpc.call("delete_agent", { id: agent.id });
+        if (!result.ok) throw new Error(result.error ?? t("owned03"));
+      }
+      setSnapshot((current) => current ? { ...current, agents: current.agents.filter((item) => item.id !== agent.id) } : current);
+      setAgents((current) => current.filter((item) => item.id !== agent.id));
+      setSelected("dev-orchestrator");
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setBusy(false); }
+  };
   return <section hidden={scope === "projects"} className="min-w-0 max-w-full space-y-6" style={{ minInlineSize: 0 }} data-testid="owned-settings">
     <div className="min-w-0 space-y-1">
       <h1 className="text-xl font-medium">{scope === "globals" ? t("navGlobals") : t("navAgents")}</h1>
@@ -315,6 +332,7 @@ export function OwnedSettings({ scope, locale, onDefaultsSaved }: { scope: "proj
           </div>
           <Label htmlFor="owned-agent">{t("agentSelectedProfile")}</Label>
           <Select value={selected} onValueChange={(value) => { setSelected(value); setSaved(false); }}><SelectTrigger id="owned-agent" className={`${CONTROL_H} ${CONTROL}`}><SelectValue /></SelectTrigger><SelectContent>{agents.map((item) => <SelectItem key={item.id} value={item.id}>{agentPickerLabel(item, t)}</SelectItem>)}</SelectContent></Select>
+          {agent && (agent.custom || isDraft) ? <Button type="button" variant="outline" className={`${CONTROL_H} shrink-0`} data-testid="agent-delete" onClick={() => void removeAgent()}>{t("agentDelete")}</Button> : null}
           {agent ? <>
             <Label htmlFor="agent-description">{t("owned15")}</Label>
             <Input id="agent-description" className={`${CONTROL_H} ${CONTROL}`} value={agent.description} onChange={(event) => { setAgents((current) => current.map((item) => item.id === selected ? { ...item, description: event.target.value } : item)); setSaved(false); }} />

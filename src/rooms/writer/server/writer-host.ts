@@ -1,4 +1,5 @@
-import { MAIN_AGENT_PROFILE_IDS, compileEffectiveMainAgent, compileMainAgentProfile } from "../../native-agent";
+import { MAIN_AGENT_PROFILE_IDS, agentListItem } from "../../native-agent";
+import type { AgentListItem } from "../../native-agent";
 import { loadPrototypeConfig } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID, LP_DEFAULTS_KEY, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { resolveWriterBinding } from "../../native-agent";
@@ -94,30 +95,15 @@ export function createWriterHost(ctx: ServerCore) {
     return { ok: true as const, hostId: binding.hostId };
   }
 
-  async function listedAgentProfiles() {
+  /** The one list of pickable agents (bundled, then the owner's own), in the shape of `AgentListItem` (src/rooms/native-agent/custom-agent.ts). */
+  async function listedAgentProfiles(): Promise<AgentListItem[]> {
     const owned = await ownedAgents();
     const ids = [...new Set([...MAIN_AGENT_PROFILE_IDS, ...Object.keys(owned)])];
-    const rows: Array<{
-      id: string; description: string; prompt: string; sourceHash: string; sourceVersion: string; edited: boolean;
-      tools?: string[]; disallowedTools?: string[]; skills?: string[]; mcpServers?: string[];
-    }> = [];
+    const rows: AgentListItem[] = [];
     for (const id of ids) {
       try {
         if (owned[id]?.compiledCorrupt) continue;
-        const compiled = compileEffectiveMainAgent(id, owned[id]);
-        const stock = (MAIN_AGENT_PROFILE_IDS as readonly string[]).includes(id) ? compileMainAgentProfile(id) : null;
-        rows.push({
-          id,
-          description: compiled.description,
-          prompt: compiled.prompt,
-          sourceHash: compiled.sourceHash,
-          sourceVersion: compiled.sourceVersion,
-          edited: stock ? compiled.sourceHash !== stock.sourceHash : true,
-          ...(compiled.tools ? { tools: compiled.tools } : {}),
-          ...(compiled.disallowedTools ? { disallowedTools: compiled.disallowedTools } : {}),
-          ...(compiled.skills ? { skills: compiled.skills } : {}),
-          ...(compiled.mcpServers ? { mcpServers: compiled.mcpServers } : {}),
-        });
+        rows.push(agentListItem(id, owned[id]));
       } catch { /* skip incomplete custom rows */ }
     }
     return rows;

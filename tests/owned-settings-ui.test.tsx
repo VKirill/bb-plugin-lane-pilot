@@ -24,6 +24,7 @@ async function mount(locale: "en" | "ru") {
       }),
       save_globals: (input) => harness.behavior.callRpc("save_globals", input),
       save_agent_profile: (input) => harness.behavior.callRpc("save_agent_profile", input),
+      delete_agent: (input) => harness.behavior.callRpc("delete_agent", input),
     },
   });
   return { slot, harness };
@@ -45,6 +46,32 @@ describe("owned settings source DOM", () => {
       const readback: any = await harness.behavior.callRpc("get_globals", {});
       expect(readback.agents[0].prompt).toBe("My independent instructions");
     } finally { slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
+  });
+
+  it.each(["en", "ru"] as const)("adds an agent with the New agent button, saves it as the owner's own and deletes it (%s)", async (locale) => {
+    const { slot, harness } = await mount(locale);
+    const confirm = window.confirm;
+    window.confirm = () => true;
+    try {
+      const ru = locale === "ru";
+      fireEvent.click(await slot.findByRole("tab", { name: ru ? "Агенты" : "Agents" }));
+      await slot.findByTestId("agent-new-profile");
+      // A bundled agent cannot be deleted.
+      expect(slot.queryByTestId("agent-delete")).toBeNull();
+      fireEvent.change(slot.getByLabelText(ru ? "ID нового профиля" : "New profile ID"), { target: { value: "video-desk" } });
+      fireEvent.click(slot.getByRole("button", { name: ru ? "Новый агент" : "New agent" }));
+      fireEvent.change(slot.getByLabelText(ru ? "Название и назначение" : "Name and purpose"), { target: { value: "Video desk" } });
+      fireEvent.change(slot.getByLabelText(ru ? "Инструкции" : "Instructions"), { target: { value: "You make videos." } });
+      // An unsaved draft can be dropped, a saved agent can be deleted.
+      fireEvent.click(slot.getByRole("button", { name: ru ? "Сохранить" : "Save" }));
+      await slot.findByRole("status");
+      const saved: any = await harness.behavior.callRpc("list_agents", { custom: true });
+      expect(saved.agents).toMatchObject([{ id: "video-desk", custom: true, displayName: "Video desk", kind: "specialist" }]);
+      await waitFor(() => expect(slot.getByTestId("agent-delete")).toBeTruthy());
+      fireEvent.click(slot.getByTestId("agent-delete"));
+      await waitFor(() => expect(slot.queryByTestId("agent-delete")).toBeNull());
+      expect(((await harness.behavior.callRpc("list_agents", { custom: true })) as any).agents).toEqual([]);
+    } finally { window.confirm = confirm; slot.lifecycle.unmount(); await harness.lifecycle.dispose(); }
   });
 
   it("retains a stale editor draft on CAS conflict without overwriting another editor", async () => {
