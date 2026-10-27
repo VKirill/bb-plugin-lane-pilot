@@ -494,8 +494,18 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     return `${pieceId}.${n}`;
   }
 
+  /** The PM chat's checkout: the folder a piece runs in when the planner left its task's project_cwd out. */
+  async function pmCheckoutPath(phase: Phase): Promise<string | null> {
+    const pm = await bb.sdk.threads.get({ threadId: phase.pmThreadId }).catch(() => null) as { environmentId?: string } | null;
+    const env = pm?.environmentId ? await bb.sdk.environments.get({ environmentId: pm.environmentId }).catch(() => null) as { path?: string } | null : null;
+    return typeof env?.path === "string" && env.path ? env.path : null;
+  }
+
   async function issue(phase: Phase): Promise<Phase> {
     const items = phase.record.plan?.items ?? [];
+    // A planner's piece may leave out what the machine knows itself: the folder (the PM's checkout) and the objective (the piece's own
+    // promise). Without them task-v2 refused every piece and the PM had to return the phase to planning (live ph_86fd9d3fab, 2026-10-27).
+    let checkout: string | null | undefined;
     const execution = { issued: { ...(phase.record.execution?.issued ?? {}) }, startedAt: phase.record.execution?.startedAt ?? now(), issueErrors: {} as Record<string, string>,
       issuedSha: { ...(phase.record.execution?.issuedSha ?? {}) } };
     // A piece issued before the contract prints existed: its print is the contract it really went out with (the stored task), compared
@@ -530,7 +540,9 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       const taskIdForIssue = redoOf ? redoId(item.id, runId) : item.id;
       const reply: Record<string, unknown> = await services.dispatchWriter({ threadId: phase.pmThreadId, projectId: phase.projectId, birth: "phase",
         // Stage above ordinary work: a phase's pieces start before the run's ordinary tasks when writers are scarce.
-        task: { ...item.task, id: taskIdForIssue, priority: (item.task.priority as string | undefined) ?? "high", ...(phase.record.design?.drawing ? { drawing: phase.record.design.drawing.paths } : {}) } as never,
+        task: { ...item.task, id: taskIdForIssue, priority: (item.task.priority as string | undefined) ?? "high", ...(phase.record.design?.drawing ? { drawing: phase.record.design.drawing.paths } : {}),
+          ...(typeof item.task.project_cwd === "string" && item.task.project_cwd ? {} : { project_cwd: (checkout ??= await pmCheckoutPath(phase)) ?? undefined }),
+          ...(typeof item.task.objective === "string" && item.task.objective.trim() ? {} : { objective: `${item.title}: given ${item.promise.given}, when ${item.promise.when}, then ${item.promise.then}` }) } as never,
         plan: `Phase ${phase.id} «${phase.title}», wave ${item.wave}, piece ${item.id}. Promise — given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}.${phase.record.design?.drawing ? ` The phase drawing: ${phase.record.design.drawing.paths.join(", ")} — the screens follow it.` : ""}`,
         objective: phase.goal }).catch((cause: unknown) => ({ ok: false, reason: cause instanceof Error ? cause.message : String(cause) }));
       const taskId = typeof reply.taskId === "string" ? reply.taskId : null;
