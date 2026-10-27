@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.352
+
+**ZCode takes three tasks at once, and only three.** The ZCode app runs tasks concurrently (bb-plugin-zcode 0.3.0 measured six without errors), so Lane Pilot's gate allows three of its own tasks there instead of one. A spawn takes its slot before it starts: two writers checked in the same second both went to ZCode before (live test 2026-10-27), now the second gets «ZCode is busy», a free environment failure, and runs on another model.
+
+**ZCode's MCP config stays out of the writer's commit.** The ZCode provider writes `<worktree>/.zcode/config.json` with the session's tool token; Lane Pilot took it for a stray file (an attempt lost) and then committed it. `.zcode/` is bookkeeping now, and activation adds it to the repository's git exclude. The runtime banner «Node.js» is no longer read as a file name in `red_outside_task`.
+
 ## 0.1.351
 
 **ZCode · GLM-5.3-Flash is a writer and a role-table option.** The ZCode app on the Mac mini (BB provider `zcode`, GLM-5.3-Flash) is in the writers' anamnesis (`zcode-flash`: large self-contained mechanical or medium tasks, docs, tests, refactors; not tiny tasks, one at a time, Mac mini only) and in the role table (`glm-5.3-flash`, GLM family, efforts low/high/max), never a default. It is offered only where it can work: a machine whose provider list has `zcode`, 15:00–01:00 UTC (setting `zcode.window`: `promo` by default, `always` to lift it), and while no Lane Pilot thread works on it. A held pick goes to the next writer or the role's built-in default. The app's refusals (`ZCode is busy`, `text-not-visible`, `foreground_required`, `session_expired`) are a free limit failure: the task or graph step runs on another model, and the provider breaker opens at once.
