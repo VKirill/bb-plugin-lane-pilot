@@ -1,4 +1,4 @@
-import { belowTier, modelTier, resolveRoleModel, roleDefaultModel, roleRow, ROLE_TABLE, type ModelTier } from "@lane-pilot/models";
+import { belowTier, judgeAgainstAuthor, modelTier, resolveRoleModel, roleDefaultModel, roleRow, ROLE_TABLE, type ModelTier } from "@lane-pilot/models";
 
 /**
  * Which model a generic workflow agent step runs on. ONE function answers it for the executor (what is spawned) and for the Models
@@ -43,7 +43,25 @@ export type AgentModelInput = {
    * A table model it does not offer is passed over for the next candidate; a pinned model is kept and flagged `model_unavailable_here`.
    */
   offered?: (providerId: string, model: string) => boolean | null | undefined;
+  /**
+   * The model that wrote the work this judge judges, when it is known (AUTHOR_ROWS says whose). A judge of the same family takes its peer
+   * in the other family (the cross-family rule, as the code critic has it); `crossed_family` says so. Null/absent: the table's pick stands.
+   */
+  author?: { providerId: string; model: string } | null;
 };
+
+/** The author rows each judge row is judged against, in order: the first one whose model is known is the author. Other roles judge no one. */
+export const AUTHOR_ROWS: Record<string, readonly string[]> = {
+  "plan-critic": ["planner"], "specialist-reviewer": ["planner"], auditor: ["planner", "analyst"],
+};
+/**
+ * The author a plan judge has when no planner is on record: the PM chat wrote the plan. The Models view uses this alone (it cannot know the
+ * run's planner); the executor tries the recorded planner first. Null for the auditor (its authors are the phase's, not the PM's) and non-judges.
+ */
+export const pmAuthorOf = (role: string, pm: { providerId: string; model: string } | null): { providerId: string; model: string } | null =>
+  roleRow(role).id === "plan-critic" || roleRow(role).id === "specialist-reviewer" ? pm : null;
+/** The rows whose model is kept per run, for the judges above to read. */
+export const AUTHOR_ROW_IDS: readonly string[] = [...new Set(Object.values(AUTHOR_ROWS).flat())];
 
 /**
  * The least a deciding role needs, from the table. A model this role inherited (a stage selection) that is below it is replaced by the role's
@@ -63,7 +81,12 @@ export function resolveAgentModel(input: AgentModelInput): AgentModel {
   const pinnedTier = text(pin?.service_tier);
   const serviceTier: "default" | "fast" | null = pinnedTier === "fast" || pinnedTier === "default" ? pinnedTier : null;
 
-  const chosen = resolveRoleModel(input.role, input.settings);
+  let chosen = resolveRoleModel(input.role, input.settings);
+  // The judge against its author (a pinned run keeps what it names).
+  if (!pinnedModel && input.author && AUTHOR_ROWS[row.id]) {
+    const judged = judgeAgainstAuthor(chosen, input.author);
+    if (judged.changed && here(judged.providerId, judged.model)) { chosen = { ...chosen, providerId: judged.providerId, model: judged.model }; issues.push("crossed_family"); }
+  }
   if (chosen.escalated) issues.push("escalated_for_role");
   if (pinnedModel) {
     const providerId = text(pin?.provider) ?? DEFAULT_PROVIDER;

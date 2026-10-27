@@ -5,7 +5,7 @@ import { resolveStageWriterSelection } from "../../writer";
 import { writerFallbackChain, writerFallbacks } from "../../writer";
 import { costTier, offeredOnHost, resolveRoleModel, roleModelKey, roleRowOf, validateChoice, type ModelCatalog } from "@lane-pilot/models";
 import { roleSpec } from "./workflow-agent";
-import { resolveAgentModel } from "./workflow-agent-model";
+import { pmAuthorOf, resolveAgentModel } from "./workflow-agent-model";
 
 /**
  * Who works on a step, and with which model. One place answers it for every node type, from the same rules the executors
@@ -73,7 +73,7 @@ function agentNode(node: Raw, id: string, settings: Settings, pm: PmPair | null,
   const role = text(node.role) ?? "worker";
   const helper = roleSpec(role).helper;
   // The same function the executor calls (withResolvedModel, workflow-agent.ts): the card says what will be spawned.
-  const chosen = resolveAgentModel({ role, settings, pm, ...(offered ? { offered } : {}) });
+  const chosen = resolveAgentModel({ role, settings, pm, author: pmAuthorOf(role, pm), ...(offered ? { offered } : {}) });
   return {
     nodeId: id, kind: "agent", uses: text(node.uses), mode: "model", agent: { role, helper, label: role },
     providerId: chosen.providerId, model: chosen.model, reasoningEffort: chosen.reasoningEffort, serviceTier: chosen.serviceTier,

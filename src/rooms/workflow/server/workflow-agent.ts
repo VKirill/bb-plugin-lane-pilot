@@ -25,10 +25,10 @@ import { detectRepoEdits, gitRepoStatus } from "../../verification/server";
 import { SPECIALIST_GRAPH, SPECIALIST_ROLES, rememberSpecialistThread } from "../../critique/server";
 import { findThreadsByMetadata, keyedSpawnSupported } from "../../core/server";
 import { modelCatalogOf, pmHostOf } from "../../core/server";
-import { offeredOnHost } from "@lane-pilot/models";
+import { offeredOnHost, roleRowOf } from "@lane-pilot/models";
 import { threadUsage } from "../../usage/server";
 import { stringAt } from "../../core/server";
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_REASONING, resolveAgentModel } from "./workflow-agent-model";
+import { AUTHOR_ROWS, AUTHOR_ROW_IDS, DEFAULT_MODEL, pmAuthorOf, DEFAULT_PROVIDER, DEFAULT_REASONING, resolveAgentModel } from "./workflow-agent-model";
 import { outputText } from "../../writer/server";
 import type { ServerCore } from "../../core/server";
 import type { ChainRuntime } from "./workflow-runtime";
@@ -410,6 +410,30 @@ export async function pmPairOfThread(bb: ServerCore["bb"], threadId: string): Pr
   } catch { return null; }
 }
 
+type Pair = { providerId: string; model: string };
+/** Where the model an author row ran on is kept: per Lane Pilot run (the phase's planner is read by its plan critic and its auditor), else per workflow run. */
+const authorKey = (rt: ChainRuntime, workflowRunId: string, row: string) => `author-model:${rt.runId ?? workflowRunId}:${row}`;
+
+/**
+ * The model that wrote the work a judge row judges: the planner (else the analyst) of the same run, as recorded when their step was resolved.
+ * A plan critic with no planner on record is judging the plan of the PM chat, so the PM's model stands in. Unknown (nothing recorded, the
+ * KV unreadable, a role that judges no one): null, and the table's choice stands.
+ */
+async function authorOf(rt: ChainRuntime, workflowRunId: string, row: string, pm: Pair | null): Promise<Pair | null> {
+  const rows = AUTHOR_ROWS[row];
+  if (!rows) return null;
+  for (const author of rows) {
+    const kept = await rt.ctx.bb.storage?.kv.get<Pair>(authorKey(rt, workflowRunId, author)).catch(() => null);
+    if (kept?.providerId && kept.model) return { providerId: kept.providerId, model: kept.model };
+  }
+  return pmAuthorOf(row, pm);
+}
+
+/** Keeps the model an author row runs on for the judges of the same run (the same value each time the step is resolved again after a reload). */
+async function rememberAuthor(rt: ChainRuntime, workflowRunId: string, row: string, chosen: Pair): Promise<void> {
+  await rt.ctx.bb.storage?.kv.set(authorKey(rt, workflowRunId, row), { providerId: chosen.providerId, model: chosen.model }).catch(() => undefined);
+}
+
 /**
  * The request with the model the step will run on written into it: the role's row of the table (resolveAgentModel decides; the Models
  * view calls the same function), unless a scheduled agent or an owner-created agent pins its own. Applied to the
@@ -429,7 +453,11 @@ export async function withResolvedModel(request: HelperRequest): Promise<HelperR
   const agentMeta = specialist && !isBundledSpecialist(specialist) ? (await (async () => rt.ctx.ownedAgents())().catch(() => ({} as Awaited<ReturnType<typeof rt.ctx.ownedAgents>>)))[specialist]?.meta : undefined;
   // The only models a run may pin: the one a scheduled agent names, and the one an owner-created agent names. The graph's node names none.
   const pinned = { provider: request.provider, model: request.model ?? agentMeta?.model, reasoning: request.reasoning ?? agentMeta?.effort, service_tier: request.serviceTier };
-  const chosen = resolveAgentModel({ role: request.role, pinned, settings, pm, ...(offered ? { offered } : {}) });
+  const row = roleRowOf(request.role);
+  const author = await authorOf(rt, request.workflowRunId, row, pm);
+  const chosen = resolveAgentModel({ role: request.role, pinned, settings, pm, author, ...(offered ? { offered } : {}) });
+  if (AUTHOR_ROW_IDS.includes(row)) await rememberAuthor(rt, request.workflowRunId, row, chosen);
+  if (chosen.issues.includes("crossed_family")) rt.ctx.log?.(`Lane Pilot: the ${request.role} of ${request.workflowId ?? "a workflow"}/${request.nodeId} would have judged work of its own model family; it runs on ${chosen.providerId}/${chosen.model} (the other family)`);
   if (chosen.issues.includes("model_unavailable_here") && read) {
     const where = findModelIn(read.providers.find((row) => row.id === chosen.providerId)?.models, chosen.model)?.hostIds.map((id) => read.hosts.find((row) => row.id === id)?.name ?? id).join(", ") ?? "";
     throw new HelperFailure("model_unavailable", `${chosen.providerId}/${chosen.model} is not offered by the machine this workflow's helpers run on (${read.hosts.find((row) => row.id === hostId)?.name ?? hostId})${where ? `; it is on ${where}` : ""}. Change the model of the role \"${request.role}\" in Settings (the role table).`);
