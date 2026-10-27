@@ -24,11 +24,11 @@ import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from ".
 import { detectRepoEdits, gitRepoStatus } from "../../verification/server";
 import { SPECIALIST_GRAPH, SPECIALIST_ROLES, rememberSpecialistThread } from "../../critique/server";
 import { findThreadsByMetadata, keyedSpawnSupported } from "../../core/server";
-import { modelCatalogOf, pmHostOf } from "../../core/server";
-import { offeredOnHost, roleRowOf } from "@lane-pilot/models";
+import { modelCatalogOf, pmHostOf, resolveSpawnModel } from "../../core/server";
+import { roleRowOf } from "@lane-pilot/models";
 import { threadUsage } from "../../usage/server";
 import { stringAt } from "../../core/server";
-import { AUTHOR_ROWS, AUTHOR_ROW_IDS, DEFAULT_MODEL, pmAuthorOf, DEFAULT_PROVIDER, DEFAULT_REASONING, resolveAgentModel } from "./workflow-agent-model";
+import { AUTHOR_ROWS, AUTHOR_ROW_IDS, DEFAULT_MODEL, pmAuthorOf, DEFAULT_PROVIDER, DEFAULT_REASONING } from "./workflow-agent-model";
 import { outputText } from "../../writer/server";
 import type { ServerCore } from "../../core/server";
 import type { ChainRuntime } from "./workflow-runtime";
@@ -127,6 +127,8 @@ export type HelperRequest = {
   prompt: string;
   fields: readonly Field[];
   provider?: string; model?: string; reasoning?: string; serviceTier?: "default" | "fast";
+  /** Set by `withResolvedModel`: provider and model are the table's answer, not a pin. `run` resolves a request that lacks it, so no helper spawns on a guess. */
+  resolved?: true;
   skills?: readonly string[];
   /** BB plugins and MCP servers the step's session may load on top of its role's. */
   plugins?: readonly string[]; mcp?: readonly string[];
@@ -143,6 +145,8 @@ export type HelperResult = { threadId: string; output: Record<string, unknown>; 
 class ContractFailure extends Error { constructor(readonly problems: ContractProblems) { super(describeProblems(problems).join("; ")); } }
 
 export class HelperFailure extends Error {
+  /** What the helper spent before it failed (`run` sets it): the engine adds it to the run, so a failed step is not free. */
+  usage?: { tokens: number; costUsd: number; unknown?: true };
   /** The code leads the message: it is what a run's step error shows. */
   constructor(readonly code: string, message: string) { super(`${code}: ${message}`); }
 }
@@ -187,6 +191,19 @@ async function followUpRequested(bb: ServerCore["bb"], threadId: string, at: num
   return listed.ok && listed.events.some((event) => (event as { type?: unknown; createdAt?: unknown }).type === "client/turn/requested" && Number((event as { createdAt?: unknown }).createdAt) >= at);
 }
 
+/** A thread a helper step started or went on in, with the marker its own turns begin at (`since`, ms; none = from the thread's start) and the model it ran on. */
+type TrackedThread = { id: string; since?: number; model?: string };
+
+/**
+ * What the threads of a step spent, summed: tokens and price of the turns since each one's marker. A thread whose usage cannot be read, or
+ * that reports none, marks the sum `unknown` (the engine then holds the run to a time and step limit instead of counting the step free).
+ */
+async function spentBy(bb: ServerCore["bb"], threads: readonly TrackedThread[]): Promise<{ tokens: number; costUsd: number; unknown?: true }> {
+  const rows = await Promise.all(threads.map((thread) => threadUsage(bb, thread.id, { ...(thread.since !== undefined ? { since: thread.since } : {}), ...(thread.model ? { fallbackModel: thread.model } : {}) }).catch(() => null)));
+  const blind = rows.some((row) => !row || !row.known);
+  return { tokens: rows.reduce((sum, row) => sum + (row?.tokens ?? 0), 0), costUsd: rows.reduce((sum, row) => sum + (row?.costUsd ?? 0), 0), ...(blind ? { unknown: true as const } : {}) };
+}
+
 export function createWorkflowAgents() {
   async function lookup(rt: ChainRuntime, request: HelperRequest): Promise<string | null> {
     // The spawn key makes `spawnKeyed` return the same thread; without the VK keys a thread is found by its metadata, or not at all.
@@ -194,7 +211,21 @@ export function createWorkflowAgents() {
     return found?.[0]?.id ?? null;
   }
 
+  /**
+   * One helper step. The model is always the table's answer (`withResolvedModel`) unless the request says it already is; the threads the step
+   * touched are listed as they start, so what it spent is read from all of them once, whether it ends well or not.
+   */
   async function run(asked: HelperRequest): Promise<HelperResult> {
+    const tracked: TrackedThread[] = [];
+    try {
+      return await runTracked(asked.resolved ? asked : await withResolvedModel(asked), tracked);
+    } catch (cause) {
+      if (cause instanceof Error && tracked.length) (cause as HelperFailure).usage = await spentBy(asked.rt.ctx.bb, tracked);
+      throw cause;
+    }
+  }
+
+  async function runTracked(asked: HelperRequest, tracked: TrackedThread[]): Promise<HelperResult> {
     const { rt } = asked;
     const { bb, db, host } = rt.ctx;
     const spec = roleSpec(asked.role);
@@ -270,6 +301,7 @@ export function createWorkflowAgents() {
     } else {
       threadId = await lookup(rt, request) ?? await spawn(request);
     }
+    tracked.push({ id: threadId, ...(sentAt !== undefined ? { since: sentAt } : {}), ...(request.model ? { model: request.model } : {}) });
 
     const wait = async (since?: number) => {
       try {
@@ -290,11 +322,15 @@ export function createWorkflowAgents() {
     // «Upgrade your plan to continue»). The step runs once more in a fresh thread on the default model instead of failing the run.
     const limit = providerLimitNotice(text);
     if (limit && !request.intoThread && (request.provider ?? DEFAULT_PROVIDER) !== DEFAULT_PROVIDER) {
-      const fallback = { ...request, provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL, reasoning: DEFAULT_REASONING, serviceTier: undefined, spawnKey: `${request.spawnKey}:limit` };
-      rt.ctx.bb.log.warn(`workflow step ${request.stepKey}: ${request.provider}/${request.model} hit a provider limit (${limit}); rerunning on ${DEFAULT_PROVIDER}/${DEFAULT_MODEL}`);
+      // The same resolver, with the provider that just failed taken out of the offer: the role's next model, judged against its author again.
+      // Nothing else on offer: the old fixed pair, flagged in the log when that puts a judge back in its author's family.
+      const again = await withResolvedModel({ ...request, provider: undefined as never, model: undefined as never, reasoning: undefined as never, resolved: undefined as never }, { avoidProvider: request.provider ?? null }).catch(() => null);
+      const fallback = { ...request, ...(again ? { provider: again.provider, model: again.model, reasoning: again.reasoning } : { provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL, reasoning: DEFAULT_REASONING }), serviceTier: undefined, spawnKey: `${request.spawnKey}:limit` };
+      rt.ctx.bb.log.warn(`workflow step ${request.stepKey}: ${request.provider}/${request.model} hit a provider limit (${limit}); rerunning on ${fallback.provider}/${fallback.model}${again ? "" : " (nothing else on offer: the default pair)"}`);
       // A fresh thread starts with the prompt: its first turn is the one to wait for, as for the first spawn.
       sentAt = undefined;
       threadId = await lookup(rt, fallback) ?? await spawn(fallback);
+      tracked.push({ id: threadId, model: fallback.model });
       await wait();
       text = await read();
     }
@@ -328,9 +364,8 @@ export function createWorkflowAgents() {
     if (!output) throw new HelperFailure(broken ? "artifact_invalid" : "output_invalid", broken ? `the ${request.role} helper's answer breaks the step's contract: ${problem}` : `the ${request.role} helper's final message could not be read: ${problem}`);
     // Read last, so the repair turn counts too. A thread whose usage cannot be read, or has no usage events, reports `unknown`:
     // the engine then holds the run to a time and step limit instead of letting a token or money budget pass unseen.
-    const measured = await threadUsage(bb, threadId!, { ...(sentAt !== undefined ? { since: sentAt } : {}), ...(request.model ? { fallbackModel: request.model } : {}) }).catch(() => undefined);
-    const usage = measured ? { tokens: measured.tokens, costUsd: measured.costUsd, ...(measured.known ? {} : { unknown: true as const }) } : { tokens: 0, costUsd: 0, unknown: true as const };
-    return { threadId: threadId!, output, text, usage };
+    // Every thread the step started counts (a provider-limit fallback leaves the first thread behind), each from its own start marker.
+    return { threadId: threadId!, output, text, usage: await spentBy(bb, tracked) };
   }
 
   return { run };
@@ -435,36 +470,39 @@ async function rememberAuthor(rt: ChainRuntime, workflowRunId: string, row: stri
 }
 
 /**
- * The request with the model the step will run on written into it: the role's row of the table (resolveAgentModel decides; the Models
- * view calls the same function), unless a scheduled agent or an owner-created agent pins its own. Applied to the
- * generic agent node and to the actions that run in an errand helper; the router, the architect and the audits keep their own.
+ * The request with the model the step will run on written into it: the role's row of the table (the one resolver, `resolveSpawnModel`, decides;
+ * the Models view calls the same function), unless a scheduled agent or an owner-created agent pins its own. Every helper step comes
+ * through here, from the generic agent node to the goal audit and the contract planner (`run` resolves what was not resolved before).
+ * `avoidProvider`: a provider that just hit its limit is taken out of the offer and no pin applies, so the answer is the role's next model.
  */
-export async function withResolvedModel(request: HelperRequest): Promise<HelperRequest> {
+export async function withResolvedModel(request: HelperRequest, options: { avoidProvider?: string | null } = {}): Promise<HelperRequest> {
   const { rt } = request;
-  const settings = (await rt.ctx.effectiveProjectSettings(rt.projectId, rt.runId ? getRunSettingsScopes(rt.ctx.db, rt.runId) : []).catch(() => ({ values: {} }))).values;
+  const avoid = options.avoidProvider ?? null;
+  const settings = (await Promise.resolve().then(() => rt.ctx.effectiveProjectSettings(rt.projectId, rt.runId ? getRunSettingsScopes(rt.ctx.db, rt.runId) : [])).catch(() => ({ values: {} as Record<string, unknown> }))).values;
   const pm = rt.pmThreadId ? await pmPairOfThread(rt.ctx.bb, rt.pmThreadId) : null;
   // The helper starts in the PM chat's environment, on one machine: a model that machine does not offer is passed over (the table's row)
   // or, when the run pins it itself, refused here with the machines that do have it, instead of failing inside the spawn.
-  const hostId = rt.pmThreadId ? await pmHostOf(rt.ctx.bb, rt.pmThreadId).catch(() => null) : (await projectFolder(rt.ctx.bb, rt.projectId))?.hostId ?? null;
-  const read = hostId ? modelCatalogOf(rt.ctx).peek() : null;
-  const offered = read && hostId ? (providerId: string, model: string) => offeredOnHost(read, providerId, model, hostId) : undefined;
+  const hostId = rt.pmThreadId ? await pmHostOf(rt.ctx.bb, rt.pmThreadId).catch(() => null) : (await projectFolder(rt.ctx.bb, rt.projectId).catch(() => null))?.hostId ?? null;
+  const read = (() => { try { return modelCatalogOf(rt.ctx).peek(); } catch { return null; } })();
   // An agent the owner created may name its own model and effort: they pin the run unless the schedule named one.
   const specialist = request.role.startsWith("specialist:") ? request.role.slice("specialist:".length) : "";
-  const agentMeta = specialist && !isBundledSpecialist(specialist) ? (await (async () => rt.ctx.ownedAgents())().catch(() => ({} as Awaited<ReturnType<typeof rt.ctx.ownedAgents>>)))[specialist]?.meta : undefined;
+  const agentMeta = !avoid && specialist && !isBundledSpecialist(specialist) ? (await Promise.resolve().then(() => rt.ctx.ownedAgents()).catch(() => ({} as Awaited<ReturnType<typeof rt.ctx.ownedAgents>>)))[specialist]?.meta : undefined;
   // The only models a run may pin: the one a scheduled agent names, and the one an owner-created agent names. The graph's node names none.
   const pinned = { provider: request.provider, model: request.model ?? agentMeta?.model, reasoning: request.reasoning ?? agentMeta?.effort, service_tier: request.serviceTier };
   const row = roleRowOf(request.role);
   const author = await authorOf(rt, request.workflowRunId, row, pm);
-  const chosen = resolveAgentModel({ role: request.role, pinned, settings, pm, author, ...(offered ? { offered } : {}) });
+  const chosen = resolveSpawnModel({ role: request.role, pinned, settings, pm, author, catalog: read, hostId, avoidProvider: avoid });
   if (AUTHOR_ROW_IDS.includes(row)) await rememberAuthor(rt, request.workflowRunId, row, chosen);
-  if (chosen.issues.includes("crossed_family")) rt.ctx.log?.(`Lane Pilot: the ${request.role} of ${request.workflowId ?? "a workflow"}/${request.nodeId} would have judged work of its own model family; it runs on ${chosen.providerId}/${chosen.model} (the other family)`);
+  const where = `the ${request.role} of ${request.workflowId ?? "a workflow"}/${request.nodeId}`;
+  if (chosen.issues.includes("crossed_family")) rt.ctx.log?.(`Lane Pilot: ${where} would have judged work of its own model family; it runs on ${chosen.providerId}/${chosen.model} (the other family)`);
+  if (chosen.issues.includes("same_family_judge")) rt.ctx.log?.(`Lane Pilot: ${where} judges work of its own model family on ${chosen.providerId}/${chosen.model}: the other family has no model on this machine, so the judge is not independent`);
   if (chosen.issues.includes("model_unavailable_here") && read) {
-    const where = findModelIn(read.providers.find((row) => row.id === chosen.providerId)?.models, chosen.model)?.hostIds.map((id) => read.hosts.find((row) => row.id === id)?.name ?? id).join(", ") ?? "";
-    throw new HelperFailure("model_unavailable", `${chosen.providerId}/${chosen.model} is not offered by the machine this workflow's helpers run on (${read.hosts.find((row) => row.id === hostId)?.name ?? hostId})${where ? `; it is on ${where}` : ""}. Change the model of the role \"${request.role}\" in Settings (the role table).`);
+    const on = findModelIn(read.providers.find((row) => row.id === chosen.providerId)?.models, chosen.model)?.hostIds.map((id) => read.hosts.find((row) => row.id === id)?.name ?? id).join(", ") ?? "";
+    throw new HelperFailure("model_unavailable", `${chosen.providerId}/${chosen.model} is not offered by the machine this workflow's helpers run on (${read.hosts.find((row) => row.id === hostId)?.name ?? hostId})${on ? `; it is on ${on}` : ""}. Change the model of the role \"${request.role}\" in Settings (the role table).`);
   }
-  if (chosen.issues.includes("escalated_for_role")) rt.ctx.log?.(`Lane Pilot: the ${request.role} of ${request.workflowId ?? "a workflow"}/${request.nodeId} inherited a model too light for it; it runs on ${chosen.providerId}/${chosen.model} (the role's default)`);
-  if (chosen.issues.includes("light_model_for_role")) rt.ctx.log?.(`Lane Pilot: the ${request.role} of ${request.workflowId ?? "a workflow"}/${request.nodeId} runs on ${chosen.model}, a light model for that role, as the role table says`);
-  return { ...request, provider: chosen.providerId, model: chosen.model, reasoning: chosen.reasoningEffort, ...(chosen.serviceTier ? { serviceTier: chosen.serviceTier } : {}) };
+  if (chosen.issues.includes("escalated_for_role")) rt.ctx.log?.(`Lane Pilot: ${where} inherited a model too light for it; it runs on ${chosen.providerId}/${chosen.model} (the role's default)`);
+  if (chosen.issues.includes("light_model_for_role")) rt.ctx.log?.(`Lane Pilot: ${where} runs on ${chosen.model}, a light model for that role, as the role table says`);
+  return { ...request, provider: chosen.providerId, model: chosen.model, reasoning: chosen.reasoningEffort, resolved: true, ...(chosen.serviceTier ? { serviceTier: chosen.serviceTier } : {}) };
 }
 
 export const agentUsesKeyedSpawn = (rt: ChainRuntime | undefined) => Boolean(rt && keyedSpawnSupported(rt.ctx.bb));

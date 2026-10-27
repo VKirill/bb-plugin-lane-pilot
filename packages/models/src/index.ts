@@ -6,3 +6,4 @@ export * from "./model-prices";
 export * from "./model-tiers";
 export * from "./model-profiles";
 export * from "./role-models";
+export * from "./agent-model";

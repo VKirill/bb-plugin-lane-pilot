@@ -158,7 +158,6 @@ export class WorkflowEngine {
   private readonly runtimes = new Map<string, unknown>();
   private readonly aborts = new Map<string, AbortController>();
   /** Children whose spend a failed step already added to the parent. */
-  private readonly chargedChildren = new Set<string>();
   private readonly compiledRuns = new Map<string, Compiled>();
   private readonly beats = new Map<string, ReturnType<typeof setInterval>>();
   private readonly stoppedRuns = new Set<string>();
@@ -829,6 +828,13 @@ export class WorkflowEngine {
     if (!outcome) {
       const message = lastError instanceof Error ? lastError.message : String(lastError);
       const code = lastError instanceof MissingValueError ? lastError.code : "step_failed";
+      // A step that failed after its helper had spent still spent: an error may carry what (`usage`), and the run is charged for it, once.
+      const spentOnFailure = (lastError as { usage?: Usage } | null)?.usage;
+      if (spentOnFailure && typeof spentOnFailure.tokens === "number") {
+        j.db.prepare("UPDATE lane_pilot_wf_run SET tokens_used=tokens_used+?, cost_micro_usd=cost_micro_usd+? WHERE id=?").run(Math.round(spentOnFailure.tokens ?? 0), Math.round((spentOnFailure.costUsd ?? 0) * 1_000_000), runId);
+        if (spentOnFailure.unknown) j.event(runId, stepKey, "usage", null, "unknown", node.id);
+        this.noteUnknownUsage(runId, stepKey, spentOnFailure);
+      }
       if (j.moveStep(runId, stepKey, "running", "failed", { error: message, ended: true, receipt_json: receipt({ code }) })) this.failStep(runId, c, stepKey, `${code}:${node.id}`, message);
       return "done";
     }
@@ -1195,10 +1201,16 @@ export class WorkflowEngine {
     if (child.status === "succeeded") return { output: child.output ?? {}, ...(usage ? { usage } : {}) };
     if (child.status === "waiting" || child.status === "running") return { wait: { kind: "subworkflow", detail: { childRunId: child.runId } } };
     // A child that ended badly still spent: the parent's step fails without an outcome, so its spend is added here, once.
-    if (usage && !this.chargedChildren.has(child.runId)) {
-      this.chargedChildren.add(child.runId);
+    // Once, whatever the process does: the charge is a journal event of the parent run, so a reload that asks again does not add it a second time.
+    if (usage) {
       const parent = this.journal.db.prepare("SELECT parent_run_id FROM lane_pilot_wf_run WHERE id=?").get(child.runId) as { parent_run_id: string | null } | undefined;
-      if (parent?.parent_run_id) this.journal.db.prepare("UPDATE lane_pilot_wf_run SET tokens_used=tokens_used+?, cost_micro_usd=cost_micro_usd+? WHERE id=?").run(Math.round(usage.tokens), Math.round(usage.costUsd * 1_000_000), parent.parent_run_id);
+      const parentId = parent?.parent_run_id;
+      if (parentId && !this.journal.db.prepare("SELECT 1 FROM lane_pilot_wf_event WHERE run_id=? AND kind='child_usage_charged' AND step_key=? LIMIT 1").get(parentId, child.runId)) {
+        this.journal.db.transaction(() => {
+          this.journal.event(parentId, child.runId, "child_usage_charged", null, null, `${Math.round(usage.tokens)} tokens of the failed child run`);
+          this.journal.db.prepare("UPDATE lane_pilot_wf_run SET tokens_used=tokens_used+?, cost_micro_usd=cost_micro_usd+? WHERE id=?").run(Math.round(usage.tokens), Math.round(usage.costUsd * 1_000_000), parentId);
+        })();
+      }
     }
     throw new Error(`subworkflow ${node.workflow} ${child.status}: ${child.error ?? child.reason ?? ""}`);
   }

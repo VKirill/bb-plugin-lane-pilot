@@ -295,7 +295,8 @@ async function setup(critiqueOutput:string, browserQaResult?:Record<string,unkno
           if (hostId === "host-qa-no-codex") return { models:[] as never };
           if (hostId === "host-qa-bad-effort") return { models:[{ id:"gpt-6-luna", model:"gpt-6-luna", defaultReasoningEffort:"xhigh",
             supportedReasoningEfforts:[{ reasoningEffort:"medium", description:"medium" }] }] as never };
-          return { models:[{ id:providerId === "critic" ? "critic-model" : "gpt-6-luna", model:providerId === "critic" ? "critic-model" : "gpt-6-luna",
+          const modelName = providerId === "critic" ? "critic-model" : providerId === "claude-code" ? "claude-haiku-5-5" : "gpt-6-luna";
+          return { models:[{ id:modelName, model:modelName,
           defaultReasoningEffort:"medium",
           supportedReasoningEfforts:["medium","high"].map((reasoningEffort) => ({ reasoningEffort, description:reasoningEffort })) }] as never };
         },
@@ -1020,7 +1021,7 @@ describe("stage → native writer → receipt", () => {
   it("fails a project-life stage whose spawn BB refused instead of leaving it running",async()=>{
     refuseStageSpawn="project-life";
     try {
-      const {db,harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"project_life.service_tier":"standard"});
+      const {db,harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"project_life.service_tier":"standard","project_life.provider":"codex","project_life.model":"gpt-6-luna"});
       await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
       await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
       const failed=await until("project-life stage to fail",()=>stageReceipt(db,task.id,"project-life")?.state==="failed" && stageReceipt(db,task.id,"project-life"));
@@ -1033,7 +1034,7 @@ describe("stage → native writer → receipt", () => {
   it("retries a project-life stage after a host hiccup before its spawn claim",async()=>{
     projectLifeHostHiccup=true;
     try {
-      const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"project_life.service_tier":"standard"});
+      const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"project_life.service_tier":"standard","project_life.provider":"codex","project_life.model":"gpt-6-luna"});
       await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
       await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
       await until("project-life child to be spawned",()=>spawned.some((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="project-life"));
@@ -1501,7 +1502,7 @@ describe("stage → native writer → receipt", () => {
 
   it("returns owner memory only through the PM context tool and never injects it into writer prompts", async () => {
     const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
-      "memory.enabled":true,"memory.maintain":true,"memory.inject":true,"memory.audience":"owner",
+      "memory.enabled":true,"memory.maintain":true,"memory.inject":true,"memory.audience":"owner","memory.provider":"codex","memory.model":"gpt-6-luna",
     });
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Record an owner-only deployment convention",task},{threadId:pmThreadId,projectId});
     await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
@@ -1659,7 +1660,7 @@ describe("stage → native writer → receipt", () => {
   it("attaches the native writer to the run's persisted managed environment", async () => {
     const { harness, spawned } = await setup(
       '{"decision":"approve","summary":"Plan is scoped and verifiable","findings":[]}',
-      undefined, {}, undefined, "managed-environment-1",
+      undefined, {"project_life.provider":"codex","project_life.model":"gpt-6-luna","memory.provider":"codex","memory.model":"gpt-6-luna"}, undefined, "managed-environment-1",
     );
     const dispatch = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
       {confirm:true,objective:"Проверка диспетча",plan:"Create the fixture and check its contents", task }, { threadId:pmThreadId, projectId })));

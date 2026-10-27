@@ -503,14 +503,14 @@ export async function queryTokenUsage(ctx: { bb: BbPluginApi; db: LanePilotDatab
 export type ThreadUsage = { tokens: number; costUsd: number; known: boolean; unknown?: true };
 
 /**
- * What one thread spent from `since` (ms; 0 = from its start): total tokens and the price of them. The same events and the same per-turn
+ * What one thread spent from `since` (ms; 0 = from its start) up to `until` (ms, exclusive; none = to its end): total tokens and the price of them. The same events and the same per-turn
  * deltas as the daily sync (`thread/tokenUsage/updated` with the model of the turn that asked), read for this thread alone, so a workflow's
  * budget (`maxTokens`, `maxCostUsd`) counts what the Usage tab counts. A model the price table does not know is priced at the dearest
  * known rate: a budget that cannot see a cost must err on the cautious side. Never throws. A thread that cannot be read, or that has no
  * `thread/tokenUsage/updated` event at all (BB records none for ACP providers such as acp-cursor: only the context window), comes back
  * with `known: false` and `unknown: true` and zeros, so a budget never takes it for a free step.
  */
-export async function threadUsage(bb: BbPluginApi, threadId: string, options: { since?: number; fallbackModel?: string } = {}): Promise<ThreadUsage> {
+export async function threadUsage(bb: BbPluginApi, threadId: string, options: { since?: number; until?: number; fallbackModel?: string } = {}): Promise<ThreadUsage> {
   const since = options.since ?? 0;
   let events: unknown[];
   try { events = await listThreadEvents(bb, threadId, 0); } catch { return { tokens: 0, costUsd: 0, known: false, unknown: true }; }
@@ -529,7 +529,7 @@ export async function threadUsage(bb: BbPluginApi, threadId: string, options: { 
     const delta = tokenDelta(usage, prev, turnId);
     prev = { last: usage.last, total: usage.total, turnId };
     const at = eventCreatedAt(event);
-    if (at !== null && at < since) continue;
+    if (at !== null && (at < since || (options.until !== undefined && at >= options.until))) continue;
     const billed = billedFrom(delta);
     tokens += billed.total;
     cost += (model ? costUsd(model, billed) : null) ?? costUsd(dearest, billed) ?? 0;

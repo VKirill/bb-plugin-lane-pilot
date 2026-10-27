@@ -9,6 +9,7 @@ const mocking = [
   "tests/verification/docs-jev.test.ts",
   "tests/jev-plan.test.ts",
   "tests/spawn-service-tier.test.ts",
+  "tests/spawn-models.test.ts",
   "tests/remote-git-detect.test.ts",
   "tests/qa-login.test.ts",
   "tests/stage-helper-live-settings.test.ts",

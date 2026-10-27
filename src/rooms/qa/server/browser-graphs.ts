@@ -8,6 +8,7 @@ import { configuredSetting, fenceOutside } from "../../core/server";
 import type { ServerCore, Services } from "../../core/server";
 import { requireGreen } from "../../workflow/server";
 import type { ChainRuntime } from "../../workflow/server";
+import { withUsage } from "../../usage/server";
 
 /**
  * Browser work as graphs (graph unification S4). Two built-in starter graphs, both started by a PM tool:
@@ -129,6 +130,13 @@ export function registerBrowserExecutors(engine: WorkflowEngine, ctx: ServerCore
   } as NodeExecutor);
 
   const TERMINAL = ["passed", "failed", "blocked", "skipped"];
+  /** What the check's own thread spent, for a receipt this step produced (not an earlier check's, found again): the step carries it up to its run. */
+  const qaUsage = async (runId: string, taskId: string, since: number) => {
+    const stage = listStageReceipts(db, runId, taskId).find((row) => row.stageId === "browser-qa");
+    const result = stage?.result && typeof stage.result === "object" ? stage.result as Row : undefined;
+    const threadId = stage?.threadId ?? (typeof result?.threadId === "string" ? result.threadId : undefined);
+    return stage && threadId && stage.updatedAt >= since ? await withUsage(ctx.bb, threadId) : {};
+  };
   /** A check whose receipt never turns terminal (nothing adopts it) fails the step after the longest check plus a margin. */
   const NO_VERDICT_MS = (1800 + 300) * 1000;
 
@@ -141,6 +149,7 @@ export function registerBrowserExecutors(engine: WorkflowEngine, ctx: ServerCore
       const params = c.template(node.params) as Row;
       const runId = str(params.run_id), taskId = str(params.task_id);
       let reply: Row;
+      const since = Date.now();
       try {
         reply = await rt.services.runBrowserQa({
           threadId: rt.pmThreadId, projectId: rt.projectId, runId, taskId, url: str(params.url),
@@ -154,9 +163,9 @@ export function registerBrowserExecutors(engine: WorkflowEngine, ctx: ServerCore
         return { output: { state: "error", reply: { error: cause instanceof Error ? cause.message : String(cause) } } };
       }
       const state = str(reply.state);
-      if (TERMINAL.includes(state) || !state) return { output: { state: state || "unknown", reply } };
+      if (TERMINAL.includes(state) || !state) return { output: { state: state || "unknown", reply }, ...(await qaUsage(runId, taskId, since)) };
       // Still running (a check another call or a reload left): the step waits for the receipt.
-      return { wait: { kind: "browser-qa", detail: { runId, taskId, startedAt: Date.now() } }, partial: { state, reply } };
+      return { wait: { kind: "browser-qa", detail: { runId, taskId, startedAt: since } }, partial: { state, reply } };
     },
     poll: async (step) => {
       const detail = step.await.detail as { runId?: string; taskId?: string; startedAt?: number } | undefined;
@@ -165,7 +174,7 @@ export function registerBrowserExecutors(engine: WorkflowEngine, ctx: ServerCore
       if (stage && TERMINAL.includes(stage.state)) {
         const result = stage.result && typeof stage.result === "object" ? stage.result as Row : undefined;
         const link = typeof result?.link === "string" ? result.link : undefined;
-        return { output: { state: stage.state, reply: { runId: detail.runId, taskId: detail.taskId, state: stage.state, ...(link ? { link } : {}), stage, ...(result ? { result } : {}), ...(stage.reason ? { reason: stage.reason } : {}) } } };
+        return { output: { state: stage.state, reply: { runId: detail.runId, taskId: detail.taskId, state: stage.state, ...(link ? { link } : {}), stage, ...(result ? { result } : {}), ...(stage.reason ? { reason: stage.reason } : {}) } }, ...(await qaUsage(detail.runId, detail.taskId, detail.startedAt ?? 0)) };
       }
       if (Date.now() - (detail.startedAt ?? 0) > NO_VERDICT_MS) return { error: "browser_qa_no_verdict: the check left no final receipt in time" };
       return null;

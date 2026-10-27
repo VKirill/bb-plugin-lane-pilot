@@ -12,6 +12,7 @@ import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 import { runOnHost } from "@lane-pilot/host-calls";
 import { withUsage } from "../../usage/server";
+import { taskUsage } from "./attempt-usage";
 
 /**
  * The built-in workflow `lp-task-pipeline` (workflows/lp-task-pipeline.json) executed by the workflow engine.
@@ -72,7 +73,7 @@ const handoffOf = (stage: string, state: string, reason?: string) => `${stage} $
 /** The graph step a stage function runs for: its helper threads carry these ids in their metadata. */
 const stepRef = (ctx: StepContext<DispatchRuntime>) => ({ runId: ctx.runId, stepKey: ctx.stepKey, nodeId: ctx.nodeId });
 
-export function registerDispatchExecutors(engine: WorkflowEngine): void {
+export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginApi): void {
   /**
    * `stage`: the stage whose helper thread this step runs. Once the stage function returns, the thread its receipt names is read for what it spent
    * and the engine adds that to the run (`lane_pilot_wf_run.tokens_used`), so a budget sees the cost. A receipt the stage did not write now (an
@@ -209,14 +210,14 @@ export function registerDispatchExecutors(engine: WorkflowEngine): void {
     return { ok: true };
   });
 
-  engine.register<DispatchRuntime>("lp-task", lpTaskPipelineExecutor(engine));
+  engine.register<DispatchRuntime>("lp-task", lpTaskPipelineExecutor(engine, bb));
 }
 
 /**
  * The code task of the per-task pipeline: Lane Pilot's own writer loop (start.ts, finish.ts) runs it; this step starts it and then
  * waits for the attempt. A chain's `lp-task` node (workflow-executors.ts) goes through the same executor key and hands a dispatch run's step to this.
  */
-export function lpTaskPipelineExecutor(engine: WorkflowEngine): NodeExecutor<DispatchRuntime> {
+export function lpTaskPipelineExecutor(engine: WorkflowEngine, bb?: BbPluginApi): NodeExecutor<DispatchRuntime> {
   return {
     run: async (ctx) => {
       const r = need(ctx);
@@ -244,20 +245,23 @@ export function lpTaskPipelineExecutor(engine: WorkflowEngine): NodeExecutor<Dis
     poll: async (step, ctx) => {
       const detail = step.await.detail as { runId: string; taskId: string } | undefined;
       if (!detail) return { error: "the waiting step does not say which task it waits for" };
-      return pollAttempt(engine, detail.runId, detail.taskId, ctx.runtime?.ctx.bb);
+      return pollAttempt(engine, detail.runId, detail.taskId, bb ?? ctx.runtime?.ctx.bb);
     },
   };
 }
 
-/** `bb` is there while the dispatch is in memory: the writer threads of every attempt of the task are then read for what they spent, once, when the task is over. */
+/**
+ * `bb` is the plugin's, bound when the executor is registered, so a step a reload found waiting reads what the task spent exactly as one that never
+ * stopped did (before, a reloaded pipeline had no runtime, no `bb`, and the step ended with no usage at all). The task is charged for its own turns
+ * only (attempt-usage.ts): a sticky writer's thread carries other tasks' turns too.
+ */
 async function pollAttempt(engine: WorkflowEngine, runId: string, taskId: string, bb?: BbPluginApi) {
   const db = engine.journal.db;
   const attempts = listAttemptsForTask(db, runId, taskId);
   const listed = attempts.at(-1);
   const latest = listed ? getAttempt(db, listed.id) : null;
   if (!latest || !TERMINAL_ATTEMPT.includes(latest.state)) return null;
-  const threads = bb ? attempts.map((row) => getAttempt(db, row.id)?.thread_id) : [];
-  return { output: { reply: { runId, taskId, attemptId: latest.id, state: latest.state, ...(latest.reason ? { reason: latest.reason } : {}) } }, ...(bb ? await withUsage(bb, threads) : {}) };
+  return { output: { reply: { runId, taskId, attemptId: latest.id, state: latest.state, ...(latest.reason ? { reason: latest.reason } : {}) } }, ...(bb ? await taskUsage(bb, db, runId, taskId) : {}) };
 }
 
 /** The engine key of an attempt's dispatch run; a restart after a reload is a run of its own (`:resume-N`). */

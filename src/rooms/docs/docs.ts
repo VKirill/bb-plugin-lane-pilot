@@ -4,19 +4,20 @@ export type DocsSince = (typeof DOCS_SINCE_CHOICES)[number];
 
 import { DOCS_DEFAULT_SELECTION } from "./docs-defaults";
 import { sha256Hex } from "@lane-pilot/kit";
-import { tableRowAt } from "@lane-pilot/models";
+import { resolveRoleModel } from "@lane-pilot/models";
 export { DOCS_DEFAULT_SELECTION };
 
 /** The project's own docs model when it set one, otherwise the docs default (not the writer's model). */
-export function docsSelection(settings:Record<string,unknown>):{providerId:string;model:string;reasoningLevel:string;serviceTier:"fast"|"standard"} {
+export function docsSelection(settings:Record<string,unknown>,resolved?:{providerId:string;model:string;reasoningEffort:string}):{providerId:string;model:string;reasoningLevel:string;serviceTier:"fast"|"standard"} {
   const text=(key:string)=>typeof settings[key]==="string"&&settings[key]?settings[key] as string:null;
   const own=text("docs.provider")&&text("docs.model");
-  // The owner's row for the docs-maintainer role of the table «role -> model» stands in for the default; the project's own docs.* settings still win.
-  const row=own?null:tableRowAt(settings,"docs-maintainer");
+  // The docs-maintainer row of the table «role -> model» (the project's own docs.* settings still win, as a stage selection of the row). The server
+  // passes what the one resolver (resolveSpawnModel) answered for this machine; without it the row is read from the settings alone.
+  const role=resolved??(()=>{ const row=resolveRoleModel("docs-maintainer",settings); return {providerId:row.providerId,model:row.model,reasoningEffort:row.effort}; })();
   return {
-    providerId:own?text("docs.provider")!:row?row.option.providerId:DOCS_DEFAULT_SELECTION.providerId,
-    model:own?text("docs.model")!:row?row.option.id:DOCS_DEFAULT_SELECTION.model,
-    reasoningLevel:text("docs.reasoning_effort")??row?.effort??DOCS_DEFAULT_SELECTION.reasoningLevel,
+    providerId:role.providerId,
+    model:role.model,
+    reasoningLevel:text("docs.reasoning_effort")??role.reasoningEffort,
     serviceTier:settings["docs.service_tier"]==="standard"||settings["docs.service_tier"]==="default"?"standard":settings["docs.service_tier"]==="fast"||!own?"fast":"standard",
   };
 }

@@ -10,6 +10,7 @@ import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 import { sendServiceMessage } from "../../relay/server";
 import { isWriterStreamError } from "./writer-task";
+import { markAttemptStart } from "./attempt-marker";
 
 /**
  * Sticky writers: an area's writer thread takes the area's next task, and a task-side failure is redone in the thread
@@ -278,6 +279,8 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
         set:{ lanePilotRunId:input.runId, lanePilotTaskId:input.taskId, attemptId:input.attemptId } } as never).catch(() => undefined);
       const since = Date.now();
       await saveFollowUp(bb.storage.kv, input.attemptId, since);
+      // Where this attempt's own turns begin in a thread that already has a history: the task is charged from here (attempt-usage.ts).
+      await markAttemptStart(bb.storage.kv, input.attemptId, since);
       try {
         const text = [typeof input.prompt === "function" ? input.prompt(conflicts) : input.prompt, ...harnessLines].join("\n\n");
         await sendServiceMessage(bb, { threadId:writer.threadId, text, senderThreadId:getRun(db, input.runId)?.pm_thread_id });

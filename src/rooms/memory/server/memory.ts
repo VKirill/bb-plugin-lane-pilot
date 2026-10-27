@@ -2,14 +2,13 @@ import { taskV2Schema } from "../../contracts";
 import { enrichMemoryContext } from "../../memory-tiers/server";
 import { claimStageSpawn, getRun, getRunSettingsScopes, getTask, listStageReceipts, searchMemoryRecords, storeMemoryRecords } from "../../storage";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
-import { resolveStageWriterSelection } from "../../writer";
 import { sha256 } from "../../tasks";
 import { memoryMaintenancePrompt, memoryRecordId, parseMemoryCandidates, parseMemorySettings } from "../memory";
 import { pmMemoryContext } from "./memory-mix";
 import { boundedAgentName } from "../../critique";
 import { MemoryChildSnapshot, childResultObject, memoryChildSnapshot, spawnRefused } from "../../runs/server";
 import { compactAcceptedResult } from "../../tasks/server";
-import { configuredSetting, stageHelperSettings } from "../../core/server";
+import { configuredSetting, modelCatalogOf, resolveSpawnModel, stageHelperSettings } from "../../core/server";
 import { fullAccessSpawn, graphStepMetadata } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { recordStage } from "../../runs/server";
@@ -37,10 +36,11 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       "memory.enabled","memory.maintain","memory.inject","memory.audience","memory.personal_bot","memory.search_engine",
       "memory.core_budget","memory.note_budget","memory.index_budget","memory.context_budget",
     ].map((key)=>[key,configuredSetting(settings,key)])));
-    const memorySelection=resolveStageWriterSelection({settings,config,stageProviderKey:"memory.provider",stageModelKey:"memory.model"});
-    const memoryProviderId=memorySelection.providerId;
-    const memoryModel=memorySelection.model;
-    const memoryEffort=typeof settings["memory.reasoning_effort"]==="string"?settings["memory.reasoning_effort"] as string:"medium";
+    // The memory row of the role table (the project's own memory.* settings still win), through the one resolver: never the project writer.
+    const memoryRole=resolveSpawnModel({role:"memory",settings,catalog:modelCatalogOf(ctx).peek(),hostId:config.hostId});
+    const memoryProviderId=memoryRole.providerId;
+    const memoryModel=memoryRole.model;
+    const memoryEffort=memoryRole.reasoningEffort;
     const memoryTier=settings["memory.service_tier"]==="fast"?"fast":"standard";
     const base={runId:args.runId,taskId:args.taskId,stageId:"memory-maintenance" as const,
       input:JSON.stringify({taskId:args.taskId,acceptanceSha256:accepted.outputSha256,settings:memorySettings,

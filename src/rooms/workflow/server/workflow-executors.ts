@@ -13,10 +13,9 @@ import { createTaskLinter } from "../../tasks/server";
 import { agentRequest, createWorkflowAgents, stepPacket, withResolvedModel } from "./workflow-agent";
 import type { WorkflowAgents } from "./workflow-agent";
 import { registerRouterExecutor } from "./workflow-router-model";
-import { lpTaskPipelineExecutor } from "../../writer/server";
+import { lpTaskPipelineExecutor, taskUsage } from "../../writer/server";
 import type { DispatchRuntime } from "../../writer/server";
 import { keyedSpawnSupported, projectFolder } from "../../core/server";
-import { threadUsage } from "../../usage/server";
 import { stringAt } from "../../core/server";
 import { startedBySchedule, type ChainRuntime } from "./workflow-runtime";
 import type { ServerCore } from "../../core/server";
@@ -355,7 +354,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   } as NodeExecutor<ChainRuntime>);
 
   // ---------------------------------------------------------------- lp-task: one code task through the writer pipeline
-  const pipeline = lpTaskPipelineExecutor(engine);
+  const pipeline = lpTaskPipelineExecutor(engine, bb);
   const chainTask: NodeExecutor<ChainRuntime> = {
     reentrant: true,
     run: async (c) => {
@@ -386,13 +385,12 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
       const state = latest.state === "accepted" ? "accepted" : latest.state === "canceled" ? "cancelled" : /needs[_ -]?human/i.test(reason) ? "needs_human" : "blocked";
       const rt = runtimeOf({ runtime: undefined }, step.runId);
       const merge = state === "accepted" && rt ? await mergeFacts(rt, latest.id) : { commit: "", files: [] as string[] };
-      // What the writer attempts of this task spent: the threads of every attempt, read once, when the task is over.
-      const threads = [...new Set(listed.map((row) => getAttempt(db, row.id)?.thread_id).filter((id): id is string => Boolean(id)))];
-      const spent = await Promise.all(threads.map((threadId) => threadUsage(bb, threadId)));
-      const usage: HelperUsage = { tokens: spent.reduce((sum, row) => sum + row.tokens, 0), costUsd: spent.reduce((sum, row) => sum + row.costUsd, 0),
-        ...(spent.some((row) => !row.known || row.unknown) ? { unknown: true as const } : {}) };
+      // What the task spent: the turns of its attempts in their threads (a sticky writer's thread carries other tasks' turns too) and the helpers it
+      // started inside, read once, when the task is over (attempt-usage.ts).
+      const spent = await taskUsage(bb, db, detail.runId, detail.taskId);
+      const usage: HelperUsage | undefined = spent.usage;
       return { output: { state, attempts: listed.length, merge_commit: merge.commit, files: merge.files,
-        verdict: { status: state === "accepted" ? "pass" : "rework", summary: reason, findings: [], evidence: reason || state } }, usage };
+        verdict: { status: state === "accepted" ? "pass" : "rework", summary: reason, findings: [], evidence: reason || state } }, ...(usage ? { usage } : {}) };
     },
   };
   const failedTask = (state: string, reason: string): Row => ({ state, attempts: 0, merge_commit: "", files: [], verdict: { status: "rework", summary: reason, findings: [], evidence: reason } });

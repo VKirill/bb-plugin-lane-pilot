@@ -4,7 +4,7 @@ import { closeSync, fstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import packageJson from "../../../../package.json";
-import { fullAccessSpawn, graphStepMetadata } from "../../core/server";
+import { fullAccessSpawn, graphStepMetadata, modelCatalogOf, resolveSpawnModel } from "../../core/server";
 import { clearSpawnMarker, keyedSpawnSupported } from "../../core/server";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { withUsage } from "../../usage/server";
@@ -1035,12 +1035,16 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
     for (const id of pmIds) {
       lastOwnerAt[id] = await lastPmOwnerMessageAt((query) => bb.sdk.threads.events.list(query), id);
     }
+    // The repair engineer's model (the night plan's pick, else the watcher's config, which already holds the `repairer` row of the table) goes
+    // through the one resolver as a pin, so provider and model are a pair that can exist; the owner's pick is kept as it is.
+    const picked = { providerId: night?.selection?.providerId ?? cfg.providerId, model: night?.selection?.model ?? cfg.model, reasoningLevel: night?.selection?.reasoningLevel ?? cfg.reasoningLevel };
+    const repairer = resolveSpawnModel({ role: "repairer", settings: {}, catalog: modelCatalogOf(ctx).peek(), hostId: worktree.hostId, pinned: { provider: picked.providerId, model: picked.model, reasoning: picked.reasoningLevel } });
     const result = await fullAccessSpawn(bb, {
       projectId: cfg.projectId,
       environment: { type: "host", hostId: worktree.hostId, workspace: { type: "unmanaged", path: worktree.path } },
       title: `Lane Pilot self-repair: ${signature.split(":").slice(2).join(":").slice(0, 70)}`,
       prompt: repairPrompt(samples, signature, worktree, cfg, { now, lastOwnerAt, ...(night ? { brief: night.brief } : {}) }),
-      ...writerExecutionSelection(night?.selection?.providerId ?? cfg.providerId, night?.selection?.model ?? cfg.model, night?.selection?.reasoningLevel ?? cfg.reasoningLevel, "default"),
+      ...writerExecutionSelection(repairer.providerId, repairer.model, repairer.reasoningEffort, "default"),
       pluginMetadata: { role: "self-repair", signature, spawnId, repairBranch: worktree.branch, ...graphStepMetadata(args.step) },
     } as Parameters<typeof fullAccessSpawn>[1]);
     return stringAt(result, "id");

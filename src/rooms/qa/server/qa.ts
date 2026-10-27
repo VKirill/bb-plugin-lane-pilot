@@ -4,7 +4,7 @@ import { QA_HOST_KEY, QA_WORKSPACE_KEY, qaCodexPreflight, qaHostUnreachableReaso
 import { sha256 } from "../../tasks";
 import { parseOpenCodeToolTelemetry } from "../../stability";
 import { MAIN_ATTEMPT_LIMIT } from "../../runs";
-import { configuredSetting } from "../../core/server";
+import { configuredSetting, modelCatalogOf, resolveSpawnModel } from "../../core/server";
 import { freezeRunRouting, inheritedProjectSettings } from "../../runs/server";
 import { recordStage } from "../../runs/server";
 import { qaStateToStatus } from "../../critique";
@@ -213,10 +213,10 @@ export function createQaStages(ctx: ServerCore) {
     }
     try {
       if (threadQa) {
-        // The thread's own agent: codex when the project picked a codex model for QA, Claude Code otherwise.
-        const agent = provider === "codex" && model
-          ? { providerId:"codex", model, effort:reasoning ?? "high" }
-          : { providerId:"claude-code", model:"claude-opus-5-5", effort:"high" };
+        // The thread's own agent, through the one resolver: the project's codex pick for QA stands as a pin, otherwise the browser-qa row of the role table.
+        const qaRole = resolveSpawnModel({ role:"browser-qa", settings, catalog:modelCatalogOf(ctx).peek(), hostId:config.hostId,
+          ...(provider === "codex" && model ? { pinned:{ provider:"codex", model, reasoning:reasoning ?? "high" } } : {}) });
+        const agent = { providerId:qaRole.providerId, model:qaRole.model, effort:qaRole.reasoningEffort };
         // A localhost target on another machine is reached over the private VPN when this machine has an address there.
         const vpn = qaTarget.hostId === config.hostId ? null
           : await host.call("vpnAddress",{requestedHostId:config.hostId},{hostId:config.hostId,timeoutMs:15_000}).catch(()=>null);

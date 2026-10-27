@@ -91,7 +91,7 @@ describe("the errand executor", () => {
   it("starts on the built-in errand model when nothing names one", async () => {
     const { executors, calls } = world();
     await executors.errand.start(input(bare));
-    expect(calls.errandStart[0]).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", reasoning: "high" });
+    expect(calls.errandStart[0]).toMatchObject({ providerId: "claude-code", model: "claude-sonnet-5-5", reasoning: "medium" });
     expect(calls.errandStart[0]!.serviceTier).toBeUndefined();
   });
 

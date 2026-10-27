@@ -132,7 +132,7 @@ describe("a model the machine does not offer", () => {
   it("is kept and flagged when nothing known to run there is left, and a pinned model is kept at once: it is the owner's choice", () => {
     expect(pick("analyst", {}, null, { offered: () => false })).toMatchObject({ model: "claude-opus-5-5", issues: ["selection_unavailable", "model_unavailable_here"] });
     expect(pick("analyst", {}, null, { offered: () => null })).toMatchObject({ issues: [] });
-    expect(pick("analyst", {}, pm, { offered: () => false, pinned: { model: "gpt-6-sol" } })).toMatchObject({ providerId: DEFAULT_PROVIDER, model: "gpt-6-sol", source: "pinned", issues: ["model_unavailable_here"] });
+    expect(pick("analyst", {}, pm, { offered: () => false, pinned: { model: "gpt-6-sol" } })).toMatchObject({ providerId: "codex", model: "gpt-6-sol", source: "pinned", issues: ["model_unavailable_here"] });
   });
 });
 
@@ -140,7 +140,7 @@ describe("a model a run pins for itself (a scheduled agent, an agent the owner c
   it("stands over the table for the fields it sets, and counts as the run's own choice", () => {
     expect(pick("specialist:mine", {}, pm, { pinned: { provider: "codex", model: "gpt-6-sol", reasoning: "max", service_tier: "fast" } }))
       .toMatchObject({ providerId: "codex", model: "gpt-6-sol", reasoningEffort: "max", serviceTier: "fast", source: "pinned", sourceKey: null, inherited: false });
-    // A model with no provider runs on the default provider; with no effort, on the role's.
+    // A model with no provider runs on the provider that serves it (F4: a GPT model never goes to claude-code); with no effort, on the role's.
     expect(pick("analyst", {}, pm, { pinned: { model: "claude-sonnet-5-5" } })).toMatchObject({ providerId: DEFAULT_PROVIDER, model: "claude-sonnet-5-5", reasoningEffort: "high", source: "pinned" });
     // An effort alone changes the effort and keeps the table's model.
     expect(pick("analyst", {}, pm, { pinned: { reasoning: "low" } })).toMatchObject({ model: "claude-opus-5-5", reasoningEffort: "low", source: "role-default", inherited: false });
@@ -151,7 +151,7 @@ describe("a model a run pins for itself (a scheduled agent, an agent the owner c
     const rt = rtFor({}, strongPm);
     const base = { rt, workflowRunId: "r", stepKey: "s", nodeId: "n", spawnKey: "k", title: "t", prompt: "", fields: [] };
     const routine = await withResolvedModel({ ...base, role: "specialist:seo-specialist", model: "gpt-6-luna", reasoning: "low", serviceTier: "fast" } as unknown as HelperRequest);
-    expect(routine).toMatchObject({ provider: DEFAULT_PROVIDER, model: "gpt-6-luna", reasoning: "low", serviceTier: "fast" });
+    expect(routine).toMatchObject({ provider: "codex", model: "gpt-6-luna", reasoning: "low", serviceTier: "fast" });
     const plain = await withResolvedModel({ ...base, role: "specialist:seo-specialist" } as unknown as HelperRequest);
     expect(plain).toMatchObject({ provider: "claude-code", model: "claude-opus-5-5", reasoning: "high" });
   });

@@ -1,13 +1,19 @@
+import { resolveRoleModel } from "@lane-pilot/models";
+
 export type ProjectLifeSettings = { enabled: boolean };
 
-export const PROJECT_LIFE_DEFAULT_WRITER = { providerId: "codex", model: "gpt-6-luna", reasoningEffort: "high", serviceTier: "fast" } as const;
+/** The fast tier is asked only of codex (its small models take it); `project_life.service_tier = standard` turns it off there too. */
+export function projectLifeServiceTier(settings: Record<string, unknown>, providerId: string): "fast" | "standard" {
+  return providerId === "codex" && settings["project_life.service_tier"] !== "standard" ? "fast" : "standard";
+}
 
-/** The stage's own pick, else the default; the project writer is never inherited (it may be an interactive CLI). */
+/**
+ * The project-life row of the role table, from the settings alone (the stage asks the one resolver, resolveSpawnModel, which adds what the machine
+ * offers): the stage's own `project_life.*` pick, else the table; the project writer is never inherited (it may be an interactive CLI).
+ */
 export function projectLifeWriterSelection(settings: Record<string, unknown>): { providerId: string; model: string } {
-  const provider = settings["project_life.provider"], model = settings["project_life.model"];
-  return typeof provider === "string" && provider && typeof model === "string" && model
-    ? { providerId: provider, model }
-    : { providerId: PROJECT_LIFE_DEFAULT_WRITER.providerId, model: PROJECT_LIFE_DEFAULT_WRITER.model };
+  const { providerId, model } = resolveRoleModel("project-life", settings);
+  return { providerId, model };
 }
 
 const ALLOWED_EXACT_PATHS = new Set([".agents/PROGRESS.md", ".agents/CHANGELOG.md"]);

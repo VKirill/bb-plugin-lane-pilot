@@ -2,6 +2,8 @@
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { createWriterAnswer } from "./answer";
 export { lpTaskPipelineExecutor, registerDispatchExecutors } from "./dispatch-workflow";
+export { markAttemptStart } from "./attempt-marker";
+export { taskThreadWindows, taskUsage } from "./attempt-usage";
 export type { DispatchRuntime } from "./dispatch-workflow";
 export { createWriterDispatch } from "./dispatch";
 export { createWriterFinish } from "./finish";

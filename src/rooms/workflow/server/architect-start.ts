@@ -1,13 +1,13 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import type { rpcContract } from "../../contracts";
-import { resolveRoleModel, writerExecutionSelection } from "@lane-pilot/models";
+import { writerExecutionSelection } from "@lane-pilot/models";
 import { mentionContext } from "../../native-agent";
 import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME } from "../workflow-architect";
 import { createDraftStore } from "../../storage";
 import type { ServerCore } from "../../core/server";
 import { storeNativeSelection } from "../../native-agent/server";
-import { fullAccessSpawn } from "../../core/server";
+import { fullAccessSpawn, modelCatalogOf, resolveSpawnModel } from "../../core/server";
 import { CONFIG_KEY, SELF_REPAIR_DEFAULTS } from "../../self-repair/server";
 import type { Services } from "../../core/server";
 import { stringAt } from "../../core/server";
@@ -15,8 +15,8 @@ import { stringAt } from "../../core/server";
 /** The architect runs on the `workflow-architect` row of the role table (Claude Opus 5.5, high, unless the owner changed it), whatever the owner's remembered chat choice says. */
 const architectExecution = async (ctx: ServerCore, projectId: string) => {
   const settings = (await ctx.effectiveProjectSettings(projectId).catch(() => ({ values: {} }))).values;
-  const picked = resolveRoleModel("workflow-architect", settings);
-  return { providerId: picked.providerId, model: picked.model, reasoningLevel: picked.effort };
+  const picked = resolveSpawnModel({ role: "workflow-architect", settings, catalog: modelCatalogOf(ctx).peek() });
+  return { providerId: picked.providerId, model: picked.model, reasoningLevel: picked.reasoningEffort };
 };
 
 /** Threads in these states are over: a new button press starts a new architect chat instead of returning them. */

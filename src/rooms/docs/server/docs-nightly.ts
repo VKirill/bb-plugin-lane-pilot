@@ -7,7 +7,7 @@ import type { DocsUnit } from "../docs";
 import { cadenceAllowsToday, codeDocsVerdict, docsCadence, docsFactsKey, docsWorthinessState, DOCS_WORTHINESS_QUESTION, fallbackDocsVerdict } from "../docs-worthiness";
 import type { DocsCadence, DocsVerdict, DocsWorthinessFacts } from "../docs-worthiness";
 import { blockingDocsFindings, buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDesignCanon, isDocsIndex, lintDocsPages, oversizedPageFindings, pagesToRefresh, uncataloguedPages, withCitedSources, withVerifiedConfidence } from "../docs-lint";
-import { configuredSetting, graphStepMetadata } from "../../core/server";
+import { configuredSetting, graphStepMetadata, modelCatalogOf, resolveSpawnModel } from "../../core/server";
 import { fullAccessSpawn } from "../../core/server";
 import { withUsage } from "../../usage/server";
 import { DOCS_MAINTENANCE, DOCS_NIGHT, builtinWorkflow } from "../../workflow";
@@ -473,7 +473,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     if(!record){
       if(!plan) throw new Error("docs unit has neither a plan nor saved progress");
       const {settings,docs}=docsSettingsOf(i.projectId,i.scopes);
-      const selection=docsSelection(settings);
+      const selection=docsSelection(settings,resolveSpawnModel({role:"docs-maintainer",settings,catalog:modelCatalogOf(ctx).peek(),hostId:place.hostId}));
       const [providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:place.hostId}),bb.sdk.providers.models({providerId:selection.providerId,hostId:place.hostId})]);
       const provider=providers.find((item)=>item.id===selection.providerId&&item.available);
       const model=catalog.models.find((item)=>item.id===selection.model||item.model===selection.model);
