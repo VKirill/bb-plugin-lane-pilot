@@ -23,7 +23,7 @@ describe("the learning room in the mounted plugin", () => {
     const names = harness.registrations.agentTools.map((tool) => tool.name);
     expect(names).toContain("lane_pilot_learned");
     const family = harness.registrations.agentTools.find((tool) => tool.name === "lane_pilot_memory")!;
-    expect(family.instructions).toContain('action "learned"');
+    expect(family.instructions).toMatch(/^- learned \{op: string/m);
     expect(family.instructions!.length).toBeLessThanOrEqual(4096);
   });
 
