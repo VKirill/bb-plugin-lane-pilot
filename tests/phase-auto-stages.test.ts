@@ -187,6 +187,17 @@ describe("the machine's pass", () => {
     expect(w.get().record.autoFailures).toBeUndefined();
     expect(w.get().record.auto).toBeUndefined();
   });
+  it("an analysis that names a security risk writes and signs SECURITY.md with the context, so the plan's threat gate can pass (drill ph_5cd09d1c7a)", async () => {
+    const { threatGap } = await import("../src/rooms/phase/stages");
+    const doc = contextDoc(phaseAt("discussion"), { risks: [{ kind: "security", text: "drills/ is a new tracked top-level directory any writer may write" }] });
+    expect(doc.security).toMatch(/Threat model[\s\S]*drills\/ is a new tracked/);
+    expect(contextDoc(phaseAt("discussion"), { risks: [{ kind: "technical", text: "x" }] }).security).toBeNull();
+    const w = world({ risks: [{ kind: "security", text: "a token could leak" }] });
+    await w.auto.step(w.get()); w.finish(); await w.auto.step(w.get());
+    const signed = w.calls.find((call) => call.startsWith("context "));
+    expect(signed).toMatch(/CONTEXT\.md,.*SECURITY\.md/);
+    expect(threatGap({ context: { docs: [{ path: ".agents/phases/ph_1/CONTEXT.md" }, { path: ".agents/phases/ph_1/SECURITY.md" }], risks: { security: "a token could leak" } } } as never)).toBeNull();
+  });
   it("a stage that fails for Lane Pilot's own reasons waits for a fixed release: it never cuts the phase's scope (Fable's recheck, 2026-10-27)", async () => {
     // Every stage failure the live phases ever booked, before 0.1.336. Only the planner's and the drawing's verdicts are about the work.
     const machine = ["thread_failed: workflow_goal_audit:error:thread_status_error:provider_error:Provider error", "guard:maxVisits:plan_critic: \"plan\" has used its visits", "thread_failed: workflow_plan_critic:plugin_stopped", "budget_exceeded:steps", "output field \"scores_min\" is missing", "repo_edited: the analyst helper edited repository files it may not touch: .agents/phases/ph_26f65b142d/CONTEXT.md", "repo_edited: the planner helper edited repository files it may not touch: .agents/plans/ui3/plan-items.json", "repo_edited: the plan-critic helper edited repository files it may not touch: .agents/phases/ph_26f65b142d/design/src/fonts/fredoka-500.ttf,", "cannot read .agents/phases/ph_26f65b142d/design/00-kit.png: lane_pilot_read_binary_rejected"];

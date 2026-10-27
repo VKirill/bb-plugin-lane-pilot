@@ -93,7 +93,7 @@ const text = (value: unknown, max: number) => String(typeof value === "string" ?
 const RISK_WORDS: Array<[RiskKind, RegExp]> = [["security", /secur|secret|auth|token|permission|безопас|секрет/i], ["operations", /deploy|ops|operat|backup|monitor|выкат|эксплуат/i], ["product", /user|product|ux|owner|пользоват|продукт/i]];
 
 /** CONTEXT.md of the discussion, written by the machine from the analysis. */
-export function contextDoc(phase: Phase, output: Record<string, unknown>): { content: string; risks: Record<RiskKind, string>; decisions: string[]; questions: string[] } {
+export function contextDoc(phase: Phase, output: Record<string, unknown>): { content: string; risks: Record<RiskKind, string>; decisions: string[]; questions: string[]; security: string | null } {
   const decisions = Array.isArray(output.decisions) ? output.decisions as unknown[] : [];
   const risks = Array.isArray(output.risks) ? output.risks as unknown[] : [];
   const byKind: Record<RiskKind, string[]> = { technical: [], product: [], operations: [], security: [] };
@@ -120,7 +120,15 @@ export function contextDoc(phase: Phase, output: Record<string, unknown>): { con
     "Written by Lane Pilot from the analysis (lp.analyze); the plan stands on this file.",
   ].join("\n");
   const risksText = Object.fromEntries((["technical", "product", "operations", "security"] as RiskKind[]).map((kind) => [kind, (byKind[kind].join("; ") || "none seen").slice(0, 600)])) as Record<RiskKind, string>;
-  return { content, risks: risksText, decisions: ids, questions };
+  // A security risk needs a signed threat model before the plan is admitted (threatGap), and no machine stage wrote one: the plan failed
+  // its gate every time and the loop ended the phase (live drill ph_5cd09d1c7a, Fable 2026-10-27). The analysis writes it with the context.
+  const security = byKind.security.length ? [
+    `# Threat model — ${phase.title}`, "", `Goal: ${phase.goal}`, "",
+    "## Security risks named by the analysis", ...byKind.security.map((risk) => `- ${risk}`), "",
+    "## What the plan must hold", "- every piece that touches these risks names them in its acceptance and carries a check for them", "- no secret, credential or permission is widened without a check that would fail if it were", "",
+    "Written by Lane Pilot from the analysis (lp.analyze); the planner and the plan critic read it with CONTEXT.md.",
+  ].join("\n") : null;
+  return { content, risks: risksText, decisions: ids, questions, security };
 }
 
 /** Plan pieces from lp.plan: each task-v2 contract with its wave and a promise drawn from the contract. */
@@ -207,10 +215,13 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       if (phase.stage !== "discussion" || phase.record.context) return;
       const doc = contextDoc(phase, output);
       const path = `${phaseFolder(phase.id)}/CONTEXT.md`;
-      const written = await deps.writeDocs(phase, [{ path, content: doc.content }], `phase ${phase.id}: CONTEXT.md from the analysis`);
+      const securityPath = `${phaseFolder(phase.id)}/SECURITY.md`;
+      const files = [{ path, content: doc.content }, ...(doc.security ? [{ path: securityPath, content: doc.security }] : [])];
+      const written = await deps.writeDocs(phase, files, `phase ${phase.id}: ${files.map((file) => file.path.split("/").at(-1)).join(" and ")} from the analysis`);
       if (!written.written.includes(path)) throw new Error("CONTEXT.md was not written");
+      if (doc.security && !written.written.includes(securityPath)) throw new Error("SECURITY.md was not written");
       for (const question of doc.questions.slice(0, 5)) deps.api.question({ phaseId: phase.id, text: question, blocking: false, by });
-      await deps.api.context({ phaseId: phase.id, docs: [path], risks: doc.risks, decisions: doc.decisions, by });
+      await deps.api.context({ phaseId: phase.id, docs: [path, ...(doc.security ? [securityPath] : [])], risks: doc.risks, decisions: doc.decisions, by });
     } else if (auto.kind === "plan") {
       if (phase.stage !== "planning" || phase.record.plan?.admittedSha) return;
       const fresh = planItems(phase, output);
