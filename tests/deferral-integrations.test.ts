@@ -19,7 +19,8 @@ const NOW = Date.parse("2026-11-10T12:00:00Z");
 const DAY = 86_400_000;
 
 const row = (patch: Partial<Deferral>): Deferral => ({
-  id: "dfr_000000000001", projectId: null, what: "thing", kind: "gate", area: "", dueAt: null, dueSource: null, ownerRef: null, ownerQuote: null,
+  // A term is the owner's: a row with a date carries his message unless the test says otherwise (an entry with no human term has no date, deferral/store.ts).
+  id: "dfr_000000000001", projectId: null, what: "thing", kind: "gate", area: "", dueAt: null, dueSource: "explicit", ownerRef: { threadId: "thr_owner", seq: 1, index: 0, sha256: "x", at: 1 }, ownerQuote: null,
   state: "open", history: [], source: "cli", createdAt: NOW - 20 * DAY, updatedAt: NOW - 20 * DAY, closedAt: null, closedBy: null, ...patch,
 });
 
@@ -61,13 +62,13 @@ describe("the drill's deferrals scenario", () => {
     expect(input!.refs.length).toBeGreaterThan(10);
   });
 
-  it("fails on an overdue deferral and says how an agent closes it or moves it with a reason", () => {
+  it("fails on an overdue deferral and says how an agent closes it or asks the owner for a new date", () => {
     const { verdict } = runDrill({ counts: {}, overdue: [{ id: "dfr_abc123abc123", kind: "drill_scenario", what: "reload scenario", due: "2026-11-05" }], needsOwnerTerm: [], entries: [], badRefs: [] });
     expect(verdict!.result).toBe("fail");
     expect(verdict!.problems).toHaveLength(1);
     expect(verdict!.problems[0]).toMatch(/overdue deferral dfr_abc123abc123 \(drill_scenario: reload scenario\): its term 2026-11-05 passed/);
     expect(verdict!.problems[0]).toMatch(/bb lane-pilot defer-close dfr_abc123abc123 --evidence/);
-    expect(verdict!.problems[0]).toMatch(/new term with the reason \(bb lane-pilot defer dfr_abc123abc123 --due .* --reason/);
+    expect(verdict!.problems[0]).toMatch(/new date from the owner \(bb lane-pilot defer dfr_abc123abc123 --owner-msg <threadId>#<seq>\)/);
   });
 
   it("fails on a skipped test that cites an entry the register lacks or holds closed", () => {
@@ -101,7 +102,10 @@ describe("what the PM reads before it promises a date", () => {
     expect(text).toContain("stale open row (dfr_000000000002");
     expect(text).toContain("- open 1, next term 2026-11-15");
     expect(text).toContain("An overdue term turns the deploy drill red");
-    expect(text).not.toMatch(/other project|no term|done/);
+    // An entry with no term from the owner is told apart: open, no term, and it counts as unproven in the project's acceptance.
+    expect(text).toContain("- open, no term 1: no term (dfr_000000000005, term none)");
+    expect(text).toContain("counts as unproven in this project's phase acceptance");
+    expect(text).not.toMatch(/other project|done/);
     expect(pmDeferralLines(db, "R", NOW).join("\n")).toContain("overdue 2");
     expect(pmDeferralLines(database(), "P", NOW)).toEqual([]);
   });

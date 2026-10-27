@@ -1054,7 +1054,7 @@ def cited_deferrals() -> list[str]:
 
 def scenario_deferrals(tmp: Path) -> dict:
     """The register of deferrals (SMA rule 5): an entry whose term has passed, or a skipped test citing an entry the register does not hold
-    or holds closed, fails the drill. Every entry has a term (the default of 14 days, an agent's with its reason, or one an owner's message named)."""
+    or holds closed, fails the drill. Only a term an owner's message named can pass: an entry without one is «open, no term» and never overdue."""
     cited = cited_deferrals()
     try:
         data = setting_rpc("deferral_list", {"refs": cited})
@@ -1066,7 +1066,7 @@ def scenario_deferrals(tmp: Path) -> dict:
     for item in data.get("overdue", []):
         problems.append(f"overdue deferral {item['id']} ({item['kind']}: {item['what'][:100]}): its term {item['due']} passed. "
                         f"Do one of: do it and close it with evidence (bb lane-pilot defer-close {item['id']} --evidence \"<commit, test run, link>\"), "
-                        f"or give it a new term with the reason (bb lane-pilot defer {item['id']} --due <day, at most 30 days ahead> --reason \"<what it waits for>\")")
+                        f"or take a new date from the owner (bb lane-pilot defer {item['id']} --owner-msg <threadId>#<seq>)")
     for ref in data.get("badRefs", []):
         why = "is not in the register" if ref["problem"] == "unknown" else "is closed, so the skip it excuses is no longer deferred (run the test or remove the skip)"
         problems.append(f"a skipped test cites deferral:{ref['id']}, which {why}")

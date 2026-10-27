@@ -1,8 +1,7 @@
 import type { DeferralApi } from "./service";
 
 export const DEFERRAL_USAGE = [
-  "bb lane-pilot defer <what> --kind drill_scenario|skipped_test|gate|plan_decision|memory_conflict|wall --due 2026-11-05 --reason <what it waits for> [--area A] [--project P]",
-  "bb lane-pilot defer <dfr_id> --due 2026-11-05 --reason <what it waits for>   (set or move the term of an entry, at most 30 days ahead)",
+  "bb lane-pilot defer <what> --kind drill_scenario|skipped_test|gate|plan_decision|memory_conflict|wall --reason <what it waits for> [--area A] [--project P]   (born with no term: only the owner's message sets one)",
   "bb lane-pilot defer <what|dfr_id> --owner-msg <threadId>#<seq> [--due 2026-11-05]   (the term a message of the owner names)",
   "bb lane-pilot defer-close <dfr_id> --evidence <commit, test run, link, decision>",
   "bb lane-pilot deferrals [--project P] [--state open|overdue|needs_owner_term|closed]",

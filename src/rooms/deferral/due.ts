@@ -6,21 +6,17 @@
  * «in 14 days» · «завтра», «послезавтра», «tomorrow» · «до пятницы», «в пятницу», «by Friday» (the next such day after the message).
  * A day and month without a year is the next one on or after the message's day.
  */
+/** `default_14d` and `agent` are terms of earlier versions: no human gave them, so they are no term (store.ts `hasHumanTerm`). */
 export type DueSource = "explicit" | "relative" | "weekday" | "default_14d" | "agent";
 export type NamedDate = { day: string; dueAt: number; source: Exclude<DueSource, "default_14d" | "agent">; match: string };
 
 const DAY = 86_400_000;
-export const DEFAULT_TERM_DAYS = 14;
-/** The furthest an agent may set a term (`defer <id> --due … --reason …`): a longer one is a new entry with its own reason. */
-export const MAX_AGENT_TERM_DAYS = 30;
 
 const pad = (n: number): string => String(n).padStart(2, "0");
 export const dayOf = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
 /** The last millisecond of the UTC day `YYYY-MM-DD`. */
 export const endOfDay = (day: string): number => Date.parse(`${day}T23:59:59.999Z`);
 const startOf = (ms: number): number => Date.parse(`${dayOf(ms)}T00:00:00.000Z`);
-/** The default term counted from `at`: the end of the day 14 days later. */
-export const defaultTermFrom = (at: number): number => endOfDay(dayOf(startOf(at) + DEFAULT_TERM_DAYS * DAY));
 const valid = (y: number, m: number, d: number): boolean => {
   const probe = new Date(Date.UTC(y, m - 1, d));
   return probe.getUTCFullYear() === y && probe.getUTCMonth() === m - 1 && probe.getUTCDate() === d;
@@ -108,12 +104,12 @@ export function dayOfArg(arg: string): string | null {
   return `${hit[1]}-${hit[2]}-${hit[3]}`;
 }
 
-export type ResolvedTerm = { dueAt: number; day: string; source: DueSource; match: string | null };
+export type ResolvedTerm = { dueAt: number; day: string; source: Exclude<DueSource, "default_14d" | "agent">; match: string | null };
 
 /**
  * The term of a deferral from the owner's message. `claimed` is the day the caller wants (`--due`): the text must name it, else
- * the term is refused. Without `claimed` a single named date is taken, several are ambiguous, and none means the owner decided
- * without a date: the term is the message's day plus 14 days (`default_14d`).
+ * the term is refused. Without `claimed` a single named date is taken, several are ambiguous, and none means the owner named no
+ * date: there is no default (SMA rule 5: only a human sets the term), so the entry stays without a term.
  */
 export function resolveTerm(text: string, at: number, claimed?: string): { ok: true; term: ResolvedTerm } | { ok: false; error: string } {
   const named = namedDates(text, at);
@@ -123,10 +119,9 @@ export function resolveTerm(text: string, at: number, claimed?: string): { ok: t
     if (!day) return { ok: false, error: `--due «${claimed}» is not a date; write it as 2026-11-05` };
     const hit = named.find((item) => item.day === day);
     if (hit) return { ok: true, term: { dueAt: hit.dueAt, day, source: hit.source, match: hit.match } };
-    return { ok: false, error: `the owner's message does not name ${day}${named.length ? `; it names ${list}` : " (it names no date; leave --due out to take the default of 14 days from the message)"}` };
+    return { ok: false, error: `the owner's message does not name ${day}${named.length ? `; it names ${list}` : " (it names no date, and there is no default term)"}` };
   }
   if (named.length > 1) return { ok: false, error: `the owner's message names several dates (${list}); pass --due with the one this deferral gets` };
   if (named.length === 1) return { ok: true, term: { dueAt: named[0]!.dueAt, day: named[0]!.day, source: named[0]!.source, match: named[0]!.match } };
-  const day = dayOf(startOf(at) + DEFAULT_TERM_DAYS * DAY);
-  return { ok: true, term: { dueAt: endOfDay(day), day, source: "default_14d", match: null } };
+  return { ok: false, error: "the owner's message names no date; there is no default term (only a date of the owner's own sets one), so the entry stays open with no term" };
 }

@@ -16,7 +16,8 @@ function seeded() {
   db.prepare("INSERT INTO lane_pilot_rule_proposal(id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,evidence_json,first_seen_at,last_seen_at,updated_at) VALUES ('r1','proj_1','s','Never edit lockfiles by hand','model','proposed',3,2,'[\"npm i changed the lock\"]','[{\"runId\":\"run_1\",\"taskId\":\"t1\",\"attemptId\":\"att_1\",\"reason\":\"lockfile edited\"}]',?,?,?)").run(NOW - 9 * HOUR, NOW - 8 * HOUR, NOW - 8 * HOUR);
   db.prepare("INSERT INTO lane_pilot_rule_proposal(id,project_id,signature,rule,author,state,occurrences,task_count,examples_json,first_seen_at,last_seen_at,updated_at) VALUES ('r2','proj_1','s2','done rule','model','accepted',1,1,'[]',?,?,?)").run(NOW, NOW, NOW);
   db.prepare("INSERT INTO lane_pilot_learning_item(id,obs_id,project_id,thread_id,kind,text,reach,state,evidence,created_at) VALUES ('i1','o1','proj_1','t','preference','Prefer short answers','owner','pending_owner','you said so',?)").run(NOW - HOUR);
-  const deferral = (id: string, kind: string, state: string, dueAt: number | null, what = `${id} thing`) => db.prepare("INSERT INTO lane_pilot_deferral(id,project_id,what,kind,state,due_at,owner_quote,created_at,updated_at) VALUES (?,NULL,?,?,?,?,?,?,?)").run(id, what, kind, state, dueAt, dueAt ? "до пятницы" : null, NOW - 50 * HOUR, NOW);
+  const deferral = (id: string, kind: string, state: string, dueAt: number | null, what = `${id} thing`) => db.prepare("INSERT INTO lane_pilot_deferral(id,project_id,what,kind,state,due_at,due_source,owner_ref,owner_quote,created_at,updated_at) VALUES (?,NULL,?,?,?,?,?,?,?,?,?)")
+    .run(id, what, kind, state, dueAt, dueAt ? "weekday" : null, dueAt ? "{\"threadId\":\"thr_owner\",\"seq\":1}" : null, dueAt ? "до пятницы" : null, NOW - 50 * HOUR, NOW);
   deferral("dfr_a", "skipped_test", "needs_owner_term", null);
   deferral("dfr_b", "gate", "overdue", NOW - 5 * HOUR);
   deferral("dfr_c", "gate", "open", NOW + 5 * HOUR);

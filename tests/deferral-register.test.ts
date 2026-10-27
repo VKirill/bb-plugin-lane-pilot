@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import plugin from "../server";
 import type { EventLike, ThreadLike } from "../src/rooms/anamnesis";
 import { SEED_ENTRIES } from "../src/rooms/deferral/seed";
-import { createDeferrals, runDeferralCli } from "../src/rooms/deferral/server";
+import { createDeferrals, noTermDeferralsOf, runDeferralCli } from "../src/rooms/deferral/server";
 import { parseOwnerRef, sha256Text, verifyOwnerMessage, type OwnerMessagePort } from "../src/rooms/deferral/verify";
 import { migrations, openDatabase } from "../src/rooms/storage/database";
 
@@ -103,10 +103,10 @@ describe("writing a term", () => {
     expect(row.due_at).toBe(Date.parse("2026-11-05T23:59:59.999Z"));
   });
 
-  it("a decision without a date gets the message time plus 14 days, marked default_14d", async () => {
+  it("a message without a date gives no term, and no default one is made up", async () => {
     const { api } = register();
-    const { entry } = await api.defer({ what: "x", kind: "gate", ownerMsg: "thr_owner#4" });
-    expect(entry).toMatchObject({ due: "2026-11-05", dueSource: "default_14d" });
+    await expect(api.defer({ what: "x", kind: "gate", ownerMsg: "thr_owner#4" })).rejects.toThrow(/names no date; there is no default term/);
+    expect(api.list().entries).toEqual([]);
   });
 
   it("refuses a date the message does not name, an ambiguous message without --due, and a message from an agent", async () => {
@@ -177,35 +177,65 @@ describe("the term passes and the entry is closed", () => {
 });
 
 describe("first entries", () => {
-  it("are seeded once with the default term of 14 days, and turn overdue when it passes", () => {
+  it("are seeded once with no term: open, no term, never overdue however late it gets", () => {
     const { api, clock } = register();
     expect(api.seed()).toBe(SEED_ENTRIES.length);
     expect(api.seed()).toBe(0);
     const listed = api.list();
-    expect(listed.counts).toMatchObject({ needs_owner_term: 0, overdue: 0, open: SEED_ENTRIES.length });
-    expect(listed.entries.find((item) => item.id === "dfr_seed_plan_code_critique_default")).toMatchObject({ due: "2026-11-05", dueSource: "default_14d" });
-    clock.now = T0 + 15 * DAY;
-    expect(api.list().counts).toMatchObject({ overdue: SEED_ENTRIES.length, open: 0 });
+    expect(listed.counts).toMatchObject({ needs_owner_term: SEED_ENTRIES.length, overdue: 0, open: 0 });
+    expect(listed.entries.find((item) => item.id === "dfr_seed_plan_code_critique_default")).toMatchObject({ state: "needs_owner_term", due: null, dueSource: null });
+    clock.now = T0 + 400 * DAY;
+    expect(api.list().counts).toMatchObject({ needs_owner_term: SEED_ENTRIES.length, overdue: 0, open: 0 });
     expect(SEED_ENTRIES.filter((item) => item.kind === "plan_decision")).toHaveLength(5);
   });
 
-  it("an entry left from the time a term had to come from the owner gets the default term at start", () => {
+  it("the 21 rows seeded under the old rule (the default of 14 days) are read as open, no term, and are not rewritten", () => {
+    const { api, db, clock } = register();
+    const due = Date.parse("2026-11-05T23:59:59.999Z");
+    db.prepare("INSERT INTO lane_pilot_deferral(id,what,kind,state,due_at,due_source,source,created_at,updated_at) VALUES('dfr_seed_old','an old seed','skipped_test','open',?,'default_14d','seed',1,1)").run(due);
+    db.prepare("INSERT INTO lane_pilot_deferral(id,what,kind,state,due_at,due_source,owner_quote,source,created_at,updated_at) VALUES('dfr_agent','an agent term','gate','open',?,'agent','agent: later','cli',1,1)").run(due);
+    clock.now = due + DAY;
+    const listed = api.list();
+    expect(listed.counts).toMatchObject({ needs_owner_term: 2, overdue: 0, open: 0 });
+    expect(listed.entries.find((item) => item.id === "dfr_seed_old")).toMatchObject({ state: "needs_owner_term", due: null, dueSource: null });
+    // The row itself is untouched: no migration, nothing turned overdue by the sweep.
+    expect(db.prepare("SELECT state, due_at, due_source FROM lane_pilot_deferral WHERE id='dfr_seed_old'").get()).toEqual({ state: "open", due_at: due, due_source: "default_14d" });
+  });
+
+  it("an entry left from the time a term had to come from the owner stays open with no term at start", () => {
     const { api, db } = register();
     db.prepare("INSERT INTO lane_pilot_deferral(id,what,kind,state,created_at,updated_at) VALUES('dfr_old','an old one','gate','needs_owner_term',1,1)").run();
     api.seed();
-    expect(api.list().entries.find((item) => item.id === "dfr_old")).toMatchObject({ state: "open", due: "2026-11-05", dueSource: "default_14d" });
+    expect(api.list().entries.find((item) => item.id === "dfr_old")).toMatchObject({ state: "needs_owner_term", due: null, dueSource: null });
   });
 
-  it("an agent sets or moves a term with the day and the reason, at most 30 days ahead", async () => {
+  it("an agent puts a thing off with a reason and gets no term; it cannot set or move one", async () => {
     const { api } = register();
     api.seed();
-    await expect(api.defer({ what: "dfr_seed_plan_containment", due: "2026-11-10" })).rejects.toThrow(/--reason/);
-    await expect(api.defer({ what: "dfr_seed_plan_containment", due: "2026-12-30", reason: "waits for the bench v2 build" })).rejects.toThrow(/more than 30 days/);
-    await expect(api.defer({ what: "dfr_seed_plan_containment", due: "2026-10-01", reason: "waits for the bench v2 build" })).rejects.toThrow(/has passed/);
-    const moved = await api.defer({ what: "dfr_seed_plan_containment", due: "2026-11-10", reason: "waits for the bench v2 build" });
-    expect(moved.entry).toMatchObject({ state: "open", due: "2026-11-10", dueSource: "agent", ownerQuote: "agent: waits for the bench v2 build" });
-    const made = await api.defer({ what: "flaky gate", kind: "gate", due: "2026-11-01", reason: "the gate is rewritten next week" });
-    expect(made).toMatchObject({ created: true, entry: { state: "open", dueSource: "agent" } });
+    await expect(api.defer({ what: "dfr_seed_plan_containment", due: "2026-11-10", reason: "waits for the bench v2 build" })).rejects.toThrow(/an agent does not set a term/);
+    await expect(api.defer({ what: "flaky gate", kind: "gate", due: "2026-11-01", reason: "the gate is rewritten next week" })).rejects.toThrow(/an agent does not set a term/);
+    await expect(api.defer({ what: "flaky gate", kind: "gate" })).rejects.toThrow(/--reason/);
+    const made = await api.defer({ what: "flaky gate", kind: "gate", reason: "the gate is rewritten next week" });
+    expect(made).toMatchObject({ created: true, entry: { state: "needs_owner_term", due: null, dueSource: null, ownerQuote: "agent: the gate is rewritten next week" } });
+    expect((await api.defer({ what: "dfr_seed_plan_containment" })).created).toBe(false);
+  });
+
+  it("opens no term for the code either (a held memory conflict) and counts a project's open checks with no term as unproven, global and foreign ones not", async () => {
+    const { api, db } = register();
+    api.seed();
+    api.open({ id: "dfr_conflict", kind: "memory_conflict", what: "two notes disagree", projectId: "proj_a" });
+    expect(api.list().entries.find((item) => item.id === "dfr_conflict")).toMatchObject({ state: "needs_owner_term", due: null });
+    await api.defer({ what: "skipped e2e of the cabinet", kind: "skipped_test", reason: "needs the staging browser", projectId: "proj_a" });
+    await api.defer({ what: "flaky gate of b", kind: "gate", reason: "rewritten next week", projectId: "proj_b" });
+    const mine = noTermDeferralsOf(db, "proj_a");
+    expect(mine.map((row) => row.what)).toEqual(["skipped e2e of the cabinet"]);
+    expect(noTermDeferralsOf(db, "proj_c")).toEqual([]);
+    expect(noTermDeferralsOf(db, "")).toEqual([]);
+    api.close({ id: mine[0]!.id, evidence: "the staging browser runs it now" });
+    expect(noTermDeferralsOf(db, "proj_a")).toEqual([]);
+    // A deferral the owner gave a term is a term, not an unproven item: it is on its own clock.
+    await api.defer({ what: "dated skip", kind: "skipped_test", ownerMsg: "thr_owner#3", projectId: "proj_a" });
+    expect(noTermDeferralsOf(db, "proj_a")).toEqual([]);
   });
 
   it("a seeded entry takes a term an owner's message names, and a restart does not reset it", async () => {
@@ -235,8 +265,9 @@ describe("the CLI", () => {
     expect(JSON.parse(made.stdout!).entry.what).toBe("reload drill");
     const listed = JSON.parse((await runDeferralCli(api, "deferrals", [])).stdout!) as { entries: Array<{ id: string }> };
     expect(listed.entries.map((item) => item.id)).toEqual([id]);
-    expect((await runDeferralCli(api, "defer", ["x", "--kind", "gate"])).stderr).toMatch(/--reason must say why/);
-    expect((await runDeferralCli(api, "defer", ["x", "--kind", "gate", "--due", "2026-11-01", "--reason", "the gate is rewritten next week"])).exitCode).toBe(0);
+    expect((await runDeferralCli(api, "defer", ["x", "--kind", "gate"])).stderr).toMatch(/--reason must say what it waits for/);
+    expect((await runDeferralCli(api, "defer", ["x", "--kind", "gate", "--due", "2026-11-01", "--reason", "the gate is rewritten next week"])).stderr).toMatch(/an agent does not set a term/);
+    expect((await runDeferralCli(api, "defer", ["x", "--kind", "gate", "--reason", "the gate is rewritten next week"])).exitCode).toBe(0);
     expect((await runDeferralCli(api, "defer", ["x", "--kind", "gate", "--owner-msg", "thr_owner#6"])).stderr).toMatch(/not a message the owner wrote/);
     expect((await runDeferralCli(api, "defer", ["x", "--bogus", "1"])).stderr).toMatch(/unknown flag --bogus/);
     expect((await runDeferralCli(api, "defer-close", [id])).exitCode).toBe(1);
@@ -267,7 +298,7 @@ describe("the plugin", () => {
     });
     await plugin(bb);
     const before = await harness.behavior.callRpc("deferral_list", {}) as { counts: { needs_owner_term: number; open: number } };
-    expect(before.counts).toMatchObject({ needs_owner_term: 0, open: SEED_ENTRIES.length });
+    expect(before.counts).toMatchObject({ needs_owner_term: SEED_ENTRIES.length, open: 0 });
 
     const made = await harness.behavior.callRpc("deferral_defer", { what: "flaky gate", kind: "gate", ownerMsg: "thr_x#12", due: "2026-11-07" }) as { entry: { id: string; due: string } };
     expect(made.entry.due).toBe("2026-11-07");

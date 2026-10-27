@@ -129,6 +129,18 @@ describe("execution and verification", () => {
     const moved = acceptanceLines(phase, facts([["a", {}], ["b", {}], ["c", {}]]), { mainSha: "h2", openDeferrals: 0 });
     expect(moved.find((line) => line.id === "main_unmoved")?.ok).toBe(false);
   });
+
+  it("holds the acceptance while a deferred check of the project is open with no term from the owner (Fable's recheck E8)", () => {
+    const record = planned(items);
+    record.plan!.admittedSha = record.plan!.sha;
+    record.verification = { verdict: blindVerdict(items, facts([["a", {}], ["b", {}], ["c", {}]]), { state: "passed", headSha: "h1" }, 1) as never, model: { state: "met", by: "lp.close", summary: "sums are right", at: 2 } };
+    const phase = phaseWith({ ...record, execution: { issued: { a: "a", b: "b", c: "c" } } }, "acceptance");
+    const all = facts([["a", {}], ["b", {}], ["c", {}]]);
+    const held = acceptanceLines(phase, all, { mainSha: "h1", openDeferrals: 1, noTerm: [{ id: "dfr_1", what: "e2e skipped" }] });
+    expect(held.filter((line) => !line.ok).map((line) => line.id)).toEqual(["limits_acknowledged"]);
+    expect(held.find((line) => line.id === "limits_acknowledged")!.detail).toMatch(/1 deferred check\(s\).*no term from the owner.*dfr_1.*defer-close/);
+    expect(acceptanceLines(phase, all, { mainSha: "h1", openDeferrals: 1, noTerm: [] }).every((line) => line.ok)).toBe(true);
+  });
 });
 
 describe("returns, lessons and the book", () => {

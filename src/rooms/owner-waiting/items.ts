@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 
 /**
  * «Waiting for the owner» (SMA D0-3). Since 2026-10-22 the owner takes no part in the loop: rules go on trial by themselves, a deferral
- * gets its term from the code or an agent, a memory conflict is settled by the newer note, a night repair the policy holds is logged.
+ * has no term unless his own message names a date (it is «open, no term» and counts as unproven in its project's phases), a memory conflict is settled by the newer note, a night repair the policy holds is logged.
  * What is left here is only what the owner's own words started:
  *  - learned items from his messages that wait for him (lane_pilot_learning_item, pending_owner: a reminder he asked for),
  *  - the inbox `lane_pilot_owner_item`: whatever a caller posts with `postOwnerItem` (nothing in the plugin posts there now).
@@ -132,8 +132,9 @@ export function collectOwnerWaiting(db: Db, now: number = Date.now(), windowMs: 
 export function ownerWaitingCounts(db: Db, now: number = Date.now()): { overdue: number; open: number; inbox: number } {
   const count = (sql: string, ...params: unknown[]) => (db.prepare(sql).get(...params) as { n: number }).n;
   return {
-    overdue: count("SELECT count(*) AS n FROM lane_pilot_deferral WHERE state IN ('open','overdue') AND due_at < ?", now),
-    open: count("SELECT count(*) AS n FROM lane_pilot_deferral WHERE state = 'open' AND due_at >= ?", now),
+    // Only a human term can be overdue (deferral/store.ts HUMAN_TERM_SQL): an entry with the code's or an agent's term is «open, no term».
+    overdue: count("SELECT count(*) AS n FROM lane_pilot_deferral WHERE state IN ('open','overdue') AND due_at < ? AND owner_ref IS NOT NULL AND due_source IN ('explicit','relative','weekday')", now),
+    open: count("SELECT count(*) AS n FROM lane_pilot_deferral WHERE state = 'open' AND due_at >= ? AND owner_ref IS NOT NULL AND due_source IN ('explicit','relative','weekday')", now),
     inbox: count("SELECT count(*) AS n FROM lane_pilot_owner_item WHERE state='open'") + count("SELECT count(*) AS n FROM lane_pilot_learning_item WHERE state='pending_owner'"),
   };
 }

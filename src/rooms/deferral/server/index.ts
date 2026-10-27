@@ -2,5 +2,6 @@
 export { DEFERRAL_USAGE, runDeferralCli } from "../cli";
 export { createDeferrals, pmDeferralLines } from "../service";
 export type { DeferInput, DeferralApi, DeferralList, DeferralView } from "../service";
+export { noTermDeferralsOf } from "../store";
 export { sdkOwnerMessagePort } from "../verify";
 export { deferralRpc } from "./rpc";

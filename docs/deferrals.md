@@ -24,12 +24,12 @@ sources:
   - src/rooms/relay/server/relay.ts
 ---
 
-> [!important] Since 2026-10-22 the owner takes no part in the loop
-> No entry waits for a term: one the code opens (seeded skips, plan decisions, a wall in the backlog) gets the default of 14 days, and entries left as `needs_owner_term` got it at the first start of 0.1.275. An agent sets or moves a term with `bb lane-pilot defer <id> --due <day> --reason <what it waits for>` (at most 30 days ahead, the history keeps the earlier term); a message of the owner that names a date still works with `--owner-msg`. An overdue term turns the deploy drill red until an agent closes the entry with evidence or moves it with a reason.
+> [!important] Only a human sets a term (Fable's recheck of 0.1.336, E8)
+> The owner takes no part in the loop, so no code or agent gives a term. An entry the code or an agent opens (seeded skips, plan decisions, a memory conflict, `bb lane-pilot defer <what> --kind … --reason …`) is born **open, no term**: no due date, never overdue. A put-off check of a project with no term from the owner counts as **unproven** in that project's phase acceptance (the `limits_acknowledged` line) until an agent closes it with evidence. A wall in the backlog opens no deferral at all (its backlog item and the owner's morning line are enough). Only a message of the owner that names a date sets a term (`--owner-msg`); an agent cannot set or move one. The 21 rows seeded on 2026-10-22 carry the old default of 14 days (2026-11-05, `due_source default_14d`); the store reads them as open, no term and does not rewrite them, so none of them turns overdue.
 
 # Register of deferrals
 
-TL;DR: A mandatory check that is put off is written in one table with a term the owner gave in his own message; when the term passes, the deploy drill is red until someone closes the entry with evidence or the owner gives a new date.
+TL;DR: A mandatory check that is put off is written in one table; only a date in the owner's own message is a term, and when that passes the deploy drill is red. Without such a term the entry is open, no term, and counts as unproven in its project's phases until it is closed with evidence.
 
 ## Purpose
 
@@ -47,7 +47,7 @@ SMA rule 5 (Maslov): a deferred mandatory check lives in one register and its te
 
 1. The reference is read through the SDK: `threads.get` for the thread and `threads.events.list` for the one `client/turn/requested` event at that sequence (`src/rooms/deferral/verify.ts:31-37`, `:57-65`).
 2. It counts only when the owner-message filter of the anamnesis room accepts it (`src/rooms/deferral/verify.ts:40`). That filter keeps an event whose `initiator` is `user`, with no `senderThreadId` (an agent's message), no system label and no retry mark, in a thread that is visible, top level, not made by a plugin and not deleted (`src/rooms/anamnesis/owner-messages.ts:38-62`). A refusal says which of these failed (`src/rooms/deferral/verify.ts:41-51`).
-3. The date comes from the text: `--due` must be a day the text names, a single named date is taken without `--due`, several need `--due`, and a decision with no date gets the message's day plus 14 days with `due_source: default_14d` (`src/rooms/deferral/due.ts:114-128`). Recognised forms: ISO, `5.11.2026` and `5.11`, `5 ноября`, `Nov 5`, `через 14 дней / 2 недели / месяц`, `in 14 days`, `завтра`, `до пятницы`, `by Friday` (`src/rooms/deferral/due.ts:41-98`). Days are UTC and a term runs to the end of its day.
+3. The date comes from the text: `--due` must be a day the text names, a single named date is taken without `--due`, several need `--due`, and a message with no date gives no term and is refused (there is no default). Recognised forms: ISO, `5.11.2026` and `5.11`, `5 ноября`, `Nov 5`, `через 14 дней / 2 недели / месяц`, `in 14 days`, `завтра`, `до пятницы`, `by Friday` (`src/rooms/deferral/due.ts:41-98`). Days are UTC and a term runs to the end of its day.
 4. Moving a term of an entry that already has one needs a newer owner message than the one that gave it; the same message or an older one is refused (`src/rooms/deferral/service.ts:79-83`). The earlier term goes to the history (`src/rooms/deferral/store.ts:69-74`).
 
 `bb lane-pilot defer-close <id> --evidence …` closes an entry; the evidence must say what closes it (`src/rooms/deferral/service.ts:108-116`). `bb lane-pilot deferrals [--project P] [--state S]` lists them (`src/rooms/deferral/service.ts:118-141`).
@@ -56,12 +56,12 @@ SMA rule 5 (Maslov): a deferred mandatory check lives in one register and its te
 
 - **Deploy drill.** The `deferrals` scenario is in `--quick`. It reads `deferral_list` over `bb plugin rpc call lane-pilot`, fails on every overdue entry with the commands to close it or to get a new date, and fails on a skipped test that cites an id the register lacks or holds closed (`scripts/lp-drill.py:700-731`). A plugin that does not have the RPC yet passes with a note once (`scripts/lp-drill.py:695-697`, `:718-720`).
 - **Skipped tests.** Every `skip`, `todo`, `skipIf`, `xit` and `xdescribe` in `tests/` and `packages/*/tests/` needs `// deferral:<id>` on its line or the line above (`src/rooms/deferral/skips.ts:35-48`). `tests/deferral-skips.test.ts` fails on a bare skip, and on an id that is neither seeded nor a runtime id.
-- **PM.** The task-result message to the PM ends with the overdue and open entries of its project and the global ones, before it promises a date (`src/rooms/deferral/service.ts:144-159`, `src/rooms/relay/server/relay.ts:371-375`, `:597`). Entries without a term are not in it.
+- **PM.** The task-result message to the PM ends with the overdue and open entries of its project and the global ones, before it promises a date (`src/rooms/deferral/service.ts:144-159`, `src/rooms/relay/server/relay.ts:371-375`, `:597`). Entries with no term are listed there as «open, no term».
 - **Daily Telegram line.** `lp-metrics-daily.sh` adds «Отсрочки: просрочено N, открыто K, нужен срок от владельца M» and names up to three overdue entries (`scripts/lp-metrics-daily.sh:26-30`).
 
 ## First entries
 
-On start the plugin writes, once, one `skipped_test` entry per skipping test file (16) and the five waiting decisions of `.agents/plans/2026-10-05-harness-engineering-gaps.md`, all `needs_owner_term` with no owner message (`src/rooms/deferral/seed.ts:18-40`, `:43-52`). They are never counted overdue; they are the owner's morning list: «нужен срок от владельца». An owner message sets a term with `bb lane-pilot defer <dfr_seed_…> --owner-msg …`.
+On start the plugin writes, once, one `skipped_test` entry per skipping test file (16) and the five waiting decisions of `.agents/plans/2026-10-05-harness-engineering-gaps.md`, all `needs_owner_term` with no owner message and no term (`src/rooms/deferral/seed.ts:18-40`, `:43-52`). They are never counted overdue; they are the owner's morning list: «нужен срок от владельца». An owner message sets a term with `bb lane-pilot defer <dfr_seed_…> --owner-msg …`.
 
 ## Limits
 

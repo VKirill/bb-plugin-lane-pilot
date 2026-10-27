@@ -152,7 +152,8 @@ describe("a failed rollback is retried, not forgotten", () => {
     expect(row.state).toBe("red");
     expect(row.acceptance).toMatchObject({ rollback: { attempts: ROLLBACK_TRIES, gaveUp: true } });
     expect(row.outcome).toMatch(/revert failed 6 times, last: conflict: src\/rooms\/verification\/sandbox\.ts/);
-    expect([...world.state.deferrals.values()].join("\n")).toMatch(/stays in the checkout.*conflict: src\/rooms\/verification\/sandbox\.ts/s);
+    // The backlog item is the wall and the owner's morning line, which carries the diagnosis (no deferral is opened).
+    expect((world.h.db.prepare("SELECT what FROM lane_pilot_owner_item").all() as Array<{ what: string }>).map((item) => item.what).join("\n")).toMatch(/stays in the checkout.*conflict: src\/rooms\/verification\/sandbox\.ts/s);
     expect(world.wall.status().walls.map((wall) => wall.state)).toContain("backlog");
     // A rollback that gave up is not a rollback path: the next judge change is not merged on its word.
     expect(world.wall.classes().find((cls) => cls.classKey === KEY)).toMatchObject({ failedMoves: 1 });

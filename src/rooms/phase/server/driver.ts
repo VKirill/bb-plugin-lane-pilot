@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { cancelAttemptById, isRunHalted, isRunPaused } from "../../runs/server";
 import { taskFamily } from "../../runs";
+import { noTermDeferralsOf } from "../../deferral/server";
 import { getRunGoal } from "../../run-goal";
 import { getRun, getRunSettingsScopes, getRunWriterHost, getTask, listOpenAttempts, storeMemoryRecords } from "../../storage";
 import { postOwnerItem, closeOwnerItem } from "../../owner-waiting";
@@ -648,7 +649,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     if (current.stage === "acceptance") {
       const lastGoal = current.runId ? getRunGoal(db, current.runId) : null;
       const openDeferrals = (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_deferral WHERE project_id=? AND closed_at IS NULL").get(current.projectId) as { n: number } | undefined)?.n ?? 0;
-      const lines = acceptanceLines(current, facts(current), { mainSha: lastGoal?.headSha ?? null, openDeferrals });
+      const lines = acceptanceLines(current, facts(current), { mainSha: lastGoal?.headSha ?? null, openDeferrals, noTerm: noTermDeferralsOf(db, current.projectId) });
       // Main moved — a new word: the verdict saw another main; verify again on the main that is there now.
       if (lines.find((line) => line.id === "main_unmoved")?.ok === false) {
         const record: PhaseRecord = { ...current.record, verification: undefined, acceptance: undefined };

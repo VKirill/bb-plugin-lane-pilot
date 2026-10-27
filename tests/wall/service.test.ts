@@ -259,7 +259,8 @@ describe("the loop guard on a class: two rounds, the hunt, one informed round, t
     expect(walls).toHaveLength(1);
     expect(walls[0]!.deferralId).toMatch(/^dfr_wall_/);
     expect((walls[0]!.analysis as { text: string }).text).toMatch(/Full analysis/);
-    expect(state.deferrals.size).toBe(1);
+    // The backlog item is the wall row itself: no deferral (a term nobody sets would turn red by itself).
+    expect(state.deferrals.size).toBe(0);
     // One line on the morning list for the class the machine ended: informational (no wake), with where the analysis is; nothing waits for the owner.
     const items = h.db.prepare("SELECT key, source, kind, what, why, wake FROM lane_pilot_owner_item").all() as Array<{ key: string; source: string; kind: string; what: string; why: string; wake: number }>;
     expect(items).toEqual([expect.objectContaining({ key: `wall:class:${KEY}`, source: "wall", kind: "loop_exhausted", wake: 0 })]);
@@ -334,11 +335,10 @@ describe("the same ladder for an ordinary task", () => {
     expect(row.state).toBe("backlog");
     expect(row.deferralId).toMatch(/^dfr_wall_/);
     expect(wall.dispatchGuard({ runId: "run_real", family: "P1", task: { objective: "different" }, plan: "other plan" })).toMatch(/wall_backlog/);
-    // An accepted attempt of the family closes the wall and its register entry.
+    // An accepted attempt of the family closes the wall.
     h.attempt("accepted", null, NOW + HOUR, { task: "P1.4", id: "t9" });
     await wall.advance(NOW + 2 * HOUR);
     expect(listWalls(h.db, { kind: "task" })[0]).toMatchObject({ state: "closed", closedBy: "accepted attempt t9" });
-    expect(state.deferrals.get(row.deferralId!)!.closed).toMatch(/accepted/);
     expect(wall.dispatchGuard({ runId: "run_real", family: "P1", task: {}, plan: "" })).toBeNull();
   });
 

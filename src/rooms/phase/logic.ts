@@ -368,7 +368,7 @@ export const ACCEPTANCE_LINES = ["contract_current", "promises_proved", "checks_
 export type AcceptanceLineId = (typeof ACCEPTANCE_LINES)[number];
 
 /** The phase acceptance calculation: each line decided by code; the phase is accepted only when every line holds. */
-export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFact>, now: { mainSha: string | null; openDeferrals: number }): AcceptanceLine[] {
+export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFact>, now: { mainSha: string | null; openDeferrals: number; noTerm?: ReadonlyArray<{ id: string; what: string }> }): AcceptanceLine[] {
   const items = phase.record.plan?.items ?? [];
   const verdict = phase.record.verification?.verdict;
   const line = (id: AcceptanceLineId, ok: boolean, detail: string): AcceptanceLine => ({ id, ok, detail });
@@ -390,7 +390,9 @@ export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFac
     line("main_unmoved", !verdict?.mainSha || !now.mainSha || verdict.mainSha === now.mainSha, verdict?.mainSha && now.mainSha && verdict.mainSha !== now.mainSha ? `main moved from ${verdict.mainSha.slice(0, 12)} to ${now.mainSha.slice(0, 12)} since the verdict — verify again` : "main is where the verdict saw it"),
     line("qa_read", qaRed.length === 0, qaRed.length ? `the browser check failed: ${qaRed.join(", ")}` : "the window, the blind verdict and the browser checks read clean"),
     line("goal_met", model?.state === "met", model ? `${model.by}: ${model.summary}` : "no goal audit yet"),
-    line("limits_acknowledged", true, now.openDeferrals ? `${now.openDeferrals} deferred item(s) of this project stay open, named in the book` : "nothing deferred"),
+    // A put-off check with no term from the owner is unproven work of this project: it holds the acceptance until an agent closes it with evidence.
+    line("limits_acknowledged", !now.noTerm?.length, now.noTerm?.length ? `${now.noTerm.length} deferred check(s) of this project are open with no term from the owner, so they count as unproven: ${now.noTerm.slice(0, 5).map((row) => row.id).join(", ")} — close each with evidence (bb lane-pilot defer-close <id> --evidence …)`
+      : now.openDeferrals ? `${now.openDeferrals} deferred item(s) of this project stay open, named in the book` : "nothing deferred"),
     line("owner_word", !phase.record.ownerWords || word?.decision === "yes", !phase.record.ownerWords ? "the project does not ask for the owner's word (owner.words off)" : word ? `${word.by}: ${word.decision} — ${word.text}` : "awaits the owner's keyed decision"),
   ];
 }

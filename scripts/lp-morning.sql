@@ -14,6 +14,6 @@ select 'Красное за ночь: ' || coalesce((select sum(n) || ' попы
         (select task_id, culprit_commit from lane_pilot_regression where state = 'open' and kind = 'regression' order by id limit 3)) || ').'
     else '' end;
 select 'Принято: ' || (select count(*) from lane_pilot_attempt where state = 'accepted' and updated_at >= (select since from lp_morning)) || ' попыток.';
-select 'Отсрочки: просрочено ' || (select count(*) from lane_pilot_deferral where state in ('open', 'overdue') and due_at < (select now from lp_morning))
-  || ', открыто ' || (select count(*) from lane_pilot_deferral where state = 'open' and due_at >= (select now from lp_morning))
+select 'Отсрочки: просрочено ' || (select count(*) from lane_pilot_deferral where state in ('open', 'overdue') and due_at < (select now from lp_morning) and owner_ref is not null and due_source in ('explicit', 'relative', 'weekday'))
+  || ', открыто ' || (select count(*) from lane_pilot_deferral where state = 'open' and due_at >= (select now from lp_morning) and owner_ref is not null and due_source in ('explicit', 'relative', 'weekday'))
   || '. От твоих сообщений — ' || ((select count(*) from lane_pilot_owner_item where state = 'open') + (select count(*) from lane_pilot_learning_item where state = 'pending_owner')) || '.';

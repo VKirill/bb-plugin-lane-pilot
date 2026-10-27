@@ -81,7 +81,7 @@ describe("a stage whose workflow failed twice", () => {
     const wall = w.wall.show(walls[0]!.wall_key).wall!;
     expect(wall).toMatchObject({ state: "backlog", hunt: "usable" });
     expect((wall.analysis as { text: string }).text).toMatch(/proposed next step/);
-    expect(w.state.deferrals.size).toBe(1);
+    expect(w.state.deferrals.size).toBe(0);
     const items = w.ownerItems();
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({ source: "wall", kind: "loop_exhausted", wake: 0, state: "open" });
@@ -91,7 +91,7 @@ describe("a stage whose workflow failed twice", () => {
     await w.wall.loopExhausted({ kind: "stage", id: `${phase.id}:analyze`, title: "again", projectId: "projA", done: "x", facts: [] });
     expect(w.state.readerCalls).toHaveLength(4);
     expect(w.ownerItems()).toHaveLength(1);
-    expect(w.state.deferrals.size).toBe(1);
+    expect(w.state.deferrals.size).toBe(0);
   });
 });
 
@@ -135,7 +135,7 @@ describe("a verification that failed after the machine's replans", () => {
     expect(wallRow.state).toBe("backlog");
     expect(JSON.parse(wallRow.pack_json).attempts.map((attempt: { state: string }) => attempt.state).sort()).toEqual(["accepted", "blocked"]);
     expect(w.ownerItems()).toHaveLength(1);
-    expect(w.state.deferrals.size).toBe(1);
+    expect(w.state.deferrals.size).toBe(0);
     // The closed phase is not driven again into the same outcome.
     await w.phases.tick();
     expect(w.state.told).toHaveLength(0);

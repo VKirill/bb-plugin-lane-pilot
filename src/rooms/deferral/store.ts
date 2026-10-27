@@ -29,11 +29,22 @@ const json = <T>(text: string | null, fallback: T): T => {
   try { return JSON.parse(text) as T; } catch { return fallback; }
 };
 
-const fromRaw = (row: Raw): Deferral => ({
-  id: row.id, projectId: row.project_id, what: row.what, kind: row.kind, area: row.area, dueAt: row.due_at, dueSource: row.due_source,
-  ownerRef: json<OwnerRef | null>(row.owner_ref, null), ownerQuote: row.owner_quote, state: row.state, history: json(row.history_json, []),
-  source: row.source, createdAt: row.created_at, updatedAt: row.updated_at, closedAt: row.closed_at, closedBy: row.closed_by,
-});
+/**
+ * Only a human sets the term of a mandatory check (Matvey Maslov, rule 5): a date from the owner's own message. A term the code gave
+ * (`default_14d`) or an agent set (`agent`) is no term, so an entry holding only that is «open, no term»: it has no due date, never turns
+ * overdue and counts as unproven in the phases of its project (`noTermDeferralsOf`). Rows written before this rule are read by it, not rewritten.
+ */
+export const HUMAN_TERM_SQL = "owner_ref IS NOT NULL AND due_source IN ('explicit','relative','weekday')";
+const hasHumanTerm = (row: Raw): boolean => row.owner_ref !== null && (row.due_source === "explicit" || row.due_source === "relative" || row.due_source === "weekday");
+
+const fromRaw = (row: Raw): Deferral => {
+  const termless = row.state !== "closed" && !hasHumanTerm(row);
+  return {
+    id: row.id, projectId: row.project_id, what: row.what, kind: row.kind, area: row.area, dueAt: termless ? null : row.due_at, dueSource: termless ? null : row.due_source,
+    ownerRef: json<OwnerRef | null>(row.owner_ref, null), ownerQuote: row.owner_quote, state: termless ? "needs_owner_term" : row.state, history: json(row.history_json, []),
+    source: row.source, createdAt: row.created_at, updatedAt: row.updated_at, closedAt: row.closed_at, closedBy: row.closed_by,
+  };
+};
 
 /** A runtime id; seeded entries have fixed ids (`dfr_seed_…`, seed.ts). */
 export const newDeferralId = (): string => `dfr_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
@@ -43,18 +54,31 @@ export function getDeferral(db: DeferralDb, id: string): Deferral | null {
   return row ? fromRaw(row) : null;
 }
 
-/** Open entries whose term passed become `overdue` (stored, so a plain SQL read sees them too). */
+/** Open entries whose human term passed become `overdue` (stored, so a plain SQL read sees them too). An entry with no human term never does. */
 export function sweepOverdue(db: DeferralDb, now: number): number {
-  return db.prepare("UPDATE lane_pilot_deferral SET state='overdue', updated_at=? WHERE state='open' AND due_at IS NOT NULL AND due_at<?").run(now, now).changes;
+  return db.prepare(`UPDATE lane_pilot_deferral SET state='overdue', updated_at=? WHERE state='open' AND due_at IS NOT NULL AND due_at<? AND ${HUMAN_TERM_SQL}`).run(now, now).changes;
 }
+
+const STATE_RANK: Record<DeferralState, number> = { overdue: 0, open: 1, needs_owner_term: 2, closed: 3 };
 
 export function listDeferrals(db: DeferralDb, filter: { projectId?: string | undefined; states?: readonly DeferralState[] | undefined } = {}): Deferral[] {
   const where: string[] = [], args: unknown[] = [];
   // A project sees its own entries and the global ones.
   if (filter.projectId) { where.push("(project_id=? OR project_id IS NULL)"); args.push(filter.projectId); }
-  if (filter.states?.length) { where.push(`state IN (${filter.states.map(() => "?").join(",")})`); args.push(...filter.states); }
-  const sql = `SELECT * FROM lane_pilot_deferral${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY CASE state WHEN 'overdue' THEN 0 WHEN 'open' THEN 1 WHEN 'needs_owner_term' THEN 2 ELSE 3 END, due_at, created_at`;
-  return (db.prepare(sql).all(...args) as Raw[]).map(fromRaw);
+  const sql = `SELECT * FROM lane_pilot_deferral${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
+  // The state is read after the term rule (fromRaw), so the filter and the order are applied here, not in SQL.
+  return (db.prepare(sql).all(...args) as Raw[]).map(fromRaw).filter((row) => !filter.states?.length || filter.states.includes(row.state))
+    .sort((a, b) => STATE_RANK[a.state] - STATE_RANK[b.state] || (a.dueAt ?? Infinity) - (b.dueAt ?? Infinity) || a.createdAt - b.createdAt);
+}
+
+/**
+ * The open entries with no term from a human that count as unproven in a phase of this project: the project's own skipped checks and
+ * gates. A global entry (no project, like the plugin's own seeds) and an entry of another project never block it, and a wall's backlog
+ * item is its own line, not a deferral. Entries carry no run or task id, so the project is the narrowest scope there is.
+ */
+export function noTermDeferralsOf(db: DeferralDb, projectId: string): Array<{ id: string; what: string }> {
+  if (!projectId) return [];
+  return listDeferrals(db, { states: ["needs_owner_term"] }).filter((row) => row.projectId === projectId && (row.kind === "skipped_test" || row.kind === "gate")).map((row) => ({ id: row.id, what: row.what }));
 }
 
 export function insertDeferral(db: DeferralDb, row: Deferral, ignoreExisting = false): boolean {
@@ -71,11 +95,6 @@ export function setTerm(db: DeferralDb, id: string, term: { dueAt: number; dueSo
   const history = row.dueAt !== null || row.ownerRef ? [...row.history, { dueAt: row.dueAt, dueSource: row.dueSource, ownerRef: row.ownerRef, at: now }] : row.history;
   db.prepare("UPDATE lane_pilot_deferral SET due_at=?, due_source=?, owner_ref=?, owner_quote=?, state=?, history_json=?, updated_at=? WHERE id=?")
     .run(term.dueAt, term.dueSource, JSON.stringify(term.ownerRef), term.ownerQuote, term.dueAt < now ? "overdue" : "open", JSON.stringify(history), now, id);
-}
-
-/** Entries left from the time a term had to come from the owner (`needs_owner_term`) get the default term from now. */
-export function dateUntermed(db: DeferralDb, dueAt: number, now: number): number {
-  return db.prepare("UPDATE lane_pilot_deferral SET state='open', due_at=?, due_source='default_14d', updated_at=? WHERE state='needs_owner_term'").run(dueAt, now).changes;
 }
 
 export function closeDeferral(db: DeferralDb, id: string, evidence: string, now: number): void {

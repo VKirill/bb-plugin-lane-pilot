@@ -73,12 +73,14 @@ describe("the term a message gives", () => {
     expect(wrong.ok).toBe(false);
     expect(!wrong.ok && wrong.error).toMatch(/does not name 2026-12-01; it names 2026-11-05/);
     const none = resolveTerm("да, отложи это", AT, "2026-11-05");
-    expect(!none.ok && none.error).toMatch(/names no date; leave --due out/);
+    expect(!none.ok && none.error).toMatch(/names no date, and there is no default term/);
     expect(resolveTerm("до 5 ноября", AT, "завтра")).toMatchObject({ ok: false });
   });
 
-  it("a decision without a date gets 14 days from the message and says so (due_source default_14d)", () => {
-    expect(resolveTerm("да, отложи", AT)).toMatchObject({ ok: true, term: { day: "2026-11-05", source: "default_14d", match: null } });
+  it("a decision without a date gives no term: there is no default (only a human sets a term, Fable's recheck E8)", () => {
+    const none = resolveTerm("да, отложи", AT);
+    expect(none.ok).toBe(false);
+    expect(!none.ok && none.error).toMatch(/names no date; there is no default term/);
   });
 
   it("reads --due as a day", () => {

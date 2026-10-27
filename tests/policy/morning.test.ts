@@ -27,7 +27,8 @@ function seeded() {
   const event = (rule_id: string, action: string, at: number) => db.prepare("INSERT INTO lane_pilot_rule_event(project_id,rule_id,action,at) VALUES ('proj_1',?,?,?)").run(rule_id, action, at);
   event("r3", "adopted", NOW - 2 * HOUR); event("r3", "adopted", NOW - 50 * HOUR); event("r3", "confirmed", NOW - HOUR);
   db.prepare("INSERT INTO lane_pilot_learning_item(id,obs_id,project_id,thread_id,kind,text,reach,state,evidence,created_at) VALUES ('i1','o1','proj_1','t','preference','p','owner','pending_owner','e',?)").run(NOW);
-  const deferral = (id: string, kind: string, state: string, dueAt: number | null) => db.prepare("INSERT INTO lane_pilot_deferral(id,project_id,what,kind,state,due_at,created_at,updated_at) VALUES (?,NULL,'w',?,?,?,?,?)").run(id, kind, state, dueAt, NOW, NOW);
+  const deferral = (id: string, kind: string, state: string, dueAt: number | null) => db.prepare("INSERT INTO lane_pilot_deferral(id,project_id,what,kind,state,due_at,due_source,owner_ref,created_at,updated_at) VALUES (?,NULL,'w',?,?,?,?,?,?,?)")
+    .run(id, kind, state, dueAt, dueAt ? "explicit" : null, dueAt ? "{\"threadId\":\"thr_owner\",\"seq\":1}" : null, NOW, NOW); // a date counts only as the owner's own
   deferral("d1", "skipped_test", "needs_owner_term", null); deferral("d2", "plan_decision", "needs_owner_term", null);
   deferral("d3", "gate", "overdue", NOW - HOUR); deferral("d4", "gate", "open", NOW + HOUR); deferral("d5", "memory_conflict", "needs_owner_term", null);
   db.prepare("INSERT INTO lane_pilot_memory_conflict(id,project_id,note_a,note_b,kind,subject,state,detected_at) VALUES ('mc1','proj_1','a','b','value','s','held',?)").run(NOW);

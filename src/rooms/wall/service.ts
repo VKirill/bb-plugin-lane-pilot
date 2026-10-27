@@ -159,7 +159,8 @@ export function createWall(deps: WallDeps) {
     const existing = getWall(db, key);
     if (existing?.deferralId) return existing.deferralId;
     const id = `dfr_wall_${sha(key).slice(0, 10)}`;
-    ports.deferrals.open({ id, what: `Wall in the backlog: ${subject.slice(0, 300)} (${why.slice(0, 160)}); the full analysis is in bb lane-pilot wall show ${key}`, area: "wall", projectId: projectId || null });
+    // The backlog item is the wall row (state backlog, `id` kept as its handle) and the owner's morning line below; no deferral is opened for it:
+    // a term nobody sets would turn red by itself in a list nobody reads (Fable's recheck, E8).
     insertWall(db, { key, kind: key.startsWith("class:") ? "class" : "task", subject, projectId, state: "backlog", moves: 0, now });
     updateWall(db, key, { state: "backlog", deferralId: id }, now);
     if (extra.classKey) updateClassLadder(db, extra.classKey, { stage: "backlog" }, now);

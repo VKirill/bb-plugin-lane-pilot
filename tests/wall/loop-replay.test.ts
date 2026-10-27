@@ -66,13 +66,13 @@ describe("Vampirism Fire replayed through loop_exhausted", () => {
     expect(state.readerCalls.filter((who) => who === "hunter")).toHaveLength(3 * walls.length);
     expect(state.readerCalls.filter((who) => who === "analysis")).toHaveLength(walls.length);
     expect(h.db.prepare("SELECT state FROM lane_pilot_wall WHERE wall_key LIKE 'loop:topic:%'").all()).toEqual(walls.map(() => ({ state: "backlog" })));
-    expect(state.deferrals.size).toBe(walls.length);
+    expect(state.deferrals.size).toBe(0);
     const items = h.db.prepare("SELECT key, source, kind, wake FROM lane_pilot_owner_item").all() as Array<{ key: string; source: string; kind: string; wake: number }>;
     expect(items).toHaveLength(walls.length);
     for (const item of items) expect(item).toMatchObject({ source: "wall", kind: "loop_exhausted", wake: 0 });
     // Idempotent: another pass reads nothing again.
     await wall.advance(clock.now + 1000);
     expect(state.readerCalls).toHaveLength(4 * walls.length);
-    expect(state.deferrals.size).toBe(walls.length);
+    expect(state.deferrals.size).toBe(0);
   });
 });
