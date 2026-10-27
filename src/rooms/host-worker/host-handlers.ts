@@ -80,6 +80,9 @@ export const gitIntegrate: ExperimentalHostRpcHandlers<typeof hostContract>["git
     replayCheck:input.replayChecks?()=>runReplayChecks(input.requestedHostId,input.replayChecks!):undefined}),
 });
 
+/** The host has no sandbox backend (or refuses to launch one): every replay check would fail the same way. */
+const NO_SANDBOX=/sandbox_backend_unavailable|no sandbox backend|Seatbelt launch was denied|bubblewrap (?:is )?(?:not found|unavailable)/i;
+
 /**
  * The task's checks in the sandbox, in the attempt's worktree, while the integration holds the base checkout. The first red
  * one (twice red: a flaky one passes the second time) ends it. A check that could not run (no sandbox backend, a folder gone, the
@@ -98,6 +101,9 @@ async function runReplayChecks(requestedHostId:string,checks:NonNullable<Paramet
     const row=(result:Ran,why?:string):ReplayCheck=>({command:check.command,exitCode:result.exitCode||1,stdout:result.stdout,stderr:why?`${why}\n${result.stderr}`:result.stderr});
     const red=(result:Ran,why?:string):ReplayCheckOutcome=>({ok:false,failed:[row(result,why)]});
     const first=await attempt();
+    // No sandbox on this host at all: no check of any task can ever run here, so holding merges would stop every task of the project.
+    // The merge goes on as before 0.1.337 and the post-merge check on main runs it; only a check that could run and did not is held.
+    if(first.threw&&NO_SANDBOX.test(first.stderr)) { console.warn(`lane-pilot: no sandbox for the replay check, the merge goes on and main's check runs it: ${check.command}`); continue; }
     const readFirst=readCheckRun(first,{command:check.command});
     if(readFirst.verdict==="pass") continue;
     if(readFirst.verdict==="not_run") return red(first,`check failed: ${readFirst.reason}`);

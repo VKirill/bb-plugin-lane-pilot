@@ -111,11 +111,15 @@ describe("gitIntegrate with replayChecks (the host runs the task's checks in the
     expect(sandbox.run).toHaveBeenCalledTimes(1);
   });
 
-  it("no sandbox for the check is not a pass either: not run, the merge waits", async () => {
+  it("a host with no sandbox at all does not hold every merge: it goes on and main's own check runs it", async () => {
     sandbox.run.mockRejectedValue(new Error("sandbox_backend_unavailable: Seatbelt launch was denied by the host"));
+    expect(await integrate()).toMatchObject({ status: "merged" });
+  });
+
+  it("a check that could run but threw for another reason is not a pass: not run, the merge waits", async () => {
+    sandbox.run.mockRejectedValue(new Error("worktree vanished: ENOENT /w"));
     const res = await integrate();
     expect(res).toMatchObject({ status: "conflict", reason: expect.stringContaining("environment: ") });
-    expect(JSON.stringify(res.checks)).toContain("sandbox_backend_unavailable");
   });
 
   // Astra's recheck of 0.1.336 (P1): the first real red must not be erased by a re-run the machine killed.
