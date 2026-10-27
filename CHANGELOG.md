@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.348
+
+**The specialist rule of 0.1.347 now catches the real role.** The specialist graph names its step's role `specialist:<id>` (`specialist:copy-lead`), and the exemption compared it with the table row `specialist`, so a specialist could still be moved to GPT and refused with 409. It now reads the role's table row; the test covers the `specialist:<id>` form.
+
 ## 0.1.347
 
 **A phase issues pieces the planner left bare.** A piece without `project_cwd` or `objective` failed task-v2 at issue, and the PM had to return the phase to planning and add them by hand (live, a bot phase, 2026-10-27). The machine fills them: the PM's checkout and the piece's own promise.

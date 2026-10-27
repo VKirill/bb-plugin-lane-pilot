@@ -238,7 +238,8 @@ describe("a provider's nearly spent limit moves the helpers to the other family"
 
   it("a specialist and the workflow architect stay on Claude Code with Claude spent: their profile needs it (409 otherwise, live 2026-10-27)", async () => {
     const usage = await usageOf({ "claude-code": 97, codex: 20 });
-    for (const role of ["specialist", "workflow-architect"]) {
+    // The specialist graph names its node `specialist:<id>`: the rule must catch that form, not only the table row (it missed it at first).
+    for (const role of ["specialist", "specialist:copy-lead", "specialist:video-lead", "workflow-architect"]) {
       const got = resolveSpawnModel({ role, ...base, usage });
       expect(got.providerId, role).toBe("claude-code");
       expect(got.issues.some((issue) => issue.startsWith("usage_moved")), role).toBe(false);
