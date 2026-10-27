@@ -3,6 +3,7 @@ import {
   GENESIS, acceptanceLines, blindVerdict, brokenLink, contextSignature, designDecision, designGate, discussionGate, executionGate, issuable, lessonsNeeded,
   nextAction, partHash, planGate, planSignature, staleAfterReturn, waveProblems, type BookPart, type Phase, type PhaseRecord, type PlanItem, type TaskFact,
 } from "../src/rooms/phase";
+import { provenPieces } from "../src/rooms/phase/logic";
 
 const piece = (id: string, wave: number, extra: Record<string, unknown> = {}): PlanItem => ({
   id, title: id, wave, promise: { given: "an empty cell", when: "the sum runs", then: "it skips the cell" },
@@ -106,6 +107,24 @@ describe("execution and verification", () => {
     const items = [piece("a", 1), piece("b", 1, { acceptance: ["the note names the cause"], kind: "research" }), piece("c", 1, { acceptance: ["the doc lists the flags"], kind: "docs" })];
     expect(blindVerdict(items, noCode, { state: "passed", headSha: "h" }, 1).state).toBe("passed");
     expect(blindVerdict(items, noCode, { state: "skipped" }, 1).state).toBe("passed");
+  });
+
+  // Astra's recheck 0.1.336 §1: an accepted piece with no receipt at all is not proved, and a code critic's block is no proof.
+  it("does not call a piece proved on a missing receipt or against a blocking code critic, and keeps the exemptions", () => {
+    const code = [piece("a", 1, { acceptance: ["the sum skips an empty cell"], kind: "fix" })];
+    const none = facts([["a", { planFact: null, verification: null }]]);
+    const verdict = blindVerdict(code, none, { state: "passed", headSha: "h" }, 1);
+    expect(verdict.state).toBe("failed");
+    expect(verdict.detail).toContain("plan-fact left no receipt");
+    expect(verdict.detail).toContain("checks left no receipt");
+    expect(provenPieces(code, none).proven).toEqual([]);
+    expect(provenPieces(code, facts([["a", {}]])).proven.map((item) => item.id)).toEqual(["a"]);
+    const blocked = facts([["a", { codeCritique: "blocked" }]]);
+    expect(blindVerdict(code, blocked, { state: "passed", headSha: "h" }, 1).detail).toContain("the code critic blocks it");
+    expect(provenPieces(code, blocked).unproven).toEqual([expect.objectContaining({ why: expect.stringContaining("the code critic blocks it") })]);
+    // Nothing to cite: no acceptance items, no checks, or a docs/research piece keep passing without a receipt.
+    const bare = [{ id: "p1" }, piece("p2", 1, { acceptance: ["the note names the cause"], kind: "research", verification: [] })] as unknown as PlanItem[];
+    expect(provenPieces(bare, facts([["p1", { planFact: null, verification: null }], ["p2", { planFact: null, verification: null }]])).proven).toHaveLength(2);
   });
 
   it("does not count a skipped plan-fact as a proved promise in the acceptance lines", () => {

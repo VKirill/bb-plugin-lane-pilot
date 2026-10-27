@@ -786,15 +786,18 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
 
   /**
    * The machine's one outcome when a loop of tries is spent (`loop_exhausted`, src/rooms/wall; Maslov: «at the ceiling: escalation, scope cut
-   * or stop»). The scope is cut to what is proven: the pieces that are not proved are withdrawn with their reasons (scope_withdrawn) and the
-   * phase closes on the proved ones, or stops when nothing is proved. Then the wall takes the subject: three read-only hunters, the backlog
-   * item with the analysis and the next step, one line on the owner's morning list, one notice to the PM. Nothing is handed back to the PM.
+   * or stop»). The phase always STOPS, partial: the pieces that are proved stay accepted (their work is merged), the pieces that are not are
+   * withdrawn with their reasons (scope_withdrawn), and the acceptance lines that do not hold are listed as the unmet obligations. `closed`
+   * as a successful end is the normal acceptance path alone (acceptanceLines, the same predicate): a spent budget proves nothing. Then the
+   * wall takes the subject: three read-only hunters, the backlog item with the analysis and the next step, one line on the owner's morning
+   * list. Nothing is handed back to the PM.
    */
   async function exhaust(phase0: Phase, input: { kind: "stage" | "replan"; stage: string; why: string }): Promise<void> {
     const phase = mustGet(phase0.id);
     const plan = phase.record.plan;
     const issued = phase.record.execution?.issued ?? {};
-    const { proven, unproven } = provenPieces(plan?.items ?? [], facts(phase), phase.record.waveReview ? phase.record.execution?.waves ?? {} : undefined);
+    const f = facts(phase);
+    const { proven, unproven } = provenPieces(plan?.items ?? [], f, phase.record.waveReview ? phase.record.execution?.waves ?? {} : undefined);
     const canceled: string[] = [];
     for (const { item } of unproven) {
       const family = issued[item.id] ? taskFamily(issued[item.id]!) : null;
@@ -804,22 +807,20 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       }
     }
     const verdict = phase.record.verification?.model?.state === "unmet" ? `the goal audit: ${phase.record.verification.model.summary}` : phase.record.verification?.verdict?.state === "failed" ? `the verification: ${phase.record.verification.verdict.detail}` : "";
+    // The obligations the acceptance does not hold: the same lines the normal path reads (the owner's word is not a machine obligation).
+    const lastGoal = phase.runId ? getRunGoal(db, phase.runId) : null;
+    const openDeferrals = (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_deferral WHERE project_id=? AND closed_at IS NULL").get(phase.projectId) as { n: number } | undefined)?.n ?? 0;
+    const unmet = acceptanceLines(phase, f, { mainSha: lastGoal?.headSha ?? null, openDeferrals, noTerm: noTermDeferralsOf(db, phase.projectId) })
+      .filter((line) => !line.ok && line.id !== "owner_word").map((line) => `${line.id}: ${line.detail}`.slice(0, 300));
     const cut = unproven.length ? `${unproven.map(({ item }) => item.id).join(", ")} withdrawn (${unproven.map(({ why }) => why).join(" | ").slice(0, 600)})` : "no piece to withdraw";
-    const outcome = proven.length ? `the phase closes on its ${proven.length} proved piece(s) (${proven.map((item) => item.id).join(", ")})` : "no piece is proved, so the phase stops (empty scope)";
-    const done = `${input.stage} ran out of tries (${input.why.slice(0, 300)}). Scope cut: ${cut}${canceled.length ? `; canceled: ${canceled.join(", ")}` : ""}${verdict ? `; not proved: ${verdict.slice(0, 500)}` : ""}; ${outcome}.`;
+    const outcome = proven.length ? `the phase stops, partial: its ${proven.length} proved piece(s) stay accepted (${proven.map((item) => item.id).join(", ")}), the goal is not met` : "no piece is proved, so the phase stops (empty scope)";
+    const done = `${input.stage} ran out of tries (${input.why.slice(0, 300)}). Scope cut: ${cut}${canceled.length ? `; canceled: ${canceled.join(", ")}` : ""}${verdict ? `; not proved: ${verdict.slice(0, 500)}` : ""}${unmet.length ? `; unmet: ${unmet.join(" | ").slice(0, 700)}` : ""}; ${outcome}.`;
     book(phase, "decisions", "scope_withdrawn", `${unproven.length ? unproven.map(({ item }) => item.id).join(", ") : "nothing"} withdrawn by Lane Pilot (loop exhausted at ${input.stage}): ${done}`.slice(0, 1800));
     const scope = { revisions: phase.record.scope?.revisions ?? 0, withdrawn: [...(phase.record.scope?.withdrawn ?? []), ...unproven.map(({ item }) => item.id)] };
-    if (proven.length) {
-      const sha = plan ? planSignature(proven, plan.contextSha) : "";
-      const record: PhaseRecord = { ...phase.record, scope, auto: undefined, closing: { by: "Lane Pilot (loop exhausted)", words: done.slice(0, 1000), at: now() },
-        lessons: { needed: false, why: "closed by the machine on what is proved; the analysis of the cut is in the backlog" },
-        ...(plan ? { plan: { ...plan, items: proven, sha, ...(plan.admittedSha ? { admittedSha: sha } : {}) } } : {}) };
-      book(phase, "decisions", "exhausted_close", outcome);
-      savePhase(db, phase.id, { stage: "closed", state: "closed", record, at: now() });
-    } else {
-      book(phase, "decisions", "exhausted_stop", outcome);
-      savePhase(db, phase.id, { state: "stopped", record: { ...phase.record, scope, auto: undefined, closing: { by: "Lane Pilot (loop exhausted)", words: done.slice(0, 1000), at: now() } }, at: now() });
-    }
+    const partial = { at: now(), kept: proven.map((item) => item.id), unproven: unproven.map(({ item, why }) => ({ id: item.id, why: why.slice(0, 300) })), unmet };
+    book(phase, "decisions", proven.length ? "exhausted_partial" : "exhausted_stop", outcome);
+    savePhase(db, phase.id, { state: "stopped", at: now(), record: { ...phase.record, scope, auto: undefined, partial, closing: { by: "Lane Pilot (loop exhausted)", words: done.slice(0, 1000), at: now() },
+      lessons: { needed: true, why: "the loop ran out of tries; the phase stopped without its goal met, the analysis of the cut is in the backlog" } } });
     await services.wall?.loopExhausted({
       kind: input.kind, id: `${phase.id}:${input.stage}`, title: `phase ${phase.id} «${phase.title}»: the ${input.stage} loop ran out of tries`, projectId: phase.projectId, runId: phase.runId,
       taskIds: Object.values(issued), facts: [`goal: ${phase.goal}`, `why the loop ended: ${input.why}`, `what the machine did: ${done}`, ...(verdict ? [verdict] : [])],

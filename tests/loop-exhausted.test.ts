@@ -96,6 +96,9 @@ describe("a stage whose workflow failed twice", () => {
 });
 
 describe("a verification that failed after the machine's replans", () => {
+  const receipt = (w: ReturnType<typeof world>, taskId: string, stageId: string, state: string) =>
+    w.db.prepare("INSERT INTO lane_pilot_stage_receipt (run_id,task_id,stage_id,contract_version,state,input_sha256,attempt,updated_at) VALUES ('run1',?,?,1,?,'in',0,1)").run(taskId, stageId, state);
+
   function failedPhase(w: ReturnType<typeof world>, phaseId: string) {
     const items = [piece("a"), piece("b")];
     const sha = planSignature(items, "ctx");
@@ -104,6 +107,7 @@ describe("a verification that failed after the machine's replans", () => {
       createAttempt(w.db, { id: `att_${id}`, runId: "run1", taskId: id });
       w.db.prepare("UPDATE lane_pilot_attempt SET state=?, reason=? WHERE id=?").run(state, state === "blocked" ? "verification failed (npm test): 1 failed in b.test.ts" : null, `att_${id}`);
     }
+    receipt(w, "a", "verification", "passed");
     savePhase(w.db, phaseId, { stage: "verification", runId: "run1", at: 2, record: {
       plan: { items, contextSha: "ctx", sha, admittedSha: sha, critique: { decision: "approve", by: "critic" } },
       execution: { issued: { a: "a", b: "b" }, startedAt: 1 },
@@ -112,22 +116,27 @@ describe("a verification that failed after the machine's replans", () => {
     } as never });
   }
 
-  it("withdraws the unproved piece, closes the phase on the proved one, and ends in one backlog item and one morning line", async () => {
+  it("withdraws the unproved piece, stops the phase partial on the proved one, and ends in one backlog item and one morning line", async () => {
     const w = world();
     const phase = await w.phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Notes", goal: "a notes module" });
     failedPhase(w, phase.id);
     await w.phases.tick();
     const after = w.phases.list({ limit: 5 }).find((row) => row.id === phase.id)!;
-    expect(after).toMatchObject({ stage: "closed", state: "closed" });
-    expect(after.record.plan!.items.map((item) => item.id)).toEqual(["a"]);
+    // A spent budget proves nothing: the phase is stopped (not closed), the plan stays the admitted one, the accepted piece stays accepted.
+    expect(after).toMatchObject({ stage: "verification", state: "stopped" });
+    expect(after.record.plan!.items.map((item) => item.id)).toEqual(["a", "b"]);
+    expect(after.record.plan!.admittedSha).toBe(after.record.plan!.sha);
     expect(after.record.scope!.withdrawn).toEqual(["b"]);
+    expect(after.record.partial).toMatchObject({ kept: ["a"], unproven: [{ id: "b", why: expect.stringContaining("b not accepted") }] });
+    expect(after.record.partial!.unmet.join(" | ")).toMatch(/landed: not merged: b/);
+    expect(after.record.lessons).toMatchObject({ needed: true });
     expect(after.record.closing).toMatchObject({ by: "Lane Pilot (loop exhausted)" });
     const book = w.book(phase.id);
-    expect(book.map((part) => part.kind)).toEqual(expect.arrayContaining(["replans_spent", "scope_withdrawn", "exhausted_close"]));
+    expect(book.map((part) => part.kind)).toEqual(expect.arrayContaining(["replans_spent", "scope_withdrawn", "exhausted_partial"]));
     expect(book.find((part) => part.kind === "scope_withdrawn")!.text).toMatch(/^b withdrawn by Lane Pilot \(loop exhausted at replan\).*b not accepted/);
     expect(JSON.stringify(book)).not.toMatch(/stage is the PM's|waits for a person/);
     expect(w.state.told).toHaveLength(0);
-    expect(after.record.closing!.words).toMatch(/closes on its 1 proved piece\(s\) \(a\)/);
+    expect(after.record.closing!.words).toMatch(/stops, partial: its 1 proved piece\(s\) stay accepted \(a\)/);
     // The hunters' evidence is the attempts of the pieces that tried, with their red reasons.
     await w.wall.advance(NOW);
     expect(w.state.readerCalls.filter((who) => who === "hunter")).toHaveLength(3);
@@ -136,8 +145,43 @@ describe("a verification that failed after the machine's replans", () => {
     expect(JSON.parse(wallRow.pack_json).attempts.map((attempt: { state: string }) => attempt.state).sort()).toEqual(["accepted", "blocked"]);
     expect(w.ownerItems()).toHaveLength(1);
     expect(w.state.deferrals.size).toBe(0);
-    // The closed phase is not driven again into the same outcome.
+    // The stopped phase is not driven again into the same outcome.
     await w.phases.tick();
     expect(w.state.told).toHaveLength(0);
+    expect(w.book(phase.id).filter((part) => part.kind === "replans_spent")).toHaveLength(1);
+    expect(w.ownerItems()).toHaveLength(1);
+    // The owner can still take it on by words: resume, or close it.
+    expect(w.phases.setState({ phaseId: phase.id, state: "resume" }).state).toBe("active");
+  });
+
+  // Astra's recheck 0.1.336 §1: one accepted piece, plan-fact and checks passed, the code critic blocks, the goal audit says unmet, the replans are spent.
+  it("does not close a phase whose goal is unmet and whose critic blocks: it stops partial, with the unmet lines listed and the lessons still needed", async () => {
+    const w = world();
+    const phase = await w.phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Notes", goal: "a notes module" });
+    const item: PlanItem = { ...piece("a"), task: { ...piece("a").task!, acceptance: ["a works"], kind: "fix" } };
+    const sha = planSignature([item], "ctx");
+    createTask(w.db, { id: "a", runId: "run1", kind: "bb", contract: item.task });
+    createAttempt(w.db, { id: "att_a", runId: "run1", taskId: "a" });
+    w.db.prepare("UPDATE lane_pilot_attempt SET state='accepted' WHERE id='att_a'").run();
+    receipt(w, "a", "plan-fact", "passed");
+    receipt(w, "a", "verification", "passed");
+    receipt(w, "a", "code-critique", "blocked");
+    savePhase(w.db, phase.id, { stage: "verification", runId: "run1", at: 2, record: {
+      plan: { items: [item], contextSha: "ctx", sha, admittedSha: sha, critique: { decision: "approve", by: "critic" } },
+      execution: { issued: { a: "a" }, startedAt: 1 },
+      verification: { verdict: { state: "failed", detail: "goal audit: the goal is not met", inputSha: "x", at: 1, mainSha: null }, model: { state: "unmet", by: "lp.close", summary: "the goal is not met", at: 1 } },
+      replan: { count: 2 },
+    } as never });
+    await w.phases.tick();
+    const after = w.phases.list({ limit: 5 }).find((row) => row.id === phase.id)!;
+    expect(after).toMatchObject({ stage: "verification", state: "stopped" });
+    expect(after.record.lessons).toMatchObject({ needed: true });
+    expect(after.record.plan!.admittedSha).toBe(sha);
+    expect(after.record.partial!.unproven).toEqual([expect.objectContaining({ id: "a", why: expect.stringContaining("the code critic blocks it") })]);
+    const unmet = after.record.partial!.unmet.join(" | ");
+    expect(unmet).toMatch(/goal_met: .*the goal is not met/);
+    expect(unmet).toMatch(/independent_check: the code critic blocks: a/);
+    expect(w.book(phase.id).map((part) => part.kind)).toEqual(expect.arrayContaining(["exhausted_stop"]));
+    expect(w.book(phase.id).map((part) => part.kind)).not.toContain("exhausted_close");
   });
 });

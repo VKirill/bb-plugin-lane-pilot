@@ -105,6 +105,8 @@ export type PhaseRecord = {
   /** The book written to the project (.agents/phases/<id>/BOOK.md) up to this part. */
   bookWritten?: { seq: number; sha256: string; at: number };
   closing?: { by: string; words: string; at: number };
+  /** A spent loop of tries ended the phase stopped, not closed: the proved pieces stay accepted, the others are withdrawn, the acceptance lines that do not hold are listed. */
+  partial?: { at: number; kept: string[]; unproven: Array<{ id: string; why: string }>; unmet: string[] };
 };
 
 export type Phase = {
@@ -325,14 +327,17 @@ export const runGoalPending = (runGoal: { state: string } | null) => runGoal?.st
  * never from what the writer says. Its input hash freezes it: the same facts give the same verdict, new facts a new verdict.
  * `pending`: only the run's goal check is still running; the driver records nothing and asks again.
  */
-/** What keeps one piece from being proved: not accepted, its promise unproved against the diff, its checks red or never run. Empty when it is proved. */
+/** What keeps one piece from being proved: not accepted, its promise unproved against the diff, its checks red, never run or with no receipt, the code critic blocking. Empty when it is proved. The one predicate of the blind verdict and of a scope cut. */
 function pieceProof(item: PlanItem, fact: TaskFact | undefined): string[] {
   const problems: string[] = [];
   if (fact?.state !== "accepted") problems.push(`${item.id} not accepted`);
   if (fact?.planFact === "failed") problems.push(`${item.id}: plan-fact failed — the promise is not proved`);
   else if (fact?.planFact === "skipped" && needsPlanFact(item)) problems.push(`${item.id}: plan-fact was skipped — its acceptance items were not checked against the diff`);
+  else if (fact?.planFact !== "passed" && fact?.planFact !== "skipped" && needsPlanFact(item)) problems.push(`${item.id}: plan-fact left no receipt — its acceptance items were not checked against the diff`);
   if (fact?.verification === "failed") problems.push(`${item.id}: its checks failed`);
   else if (fact?.verification === "skipped" && needsChecks(item)) problems.push(`${item.id}: its checks were skipped — nothing ran`);
+  else if (fact?.verification !== "passed" && fact?.verification !== "skipped" && needsChecks(item)) problems.push(`${item.id}: its checks left no receipt — nothing is known to have run`);
+  if (fact?.codeCritique === "blocked") problems.push(`${item.id}: the code critic blocks it`);
   return problems;
 }
 
