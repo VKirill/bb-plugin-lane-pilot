@@ -1,7 +1,5 @@
 import type { DocsPage } from "../../docs";
 import type { MemorySettings } from "../../memory";
-import { acceptedOnboardingEvidence } from "../../project-life";
-import type { OnboardingAcceptedEvidence, OnboardingInputPage } from "../../project-life";
 import type { ProjectLifeTaskSummary } from "../../project-life";
 export type DocsChildSnapshot = { pages:DocsPage[]; since:string; truncated:boolean; inputSha256:string; pageCap?:number; dispatchInput?:unknown };
 
@@ -48,38 +46,6 @@ export function spawnRefused(reason:string): boolean {
   return /^HTTP 4\d\d\b/.test(reason);
 }
 
-export type OnboardingChildSnapshot = {
-  pages:OnboardingInputPage[]; inputBytes:number; inputPageCount:number; availablePageCount:number;
-  acceptanceSha256:string; agent:string; depth:"fast"|"deep"; dispatchInput?:unknown;
-  acceptedEvidence?:OnboardingAcceptedEvidence;
-};
-
-export function onboardingAcceptedEvidenceFromUnknown(value:unknown): OnboardingAcceptedEvidence|undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const row = value as Record<string, unknown>;
-  if (!Array.isArray(row.ownsPaths) || !Array.isArray(row.produced) || !Array.isArray(row.verification)) return undefined;
-  return acceptedOnboardingEvidence({
-    outputSha256:typeof row.outputSha256 === "string" ? row.outputSha256 : null,
-    result:row,
-  });
-}
-
-export function onboardingChildSnapshot(result:unknown): OnboardingChildSnapshot|null {
-  const snapshot = childResultObject(result).snapshot;
-  if (!snapshot || typeof snapshot !== "object") return null;
-  const row = snapshot as Record<string, unknown>;
-  if (!Array.isArray(row.pages) || typeof row.inputBytes !== "number" || typeof row.inputPageCount !== "number"
-    || typeof row.availablePageCount !== "number" || typeof row.acceptanceSha256 !== "string"
-    || typeof row.agent !== "string" || (row.depth !== "fast" && row.depth !== "deep")) return null;
-  const acceptedEvidence=onboardingAcceptedEvidenceFromUnknown(row.acceptedEvidence);
-  return {
-    pages:row.pages as OnboardingInputPage[], inputBytes:row.inputBytes, inputPageCount:row.inputPageCount,
-    availablePageCount:row.availablePageCount, acceptanceSha256:row.acceptanceSha256, agent:row.agent, depth:row.depth,
-    ...(row.dispatchInput !== undefined ? { dispatchInput:row.dispatchInput } : {}),
-    ...(acceptedEvidence ? { acceptedEvidence } : {}),
-  };
-}
-
 export type MemoryChildSnapshot = { acceptanceSha256:string; settings:MemorySettings; agent:string; dispatchInput?:unknown };
 
 export function memoryChildSnapshot(result:unknown): MemoryChildSnapshot|null {
@@ -106,19 +72,6 @@ export function projectLifeChildSnapshot(result:unknown): ProjectLifeChildSnapsh
   return {
     coveredTaskIds:row.coveredTaskIds as string[], tasks:row.tasks as ProjectLifeTaskSummary[],
     baseHeadSha:typeof row.baseHeadSha === "string" ? row.baseHeadSha : null, agent:row.agent,
-    ...(row.dispatchInput !== undefined ? { dispatchInput:row.dispatchInput } : {}),
-  };
-}
-
-export type NightChildSnapshot = { acceptanceSha256:string; agent:string; dispatchInput?:unknown };
-
-export function nightChildSnapshot(result:unknown): NightChildSnapshot|null {
-  const snapshot = childResultObject(result).snapshot;
-  if (!snapshot || typeof snapshot !== "object") return null;
-  const row = snapshot as Record<string, unknown>;
-  if (typeof row.acceptanceSha256 !== "string" || typeof row.agent !== "string") return null;
-  return {
-    acceptanceSha256:row.acceptanceSha256, agent:row.agent,
     ...(row.dispatchInput !== undefined ? { dispatchInput:row.dispatchInput } : {}),
   };
 }

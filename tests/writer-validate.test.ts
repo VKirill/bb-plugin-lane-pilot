@@ -665,11 +665,8 @@ describe("BB writer validation on the server path", () => {
     createRun(db, "run-invalid-provider", projectId, "cli");
     setRunThread(db, "run-invalid-provider", pmThreadId);
     await plugin(bb);
-    const result = JSON.parse(String(await harness.behavior.callAgentTool(
-      "lane_pilot_dispatch_cli",
-      { confirm: true, binary: "run-controller", subcommand: "run" },
-      { threadId: pmThreadId, projectId },
-    )));
+    // The dispatch is a CLI command now (`bb lane-pilot dispatch-cli`): the PM tool is gone.
+    const result = JSON.parse((await harness.behavior.runCli(["dispatch-cli", projectId, pmThreadId, "run-controller", "run"])).stdout);
     expect(result.status).toBe("blocked");
     expect(result.applied).not.toContain("writer.provider");
     expect(result.argv).not.toContain("--provider");
@@ -696,11 +693,8 @@ describe("BB writer validation on the server path", () => {
     createRun(db, "run-invalid-pair", projectId, "cli");
     setRunThread(db, "run-invalid-pair", pmThreadId);
     await plugin(bb);
-    const result = JSON.parse(String(await harness.behavior.callAgentTool(
-      "lane_pilot_dispatch_cli",
-      { confirm: true, binary: "run-controller", subcommand: "run" },
-      { threadId: pmThreadId, projectId },
-    )));
+    // The dispatch is a CLI command now (`bb lane-pilot dispatch-cli`): the PM tool is gone.
+    const result = JSON.parse((await harness.behavior.runCli(["dispatch-cli", projectId, pmThreadId, "run-controller", "run"])).stdout);
     expect(result.status).toBe("blocked");
     expect(result.argv).not.toContain("--reasoning-effort");
     expect(result.applied).not.toContain("writer.reasoning_effort");
@@ -1161,11 +1155,7 @@ describe("BB writer validation on the server path", () => {
     createRun(db, "run-cli", projectId, "cli");
     setRunThread(db, "run-cli", pmThreadId);
     await plugin(bb);
-    const result = JSON.parse(String(await harness.behavior.callAgentTool(
-      "lane_pilot_dispatch_cli",
-      { confirm:true, binary:"lane-ctl", subcommand:"status", taskId:"001" },
-      { threadId:pmThreadId, projectId },
-    )));
+    const result = JSON.parse((await harness.behavior.runCli(["dispatch-cli", projectId, pmThreadId, "lane-ctl", "status", "", "001"])).stdout);
     expect(result.status).toBe("blocked");
     expect(result.taskAccepted).toBe(false);
     expect(result.upstreamStatus).toBe("failed");
@@ -1366,16 +1356,8 @@ describe("CLI receipts per run", () => {
     createRun(db, "run-b", projectId, "cli");
     setRunThread(db, "run-b", "pm-b");
     await plugin(bb);
-    await harness.behavior.callAgentTool(
-      "lane_pilot_dispatch_cli",
-      { confirm: true, binary: "run-controller", subcommand: "run" },
-      { threadId: "pm-a", projectId },
-    );
-    await harness.behavior.callAgentTool(
-      "lane_pilot_dispatch_cli",
-      { confirm: true, binary: "run-controller", subcommand: "run" },
-      { threadId: "pm-b", projectId },
-    );
+    await harness.behavior.runCli(["dispatch-cli", projectId, "pm-a", "run-controller", "run"]);
+    await harness.behavior.runCli(["dispatch-cli", projectId, "pm-b", "run-controller", "run"]);
     const screen = await harness.behavior.callRpc("get_screen", { projectId }) as {
       runs: Array<{
         id: string;

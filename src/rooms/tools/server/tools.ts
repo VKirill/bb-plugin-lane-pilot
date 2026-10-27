@@ -252,31 +252,6 @@ export function registerTools(ctx: ServerCore, services: Services) {
   });
 
   registerObservedTool(bb.agents, {
-    name:"lane_pilot_dispatch_cli",
-    description:"Dispatch a CLI writer through run-controller or lane-ctl on the project host worker.",
-    instructions:"Use only from a Lane Pilot PM thread. Do not mix with a BB writer run. Receipt lists settings that have no runtime channel.",
-    parameters:z.object({
-      confirm:z.literal(true),
-      binary:z.enum(["run-controller","lane-ctl"]).optional(),
-      subcommand:z.string().min(1).optional(),
-      taskFile:z.string().min(1).optional(),
-      taskId:z.string().min(1).optional(),
-    }).strict(),
-    execute: async (params, context) => JSON.stringify(
-      await services.dispatchCli({
-        threadId:context.threadId,
-        projectId:context.projectId,
-        binary:params.binary,
-        subcommand:params.subcommand,
-        taskFile:params.taskFile,
-        taskId:params.taskId,
-      }),
-      null,
-      2,
-    ),
-  });
-
-  registerObservedTool(bb.agents, {
     name:"lane_pilot_browser_qa",
     description:"Check an accepted task in a browser: a child thread drives the BB browser on the project's Browser QA machine (the Mac mini) and returns a verdict per case and viewport.",
     instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. runId is this PM thread's Lane Pilot run id (lprun_…; the dispatch and wait receipts carry it) and taskId the accepted task's id. envClass says what the URL is: local (localhost or a dev server), staging, preview (a per-branch deploy), production (a live site) or unknown; production and unknown need authorized=true. The check runs in a child thread that opens the BB browser on the Browser QA machine (the Mac mini), even when this chat runs elsewhere; a localhost target on another machine is opened at that machine's private VPN address. When the target is a dev server that is not running, pass its start command in devServer (e.g. npm -w @app/web run dev -- --port 5173): the check starts it in a BB terminal of its thread and closes it afterwards. Supply concrete browser-ui cases and the exact target URL; viewports are CSS widths (default 375,768,1280). Production, unknown, or stateful side-effect cases require authorized=true. Authorization follows the owner's goal, as in your instructions. A case that needs a sign-in starts with `login: NAME` (an Env Catalog entry of kind login that the owner allowed in the setting secrets.allow): the check thread then reads only that login. If the login is missing or not allowed, nothing starts and the answer says what to do (env_request for a missing one); call again afterwards. Show the owner the returned @thread link. A verdict is passed only when every case passed on every viewport.",
@@ -308,54 +283,6 @@ export function registerTools(ctx: ServerCore, services: Services) {
   });
 
   registerObservedTool(bb.agents, {
-    name:"lane_pilot_docs_maintain",
-    description:"Dispatch or poll bounded documentation maintenance and return a stage receipt or running child id.",
-    instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. First call returns running with threadId if the child is not yet terminal. Call again with the same runId and taskId; do not start another writer. Observation timeout is not a product failure. Reads and writes only markdown beneath docs/ and apps/ with per-file SHA compare-and-swap.",
-    parameters:z.object({runId:z.string().min(1),taskId:z.string().min(1),timeoutSec:z.number().int().min(1).max(240).default(60)}).strict(),
-    execute:async(params,context)=>JSON.stringify(await services.runDocsMaintenance({threadId:context.threadId,projectId:context.projectId,runId:params.runId,taskId:params.taskId,timeoutSec:params.timeoutSec}),null,2),
-  });
-
-  registerObservedTool(bb.agents, {
-    name:"lane_pilot_onboarding_preview",
-    description:"Dispatch or poll a bounded onboarding preview from an accepted task and persisted Markdown inventory; this stage does not write files.",
-    instructions:"Use only from the matching Lane Pilot PM thread after an accepted writer receipt. First call returns running with threadId if the child is not yet terminal. Call again with the same runId and taskId; do not start another child. Observation timeout is not a product failure. Show the returned summary, paths, expected hashes, and content for review. Writes are never automatic; use lane_pilot_onboarding_apply only after separate explicit confirmation and with this exact previewSha256.",
-    parameters:z.object({runId:z.string().min(1),taskId:z.string().min(1),timeoutSec:z.number().int().min(1).max(240).default(60)}).strict(),
-    execute:async(params,context)=>JSON.stringify(await services.runOnboardingPreview({threadId:context.threadId,projectId:context.projectId,runId:params.runId,taskId:params.taskId,timeoutSec:params.timeoutSec}),null,2),
-  });
-
-  registerObservedTool(bb.agents, {
-    name:"lane_pilot_onboarding_apply",
-    description:"Apply a previously reviewed onboarding preview through the task host with explicit confirmation and exact SHA compare-and-swap.",
-    instructions:"Use only from the matching Lane Pilot PM thread. Require the user to review the complete preview first, then pass confirm=true and the exact previewSha256 returned by lane_pilot_onboarding_preview. The host rejects out-of-scope paths, symlinks, stale hashes, and mismatched preview content; return its write/readback receipt verbatim.",
-    parameters:z.object({runId:z.string().min(1),taskId:z.string().min(1),previewSha256:z.string().regex(/^[a-f0-9]{64}$/),confirm:z.literal(true)}).strict(),
-    execute:async(params,context)=>JSON.stringify(await services.applyOnboardingPreview({threadId:context.threadId,projectId:context.projectId,runId:params.runId,taskId:params.taskId,previewSha256:params.previewSha256,confirm:params.confirm}),null,2),
-  });
-
-  registerObservedTool(bb.agents, {
-    name:"lane_pilot_memory_maintain",
-    description:"Dispatch or poll project memory maintenance from an accepted Lane Pilot task and return a stage receipt or running child id.",
-    instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. First call returns running with threadId if the child is not yet terminal. Call again with the same runId and taskId; do not start another child. Observation timeout is not a product failure. Memory is project-scoped; credentials are rejected; audience and aggregate token budgets are enforced from the persisted snapshot.",
-    parameters:z.object({runId:z.string().min(1),taskId:z.string().min(1),timeoutSec:z.number().int().min(1).max(240).default(60)}).strict(),
-    execute:async(params,context)=>JSON.stringify(await services.runMemoryMaintenance({threadId:context.threadId,projectId:context.projectId,runId:params.runId,taskId:params.taskId,timeoutSec:params.timeoutSec}),null,2),
-  });
-
-  registerObservedTool(bb.agents, {
-    name:"lane_pilot_night_review",
-    description:"Dispatch or poll the configured bounded night reviewer after an accepted writer receipt and persist its findings as a stage receipt or running child id.",
-    instructions:"Use only from the matching Lane Pilot PM thread and only after lane_pilot_wait_writer returned an accepted receipt. First call returns running with threadId if the child is not yet terminal. Call again with the same runId and taskId; do not start another child. Observation timeout is not a product failure. This stage is read-only: it reports bounded findings and never edits or merges. A blocking finding stops progression until a separately authorized bounded fix is verified.",
-    parameters:z.object({runId:z.string().min(1),taskId:z.string().min(1),timeoutSec:z.number().int().min(1).max(240).default(60)}).strict(),
-    execute:async(params,context)=>JSON.stringify(await services.runNightReview({threadId:context.threadId,projectId:context.projectId,runId:params.runId,taskId:params.taskId,timeoutSec:params.timeoutSec}),null,2),
-  });
-
-  registerObservedTool(bb.agents, {
-    name:"lane_pilot_night_fix",
-    description:"Apply only night-review findings inside task-owned paths, run task verification, and merge an approved managed-worktree PR only when explicitly enabled.",
-    instructions:"Use only from the matching Lane Pilot PM thread after lane_pilot_night_review reported findings. Fixes are bounded to finding paths intersecting owns_paths; verification must pass. Merge is disabled unless night_review.auto_merge is explicitly true and the managed worktree PR is open, approved, passing checks, ready, and mergeable.",
-    parameters:z.object({runId:z.string().min(1),taskId:z.string().min(1)}).strict(),
-    execute:async(params,context)=>JSON.stringify(await services.runNightFix({threadId:context.threadId,projectId:context.projectId,runId:params.runId,taskId:params.taskId}),null,2),
-  });
-
-  registerObservedTool(bb.agents, {
     name:"lane_pilot_workspace_status",
     description:"Capture the read-only status and diff of the run's BB-managed workspace and persist a bounded receipt.",
     instructions:"Use from the matching Lane Pilot PM thread after dispatch. This tool reads only the immutable run-bound managed worktree status/diff; it does not write, commit, merge, cancel, or inspect another environment.",
@@ -377,14 +304,6 @@ export function registerTools(ctx: ServerCore, services: Services) {
     instructions:"Use only from the matching Lane Pilot PM thread. Gate categories are owns-paths, validate, accept, and verification, recorded as separate append-only events; this reads Lane Pilot's own ledgers and never reads or modifies upstream ~/.agents gate logs. Choose a period from 1 to 365 days and optionally one gate category or one exact stage ID. Results contain counts and receipt hashes, not task content.",
     parameters:z.object({days:z.number().int().min(1).max(365).default(7),stageId:z.enum(["pm-read","plan-critique","specialist-review","writer-agent","verification","code-critique","acceptance-receipt","browser-qa","docs-maintenance","onboarding-preview","onboarding-apply","memory-maintenance","project-life","night-review","night-fix","workspace-status","opencode-telemetry","gate-triage"]).optional(),gate:z.enum(["owns-paths","validate","accept","verification"]).optional()}).strict(),
     execute:async(params,context)=>JSON.stringify(readGateReport(db,{projectId:context.projectId,days:params.days,stageId:params.stageId,gate:params.gate}),null,2),
-  });
-
-  registerObservedTool(bb.agents, {
-    name:"lane_pilot_gate_triage",
-    description:"Run a read-only model analysis of bounded, project-local Lane Pilot gate history and return a persisted triage receipt.",
-    instructions:"Use only from the matching active Lane Pilot PM thread and provide its current runId/taskId. This stage sees only aggregate stage IDs, states, counts, timestamps, and opaque run/task IDs. It does not read upstream ~/.agents logs or task/source content and never edits, repairs, merges, or executes commands. Set days to 1-365; optional provider/model/reasoningEffort must be available on the configured host.",
-    parameters:z.object({runId:z.string().min(1),taskId:z.string().min(1),days:z.number().int().min(1).max(365).default(7),providerId:z.string().min(1).optional(),model:z.string().min(1).optional(),reasoningEffort:z.enum(["low","medium","high","xhigh","max"]).optional()}).strict(),
-    execute:async(params,context)=>JSON.stringify(await services.runGateTriage({threadId:context.threadId,projectId:context.projectId,...params}),null,2),
   });
 
   // Modules register their tools after the core ones so the PM tool order follows NATIVE_LP_BRIDGE_TOOLS.
