@@ -1,6 +1,6 @@
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
-import { batchShapeAdvice, topicLoop, topicLoopMessage } from "../../tasks";
+import { batchShapeAdvice, topicHold, topicLoop, topicLoopMessage } from "../../tasks";
 import type { LoopTask, OpenShape } from "../../tasks";
 import { taskFamily } from "../../runs";
 import { getTask, listOpenAttempts } from "../../storage";
@@ -14,7 +14,7 @@ export function loopTaskOf(id: string, createdAt: number, contract: unknown, att
   const task = parsed.data;
   const files = [...task.owns_paths, ...task.expected_outputs];
   const commands = task.verification.map((check) => check.command);
-  return { id, createdAt, kind: task.kind, area: task.area, title: task.title, files, commands, text: [task.title, task.objective, ...files, ...commands].join(" "), attempts };
+  return { id, createdAt, kind: task.kind, area: task.area, title: task.title, objective: task.objective, files, commands, text: [task.title, task.objective, ...files, ...commands].join(" "), attempts };
 }
 
 /**
@@ -39,19 +39,19 @@ export async function topicLoopGuard(db: LanePilotDatabase, runId: string, task:
 
 /**
  * The first refusal of a topic also ends its loop: the wall (loop_exhausted) puts the big picture to three read-only hunters and writes the
- * backlog item. That hunt stands for the research task the stopper lets through (open while it runs, done after it), so tasks on the topic
- * go out again once it is done; one hunt per topic and round. Without a wall the PM is told to send the research task itself.
+ * backlog item. From then on the topic is closed to every task on it (whatever id, origin or mainfix) until an accepted fix closes the wall;
+ * the hunt ending does not reopen it, and the one new try the topic allows is a decision tied to the incident (see `topicHold`). A closed
+ * wall counts as the accepted research that ends the chase before it. Without a wall the PM is told to send the research task itself.
  */
 export async function topicLoopStop(wall: Services["wall"] | undefined, runId: string, candidate: LoopTask, earlier: readonly LoopTask[], opts: { projectId?: string; pmThreadId?: string; contract?: unknown } = {}): Promise<string | null> {
   const hunts = wall?.loopTopics(runId) ?? [];
-  const research: LoopTask[] = hunts.map((hunt) => {
-    const open = hunt.state === "stopped" || hunt.state === "hunting";
-    return { id: hunt.key, createdAt: open ? hunt.createdAt : hunt.updatedAt, kind: "research", title: hunt.topic, files: [], commands: [], text: hunt.topic, attempts: [{ state: open ? "running" : "accepted", reason: null }] };
-  });
+  const hold = topicHold(candidate, hunts, earlier);
+  if (hold) return hold.allowed ? null : hold.why;
+  const research: LoopTask[] = hunts.filter((hunt) => hunt.state === "closed").map((hunt) => ({ id: hunt.key, createdAt: hunt.updatedAt, kind: "research", title: hunt.topic, files: [], commands: [], text: hunt.topic, attempts: [{ state: "accepted", reason: null }] }));
   const found = topicLoop(candidate, [...earlier, ...research]);
   if (!found) return null;
   if (!wall || !opts.projectId) return topicLoopMessage(found);
-  let hunt = found.openAnalysis?.startsWith("loop:") ? found.openAnalysis : undefined;
+  let hunt: string | undefined;
   if (!found.openAnalysis) {
     const tried = earlier.filter((other) => found.families.includes(taskFamily(other.id)));
     hunt = (await wall.loopExhausted({

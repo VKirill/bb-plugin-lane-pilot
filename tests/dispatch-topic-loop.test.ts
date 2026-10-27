@@ -82,30 +82,60 @@ describe("dispatch: loop stopper and batch advice", () => {
     expect(taskCount()).toBe(3);
     // The machine started the hunt itself: one wall of the topic, waiting for the hunters.
     expect(loopWalls()).toEqual([expect.objectContaining({ state: "stopped", subject: expect.stringContaining("tools/runner.py") })]);
-    // The redo of a family the run has is not a new try; the research task on the whole picture is the allowed move.
-    expect(await dispatch({ id: "runner-c.2" })).toMatchObject({ taskId: "runner-c.2", state: "queued" });
+    // The topic is closed from the first refusal: the redo of an old family is the old hypothesis again. The research task on the whole picture is the allowed move.
+    expect(await dispatch({ id: "runner-c.2" })).toMatchObject({ ok: false, error: { code: "topic_loop" } });
     const research = await dispatch({ id: "why-runner", kind: "research", area: "research:runner", title: "Why tools/runner.py keeps breaking", expected_outputs: ["docs/runner-why.md"], owns_paths: ["docs/runner-why.md"] });
     expect(research.error).toBeUndefined();
     expect(research).toMatchObject({ taskId: "why-runner", state: "queued" });
-    // While that analysis is open the topic stays shut, and the message says to wait for it.
+    // An accepted research task does not reopen it either: only an accepted fix closes the wall.
     const held = await dispatch({ id: "runner-e", title: "Fix the runner once more" });
     expect(held).toMatchObject({ ok: false, error: { code: "topic_loop" } });
-    expect(String(held.hint)).toMatch(/why-runner is still open: wait for its receipt/);
+    expect(String(held.hint)).toMatch(/being read by the hunters.*closed to new tasks/s);
   });
 
-  it("the machine's hunt stands for the research: other tries wait while it runs, one hunt per topic, and the topic reopens when it is done", async () => {
+  it("keeps the topic closed after the hunt ends, whatever the id or origin, and lets one cited new try through", async () => {
     const { seed, dispatch, taskCount, loopWalls, db } = await setup();
     for (const [index, id] of ["runner-a", "runner-b", "runner-c"].entries()) seed({ id, title: `Fix the runner: ${id}` }, 10 - index, ["accepted"]);
     expect(await dispatch({ id: "runner-d", title: "Fix the runner again" })).toMatchObject({ ok: false, error: { code: "topic_loop" } });
     const held = await dispatch({ id: "runner-e", title: "Fix the runner once more" });
     expect(held).toMatchObject({ ok: false, error: { code: "topic_loop" } });
-    expect(String(held.hint)).toMatch(/hunt loop:topic:[0-9a-f]+.*Tasks on the file tools\/runner\.py go out again once the hunt is done/s);
+    expect(String(held.hint)).toMatch(/loop:topic:[0-9a-f]+\) is being read by the hunters/);
     expect(loopWalls()).toHaveLength(1);
     expect(taskCount()).toBe(3);
-    // The hunters finished (the backlog item stands): the topic counts from there, and the next task goes out and follows the finding.
-    db.prepare("UPDATE lane_pilot_wall SET state='backlog', updated_at=? WHERE wall_key LIKE 'loop:topic:%'").run(Date.now());
-    expect(await dispatch({ id: "runner-f", title: "Fix the runner per the finding" })).toMatchObject({ taskId: "runner-f", state: "queued" });
+    const [{ key }] = loopWalls();
+    // The hunt ended in the backlog (Astra's table: the same contract, the same three tries): still closed, and no second wall.
+    db.prepare("UPDATE lane_pilot_wall SET state='backlog', hunt_state='usable', updated_at=? WHERE wall_key=?").run(Date.now(), key);
+    const refused = await dispatch({ id: "runner-f", title: "Fix the runner per the finding" });
+    expect(refused).toMatchObject({ ok: false, error: { code: "topic_loop" } });
+    expect(String(refused.hint)).toContain(`incident: ${key}`);
+    expect(await dispatch({ id: "runner-c.2" })).toMatchObject({ ok: false, error: { code: "topic_loop" } });
+    // A mainfix of an old task on the topic is refused the same way.
+    expect(await dispatch({ id: "runner-b-mainfix", title: "Make main green after runner-b" })).toMatchObject({ ok: false, error: { code: "topic_loop" } });
+    expect(taskCount()).toBe(3);
     expect(loopWalls()).toHaveLength(1);
+    // One try that cites the incident, says a new cause and runs a new check goes out ...
+    const attempt = { id: "runner-g", title: "Fix the runner at the window pool", objective: `Fix the runner.\nincident: ${key}\nhypothesis: the runner leaks its window handle when the pool recycles`,
+      verification: [{ command: "python3 tools/probe_pool.py", cwd: ".", timeout_sec: 60 }] } as Partial<TaskV2>;
+    expect(await dispatch(attempt)).toMatchObject({ taskId: "runner-g", state: "queued" });
+    // ... a second one on the same incident does not, however new it is.
+    const second = await dispatch({ ...attempt, id: "runner-h", objective: `${attempt.objective}\nhypothesis: the pool recycles windows in another order`, verification: [{ command: "python3 tools/probe_order.py", cwd: ".", timeout_sec: 60 }] });
+    expect(second).toMatchObject({ ok: false, error: { code: "topic_loop" } });
+    expect(String(second.hint)).toMatch(/one new try was already made \(runner-g\)/);
+    expect(loopWalls()).toHaveLength(1);
+  });
+
+  it("gives an unknown hunt, or a day whose hunt budget ran out, no permission for a new try", async () => {
+    for (const hunt of ["unknown", "none"]) {
+      const { seed, dispatch, loopWalls, db } = await setup();
+      for (const [index, id] of ["runner-a", "runner-b", "runner-c"].entries()) seed({ id, title: `Fix the runner: ${id}` }, 10 - index, ["accepted"]);
+      await dispatch({ id: "runner-d", title: "Fix the runner again" });
+      const [{ key }] = loopWalls();
+      db.prepare("UPDATE lane_pilot_wall SET state='backlog', hunt_state=?, updated_at=? WHERE wall_key=?").run(hunt, Date.now(), key);
+      const perfect = await dispatch({ id: "runner-g", title: "Fix the runner at the window pool", objective: `incident: ${key}\nhypothesis: the runner leaks its window handle when the pool recycles`,
+        verification: [{ command: "python3 tools/probe_pool.py", cwd: ".", timeout_sec: 60 }] } as Partial<TaskV2>);
+      expect(perfect, hunt).toMatchObject({ ok: false, error: { code: "topic_loop" } });
+      expect(String(perfect.hint)).toMatch(/No new try is allowed/);
+    }
   });
 
   it("answers a task that joins a queue with the open tasks that hold it and, from three, how to cut the batch", async () => {

@@ -19,6 +19,8 @@ export interface LoopTask {
   kind?: string;
   area?: string;
   title: string;
+  /** The contract's objective: a new try on a closed topic names its incident and hypothesis there. */
+  objective?: string;
   /** owns_paths and expected_outputs. */
   files: string[];
   /** The commands of the task's verification. */
@@ -171,6 +173,9 @@ export function topicLoop(candidate: LoopTask, earlier: readonly LoopTask[]): To
   return found.reduce<TopicLoop | null>((best, loop) => (!best || loop.families.length > best.families.length ? loop : best), null);
 }
 
+/** What a new try on a closed topic must carry, in the words the PM reads in the refusal. */
+const newTryRule = (incident: string) => `A single new try is allowed only as an explicit decision tied to the incident ${incident}: its objective carries a line \`incident: ${incident}\`, a line \`hypothesis: ...\` with a cause no earlier task on the topic assumed, and its verification holds a command no earlier task on the topic used.`;
+
 /**
  * The refusal the PM reads: the topic, who already tried, and what the machine does about it. The machine ends the loop itself (the wall's
  * hunters and a backlog item, see src/rooms/wall `loopExhausted`); `hunt` is its wall key. Without it (no wall) the old way stands: one research task.
@@ -178,8 +183,74 @@ export function topicLoop(candidate: LoopTask, earlier: readonly LoopTask[]): To
 export function topicLoopMessage(found: TopicLoop, hunt?: string): string {
   const what = found.topic === "file" ? `the file ${found.key}` : `the test ${found.key}`;
   const tried = `${found.families.length} earlier tasks of this run (${found.families.slice(-5).join(", ")}${found.families.length > 5 ? ", ..." : ""}) already worked on ${what} in the last ${found.hours} h, and it is still being patched, not solved`;
-  const running = found.openAnalysis?.startsWith("loop:") ? found.openAnalysis : undefined;
-  if (running || (hunt && !found.openAnalysis)) return `topic_loop: ${tried}. A fourth try is not sent. Lane Pilot took the big picture itself: three read-only hunters read ${what} from other sides (hunt ${running ?? hunt}), and their analysis with the proposed next step lands in the backlog. Tasks on ${what} go out again once the hunt is done, and they follow its finding (bb lane-pilot wall show ${running ?? hunt}). You need not send a research task and nothing waits for the owner.`;
+  if (hunt && !found.openAnalysis) return `topic_loop: ${tried}. A fourth try is not sent. Lane Pilot took the big picture itself: three read-only hunters read ${what} from other sides (hunt ${hunt}), and their analysis with the proposed next step lands in the backlog (bb lane-pilot wall show ${hunt}). The topic stays closed however the hunt ends: no task on ${what} goes out, under any id, as a mainfix or from a workflow, until the backlog item is closed by an accepted fix. ${newTryRule(hunt)} You need not send a research task and nothing waits for the owner.`;
   if (found.openAnalysis) return `topic_loop: ${tried}. The analysis task ${found.openAnalysis} is still open: wait for its receipt (lane_pilot_wait_writer); tasks on ${what} go out again once it is accepted, and they follow its finding.`;
   return `topic_loop: ${tried}. A fourth try is not sent. Step back: dispatch ONE research task (kind research, or check) that looks at the whole picture, i.e. what each of those tasks changed, why it did not hold, and the root cause, and writes the finding to a file; name ${found.key} in it. Once it is accepted, tasks on ${what} go out again and follow its finding. This needs no owner: it is the next move for you.`;
+}
+
+/** A loop wall of a topic of the run, as the stopper reads it (the wall's `loopTopics`). */
+export interface TopicWall {
+  /** The incident id: the wall key `loop:topic:<hash>`. */
+  key: string;
+  /** The file or test the wall is about. */
+  topic: string;
+  state: "stopped" | "hunting" | "hunted" | "backlog" | "closed";
+  /** How the hunt ended: `usable`, `unknown`, or `none` when no hunt ran (the day's hunt budget was spent). */
+  hunt: string;
+}
+
+/** Whether a task is work on the topic: a fix-like task about the file, or a task whose checks name the test. Research and check tasks look at a topic, they do not patch it. */
+function touchesTopic(task: LoopTask, key: string): boolean {
+  if (ANALYSIS_KINDS.has(task.kind ?? "")) return false;
+  return (isFixLike(task) && focusFiles(task, new Set()).includes(key)) || task.commands.flatMap(testNames).includes(key);
+}
+
+const INCIDENT_LINE = /^\s*incident:\s*(\S+)/im;
+const HYPOTHESIS_LINE = /^\s*hypothesis:\s*(\S.*)$/im;
+const words = (text: string) => new Set(lower(text).split(/[^\p{L}\p{N}_.\/-]+/u).filter((word) => word.length >= 3));
+const sameWords = (a: string, b: string) => {
+  const left = words(a), right = words(b);
+  const shared = [...left].filter((word) => right.has(word)).length;
+  return shared / Math.max(1, left.size + right.size - shared) >= 0.8;
+};
+const flat = (text: string) => text.replace(/\s+/g, " ").trim();
+
+export interface TopicHold {
+  wall: TopicWall;
+  /** The task is the one new try the topic allows (or the redo or mainfix of that try): it goes on. */
+  allowed: boolean;
+  /** Why not (what the PM reads); empty when allowed. */
+  why: string;
+}
+
+/**
+ * The topic stays closed from the first refusal on: a task on the topic of a wall that is not closed is refused whatever its id, family or
+ * origin (a redo, a mainfix, a workflow's task), and the hunt ending in the backlog does not reopen it. Only an accepted fix closes the
+ * wall (the wall's `advance`). The one way through is a single new try, a machine decision tied to the incident: the objective names the
+ * wall's key, states a hypothesis that differs from the earlier tasks' and carries a check none of them used. A hunt that ended unknown,
+ * or never ran (the budget of the day), gives no permission. The try is one for the incident: a task that cites it ends the permission, and
+ * only its own family (a redo, its mainfix) goes on. null for a task not on the topic of any open wall.
+ */
+export function topicHold(candidate: LoopTask, walls: readonly TopicWall[], earlier: readonly LoopTask[]): TopicHold | null {
+  const wall = walls.find((row) => row.state !== "closed" && touchesTopic(candidate, row.topic));
+  if (!wall) return null;
+  const what = `${wall.topic} (incident ${wall.key})`;
+  const refuse = (why: string): TopicHold => ({ wall, allowed: false, why });
+  if (wall.state === "stopped" || wall.state === "hunting") return refuse(`topic_loop: ${what} is being read by the hunters, and the topic is closed to new tasks: no task on it goes out, under any id, as a mainfix or from a workflow, while the hunt runs or after it (the backlog item holds the topic until an accepted fix closes it). Work on something else. ${newTryRule(wall.key)}`);
+  const citing = earlier.filter((task) => INCIDENT_LINE.exec(task.objective ?? "")?.[1] === wall.key);
+  if (citing.some((task) => taskFamily(task.id) === taskFamily(candidate.id))) return { wall, allowed: true, why: "" };
+  const closed = `topic_loop: ${what} is in the backlog and closed to new tasks: no task on it goes out, under any id, as a mainfix or from a workflow, until an accepted fix closes the backlog item (bb lane-pilot wall show ${wall.key}).`;
+  if (wall.state !== "backlog" || wall.hunt !== "usable") return refuse(`${closed} No new try is allowed on it: ${wall.hunt === "usable" ? "the item is not in the backlog yet" : wall.hunt === "unknown" ? "every hunter ended unknown or without a citation that holds" : "no hunt ran (the hunt budget of the day was spent)"}, so there is nothing to base a changed approach on. Work on something else.`);
+  if (citing.length) return refuse(`${closed} Its one new try was already made (${citing.map((task) => task.id).join(", ")}) and it did not close the item, so no further try on this incident goes out, whatever its hypothesis.`);
+  const incident = INCIDENT_LINE.exec(candidate.objective ?? "")?.[1];
+  if (incident !== wall.key) return refuse(`${closed} ${newTryRule(wall.key)}${incident ? ` The incident line says ${incident}, not ${wall.key}.` : " This task cites no incident."}`);
+  const hypothesis = flat(HYPOTHESIS_LINE.exec(candidate.objective ?? "")?.[1] ?? "");
+  if (hypothesis.split(" ").length < 4) return refuse(`${closed} The task cites the incident but states no hypothesis: add a line \`hypothesis: ...\` of the cause this try assumes (four words at least).`);
+  const onTopic = earlier.filter((task) => touchesTopic(task, wall.topic));
+  const seen = onTopic.flatMap((task) => [task.title, HYPOTHESIS_LINE.exec(task.objective ?? "")?.[1] ?? ""]).filter(Boolean);
+  const repeated = seen.find((text) => sameWords(hypothesis, text));
+  if (repeated) return refuse(`${closed} The hypothesis repeats an earlier one on this topic («${flat(repeated).slice(0, 120)}»): state a different cause.`);
+  const used = new Set(onTopic.flatMap((task) => task.commands.map(flat)));
+  if (!candidate.commands.some((command) => !used.has(flat(command)))) return refuse(`${closed} Every check of this task was already used by an earlier task on the topic: add a verification command that tells the new hypothesis from the old ones.`);
+  return { wall, allowed: true, why: "" };
 }

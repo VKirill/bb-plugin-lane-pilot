@@ -947,7 +947,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         content:log.content, contentEncoding:"utf8", createParents:true, expectedSha256:null }).catch(() => undefined);
     }
     const sent = await services.dispatchWriter({ threadId:input.pmThreadId, projectId:input.projectId, task:fix, plan }).catch((cause:unknown) => ({ state:"rejected", reason:cause instanceof Error ? cause.message : String(cause) }));
-    await tell(`Lane Pilot: ${input.task.id} is merged, but ${confirmed.map((check) => check.command).join(", ")} fails on main with it${turnedRed.length ? ` (${turnedRed.join(", ")} passed on the base before this task)` : ""}. The work stays in main; ${String(sent.state) === "rejected" || String(sent.state) === "blocked" ? `the repair task could not start (${String((sent as { reason?:unknown }).reason ?? sent.state)}), dispatch it yourself` : `repair task ${fix.id} is on its way — no action needed`}.`);
+    await tell(`Lane Pilot: ${input.task.id} is merged, but ${confirmed.map((check) => check.command).join(", ")} fails on main with it${turnedRed.length ? ` (${turnedRed.join(", ")} passed on the base before this task)` : ""}. The work stays in main; ${String(sent.state) === "rejected" || String(sent.state) === "blocked" || (sent as { ok?:unknown }).ok === false ? `the repair task could not start (${String((sent as { reason?:unknown }).reason ?? (sent as { hint?:unknown }).hint ?? sent.state)}), dispatch it yourself` : `repair task ${fix.id} is on its way — no action needed`}.`);
   }
 
   return { finishWriterAttempt, checkMainAfterMerge, noteMergedForGate };

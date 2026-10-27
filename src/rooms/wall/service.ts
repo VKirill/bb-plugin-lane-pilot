@@ -285,6 +285,16 @@ export function createWall(deps: WallDeps) {
   /** The hunt, then the backlog item with the analysis, of every loop wall that waits for it. A spent hunt budget does not hold the item back: it says so. */
   async function advanceLoopWalls(cfg: WallConfig, now: number): Promise<string[]> {
     const notes: string[] = [];
+    // The only thing that closes a topic's backlog item: an accepted attempt of the one new try that cites the incident (its checks went green).
+    for (const wall of listWalls(db, { kind: "task", states: ["backlog"] })) {
+      const runId = (wall.pack as EvidencePack | null)?.meta?.runId;
+      if (!wall.key.startsWith(`${LOOP_PREFIX}topic:`) || !runId) continue;
+      const accepted = db.prepare("SELECT a.id FROM lane_pilot_attempt a JOIN lane_pilot_task t ON t.id=a.task_id WHERE t.run_id=? AND a.state='accepted' AND a.updated_at>? AND instr(t.contract_json, ?)>0 LIMIT 1")
+        .get(runId, wall.createdAt, wall.key) as { id: string } | undefined;
+      if (!accepted) continue;
+      updateWall(db, wall.key, { state: "closed", closedAt: now, closedBy: `accepted attempt ${accepted.id} of the new try that cites it` }, now);
+      notes.push(`closed ${wall.key} by ${accepted.id}`);
+    }
     for (const wall of listWalls(db, { kind: "task", states: ["stopped"] })) {
       const pack = wall.pack as EvidencePack | null;
       if (!wall.key.startsWith(LOOP_PREFIX) || !pack) continue;
@@ -302,10 +312,13 @@ export function createWall(deps: WallDeps) {
     return notes;
   }
 
-  /** The loop walls of a run's topics: the stopper reads them as the research that answers a topic (open while the hunt runs, done after). */
-  function loopTopics(runId: string): Array<{ key: string; topic: string; state: WallRow["state"]; createdAt: number; updatedAt: number }> {
+  /**
+   * The loop walls of a run's topics: the stopper keeps a topic closed while its wall is open (hunting or in the backlog) and counts a closed
+   * wall as the end of the chase. A backlog wall is closed by an accepted attempt of the one new try that cited it (the stopper's `topicHold`).
+   */
+  function loopTopics(runId: string): Array<{ key: string; topic: string; state: WallRow["state"]; hunt: WallRow["hunt"]; createdAt: number; updatedAt: number }> {
     return listWalls(db, { kind: "task" }).filter((wall) => wall.key.startsWith(`${LOOP_PREFIX}topic:`) && (wall.pack as EvidencePack | null)?.meta?.runId === runId)
-      .map((wall) => ({ key: wall.key, topic: (wall.pack as EvidencePack).meta?.topic ?? "", state: wall.state, createdAt: wall.createdAt, updatedAt: wall.updatedAt }));
+      .map((wall) => ({ key: wall.key, topic: (wall.pack as EvidencePack).meta?.topic ?? "", state: wall.state, hunt: wall.hunt, createdAt: wall.createdAt, updatedAt: wall.updatedAt }));
   }
 
   // ---------------------------------------------------------------- the night

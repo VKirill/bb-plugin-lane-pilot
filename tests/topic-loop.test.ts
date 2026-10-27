@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fixture from "./fixtures/vampirism-fire-run.json";
-import { TOPIC_LOOP, testNames, topicLoop, topicLoopMessage } from "../src/rooms/tasks";
-import type { LoopTask } from "../src/rooms/tasks";
+import { TOPIC_LOOP, testNames, topicHold, topicLoop, topicLoopMessage } from "../src/rooms/tasks";
+import type { LoopTask, TopicWall } from "../src/rooms/tasks";
 
 const HOUR = 3_600_000;
 /** Vampirism Fire (run lprun_18aa9a163f6d4824aa8c5572b9dec21f, 165 tasks, 74 h) as the dispatcher saw it, trimmed: see the fixture's note. */
@@ -125,5 +125,56 @@ describe("testNames", () => {
     expect(testNames("npx vitest run tests/foo.test.ts -t 'does the thing'")).toEqual(["does the thing", "tests/foo.test.ts"]);
     expect(testNames("pytest tests/test_api.py")).toEqual(["tests/test_api.py"]);
     expect(testNames("cd game && scripts/check.sh")).toEqual([]);
+  });
+});
+
+describe("topicHold: a topic whose wall is open stays closed", () => {
+  const KEY = "loop:topic:abc123def456";
+  const wall = (extra: Partial<TopicWall> = {}): TopicWall => ({ key: KEY, topic: "src/runner.py", state: "backlog", hunt: "usable", ...extra });
+  const earlier = chain(3, { commands: ["pytest tests/test_runner.py"] });
+  const fresh = (id: string, objective: string, commands = ["python3 tools/new_probe.py"], extra: Partial<LoopTask> = {}) => task(id, 5, { objective, commands, ...extra });
+  const tryText = `Fix the runner.\nincident: ${KEY}\nhypothesis: the runner leaks its window handle when the pool is recycled`;
+
+  it("refuses the same contract in every state of the wall but closed (Astra's table)", () => {
+    const same = task("t4", 5);
+    for (const state of ["stopped", "hunting", "hunted", "backlog"] as const) expect(topicHold(same, [wall({ state })], earlier), state).toMatchObject({ allowed: false, why: expect.stringContaining(KEY) });
+    expect(topicHold(same, [wall({ state: "closed" })], earlier)).toBeNull();
+    expect(topicHold(same, [], earlier)).toBeNull();
+    // Another topic, and the analysis kinds, are not held.
+    expect(topicHold(task("o", 5, { files: ["src/other.py"] }), [wall()], earlier)).toBeNull();
+    expect(topicHold(task("r", 5, { kind: "research" }), [wall()], earlier)).toBeNull();
+  });
+
+  it("holds a redo of an old family, a mainfix and a task that names the test, whatever the id", () => {
+    expect(topicHold(task("t2.2", 5), [wall()], earlier)).toMatchObject({ allowed: false });
+    expect(topicHold(task("t2-mainfix", 5), [wall()], earlier)).toMatchObject({ allowed: false });
+    expect(topicHold(task("x", 5, { kind: "feature", title: "add x", files: ["src/x.py"], commands: ["pytest tests/test_runner.py"] }), [wall({ topic: "tests/test_runner.py" })], earlier)).toMatchObject({ allowed: false });
+  });
+
+  it("lets one try through that cites the incident, states a new hypothesis and carries a check no earlier task used", () => {
+    expect(topicHold(fresh("n1", tryText), [wall()], earlier)).toMatchObject({ allowed: true });
+    // The try's own redo and mainfix are the same try; once it exists no other id gets through, however new its hypothesis.
+    const spent = [...earlier, fresh("n1", tryText)];
+    expect(topicHold(fresh("n1.2", "redo"), [wall()], spent)).toMatchObject({ allowed: true });
+    expect(topicHold(fresh("n1-mainfix", "repair main"), [wall()], spent)).toMatchObject({ allowed: true });
+    const second = topicHold(fresh("n2", `${tryText}\nhypothesis: the pool recycles windows in the wrong order`, ["python3 tools/other_probe.py"]), [wall()], spent);
+    expect(second).toMatchObject({ allowed: false, why: expect.stringMatching(/one new try was already made \(n1\)/) });
+    // The old families stay shut during and after the try.
+    expect(topicHold(task("t2.2", 5), [wall()], spent)).toMatchObject({ allowed: false });
+  });
+
+  it("names what a new try lacks: the incident, a hypothesis that differs, a check that differs", () => {
+    expect(topicHold(fresh("n1", "Fix the runner."), [wall()], earlier)!.why).toMatch(new RegExp(`line .incident: ${KEY}.*cites no incident`, "s"));
+    expect(topicHold(fresh("n1", "incident: loop:topic:other0000000"), [wall()], earlier)!.why).toMatch(/says loop:topic:other0000000, not/);
+    expect(topicHold(fresh("n1", `incident: ${KEY}`), [wall()], earlier)!.why).toMatch(/states no hypothesis/);
+    expect(topicHold(fresh("n1", `incident: ${KEY}\nhypothesis: fix t1`), [wall()], earlier)!.why).toMatch(/states no hypothesis/);
+    const repeated = [...earlier.slice(0, 2), task("t3", 3, { objective: "hypothesis: the runner leaks its window handle when the pool is recycled", commands: ["pytest tests/test_runner.py"] })];
+    expect(topicHold(fresh("n1", tryText), [wall()], repeated)!.why).toMatch(/hypothesis repeats an earlier one/);
+    expect(topicHold(fresh("n1", tryText, ["pytest   tests/test_runner.py"]), [wall()], earlier)!.why).toMatch(/Every check of this task was already used/);
+  });
+
+  it("gives no permission when the hunters ended unknown or no hunt ran, even for a perfect try", () => {
+    for (const hunt of ["unknown", "none"]) expect(topicHold(fresh("n1", tryText), [wall({ hunt })], earlier), hunt).toMatchObject({ allowed: false, why: expect.stringMatching(/No new try is allowed/) });
+    expect(topicHold(fresh("n1", tryText), [wall({ state: "hunted" })], earlier)).toMatchObject({ allowed: false });
   });
 });

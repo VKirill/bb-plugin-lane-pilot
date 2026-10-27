@@ -30,7 +30,7 @@ function replay() {
 }
 
 describe("Vampirism Fire replayed through loop_exhausted", () => {
-  it("the runner chain and the batch-suite chain each end in one backlog item, not in new tasks", async () => {
+  it("while the hunts are open, the runner chain and the batch-suite chain each stand in one wall, not in new tasks", async () => {
     const { h, wall, clock, state } = replay();
     const created: LoopTask[] = [];
     const refused: Array<{ id: string; hint: string }> = [];
@@ -53,7 +53,7 @@ describe("Vampirism Fire replayed through loop_exhausted", () => {
     expect(refused.some((row) => /last7/.test(row.id))).toBe(true);
     // Every refusal says the machine took the big picture and names its hunt; none hands the topic to the PM.
     for (const row of refused) {
-      expect(row.hint).toMatch(/Lane Pilot took the big picture itself.*hunt loop:topic:/s);
+      expect(row.hint).toMatch(/(Lane Pilot took the big picture itself.*hunt loop:topic:|incident loop:topic:[0-9a-f]+\) is being read by the hunters)/s);
       expect(row.hint).not.toMatch(/dispatch ONE research task|waits for a person|PM's/);
     }
     // No two walls for one topic (a round is a wall; the replay never reaches a second round before a hunt ends).
@@ -74,5 +74,66 @@ describe("Vampirism Fire replayed through loop_exhausted", () => {
     await wall.advance(clock.now + 1000);
     expect(state.readerCalls).toHaveLength(4 * walls.length);
     expect(state.deferrals.size).toBe(0);
+  });
+
+  /** The two topics the stopper walled in the run: the runner file and the Par028 test. */
+  const TOPICS = [
+    { subject: "game/scripts/studio_test.py", on: (task: LoopTask) => task.kind === "fix" && task.files.includes("game/scripts/studio_test.py") },
+    { subject: "par028", on: (task: LoopTask) => task.commands.some((command) => /par028/i.test(command)) },
+  ];
+
+  it("with the hunts finishing between the dispatches, no task on a walled topic goes out after its backlog item exists", async () => {
+    const { h, wall, clock, state } = replay();
+    const created: LoopTask[] = [];
+    const refused: Array<{ id: string; hint: string }> = [];
+    const backlogAt = new Map<string, number>();
+    for (const task of tasks) {
+      clock.now = task.createdAt;
+      // The hunters read the walls that stand, as the 15-minute pass does.
+      await wall.advance(clock.now);
+      for (const row of h.db.prepare("SELECT subject, state FROM lane_pilot_wall WHERE wall_key LIKE 'loop:topic:%'").all() as Array<{ subject: string; state: string }>) {
+        if (row.state === "backlog" && !backlogAt.has(row.subject)) backlogAt.set(row.subject, task.createdAt);
+      }
+      const hint = await topicLoopStop(wall, RUN, task, created, { projectId: "proj_real", pmThreadId: "thr_pm" });
+      if (hint) refused.push({ id: task.id, hint }); else created.push(task);
+    }
+    // The hunts did finish in time (the hunters said nothing that holds), and the backlog is where each topic stands.
+    const wallRows = h.db.prepare("SELECT subject, state, hunt_state FROM lane_pilot_wall WHERE wall_key LIKE 'loop:topic:%'").all() as Array<{ subject: string; state: string; hunt_state: string }>;
+    expect(wallRows).toHaveLength(TOPICS.length);
+    for (const row of wallRows) expect(row).toMatchObject({ state: "backlog", hunt_state: "unknown" });
+    expect(state.readerCalls.filter((who) => who === "hunter")).toHaveLength(3 * TOPICS.length);
+    // After a topic's backlog item exists, not one task on that topic was created, and every later try was refused with the incident named.
+    for (const topic of TOPICS) {
+      const at = [...backlogAt].find(([subject]) => subject.includes(topic.subject))?.[1];
+      expect(at, topic.subject).toBeDefined();
+      expect(created.filter((task) => topic.on(task) && task.createdAt > at!), topic.subject).toEqual([]);
+      const later = tasks.filter((task) => topic.on(task) && task.createdAt > at!);
+      expect(later.length, topic.subject).toBeGreaterThan(0);
+      for (const task of later) expect(refused.find((row) => row.id === task.id)?.hint, task.id).toMatch(/incident loop:topic:[0-9a-f]+\).*No new try is allowed/s);
+    }
+  });
+
+  it("the backlog item is closed by the accepted attempt of the one new try that cites it, and by nothing else", async () => {
+    const { h, wall, clock } = replay();
+    const created: LoopTask[] = [];
+    for (const task of tasks) {
+      clock.now = task.createdAt;
+      if (!await topicLoopStop(wall, RUN, task, created, { projectId: "proj_real", pmThreadId: "thr_pm" })) created.push(task);
+      if (h.db.prepare("SELECT 1 FROM lane_pilot_wall WHERE wall_key LIKE 'loop:topic:%'").get()) break;
+    }
+    clock.now += 3_600_000;
+    await wall.advance(clock.now);
+    const [{ wall_key: key }] = h.db.prepare("SELECT wall_key FROM lane_pilot_wall WHERE wall_key LIKE 'loop:topic:%'").all() as Array<{ wall_key: string }>;
+    const seedTry = (id: string, objective: string, attemptState: string) => {
+      h.db.prepare("INSERT INTO lane_pilot_task (id,run_id,kind,contract_json,created_at) VALUES (?,?,?,?,?)").run(id, RUN, "bb", JSON.stringify({ id, objective }), clock.now);
+      h.db.prepare("INSERT INTO lane_pilot_attempt (id,run_id,task_id,state,created_at,updated_at) VALUES (?,?,?,?,?,?)").run(`att-${id}`, RUN, id, attemptState, clock.now + 1, clock.now + 2);
+    };
+    seedTry("other-accepted", "an unrelated fix that touched the same file", "accepted");
+    seedTry("try-failed", `incident: ${key}\nhypothesis: a new cause`, "validation_failed");
+    await wall.advance(clock.now + 60_000);
+    expect(h.db.prepare("SELECT state FROM lane_pilot_wall WHERE wall_key=?").get(key)).toEqual({ state: "backlog" });
+    seedTry("try-ok", `incident: ${key}\nhypothesis: another new cause`, "accepted");
+    await wall.advance(clock.now + 120_000);
+    expect(h.db.prepare("SELECT state, closed_by FROM lane_pilot_wall WHERE wall_key=?").get(key)).toMatchObject({ state: "closed", closed_by: expect.stringContaining("att-try-ok") });
   });
 });
