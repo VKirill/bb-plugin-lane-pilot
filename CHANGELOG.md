@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.340
+
+0.1.339 (the agent dropdown) never went live: its drill ran out of disk on the Mac mini and the deploy rolled back to 0.1.338. This release carries it.
+
+**Your own agents.** «Новый агент» in the agents settings, or `bb lane-pilot agents create <json | markdown with frontmatter>`: an agent is data — prompt, skills, MCP servers, model, effort — no code change. It appears in the composer's «Агент» dropdown, can be handed work as a specialist, and can be a step of a graph (`role: "specialist:<id>"`; an unknown id fails validation). Deleting an agent clears it where a project uses it as the main agent and is refused while an active schedule uses it.
+
+**Video agent («Видео», `video-lead`).** A specialist with a real job description: load the `video-lead-playbook` skill first, brief (audience, format, length, one message), storyboard, short draft, self-review, full render, sound, captions, final checks (duration, resolution, −14 LUFS, safe areas), and proof (path, duration, loudness, a frame it looked at). Its toolchain is installed on the Mac mini and OVH and wrapped into skills: HyperFrames, FFmpeg, ManimGX, Anatomy, opus-sound-layer + librosa (`video-sound`), mlx-whisper + parakeet-mlx (`video-transcribe`, Mac only), claude-video.
+
+**Specialists on a schedule, as a graph.** A schedule task of kind «Агент» runs the chosen specialist through the new built-in graph `agent-routine`: the agent gets its standing instruction, the outcomes of its last runs and the project memory, decides, and ends with a typed outcome. One line goes to the owner's morning list (a push when it is urgent); a code change it proposes goes to Lane Pilot's intake (small → issue-quick, batch → issue-batch, large → phase) once — never the same hand-over twice. Every specialist can create schedules from its chat.
+
+**Graphs run in projects without Lane Pilot.** A graph no longer needs an open PM chat: its helpers run as hidden threads of the project, a question to the owner becomes a line in the morning list with a push (answer with `bb lane-pilot workflow-answer`), and the end report goes there too. Steps that build code stop with `needs_lane_pilot`.
+
+**Switch the agent of an open chat.** The Lane Pilot switch and the agent dropdown are now in existing chats too; the change applies from the next message (the session is restarted on the new profile). Turning Lane Pilot on makes the chat a PM chat bound to the project's run; off closes that and makes it plain again.
+
+**GPT-6.1 Terra** (released 2026-10-26, $1/$5) joins the writers Jev picks from, as a standard-tier model for well-specified mid-size work.
+
 ## 0.1.339
 
 **The agent is picked from a dropdown again.** 0.1.338 listed the specialists as a column of rows under the Lane Pilot switch; the owner found the old dropdown handier. The «Агент» field is a dropdown now («Без агента» and the specialists); the Lane Pilot switch above it is unchanged.
