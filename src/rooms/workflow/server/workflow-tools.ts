@@ -87,7 +87,7 @@ export async function routeTool(deps: WorkflowToolDeps, params: { intent: string
     ...(decision.questions.length ? { questions: decision.questions } : {}),
     ...(decision.warnings.length ? { warnings: decision.warnings } : {}),
     candidates: decision.candidates.map((candidate) => ({ id: candidate.id, name: candidate.name, score: candidate.score, rules: candidate.rules, ...(candidate.liveTrial ? { notYetRunLive: true } : {}), ...(candidate.stat !== undefined ? { runRecord: candidate.stat } : {}) })),
-    next: noWorkflow ? "No published workflow fits or exists here: work the usual way (lane_pilot_dispatch_writer, specialists, errands)."
+    next: noWorkflow ? "No published workflow fits or exists here. A web search or research with sources: start `web-research` (inputs: question; depth quick, standard or deep) with lane_pilot_run_workflow, not a bare tavily specialist (pass liveTrial: true if it answers that it is still only tested and the owner agrees). Anything else: work the usual way (lane_pilot_dispatch_writer, specialists, errands)."
       : decision.stateContinue ? "«Continue» is no workflow: read the run state (lane_pilot_run_health) and propose the next step from it; never guess."
       : decision.decision === "route" ? (decision.liveTrial ? ROUTE_NEXT_LIVE_TRIAL : ROUTE_NEXT_ROUTE) : ROUTE_NEXT_CLARIFY,
   }, null, 2);

@@ -47,6 +47,7 @@ import validatePhase from "../../../workflows/validate-phase.json";
 import evalReview from "../../../workflows/eval-review.json";
 import aiIntegrationPhase from "../../../workflows/ai-integration-phase.json";
 import spike from "../../../workflows/spike.json";
+import specialist from "../../../workflows/specialist.json";
 import ship from "../../../workflows/ship.json";
 import prBranch from "../../../workflows/pr-branch.json";
 import cleanup from "../../../workflows/cleanup.json";
@@ -114,6 +115,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "eval-review.json", value: evalReview },
   { name: "ai-integration-phase.json", value: aiIntegrationPhase },
   { name: "spike.json", value: spike },
+  { name: "specialist.json", value: specialist },
   { name: "ship.json", value: ship },
   { name: "pr-branch.json", value: prBranch },
   { name: "cleanup.json", value: cleanup },

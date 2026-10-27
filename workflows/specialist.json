@@ -1,0 +1,132 @@
+{
+  "id": "specialist",
+  "startedBy": "lane_pilot_specialist",
+  "name": {
+    "en": "A specialist's task",
+    "ru": "Задача специалиста"
+  },
+  "description": {
+    "en": "What the PM's lane_pilot_specialist starts: one specialist (design-lead, copy-lead, seo-specialist, tavily, video-lead, or an agent the owner created) does the task it was handed, as itself, with its own prompt, skills and MCP servers and the lines added to its role in this project. It writes only its deliverable (under .agents/, and DESIGN.md files for design-lead); its answer goes back to the PM.",
+    "ru": "То, что запускает lane_pilot_specialist у PM: один специалист (design-lead, copy-lead, seo-specialist, tavily, video-lead или агент, созданный владельцем) выполняет полученное поручение как он сам, со своим промптом, навыками и MCP-серверами и строками, добавленными к его роли в этом проекте. Пишет только свой результат (в .agents/, а design-lead ещё и файлы DESIGN.md); ответ уходит PM."
+  },
+  "not_for": [
+    "anything the owner asks for in a chat: the PM starts this graph with lane_pilot_specialist, not with lane_pilot_run_workflow"
+  ],
+  "status": "published",
+  "tags": [
+    "specialist"
+  ],
+  "triggers": [
+    "manual"
+  ],
+  "inputs": {
+    "role": {
+      "type": "string",
+      "required": true,
+      "note": "the specialist: a bundled one (design-lead, copy-lead, seo-specialist, tavily, video-lead) or an agent the owner created"
+    },
+    "task": {
+      "type": "string",
+      "required": true,
+      "note": "the whole task: goal, context, files to read, the deliverable and where to write it"
+    },
+    "title": {
+      "type": "string",
+      "default": "Specialist",
+      "note": "the title of the specialist's thread"
+    }
+  },
+  "outputs": {
+    "report": "string"
+  },
+  "budget": {
+    "max_steps": 6,
+    "max_minutes": 120,
+    "max_usd": 25
+  },
+  "nodes": [
+    {
+      "id": "brief",
+      "type": "action",
+      "action": "lp.specialist_brief",
+      "title": {
+        "en": "Write the first message",
+        "ru": "Составить первое сообщение"
+      },
+      "rule": "code: the task, what the PM's rules for this specialist forbid and the lines added to the role in this project, as one text",
+      "out": {
+        "text": "string"
+      }
+    },
+    {
+      "id": "work",
+      "type": "agent",
+      "role": "specialist:{{$inputs.role}}",
+      "title": {
+        "en": "{{$inputs.title}}",
+        "ru": "{{$inputs.title}}"
+      },
+      "prompt": "{{brief.text}}",
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "out": {
+        "report": "string"
+      },
+      "guards": {
+        "timeoutMin": 110
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "report": "work.report"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "brief"
+    },
+    {
+      "from": "brief",
+      "to": "work"
+    },
+    {
+      "from": "work",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "specialist-1",
+    "sim": {
+      "input": {
+        "role": "design-lead",
+        "task": "Mock up the mobile wizard without the captcha."
+      },
+      "stubs": {
+        "brief": {
+          "text": "The Lane Pilot PM hands you this work as design-lead."
+        },
+        "work": {
+          "report": "Mockup written to .agents/design/wizard.html"
+        }
+      },
+      "expect_path": [
+        "brief",
+        "work",
+        "done"
+      ],
+      "expect_output": {
+        "report": "Mockup written to .agents/design/wizard.html"
+      }
+    },
+    "live": "from a PM chat: lane_pilot_helpers action specialist with role design-lead and a small task, then wait_specialist; the thread is a child of the PM chat and carries the run id"
+  }
+}

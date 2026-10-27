@@ -22,7 +22,7 @@ import type { LanePilotDatabase } from "../../storage";
 import { folderEnvironment, fullAccessSpawn, hiddenPlacement, projectFolder } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { detectRepoEdits, gitRepoStatus } from "../../verification/server";
-import { SPECIALIST_ROLES } from "../../critique/server";
+import { SPECIALIST_GRAPH, SPECIALIST_ROLES, rememberSpecialistThread } from "../../critique/server";
 import { findThreadsByMetadata, keyedSpawnSupported } from "../../core/server";
 import { modelCatalogOf, pmHostOf } from "../../core/server";
 import { offeredOnHost } from "@lane-pilot/models";
@@ -69,7 +69,9 @@ function routineModel(inputs: Record<string, unknown>): Pick<HelperRequest, "mod
 export function roleSpec(role: string): RoleSpec {
   const specialist = role.startsWith("specialist:") ? role.slice("specialist:".length) : null;
   if (specialist && (isBundledSpecialist(specialist) || (MAIN_AGENT_ID.test(specialist) && isCustomAgentId(specialist)))) {
-    return { helper: `specialist:${specialist}` as HelperRole, metadata: "specialist", specialist, readOnly: false, editable: (file) => BASE_ALLOWED(file) || file === ".agents" || file.startsWith(".agents/") };
+    // design-lead keeps the design canon: DESIGN.md at the root and in an app's docs (the specialist's own prompt says the same).
+    const designCanon = (file: string) => specialist === "design-lead" && (file === "DESIGN.md" || file.endsWith("/DESIGN.md"));
+    return { helper: `specialist:${specialist}` as HelperRole, metadata: "specialist", specialist, readOnly: false, editable: (file) => BASE_ALLOWED(file) || file === ".agents" || file.startsWith(".agents/") || designCanon(file) };
   }
   const helper = ROLE_MAP[role] ?? "analyst";
   if (helper === "project-life") return { helper, metadata: "project-life", readOnly: false, editable: (file) => BASE_ALLOWED(file) || file.startsWith(".agents/") || file === "CHANGELOG.md" };
@@ -200,7 +202,7 @@ export function createWorkflowAgents() {
     if (asked.role.startsWith("specialist:") && !spec.specialist) throw new HelperFailure("unknown_specialist", `"${asked.role.slice("specialist:".length)}" is neither a bundled specialist nor an agent you created (bb lane-pilot agents list)`);
     // An agent the owner created runs with its own profile: its marker leads the first message, its skills and MCP servers join the session's.
     // A scheduled agent's routine runs a bundled specialist as itself too (its stored profile selection, as a chat started with it gets).
-    const own = spec.specialist && (!isBundledSpecialist(spec.specialist) || asked.workflowId === AGENT_ROUTINE) ? await ownSpecialist(rt, spec.specialist) : null;
+    const own = spec.specialist && (!isBundledSpecialist(spec.specialist) || asked.workflowId === AGENT_ROUTINE || asked.workflowId === SPECIALIST_GRAPH) ? await ownSpecialist(rt, spec.specialist) : null;
     // A phase stage writes its documents: its helper is told which folders it may write, the same ones the check below allows.
     const phaseId = spec.readOnly && isPhaseAuthor(spec.helper) ? phaseOfWorkflowRun(db, asked.workflowRunId) : null;
     const noted = phaseId ? phaseWriteNote(asked.prompt, phaseId, spec.helper) : asked.prompt;
@@ -247,6 +249,8 @@ export function createWorkflowAgents() {
       } as Parameters<typeof fullAccessSpawn>[1]);
       const id = stringAt(spawned, "id");
       if (!id) throw new HelperFailure("thread_id_missing", "the helper thread was not created");
+      // The PM asks for a specialist by its thread: the run behind it is looked up from here.
+      if (req.workflowId === SPECIALIST_GRAPH) await rememberSpecialistThread(bb, req.workflowRunId, id);
       return id;
     }
 
@@ -353,7 +357,8 @@ const intoThreadOf = (ctx: StepContext<ChainRuntime>, node: Extract<GraphNode, {
 export function stepPacket(ctx: StepContext<ChainRuntime>, node: Extract<GraphNode, { type: "agent" }>, byReference = true): PacketPlan | null {
   if (!hasContract(node)) return null;
   const intoThread = intoThreadOf(ctx, node);
-  const values = { ...(intoThread ? {} : ctx.inputs), ...ctx.input.with };
+  // A specialist run's first message (its `brief` step) already carries the task: the inputs are not repeated in the packet.
+  const values = { ...(intoThread || ctx.workflow.id === SPECIALIST_GRAPH ? {} : ctx.inputs), ...ctx.input.with };
   const inputs: PacketInput[] = Object.entries(values).map(([name, value]) => ({ name, value }));
   if (ctx.input.item !== undefined) inputs.push({ name: "item", value: ctx.input.item });
   if (ctx.input.via.handoff) inputs.push({ name: "previous_handoff", value: ctx.input.via.handoff });
@@ -373,14 +378,14 @@ export function agentRequest(ctx: StepContext<ChainRuntime>, node: Extract<Graph
   const prior = via.mode === "same-session" || via.mode === "read-prior-session" ? { mode: via.mode, threadId: via.fromThreadId ?? null } : undefined;
   const task = ctx.render(node.prompt);
   const method = roleMethod(spec.helper.startsWith("specialist:") ? "" : role);
-  const title = node.title?.en ?? node.label ?? node.id;
+  const title = ctx.render(node.title?.en ?? node.label ?? node.id);
   const intoThread = intoThreadOf(ctx, node);
   const packet = stepPacket(ctx, node, options.byReference !== false)?.packet;
   // The step's own `with` over the workflow's `$inputs`: a fragment's goal reaches its helper even where no edge or node maps it. A step that
   // continues a thread was given the workflow's inputs earlier in it.
   // The routine graph of a scheduled agent carries everything the agent needs in its first message already (its `brief` step): the inputs are not repeated.
   const routine = ctx.workflow.id === AGENT_ROUTINE;
-  const inputs = routine ? {} : { ...(intoThread ? {} : ctx.inputs), ...ctx.input.with };
+  const inputs = routine || ctx.workflow.id === SPECIALIST_GRAPH ? {} : { ...(intoThread ? {} : ctx.inputs), ...ctx.input.with };
   // K7: the first step and every third remind the helper what the whole run is for.
   const goals = ctx.reground ? goalsBlock(ctx.goals) : undefined;
   const body = intoThread

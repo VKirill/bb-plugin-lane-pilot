@@ -20,7 +20,8 @@ describe("status of the built-in chains", () => {
     for (const item of store.list()) {
       const id = item.workflow.id;
       // The body of a schedule of kind agent: its case is in tests/schedule/agent-routine.test.ts, run through the real engine.
-      if (id === "lp-task-pipeline" || id === "agent-routine") continue;
+      // The graph behind lane_pilot_specialist: its case is in tests/server/specialist-graph.test.ts, run through the real plugin.
+      if (id === "lp-task-pipeline" || id === "agent-routine" || id === "specialist") continue;
       if (!withCase.has(id)) missing.push(id);
     }
     expect(missing).toEqual([]);
@@ -45,6 +46,6 @@ describe("status of the built-in chains", () => {
     expect(ids).toEqual(expect.arrayContaining(OWN));
     expect(ids.filter((id) => store.get(id)!.workflow.internal).sort()).toEqual(["ins.post", "lp.analyze", "lp.brainstorm", "lp.build", "lp.close", "lp.draw", "lp.plan", "lp.review"]);
     expect(ids).toEqual(expect.arrayContaining(["validate-phase", "eval-review", "ai-integration-phase", "spike", "ship", "pr-branch", "cleanup", "new-milestone", "plan-review-convergence", "project-start"]));
-    expect(ids).toHaveLength(55);
+    expect(ids).toHaveLength(56);
   });
 });
