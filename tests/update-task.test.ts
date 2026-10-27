@@ -70,6 +70,8 @@ describe("lane_pilot_update_task", () => {
   async function dispatched(ctx: ServerCore, services: Services, task: TaskV2 = baseTask, config = loadPrototypeConfig(db, projectId)!) {
     const engine = new WorkflowEngine({ db, harnessVersion: "1.0.0", resolveWorkflow: (id, version) => builtinWorkflow(id, version) });
     registerDispatchExecutors(engine);
+    // The pipeline's browser-check gate (registered by the qa room in the plugin): these tasks have no qa_url, so it never runs a check.
+    engine.register("lp.qa-gate", { reentrant: true, run: async () => ({ output: { run: false } }) });
     const started: string[] = [];
     Object.assign(services, { workflowEngine: engine, isLiveFolder: async () => false, startWriterTask: (input: { task: TaskV2 }) => { started.push(input.task.title); } });
     const mutable = ctx as unknown as { host?: unknown; refreshRun?: unknown };
