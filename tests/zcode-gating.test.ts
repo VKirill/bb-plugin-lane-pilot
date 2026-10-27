@@ -64,11 +64,14 @@ describe("the helpers' resolver offers ZCode only where it works", () => {
 describe("the slot: a thread Lane Pilot started on ZCode holds it until BB says it is idle", () => {
   const bbWith = (status: () => string | null) => ({ sdk: { threads: { get: vi.fn(async () => (status() ? { id: "t1", status: status() } : null)) } } }) as never;
 
-  it("is busy at the spawn, free once the thread is idle, busy again when it works again, and forgets a thread BB does not answer for after hours", async () => {
+  it("is busy once its three slots are taken, free once a thread is idle, busy again when it works again, and forgets threads BB does not answer for after hours", async () => {
     let status: string | null = "active";
     const bb = bbWith(() => status);
     expect(zcodeBusyPeek(bb)).toBe(false);
     noteZcodeThread(bb, "t1", Date.now());
+    noteZcodeThread(bb, "t2", Date.now());
+    expect(zcodeBusyPeek(bb)).toBe(false);
+    noteZcodeThread(bb, "t3", Date.now());
     expect(zcodeBusyPeek(bb)).toBe(true);
     vi.useFakeTimers();
     vi.setSystemTime(Date.now() + 10_000);
@@ -84,11 +87,12 @@ describe("the slot: a thread Lane Pilot started on ZCode holds it until BB says 
     expect(await zcodeBusy(bb, Date.now())).toBe(false);
   });
   it("is noted by fullAccessSpawn for the zcode provider only", async () => {
-    const spawn = vi.fn(async (args: { providerId: string }) => ({ id: `thread-${args.providerId}` }));
+    let spawned = 0;
+    const spawn = vi.fn(async (args: { providerId: string }) => ({ id: `thread-${args.providerId}-${++spawned}` }));
     const bb = { sdk: { threads: { spawn, get: async () => ({ status: "active" }) }, providers: { list: async () => [] } }, log: { warn: () => undefined } } as never;
     await fullAccessSpawn(bb, { providerId: "claude-code", model: "m" } as never);
     expect(zcodeBusyPeek(bb)).toBe(false);
-    await fullAccessSpawn(bb, { providerId: "zcode", model: "glm-5.3-flash" } as never);
+    for (const n of [1, 2, 3]) await fullAccessSpawn(bb, { providerId: "zcode", model: `glm-5.3-flash`, title: `z${n}` } as never);
     expect(zcodeBusyPeek(bb)).toBe(true);
   });
 });
@@ -126,10 +130,9 @@ describe("the writers: a hold on the zcode pair, whatever the usage threshold", 
     at(IN_WINDOW);
     expect(await hold("mini")).toBeNull();
     expect(await hold("ovh")).toMatchObject({ window: expect.stringContaining("only the Mac mini") });
-    noteZcodeThread(bb, "w1");
-    threads.set("w1", "active");
+    for (const id of ["w1", "w2", "w3"]) { noteZcodeThread(bb, id); threads.set(id, "active"); }
     vi.setSystemTime(IN_WINDOW + 10_000);
-    expect(await hold("mini")).toMatchObject({ window: expect.stringContaining("busy") });
+    expect(await hold("mini")).toMatchObject({ window: expect.stringContaining("slots") });
     threads.set("w1", "idle");
     vi.setSystemTime(IN_WINDOW + 20_000);
     expect(await hold("mini")).toBeNull();
@@ -138,8 +141,8 @@ describe("the writers: a hold on the zcode pair, whatever the usage threshold", 
     expect(await hold("mini", { "zcode.window": "always" })).toBeNull();
     // The helpers' resolver reads the same slot through the registered usage.
     vi.setSystemTime(IN_WINDOW + 40_000);
-    noteZcodeThread(bb, "w2");
-    threads.set("w2", "active");
+    noteZcodeThread(bb, "w1");
+    threads.set("w1", "active");
     const usage = spawnUsageOf({ bb })!;
     expect(usage.zcodeBusy?.()).toBe(true);
   });

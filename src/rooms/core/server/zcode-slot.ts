@@ -2,8 +2,8 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { stringAt } from "./values";
 
 /**
- * The one ZCode slot. The ZCode app on the Mac mini runs one task at a time (a second session waits and then fails with «ZCode is busy»),
- * so Lane Pilot does not send a task there while one of its own is running. Every thread Lane Pilot starts on the `zcode` provider is noted
+ * The ZCode slots. The ZCode app runs several tasks at once (bb-plugin-zcode 0.3.0: six overlapped without an error, each about twice as slow);
+ * the bridge allows ZCODE_MAX_PARALLEL (3 by default) and queues the rest, so Lane Pilot sends no more than ZCODE_PARALLEL of its own at once. Every thread Lane Pilot starts on the `zcode` provider is noted
  * at its spawn (`fullAccessSpawn`); whether it still works is read from BB (`active` or `starting`), so nothing has to release the slot and a
  * reload or a crash leaves no stale lock. A thread another chat of the owner runs there is not seen; the bridge's own lock queues it.
  */
@@ -49,9 +49,11 @@ function stale(bb: object, now: number): string[] {
   return ids;
 }
 
-const anyBusy = (bb: object): boolean => [...mapOf(bb).values()].some((seen) => seen.busy);
+/** How many tasks Lane Pilot keeps on ZCode at once: the bridge's default limit. */
+export const ZCODE_PARALLEL = 3;
+const anyBusy = (bb: object): boolean => [...mapOf(bb).values()].filter((seen) => seen.busy).length >= ZCODE_PARALLEL;
 
-/** Whether a Lane Pilot thread is working on ZCode, as last known; stale entries are read again in the background. Never waits, never throws. */
+/** Whether ZCode's slots are all taken by Lane Pilot threads, as last known; stale entries are read again in the background. Never waits, never throws. */
 export function zcodeBusyPeek(bb: BbPluginApi, now = Date.now()): boolean {
   try {
     for (const id of stale(bb, now)) void read(bb, id, now).catch(() => undefined);

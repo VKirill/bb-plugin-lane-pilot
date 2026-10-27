@@ -7,7 +7,7 @@ import { findProvider, type ModelCatalog } from "./model-catalog";
  *  - host: only on a machine whose provider list has `zcode` (the Mac mini); an unknown catalog counts as «no», it is not a guess;
  *  - window: GLM-5.3-Flash through ZCode is free from 15:00 to 01:00 UTC (the promo; 712k input tokens did not move the plan quota) and bills
  *    the owner's Z.ai plan outside it, so by default (`zcode.window` = `promo`) it is offered in that window only; `always` lifts the limit;
- *  - busy: one ZCode task at a time on the machine (a second session waits), so a task is not sent while one runs.
+ *  - busy: all of ZCode's parallel slots (3) are taken by Lane Pilot tasks, so another is not sent until one ends.
  */
 export const ZCODE_PROVIDER_ID = "zcode";
 export const ZCODE_WINDOW_KEY = "zcode.window";
@@ -57,7 +57,7 @@ export function zcodeBlock(input: { settings: Record<string, unknown>; catalog: 
   if (!onHost) return { code: "host", detail: "ZCode is not on this machine (only the Mac mini has it)", resetsAt: null };
   const closed = zcodeWindowBlock(input.settings, input.now);
   if (closed) return closed;
-  if (input.busy) return { code: "busy", detail: "ZCode is busy with another task (one at a time)", resetsAt: null };
+  if (input.busy) return { code: "busy", detail: "ZCode's parallel slots are all taken", resetsAt: null };
   return null;
 }
 
