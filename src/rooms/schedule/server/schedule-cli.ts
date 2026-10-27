@@ -14,6 +14,7 @@ export const SCHEDULE_USAGE = [
   "bb lane-pilot schedule resume <id>",
   "bb lane-pilot schedule run-now <id>",
   "bb lane-pilot schedule delete <id>",
+  "A named agent on a schedule: task {\"kind\":\"agent\",\"agentId\":\"seo-specialist\",\"task\":\"<standing instruction>\",\"historyRuns\":5}",
 ].join("\n");
 
 type Result = { exitCode: number; stdout: string };
@@ -53,7 +54,7 @@ export async function runScheduleCli(services: Services, args: string[]): Promis
   if (sub === "list") {
     const views = board.list({ ...(flags.get("--project") ? { projectId: flags.get("--project")! } : {}), next: 3 });
     if (json) return out({ schedules: views });
-    return out(views.length ? views.map((view) => `${view.id}  ${view.state.padEnd(6)} ${view.column.padEnd(9)} ${view.task.kind.padEnd(8)} ${view.name}  ${when(view)}  next ${time(view.nextFires[0])}`).join("\n") : "no schedules");
+    return out(views.length ? views.map((view) => `${view.id}  ${view.state.padEnd(6)} ${view.column.padEnd(9)} ${(view.task.kind === "agent" ? `agent:${view.task.agentId}` : view.task.kind).padEnd(8)} ${view.name}  ${when(view)}  next ${time(view.nextFires[0])}`).join("\n") : "no schedules");
   }
   if (sub === "show" && positional[0]) {
     const row = board.store.get(positional[0]);

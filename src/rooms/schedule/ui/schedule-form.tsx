@@ -14,7 +14,7 @@ import { WhoLine, WhoPicker, defaultSeed } from "./schedule-who";
 
 type Preview = { problems: string[]; warnings: string[]; conflicts: Array<{ name: string; machine: string; windowMinutes: number }>; nextFires: number[] };
 type Hosts = Array<{ id: string; name: string; connected: boolean }>;
-type Kind = "workflow" | "errand" | "script";
+type Kind = "workflow" | "errand" | "script" | "agent";
 
 const PRESETS = [
   ["daily", "0 9 * * *"], ["weekdays", "0 9 * * 1-5"], ["hourly", "0 * * * *"], ["monthly", "0 9 1 * *"],
@@ -44,6 +44,13 @@ export function ScheduleForm({ projectId, projects, hosts, existing, errandDefau
   const [authorized, setAuthorized] = useState(task?.kind === "errand" ? task.authorized : false);
   const [fields, setFields] = useState<ModelFields>(task?.kind === "errand" ? modelFieldsOf(task) : {});
   const [accounts, setAccounts] = useState(task?.kind === "errand" ? (task.accounts ?? []).join(", ") : "");
+  const agentTask = task?.kind === "agent" ? task : null;
+  const [agentId, setAgentId] = useState(agentTask?.agentId ?? "");
+  const [agentText, setAgentText] = useState(agentTask?.task ?? "");
+  const [agentAuthorized, setAgentAuthorized] = useState(agentTask?.authorized ?? false);
+  const [agentAccounts, setAgentAccounts] = useState((agentTask?.accounts ?? []).join(", "));
+  const [historyRuns, setHistoryRuns] = useState(String(agentTask?.historyRuns ?? 5));
+  const [agents, setAgents] = useState<Array<{ id: string; displayName: string }>>([]);
   const [hostId, setHostId] = useState(task?.kind === "script" ? task.hostId : hosts[0]?.id ?? "");
   const [command, setCommand] = useState(task?.kind === "script" ? task.command : "");
   const [cwd, setCwd] = useState(task?.kind === "script" ? task.cwd : "/tmp");
@@ -68,6 +75,16 @@ export function ScheduleForm({ projectId, projects, hosts, existing, errandDefau
     return () => { live = false; };
   }, [project, rpc, locale]);
 
+  useEffect(() => {
+    let live = true;
+    void rpc.call("schedule_agents", {}).then((result) => {
+      if (!live) return;
+      setAgents(result.agents);
+      setAgentId((current) => current || result.agents[0]?.id || "");
+    }).catch(() => { if (live) setAgents([]); });
+    return () => { live = false; };
+  }, [rpc]);
+
   const built = useMemo((): { definition: Record<string, unknown> } | { error: string } => {
     if (!project) return { error: t("schFormNeedProject") };
     let taskBody: Record<string, unknown>;
@@ -78,13 +95,16 @@ export function ScheduleForm({ projectId, projects, hosts, existing, errandDefau
       taskBody = { ...(task?.kind === "workflow" ? task : {}), kind, workflowId, inputs };
     } else if (kind === "errand") {
       taskBody = withModelFields({ ...(task?.kind === "errand" ? task : {}), kind, task: errandText, authorized, accounts: accounts.split(",").map((item) => item.trim()).filter(Boolean) } as Extract<ScheduleView["task"], { kind: "errand" }>, fields) as Record<string, unknown>;
+    } else if (kind === "agent") {
+      const runs = Number(historyRuns);
+      taskBody = { ...(task?.kind === "agent" ? task : {}), kind, agentId, task: agentText, authorized: agentAuthorized, accounts: agentAccounts.split(",").map((item) => item.trim()).filter(Boolean), historyRuns: Number.isFinite(runs) ? Math.trunc(runs) : 5 };
     } else {
       taskBody = { ...(task?.kind === "script" ? task : {}), kind, hostId, command, cwd };
     }
     const when = whenType === "cron" ? { type: "cron", cron: cron.trim(), ...(timezone.trim() ? { timezone: timezone.trim() } : {}) } : { type: "once", runAt: new Date(runAt).getTime() };
     const policies = existing ? { missed: existing.missed, missedLimit: existing.missedLimit, overlap: existing.overlap, timeoutSec: existing.timeoutSec, maxFailures: existing.maxFailures } : {};
     return { definition: { ...(existing ? { id: existing.id } : {}), projectId: project, name: name.trim(), ...(existing?.description ? { description: existing.description } : {}), task: taskBody, when, ...policies } };
-  }, [project, kind, workflowId, inputsText, errandText, authorized, accounts, fields, hostId, command, cwd, whenType, cron, timezone, runAt, name, existing, task]);
+  }, [project, kind, workflowId, inputsText, errandText, authorized, accounts, fields, agentId, agentText, agentAuthorized, agentAccounts, historyRuns, hostId, command, cwd, whenType, cron, timezone, runAt, name, existing, task]);
 
   const definition = "definition" in built ? built.definition : null;
   const definitionKey = definition ? JSON.stringify(definition) : "";
@@ -109,7 +129,7 @@ export function ScheduleForm({ projectId, projects, hosts, existing, errandDefau
 
   const problems = [...("error" in built ? [built.error] : []), ...(preview?.problems ?? [])];
   const canSave = !busy && definition !== null && name.trim().length > 0 && !(preview?.problems.length);
-  const kindItems: Kind[] = ["errand", "workflow", "script"];
+  const kindItems: Kind[] = ["errand", "agent", "workflow", "script"];
 
   return (
     <Surface testId="schedule-form">
@@ -154,6 +174,21 @@ export function ScheduleForm({ projectId, projects, hosts, existing, errandDefau
             </Field>
             <label className="flex items-center gap-2 text-sm"><Switch checked={authorized} onCheckedChange={setAuthorized} data-testid="sch-authorized" aria-label={t("schFormAuthorized")} />{t("schFormAuthorized")}</label>
             <Field label={t("schFormAccounts")} htmlFor="sch-accounts"><Input id="sch-accounts" className="h-8 font-mono text-sm" data-testid="sch-accounts" value={accounts} onChange={(event) => setAccounts(event.target.value)} /></Field>
+          </> : null}
+
+          {kind === "agent" ? <>
+            <Field label={t("schFormAgent")} htmlFor="sch-agent">
+              {agents.length === 0 && !agentId ? <p className="text-xs text-muted-foreground" data-testid="sch-agent-none">{t("schFormAgentNone")}</p> : (
+                <Select value={agentId} onValueChange={setAgentId}>
+                  <SelectTrigger id="sch-agent" className="h-8 w-full text-sm" data-testid="sch-agent"><SelectValue /></SelectTrigger>
+                  <SelectContent>{(agents.some((item) => item.id === agentId) ? agents : [...agents, { id: agentId, displayName: agentId }]).map((item) => <SelectItem key={item.id} value={item.id}>{item.displayName === item.id ? item.id : `${item.displayName} (${item.id})`}</SelectItem>)}</SelectContent>
+                </Select>
+              )}
+            </Field>
+            <Field label={t("schFormAgentText")} htmlFor="sch-agent-text"><textarea id="sch-agent-text" className={AREA} rows={4} data-testid="sch-agent-text" value={agentText} onChange={(event) => setAgentText(event.target.value)} /></Field>
+            <Field label={t("schFormHistoryRuns")} htmlFor="sch-history-runs"><Input id="sch-history-runs" type="number" min={0} max={20} className="h-8 w-24 text-sm" data-testid="sch-history-runs" value={historyRuns} onChange={(event) => setHistoryRuns(event.target.value)} /></Field>
+            <label className="flex items-center gap-2 text-sm"><Switch checked={agentAuthorized} onCheckedChange={setAgentAuthorized} data-testid="sch-agent-authorized" aria-label={t("schFormAuthorized")} />{t("schFormAuthorized")}</label>
+            <Field label={t("schFormAccounts")} htmlFor="sch-agent-accounts"><Input id="sch-agent-accounts" className="h-8 font-mono text-sm" data-testid="sch-agent-accounts" value={agentAccounts} onChange={(event) => setAgentAccounts(event.target.value)} /></Field>
           </> : null}
 
           {kind === "script" ? <>

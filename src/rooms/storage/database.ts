@@ -19,7 +19,7 @@ import { workflowOpsMigrations } from "@lane-pilot/workflow-engine";
 import { draftMigrations } from "@lane-pilot/workflow-engine";
 import { jevMigrations } from "@lane-pilot/jev";
 import { learningMigrations } from "../learning/migrations";
-import { scheduleMigrations } from "../schedule";
+import { scheduleAgentMigrations, scheduleMigrations } from "../schedule";
 import { worldMigrations } from "../world";
 import { harnessMigrations } from "../harness";
 import { deferralKindMigrations, deferralMigrations } from "../deferral";
@@ -413,6 +413,8 @@ export const migrations = [
   `ALTER TABLE lane_pilot_task ADD COLUMN birth TEXT NOT NULL DEFAULT 'pm'`,
   `ALTER TABLE lane_pilot_task ADD COLUMN held_until INTEGER`,
   `ALTER TABLE lane_pilot_task ADD COLUMN closed_words TEXT`,
+  // Schedule board: the `agent` kind (the kind CHECK of lane_pilot_schedule is rebuilt, rows and ids kept; src/rooms/schedule/store.ts). Append only.
+  ...scheduleAgentMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

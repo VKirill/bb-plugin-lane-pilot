@@ -4,7 +4,8 @@ import { parseDelay, scheduleTimeProblem } from "./time";
 
 /**
  * A scheduled task (schedule board): what to do, when, and how the scheduler treats a run that cannot go on time. The task is one
- * of three kinds: a Lane Pilot workflow, an agent errand, or a script on a chosen machine.
+ * of four kinds: a Lane Pilot workflow, an agent errand, a script on a chosen machine, or a named specialist agent that runs as itself and
+ * decides from what its earlier runs found.
  */
 const envName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/);
 
@@ -30,6 +31,27 @@ export const errandTaskSchema = z.object({
   preset: z.string().min(1).max(120).optional(),
 }).strict();
 
+export const AGENT_ID = /^[a-z][a-z0-9-]{0,63}$/;
+export const MAX_HISTORY_RUNS = 20;
+
+/** A named agent (SEO specialist, copywriter, an owner-defined one) run on a schedule as itself: its own prompt, skills and MCP servers, plus the last runs' outcomes in the first message. */
+export const agentTaskSchema = z.object({
+  kind: z.literal("agent"),
+  agentId: z.string().regex(AGENT_ID),
+  /** The standing instruction, the same at every run. */
+  task: z.string().min(10).max(20_000),
+  title: z.string().min(1).max(120).optional(),
+  /** As for an errand: false reads and reports only. */
+  authorized: z.boolean().default(false),
+  accounts: z.array(envName).max(8).default([]),
+  /** How many of the schedule's finished runs (newest first) the first message lists with their outcome; 0 shows none. */
+  historyRuns: z.number().int().min(0).max(MAX_HISTORY_RUNS).default(5),
+  /** The thread runs on Claude Code (a native profile needs it); these change its model, effort and fast mode. */
+  model: z.string().min(1).max(120).optional(),
+  reasoning: z.enum(["low", "medium", "high", "xhigh", "ultracode", "max"]).optional(),
+  serviceTier: z.enum(["default", "fast"]).optional(),
+}).strict();
+
 export const scriptTaskSchema = z.object({
   kind: z.literal("script"),
   /** The machine the script runs on (a host id of BB). */
@@ -41,7 +63,7 @@ export const scriptTaskSchema = z.object({
   maxOutputBytes: z.number().int().min(1024).max(512 * 1024).optional(),
 }).strict();
 
-export const scheduleTaskSchema = z.discriminatedUnion("kind", [workflowTaskSchema, errandTaskSchema, scriptTaskSchema]);
+export const scheduleTaskSchema = z.discriminatedUnion("kind", [workflowTaskSchema, errandTaskSchema, scriptTaskSchema, agentTaskSchema]);
 export type ScheduleTask = z.infer<typeof scheduleTaskSchema>;
 export type ScheduleKind = ScheduleTask["kind"];
 
@@ -79,7 +101,7 @@ export type ScheduleInput = z.input<typeof scheduleInputSchema>;
 export type ScheduleDefinition = z.output<typeof scheduleInputSchema>;
 
 /** A run of a workflow or an errand may take long; a script is expected to be short. */
-export const DEFAULT_TIMEOUT_SEC: Record<ScheduleKind, number> = { workflow: 3600, errand: 3600, script: 600 };
+export const DEFAULT_TIMEOUT_SEC: Record<ScheduleKind, number> = { workflow: 3600, errand: 3600, script: 600, agent: 3600 };
 /** A workflow run waiting for the owner's answer is given up after this. */
 export const WAITING_LIMIT_MS = 72 * 3_600_000;
 export const MAX_RUN_OUTPUT = 64 * 1024;

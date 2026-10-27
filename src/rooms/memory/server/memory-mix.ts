@@ -55,6 +55,18 @@ export function reviewerMemoryFor(db: LanePilotDatabase, projectId: string, runI
   }
 }
 
+/** The project's notes ranked for a task text, the way the PM tool `context` action ranks them; empty when the project's memory is off. For a scheduled agent's first message. */
+export function taskMemoryContext(db: LanePilotDatabase, projectId: string, runId: string | null, query: string): string {
+  try {
+    const chain = runId ? getRunSettingsScopes(db, runId) : undefined;
+    const settings = loadProjectSettings(db, projectId, chain);
+    const memory = parseMemorySettings(Object.fromEntries(MEMORY_SETTING_KEYS.map((key) => [key, configuredSetting(settings, key)])));
+    return memory.enabled ? pmMemoryContext(db, projectId, memory, query, chain).text : "";
+  } catch {
+    return "";
+  }
+}
+
 /** What the PM tool `lane_pilot_memory {action:"context"}` returns for a query: the project's records ranked for it, within the context budget. Also what the memory probe reads. */
 export function pmMemoryContext(db: LanePilotDatabase, projectId: string, memory: MemorySettings, query: string, chain?: readonly string[]) {
   const records = searchMemoryRecords(db, projectId, query, 100, memory.searchEngine, memory.audience, memory.personalBot, chain ? { chain } : {});

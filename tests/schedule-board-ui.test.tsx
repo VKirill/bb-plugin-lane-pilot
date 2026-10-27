@@ -304,6 +304,26 @@ describe("create forms", () => {
     await slot.findByTestId("sch-board");
   });
 
+  it("creates an agent task: the picker is fed by schedule_agents (first agent chosen), the standing instruction and the history length go into the task", async () => {
+    const slot = await mount({
+      schedule_agents: () => ({ agents: [{ id: "seo-specialist", displayName: "SEO specialist", description: "Lane Pilot SEO specialist" }, { id: "copy-lead", displayName: "Copy editor", description: "Lane Pilot copy lead" }] }),
+      schedule_upsert: () => ({ ok: true, schedule: null, problems: [], warnings: [], conflicts: [] }),
+    });
+    fireEvent.click(await slot.findByTestId("sch-create-form"));
+    await slot.findByTestId("schedule-form");
+    fireEvent.click(slot.getByTestId("sch-kind-agent"));
+    await slot.findByTestId("sch-agent");
+    expect(slot.getByTestId("sch-agent").textContent).toContain("SEO specialist");
+    fireEvent.change(slot.getByTestId("sch-name"), { target: { value: "SEO positions" } });
+    fireEvent.change(slot.getByTestId("sch-agent-text"), { target: { value: "Check the positions every Monday and decide what to improve." } });
+    fireEvent.change(slot.getByTestId("sch-history-runs"), { target: { value: "3" } });
+    await waitFor(() => expect((slot.getByTestId("sch-save") as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(slot.getByTestId("sch-save"));
+    await waitFor(() => expect(calls(slot, "schedule_upsert")).toHaveLength(1));
+    const definition = (calls(slot, "schedule_upsert")[0]!.input as { definition: Record<string, any> }).definition;
+    expect(definition).toMatchObject({ projectId: "proj_a", name: "SEO positions", task: { kind: "agent", agentId: "seo-specialist", task: "Check the positions every Monday and decide what to improve.", historyRuns: 3, authorized: false, accounts: [] } });
+  });
+
   it("does not save while the check reports a problem, and shows what the server refused", async () => {
     const slot = await mount({ schedule_preview: () => ({ ok: false, problems: ["cron has 4 fields"], warnings: [], conflicts: [], nextFires: [], timeoutSec: null }) });
     fireEvent.click(await slot.findByTestId("sch-create-form"));

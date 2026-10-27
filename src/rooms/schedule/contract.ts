@@ -18,6 +18,11 @@ export const scheduleRpcContract = {
     input: z.object({ projectId: projectId.optional(), next: nextCount.optional() }).strict(),
     output: z.object({ schedules: z.array(scheduleViewSchema), hosts: z.array(hostOptionSchema), now: z.number(), errandDefault: errandDefaultSchema }).strict(),
   },
+  /** The agents a schedule of kind `agent` can run as: id, the name the composer shows, one line about it. Internal profiles are left out. */
+  schedule_agents: {
+    input: z.object({}).strict(),
+    output: z.object({ agents: z.array(z.object({ id: z.string(), displayName: z.string(), description: z.string() }).strict()) }).strict(),
+  },
   /** One schedule with its newest runs (`runs`, default 20). */
   schedule_get: {
     input: z.object({ id: z.string().min(1), runs: z.number().int().min(0).max(200).optional(), next: nextCount.optional() }).strict(),

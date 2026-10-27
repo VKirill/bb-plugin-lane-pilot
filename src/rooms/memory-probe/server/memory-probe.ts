@@ -4,7 +4,7 @@ import { storeMemoryRecords, type MemoryKind, type MemorySettings } from "@lane-
 import { sha256Hex } from "@lane-pilot/kit";
 import { taskV2Schema, type TaskV2 } from "../../contracts";
 import { MEMORY_PATHS, pathById, type MemoryPath, type ProbeKind } from "../../memory";
-import { pmMemoryContext, reviewerMemoryFor, sessionMemoryRpc } from "../../memory/server";
+import { pmMemoryContext, reviewerMemoryFor, sessionMemoryRpc, taskMemoryContext } from "../../memory/server";
 import { stickyTurnPromptWithRules, writerBriefSegments, writerContextBlocks, writerKnowledge } from "../../writer/server";
 import { memoryUnanswered, pmResumeInstructions, pmRulesOf, pmRulesPromptBlock, ruleBudget, type MemoryUnanswered } from "../../learning";
 import { codeCritiquePrompt, codeRepairPrompt } from "../../critique";
@@ -101,6 +101,7 @@ const PROBES: Record<string, (c: Context) => Promise<Probe> | Probe> = {
     const none = pmMemoryContext(c.db, c.projectId, c.settings, GIBBERISH);
     return { delivered: pmMemoryContext(c.db, c.projectId, c.settings, c.query).text, negative: none.text, pulled: none.records.length };
   },
+  "schedule.agent": (c) => ({ delivered: taskMemoryContext(c.db, c.projectId, null, c.query), negative: taskMemoryContext(c.db, c.projectId, null, GIBBERISH) }),
   "critic.code": (c) => {
     const build = (task: TaskV2) => codeCritiquePrompt({ evidence: {} as never, task, memoryText: reviewerMemoryFor(c.db, c.projectId, null, task) });
     return { delivered: build(c.positive), negative: build(c.unrelated) };
