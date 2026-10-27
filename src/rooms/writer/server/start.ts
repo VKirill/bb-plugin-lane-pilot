@@ -1,5 +1,5 @@
 import { retryBudgetReason, spendRetryBudget } from "../retry-budget";
-import { pilotOf, runTasks } from "../../pilot";
+import { pilotOf, pilotUnderWall, runTasks } from "../../pilot";
 import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop, tokenUsageFromEvent, type RunBudget } from "@lane-pilot/resilience";
 import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
@@ -215,11 +215,17 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
      */
     const waitForDependencies = async (shouldStop?:()=>string|null): Promise<string | null> => {
       // The pilot of this task's siblings (src/rooms/pilot): waited for like a dependency, except that a canceled pilot holds no one.
-      const pilot = pilotOf(input.taskId, runTasks(db, input.runId));
+      const waveTasks = runTasks(db, input.runId);
+      const pilot = pilotOf(input.taskId, waveTasks);
+      // A blocked pilot that nothing will redo soon (its own attempts are spent, or the wall ladder holds its family or a hunt runs on its
+      // files) holds no one: the wave goes on in its own order, each task still serialised by owns_paths overlap. Only the PM's own depends_on keeps the 6-hour wait.
+      const pilotGivenUp = (dep:string) => countChargedAttempts(db, input.runId, dep) >= MAIN_ATTEMPT_LIMIT
+        || pilotUnderWall(db, input.runId, taskFamily(dep), waveTasks.find((task) => task.id === dep)?.ownsPaths ?? []);
       const deps = [...new Set([...(input.task.depends_on ?? []), ...(pilot ? [pilot] : [])].filter((dep) => dep && dep !== input.taskId))];
       let noted = "";
       const since = Date.now();
       const blockedSince = new Map<string, number>();
+      const released = new Set<string>();
       for (;;) {
         if (ctx.isDisposed()) return null;
         const stop = shouldStop?.();
@@ -235,6 +241,10 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           if (state === "blocked") {
             // The PM verified this blocked task by hand (lane_pilot_update_task satisfied:true): its dependents go on.
             if (await isTaskSatisfied(bb.storage.kv as never, input.projectId, dep)) continue;
+            if (dep === pilot && !(input.task.depends_on ?? []).includes(dep) && pilotGivenUp(dep)) {
+              if (!released.has(dep)) { released.add(dep); ctx.log(`writer ${input.taskId} goes on: its pilot ${dep} ended blocked and nothing will redo it soon`); }
+              continue;
+            }
             blockedSince.set(dep, blockedSince.get(dep) ?? Date.now());
             if (Date.now() - blockedSince.get(dep)! > DEPENDENCY_REDO_WAIT_MS) return `depends_on ${dep}: that task ended blocked and was not sent again within 6 hours`;
           } else blockedSince.delete(dep);

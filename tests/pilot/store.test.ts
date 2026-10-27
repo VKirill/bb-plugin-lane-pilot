@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
-import { pilotOf, runTasks } from "../../src/rooms/pilot";
+import { pilotOf, pilotUnderWall, runTasks } from "../../src/rooms/pilot";
 
 describe("runTasks reads the owned paths of the PM's tasks and which of them ended canceled", () => {
   const db = new Database(":memory:");
@@ -22,5 +22,23 @@ describe("runTasks reads the owned paths of the PM's tasks and which of them end
     // «old» was canceled, so the wave is a, b, c and a is its pilot; the mainfix waits for no one.
     expect(pilotOf("c", tasks)).toBe("a");
     expect(pilotOf("c-mainfix", tasks)).toBeNull();
+  });
+});
+
+describe("pilotUnderWall", () => {
+  const wallDb = new Database(":memory:");
+  wallDb.exec("CREATE TABLE lane_pilot_wall(wall_key TEXT, kind TEXT, state TEXT, pack_json TEXT)");
+  const wall = (key: string, state: string, meta: Record<string, unknown>) => wallDb.prepare("INSERT INTO lane_pilot_wall VALUES (?,?,?,?)").run(key, "task", state, JSON.stringify({ meta }));
+  wall("task:a", "stopped", { runId: "r", family: "p0" });
+  wall("loop:topic:b", "hunting", { runId: "r", topic: "scripts/gamedata/rules.py" });
+  wall("loop:topic:c", "hunted", { runId: "r", topic: "game/done.luau" });
+  wall("task:d", "stopped", { runId: "other", family: "p9" });
+
+  it("holds a family with a task wall in this run, and a pilot that owns the file of a running hunt; a finished hunt or another run's wall holds nothing", () => {
+    expect(pilotUnderWall(wallDb, "r", "p0", [])).toBe(true);
+    expect(pilotUnderWall(wallDb, "r", "p1", ["scripts/gamedata/"])).toBe(true);
+    expect(pilotUnderWall(wallDb, "r", "p1", ["game/done.luau"])).toBe(false);
+    expect(pilotUnderWall(wallDb, "r", "p9", [])).toBe(false);
+    expect(pilotUnderWall(new Database(":memory:"), "r", "p0", [])).toBe(false);
   });
 });
