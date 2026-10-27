@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { literalCoverage } from "@lane-pilot/kit";
 import { EXISTENCE_ONLY_WORDS, isExistenceOnly } from "../src/rooms/baseline/logic";
+import plugin from "../server";
 import { taskV2Schema } from "../src/rooms/contracts";
 import { GATE_CODES, gateVocabularyLines } from "../src/rooms/tasks/gate-vocabulary";
 import { INVARIANT_ITEM, INVARIANT_WORDS } from "../src/rooms/tasks/plan-fact";
@@ -54,5 +56,19 @@ describe("the judged agents are told every gate word", () => {
   it("the block is short enough to ride in every brief", () => {
     expect(gateVocabularyLines().join("\n").length).toBeLessThan(2600);
     expect(gateVocabularyLines("writer").join("\n").length).toBeLessThan(1100);
+  });
+});
+
+describe("the PM, who writes the contracts of ordinary runs, reads the gate words before it dispatches", () => {
+  it("the dispatch tool's own instructions name every gate word and carry the planner block, at no cost to the session prompt", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    await plugin(bb);
+    try {
+      const tool = harness.registrations.agentTools.find((row) => row.name === "lane_pilot_dispatch_writer")!;
+      expect(literalCoverage(GATE_WORDS, tool.instructions!).missing).toEqual([]);
+      expect(tool.instructions).toContain(gateVocabularyLines().join("\n"));
+    } finally {
+      await harness.lifecycle.dispose();
+    }
   });
 });

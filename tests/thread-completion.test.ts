@@ -122,8 +122,8 @@ describe("decideThreadCompletion", () => {
     expect(decideThreadCompletion({ threadId:t, status:"error", queuedWork:"none", events, now:1792166841516 })).toEqual({ ok:false, via:"error",
       detail:"thread_status_error:system_error:thread_command_failed:Thread interrupted because the host daemon disconnected" });
     // Only the interruption itself, no system/error: its reason is named.
-    expect(decideThreadCompletion({ threadId:t, status:"error", events:events.filter((row) => row.type !== "system/error") }).detail)
-      .toBe("thread_status_error:thread_interrupted:host-daemon-restarted");
+    expect(decideThreadCompletion({ threadId:t, status:"error", events:events.filter((row) => row.type !== "system/error") }))
+      .toMatchObject({ detail: "thread_status_error:thread_interrupted:host-daemon-restarted" });
   });
 
   it("does not end on a sub-agent's interrupted turn (live docs agent thr_vpv6743wkq, 2026-10-03)", () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createWall, askSha, type RepairView, type WallPorts } from "../../src/rooms/wall/service";
+import type { RepairFile } from "../../src/rooms/wall/acceptance";
 import { listRepairs, listWalls } from "../../src/rooms/wall/store";
 import { wallSignature } from "../../src/rooms/wall/signature";
 import { HOUR, NOW, freshDb, isReal } from "./helpers";
@@ -13,7 +14,7 @@ function fakePorts(h: ReturnType<typeof freshDb>, patch: { version?: { v: string
     version: patch.version ?? { v: "0.1.268" },
     views: new Map<string, RepairView>(),
     reports: new Map<string, string>(),
-    changed: ["src/rooms/relay/server/relay.ts", "tests/relay.test.ts"] as string[] | null,
+    changed: ["src/rooms/relay/server/relay.ts", "tests/relay.test.ts"] as RepairFile[] | null,
     drill: null as { version: string; at: number; ok: boolean } | null,
     canary: null as { version: string; tripped: boolean; windowOpen: boolean } | null,
     benchAvailable: true,

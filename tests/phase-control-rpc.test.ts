@@ -13,7 +13,7 @@ describe("phase_control word", () => {
   it("passes the wave to the driver", async () => {
     const seen: unknown[] = [];
     const api = { word: async (input: unknown) => { seen.push(input); return { id: "ph1" }; }, status: (id: string) => ({ id }) } as never;
-    await phaseRpc(api).phase_control({ phaseId: "ph1", action: "word", turn: "wave", decision: "no", note: "map is old", wave: 2 } as never, {} as never);
+    await phaseRpc(api).phase_control({ phaseId: "ph1", action: "word", turn: "wave", decision: "no", note: "map is old", wave: 2 } as never);
     expect(seen).toEqual([{ phaseId: "ph1", turn: "wave", decision: "no", text: "map is old", wave: 2, by: "owner via screen" }]);
   });
 });

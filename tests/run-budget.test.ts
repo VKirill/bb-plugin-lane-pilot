@@ -162,7 +162,7 @@ describe("the owner at the keyboard (SMA D2-6)", () => {
     const result = await writer.spawnWriterAttempt({ projectId: "P", runId: "run", taskId: "t1", attemptId: "a1", config, task, plan: "write", pmThreadId: "pm" });
     expect(result).toMatchObject({ ok: false, reason: "writer_provider_unavailable:owner_present:codex used by the owner 2 min ago on mini" });
     expect(spawned).toBe(0);
-    expect(failureClass("blocked", result.reason!)).toBe(failureClass("blocked", "writer_provider_unavailable:breaker_open:x"));
+    expect(failureClass("blocked", (result as { reason: string }).reason)).toBe(failureClass("blocked", "writer_provider_unavailable:breaker_open:x"));
   });
 });
 
@@ -269,7 +269,7 @@ describe("running writer budget stop", () => {
     const { result, stopped, attempt } = await finishWithBudget(createRunBudget({}), { ...task, appetite: { tokens: 40 } });
     expect(result).toMatchObject({ status: "blocked", reason: "run_budget_exceeded:appetite tokens 50 > 40" });
     expect(stopped).toEqual(["writer-1"]);
-    expect(failureClass(attempt!.reason!)).toBe(failureClass("run_budget_exceeded:tokens"));
+    expect(failureClass("blocked", attempt!.reason!)).toBe(failureClass("blocked", "run_budget_exceeded:tokens"));
   });
 });
 

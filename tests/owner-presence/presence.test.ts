@@ -20,7 +20,7 @@ describe("the owner at the keyboard (SMA D2-6)", () => {
   });
 
   it("a hold is a provider limit, like an open breaker: the chain moves on, the attempt is not the task's failure", () => {
-    expect(failureClass("writer_provider_unavailable:owner_present:claude-code used by the owner 1 min ago on mini")).toBe(failureClass("writer_provider_unavailable:breaker_open:x"));
+    expect(failureClass("blocked", "writer_provider_unavailable:owner_present:claude-code used by the owner 1 min ago on mini")).toBe(failureClass("blocked", "writer_provider_unavailable:breaker_open:x"));
   });
 
   it("the sweep reads every connected machine and keeps a machine's last marks when it does not answer", async () => {
