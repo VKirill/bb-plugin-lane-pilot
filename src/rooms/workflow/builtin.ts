@@ -32,6 +32,11 @@ import lpClose from "../../../workflows/lp.close.json";
 import lpDraw from "../../../workflows/lp.draw.json";
 import lpPlan from "../../../workflows/lp.plan.json";
 import lpReview from "../../../workflows/lp.review.json";
+import lpHarnessEdit from "../../../workflows/lp.harness-edit.json";
+import lpHarnessReflect from "../../../workflows/lp.harness-reflect.json";
+import lpWallHunt from "../../../workflows/lp.wall-hunt.json";
+import lpRulesAsk from "../../../workflows/lp.rules-ask.json";
+import lpRulesScan from "../../../workflows/lp.rules-scan.json";
 import milestoneClose from "../../../workflows/milestone-close.json";
 import planOnly from "../../../workflows/plan-only.json";
 import qualityLoop from "../../../workflows/quality-loop.json";
@@ -105,6 +110,11 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "lp.draw.json", value: lpDraw },
   { name: "lp.plan.json", value: withGateVocabulary(lpPlan as never) },
   { name: "lp.review.json", value: lpReview },
+  { name: "lp.harness-edit.json", value: lpHarnessEdit },
+  { name: "lp.harness-reflect.json", value: lpHarnessReflect },
+  { name: "lp.wall-hunt.json", value: lpWallHunt },
+  { name: "lp.rules-ask.json", value: lpRulesAsk },
+  { name: "lp.rules-scan.json", value: lpRulesScan },
   { name: "milestone-close.json", value: milestoneClose },
   { name: "plan-only.json", value: planOnly },
   { name: "quality-loop.json", value: qualityLoop },

@@ -1,0 +1,172 @@
+{
+  "id": "lp.harness-reflect",
+  "startedBy": "harness-nightly",
+  "name": {
+    "en": "Harness reflection",
+    "ru": "Разбор испытания обвязки"
+  },
+  "description": {
+    "en": "What follows a decided harness trial: the evidence of both arms is written beside the repository, one reflection session writes what each edit did and at most one lesson that transfers, and the lesson enters the experience library and, with its form, the rules pipeline. Started when a trial is adopted or retired; a trial is reflected on once. Works with no PM chat.",
+    "ru": "Что идёт после решённого испытания обвязки: улики обеих веток записываются рядом с репозиторием, одна сессия разбора пишет, что сделала каждая правка, и не больше одного урока, который переносится, а урок попадает в библиотеку опыта и, со своей формой, в конвейер правил. Запускается, когда испытание принято или снято; на испытание разбор делается один раз. Работает без PM-чата."
+  },
+  "not_for": [
+    "anything a person asks in a chat: Lane Pilot starts this itself when a trial decides"
+  ],
+  "status": "published",
+  "tags": [
+    "harness",
+    "night"
+  ],
+  "triggers": [
+    "manual"
+  ],
+  "inputs": {
+    "project_id": {
+      "type": "string"
+    },
+    "trial_id": {
+      "type": "string",
+      "note": "the decided harness tree (adopted or retired)"
+    }
+  },
+  "outputs": {
+    "status": "done|skipped",
+    "detail": "string"
+  },
+  "budget": {
+    "max_steps": 6,
+    "max_minutes": 90
+  },
+  "nodes": [
+    {
+      "id": "prepare",
+      "type": "action",
+      "action": "lp.harness_reflect_prepare",
+      "title": {
+        "en": "Write the evidence",
+        "ru": "Записать улики"
+      },
+      "rule": "code: the trial has decided; the attempts of both arms, the trees and the trial's numbers are written beside the repository (otherwise skipped; no folder fails the step)",
+      "out": {
+        "status": "ready|skipped",
+        "detail": "string",
+        "project_id": "string",
+        "host_id": "string",
+        "path": "string",
+        "folder": "string",
+        "mission": "string"
+      },
+      "guards": {
+        "timeoutMin": 15
+      }
+    },
+    {
+      "id": "reflect",
+      "type": "agent",
+      "role": "harness-reflection",
+      "uses": "lp.harness-reflection",
+      "title": {
+        "en": "Reflect on the trial",
+        "ru": "Разобрать испытание"
+      },
+      "proof": {
+        "kind": "advisory",
+        "reason": "the reflection's own account; the record step keeps a lesson only when its edit rows support it",
+        "form": "experienceIsSupported: the lesson names a cue, evidence and an edit that was observed"
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "out": {
+        "text": "string"
+      },
+      "guards": {
+        "timeoutMin": 50
+      }
+    },
+    {
+      "id": "record",
+      "type": "action",
+      "action": "lp.harness_reflect_record",
+      "title": {
+        "en": "Record the lesson",
+        "ru": "Записать урок"
+      },
+      "rule": "code: the edit rows and the supported lesson are saved to the library; the lesson becomes a rule proposal with its form",
+      "out": {
+        "status": "done|skipped",
+        "detail": "string"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "record.status",
+        "detail": "record.detail"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "prepare"
+    },
+    {
+      "from": "prepare",
+      "to": "reflect"
+    },
+    {
+      "from": "reflect",
+      "to": "record"
+    },
+    {
+      "from": "record",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "harness-reflect-1",
+    "sim": {
+      "input": {
+        "project_id": "proj-1",
+        "trial_id": "hrn_1"
+      },
+      "stubs": {
+        "prepare": {
+          "status": "skipped",
+          "detail": "the trial has not decided",
+          "project_id": "",
+          "host_id": "",
+          "path": "",
+          "folder": "",
+          "mission": "",
+          "handoff": "skipped"
+        },
+        "reflect": {
+          "text": "",
+          "handoff": "skipped"
+        },
+        "record": {
+          "status": "skipped",
+          "detail": "the trial has not decided",
+          "handoff": "skipped"
+        }
+      },
+      "expect_path": [
+        "prepare",
+        "reflect",
+        "record",
+        "done"
+      ],
+      "expect_output": {
+        "status": "skipped"
+      }
+    },
+    "live": "a harness trial decides (nightly) and its reflection runs; read the run of lp.harness-reflect"
+  }
+}

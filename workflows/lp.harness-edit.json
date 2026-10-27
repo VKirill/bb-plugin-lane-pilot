@@ -1,0 +1,197 @@
+{
+  "id": "lp.harness-edit",
+  "startedBy": "harness-nightly",
+  "name": {
+    "en": "Harness edit",
+    "ru": "Правка обвязки писателя"
+  },
+  "description": {
+    "en": "One improvement round of the writer harness for a key (project, area, writer model): the editors read the key's recent attempts, the invariant and the domain editor propose a tree side by side, a composer merges them, and the composed tree goes on trial in alternation with the active one on the key's next tasks, or the round is recorded as «kept the base». The nightly tick picks the keys (enough attempts, no open trial, not edited this week) and starts a round for each; the trial, not the editor, decides what ships. A round in which the editors fail fails the run. Works with no PM chat.",
+    "ru": "Один круг улучшения обвязки писателя для ключа (проект, область, модель писателя): редакторы читают недавние попытки ключа, инвариантный и предметный редактор предлагают дерево рядом друг с другом, составитель их сводит, и сведённое дерево идёт на испытание вперемешку с действующим на следующих задачах ключа, либо круг записывается как «оставили базу». Ночной проход выбирает ключи (достаточно попыток, нет открытого испытания, не правили на этой неделе) и запускает круг для каждого; что пойдёт в работу, решает испытание, а не редактор. Круг, в котором редакторы упали, делает запуск упавшим. Работает без PM-чата."
+  },
+  "not_for": [
+    "anything a person asks in a chat: Lane Pilot starts this itself every night"
+  ],
+  "status": "published",
+  "tags": [
+    "harness",
+    "night"
+  ],
+  "triggers": [
+    "manual"
+  ],
+  "inputs": {
+    "project_id": {
+      "type": "string"
+    },
+    "area": {
+      "type": "string",
+      "default": "",
+      "note": "the task area of the key; empty: the whole project"
+    },
+    "writer_key": {
+      "type": "string",
+      "note": "the writer model the key stands for, or the any-writer key"
+    },
+    "reason": {
+      "type": "string",
+      "default": "",
+      "note": "why the round runs (the nightly's attempt count); kept on the candidate"
+    }
+  },
+  "outputs": {
+    "status": "trial|keep_base|skipped",
+    "detail": "string",
+    "candidate_id": "string",
+    "thread_ids": "string[]"
+  },
+  "budget": {
+    "max_steps": 6,
+    "max_minutes": 240
+  },
+  "nodes": [
+    {
+      "id": "prepare",
+      "type": "action",
+      "action": "lp.harness_prepare",
+      "title": {
+        "en": "Check the key and the folder",
+        "ru": "Проверить ключ и папку"
+      },
+      "rule": "code: editing is on for the project, no candidate is on trial for the key, the key's runs name a folder the editor can work in (otherwise the step fails)",
+      "out": {
+        "status": "ready|skipped",
+        "detail": "string",
+        "host_id": "string",
+        "path": "string"
+      },
+      "guards": {
+        "timeoutMin": 10
+      }
+    },
+    {
+      "id": "edit",
+      "type": "agent",
+      "role": "harness-editor",
+      "uses": "lp.harness-editor",
+      "title": {
+        "en": "Edit the harness",
+        "ru": "Править обвязку"
+      },
+      "proof": {
+        "kind": "advisory",
+        "reason": "the editors' and the composer's own trees; code validates the composed tree and the trial, not the editors, decides whether it ships",
+        "form": "harness-core validate: the tree's files are well formed and within the surface"
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "out": {
+        "status": "edited|keep_base|skipped|failed",
+        "detail": "string",
+        "tree": "any",
+        "inv_notes": "string",
+        "dom_notes": "string",
+        "compose_notes": "string",
+        "thread_ids": "string[]"
+      },
+      "guards": {
+        "timeoutMin": 220
+      }
+    },
+    {
+      "id": "validate",
+      "type": "action",
+      "action": "lp.harness_validate",
+      "title": {
+        "en": "Put the candidate on trial",
+        "ru": "Поставить кандидата на испытание"
+      },
+      "rule": "code: the composed tree is validated and inserted as a candidate on trial (the parent is the active tree); a round that kept the base is recorded; a failed round fails the step",
+      "out": {
+        "status": "trial|keep_base|skipped",
+        "detail": "string",
+        "candidate_id": "string"
+      },
+      "guards": {
+        "timeoutMin": 10
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "validate.status",
+        "detail": "validate.detail",
+        "candidate_id": "validate.candidate_id",
+        "thread_ids": "edit.thread_ids"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "prepare"
+    },
+    {
+      "from": "prepare",
+      "to": "edit"
+    },
+    {
+      "from": "edit",
+      "to": "validate"
+    },
+    {
+      "from": "validate",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "harness-edit-1",
+    "sim": {
+      "input": {
+        "project_id": "proj-1",
+        "writer_key": "*"
+      },
+      "stubs": {
+        "prepare": {
+          "status": "ready",
+          "detail": "",
+          "host_id": "host-1",
+          "path": "/proj",
+          "handoff": "ready"
+        },
+        "edit": {
+          "status": "keep_base",
+          "detail": "both editors kept the current harness",
+          "tree": {},
+          "inv_notes": "",
+          "dom_notes": "",
+          "compose_notes": "",
+          "thread_ids": [],
+          "handoff": "keep_base"
+        },
+        "validate": {
+          "status": "keep_base",
+          "detail": "both editors kept the current harness",
+          "candidate_id": "",
+          "handoff": "keep_base"
+        }
+      },
+      "expect_path": [
+        "prepare",
+        "edit",
+        "validate",
+        "done"
+      ],
+      "expect_output": {
+        "status": "keep_base"
+      }
+    },
+    "live": "run the cron harness-nightly (or bb lane-pilot harness edit) and read the run of lp.harness-edit"
+  }
+}

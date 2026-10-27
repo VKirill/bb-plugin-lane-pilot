@@ -1,0 +1,131 @@
+{
+  "id": "lp.rules-ask",
+  "startedBy": "learning",
+  "name": {
+    "en": "Rules analyzer question",
+    "ru": "Вопрос анализатору правил"
+  },
+  "description": {
+    "en": "One prompt to the rules analyzer (a hidden thread of the model the project chose for rules) and its answer: what the learning review of the owner's messages asks when it needs a model. Started by the learning room; works in a project that has no PM chat.",
+    "ru": "Один запрос анализатору правил (скрытый тред на модели, которую проект выбрал для правил) и его ответ: так обучающий разбор сообщений владельца обращается к модели. Запускается комнатой обучения; работает и в проекте без PM-чата."
+  },
+  "not_for": [
+    "anything a person asks in a chat: Lane Pilot starts this itself"
+  ],
+  "status": "published",
+  "tags": [
+    "rules",
+    "learning"
+  ],
+  "triggers": [
+    "manual"
+  ],
+  "inputs": {
+    "project_id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "prompt": {
+      "type": "string"
+    },
+    "host_id": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "analyzer": {
+      "type": "any",
+      "note": "{providerId, model, reasoningLevel, serviceTier}"
+    },
+    "metadata": {
+      "type": "any",
+      "default": {}
+    }
+  },
+  "outputs": {
+    "text": "string"
+  },
+  "budget": {
+    "max_steps": 3,
+    "max_minutes": 30
+  },
+  "nodes": [
+    {
+      "id": "ask",
+      "type": "agent",
+      "role": "rules-analyzer",
+      "uses": "lp.rules-ask",
+      "title": {
+        "en": "Ask the analyzer",
+        "ru": "Спросить анализатор"
+      },
+      "proof": {
+        "kind": "advisory",
+        "reason": "the analyzer's own answer; the caller parses it",
+        "form": "free text, JSON when the prompt asks for it"
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "out": {
+        "text": "string",
+        "thread_id": "string"
+      },
+      "guards": {
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "text": "ask.text"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "ask"
+    },
+    {
+      "from": "ask",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "rules-ask-1",
+    "sim": {
+      "input": {
+        "project_id": "proj-1",
+        "title": "Learning",
+        "prompt": "Rules?",
+        "host_id": "host-1",
+        "path": "/proj",
+        "analyzer": {}
+      },
+      "stubs": {
+        "ask": {
+          "text": "{}",
+          "thread_id": "thr-1",
+          "handoff": "answered"
+        }
+      },
+      "expect_path": [
+        "ask",
+        "done"
+      ],
+      "expect_output": {
+        "text": "{}"
+      }
+    },
+    "live": "the learning review of the owner's messages asks it; read the run of lp.rules-ask"
+  }
+}

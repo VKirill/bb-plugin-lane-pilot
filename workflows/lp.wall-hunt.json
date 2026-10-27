@@ -1,0 +1,233 @@
+{
+  "id": "lp.wall-hunt",
+  "startedBy": "wall",
+  "name": {
+    "en": "Wall hunt",
+    "ru": "Охота на стену"
+  },
+  "description": {
+    "en": "The night wall's model work on one wall (a class of failures, a stopped task family or an exhausted loop): read-only hunters from three sides (the task, the system, the big picture) read the same evidence pack side by side; code holds every citation against the pack and writes the findings to the wall; when asked, one strong reader writes the full analysis for the backlog item. Which wall is hunted, and when, is the wall room's code (the night's selection and the advance pass start this graph). A hunter that fails is a hunter with no finding; a run in which nothing came back fails, after the wall holds what there was. Works in the self-repair project, with no PM chat.",
+    "ru": "Работа моделей ночной стены над одной стеной (класс сбоев, остановленное семейство задач или исчерпанная петля): охотники только на чтение с трёх сторон (задача, система, общая картина) читают один и тот же пакет улик рядом друг с другом; код проверяет каждую цитату по пакету и пишет находки в стену; по запросу один сильный читатель пишет полный разбор для пункта беклога. Какую стену и когда охотить, решает код комнаты стены (ночной отбор и проход advance запускают этот граф). Упавший охотник это охотник без находки; запуск, в котором ничего не вернулось, падает после того, как стена получила то, что было. Работает в проекте самолечения, без PM-чата."
+  },
+  "not_for": [
+    "anything a person asks in a chat: Lane Pilot starts this itself from the wall"
+  ],
+  "status": "published",
+  "tags": [
+    "wall",
+    "night"
+  ],
+  "triggers": [
+    "manual"
+  ],
+  "inputs": {
+    "wall_key": {
+      "type": "string",
+      "note": "the wall row the findings and the analysis go to"
+    },
+    "pack": {
+      "type": "any",
+      "default": {},
+      "note": "the evidence pack the hunters read and their citations are held against"
+    },
+    "angles": {
+      "type": "string[]",
+      "default": [],
+      "note": "task, system, big_picture: one hunter each; empty for an analysis-only run"
+    },
+    "analysis_prompt": {
+      "type": "string",
+      "default": "",
+      "note": "the full analysis's brief; empty: no analysis"
+    }
+  },
+  "outputs": {
+    "outcome": "any",
+    "tokens": "int",
+    "analysis_text": "string",
+    "analysis_tokens": "int"
+  },
+  "budget": {
+    "max_steps": 12,
+    "max_minutes": 90
+  },
+  "nodes": [
+    {
+      "id": "hunt",
+      "type": "parallel",
+      "for_each": "$inputs.angles",
+      "title": {
+        "en": "Hunters, side by side",
+        "ru": "Охотники рядом"
+      },
+      "child": {
+        "type": "agent",
+        "role": "wall-hunter",
+        "uses": "lp.wall-hunter",
+        "session": "new",
+        "proof": {
+          "kind": "advisory",
+          "reason": "a hunter's own finding; the judge step parses it and holds every citation against the evidence pack",
+          "form": "parseFinding: a verdict, an action and citations that name lines of the pack"
+        },
+        "produces": [
+          {
+            "kind": "report",
+            "version": 1
+          }
+        ],
+        "out": {
+          "angle": "string",
+          "ok": "bool",
+          "text": "string",
+          "tokens": "int",
+          "error": "string"
+        }
+      },
+      "join": {
+        "policy": "all",
+        "out": {
+          "hunters": "any"
+        },
+        "uses": "reduce.lp.wall-hunt.hunters"
+      },
+      "concurrency": 5,
+      "max_fan_out": 5
+    },
+    {
+      "id": "judge",
+      "type": "action",
+      "action": "lp.wall_judge",
+      "title": {
+        "en": "Hold the citations against the pack",
+        "ru": "Сверить цитаты с пакетом"
+      },
+      "rule": "code: every hunter's finding is parsed and its citations are checked against the evidence pack; the outcome (usable, unknown) and the tokens are written to the wall row",
+      "out": {
+        "state": "string",
+        "tokens": "int",
+        "outcome": "any"
+      }
+    },
+    {
+      "id": "analysis",
+      "type": "agent",
+      "role": "wall-analyst",
+      "uses": "lp.wall-analyst",
+      "title": {
+        "en": "Write the full analysis",
+        "ru": "Написать полный разбор"
+      },
+      "proof": {
+        "kind": "advisory",
+        "reason": "a strong reader's analysis for the backlog item; nothing stands on it but a person's reading",
+        "form": "free text; empty when no analysis was asked"
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "out": {
+        "angle": "string",
+        "ok": "bool",
+        "text": "string",
+        "tokens": "int",
+        "error": "string"
+      },
+      "guards": {
+        "timeoutMin": 30
+      }
+    },
+    {
+      "id": "record",
+      "type": "action",
+      "action": "lp.wall_record",
+      "title": {
+        "en": "Record in the wall",
+        "ru": "Записать в стену"
+      },
+      "rule": "code: the analysis goes to the wall row; a run in which no hunter and no analysis gave an answer fails here",
+      "out": {
+        "recorded": "bool"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "outcome": "judge.outcome",
+        "tokens": "judge.tokens",
+        "analysis_text": "analysis.text",
+        "analysis_tokens": "analysis.tokens"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "hunt"
+    },
+    {
+      "from": "hunt",
+      "to": "judge"
+    },
+    {
+      "from": "judge",
+      "to": "analysis"
+    },
+    {
+      "from": "analysis",
+      "to": "record"
+    },
+    {
+      "from": "record",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "wall-hunt-1",
+    "sim": {
+      "input": {
+        "wall_key": "class:x",
+        "angles": []
+      },
+      "stubs": {
+        "hunt": {
+          "hunters": []
+        },
+        "judge": {
+          "state": "none",
+          "tokens": 0,
+          "outcome": {},
+          "handoff": "none"
+        },
+        "analysis": {
+          "angle": "",
+          "ok": true,
+          "text": "",
+          "tokens": 0,
+          "error": "",
+          "handoff": "none"
+        },
+        "record": {
+          "recorded": true,
+          "handoff": "recorded"
+        }
+      },
+      "expect_path": [
+        "hunt",
+        "judge",
+        "analysis",
+        "record",
+        "done"
+      ],
+      "expect_output": {
+        "tokens": 0
+      }
+    },
+    "live": "wall-night or the advance pass hunts a wall; read the run of lp.wall-hunt"
+  }
+}

@@ -15,6 +15,7 @@ import { createReconcile } from "./src/rooms/stability/server";
 import { createStability } from "./src/rooms/stability/server";
 import { adoptWaitingRules } from "./src/rooms/self-repair/server";
 import { createRuleScan } from "./src/rooms/self-repair/server";
+import { mountNightGraphs } from "./src/rooms/night-graphs/server";
 import { createHarness } from "./src/rooms/harness/server";
 import { createDeferrals, sdkOwnerMessagePort } from "./src/rooms/deferral/server";
 import { createRollback } from "./src/rooms/rollback/server";
@@ -139,6 +140,8 @@ export default async function plugin(bb: BbPluginApi) {
   registerSpecialistActions(services.workflowEngine, ctx);
   // The council is the `council` graph: its steps (open, next, the seats' turns, decide) run on the engine, the PM tools start and stop it.
   mountCouncilGraph(ctx, services, services.council);
+  // The night jobs are graphs too: the rules scan, the wall's hunt and the harness editor (their steps wrap the functions of those rooms).
+  mountNightGraphs(ctx, services);
   mountLifecycleEvents(ctx, { onQueued: (name, entry) => {
     const id = entry && typeof entry === "object" ? Reflect.get(entry, "id") : undefined;
     if (typeof id === "string") return relayFor(ctx).queueEvent(name, id).then(() => undefined);

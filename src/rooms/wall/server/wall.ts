@@ -1,5 +1,4 @@
 import { join } from "node:path";
-import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { writerExecutionSelection } from "@lane-pilot/models";
 import { fullAccessSpawn, scheduleIsolated, stringAt } from "../../core/server";
 import { conveyorState } from "../../conveyor";
@@ -16,12 +15,12 @@ import { id as newId } from "../../core/server";
 import { saveVerdict } from "../../bench";
 import { wallLogLines } from "../logs";
 import { revertMerge, type RevertHost } from "../revert";
-import { createWall, type RepairView, type Scope, type ThreadRun, type WallApi, type WallPorts } from "../service";
+import { builtinWorkflow } from "../../workflow";
+import type { ChainRuntime } from "../../workflow/server";
+import type { HuntOutcome } from "../pack";
+import { WALL_HUNT_WORKFLOW, createWall, type RepairView, type Scope, type ThreadRun, type WallApi, type WallPorts } from "../service";
 
 const LOG_TAIL_BYTES = 1_000_000;
-const READER_WAIT_MS = 25 * 60_000;
-/** A reader thread that reports no usage still cost something: its prompt and answer, read a few times. */
-const estimateTokens = (...texts: string[]): number => Math.ceil(texts.reduce((sum, text) => sum + text.length, 0) / 3) * 3;
 
 /** The night loop inside the plugin: the real ports, the self-repair hooks, the two schedules. */
 export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
@@ -60,10 +59,10 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
     };
   };
 
-  const reader: WallPorts["reader"] = async (prompt, who) => {
+  /** The hidden thread of one reader (a hunter or the analysis), tied to the graph step that asked for it; the step waits for it, reads it and archives it. */
+  const spawnReader: NonNullable<WallPorts["spawnReader"]> = async ({ who, prompt, graph }) => {
     const { cfg, hostId, basePath } = await environmentOf();
-    const wall = wallRef.current;
-    const wcfg = await wall.config();
+    const wcfg = await wallRef.current.config();
     const spawned = await fullAccessSpawn(bb, {
       projectId: cfg.projectId,
       environment: { type: "host", hostId, workspace: { type: "unmanaged", path: basePath } },
@@ -72,23 +71,27 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
       visibility: "hidden",
       prompt,
       ...writerExecutionSelection(wcfg.hunterProviderId, wcfg.hunterModel, who === "analysis" ? "high" : wcfg.hunterReasoningLevel, "default"),
-      pluginMetadata: { role: `wall-${who}` },
+      pluginMetadata: { role: `wall-${who}`, ...graph.metadata, spawnId: graph.spawnId },
     } as Parameters<typeof fullAccessSpawn>[1]);
     const threadId = stringAt(spawned, "id");
-    if (!threadId) return { text: null, tokens: 0 };
-    try {
-      await waitThreadIdle(bb, threadId, "wall_reader_timeout", READER_WAIT_MS);
-      const out = (await bb.sdk.threads.output({ threadId })).output;
-      const text = typeof out === "string" && out.trim() ? out : null;
-      const usage = await threadUsage(bb, threadId).catch(() => null);
-      const used = usage?.known ? usage.tokens : null;
-      return { text, tokens: used ?? estimateTokens(prompt, text ?? "") };
-    } catch {
-      await bb.sdk.threads.stop({ threadId }).catch(() => undefined);
-      return { text: null, tokens: estimateTokens(prompt) };
-    } finally {
-      await bb.sdk.threads.archive({ threadId }).catch(() => undefined);
-    }
+    if (!threadId) throw new Error("wall_reader_thread_id_missing");
+    return threadId;
+  };
+
+  /** A run of `lp.wall-hunt` named by the night, the wall and what it does: asking again the same night finds the run and its result. */
+  const runGraph = async (wallKey: string, kind: "hunt" | "analysis", inputs: Record<string, unknown>): Promise<Record<string, unknown>> => {
+    const { cfg } = await environmentOf();
+    const workflow = builtinWorkflow(WALL_HUNT_WORKFLOW);
+    if (!workflow) throw new Error(`built-in workflow ${WALL_HUNT_WORKFLOW} is not loaded`);
+    const night = new Date(ports.now()).toISOString().slice(0, 10);
+    const started = services.workflowEngine.start({
+      workflow, key: `wall-hunt:${night}:${wallKey}:${kind}`, link: { projectId: cfg.projectId },
+      runtime: { ctx, services, pmThreadId: null, projectId: cfg.projectId, runId: null } satisfies ChainRuntime,
+      inputs: { wall_key: wallKey, pack: {}, angles: [], analysis_prompt: "", ...inputs },
+    });
+    const summary = await started.done;
+    if (summary.status !== "succeeded") throw new Error(summary.error ?? summary.reason ?? `wall ${kind} run ${summary.status}`);
+    return summary.output ?? {};
   };
 
   const busy = async (threadId: string): Promise<boolean> => {
@@ -129,7 +132,17 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
         return files.slice(0, 6);
       } catch { return []; }
     },
-    reader,
+    spawnReader,
+    graph: {
+      hunt: async ({ wallKey, pack, angles }) => {
+        const out = await runGraph(wallKey, "hunt", { pack, angles: [...angles] });
+        return out.outcome ? { outcome: out.outcome as HuntOutcome, tokens: Number(out.tokens) || 0 } : null;
+      },
+      analysis: async ({ wallKey, prompt }) => {
+        const out = await runGraph(wallKey, "analysis", { analysis_prompt: prompt });
+        return { text: typeof out.analysis_text === "string" && out.analysis_text ? out.analysis_text : null, tokens: Number(out.analysis_tokens) || 0 };
+      },
+    },
     tellPm: async (threadId, text) => {
       try { await sendServiceMessage(bb as never, { threadId, text }); return true; } catch { return false; }
     },
