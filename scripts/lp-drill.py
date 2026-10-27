@@ -76,8 +76,8 @@ BAD_MODEL = os.environ.get("LP_DRILL_BAD_MODEL", "lp-drill-model-that-does-not-e
 SANDBOX = dict(project=os.environ.get("LP_DRILL_PROJECT", "proj_3tb652jpsi"),
                environment=os.environ.get("LP_DRILL_ENVIRONMENT", "env_mybrzmx7nz"),
                cwd=os.environ.get("LP_DRILL_CWD", "/Users/vechkasov/lp-sandbox-rules"))
-NOGIT = dict(project=os.environ.get("LP_DRILL_NOGIT_PROJECT", "proj_mzm4k9xd4c"),
-             environment=os.environ.get("LP_DRILL_NOGIT_ENVIRONMENT", "env_ncxmcqyh99"),
+NOGIT = dict(project=os.environ.get("LP_DRILL_NOGIT_PROJECT", "proj_cpxzk7r2vs"),
+             environment=os.environ.get("LP_DRILL_NOGIT_ENVIRONMENT", "env_6adk43aq2y"),
              cwd=os.environ.get("LP_DRILL_NOGIT_CWD", "/Users/vechkasov/lp-sandbox-layouts/n-nogit"))
 SANDBOX_PROJECTS = {SANDBOX["project"], NOGIT["project"]}
 OPEN_STATES = ("queued", "spawn_requested", "spawn_unknown", "running")
@@ -1170,7 +1170,8 @@ def ensure_prototype_config(spec: dict) -> bool:
 def scenario_nogit(tmp: Path) -> dict:
     cwd = NOGIT["cwd"]
     if not Path(cwd).is_dir():
-        return {"name": "nogit", "result": "skipped", "problems": [], "note": f"no folder {cwd}"}
+        # A missing sandbox is a red drill, not a quiet skip: from 2026-10-23 to 10-27 both scenarios were skipped unseen (project deleted).
+        return verdict("nogit", [f"the sandbox folder {cwd} is missing: recreate it (a folder without git) and its BB project (LP_DRILL_NOGIT_PROJECT)"])
     if (Path(cwd) / ".git").exists():
         return verdict("nogit", [f"{cwd} is a git repo: this scenario needs a folder without git"])
     ctx = Context(NOGIT, tmp)
@@ -1205,7 +1206,8 @@ def scenario_nogit(tmp: Path) -> dict:
 def scenario_nogit_repo(tmp: Path) -> dict:
     cwd = NOGIT["cwd"]
     if not Path(cwd).is_dir():
-        return {"name": "nogit_repo", "result": "skipped", "problems": [], "note": f"no folder {cwd}"}
+        # A missing sandbox is a red drill, not a quiet skip: from 2026-10-23 to 10-27 both scenarios were skipped unseen (project deleted).
+        return verdict("nogit_repo", [f"the sandbox folder {cwd} is missing: recreate it (a folder without git) and its BB project (LP_DRILL_NOGIT_PROJECT)"])
     if (Path(cwd) / ".git").exists():
         return verdict("nogit_repo", [f"{cwd} is a git repo: this scenario needs a folder without git"])
     repo = Path(cwd) / NOGIT_REPO
