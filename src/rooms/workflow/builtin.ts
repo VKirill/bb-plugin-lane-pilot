@@ -8,6 +8,7 @@ import lpBrowserQa from "../../../workflows/lp.browser-qa.json";
 import brainstormDriven from "../../../workflows/brainstorm-driven.json";
 import codeReview from "../../../workflows/code-review.json";
 import companion from "../../../workflows/companion.json";
+import council from "../../../workflows/council.json";
 import debug from "../../../workflows/debug.json";
 import deploy from "../../../workflows/deploy.json";
 import errand from "../../../workflows/errand.json";
@@ -80,6 +81,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "lp.browser-qa.json", value: lpBrowserQa },
   { name: "code-review.json", value: codeReview },
   { name: "companion.json", value: companion },
+  { name: "council.json", value: council },
   { name: "debug.json", value: debug },
   { name: "deploy.json", value: deploy },
   { name: "errand.json", value: errand },

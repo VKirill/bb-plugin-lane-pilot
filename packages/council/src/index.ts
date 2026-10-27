@@ -19,14 +19,20 @@ export { NOVELTY_FLOOR, moderate, moderatorDecision, roundNovelty, type Moderato
 export {
   addCouncilMessage,
   councilMigrations,
+  councilRunMigrations,
   createCouncilSession,
   getCouncilSession,
   listCouncilMessages,
   listCouncilSessions,
   setCouncilAgenda,
+  setCouncilRun,
   setCouncilState,
   type CouncilDatabase,
 } from "./store";
 export { decisionFileName, decisionMarkdown, slugify } from "./render";
-export { CHAIR_SEAT_ID, MODERATOR_SEAT_ID, runCouncil, type CouncilIo } from "./run";
-export { FLOOR_THRESHOLD, IMPULSE_SCORES, chooseSpeaker, ruleImpulse, runRoom, type Impulse, type ImpulseJudge, type ImpulseReason, type RoomIo } from "./room";
+export {
+  CHAIR_SEAT_ID, DECIDE_REQUEST_TEXT, MODERATOR_SEAT_ID, ROOM_TURN_CAP,
+  decideRequestedIn, lastSeqOf, maxTurnsOf, roomPlan, roundsPlan, seenBySeat, verdictWritten,
+  type RoomPlan, type RoundsPlan,
+} from "./step";
+export { FLOOR_THRESHOLD, IMPULSE_SCORES, chooseSpeaker, ruleImpulse, type Impulse, type ImpulseJudge, type ImpulseReason } from "./room";

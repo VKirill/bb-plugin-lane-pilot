@@ -1,41 +1,26 @@
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { createHandoff } from "@lane-pilot/handoff";
 import { memoryContext, searchMemoryRecords } from "@lane-pilot/memory-core";
-import { observeStageChild } from "@lane-pilot/thread-observe";
 import {
+  DECIDE_REQUEST_TEXT,
+  MODERATOR_SEAT_ID,
   addCouncilMessage,
-  createCouncilSession,
-  decisionFileName,
-  decisionMarkdown,
+  decideRequestedIn,
   getCouncilSession,
   listCouncilMessages,
   listCouncilSessions,
   resolveRoles,
-  runCouncil,
-  runRoom,
-  IMPULSE_SCORES,
-  type Impulse,
-  type ImpulseJudge,
-  type Moderator,
-  setCouncilAgenda,
   setCouncilState,
   type CouncilMessage,
   type CouncilSeat,
   type CouncilSession,
 } from "@lane-pilot/council";
-import { getRun, loadPrototypeConfig, type LanePilotDatabase } from "../../storage";
-import { writerExecutionSelection, findModelIn } from "@lane-pilot/models";
+import { loadPrototypeConfig, type LanePilotDatabase } from "../../storage";
 import { configuredSetting, requirePmRun, ToolError } from "../../core/server";
 import type { ServerCore } from "../../core/server";
 import { memorySettingsFor } from "../../self-repair/server";
-import { councilOwnerForm, ownerLocale, type OwnerAsk } from "../../relay/server";
-import { fullAccessSpawn } from "../../core/server";
-import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
-import { outputText } from "../../writer/server";
-import { stringAt } from "../../core/server";
+import type { OwnerAsk } from "../../relay/server";
 import { fenceOutside, registerObservedTool } from "../../core/server";
-import { councilDecisionText, councilEndedText, sendCouncilNotice } from "./pm-notice";
+import type { CouncilGraph, CouncilStart } from "./council-graph";
 
 export const COUNCIL_TOOLS = ["lane_pilot_council_start", "lane_pilot_council_status", "lane_pilot_council_stop"] as const;
 
@@ -49,13 +34,8 @@ const SEAT_SELECTION_KEYS: ReadonlyArray<readonly [string, string]> = [
   ["memory.provider", "memory.model"],
   ["docs.provider", "docs.model"],
 ];
-const EVIDENCE_FILES = ["PROJECT.md", "docs/index.md", "README.md"];
-const EVIDENCE_FILE_CHARS = 12_000;
-const MATERIAL_CHARS = 20_000;
-const TURN_LIMIT_MS = 30 * 60_000;
-const OBSERVE_STEP_MS = 30_000;
-
-function selectionPairs(settings: Record<string, unknown>, fallback: { providerId: string; model: string }): Array<{ providerId: string; model: string }> {
+/** The distinct provider/model pairs the stage selections give, in order, with the writer's as the last resort. */
+export function selectionPairs(settings: Record<string, unknown>, fallback: { providerId: string; model: string }): Array<{ providerId: string; model: string }> {
   const pairs: Array<{ providerId: string; model: string }> = [];
   const push = (providerId: unknown, model: unknown) => {
     if (typeof providerId !== "string" || typeof model !== "string" || !providerId || !model) return;
@@ -118,235 +98,18 @@ export function councilMemoryBlock(db: LanePilotDatabase, projectId: string, que
 }
 
 export function createCouncil(ctx: ServerCore) {
-  const { bb, db, host, workspaceExecutionEnvironment } = ctx;
-  const stopRequested = new Set<string>();
-  const decideRequested = new Set<string>();
+  const { db } = ctx;
   /** Who has the floor right now, per session; not persisted, a reload starts quiet. */
   const presence = new Map<string, { seatId: string | null; since: number }>();
-  const OWNER_WAIT_MS = 10 * 60_000;
   /** The council page re-reads on this signal instead of polling every two seconds. */
   const changed = (projectId: string) => ctx.realtime.notify(projectId, "council");
+  /** The `council` graph (council-graph.ts), bound once the workflow engine exists. */
+  let graph: CouncilGraph | null = null;
 
-  /** One System One call through the run's host; null when the judge is off or fails, so the rule answers. */
-  async function judge(hostId: string, state: unknown, questions: Record<string, { instructions: string; criteria: Record<string, string> }>): Promise<{ answers: Record<string, string>; confidence: Record<string, number> } | null> {
-    try {
-      const result = await host.call("councilJudge", { requestedHostId: hostId, state: JSON.stringify(state).slice(0, 60_000), questions }, { hostId, timeoutMs: 10_000 });
-      return result.status === "ok" ? { answers: result.answers, confidence: result.confidence ?? {} } : null;
-    } catch {
-      return null;
-    }
-  }
-
-  function jevModerator(hostId: string, session: CouncilSession): Moderator {
-    return async (state) => {
-      const answers = await judge(hostId, { question: session.question, agenda: session.agenda, ...state }, {
-        verdict: { instructions: "Should the council keep discussing or is it time for the chair to decide?", criteria: { continue: "the last messages still add new arguments, evidence or unresolved disagreement", synthesize: "the room repeats itself, agrees, or the remaining questions need data nobody has" } },
-      });
-      const verdict = answers?.answers.verdict;
-      return verdict === "continue" || verdict === "synthesize" ? verdict : null;
-    };
-  }
-
-  function jevImpulse(hostId: string): ImpulseJudge {
-    return async ({ session, seat, last, ownStatements }) => {
-      if (last.seatId === seat.id) return { seatId: seat.id, score: 0, reason: "none" };
-      const answers = await judge(hostId, {
-        question: session.question, seat: { title: seat.title, role: seat.role, instruction: seat.instruction },
-        lastMessage: { from: last.seatId, kind: last.kind, text: last.text.slice(0, 4000) },
-        ownLastStatement: ownStatements.at(-1)?.text.slice(0, 2000) ?? null,
-      }, {
-        wants: { instructions: "Does this seat have something worth saying right now in reply to the last message?", criteria: {
-          addressed: "the last message asks this seat a question or names its role", disagreement: "this seat would object to a claim in the last message", evidence: "this seat can add a fact or example the room lacks",
-          turn: "this seat has been silent while the topic moved into its area", none: "this seat would only repeat itself or agree" } },
-      });
-      const reason = answers?.answers.wants as Impulse["reason"] | undefined;
-      if (!reason || !(reason in IMPULSE_SCORES)) return null;
-      // A hesitant judge should not hand out the floor: the score carries its confidence, so a weak
-      // "evidence" (0.75 × 0.4) stays under the floor threshold while a sure "addressed" passes.
-      const confidence = answers?.confidence.wants;
-      const weight = typeof confidence === "number" ? Math.max(0.3, Math.min(1, confidence)) : 1;
-      return { seatId: seat.id, score: IMPULSE_SCORES[reason] * weight, reason };
-    };
-  }
-
-  /**
-   * The room waits for the owner. Besides the council page, the owner is asked in the PM chat (a form and a push on the
-   * phone): a word goes into the feed like one said on the page, «let the chair decide» asks for the decision. The form is
-   * withdrawn when the wait ends another way.
-   */
-  async function waitForOwner(councilId: string, afterSeq: number, pmThreadId: string): Promise<CouncilMessage | null> {
-    const deadline = Date.now() + OWNER_WAIT_MS;
-    const session = getCouncilSession(db, councilId);
-    const form = councilOwnerForm(await ownerLocale(bb), session?.question ?? "");
-    const withdraw = askOwnerToJoin(ctx.ownerAsk, {
-      pmThreadId, question: form.question, decideLabel: form.decideLabel,
-      detail: lastCouncilWords(councilId), timeoutMs: OWNER_WAIT_MS,
-      onWords: (text) => { say(councilId, text); }, onDecide: () => { requestDecision(councilId); },
-    });
-    try {
-      while (Date.now() < deadline) {
-        if (ctx.isDisposed() || stopRequested.has(councilId) || decideRequested.has(councilId)) return null;
-        const fresh = listCouncilMessages(db, councilId, afterSeq).filter((message) => message.kind === "owner");
-        if (fresh.length) return fresh[0]!;
-        await new Promise((resolve) => setTimeout(resolve, 2_000));
-      }
-      return null;
-    } finally {
-      withdraw();
-    }
-  }
-
-  /** The last few things said in the room, for the owner's form. */
-  function lastCouncilWords(councilId: string): string {
-    return listCouncilMessages(db, councilId).filter((message) => message.kind !== "status").slice(-3)
-      .map((message) => `${message.seatId}: ${message.text.replace(/\s+/g, " ").slice(0, 400)}`).join("\n\n");
-  }
-
-  async function readBounded(place: { hostId: string; workspace: string }, path: string, max: number): Promise<string | null> {
-    const read = await bb.sdk.files.read({ hostId: place.hostId, rootPath: place.workspace, path: `${place.workspace}/${path}` }).catch(() => null);
-    const content = read && typeof read === "object" ? Reflect.get(read, "content") : null;
-    return typeof content === "string" ? content.slice(0, max) : null;
-  }
-
-  async function evidencePack(projectId: string, place: { hostId: string; workspace: string }, question: string, materials: readonly string[]): Promise<string> {
-    const parts: string[] = [];
-    for (const path of EVIDENCE_FILES) {
-      const text = await readBounded(place, path, EVIDENCE_FILE_CHARS);
-      if (text) parts.push(`## ${path}\n${text}`);
-    }
-    for (const path of materials.slice(0, 10)) {
-      const text = await readBounded(place, path, MATERIAL_CHARS);
-      parts.push(text ? `## Material: ${path}\n${text}` : `## Material: ${path}\n(unreadable)`);
-    }
-    const memory = councilMemoryBlock(db, projectId, question);
-    if (memory) parts.push(memory);
-    return parts.length ? parts.join("\n\n") : "(no project files or materials could be read; say so and reason from the question alone)";
-  }
-
-  async function effortFor(hostId: string, providerId: string, model: string): Promise<string> {
-    try {
-      const catalog = await bb.sdk.providers.models({ providerId, hostId });
-      const entry = findModelIn(catalog.models, model);
-      const supported = entry?.supportedReasoningEfforts.map((item) => item.reasoningEffort) ?? [];
-      if (supported.includes("high")) return "high";
-      return entry?.defaultReasoningEffort ?? supported[0] ?? "medium";
-    } catch {
-      return "medium";
-    }
-  }
-
-  async function spawnTurn(input: { session: CouncilSession; seat: CouncilSeat | null; round: number; prompt: string; pmThreadId: string; place: { hostId: string; workspace: string }; chair: { providerId: string; model: string } }): Promise<string> {
-    const providerId = input.seat?.providerId ?? input.chair.providerId;
-    const model = input.seat?.model ?? input.chair.model;
-    const effort = (input.seat as { effort?: string } | null)?.effort ?? await effortFor(input.place.hostId, providerId, model);
-    const helperPolicy = requireHelperSpawn({ bb, db, projectId: input.session.projectId, runId: input.session.runId });
-    const placement = await helperChildPlacement({ bb, db, projectId: input.session.projectId, runId: input.session.runId, role: "council-seat", taskTitle: `${input.seat?.title ?? "Chair"}: ${input.session.question.slice(0, 60)}` });
-    const spawned = await fullAccessSpawn(bb, {
-      ...placement,
-      ...requiredPolicyField(bb, helperPolicy, providerId, "council-seat"),
-      ...writerExecutionSelection(providerId, model, effort, (input.seat as { serviceTier?: "default" | "fast" } | null)?.serviceTier ?? "default"),
-      prompt: input.prompt,
-      environment: workspaceExecutionEnvironment(input.place.hostId, { path: input.place.workspace, environmentId: null }),
-      pluginMetadata: { role: "council-seat", spawnId: `${input.session.id}:${input.seat?.id ?? "chair"}:r${input.round}`, lanePilotRunId: input.session.runId, councilId: input.session.id, seatId: input.seat?.id ?? "chair", round: input.round, parentPmThreadId: input.pmThreadId, helperMode: helperPolicy.mode },
-    } as Parameters<typeof fullAccessSpawn>[1]);
-    const threadId = stringAt(spawned, "id");
-    if (!threadId) throw new Error("council_seat_thread_id_missing");
-    const deadline = Date.now() + TURN_LIMIT_MS;
-    while (Date.now() < deadline) {
-      if (ctx.isDisposed() || stopRequested.has(input.session.id)) break;
-      const observed = await observeStageChild(bb, threadId, OBSERVE_STEP_MS);
-      if (observed.kind === "completed") {
-        const raw = (await bb.sdk.threads.output({ threadId })).output;
-        return typeof raw === "string" ? raw : outputText(raw);
-      }
-      if (observed.kind === "product_failure") throw new Error(`council seat ${input.seat?.id ?? "chair"} failed: ${observed.via}:${observed.detail}`);
-    }
-    await bb.sdk.threads.stop({ threadId }).catch(() => undefined);
-    throw new Error(`council seat ${input.seat?.id ?? "chair"} did not finish within ${TURN_LIMIT_MS / 60_000} minutes`);
-  }
-
-  /** The whole session in the background; a notice lands in the PM chat when it ends. */
-  function runInBackground(session: CouncilSession, input: { pmThreadId: string; place: { hostId: string; workspace: string }; chair: { providerId: string; model: string }; materials: string[]; mode: "room" | "rounds"; judge: boolean }): void {
-    void (async () => {
-      const io = {
-        spawnTurn: (turn: { session: CouncilSession; seat: CouncilSeat | null; round: number; prompt: string }) => spawnTurn({ ...turn, pmThreadId: input.pmThreadId, place: input.place, chair: input.chair }),
-        evidence: () => evidencePack(session.projectId, input.place, session.question, input.materials),
-        save: {
-          agenda: (agenda: string[], criteria: string[]) => { setCouncilAgenda(db, session.id, agenda, criteria); changed(session.projectId); },
-          message: (message: Omit<CouncilMessage, "seq" | "councilId" | "at">) => { const saved = addCouncilMessage(db, { councilId: session.id, ...message }); changed(session.projectId); return saved; },
-          state: (patch: Parameters<typeof setCouncilState>[2]) => { setCouncilState(db, session.id, patch); changed(session.projectId); },
-        },
-        isStopped: () => ctx.isDisposed() || stopRequested.has(session.id),
-        workspace: input.place.workspace,
-        moderator: input.judge ? jevModerator(input.place.hostId, session) : undefined,
-        log: (message: string) => ctx.log(`Lane Pilot ${message}`),
-      };
-      const decision = input.mode === "rounds"
-        ? await runCouncil(session, io)
-        : await runRoom(session, {
-          ...io,
-          impulse: input.judge ? jevImpulse(input.place.hostId) : undefined,
-          pollOwner: (afterSeq) => listCouncilMessages(db, session.id, afterSeq).filter((message) => message.kind === "owner"),
-          waitForOwner: (afterSeq) => waitForOwner(session.id, afterSeq, input.pmThreadId),
-          decideRequested: () => decideRequested.has(session.id),
-          presence: (seatId) => { presence.set(session.id, { seatId, since: Date.now() }); changed(session.projectId); },
-          maxTurns: session.maxRounds * session.seats.length,
-        });
-      stopRequested.delete(session.id);
-      decideRequested.delete(session.id);
-      presence.delete(session.id);
-      const ended = getCouncilSession(db, session.id);
-      if (!decision) {
-        await sendCouncilNotice({
-          bb, pmThreadId: input.pmThreadId, councilId: session.id, state: ended?.state ?? "failed",
-          text: councilEndedText({ id: session.id, question: session.question, state: ended?.state ?? "failed", reason: ended?.reason ?? null }),
-          log: (message) => ctx.log(message),
-        });
-        return;
-      }
-      const final = ended ?? session;
-      const feed = listCouncilMessages(db, session.id);
-      const path = decisionFileName(final);
-      try {
-        await bb.sdk.files.write({ hostId: input.place.hostId, rootPath: input.place.workspace, path: `${input.place.workspace}/${path}`, content: decisionMarkdown(final, decision, feed), contentEncoding: "utf8", createParents: true, expectedSha256: null });
-        setCouncilState(db, session.id, { decisionPath: path });
-      } catch (cause) {
-        ctx.log(`Lane Pilot council ${session.id}: decision page not written: ${cause instanceof Error ? cause.message : String(cause)}`);
-      }
-      for (const task of decision.nextTasks) {
-        try {
-          createHandoff(db, {
-            id: `hnd_${randomUUID().replaceAll("-", "").slice(0, 20)}`, projectId: session.projectId, runId: session.runId, ownerThreadId: input.pmThreadId,
-            draft: { fromAgent: "council", toAgent: task.toAgent ?? "lane-pilot-pm", title: task.title, objective: task.objective, acceptance: task.acceptance, inputs: [{ kind: "path", ref: path, note: "council decision" }], budget: {}, deadlineAt: null },
-          });
-        } catch (cause) {
-          ctx.log(`Lane Pilot council ${session.id}: handoff for "${task.title}" not created: ${cause instanceof Error ? cause.message : String(cause)}`);
-        }
-      }
-      await sendCouncilNotice({
-        bb, pmThreadId: input.pmThreadId, councilId: session.id, state: "done",
-        text: councilDecisionText({ id: session.id, question: session.question, decisionPath: path, nextTasks: decision.nextTasks }),
-        log: (message) => ctx.log(message),
-      });
-    })().catch((cause: unknown) => ctx.log(`Lane Pilot council ${session.id} crashed: ${cause instanceof Error ? cause.message : String(cause)}`));
-  }
-
-  async function startCouncil(input: { projectId: string; runId: string; pmThreadId: string; question: string; roles?: string[]; materials?: string[]; maxRounds?: number; mode?: "room" | "rounds"; judge?: boolean }): Promise<CouncilSession> {
-    const run = getRun(db, input.runId);
-    const config = await ctx.configForRun(input.projectId, run);
-    if (!config?.hostId || !config.writerWorkspacePath) throw new Error("the run has no writer host and workspace yet");
-    const settings = (await ctx.effectiveProjectSettings(input.projectId)).values;
-    const pairs = selectionPairs(settings, { providerId: config.writerProviderId, model: config.writerModel });
-    const seats = seatsFor(input.roles, pairs, settings);
-    const chairOwn = configuredSeatPair(settings, "chair");
-    const chairPair = chairOwn ?? pairs.find((pair) => !seats.some((seat) => seat.providerId === pair.providerId && seat.model === pair.model)) ?? pairs[0]!;
-    const judgeSetting = configuredSetting(settings, "council.judge");
-    const roundsSetting = configuredSetting(settings, "council.max_rounds");
-    const session = createCouncilSession(db, { id: `cncl_${randomUUID().replaceAll("-", "").slice(0, 16)}`, projectId: input.projectId, runId: input.runId, question: input.question, seats, maxRounds: input.maxRounds ?? (Number(roundsSetting) >= 1 && Number(roundsSetting) <= 6 ? Number(roundsSetting) : 3) });
-    addCouncilMessage(db, { councilId: session.id, seatId: "owner", round: 0, kind: "owner", text: input.question });
-    changed(session.projectId);
-    runInBackground(session, { pmThreadId: input.pmThreadId, place: { hostId: config.hostId, workspace: config.writerWorkspacePath }, chair: chairPair, materials: input.materials ?? [], mode: input.mode ?? "room", judge: input.judge ?? !(judgeSetting === false || judgeSetting === "false" || judgeSetting === "0") });
-    return session;
+  /** Convenes a council: the session is made at once (so the reply has its seats), the graph then runs it. */
+  async function startCouncil(input: CouncilStart): Promise<CouncilSession> {
+    if (!graph) throw new Error("the council graph is not mounted");
+    return graph.start(input);
   }
 
   function councilView(session: CouncilSession, afterSeq = 0) {
@@ -363,41 +126,28 @@ export function createCouncil(ctx: ServerCore) {
     return saved;
   }
 
+  /** A request for the decision is a note in the feed, so the graph's next step finds it even after a plugin reload. */
   function requestDecision(id: string): CouncilSession | null {
     const session = getCouncilSession(db, id);
     if (!session) return null;
-    if (!["done", "failed", "stopped"].includes(session.state)) decideRequested.add(id);
+    if (!["done", "failed", "stopped"].includes(session.state) && !decideRequestedIn(listCouncilMessages(db, id))) {
+      addCouncilMessage(db, { councilId: id, seatId: MODERATOR_SEAT_ID, round: session.round, kind: "status", text: DECIDE_REQUEST_TEXT });
+      changed(session.projectId);
+    }
     return session;
   }
 
+  /** Stops the graph run (the seat on the floor is stopped with it) and closes the session as stopped. */
   function requestStop(id: string): CouncilSession | null {
     const session = getCouncilSession(db, id);
     if (!session) return null;
     if (["done", "failed", "stopped"].includes(session.state)) return session;
-    stopRequested.add(id);
+    setCouncilState(db, id, { state: "stopped", reason: "stopped by the owner" });
+    presence.delete(id);
+    if (session.wfRunId) graph?.cancel(session.wfRunId, "stopped by the owner");
+    changed(session.projectId);
     return session;
   }
-
-  /** A reload drops the loops; sessions they were driving cannot resume mid-way and say so instead of looking alive. */
-  function reconcileAfterReload(): string[] {
-    const stale = db.prepare("SELECT id FROM lane_pilot_council WHERE state IN ('agenda','discussion','synthesis')").all() as Array<{ id: string }>;
-    for (const row of stale) {
-      setCouncilState(db, row.id, { state: "failed", reason: "interrupted by a plugin reload; convene the council again" });
-      addCouncilMessage(db, { councilId: row.id, seatId: "moderator", round: 0, kind: "status", text: "Interrupted by a plugin reload. Convene the council again." });
-      const session = getCouncilSession(db, row.id);
-      const pmThreadId = session ? getRun(db, session.runId)?.pm_thread_id : null;
-      if (session && pmThreadId) {
-        void sendCouncilNotice({
-          bb, pmThreadId, councilId: session.id, state: "failed",
-          text: councilEndedText({ id: session.id, question: session.question, state: "failed", reason: session.reason }),
-          log: (message) => ctx.log(message),
-        });
-      }
-    }
-    return stale.map((row) => row.id);
-  }
-  const interrupted = reconcileAfterReload();
-  if (interrupted.length) ctx.log(`Lane Pilot councils interrupted by the reload: ${interrupted.join(", ")}`);
 
   /** Which pair every seat would get right now and where it comes from; the settings panel and the CLI show it. */
   async function seatDefaults(projectId: string) {
@@ -417,7 +167,13 @@ export function createCouncil(ctx: ServerCore) {
   }
 
   return {
-    startCouncil, councilView, requestStop, say, requestDecision, seatDefaults,
+    startCouncil, councilView, requestStop, say, requestDecision, seatDefaults, changed,
+    bindGraph: (bound: CouncilGraph) => { graph = bound; },
+    setPresence: (id: string, seatId: string | null) => {
+      const session = getCouncilSession(db, id);
+      if (seatId) presence.set(id, { seatId, since: Date.now() }); else presence.delete(id);
+      if (session) changed(session.projectId);
+    },
     listCouncils: (projectId: string, runId?: string) => listCouncilSessions(db, { projectId, runId }),
   };
 }
@@ -437,7 +193,7 @@ export function mountCouncilTools(ctx: ServerCore, council: CouncilApi, launchRe
   registerObservedTool(bb.agents, {
     name: "lane_pilot_council_start",
     description: "Convene a council of directors on a product or business question: role-bound seats on different models argue it through evidence and rounds; the chair writes a decision page under docs/decisions and hands next tasks over.",
-    instructions: "Use from the active Lane Pilot PM thread when the owner asks for a council, or a product question the owner delegated to you is open (how to raise repeat purchases, which features the collected requests ask for). Put exports and notes into the workspace and name them in `materials`. Default mode is `room`: seats speak when they have something to add and the owner may join at any time with lane_pilot_council_say; `rounds` is a fixed-round debate. `judge` (default on) asks Jev whether a seat wants the floor and whether the room is done; off means the built-in rule. A session takes tens of minutes: end the turn after starting; the council reports its end to this chat itself. Then dispatch the tasks its decision names or report the decision to the owner.",
+    instructions: "Use from the active Lane Pilot PM thread when the owner asks for a council, or a product question the owner delegated to you is open (how to raise repeat purchases, which features the collected requests ask for). Put exports and notes into the workspace and name them in `materials`. Default mode is `room`: seats speak when they have something to add and the owner may join at any time with lane_pilot_council_say; `rounds` is a fixed-round debate. `judge` (default on) asks Jev whether a seat wants the floor and whether the room is done; off means the built-in rule. A session takes tens of minutes: end the turn after starting; the council reports its end to this chat itself. It is a run of the `council` graph (`wfRunId` in the reply) and a plugin reload does not end it. Then dispatch the tasks its decision names or report the decision to the owner.",
     parameters: z.object({
       runId: z.string().min(1),
       question: z.string().trim().min(8).max(2000),

@@ -1,0 +1,345 @@
+{
+  "id": "council",
+  "startedBy": "lane_pilot_council",
+  "name": {
+    "en": "Council",
+    "ru": "Совет"
+  },
+  "description": {
+    "en": "A council of directors on a product or business question: the chair sets an agenda from the project's files and materials, role-bound seats, each on its own model, speak in turn or when they have something to add (the owner may join at any time, ask for the decision or stop it), a judge or the round order picks who speaks next, and the chair ends with a decision record: a page under docs/decisions and handoffs for the next tasks. The talk is stored in the council tables the Council office reads; a plugin reload resumes it where the feed stopped. Started by lane_pilot_council_start; works under a Lane Pilot run.",
+    "ru": "Совет директоров по вопросу о продукте или бизнесе: председатель составляет повестку по файлам проекта и материалам, места с ролями, каждое на своей модели, говорят по кругу или когда есть что добавить (владелец может вступить в любой момент, попросить решение или остановить совет), судья или порядок кругов выбирает следующего, а председатель заканчивает записью решения: страница в docs/decisions и поручения на следующие задачи. Разговор хранится в таблицах совета, которые читает офис совета; перезагрузка плагина продолжает совет с места, где остановилась лента. Запускается через lane_pilot_council_start; работает под запуском Lane Pilot."
+  },
+  "not_for": [
+    "a code change: that goes through lane_pilot_dispatch_writer",
+    "anything a person asks for in a chat: the PM starts this with lane_pilot_council_start"
+  ],
+  "status": "published",
+  "tags": [
+    "council"
+  ],
+  "triggers": [
+    "manual"
+  ],
+  "inputs": {
+    "council_id": {
+      "type": "string",
+      "default": "",
+      "note": "the session the starter already made; empty: open makes it"
+    },
+    "question": {
+      "type": "string",
+      "note": "the question the council works to a decision"
+    },
+    "roles": {
+      "type": "string[]",
+      "default": [],
+      "note": "role names of the seats; empty: the default seats"
+    },
+    "materials": {
+      "type": "string[]",
+      "default": [],
+      "note": "project files the seats get as evidence"
+    },
+    "max_rounds": {
+      "type": "int",
+      "default": 3,
+      "note": "1 to 6; the room takes at most rounds x seats turns"
+    },
+    "mode": {
+      "type": "string",
+      "default": "room",
+      "note": "room (seats speak when they have something to add) or rounds (a fixed order)"
+    },
+    "judge": {
+      "type": "bool",
+      "default": true,
+      "note": "a System One judge picks the speaker and weighs the room; off: the built-in rule"
+    }
+  },
+  "outputs": {
+    "state": "done",
+    "council_id": "string",
+    "decision_path": "string",
+    "recommendation": "string"
+  },
+  "live_success": {
+    "output": "state",
+    "in": [
+      "done"
+    ]
+  },
+  "guards": {
+    "maxSteps": 120
+  },
+  "budget": {
+    "max_steps": 120,
+    "max_minutes": 480
+  },
+  "nodes": [
+    {
+      "id": "open",
+      "type": "action",
+      "action": "council.open",
+      "title": {
+        "en": "Open the council",
+        "ru": "Открыть совет"
+      },
+      "rule": "code: the session and its seats (the owner's models for a seat, else distinct stage selections), the chair (the council row of the role table), the project's place, the evidence pack",
+      "out": {
+        "council_id": "string",
+        "seats": "string[]",
+        "chair_provider": "string",
+        "chair_model": "string",
+        "chair_effort": "string",
+        "host_id": "string",
+        "workspace": "string"
+      }
+    },
+    {
+      "id": "agenda",
+      "type": "agent",
+      "role": "council-seat",
+      "uses": "lp.council-turn",
+      "title": {
+        "en": "Set the agenda",
+        "ru": "Составить повестку"
+      },
+      "proof": {
+        "kind": "advisory",
+        "reason": "the chair's own agenda; the JSON schema of the agenda decides whether it is usable",
+        "form": "parseAgenda: 1 to 8 agenda items and 1 to 8 criteria"
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "out": {
+        "agenda": "string[]",
+        "criteria": "string[]",
+        "thread_id": "string"
+      },
+      "guards": {
+        "timeoutMin": 35
+      }
+    },
+    {
+      "id": "next",
+      "type": "action",
+      "action": "council.next",
+      "title": {
+        "en": "Pick the next speaker",
+        "ru": "Выбрать следующего"
+      },
+      "rule": "code: the decision request, then the order of the round or the room (the judge's impulse, else the rule); waits up to 10 minutes for the owner when nobody asks for the floor; ends the talk at the round or turn cap",
+      "out": {
+        "done": "bool",
+        "seat": "string",
+        "round": "int",
+        "reason": "string"
+      },
+      "guards": {
+        "maxVisits": 50,
+        "timeoutMin": 25
+      }
+    },
+    {
+      "id": "speak",
+      "type": "agent",
+      "role": "council-seat",
+      "uses": "lp.council-turn",
+      "title": {
+        "en": "A seat speaks",
+        "ru": "Место говорит"
+      },
+      "proof": {
+        "kind": "advisory",
+        "reason": "a seat's opinion; it is saved in the feed as it is, PASS when it has nothing to add",
+        "form": "the answer is the seat's statement, or exactly PASS after the first round"
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "out": {
+        "seat": "string",
+        "passed": "bool",
+        "thread_id": "string"
+      },
+      "guards": {
+        "maxVisits": 50,
+        "timeoutMin": 35
+      }
+    },
+    {
+      "id": "chair",
+      "type": "agent",
+      "role": "council-seat",
+      "uses": "lp.council-turn",
+      "title": {
+        "en": "The chair decides",
+        "ru": "Председатель решает"
+      },
+      "proof": {
+        "kind": "advisory",
+        "reason": "the chair's own record; the decision schema decides whether it is usable",
+        "form": "parseDecisionRecord: summary, options, recommendation, dissent, experiments, next tasks"
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "out": {
+        "recommendation": "string",
+        "tasks": "int",
+        "thread_id": "string"
+      },
+      "guards": {
+        "timeoutMin": 35
+      }
+    },
+    {
+      "id": "decide",
+      "type": "action",
+      "action": "council.decide",
+      "title": {
+        "en": "Write the decision",
+        "ru": "Записать решение"
+      },
+      "rule": "code: the decision page under docs/decisions, a handoff for each next task, the session closed as done, one notice to the PM chat",
+      "out": {
+        "decision_path": "string",
+        "handoffs": "int"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "state": "done",
+        "council_id": "open.council_id",
+        "decision_path": "decide.decision_path",
+        "recommendation": "chair.recommendation"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "open"
+    },
+    {
+      "from": "open",
+      "to": "agenda"
+    },
+    {
+      "from": "agenda",
+      "to": "next"
+    },
+    {
+      "from": "next",
+      "to": "chair",
+      "when": "next.done"
+    },
+    {
+      "from": "next",
+      "to": "speak"
+    },
+    {
+      "from": "speak",
+      "to": "next"
+    },
+    {
+      "from": "chair",
+      "to": "decide"
+    },
+    {
+      "from": "decide",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "council-1",
+    "sim": {
+      "input": {
+        "question": "How do we raise repeat purchases in the cabinet?",
+        "mode": "rounds",
+        "max_rounds": 2
+      },
+      "stubs": {
+        "open": {
+          "council_id": "cncl_sim",
+          "seats": [
+            "product",
+            "skeptic"
+          ],
+          "chair_provider": "codex",
+          "chair_model": "gpt-6.1-sol",
+          "chair_effort": "high",
+          "host_id": "host-1",
+          "workspace": "/work"
+        },
+        "agenda": {
+          "agenda": [
+            "Where do buyers stop?"
+          ],
+          "criteria": [
+            "effect on sales"
+          ],
+          "thread_id": "thr_agenda",
+          "handoff": "agenda of 1 items"
+        },
+        "next": [
+          {
+            "done": false,
+            "seat": "product",
+            "round": 1,
+            "reason": "round"
+          },
+          {
+            "done": true,
+            "seat": "",
+            "round": 0,
+            "reason": "moderator"
+          }
+        ],
+        "speak": {
+          "seat": "product",
+          "passed": false,
+          "thread_id": "thr_seat",
+          "handoff": "Product director spoke"
+        },
+        "chair": {
+          "recommendation": "Ship guest checkout first.",
+          "tasks": 1,
+          "thread_id": "thr_chair",
+          "handoff": "decision with 1 next tasks"
+        },
+        "decide": {
+          "decision_path": "docs/decisions/2026-10-27-council-repeat-purchases.md",
+          "handoffs": 1
+        }
+      },
+      "expect_path": [
+        "open",
+        "agenda",
+        "next",
+        "speak",
+        "next",
+        "chair",
+        "decide",
+        "done"
+      ],
+      "expect_output": {
+        "state": "done"
+      }
+    },
+    "live": "from a PM chat call lane_pilot_council_start with two roles and maxRounds 1, then lane_pilot_council_status; the Council office shows the same session"
+  }
+}

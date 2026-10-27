@@ -34,7 +34,9 @@ export function workflowEndedText(input: {
   if (input.unmetGoalIds?.length) lines.push(`Unmet goals: ${input.unmetGoalIds.join(", ")}`);
   lines.push(input.workflowId === "errand"
     ? "Next: call lane_pilot_wait_errand with this workflowRunId for the report."
-    : "Next: call lane_pilot_workflow_status with this workflowRunId for details.");
+    : input.workflowId === "council"
+      ? "Next: call lane_pilot_council_status (with runId) for the feed and the reason."
+      : "Next: call lane_pilot_workflow_status with this workflowRunId for details.");
   return lines.join("\n");
 }
 
@@ -72,6 +74,8 @@ export async function maybeNotifyWorkflowRun(input: {
   if (run.idem_key?.startsWith("phase:")) return false;
   // The browser tools wait for their graph and answer with its result: a notice would wake the PM a second time.
   if (PM_WAITS_FOR.has(run.workflow_id)) return false;
+  // A council that decided has told the PM itself (its `decide` step names the page and the next tasks); one that failed or was stopped is told here.
+  if (run.workflow_id === "council" && run.status === "succeeded") return false;
   if (!input.pmThreadId) return false;
   // A scheduled run is not watched live, but what it was scheduled for (a report, a digest) is the owner's: the PM shows it. Its
   // failures are the schedule board's to tell (the live weekly report reached no one, 2026-10-25).
