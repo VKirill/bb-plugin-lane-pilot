@@ -758,6 +758,26 @@ def owner_words(ctx: "Context", value: str) -> tuple[object, int]:
     return original, int(changed["version"])
 
 
+def restore_owner_words(ctx: "Context", original: object, version: int) -> list[str]:
+    """Puts owner.words back after the live word drill and says so when it could not. The key is not a catalog setting, so
+    reset_project_settings refuses it (silently, as ok:false): live 2026-10-27 the drill left it «on» and every later task, phase and the
+    reload task waited six hours for the owner's word. The sandbox project's own value is «off»; a stale «on» is a leftover of an earlier drill, not a choice."""
+    value = original if isinstance(original, str) and original != "on" else "off"
+    saved = setting_rpc("save_setting", {"projectId": ctx.project, "key": "owner.words", "value": value, "expectedVersion": version})
+    if not saved.get("ok") and saved.get("conflict"):
+        saved = setting_rpc("save_setting", {"projectId": ctx.project, "key": "owner.words", "value": value, "expectedVersion": int(saved.get("version") or 0)})
+    return [] if saved.get("ok") else [f"could not put owner.words back to {value}: {saved}"]
+
+
+def clear_stale_owner_words(ctx: "Context") -> list[str]:
+    """Before the scenarios: a leftover owner.words «on» (an earlier drill that could not put it back) makes every task wait for the owner."""
+    saved = hubsql(f"select value, version from lane_pilot_project_settings where project_id='{ctx.project}' and binding_id='' and key='owner.words';")
+    if not saved or json.loads(saved[0]["value"]) != "on":
+        return []
+    log("owner.words was left on by an earlier drill: putting it back to off")
+    return restore_owner_words(ctx, "off", int(saved[0]["version"]))
+
+
 def scenario_live_word(ctx: "Context") -> dict:
     """Live word drill (SMA: Live word drill, Approval drill): with owner.words on, a verified task waits for the owner's word, and lands once
     the word is given (here through the task_word RPC, the path of the screen and the CLI)."""
@@ -782,10 +802,7 @@ def scenario_live_word(ctx: "Context") -> dict:
         if row["state"] != "accepted":
             problems.append(f"the task did not land after the word: {row['states']} {row['reason']}")
     finally:
-        if original is None:
-            setting_rpc("reset_project_settings", {"projectId": ctx.project, "keys": ["owner.words"], "expectedVersions": {"owner.words": version}})
-        else:
-            setting_rpc("save_setting", {"projectId": ctx.project, "key": "owner.words", "value": original, "expectedVersion": version})
+        problems.extend(restore_owner_words(ctx, original, version))
     return verdict("live_word", problems, tasks=[row] if row else [])
 
 
@@ -1408,6 +1425,8 @@ def main() -> int:
             except RuntimeError as cause:
                 problems.append(str(cause))
                 log(str(cause))
+        if ctx is not None and ctx.run_id:
+            problems += clear_stale_owner_words(ctx)
         for name in main_names:
             if ctx is None or not ctx.run_id:
                 break
