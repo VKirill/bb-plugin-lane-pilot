@@ -84,13 +84,14 @@ describe("accounts for a deploy errand (J7)", () => {
     saveProjectSetting(db, projectId, "secrets.allow", "OVH_SSH");
     const call = async (name: string, params: Record<string, unknown>) =>
       JSON.parse(String(await harness.behavior.callAgentTool(name, params, { threadId: pmThreadId, projectId }))) as Record<string, any>;
+    // The doubled helper ends at once, and the errand's graph step reads its report then: what it prints is there before it starts.
+    say(`Deployed. I ran ssh with the key:\n${PRIVATE_KEY}\nERRAND: done`);
     const started = await call("lane_pilot_errand", { task: "Deploy the build to the server over SSH", authorized: true, accounts: ["OVH_SSH"] });
-    expect(started).toMatchObject({ threadId: "errand-thread", state: "running" });
+    expect(started).toMatchObject({ threadId: "errand-thread", state: "running", workflowRunId: expect.stringMatching(/^wfrun_/) });
     const prompt = String(spawned[0]!.prompt);
     expect(prompt).toContain("- OVH_SSH (ssh)");
     expect(prompt).not.toContain("QUJDREVGR0hJSktMTU5PUA");
-    say(`Deployed. I ran ssh with the key:\n${PRIVATE_KEY}\nERRAND: done`);
-    const waited = await call("lane_pilot_wait_errand", { threadId: "errand-thread", timeoutSec: 5 });
+    const waited = await call("lane_pilot_wait_errand", { workflowRunId: started.workflowRunId, timeoutSec: 20 });
     expect(waited.state).toBe("done");
     expect(waited.output).not.toContain("QUJDREVGR0hJSktMTU5PUA");
     expect(waited.output).toContain("***");

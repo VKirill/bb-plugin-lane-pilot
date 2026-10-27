@@ -19,9 +19,9 @@ describe("status of the built-in chains", () => {
     const missing: string[] = [];
     for (const item of store.list()) {
       const id = item.workflow.id;
-      // The body of a schedule of kind agent: its case is in tests/schedule/agent-routine.test.ts, run through the real engine.
-      // Graphs another tool starts (specialist, after-accept): their cases run through the real plugin or engine in their own tests.
-      if (id === "lp-task-pipeline" || id === "agent-routine" || id === "specialist" || id === "lp.after-accept") continue;
+      // The body of a schedule of kind agent: its case is in tests/schedule/agent-routine.test.ts, run through the real engine. A starter graph
+      // (`startedBy`: lp-task-pipeline, errand) is run by the tool that starts it, with its own test file (tests/errand-graph.test.ts).
+      if (item.workflow.startedBy || id === "agent-routine") continue;
       if (!withCase.has(id)) missing.push(id);
     }
     expect(missing).toEqual([]);
@@ -46,6 +46,6 @@ describe("status of the built-in chains", () => {
     expect(ids).toEqual(expect.arrayContaining(OWN));
     expect(ids.filter((id) => store.get(id)!.workflow.internal).sort()).toEqual(["ins.post", "lp.analyze", "lp.brainstorm", "lp.build", "lp.close", "lp.draw", "lp.plan", "lp.review"]);
     expect(ids).toEqual(expect.arrayContaining(["validate-phase", "eval-review", "ai-integration-phase", "spike", "ship", "pr-branch", "cleanup", "new-milestone", "plan-review-convergence", "project-start"]));
-    expect(ids).toHaveLength(59);
+    expect(ids).toHaveLength(60);
   });
 });

@@ -42,6 +42,14 @@ export function priceView(model: string | null): Pick<CostView, "priceInPer1M" |
 
 const COST_WINDOW = 20;
 
+/** The helper thread of a scheduled errand's run: a schedule of kind errand is a run of the `errand` graph, and the graph step noted the thread it spawned. */
+export function errandRunThread(db: Database.Database, workflowRunId: string): string | null {
+  try {
+    const row = db.prepare("SELECT json_extract(result_json,'$.threadId') AS thread FROM lane_pilot_wf_effect WHERE run_id=? AND kind='errand.spawn' AND state='done'").get(workflowRunId) as { thread: string | null } | undefined;
+    return row?.thread ?? null;
+  } catch { return null; }
+}
+
 /** Cost per run of an errand schedule: the average over its last runs whose thread has known usage and a priced model, and the price of `model` now. */
 export function scheduleCost(db: Database.Database, scheduleId: string, model: string | null): CostView {
   let costs: Array<number | null> = [];
@@ -51,5 +59,12 @@ export function scheduleCost(db: Database.Database, scheduleId: string, model: s
       WHERE r.schedule_id=? AND r.ref_kind='thread' AND r.status IN ('succeeded','failed','timed_out') ORDER BY r.scheduled_at DESC LIMIT ?`).all(scheduleId, COST_WINDOW) as CursorRow[];
     costs = rows.map((row) => usageOfCursor(row).costUsd);
   } catch { costs = []; }
+  try {
+    const rows = db.prepare(`SELECT c.total_json, c.last_model, c.last_provider, c.provider_id FROM lane_pilot_schedule_run r
+      JOIN lane_pilot_wf_effect e ON e.run_id=r.ref_id AND e.kind='errand.spawn' AND e.state='done'
+      JOIN lane_pilot_token_cursor c ON c.thread_id=json_extract(e.result_json,'$.threadId')
+      WHERE r.schedule_id=? AND r.ref_kind='workflow_run' AND r.status IN ('succeeded','failed','timed_out') ORDER BY r.scheduled_at DESC LIMIT ?`).all(scheduleId, COST_WINDOW) as CursorRow[];
+    costs = [...costs, ...rows.map((row) => usageOfCursor(row).costUsd)].slice(0, COST_WINDOW);
+  } catch { /* no graph runs yet */ }
   return { ...averageCost(costs), ...priceView(model) };
 }

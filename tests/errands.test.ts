@@ -24,6 +24,8 @@ describe("errandPrompt", () => {
     const runId = "errand-run-id";
     const spawned: Array<Record<string, unknown>> = [];
     const hostCalls: Array<{ method: string; hostId: unknown; cwd: unknown }> = [];
+    // The helper ends when the test says so: the errand's graph step reads the report the moment its thread ends.
+    let helperEnded = false;
 
     const { bb, harness } = createFakePluginHost({
       pluginId: "lane-pilot",
@@ -38,7 +40,7 @@ describe("errandPrompt", () => {
           getPluginMetadata: async ({ threadId }) => threadId === pmThreadId ? { role: "pm", lanePilotRunId: runId } : {},
           spawn: async (args) => { spawned.push(args as unknown as Record<string, unknown>); return { id: "errand-child-thread" }; },
           get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId, environmentId: "env-pm", sourceThreadId: pmThreadId, lifecycleOwnerThreadId: pmThreadId }),
-          events: { list: async ({ threadId }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }] },
+          events: { list: async ({ threadId }) => helperEnded ? [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }] : [{ type: "turn/started", threadId, seq: 1 }] },
           output: async () => ({ output: "I updated .gitignore\nERRAND: done" }),
         },
         environments: {
@@ -57,15 +59,17 @@ describe("errandPrompt", () => {
       JSON.parse(String(await harness.behavior.callAgentTool(name, params, { threadId: pmThreadId, projectId }))) as Record<string, any>;
 
     const started = await call("lane_pilot_errand", { task: "Please update .gitignore file for me" });
-    expect(started).toMatchObject({ threadId: "errand-child-thread", state: "running" });
+    expect(started).toMatchObject({ threadId: "errand-child-thread", state: "running", workflowRunId: expect.stringMatching(/^wfrun_/) });
 
     // Create a temporary untracked file to simulate a helper edit
     const fs = await import("node:fs/promises");
     const testFile = "stray_helper_test_file.txt";
     await fs.writeFile(testFile, "touched");
     try {
-      const waited = await call("lane_pilot_wait_errand", { threadId: "errand-child-thread", timeoutSec: 5 });
+      helperEnded = true;
+      const waited = await call("lane_pilot_wait_errand", { threadId: "errand-child-thread", timeoutSec: 20 });
       expect(waited).toMatchObject({
+        workflowRunId: started.workflowRunId,
         threadId: "errand-child-thread",
         state: "blocked",
         reason: "repo_edited",

@@ -73,6 +73,8 @@ describe("council PM notices", () => {
 
 describe("workflow PM notices", () => {
   it("names the run, workflow, status, reason and the status tool", () => {
+    // The notice of an errand run points at the errand's own wait tool, not at the workflow status.
+    expect(workflowEndedText({ workflowRunId: "wfrun_2", workflowId: "errand", status: "succeeded", reason: null })).toContain("lane_pilot_wait_errand with this workflowRunId");
     const text = workflowEndedText({ workflowRunId: "wfrun_1", workflowId: "demo", status: "succeeded", reason: null });
     expect(text).toContain("Workflow run wfrun_1 of demo is succeeded.");
     expect(text).toContain("lane_pilot_workflow_status");

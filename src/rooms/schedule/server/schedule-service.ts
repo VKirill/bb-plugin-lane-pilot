@@ -15,7 +15,7 @@ import { t } from "@lane-pilot/i18n";
 import { loadPushConfig, postOwnerItem } from "../../owner-waiting";
 import { errandModelView, readErrandDefault } from "./schedule-default";
 import { createThreadHosts, projectPlaces, whereOf, type ProjectPlace } from "./schedule-place";
-import { NO_USAGE, scheduleCost, threadUsage } from "./schedule-usage";
+import { NO_USAGE, errandRunThread, scheduleCost, threadUsage } from "./schedule-usage";
 import { createScheduleExecutors } from "./schedule-executors";
 import type { Services } from "../../core/server";
 import { createWorkflowLibrary } from "../../workflow/server";
@@ -236,7 +236,7 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
   async function runsDetailed(id: string, limit = 50, offset = 0) {
     const hosts = await hostOptions();
     return Promise.all(runs(id, limit, offset).map(async (run) => {
-      const thread = run.refKind === "thread" && run.refId ? run.refId : null;
+      const thread = run.refKind === "thread" && run.refId ? run.refId : run.refKind === "workflow_run" && run.refId ? errandRunThread(db, run.refId) : null;
       const hostId = (thread ? await threadHost(thread).catch(() => null) : null) ?? run.hostId;
       return { ...run, ...(thread ? threadUsage(db, thread) : NO_USAGE), hostName: hostId ? hosts.find((host) => host.id === hostId)?.name ?? hostId : null };
     }));

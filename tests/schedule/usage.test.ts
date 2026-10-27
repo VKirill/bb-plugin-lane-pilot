@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { costUsd } from "@lane-pilot/models";
 import { createDb } from "./harness";
-import { averageCost, priceView, scheduleCost, threadUsage, usageOfCursor } from "../../src/rooms/schedule/server/schedule-usage";
+import { averageCost, errandRunThread, priceView, scheduleCost, threadUsage, usageOfCursor } from "../../src/rooms/schedule/server/schedule-usage";
 
 const total = (input: number, output: number, cacheRead = 0, cacheWrite = 0) => JSON.stringify({ input: input + cacheRead + cacheWrite, output, cached: cacheRead + cacheWrite, total: input + cacheRead + cacheWrite + output, cacheRead, cacheWrite });
 const cursor = (extra: Partial<{ total_json: string; last_model: string; last_provider: string; provider_id: string }> = {}) => ({ total_json: total(1_000_000, 100_000), last_model: "claude-opus-5-5", last_provider: "claude-code", provider_id: "claude-code", ...extra });
@@ -77,5 +77,22 @@ describe("cost per run of a schedule", () => {
     expect(scheduleCost(db, "s_none", "claude-sonnet-5-5")).toEqual({ perRunUsd: null, samples: 0, priceInPer1M: 2, priceOutPer1M: 10 });
     // A model without a price.
     expect(scheduleCost(db, "s_none", "router9/x")).toEqual({ perRunUsd: null, samples: 0, priceInPer1M: null, priceOutPer1M: null });
+  });
+
+  it("a scheduled errand is a run of the errand graph: its helper thread is the one its spawn effect noted, and its cost counts like a thread run's", () => {
+    const db = createDb();
+    db.exec("CREATE TABLE lane_pilot_token_cursor (thread_id TEXT PRIMARY KEY, project_id TEXT, provider_id TEXT, last_seq INTEGER, last_json TEXT, total_json TEXT, last_model TEXT, last_provider TEXT, last_turn_id TEXT, updated_at INTEGER)");
+    db.exec("CREATE TABLE lane_pilot_wf_effect (id TEXT PRIMARY KEY, run_id TEXT, step_key TEXT, effect_key TEXT, kind TEXT, state TEXT, intent_json TEXT, result_json TEXT, created_at INTEGER, updated_at INTEGER)");
+    db.prepare(`INSERT INTO lane_pilot_schedule (id, project_id, name, kind, task_json, trigger_type, timeout_sec, state, cursor_at, created_by, created_at, updated_at) VALUES ('s2','p','n','errand','{}','cron',60,'active',0,'t',0,0)`).run();
+    const run = db.prepare("INSERT INTO lane_pilot_schedule_run (id, schedule_id, run_key, scheduled_at, trigger, status, queued_at, ref_kind, ref_id) VALUES (?,?,?,?,?,?,?,?,?)");
+    const effect = db.prepare("INSERT INTO lane_pilot_wf_effect VALUES (?,?,?,?,?,?,?,?,0,0)");
+    run.run("r1", "s2", "s2:1", 1, "tick", "succeeded", 1, "workflow_run", "wfrun_a");
+    run.run("r2", "s2", "s2:2", 2, "tick", "succeeded", 2, "workflow_run", "wfrun_b");
+    effect.run("e1", "wfrun_a", "work#1", "spawn", "errand.spawn", "done", null, JSON.stringify({ threadId: "thr_a", browserMachine: null }));
+    effect.run("e2", "wfrun_b", "work#1", "before", "errand.before", "done", null, "null");
+    db.prepare("INSERT INTO lane_pilot_token_cursor VALUES (?,?,?,?,?,?,?,?,?,?)").run("thr_a", "p", "claude-code", 1, "{}", total(1_000_000, 0), "claude-opus-5-5", "claude-code", "t", 0);
+    expect(errandRunThread(db, "wfrun_a")).toBe("thr_a");
+    expect(errandRunThread(db, "wfrun_b")).toBeNull();
+    expect(scheduleCost(db, "s2", "claude-opus-5-5")).toEqual({ perRunUsd: 4, samples: 1, priceInPer1M: 4, priceOutPer1M: 20 });
   });
 });
