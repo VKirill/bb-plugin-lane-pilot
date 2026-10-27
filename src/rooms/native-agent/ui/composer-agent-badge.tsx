@@ -6,7 +6,7 @@ import { detectLocale, setLocaleOverride, t } from "@lane-pilot/i18n";
 import { composerAgentLabel } from "../agent-display";
 import { nativeAgentCliId } from "../native-agent-id";
 import { findComposerPromptBox, promptBoxFrameStyle, PROMPT_BOX_AGENT_LABEL_LEFT } from "./composer-prompt-box";
-import { getPendingNativeAgent, subscribePendingNativeAgent } from "./pending-native-agent";
+import { getChatAgentVersion, getPendingNativeAgent, subscribePendingNativeAgent } from "./pending-native-agent";
 import { HelperChips, useHelperThreads, type HelperThread } from "./helper-threads";
 
 function shortAgentId(value: string): string {
@@ -97,6 +97,7 @@ export function ComposerAgentBadge() {
   const view = useComposerView();
   const threadId = view.scope.kind === "thread" ? view.scope.threadId : null;
   const pending = useSyncExternalStore(subscribePendingNativeAgent, getPendingNativeAgent, getPendingNativeAgent);
+  const switched = useSyncExternalStore(subscribePendingNativeAgent, getChatAgentVersion, getChatAgentVersion);
   const [bound, setBound] = useState<{ agentId: string; description: string } | null>(null);
 
   useEffect(() => {
@@ -120,7 +121,7 @@ export function ComposerAgentBadge() {
       setBound({ agentId: row.agentType, description: row.description });
     }).catch(() => undefined);
     return () => { current = false; };
-  }, [rpc, threadId]);
+  }, [rpc, threadId, switched]);
 
   const { threads: helpers, queued } = useHelperThreads(bound ? threadId : null);
   if (threadId) return bound ? <AgentNameBadge {...bound} helpers={helpers} queued={queued} /> : null;

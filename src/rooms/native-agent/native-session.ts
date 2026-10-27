@@ -5,6 +5,9 @@ import { nativeAgentCliId } from "./native-agent-id";
 
 export const nativeSelectionMarker = (token: string) => `[lane-pilot-selection:${token}]`;
 
+/** The token of a profile an existing chat was switched to; the chat's next message takes it (native-dispatch.ts). */
+export const nativeSwitchKey = (threadId: string) => `native-switch:${threadId}`;
+
 export const nativeSelectionSchema = z.object({
   token: z.string().uuid(),
   projectId: z.string().min(1),
@@ -77,4 +80,13 @@ export function collisionMessage(kind: CliAgentsCollision): string {
     return "CLI Agents already bound this chat. Start a new chat without a CLI session agent. Lane Pilot does not clear that binding.";
   }
   return "CLI Agents has a project pending selection (no mention required). Clear it in CLI Agents. Lane Pilot does not delete pending:<project>:<provider>.";
+}
+
+/** The profile the chat was switched to and has not yet sent a message with; null when no switch waits. */
+export async function pendingSwitch(kv: { get<T>(key: string): Promise<T | undefined> }, threadId: string): Promise<NativeSelection | null> {
+  const token = await kv.get<string>(nativeSwitchKey(threadId)).catch(() => undefined);
+  if (typeof token !== "string") return null;
+  const raw = await kv.get(`native-selection:${token}`).catch(() => undefined);
+  const parsed = raw ? nativeSelectionSchema.safeParse(raw) : null;
+  return parsed?.success ? parsed.data : null;
 }

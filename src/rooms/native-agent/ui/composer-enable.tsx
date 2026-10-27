@@ -17,7 +17,7 @@ import {
 } from "../activation";
 import { DEFAULT_NATIVE_AGENT } from "../native-agent-id";
 import { selectionHostId } from "../composer-selection";
-import { setPendingNativeAgent } from "./pending-native-agent";
+import { noteChatAgentChanged, setPendingNativeAgent } from "./pending-native-agent";
 import { useNativeComposerSelection } from "./composer-selection-hook";
 import { takeArchitectLaunch } from "../../workflow/ui";
 
@@ -46,15 +46,23 @@ function blockCopy(block: ActivationBlock): string {
   return t("compiledMainUnavailable");
 }
 
-function nativeProjectId(scope: ReturnType<typeof useComposerView>["scope"]): string | null {
-  return scope.kind === "new-thread" ? scope.projectId : null;
+type ChatState = { projectId: string; eligible: boolean; reason: "helper" | "provider" | "lane_started" | "specialist_run" | null };
+
+/** Why an existing chat cannot change its agent; helper chats get no control at all. */
+function lockedCopy(reason: NonNullable<ChatState["reason"]>): string | null {
+  if (reason === "provider") return t("composerChatLockedProvider");
+  if (reason === "lane_started") return t("composerChatLockedLane");
+  return null;
 }
 
 export function EnableLanePilotAction() {
   const rpc = useRpc<typeof rpcContract>();
   const composer = useComposer();
   const view = useComposerView();
-  const projectId = nativeProjectId(view.scope);
+  // In an existing chat the same popover changes the agent from the chat's next message (switch_chat_agent).
+  const threadId = view.scope.kind === "thread" ? view.scope.threadId : null;
+  const [chat, setChat] = useState<ChatState | null>(null);
+  const projectId = view.scope.kind === "new-thread" ? view.scope.projectId : chat?.projectId || null;
   const hostId = selectionHostId(useNativeComposerSelection());
   // The agent the chat will run as on send: null = a plain chat, the coordinator = Lane Pilot on, anything else = a specialist.
   const [selected, setSelected] = useState<{ id: string; description: string } | null>(null);
@@ -73,10 +81,28 @@ export function EnableLanePilotAction() {
   }, [rpc]);
 
   useEffect(() => {
+    if (!threadId) { setChat(null); return; }
+    let current = true;
+    setChat(null);
+    setSelected(null);
+    void rpc.call("chat_agent_state", { threadId }).then((state) => {
+      if (!current) return;
+      setChat(state);
+      setSelected(state.current ? { id: state.current.agentId, description: state.current.description } : null);
+    }).catch((cause) => {
+      if (current) setError(cause instanceof Error ? cause.message : String(cause));
+    });
+    return () => { current = false; };
+  }, [rpc, threadId]);
+
+  useEffect(() => {
+    if (threadId && !projectId) return;
     let current = true;
     setCtx(null);
-    setSelected(null);
-    setPendingNativeAgent(null);
+    if (!threadId) {
+      setSelected(null);
+      setPendingNativeAgent(null);
+    }
     void rpc.call("activation_context", { projectId, threadId: null }).then((next) => {
       if (current) setCtx(next);
     }).catch((cause) => {
@@ -85,7 +111,7 @@ export function EnableLanePilotAction() {
     return () => { current = false; };
   }, [rpc, projectId]);
 
-  const blocks = activationDisabledPredicate({
+  const blocks = threadId && !chat ? [{ code: "pending" as const }] : activationDisabledPredicate({
     pending,
     projectId,
     bindingStatus: ctx?.bindingStatus,
@@ -105,7 +131,7 @@ export function EnableLanePilotAction() {
       const attach = (composer as typeof composer & {
         experimental_vkSetDispatchData?: (data: { token: string } | null) => void;
       }).experimental_vkSetDispatchData;
-      if (!attach) throw new Error(t("nativeComposerUpgrade"));
+      if (!attach && !threadId) throw new Error(t("nativeComposerUpgrade"));
       // Opus 5.5 with the 1M context when the machine offers it, the standard context otherwise.
       let selected = false;
       for (const model of ["claude-opus-5-5[1m]", "claude-opus-5-5"]) {
@@ -113,8 +139,16 @@ export function EnableLanePilotAction() {
         if (selection.providerId === "claude-code" && selection.model === model) { selected = true; break; }
       }
       if (!selected) throw new Error(t("nativeComposerModelUnavailable"));
+      if (threadId) {
+        // BB releases the chat's session and the next message resumes it as that agent.
+        const changed = await rpc.call("switch_chat_agent", { threadId, agentId: agent });
+        if (!changed.agentId) throw new Error(t("failed"));
+        setSelected({ id: changed.agentId, description: changed.description ?? changed.agentId });
+        noteChatAgentChanged();
+        return;
+      }
       const result = await rpc.call("prepare_native_session", { projectId, agentId: agent });
-      attach({ token: result.token });
+      attach!({ token: result.token });
       // Claude Lane may still need installing on that machine; start now so the first send does not wait.
       if (hostId) void rpc.call("native_install_start", { hostId }).catch(() => undefined);
       setPendingNativeAgent({ agentId: result.agentId, description: result.label });
@@ -127,16 +161,17 @@ export function EnableLanePilotAction() {
   };
 
   useEffect(() => composer.experimental_onSubmitted(() => {
+    if (threadId) { noteChatAgentChanged(); return; }
     setSelected(null);
     setPendingNativeAgent(null);
-  }), [composer.experimental_onSubmitted]);
+  }), [composer.experimental_onSubmitted, threadId]);
 
   // A project with a main agent starts every new chat with Lane Pilot on and that agent picked, once per composer;
   // turning it off by hand stays off.
   const autoEnabled = useRef<string | null>(null);
   // «Build with the architect» in the Workflows tab asks for its agent; it wins over the project's main agent, once.
   useEffect(() => {
-    if (!ctx || !projectId || ctx.projectId !== projectId || blocked || autoEnabled.current === projectId) return;
+    if (threadId || !ctx || !projectId || ctx.projectId !== projectId || blocked || autoEnabled.current === projectId) return;
     const asked = takeArchitectLaunch(projectId);
     if (!asked) return;
     autoEnabled.current = projectId;
@@ -144,12 +179,22 @@ export function EnableLanePilotAction() {
   }, [ctx, projectId, blocked]);
   useEffect(() => {
     const agent = ctx?.mainAgent;
-    if (!agent || !projectId || ctx?.projectId !== projectId || blocked || autoEnabled.current === projectId) return;
+    if (threadId || !agent || !projectId || ctx?.projectId !== projectId || blocked || autoEnabled.current === projectId) return;
     autoEnabled.current = projectId;
     void prepare(agent);
   }, [ctx, projectId, blocked]);
 
   const disable = () => {
+    if (threadId) {
+      if (pending) return;
+      setPending(true);
+      setError(null);
+      void rpc.call("switch_chat_agent", { threadId, agentId: null })
+        .then(() => { setSelected(null); noteChatAgentChanged(); })
+        .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
+        .finally(() => setPending(false));
+      return;
+    }
     (composer as typeof composer & { experimental_vkSetDispatchData?: (data: null) => void })
       .experimental_vkSetDispatchData?.(null);
     setPendingNativeAgent(null);
@@ -160,10 +205,14 @@ export function EnableLanePilotAction() {
   const coordinatorId = agents.find((agent) => agentKind(agent) === "coordinator")?.id ?? DEFAULT_NATIVE_AGENT;
   const specialists = agents.filter((agent) => agentKind(agent) === "specialist");
   const laneOn = selected?.id === coordinatorId;
-  const busy = blocked || pending;
+  const locked = chat && !chat.eligible ? lockedCopy(chat.reason!) : null;
+  const running = Boolean(threadId) && view.run.isRunning;
+  const busy = blocked || pending || Boolean(chat && !chat.eligible) || running;
   const triggerLabel = pending ? t("enabling") : error ? t("failed") : !selected ? t("composerAgentMenu") : laneOn ? t("panelTitle") : composerAgentLabel(agents.find((agent) => agent.id === selected.id) ?? selected, t);
 
-  if (view.scope.kind !== "new-thread") return null;
+  if (view.scope.kind !== "new-thread" && !threadId) return null;
+  // A helper chat of a run has its agent from the run: no control there.
+  if (chat && !chat.eligible && !locked) return null;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -201,7 +250,7 @@ export function EnableLanePilotAction() {
             </SelectContent>
           </Select>
         </div>
-        <p className="text-xs text-muted-foreground">{t("nativeComposerHint")}</p>
+        <p className="text-xs text-muted-foreground">{locked ?? (running ? t("composerChatRunning") : threadId ? t("composerChatHint") : t("nativeComposerHint"))}</p>
         {blocks.filter((row) => row.code !== "pending").length ? (
           <div>
             <p className="text-xs font-medium">{t("activationBlocks")}</p>
