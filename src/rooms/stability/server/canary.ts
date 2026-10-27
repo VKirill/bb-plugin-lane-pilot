@@ -1,4 +1,5 @@
 import packageJson from "../../../../package.json";
+import { setSandboxProjects } from "../../owner-waiting";
 import { failureClass } from "../../runs";
 import type { LanePilotDatabase } from "../../storage";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
@@ -145,6 +146,7 @@ export function createCanary(ctx: ServerCore, breaker?: () => { snapshot(now?: n
       }
     } catch { /* keep the last answer: a project list that fails must not put the sandbox back into the budget */ }
     sandboxCache = { at: now, ids };
+    setSandboxProjects([SANDBOX_PROJECT_ID, ...ids]);
     return ids;
   }
 

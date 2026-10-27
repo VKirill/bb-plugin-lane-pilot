@@ -75,11 +75,22 @@ function learningItems(db: Db): OwnerItem[] {
   }));
 }
 
+/**
+ * The drill's sandbox projects («LP sandbox …»): what their tasks and phases ask is the drill's, not the owner's — it never reaches the
+ * morning list, the digest or a push (live 2026-10-27: «Drill route … loop ran out of tries» and a drill writer's colour question, with a
+ * push). The stability canary keeps the set current; the drill's own sandbox id is in it from the start.
+ */
+const sandboxProjects = new Set<string>(["proj_3tb652jpsi"]);
+export function setSandboxProjects(ids: Iterable<string>): void {
+  for (const id of ids) sandboxProjects.add(id);
+}
+const isSandbox = (projectId: string | null | undefined): boolean => !!projectId && sandboxProjects.has(projectId);
+
 function inbox(db: Db): OwnerItem[] {
   if (!tableExists(db, "lane_pilot_owner_item")) return [];
   const rows = db.prepare("SELECT key, source, kind, project_id, what, why, evidence_json, actions_json, wake, created_at FROM lane_pilot_owner_item WHERE state='open' ORDER BY created_at").all() as
     Array<{ key: string; source: string; kind: string; project_id: string | null; what: string; why: string; evidence_json: string; actions_json: string; wake: number; created_at: number }>;
-  return rows.map((row) => ({
+  return rows.filter((row) => !isSandbox(row.project_id)).map((row) => ({
     key: row.key, source: row.source, kind: row.kind, projectId: row.project_id, what: row.what, why: row.why, since: row.created_at, wake: row.wake === 1,
     evidence: parse<OwnerEvidence[]>(row.evidence_json, []), actions: parse<OwnerAction[]>(row.actions_json, []),
   }));
@@ -90,6 +101,7 @@ export type PostOwnerItem = Omit<OwnerItem, "since" | "wake" | "evidence" | "act
 /** The night loop's door: an open waiting with a stable `key`; posting the same key again changes nothing (one waiting, one row). */
 export function postOwnerItem(db: Db, item: PostOwnerItem, now: number = Date.now()): { created: boolean } {
   if (!item.key.trim() || !item.what.trim() || !item.why.trim()) throw new Error("an owner item needs a key, what and why");
+  if (isSandbox(item.projectId)) return { created: false };
   const result = db.prepare(`INSERT OR IGNORE INTO lane_pilot_owner_item(key,source,kind,project_id,what,why,evidence_json,actions_json,wake,state,created_at)
     VALUES (?,?,?,?,?,?,?,?,?,'open',?)`).run(item.key, item.source, item.kind, item.projectId ?? null, clip(item.what, 600), clip(item.why, 600),
     JSON.stringify(item.evidence ?? []), JSON.stringify(item.actions ?? []), item.wake === false ? 0 : 1, now);
