@@ -8,6 +8,7 @@ import codeReview from "../../../workflows/code-review.json";
 import companion from "../../../workflows/companion.json";
 import debug from "../../../workflows/debug.json";
 import deploy from "../../../workflows/deploy.json";
+import errand from "../../../workflows/errand.json";
 import fullLifecycle from "../../../workflows/full-lifecycle.json";
 import grillDriven from "../../../workflows/grill-driven.json";
 import grillPlan from "../../../workflows/grill-plan.json";
@@ -75,6 +76,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "companion.json", value: companion },
   { name: "debug.json", value: debug },
   { name: "deploy.json", value: deploy },
+  { name: "errand.json", value: errand },
   { name: "full-lifecycle.json", value: fullLifecycle },
   { name: "grill-driven.json", value: grillDriven },
   { name: "grill-plan.json", value: grillPlan },

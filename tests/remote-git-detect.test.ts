@@ -170,6 +170,8 @@ describe("errands and specialists read the checkout's status on its host", () =>
     const runId = "remote-run";
     const statusCalls: Array<{ hostId: string; cwd: string; command: string }> = [];
     let status = "";
+    // The errand's graph step reads the report the moment the helper's thread ends, so the helper ends after the stray file is there.
+    let helperEnded = false;
     const { bb, harness } = createFakePluginHost({
       pluginId: "lane-pilot",
       experimental_callHostRpc: (async (call: { method: string; input: { requestedHostId: string; cwd: string; command: string } }) => {
@@ -182,7 +184,7 @@ describe("errands and specialists read the checkout's status on its host", () =>
           getPluginMetadata: async ({ threadId }) => threadId === pmThreadId ? { role: "pm", lanePilotRunId: runId } : {},
           spawn: async () => ({ id: "remote-child" }),
           get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId, environmentId: "env-remote", sourceThreadId: pmThreadId, lifecycleOwnerThreadId: pmThreadId }),
-          events: { list: async ({ threadId }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }] },
+          events: { list: async ({ threadId }) => helperEnded ? [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }] : [{ type: "turn/started", threadId, seq: 1 }] },
           output: async () => ({ output: "done\nERRAND: done" }),
         },
         environments: { get: async () => ({ id: "env-remote", hostId: "ovh", path: REMOTE, status: "ready" }) },
@@ -199,7 +201,8 @@ describe("errands and specialists read the checkout's status on its host", () =>
     status = " M README.md\n";
     await call("lane_pilot_errand", { task: "Please check the billing console for me" });
     status = " M README.md\n?? stray-from-helper.txt\n";
-    const waited = await call("lane_pilot_wait_errand", { threadId: "remote-child", timeoutSec: 5 });
+    helperEnded = true;
+    const waited = await call("lane_pilot_wait_errand", { threadId: "remote-child", timeoutSec: 20 });
 
     expect(waited).toMatchObject({ state: "blocked", reason: "repo_edited", files: ["stray-from-helper.txt"] });
     expect(statusCalls).toEqual([

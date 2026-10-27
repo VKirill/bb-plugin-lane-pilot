@@ -1,4 +1,3 @@
-import { observeStageChild } from "@lane-pilot/thread-observe";
 import { loadProjectSettings, recordSecretIssuance } from "../../storage";
 import { redactKnown } from "@lane-pilot/kit";
 import { agentHistoryBlock, finalRuleOf, workflowFinish } from "../outcome";
@@ -50,12 +49,16 @@ export function createScheduleExecutors(ctx: ServerCore, services: Services): Re
     async cancel({ run }: ExecutorInput) { if (run.ref_id) services.workflowEngine.cancel(run.ref_id, "the scheduled run was stopped"); },
   };
 
+  /**
+   * A scheduled errand is a run of the graph `errand` (workflows/errand.json), keyed by the schedule's run key: a start repeated after a crash finds the
+   * run it began. The account check comes before the run, so a missing account fails the schedule's run and starts nothing. With a PM chat the helper
+   * works in its checkout, without one in the project's own folder; either way its thread is hidden and has no parent chat, so its end wakes no one.
+   */
   const errand: Executor = {
     async start({ schedule, task, run }: ExecutorInput) {
       if (task.kind !== "errand") return wrongKind(task, "errand");
       const pm = await services.workflowTriggers.pmOf(schedule.project_id);
-      if (!pm) throw new Error("no_pm_chat: the project has no open Lane Pilot PM chat to hold the errand's thread; enable Lane Pilot in a chat of the project");
-      const resolved = await services.errands.resolveAccounts({ projectId: schedule.project_id, runId: pm.runId, pmThreadId: pm.pmThreadId, names: task.accounts });
+      const resolved = await services.errands.resolveAccounts({ projectId: schedule.project_id, runId: pm?.runId ?? null, pmThreadId: pm?.pmThreadId ?? null, names: task.accounts, record: false });
       if (!resolved.ok) throw new Error(`${resolved.blocked.reason}: ${resolved.blocked.fix.join(" ")}`);
       const brief = [
         `This is a scheduled run of «${schedule.name}» (${new Date(run.scheduled_at).toISOString()}). Nobody is watching it live: do not wait for an answer.`,
@@ -63,27 +66,27 @@ export function createScheduleExecutors(ctx: ServerCore, services: Services): Re
         "", task.task,
       ].join("\n");
       // The same resolution the board shows on the card (src/schedule/errand-model.ts): the task, its preset, the Automation default, the errand role.
-      const model = await errandModelForRun(ctx, schedule.project_id, pm.pmThreadId, task);
-      const started = await services.errands.startErrand({
-        projectId: schedule.project_id, runId: pm.runId, pmThreadId: pm.pmThreadId, task: brief, title: task.title ?? schedule.name, authorized: task.authorized,
-        accounts: resolved.accounts, providerId: model.providerId, model: model.model, reasoning: model.reasoningEffort, serviceTier: model.serviceTier ?? undefined, spawnId: `schedule:${run.run_key}`,
-        // Nobody is watching: the thread has no parent chat, so its end wakes no one; the board keeps the report.
-        detached: true,
-        // A thread that carries this origin cannot create or change schedules (schedule-tools.ts).
-        metadata: { origin: "schedule", scheduleId: schedule.id, scheduleRunKey: run.run_key },
+      const model = await errandModelForRun(ctx, schedule.project_id, pm?.pmThreadId ?? null, task);
+      const started = services.errands.startRun({
+        projectId: schedule.project_id, pmThreadId: pm?.pmThreadId ?? null, runId: pm?.runId ?? null, key: run.run_key,
+        task: brief, title: task.title ?? schedule.name, authorized: task.authorized, accounts: task.accounts,
+        providerId: model.providerId, model: model.model, reasoning: model.reasoningEffort, serviceTier: model.serviceTier ?? undefined,
+        // Nobody is watching: no parent chat. A thread that carries the schedule origin cannot create or change schedules (schedule-tools.ts).
+        detached: true, schedule: { id: schedule.id, runKey: run.run_key },
       });
-      return { refKind: "thread", refId: started.threadId, ...(started.browserMachine ? { hostId: started.browserMachine } : {}) };
+      return { refKind: "workflow_run", refId: started.runId };
     },
-    async poll({ schedule, run }: ExecutorInput): Promise<PollResult> {
-      const observed = await observeStageChild(bb, run.ref_id!, 1);
-      if (observed.kind === "product_failure") return { state: "done", status: "failed", error: redactKnown(`${observed.via}: ${observed.detail}`) };
-      if (observed.kind !== "completed") return { state: "running" };
-      const report = await services.errands.completedReport(run.ref_id!, schedule.project_id ?? "-");
-      return report.state === "done"
-        ? { state: "done", status: "succeeded", output: report.output }
-        : { state: "done", status: "failed", output: report.output, error: report.reason ?? "blocked", reason: "blocked" };
+    // The run's result is the errand's: a helper that ended `blocked` (or edited the repository) is a failed scheduled run with its reason.
+    async poll(input: ExecutorInput): Promise<PollResult> {
+      const summary = services.workflowEngine.get(input.run.ref_id!);
+      if (summary?.status !== "succeeded") return workflow.poll(input);
+      const out = (summary.output ?? {}) as { state?: unknown; reason?: unknown; output?: unknown };
+      const output = typeof out.output === "string" ? out.output : "";
+      return out.state === "done"
+        ? { state: "done", status: "succeeded", output }
+        : { state: "done", status: "failed", output, error: typeof out.reason === "string" && out.reason ? out.reason : "blocked", reason: "blocked" };
     },
-    async cancel({ run }: ExecutorInput) { if (run.ref_id) await bb.sdk.threads.stop({ threadId: run.ref_id }).catch(() => undefined); },
+    cancel: (input: ExecutorInput) => workflow.cancel(input),
   };
 
   const script: Executor = {

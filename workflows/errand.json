@@ -1,0 +1,196 @@
+{
+  "id": "errand",
+  "startedBy": "lane_pilot_errand",
+  "name": {
+    "en": "Errand",
+    "ru": "Поручение"
+  },
+  "description": {
+    "en": "A task that is not a code change, done end to end by one helper: a page in the owner's signed-in browser, a mailbox, a cloud console, a deploy with an SSH or FTP account from Env Catalog. The accounts are checked first (nothing starts when one is missing or left out of the project list); the helper then works with the errand brief and ends with an ERRAND: done or ERRAND: blocked line. It never changes, commits or pushes the project's files (a repository edit makes the errand blocked), and its report passes the output guard. Started by lane_pilot_errand and by a schedule of kind errand; works in a project that has no PM chat.",
+    "ru": "Задача, которая не правка кода, выполненная одним помощником от начала до конца: страница в браузере владельца с его входом, почта, облачная консоль, выкладка по SSH или FTP с учёткой из Env Catalog. Сначала проверяются учётки (если одной нет или она вне списка проекта, ничего не запускается); затем помощник работает по записке поручения и заканчивает строкой ERRAND: done или ERRAND: blocked. Он не правит, не коммитит и не пушит файлы проекта (правка репозитория делает поручение blocked), а отчёт проходит проверку вывода. Запускается через lane_pilot_errand и расписанием вида «поручение»; работает и в проекте без PM-чата."
+  },
+  "not_for": [
+    "a code change: that goes through lane_pilot_dispatch_writer",
+    "anything a person asks for in a chat: the PM starts this with lane_pilot_errand, a schedule with its errand task"
+  ],
+  "status": "published",
+  "tags": [
+    "errand"
+  ],
+  "triggers": [
+    "manual"
+  ],
+  "inputs": {
+    "task": {
+      "type": "string",
+      "note": "the whole task: the goal, where, what to report"
+    },
+    "title": {
+      "type": "string",
+      "default": ""
+    },
+    "authorized": {
+      "type": "bool",
+      "default": false,
+      "note": "the owner authorized the reversible changes the task needs inside his accounts; false reads and reports only"
+    },
+    "accounts": {
+      "type": "string[]",
+      "default": [],
+      "note": "Env Catalog names the helper may read for this task"
+    },
+    "providerId": {
+      "type": "string",
+      "default": ""
+    },
+    "model": {
+      "type": "string",
+      "default": "",
+      "note": "empty: the errand role's model (claude-opus-5-5, high)"
+    },
+    "reasoning": {
+      "type": "string",
+      "default": ""
+    },
+    "serviceTier": {
+      "type": "string",
+      "default": "default",
+      "note": "default or fast"
+    },
+    "detached": {
+      "type": "bool",
+      "default": false,
+      "note": "a hidden thread of the project with no parent chat (a schedule's); also the case when the project has no PM chat"
+    },
+    "scheduleId": {
+      "type": "string",
+      "default": ""
+    },
+    "scheduleRunKey": {
+      "type": "string",
+      "default": ""
+    }
+  },
+  "outputs": {
+    "state": "done|blocked",
+    "reason": "string",
+    "output": "string",
+    "files": "string[]",
+    "thread_id": "string"
+  },
+  "live_success": {
+    "output": "state",
+    "in": [
+      "done"
+    ]
+  },
+  "budget": {
+    "max_steps": 6,
+    "max_minutes": 60,
+    "max_usd": 25
+  },
+  "nodes": [
+    {
+      "id": "accounts",
+      "type": "action",
+      "action": "lp.errand_accounts",
+      "title": {
+        "en": "Check the accounts",
+        "ru": "Проверить учётки"
+      },
+      "rule": "code: every Env Catalog name the errand lists exists, is of a usable kind and is allowed for the project; otherwise the run stops here and says what to fix. Nothing is read from the catalog but the names",
+      "out": {
+        "ok": "bool",
+        "count": "int"
+      }
+    },
+    {
+      "id": "work",
+      "type": "agent",
+      "role": "errand",
+      "uses": "lp.errand",
+      "title": {
+        "en": "Do the task",
+        "ru": "Выполнить задачу"
+      },
+      "proof": {
+        "kind": "advisory",
+        "reason": "the helper's own report; the closing ERRAND: line, the repository check and the output guard decide done or blocked",
+        "form": "errandVerdict: the last line is ERRAND: done or ERRAND: blocked: <why>; a report without it is blocked (no_marker)"
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "out": {
+        "state": "done|blocked",
+        "reason": "string",
+        "output": "string",
+        "files": "string[]",
+        "thread_id": "string"
+      },
+      "guards": {
+        "timeoutMin": 58
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "state": "work.state",
+        "reason": "work.reason",
+        "output": "work.output",
+        "files": "work.files",
+        "thread_id": "work.thread_id"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "accounts"
+    },
+    {
+      "from": "accounts",
+      "to": "work"
+    },
+    {
+      "from": "work",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "errand-1",
+    "sim": {
+      "input": {
+        "task": "Open the CRM and report the number of new leads."
+      },
+      "stubs": {
+        "accounts": {
+          "ok": true,
+          "count": 0
+        },
+        "work": {
+          "state": "done",
+          "reason": "",
+          "output": "12 new leads.\nERRAND: done",
+          "files": [],
+          "thread_id": "thr_errand",
+          "handoff": "errand done"
+        }
+      },
+      "expect_path": [
+        "accounts",
+        "work",
+        "done"
+      ],
+      "expect_output": {
+        "state": "done"
+      }
+    },
+    "live": "from a PM chat call lane_pilot_errand with a read-only page check, then lane_pilot_wait_errand with the workflowRunId; or run a schedule of kind errand now and read its run"
+  }
+}

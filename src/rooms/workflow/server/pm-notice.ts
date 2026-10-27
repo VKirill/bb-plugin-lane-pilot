@@ -32,7 +32,9 @@ export function workflowEndedText(input: {
   const lines = [`Workflow run ${input.workflowRunId} of ${input.workflowId} is ${input.status}.`];
   if (input.reason) lines.push(`Reason: ${input.reason}`);
   if (input.unmetGoalIds?.length) lines.push(`Unmet goals: ${input.unmetGoalIds.join(", ")}`);
-  lines.push("Next: call lane_pilot_workflow_status with this workflowRunId for details.");
+  lines.push(input.workflowId === "errand"
+    ? "Next: call lane_pilot_wait_errand with this workflowRunId for the report."
+    : "Next: call lane_pilot_workflow_status with this workflowRunId for details.");
   return lines.join("\n");
 }
 

@@ -1,8 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const observe = vi.hoisted(() => ({ result: { kind: "observing", detail: "" } as { kind: string; detail?: string; via?: string } }));
-vi.mock("@lane-pilot/thread-observe", () => ({ observeStageChild: async () => observe.result }));
-
+import { describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
 import { createScheduleExecutors } from "../../src/rooms/schedule/server/schedule-executors";
 import type { ExecutorInput } from "../../src/rooms/schedule/scheduler";
@@ -35,14 +31,13 @@ function world(options: { settings?: Record<string, unknown>; pm?: { providerId:
     workflowEngine: { get: (id: string) => summaries.get(id) ?? null, cancel: (id: string) => { calls.cancel.push(id); return true; } },
     errands: {
       resolveAccounts: async (args: Record<string, any>) => { calls.resolve.push(args); return args.names.includes("BAD") ? { ok: false, blocked: { reason: "waiting_secret:BAD", fix: ["BAD: not allowed"] } } : { ok: true, accounts: args.names.map((name: string) => ({ name, kind: "login" })) }; },
-      startErrand: async (args: Record<string, any>) => { calls.errandStart.push(args); return { threadId: "thr_errand", browserMachine: "mini" }; },
-      completedReport: async () => ({ state: "done" as const, output: "Checked.\nERRAND: done" }),
+      startRun: (args: Record<string, any>) => { calls.errandStart.push(args); return { runId: "wfrun_errand", created: true }; },
     },
   } as never;
   return { calls, summaries, executors: createScheduleExecutors(ctx, services), setPm: (value: typeof pm) => { pm = value; } };
 }
 
-beforeEach(() => { observe.result = { kind: "observing", detail: "" }; });
+
 
 describe("the workflow executor", () => {
   const task = { kind: "workflow" as const, workflowId: "weekly-digest", inputs: { query: "cats" } };
@@ -77,14 +72,15 @@ describe("the workflow executor", () => {
 describe("the errand executor", () => {
   const task = { kind: "errand" as const, task: "Check the open invoices in Elba and report the total.", authorized: false, accounts: ["ELBA_LOGIN"], model: "claude-opus-5-5", reasoning: "high" as const };
 
-  it("starts a detached helper thread (no parent chat to wake), marked as started by a schedule, with an idempotent spawn id", async () => {
+  it("starts the errand graph (a workflow run, not a thread), detached, marked as started by a schedule, keyed by the schedule's run key", async () => {
     const { executors, calls } = world();
     const ref = await executors.errand.start(input(task));
-    expect(ref).toEqual({ refKind: "thread", refId: "thr_errand", hostId: "mini" });
-    expect(calls.resolve[0]).toMatchObject({ projectId: "p1", runId: "lprun_1", pmThreadId: "thr_pm", names: ["ELBA_LOGIN"] });
+    expect(ref).toEqual({ refKind: "workflow_run", refId: "wfrun_errand" });
+    // The check only: the graph's own account step notes the accounts as issued.
+    expect(calls.resolve[0]).toMatchObject({ projectId: "p1", runId: "lprun_1", pmThreadId: "thr_pm", names: ["ELBA_LOGIN"], record: false });
     const started = calls.errandStart[0]!;
-    expect(started).toMatchObject({ projectId: "p1", runId: "lprun_1", pmThreadId: "thr_pm", authorized: false, providerId: "claude-code", model: "claude-opus-5-5", reasoning: "high",
-      spawnId: "schedule:sch_1:1790000000000", detached: true, metadata: { origin: "schedule", scheduleId: "sch_1", scheduleRunKey: "sch_1:1790000000000" } });
+    expect(started).toMatchObject({ projectId: "p1", runId: "lprun_1", pmThreadId: "thr_pm", authorized: false, accounts: ["ELBA_LOGIN"], providerId: "claude-code", model: "claude-opus-5-5", reasoning: "high",
+      key: "sch_1:1790000000000", detached: true, schedule: { id: "sch_1", runKey: "sch_1:1790000000000" } });
     expect(started.task).toContain("This is a scheduled run of «Nightly check»");
     expect(started.task).toContain("ERRAND: blocked");
     expect(started.task).toContain("Check the open invoices in Elba");
@@ -119,35 +115,33 @@ describe("the errand executor", () => {
     expect(calls.errandStart[0]).toMatchObject({ providerId: "codex", model: "gpt-5.6-luna", reasoning: "max" });
   });
 
-  it("fails with the reason when there is no PM chat or an account is not allowed", async () => {
-    const { executors, setPm } = world();
+  it("works in a project with no PM chat (the graph's helper then works in the project's folder); an account that is not allowed fails the run before any run exists", async () => {
+    const { executors, setPm, calls } = world();
     setPm(null);
-    await expect(executors.errand.start(input(task))).rejects.toThrow(/no_pm_chat/);
+    await executors.errand.start(input(bare));
+    expect(calls.errandStart[0]).toMatchObject({ projectId: "p1", runId: null, pmThreadId: null, detached: true });
     setPm({ pmThreadId: "thr_pm", runId: "lprun_1" });
+    calls.errandStart.length = 0;
     await expect(executors.errand.start(input({ ...task, accounts: ["BAD"] }))).rejects.toThrow(/waiting_secret:BAD: BAD: not allowed/);
+    expect(calls.errandStart).toEqual([]);
   });
 
-  it("follows the thread: running, done with the report, failed on a product failure", async () => {
-    const { executors } = world();
-    expect(await executors.errand.poll(input(task, { ref_id: "thr_errand" }))).toEqual({ state: "running" });
-    observe.result = { kind: "completed" };
-    expect(await executors.errand.poll(input(task, { ref_id: "thr_errand" }))).toMatchObject({ state: "done", status: "succeeded", output: expect.stringContaining("ERRAND: done") });
-    observe.result = { kind: "product_failure", via: "error", detail: "provider limit" };
-    expect(await executors.errand.poll(input(task, { ref_id: "thr_errand" }))).toMatchObject({ state: "done", status: "failed", error: expect.stringContaining("provider limit") });
+  it("follows the run: running, done with the report, blocked (the helper's reason) and failed", async () => {
+    const { executors, summaries } = world();
+    const polled = (summary: Record<string, any> | null) => { if (summary) summaries.set("wfrun_errand", summary); else summaries.delete("wfrun_errand"); return executors.errand.poll(input(task, { ref_id: "wfrun_errand" })); };
+    expect(await polled({ status: "running", waiting: [] })).toEqual({ state: "running" });
+    expect(await polled({ status: "interrupted", waiting: [] })).toEqual({ state: "running" });
+    expect(await polled({ status: "succeeded", output: { state: "done", reason: "", output: "Checked.\nERRAND: done" }, waiting: [] })).toEqual({ state: "done", status: "succeeded", output: "Checked.\nERRAND: done" });
+    // A helper that ended blocked, or edited the repository, fails the scheduled run with its reason.
+    expect(await polled({ status: "succeeded", output: { state: "blocked", reason: "page asks for a password", output: "ERRAND: blocked: page asks for a password" }, waiting: [] }))
+      .toMatchObject({ state: "done", status: "failed", error: "page asks for a password", reason: "blocked", output: expect.stringContaining("ERRAND: blocked") });
+    expect(await polled({ status: "failed", error: "errand:error:provider limit", failedNode: "work", waiting: [] })).toMatchObject({ state: "done", status: "failed", error: "errand:error:provider limit", reason: "failed at work" });
+    expect(await polled(null)).toMatchObject({ state: "done", status: "failed", error: expect.stringContaining("gone") });
   });
 
-  it("a helper that ended blocked fails the run with its reason", async () => {
-    const { executors } = world();
-    const services = { errands: { completedReport: async () => ({ state: "blocked", reason: "page asks for a password", output: "ERRAND: blocked: page asks for a password" }) } };
-    const blocked = createScheduleExecutors({ bb: { sdk: {} }, db: {} } as never, services as never);
-    observe.result = { kind: "completed" };
-    expect(await blocked.errand.poll(input(task, { ref_id: "thr_errand" }))).toMatchObject({ state: "done", status: "failed", error: "page asks for a password", reason: "blocked" });
-    void executors;
-  });
-
-  it("cancel stops the thread", async () => {
+  it("cancel stops the errand run (the graph step stops its helper thread)", async () => {
     const { executors, calls } = world();
-    await executors.errand.cancel(input(task, { ref_id: "thr_errand" }));
-    expect(calls.stopped).toEqual(["thr_errand"]);
+    await executors.errand.cancel(input(task, { ref_id: "wfrun_errand" }));
+    expect(calls.cancel).toEqual(["wfrun_errand"]);
   });
 });

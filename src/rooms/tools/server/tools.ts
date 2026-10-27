@@ -390,7 +390,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   mountMemorySync(ctx);
   mountCouncilTools(ctx, services.council, (threadId) => services.phaseIntake.launchRefusal(threadId));
   mountSpecialists(ctx);
-  services.errands = mountErrands(ctx);
+  services.errands = mountErrands(ctx, services);
   mountRelay(ctx);
   mountWorkflowTools(ctx, services);
   mountSelfRepair(ctx);

@@ -36,9 +36,10 @@ export function errandModelView(db: LanePilotDatabase, projectId: string, task: 
 }
 
 /** The model a run of the errand starts on: the sync resolution plus the model of the project's PM chat for the last-resort level. */
-export async function errandModelForRun(ctx: ServerCore, projectId: string, pmThreadId: string, task: ErrandModelTask) {
+export async function errandModelForRun(ctx: ServerCore, projectId: string, pmThreadId: string | null, task: ErrandModelTask) {
   let pm: { providerId: string; model: string } | null = null;
   try {
+    if (!pmThreadId) throw new Error("no PM chat");
     const options = await ctx.bb.sdk.threads.defaultExecutionOptions({ threadId: pmThreadId });
     const providerId = stringAt(options, "providerId"), model = stringAt(options, "model");
     pm = providerId && model ? { providerId, model } : null;
