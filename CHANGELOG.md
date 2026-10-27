@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.346
+
+**The PM knows every tool's arguments.** BB shows a model only `type: object` for a tool whose parameters are a union on `action`, so ten PM tools (phase, helpers, council, memory, relay, schedule, workflow drafts, queue, check, forge) published no argument names and the PM guessed — `lane_pilot_phase revise` failed twice on `goal` and `note` before it worked. Each such tool now publishes one flat schema and a signature line per action generated from its zod schema (`revise {phaseId, goal, note}`), and a refusal names what the action needs. The PM prompt, specialist prompts, phase next steps, graph descriptions, hook refusals and 13 skills were checked against the real tools and corrected; a test keeps them in line.
+
+**The owner's answer reads as an answer.** `lane_pilot_ask_owner` returns «**Владелец ответил** · **Ответ:** > …» instead of a JSON object, and its row is labelled «Владелец ответил». Tool rows show one language: on Auto they follow the locale the app resolved.
+
+**Helpers use the other family when a provider runs dry.** When a provider's usage window is at `usage.skip_percent` (90 by default, the same as writers), a helper role takes its peer in the other family (Opus↔Sol, Sonnet↔Terra, Haiku↔Luna, Fable↔Astra) if that one has room; the step's card and the log say why. A helper on Claude that hits a plan limit now reruns on GPT — before, only the other providers fell back, to Claude. The limit cache refreshes in the background; a spawn never waits for it.
+
 ## 0.1.345
 
 **The drill stays out of the owner's way.** Items of the drill's sandbox projects («LP sandbox …») never reach the morning list, the digest or a push: yesterday's drill phase posted «loop ran out of tries» and a drill writer's colour question with a push. The sandbox leftovers (an old drill phase that 0.1.342's resume rule would have restarted, eighteen open sandbox runs, two owner items) are closed.
