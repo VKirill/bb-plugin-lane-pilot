@@ -212,3 +212,27 @@ describe("bb lane-pilot regress / regressions / regress-close / baseline", () =>
     await w.dispose();
   });
 });
+
+describe("worktrees a stopped pass left", () => {
+  it("are removed by the next pass once they are older than any pass can run; a fresh one is left alone", async () => {
+    const w = await world();
+    await w.acceptedTask("A", async (dir) => { await writeFile(join(dir, "a.txt"), "a\n"); }, ["test -f a.txt"]);
+    const before = w.worktrees();
+    // What a plugin reload in the middle of a pass leaves: the worktree and its KV record, the `finally` never ran.
+    const old = join(w.root, "wt", "regress-old", "project");
+    git(w.base, "worktree", "add", "-q", "-b", "lane/regress-old", old, "main");
+    const fresh = join(w.root, "wt", "regress-fresh", "project");
+    git(w.base, "worktree", "add", "-q", "-b", "lane/regress-fresh", fresh, "main");
+    await w.bb.storage.kv.set(`regress-worktree:${old}`, { hostId: "host-1", basePath: w.base, at: Date.now() - 7 * 3_600_000 });
+    await w.bb.storage.kv.set(`regress-worktree:${fresh}`, { hostId: "host-1", basePath: w.base, at: Date.now() - 60_000 });
+
+    await w.services.regression.run({ projectId: "projA" });
+
+    const listed = git(w.base, "worktree", "list");
+    expect(listed).not.toContain("regress-old");
+    expect(listed).toContain("regress-fresh");
+    expect(w.worktrees()).toBe(before + 1);
+    expect(await w.bb.storage.kv.list("regress-worktree:")).toEqual([`regress-worktree:${fresh}`]);
+  });
+});
+

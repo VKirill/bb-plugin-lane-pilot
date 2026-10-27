@@ -72,6 +72,32 @@ export function createRegression(ctx: ServerCore, services: Services) {
   const log = (line: string) => ctx.log(line);
   const kit = (): RollbackApi["kit"] => (services.rollback as RollbackApi).kit;
 
+  /**
+   * The pass's worktrees, kept in KV while they live. A plugin reload in the middle of a pass skips its `finally`, and the worktree
+   * stayed (regress-mvkeq7xe of cakekeeper.ru, 1.3 GB, left on 2026-10-23 and found four days later while the Mac mini's disk ran out).
+   */
+  const WORKTREE_KEY = "regress-worktree:";
+  const LEFTOVER_AFTER_MS = 6 * 3_600_000;
+  async function madeWorktree(t: RollbackTarget, name: string, commit: string): Promise<{ path: string } | { error: string }> {
+    const result = await kit().makeWorktree(t, name, commit);
+    if ("path" in result) await ctx.bb.storage.kv.set(`${WORKTREE_KEY}${result.path}`, { hostId: t.hostId, basePath: t.basePath, at: Date.now() }).catch(() => undefined);
+    return result;
+  }
+  async function dropped(t: RollbackTarget, path: string): Promise<void> {
+    await kit().dropWorktree(t, path);
+    await ctx.bb.storage.kv.delete(`${WORKTREE_KEY}${path}`).catch(() => undefined);
+  }
+  /** Removes the worktrees a stopped pass left; a pass is bounded by four hours, so one older than six is nobody's. */
+  async function sweepLeftovers(now: number): Promise<void> {
+    for (const key of await ctx.bb.storage.kv.list(WORKTREE_KEY).catch(() => [] as string[])) {
+      const entry = await ctx.bb.storage.kv.get(key).catch(() => null) as { hostId?: string; basePath?: string; at?: number } | null;
+      if (!entry?.hostId || !entry.basePath || now - (entry.at ?? 0) < LEFTOVER_AFTER_MS) continue;
+      const path = key.slice(WORKTREE_KEY.length);
+      await dropped({ hostId: entry.hostId, basePath: entry.basePath } as RollbackTarget, path);
+      log(`regress: removed a worktree a stopped pass left: ${path}`);
+    }
+  }
+
   async function head(hostId: string, basePath: string): Promise<string | null> {
     const base = await host.call("gitOwnershipBase", { requestedHostId: hostId, projectCwd: basePath }, { hostId, timeoutMs: 30_000 }).catch(() => null);
     return base?.status === "ready" ? base.headSha : null;
@@ -184,14 +210,14 @@ export function createRegression(ctx: ServerCore, services: Services) {
     // Green at the merge commit too? A check that is red there as well never was a regression of later work.
     let kind: RegressFinding["kind"] = "regression";
     let note: string | null = null;
-    const made = await kit().makeWorktree(c.target, `regress-merge-${c.target.taskId}-${Date.now().toString(36)}`, c.mergeCommit);
+    const made = await madeWorktree(c.target, `regress-merge-${c.target.taskId}-${Date.now().toString(36)}`, c.mergeCommit);
     if ("path" in made) {
       try {
         // «Flaky or the machine» was a guess: the project's host says how loaded it is right before this run (not during it).
         const reading = readingFrom(await host.call("diskFree", { requestedHostId: c.target.hostId, path: c.target.basePath, machine: true }, { hostId: c.target.hostId, timeoutMs: 5_000 }).catch(() => null));
         const [again] = await kit().runChecks(c.target, made.path, [item]);
         if (again && !again.ok && !again.hostError) { kind = "unstable"; note = `red at its own merge commit ${c.mergeCommit.slice(0, 10)} as well: flaky or the machine, not later work; ${readingNote(reading)}`; }
-      } finally { await kit().dropWorktree(c.target, made.path); }
+      } finally { await dropped(c.target, made.path); }
     } else { note = `not confirmed at the merge commit (${made.error})`; }
     const found = kind === "regression" ? await bisect(c, item, headSha, settings) : { status: "skipped" as const, commit: null, task: null, subject: null, note: null };
     // A later task that changed the same files may have broken the check or changed what it pins on purpose (a release's version); the code cannot tell, the evidence says which files they share.
@@ -237,7 +263,7 @@ export function createRegression(ctx: ServerCore, services: Services) {
         for (const m of members) m.report.skipped = report.skipped;
         continue;
       }
-      const made = await kit().makeWorktree(first, `regress-${Date.now().toString(36)}`, headSha);
+      const made = await madeWorktree(first, `regress-${Date.now().toString(36)}`, headSha);
       if ("error" in made) { for (const m of members) m.report.skipped = made.error; continue; }
       const cache = new Map<string, RollbackItem>();
       try {
@@ -271,7 +297,7 @@ export function createRegression(ctx: ServerCore, services: Services) {
           }
         }
       } finally {
-        await kit().dropWorktree(first, made.path);
+        await dropped(first, made.path);
       }
     }
     if (!dry) {
@@ -284,6 +310,7 @@ export function createRegression(ctx: ServerCore, services: Services) {
   /** One pass over a project, or over every project with accepted work in the window. Read-only on the projects: worktrees only. */
   async function run(options: RegressOptions = {}): Promise<RegressResult> {
     const now = options.now ?? Date.now();
+    await sweepLeftovers(Date.now()).catch((cause: unknown) => log(`regress: leftover sweep skipped: ${cause instanceof Error ? cause.message : String(cause)}`));
     const days = options.days ?? 365;
     const projects = options.projectId ? [options.projectId]
       : (db.prepare("SELECT DISTINCT r.project_id AS id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.state='accepted' AND a.updated_at>=? ORDER BY r.project_id").all(now - days * DAY) as Array<{ id: string }>).map((row) => row.id);

@@ -56,7 +56,7 @@ export async function world(options: { settings?: Record<string, unknown> } = {}
   const ran: string[] = [];
   const runs: Array<{ cwd: string; command: string }> = [];
   const ctx = {
-    bb: { sdk: { threads: { send } } }, db, host, log: () => undefined, isDisposed: () => false,
+    bb: { sdk: { threads: { send } }, storage: bb.storage }, db, host, log: () => undefined, isDisposed: () => false,
     configForRun: async (projectId: string) => ({ projectId, hostId: HOST, writerWorkspacePath: base }),
     effectiveProjectSettings: async (projectId: string, scopes: readonly string[] = []) => ({ values: loadProjectSettings(db, projectId, scopes) }),
   };
@@ -103,7 +103,7 @@ export async function world(options: { settings?: Record<string, unknown> } = {}
 
   const worktrees = () => git(base, "worktree", "list").trim().split("\n").length;
   return {
-    root, base, db, calls, send, ran, runs, services: services as { baseline: BaselineApi; regression: RegressionApi; rollback: RollbackApi }, acceptedTask, pendingTask, worktrees,
+    root, base, db, bb, calls, send, ran, runs, services: services as { baseline: BaselineApi; regression: RegressionApi; rollback: RollbackApi }, acceptedTask, pendingTask, worktrees,
     dispose: async () => { await harness.lifecycle.dispose(); await rm(root, { recursive: true, force: true }); },
   };
 }
