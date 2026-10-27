@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { createHandoff } from "@lane-pilot/handoff";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
-import { resolveRoleModel, writerExecutionSelection, findModelIn } from "@lane-pilot/models";
+import { judgeAgainstAuthor, modelFamily, resolveRoleModel, writerExecutionSelection, findModelIn } from "@lane-pilot/models";
 import {
   CHAIR_SEAT_ID, IMPULSE_SCORES, MODERATOR_SEAT_ID,
   addCouncilMessage, agendaPrompt, chairPrompt, chooseSpeaker, createCouncilSession, decideRequestedIn, decisionFileName, decisionMarkdown, getCouncilSession,
@@ -91,13 +91,20 @@ export function mountCouncilGraph(ctx: ServerCore, services: Services, council: 
     const pairs = selectionPairs(settings, { providerId: config.writerProviderId, model: config.writerModel });
     // The chair is the council row of the role table (a judge of the seats' opinions), unless the owner pinned `council.chair.*`.
     const chairOwn = configuredSeatPair(settings, "chair");
-    const chairRole = resolveRoleModel("council", settings);
+    // The chair judges the seats: when every seat runs in one family and the table's chair is of that family, the chair takes its peer in the
+    // other. Seats of mixed (or unknown) families leave the table's pick, and a chair the owner pinned is never moved.
+    const existing = getCouncilSession(db, args.id);
+    // The seats keep the models they have always been given: the owner's `council.<role>.*`, else distinct stage selections.
+    const seats = existing?.seats ?? seatsFor(args.roles, pairs, settings);
+    const seatModels = seats.map((seat) => (seat.providerId && seat.model ? { providerId: seat.providerId, model: seat.model } : null));
+    const seatFamilies = new Set(seatModels.map((seat) => (seat ? modelFamily(seat.model) : null)));
+    const seatAuthor = seatModels.length && seatFamilies.size === 1 && !seatFamilies.has(null) ? seatModels[0]! : null;
+    const tableChair = resolveRoleModel("council", settings);
+    const judged = judgeAgainstAuthor(tableChair, seatAuthor);
+    const chairRole = judged.changed ? { ...tableChair, providerId: judged.providerId, model: judged.model } : tableChair;
     const chair: ChairPair = chairOwn ? { providerId: chairOwn.providerId, model: chairOwn.model, effort: chairOwn.effort ?? chairRole.effort } : { providerId: chairRole.providerId, model: chairRole.model, effort: chairRole.effort };
     const place = { hostId: config.hostId, workspace: config.writerWorkspacePath };
-    const existing = getCouncilSession(db, args.id);
     if (existing) return { session: existing, place, chair };
-    // The seats keep the models they have always been given: the owner's `council.<role>.*`, else distinct stage selections.
-    const seats = seatsFor(args.roles, pairs, settings);
     const roundsSetting = configuredSetting(settings, "council.max_rounds");
     const session = createCouncilSession(db, {
       id: args.id, projectId: args.projectId, runId: args.runId, question: args.question, seats,

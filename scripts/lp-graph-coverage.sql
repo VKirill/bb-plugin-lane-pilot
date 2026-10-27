@@ -2,7 +2,7 @@
 -- (no `lanePilotWorkflowRunId` in their plugin metadata) out of all of them. Model work is meant to run as graphs; this line shows what still does not.
 -- Read-only, on the hub: needs the core database attached as `core` (thread_plugin_metadata, threads).
 -- The caller creates the parameter first:  create temp table lp_cover(since integer);  insert into lp_cover values (<ms>);
--- Left out: the PM chats (conductors, not work units) and workspace holders (scaffolds). Prints nothing when there is no thread.
+-- Left out: the PM chats (conductors, not work units), workspace holders (scaffolds) and the provider probes of a chat start (`helperProbe`: a check, not work). Prints nothing when there is no thread.
 with t as (
   select json_extract(m.metadata_json, '$.role') as role,
          json_extract(m.metadata_json, '$.lanePilotWorkflowRunId') is null as side
@@ -11,6 +11,7 @@ with t as (
     and (case when th.created_at > 100000000000 then th.created_at else th.created_at * 1000 end) >= (select since from lp_cover)
     and json_extract(m.metadata_json, '$.role') is not null
     and json_extract(m.metadata_json, '$.role') not in ('pm', 'workspace-provisioner')
+    and json_extract(m.metadata_json, '$.helperProbe') is not 1
 ), per_role as (
   select role, sum(side) as outside, count(*) as total from t group by role
 )

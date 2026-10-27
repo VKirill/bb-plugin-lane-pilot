@@ -186,6 +186,26 @@ describe("the council graph", () => {
     expect(w.state.sends.filter((text) => text.includes(started.id))).toHaveLength(1);
   });
 
+  it("the chair is of another family than the seats when all of them run in one family; mixed seats and a pinned chair leave the table", async () => {
+    const chairModel = async (settings: Record<string, string>) => {
+      const w = world();
+      await boot(w, settings);
+      const started = await w.view.call("lane_pilot_council_start", { runId, question: QUESTION, roles: ["product", "skeptic"], maxRounds: 2, mode: "rounds", judge: false });
+      await until(() => w.state.spawned.some((request) => request.pluginMetadata.seatId === "chair"), "the chair's first turn");
+      const chair = w.state.spawned.find((request) => request.pluginMetadata.seatId === "chair")!;
+      await until(async () => ended((await w.view.rpc("get_council", { councilId: started.id })).state), "the end");
+      await current?.dispose(); current = null;
+      return chair.model;
+    };
+    const gpt = { "council.product.provider": "codex", "council.product.model": "gpt-6.1-sol", "council.skeptic.provider": "codex", "council.skeptic.model": "gpt-6.1-terra" };
+    // Every seat is GPT: the table's chair (Sol) moves to Opus.
+    expect(await chairModel(gpt)).toBe("claude-opus-5-5");
+    // One seat is Claude: the families are mixed, the table's chair stays.
+    expect(await chairModel({ ...gpt, "council.skeptic.provider": "claude-code", "council.skeptic.model": "claude-sonnet-5-5" })).toBe("gpt-6.1-sol");
+    // The owner pinned the chair: it is not moved.
+    expect(await chairModel({ ...gpt, "council.chair.provider": "codex", "council.chair.model": "gpt-6.1-sol" })).toBe("gpt-6.1-sol");
+  });
+
   it("the Council office reads the same shape: get_council, list_councils, defaults", async () => {
     const w = world();
     await boot(w);
