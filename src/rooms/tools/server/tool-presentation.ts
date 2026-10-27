@@ -21,7 +21,7 @@ export const TOOL_PRESENTATION: Record<string, Entry> = {
   lane_pilot_reassign_task: row("Reassigning a task", "Reassigned a task", "Переназначаю задачу", "Задача переназначена"),
   lane_pilot_wait_writer: row("Waiting for a writer", "Waited for a writer", "Жду писателя", "Дождался писателя", true),
   lane_pilot_answer_writer: row("Answering a writer", "Answered a writer", "Отвечаю писателю", "Ответ писателю отправлен"),
-  lane_pilot_ask_owner: row("Asking the owner", "Asked the owner", "Спрашиваю владельца", "Вопрос владельцу задан"),
+  lane_pilot_ask_owner: row("Asking the owner", "The owner answered", "Спрашиваю владельца", "Владелец ответил"),
   lane_pilot_browser_qa: row("Checking the page in a browser", "Checked the page in a browser", "Проверяю страницу в браузере", "Страница проверена в браузере"),
   lane_pilot_ingest_opencode_telemetry: row("Reading OpenCode telemetry", "Read OpenCode telemetry", "Читаю телеметрию OpenCode", "Телеметрия OpenCode прочитана"),
   lane_pilot_workspace_status: row("Checking the workspace", "Checked the workspace", "Проверяю рабочую папку", "Рабочая папка проверена"),

@@ -13,7 +13,8 @@ import { mountHealth } from "../../stability/server";
 import { mountMemorySync } from "../../memory/server";
 import { mountCouncilTools } from "../../council/server";
 import { mountSpecialists } from "../../critique/server";
-import { mountRelay } from "../../relay/server";
+import { mountRelay, ownerLocale } from "../../relay/server";
+import { ownerAnswerText } from "../owner-answer-text";
 import { mountWorkflowTools } from "../../workflow/server";
 import { mountSelfRepair } from "../../self-repair/server";
 import { mountHookTimeoutWatch, mountServiceProjects } from "../../stability/server";
@@ -243,11 +244,10 @@ export function registerTools(ctx: ServerCore, services: Services) {
       if (answer.outcome === "unavailable") {
         throw new ToolError(`owner_question_unavailable: ${answer.reason}`, { code:"owner_question_unavailable", retryable:false, sideEffects:"none", next:"ask the owner in your reply text" });
       }
-      if (answer.outcome === "cancelled") {
-        return JSON.stringify({ answered:false, reason:answer.reason,
-          next:answer.reason === "timeout" ? "the owner did not answer in time: decide yourself if it is safe, or ask again in your reply" : "the owner dismissed the question: decide yourself if it is safe, or ask in your reply" }, null, 2);
-      }
-      return JSON.stringify({ answered:true, choice:answer.choice?.label ?? null, text:answer.text }, null, 2);
+      // Readable text, not JSON: BB shows a delivered result to the owner as markdown (owner-answer-text.ts).
+      const locale = await ownerLocale(bb).catch(() => "ru" as const);
+      if (answer.outcome === "cancelled") return ownerAnswerText({ answered:false, reason:answer.reason }, locale);
+      return ownerAnswerText({ answered:true, choice:answer.choice?.label ?? null, text:answer.text }, locale);
     },
   });
 

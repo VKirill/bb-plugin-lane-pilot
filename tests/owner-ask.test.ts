@@ -135,7 +135,7 @@ describe("lane_pilot_ask_owner (H8)", () => {
     const form = harness.pendingInteractions[0]!;
     expect(form).toMatchObject({ threadId: "thr_pm", rendererId: "lane-pilot-ask", title: "Which payment provider?" });
     harness.behavior.submitInteraction(form.id, { choice: "2" });
-    expect(JSON.parse(String(await called))).toEqual({ answered: true, choice: "Cloudpayments", text: "" });
+    expect(String(await called)).toBe("**Владелец ответил**\n\n**Выбор:** Cloudpayments");
   });
 
   it("tells the PM when the owner dismissed the form, and refuses a thread that is not a PM", async () => {
@@ -143,7 +143,7 @@ describe("lane_pilot_ask_owner (H8)", () => {
     const called = harness.behavior.callAgentTool("lane_pilot_ask_owner", { question: "Delete the old data?" }, { threadId: "thr_pm", projectId: "proj_1" });
     await vi.waitFor(() => expect(harness.pendingInteractions).toHaveLength(1));
     harness.behavior.cancelInteraction(harness.pendingInteractions[0]!.id);
-    expect(JSON.parse(String(await called))).toMatchObject({ answered: false, reason: "user" });
+    expect(String(await called)).toContain("Владелец закрыл вопрос");
 
     const writer = await pmHost("writer");
     const refused = JSON.parse(String(await writer.harness.behavior.callAgentTool("lane_pilot_ask_owner", { question: "q" }, { threadId: "thr_w", projectId: "proj_1" })));

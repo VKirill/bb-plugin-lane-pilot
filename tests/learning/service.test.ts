@@ -59,8 +59,8 @@ describe("the learning room in the mounted plugin", () => {
     const sure = { ...scripted.jev, judge: async () => ({ by: "jev" as const, decision: 0.9, receiptId: null, answers: {} }) } as never;
     setJevForTests(sure);
     // The owner dismisses the form: the tool answers exactly as before, and the signal is written all the same.
-    const answer = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_ask_owner", { question: "Which wording do you prefer for the button?" }, ctx)));
-    expect(answer).toMatchObject({ answered: false, reason: "dismissed" });
+    const answer = String(await harness.behavior.callAgentTool("lane_pilot_ask_owner", { question: "Which wording do you prefer for the button?" }, ctx));
+    expect(answer).toContain("Владелец закрыл вопрос");
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(listSignals(db, { kind: "owner_question" })).toMatchObject([{ projectId: "project-a", p: 0.9 }]);
   });
