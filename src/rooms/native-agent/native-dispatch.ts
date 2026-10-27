@@ -11,6 +11,7 @@ import {
   isMissingPluginRpc,
   nativeSelectionMarker,
   nativeSelectionSchema,
+  nativeSwitchKey,
   tokensFrom,
   type NativeSelection,
 } from "./native-session";
@@ -189,6 +190,11 @@ export async function handleNativeDispatch(
     ...tokensFrom(ctx.input.blocks),
     ...(hidden?.success ? [hidden.data.token] : []),
   ])];
+  // An existing chat whose agent was switched in the composer: the switch waits here for the chat's next message.
+  const switchKey = nativeSwitchKey(ctx.thread.id);
+  const switchToken = tokens.length ? null : await bb.storage.kv.get<string>(switchKey).catch(() => null);
+  const switching = typeof switchToken === "string";
+  if (switching) tokens.push(switchToken);
   const base = {
     thread: ctx.thread.id,
     project: ctx.project.id,
@@ -229,7 +235,7 @@ export async function handleNativeDispatch(
         "Lane Pilot native profile needs Claude Code. Switch the composer provider back, or start without the Lane mention.",
       );
     }
-    if (tokens.length && bound && bound.token !== tokens[0]) {
+    if (tokens.length && bound && bound.token !== tokens[0] && !switching) {
       return reject(
         "bound_token_mismatch",
         "The Lane Pilot profile is fixed for this chat. Start a new chat to choose another.",
@@ -240,6 +246,7 @@ export async function handleNativeDispatch(
     if (tokens.length) {
       const candidate = await bb.storage.kv.get<NativeSelection>(`native-selection:${tokens[0]}`);
       if (!candidate) {
+        if (switching) await bb.storage.kv.delete(switchKey);
         return reject("selection_missing", "Lane Pilot selection is missing. Choose the profile again.");
       }
       selected = nativeSelectionSchema.parse(candidate);
@@ -303,6 +310,7 @@ export async function handleNativeDispatch(
       await bb.storage.kv.set(`native-thread:${ctx.thread.id}`, selected);
       await bb.storage.kv.set(`native-env:${ctx.thread.id}`, prepared.env);
       await bb.storage.kv.set(`native-agent-type:${ctx.thread.id}`, prepared.agentId);
+      if (switching) await bb.storage.kv.delete(switchKey);
       traceNativeDispatch(bb.log, "dispatch.proceed", { ...base, reason: "workspace_pending" });
       return { action: "proceed" };
     }
@@ -323,7 +331,7 @@ export async function handleNativeDispatch(
     // A chat already bound with a launcher needs no host call here: BB gives this hook 10 s, a busy host took up
     // to 36 s to prepare, and every message into the PM (owner's or a relay reminder) failed with «did not decide».
     // nativeContributedEnv refreshes the launcher on the same send.
-    if (bound) {
+    if (bound && !switching) {
       const cached = await bb.storage.kv.get<ExperimentalPluginProviderEnvEntry[]>(`native-env:${ctx.thread.id}`);
       if (cached?.length) {
         traceNativeDispatch(bb.log, "dispatch.proceed", { ...base, reason: "bound_cached_env" });
@@ -342,6 +350,7 @@ export async function handleNativeDispatch(
     await bb.storage.kv.set(`native-thread:${ctx.thread.id}`, selected);
     await bb.storage.kv.set(`native-env:${ctx.thread.id}`, prepared.env);
     await bb.storage.kv.set(`native-agent-type:${ctx.thread.id}`, prepared.agentId);
+    if (switching) await bb.storage.kv.delete(switchKey);
     traceNativeDispatch(bb.log, "dispatch.proceed", { ...base, reason: "ok" });
     return { action: "proceed" };
   } catch (error) {

@@ -60,7 +60,7 @@ export default definePluginApp((app) => {
   app.slots.pendingInteraction({ id: OWNER_ASK_RENDERER_ID, component: OwnerAsk });
   app.composer.customize({
     id: "lane-pilot-activation",
-    scopes: ["new-thread"],
+    scopes: ["new-thread", "thread"],
     actions: [{ id: "enable-lane-pilot", component: EnableLanePilotAction }],
   });
   app.composer.customize({

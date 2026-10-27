@@ -125,6 +125,21 @@ export const rpcNative = {
       cliAgentsCollision: z.enum(["pending", "thread", "mention"]).nullable(),
     }).strict(),
   },
+  /** Whether an existing chat can change its agent, and which agent it runs (or will on its next message). */
+  chat_agent_state: {
+    input: z.object({ threadId: z.string().min(1) }).strict(),
+    output: z.object({
+      projectId: z.string(),
+      eligible: z.boolean(),
+      reason: z.enum(["helper", "provider", "lane_started", "specialist_run"]).nullable(),
+      current: z.object({ agentId: z.string(), description: z.string().min(1), pending: z.boolean() }).strict().nullable(),
+    }).strict(),
+  },
+  /** Changes the agent of an existing chat from its next message; `agentId: null` makes the chat plain again. */
+  switch_chat_agent: {
+    input: z.object({ threadId: z.string().min(1), agentId: z.string().min(1).max(200).nullable() }).strict(),
+    output: z.object({ agentId: z.string().nullable(), description: z.string().nullable() }).strict(),
+  },
   list_helper_threads: {
     input: z.object({ threadId: z.string().min(1) }).strict(),
     output: z.object({

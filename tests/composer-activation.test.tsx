@@ -8,11 +8,14 @@ import { requestArchitectLaunch, takeArchitectLaunch } from "../src/rooms/workfl
 
 const hiddenData = vi.hoisted(() => ({ value: null as null | { token: string } }));
 const installStarts = vi.hoisted(() => [] as string[]);
+const running = vi.hoisted(() => ({ value: false }));
 const prepared: string[] = [];
+const switches: Array<{ threadId: string; agentId: string | null }> = [];
 vi.mock("@get-bb/plugin-sdk/app", async (original) => {
   const sdk = await original<typeof import("@get-bb/plugin-sdk/app")>();
   return {
     ...sdk,
+    useComposerView: () => { const view = sdk.useComposerView(); return running.value ? { ...view, run: { ...view.run, isRunning: true } } : view; },
     useComposer: () => ({ ...sdk.useComposer(), experimental_vkSetDispatchData: (data: null | { token: string }) => { hiddenData.value = data; } }),
     experimental_useComposerSelection: () => ({
       status: "ready", scope: { kind: "new-thread", projectId: "p1" }, projectId: "p1", providerId: "claude-code", model: "claude-opus-5-5[1m]", reasoningLevel: "medium",
@@ -37,6 +40,7 @@ async function mountComposer(input: {
     mainAgent?: string | null;
   };
   activate?: (args: unknown) => Promise<{ threadId: string; runId: string }>;
+  chat?: { eligible?: boolean; reason?: "helper" | "provider" | "lane_started" | "specialist_run" | null; current?: { agentId: string; description: string; pending: boolean } | null };
 }) {
   const app = await loadPluginApp(() => import("../app"));
   const action = app.composerCustomizations[0]?.actions?.[0];
@@ -61,6 +65,12 @@ async function mountComposer(input: {
         requiredSessionPolicy: "none",
         mainAgent: input.context.mainAgent ?? null,
       }; },
+      chat_agent_state: () => ({ projectId: input.projectId ?? "proj_a", eligible: input.chat?.eligible ?? true, reason: input.chat?.reason ?? null, current: input.chat?.current ?? null }),
+      switch_chat_agent: async (request: unknown) => {
+        const { threadId, agentId } = request as { threadId: string; agentId: string | null };
+        switches.push({ threadId, agentId });
+        return { agentId, description: agentId === "copy-lead" ? "Night desk" : agentId ? "Development coordinator" : null };
+      },
       activate_pm: input.activate ?? (async () => ({ threadId: "thr_pm", runId: "run_1" })),
       native_install_start: async (input: unknown) => { installStarts.push((input as { hostId: string }).hostId); return { started: true }; },
       prepare_native_session: async (request: unknown) => { const { agentId } = request as { agentId: string }; prepared.push(agentId); return {
@@ -80,6 +90,8 @@ afterEach(() => {
   hiddenData.value = null;
   installStarts.length = 0;
   prepared.length = 0;
+  switches.length = 0;
+  running.value = false;
   setPendingNativeAgent(null);
 });
 
@@ -92,25 +104,86 @@ function pickAgent(slot: { getByRole: (role: string, options?: { name: string })
 describe("Enable Lane Pilot composer action", () => {
   it("registers the launch action only on the new-thread composer", async () => {
     const app = await loadPluginApp(() => import("../app"));
-    expect(app.composerCustomizations[0]?.scopes).toEqual(["new-thread"]);
+    expect(app.composerCustomizations[0]?.scopes).toEqual(["new-thread", "thread"]);
   });
 
-  it("renders no Lane Pilot action in an existing conversation, idle or with a live run", async () => {
-    for (const context of [
-      { bindingStatus: "resolved" as const, projects: [{ id: "proj_a", name: "Alpha" }], threadStatus: null, pluginRole: null },
-      { bindingStatus: "resolved" as const, projects: [{ id: "proj_a", name: "Alpha" }], threadStatus: "active", pluginRole: null, liveRun: { threadId: "thr_pm", runId: "run_1" } },
-    ]) {
-      const slot = await mountComposer({
-        projectId: "proj_a",
-        threadId: "thr_existing",
-        scope: { kind: "thread", threadId: "thr_existing" },
-        context,
-      });
-      expect(slot.queryByRole("button", { name: "Lane Pilot / agent" })).toBeNull();
-      expect(slot.queryByRole("button", { name: /New Lane Pilot session/ })).toBeNull();
-      expect(slot.queryByRole("button", { name: "Open Lane Pilot run" })).toBeNull();
-      slot.lifecycle.unmount();
-    }
+  const chatAgents = [
+    { id: "dev-orchestrator", description: "Lane Pilot development orchestrator" },
+    { id: "copy-lead", description: "Lane Pilot copy lead" },
+  ];
+  const existingChat = (chat: Parameters<typeof mountComposer>[0]["chat"] = {}) => mountComposer({
+    projectId: "proj_a",
+    threadId: "thr_existing",
+    scope: { kind: "thread", threadId: "thr_existing" },
+    context: { bindingStatus: "resolved", projects: [{ id: "proj_a", name: "Alpha" }], mainAgents: chatAgents },
+    chat,
+  });
+
+  it("shows the switch and the dropdown in an existing chat with the chat's current agent selected", async () => {
+    const slot = await existingChat({ current: { agentId: "copy-lead", description: "Lane Pilot copy lead", pending: false } });
+    fireEvent.click(await slot.findByRole("button", { name: "Copy editor" }));
+    await slot.findByTestId("activation-popover");
+    expect(slot.getByRole("switch", { name: "Lane Pilot" }).getAttribute("aria-checked")).toBe("false");
+    expect(slot.getByRole("combobox", { name: "Agent" }).textContent).toBe("Copy editor");
+    expect(slot.getByText(/from your next message/i)).toBeTruthy();
+    slot.lifecycle.unmount();
+  });
+
+  it("turns Lane Pilot on in a plain chat from its next message: the server switches it, no dispatch token is attached", async () => {
+    const slot = await existingChat();
+    fireEvent.click(await slot.findByRole("button", { name: "Lane Pilot / agent" }));
+    await slot.findByTestId("activation-popover");
+    const laneSwitch = () => slot.getByRole("switch", { name: "Lane Pilot" });
+    expect(laneSwitch().getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(laneSwitch());
+    await waitFor(() => expect(laneSwitch().getAttribute("aria-checked")).toBe("true"));
+    expect(switches).toEqual([{ threadId: "thr_existing", agentId: "dev-orchestrator" }]);
+    expect(prepared).toEqual([]);
+    expect(hiddenData.value).toBeNull();
+    expect(getPendingNativeAgent()).toBeNull();
+    expect(slot.inspection.composer.text).toBe("Please review this project");
+    expect(slot.inspection.composer.selections).toEqual([{ providerId: "claude-code", model: "claude-opus-5-5[1m]", permissionMode: "full" }]);
+    slot.lifecycle.unmount();
+  });
+
+  it("moves an existing chat from one agent to another and back to a plain chat", async () => {
+    const slot = await existingChat({ current: { agentId: "dev-orchestrator", description: "Lane Pilot development orchestrator", pending: false } });
+    fireEvent.click(await slot.findByRole("button", { name: "Lane Pilot" }));
+    await slot.findByTestId("activation-popover");
+    const laneSwitch = () => slot.getByRole("switch", { name: "Lane Pilot" });
+    expect(laneSwitch().getAttribute("aria-checked")).toBe("true");
+    pickAgent(slot, "Copy editor");
+    await waitFor(() => expect(slot.getByRole("combobox", { name: "Agent" }).textContent).toBe("Copy editor"));
+    expect(laneSwitch().getAttribute("aria-checked")).toBe("false");
+    pickAgent(slot, "No agent");
+    await waitFor(() => expect(switches.at(-1)).toEqual({ threadId: "thr_existing", agentId: null }));
+    await waitFor(() => expect(slot.getByRole("combobox", { name: "Agent" }).textContent).toBe("No agent"));
+    expect(switches.map((row) => row.agentId)).toEqual(["copy-lead", null]);
+    slot.lifecycle.unmount();
+  });
+
+  it("locks the controls with the reason for a chat on another provider and hides them in a run's helper chat", async () => {
+    const other = await existingChat({ eligible: false, reason: "provider" });
+    fireEvent.click(await other.findByRole("button", { name: "Lane Pilot / agent" }));
+    await other.findByTestId("activation-popover");
+    expect((other.getByRole("switch", { name: "Lane Pilot" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(other.getByText(/Start a new Claude Code chat/)).toBeTruthy();
+    other.lifecycle.unmount();
+    const helper = await existingChat({ eligible: false, reason: "helper" });
+    await waitFor(() => expect(switches).toEqual([]));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(helper.queryByRole("button", { name: "Lane Pilot / agent" })).toBeNull();
+    helper.lifecycle.unmount();
+  });
+
+  it("keeps the controls off while the chat is replying", async () => {
+    running.value = true;
+    const slot = await existingChat();
+    fireEvent.click(await slot.findByRole("button", { name: "Lane Pilot / agent" }));
+    await slot.findByTestId("activation-popover");
+    expect((slot.getByRole("switch", { name: "Lane Pilot" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(slot.getByText(/Wait until the reply ends/)).toBeTruthy();
+    slot.lifecycle.unmount();
   });
 
   it("keeps Enable clickable with no project and requires a project before start", async () => {

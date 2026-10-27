@@ -14,7 +14,7 @@ export { handleNativeDispatch, mentionContext, nativeContributedEnv } from "./na
 export { reconcileClaudeLane } from "./native-lane-reconcile";
 export { finalizeNativeLaneBinding, nativeRunReady, ownedNativePmRun, writerWorkspaceForPmInstructions } from "./native-run";
 export { NATIVE_LP_BRIDGE_PM_TOOLS } from "./native-session-hooks";
-export { DEFAULT_NATIVE_AGENT, NATIVE_MENTION_PROVIDER, nativeAgentCliId, nativeSelectionSchema } from "./native-session";
+export { DEFAULT_NATIVE_AGENT, NATIVE_MENTION_PROVIDER, nativeAgentCliId, nativeSelectionSchema, pendingSwitch } from "./native-session";
 export { resolveWriterBinding } from "./project-binding";
 export type { ProjectSourceBinding, WriterBindingResolution } from "./project-binding";
 export { userVisibleProjects } from "./project-scope";
