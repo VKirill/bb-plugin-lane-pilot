@@ -31,8 +31,13 @@ export function spawnUsageOf(owner: { bb: object; log?: ((line: string) => void)
   return usage ? { ...usage, log: owner.log } : undefined;
 }
 /** Reads the usage of both table providers before a decision (bounded; never throws), for callers that are asynchronous anyway. */
+/**
+ * Refreshes the provider-limit cache in the background and returns at once: a spawn never waits for a usage source (awaiting it held
+ * every helper spawn up to 12 s and broke a reload's resume of pm-read). The decision reads the cache (`peek`): a cold cache moves
+ * nothing this once, the next spawn sees the refreshed numbers.
+ */
 export async function warmSpawnUsage(usage: SpawnUsageUse | undefined, hostId: string | null): Promise<void> {
-  await usage?.warm({ providerIds: TABLE_PROVIDERS, hostId }).catch(() => undefined);
+  void usage?.warm({ providerIds: TABLE_PROVIDERS, hostId }).catch(() => undefined);
 }
 
 export type SpawnModelInput = Omit<AgentModelInput, "offered" | "providerOf" | "pm"> & {

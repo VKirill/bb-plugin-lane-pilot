@@ -152,7 +152,8 @@ const usageOf = async (percent: Record<string, number | null>, calls: string[] =
   const bb = usageSource(percent, calls) as never;
   createWriterState({ bb, log: () => undefined } as never);
   const usage = spawnUsageOf({ bb, log: (line) => log.push(line) });
-  await warmSpawnUsage(usage, "h1");
+  // The spawn path refreshes in the background (warmSpawnUsage returns at once); a test waits for the cache directly.
+  await usage!.warm({ providerIds: ["claude-code", "codex"], hostId: "h1" });
   return usage;
 };
 const base = { settings: {}, pm: opus, catalog: catalog(true, true), hostId: "h1" };
@@ -235,6 +236,15 @@ describe("a provider's nearly spent limit moves the helpers to the other family"
     expect(spawnUsageOf({ bb: {} })).toBeUndefined();
   });
 
+  it("a spawn never waits for the usage source: warmSpawnUsage returns at once", async () => {
+    const bb = { events: { on: () => () => undefined }, sdk: { plugins: { experimental_discoverRpc: () => new Promise(() => undefined), callRpc: async () => ({}) } } } as never;
+    createWriterState({ bb, log: () => undefined } as never);
+    const usage = spawnUsageOf({ bb });
+    const started = Date.now();
+    await warmSpawnUsage(usage, "h1");
+    expect(Date.now() - started).toBeLessThan(50);
+  });
+
   it("a slow source never holds a decision", async () => {
     const bb = { events: { on: () => () => undefined }, sdk: { plugins: { experimental_discoverRpc: () => new Promise(() => undefined), callRpc: async () => ({}) } } } as never;
     createWriterState({ bb, log: () => undefined } as never);
@@ -254,7 +264,7 @@ describe("a provider's nearly spent limit moves the helpers to the other family"
     const asked = calls.length;
     expect(asked).toBeGreaterThan(0);
     for (let n = 0; n < 5; n += 1) resolveSpawnModel({ role: "analyst", ...base, usage });
-    await warmSpawnUsage(usage, "h1");
+    await usage!.warm({ providerIds: ["claude-code", "codex"], hostId: "h1" });
     expect(calls).toHaveLength(asked);
     expect(calls.filter((method) => method === USAGE_LIST_METHOD)).toHaveLength(1);
     expect(calls.filter((method) => method === USAGE_FETCH_METHOD)).toHaveLength(2);
