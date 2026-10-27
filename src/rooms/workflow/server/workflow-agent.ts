@@ -60,8 +60,8 @@ export function roleSpec(role: string): RoleSpec {
 
 /**
  * The stage workflows of a phase (lp.analyze, lp.plan, lp.draw, lp.close, lp.review, retrospective) are started by the phase driver under the
- * key `phase:<phaseId>:<kind>:…` (auto-stages.ts). A read-only helper of such a run may write the phase's own folder and the plans folder,
- * where the stage's documents live; every other edit is still `repo_edited` (live ph_26f65b142d: the stages failed on their own files).
+ * key `phase:<phaseId>:<kind>:…` (auto-stages.ts). The read-only helper that authors a stage's documents (below) may write the folders of its
+ * own role, where those documents live; every other edit is still `repo_edited` (live ph_26f65b142d: the stages failed on their own files).
  */
 const PHASE_RUN_KEY = /^phase:(ph_[0-9a-z]+):/;
 
@@ -77,13 +77,23 @@ export function phaseOfWorkflowRun(db: LanePilotDatabase, runId: string): string
   return null;
 }
 
-/** Whether a stage helper of this phase may write the file: the phase's folder and the plans folder only. */
-export const phaseWritable = (phaseId: string) => (file: string): boolean =>
-  !file.split("/").includes("..") && (file.startsWith(`${phaseFolder(phaseId)}/`) || file.startsWith(".agents/plans/"));
+/**
+ * The authors of a phase stage's documents and the folders each may write. A judge (the plan critic, the code critic, the auditor, a council
+ * seat) writes none: it must not edit what it judges (Matvey Maslov: the candidate cannot change the judge, nor the judge the candidate).
+ * The planner writes the phase's folder and the plans folder; the analyst only the phase's folder (its CONTEXT.md). The drawing is the
+ * design-lead specialist's own rule, not this one.
+ */
+const PHASE_AUTHORS: Partial<Record<HelperRole, "phase" | "plans">> = { analyst: "phase", planner: "plans" };
+export const isPhaseAuthor = (helper: HelperRole): boolean => helper in PHASE_AUTHORS;
+const phaseFolders = (phaseId: string, helper: HelperRole): string[] => PHASE_AUTHORS[helper] === "plans" ? [`${phaseFolder(phaseId)}/`, ".agents/plans/"] : PHASE_AUTHORS[helper] ? [`${phaseFolder(phaseId)}/`] : [];
+
+/** Whether a stage helper of this phase may write the file: the folders of its own role, if it is an author. */
+export const phaseWritable = (phaseId: string, helper: HelperRole) => (file: string): boolean =>
+  !file.split("/").includes("..") && phaseFolders(phaseId, helper).some((folder) => file.startsWith(folder));
 
 /** The read-only line of a phase stage's prompt, with the folders the stage writes (the brief said «write nothing» while the check expected files). */
-export const phaseWriteNote = (prompt: string, phaseId: string): string => {
-  const line = `Write the step's documents only under ${phaseFolder(phaseId)}/ and .agents/plans/; do not change, commit or push any other file of the repository (reports and scratch files go under .bb/chats/ or /tmp).`;
+export const phaseWriteNote = (prompt: string, phaseId: string, helper: HelperRole): string => {
+  const line = `Write the step's documents only under ${phaseFolders(phaseId, helper).join(" and ")}; do not change, commit or push any other file of the repository (reports and scratch files go under .bb/chats/ or /tmp).`;
   return prompt.includes(READ_ONLY_LINE) ? prompt.replace(READ_ONLY_LINE, line) : `${prompt}\n\n${line}`;
 };
 
@@ -144,8 +154,8 @@ export function createWorkflowAgents() {
     const { bb, db, host } = rt.ctx;
     const spec = roleSpec(asked.role);
     // A phase stage writes its documents: its helper is told which folders it may write, the same ones the check below allows.
-    const phaseId = spec.readOnly ? phaseOfWorkflowRun(db, asked.workflowRunId) : null;
-    const request = phaseId ? { ...asked, prompt: phaseWriteNote(asked.prompt, phaseId) } : asked;
+    const phaseId = spec.readOnly && isPhaseAuthor(spec.helper) ? phaseOfWorkflowRun(db, asked.workflowRunId) : null;
+    const request = phaseId ? { ...asked, prompt: phaseWriteNote(asked.prompt, phaseId, spec.helper) } : asked;
     const pm = await bb.sdk.threads.get({ threadId: rt.pmThreadId });
     const environmentId = stringAt(pm, "environmentId");
     if (!environmentId) throw new HelperFailure("no_pm_environment", "the PM chat has no environment to run the helper in");
@@ -240,7 +250,7 @@ export function createWorkflowAgents() {
     }
     if (checkoutPath && checkoutHostId && before) {
       const after = await gitRepoStatus(host, checkoutHostId, checkoutPath);
-      const editable = phaseId ? (file: string) => spec.editable(file) || phaseWritable(phaseId)(file) : spec.editable;
+      const editable = phaseId ? (file: string) => spec.editable(file) || phaseWritable(phaseId, spec.helper)(file) : spec.editable;
       const edited = after ? detectRepoEdits(before, after, editable) : [];
       if (edited.length) throw new HelperFailure("repo_edited", `the ${request.role} helper edited repository files it may not touch: ${edited.slice(0, 8).join(", ")}`);
     }

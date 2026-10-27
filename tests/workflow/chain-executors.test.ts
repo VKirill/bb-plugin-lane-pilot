@@ -306,19 +306,31 @@ describe("the agent step", () => {
   });
 
   // Live ph_26f65b142d: the stages failed with repo_edited on their own files (CONTEXT.md, plan-items.json, the drawing's fonts).
-  it("a helper of a phase stage may write its phase's folder and the plans folder, nothing else", async () => {
+  // A judge must not edit what it judges (Fable's recheck E7): only the stage's author writes, and each author only its own folders.
+  it("the author of a phase stage may write its own folders, a judge nothing, and nobody anything else", async () => {
     const write = (...files: string[]) => (checkout: string) => {
       for (const file of files) { mkdirSync(dirname(join(checkout, file)), { recursive: true }); writeFileSync(join(checkout, file), "x"); }
       return reply({ count: 1, summary: "s", handoff: "h" });
     };
-    const stage = async (files: string[], key = "phase:ph_abc123:analyze:1:1") => {
+    const stage = async (files: string[], role = "analyst", key = "phase:ph_abc123:analyze:1:1") => {
       const t = await setup({ look: [write(...files)] });
-      const summary = await t.engine.start({ workflow: oneAgent(), inputs: {}, key, runtime: t.rt, link: { projectId: PROJECT, runId: RUN } }).done;
+      const summary = await t.engine.start({ workflow: oneAgent({ role }), inputs: {}, key, runtime: t.rt, link: { projectId: PROJECT, runId: RUN } }).done;
       await t.dispose();
       return summary;
     };
-    expect((await stage([".agents/phases/ph_abc123/CONTEXT.md", ".agents/phases/ph_abc123/design/src/fonts/a.ttf", ".agents/plans/ui3/plan-items.json"])).status).toBe("succeeded");
-    const source = await stage([".agents/phases/ph_abc123/CONTEXT.md", "src/app.ts"]);
+    const context = ".agents/phases/ph_abc123/CONTEXT.md", plans = ".agents/plans/ui3/plan-items.json";
+    expect((await stage([context])).status).toBe("succeeded");
+    expect((await stage([context, plans], "planner")).status).toBe("succeeded");
+    // The analyst has no business in the plans folder; the critics of the plan and of the drawing edit neither the plans nor the drawing they judge.
+    const analyst = await stage([context, plans]);
+    expect(analyst.error).toContain("repo_edited");
+    expect(analyst.error).toContain(plans);
+    for (const role of ["plan-critic", "code-critic", "auditor"]) {
+      const judge = await stage([".agents/phases/ph_abc123/design/src/fonts/a.ttf", plans], role);
+      expect(judge.error, role).toContain("repo_edited");
+      expect(judge.error, role).toContain("a.ttf");
+    }
+    const source = await stage([context, "src/app.ts"], "planner");
     expect(source.status).toBe("failed");
     expect(source.error).toContain("repo_edited");
     expect(source.error).toContain("src/app.ts");
@@ -326,7 +338,7 @@ describe("the agent step", () => {
     const other = await stage([".agents/phases/ph_other/CONTEXT.md"]);
     expect(other.error).toContain("repo_edited");
     // A run that is not a phase stage keeps the old rule, plans folder included.
-    expect((await stage([".agents/plans/ui3/plan-items.json"], "wf-manual:proj:w:k")).error).toContain("repo_edited");
+    expect((await stage([plans], "planner", "wf-manual:proj:w:k")).error).toContain("repo_edited");
   });
 
   it("a step in the same session sends into the earlier helper's thread instead of spawning a new one", async () => {
@@ -792,13 +804,14 @@ describe("handoff by reference and the start packet (W0)", () => {
 });
 
 describe("a phase stage's helper is told the folders it writes", () => {
-  it("replaces «write nothing» with the phase folder and the plans folder", async () => {
+  it("replaces «write nothing» with the folders of the author's own: the planner the phase folder and the plans folder, the analyst the phase folder", async () => {
     const { phaseWriteNote } = await import("../../src/rooms/workflow/server/workflow-agent");
     const { READ_ONLY_LINE } = await import("@lane-pilot/workflow-engine");
-    const told = phaseWriteNote(`brief\n${READ_ONLY_LINE}\ncontract`, "ph_abc123");
+    const told = phaseWriteNote(`brief\n${READ_ONLY_LINE}\ncontract`, "ph_abc123", "planner");
     expect(told).not.toContain(READ_ONLY_LINE);
     expect(told).toContain(".agents/phases/ph_abc123/ and .agents/plans/");
-    expect(phaseWriteNote("no line here", "ph_abc123")).toContain(".agents/phases/ph_abc123/");
+    expect(phaseWriteNote("no line here", "ph_abc123", "analyst")).toContain(".agents/phases/ph_abc123/");
+    expect(phaseWriteNote("no line here", "ph_abc123", "analyst")).not.toContain(".agents/plans/");
   });
 });
 
