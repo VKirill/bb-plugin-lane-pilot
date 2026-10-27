@@ -1,5 +1,4 @@
-import { BUILTIN_PRESETS, PRESET_SLUGS, presetSelection } from "@lane-pilot/models";
-import { NODE_EFFORTS, findModel, findProvider, offeredOnHost, type ModelCatalog } from "@lane-pilot/models";
+import { ROLE_TABLE, findModel, findProvider, offeredOnHost, resolveRoleModel, type ModelCatalog } from "@lane-pilot/models";
 import { ARTIFACTS, artifactId } from "./artifacts";
 import { CONDITION_OPS, FIELD_TYPES, PASS_MODES, QUALITY_MODES } from "./schema";
 
@@ -17,7 +16,7 @@ export type CapabilityPorts = {
   /** Env Catalog entries by name and kind; null when Env Catalog cannot be asked. */
   secrets?: () => Promise<Array<{ name: string; kind: string }> | null>;
   hosts?: () => Promise<Array<{ id: string; name: string; connected: boolean }>>;
-  /** The providers and models the machines offer (the catalog of the Models view) and the settings the presets are read from; null when it cannot be asked. */
+  /** The providers and models the machines offer (the catalog of the Models view) and the settings the role table is read from; null when it cannot be asked. */
   models?: () => Promise<{ catalog: ModelCatalog; settings: Record<string, unknown> } | null>;
   /** The Browser QA machine of the project (setting browser_qa.host_id). */
   browserHostId?: () => string | null;
@@ -29,41 +28,29 @@ export type CapabilityQuery = { sections?: string[]; query?: string };
 
 export const CAPABILITY_SECTIONS = ["skills", "plugins", "mcpServers", "secrets", "hosts", "browser", "specialists", "models", "reference"] as const;
 const LIMIT = 120;
-const MODELS_PER_PROVIDER = 40;
 
 /**
- * The model pairs a node may name, compact: for each provider the machines it runs on, its service tiers and the models some
- * machine lists (id as a node writes it, efforts, `default`, and `only` when fewer machines have it than the provider); the presets
- * resolved to the pair they run on now and whether a machine offers it. Names only, no prices. Pure: the server passes the catalog.
+ * The table «role -> model» as it stands now: for each role the model it runs on (the owner's row, else a stage selection set before
+ * the table, else the built-in default), the effort, where that comes from, and whether the machine the helpers run on offers it.
+ * A node names no model: the model belongs to the role, set once for every graph in Settings. Pure: the server passes the catalog.
  */
 export function modelsSection(catalog: ModelCatalog, settings: Record<string, unknown>, needle?: string) {
   const hostName = new Map(catalog.hosts.map((host) => [host.id, host.name]));
-  const names = (ids: string[]) => ids.map((id) => hostName.get(id) ?? id);
   const wanted = needle?.trim().toLowerCase();
-  const providers = catalog.providers.filter((provider) => provider.hostIds.length).flatMap((provider) => {
-    const all = provider.models.filter((model) => model.hostIds.length);
-    const shown = wanted && !provider.id.toLowerCase().includes(wanted) ? all.filter((model) => `${model.id} ${model.displayName}`.toLowerCase().includes(wanted)) : all;
-    if (wanted && !shown.length) return [];
-    return [{
-      provider: provider.id, machines: names(provider.hostIds), ...(provider.supportsServiceTier && provider.serviceTiers.length ? { serviceTiers: provider.serviceTiers } : {}),
-      models: shown.slice(0, MODELS_PER_PROVIDER).map((model) => ({
-        id: model.id, efforts: model.efforts.filter((effort) => (NODE_EFFORTS as readonly string[]).includes(effort)),
-        ...(model.isDefault ? { default: true } : {}), ...(model.hostIds.length < provider.hostIds.length ? { only: names(model.hostIds) } : {}),
-        ...(offeredOnHost(catalog, provider.id, model.id, catalog.runHostId) === false ? { notOnThisMachine: true } : {}),
-      })),
-      ...(shown.length > MODELS_PER_PROVIDER ? { moreModels: shown.length - MODELS_PER_PROVIDER } : {}),
-    }];
-  });
-  const presets = Object.fromEntries(PRESET_SLUGS.filter((slug) => !wanted || slug.includes(wanted)).map((slug) => {
-    const chosen = presetSelection(slug, settings)!;
+  const roles = Object.fromEntries(ROLE_TABLE.filter((row) => !wanted || row.id.includes(wanted)).map((row) => {
+    const chosen = resolveRoleModel(row.id, settings);
     const model = findModel(findProvider(catalog, chosen.providerId), chosen.model);
-    return [slug, { provider: chosen.providerId, model: chosen.model, reasoning: chosen.reasoning ?? BUILTIN_PRESETS[slug]!.reasoning, offered: Boolean(model?.hostIds.length) && offeredOnHost(catalog, chosen.providerId, chosen.model, catalog.runHostId) !== false, ...(model?.hostIds.length ? { machines: names(model.hostIds) } : {}) }];
+    return [row.id, {
+      provider: chosen.providerId, model: chosen.model, reasoning: chosen.effort, source: chosen.source, why: row.default.why,
+      offered: Boolean(model?.hostIds.length) && offeredOnHost(catalog, chosen.providerId, chosen.model, catalog.runHostId) !== false,
+      ...(model?.hostIds.length ? { machines: model.hostIds.map((id) => hostName.get(id) ?? id) } : {}),
+    }];
   }));
   return {
     status: "ready" as const,
     machines: catalog.hosts.map((host) => ({ name: host.name, connected: host.connected })),
-    providers, presets,
-    note: "a node names `provider` and `model` (the id column) together, with `reasoning` from that model's efforts; pick only pairs listed here: a pair no machine offers is a validator warning and the step fails to start. Prefer a preset (`model_preset`) to a pair; `only` means the model exists on those machines alone; `notOnThisMachine` means the machine this project's helpers run on does not have it (a step that names it fails to start there: pick another); a preset with offered: false (not offered by the machine the helpers run on) is passed over for the role's Settings, then the generic workflow model, then the PM chat's model",
+    roles,
+    note: "a step names a `role`, never a model: the role picks its row of this table, and the owner sets the table once in Settings for every graph. Do not put `provider`, `model`, `reasoning` or `model_preset` on a node (the validator warns and the run ignores them). Pick the role by the job; `offered: false` means the machine this project's helpers run on lacks the model (the step then takes the role's default, then the PM chat's model)",
   };
 }
 
@@ -121,9 +108,8 @@ export const WORKFLOW_REFERENCE = {
     note: "every role but project-life and the specialists is read-only for the repository: a changed file fails the step (repo_edited). A file the chain must leave in the project goes through an `fs.write` action or an lp-task node; notes go under .bb/chats/",
   },
   models: {
-    precedence: "the model of an agent step (and of an action that runs in a helper): the node's own `provider`/`model`/`reasoning` override, field by field, what the first of these gives: 1. the node's `model_preset`; 2. the role's stage selection in Settings (analyst and pm-reader: pm_read; planner and plan-critic: plan_critique; code-critic: code_critique; auditor: code_critique, then night_review; debugger: workflow.debugger, then specialist; specialist:x: specialist); 3. `workflow.agent.*` in Settings; 4. the model of the project's PM chat. An lp-task node runs on the writer chain (writer.* in Settings); decision, human and code actions use no model",
-    presets: "named settings `workflow.preset.<name>.{provider,model,reasoning_effort}`: the owner changes a model in Settings without editing the chain. `cheap-fast` (claude-haiku-5-5, low: collecting, extracting, sending), `strong` (claude-opus-5-5, high: judgment, planning), and the Insights ones `ins-analysis`, `ins-psychology`, `ins-check`, `ins-digest`. An unknown preset is a warning and the step falls through to Settings; a known one is used as it is",
-    advice: "leave the model unset unless the step differs in difficulty; name a preset, not a model; `provider` and `model` go together, only on the owner's word and only a pair from the `models` section of the capabilities; `reasoning` is one of that model's efforts (low, medium, high, xhigh, max, ultracode where the model has it); `service_tier: fast` only where the provider lists service tiers",
+    precedence: "the model of an agent step (and of an action that runs in a helper) belongs to its `role`: one table «role -> model» in Settings, the same in every graph. A role's row is the owner's pick, else the stage selection the owner set before the table existed (analyst, planner and workflow-architect: none; pm-reader: pm_read; plan-critic: plan_critique; code-critic: code_critique; auditor: code_critique, then night_review; debugger: workflow.debugger, then specialist; specialist-reviewer and specialist:x: specialist; errand: errand), else the built-in default (authors on Claude Opus 5.5, judges on GPT-6.1 Sol, cheap jobs on Haiku 5.5, Sonnet 5.5 or GPT-6 Luna). An lp-task node runs on the writer chain (writer.* in Settings, Jev's pick per task); decision, human and code actions use no model",
+    advice: "put no model on a node: choose the role by the job. `provider`, `model`, `reasoning`, `service_tier` and `model_preset` on a node change nothing and the validator warns about them",
   },
   requires: "`skills` (a hint on a step; only the ones listed here are checked before a run), `plugins` and `mcp` (those named on agent steps are added by themselves), `secrets` (Env Catalog names, `NAME?` when optional), `tools` (commands: `ffmpeg`, `a|b`), `platforms` (threads, instagram, facebook, vk are checked, x is not), `machines` (shown to the owner, not passed to a step), `browserSession`. A step that needs an account or a key runs as role `errand`: it reads the value by name with env_get and never prints it",
   actions: {

@@ -1,4 +1,5 @@
 import { PROVIDER_POOL_KEY, providerPoolProblem } from "@lane-pilot/settings-catalog";
+import { ROLE_MODEL_KEY_PREFIX, roleModelProblem } from "@lane-pilot/models";
 import { SCHEDULE_ERRAND_DEFAULT_KEY, errandDefaultProblem } from "../schedule";
 import "../workflow/route-workflow";
 import "@lane-pilot/jev/judgments/repair-group";
@@ -51,17 +52,14 @@ export function validateSettingValue(key: string, value: unknown): SettingValida
     }
     return null;
   }
-  // The efforts a workflow node may name (the `reasoning` enum of the agent node); a preset or the generic agent with another word would fail at the spawn.
-  if (/^workflow\.(agent|debugger|preset\.[a-z-]+)\.reasoning_effort$/.test(key) && value !== undefined && value !== null && value !== "") {
+  // The efforts a preset or the debugger's old selection may name; another word would fail at the spawn.
+  if (/^workflow\.(debugger|preset\.[a-z-]+)\.reasoning_effort$/.test(key) && value !== undefined && value !== null && value !== "") {
     return typeof value === "string" && WORKFLOW_EFFORTS.includes(value) ? null : { code: "invalid_choice", key, params: [key, WORKFLOW_EFFORTS.join(", ")] };
   }
-  // The owner's model override of one workflow step (`workflow.model_override.<workflowId>/<nodeId>`): a complete provider + model pair.
-  if (key.startsWith("workflow.model_override.") && value !== undefined && value !== null) {
-    const row = typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
-    const effort = row?.reasoning_effort, tier = row?.service_tier;
-    const ok = row && typeof row.provider === "string" && row.provider && typeof row.model === "string" && row.model
-      && (effort === undefined || (typeof effort === "string" && WORKFLOW_EFFORTS.includes(effort))) && (tier === undefined || tier === "fast" || tier === "default");
-    return ok ? null : { code: "invalid_choice", key, params: [key, "{provider, model, reasoning_effort?, service_tier?}"] };
+  // The table «role -> model» (`role_model.<role>`): one of the Claude / GPT models of the table and an effort.
+  if (key.startsWith(ROLE_MODEL_KEY_PREFIX)) {
+    const problem = roleModelProblem(key, value);
+    return problem ? { code: "invalid_choice", key, params: [key, problem] } : null;
   }
   // The default model of scheduled errands: a complete provider + model pair, or a preset.
   if (key === SCHEDULE_ERRAND_DEFAULT_KEY) {

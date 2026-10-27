@@ -114,6 +114,7 @@ const nodeBase = {
   with: z.record(z.string(), z.unknown()).optional(),
   /** Data this node reads, as references; checked like any reference. */
   reads: z.array(z.string()).max(30).optional(),
+  /** Accepted so older files load; IGNORED when the step runs and warned about (`model_ignored`): the model belongs to the step's role, in the table «role -> model» in Settings. */
   model_preset: z.string().max(64).optional(),
   profile: z.object({ skills: z.array(z.string().min(1).max(120)).max(12).default([]) }).strict().optional(),
   position,
@@ -122,10 +123,11 @@ const nodeBase = {
 const agentBody = {
   role: z.string().max(80).default("worker"),
   prompt: z.string().max(12_000).default(""),
+  // `provider`, `model`, `reasoning` and `service_tier` are accepted so older files load, and IGNORED when the step runs (warning `model_ignored`):
+  // the model belongs to `role`, in the table «role -> model» in Settings, the same in every graph.
   provider: z.string().max(64).optional(),
   model: z.string().max(120).optional(),
   reasoning: z.enum(["low", "medium", "high", "xhigh", "ultracode", "max"]).optional(),
-  /** `fast` asks the provider's fast mode where it has one (the picker offers it only for those providers); `default` is the normal tier. */
   service_tier: z.enum(["default", "fast"]).optional(),
   skills: z.array(z.string().min(1).max(120)).max(8).default([]),
   /** BB plugins this step's session may load, on top of its role's (by plugin id; the helper's session policy narrows to the role's list plus these). */

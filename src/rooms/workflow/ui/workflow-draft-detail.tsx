@@ -18,10 +18,9 @@ import {
 import { say } from "./workflow-edit-fields";
 import { AddNodeMenu, EdgeForm, NodeForm, TestResults, VersionsList, WorkflowForm } from "./workflow-edit-panels";
 import { useCatalog, useDraftEditing } from "./workflow-edit-state";
-import { ModelsPanel, issueText, providerMap, useModelCatalog, useStepExecutors } from "./workflow-models";
+import { ModelsPanel, providerMap, useModelCatalog, useStepExecutors } from "./workflow-models";
 import { useLatestRun, type NodeDataProps } from "./workflow-node-data";
 import { useDrill } from "./workflow-drill";
-import { choiceOps, clearModelOps, type ModelChoice } from "./workflow-model-ops";
 
 const bilingual = (value: unknown, locale: Locale): string | null => {
   if (typeof value === "string") return value || null;
@@ -175,15 +174,6 @@ function DraftScreen({ doc, view, locale, projectId, changes, selection, setSele
   };
   const arrange = async () => { await edit.apply(setMetaOps({ ui: null })); };
 
-  /** A model picked in the table is a patch of the draft like any other edit; one the catalog does not offer is refused before it is sent. */
-  const chooseModel = async (nodeId: string, choice: ModelChoice | null): Promise<string | null> => {
-    const made = choice ? (modelCatalog ? choiceOps(definition, modelCatalog, nodeId, choice) : { ok: false as const, code: "model_unknown" as const, detail: "" }) : { ok: true as const, ops: clearModelOps(definition, nodeId) ?? [] };
-    if (!made.ok) return issueText(made.code);
-    if (!made.ops.length) return issueText("no_node");
-    const result = await edit.apply(made.ops);
-    return result.ok ? null : result.refused ?? "-";
-  };
-
   const tests = doc.tests;
   const testsFresh = Boolean(tests && tests.version === doc.version);
   const canPublish = editing && Boolean(doc.check?.valid) && testsFresh && tests!.green && !edit.busy && !edit.publishing;
@@ -271,8 +261,8 @@ function DraftScreen({ doc, view, locale, projectId, changes, selection, setSele
               <WorkflowGraph key={drilled ? `${drilled.key}:${drilled.workflowId}` : "draft"} graph={shown} locale={locale} {...(drilled ? {} : { changedNodes: changes.nodes, changedEdges: changes.edges })} selected={!drilled && selection?.kind === "node" ? selection.id : null}
                 {...(drilled ? {} : { onSelect })} direction={direction} height={direction === "DOWN" ? 440 : 560}
                 onOpen={(key, node) => { setSelection(null); void drill.open(key, node, locale); }} trail={[{ label: title }, ...drill.trail.map((step) => ({ label: step.label }))]} onTrail={(index) => { setSelection(null); drill.goTo(index); }}
-                models={drilled ? { executors: drilledModels.byNode, providers: providerMap(modelCatalog), catalog: modelCatalog, access: "readonly" as const }
-                  : { executors: stepModels.byNode, providers: providerMap(modelCatalog), catalog: modelCatalog, access: "draft" as const, onChoose: chooseModel }}
+                models={drilled ? { executors: drilledModels.byNode, providers: providerMap(modelCatalog) }
+                  : { executors: stepModels.byNode, providers: providerMap(modelCatalog) }}
                 {...(editing && !drilled ? { onAddAfter: (key: string) => { setSelection({ kind: "node", id: key }); setAdding({ after: key }); }, onAddFirst: () => { setSelection(null); setAdding({ after: null }); }, onConnect: (from: string, to: string) => void connect(from, to),
                   onMove: (positions: Record<string, { x: number; y: number }>) => void place(positions), onArrange: () => void arrange(),
                   selectedEdge: selectedEdge?.key ?? null, onSelectEdge, problems: problems.graph, focusKey, refit: "first" as const } : {})} />
@@ -293,7 +283,7 @@ function DraftScreen({ doc, view, locale, projectId, changes, selection, setSele
       {!sideBySide && editing && adding ? <AddNodeMenu after={adding.after} onPick={(type) => void add(type)} onClose={() => setAdding(null)} /> : null}
       {!sideBySide ? panel : null}
 
-      {view.nodes.length ? <ModelsPanel graph={view} locale={locale} executors={stepModels.list} loaded={stepModels.loaded} catalog={modelCatalog} wide={wide} busy={edit.busy} access="draft" onChoose={chooseModel} /> : null}
+      {view.nodes.length ? <ModelsPanel graph={view} locale={locale} executors={stepModels.list} loaded={stepModels.loaded} catalog={modelCatalog} wide={wide} /> : null}
 
       {editing ? (
         <>

@@ -4,7 +4,7 @@ import type { Services } from "./services";
 import { preferencesRpc } from "../../settings/server";
 import { runsRpc } from "../../runs/server";
 import { settingsRpc } from "../../settings/server";
-import { selectionsRpc } from "../../settings/server";
+import { selectionsRpc, roleModelsRpc } from "../../settings/server";
 import { stackRpc } from "../../native-install/server";
 import { insightsRpc } from "../../self-repair/server";
 import { jevProviderRpc, secretsRpc } from "../../secrets/server";
@@ -53,6 +53,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...runsRpc(ctx, services),
     ...settingsRpc(ctx, services),
     ...selectionsRpc(ctx, services),
+    ...roleModelsRpc(ctx),
     ...stackRpc(ctx),
     ...insightsRpc(ctx, services),
     ...tokenUsageRpc(ctx),

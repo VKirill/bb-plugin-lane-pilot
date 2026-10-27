@@ -3,3 +3,4 @@
 export { preferencesRpc } from "./rpc/preferences";
 export { selectionsRpc } from "./rpc/selections";
 export { settingsRpc } from "./rpc/settings";
+export { roleModelsRpc } from "./rpc/role-models";

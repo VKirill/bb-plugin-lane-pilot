@@ -147,7 +147,6 @@
       "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
-      "model_preset": "cheap-fast",
       "title": {
         "en": "Widen the query",
         "ru": "Расширить запрос"
@@ -225,7 +224,6 @@
         "produces": [{"kind": "report", "version": 1}],
         "type": "agent",
         "role": "analyst",
-        "model_preset": "cheap-fast",
         "prompt": "For each post: relevance 0-1 to the query, one-word topic, keep=true when relevance >= 0.5 and the post says something (not a bare link or ad). Do not rewrite the text.",
         "out": {
           "scores": "Score[]"

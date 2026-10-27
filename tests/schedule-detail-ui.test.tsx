@@ -243,15 +243,15 @@ describe("the detail view: who runs it", () => {
 
   it("a chain lists the models of its steps with where each comes from, read-only, from workflow_step_executors", async () => {
     const executors = [
-      { nodeId: "collect", kind: "agent", uses: null, mode: "model", providerId: "claude-code", model: "claude-haiku-5-5", reasoningEffort: "low", serviceTier: null, source: "preset", sourceKey: "cheap-fast" },
-      { nodeId: "write", kind: "agent", uses: null, mode: "model", providerId: "codex", model: "gpt-6-luna", reasoningEffort: "high", serviceTier: "fast", source: "node", sourceKey: null },
+      { nodeId: "collect", kind: "agent", uses: null, mode: "model", providerId: "claude-code", model: "claude-haiku-5-5", reasoningEffort: "low", serviceTier: null, source: "table", sourceKey: "role_model.memory" },
+      { nodeId: "write", kind: "agent", uses: null, mode: "model", providerId: "codex", model: "gpt-6-luna", reasoningEffort: "high", serviceTier: "fast", source: "role-default", sourceKey: null },
       { nodeId: "send", kind: "action", uses: null, mode: "none", providerId: null, model: null, reasoningEffort: null, serviceTier: null, source: "none", sourceKey: null },
     ];
     const slot = await mount({ workflow_step_executors: () => ({ found: true, executors, pm: null }) }, { schedules: [workflowSchedule()] });
     await openDetail(slot, "wf");
     expect(slot.getByTestId("sch-who-workflow").textContent).toContain("each step has one, set in the chain");
     expect((await slot.findByTestId("sch-step-model-collect")).textContent).toBe("claude-code · claude-haiku-5-5 · low");
-    expect(slot.getByTestId("sch-step-source-collect").textContent).toContain("cheap-fast");
+    expect(slot.getByTestId("sch-step-source-collect").textContent).toContain("role table");
     expect(slot.getByTestId("sch-step-model-write").textContent).toContain("gpt-6-luna");
     expect(slot.queryByTestId("sch-step-send")).toBeNull();
     expect(calls(slot, "workflow_step_executors")[0]!.input).toEqual({ workflowId: "lead-digest", projectId: "proj_a" });

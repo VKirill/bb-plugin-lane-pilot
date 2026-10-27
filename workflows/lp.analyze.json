@@ -116,8 +116,7 @@
       "guards": {
         "maxVisits": 3,
         "timeoutMin": 20
-      },
-      "model_preset": "strong"
+      }
     },
     {
       "id": "second_opinion",

@@ -5,3 +5,4 @@ export * from "./picker-compat";
 export * from "./model-prices";
 export * from "./model-tiers";
 export * from "./model-profiles";
+export * from "./role-models";

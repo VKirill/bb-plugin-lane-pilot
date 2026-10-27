@@ -1,21 +1,14 @@
 import type { z } from "zod";
 import type { rpcContract } from "../../contracts";
-import { casResetSettings, casUpsertSetting, getSettingVersions, listSettingRows } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { DraftStore } from "../../storage";
-import { validateChoice, type ModelCatalog } from "@lane-pilot/models";
+import type { ModelCatalog } from "@lane-pilot/models";
 import { CATALOG_WAIT_MS, createModelCatalog, modelCatalogOf, pmHostOf, within, type ModelCatalogReader } from "../../core/server";
 import type { ServerCore } from "../../core/server";
 import { stringAt } from "../../core/server";
-import { MODEL_OVERRIDE_PREFIX, modelOverrideKey } from "./workflow-agent-model";
 import { resolveStepExecutors, type PmPair, type WorkflowShape } from "./workflow-step-executors";
 
-/** Who changed which override, when, from what to what; the last entries, in the plugin KV. */
-export const OVERRIDE_JOURNAL_KEY = "workflow-model-override:journal";
-const OVERRIDE_JOURNAL_KEEP = 500;
-
 type Output<K extends keyof typeof rpcContract> = z.infer<(typeof rpcContract)[K]["output"]>;
-type Input<K extends keyof typeof rpcContract> = z.infer<(typeof rpcContract)[K]["input"]>;
 
 
 /** The model the project's PM chat runs on: the last model of a writer chain. Unknown when no PM chat of the project is open. */
@@ -30,7 +23,7 @@ async function pmPairOf(ctx: ServerCore, projectId: string): Promise<PmPair | nu
   return providerId && model ? { providerId, model } : null;
 }
 
-/** `workflow_step_executors` and `workflow_model_catalog`. */
+/** `workflow_step_executors` (read-only: the model of every step comes from the role table) and `workflow_model_catalog`. */
 export function createWorkflowModels(ctx: ServerCore, deps: { drafts: Pick<DraftStore, "get">; source: (input: { id: string; projectId?: string }) => Promise<{ workflow: WorkflowShape } | null>; catalog?: ModelCatalogReader }) {
   const catalog = deps.catalog ?? modelCatalogOf(ctx);
   /** The catalog with the machine the project's helpers run on (the PM chat's environment), so a model is judged against that machine. */
@@ -77,48 +70,8 @@ export function createWorkflowModels(ctx: ServerCore, deps: { drafts: Pick<Draft
         within(catalog.get(), CATALOG_WAIT_MS).catch(() => null),
       ]);
       const offered = read ? await catalogFor(projectId, read) : null;
-      // The keys the project holds itself tell an override of the project from one for all projects.
-      const ownKeys = new Set(projectId && Object.keys(settings).some((key) => key.startsWith(MODEL_OVERRIDE_PREFIX)) ? listSettingRows(ctx.db, projectId).map((row) => row.key) : []);
       // A catalog that lists nothing (no machine answered) is no evidence that a model is missing.
-      return { found: true, executors: resolveStepExecutors({ nodes: shape.nodes, edges: shape.edges, entry: shape.entry, fragments, settings, pm, catalog: offered?.providers.length ? offered : null, workflowId, ownKeys }), pm };
-    },
-    /**
-     * Writes or drops the owner's override of one step: a settings row of the project, or of all projects. A choice is checked
-     * against the catalog of the machines first (provider, model, effort, tier, and the machine the project's helpers run on), and
-     * every change or refusal is journaled with who, when, the old value and the new one (audit 2026-10-08 round 3, item 18).
-     * `caller` is who asked, when the RPC layer knows; the journal says so when it does not.
-     */
-    async setOverride(input: Input<"workflow_model_override">, caller?: string | null): Promise<Output<"workflow_model_override">> {
-      const projectId = input.scope === "global" ? GLOBAL_SETTINGS_PROJECT_ID : input.projectId;
-      const key = modelOverrideKey(input.workflowId, input.nodeId);
-      const before = listSettingRows(ctx.db, projectId).find((row) => row.key === key);
-      const versions = getSettingVersions(ctx.db, projectId, [key]);
-      const journal = async (result: string, value: unknown) => {
-        const entry = { at: Date.now(), by: caller ?? null, scope: input.scope, projectId: input.projectId, workflowId: input.workflowId, nodeId: input.nodeId, old: before?.value ?? null, new: value, result };
-        try {
-          const known = await ctx.bb.storage.kv.get(OVERRIDE_JOURNAL_KEY).catch(() => null);
-          await ctx.bb.storage.kv.set(OVERRIDE_JOURNAL_KEY, [...(Array.isArray(known) ? known : []), entry].slice(-OVERRIDE_JOURNAL_KEEP));
-        } catch { /* the setting is what matters; the log line below is the fallback */ }
-        ctx.bb.log.info(`Lane Pilot model override ${key} (${input.scope === "global" ? "all projects" : input.projectId}) by ${caller ?? "an unknown caller"}: ${result}`);
-      };
-      if (!input.choice) {
-        if (!before) return { ok: true };
-        const result = casResetSettings(ctx.db, { projectId, keys: [key], expectedVersions: versions, validationKeys: [key], validatedRows: listSettingRows(ctx.db, projectId) });
-        await journal(result.ok ? "dropped" : "conflict", null);
-        return result.ok ? { ok: true } : { ok: false, reason: "conflict" };
-      }
-      const { providerId, model, effort, serviceTier } = input.choice;
-      // The machine is the one the project's helpers run on; without a catalog (no machine answered) nothing can be vouched for.
-      const read = await within(catalog.get(), CATALOG_WAIT_MS).catch(() => null);
-      if (!read?.providers.length) { await journal("catalog_unavailable", input.choice); return { ok: false, reason: "catalog_unavailable" }; }
-      const verdict = validateChoice(await catalogFor(input.projectId, read), { providerId, model, effort: effort ?? null, serviceTier: serviceTier ?? null });
-      if (!verdict.ok) { await journal(`refused:${verdict.code}`, input.choice); return { ok: false, reason: `${verdict.code}: ${verdict.detail}` }; }
-      const value = { provider: providerId, model, ...(effort ? { reasoning_effort: effort } : {}), service_tier: serviceTier === "fast" ? "fast" : "default" };
-      const result = casUpsertSetting(ctx.db, { projectId, key, value, expectedVersion: versions[key] ?? 0 });
-      if (result.ok) { await journal("set", value); return { ok: true }; }
-      const reason = result.conflict ? "conflict" : result.validation.params[1] ?? "invalid";
-      await journal(`refused:${reason}`, value);
-      return { ok: false, reason };
+      return { found: true, executors: resolveStepExecutors({ nodes: shape.nodes, edges: shape.edges, entry: shape.entry, fragments, settings, pm, catalog: offered?.providers.length ? offered : null, workflowId }), pm };
     },
     modelCatalog: async (input: { refresh?: boolean; projectId?: string }): Promise<Output<"workflow_model_catalog">> => {
       const read = await catalog.get(input.refresh === true);

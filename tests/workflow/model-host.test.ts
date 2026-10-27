@@ -6,7 +6,7 @@ import { createWorkflowModels } from "../../src/rooms/workflow/server/workflow-m
 import { resolveStepExecutors } from "../../src/rooms/workflow/server/workflow-step-executors";
 import { offeredOnHost, validateChoice, type ModelCatalog } from "@lane-pilot/models";
 import { modelsSection } from "@lane-pilot/workflow-engine";
-import { presetKey } from "@lane-pilot/models";
+import { roleModelKey } from "@lane-pilot/models";
 import type { ServerCore } from "../../src/rooms/core/server/core";
 import { journalDb } from "./engine-helpers";
 
@@ -18,6 +18,8 @@ const catalog = (runHostId: string | null | undefined = "mini"): ModelCatalog =>
     { id: "claude-code", displayName: "Claude Code", logoUrl: null, family: null, supportsServiceTier: false, serviceTiers: [], hostIds: ["mini", "book"],
       models: [{ id: "claude-opus-5-5", model: "claude-opus-5-5", displayName: "Opus", efforts: ["low", "high"], defaultEffort: "high", isDefault: true, hostIds: ["mini", "book"] },
         { id: "claude-haiku-5-5", model: "claude-haiku-5-5", displayName: "Haiku", efforts: ["low"], defaultEffort: "low", isDefault: false, hostIds: ["book"] }] },
+    { id: "codex", displayName: "Codex", logoUrl: null, family: null, supportsServiceTier: false, serviceTiers: [], hostIds: ["book"],
+      models: [{ id: "gpt-6.1-sol", model: "gpt-6.1-sol", displayName: "Sol", efforts: ["high"], defaultEffort: "high", isDefault: true, hostIds: ["book"] }] },
     { id: "acp-opencode", displayName: "OpenCode", logoUrl: null, family: null, supportsServiceTier: false, serviceTiers: [], hostIds: ["book"],
       models: [{ id: "gemini-3.8", model: "gemini-3.8", displayName: "Gemini", efforts: ["high"], defaultEffort: "high", isDefault: true, hostIds: ["book"] }] },
   ],
@@ -45,47 +47,47 @@ describe("a model is judged on the machine the step runs on (audit r2, B2)", () 
     expect(validateChoice(catalog("book"), { providerId: "acp-opencode", model: "gemini-3.8" })).toEqual({ ok: true });
   });
 
-  it("the Models view flags a step that names such a model, and the architect's list marks it", () => {
-    const rows = resolveStepExecutors({ nodes: [{ id: "a", type: "agent", role: "analyst", provider: "claude-code", model: "claude-haiku-5-5", reasoning: "low" }, { id: "b", type: "agent", role: "analyst", provider: "claude-code", model: "claude-opus-5-5" }],
-      settings: {}, pm: null, catalog: catalog("mini") });
-    expect(rows.map((row) => [row.nodeId, row.issues])).toEqual([["a", ["model_unavailable_here"]], ["b", []]]);
-    const section = modelsSection(catalog("mini"), {});
-    const claude = section.providers!.find((row) => row.provider === "claude-code")!;
-    expect(claude.models.find((row) => row.id === "claude-haiku-5-5")).toMatchObject({ notOnThisMachine: true });
-    expect(claude.models.find((row) => row.id === "claude-opus-5-5")).not.toHaveProperty("notOnThisMachine");
+  it("the Models view flags a step whose role's model only another machine has, and the architect's list marks it", () => {
+    const mine = { [roleModelKey("analyst")]: { model: "claude-haiku-5-5" } };
+    const rows = resolveStepExecutors({ nodes: [{ id: "a", type: "agent", role: "analyst" }, { id: "b", type: "agent", role: "planner" }], settings: mine, pm: null, catalog: catalog("mini") });
+    expect(rows.map((row) => [row.nodeId, row.issues])).toEqual([["a", ["selection_unavailable"]], ["b", []]]);
+    // The card shows what will run: the table's model is not on this machine, so the role's default is.
+    expect(rows[0]).toMatchObject({ model: "claude-opus-5-5", source: "role-default" });
+    const section = modelsSection(catalog("mini"), mine);
+    expect(section.roles.analyst).toMatchObject({ model: "claude-haiku-5-5", source: "table", offered: false });
+    expect(section.roles.planner).toMatchObject({ model: "claude-opus-5-5", source: "default", offered: true });
+    expect(section.roles["code-critic"]).toMatchObject({ provider: "codex", model: "gpt-6.1-sol", offered: false });
+    expect(modelsSection(catalog("book"), mine).roles.analyst).toMatchObject({ offered: true, machines: ["MacBook"] });
   });
 });
 
-describe("a preset or a Settings selection the machine does not offer falls through (audit r2, B3)", () => {
+describe("a table model the machine does not offer falls through (audit r2, B3)", () => {
   const offered = (providerId: string, model: string) => offeredOnHost(catalog("mini"), providerId, model, "mini");
   const pm = { providerId: "claude-code", model: "claude-opus-5-5" };
-  const strong = { [presetKey("strong", "provider")]: "acp-opencode", [presetKey("strong", "model")]: "gemini-3.8" };
+  const haiku = { [roleModelKey("analyst")]: { model: "claude-haiku-5-5" } };
 
-  it("a preset whose model is not on the machine is passed over for the next level, and says so", () => {
-    expect(resolveAgentModel({ role: "analyst", node: { model_preset: "strong" }, settings: strong, pm, offered })).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", source: "pm", issues: ["preset_unavailable"] });
-    expect(resolveAgentModel({ role: "analyst", node: { model_preset: "strong" }, settings: { ...strong, "workflow.agent.provider": "claude-code", "workflow.agent.model": "claude-opus-5-5" }, pm, offered })).toMatchObject({ source: "agent", issues: ["preset_unavailable"] });
-    // On a machine that has it, the preset stands; with no machine known, nothing is passed over.
-    expect(resolveAgentModel({ role: "analyst", node: { model_preset: "strong" }, settings: strong, pm, offered: (p, m) => offeredOnHost(catalog("book"), p, m, "book") })).toMatchObject({ source: "preset", model: "gemini-3.8", issues: [] });
-    expect(resolveAgentModel({ role: "analyst", node: { model_preset: "strong" }, settings: strong, pm })).toMatchObject({ source: "preset" });
+  it("is passed over for the role's default, then for the PM's model, and says so", () => {
+    expect(resolveAgentModel({ role: "analyst", settings: haiku, pm, offered })).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", source: "role-default", issues: ["selection_unavailable"] });
+    expect(resolveAgentModel({ role: "analyst", settings: { [roleModelKey("analyst")]: { model: "gpt-6-luna" }, [roleModelKey("workflow-architect")]: { model: "gpt-6-luna" } }, pm: { providerId: "claude-code", model: "claude-opus-5-5" }, offered: (p, m) => m === "claude-opus-5-5" && p === "claude-code" }))
+      .toMatchObject({ source: "role-default", issues: ["selection_unavailable"] });
+    // A judge whose default (Sol) the machine lacks goes to the PM's model.
+    expect(resolveAgentModel({ role: "code-critic", settings: {}, pm, offered })).toMatchObject({ source: "pm", model: "claude-opus-5-5", issues: ["selection_unavailable"] });
+    // On a machine that has it, the pick stands; with no machine known, nothing is passed over.
+    expect(resolveAgentModel({ role: "analyst", settings: haiku, pm, offered: (p, m) => offeredOnHost(catalog("book"), p, m, "book") })).toMatchObject({ source: "table", model: "claude-haiku-5-5", issues: [] });
+    expect(resolveAgentModel({ role: "analyst", settings: haiku, pm })).toMatchObject({ source: "table" });
   });
 
-  it("a stage or generic selection of Settings is skipped the same way; the PM's own model is never judged", () => {
-    const stage = { "pm_read.provider": "acp-opencode", "pm_read.model": "gemini-3.8", "workflow.agent.provider": "claude-code", "workflow.agent.model": "claude-opus-5-5" };
-    expect(resolveAgentModel({ role: "analyst", node: {}, settings: stage, pm, offered })).toMatchObject({ source: "agent", model: "claude-opus-5-5", issues: ["selection_unavailable"] });
-    expect(resolveAgentModel({ role: "analyst", node: {}, settings: {}, pm: { providerId: "acp-opencode", model: "gemini-3.8" }, offered })).toMatchObject({ source: "pm", model: "gemini-3.8", issues: [] });
+  it("a stage selection of Settings is skipped the same way; the PM's own model is never judged", () => {
+    const stage = { "pm_read.provider": "acp-opencode", "pm_read.model": "gemini-3.8" };
+    // Haiku, the role's default, is on the MacBook only: the PM's model, which this machine runs, is the last stop.
+    expect(resolveAgentModel({ role: "pm-reader", settings: stage, pm, offered })).toMatchObject({ source: "pm", model: "claude-opus-5-5", issues: ["selection_unavailable"] });
+    expect(resolveAgentModel({ role: "pm-reader", settings: stage, pm, offered }).issues).not.toContain("model_unavailable_here");
+    expect(resolveAgentModel({ role: "code-critic", settings: {}, pm: { providerId: "acp-opencode", model: "gemini-3.8" }, offered }))
+      .toMatchObject({ source: "pm", model: "gemini-3.8", issues: ["selection_unavailable"] });
   });
 
-  it("a model the step names itself, or an override, is kept and flagged: it is the owner's choice and is refused at start instead of replaced", () => {
-    expect(resolveAgentModel({ role: "analyst", node: { provider: "acp-opencode", model: "gemini-3.8" }, settings: {}, pm, offered })).toMatchObject({ model: "gemini-3.8", source: "node", issues: ["model_unavailable_here"] });
-    const key = "workflow.model_override.w/n";
-    expect(resolveAgentModel({ role: "analyst", node: {}, settings: { [key]: { provider: "acp-opencode", model: "gemini-3.8" } }, pm, offered, at: { workflowId: "w", nodeId: "n" } }))
-      .toMatchObject({ source: "override", model: "gemini-3.8", issues: ["model_unavailable_here"] });
-  });
-
-  it("the architect's presets list says offered: false for a preset the run machine lacks", () => {
-    const section = modelsSection(catalog("mini"), strong);
-    expect((section.presets as Record<string, { offered: boolean }>).strong!.offered).toBe(false);
-    expect((modelsSection(catalog("book"), strong).presets as Record<string, { offered: boolean }>).strong!.offered).toBe(true);
+  it("a model a run pins is kept and flagged: it is the owner's choice and is refused at start instead of replaced", () => {
+    expect(resolveAgentModel({ role: "analyst", pinned: { provider: "acp-opencode", model: "gemini-3.8" }, settings: {}, pm, offered })).toMatchObject({ model: "gemini-3.8", source: "pinned", issues: ["model_unavailable_here"] });
   });
 });
 
@@ -97,8 +99,9 @@ describe("the executor and the catalog RPC use the machine of the PM chat", () =
         providers: {
           list: async ({ hostId: host }: { hostId: string }) => [{ id: "claude-code", displayName: "Claude Code", available: true, logoUrl: null, capabilities: { supportsServiceTier: false } },
             ...(host === "book" ? [{ id: "acp-opencode", displayName: "OpenCode", available: true, logoUrl: null, capabilities: { supportsServiceTier: false } }] : [])],
-          models: async ({ providerId }: { providerId: string }) => ({ models: providerId === "claude-code"
-            ? [{ id: "claude-opus-5-5", model: "claude-opus-5-5", displayName: "Opus", supportedReasoningEfforts: [{ reasoningEffort: "high" }], defaultReasoningEffort: "high", isDefault: true }]
+          models: async ({ providerId, hostId: host }: { providerId: string; hostId?: string }) => ({ models: providerId === "claude-code"
+            ? [{ id: "claude-opus-5-5", model: "claude-opus-5-5", displayName: "Opus", supportedReasoningEfforts: [{ reasoningEffort: "high" }], defaultReasoningEffort: "high", isDefault: true },
+              ...(host === "book" ? [{ id: "claude-haiku-5-5", model: "claude-haiku-5-5", displayName: "Haiku", supportedReasoningEfforts: [{ reasoningEffort: "low" }], defaultReasoningEffort: "low", isDefault: false }] : [])]
             : [{ id: "gemini-3.8", model: "gemini-3.8", displayName: "Gemini", supportedReasoningEfforts: [{ reasoningEffort: "high" }], defaultReasoningEffort: "high", isDefault: true }] }),
         },
         threads: { get: async () => ({ id: "pm", environmentId: "env" }), defaultExecutionOptions: async () => ({ providerId: "claude-code", model: "claude-opus-5-5" }) },
@@ -113,19 +116,18 @@ describe("the executor and the catalog RPC use the machine of the PM chat", () =
     return { ctx, db };
   }
 
-  it("withResolvedModel refuses a model named by the step that the machine lacks, with where it is; the machine that has it starts", async () => {
+  it("withResolvedModel refuses a model a run pins that the machine lacks, with where it is; the machine that has it starts", async () => {
     const mini = await world("mini");
     const request = (ctx: ServerCore) => ({ rt: { ctx, pmThreadId: "pm", projectId: "proj", runId: "r" }, workflowRunId: "w", stepKey: "s", nodeId: "n", spawnKey: "k", role: "analyst", title: "t", prompt: "", fields: [], provider: "acp-opencode", model: "gemini-3.8" }) as unknown as HelperRequest;
-    await expect(withResolvedModel(request(mini.ctx))).rejects.toThrow(/gemini-3\.8 is not offered by the machine.*Mac mini.*it is on MacBook/);
+    await expect(withResolvedModel(request(mini.ctx))).rejects.toThrow(/gemini-3\.8 is not offered by the machine.*Mac mini.*it is on MacBook.*role table/);
     const book = await world("book");
     await expect(withResolvedModel(request(book.ctx))).resolves.toMatchObject({ provider: "acp-opencode", model: "gemini-3.8" });
   });
 
-  it("a preset the machine lacks runs on the next level instead of failing at the spawn", async () => {
+  it("a table model the machine lacks runs on the next level instead of failing at the spawn", async () => {
     const mini = await world("mini");
-    const settings = { [presetKey("strong", "provider")]: "acp-opencode", [presetKey("strong", "model")]: "gemini-3.8" };
-    mini.ctx.effectiveProjectSettings = (async () => ({ values: settings })) as never;
-    const request = { rt: { ctx: mini.ctx, pmThreadId: "pm", projectId: "proj", runId: "r" }, workflowRunId: "w", stepKey: "s", nodeId: "n", spawnKey: "k", role: "analyst", title: "t", prompt: "", fields: [], preset: "strong" } as unknown as HelperRequest;
+    mini.ctx.effectiveProjectSettings = (async () => ({ values: { [roleModelKey("analyst")]: { model: "claude-haiku-5-5" } } })) as never;
+    const request = { rt: { ctx: mini.ctx, pmThreadId: "pm", projectId: "proj", runId: "r" }, workflowRunId: "w", stepKey: "s", nodeId: "n", spawnKey: "k", role: "analyst", title: "t", prompt: "", fields: [] } as unknown as HelperRequest;
     vi.spyOn(mini.db, "prepare");
     await expect(withResolvedModel(request)).resolves.toMatchObject({ provider: "claude-code", model: "claude-opus-5-5" });
   });

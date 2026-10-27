@@ -6,7 +6,7 @@ import { Icon } from "@lane-pilot/ui-kit";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
 import { Switch } from "@lane-pilot/ui-kit";
 import { CONTROL_H } from "@lane-pilot/ui-kit";
-import { AccessModePanel, isChanged, ModelOverridesPanel, ORIGIN_LABEL, PmAccessNote, RoleAccessBody, roleSummary, useAccessView, type AccessApi, type RoleView } from "../../settings/ui";
+import { AccessModePanel, isChanged, ModelOverridesPanel, ORIGIN_LABEL, PmAccessNote, RoleAccessBody, RoleModelsPanel, roleSummary, useAccessView, type AccessApi, type RoleView } from "../../settings/ui";
 import { useRulesAnalyzer } from "../../self-repair/ui";
 import { asBoolean } from "./page-model";
 import { writerFallbackSlots } from "../../writer/ui";
@@ -226,6 +226,7 @@ export function TeamTab({ page }: { page: LpPage }) {
   return (
     <div className="space-y-6" data-testid="agent-access" data-scope={access.scope}>
       {isGlobal ? null : <PmRow page={page} />}
+      <RoleModelsPanel page={page} />
       <Surface testId="team-table">
         <SurfaceHeader className="justify-between"><h2 className="text-sm font-medium">{t("teamTitle")}</h2></SurfaceHeader>
         <SurfaceBody className="space-y-3">
