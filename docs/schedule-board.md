@@ -20,7 +20,7 @@ sources:
 
 TL;DR: A core scheduler materializes workflow, agent-errand, and host-script runs from persisted schedule definitions, then supervises them across ticks.
 
-Lane Pilot runs scheduled work itself: a workflow, an agent errand, or a script on a chosen machine, once or on a cron. It does not need
+Lane Pilot runs scheduled work itself: a workflow, an agent errand, a script on a chosen machine, or a named agent that runs as itself and decides from its earlier runs, once or on a cron. It does not need
 the official Automations plugin (that one stays on until every automation has moved and run seven days clean; `workflow-triggers.ts` still
 creates its automations for the schedule triggers of workflows, see [workflow-triggers.md](workflow-triggers.md)).
 
@@ -70,7 +70,7 @@ are in `tests/schedule/time.test.ts`. A one-time task takes `runAt` (ms) or `del
   schedule does not count its pause as missed; a one-time task whose moment passed runs late as the policy says.
 - **Overlap** (`overlap`): a tick that finds the last run (running or waiting for the owner) still going is `skip`ped (default), `queue`d
   (up to 10) or run in `parallel`. A catching-up run waits its turn instead of being skipped.
-- **Timeout** (`timeoutSec`; default workflow 3600, errand 3600, script 600; a script at most 10 700). A workflow run that waits for the
+- **Timeout** (`timeoutSec`; default workflow 3600, errand 3600, script 600, agent 3600; a script at most 10 700). A workflow run that waits for the
   owner's answer is not counted: it is given up after 72 hours.
 - **Pause** (`maxFailures`, default 3, 0 never): that many failed or timed-out runs in a row pause the schedule and a message goes to the
   project's PM chat. Resume forgives them and counts time from now.
@@ -82,6 +82,7 @@ are in `tests/schedule/time.test.ts`. A one-time task takes `runAt` (ms) or `del
 | `workflow` | `workflowId`, `inputs` | a workflow run of the engine, started like the Run button (published, inputs whole, requirements met, a PM chat of the project). A `tested` workflow is refused until its first live run (Workflows tab, Run for real). Output: the run's output JSON |
 | `errand` | `task` (text), `title`, `authorized`, `accounts` (Env Catalog names), `providerId`, `model`, `reasoning`, `serviceTier`, `preset` (who runs it, see below) | a hidden, detached helper thread filed with the PM project and section; it reuses the PM environment, resolves named accounts, and receives a scheduled-run brief that says nobody is watching and to return `ERRAND: blocked` when it needs a decision, approval or access. The thread carries `origin: "schedule"`. Its report is redacted and checked by the output guard; only a final `ERRAND: done` counts as success (`src/rooms/schedule/server/schedule-executors.ts:54-73`, `src/rooms/qa/server/errands.ts:80-85`, `:188-224`) |
 | `script` | `hostId`, `command`, `cwd`, `env` (Env Catalog names), `maxOutputBytes` | the host job `runScript` (`bash -lc`, own process group, killed at the timeout) on that machine. The secrets are resolved by the hub (allowed for the project, or the owner is asked), reach the script as environment variables only, are masked on the host and again on the hub; the host deletes `input.json` once the job has read it. stdout and stderr are kept head and tail up to the cap; exit code 0 is success |
+| `agent` | `agentId` (a profile id such as `seo-specialist`), `task` (the standing instruction, 10 to 20000 characters), `title`, `authorized`, `accounts`, `historyRuns` (0 to 20, default 5), `model`, `reasoning`, `serviceTier` | the agent's own native profile (the one a chat started with it from the composer gets: prompt, skills, MCP servers) in a hidden thread with no parent chat, filed with the PM project and section and belonging to the PM's run. Carries `origin: "schedule"`, so it cannot create or change schedules. Its first message holds the standing task, the last `historyRuns` finished runs of this schedule (time, state, the outcome each reported, a marker for a change already handed over) and the project memory for the task. It ends with an `OUTCOME` block (summary, decision, follow-ups, code-change, urgent, status); the whole report is the run's output, so the next run reads it. A report without the block is a failed run (`no_outcome`); `status: blocked: why` is a failed run (`blocked`). One line goes to the owner's morning list (`lane_pilot_owner_item`, source `schedule`, `wake` only when the agent says `urgent: yes`). It edits no code: a `code-change` goes down the road of an owner's request in the PM chat (`phaseIntake.handOver`: a heavy goal opens a phase, a small job starts issue-quick, a batch issue-batch), at most once per run and never twice for the same text as the run before; with no PM chat the morning line only. An unknown agent id fails the run with `agent_unknown` (`src/rooms/schedule/server/schedule-executors.ts`, `src/rooms/critique/server/scheduled-agent.ts`, `src/rooms/schedule/outcome.ts`) |
 
 The hosts need the Lane Pilot host build with `runScript` and `jobStart.key`; an older host answers that it does not know the method, and the run fails with that.
 
@@ -97,6 +98,7 @@ run failed or timed out, until one succeeds); else `done` (a one-time task that 
 | --- | --- | --- |
 | `schedule_list` | `{projectId?, next?}` (next 0 to 50, default 5) | `{schedules: ScheduleView[], hosts: [{id,name,connected}], now, errandDefault}`; `hosts` fills the machine picker; `errandDefault` is the Automation default model (below) |
 | `schedule_get` | `{id, runs?, next?}` | `{schedule \| null, runs: RunView[], runTotal}` |
+| `schedule_agents` | `{}` | `{agents: [{id, displayName, description}]}`: the agents a schedule of kind `agent` can run as (the composer's list without internal profiles); fills the agent picker |
 | `schedule_runs` | `{id, limit?, offset?}` | `{runs, total}`, newest first. `RunView`: `id, scheduleId, scheduledAt, trigger (tick, catchup, manual), status, reason, queuedAt, startedAt, finishedAt, durationMs, refKind, refId, hostId, exitCode, output, error, truncated, providerId, model, tokens, costUsd, usageKnown, hostName`. `refKind: "thread"` + `refId` is the errand's thread (`@thread:<refId>`), `workflow_run` + `refId` opens the run in the Workflows tab |
 | `schedule_preview` | `{definition, next?}` | `{ok, problems[], warnings[], conflicts[], nextFires[], timeoutSec}`: validation without saving; call it on every change of the create form |
 | `schedule_upsert` | `{definition}` (with `id` it replaces) | `{ok, schedule, problems[], warnings[], conflicts[]}`. `problems` stop the save; `warnings` and `conflicts` do not |

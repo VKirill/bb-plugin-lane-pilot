@@ -12,7 +12,7 @@ import { mountInsights } from "../../self-repair/server";
 import { mountHealth } from "../../stability/server";
 import { mountMemorySync } from "../../memory/server";
 import { mountCouncilTools } from "../../council/server";
-import { mountSpecialists } from "../../critique/server";
+import { mountScheduledAgents, mountSpecialists } from "../../critique/server";
 import { mountRelay } from "../../relay/server";
 import { mountWorkflowTools } from "../../workflow/server";
 import { mountSelfRepair } from "../../self-repair/server";
@@ -391,6 +391,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   mountCouncilTools(ctx, services.council, (threadId) => services.phaseIntake.launchRefusal(threadId));
   mountSpecialists(ctx);
   services.errands = mountErrands(ctx);
+  services.agentRuns = mountScheduledAgents(ctx);
   mountRelay(ctx);
   mountWorkflowTools(ctx, services);
   mountSelfRepair(ctx);

@@ -10,6 +10,8 @@ import type { ScheduleConflict, ScheduleView } from "../views";
 import { configuredSetting } from "../../core/server";
 import type { ServerCore } from "../../core/server";
 import { allowedSecretNames } from "../../secrets/server";
+import { agentPickerLabel } from "../../native-agent";
+import { t } from "@lane-pilot/i18n";
 import { loadPushConfig } from "../../owner-waiting";
 import { errandModelView, readErrandDefault } from "./schedule-default";
 import { createThreadHosts, projectPlaces, whereOf, type ProjectPlace } from "./schedule-place";
@@ -62,6 +64,15 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
     if (task.kind !== "errand") return null;
     const host = configuredSetting(loadProjectSettings(db, projectId), QA_HOST_KEY);
     return typeof host === "string" && host.trim() ? host.trim() : null;
+  }
+
+  /**
+   * The agents a schedule may run as: the composer's list (stock, owner-edited and owner-defined profiles) without the internal ones, whose
+   * rows say `kind: "internal"` once the list carries a kind. `displayName` is the row's own, else the picker's label.
+   */
+  async function pickableAgents(): Promise<Array<{ id: string; displayName: string; description: string }>> {
+    const rows = await services.listedAgentProfiles() as Array<{ id: string; description: string; kind?: string; displayName?: string }>;
+    return rows.filter((row) => row.kind !== "internal").map((row) => ({ id: row.id, displayName: row.displayName ?? agentPickerLabel(row, (key) => t(key)), description: row.description }));
   }
 
   type Hosts = Awaited<ReturnType<typeof hostOptions>>;
@@ -121,6 +132,10 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
       if (task.providerId && !task.model) problems.push("task.providerId: a provider needs a model (task.model)");
       if (task.preset && !presetSlug(task.preset)) problems.push(`task.preset: no model preset "${task.preset}" (known: ${PRESET_SLUGS.join(", ")})`);
     }
+    if (task.kind === "agent") {
+      const known = await pickableAgents();
+      if (!known.some((agent) => agent.id === task.agentId)) problems.push(`task.agentId: there is no agent "${task.agentId}" to run on a schedule (known: ${known.map((agent) => agent.id).join(", ") || "none"})`);
+    }
     if (task.kind === "script" || task.kind === "errand") {
       const hosts = await hostOptions();
       const machine = machineOf(definition.projectId, task);
@@ -130,14 +145,14 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
         else if (host && !host.connected) warnings.push(`machine ${host.name} is not connected now; a run while it is offline fails`);
       } else if (!machine) warnings.push("the project has no Browser QA machine set (Lane Pilot settings): an errand that needs the owner's browser will say so");
     }
-    const names = task.kind === "script" ? task.env : task.kind === "errand" ? task.accounts : [];
+    const names = task.kind === "script" ? task.env : task.kind === "errand" || task.kind === "agent" ? task.accounts : [];
     if (names.length) {
-      const gate = await ctx.secrets.check({ declared: names, allowed: allowedSecretNames(loadProjectSettings(db, definition.projectId)), kinds: task.kind === "errand" ? ["secret", "login", "ssh", "ftp"] : ["secret", "login"] });
+      const gate = await ctx.secrets.check({ declared: names, allowed: allowedSecretNames(loadProjectSettings(db, definition.projectId)), kinds: task.kind === "errand" || task.kind === "agent" ? ["secret", "login", "ssh", "ftp"] : ["secret", "login"] });
       if (gate.missing.length) warnings.push(`not in Env Catalog: ${gate.missing.join(", ")}`);
       if (gate.wrongKind.length) problems.push(`${gate.wrongKind.join(", ")}: not a kind this task can take`);
       if (gate.denied.length) warnings.push(`${gate.denied.join(", ")}: the project list «Secrets checks may use» (secrets.allow) leaves it out; add it there or the run fails`);
     }
-    if ((task.kind === "workflow" || task.kind === "errand") && !(await services.workflowTriggers.pmOf(definition.projectId))) warnings.push("the project has no open Lane Pilot PM chat; a run needs one for its threads and questions");
+    if ((task.kind === "workflow" || task.kind === "errand" || task.kind === "agent") && !(await services.workflowTriggers.pmOf(definition.projectId))) warnings.push("the project has no open Lane Pilot PM chat; a run needs one for its threads and questions");
     // The same job scheduled twice (a PM that did not call list first, a retried create) runs twice: say so, the caller decides.
     const twins = store.list({ projectId: definition.projectId, states: ["active", "paused"] }).filter((row) => row.id !== selfId
       && (row.name.trim().toLowerCase() === definition.name.trim().toLowerCase()
@@ -242,6 +257,6 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
   /** The tick of the core's isolated schedule: fire times become runs, runs are started and watched for the tick's budget. */
   const tick = (signal?: AbortSignal) => scheduler.tick(signal ? { signal } : {});
 
-  return { schedules: { scheduler, store, list, listDetailed, view, errandDefault, runsDetailed, viewOf, definitionOf, preview, save, remove, setPaused, runNow, cancelRun, runs, runCount, calendar, tick, hostOptions } };
+  return { schedules: { scheduler, store, list, listDetailed, view, errandDefault, runsDetailed, viewOf, definitionOf, pickableAgents, preview, save, remove, setPaused, runNow, cancelRun, runs, runCount, calendar, tick, hostOptions } };
 }
 export type ScheduleService = ReturnType<typeof createScheduleService>["schedules"];

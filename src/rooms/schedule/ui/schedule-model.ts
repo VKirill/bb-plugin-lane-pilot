@@ -38,6 +38,7 @@ export function taskSummary(schedule: Pick<ScheduleView, "task">): string {
   const task = schedule.task;
   if (task.kind === "workflow") return task.workflowId;
   if (task.kind === "errand") return task.title ?? task.task.split("\n")[0]!.slice(0, 140);
+  if (task.kind === "agent") return `${task.agentId}: ${task.title ?? task.task.split("\n")[0]!.slice(0, 120)}`;
   return task.command.split("\n")[0]!.slice(0, 140);
 }
 

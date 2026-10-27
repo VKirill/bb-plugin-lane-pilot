@@ -118,6 +118,38 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     return record;
   }
 
+  /**
+   * Work found by something other than the owner's message (a scheduled agent that concluded the project needs a change) goes down the same
+   * road a request typed in the PM chat takes: it is classified the same way, a heavy goal opens a phase, a small job or a batch starts
+   * issue-quick / issue-batch. Nothing is written as a contract here; the road does that. The text carries its origin, `key` makes a repeated
+   * call the same start. Not started (and why) when the run is stopped, rails or the train are off, a phase is already live for the chat, or the
+   * text is no work (a question, a process, a consent). The agent's text is a declared piece of work, so the rules' reading of its size
+   * is enough where an owner's short line would wait for the judgment.
+   */
+  async function handOver(input: { projectId: string; pmThreadId: string; runId: string; text: string; key: string; origin: string }): Promise<{ started: true; via: "phase" | "issue-quick" | "issue-batch"; id: string } | { started: false; kind: IntakeKind | null; reason: string }> {
+    const run = getRun(db, input.runId);
+    if (!run) return { started: false, kind: null, reason: "the PM run is gone" };
+    const settings = await ctx.effectiveProjectSettings(run.project_id, getRunSettingsScopes(db, run.id)).then((result) => result.values as Record<string, unknown>, () => ({} as Record<string, unknown>));
+    if (await isRunHalted(bb.storage.kv as never, run.id) || await isRunPaused(bb.storage.kv as never, run.id)) return { started: false, kind: null, reason: "the owner stopped or paused the run" };
+    const { kind, by } = await classify(input.text, run.project_id, run.id, settings);
+    const text = `${input.origin}\n\n${input.text}`;
+    if (kind === "heavy") {
+      if (String(settings["phase.rails"] ?? "on") === "off") return { started: false, kind, reason: "phase rails are off" };
+      const live = phases.list({ pmThreadId: input.pmThreadId, live: true })[0];
+      if (live) return { started: false, kind, reason: `phase ${live.id} is already live in the PM chat` };
+      const phase = await phases.open({ projectId: run.project_id, pmThreadId: input.pmThreadId, title: intakeTitle(input.text), goal: text, rails: true });
+      ctx.log(`phase intake: hand-over (${input.origin.slice(0, 80)}) is heavy (${by}); phase ${phase.id} opened`);
+      await phases.tick().catch(() => 0);
+      return { started: true, via: "phase", id: phase.id };
+    }
+    if ((kind === "small" || kind === "batch") && train && String(settings["phase.train"] ?? "on") !== "off") {
+      const id = train.start({ projectId: run.project_id, pmThreadId: input.pmThreadId, runId: run.id, requestId: input.key, text, kind });
+      if (id) { ctx.log(`phase intake: hand-over (${input.origin.slice(0, 80)}) is ${kind} (${by}); ${kind === "batch" ? "issue-batch" : "issue-quick"} ${id} started`); return { started: true, via: kind === "batch" ? "issue-batch" : "issue-quick", id }; }
+      return { started: false, kind, reason: "the small-task graph did not start" };
+    }
+    return { started: false, kind, reason: kind === "small" || kind === "batch" ? "the small-task graph is off" : `the text reads as ${kind}, not as work to build` };
+  }
+
   /** Reads the newest owner message of a PM chat once; a second call while it runs waits for the same reading. */
   function take(threadId: string): Promise<IntakeRecord | null> {
     const running = pending.get(threadId);
@@ -156,7 +188,7 @@ export function createPhaseIntake(ctx: Deps, phases: IntakePhases, train?: Intak
     return railsRefusal(phase, phases.status(phase.id).next.text);
   }
 
-  return { take, dispatchRefusal, launchRefusal, classify };
+  return { take, dispatchRefusal, launchRefusal, classify, handOver };
 }
 export type PhaseIntake = ReturnType<typeof createPhaseIntake>;
 

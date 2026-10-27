@@ -12,6 +12,7 @@ export function schedulesRpc(_ctx: ServerCore, services: Services) {
       schedules: await board().listDetailed({ ...(projectId ? { projectId } : {}), ...(next !== undefined ? { next } : {}) }), hosts: await board().hostOptions(), now: Date.now(),
       errandDefault: board().errandDefault(projectId ?? null),
     }),
+    schedule_agents: async () => ({ agents: await board().pickableAgents() }),
     schedule_get: async ({ id, runs, next }) => {
       const row = board().store.get(id);
       return { schedule: (await board().view(id, next ?? 5)) ?? null, runs: row ? await board().runsDetailed(id, runs ?? 20) : [], runTotal: row ? board().runCount(id) : 0 };
@@ -37,5 +38,5 @@ export function schedulesRpc(_ctx: ServerCore, services: Services) {
     },
     schedule_cancel_run: async ({ runId }) => ({ ok: await board().cancelRun(runId) }),
     schedule_calendar: (input) => board().calendar(input),
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "schedule_list" | "schedule_get" | "schedule_runs" | "schedule_preview" | "schedule_upsert" | "schedule_delete" | "schedule_pause" | "schedule_resume" | "schedule_run_now" | "schedule_cancel_run" | "schedule_calendar">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "schedule_list" | "schedule_agents" | "schedule_get" | "schedule_runs" | "schedule_preview" | "schedule_upsert" | "schedule_delete" | "schedule_pause" | "schedule_resume" | "schedule_run_now" | "schedule_cancel_run" | "schedule_calendar">;
 }

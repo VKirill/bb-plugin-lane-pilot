@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { normalizeSchedule, type ScheduleInput, type ScheduleKind } from "../../src/rooms/schedule/model";
 import { createScheduler, type Executor, type ExecutorInput, type PollResult, type Scheduler } from "../../src/rooms/schedule/scheduler";
-import { createScheduleStore, scheduleMigrations, type RunRow } from "../../src/rooms/schedule/store";
+import { createScheduleStore, scheduleAgentMigrations, scheduleMigrations, type RunRow } from "../../src/rooms/schedule/store";
 
 /** A fake clock the scheduler's sleeps advance, so a minute of supervising costs no time. */
 export function createClock(start: number) {
@@ -12,7 +12,7 @@ export function createClock(start: number) {
 export function createDb(): Database.Database {
   const db = new Database(":memory:");
   db.pragma("foreign_keys = ON");
-  for (const statement of scheduleMigrations) db.exec(statement);
+  for (const statement of [...scheduleMigrations, ...scheduleAgentMigrations]) db.exec(statement);
   return db;
 }
 
@@ -43,7 +43,7 @@ export function createFakeExecutor(clock: { now(): number }, options: { duration
   return { executor, jobs, calls };
 }
 
-export function bag(executor: Executor): Record<ScheduleKind, Executor> { return { workflow: executor, errand: executor, script: executor }; }
+export function bag(executor: Executor): Record<ScheduleKind, Executor> { return { workflow: executor, errand: executor, script: executor, agent: executor }; }
 
 export function schedulerOn(db: Database.Database, clock: { now(): number; sleep(ms: number): Promise<void> }, executor: Executor, extra: Partial<Parameters<typeof createScheduler>[0]> = {}): Scheduler {
   return createScheduler({ db, executors: bag(executor), now: clock.now, sleep: clock.sleep, ...extra });

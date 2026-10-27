@@ -25,7 +25,7 @@ const AREA = "w-full rounded-lg border border-[var(--lp-outline)] bg-[var(--lp-c
 function baseOf(schedule: ScheduleView): Draft {
   const task = schedule.task;
   return {
-    text: task.kind === "errand" ? task.task : "", command: task.kind === "script" ? task.command : "", hostId: task.kind === "script" ? task.hostId : "",
+    text: task.kind === "errand" || task.kind === "agent" ? task.task : "", command: task.kind === "script" ? task.command : "", hostId: task.kind === "script" ? task.hostId : "",
     cwd: task.kind === "script" ? task.cwd : "", fields: modelFieldsOf(task),
   };
 }
@@ -33,6 +33,7 @@ function baseOf(schedule: ScheduleView): Draft {
 function taskOf(schedule: ScheduleView, draft: Draft): ScheduleView["task"] {
   const task = schedule.task;
   if (task.kind === "errand") return withModelFields({ ...task, task: draft.text }, draft.fields);
+  if (task.kind === "agent") return { ...task, task: draft.text };
   if (task.kind === "script") return { ...task, command: draft.command, hostId: draft.hostId, cwd: draft.cwd };
   return task;
 }
@@ -83,7 +84,7 @@ export function ScheduleDetail({ schedule, hosts, errandDefault, onBack, onEdit,
           <span className="min-w-0 break-words" data-testid="sch-detail-when">{whenText(schedule.when)}</span>
         </div>
 
-        {task.kind === "errand" ? (
+        {task.kind === "errand" || task.kind === "agent" ? (
           <Section title={t("schWhatTitle")} testId="sch-what">
             <textarea className={AREA} rows={Math.min(16, Math.max(5, draft.text.split("\n").length + 1))} data-testid="sch-what-text" aria-label={t("schWhatTitle")} value={draft.text}
               disabled={busy} onChange={(event) => change({ text: event.target.value })} />
@@ -121,6 +122,7 @@ export function ScheduleDetail({ schedule, hosts, errandDefault, onBack, onEdit,
             <WhoPicker projectId={schedule.projectId} fields={draft.fields} resolved={schedule.model} fallback={defaultSeed(errandDefault?.effective)} disabled={busy} onChange={(fields) => change({ fields })} />
             {schedule.cost ? <p className="break-words text-sm" data-testid="sch-cost">{costText(schedule.cost)}</p> : null}
           </> : null}
+          {task.kind === "agent" ? <p className="text-sm" data-testid="sch-who-agent">{fill(t("schWhoAgent"), { name: task.agentId, n: task.historyRuns })}</p> : null}
           {task.kind === "script" ? <p className="text-sm text-muted-foreground" data-testid="sch-who-script">{t("schWhoScript")}</p> : null}
           {task.kind === "workflow" ? <>
             <p className="text-sm text-muted-foreground" data-testid="sch-who-workflow">{t("schWhoWorkflow")}</p>
