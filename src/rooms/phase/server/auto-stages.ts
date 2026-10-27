@@ -307,7 +307,11 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
         deps.save(after.id, { ...after.record, auto: undefined });
         deps.book(after, "decisions", "auto_done", `${AUTO_WORKFLOWS[running.kind]} done (${running.wfRunId}) and reported through the gates`);
       } catch (cause) {
-        await fail(deps.get(phase.id), running.kind, cause instanceof Error ? cause.message : String(cause));
+        // A gate's refusal carries its reasons (PhaseRefusal.why): the book said only «the plan is not admitted» and the cause had to be
+        // rebuilt from the record (drill ph_5cd09d1c7a: the missing SECURITY.md, Fable 2026-10-27).
+        const why = (cause as { why?: unknown })?.why;
+        const reasons = Array.isArray(why) && why.length ? `: ${why.map(String).join("; ").slice(0, 600)}` : "";
+        await fail(deps.get(phase.id), running.kind, `${cause instanceof Error ? cause.message : String(cause)}${reasons}`);
       }
       return true;
     }

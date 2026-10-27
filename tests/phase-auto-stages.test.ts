@@ -45,6 +45,8 @@ describe("the machine's pass", () => {
   function world(output: Record<string, unknown> | null, status = "succeeded", start: Phase = phaseAt("discussion")) {
     let phase = start;
     let stopped = false;
+    let planRefusal: Error | null = null;
+    const booked: string[] = [];
     const calls: string[] = [];
     const runs = new Map<string, { status: string; output: Record<string, unknown> | null }>();
     const engine: Record<string, unknown> = {};
@@ -55,12 +57,12 @@ describe("the machine's pass", () => {
       exhausted: async (_phase, input) => { calls.push(`exhausted ${input.kind} ${input.stage}`); },
       api: {
         context: async (input) => { calls.push(`context ${input.docs.join(",")}`); phase = phaseAt("planning", { ...phase.record, context: { docs: [], sha: "c", signedAt: 1 } }); return phase; },
-        plan: (input) => { calls.push(`plan ${input.items.length}${input.alreadyMet ? ` already_met: ${input.alreadyMet}` : ""}`); return phase; }, planCheck: async (input) => { calls.push(`planCheck ${input.decision}`); return phase; }, question: (input) => { calls.push(`question ${input.text}`); return phase; }, waveReview: () => phase, goalAudit: (input) => { calls.push(`goalAudit ${input.state}\n${input.summary}`); return phase; }, lessons: () => phase, drawing: async () => phase,
+        plan: (input) => { calls.push(`plan ${input.items.length}${input.alreadyMet ? ` already_met: ${input.alreadyMet}` : ""}`); return phase; }, planCheck: async (input) => { calls.push(`planCheck ${input.decision}`); if (planRefusal) throw planRefusal; return phase; }, question: (input) => { calls.push(`question ${input.text}`); return phase; }, waveReview: () => phase, goalAudit: (input) => { calls.push(`goalAudit ${input.state}\n${input.summary}`); return phase; }, lessons: () => phase, drawing: async () => phase,
         returnTo: (input) => { calls.push(`return ${input.to}`); phase = { ...phase, stage: input.to } as Phase; return phase; },
       },
       get: () => phase,
       save: (_id, record) => { phase = { ...phase, record }; },
-      book: (_phase, _section, kind) => { calls.push(`book ${kind}`); },
+      book: (_phase, _section, kind, text) => { calls.push(`book ${kind}`); booked.push(String(text)); },
       writeDocs: async (_phase, files) => ({ written: files.map((file) => file.path) }),
       runtime: () => ({}),
       bookHead: () => "h".repeat(64),
@@ -68,7 +70,7 @@ describe("the machine's pass", () => {
       now: () => 1,
       runStopped: async () => stopped,
     });
-    return { auto, calls, runs, engine, stop: (value = true) => { stopped = value; }, get: () => phase, finish: () => { runs.set("wfrun_1", { status, output }); } };
+    return { auto, calls, runs, engine, booked, failPlan: (error: Error) => { planRefusal = error; }, stop: (value = true) => { stopped = value; }, get: () => phase, finish: () => { runs.set("wfrun_1", { status, output }); } };
   }
   it("starts no stage workflow while the run is halted or paused, and starts it once the run goes on", async () => {
     const w = world({ decisions: [], risks: [], open_questions: [] });
@@ -197,6 +199,13 @@ describe("the machine's pass", () => {
     const signed = w.calls.find((call) => call.startsWith("context "));
     expect(signed).toMatch(/CONTEXT\.md,.*SECURITY\.md/);
     expect(threatGap({ context: { docs: [{ path: ".agents/phases/ph_1/CONTEXT.md" }, { path: ".agents/phases/ph_1/SECURITY.md" }], risks: { security: "a token could leak" } } } as never)).toBeNull();
+  });
+  it("books a gate's reasons with its refusal, not only «the plan is not admitted»", async () => {
+    const w = world({ tasks: [{ id: "t1" }] }, "succeeded", phaseAt("planning", { context: { docs: [], sha: "c", signedAt: 1 } } as never));
+    const refusal = Object.assign(new Error("the plan is not admitted"), { why: ["the security risk «x» needs a threat model"] });
+    w.failPlan(refusal);
+    await w.auto.step(w.get()); w.finish(); await w.auto.step(w.get());
+    expect(w.booked.find((text) => text.includes("not admitted"))).toMatch(/not admitted: the security risk «x» needs a threat model/);
   });
   it("a stage that fails for Lane Pilot's own reasons waits for a fixed release: it never cuts the phase's scope (Fable's recheck, 2026-10-27)", async () => {
     // Every stage failure the live phases ever booked, before 0.1.336. Only the planner's and the drawing's verdicts are about the work.
