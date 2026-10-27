@@ -136,7 +136,7 @@ export const ROLE_PROFILES: Record<HelperRole, RoleProfile> = {
   "specialist:copy-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "copy-project-life", "site-copy-audience", "site-copy-headlines", "site-copy-ux", "copy-research", "tavily", "page-prototype", "ru-text", "ru-check", "ru-score"], mcpServers: [] },
   "specialist:seo-specialist": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "seo-project-life", "seo-drmax-orchestrator", "cocoon-chainsmith", "drmax-cocoon-engine-x4", "drmax-brandcore", "drmax-text-humanization", "ai-detect", "drmax-signalforge", "drmax-latent-intent", "drmax-market-scoped", "google", "yandex", "seo-tools", "page-prototype", "ru-text", "ru-check", "ru-score"], mcpServers: [] },
   "specialist:tavily": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "tavily"], mcpServers: [] },
-  "specialist:video-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "hyperframes", "hyperframes-cli", "hyperframes-registry", "media-use", "procedural-film", "video-to-reels", "business-motion-film", "remotion:remotion-best-practices", "remotion:remotion-render", "remotion:remotion-create"], mcpServers: [] },
+  "specialist:video-lead": { bbPlugins: ["env-catalog"], skills: ["env-catalog", "video-lead-playbook", "hyperframes", "hyperframes-cli", "hyperframes-registry", "media-use", "procedural-film", "video-to-reels", "business-motion-film", "video-transcribe", "video-sound", "manimgx", "anatomy", "claude-video", "remotion:remotion-best-practices", "remotion:remotion-render", "remotion:remotion-create"], mcpServers: [] },
 };
 
 /** The profile of a specialist the owner defined: it has no entry above, so it starts with Env Catalog; its own skills and MCP servers come in as `extra` on the spawn. */

@@ -144,7 +144,8 @@ const OWNED_PROFILES: Record<string, BundledAgent> = {
     prompt: laneSessionOverlayPrompt("video-lead"),
     tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"],
     skills: [
-      "hyperframes", "hyperframes-cli", "hyperframes-registry", "media-use", "procedural-film", "video-to-reels", "business-motion-film",
+      "video-lead-playbook", "hyperframes", "hyperframes-cli", "hyperframes-registry", "media-use", "procedural-film", "video-to-reels", "business-motion-film",
+      "video-transcribe", "video-sound", "manimgx", "anatomy", "claude-video",
       "remotion:remotion-best-practices", "remotion:remotion-render", "remotion:remotion-create",
     ],
     mcpServers: [],
