@@ -247,7 +247,7 @@ describe("a deciding role", () => {
   it("tiers the models the team uses", async () => {
     const { modelTier } = await import("@lane-pilot/models");
     expect(["claude-haiku-5-5", "gpt-6-luna", "zai-coding-plan/glm-5.3-flash", "router9/ag/gemini-3.8-flash-low"].map(modelTier)).toEqual(["light", "light", "light", "light"]);
-    expect(["claude-sonnet-5-5", "router9/ag/gemini-3.8-flash-high", "composer-2.5", "gpt-5.6-sol"].map(modelTier)).toEqual(["standard", "standard", "standard", "standard"]);
+    expect(["claude-sonnet-5-5", "router9/ag/gemini-3.8-flash-high", "composer-2.5", "gpt-5.6-sol", "gpt-6.1-terra"].map(modelTier)).toEqual(["standard", "standard", "standard", "standard", "standard"]);
     expect(["claude-opus-5-5", "gpt-6-sol", "gpt-6.1-sol", "openlux/gemini-4-argon", "openrouter/~google/gemini-pro-latest"].map(modelTier)).toEqual(["strong", "strong", "strong", "strong", "strong"]);
   });
 });

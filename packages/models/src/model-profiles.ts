@@ -38,6 +38,11 @@ export const WRITER_PROFILES: readonly WriterProfile[] = [
     sources: ["https://www.vellum.ai/blog/gpt-6-1-sol-benchmarks-explained", "https://www.sonarsource.com/blog/openai-gpt-6-1-sol-evaluation/", "https://www.layer3labs.io/guides/gpt-6-1-sol-for-coding"],
   },
   {
+    key: "gpt-terra", providerId: "codex", model: "gpt-6.1-terra", reasoning: "medium", label: "GPT-6.1 Terra (Codex)", tier: "standard", available: true,
+    summary: "OpenAI's mid model (released 2026-10-26), $1/$5 per million: Artificial Analysis Coding Agent Index 48 (Sol 54, Luna 31), Terminal-Bench 4.0 50.3% at max effort (vendor figure), about three times faster than Sol per OpenAI; low and medium effort are its cost-efficient settings, guesses on 38% of unknown facts (AA-Omniscience). Fits well-specified features and fixes of moderate size, terminal and build work, UI changes it can check on screen, data analysis and high-volume agent steps where Sol is too dear and Luna too weak. Not for the hardest debugging, architecture or deep research: OpenAI itself points those to Sol or Astra.",
+    sources: ["https://artificialanalysis.ai/articles/gpt-6-1-terra-pushes-the-cost-efficiency-frontier", "https://siliconangle.com/2026/10/26/openai-launches-gpt-6-1-terra-for-faster-better-performing-ai-agents-at-half-the-price/", "https://plotly.com/blog/gpt-6-1-terra-plotly-data-analytics-bench/", "https://decrypt.co/381883/openai-launches-gpt-6-1-terra-half-good-half-price"],
+  },
+  {
     key: "gpt-luna", providerId: "codex", model: "gpt-6-luna", reasoning: "high", label: "GPT-6 Luna (Codex)", tier: "light", available: true,
     summary: "OpenAI's cheap model: DeepSWE 66.6% at max effort for about $0.22 a task (Sol 68.8% at $2.74), but well behind Sol on broad agent work (Artificial Analysis coding index 41 vs 57). Fits small, well-scoped tasks with clear checks: tests, config, small fixes, scripts, mechanical edits, documentation. Not for open-ended features or architecture.",
     sources: ["https://www.vellum.ai/blog/gpt-6-sol-and-luna-benchmarks-explained", "https://benchlm.ai/compare/gpt-6-luna-vs-gpt-6-sol"],

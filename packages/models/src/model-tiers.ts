@@ -9,7 +9,7 @@ export type ModelTier = "light" | "standard" | "strong";
 const TIERS: Array<[RegExp, ModelTier]> = [
   [/haiku|luna|glm-[\d.]+-flash|flash-low|flash-lite|-mini\b/i, "light"],
   [/opus|fable|mythos|gpt-6(\.\d+)?-sol|gpt-6-astra|gemini-[\w.-]*pro|gemini-4-argon|pro-latest/i, "strong"],
-  [/sonnet|gemini-[\w.-]*flash|flash-latest|gpt-5\.\d+-(sol|terra)|gpt-6-terra|composer/i, "standard"],
+  [/sonnet|gemini-[\w.-]*flash|flash-latest|gpt-5\.\d+-(sol|terra)|gpt-6(\.\d+)?-terra|composer/i, "standard"],
 ];
 
 export function modelTier(model: string): ModelTier | null {
