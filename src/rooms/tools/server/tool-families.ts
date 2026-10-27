@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { LANE_PILOT_TOOL_SEARCH_NAME, PM_CORE_TOOLS, PM_TOOL_FAMILIES, rewriteFoldedToolNames, type ToolFamily } from "../pm-tool-families";
 import type { ServerCore } from "../../core/server";
-import { registerObservedTool, registeredTools, type ObservedTool } from "../../core/server";
+import { checkArguments, flatParameters, memberOf as actionMemberOf, registerObservedTool, registeredTools, signature, type ActionMember, type ObservedTool } from "../../core/server";
 
 /** The shared lead of every "Use from the active Lane Pilot PM thread." that the family says once. */
 const PM_ONLY_LEAD = /Use (?:only )?from the (?:active|matching) Lane Pilot PM thread\.\s*/g;
@@ -13,129 +13,23 @@ function shapeOf(tool: ObservedTool): z.ZodRawShape {
   return (tool.parameters as z.ZodObject).shape;
 }
 
-/** The kind under optional/default/nullable wrappers. */
-function baseKind(schema: z.ZodType): string {
-  let current: any = schema;
-  for (let i = 0; i < 6 && current?._zod?.def; i += 1) {
-    const def = current._zod.def;
-    if (["optional", "default", "nullable", "prefault", "readonly"].includes(def.type) && def.innerType) { current = def.innerType; continue; }
-    return def.type;
-  }
-  return "unknown";
-}
-
-/**
- * Agents often send a number or a list as text ("45", "[\"a\"]"), mostly when the tool's schema came through ToolSearch.
- * A family field that is not text also takes a JSON string of its own type; the old tool still checks the value.
- */
-function lenient(schema: z.ZodType): z.ZodType {
-  if (!["number", "int", "bigint", "boolean", "array", "object", "record", "tuple"].includes(baseKind(schema))) return schema;
-  const fromText = z.string().transform((text, ctx) => {
-    try { return JSON.parse(text) as unknown; } catch { ctx.addIssue({ code: "custom", message: "expected JSON of the field's type" }); return z.NEVER; }
-  }).pipe(schema);
-  return z.union([schema, fromText]);
-}
-
-function lenientShape(tool: ObservedTool): z.ZodRawShape {
-  return Object.fromEntries(Object.entries(shapeOf(tool)).map(([key, field]) => [key, lenient(field as z.ZodType)]));
-}
-
 /** BB caps a tool's static instructions; a family that does not fit says only what each action's instructions say. */
 const INSTRUCTIONS_MAX = 4000;
 /** A PM that still calls the removed remind action is told what already wakes it. */
 const RELAY_REMIND_GONE = "lane_pilot_relay has no remind action: results of your tasks, answers to asks, and the holder of a merge-block reach this chat by themselves — end your turn.";
 
-/** One action of a family: the old tool it runs, the arguments that old tool takes and the ones it must get. */
-type Member = {
-  action: string;
-  tool: ObservedTool;
-  /** The old tool's fields, lenient about text; its defaults stay with the old tool. */
-  args: z.ZodObject;
-  required: Array<{ key: string; type: string }>;
-};
-
-/** What a field takes, for messages and instructions: `string`, `number`, `local|staging|...`. */
-function fieldType(schema: z.ZodType): string {
-  const def = (schema as any)._zod.def;
-  if (def.type === "enum") return Object.values(def.entries).join("|");
-  if (["optional", "default", "nullable", "prefault", "readonly"].includes(def.type) && def.innerType) return fieldType(def.innerType);
-  return def.type;
-}
-
-/** The field without its default: the flat schema must not give an action a value that is not its own. */
-function withoutDefault(schema: z.ZodType): z.ZodType {
-  const def = (schema as any)._zod.def;
-  return def.type === "default" || def.type === "prefault" ? withoutDefault(def.innerType) : schema;
-}
+/** One action of a family: the old tool it runs, and the call shape generated from that tool's schema. */
+type Member = ActionMember & { tool: ObservedTool };
 
 function memberOf(action: string, tool: ObservedTool): Member {
-  return {
-    action,
-    tool,
-    args: z.object(lenientShape(tool)).strict(),
-    required: Object.entries(shapeOf(tool))
-      .filter(([, field]) => !(field as z.ZodType).safeParse(undefined).success)
-      .map(([key, field]) => ({ key, type: fieldType(field as z.ZodType) })),
-  };
-}
-
-/** Every argument of every action, once per name, optional: each name takes the union of the forms its actions take. */
-function flatShape(members: Member[]): z.ZodRawShape {
-  const takers = new Map<string, Array<{ action: string; field: z.ZodType; required: boolean }>>();
-  for (const member of members) {
-    for (const [key, field] of Object.entries(shapeOf(member.tool))) {
-      const uses = takers.get(key) ?? [];
-      uses.push({ action: member.action, field: field as z.ZodType, required: member.required.some((r) => r.key === key) });
-      takers.set(key, uses);
-    }
-  }
-  return Object.fromEntries([...takers].map(([key, uses]) => {
-    // Two actions that send one name in the same form share the field; a clash of forms is a union.
-    const forms = new Map(uses.map((use) => [JSON.stringify(z.toJSONSchema(use.field, { io: "input", unrepresentable: "any" })), lenient(withoutDefault(use.field))]));
-    const variants = [...forms.values()];
-    const field = variants.length === 1 ? variants[0]! : z.union(variants as [z.ZodType, z.ZodType, ...z.ZodType[]]);
-    const takes = uses.map((use) => (use.required ? `${use.action} (required)` : use.action)).join(", ");
-    return [key, field.optional().describe(`Argument of ${takes}.`)];
-  }));
-}
-
-type Checked = { ok: true; value: unknown } | { ok: false; message: string };
-
-const issuesOf = (error: z.ZodError) => error.issues.map((issue) => (issue.path.length ? `${issue.path.join(".")}: ${issue.message}` : issue.message)).join("; ");
-
-/**
- * The arguments one action gets, checked the way its old tool checks them: missing required ones, another action's
- * arguments and wrong types are refused with the action's name; the old tool's own schema then gets the value.
- */
-function checkArguments(family: string, members: Member[], member: Member, args: Record<string, unknown>): Checked {
-  const missing = member.required.filter(({ key }) => args[key] === undefined);
-  if (missing.length) return { ok: false, message: `${family} ${member.action} needs: ${missing.map(({ key, type }) => `${key} (${type})`).join(", ")}` };
-  const own = shapeOf(member.tool);
-  const foreign = Object.keys(args).filter((key) => args[key] !== undefined && !Object.hasOwn(own, key));
-  if (foreign.length) {
-    return {
-      ok: false,
-      message: foreign.map((key) => {
-        const owner = members.find((other) => Object.hasOwn(shapeOf(other.tool), key));
-        return `${family} ${member.action} does not take ${key}${owner ? ` (an argument of ${owner.action})` : ""}`;
-      }).join("; "),
-    };
-  }
-  const typed = member.args.safeParse(args);
-  if (!typed.success) return { ok: false, message: `${family} ${member.action}: ${issuesOf(typed.error)}` };
-  const checked = member.tool.parameters.safeParse(typed.data);
-  if (!checked.success) return { ok: false, message: `${family} ${member.action}: ${issuesOf(checked.error)}` };
-  return { ok: true, value: checked.data };
+  return { ...actionMemberOf(action, shapeOf(tool), tool.parameters, false), tool };
 }
 
 function familyInstructions(members: Member[]): string {
-  const lead = "Every call carries `action` plus the arguments of that action; any other argument is refused. Use from the active Lane Pilot PM thread.";
-  const required = (member: Member) => (member.required.length
-    ? `Required: ${member.required.map(({ key, type }) => `${key} (${type})`).join(", ")}.`
-    : "No required argument.");
-  const full = [lead, ...members.map((member) => `- action "${member.action}": ${required(member)} ${tidy(member.tool.description)} ${tidy(member.tool.instructions ?? "")}`.trim())].join("\n");
+  const lead = "Every call carries `action` plus the arguments of that action (`?` optional); any other argument is refused. Use from the active Lane Pilot PM thread.";
+  const full = [lead, ...members.map((member) => `- ${signature(member)}: ${tidy(member.tool.description)} ${tidy(member.tool.instructions ?? "")}`.trim())].join("\n");
   if (full.length <= INSTRUCTIONS_MAX) return full;
-  const short = [lead, ...members.map((member) => `- action "${member.action}": ${required(member)} ${tidy(member.tool.instructions || member.tool.description)}`)].join("\n");
+  const short = [lead, ...members.map((member) => `- ${signature(member)}: ${tidy(member.tool.instructions || member.tool.description)}`)].join("\n");
   if (short.length > INSTRUCTIONS_MAX) throw new Error(`tool family: instructions of ${members.map((m) => m.action).join("/")} are ${short.length} characters, over ${INSTRUCTIONS_MAX}`);
   return short;
 }
@@ -149,29 +43,12 @@ function mountFamily(ctx: ServerCore, name: string, family: ToolFamily): void {
   });
   const byAction = new Map(members.map((member) => [member.action, member]));
   const actionList = members.map((member) => member.action).join(", ");
-  const actionValues = (name === "lane_pilot_relay"
-    ? [...members.map((member) => member.action), "remind"]
-    : members.map((member) => member.action)) as [string, ...string[]];
   registerObservedTool(ctx.bb.agents, {
     name,
     description: `${family.summary} Pick one action (${actionList}) and give its arguments next to it.`,
     instructions: familyInstructions(members),
-    // BB keeps only `type: object` of a top-level union, so the family publishes one flat object. Its superRefine runs the
-    // action's checks at parse time, where a refusal reaches the caller as an invalid-arguments error.
-    parameters: z.object({
-      action: z.enum(actionValues).describe(`The action to run: ${actionList}.`),
-      ...flatShape(members),
-    }).strict().superRefine((input, issues) => {
-      const { action, ...args } = input as { action: string } & Record<string, unknown>;
-      if (name === "lane_pilot_relay" && action === "remind") {
-        issues.addIssue({ code: "custom", message: RELAY_REMIND_GONE });
-        return;
-      }
-      const member = byAction.get(action);
-      if (!member) return;
-      const checked = checkArguments(name, members, member, args);
-      if (!checked.ok) issues.addIssue({ code: "custom", message: checked.message });
-    }),
+    // BB keeps only `type: object` of a top-level union, so the family publishes one flat object (core/server/action-schema.ts).
+    parameters: flatParameters(name, members, name === "lane_pilot_relay" ? { actions: ["remind"], refuse: (action) => (action === "remind" ? RELAY_REMIND_GONE : undefined) } : undefined),
     execute: async (input, context) => {
       const { action, ...args } = input as { action: string } & Record<string, unknown>;
       if (name === "lane_pilot_relay" && action === "remind") throw new Error(RELAY_REMIND_GONE);

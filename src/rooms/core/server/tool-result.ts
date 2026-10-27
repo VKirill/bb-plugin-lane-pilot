@@ -2,6 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { z } from "zod";
 import { failureClass } from "../../runs";
 import { boundPresentation } from "../../tools/server";
+import { checkArguments, flatParameters, unionMembers, withSignatures } from "./action-schema";
 
 export type SideEffects = "none" | "unknown";
 
@@ -100,12 +101,23 @@ export function registerObservedTool<S extends z.ZodType>(
   registered.set(agents, book);
   const execute = tool.execute;
   const presentation = boundPresentation(agents, tool.name);
+  // A tool whose parameters are a union on `action` is published as one flat object with a signature line per action (action-schema.ts):
+  // BB would show a model only `type: object` of the union. Its handler still gets the union's own parse.
+  const members = unionMembers(tool.parameters);
+  const byAction = new Map(members?.map((member) => [member.action, member]));
   agents.registerTool({
     ...tool,
+    ...(members ? { parameters: flatParameters(tool.name, members), instructions: withSignatures(tool.instructions, members) } : {}),
     ...(presentation ? { presentation } : {}),
     execute: async (params, context) => {
       try {
-        return await execute(params, context) as string;
+        if (members) {
+          const { action, ...args } = params as unknown as { action: string } & Record<string, unknown>;
+          const checked = checkArguments(tool.name, members, byAction.get(action)!, args);
+          if (!checked.ok) throw new Error(checked.message);
+          return await execute(checked.value as never, context) as string;
+        }
+        return await execute(params as z.output<S>, context) as string;
       } catch (error) {
         return toolFailure(error);
       }

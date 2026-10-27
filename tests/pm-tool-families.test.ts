@@ -40,7 +40,7 @@ describe("the PM's folded tool list", () => {
       expect(tool.instructions!.length, name).toBeLessThanOrEqual(4000);
       for (const action of Object.keys(family.actions)) {
         expect(tool.description, `${name} ${action}`).toContain(action);
-        expect(tool.instructions, `${name} ${action}`).toContain(`action "${action}"`);
+        expect(tool.instructions, `${name} ${action}`).toContain(`${action} {`);
       }
       expect(JSON.stringify(tool.inputSchema)).toContain('"action"');
     }
@@ -68,8 +68,8 @@ describe("the PM's folded tool list", () => {
   it("lists each action's required arguments in the family instructions, generated from the schema", async () => {
     const harness = await start();
     const instructions = (name: string) => harness.registrations.agentTools.find((row) => row.name === name)!.instructions!;
-    expect(instructions("lane_pilot_helpers")).toContain('action "browser_qa": Required: runId (string), taskId (string), url (string), cases (array), envClass (local|staging|preview|production|unknown).');
-    expect(instructions("lane_pilot_relay")).toContain('action "list": No required argument.');
+    expect(instructions("lane_pilot_helpers")).toContain("- browser_qa {runId, taskId, url, cases: array, envClass: local|staging|preview|production|unknown, viewports?");
+    expect(instructions("lane_pilot_relay")).toContain("- list {");
   });
 
   it("says where browser_qa's runId comes from and what envClass means", async () => {

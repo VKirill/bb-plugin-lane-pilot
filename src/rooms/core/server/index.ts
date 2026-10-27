@@ -1,5 +1,7 @@
 // Public API of core/server: what other rooms import. Everything else in this room is private.
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
+export { checkArguments, flatParameters, memberOf, signature, unionMembers } from "./action-schema";
+export type { ActionMember } from "./action-schema";
 export { configuredSetting, requirePmRun } from "./context";
 export type { ServerContext } from "./context";
 export type { ServerCore } from "./core";
