@@ -174,6 +174,14 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
         const report = await services.canary.status();
         return { version: report.version, tripped: report.tripped, windowOpen: report.window.open };
       },
+      changedBetween: async (from, to) => {
+        if (![from, to].every((version) => /^\d+\.\d+\.\d+$/.test(version))) return null;
+        try {
+          const { hostId, basePath } = await environmentOf();
+          const diff = await host.call("runCommand", { requestedHostId: hostId, cwd: basePath, timeoutSec: 30, command: `git diff --name-only v${from} v${to}` }, { hostId, timeoutMs: 40_000 });
+          return diff.exitCode === 0 ? diff.stdout.split("\n").map((line) => line.trim()).filter(Boolean) : null;
+        } catch { return null; }
+      },
     },
     bench: {
       available: async () => {

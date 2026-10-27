@@ -11,7 +11,7 @@ const REASON = "internal_error: another writer integration holds the base checko
 const KEY = wallSignature("blocked", REASON).classKey;
 
 type Fakes = ReturnType<typeof world>;
-function world(patch: { changed?: unknown; seed?: boolean } = {}) {
+function world(patch: { changed?: unknown; seed?: boolean; releaseFiles?: string[] | null; classFiles?: string[] } = {}) {
   const h = freshDb();
   if (patch.seed !== false) {
     for (let i = 0; i < 25; i++) h.attempt("accepted", null, NOW - 20 * HOUR + i);
@@ -22,16 +22,18 @@ function world(patch: { changed?: unknown; seed?: boolean } = {}) {
     canary: null as { version: string; tripped: boolean; windowOpen: boolean } | null,
     ensured: [] as string[], compared: [] as Array<[string, string]>, reverted: [] as string[],
     changed: (patch.changed ?? ["src/rooms/relay/server/relay.ts"]) as unknown,
+    releaseFiles: patch.releaseFiles, classFiles: patch.classFiles ?? [], asked: [] as Array<[string, string]>,
   };
   const ports: WallPorts = {
     now: () => state.time, get version() { return state.version; },
-    loadScope: async () => ({ isReal, scopeOf: () => "real" }), logLines: () => [], codeFiles: async () => [], reader: async () => ({ text: null, tokens: 0 }), tellPm: async () => true,
+    loadScope: async () => ({ isReal, scopeOf: () => "real" }), logLines: () => [], codeFiles: async () => state.classFiles.map((path) => ({ path, lines: 1, text: "" })), reader: async () => ({ text: null, tokens: 0 }), tellPm: async () => true,
     repair: {
       view: async () => ({ threadId: "thr_fix", verdict: "fixed", outcome: null, branch: "b", worktreePath: "/wt", spawnedAt: NOW }),
       report: async () => "", tokens: async () => 1, busy: async () => false, changedFiles: async () => state.changed as never,
       revert: async (sha) => { state.reverted.push(sha); return { ok: true, detail: "merged abc" }; },
     },
-    release: { drill: async () => (state.drillReceipt ? { version: state.version, at: state.time + 1, ok: true } : null), canary: async () => state.canary },
+    release: { drill: async () => (state.drillReceipt ? { version: state.version, at: state.time + 1, ok: true } : null), canary: async () => state.canary,
+      ...(patch.releaseFiles !== undefined ? { changedBetween: async (from: string, to: string) => { state.asked.push([from, to]); return state.releaseFiles ?? null; } } : {}) },
     bench: {
       available: async () => state.benchAvailable,
       ensureArm: async (arm) => { state.ensured.push(arm); return "done"; },
@@ -211,5 +213,90 @@ describe("a runnable bench is availability, not a passed bench (review section 2
     expect(await w.wall.mergeGate(assignment.signature, { threadId: "thr_fix" })).toBe("release");
     const row = listRepairs(w.h.db).find((item) => item.id === assignment.id)!;
     expect((row.policy as { reason: string }).reason).toMatch(/revert is not in working order/);
+  });
+});
+
+describe("a later release voids a repair's evidence only when it touched the repair or its class (Fable's recheck of 0.1.341, R5)", () => {
+  const release341 = (w: Fakes, canary = true) => {
+    w.state.version = "0.1.341";
+    if (canary) w.state.canary = { version: "0.1.341", tripped: false, windowOpen: false };
+  };
+
+  it("a release that changed other files leaves the repair judged: the running version's canary, bench and drill decide", async () => {
+    const w = world({ releaseFiles: ["CHANGELOG.md", "package.json", "src/rooms/council/server/council.ts"] });
+    await deployed(w, "0.1.340");
+    release341(w);
+    await w.wall.advance(NOW + 3 * HOUR);
+    expect(w.state.asked).toEqual([["0.1.340", "0.1.341"]]);
+    expect(w.state.compared).toEqual([["night-0.1.268", "night-0.1.341"]]);
+    expect(listRepairs(w.h.db)[0]).toMatchObject({ state: "accepted", shippedVersion: "0.1.340" });
+  });
+
+  it("without the canary of the running version it keeps waiting, it is not set aside", async () => {
+    const w = world({ releaseFiles: ["src/rooms/council/server/council.ts"] });
+    await deployed(w, "0.1.340");
+    release341(w, false);
+    await w.wall.advance(NOW + 3 * HOUR);
+    expect(listRepairs(w.h.db)[0]).toMatchObject({ state: "deployed" });
+  });
+
+  it("a release that changed a file of the repair voids it as before", async () => {
+    const w = world({ releaseFiles: ["CHANGELOG.md", "src/rooms/relay/server/relay.ts"] });
+    await deployed(w, "0.1.340");
+    release341(w);
+    await w.wall.advance(NOW + 3 * HOUR);
+    expect(w.state.compared).toEqual([]);
+    expect(listRepairs(w.h.db)[0]).toMatchObject({ state: "unproven" });
+    expect(listRepairs(w.h.db)[0]!.outcome).toMatch(/0\.1\.341 was released after 0\.1\.340/);
+  });
+
+  it("a release that changed the source of the failure class voids it", async () => {
+    const w = world({ releaseFiles: ["src/rooms/writer/server/lock-holder.ts"], classFiles: ["src/rooms/writer/server/lock-holder.ts"] });
+    await deployed(w, "0.1.340");
+    release341(w);
+    await w.wall.advance(NOW + 3 * HOUR);
+    expect(listRepairs(w.h.db)[0]).toMatchObject({ state: "unproven" });
+  });
+
+  it("a release whose files cannot be told voids it (nothing shows it was unrelated)", async () => {
+    const w = world({ releaseFiles: null });
+    await deployed(w, "0.1.340");
+    release341(w);
+    await w.wall.advance(NOW + 3 * HOUR);
+    expect(listRepairs(w.h.db)[0]).toMatchObject({ state: "unproven" });
+  });
+
+  it("a repair set aside by the old rule is judged again once its release is known to be unrelated, and only inside the evidence wait", async () => {
+    const w = world({ releaseFiles: null });
+    await deployed(w, "0.1.340");
+    release341(w);
+    await w.wall.advance(NOW + 3 * HOUR);
+    expect(listRepairs(w.h.db)[0]).toMatchObject({ state: "unproven" });
+    w.state.releaseFiles = ["src/rooms/council/server/council.ts"];
+    const notes = await w.wall.advance(NOW + 4 * HOUR);
+    expect(notes.join("|")).toMatch(/judged again/);
+    expect(listRepairs(w.h.db)[0]).toMatchObject({ state: "accepted" });
+  });
+
+  it("is judged again only once: when the release did touch the repair it stays unproven, and the next advance does not reopen it", async () => {
+    const w = world({ releaseFiles: ["src/rooms/relay/server/relay.ts"] });
+    await deployed(w, "0.1.340");
+    release341(w, false);
+    await w.wall.advance(NOW + 3 * HOUR);
+    expect(listRepairs(w.h.db)[0]).toMatchObject({ state: "unproven" });
+    const again = await w.wall.advance(NOW + 4 * HOUR);
+    expect(again.join("|")).not.toMatch(/judged again/);
+    expect(listRepairs(w.h.db)[0]).toMatchObject({ state: "unproven" });
+  });
+
+  it("an old unproven repair (past the evidence wait) is not reopened", async () => {
+    const w = world({ releaseFiles: null });
+    await deployed(w, "0.1.340");
+    release341(w, false);
+    await w.wall.advance(NOW + 3 * HOUR);
+    w.state.releaseFiles = ["src/rooms/council/server/council.ts"];
+    const notes = await w.wall.advance(NOW + 3 * HOUR + EVIDENCE_WAIT_MS + HOUR);
+    expect(notes.join("|")).not.toMatch(/judged again/);
+    expect(listRepairs(w.h.db)[0]).toMatchObject({ state: "unproven" });
   });
 });
