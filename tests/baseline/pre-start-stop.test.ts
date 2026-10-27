@@ -48,6 +48,8 @@ describe("a check red on the base outside the task's files", () => {
     expect(redOutsideTaskFiles(red("npx vitest run tests/new.test.ts", "FAIL tests/new.test.ts"), task)).toEqual([]);
     expect(redOutsideTaskFiles(typecheck("Test Files  1 failed (1)\n Tests  2 failed"), task)).toEqual([]);
     expect(redOutsideTaskFiles(typecheck("/home/ubuntu/w/src/other/b.ts:2 error"), task)).toEqual([]);
+    // the runtime's own banner after an uncaught Node error is not a file
+    expect(redOutsideTaskFiles(red("node checks/a.mjs", "Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/w/src/a.js'\n\nNode.js v26.3.1"), task)).toEqual([]);
     expect(redOutsideTaskFiles(typecheck("at run (node_modules/vitest/dist/chunk.js:12:3)"), task)).toEqual([]);
     expect(redOutsideTaskFiles({ ...typecheck("src/other/b.ts error"), status: "green" }, task)).toEqual([]);
   });

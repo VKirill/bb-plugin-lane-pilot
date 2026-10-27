@@ -151,6 +151,8 @@ export function redOutsideTaskFiles(check: BaselineCheck, task: TaskFiles): stri
     // The tail may begin in the middle of a path.
     if (cut && found.index === 0) continue;
     if (/(^|\/)node_modules\//.test(found[1]!)) continue;
+    // `Node.js v26` closes every uncaught Node error; it names the runtime, not a file.
+    if (/^(?:node|next|nuxt|vue|express)\.js$/i.test(found[1]!)) continue;
     files.add(found[1]!.replace(/^\.\//, ""));
   }
   if (!files.size) return [];

@@ -13,6 +13,8 @@ export const BOOKKEEPING_PATHS = [
   ".agents/reports/**",
   ".bb/chats/**",
   "notes/lock/**",
+  // The ZCode provider (bb-plugin-zcode) writes the BB MCP servers, with their keys, into <worktree>/.zcode/config.json for the life of the session.
+  ".zcode/**",
 ];
 
 /**
