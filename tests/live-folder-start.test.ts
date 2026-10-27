@@ -57,8 +57,7 @@ function services(env: ReturnType<typeof setup>, script: Step[], live: boolean) 
     runBudgetFor: () => ({ check: () => ({ ok: true }), noteAttempt: () => undefined, noteTokens: () => undefined, snapshot: () => ({ limits: {} }) }),
     runWriterPool: { acquire: async (key: string, limit: number) => { acquired.push({ key, limit }); return () => undefined; } },
     stability: { breakerHolds: () => null, diskHolds: async () => null, onTaskFailed: async () => false, loadParked: async () => [] },
-    maintainMemoryAfterAcceptance: () => undefined,
-    maintainProjectLifeAfterAcceptance: () => undefined,
+    startAfterAcceptance: () => undefined,
     isLiveFolder: async () => live,
     workspaceDirt: async () => ({ ok: true, paths: [], snapshots: [] }),
     restoreLiveFolder: async (input: { backupId: string; folder: string; task: { owns_paths: string[] } }) => {

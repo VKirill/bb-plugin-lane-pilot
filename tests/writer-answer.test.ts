@@ -70,8 +70,7 @@ function fakeServices(db:ReturnType<typeof openDatabase>, finish?:Services["fini
     isLiveFolder:async () => false,
     stability:{ breakerHolds:() => null, diskHolds:async () => null, onTaskFailed:async () => false },
     finishWriterAttempt:finish ?? (async () => ({ status:"accepted" })),
-    maintainMemoryAfterAcceptance:() => undefined,
-    maintainProjectLifeAfterAcceptance:() => undefined,
+    startAfterAcceptance: () => undefined,
   } as unknown as Services;
 }
 

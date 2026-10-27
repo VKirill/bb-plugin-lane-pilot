@@ -1038,8 +1038,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
       if (accepted && acceptedAttemptId) void sticky.noteAccepted(input.projectId, input.runId, input.task, acceptedAttemptId,
         Array.isArray(last.produced) ? (last.produced as unknown[]).filter((path):path is string => typeof path === "string") : [])
         .catch((cause) => ctx.log(`area record of ${input.taskId} failed: ${cause instanceof Error ? cause.message : String(cause)}`));
-      if (accepted) services.maintainMemoryAfterAcceptance(input.projectId, input.runId, input.taskId, input.pmThreadId);
-      if (accepted) services.maintainProjectLifeAfterAcceptance(input.projectId, input.runId, input.taskId, input.pmThreadId);
+      if (accepted) services.startAfterAcceptance(input.projectId, input.runId, input.taskId, input.pmThreadId);
     })().catch((cause: unknown) => {
       // After a reload the database is closed: stop quietly, the next load reconciles the attempt.
       if (ctx.state.disposed) return;

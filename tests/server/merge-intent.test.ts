@@ -167,7 +167,7 @@ describe("recovery of a merge whose reply was lost", () => {
     createAttempt(db, { id: "a1", runId: "run", taskId: "T1" });
     for (const state of ["spawn_requested", "running"]) transitionAttempt(db, "a1", state);
     const maintained: string[] = [];
-    const services = { activeWriterTasks: new Set<string>(), maintainMemoryAfterAcceptance: (_p: string, _r: string, task: string) => { maintained.push(task); }, maintainProjectLifeAfterAcceptance: () => undefined };
+    const services = { activeWriterTasks: new Set<string>(), startAfterAcceptance: (_p: string, _r: string, task: string) => { maintained.push(task); } };
     const ctx = { bb, db, log: () => undefined, host: { call: (_method: string, input: { requestedHostId: string; cwd: string; command: string }) => runCommandOnHost(input) }, refreshRun: () => undefined } as never;
     const { recoverMergeIntents } = createMergeIntentRecovery(ctx, services as never);
     return { bb, db, base, worktree, recoverMergeIntents, services, maintained };

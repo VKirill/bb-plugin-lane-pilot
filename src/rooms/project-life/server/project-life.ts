@@ -1,11 +1,11 @@
 import { acceptanceArtifactDir } from "../../tasks";
 import { taskV2Schema } from "../../contracts";
-import { claimStageSpawn, getRun, getTask, listOpenAttempts, listStageReceipts } from "../../storage";
+import { claimStageSpawn, getRun, getTask, listStageReceipts } from "../../storage";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
-import { PROJECT_LIFE_DEFAULT_WRITER, findOutOfScopeProjectLifeWrites, foldCoveredTaskIds, parseProjectLifeFinalMessage, parseProjectLifeSettings, projectLifePrompt, projectLifeWriterSelection, shouldTriggerProjectLife } from "../project-life";
+import { PROJECT_LIFE_DEFAULT_WRITER, findOutOfScopeProjectLifeWrites, foldCoveredTaskIds, parseProjectLifeFinalMessage, parseProjectLifeSettings, projectLifePrompt, projectLifeWriterSelection } from "../project-life";
 import { ProjectLifeChildSnapshot, childResultObject, projectLifeChildSnapshot, spawnRefused } from "../../runs/server";
 import { configuredSetting, stageHelperSettings } from "../../core/server";
-import { fullAccessSpawn } from "../../core/server";
+import { fullAccessSpawn, graphStepMetadata } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { recordStage } from "../../runs/server";
 import { stringAt, valueAt } from "../../core/server";
@@ -16,27 +16,7 @@ import type { Services } from "../../core/server";
 export function createProjectLifeStage(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, host, workspaceExecutionEnvironment } = ctx;
 
-  /**
-   * Project life is a background stage the plugin itself runs after an accepted wave goes idle — the PM
-   * never calls it. It rewrites PROGRESS/plans/todos only; LESSONS.md and decision drafts stay with the PM.
-   */
-  function maintainProjectLifeAfterAcceptance(projectId:string, runId:string, taskId:string, pmThreadId:string):void {
-    if (!shouldTriggerProjectLife(listOpenAttempts(db).map((attempt) => attempt.run_id), runId)) return;
-    void (async () => {
-      // Project life commits PROGRESS and plans to main; a folder without git has no main.
-      const run = getRun(db, runId);
-      const config = await configForRun(projectId, run);
-      if (run?.writer_workspace_path && config && await services.isLiveFolder(runId, config.hostId, run.writer_workspace_path)) return;
-      for (let round = 0; round < 60 && !ctx.state.disposed; round++) {
-        const result = await runProjectLifeMaintenance({ threadId:pmThreadId, projectId, runId, taskId, timeoutSec:60 });
-        if (result.state !== "running") return;
-      }
-    })().catch((cause: unknown) => {
-      if (!ctx.state.disposed) bb.log.warn(`Lane Pilot project-life after ${taskId} failed: ${cause instanceof Error ? cause.message : String(cause)}`);
-    });
-  }
-
-  async function runProjectLifeMaintenance(args:{threadId:string;projectId:string;runId:string;taskId:string;timeoutSec?:number}):Promise<Record<string,unknown>> {
+  async function runProjectLifeMaintenance(args:{threadId:string;projectId:string;runId:string;taskId:string;timeoutSec?:number;workflow?:{runId:string;stepKey?:string;nodeId?:string}}):Promise<Record<string,unknown>> {
     const metadata=await bb.sdk.threads.getPluginMetadata({threadId:args.threadId});
     if(valueAt(metadata,"role")!=="pm"||stringAt(metadata,"lanePilotRunId")!==args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
     const run=getRun(db,args.runId),config=await configForRun(args.projectId,run),taskRow=getTask(db,args.taskId);
@@ -200,7 +180,7 @@ export function createProjectLifeStage(ctx: ServerCore, services: Services) {
         prompt:projectLifePrompt({workspace:workspace.path,runId:args.runId,artifactDirs,tasks:snapshot.tasks,nowIso:new Date().toISOString()}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"project-life-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,
-          stageId:"project-life",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
+          stageId:"project-life",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true,...graphStepMetadata(args.workflow)}});
       threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("project_life_maintainer_thread_id_missing");
       persistRunning(threadId,{...childResultObject(receipt?.result),snapshot,spawnAttempted:true});
       return await finishObservation(threadId,snapshot);
@@ -237,5 +217,5 @@ export function createProjectLifeStage(ctx: ServerCore, services: Services) {
     }
   }
 
-  return { maintainProjectLifeAfterAcceptance, runProjectLifeMaintenance };
+  return { runProjectLifeMaintenance };
 }

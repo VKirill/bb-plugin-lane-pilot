@@ -1,13 +1,14 @@
 import { createHash } from "node:crypto";
 import { createFakeWorktreeHost } from "../own-worktree-host";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import plugin from "../../server";
 import type { TaskV2 } from "../../src/rooms/contracts";
 import { createRun, getAttempt, getRun, listStageReceipts, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../../src/rooms/storage/database";
 
 /**
- * The dispatch pipeline run twice per scenario, by the workflow engine and by the direct path (LANE_PILOT_WORKFLOW_ENGINE=0):
- * the same dispatch reply, the same stage receipts, the same attempt and run states, up to ids and clocks.
+ * The dispatch pipeline runs on the workflow engine and nowhere else. Each scenario states what the dispatch must answer, which
+ * stage receipts it leaves and how the attempt and the run end; when the engine cannot start the pipeline the dispatch refuses.
  */
 
 const projectId = "eq-project";
@@ -39,9 +40,11 @@ type Scenario = {
   cancelDuringPmRead?: boolean;
   /** Every helper thread reports 1,000 tokens (its events carry a `thread/tokenUsage/updated`). */
   usage?: boolean;
+  /** Collects the plugin log's warnings. */
+  warn?: string[];
 };
 
-async function runScenario(engine: "on" | "off", scenario: Scenario) {
+async function runScenario(scenario: Scenario) {
   const spawned: Array<Record<string, unknown>> = [];
   const meta = new Map<string, Record<string, unknown>>();
   let nextWriter = 0, porcelain = 0;
@@ -124,21 +127,23 @@ async function runScenario(engine: "on" | "off", scenario: Scenario) {
     },
   }, config.hostId);
   const db = openDatabase(bb);
+  if (scenario.warn) vi.spyOn(bb.log, "warn").mockImplementation((message: string) => { scenario.warn!.push(String(message)); });
   savePrototypeConfig(db, config);
   const settings = { "plan_critique.min_score": 0, "plan_critique.min_write_tasks": 1, "jev.LANE_JEV_EFFORT": false, "memory.enabled": false, "project_life.enabled": false, "docs.enabled": false, ...scenario.settings };
   for (const [key, value] of Object.entries(settings)) saveProjectSetting(db, projectId, key, value);
   createRun(db, runId, projectId, "bb", config.writerWorkspacePath, scenario.runGate ?? "none");
   setRunThread(db, runId, pmThreadId);
   await plugin(bb);
-  const previous = process.env.LANE_PILOT_WORKFLOW_ENGINE;
-  if (engine === "off") process.env.LANE_PILOT_WORKFLOW_ENGINE = "0"; else delete process.env.LANE_PILOT_WORKFLOW_ENGINE;
-  let reply: Record<string, unknown>;
-  try {
-    reply = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
-      { confirm: true, objective: "Проверка диспетча", plan: "Write the fixture", task: { ...task, ...scenario.task }, ...(scenario.baseRef ? { baseRef: scenario.baseRef } : {}) }, { threadId: pmThreadId, projectId })));
-  } finally { if (previous === undefined) delete process.env.LANE_PILOT_WORKFLOW_ENGINE; else process.env.LANE_PILOT_WORKFLOW_ENGINE = previous; }
+  const reply = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",
+    { confirm: true, objective: "Проверка диспетча", plan: "Write the fixture", task: { ...task, ...scenario.task }, ...(scenario.baseRef ? { baseRef: scenario.baseRef } : {}) }, { threadId: pmThreadId, projectId }))) as Record<string, unknown>;
   let waited: Record<string, unknown> | null = null;
   if (scenario.finish) waited = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_wait_writer", { runId, timeoutSec: 10 }, { threadId: pmThreadId, projectId })));
+  // The after-acceptance run of an accepted task goes on after the writer's end: wait for it before reading the receipts.
+  if (scenario.finish) for (let i = 0; i < 100; i++) {
+    const open = db.prepare("SELECT 1 FROM lane_pilot_wf_run WHERE workflow_id='lp.after-accept' AND status IN ('running','waiting')").get();
+    if (!open && db.prepare("SELECT 1 FROM lane_pilot_wf_run WHERE workflow_id='lp.after-accept'").get()) break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
   const attemptId = String(reply.attemptId ?? "");
   const taskId = String(reply.taskId ?? task.id);
   const out = {
@@ -147,26 +152,14 @@ async function runScenario(engine: "on" | "off", scenario: Scenario) {
     run: getRun(db, runId)!.state, runAfterCancel,
     stages: listStageReceipts(db, runId, taskId),
     spawned: spawned.map((row) => `${String((row.pluginMetadata as Record<string, unknown>).role)}:${String((row.pluginMetadata as Record<string, unknown>).stageId ?? "")}`),
-    engineRuns: (db.prepare("SELECT id, workflow_id, status FROM lane_pilot_wf_run").all() as Array<{ id: string; workflow_id: string; status: string }>),
-    engineSteps: (db.prepare("SELECT node_id, state FROM lane_pilot_wf_step ORDER BY rowid").all() as Array<{ node_id: string; state: string }>),
-    engineTokens: (db.prepare("SELECT tokens_used FROM lane_pilot_wf_run").all() as Array<{ tokens_used: number }>).map((row) => row.tokens_used),
+    engineRuns: (db.prepare("SELECT id, workflow_id, status FROM lane_pilot_wf_run WHERE workflow_id='lp-task-pipeline'").all() as Array<{ id: string; workflow_id: string; status: string }>),
+    engineSteps: (db.prepare("SELECT node_id, state FROM lane_pilot_wf_step WHERE run_id IN (SELECT id FROM lane_pilot_wf_run WHERE workflow_id='lp-task-pipeline') ORDER BY rowid").all() as Array<{ node_id: string; state: string }>),
+    engineTokens: (db.prepare("SELECT tokens_used FROM lane_pilot_wf_run WHERE workflow_id='lp-task-pipeline'").all() as Array<{ tokens_used: number }>).map((row) => row.tokens_used),
+    afterAccept: (db.prepare("SELECT idem_key, status, output_json FROM lane_pilot_wf_run WHERE workflow_id='lp.after-accept'").all() as Array<{ idem_key: string; status: string; output_json: string | null }>),
     spawnedMeta: spawned.map((row) => row.pluginMetadata as Record<string, unknown>),
   };
   await harness.lifecycle.dispose();
   return out;
-}
-
-/** The same value with the ids and clocks that differ between two runs replaced. */
-function normal(value: unknown): unknown {
-  // Receipts of the stages that follow an acceptance hash its result, which carries the clock; their results are compared whole.
-  const hashOfClock = new Set(["docs-maintenance", "memory-maintenance", "project-life", "acceptance-receipt", "writer-agent"]);
-  const text = JSON.stringify(value, function (this: Record<string, unknown>, key, item) {
-    if (key === "updatedAt" || key === "engineRuns" || key === "engineSteps" || key === "engineTokens" || key === "spawnedMeta" || key === "outputSha256") return undefined;
-    if (key === "inputSha256" && hashOfClock.has(String(this.stageId))) return undefined;
-    return item;
-  });
-  return JSON.parse(text.replace(/lpattempt_[a-f0-9]{32}/g, "ATTEMPT").replace(/lptask_[a-f0-9]{32}/g, "TASK")
-    .replace(/\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z/g, "ISO").replace(/"(startedAt|finishedAt|durationMs|elapsedMs)":\d+/g, '"$1":0'));
 }
 
 const scenarios: Scenario[] = [
@@ -190,35 +183,97 @@ const scenarios: Scenario[] = [
   { name: "unresolved placeholder in the task blocks the plan critique", task: { objective: "Write REPLACE_ME" } },
 ];
 
-afterEach(() => { delete process.env.LANE_PILOT_WORKFLOW_ENGINE; });
+afterEach(() => { vi.restoreAllMocks(); });
 
-describe("dispatch through the workflow engine equals the direct path", () => {
+/** The stage receipts each scenario leaves (`stageId:state`, sorted by stage id). The after-acceptance stages are skipped here because memory and project life are off in the fixture. */
+const STAGES: Record<string, string[]> = {
+  "no review stages: queued, then accepted": ["acceptance-receipt:passed", "memory-maintenance:skipped", "plan-critique:skipped", "plan-fact:skipped", "pm-read:skipped", "project-life:skipped", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
+  "plan critique approves, then accepted": ["acceptance-receipt:passed", "memory-maintenance:skipped", "plan-critique:passed", "plan-fact:skipped", "pm-read:skipped", "project-life:skipped", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
+  "plan critique and PM read configured, then accepted": ["acceptance-receipt:passed", "memory-maintenance:skipped", "plan-critique:passed", "plan-fact:skipped", "pm-read:passed", "project-life:skipped", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
+  "quality_mode quick: the critique receipt is skipped by its own rule": ["acceptance-receipt:passed", "memory-maintenance:skipped", "plan-critique:skipped", "plan-fact:skipped", "pm-read:skipped", "project-life:skipped", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
+  "quality_mode full on a task of its own": ["acceptance-receipt:passed", "code-critique:passed", "memory-maintenance:skipped", "plan-critique:passed", "plan-fact:skipped", "pm-read:skipped", "project-life:skipped", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
+  "plan critique asks for changes: blocked before any writer": ["acceptance-receipt:skipped", "plan-critique:failed", "pm-read:skipped", "specialist-review:skipped", "verification:skipped", "writer-agent:skipped"],
+  "PM read returns malformed output: blocked": ["acceptance-receipt:skipped", "plan-critique:skipped", "pm-read:failed", "specialist-review:skipped", "verification:skipped", "writer-agent:skipped"],
+  "a cancel during a failing PM read keeps the task canceled and the run open": ["acceptance-receipt:canceled", "pm-read:canceled", "verification:canceled", "writer-agent:canceled"],
+  "a cancel during a passing PM read starts no plan critique": ["acceptance-receipt:canceled", "pm-read:canceled", "verification:canceled", "writer-agent:canceled"],
+  "specialist blocks a high-risk task": ["acceptance-receipt:skipped", "plan-critique:passed", "pm-read:skipped", "specialist-review:blocked", "verification:skipped", "writer-agent:skipped"],
+  "ownership base unavailable for an explicit base ref": ["acceptance-receipt:skipped", "plan-critique:skipped", "pm-read:skipped", "run-gate:blocked", "specialist-review:skipped", "verification:skipped", "writer-agent:skipped"],
+  "explicit base ref is frozen, then accepted": ["acceptance-receipt:passed", "memory-maintenance:skipped", "plan-critique:skipped", "plan-fact:skipped", "pm-read:skipped", "project-life:skipped", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
+  "explicit review gate stops before the stages": ["acceptance-receipt:skipped", "plan-critique:skipped", "pm-read:skipped", "run-gate:blocked", "specialist-review:skipped", "verification:skipped", "writer-agent:skipped"],
+  "unresolved placeholder in the task blocks the plan critique": ["acceptance-receipt:skipped", "plan-critique:blocked", "pm-read:skipped", "specialist-review:skipped", "verification:skipped", "writer-agent:skipped"],
+};
+
+/** The state of each stage receipt, in order, as a dispatch of the scenario leaves it. */
+const stageStates = (run: Awaited<ReturnType<typeof runScenario>>) => run.stages.map((row) => `${row.stageId}:${row.state}`);
+
+describe("the dispatch runs on the workflow engine", () => {
   for (const scenario of scenarios) {
     it(scenario.name, async () => {
-      const direct = await runScenario("off", scenario);
-      const engine = await runScenario("on", scenario);
-      expect(normal(engine)).toEqual(normal(direct));
+      const run = await runScenario(scenario);
       if (scenario.expect) {
-        expect(engine.reply.state, JSON.stringify(engine.reply).slice(0, 600)).toBe(scenario.expect.state);
-        if (scenario.expect.reason) expect(String(engine.reply.reason)).toMatch(scenario.expect.reason);
+        expect(run.reply.state, JSON.stringify(run.reply).slice(0, 600)).toBe(scenario.expect.state);
+        if (scenario.expect.reason) expect(String(run.reply.reason)).toMatch(scenario.expect.reason);
       }
-      if (scenario.finish) expect((engine.waited as { state: string }).state).toBe("accepted");
+      if (scenario.finish) expect((run.waited as { state: string }).state).toBe("accepted");
+      expect(stageStates(run)).toEqual(STAGES[scenario.name]);
       if (scenario.cancelDuringPmRead) {
         // The stage verdict that came after the cancel neither blocks the run nor rewrites the writer stages the cancel closed.
-        expect(engine.attempt?.state).toBe("canceled");
-        expect(engine.runAfterCancel).not.toBeNull();
-        expect(engine.run).toBe(engine.runAfterCancel);
-        expect(engine.spawned.filter((row) => !row.endsWith(":pm-read"))).toEqual([]);
-        expect(engine.stages.filter((row) => ["writer-agent", "verification", "acceptance-receipt"].includes(row.stageId)).map((row) => row.state)).toEqual(["canceled", "canceled", "canceled"]);
+        expect(run.attempt?.state).toBe("canceled");
+        expect(run.runAfterCancel).not.toBeNull();
+        expect(run.run).toBe(run.runAfterCancel);
+        expect(run.spawned.filter((row) => !row.endsWith(":pm-read"))).toEqual([]);
+        expect(run.stages.filter((row) => ["writer-agent", "verification", "acceptance-receipt"].includes(row.stageId)).map((row) => row.state)).toEqual(["canceled", "canceled", "canceled"]);
       }
-      // The kill switch really switches: the engine leaves a journal, the direct path none.
-      expect(direct.engineRuns).toEqual([]);
-      expect(engine.engineRuns.map((row) => row.workflow_id)).toEqual(scenario.runGate === "pre-merge" ? [] : ["lp-task-pipeline"]);
+      // An accepted task starts its after-acceptance run, keyed by the task; one that is not accepted starts none.
+      if (scenario.finish) expect(run.afterAccept.map((row) => row.idem_key)).toEqual([`after-accept:${runId}:${task.id}`]);
+      else expect(run.afterAccept).toEqual([]);
+      // Every dispatch that gets past the review gate leaves one pipeline run in the journal.
+      expect(run.engineRuns.map((row) => row.workflow_id)).toEqual(scenario.runGate === "pre-merge" ? [] : ["lp-task-pipeline"]);
     }, 30_000);
   }
 
+  it("keeps the task accepted when the memory stage fails; project life is independent of it", async () => {
+    const run = await runScenario({ name: "memory fails", finish: true, settings: { "plan_critique.enabled": false, "memory.enabled": true, "memory.maintain": true } });
+    expect((run.waited as { state: string }).state).toBe("accepted");
+    expect(run.attempt?.state).toBe("accepted");
+    // The fixture's memory helper answers prose, not memory records: the stage fails by its own receipt.
+    const states = Object.fromEntries(run.stages.map((row) => [row.stageId, row.state]));
+    expect(states["memory-maintenance"]).toBe("failed");
+    expect(states["project-life"]).toBe("skipped");
+    expect(states["acceptance-receipt"]).toBe("passed");
+    // Both stages ran as steps of one graph run, which ended well; the memory thread carries the run and step it ran in.
+    expect(run.afterAccept).toHaveLength(1);
+    expect(run.afterAccept[0]!.status).toBe("succeeded");
+    expect(JSON.parse(run.afterAccept[0]!.output_json!)).toEqual({ memory_state: "failed", life_state: "skipped" });
+    const memory = run.spawnedMeta.find((meta) => meta.role === "memory-maintainer")!;
+    expect(memory).toMatchObject({ stageId: "memory-maintenance", lanePilotWorkflowNode: "memory" });
+    expect(memory.lanePilotWorkflowRunId).toBeTruthy();
+  }, 30_000);
+
+  it("refuses with engine_unavailable when the engine cannot start the pipeline, creating nothing", async () => {
+    vi.spyOn(WorkflowEngine.prototype, "preflight").mockReturnValue(["executor \"lp.pm-read\" is not registered"]);
+    const warnings: string[] = [];
+    const run = await runScenario({ name: "engine down", warn: warnings });
+    expect(run.reply).toMatchObject({ ok: false, error: { code: "engine_unavailable", retryable: true, sideEffects: "none" } });
+    // No task, attempt, stage receipt or pipeline run: the PM sends the same task again.
+    expect(run.stages).toEqual([]);
+    expect(run.engineRuns).toEqual([]);
+    expect(run.attempt).toBeNull();
+    // The refusal is a failure line of the plugin log, which the wall's journal reads.
+    expect(warnings.some((line) => /refused: engine_unavailable/.test(line))).toBe(true);
+  }, 30_000);
+
+  it("blocks the attempt when the engine refuses the run after the early check", async () => {
+    const start = vi.spyOn(WorkflowEngine.prototype, "start").mockImplementation(() => { throw new Error("journal closed"); });
+    const run = await runScenario({ name: "engine refuses" });
+    expect(start).toHaveBeenCalled();
+    expect(run.reply).toMatchObject({ state: "blocked" });
+    expect(String(run.reply.reason)).toMatch(/dispatch_failed:engine_unavailable: journal closed/);
+    expect(run.attempt?.state).toBe("blocked");
+  }, 30_000);
+
   it("charges the helper threads to the run and tags them with the run and step that spawned them", async () => {
-    const run = await runScenario("on", { name: "usage", usage: true, settings: { "pm_read.enabled": true, "pm_read.min_lines": 50, "pm_read.reasoning_effort": "medium" }, task: { read_first: ["README.md"] }, finish: true,
+    const run = await runScenario({ name: "usage", usage: true, settings: { "pm_read.enabled": true, "pm_read.min_lines": 50, "pm_read.reasoning_effort": "medium" }, task: { read_first: ["README.md"] }, finish: true,
       pmRead: '{"summary":"README names the contract","keyFacts":["Managed workspaces isolate task edits."],"openQuestions":[]}' });
     const [runRow] = run.engineRuns;
     // pm-read and plan-critique each spent 1,000 tokens: the run's total is no longer 0. The writer step is charged when the engine's poll sees the task
@@ -229,13 +284,10 @@ describe("dispatch through the workflow engine equals the direct path", () => {
       expect(byStage(role), role).toMatchObject({ lanePilotWorkflowRunId: runRow!.id, lanePilotWorkflowNode: node });
       expect(byStage(role).lanePilotWorkflowStep, role).toBeTruthy();
     }
-    // The direct path is no graph: its threads carry no run id.
-    const direct = await runScenario("off", { name: "usage-direct", usage: true, settings: { "plan_critique.enabled": false } });
-    expect(direct.spawnedMeta.some((meta) => "lanePilotWorkflowRunId" in meta)).toBe(false);
   }, 30_000);
 
   it("records the journal of a finished dispatch: one step per stage, the writer step settled when the task ends", async () => {
-    const { engineRuns, engineSteps } = await runScenario("on", { name: "journal", settings: { "plan_critique.enabled": false }, finish: true });
+    const { engineRuns, engineSteps } = await runScenario({ name: "journal", settings: { "plan_critique.enabled": false }, finish: true });
     expect(engineSteps.map((step) => step.node_id)).toEqual(["pm-read", "quality-mode", "plan-critique", "specialist-review", "ownership-base", "task-folder", "writer"]);
     expect(engineSteps.slice(0, -1).every((step) => step.state === "succeeded")).toBe(true);
     expect(["waiting", "succeeded"]).toContain(engineRuns[0]!.status);

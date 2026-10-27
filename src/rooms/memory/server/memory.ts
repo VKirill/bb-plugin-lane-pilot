@@ -10,7 +10,7 @@ import { boundedAgentName } from "../../critique";
 import { MemoryChildSnapshot, childResultObject, memoryChildSnapshot, spawnRefused } from "../../runs/server";
 import { compactAcceptedResult } from "../../tasks/server";
 import { configuredSetting, stageHelperSettings } from "../../core/server";
-import { fullAccessSpawn } from "../../core/server";
+import { fullAccessSpawn, graphStepMetadata } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { recordStage } from "../../runs/server";
 import { stringAt, valueAt } from "../../core/server";
@@ -21,22 +21,7 @@ import type { Services } from "../../core/server";
 export function createMemoryStage(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, workspaceExecutionEnvironment } = ctx;
 
-  /**
-   * Memory is kept after every accepted task without waiting for the PM to remember the call: the
-   * stage is idempotent, so a PM that also calls lane_pilot_memory_maintain just reads the receipt.
-   */
-  function maintainMemoryAfterAcceptance(projectId:string, runId:string, taskId:string, pmThreadId:string):void {
-    void (async () => {
-      for (let round = 0; round < 60 && !ctx.state.disposed; round++) {
-        const result = await runMemoryMaintenance({ threadId:pmThreadId, projectId, runId, taskId, timeoutSec:60 });
-        if (result.state !== "running") return;
-      }
-    })().catch((cause: unknown) => {
-      if (!ctx.state.disposed) bb.log.warn(`Lane Pilot memory after ${taskId} failed: ${cause instanceof Error ? cause.message : String(cause)}`);
-    });
-  }
-
-  async function runMemoryMaintenance(args:{threadId:string;projectId:string;runId:string;taskId:string;timeoutSec?:number}):Promise<Record<string,unknown>> {
+  async function runMemoryMaintenance(args:{threadId:string;projectId:string;runId:string;taskId:string;timeoutSec?:number;workflow?:{runId:string;stepKey?:string;nodeId?:string}}):Promise<Record<string,unknown>> {
     const metadata=await bb.sdk.threads.getPluginMetadata({threadId:args.threadId});
     if(valueAt(metadata,"role")!=="pm"||stringAt(metadata,"lanePilotRunId")!==args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
     const run=getRun(db,args.runId),config=await configForRun(args.projectId,run),taskRow=getTask(db,args.taskId);
@@ -182,7 +167,7 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
             .filter((record)=>record.kind==="note"&&!record.concepts.includes("rule")).map((record)=>({id:record.id,content:record.content}))}),
         environment:workspaceExecutionEnvironment(config.hostId,workspace),
         pluginMetadata:{role:"memory-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,
-          stageId:"memory-maintenance",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
+          stageId:"memory-maintenance",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true,...graphStepMetadata(args.workflow)}});
       threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("memory_maintainer_thread_id_missing");
       persistRunning(threadId,{...childResultObject(receipt?.result),snapshot,spawnAttempted:true});
       return await finishObservation(threadId,snapshot);
@@ -239,5 +224,5 @@ export function createMemoryStage(ctx: ServerCore, services: Services) {
       ...(tiers.promoted.length?{promotedFromCold:tiers.promoted.length}:{}),...(tiers.episodes?{episodes:tiers.episodes}:{})};
   }
 
-  return { maintainMemoryAfterAcceptance, runMemoryMaintenance, runMemoryContext };
+  return { runMemoryMaintenance, runMemoryContext };
 }

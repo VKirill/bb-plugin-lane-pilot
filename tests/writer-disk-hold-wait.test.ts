@@ -53,7 +53,7 @@ function setup(task: TaskV2, diskHolds: () => Promise<string | null>) {
     runBudgetFor: () => ({ check: () => ({ ok: true }), noteAttempt: () => undefined, noteTokens: () => undefined, snapshot: () => ({ limits: {} }) }),
     runWriterPool: { acquire: async () => () => undefined },
     stability: { breakerHolds: () => null, onTaskFailed: async () => false, loadParked: async () => [], diskHolds },
-    maintainMemoryAfterAcceptance: () => undefined, maintainProjectLifeAfterAcceptance: () => undefined,
+    startAfterAcceptance: () => undefined,
     workspaceDirt: async () => ({ ok: true, paths: [], snapshots: [] }), isLiveFolder: async () => false,
     spawnWriterAttempt: async (input: { attemptId: string }) => {
       spawned.push(input.attemptId);

@@ -41,7 +41,7 @@ function services(env: ReturnType<typeof setup>, preflight: ((input: unknown) =>
     runBudgetFor: () => ({ check: () => ({ ok: true }), noteAttempt: () => undefined, noteTokens: () => undefined, snapshot: () => ({ limits: {} }) }),
     runWriterPool: { acquire: async () => () => undefined },
     stability: { breakerHolds: () => null, diskHolds: async () => null, onTaskFailed: async () => false, loadParked: async () => [] },
-    maintainMemoryAfterAcceptance: () => undefined, maintainProjectLifeAfterAcceptance: () => undefined,
+    startAfterAcceptance: () => undefined,
     workspaceDirt: async () => ({ ok: true, paths: [], snapshots: [] }), isLiveFolder: async () => false,
     ...(preflight ? { baseline: { preflight } } : {}), ...extra,
     spawnWriterAttempt: async (input: { attemptId: string }) => {

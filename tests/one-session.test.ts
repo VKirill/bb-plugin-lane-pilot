@@ -56,8 +56,7 @@ function services(db:ReturnType<typeof openDatabase>, script:Step[]) {
     runBudgetFor:() => ({ check:() => ({ ok:true }), noteAttempt:() => undefined, noteTokens:() => undefined, snapshot:() => ({ limits:{} }) }),
     runWriterPool:{ acquire:async () => () => undefined },
     stability:{ breakerHolds:() => null, diskHolds:async () => null, onTaskFailed:async () => false, loadParked:async () => [] },
-    maintainMemoryAfterAcceptance:() => undefined,
-    maintainProjectLifeAfterAcceptance:() => undefined,
+    startAfterAcceptance: () => undefined,
     workspaceDirt:async () => ({ ok:true, paths:[], snapshots:[] }),
     isLiveFolder:async () => false,
     spawnWriterAttempt:async (input:{ attemptId:string }) => {

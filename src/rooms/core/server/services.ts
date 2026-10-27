@@ -141,8 +141,6 @@ export interface Services {
   finishWriterAttempt: WriterFinishApi["finishWriterAttempt"];
   ingestOpenCodeTelemetry: QaStagesApi["ingestOpenCodeTelemetry"];
   listedAgentProfiles: WriterHostApi["listedAgentProfiles"];
-  maintainMemoryAfterAcceptance: MemoryStageApi["maintainMemoryAfterAcceptance"];
-  maintainProjectLifeAfterAcceptance: ProjectLifeStageApi["maintainProjectLifeAfterAcceptance"];
   maybeFinishResumedAttempt: ReconcileApi["maybeFinishResumedAttempt"];
   persistWriterAcceptance: WriterVerifyApi["persistWriterAcceptance"];
   pluginStopped: DocsNightlyApi["pluginStopped"];
@@ -196,6 +194,7 @@ export interface Services {
   workflowEngine: WorkflowEngineApi["workflowEngine"];
   workflowCatalog: WorkflowEngineApi["workflowCatalog"];
   workflowAgents: WorkflowEngineApi["workflowAgents"];
+  startAfterAcceptance: WorkflowEngineApi["startAfterAcceptance"];
   workflowTriggers: WorkflowTriggersApi["workflowTriggers"];
   /** The errand starter of the PM tools (also used by scheduled errands); set when the tools are mounted. */
   errands: ErrandsApi;

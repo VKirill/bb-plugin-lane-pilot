@@ -134,8 +134,7 @@ export function createMergeIntentRecovery(ctx:ServerCore, services:Services) {
           attempt:countAttempts(db, intent.runId, intent.taskId), threadId:attempt.thread_id, result:receipt });
         refreshRun(intent.runId);
         const pmThreadId = getRun(db, intent.runId)?.pm_thread_id ?? "";
-        services.maintainMemoryAfterAcceptance(intent.projectId, intent.runId, intent.taskId, pmThreadId);
-        services.maintainProjectLifeAfterAcceptance(intent.projectId, intent.runId, intent.taskId, pmThreadId);
+        services.startAfterAcceptance(intent.projectId, intent.runId, intent.taskId, pmThreadId);
         await clearMergeIntent(kv, intent.attemptId);
         accepted.push(intent.taskId);
         bb.log.info(`Lane Pilot accepted ${intent.taskId} from its merge intent: ${verdict.how}`);
