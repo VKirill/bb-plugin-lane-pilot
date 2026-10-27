@@ -6,7 +6,8 @@ import { findSandboxUnsafeMissingExcludes, runnerFilterArgs, runsWholeSuite } fr
 import { NO_RED_KINDS } from "../../baseline";
 import { parseReadFirstHints } from "../read-first";
 import { maskedExitReason, passWithNoTestsReason } from "./lint-exit-status";
-import { SUBJECTIVE_WORDS } from "../../critique";
+import { SUBJECTIVE_WORDS, browserQaRequired } from "../../critique";
+import type { QualityMode } from "../../critique";
 import { isMainfixTask, isOutputPath, unownedExpectedOutputs } from "../validate-output";
 import { mapVerificationCwd } from "../verification-cwd";
 import { SANDBOX_OWN_ENV } from "../../verification";
@@ -35,6 +36,8 @@ export type LintInput = {
   checkHistory?:(check:{ command:string; cwd:string }) => { greenMs:readonly number[]; timedOutSec:readonly number[] };
   /** The project asks for the owner's word (setting owner.words = on): a clarification counts only with his answer. */
   ownerWords?:boolean;
+  /** The quality mode the task runs in (its own, else the project setting); absent when it was not resolved, and the browser-check rule then stays silent. */
+  qualityMode?:QualityMode;
   /** Other open tasks of the project. */
   openTasks:readonly LintOpenTask[];
   /** depends_on names whose latest task ended blocked or canceled and that nothing restarts or vouches for. */
@@ -244,6 +247,10 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
   const kindOf = (path:string) => kinds?.get(path);
 
   errors.push(...taskStandardFindings(task));
+  // quality_mode full: a task with qa_cases owes a browser check, and the task's own graph runs it from qa_url.
+  if (input.qualityMode && browserQaRequired(input.qualityMode, task) && !task.qa_url) {
+    errors.push({ code:"qa_url_missing", message:`quality_mode is full and the task has qa_cases, so its graph runs the browser check itself and needs the page to open: add qa_url (the address the cases run on, e.g. "http://127.0.0.1:5173/orders"), plus qa_env_class (local, staging, preview, production or unknown) and qa_dev_server (the command that starts the dev server, when it is not running); or drop qa_cases` });
+  }
   // The task-birth rails (src/rooms/tasks/rails.ts): open clarification, the promise in Given/When/Then words, the drawing a screen task follows.
   const birth = birthFindings(task);
   errors.push(...birth.errors, ...ownerWordFindings(task, input.ownerWords === true));

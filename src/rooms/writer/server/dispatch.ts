@@ -7,7 +7,7 @@ import { classifyCliOutcome } from "../cli-outcome";
 import { cliReceiptAttemptKey, cliReceiptRunKey, DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING } from "../../runs";
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
-import { QUALITY_MODE_SETTING, browserQaRequired, resolveQualityMode } from "../../critique";
+import { QUALITY_MODE_SETTING, browserQaRequired, resolveQualityMode, taskQaPlan } from "../../critique";
 import type { CodeCriticDefault } from "../../critique";
 import { saveCriticCodeDefault } from "./critic-override";
 import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskGitBase, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, recordFinishedAttempt, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskPlan, setRunState, transitionAttempt } from "../../storage";
@@ -296,6 +296,13 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
   const folderLockNote = (attempt:{ id:string; state:string; reason:string | null }):string =>
     liveFolderLockNote(attempt.state, attempt.reason, isLiveDecision(getAttempt(db, attempt.id)?.workspace_decision));
 
+  /** The task's pipeline is still open and its browser check (qa_cases and qa_url) has no verdict yet. */
+  const qaRunsInGraph = (runId:string, taskId:string):boolean => {
+    if (!taskQaPlan(taskV2Schema.safeParse(getTask(db, taskId)?.contract).data)) return false;
+    if (listStageReceipts(db, runId, taskId).some((row) => row.stageId === "browser-qa" && ["passed", "failed", "blocked", "skipped"].includes(row.state))) return false;
+    return Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_run WHERE workflow_id='lp-task-pipeline' AND link_run_id=? AND link_task_id=? AND status IN ('running','waiting')").get(runId, taskId));
+  };
+
   async function waitWriter(args:{threadId:string; projectId:string; runId:string; timeoutSec:number}): Promise<Record<string, unknown>> {
     const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
     if (valueAt(metadata, "role") !== "pm" || stringAt(metadata, "lanePilotRunId") !== args.runId) {
@@ -306,6 +313,7 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       throw new Error("run does not belong to this PM thread and project");
     }
     const deadline = Date.now() + Math.min(240, Math.max(1, args.timeoutSec)) * 1000;
+    let qaInGraph = false;
     while (Date.now() < deadline) {
       // A plugin reload closes this instance's database; the writer keeps running, so ask for a fresh poll.
       if (ctx.state.disposed) return { runId:args.runId, state:"running", reason:"Lane Pilot was reloaded; call lane_pilot_wait_writer again" };
@@ -368,6 +376,12 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
           await new Promise((resolve) => setTimeout(resolve, pollPause(100)));
           continue;
         }
+        // A task with qa_cases and qa_url has its browser check run by its own graph right after acceptance: the task is not done before the verdict.
+        if ([...latestByTask.values()].some((attempt) => attempt.state === "accepted" && qaRunsInGraph(args.runId, attempt.task_id))) {
+          qaInGraph = true;
+          await new Promise((resolve) => setTimeout(resolve, pollPause(500)));
+          continue;
+        }
         // writer.lastResult is one project-wide slot that the last accepted task overwrites; read each task's own receipt.
         const settings = loadProjectSettings(db,args.projectId,getRunSettingsScopes(db,args.runId));
         const lastResult = settings["writer.lastResult"];
@@ -388,12 +402,19 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
         const nudged = await countRunNudges(bb.storage.kv, (listedRun?.attempts ?? []).map((row) => row.id));
         const next = [...latestByTask.values()].filter((attempt) => attempt.state !== "accepted")
           .map((attempt) => ({ taskId:attempt.task_id, state:attempt.state, next:`${nextStep(attempt.state, attempt.reason)}${folderLockNote(attempt)}` }));
-        // quality_mode=full: an accepted task that carries qa_cases still owes its browser check.
+        // quality_mode=full: an accepted task that carries qa_cases still owes its browser check. A task with qa_url has it run by its own graph.
         for (const attempt of latestByTask.values()) {
           if (attempt.state !== "accepted") continue;
           const contract = taskV2Schema.safeParse(getTask(db, attempt.task_id)?.contract);
           if (!contract.success || !browserQaRequired(resolveQualityMode(contract.data, settings[QUALITY_MODE_SETTING]), contract.data)) continue;
-          if (listStageReceipts(db, args.runId, attempt.task_id).some((row) => row.stageId === "browser-qa" && row.state === "passed")) continue;
+          const verdict = listStageReceipts(db, args.runId, attempt.task_id).find((row) => row.stageId === "browser-qa");
+          if (verdict?.state === "passed") continue;
+          if (taskQaPlan(contract.data)) {
+            next.push({ taskId:attempt.task_id, state:"accepted", next: verdict && ["failed", "blocked", "skipped"].includes(verdict.state)
+              ? `quality_mode=full: the browser check of this task's graph ${verdict.state}${verdict.reason ? ` (${verdict.reason.slice(0, 400)})` : ""}; the task is not done until a check passes: fix what it found and dispatch a follow-up task with the same qa_url and qa_cases`
+              : `quality_mode=full: the task's graph ended without a browser verdict (see its lp.browser-qa workflow run); run lane_pilot_helpers {action:"browser_qa"} for this task with qa_url ${contract.data.qa_url}; the task is not done until the check passes` });
+            continue;
+          }
           next.push({ taskId:attempt.task_id, state:"accepted", next:`quality_mode=full: run lane_pilot_helpers {action:"browser_qa"} for this task with its qa_cases (${contract.data.qa_cases!.join("; ").slice(0, 600)}); the task is not done until the check passes` });
         }
         return { runId:args.runId, state, receipt, stages:listStageReceipts(db, args.runId), nudged, ...(reasons.length ? { reason:reasons.join("; ") } : {}),
@@ -413,7 +434,9 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       nudged:await countRunNudges(bb.storage.kv, listRunsWithAttempts(db, args.projectId).find((item) => item.id === args.runId)?.attempts.map((row) => row.id) ?? []),
       tasks:recent.tasks,
       stages:listStageReceipts(db, args.runId).filter((row) => recent.ids.has(row.taskId)),
-      ...(writerThreadId
+      ...(qaInGraph
+        ? { message:"Задача принята, её граф ещё проверяет страницу в браузере (qa_url). Вызови lane_pilot_wait_writer ещё раз с тем же runId." }
+        : writerThreadId
         ? { message:"Писатель ещё работает. Вызови lane_pilot_wait_writer ещё раз с тем же runId." }
         : { writerStarted:false, message:"Писатель ещё не создан. Старт не закончен или не прошёл. Вызови lane_pilot_wait_writer ещё раз с тем же runId." }),
     };

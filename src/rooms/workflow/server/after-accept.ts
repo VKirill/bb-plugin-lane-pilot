@@ -94,6 +94,10 @@ export function createAfterAcceptStarter(engine: WorkflowEngine, ctx: ServerCore
       started.done.catch((cause: unknown) => {
         if (!ctx.state.disposed) ctx.bb.log.warn(`Lane Pilot after-acceptance run of ${taskId} stopped: ${cause instanceof Error ? cause.message : String(cause)}`);
       });
+      // The task's own pipeline waits on its writer step until a poll sees the attempt end; the browser check (qa_cases, qa_url) is the step after it, so do not wait for the five-minute tick.
+      void engine.poll().catch((cause: unknown) => {
+        if (!ctx.state.disposed) ctx.bb.log.warn(`Lane Pilot could not settle the pipeline of ${taskId}: ${cause instanceof Error ? cause.message : String(cause)}`);
+      });
     } catch (cause) {
       if (!ctx.state.disposed) ctx.bb.log.warn(`Lane Pilot could not start the after-acceptance run of ${taskId}: ${cause instanceof Error ? cause.message : String(cause)}`);
     }

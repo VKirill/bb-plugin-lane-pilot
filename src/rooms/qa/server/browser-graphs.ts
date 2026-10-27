@@ -1,5 +1,7 @@
 import type { NodeExecutor, RunSummary, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
-import { getRunSettingsScopes, listStageReceipts, loadProjectSettings } from "../../storage";
+import { getAttempt, getRunSettingsScopes, getTask, listAttemptsForTask, listStageReceipts, loadProjectSettings } from "../../storage";
+import { taskV2Schema } from "../../contracts";
+import { taskQaPlan } from "../../critique";
 import { QA_HOST_KEY } from "../qa-host";
 import { builtinWorkflow } from "../../workflow";
 import { configuredSetting, fenceOutside } from "../../core/server";
@@ -11,6 +13,7 @@ import type { ChainRuntime } from "../../workflow/server";
  * - `browser-step` (`lane_pilot_browser`): the action `browser.goal` (host `browserGoal`, jev-ultrafast in the owner's Chrome), usable in any graph.
  * - `lp.browser-qa` (`lane_pilot_browser_qa`): the action `lp.browser-qa` wraps `runBrowserQa` (qa.ts), so the `browser-qa` stage receipts are
  *   the ones the stage always wrote. A check still running after a plugin reload is read back from its receipt (`poll`).
+ *   A task that carries qa_cases and qa_url runs it as a step of its own pipeline (`lp-task-pipeline`: the step `lp.qa-gate`, then the subworkflow).
  */
 export const BROWSER_STEP = "browser-step";
 export const BROWSER_QA = "lp.browser-qa";
@@ -66,6 +69,33 @@ export function registerBrowserExecutors(engine: WorkflowEngine, ctx: ServerCore
   } as NodeExecutor<ChainRuntime>);
 
   // ---------------------------------------------------------------- browser check of an accepted task
+  /** How long the gate waits for the acceptance receipt of an attempt that already reads accepted (the writer records the two a moment apart). */
+  const RECEIPT_WAIT_MS = 15_000;
+
+  /**
+   * The decision after the code task of `lp-task-pipeline`: is a browser check due? It is when the task ended accepted and its contract has
+   * qa_cases and qa_url. It reads the stored task, not the dispatch's memory: the pipeline may have outlived a plugin reload.
+   */
+  engine.register("lp.qa-gate", {
+    reentrant: true,
+    run: async (c: StepContext) => {
+      const row = engine.journal.getRun(c.runId);
+      const runId = row?.link_run_id ?? "", taskId = row?.link_task_id ?? "";
+      const none = { output: { run: false } };
+      if (!runId || !taskId) return none;
+      const contract = taskV2Schema.safeParse(getTask(db, taskId)?.contract);
+      const plan = contract.success ? taskQaPlan(contract.data) : null;
+      if (!plan) return none;
+      const last = listAttemptsForTask(db, runId, taskId).at(-1);
+      if (!last || getAttempt(db, last.id)?.state !== "accepted") return none;
+      for (const until = Date.now() + RECEIPT_WAIT_MS; listStageReceipts(db, runId, taskId).find((item) => item.stageId === "acceptance-receipt")?.state !== "passed";) {
+        if (Date.now() > until || c.signal.aborted) return none;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      return { output: { run: true, run_id: runId, task_id: taskId, url: plan.url, cases: plan.cases, env_class: plan.envClass, dev_server: plan.devServer } };
+    },
+  } as NodeExecutor);
+
   const TERMINAL = ["passed", "failed", "blocked", "skipped"];
   /** A check whose receipt never turns terminal (nothing adopts it) fails the step after the longest check plus a margin. */
   const NO_VERDICT_MS = (1800 + 300) * 1000;

@@ -38,6 +38,12 @@
       "name": "reply",
       "type": "json",
       "description": "What the dispatch tool answers the PM with."
+    },
+    {
+      "name": "browser_qa",
+      "type": "json",
+      "required": false,
+      "description": "The reply of the browser check the task's graph ran after acceptance; absent when the task carries no qa_cases and qa_url."
     }
   ],
   "requires": {
@@ -47,7 +53,7 @@
     "browserSession": false
   },
   "status": "published",
-  "version": 1,
+  "version": 2,
   "guards": {
     "maxSteps": 20,
     "maxFanOut": 1,
@@ -290,7 +296,42 @@
     {
       "id": "inside-writer",
       "type": "note",
-      "text": "Inside the code task (locked): workspace and worktree, the writer session and its turns, owns-paths and verification checks, repair rounds, code critique, merge intent and merge, integration gate, acceptance receipt, retries and fallbacks, memory and project-life after acceptance, browser check in quality mode full."
+      "text": "Inside the code task (locked): workspace and worktree, the writer session and its turns, owns-paths and verification checks, repair rounds, code critique, merge intent and merge, integration gate, acceptance receipt, retries and fallbacks, memory and project-life after acceptance."
+    },
+    {
+      "id": "qa-gate",
+      "type": "decision",
+      "label": "Browser check due",
+      "uses": "lp.qa-gate",
+      "proof": {"kind": "gate", "check": "the task is accepted with a passed acceptance receipt and its contract carries qa_cases and qa_url; a task without them, or one that did not end accepted, goes on without a check"},
+      "output": [
+        {"name": "run", "type": "boolean"},
+        {"name": "run_id", "type": "string", "required": false},
+        {"name": "task_id", "type": "string", "required": false},
+        {"name": "url", "type": "string", "required": false},
+        {"name": "cases", "type": "array", "required": false},
+        {"name": "env_class", "type": "string", "required": false},
+        {"name": "dev_server", "type": "string", "required": false}
+      ]
+    },
+    {
+      "id": "browser-qa",
+      "type": "subworkflow",
+      "label": "Browser check",
+      "workflow": "lp.browser-qa",
+      "inputs": {
+        "run_id": "qa-gate.run_id",
+        "task_id": "qa-gate.task_id",
+        "url": "qa-gate.url",
+        "cases": "qa-gate.cases",
+        "env_class": "qa-gate.env_class",
+        "dev_server": "qa-gate.dev_server"
+      },
+      "proof": {"kind": "receipt", "check": "the browser-qa stage receipt of the task holds the verdict of the check thread; a failed one leaves the task not done"},
+      "output": [
+        {"name": "state", "type": "string"},
+        {"name": "reply", "type": "json"}
+      ]
     }
   ],
   "edges": [
@@ -423,9 +464,32 @@
     },
     {
       "from": "writer",
+      "to": "qa-gate"
+    },
+    {
+      "from": "qa-gate",
       "to": "end",
+      "label": "no browser check",
+      "when": {
+        "field": "run",
+        "op": "eq",
+        "value": false
+      },
       "with": {
         "reply": "writer.reply"
+      }
+    },
+    {
+      "from": "qa-gate",
+      "to": "browser-qa",
+      "label": "qa_cases and qa_url"
+    },
+    {
+      "from": "browser-qa",
+      "to": "end",
+      "with": {
+        "reply": "writer.reply",
+        "browser_qa": "browser-qa.reply"
       }
     },
     {

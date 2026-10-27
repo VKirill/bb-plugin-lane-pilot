@@ -112,8 +112,14 @@ export const taskV2Schema = z.object({
   skills: z.array(z.string().trim().min(1).max(200)).max(8).optional(),
   /** Which review stages this task goes through (quick, standard, full); the project setting `quality_mode` when absent, and standard when that is absent too. */
   quality_mode: z.enum(["quick", "standard", "full"]).optional(),
-  /** Browser checks for a task of a project in full mode: the PM runs them with lane_pilot_helpers (action browser_qa), and the task is not done until they pass. */
+  /** Browser checks for a task of a project in full mode: with qa_url the task's graph runs them once the task is accepted, and the task is not done until they pass. */
   qa_cases: z.array(z.string().min(1).max(2000)).max(30).optional(),
+  /** The page the browser check opens. With qa_cases, the task's own graph runs the check once the task is accepted (graph lp.browser-qa); full mode requires it next to qa_cases. */
+  qa_url: z.string().trim().max(2000).regex(/^https?:\/\/\S+$/, "qa_url is an http(s) address without spaces").optional(),
+  /** What the page is: local, staging, preview, production or unknown. Absent: local for a loopback address, unknown for any other. */
+  qa_env_class: z.enum(["local", "staging", "preview", "production", "unknown"]).optional(),
+  /** The start command of a dev server that is not running; the browser check starts it in a BB terminal and closes it afterwards. */
+  qa_dev_server: z.string().trim().min(1).max(500).optional(),
   /**
    * Maestro `convergence`: the checks that decide the task is done, each one a command, a grep or a file read that names the exact
    * string, value or exit code («src/a.ts contains 'RATE_LIMIT = 10'», «the command exits 0»). Next to `acceptance`, not instead of it;
@@ -164,7 +170,7 @@ export const taskV2Schema = z.object({
 
 export type TaskV2 = z.infer<typeof taskV2Schema>;
 /** The optional fields of the task contract: `validateTaskV2` accepts them, any other extra key is refused. */
-export const TASK_V2_OPTIONAL = ["skills", "area", "display_title", "kind", "quality_mode", "qa_cases", "convergence", "files", "appetite", "forecast", "wires", "promise", "priority", "clarify", "drawing"] as const;
+export const TASK_V2_OPTIONAL = ["skills", "area", "display_title", "kind", "quality_mode", "qa_cases", "qa_url", "qa_env_class", "qa_dev_server", "convergence", "files", "appetite", "forecast", "wires", "promise", "priority", "clarify", "drawing"] as const;
 
 /**
  * Host calls that run as background jobs: a separate process the host daemon's deadline cannot cut off (B4). A kind is
