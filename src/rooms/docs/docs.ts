@@ -4,16 +4,19 @@ export type DocsSince = (typeof DOCS_SINCE_CHOICES)[number];
 
 import { DOCS_DEFAULT_SELECTION } from "./docs-defaults";
 import { sha256Hex } from "@lane-pilot/kit";
+import { tableRowAt } from "@lane-pilot/models";
 export { DOCS_DEFAULT_SELECTION };
 
 /** The project's own docs model when it set one, otherwise the docs default (not the writer's model). */
 export function docsSelection(settings:Record<string,unknown>):{providerId:string;model:string;reasoningLevel:string;serviceTier:"fast"|"standard"} {
   const text=(key:string)=>typeof settings[key]==="string"&&settings[key]?settings[key] as string:null;
   const own=text("docs.provider")&&text("docs.model");
+  // The owner's row for the docs-maintainer role of the table «role -> model» stands in for the default; the project's own docs.* settings still win.
+  const row=own?null:tableRowAt(settings,"docs-maintainer");
   return {
-    providerId:own?text("docs.provider")!:DOCS_DEFAULT_SELECTION.providerId,
-    model:own?text("docs.model")!:DOCS_DEFAULT_SELECTION.model,
-    reasoningLevel:text("docs.reasoning_effort")??DOCS_DEFAULT_SELECTION.reasoningLevel,
+    providerId:own?text("docs.provider")!:row?row.option.providerId:DOCS_DEFAULT_SELECTION.providerId,
+    model:own?text("docs.model")!:row?row.option.id:DOCS_DEFAULT_SELECTION.model,
+    reasoningLevel:text("docs.reasoning_effort")??row?.effort??DOCS_DEFAULT_SELECTION.reasoningLevel,
     serviceTier:settings["docs.service_tier"]==="standard"||settings["docs.service_tier"]==="default"?"standard":settings["docs.service_tier"]==="fast"||!own?"fast":"standard",
   };
 }

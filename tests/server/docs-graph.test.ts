@@ -178,7 +178,7 @@ describe("the nightly docs of a unit is the graph lp.docs-night", () => {
     expect(JSON.parse(String(runs[0]!.output_json))).toMatchObject({ state: "failed" });
     // The upkeep graphs tell no one: not the PM chat of the run, not the owner's list.
     const sent: unknown[] = [];
-    const told = await maybeNotifyWorkflowRun({ bb: { sdk: { threads: { send: async (request: never) => { sent.push(request); } } }, storage: bb.storage as never }, log: () => undefined, run: { ...(runs[0] as never), status: "failed" }, pmThreadId: "thr_pm", startedBySchedule: false });
+    const told = await maybeNotifyWorkflowRun({ bb: { sdk: { threads: { send: async (request: never) => { sent.push(request); } } }, storage: bb.storage as never }, log: () => undefined, run: { ...runs[0], status: "failed" } as never, pmThreadId: "thr_pm", startedBySchedule: false });
     expect(told).toBe(false);
     expect(sent).toEqual([]);
   });

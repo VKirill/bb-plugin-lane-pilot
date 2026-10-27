@@ -319,7 +319,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   registerBrowserExecutors(services.workflowEngine, ctx, services);
   mountRelay(ctx);
   mountWorkflowTools(ctx, services);
-  mountSelfRepair(ctx);
+  mountSelfRepair(ctx, services);
   mountHookTimeoutWatch(ctx);
   mountServiceProjects(ctx);
   mountWorkflowArchitect(ctx, services);

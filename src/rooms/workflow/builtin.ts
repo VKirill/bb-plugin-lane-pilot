@@ -34,6 +34,7 @@ import lpClose from "../../../workflows/lp.close.json";
 import lpDraw from "../../../workflows/lp.draw.json";
 import lpPlan from "../../../workflows/lp.plan.json";
 import lpReview from "../../../workflows/lp.review.json";
+import lpSelfRepair from "../../../workflows/lp.self-repair.json";
 import milestoneClose from "../../../workflows/milestone-close.json";
 import planOnly from "../../../workflows/plan-only.json";
 import qualityLoop from "../../../workflows/quality-loop.json";
@@ -109,6 +110,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "lp.draw.json", value: lpDraw },
   { name: "lp.plan.json", value: withGateVocabulary(lpPlan as never) },
   { name: "lp.review.json", value: lpReview },
+  { name: "lp.self-repair.json", value: lpSelfRepair },
   { name: "milestone-close.json", value: milestoneClose },
   { name: "plan-only.json", value: planOnly },
   { name: "quality-loop.json", value: qualityLoop },
@@ -146,6 +148,8 @@ export const AFTER_ACCEPT = "lp.after-accept";
 export const DOCS_NIGHT = "lp.docs-night";
 /** The graph of the docs upkeep of one accepted task, started by the hourly docs-maintenance schedule. */
 export const DOCS_MAINTENANCE = "lp.docs-maintenance";
+/** The graph of one self-repair (worktree, repair thread, verdict and merge), started by the self-repair watcher. */
+export const SELF_REPAIR = "lp.self-repair";
 /** The outer chain of the chains spec: analyze, plan, build, check, close. */
 export const ANALYZE_PLAN_EXECUTE = "analyze-plan-execute";
 
