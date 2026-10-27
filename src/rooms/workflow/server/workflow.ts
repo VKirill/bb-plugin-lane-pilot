@@ -13,6 +13,7 @@ import { createGoalAuditor } from "./workflow-goal-audit";
 import { chainRuntimeFor, registerChainExecutors } from "./workflow-executors";
 import { notifyWorkflowIfEnded } from "./pm-notice";
 import { registerDispatchExecutors } from "../../writer/server";
+import { registerBrowserExecutors } from "../../qa/server";
 import { registerInvoiceActions } from "./workflow-invoice";
 import { registerAnamnesisActions } from "../../anamnesis";
 import { anamnesisFor } from "../../anamnesis";
@@ -71,6 +72,8 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
   registerInvoiceActions(engine, ctx);
   // The public-only facts of the anamnesis for `about-site`, `resume` and `year-review`, and the check of what they wrote.
   registerAnamnesisActions(engine, ctx, (core) => anamnesisFor(core).hub);
+  // The browser step and the browser check of an accepted task (graphs browser-step and lp.browser-qa).
+  registerBrowserExecutors(engine, ctx, services);
   bb.onDispose(() => engine.dispose());
   return { workflowEngine: engine, workflowCatalog, workflowAgents };
 }

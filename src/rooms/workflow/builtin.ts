@@ -3,6 +3,8 @@ import agentRoutine from "../../../workflows/agent-routine.json";
 import analyzeCode from "../../../workflows/analyze-code.json";
 import analyzePlanExecute from "../../../workflows/analyze-plan-execute.json";
 import blueprintDriven from "../../../workflows/blueprint-driven.json";
+import browserStep from "../../../workflows/browser-step.json";
+import lpBrowserQa from "../../../workflows/lp.browser-qa.json";
 import brainstormDriven from "../../../workflows/brainstorm-driven.json";
 import codeReview from "../../../workflows/code-review.json";
 import companion from "../../../workflows/companion.json";
@@ -72,6 +74,8 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "analyze-plan-execute.json", value: analyzePlanExecute },
   { name: "blueprint-driven.json", value: blueprintDriven },
   { name: "brainstorm-driven.json", value: brainstormDriven },
+  { name: "browser-step.json", value: browserStep },
+  { name: "lp.browser-qa.json", value: lpBrowserQa },
   { name: "code-review.json", value: codeReview },
   { name: "companion.json", value: companion },
   { name: "debug.json", value: debug },

@@ -1,5 +1,5 @@
 import { gateVocabularyLines, secretShaped } from "../../tasks";
-import { mountErrands } from "../../qa/server";
+import { mountErrands, runBrowserQaGraph } from "../../qa/server";
 import { cancelAttemptById } from "../../runs/server";
 import { LANE_PILOT_READ_NAME } from "@lane-pilot/kit";
 import { taskV2Schema } from "../../contracts";
@@ -288,10 +288,14 @@ export function registerTools(ctx: ServerCore, services: Services) {
       authorized:z.boolean().default(false),
       devServer:z.string().min(1).max(500).optional(),
     }).strict(),
-    execute:async (params,context) => JSON.stringify(await services.runBrowserQa({
-      threadId:context.threadId, projectId:context.projectId, runId:params.runId, taskId:params.taskId,
-      url:params.url, cases:params.cases, envClass:params.envClass, viewports:params.viewports, authorized:params.authorized, devServer:params.devServer,
-    }),null,2),
+    // The graph `lp.browser-qa` runs the check (qa/server/browser-graphs.ts); the receipts and the reply are runBrowserQa's.
+    execute:async (params,context) => {
+      if (!context.threadId || !context.projectId) throw new Error("browser_qa_needs_pm_thread: call this from the Lane Pilot PM chat of the run");
+      return JSON.stringify(await runBrowserQaGraph(ctx,{
+        pmThreadId:context.threadId, projectId:context.projectId, runId:params.runId, taskId:params.taskId,
+        url:params.url, cases:params.cases, envClass:params.envClass, viewports:params.viewports, authorized:params.authorized, devServer:params.devServer,
+      }),null,2);
+    },
   });
 
   registerObservedTool(bb.agents, {
