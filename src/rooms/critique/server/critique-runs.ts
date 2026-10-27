@@ -314,6 +314,8 @@ export async function runCodeCritique(input:{
   config:PrototypeConfig;task:TaskV2;evidence:CandidateEvidence;disputes?:unknown;frozenPolicy?:FrozenCritiquePolicy;
   /** This task's `critic.code.default_for_risk` when the dispatch carried one; else the project's setting decides. */
   criticDefault?:CodeCriticDefault;
+  /** The graph step the review runs inside (the `writer` node of the task's pipeline run): the critic's thread carries its ids. */
+  workflow?:{runId:string;stepKey?:string;nodeId?:string};
 }): Promise<{allowed:boolean;reason?:string;review:"passed"|"not_required";critique?:unknown;parsed?:ReturnType<typeof parseCodeCritique>;settings?:ReturnType<typeof parseCodeCritiqueSettings>;policy?:FrozenCritiquePolicy}> {
   // The code check on the critic's opinion: a finding's line must exist in the file the critic was shown.
   const cites = candidateCitations(input.evidence.files, MAX_FILE_EXCERPT_BYTES);
@@ -536,7 +538,7 @@ export async function runCodeCritique(input:{
       pluginMetadata:{ role:"code-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
         stageId:"code-critique", parentPmThreadId:getRun(input.db, input.runId)?.pm_thread_id ?? null,
         revisionSha256:input.evidence.revisionSha256, helperMode:helperPolicy.mode,
-        helperRequired:helperPolicy.policy?.required===true, reviewer:reviewerSnapshot },
+        helperRequired:helperPolicy.policy?.required===true, reviewer:reviewerSnapshot, ...graphStepMetadata(input.workflow) },
     });
     threadId = stringAt(spawned, "id");
     if (!threadId) throw new Error("critique_thread_id_missing");

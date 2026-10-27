@@ -2167,6 +2167,9 @@ describe("stage → native writer → receipt", () => {
     const critic=spawned.find((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="code-critique") as Record<string,unknown>;
     expect(critic.parentThreadId).toBe(pmThreadId);
     expect(String(critic.title)).toMatch(/code critique/i);
+    // The critic runs inside the task's pipeline run (the writer node), so the coverage metric counts it as a graph thread.
+    const pipeline=db.prepare("SELECT id FROM lane_pilot_wf_run WHERE workflow_id='lp-task-pipeline' AND link_task_id=?").get(task.id) as {id:string};
+    expect(critic.pluginMetadata).toMatchObject({lanePilotWorkflowRunId:pipeline.id,lanePilotWorkflowNode:"writer"});
     expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="code-critique")?.state).toBe("passed");
     await harness.lifecycle.dispose();
   },20_000);
