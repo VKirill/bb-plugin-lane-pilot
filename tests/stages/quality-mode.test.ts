@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { taskV2Schema } from "../../src/rooms/contracts";
 import { shouldRunPlanCritique } from "../../src/rooms/critique/critique";
 import { parseCodeCritiqueSettings } from "../../src/rooms/critique/code-critique";
-import { applyQualityMode, browserQaRequired, resolveQualityMode } from "../../src/rooms/critique/quality-mode";
+import { applyQualityMode, browserQaRequired, resolveQualityMode, taskQaPlan } from "../../src/rooms/critique/quality-mode";
 import { validateTaskV2 } from "../../src/rooms/tasks/task-v2";
 
 const base = {
@@ -66,5 +66,30 @@ describe("the task contract carries quality_mode and qa_cases, both optional", (
     expect(validateTaskV2({ ...base, quality_mode: "full", qa_cases: ["the cart opens at 375"] }).ok).toBe(true);
     expect(validateTaskV2({ ...base, quality_mode: "extreme" }).ok).toBe(false);
     expect(validateTaskV2({ ...base, qa_cases: [""] }).ok).toBe(false);
+  });
+});
+
+describe("the task contract carries qa_url, qa_env_class and qa_dev_server, all optional", () => {
+  it("accepts an http(s) page, a known class and a dev-server command; refuses the rest", () => {
+    expect(validateTaskV2({ ...base, qa_cases: ["x"], qa_url: "http://127.0.0.1:5173/cart", qa_env_class: "local", qa_dev_server: "npm run dev" }).ok).toBe(true);
+    expect(validateTaskV2({ ...base, qa_url: "file:///etc/passwd" }).ok).toBe(false);
+    expect(validateTaskV2({ ...base, qa_url: "http://a b" }).ok).toBe(false);
+    expect(validateTaskV2({ ...base, qa_env_class: "moon" }).ok).toBe(false);
+    expect(validateTaskV2({ ...base, qa_dev_server: "" }).ok).toBe(false);
+  });
+});
+
+describe("taskQaPlan: what the task's graph runs as its browser check", () => {
+  it("is null without both qa_cases and qa_url, in any mode", () => {
+    expect(taskQaPlan(null)).toBeNull();
+    expect(taskQaPlan({})).toBeNull();
+    expect(taskQaPlan({ qa_cases: ["x"] })).toBeNull();
+    expect(taskQaPlan({ qa_cases: [], qa_url: "http://127.0.0.1/" })).toBeNull();
+    expect(taskQaPlan({ qa_url: "http://127.0.0.1/" })).toBeNull();
+  });
+  it("takes the class from the task, else local for a loopback page and unknown for any other", () => {
+    expect(taskQaPlan({ qa_cases: ["x"], qa_url: "http://localhost:3000/a" })).toEqual({ url: "http://localhost:3000/a", cases: ["x"], envClass: "local", devServer: "" });
+    expect(taskQaPlan({ qa_cases: ["x"], qa_url: "https://shop.test/a" })?.envClass).toBe("unknown");
+    expect(taskQaPlan({ qa_cases: ["x"], qa_url: "https://shop.test/a", qa_env_class: "staging", qa_dev_server: "npm run dev" })).toMatchObject({ envClass: "staging", devServer: "npm run dev" });
   });
 });

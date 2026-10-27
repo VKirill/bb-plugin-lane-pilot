@@ -3,6 +3,7 @@ import { createFakeWorktreeHost } from "../own-worktree-host";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import plugin from "../../server";
+import { QA_HOST_KEY } from "../../src/rooms/qa/qa-host";
 import type { TaskV2 } from "../../src/rooms/contracts";
 import { createRun, getAttempt, getRun, listStageReceipts, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../../src/rooms/storage/database";
 
@@ -30,6 +31,8 @@ type Scenario = {
   settings?: Record<string, unknown>;
   task?: Partial<TaskV2>;
   critique?: string; specialist?: string; pmRead?: string;
+  /** What the browser-check thread answers (its fenced verdict). */
+  qa?: string;
   baseRef?: string; gitBase?: "ready" | "not-git" | "error";
   runGate?: "pre-merge";
   /** Wait for the writer's end and read the acceptance receipts too. */
@@ -66,7 +69,7 @@ async function runScenario(scenario: Scenario) {
           return { id };
         },
         wait: async () => ({ matched: true, thread: { status: "idle" } }),
-        get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId, sourceThreadId: pmThreadId, lifecycleOwnerThreadId: pmThreadId }) as never,
+        get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId, sourceThreadId: pmThreadId, lifecycleOwnerThreadId: pmThreadId, ...(threadId === pmThreadId ? { environmentId: "eq-pm-env" } : {}) }) as never,
         events: { list: async ({ threadId }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } },
           ...(scenario.usage ? [{ type: "thread/tokenUsage/updated", threadId, seq: 3, createdAt: 2, data: { turnId: "t1", tokenUsage: { last: { inputTokens: 600, outputTokens: 400, totalTokens: 1000 }, total: { inputTokens: 600, outputTokens: 400, totalTokens: 1000 } } } }] : [])] },
         send: async () => ({}) as never,
@@ -77,7 +80,7 @@ async function runScenario(scenario: Scenario) {
             runAfterCancel = getRun(db, runId)!.state;
           }
           return threadId === "pm-read-thread" ? { output: scenario.pmRead ?? "{}" } : threadId === "critic-thread" ? { output: scenario.critique ?? approve }
-          : threadId === "code-critique-thread" ? { output: approve } : threadId === "specialist-thread" ? { output: scenario.specialist ?? '{"decision":"approve","summary":"No risk","risks":[]}' } : { output: "writer created note.txt" };
+          : threadId === "browser-qa-thread" ? { output: scenario.qa ?? "" } : threadId === "code-critique-thread" ? { output: approve } : threadId === "specialist-thread" ? { output: scenario.specialist ?? '{"decision":"approve","summary":"No risk","risks":[]}' } : { output: "writer created note.txt" };
         },
         list: async () => [...meta.keys()].map((id) => ({ id })) as never,
         queue: { list: async () => [] },
@@ -144,6 +147,11 @@ async function runScenario(scenario: Scenario) {
     if (!open && db.prepare("SELECT 1 FROM lane_pilot_wf_run WHERE workflow_id='lp.after-accept'").get()) break;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
+  // A task with a browser check ends its pipeline after the check: wait for that too.
+  if (scenario.finish && scenario.qa !== undefined) for (let i = 0; i < 100; i++) {
+    if (!db.prepare("SELECT 1 FROM lane_pilot_wf_run WHERE workflow_id IN ('lp-task-pipeline','lp.browser-qa') AND status IN ('running','waiting')").get()) break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
   const attemptId = String(reply.attemptId ?? "");
   const taskId = String(reply.taskId ?? task.id);
   const out = {
@@ -156,6 +164,8 @@ async function runScenario(scenario: Scenario) {
     engineSteps: (db.prepare("SELECT node_id, state FROM lane_pilot_wf_step WHERE run_id IN (SELECT id FROM lane_pilot_wf_run WHERE workflow_id='lp-task-pipeline') ORDER BY rowid").all() as Array<{ node_id: string; state: string }>),
     engineTokens: (db.prepare("SELECT tokens_used FROM lane_pilot_wf_run WHERE workflow_id='lp-task-pipeline'").all() as Array<{ tokens_used: number }>).map((row) => row.tokens_used),
     afterAccept: (db.prepare("SELECT idem_key, status, output_json FROM lane_pilot_wf_run WHERE workflow_id='lp.after-accept'").all() as Array<{ idem_key: string; status: string; output_json: string | null }>),
+    qaRuns: (db.prepare("SELECT status, output_json FROM lane_pilot_wf_run WHERE workflow_id='lp.browser-qa'").all() as Array<{ status: string; output_json: string | null }>),
+    pipelineOutput: JSON.parse((db.prepare("SELECT output_json FROM lane_pilot_wf_run WHERE workflow_id='lp-task-pipeline'").get() as { output_json: string | null } | undefined)?.output_json ?? "null") as Record<string, unknown> | null,
     spawnedMeta: spawned.map((row) => row.pluginMetadata as Record<string, unknown>),
   };
   await harness.lifecycle.dispose();
@@ -232,6 +242,56 @@ describe("the dispatch runs on the workflow engine", () => {
     }, 30_000);
   }
 
+  describe("the browser check of a task is a step of its own graph", () => {
+    const qaTask = { qa_cases: ["the note page opens at 375"], qa_url: "http://127.0.0.1:5173/note" };
+    const pass = '```json\n{"status":"pass","summary":"all cases pass","findings":[],"evidence":"shots in .agents/qa","cases":[{"case":"the note page opens at 375","result":"passed"}]}\n```';
+    const rework = '```json\n{"status":"rework","summary":"the note page is blank","findings":[{"file":"/note","severity":"high","evidence":"the page body is empty at 375"}],"evidence":"shot","cases":[{"case":"the note page opens at 375","result":"failed"}]}\n```';
+    const base = { finish: true, settings: { "plan_critique.enabled": false, quality_mode: "full", [QA_HOST_KEY]: config.hostId }, task: qaTask } as const;
+
+    it("runs lp.browser-qa after acceptance, records its receipt, and the PM has nothing left to do by hand", async () => {
+      const run = await runScenario({ name: "qa passes", ...base, qa: pass });
+      const states = Object.fromEntries(run.stages.map((row) => [row.stageId, row.state]));
+      expect(states["acceptance-receipt"]).toBe("passed");
+      expect(states["browser-qa"]).toBe("passed");
+      const waited = run.waited as Record<string, unknown>;
+      expect(waited.state).toBe("accepted");
+      expect(waited.next).toBeUndefined();
+      expect(run.spawned).toContain("browser-qa:");
+      // The pipeline went writer -> qa-gate -> browser-qa and ended well; the check is a child graph run of the pipeline.
+      expect(run.engineSteps.map((step) => step.node_id).slice(-3)).toEqual(["writer", "qa-gate", "browser-qa"]);
+      expect(run.engineRuns[0]!.status).toBe("succeeded");
+      expect(run.qaRuns.map((row) => row.status)).toEqual(["succeeded"]);
+      expect(run.pipelineOutput).toMatchObject({ browser_qa: { state: "passed" } });
+    }, 40_000);
+
+    it("a failed check leaves the receipt failed and tells the PM the task is not done", async () => {
+      const run = await runScenario({ name: "qa fails", ...base, qa: rework });
+      const states = Object.fromEntries(run.stages.map((row) => [row.stageId, row.state]));
+      expect(states["browser-qa"]).toBe("failed");
+      const waited = run.waited as { state: string; next?: Array<{ next: string }> };
+      expect(waited.state).toBe("accepted");
+      expect(waited.next).toHaveLength(1);
+      expect(waited.next![0]!.next).toMatch(/browser check of this task's graph failed.*not done.*follow-up task/s);
+      expect(waited.next![0]!.next).not.toMatch(/lane_pilot_helpers/);
+    }, 40_000);
+
+    it("runs no check for a task without qa_cases and qa_url, in any mode", async () => {
+      for (const task of [{}, { qa_cases: qaTask.qa_cases }, { qa_url: qaTask.qa_url }]) {
+        const run = await runScenario({ name: "no qa", finish: true, settings: { "plan_critique.enabled": false }, task });
+        expect(run.stages.some((row) => row.stageId === "browser-qa")).toBe(false);
+        expect(run.spawned).not.toContain("browser-qa:");
+        expect(run.qaRuns).toEqual([]);
+      }
+    }, 60_000);
+
+    it("a full-mode task with qa_cases and no qa_url is refused by the contract lint with the fix", async () => {
+      const run = await runScenario({ name: "no qa_url", settings: { "plan_critique.enabled": false, quality_mode: "full" }, task: { qa_cases: qaTask.qa_cases } });
+      expect(String(run.reply.reason)).toMatch(/contract lint/);
+      expect(JSON.stringify(run.reply.findings)).toMatch(/qa_url_missing/);
+      expect(run.attempt).toBeNull();
+    }, 30_000);
+  });
+
   it("keeps the task accepted when the memory stage fails; project life is independent of it", async () => {
     const run = await runScenario({ name: "memory fails", finish: true, settings: { "plan_critique.enabled": false, "memory.enabled": true, "memory.maintain": true } });
     expect((run.waited as { state: string }).state).toBe("accepted");
@@ -276,9 +336,9 @@ describe("the dispatch runs on the workflow engine", () => {
     const run = await runScenario({ name: "usage", usage: true, settings: { "pm_read.enabled": true, "pm_read.min_lines": 50, "pm_read.reasoning_effort": "medium" }, task: { read_first: ["README.md"] }, finish: true,
       pmRead: '{"summary":"README names the contract","keyFacts":["Managed workspaces isolate task edits."],"openQuestions":[]}' });
     const [runRow] = run.engineRuns;
-    // pm-read and plan-critique each spent 1,000 tokens: the run's total is no longer 0. The writer step is charged when the engine's poll sees the task
-    // end (every five minutes in production); tests/workflow/step-usage.test.ts pins that poll.
-    expect(run.engineTokens[0]).toBe(2000);
+    // pm-read, plan-critique and the writer each spent 1,000 tokens: the run's total is no longer 0. The writer step is charged when the engine's poll sees the task
+    // end; the acceptance starts that poll at once (the browser check is the step after it), and tests/workflow/step-usage.test.ts pins the poll itself.
+    expect(run.engineTokens[0]).toBe(3000);
     const byStage = (role: string) => run.spawnedMeta.find((meta) => meta.role === role)!;
     for (const [role, node] of [["pm-reader", "pm-read"], ["plan-critic", "plan-critique"], ["writer", "writer"]] as const) {
       expect(byStage(role), role).toMatchObject({ lanePilotWorkflowRunId: runRow!.id, lanePilotWorkflowNode: node });
@@ -288,7 +348,7 @@ describe("the dispatch runs on the workflow engine", () => {
 
   it("records the journal of a finished dispatch: one step per stage, the writer step settled when the task ends", async () => {
     const { engineRuns, engineSteps } = await runScenario({ name: "journal", settings: { "plan_critique.enabled": false }, finish: true });
-    expect(engineSteps.map((step) => step.node_id)).toEqual(["pm-read", "quality-mode", "plan-critique", "specialist-review", "ownership-base", "task-folder", "writer"]);
+    expect(engineSteps.map((step) => step.node_id)).toEqual(["pm-read", "quality-mode", "plan-critique", "specialist-review", "ownership-base", "task-folder", "writer", "qa-gate"]);
     expect(engineSteps.slice(0, -1).every((step) => step.state === "succeeded")).toBe(true);
     expect(["waiting", "succeeded"]).toContain(engineRuns[0]!.status);
   }, 30_000);

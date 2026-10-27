@@ -29,6 +29,16 @@ export function applyQualityMode(settings: Record<string, unknown>, mode: Qualit
 export const browserQaRequired = (mode: QualityMode, task: { qa_cases?: readonly string[] } | null | undefined): boolean =>
   mode === "full" && (task?.qa_cases?.length ?? 0) > 0;
 
+export type TaskQaPlan = { url: string; cases: string[]; envClass: "local" | "staging" | "preview" | "production" | "unknown"; devServer: string };
+
+/** What the task's graph runs as its browser check: the task has both qa_cases and qa_url (the mode does not matter); null when it has not. */
+export function taskQaPlan(task: { qa_cases?: readonly string[]; qa_url?: string; qa_env_class?: TaskQaPlan["envClass"]; qa_dev_server?: string } | null | undefined): TaskQaPlan | null {
+  if (!task?.qa_url || (task.qa_cases?.length ?? 0) === 0) return null;
+  let loopback = false;
+  try { loopback = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(task.qa_url).hostname); } catch { /* the schema refuses an address that is not http(s) */ }
+  return { url: task.qa_url, cases: [...task.qa_cases!], envClass: task.qa_env_class ?? (loopback ? "local" : "unknown"), devServer: task.qa_dev_server ?? "" };
+}
+
 /**
  * The code critic by the task's risk (SMA plan P1-3). `critic.code.default_for_risk` is `off` (the critic runs only when
  * `code_critique.enabled` or quality_mode full says so), `medium` (it also runs for risk medium, high and critical) or `high` (high and

@@ -2,7 +2,7 @@ import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
 import { getRunSettingsScopes, getTask, latestTaskAttemptState, listCheckDurations, listCheckTimeouts, listOpenAttempts, loadProjectSettings } from "../../storage";
 import { taskFamily } from "../../runs";
-import { parseSandboxUnsafePatterns } from "../../critique";
+import { QUALITY_MODE_SETTING, parseSandboxUnsafePatterns, resolveQualityMode } from "../../critique";
 import { isTaskSatisfied } from "../../runs/server";
 import { lintContract, lintProbePaths, siblingTestFolders } from "./contract-lint";
 import { checkProgram } from "../rails";
@@ -74,6 +74,7 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
     const ownerWords = String(settings["owner.words"] ?? "off") === "on";
     // What the project recorded of each check: its green durations (the store checkTimeoutSec reads) and the limits it timed out at.
     const checkHistory = (check:{ command:string; cwd:string }) => { const ref = { command:check.command, cwd:check.cwd, root:task.project_cwd }; return { greenMs:listCheckDurations(db, projectId, ref), timedOutSec:listCheckTimeouts(db, projectId, ref) }; };
-    return lintContract({ task, workspacePath, hostId, kinds, listings, sandboxUnsafe, gate, openTasks, deadDependencies, programs, ownerWords, checkHistory, ...(secrets ? { secrets } : {}) });
+    const qualityMode = resolveQualityMode(task, settings[QUALITY_MODE_SETTING]);
+    return lintContract({ task, workspacePath, hostId, kinds, listings, sandboxUnsafe, gate, openTasks, deadDependencies, programs, ownerWords, qualityMode, checkHistory,...(secrets ? { secrets } : {}) });
   };
 }

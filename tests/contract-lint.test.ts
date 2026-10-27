@@ -25,6 +25,24 @@ describe("contract lint rules", () => {
     expect(lint({}, {}, { "src/a.ts":"file" })).toEqual({ errors:[], warnings:[] });
   });
 
+  describe("the browser check the task's graph runs (qa_url)", () => {
+    const qa = (task:Partial<TaskV2>, qualityMode?:"quick" | "standard" | "full") => lint(task, qualityMode ? { qualityMode } : {}, { "src/a.ts":"file" }).errors.filter((error) => error.code === "qa_url_missing");
+    it("requires qa_url next to qa_cases in full mode, and says what to add", () => {
+      const [missing] = qa({ qa_cases:["the cart opens at 375"] }, "full");
+      expect(missing?.message).toContain("add qa_url");
+      expect(missing?.message).toContain("qa_env_class");
+      expect(missing?.message).toContain("qa_dev_server");
+    });
+    it("is satisfied by qa_url, and silent in every other case", () => {
+      expect(qa({ qa_cases:["the cart opens"], qa_url:"http://127.0.0.1:5173/cart" }, "full")).toEqual([]);
+      expect(qa({}, "full")).toEqual([]);
+      expect(qa({ qa_cases:[] }, "full")).toEqual([]);
+      expect(qa({ qa_cases:["the cart opens"] }, "standard")).toEqual([]);
+      expect(qa({ qa_cases:["the cart opens"] }, "quick")).toEqual([]);
+      expect(qa({ qa_cases:["the cart opens"] })).toEqual([]);
+    });
+  });
+
   describe("task standard (the Tasks board)", () => {
     const standard = (task:Partial<TaskV2>) => lint(task, {}, { "src/a.ts":"file" }).errors.filter((error) => /^(display_title|kind|area)_/.test(error.code));
     it("asks for a card title, a kind and an area, each with the fix", () => {
