@@ -57,7 +57,8 @@ export type RoleRow = {
  *  - authors (analyst, planner, architect, specialists): Claude Opus 5.5 high, the strongest author we have; they write the documents and plans;
  *  - judges (plan-critic, code-critic, auditor, debugger, council chair): GPT-6.1 Sol high, the strongest model of the other family; it
  *    reads what the Claude authors wrote and finds what they cannot see in their own work. The debugger is a judge of causes, not an author;
- *  - cheap judgments (pm-reader, triager, memory, project-life, errand, browser-qa): the small models, picked by what the job is.
+ *  - cheap judgments (pm-reader, triager, memory, project-life, errand, browser-qa): the small models, picked by what the job is;
+ *  - upkeep authors (docs-maintainer: Luna, a text job with a code checker behind it; repairer: Opus, the engineer who fixes Lane Pilot itself).
  */
 export const ROLE_TABLE: readonly RoleRow[] = [
   { id: "analyst", default: { model: "claude-opus-5-5", effort: "high", why: "Reads the goal and the project and writes the analysis the plan stands on; an author, so Claude." } },
@@ -77,6 +78,8 @@ export const ROLE_TABLE: readonly RoleRow[] = [
   { id: "project-life", default: { model: "claude-haiku-5-5", effort: "medium", why: "Keeps PROGRESS and CHANGELOG up to date from what happened: short factual text." } },
   { id: "errand", default: { model: "claude-sonnet-5-5", effort: "medium", why: "Runs a script, a send or a check as told: tool use, no deep thinking." }, legacy: ["errand"] },
   { id: "browser-qa", default: { model: "claude-sonnet-5-5", effort: "medium", why: "Drives a browser and reports what it sees: fast, steady tool use." } },
+  { id: "docs-maintainer", default: { model: "gpt-6-luna", effort: "high", why: "Writes and refreshes the repository docs overnight from the code diff, many pages, each held to cited lines and then checked by code and Jev; Luna is cheap and, at high effort, careful enough for a text job with a hard checker behind it (the project's own docs.* settings still win)." } },
+  { id: "repairer", default: { model: "claude-opus-5-5", effort: "high", why: "The self-repair engineer: reads logs and the hub's data, finds the cause of Lane Pilot's own fault, fixes the code and adds the test that fails without the fix; an author of code, so the strongest author we have." } },
 ];
 
 export const ROLE_IDS: readonly string[] = ROLE_TABLE.map((row) => row.id);

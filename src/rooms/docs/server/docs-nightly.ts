@@ -7,8 +7,11 @@ import type { DocsUnit } from "../docs";
 import { cadenceAllowsToday, codeDocsVerdict, docsCadence, docsFactsKey, docsWorthinessState, DOCS_WORTHINESS_QUESTION, fallbackDocsVerdict } from "../docs-worthiness";
 import type { DocsCadence, DocsVerdict, DocsWorthinessFacts } from "../docs-worthiness";
 import { blockingDocsFindings, buildBacklinks, buildDocsIndex, citedFiles, docsCompletenessGaps, isDesignCanon, isDocsIndex, lintDocsPages, oversizedPageFindings, pagesToRefresh, uncataloguedPages, withCitedSources, withVerifiedConfidence } from "../docs-lint";
-import { configuredSetting } from "../../core/server";
+import { configuredSetting, graphStepMetadata } from "../../core/server";
 import { fullAccessSpawn } from "../../core/server";
+import { withUsage } from "../../usage/server";
+import { DOCS_MAINTENANCE, DOCS_NIGHT, builtinWorkflow } from "../../workflow";
+import type { StepContext, WorkflowEngine } from "../../workflow";
 import { stringAt, valueAt } from "../../core/server";
 import { recordStage } from "../../runs/server";
 import { sleepUntilThreadSignal, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -176,7 +179,9 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     hasDocs:boolean;changedCount:number;refresh:string[];gaps:{missingPages:string[];uncoveredCore:string[]};anchors:{count:number;jev:string}|null;
     core:Array<{name:string;file:string;line:number;endLine:number}>;kvKey:string;
     /** Pages of the place already over the size limit when the agent started (absent in records saved by older versions). */
-    oversizedAtStart?:string[]};
+    oversizedAtStart?:string[];
+    /** The idempotency key of the graph run (`lp.docs-night`) that works on the unit; absent in records saved before the unit was a graph. */
+    runKey?:string};
 
   /** What one docs unit may write: a flow its page, the root its docs/ outside docs/flows when flows exist, a workspace its folder. */
   function unitWritable(unit:DocsUnit):(path:string)=>boolean {
@@ -307,7 +312,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
           const tracing=host.call("docsFlows",{requestedHostId:work.hostId,projectCwd:work.path,workspaces:workspaces.map((workspace)=>({path:workspace.path,name:workspace.name})),
             keep:[...new Set(flowPagesAtStart.map((page)=>/^docs\/flows\/([^/]+)\.md$/.exec(page.path)?.[1]).filter((slug):slug is string=>Boolean(slug)))]},
             {hostId:work.hostId,timeoutMs:1_800_000}).catch((cause)=>{ bb.log.warn(`Lane Pilot docs flows failed for ${place.path}: ${cause instanceof Error?cause.message:String(cause)}`); return null; });
-          const context={projectId:project.id,place:work,basePath:place.path,settings,docs,base:opts.base,roots:units.map((unit)=>unit.docsDir),exclude:own.map((workspace)=>workspace.path),workspaces,prefetch,
+          const context={projectId:project.id,place:work,basePath:place.path,scopes:place.scopes,localDate:scope.localDate,attempt:opts.force?Date.now():attempts,settings,docs,base:opts.base,roots:units.map((unit)=>unit.docsDir),exclude:own.map((workspace)=>workspace.path),workspaces,prefetch,
             othersWritable:(path:string,self:DocsUnit)=>leftover.has(path)||[...running,...docsUnitsFinishing.values()].some((unit)=>unit!==self&&unitWritable(unit)(path))};
           const run=async(unit:DocsUnit)=>{
             running.add(unit);
@@ -349,33 +354,52 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     return results;
   }
 
-  /** One docs folder of a place: its own git scope, code map, agent, checks, builders and commit. */
-  async function runDocsUnit(ctx:{projectId:string;place:{hostId:string;path:string};basePath?:string;settings:Record<string,unknown>;docs:ReturnType<typeof parseDocsSettings>;base?:string;
-    roots:string[];exclude:string[];workspaces:Array<{path:string;name:string;docsDir:string|null}>;prefetch:Map<string,Promise<unknown>>;
-    othersWritable:(path:string,self:DocsUnit)=>boolean},unit:DocsUnit):Promise<Record<string,unknown>> {
-    const {place,settings,docs}=ctx;
+  /** What one docs unit's graph run is started with: everything its steps need that the unit record does not hold yet. */
+  type UnitInputs={projectId:string;place:{hostId:string;path:string};basePath:string;scopes:string[];unit:DocsUnit;roots:string[];exclude:string[];
+    workspaces:Array<{path:string;name:string;docsDir:string|null}>;base:string;runKey:string};
+  /** What the prepare step found for a unit with work to do, handed to the write step (the unit record is made once the agent has a thread). */
+  type UnitPlan={label:string;hasDocs:boolean;changed:string[];changedCount:number;refresh:string[];gaps:{missingPages:string[];uncoveredCore:string[]};
+    anchors:{count:number;jev:string;briefPath?:string;deploy:boolean}|null;core:Array<{name:string;file:string;line:number;endLine:number}>;kvKey:string;
+    doubts:Array<{path:string;rule:string;detail:string}>;decisionDrafts:string[];beforeDirty:string[];localDate:string;oversizedAtStart:string[]};
+  /** What a unit's pass holds in this process only (the code maps fetched ahead, the pages of the units beside it): a step run after a reload does without. */
+  const unitExtras=new Map<string,{prefetch:Map<string,Promise<unknown>>;othersWritable:(path:string,self:DocsUnit)=>boolean}>();
+
+  const unitLabelOf=(unit:DocsUnit):string=>unit.flow?`docs/flows/${unit.flow.slug}.md`:unit.docsDir;
+  /** The settings of a place as the docs pass reads them. */
+  function docsSettingsOf(projectId:string,scopes:string[]){
+    const settings=loadProjectSettings(db,projectId,scopes);
+    const docs=parseDocsSettings(Object.fromEntries(["docs.enabled","docs.maintain","docs.since","docs.page_cap","docs.hour"].map((key)=>[key,configuredSetting(settings,key)])));
+    return {settings,docs};
+  }
+  async function readUnitRecord(key:string):Promise<DocsUnitRecord|null> {
+    return await bb.storage.kv.get(key).catch(()=>null) as DocsUnitRecord|null;
+  }
+
+  /** The first half of a unit: its git scope, the pages to refresh, the gaps, what Jev doubted last time. Nothing to do, or saved progress, is said in the state. */
+  async function prepareDocsUnit(i:UnitInputs):Promise<{state:"skipped";row:Record<string,unknown>}|{state:"resume"}|{state:"ready";plan:UnitPlan}> {
+    const {place,unit}=i;
+    const {docs}=docsSettingsOf(i.projectId,i.scopes);
     const d=unit.docsDir, flow=unit.flow;
+    const label=unitLabelOf(unit);
+    const recordKey=docsUnitRecordKey(i.projectId,place.path,label);
     // A unit whose agent an earlier plugin instance started is picked up where it stopped, not started again.
-    const label0=flow?`docs/flows/${flow.slug}.md`:d;
-    const open=await bb.storage.kv.get(docsUnitRecordKey(ctx.projectId,place.path,label0)).catch(()=>null) as DocsUnitRecord|null;
-    if(open) return finishDocsUnit(open,ctx.othersWritable);
+    if(await readUnitRecord(recordKey)) return {state:"resume"};
     const writable=unitWritable(unit);
     const prefix=unit.workspace?`${unit.workspace.path}/`:"";
     const flowFiles=new Set(flow?.files??[]);
     // The root summarises every workspace (capabilities, role pages, architecture), so any change may concern it;
     // Jev's staleness check picks the root pages a change actually makes wrong.
     const inUnit=(path:string)=>flow?flowFiles.has(path):prefix?path.startsWith(prefix):true;
-    const label=flow?`docs/flows/${flow.slug}.md`:d;
-    const report=(state:string,extra:Record<string,unknown>={}):Record<string,unknown>=>({projectId:ctx.projectId,path:ctx.basePath??place.path,docsDir:label,state,...extra});
+    const report=(state:string,extra:Record<string,unknown>={}):Record<string,unknown>=>({projectId:i.projectId,path:i.basePath||place.path,docsDir:label,state,...extra});
     const gitScope=(base?:string)=>host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date()),docsDir:label,
       ...(unit.flows?.length?{exclude:["docs/flows"]}:{}),...(base?{base}:{})},{hostId:place.hostId,timeoutMs:120_000});
-    const before=await gitScope(ctx.base);
+    const before=await gitScope(i.base||undefined);
     if(before.status!=="ready") throw new Error(`git scope failed: ${before.reason}`);
     const changed=before.changed.filter(inUnit);
     // Every docs folder of the place, so links and contradictions across folders are seen; this unit writes only its own.
     let oversized:string[]=[];
     const allPages=async()=>{
-      const listed=await host.call("listDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,roots:ctx.roots,skipOversized:true},{hostId:place.hostId,timeoutMs:120_000});
+      const listed=await host.call("listDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,roots:i.roots,skipOversized:true},{hostId:place.hostId,timeoutMs:120_000});
       oversized=listed.oversized??[];
       return listed.pages as Array<{path:string;sha256:string;content:string}>;
     };
@@ -391,7 +415,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       const decisions=(await allPages()).find((page)=>page.path===`${d}/decisions.md`)?.content??"";
       return drafts.map((page)=>page.path).filter((path)=>!decisions.includes(path)).sort();
     })();
-    if(hasDocs&&changed.length===0&&!pending&&!decisionDrafts.length) return report("skipped",{reason:"no code changes"});
+    if(hasDocs&&changed.length===0&&!pending&&!decisionDrafts.length) return {state:"skipped",row:report("skipped",{reason:"no code changes"})};
     const existing=hasDocs?mine(await allPages()):[];
     // The root README.md and PROJECT.md describe the code too, so they are checked for staleness with the root docs.
     const readRootPages=async()=>unit.workspace||flow?[]:(await Promise.all(["README.md","PROJECT.md"].map(async(path)=>{
@@ -401,9 +425,9 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
     const rootPages=hasDocs?await readRootPages():[];
     const pageInput=existing.filter((page)=>!isDocsIndex(page.path)).map((page)=>({path:page.path,content:page.content}));
     // Jev judges which sections the day's diff made wrong; without it, pages whose sources changed.
-    const prefetched=flow?undefined:ctx.prefetch.get(d) as Promise<Awaited<ReturnType<typeof host.call<"docsAnchors">>>|null>|undefined;
+    const prefetched=flow?undefined:unitExtras.get(recordKey)?.prefetch.get(d) as Promise<Awaited<ReturnType<typeof host.call<"docsAnchors">>>|null>|undefined;
     const anchors=flow?null:prefetched?await prefetched:await host.call("docsAnchors",{requestedHostId:place.hostId,projectCwd:place.path,prefix,
-      ...(unit.workspace?{}:{exclude:ctx.exclude,...(ctx.workspaces.length?{workspaces:ctx.workspaces}:{})}),
+      ...(unit.workspace?{}:{exclude:i.exclude,...(i.workspaces.length?{workspaces:i.workspaces}:{})}),
       pages:pageInput.map((page)=>({path:page.path,title:/^title:\s*(.+)$/m.exec(page.content)?.[1]?.trim()??page.path}))},{hostId:place.hostId,timeoutMs:1_800_000}).catch(()=>null);
     const gaps=hasDocs&&!flow?docsCompletenessGaps(existing,{tables:anchors?.tables??[],deploy:anchors?.deploy??false,core:anchors?.core??[],docsDir:d,workspace:Boolean(unit.workspace),
       flows:unit.flows}):{missingPages:[],uncoveredCore:[]};
@@ -417,37 +441,104 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
         const cited=new Set(existing.flatMap((page)=>citedFiles([page])));
         const product=new Set(anchors&&anchors.jev!=="disabled"?anchors.productFiles:changed);
         const uncovered=changed.filter((file)=>product.has(file)&&!cited.has(file));
-        if(!pending&&!decisionDrafts.length&&!stale.refresh.length&&!uncovered.length&&!gaps.missingPages.length&&!gaps.uncoveredCore.length) return report("skipped",{reason:"Jev found no section the changes made wrong, and no changed product file is undocumented"});
+        if(!pending&&!decisionDrafts.length&&!stale.refresh.length&&!uncovered.length&&!gaps.missingPages.length&&!gaps.uncoveredCore.length) return {state:"skipped",row:report("skipped",{reason:"Jev found no section the changes made wrong, and no changed product file is undocumented"})};
         refresh=stale.refresh;
       }
     }
     // What Jev still doubted after this unit's last pass goes back to the agent to recheck, while the page exists.
-    const kvKey=`docs-nightly:${ctx.projectId}:${sha256(`${place.path}\n${label}`).slice(0,12)}`;
+    const kvKey=`docs-nightly:${i.projectId}:${sha256(`${place.path}\n${label}`).slice(0,12)}`;
     const last=hasDocs?await bb.storage.kv.get(kvKey).catch(()=>null) as {warnings?:Array<{path:string;rule:string;detail:string}>}|null:null;
     const pagePaths=new Set(existing.map((page)=>page.path));
     const doubts=(last?.warnings??[]).filter((warning)=>(warning.rule==="evidence-check"||warning.rule==="contradiction")&&pagePaths.has(warning.path));
-    const selection=docsSelection(settings);
-    const [providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:place.hostId}),bb.sdk.providers.models({providerId:selection.providerId,hostId:place.hostId})]);
-    const provider=providers.find((item)=>item.id===selection.providerId&&item.available);
-    const model=catalog.models.find((item)=>item.id===selection.model||item.model===selection.model);
-    if(!provider||!model) throw new Error(`docs provider or model unavailable: ${selection.providerId}/${selection.model}`);
-    const effort=selection.reasoningLevel;
-    const tier=provider.capabilities.supportsServiceTier?bbServiceTier(selection.serviceTier):null;
-    const threadId=await spawnDocsThread({projectId:ctx.projectId,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}${unit.workspace?` · ${unit.workspace.path}`:flow?` · flow ${flow.slug}`:""}`,
-      ...writerExecutionSelection(selection.providerId,selection.model,effort,tier),
-      ...projectRoleField(bb,db,ctx.projectId,selection.providerId,"docs-maintainer"),
-      prompt:nightlyDocsPrompt({since:docs.since,hasDocs,changed,refresh,anchorsPath:anchors?.briefPath,deploy:anchors?.deploy??false,missingPages:gaps.missingPages,uncoveredCore:gaps.uncoveredCore,
-        agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit,doubts,decisionDrafts}),
-      environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
-      pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly",spawnId:`${ctx.projectId}:${sha256(`${place.path}\n${label}`).slice(0,12)}:${before.localDate}`}});
-    // From here on the unit's progress is saved, so a plugin reload picks the same agent thread up again.
-    const record:DocsUnitRecord={version:1,projectId:ctx.projectId,place,...(ctx.basePath&&ctx.basePath!==place.path?{basePath:ctx.basePath}:{}),label,unit,threadId,phase:"writing",beforeDirty:before.dirty,localDate:before.localDate,
-      since:docs.since,roots:ctx.roots,workspaces:ctx.workspaces,hasDocs,changedCount:changed.length,refresh,gaps,
-      anchors:anchors?{count:anchors.anchors,jev:anchors.jev}:null,core:core.slice(0,2000),kvKey,
+    return {state:"ready",plan:{label,hasDocs,changed,changedCount:changed.length,refresh,gaps,
+      anchors:anchors?{count:anchors.anchors,jev:anchors.jev,...(anchors.briefPath?{briefPath:anchors.briefPath}:{}),deploy:anchors.deploy??false}:null,
+      core:core.slice(0,2000),kvKey,doubts,decisionDrafts,beforeDirty:before.dirty,localDate:before.localDate,
       // Pages an earlier failed pass left oversized are this unit's work, not the base's.
-      oversizedAtStart:oversized.filter((path)=>!before.dirty.includes(path))};
-    await saveDocsUnitRecord(record);
-    return finishDocsUnit(record,ctx.othersWritable);
+      oversizedAtStart:oversized.filter((path)=>!before.dirty.includes(path))}};
+  }
+
+  /** Whether a unit's night is long gone, so it is not finished from saved progress. */
+  function nightIsOver(record:{localDate:string}):boolean { return Date.now()-Date.parse(`${record.localDate}T00:00:00Z`)>DOCS_UNIT_RESUME_MS; }
+
+  /**
+   * The second step of a unit: the docs agent. Starts it (once: the unit record names its thread, and its spawn key is the unit's night) and waits
+   * until its turn ends. A unit with saved progress does not start a second agent; one in its repair round is waited for in the verify step.
+   */
+  async function writeDocsUnit(i:UnitInputs,plan:UnitPlan|null,step:{runId:string;stepKey:string;nodeId:string},stop:()=>string|null):Promise<string> {
+    const {place,unit}=i;
+    const label=unitLabelOf(unit);
+    const recordKey=docsUnitRecordKey(i.projectId,place.path,label);
+    let record=await readUnitRecord(recordKey);
+    if(!record){
+      if(!plan) throw new Error("docs unit has neither a plan nor saved progress");
+      const {settings,docs}=docsSettingsOf(i.projectId,i.scopes);
+      const selection=docsSelection(settings);
+      const [providers,catalog]=await Promise.all([bb.sdk.providers.list({hostId:place.hostId}),bb.sdk.providers.models({providerId:selection.providerId,hostId:place.hostId})]);
+      const provider=providers.find((item)=>item.id===selection.providerId&&item.available);
+      const model=catalog.models.find((item)=>item.id===selection.model||item.model===selection.model);
+      if(!provider||!model) throw new Error(`docs provider or model unavailable: ${selection.providerId}/${selection.model}`);
+      const effort=selection.reasoningLevel;
+      const tier=provider.capabilities.supportsServiceTier?bbServiceTier(selection.serviceTier):null;
+      const threadId=await spawnDocsThread({projectId:i.projectId,visibility:"hidden",title:`Lane Pilot docs: ${basename(place.path)}${unit.workspace?` · ${unit.workspace.path}`:unit.flow?` · flow ${unit.flow.slug}`:""}`,
+        ...writerExecutionSelection(selection.providerId,selection.model,effort,tier),
+        ...projectRoleField(bb,db,i.projectId,selection.providerId,"docs-maintainer"),
+        prompt:nightlyDocsPrompt({since:docs.since,hasDocs:plan.hasDocs,changed:plan.changed,refresh:plan.refresh,anchorsPath:plan.anchors?.briefPath,deploy:plan.anchors?.deploy??false,missingPages:plan.gaps.missingPages,uncoveredCore:plan.gaps.uncoveredCore,
+          agent:typeof settings["docs.agent"]==="string"?settings["docs.agent"] as string:undefined,unit,doubts:plan.doubts,decisionDrafts:plan.decisionDrafts}),
+        environment:{type:"host",hostId:place.hostId,workspace:{type:"unmanaged",path:place.path}},
+        pluginMetadata:{role:"docs-nightly",stageId:"docs-nightly",spawnId:`${i.projectId}:${sha256(`${place.path}\n${label}`).slice(0,12)}:${plan.localDate}`,...graphStepMetadata(step)}});
+      // From here on the unit's progress is saved, so a plugin reload picks the same agent thread up again.
+      record={version:1,projectId:i.projectId,place,...(i.basePath&&i.basePath!==place.path?{basePath:i.basePath}:{}),label,unit,threadId,phase:"writing",beforeDirty:plan.beforeDirty,localDate:plan.localDate,
+        since:docs.since,roots:i.roots,workspaces:i.workspaces,hasDocs:plan.hasDocs,changedCount:plan.changedCount,refresh:plan.refresh,gaps:plan.gaps,
+        anchors:plan.anchors?{count:plan.anchors.count,jev:plan.anchors.jev}:null,core:plan.core,kvKey:plan.kvKey,oversizedAtStart:plan.oversizedAtStart,runKey:i.runKey};
+      await saveDocsUnitRecord(record);
+    }
+    // A unit of a night long gone is not waited for: the verify step drops it.
+    if(record.phase==="writing"&&!nightIsOver(record)){
+      try{ await waitThreadIdle(bb,record.threadId,"docs_nightly",undefined,undefined,stop); }
+      catch(cause){
+        // The agent's thread failed: the unit is done for tonight, its pages stay pending. A reload keeps the progress for the next instance.
+        if(!pluginStopped(cause)&&!ctx.isDisposed()) await dropDocsUnitRecord(record).catch(()=>undefined);
+        throw cause;
+      }
+    }
+    return record.threadId;
+  }
+
+  /**
+   * One docs unit as a graph run (`lp.docs-night`): the same key is the same run, so a retry after a reload or a second tick finds the run that
+   * has the unit and waits for it. Returns the unit's report, the row the pass collects; a run that failed throws, as the unit's code did.
+   */
+  async function runDocsUnit(c:{projectId:string;place:{hostId:string;path:string};basePath?:string;scopes?:string[];localDate?:string;attempt?:number;settings?:Record<string,unknown>;docs?:ReturnType<typeof parseDocsSettings>;base?:string;
+    roots:string[];exclude:string[];workspaces:Array<{path:string;name:string;docsDir:string|null}>;prefetch:Map<string,Promise<unknown>>;
+    othersWritable:(path:string,self:DocsUnit)=>boolean},unit:DocsUnit):Promise<Record<string,unknown>> {
+    const label=unitLabelOf(unit);
+    const recordKey=docsUnitRecordKey(c.projectId,c.place.path,label);
+    // A unit with saved progress keeps the run that saved it (an older version's record has none: its night is the key).
+    const open=await readUnitRecord(recordKey);
+    const runKey=open?(open.runKey??`docs-night:${recordKey}:${open.localDate}:0`):`docs-night:${recordKey}:${c.localDate??localDateKey(new Date())}:${c.attempt??1}`;
+    unitExtras.set(recordKey,{prefetch:c.prefetch,othersWritable:c.othersWritable});
+    try{
+      return await startUnitRun({projectId:c.projectId,place:c.place,basePath:c.basePath&&c.basePath!==c.place.path?c.basePath:"",scopes:c.scopes??[],unit,roots:c.roots,exclude:c.exclude,workspaces:c.workspaces,base:c.base??"",runKey},recordKey);
+    }finally{ unitExtras.delete(recordKey); }
+  }
+
+  async function startUnitRun(i:UnitInputs,recordKey:string):Promise<Record<string,unknown>> {
+    const engine=services.workflowEngine;
+    const workflow=builtinWorkflow(DOCS_NIGHT);
+    if(!workflow) throw new Error(`built-in workflow ${DOCS_NIGHT} is not loaded`);
+    const started=engine.start({workflow,key:i.runKey,link:{projectId:i.projectId},inputs:{project_id:i.projectId,host_id:i.place.hostId,path:i.place.path,base_path:i.basePath,scopes:i.scopes,unit:i.unit,
+      roots:i.roots,exclude:i.exclude,workspaces:i.workspaces,base:i.base,run_key:i.runKey}});
+    let summary:Awaited<typeof started.done>;
+    try{ summary=await started.done; }
+    finally{ docsUnitsFinishing.delete(recordKey); }
+    if(summary.status==="succeeded"){
+      const row=(summary.output??{}).row;
+      if(row&&typeof row==="object") return row as Record<string,unknown>;
+      throw new Error(`docs unit run ${summary.runId} gave no report`);
+    }
+    // The engine stopped at a step boundary (a reload): the run goes on in the next instance, the unit record keeps its progress.
+    if(summary.stopped||ctx.isDisposed()) throw new Error("plugin reloaded: the docs unit run goes on in the next instance");
+    throw new Error(summary.error??summary.reason??`docs unit run ${summary.status}`);
   }
 
   /** The key a unit's saved progress lives under, and the index of units with progress not yet finished. */
@@ -495,26 +586,34 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
   // cancels the rest («Host plugin call was cancelled»). A worker that crashes or is killed exits otherwise and stays a failure.
   const pluginStopped=(cause:unknown)=>/stale API handle|generation .* is retired|plugin .* (reloaded|disabled)|database connection is not open|host plugin worker exited \(0\)|^Host plugin call was cancelled$/i.test(cause instanceof Error?cause.message:String(cause));
 
+  /** The checks of a unit's pages: what the agent touched, what is dirty in its docs, per-page citation stats, the findings that block and the ones left as warnings. */
+  type DocsFinding={path:string;rule:string;detail:string};
+  type Checked={touched:string[];docsDirty:string[];pageStats:Array<{path:string;checked:number;supported:number;partial:number}>;findings:DocsFinding[];kept:DocsFinding[]};
+  type Verified={checked:Checked;warnings:DocsFinding[];reverted:string[]};
+
+  /** The units whose graph run a catch-up tick already holds in this process: the next tick does not join it a second time. */
+  const activeUnitRuns=new Set<string>();
+
   /**
-   * The second half of a docs unit, from saved progress: wait for the agent's thread, check the pages, send one repair
-   * round to the same thread, build backlinks, confidence and the index, commit, and report. Safe to run again after a
-   * reload: it waits for the same thread and repeats only what did not finish.
+   * The third step of a unit: wait for the repair round if one was in flight, check the pages the way the methodology asks, give the agent one
+   * round to fix, and say which findings block and which are only Jev's doubts. What the agent changed outside every docs folder is put back
+   * first; other folders' passes may be writing theirs.
    */
-  async function finishDocsUnit(record:DocsUnitRecord,othersWritable:(path:string,self:DocsUnit)=>boolean):Promise<Record<string,unknown>> {
-    const key=docsUnitRecordKey(record.projectId,record.place.path,record.label);
+  async function verifyDocsUnit(key:string,stop:()=>string|null):Promise<{state:"skipped";row:Record<string,unknown>}|{state:"ok";verified:Verified;threadId:string}> {
+    const record=await readUnitRecord(key);
+    if(!record) throw new Error("docs unit record is gone");
     const {place,unit,threadId,label}=record;
-    if(docsUnitsFinishing.has(key)) return {projectId:record.projectId,path:place.path,docsDir:label,state:"skipped",reason:"already finishing"};
     // A unit from a night long gone is not finished: its list of files dirty before the agent is stale, so what is
     // dirty now would pass for the agent's changes and be reverted. Its pages stay for the next pass.
-    if(Date.now()-Date.parse(`${record.localDate}T00:00:00Z`)>DOCS_UNIT_RESUME_MS){
+    if(nightIsOver(record)){
       await dropDocsUnitRecord(record);
       bb.log.info(`Lane Pilot docs unit ${place.path} ${label} of ${record.localDate} dropped: its night is over`);
-      return {projectId:record.projectId,path:place.path,docsDir:label,state:"skipped",reason:"night_over"};
+      return {state:"skipped",row:{projectId:record.projectId,path:place.path,docsDir:label,state:"skipped",reason:"night_over"}};
     }
     docsUnitsFinishing.set(key,unit);
+    const othersWritable=unitExtras.get(key)?.othersWritable??((path:string,self:DocsUnit)=>[...docsUnitsFinishing.values()].some((other)=>other!==self&&unitWritable(other)(path)));
     try{
       const d=unit.docsDir, flow=unit.flow, writable=unitWritable(unit);
-      const report=(state:string,extra:Record<string,unknown>={}):Record<string,unknown>=>({projectId:record.projectId,path:record.basePath??place.path,docsDir:label,state,...extra});
       const gitScope=()=>host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(record.since,new Date()),docsDir:label,
         ...(unit.flows?.length?{exclude:["docs/flows"]}:{})},{hostId:place.hostId,timeoutMs:120_000});
       let oversized:string[]=[];
@@ -530,12 +629,10 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       }))).filter((page):page is {path:string;content:string}=>page!==null);
       const core=record.core;
       const before={dirty:record.beforeDirty};
-      if(record.phase==="writing") await waitThreadIdle(bb,threadId,"docs_nightly");
-      else await waitThreadIdle(bb,threadId,"docs_nightly_repair",undefined,record.sentAt);
+      if(record.phase==="repairing") await waitThreadIdle(bb,threadId,"docs_nightly_repair",undefined,record.sentAt,stop);
       const reverted:string[]=[];
       // Check the pages the way the methodology asks, give the agent one round to fix, then index and commit.
-      // What the agent changed outside every docs folder is put back first; other folders' passes may be writing theirs.
-      const inspect=async()=>{
+      const inspect=async():Promise<Checked>=>{
         const after=await gitScope();
         const touched=after.dirty.filter((path)=>!before.dirty.includes(path));
         const outside=touched.filter((path)=>!writable(path)&&!othersWritable(path,unit)&&!DOCS_TOOLING.test(path));
@@ -551,7 +648,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
         // Only what this pass wrote, or a link to a page it removed, blocks it: untouched pages are on main as they are.
         // A page already oversized when the agent started is reported, not split now: its unread content would block.
         const sized=oversizedPageFindings(oversized.filter(writable),record.oversizedAtStart??[]);
-        const findings:Array<{path:string;rule:string;detail:string}>=blockingDocsFindings([...sized.blocking,
+        const findings:DocsFinding[]=blockingDocsFindings([...sized.blocking,
           ...lintDocsPages(pages,counts,oversized).filter((finding)=>writable(finding.path))],docsDirty);
         // The capabilities catalogue covers every capability the apps document, not only the ones inside a flow.
         const catalogue=unit.flows?.length?pages.find((page)=>page.path===`${d}/capabilities.md`):undefined;
@@ -560,7 +657,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
           // A link on an area page the catalogue links (docs/capabilities/<area>.md) counts: the size limit splits it.
           for(const path of uncataloguedPages(catalogue,pages,features)) findings.push({path:catalogue.path,rule:"coverage",detail:`does not link ${path}: add the capability that page describes, with its conditions and where it is available, citing the code that page cites (never the page itself), and link it from ${d}/capabilities.md or an area page it links under ${d}/capabilities/ (operator tools under operator capabilities); keep the links already there`});
         }
-        let pageStats:Array<{path:string;checked:number;supported:number;partial:number}>=[];
+        let pageStats:Checked["pageStats"]=[];
         // Structure first; once it holds, Jev checks each claim against its cited lines on the pages written now,
         // and pairs of claims across all the docs that cite the same code for contradictions.
         if(!findings.length){
@@ -585,7 +682,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
         const sentAt=Date.now()-2_000;
         await saveDocsUnitRecord({...record,phase:"repairing",sentAt});
         await bb.sdk.threads.send({threadId,mode:"queue-if-active",input:[{type:"text",text:docsRepairPrompt(checked.findings),mentions:[]}]});
-        await waitThreadIdle(bb,threadId,"docs_nightly_repair",undefined,sentAt);
+        await waitThreadIdle(bb,threadId,"docs_nightly_repair",undefined,sentAt,stop);
         checked=await inspect();
       }
       // A Jev judgment is a signal, not a verdict: once the agent has rechecked it in the repair round,
@@ -593,10 +690,34 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       const judged=(finding:{rule:string})=>finding.rule==="evidence-check"||finding.rule==="contradiction"||finding.rule==="depth"||finding.rule==="links-external";
       const warnings=[...checked.findings.filter(judged),...checked.kept];
       checked={...checked,findings:checked.findings.filter((finding)=>!judged(finding))};
+      return {state:"ok",verified:{checked,warnings,reverted},threadId};
+    }catch(cause){
+      // The agent's thread failed or its work cannot be checked: the unit is done for tonight, its pages stay pending.
+      if(!pluginStopped(cause)&&!ctx.isDisposed()) await dropDocsUnitRecord(record).catch(()=>undefined);
+      docsUnitsFinishing.delete(key);
+      throw cause;
+    }
+  }
+
+  /**
+   * The last step of a unit: builders own what the model must not write (Referenced by blocks, verified confidence, the index); the pages that passed
+   * are committed (code never is) and merged into the project checkout under the writers' merge lock. The report is the unit's row.
+   */
+  async function commitDocsUnit(key:string,verified:Verified):Promise<Record<string,unknown>> {
+    const record=await readUnitRecord(key);
+    if(!record) throw new Error("docs unit record is gone");
+    const {place,unit,threadId,label}=record;
+    try{
+      const d=unit.docsDir, flow=unit.flow, writable=unitWritable(unit);
+      const {checked,warnings,reverted}=verified;
+      const report=(state:string,extra:Record<string,unknown>={}):Record<string,unknown>=>({projectId:record.projectId,path:record.basePath??place.path,docsDir:label,state,...extra});
+      const allPages=async()=>{
+        const listed=await host.call("listDocsPages",{requestedHostId:place.hostId,projectCwd:place.path,roots:record.roots,skipOversized:true},{hostId:place.hostId,timeoutMs:120_000});
+        return listed.pages as Array<{path:string;sha256:string;content:string}>;
+      };
       let commit:string|null=null, merged:string|null=null;
       // Every page this pass wrote passed the checks, pages an earlier pass left uncommitted included, so they go in; code never does.
       if(!checked.findings.length&&checked.docsDirty.length){
-        // Builders own what the model must not write: Referenced by blocks, verified confidence, the index.
         // They work on the pages as they are on disk now, and rebuild once if a page moved under them.
         const stats=new Map(checked.pageStats.map((stat)=>[stat.path,stat]));
         const index=`${d}/index.md`;
@@ -640,10 +761,112 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       bb.log.info(`Lane Pilot nightly docs ${row.state} for ${record.basePath??place.path} ${label}${merged?` (merge ${merged})`:""}${failure?`: ${failure}`:""}`);
       return row;
     }catch(cause){
-      // The agent's thread failed or its work cannot be checked: the unit is done for tonight, its pages stay pending.
-      if(!pluginStopped(cause)) await dropDocsUnitRecord(record).catch(()=>undefined);
+      if(!pluginStopped(cause)&&!ctx.isDisposed()) await dropDocsUnitRecord(record).catch(()=>undefined);
       throw cause;
     }finally{ docsUnitsFinishing.delete(key); }
+  }
+
+  /**
+   * A unit with saved progress, finished on its own graph run: the run that saved it (or, for a record an older version saved, a run made now) goes on
+   * from the record. Safe to call again: the same run is the same run. Returns the unit's report.
+   */
+  async function finishDocsUnit(record:DocsUnitRecord,othersWritable:(path:string,self:DocsUnit)=>boolean):Promise<Record<string,unknown>> {
+    const key=docsUnitRecordKey(record.projectId,record.place.path,record.label);
+    const runKey=record.runKey??`docs-night:${key}:${record.localDate}:0`;
+    if(activeUnitRuns.has(runKey)) return {projectId:record.projectId,path:record.place.path,docsDir:record.label,state:"skipped",reason:"already finishing"};
+    activeUnitRuns.add(runKey);
+    unitExtras.set(key,{prefetch:new Map(),othersWritable});
+    try{
+      return await startUnitRun({projectId:record.projectId,place:record.place,basePath:record.basePath??"",scopes:[],unit:record.unit,roots:record.roots,exclude:[],workspaces:record.workspaces,base:"",runKey},key);
+    }finally{ activeUnitRuns.delete(runKey); unitExtras.delete(key); }
+  }
+
+  /**
+   * The executors of the docs graphs. Registered by server.ts once the workflow engine exists (the services are assembled before it is). Every step is
+   * reentrant: the unit record and the git state are the progress, so a step a reload cut off is simply run again, and while the plugin is stopping a
+   * step holds instead of failing, so the run is picked up by the next instance.
+   */
+  function registerDocsGraphs(engine:WorkflowEngine):void {
+    const held=async<T>(work:()=>Promise<T>):Promise<T>=>{
+      try{ return await work(); }
+      catch(cause){ if(ctx.isDisposed()) return await new Promise<T>(()=>undefined); throw cause; }
+    };
+    const stopOf=(c:StepContext)=>():string|null=>ctx.isDisposed()?"plugin_stopped":c.signal.aborted?"aborted":null;
+    const input=(c:StepContext,name:string)=>c.resolve(`$inputs.${name}`);
+    const text=(value:unknown)=>typeof value==="string"?value:"";
+    const list=(value:unknown):string[]=>Array.isArray(value)?value.map(String):[];
+    const inputsOf=(c:StepContext):UnitInputs=>({projectId:text(input(c,"project_id")),place:{hostId:text(input(c,"host_id")),path:text(input(c,"path"))},basePath:text(input(c,"base_path")),
+      scopes:list(input(c,"scopes")),unit:input(c,"unit") as DocsUnit,roots:list(input(c,"roots")),exclude:list(input(c,"exclude")),workspaces:(Array.isArray(input(c,"workspaces"))?input(c,"workspaces"):[]) as UnitInputs["workspaces"],
+      base:text(input(c,"base")),runKey:text(input(c,"run_key"))});
+    const keyOf=(i:UnitInputs)=>docsUnitRecordKey(i.projectId,i.place.path,unitLabelOf(i.unit));
+    const earlier=(c:StepContext,ref:string):unknown=>{ try{ return c.resolve(ref); }catch{ return undefined; } };
+
+    engine.register("lp.docs_prepare",{reentrant:true,run:(c)=>held(async()=>{
+      const found=await prepareDocsUnit(inputsOf(c));
+      return {output:found.state==="skipped"?{state:"skipped",row:found.row}:found.state==="resume"?{state:"resume"}:{state:"ready",plan:found.plan}};
+    })});
+
+    engine.register("lp.docs-unit",{reentrant:true,run:(c)=>held(async()=>{
+      const i=inputsOf(c);
+      const threadId=await writeDocsUnit(i,(earlier(c,"prepare.plan") as UnitPlan|undefined)??null,{runId:c.runId,stepKey:c.stepKey,nodeId:c.nodeId},stopOf(c));
+      return {output:{state:"written",thread_id:threadId,handoff:`docs agent ended in ${threadId}`},threadId};
+    })});
+
+    engine.register("lp.docs_verify",{reentrant:true,run:(c)=>held(async()=>{
+      const i=inputsOf(c);
+      const done=await verifyDocsUnit(keyOf(i),stopOf(c));
+      if(done.state==="skipped") return {output:{state:"skipped",row:done.row}};
+      return {output:{state:"ok",checked:done.verified},...(await withUsage(bb,done.threadId))};
+    })});
+
+    engine.register("lp.docs_commit",{reentrant:true,run:(c)=>held(async()=>{
+      const i=inputsOf(c);
+      const verified=earlier(c,"verify.checked") as Verified|undefined;
+      if(!verified) throw new Error("docs unit has no verified pages to commit");
+      return {output:{row:await commitDocsUnit(keyOf(i),verified)}};
+    })});
+
+    // The docs upkeep of one accepted task: the stage function is called until its receipt is final, as the hourly schedule called it.
+    engine.register("lp.docs-maintenance",{reentrant:true,run:(c)=>held(async()=>{
+      const runId=text(input(c,"run_id")), taskId=text(input(c,"task_id")), threadId=text(input(c,"pm_thread_id"));
+      const projectId=engine.journal.getRun(c.runId)?.project_id??getRun(db,runId)?.project_id??"";
+      const since=Date.now();
+      let result:Record<string,unknown>={state:"running"};
+      try{
+        for(let round=0;round<60&&!ctx.isDisposed()&&!c.signal.aborted;round++){
+          result=await services.runDocsMaintenance({threadId,projectId,runId,taskId,timeoutSec:60,workflow:{runId:c.runId,stepKey:c.stepKey,nodeId:c.nodeId}});
+          if(result.state!=="running") break;
+        }
+      }catch(cause){
+        if(ctx.isDisposed()||pluginStopped(cause)) throw cause;
+        const reason=cause instanceof Error?cause.message:String(cause);
+        bb.log.warn(`Lane Pilot docs maintenance failed for project ${projectId}: ${reason}`);
+        result={state:"failed",reason};
+      }
+      if(ctx.isDisposed()) return await new Promise<never>(()=>undefined);
+      const receipt=listStageReceipts(db,runId,taskId).find((row)=>row.stageId==="docs-maintenance");
+      const usage=receipt?.threadId&&receipt.updatedAt>=since?await withUsage(bb,receipt.threadId):{};
+      const state=text(result.state), reason=text(result.reason);
+      return {output:{state,...(reason?{reason}:{}),handoff:`docs-maintenance ${state}${reason?`: ${reason}`:""}`},...usage};
+    })});
+  }
+
+  /**
+   * The docs upkeep of one accepted task as a graph run (`lp.docs-maintenance`). The run of an earlier hour that is still going is joined; one that
+   * ended with the receipt still open (the stage was still observing) is followed by a new run, as the hour before called the stage again.
+   */
+  async function runDocsMaintenanceGraph(args:{threadId:string;projectId:string;runId:string;taskId:string}):Promise<void> {
+    const engine=services.workflowEngine;
+    const workflow=builtinWorkflow(DOCS_MAINTENANCE);
+    if(!workflow) throw new Error(`built-in workflow ${DOCS_MAINTENANCE} is not loaded`);
+    const prefix=`docs-maintenance:${args.runId}:${args.taskId}:`;
+    const runs=db.prepare("SELECT idem_key, status FROM lane_pilot_wf_run WHERE idem_key LIKE ? ORDER BY created_at DESC").all(`${prefix}%`) as Array<{idem_key:string;status:string}>;
+    const live=runs.find((row)=>row.status==="running"||row.status==="waiting");
+    const key=live?.idem_key??`${prefix}${runs.length}`;
+    const started=engine.start({workflow,key,link:{projectId:args.projectId,runId:args.runId,taskId:args.taskId},inputs:{run_id:args.runId,task_id:args.taskId,pm_thread_id:args.threadId}});
+    const summary=await started.done;
+    if(summary.stopped||ctx.isDisposed()) throw new Error("plugin reloaded: the docs maintenance run goes on in the next instance");
+    if(summary.status!=="succeeded"&&summary.status!=="running"&&summary.status!=="waiting") throw new Error(summary.error??summary.reason??`docs maintenance run ${summary.status}`);
   }
 
   async function runScheduledDocsMaintenance(signal?:AbortSignal):Promise<void> {
@@ -682,7 +905,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
         if(!docsScheduleDue(now,docsSettings.hour,null)||!claimDailySchedule(db,projectId,"docs-maintenance",today)) continue;
       }
       // One project's failure must not leave the projects after it unprocessed.
-      try{ await services.runDocsMaintenance({threadId:activation.pm_thread_id,projectId,runId:run.id,taskId}); }
+      try{ await runDocsMaintenanceGraph({threadId:activation.pm_thread_id,projectId,runId:run.id,taskId}); }
       catch(cause){
         if(signal?.aborted||pluginStopped(cause)) throw cause;
         bb.log.warn(`Lane Pilot docs maintenance failed for project ${projectId}: ${cause instanceof Error?cause.message:String(cause)}`);
@@ -752,5 +975,5 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
 
   scheduleDocs("docs-nightly-catchup","*/2 * * * *",runDocsCatchUps,6*3_600_000);
 
-  return { docsPlaces, docsVerdict, docsPlaceStatus, docsLastRead, WORKSPACE_DOCS_MIN_FILES, DOCS_UNIT_CONCURRENCY, docsSpawnGate, spawnDocsThread, DOCS_NIGHT_ATTEMPTS, DOCS_OPEN_KEY, docsPassesRunning, DOCS_TOOLING, unitWritable, runNightlyDocs, runDocsUnit, docsUnitRecordKey, DOCS_UNITS_OPEN_KEY, docsUnitsIndexChain, updateDocsUnitsIndex, saveDocsUnitRecord, dropDocsUnitRecord, docsUnitsFinishing, pluginStopped, finishDocsUnit, runScheduledDocsMaintenance, runDocsCatchUps };
+  return { registerDocsGraphs, docsPlaces, docsVerdict, docsPlaceStatus, docsLastRead, WORKSPACE_DOCS_MIN_FILES, DOCS_UNIT_CONCURRENCY, docsSpawnGate, spawnDocsThread, DOCS_NIGHT_ATTEMPTS, DOCS_OPEN_KEY, docsPassesRunning, DOCS_TOOLING, unitWritable, runNightlyDocs, runDocsUnit, docsUnitRecordKey, DOCS_UNITS_OPEN_KEY, docsUnitsIndexChain, updateDocsUnitsIndex, saveDocsUnitRecord, dropDocsUnitRecord, docsUnitsFinishing, pluginStopped, finishDocsUnit, runScheduledDocsMaintenance, runDocsCatchUps };
 }

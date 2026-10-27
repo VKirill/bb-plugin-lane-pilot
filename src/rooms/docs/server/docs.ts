@@ -8,7 +8,7 @@ import type { DocsPage } from "../docs";
 import { boundedAgentName } from "../../critique";
 import { DocsChildSnapshot, docsChildSnapshot, docsResultObject, resolveDocsSnapshotPageCap } from "../../runs/server";
 import { configuredSetting, stageHelperSettings } from "../../core/server";
-import { fullAccessSpawn } from "../../core/server";
+import { fullAccessSpawn, graphStepMetadata } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { recordStage } from "../../runs/server";
 import { stringAt, valueAt } from "../../core/server";
@@ -19,7 +19,7 @@ import type { Services } from "../../core/server";
 export function createDocsStage(ctx: ServerCore, services: Services) {
   const { acceptedTaskWorkspace, bb, configForRun, db, host, workspaceExecutionEnvironment } = ctx;
 
-  async function runDocsMaintenance(args:{threadId:string;projectId:string;runId:string;taskId:string;timeoutSec?:number}):Promise<Record<string,unknown>> {
+  async function runDocsMaintenance(args:{threadId:string;projectId:string;runId:string;taskId:string;timeoutSec?:number;workflow?:{runId:string;stepKey?:string;nodeId?:string}}):Promise<Record<string,unknown>> {
     const metadata = await bb.sdk.threads.getPluginMetadata({threadId:args.threadId});
     if (valueAt(metadata,"role") !== "pm" || stringAt(metadata,"lanePilotRunId") !== args.runId) throw new Error("runId does not belong to this Lane Pilot PM thread");
     const run = getRun(db,args.runId), config = await configForRun(args.projectId, run), taskRow = getTask(db,args.taskId);
@@ -179,7 +179,7 @@ export function createDocsStage(ctx: ServerCore, services: Services) {
       const placement=await helperChildPlacement({
         bb, db, projectId:args.projectId, runId:args.runId, role:"docs-maintainer",
       });
-      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, docsProviderId, "docs-maintainer"),...writerExecutionSelection(docsProviderId,docsModelId,docsEffort,tier),prompt:docsMaintenancePrompt({since:docsSettings.since,pages:snapshot.pages,pageCap:resolvedPageCap,agent:docsAgent}),environment:workspaceExecutionEnvironment(config.hostId,workspace),pluginMetadata:{role:"docs-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"docs-maintenance",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
+      const spawned=await fullAccessSpawn(bb, {...placement,...requiredPolicyField(bb, helperPolicy, docsProviderId, "docs-maintainer"),...writerExecutionSelection(docsProviderId,docsModelId,docsEffort,tier),prompt:docsMaintenancePrompt({since:docsSettings.since,pages:snapshot.pages,pageCap:resolvedPageCap,agent:docsAgent}),environment:workspaceExecutionEnvironment(config.hostId,workspace),pluginMetadata:{role:"docs-maintainer",lanePilotRunId:args.runId,lanePilotTaskId:args.taskId,stageId:"docs-maintenance",parentPmThreadId:args.threadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true,...graphStepMetadata(args.workflow)}});
       threadId=stringAt(spawned,"id"); if(!threadId) throw new Error("docs_maintainer_thread_id_missing");
       persistRunning(threadId, { ...docsResultObject(receipt?.result), snapshot, spawnAttempted:true });
       receipt = listStageReceipts(db,args.runId,args.taskId).find((row)=>row.stageId==="docs-maintenance");

@@ -65,7 +65,7 @@ export function registerRpc(ctx: ServerCore, services: Services) {
     ...workflowOpsRpc(ctx, services),
     ...schedulesRpc(ctx, services),
     ...councilRpc(ctx.db, services.council),
-    ...selfRepairRpc(ctx),
+    ...selfRepairRpc(ctx, services),
     ...canaryRpc(services.canary),
     ...memoryProbeRpc(services),
     ...harnessRpc(services.harness),

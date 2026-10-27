@@ -1,0 +1,60 @@
+{
+  "id": "lp.docs-maintenance",
+  "startedBy": "docs-maintenance",
+  "name": {
+    "en": "Docs after an accepted task",
+    "ru": "Документы после принятой задачи"
+  },
+  "description": {
+    "en": "The docs maintainer of one accepted task: it reads the docs pages changed lately, the docs agent returns edits as a JSON array, Lane Pilot validates them and writes the pages. The stage receipt docs-maintenance is written as always. Lane Pilot starts it from the hourly docs-maintenance schedule.",
+    "ru": "Хранитель документов одной принятой задачи: читает недавно изменённые страницы, агент документов возвращает правки массивом JSON, Lane Pilot проверяет их и записывает страницы. Квитанция этапа docs-maintenance пишется как всегда. Запускается почасовым расписанием docs-maintenance."
+  },
+  "not_for": [
+    "anything a person asks for: Lane Pilot starts this itself from the docs-maintenance schedule"
+  ],
+  "status": "published",
+  "tags": ["docs"],
+  "triggers": ["manual"],
+  "inputs": {
+    "run_id": { "type": "string", "required": true },
+    "task_id": { "type": "string", "required": true },
+    "pm_thread_id": { "type": "string", "required": true }
+  },
+  "outputs": {
+    "state": "string"
+  },
+  "budget": {
+    "max_steps": 4,
+    "max_minutes": 120
+  },
+  "nodes": [
+    {
+      "id": "docs",
+      "type": "agent",
+      "role": "docs-maintainer",
+      "uses": "lp.docs-maintenance",
+      "title": { "en": "Maintain the docs", "ru": "Поддержать документы" },
+      "produces": [{ "kind": "report", "version": 1 }],
+      "proof": { "kind": "receipt", "check": "the stage receipt docs-maintenance holds the verdict of the docs thread and the pages written" },
+      "out": [
+        { "name": "state", "type": "string" },
+        { "name": "reason", "type": "string", "required": false }
+      ],
+      "guards": { "timeoutMin": 110 }
+    },
+    { "id": "done", "type": "action", "action": "emit", "map": { "state": "docs.state" } }
+  ],
+  "edges": [
+    { "from": "start", "to": "docs" },
+    { "from": "docs", "to": "done" }
+  ],
+  "test": {
+    "id": "docs-maintenance-1",
+    "sim": {
+      "input": { "run_id": "lprun_1", "task_id": "t1", "pm_thread_id": "thr_pm" },
+      "stubs": { "docs": { "state": "passed", "handoff": "docs passed" } },
+      "expect_path": ["docs", "done"],
+      "expect_output": { "state": "passed" }
+    }
+  }
+}

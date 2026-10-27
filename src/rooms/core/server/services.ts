@@ -127,6 +127,7 @@ export interface Services {
   dispatchCli: WriterDispatchApi["dispatchCli"];
   dispatchWriter: WriterDispatchApi["dispatchWriter"];
   resumeDispatch: WriterDispatchApi["resumeDispatch"];
+  registerDocsGraphs: DocsNightlyApi["registerDocsGraphs"];
   docsPassesRunning: DocsNightlyApi["docsPassesRunning"];
   docsSpawnGate: DocsNightlyApi["docsSpawnGate"];
   docsUnitRecordKey: DocsNightlyApi["docsUnitRecordKey"];

@@ -138,6 +138,8 @@ export default async function plugin(bb: BbPluginApi) {
   registerAgentRoutineActions(services.workflowEngine, ctx, services);
   // The brief step of `specialist`, the graph behind lane_pilot_specialist.
   registerSpecialistActions(services.workflowEngine, ctx);
+  // The nightly docs of a unit (lp.docs-night) and the docs upkeep of an accepted task (lp.docs-maintenance) run on the engine; the schedules start them.
+  services.registerDocsGraphs(services.workflowEngine);
   // The council is the `council` graph: its steps (open, next, the seats' turns, decide) run on the engine, the PM tools start and stop it.
   mountCouncilGraph(ctx, services, services.council);
   // The night jobs are graphs too: the rules scan, the wall's hunt and the harness editor (their steps wrap the functions of those rooms).

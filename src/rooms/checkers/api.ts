@@ -36,7 +36,7 @@ export function createCheckers(deps: CheckersDeps) {
     const loaded = await deps.load({ limit: request.limit ?? 6, ...(request.only ? { only: request.only } : {}), ...(request.checkTimeoutSec ? { checkTimeoutSec: request.checkTimeoutSec } : {}) });
     if (!loaded.length) throw new Error("no accepted candidate could be loaded (see the log for why each was skipped)");
     const model = request.critic ? deps.model(request.critic) : null;
-    if (request.critic && !model) throw new Error(`this host cannot ask ${request.critic.providerId}/${request.critic.model}`);
+    if (request.critic && !model) throw new Error(`this host cannot ask ${request.critic.providerId}/${request.critic.model}: the plugin starts no critic threads; run the critics with scripts/lp-checkers.ts, or score with the code checkers only (no --critic)`);
     const byTask = new Map(loaded.map((row) => [row.input.taskId, row]));
     return await runScore({
       db: deps.db, model, log: deps.log, where: (input) => byTask.get(input.taskId)?.where,
@@ -62,7 +62,7 @@ export type CheckersApi = ReturnType<typeof createCheckers>;
 
 export const CHECKERS_USAGE = [
   "bb lane-pilot checkers score [--tasks 6] [--only id,id] [--classes a,b] [--checkers a,b] [--critic provider/model] [--critic-on escapes|all] [--budget-tokens N] [--check-timeout sec] [--json]",
-  "                             (plant known defects in accepted candidates, run the checkers on them, print the checker scorecard; the critics run only with --critic)",
+  "                             (plant known defects in accepted candidates, run the checkers on them, print the checker scorecard; the critics run only with --critic, from scripts/lp-checkers.ts, not inside the plugin)",
   "bb lane-pilot checkers scorecard [run-id] [--json]   (the stored scorecard of a run, newest by default)",
   "bb lane-pilot checkers drill [--blind a,b] [--json]  (the quick drill: code checkers on a fixture; exit 1 when a checker misses its class)",
   "bb lane-pilot checkers defects                       (the defect classes and who must catch each)",

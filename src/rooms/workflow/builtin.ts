@@ -25,6 +25,8 @@ import issueQuick from "../../../workflows/issue-quick.json";
 import issueBatch from "../../../workflows/issue-batch.json";
 import lpTaskPipeline from "../../../workflows/lp-task-pipeline.json";
 import lpAfterAccept from "../../../workflows/lp.after-accept.json";
+import lpDocsMaintenance from "../../../workflows/lp.docs-maintenance.json";
+import lpDocsNight from "../../../workflows/lp.docs-night.json";
 import lpAnalyze from "../../../workflows/lp.analyze.json";
 import lpBrainstorm from "../../../workflows/lp.brainstorm.json";
 import lpBuild from "../../../workflows/lp.build.json";
@@ -37,6 +39,7 @@ import lpHarnessReflect from "../../../workflows/lp.harness-reflect.json";
 import lpWallHunt from "../../../workflows/lp.wall-hunt.json";
 import lpRulesAsk from "../../../workflows/lp.rules-ask.json";
 import lpRulesScan from "../../../workflows/lp.rules-scan.json";
+import lpSelfRepair from "../../../workflows/lp.self-repair.json";
 import milestoneClose from "../../../workflows/milestone-close.json";
 import planOnly from "../../../workflows/plan-only.json";
 import qualityLoop from "../../../workflows/quality-loop.json";
@@ -103,6 +106,8 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "issue-batch.json", value: issueBatch },
   { name: "lp-task-pipeline.json", value: lpTaskPipeline },
   { name: "lp.after-accept.json", value: lpAfterAccept },
+  { name: "lp.docs-maintenance.json", value: lpDocsMaintenance },
+  { name: "lp.docs-night.json", value: lpDocsNight },
   { name: "lp.analyze.json", value: lpAnalyze },
   { name: "lp.brainstorm.json", value: lpBrainstorm },
   { name: "lp.build.json", value: lpBuild },
@@ -115,6 +120,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "lp.wall-hunt.json", value: lpWallHunt },
   { name: "lp.rules-ask.json", value: lpRulesAsk },
   { name: "lp.rules-scan.json", value: lpRulesScan },
+  { name: "lp.self-repair.json", value: lpSelfRepair },
   { name: "milestone-close.json", value: milestoneClose },
   { name: "plan-only.json", value: planOnly },
   { name: "quality-loop.json", value: qualityLoop },
@@ -148,6 +154,12 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
 export const LP_TASK_PIPELINE = "lp-task-pipeline";
 /** The graph that runs once a task is accepted: memory maintenance and project life, side by side (started by the merge, never offered). */
 export const AFTER_ACCEPT = "lp.after-accept";
+/** The graph of one docs unit of the night (prepare, write, verify, commit), started by the nightly docs schedules. */
+export const DOCS_NIGHT = "lp.docs-night";
+/** The graph of the docs upkeep of one accepted task, started by the hourly docs-maintenance schedule. */
+export const DOCS_MAINTENANCE = "lp.docs-maintenance";
+/** The graph of one self-repair (worktree, repair thread, verdict and merge), started by the self-repair watcher. */
+export const SELF_REPAIR = "lp.self-repair";
 /** The outer chain of the chains spec: analyze, plan, build, check, close. */
 export const ANALYZE_PLAN_EXECUTE = "analyze-plan-execute";
 

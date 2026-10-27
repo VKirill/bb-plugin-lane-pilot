@@ -1,0 +1,104 @@
+{
+  "id": "lp.self-repair",
+  "startedBy": "self-repair",
+  "name": {
+    "en": "Self-repair of one kind of failure",
+    "ru": "Самолечение одного вида сбоя"
+  },
+  "description": {
+    "en": "One repair of a failure that is Lane Pilot's own fault. worktree makes the repair its own git worktree on a lane/self-repair branch; repair starts the engineer thread in it (it finds the cause, fixes it, adds a test, commits on its branch and ends with SELF-REPAIR-VERDICT) and waits for it; verdict reads the verdict, asks the owner only for needs-owner, and merges a fixed branch into the shared checkout under the base lock, or saves the worktree as a patch and releases it. A branch that cannot be merged yet is retried by the watcher's next passes. The watcher (the self-repair schedule) decides which kind of failure gets a repair and starts this graph; a failure whose class is the workflow engine itself (packages/workflow-engine, src/rooms/workflow/) is repaired by a direct thread, because a broken engine cannot run its own repair.",
+    "ru": "Один ремонт сбоя, который по вине самого Lane Pilot. worktree делает для ремонта отдельный git-worktree на ветке lane/self-repair; repair запускает в нём поток-инженера (он находит причину, чинит, добавляет тест, коммитит в свою ветку и заканчивает строкой SELF-REPAIR-VERDICT) и ждёт его; verdict читает вердикт, спрашивает владельца только при needs-owner и вливает ветку с вердиктом fixed в общую папку под замком базы либо сохраняет worktree патчем и освобождает его. Ветку, которую пока нельзя влить, повторно пробуют следующие проходы сторожа. Какому виду сбоя нужен ремонт, решает сторож (расписание self-repair), он и запускает этот граф; сбой, чей класс сам движок графов (packages/workflow-engine, src/rooms/workflow/), чинится прямым потоком: сломанный движок не может запустить собственный ремонт."
+  },
+  "not_for": [
+    "anything a person asks for: the self-repair watcher starts this itself"
+  ],
+  "status": "published",
+  "tags": ["self-repair"],
+  "triggers": ["manual"],
+  "inputs": {
+    "signature": { "type": "string", "required": true, "note": "the kind of failure, the key in the watcher's state" },
+    "spawn_id": { "type": "string", "required": true, "note": "names the repair thread: the same id is the same thread" },
+    "at": { "type": "number", "required": true, "note": "when the watcher decided on this repair (ms); names the worktree" },
+    "night_id": { "type": "string", "default": "", "note": "the night loop's assignment, when this repair is one" },
+    "brief": { "type": "string", "default": "", "note": "the night loop's addition to the repair prompt" },
+    "selection": { "type": "any", "default": null, "note": "another model than the configured engineer for a night repair: providerId, model, reasoningLevel" }
+  },
+  "outputs": {
+    "verdict": "string",
+    "outcome": "string",
+    "thread_id": "string"
+  },
+  "budget": {
+    "max_steps": 6,
+    "max_minutes": 1500
+  },
+  "nodes": [
+    {
+      "id": "worktree",
+      "type": "action",
+      "action": "lp.repair_worktree",
+      "title": { "en": "Make the repair's worktree", "ru": "Сделать worktree для ремонта" },
+      "rule": "code: a git worktree on lane/self-repair-... forked from the shared checkout's HEAD, node_modules and built output linked in; a worktree kept by an earlier try of this repair is reused",
+      "out": [
+        { "name": "path", "type": "string" },
+        { "name": "branch", "type": "string" }
+      ],
+      "guards": { "timeoutMin": 30 }
+    },
+    {
+      "id": "repair",
+      "type": "agent",
+      "role": "repairer",
+      "uses": "lp.repair",
+      "title": { "en": "Find the cause and fix it", "ru": "Найти причину и починить" },
+      "produces": [{ "kind": "report", "version": 1 }],
+      "proof": { "kind": "receipt", "check": "the watcher's state names the repair thread, its worktree and branch; the verdict step reads the thread's closing SELF-REPAIR-VERDICT line" },
+      "out": [
+        { "name": "thread_id", "type": "string" },
+        { "name": "ended", "type": "string" }
+      ],
+      "guards": { "timeoutMin": 1440 }
+    },
+    {
+      "id": "verdict",
+      "type": "action",
+      "action": "lp.repair_verdict",
+      "title": { "en": "Read the verdict and settle the branch", "ru": "Прочитать вердикт и распорядиться веткой" },
+      "rule": "code: SELF-REPAIR-VERDICT of the thread's last message; needs-owner puts a question on the owner's list; fixed merges the branch (a night repair only when the night policy lets it), any other verdict saves the worktree as a patch and releases it",
+      "out": [
+        { "name": "verdict", "type": "string" },
+        { "name": "outcome", "type": "string" }
+      ],
+      "guards": { "timeoutMin": 30 }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "verdict": "verdict.verdict",
+        "outcome": "verdict.outcome",
+        "thread_id": "repair.thread_id"
+      }
+    }
+  ],
+  "edges": [
+    { "from": "start", "to": "worktree" },
+    { "from": "worktree", "to": "repair" },
+    { "from": "repair", "to": "verdict" },
+    { "from": "verdict", "to": "done" }
+  ],
+  "test": {
+    "id": "self-repair-1",
+    "sim": {
+      "input": { "signature": "triage:abc:merge failed", "spawn_id": "triage:abc:0", "at": 1 },
+      "stubs": {
+        "worktree": { "path": "/wt/self-repair-1", "branch": "lane/self-repair-1" },
+        "repair": { "thread_id": "thr_repair", "ended": "idle", "handoff": "repair ended" },
+        "verdict": { "verdict": "fixed", "outcome": "merged abc" }
+      },
+      "expect_path": ["worktree", "repair", "verdict", "done"],
+      "expect_output": { "verdict": "fixed" }
+    }
+  }
+}
