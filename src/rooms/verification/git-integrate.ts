@@ -752,11 +752,14 @@ const NODE_MODULES_NPM_STATE = new Set([".bin", ".package-lock.json"]);
  * `topUp` adds to a mirror made before what the base has installed since: the packages a merged lockfile brought in (see
  * dependenciesStale) are missing from it, and a sticky writer's worktree, synced with main, kept failing on them.
  */
-async function mirrorNodeModules(input:{baseReal:string;worktreePath:string;dir:string;topUp?:boolean}):Promise<boolean> {
+async function mirrorNodeModules(input:{baseReal:string;worktreePath:string;dir:string;topUp?:boolean;clone?:boolean}):Promise<boolean> {
   const base=join(input.baseReal,input.dir,"node_modules"), target=join(input.worktreePath,input.dir,"node_modules");
   if(!(await stat(base).catch(()=>null))?.isDirectory()) return false;
   if(!(await stat(dirname(target)).catch(()=>null))?.isDirectory()) return false;
-  const existing=await lstat(target).catch(()=>null);
+  let existing=await lstat(target).catch(()=>null);
+  // A worktree made before the clone rule, or by hand, holds links into the protected checkout: they go, and the mirror is remade.
+  if(input.clone&&existing?.isSymbolicLink()) { await rm(target,{force:true}); existing=null; }
+  if(input.clone&&existing?.isDirectory()) await dropLinksInto(target,base);
   if(existing&&!(input.topUp&&existing.isDirectory())) return false;
   const inRepo=(path:string)=>(path===input.baseReal||path.startsWith(`${input.baseReal}/`))&&!path.startsWith(`${base}/`);
   const has=async(rel:string[])=>Boolean(existing&&await lstat(join(target,...rel)).catch(()=>null));
@@ -773,6 +776,7 @@ async function mirrorNodeModules(input:{baseReal:string;worktreePath:string;dir:
       if(real&&inRepo(real)) { await symlink(join(input.worktreePath,relative(input.baseReal,real)),destination,"dir"); return; }
     }
     const followed=await stat(source).catch(()=>null);
+    if(input.clone) { await cloneEntry(source,destination); return; }
     await symlink(source,destination,followed?.isDirectory()?"dir":"file");
   };
   for(const name of await readdir(base)) {
@@ -792,6 +796,31 @@ async function mirrorNodeModules(input:{baseReal:string;worktreePath:string;dir:
     }
   }
   return !existing;
+}
+
+/**
+ * A checkout under a macOS privacy-protected folder (~/Documents, ~/Desktop, ~/Downloads, iCloud Drive). A writer whose sandbox
+ * may not read it hit every package linked from there: «EPERM: operation not permitted, open '…/Документы/…/node_modules/vitest/
+ * vitest.mjs'» before any work (Оживить фото, acp-cursor writers T3 and T6, 2026-10-27). Its packages are cloned into the worktree.
+ */
+export function protectedCheckout(path:string, home=process.env.HOME??"", platform=process.platform):boolean {
+  if(platform!=="darwin"||!home) return false;
+  return ["Documents","Desktop","Downloads","Library/Mobile Documents"].some((dir)=>{ const root=join(home,dir); return path===root||path.startsWith(`${root}/`); });
+}
+
+/** Removes the entries of a mirrored node_modules (and of its @scope folders) that link into the base checkout's own. */
+async function dropLinksInto(target:string, base:string):Promise<void> {
+  for(const name of await readdir(target).catch(()=>[] as string[])) {
+    const path=join(target,name), info=await lstat(path).catch(()=>null);
+    if(info?.isSymbolicLink()) { const real=await realpath(path).catch(()=>""); if(real===base||real.startsWith(`${base}/`)) await rm(path,{force:true}); }
+    else if(name.startsWith("@")&&info?.isDirectory()) await dropLinksInto(path,base);
+  }
+}
+
+/** A copy-on-write clone on APFS (`cp -c`: no extra disk until a side writes), a plain copy if the volume cannot clone. */
+async function cloneEntry(source:string, destination:string):Promise<void> {
+  const cloned=await spawnAsync("cp",["-Rc",source,destination],{timeout:300_000,maxBuffer:1_000_000});
+  if(cloned.status!==0) await cp(source,destination,{recursive:true,dereference:false,verbatimSymlinks:true,errorOnExist:false,force:true});
 }
 
 /** The checkout's real info/exclude, resolved by git itself: the repo root's, a linked worktree's shared one, or a subfolder workspace's. */
@@ -839,9 +868,10 @@ export async function prepareWorktree(input:{basePath:string;worktreePath:string
     if(await dependenciesStale(path)) await withInstallLock(path,()=>refreshStaleDependencies(path));
   }
   const rootModules=(await stat(join(baseReal,"node_modules")).catch(()=>null))?.isDirectory()??false;
+  const clone=protectedCheckout(baseReal);
   if(await lstat(join(input.worktreePath,"node_modules")).catch(()=>null)) {
     if(baseReal!==await realpath(input.worktreePath).catch(()=>input.worktreePath)) {
-      for(const dir of ["",...workspaces,...nested]) await mirrorNodeModules({baseReal,worktreePath:input.worktreePath,dir,topUp:true});
+      for(const dir of ["",...workspaces,...nested]) await mirrorNodeModules({baseReal,worktreePath:input.worktreePath,dir,topUp:true,clone});
     }
     return {linked:[]};
   }
@@ -857,7 +887,7 @@ export async function prepareWorktree(input:{basePath:string;worktreePath:string
   }
   const linked:string[]=[];
   for(const workspace of ["",...workspaces,...nested]) {
-    if(await mirrorNodeModules({baseReal,worktreePath:input.worktreePath,dir:workspace})) linked.push(workspace?join(workspace,"node_modules"):"node_modules");
+    if(await mirrorNodeModules({baseReal,worktreePath:input.worktreePath,dir:workspace,clone})) linked.push(workspace?join(workspace,"node_modules"):"node_modules");
   }
   // Workspace packages are consumed through their ignored build output (exports → dist/). A fresh
   // worktree has none, so every check importing a sibling package would fail; each worktree gets its
