@@ -23,7 +23,7 @@ const excludeFile = (dir:string) => join(dir, ".git", "info", "exclude");
 
 describe("bookkeeping exclude lines", () => {
   it("name only bookkeeping folders of the module's list", () => {
-    expect(BOOKKEEPING_EXCLUDE_LINES).toEqual(["**/.agents/runs/", "**/.agents/reports/", "**/.bb/chats/", "**/notes/lock/"]);
+    expect(BOOKKEEPING_EXCLUDE_LINES).toEqual(["**/.agents/runs/", "**/.agents/reports/", "**/.bb/chats/", "**/notes/lock/", "**/.zcode/"]);
     for (const line of BOOKKEEPING_EXCLUDE_LINES) expect(isBookkeepingPath(`${line.replace("**/", "")}x/y.md`)).toBe(true);
   });
 
@@ -50,8 +50,8 @@ describe("bookkeeping exclude lines", () => {
     const dir = repo();
     mkdirSync(join(dir, ".git", "info"), { recursive: true });
     writeFileSync(excludeFile(dir), `*.log\n${BOOKKEEPING_EXCLUDE_LINES[1]}\nmine`);
-    expect(await excludeBookkeeping(runner(), "h1", dir, () => {})).toEqual([0, 2, 3].map((i) => BOOKKEEPING_EXCLUDE_LINES[i]));
-    expect(readFileSync(excludeFile(dir), "utf8").split("\n")).toEqual(["*.log", BOOKKEEPING_EXCLUDE_LINES[1], "mine", BOOKKEEPING_EXCLUDE_LINES[0], BOOKKEEPING_EXCLUDE_LINES[2], BOOKKEEPING_EXCLUDE_LINES[3], ""]);
+    expect(await excludeBookkeeping(runner(), "h1", dir, () => {})).toEqual([0, 2, 3, 4].map((i) => BOOKKEEPING_EXCLUDE_LINES[i]));
+    expect(readFileSync(excludeFile(dir), "utf8").split("\n")).toEqual(["*.log", BOOKKEEPING_EXCLUDE_LINES[1], "mine", BOOKKEEPING_EXCLUDE_LINES[0], BOOKKEEPING_EXCLUDE_LINES[2], BOOKKEEPING_EXCLUDE_LINES[3], BOOKKEEPING_EXCLUDE_LINES[4], ""]);
   });
 
   it("reaches the repository's exclude from a subfolder workspace and from a linked worktree", async () => {
