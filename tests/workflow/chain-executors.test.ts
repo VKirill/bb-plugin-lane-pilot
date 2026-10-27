@@ -270,6 +270,26 @@ describe("the agent step", () => {
     expect(String((t.spawned[1]!.pluginMetadata as Row).spawnId)).toMatch(/:limit$/);
   });
 
+  it.each([
+    ["busy, as the answer", "ZCode is busy with another chat (one task at a time); try again in a few minutes."],
+    ["text not visible, as the answer", "ZCode (text-not-visible): the answer is not on screen"],
+    ["the signed-out notice, as the answer", "Authentication required: sign in inside the ZCode app. ZCode (session_expired): login"],
+  ])("a step the owner put on ZCode whose app answers %s runs once more on another model, as for a provider limit", async (_name, notice) => {
+    let calls = 0;
+    const answer = () => ((calls += 1) === 1 ? notice : reply({ count: 3, summary: "three", handoff: "counted" }));
+    const t = await setup({ look: [answer] }, { offers: [{ providerId: "claude-code", model: "claude-opus-5-5" }, { providerId: "zcode", model: "glm-5.3-flash" }] });
+    dispose = t.dispose;
+    await modelCatalogOf(t.rt.ctx).get();
+    saveProjectSetting(t.db, PROJECT, "role_model.analyst", { model: "glm-5.3-flash" });
+    saveProjectSetting(t.db, PROJECT, "zcode.window", "always");
+    const summary = await t.start(oneAgent()).done;
+    expect(summary).toMatchObject({ status: "succeeded", output: { count: 3 } });
+    expect(t.spawned).toHaveLength(2);
+    expect(t.spawned[0]).toMatchObject({ providerId: "zcode", model: "glm-5.3-flash" });
+    expect(t.spawned[1]).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5" });
+    expect(String((t.spawned[1]!.pluginMetadata as Row).spawnId)).toMatch(/:limit$/);
+  });
+
   it("a Gemini review whose 9router is not on the machine (a warm catalog without it) spawns on Sol at once, not on the Gemini", async () => {
     const t = await setup({ look: [reply({ count: 1, summary: "one", handoff: "counted" })] }, { offers: [{ providerId: "claude-code", model: "claude-opus-5-5" }, { providerId: "codex", model: "gpt-6.1-sol" }] });
     dispose = t.dispose;

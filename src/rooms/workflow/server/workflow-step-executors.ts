@@ -3,7 +3,7 @@ import type { stepExecutorSchema } from "../../contracts";
 import { automaticEffortRoutingEnabled, writerServiceTier } from "@lane-pilot/models";
 import { resolveStageWriterSelection } from "../../writer";
 import { writerFallbackChain, writerFallbacks } from "../../writer";
-import { costTier, modelFamily, offeredForRole, peerOffSpent, resolveRoleModel, roleFallbackModel, roleModelKey, roleRowOf, validateChoice, type ModelCatalog, type SpentProbe } from "@lane-pilot/models";
+import { costTier, isZcodeProvider, modelFamily, offeredForRole, zcodeBlock, peerOffSpent, resolveRoleModel, roleFallbackModel, roleModelKey, roleRowOf, validateChoice, type ModelCatalog, type SpentProbe } from "@lane-pilot/models";
 import { roleSpec } from "./workflow-agent";
 import { pmAuthorOf, resolveAgentModel } from "./workflow-agent-model";
 
@@ -212,7 +212,10 @@ function withInheritedSessions(raws: ReadonlyArray<Raw>, shape: WorkflowShape, s
  */
 export function resolveStepExecutors(input: ResolveInput): StepExecutor[] {
   // The machine the helpers run on decides what is offered: a model another machine has is not one this step can start on.
-  const offered: Offered = input.catalog?.runHostId ? (providerId, model) => offeredForRole(input.catalog!, providerId, model, input.catalog!.runHostId) : undefined;
+  // The Models view says what the executor will do, so ZCode counts as offered only where it can work (its machine, its free hours; the busy slot is a moment's state).
+  const offered: Offered = input.catalog?.runHostId ? (providerId, model) => isZcodeProvider(providerId)
+    ? !zcodeBlock({ settings: input.settings, catalog: input.catalog!, hostId: input.catalog!.runHostId, now: Date.now(), busy: false })
+    : offeredForRole(input.catalog!, providerId, model, input.catalog!.runHostId) : undefined;
 
   const level = (shape: WorkflowShape, tag: StepExecutor["fragment"], path: readonly string[]): StepExecutor[] => {
     const raws = shape.nodes.filter(isRaw);

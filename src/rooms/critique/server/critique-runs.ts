@@ -24,7 +24,7 @@ import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefau
 import type { CodeCriticDefault } from "../quality-mode";
 import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { MAIN_ATTEMPT_LIMIT } from "../../runs";
-import { configuredSetting, spawnUsageOf, stageHelperSettings, warmSpawnUsage } from "../../core/server";
+import { configuredSetting, spawnUsageOf, stageHelperSettings, warmSpawnUsage, zcodeBusyPeek } from "../../core/server";
 import { fullAccessSpawn, graphStepMetadata } from "../../core/server";
 import { reviewerMemoryFor } from "../../memory/server";
 import { clearSpawnMarker } from "../../core/server";
@@ -55,7 +55,7 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
   ].map((key)=>[key,configuredSetting(settings,key)])));
   const fallback=resolveStageWriterSelection({settings,config:input.config});
   // One role table (packages/models/src/role-models.ts): the owner's row, else the pm_read selection, else the default; the old pick stands when the host lacks it.
-  const picked=await roleSelection({catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:"pm-reader",fallback:{providerId:parsedSettings.provider??fallback.providerId,model:parsedSettings.model??fallback.model},spent:await limitProbe(input.bb,input.config.hostId,settings)});
+  const picked=await roleSelection({zcodeBusy:zcodeBusyPeek(input.bb),catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:"pm-reader",fallback:{providerId:parsedSettings.provider??fallback.providerId,model:parsedSettings.model??fallback.model},spent:await limitProbe(input.bb,input.config.hostId,settings)});
   logLimitMove(input.bb,`pm read for ${input.taskId}`,picked.issues);
   const providerId=picked.providerId;
   const modelId=picked.model;
@@ -172,7 +172,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   const qualityMode = resolveQualityMode(input.task,projectSettings[QUALITY_MODE_SETTING]);
   const settings = applyQualityMode(projectSettings,qualityMode);
   const legacy=resolveStageWriterSelection({settings,config:input.config,stageProviderKey:"plan_critique.provider",stageModelKey:"plan_critique.model"});
-  const selection=await roleSelection({catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:"plan-critic",fallback:{providerId:legacy.providerId,model:legacy.model},spent:await limitProbe(input.bb,input.config.hostId,settings)});
+  const selection=await roleSelection({zcodeBusy:zcodeBusyPeek(input.bb),catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:"plan-critic",fallback:{providerId:legacy.providerId,model:legacy.model},spent:await limitProbe(input.bb,input.config.hostId,settings)});
   logLimitMove(input.bb,`plan critic for ${input.taskId}`,selection.issues);
   const providerId=selection.providerId;
   const modelId=selection.model;
@@ -431,7 +431,7 @@ export async function runCodeCritique(input:{
     settings, config:input.config, stageProviderKey:"code_critique.provider", stageModelKey:"code_critique.model",
   });
   const criticCatalog = sdkCriticCatalog(input.bb, input.config.hostId);
-  const roleCritic = frozen ? null : await roleSelection({ catalog:criticCatalog, settings, role:"code-critic", fallback:{ providerId:stageSelection.providerId, model:stageSelection.model } });
+  const roleCritic = frozen ? null : await roleSelection({ zcodeBusy:zcodeBusyPeek(input.bb), catalog:criticCatalog, settings, role:"code-critic", fallback:{ providerId:stageSelection.providerId, model:stageSelection.model } });
   const liveSelection = roleCritic ? { providerId:roleCritic.providerId, model:roleCritic.model } : stageSelection;
   let configuredEffort = frozen?.reasoningEffort ?? roleCritic?.effort ?? (typeof settings["code_critique.reasoning_effort"] === "string"
     ? settings["code_critique.reasoning_effort"] as string
@@ -604,7 +604,7 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
   }
 
   const legacy=resolveStageWriterSelection({settings,config:input.config,stageProviderKey:"specialist.provider",stageModelKey:"specialist.model"});
-  const selection=await roleSelection({catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:"specialist-reviewer",fallback:{providerId:legacy.providerId,model:legacy.model},spent:await limitProbe(input.bb,input.config.hostId,settings)});
+  const selection=await roleSelection({zcodeBusy:zcodeBusyPeek(input.bb),catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:"specialist-reviewer",fallback:{providerId:legacy.providerId,model:legacy.model},spent:await limitProbe(input.bb,input.config.hostId,settings)});
   logLimitMove(input.bb,`specialist review for ${input.taskId}`,selection.issues);
   const providerId=selection.providerId;
   const modelId=selection.model;

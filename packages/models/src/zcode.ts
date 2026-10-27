@@ -43,13 +43,20 @@ export function nextZcodePromoStart(at: number): string {
 
 export type ZcodeBlock = { code: "host" | "window" | "busy"; detail: string; resetsAt: string | null };
 
+/** Why ZCode is not offered at this hour (outside its free hours with the default window), or null. */
+export function zcodeWindowBlock(settings: Record<string, unknown>, now: number): ZcodeBlock | null {
+  if (zcodeWindowMode(settings) === "promo" && !inZcodePromo(now)) {
+    return { code: "window", detail: `ZCode is free only 15:00-01:00 UTC (set ${ZCODE_WINDOW_KEY}=always to use it at other hours)`, resetsAt: nextZcodePromoStart(now) };
+  }
+  return null;
+}
+
 /** Why ZCode cannot take work on this machine now, or null when it can. */
 export function zcodeBlock(input: { settings: Record<string, unknown>; catalog: ModelCatalog | null | undefined; hostId: string | null | undefined; now: number; busy: boolean }): ZcodeBlock | null {
   const onHost = Boolean(input.catalog && input.hostId && findProvider(input.catalog, ZCODE_PROVIDER_ID)?.hostIds.includes(input.hostId));
   if (!onHost) return { code: "host", detail: "ZCode is not on this machine (only the Mac mini has it)", resetsAt: null };
-  if (zcodeWindowMode(input.settings) === "promo" && !inZcodePromo(input.now)) {
-    return { code: "window", detail: `ZCode is free only 15:00-01:00 UTC (set ${ZCODE_WINDOW_KEY}=always to use it at other hours)`, resetsAt: nextZcodePromoStart(input.now) };
-  }
+  const closed = zcodeWindowBlock(input.settings, input.now);
+  if (closed) return closed;
   if (input.busy) return { code: "busy", detail: "ZCode is busy with another task (one at a time)", resetsAt: null };
   return null;
 }

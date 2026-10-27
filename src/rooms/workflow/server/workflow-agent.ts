@@ -1,6 +1,6 @@
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, waitThreadIdle } from "@lane-pilot/thread-observe";
 import { getRunSettingsScopes } from "../../storage";
-import { writerExecutionSelection, findModelIn } from "@lane-pilot/models";
+import { writerExecutionSelection, findModelIn, isZcodeProvider, zcodeEnvironmentError } from "@lane-pilot/models";
 import { providerLimitNotice } from "../../writer/server";
 import { MAIN_AGENT_ID, ROLE_PROFILES, compileEffectiveMainAgent, isCustomAgentId, mentionContext } from "../../native-agent";
 import type { ExtraAccess, HelperRole } from "../../native-agent";
@@ -316,12 +316,19 @@ export function createWorkflowAgents() {
       return redactKnown(typeof raw === "string" ? raw : outputText(raw));
     };
 
-    await wait(sentAt);
-    let text = await read();
+    // The ZCode app cannot take the work now (busy, text not visible, needs the foreground, signed out): the machine's state, handled below as a limit.
+    let zcodeRefusal: string | null = null;
+    try {
+      await wait(sentAt);
+    } catch (cause) {
+      zcodeRefusal = isZcodeProvider(request.provider) && !request.intoThread ? zcodeEnvironmentError(cause instanceof Error ? cause.message : String(cause)) : null;
+      if (!zcodeRefusal) throw cause;
+    }
+    let text = zcodeRefusal ? "" : await read();
     // A provider out of plan or quota answers with its notice and does no work (insights-post critic on acp-cursor, 2026-10-09:
     // «Upgrade your plan to continue»). The step runs once more in a fresh thread on another provider instead of failing the run.
     // Any provider, Claude included: the resolver answers with the failed provider taken out of the offer (the peer of the other family).
-    const limit = providerLimitNotice(text);
+    const limit = zcodeRefusal ?? providerLimitNotice(text) ?? (isZcodeProvider(request.provider) ? zcodeEnvironmentError(text.length <= 400 ? text : null) : null);
     // A specialist or the architect runs as a Claude Code agent profile: another provider would refuse it (409), so its limit fails the step.
     if (limit && !request.intoThread && (request.role.startsWith("specialist") || request.role === "workflow-architect")) throw new HelperFailure("provider_limit", `the ${request.role} helper hit Claude's limit (${limit}); a specialist runs only on Claude Code, so it waits for the window to reset`);
     if (limit && !request.intoThread) {

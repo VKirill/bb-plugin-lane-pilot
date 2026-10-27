@@ -1,6 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { getReasoningTrace, listAttemptsForTask, type LanePilotDatabase } from "../storage";
-import { bbServiceTier, crossFamilyPeers, findModelIn, judgeAgainstAuthor, modelFamily, peerOffSpent, resolveRoleModel, roleFallbackModel, roleRowOf, SAME_FAMILY_JUDGE_BY_LIMIT, type RoleModelSource, type SpentProbe } from "@lane-pilot/models";
+import { bbServiceTier, crossFamilyPeers, findModelIn, isZcodeProvider, judgeAgainstAuthor, modelFamily, peerOffSpent, resolveRoleModel, roleDefaultModel, roleFallbackModel, roleRowOf, zcodeWindowBlock, SAME_FAMILY_JUDGE_BY_LIMIT, type RoleModelSource, type SpentProbe } from "@lane-pilot/models";
 
 /**
  * G9: the code critic is another model than the writer. Reviewing the writer's own work with the writer's own model
@@ -102,13 +102,22 @@ export async function criticOffSpent(input: { critic: Pair; writer?: Pair | null
  */
 export async function roleSelection(input: {
   catalog: CriticCatalog; settings: Record<string, unknown>; role: string; fallback: Pair; tier?: "fast" | "standard"; spent?: SpentProbe | undefined;
+  /** A Lane Pilot thread is working on the ZCode app now (it takes one task at a time). */
+  zcodeBusy?: boolean | undefined;
 }): Promise<RoleSelection> {
   const chosen = resolveRoleModel(input.role, input.settings);
+  // ZCode is the owner's pick for this row but is not offered now (outside its free hours, busy, or not on this machine): the row's built-in default stands in.
+  const zcodePick = isZcodeProvider(chosen.providerId);
+  const zcodeHeld = zcodePick && (zcodeWindowBlock(input.settings, Date.now()) !== null || input.zcodeBusy === true);
   try {
-    if (await usable(input.catalog, chosen, chosen.effort, input.tier ?? "standard")) {
+    if (!zcodeHeld && await usable(input.catalog, chosen, chosen.effort, input.tier ?? "standard")) {
       // The limit of the table pick's provider moves the stage to the other family (the stage's author is not known here: only the code critic is judged against one).
       const off = await criticOffSpent({ critic: chosen, spent: input.spent, effort: chosen.effort, tier: input.tier ?? "standard", catalog: input.catalog });
       return { providerId: off.pair.providerId, model: off.pair.model, effort: effortAfterMove(input.role, chosen, off.pair), source: chosen.source, ...(off.issues.length ? { issues: off.issues } : {}) };
+    }
+    if (zcodePick) {
+      const builtin = roleDefaultModel(roleRowOf(input.role));
+      if (await usable(input.catalog, builtin, builtin.effort, input.tier ?? "standard")) return { providerId: builtin.providerId, model: builtin.model, effort: builtin.effort, source: "default" };
     }
     // The table's pick is not offered here (a Gemini through 9router on a machine without it): the row's own fallback, the GPT model it ran on
     // before, comes before what the stage ran on (its selection, else the writer's).

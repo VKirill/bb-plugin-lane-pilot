@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { isZcodeProvider, type ZcodeBlock } from "@lane-pilot/models";
 
 /**
  * Provider usage (BB official plugin `provider-usage`, I1). The plugin's own RPC (`getUsage`) is only a display
@@ -99,7 +100,9 @@ export function usageHold(
 
 /** The reason an attempt carries when its writer pair is skipped; read as a limit by failure-class (uncharged, moves down the chain). */
 export function usageHoldReason(providerId: string, model: string, hold: UsageHold): string {
-  return `writer_provider_unavailable:usage_window:${providerId}/${model}: ${hold.window} at ${hold.percent}%${hold.resetsAt ? `, resets ${hold.resetsAt}` : ""}`;
+  // ZCode is held by its machine's state (host, free hours, one task at a time), not by a window that fills up: no percentage.
+  const level = isZcodeProvider(providerId) ? "" : ` at ${hold.percent}%`;
+  return `writer_provider_unavailable:usage_window:${providerId}/${model}: ${hold.window}${level}${hold.resetsAt ? `, resets ${hold.resetsAt}` : ""}`;
 }
 
 type PluginsApi = {
@@ -107,7 +110,14 @@ type PluginsApi = {
   callRpc?: (args: { pluginId: string; method: string; input?: unknown; outputSchema: z.ZodType<unknown>; signal?: AbortSignal }) => Promise<unknown>;
 };
 
-export function createProviderUsage(bb: BbPluginApi, now: () => number = Date.now) {
+/**
+ * `zcode` answers whether the ZCode app may take work on a machine now (host, free hours, one slot: packages/models/src/zcode.ts). The
+ * provider has no usage window to read, so its answer is a hold of its own, given whatever the usage threshold is (even 0, which turns the
+ * windows off): a writer is not sent where it cannot work.
+ */
+export type ZcodeProbe = (input: { hostId: string; settings: Record<string, unknown> }) => Promise<ZcodeBlock | null>;
+
+export function createProviderUsage(bb: BbPluginApi, now: () => number = Date.now, zcode?: ZcodeProbe) {
   const plugins = (bb.sdk as { plugins?: PluginsApi }).plugins;
   let sources: { ids: string[]; at: number } | null = null;
   const inventories = new Map<string, { at: number; resources: UsageResource[] }>();
@@ -173,7 +183,12 @@ export function createProviderUsage(bb: BbPluginApi, now: () => number = Date.no
    * The hold on a provider/model for a writer on this machine, or null (nothing known, room left, the check is off, the
    * lookup failed or took too long). Never throws.
    */
-  async function hold(input: { providerId: string; model: string; hostId: string; threshold: number }): Promise<UsageHold | null> {
+  async function hold(input: { providerId: string; model: string; hostId: string; threshold: number; settings?: Record<string, unknown> }): Promise<UsageHold | null> {
+    if (isZcodeProvider(input.providerId)) {
+      // Without an answer ZCode is not sent work: its machine is the one place it works, and a refusal costs a task.
+      const block = zcode ? await zcode({ hostId: input.hostId, settings: input.settings ?? {} }).catch(() => ({ detail: "ZCode state could not be read", resetsAt: null })) : null;
+      return block ? { percent: 100, window: block.detail, resetsAt: block.resetsAt } : null;
+    }
     if (input.threshold <= 0 || !input.providerId || !input.model) return null;
     const rows = await bounded(input);
     return rows ? usageHold(rows, { ...input, now: now() }) : null;

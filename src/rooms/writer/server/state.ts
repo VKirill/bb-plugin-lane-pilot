@@ -1,9 +1,10 @@
+import { zcodeBlock } from "@lane-pilot/models";
 import { createProviderBreaker, createRunBudget, parseRunBudgetLimits, type RunBudget } from "@lane-pilot/resilience";
 import { RunWriterPool } from "../../tasks";
 import { createProviderUsage, usageSkipPercent } from "../../usage/server";
 import { createProviderRetryGuard } from "../../stability/server";
 import { createConcurrencyLimit } from "./concurrency-limit";
-import { registerSpawnUsage } from "../../core/server";
+import { CATALOG_WAIT_MS, modelCatalogOf, registerSpawnUsage, within, zcodeBusy, zcodeBusyPeek } from "../../core/server";
 import type { ServerCore } from "../../core/server";
 
 /** State shared by the writer modules: the live task set, the provider pool, the provider breaker and one budget per run. */
@@ -16,7 +17,11 @@ export function createWriterState(ctx: ServerCore) {
   const providerBreaker = createProviderBreaker();
 
   /** Provider usage windows read from BB's usage sources; a writer pair whose window is nearly spent is skipped, never failed. */
-  const providerUsage = createProviderUsage(ctx.bb);
+  // ZCode (the Mac mini's app) has no usage window: it is held when the machine has no zcode provider, outside its free hours, or while one of our threads works on it.
+  const providerUsage = createProviderUsage(ctx.bb, Date.now, async ({ hostId, settings }) => zcodeBlock({
+    settings, hostId, now: Date.now(), busy: await zcodeBusy(ctx.bb),
+    catalog: await within(modelCatalogOf(ctx).get(), CATALOG_WAIT_MS).catch(() => null),
+  }));
   // The helpers' resolver (resolveSpawnModel) reads the same cache, under the same threshold, to move a table pick off a nearly spent provider.
   // Gemini through 9router runs on OpenCode v2 (`opencode2`); a usage source may list its quota under the router's own id (`router9`), so both are read.
   const viaRouter = (providerId: string, model: string) => providerId === "opencode2" && model.startsWith("router9/");
@@ -25,6 +30,7 @@ export function createWriterState(ctx: ServerCore) {
       const base = { model: query.model, hostId: query.hostId ?? "", threshold: usageSkipPercent(query.settings) };
       return providerUsage.peek({ ...base, providerId: query.providerId }) ?? (viaRouter(query.providerId, query.model) ? providerUsage.peek({ ...base, providerId: "router9" }) : null);
     },
+    zcodeBusy: () => zcodeBusyPeek(ctx.bb),
     warm: (query) => providerUsage.warm({ providerIds: query.providerIds.includes("opencode2") ? [...query.providerIds, "router9"] : query.providerIds, hostId: query.hostId ?? "" }),
   });
 

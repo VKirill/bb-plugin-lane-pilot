@@ -4,6 +4,7 @@ import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop,
 import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { providerPoolCap } from "@lane-pilot/settings-catalog";
+import { isZcodeProvider } from "@lane-pilot/models";
 import { DEPENDENCY_REDO_WAIT_MS, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, noteToldPmDirectly, transitionAttempt, taskBasePath } from "../../storage";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
@@ -120,16 +121,20 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
    */
   async function chainWithRoom<T extends { providerId:string; model:string }>(chain:T[], hostId:string, settings:Record<string, unknown>, taskId:string):Promise<{ chain:T[]; room:boolean }> {
     const threshold = usageSkipPercent(settings);
-    if (!chain.length || threshold <= 0) return { chain, room:chain.length > 0 };
-    const holds = await Promise.all(chain.map((entry) => services.providerUsage.hold({ providerId:entry.providerId, model:entry.model, hostId, threshold })));
+    // The usage threshold can be 0 (the windows off); ZCode's own limits (host, free hours, one slot) still hold.
+    if (!chain.length || (threshold <= 0 && !chain.some((entry) => isZcodeProvider(entry.providerId)))) return { chain, room:chain.length > 0 };
+    const holds = await Promise.all(chain.map((entry) => services.providerUsage.hold({ providerId:entry.providerId, model:entry.model, hostId, threshold, settings })));
     const usable = chain.filter((_, index) => !holds[index]);
     if (usable.length) chain.forEach((entry, index) => { if (holds[index]) ctx.log(`writer ${taskId}: ${entry.providerId}/${entry.model} skipped, ${usageHoldReason(entry.providerId, entry.model, holds[index]!)}`); });
     return usable.length ? { chain:usable, room:true } : { chain, room:false };
   }
 
   /** Jev's writer for a task, once per task (kept in the KV), as the settings it changes; null keeps the project's writer. */
-  const pickWriter = (settings:Record<string, unknown>, input:{ projectId:string; runId:string; taskId:string; task:TaskV2 }) =>
-    writerPickOverlay({ kv:bb.storage.kv as never, jev:jev(), log:(line) => bb.log.warn(line) }, settings, input);
+  const pickWriter = (settings:Record<string, unknown>, input:{ projectId:string; runId:string; taskId:string; task:TaskV2; config:PrototypeConfig }) =>
+    writerPickOverlay({ kv:bb.storage.kv as never, jev:jev(), log:(line) => bb.log.warn(line),
+      // ZCode is not offered to Jev where it cannot work now (no zcode provider on the task's machine, outside its free hours, or busy).
+      held:async (profile) => isZcodeProvider(profile.providerId) && Boolean(await services.providerUsage.hold({ providerId:profile.providerId, model:profile.model, hostId:input.config.hostId, threshold:0, settings })) },
+      settings, input);
 
   function startWriterTask(input:{
     projectId:string; runId:string; taskId:string; firstAttemptId:string; pmThreadId:string;
@@ -644,7 +649,7 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           // instead of a failed attempt that opens the breaker. Nothing is skipped when no other pair has room.
           const primaryPair = { providerId:typeof runSettings["writer.provider"] === "string" && runSettings["writer.provider"] ? runSettings["writer.provider"] as string : freshConfig.writerProviderId,
             model:typeof runSettings["writer.model"] === "string" && runSettings["writer.model"] ? runSettings["writer.model"] as string : freshConfig.writerModel };
-          const spentWindow = await services.providerUsage.hold({ ...primaryPair, hostId:freshConfig.hostId, threshold:usageSkipPercent(runSettings) });
+          const spentWindow = await services.providerUsage.hold({ ...primaryPair, hostId:freshConfig.hostId, threshold:usageSkipPercent(runSettings), settings:runSettings });
           if (spentWindow && (await chainWithRoom(writerFallbackChain(primaryPair, writerFallbacks(runSettings), { providerId:freshConfig.pmProviderId, model:freshConfig.pmModel }), freshConfig.hostId, runSettings, input.taskId)).room) {
             const reason = usageHoldReason(primaryPair.providerId, primaryPair.model, spentWindow);
             transitionAttempt(db, attemptId, "blocked", { reason });

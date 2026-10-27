@@ -1,7 +1,10 @@
 import type { PrototypeConfig } from "../../contracts";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { RunBudgetExceeded, type RunBudget } from "@lane-pilot/resilience";
+import { isZcodeProvider } from "@lane-pilot/models";
 import { spawnKeyed } from "./thread-keys";
+import { stringAt } from "./values";
+import { noteZcodeThread } from "./zcode-slot";
 
 /**
  * The PM agents the machine's guard (~/.agents/hooks/guard_shell.py: PM_AGENTS, lane-pilot-pm) reads the rules of: it keys
@@ -162,7 +165,10 @@ export function fullAccessSpawn(bb: BbPluginApi, args: Parameters<BbPluginApi["s
       },
     } as Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0] & Record<string, unknown>;
     // With the VK thread keys the spawn is idempotent: a lost answer repeated returns the same thread (thread-keys.ts).
-    return spawnKeyed(bb, full, () => bb.sdk.threads.spawn(full)) as ReturnType<BbPluginApi["sdk"]["threads"]["spawn"]>;
+    const spawned = await spawnKeyed(bb, full, () => bb.sdk.threads.spawn(full));
+    // The ZCode app takes one task at a time: the thread holds its slot until BB says it is idle (zcode-slot.ts).
+    if (isZcodeProvider(args.providerId)) noteZcodeThread(bb, stringAt(spawned, "id"));
+    return spawned as Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["spawn"]>>;
   })();
 }
 

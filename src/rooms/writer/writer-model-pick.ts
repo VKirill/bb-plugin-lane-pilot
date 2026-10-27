@@ -75,19 +75,23 @@ type PickTaskContract = { title: string; display_title?: string; objective?: str
  * The settings a task's writer changes, from Jev's pick; asked once per task and kept in the KV, so every attempt of the task runs on
  * the same writer. Null keeps the project's writer: the pick is off, Jev is off or unsure, or it picked the project's writer.
  */
-export async function writerPickOverlay(deps: { kv: { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> }; jev: Pick<Jev, "judge" | "enabled"> | null; log(line: string): void },
+export async function writerPickOverlay(deps: { kv: { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> }; jev: Pick<Jev, "judge" | "enabled"> | null; log(line: string): void;
+  /** Whether a writer cannot work where this task runs now (ZCode: other machine, outside its free hours, busy); such a writer is not offered to Jev. A pick already kept for the task stands. */
+  held?(profile: WriterProfile): Promise<boolean> },
   settings: Record<string, unknown>, input: { projectId: string; runId: string; taskId: string; task: PickTaskContract }): Promise<Record<string, unknown> | null> {
   if (settings["writer.pick"] === false || settings["writer.pick"] === "off") return null;
   const key = `writer-pick:${input.runId}:${input.taskId}`;
   const candidates = writerCandidates(settings);
+  const offered = deps.held ? (await Promise.all(candidates.map(async (profile) => ((await deps.held!(profile).catch(() => true)) ? null : profile)))).flatMap((profile) => (profile ? [profile] : [])) : candidates;
   // A key never written reads back undefined, not null: with a null check only, the pick was never asked (live 2026-10-25).
   let picked = ((await deps.kv.get(key).catch(() => null)) ?? null) as string | null;
-  if (picked === null && candidates.length > 1 && deps.jev?.enabled(settings as never)) {
+  if (picked === null && offered.length > 1 && deps.jev?.enabled(settings as never)) {
     const task = input.task;
     const verdict = await deps.jev.judge(writerModelJudgment, { task: { title: task.display_title ?? task.title, objective: task.objective ?? "", kind: task.kind ?? null, area: task.area ?? null,
-      risk: task.risk ?? null, owns_paths: task.owns_paths, expected_outputs: task.expected_outputs, acceptance: task.acceptance ?? [] }, candidates },
+      risk: task.risk ?? null, owns_paths: task.owns_paths, expected_outputs: task.expected_outputs, acceptance: task.acceptance ?? [] }, candidates: offered },
       { projectId: input.projectId, runId: input.runId, subject: input.taskId, settings: settings as never }).catch(() => null);
-    picked = verdict?.by === "jev" && verdict.decision.key ? verdict.decision.key : "";
+    // Only a writer that was offered can be the answer (a held ZCode was not).
+    picked = verdict?.by === "jev" && verdict.decision.key && offered.some((row) => row.key === verdict.decision.key) ? verdict.decision.key : "";
     await deps.kv.set(key, picked).catch(() => undefined);
     deps.log(`Lane Pilot writer pick: ${input.taskId} → ${picked || "the project's writer"}`);
   }

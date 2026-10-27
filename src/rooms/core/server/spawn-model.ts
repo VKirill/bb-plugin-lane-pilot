@@ -1,4 +1,4 @@
-import { catalogProviderOf, offeredForRole, resolveAgentModel, type AgentModel, type AgentModelInput, type ModelCatalog, type SpentProbe } from "@lane-pilot/models";
+import { catalogProviderOf, isZcodeProvider, offeredForRole, resolveAgentModel, zcodeBlock, type AgentModel, type AgentModelInput, type ModelCatalog, type SpentProbe } from "@lane-pilot/models";
 
 /**
  * THE resolver right before a real spawn (Astra's review of 2026-10-27, F4): every wrapper that starts a model thread for a ROLE of the
@@ -18,6 +18,8 @@ import { catalogProviderOf, offeredForRole, resolveAgentModel, type AgentModel, 
 export type SpawnUsage = {
   peek(query: { providerId: string; model: string; hostId: string | null; settings: Record<string, unknown> }): { percent: number; window: string } | null;
   warm(query: { providerIds: readonly string[]; hostId: string | null }): Promise<void>;
+  /** Whether a Lane Pilot thread is working on the ZCode app now (it takes one task at a time); absent: not known, taken as free. */
+  zcodeBusy?(): boolean;
 };
 const registered = new WeakMap<object, SpawnUsage>();
 export function registerSpawnUsage(bb: object, usage: SpawnUsage): void { registered.set(bb, usage); }
@@ -56,11 +58,14 @@ export function resolveSpawnModel(input: SpawnModelInput): AgentModel {
   const { catalog, hostId, avoidProvider, pm, usage, ...rest } = input;
   const offeredAt = (avoided: boolean) => (providerId: string, model: string): boolean | null => {
     if (avoided && avoidProvider && providerId === avoidProvider) return false;
+    // ZCode works only where packages/models/src/zcode.ts says: the Mac mini, its free hours (or zcode.window=always), no other ZCode task running.
+    // An unknown catalog is a no for it: the role's next candidate (its built-in default) runs instead.
+    if (isZcodeProvider(providerId)) return !zcodeBlock({ settings: rest.settings, catalog: catalog ?? null, hostId: hostId ?? null, now: Date.now(), busy: usage?.zcodeBusy?.() ?? false });
     return catalog && hostId ? offeredForRole(catalog, providerId, model, hostId) : null;
   };
   const usageSpent: SpentProbe | undefined = usage ? (providerId, model) => usage.peek({ providerId, model, hostId: hostId ?? null, settings: rest.settings }) : undefined;
   const resolve = (avoided: boolean, spent: SpentProbe | undefined): AgentModel => resolveAgentModel({
-    ...rest, pm: pm ?? null, ...(catalog || avoidProvider ? { offered: offeredAt(avoided) } : {}),
+    ...rest, pm: pm ?? null, offered: offeredAt(avoided),
     ...(catalog ? { providerOf: (model: string) => catalogProviderOf(catalog, model) } : {}), ...(spent ? { spent } : {}),
   });
   let answer = resolve(true, usageSpent);
