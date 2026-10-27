@@ -1,4 +1,4 @@
-import { catalogProviderOf, offeredOnHost, resolveAgentModel, type AgentModel, type AgentModelInput, type ModelCatalog, type SpentProbe } from "@lane-pilot/models";
+import { catalogProviderOf, offeredForRole, resolveAgentModel, type AgentModel, type AgentModelInput, type ModelCatalog, type SpentProbe } from "@lane-pilot/models";
 
 /**
  * THE resolver right before a real spawn (Astra's review of 2026-10-27, F4): every wrapper that starts a model thread for a ROLE of the
@@ -21,8 +21,8 @@ export type SpawnUsage = {
 };
 const registered = new WeakMap<object, SpawnUsage>();
 export function registerSpawnUsage(bb: object, usage: SpawnUsage): void { registered.set(bb, usage); }
-/** The providers a helper table pick can come from; a spent window of either moves the pick to the other. */
-export const TABLE_PROVIDERS = ["claude-code", "codex"] as const;
+/** The providers a helper table pick can come from (Claude, GPT, and Gemini through 9router on OpenCode v2); a spent window of one moves the pick to its peer in another family. */
+export const TABLE_PROVIDERS = ["claude-code", "codex", "opencode2"] as const;
 
 /** What a caller passes as `usage`: the registered reader of the plugin instance, with the log the moves are written to. Undefined without one (no move). */
 export type SpawnUsageUse = SpawnUsage & { log?: ((line: string) => void) | undefined };
@@ -56,7 +56,7 @@ export function resolveSpawnModel(input: SpawnModelInput): AgentModel {
   const { catalog, hostId, avoidProvider, pm, usage, ...rest } = input;
   const offeredAt = (avoided: boolean) => (providerId: string, model: string): boolean | null => {
     if (avoided && avoidProvider && providerId === avoidProvider) return false;
-    return catalog && hostId ? offeredOnHost(catalog, providerId, model, hostId) : null;
+    return catalog && hostId ? offeredForRole(catalog, providerId, model, hostId) : null;
   };
   const usageSpent: SpentProbe | undefined = usage ? (providerId, model) => usage.peek({ providerId, model, hostId: hostId ?? null, settings: rest.settings }) : undefined;
   const resolve = (avoided: boolean, spent: SpentProbe | undefined): AgentModel => resolveAgentModel({

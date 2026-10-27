@@ -4,7 +4,7 @@ import { withResolvedModel, type HelperRequest } from "../../src/rooms/workflow/
 import { resolveAgentModel } from "../../src/rooms/workflow/server/workflow-agent-model";
 import { createWorkflowModels } from "../../src/rooms/workflow/server/workflow-models";
 import { resolveStepExecutors } from "../../src/rooms/workflow/server/workflow-step-executors";
-import { offeredOnHost, validateChoice, type ModelCatalog } from "@lane-pilot/models";
+import { offeredForRole, offeredOnHost, validateChoice, type ModelCatalog } from "@lane-pilot/models";
 import { modelsSection } from "@lane-pilot/workflow-engine";
 import { roleModelKey } from "@lane-pilot/models";
 import type { ServerCore } from "../../src/rooms/core/server/core";
@@ -56,7 +56,8 @@ describe("a model is judged on the machine the step runs on (audit r2, B2)", () 
     const section = modelsSection(catalog("mini"), mine);
     expect(section.roles.analyst).toMatchObject({ model: "claude-haiku-5-5", source: "table", offered: false });
     expect(section.roles.planner).toMatchObject({ model: "claude-opus-5-5", source: "default", offered: true });
-    expect(section.roles["code-critic"]).toMatchObject({ provider: "codex", model: "gpt-6.1-sol", offered: false });
+    expect(section.roles.auditor).toMatchObject({ provider: "codex", model: "gpt-6.1-sol", offered: false });
+    expect(section.roles["code-critic"]).toMatchObject({ provider: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoning: "medium", offered: false });
     expect(modelsSection(catalog("book"), mine).roles.analyst).toMatchObject({ offered: true, machines: ["MacBook"] });
   });
 });
@@ -71,7 +72,14 @@ describe("a table model the machine does not offer falls through (audit r2, B3)"
     expect(resolveAgentModel({ role: "analyst", settings: { [roleModelKey("analyst")]: { model: "gpt-6-luna" }, [roleModelKey("workflow-architect")]: { model: "gpt-6-luna" } }, pm: { providerId: "claude-code", model: "claude-opus-5-5" }, offered: (p, m) => m === "claude-opus-5-5" && p === "claude-code" }))
       .toMatchObject({ source: "role-default", issues: ["selection_unavailable"] });
     // A judge whose default (Sol) the machine lacks goes to the PM's model.
-    expect(resolveAgentModel({ role: "code-critic", settings: {}, pm, offered })).toMatchObject({ source: "pm", model: "claude-opus-5-5", issues: ["selection_unavailable"] });
+    expect(resolveAgentModel({ role: "auditor", settings: {}, pm, offered })).toMatchObject({ source: "pm", model: "claude-opus-5-5", issues: ["selection_unavailable"] });
+    // A review whose default (the Gemini) the machine lacks goes to its fallback, Sol, and only if Sol is not here either, to the PM's model. The Gemini is
+    // not listed at all on this catalog: for a Gemini that means «not offered» (offeredForRole), where a native model not listed is unknown.
+    const here = (providerId: string, model: string) => offeredForRole(catalog("mini"), providerId, model, "mini");
+    expect(here("opencode2", "router9/ag/gemini-3.8-flash-high")).toBe(false);
+    expect(resolveAgentModel({ role: "code-critic", settings: {}, pm, offered: (p, m) => (m === "gpt-6.1-sol" ? true : here(p, m)) })).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", reasoningEffort: "high", source: "role-default", issues: ["selection_unavailable"] });
+    expect(resolveAgentModel({ role: "code-critic", settings: {}, pm, offered: here })).toMatchObject({ source: "pm", model: "claude-opus-5-5", issues: ["selection_unavailable"] });
+    expect(resolveAgentModel({ role: "triager", settings: {}, pm, offered: (p, m) => (m === "gpt-6-luna" ? true : here(p, m)) })).toMatchObject({ model: "gpt-6-luna", reasoningEffort: "high", issues: ["selection_unavailable"] });
     // On a machine that has it, the pick stands; with no machine known, nothing is passed over.
     expect(resolveAgentModel({ role: "analyst", settings: haiku, pm, offered: (p, m) => offeredOnHost(catalog("book"), p, m, "book") })).toMatchObject({ source: "table", model: "claude-haiku-5-5", issues: [] });
     expect(resolveAgentModel({ role: "analyst", settings: haiku, pm })).toMatchObject({ source: "table" });
@@ -82,7 +90,7 @@ describe("a table model the machine does not offer falls through (audit r2, B3)"
     // Haiku, the role's default, is on the MacBook only: the PM's model, which this machine runs, is the last stop.
     expect(resolveAgentModel({ role: "pm-reader", settings: stage, pm, offered })).toMatchObject({ source: "pm", model: "claude-opus-5-5", issues: ["selection_unavailable"] });
     expect(resolveAgentModel({ role: "pm-reader", settings: stage, pm, offered }).issues).not.toContain("model_unavailable_here");
-    expect(resolveAgentModel({ role: "code-critic", settings: {}, pm: { providerId: "acp-opencode", model: "gemini-3.8" }, offered }))
+    expect(resolveAgentModel({ role: "auditor", settings: {}, pm: { providerId: "acp-opencode", model: "gemini-3.8" }, offered }))
       .toMatchObject({ source: "pm", model: "gemini-3.8", issues: ["selection_unavailable"] });
   });
 

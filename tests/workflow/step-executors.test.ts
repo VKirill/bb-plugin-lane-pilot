@@ -28,8 +28,9 @@ describe("step executors by node type", () => {
       mode: "model", providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: "high", source: "role-default", sourceKey: null, inherited: true,
       agent: { role: "analyst", helper: "analyst" }, costTier: "high", settingsKey: "role_model.analyst", issues: [],
     });
-    expect(one({ id: "c", type: "agent", role: "code-critic" }, writer, { pm: null })).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", reasoningEffort: "high", source: "role-default", settingsKey: "role_model.code-critic" });
-    expect(one({ id: "t", type: "agent", role: "triager" })).toMatchObject({ providerId: "codex", model: "gpt-6-luna", costTier: "low" });
+    expect(one({ id: "c", type: "agent", role: "code-critic" }, writer, { pm: null })).toMatchObject({ providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "medium", source: "role-default", settingsKey: "role_model.code-critic" });
+    expect(one({ id: "t", type: "agent", role: "triager" })).toMatchObject({ providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", costTier: "low" });
+    expect(one({ id: "u", type: "agent", role: "auditor" })).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", reasoningEffort: "high" });
   });
 
   it("the owner's row of the table, then a stage selection set earlier, decide; the removed levels do not", () => {
@@ -48,12 +49,12 @@ describe("step executors by node type", () => {
 
   it("the pipeline's stages run on the rows of their roles (pm-reader, plan-critic, specialist-reviewer), the old stage selection standing in until the owner sets the table", () => {
     const stage = { id: "p", type: "agent", role: "plan-critic", uses: "lp.plan-critique" };
-    expect(one(stage, writer)).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", reasoningEffort: "high", serviceTier: "fast", source: "role-default", settingsKey: "role_model.plan-critic" });
+    expect(one(stage, writer)).toMatchObject({ providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "medium", serviceTier: "fast", source: "role-default", settingsKey: "role_model.plan-critic" });
     expect(one(stage, { ...writer, "plan_critique.provider": "claude-code", "plan_critique.model": "claude-opus-5-5", "plan_critique.reasoning_effort": "xhigh", "plan_critique.service_tier": "standard" }))
       .toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: "xhigh", serviceTier: "standard", source: "stage", sourceKey: "plan_critique.model", inherited: true });
     expect(one(stage, { ...writer, [roleModelKey("plan-critic")]: { model: "claude-sonnet-5-5" } })).toMatchObject({ model: "claude-sonnet-5-5", source: "table", inherited: false });
     expect(one({ id: "r", type: "agent", uses: "lp.pm-read" }, writer)).toMatchObject({ model: "claude-haiku-5-5", reasoningEffort: "low", settingsKey: "role_model.pm-reader", agent: { label: "PM read" } });
-    expect(one({ id: "s", type: "agent", uses: "lp.specialist-review" }, writer)).toMatchObject({ model: "gpt-6.1-sol", reasoningEffort: "high", settingsKey: "role_model.specialist-reviewer" });
+    expect(one({ id: "s", type: "agent", uses: "lp.specialist-review" }, writer)).toMatchObject({ model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "medium", settingsKey: "role_model.specialist-reviewer" });
   });
 
   it("a code task is the writer's chain: writer, fallback 1, fallback 2, then the PM; its code critic is a part", () => {
@@ -64,7 +65,7 @@ describe("step executors by node type", () => {
       { providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "medium", pm: false },
       { providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: null, pm: true },
     ]);
-    expect(task.parts).toEqual([{ stage: "code-critique", providerId: "codex", model: "gpt-6.1-sol", reasoningEffort: "high", serviceTier: "fast", source: "role-default", sourceKey: null }]);
+    expect(task.parts).toEqual([{ stage: "code-critique", providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "medium", serviceTier: "fast", source: "role-default", sourceKey: null }]);
   });
 
   it("the chain follows the configured fallbacks, drops an off slot and a repeat of the writer, and leaves the PM open when it is unknown", () => {
@@ -75,7 +76,7 @@ describe("step executors by node type", () => {
   });
 
   it("the code critic is the code-critic row, and the old code_critique selection stands in for it", () => {
-    expect(one({ id: "w", type: "lp-task" }, writer).parts[0]).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", reasoningEffort: "high", source: "role-default", sourceKey: null });
+    expect(one({ id: "w", type: "lp-task" }, writer).parts[0]).toMatchObject({ providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "medium", source: "role-default", sourceKey: null });
     const task = one({ id: "w", type: "lp-task" }, { ...writer, "code_critique.provider": "claude-code", "code_critique.model": "claude-opus-5-5" });
     expect(task.parts[0]).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", source: "stage", sourceKey: "code_critique.model" });
   });
@@ -187,7 +188,7 @@ describe("a step that goes on in an earlier step's session", () => {
   });
 
   it("follows the chain: the whole session runs on the first step's model", () => {
-    const chain = [{ id: "a", type: "agent", role: "triager" }, { id: "b", type: "agent", role: "analyst" }, { id: "c", type: "agent", role: "planner" }];
+    const chain = [{ id: "a", type: "agent", role: "rules-analyzer" }, { id: "b", type: "agent", role: "analyst" }, { id: "c", type: "agent", role: "planner" }];
     const links = [{ from: "start", to: "a" }, { from: "a", to: "b", pass: "same-session" }, { from: "b", to: "c", pass: "same-session" }];
     const steps = by(resolveStepExecutors({ nodes: chain, edges: links, settings: writer, pm, workflowId: "frag" }));
     expect(steps.a).toMatchObject({ source: "role-default", model: "gpt-6-luna" });

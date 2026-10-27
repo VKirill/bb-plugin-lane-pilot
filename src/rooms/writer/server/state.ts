@@ -18,9 +18,14 @@ export function createWriterState(ctx: ServerCore) {
   /** Provider usage windows read from BB's usage sources; a writer pair whose window is nearly spent is skipped, never failed. */
   const providerUsage = createProviderUsage(ctx.bb);
   // The helpers' resolver (resolveSpawnModel) reads the same cache, under the same threshold, to move a table pick off a nearly spent provider.
+  // Gemini through 9router runs on OpenCode v2 (`opencode2`); a usage source may list its quota under the router's own id (`router9`), so both are read.
+  const viaRouter = (providerId: string, model: string) => providerId === "opencode2" && model.startsWith("router9/");
   registerSpawnUsage(ctx.bb, {
-    peek: (query) => providerUsage.peek({ providerId: query.providerId, model: query.model, hostId: query.hostId ?? "", threshold: usageSkipPercent(query.settings) }),
-    warm: (query) => providerUsage.warm({ providerIds: query.providerIds, hostId: query.hostId ?? "" }),
+    peek: (query) => {
+      const base = { model: query.model, hostId: query.hostId ?? "", threshold: usageSkipPercent(query.settings) };
+      return providerUsage.peek({ ...base, providerId: query.providerId }) ?? (viaRouter(query.providerId, query.model) ? providerUsage.peek({ ...base, providerId: "router9" }) : null);
+    },
+    warm: (query) => providerUsage.warm({ providerIds: query.providerIds.includes("opencode2") ? [...query.providerIds, "router9"] : query.providerIds, hostId: query.hostId ?? "" }),
   });
 
   /** Cancels the retry BB's provider-retry queued in a writer thread once the task moved on to another writer. */

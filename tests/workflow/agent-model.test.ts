@@ -18,15 +18,17 @@ const pick = (role: string, settings: Record<string, unknown> = {}, pair: typeof
 const row = (model: string, reasoning_effort?: string) => ({ model, ...(reasoning_effort ? { reasoning_effort } : {}) });
 
 describe("which model a workflow agent step runs on: the role's row of one table", () => {
-  it("authors run on Claude Opus 5.5 high, judges on GPT-6.1 Sol high, cheap jobs on the small models, whatever the PM chat runs", () => {
+  it("authors run on Claude Opus 5.5 high, the reviews on Gemini 3.8 Flash (9router), the auditor, debugger and chair on GPT-6.1 Sol high, cheap jobs on the small models, whatever the PM chat runs", () => {
     for (const role of ["analyst", "planner", "workflow-architect", "specialist:design-lead", "specialist:seo-specialist", "specialist:my-own-agent"]) {
       expect(pick(role, {}, pm), role).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: "high", source: "role-default", sourceKey: null, issues: [] });
     }
-    for (const role of ["plan-critic", "specialist-reviewer", "code-critic", "auditor", "debugger", "council"]) {
+    for (const role of ["plan-critic", "specialist-reviewer", "code-critic", "triager"]) {
+      expect(pick(role, {}, strongPm), role).toMatchObject({ providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "medium", source: "role-default" });
+    }
+    for (const role of ["auditor", "debugger", "council"]) {
       expect(pick(role, {}, strongPm), role).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", reasoningEffort: "high", source: "role-default" });
     }
     expect(pick("pm-reader")).toMatchObject({ providerId: "claude-code", model: "claude-haiku-5-5", reasoningEffort: "low" });
-    expect(pick("triager")).toMatchObject({ providerId: "codex", model: "gpt-6-luna", reasoningEffort: "high" });
     expect(pick("memory")).toMatchObject({ model: "claude-haiku-5-5", reasoningEffort: "medium" });
     expect(pick("project-life")).toMatchObject({ model: "claude-haiku-5-5", reasoningEffort: "medium" });
     expect(pick("errand")).toMatchObject({ model: "claude-sonnet-5-5", reasoningEffort: "medium" });
@@ -48,7 +50,7 @@ describe("which model a workflow agent step runs on: the role's row of one table
       walk(JSON.parse(readFileSync(new URL(file, dir), "utf8")));
     }
     expect(roles.size).toBeGreaterThan(8);
-    for (const role of roles) expect(pick(role).model, role).toMatch(/^(claude-(opus|sonnet|haiku)-5-5|gpt-6\.1-(sol|terra)|gpt-6-luna)$/);
+    for (const role of roles) expect(pick(role).model, role).toMatch(/^(claude-(opus|sonnet|haiku)-5-5|gpt-6\.1-(sol|terra)|gpt-6-luna|router9\/ag\/gemini-3\.8-flash-high)$/);
     expect(pick("worker")).toEqual(pick("analyst"));
     expect(pick("something-new")).toEqual(pick("analyst"));
     expect(pick("gate-triage")).toEqual(pick("triager"));
@@ -60,8 +62,9 @@ describe("which model a workflow agent step runs on: the role's row of one table
   it("takes the owner's row of the table: its model, its effort, and says where it comes from", () => {
     const settings = { [roleModelKey("analyst")]: row("claude-sonnet-5-5", "medium"), [roleModelKey("code-critic")]: row("claude-opus-5-5") };
     expect(pick("analyst", settings, pm)).toMatchObject({ providerId: "claude-code", model: "claude-sonnet-5-5", reasoningEffort: "medium", source: "table", sourceKey: "role_model.analyst", inherited: true, issues: [] });
-    // No effort in the row: the role's own default effort.
+    // No effort in the row: the role's own default effort (the code critic's default is a Gemini at medium, so Opus gets the effort of the GPT judge it replaced: high).
     expect(pick("code-critic", settings)).toMatchObject({ model: "claude-opus-5-5", reasoningEffort: "high", source: "table" });
+    expect(pick("auditor", { [roleModelKey("auditor")]: row("claude-opus-5-5") })).toMatchObject({ model: "claude-opus-5-5", reasoningEffort: "high", source: "table" });
     // One row serves every specialist, in every graph.
     expect(pick("specialist:copy-lead", { [roleModelKey("specialist")]: row("gpt-6.1-terra", "low") })).toMatchObject({ providerId: "codex", model: "gpt-6.1-terra", reasoningEffort: "low", source: "table" });
     expect(pick("specialist:tavily", { [roleModelKey("specialist")]: row("gpt-6.1-terra", "low") }).model).toBe("gpt-6.1-terra");
@@ -162,9 +165,10 @@ describe("validating the table and the settings of the removed levels", () => {
     for (const role of ROLE_IDS) {
       expect(validateSettingValue(roleModelKey(role), row("claude-opus-5-5", "high"))).toBeNull();
       expect(validateSettingValue(roleModelKey(role), row("gpt-6.1-sol"))).toBeNull();
+      expect(validateSettingValue(roleModelKey(role), row("router9/ag/gemini-3.8-flash-high", "medium"))).toBeNull();
       expect(validateSettingValue(roleModelKey(role), null)).toBeNull();
     }
-    for (const bad of [row("zai/glm-5.3-flash"), row("claude-opus-5"), { model: "gpt-6.1-sol", reasoning_effort: "ultra" }, { model: "gpt-6.1-sol", provider: "codex" }, "gpt-6.1-sol", {}, []]) {
+    for (const bad of [row("gemini-3.8-flash-high"), row("router9/ag/gemini-3.8-flash-low"), row("zai/glm-5.3-flash"), row("claude-opus-5"), { model: "gpt-6.1-sol", reasoning_effort: "ultra" }, { model: "gpt-6.1-sol", provider: "codex" }, "gpt-6.1-sol", {}, []]) {
       expect(validateSettingValue(roleModelKey("analyst"), bad), JSON.stringify(bad)).toMatchObject({ code: "invalid_choice", key: roleModelKey("analyst") });
     }
     expect(validateSettingValue("role_model.nobody", row("gpt-6.1-sol"))).toMatchObject({ code: "invalid_choice" });
@@ -265,12 +269,18 @@ describe("the Models view shows the move a nearly spent provider causes", () => 
   const spent = (providerId: string) => (providerId === "claude-code" ? { percent: 93, window: "weekly" } : null);
   it("an agent node and a pipeline stage read the cached usage the executor reads; unknown usage shows the table's pick", () => {
     const nodes = [{ id: "a", type: "agent", role: "analyst" }, { id: "b", type: "agent", role: "pm-reader", uses: "lp.pm-read" }, { id: "c", type: "agent", role: "plan-critic" }];
-    const shown = resolveStepExecutors({ nodes, settings: {}, pm, spent });
+    const sol = { [roleModelKey("plan-critic")]: row("gpt-6.1-sol") };
+    const shown = resolveStepExecutors({ nodes, settings: sol, pm, spent });
     expect(shown[0]).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", issues: ["usage_moved: claude-code weekly 93% → codex/gpt-6.1-sol"] });
     expect(shown[1]).toMatchObject({ providerId: "codex", model: "gpt-6-luna", issues: ["usage_moved: claude-code weekly 93% → codex/gpt-6-luna"] });
     // The PM (the plan's author here) is a GPT model, so the critic crossed to Opus; Opus is spent, and the limit puts it back in the author's family.
     expect(shown[2]).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol" });
     expect(shown[2]!.issues).toEqual(["crossed_family", "same_family_judge_by_limit", "usage_moved: claude-code weekly 93% → codex/gpt-6.1-sol"]);
+    // On the default row the plan critic is a Gemini: another family than the GPT author, and Claude's limit does not touch it.
+    expect(resolveStepExecutors({ nodes, settings: {}, pm, spent })[2]).toMatchObject({ providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", issues: [] });
+    // 9router itself spent: the Models view shows the move to Sol, as the executor makes it.
+    expect(resolveStepExecutors({ nodes, settings: {}, pm: strongPm, spent: (providerId) => (providerId === "opencode2" ? { percent: 96, window: "weekly" } : null) })[2])
+      .toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", issues: ["usage_moved: opencode2 weekly 96% → codex/gpt-6.1-sol"] });
     expect(resolveStepExecutors({ nodes, settings: {}, pm })[0]).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", issues: [] });
   });
 });

@@ -1,5 +1,5 @@
 import { belowTier, modelTier, type ModelTier } from "./model-tiers";
-import { SAME_FAMILY_JUDGE_BY_LIMIT, consistentProvider, roleRowOf, judgeAgainstAuthor, modelFamily, peerOffSpent, resolveRoleModel, roleDefaultModel, roleRow, ROLE_TABLE, type SpentProbe } from "./role-models";
+import { SAME_FAMILY_JUDGE_BY_LIMIT, consistentProvider, roleRowOf, judgeAgainstAuthor, modelFamily, peerOffSpent, resolveRoleModel, roleDefaultModel, roleFallbackModel, roleRow, ROLE_TABLE, type SpentProbe } from "./role-models";
 
 /** Roles that run as a Claude Code agent profile (a specialist, the workflow architect): never moved to another provider. */
 export const CLAUDE_PROFILE_ROLES: ReadonlySet<string> = new Set(["specialist", "workflow-architect"]);
@@ -108,12 +108,15 @@ export function resolveAgentModel(input: AgentModelInput): AgentModel {
     return { providerId, model: pinnedModel, reasoningEffort: text(pin?.reasoning) ?? chosen.effort, serviceTier, source: "pinned", sourceKey: null, inherited: false, issues };
   }
 
-  // The candidates in order: the table's pick, the role's built-in default, the PM chat's model (which this machine runs by definition).
+  // The candidates in order: the table's pick, the role's built-in default, the role's fallback (a review whose Gemini is not offered here takes
+  // the GPT model it ran on before), the PM chat's model (which this machine runs by definition).
   const builtin = roleDefaultModel(row.id);
   const candidates: Array<{ providerId: string; model: string; effort: string; source: AgentModelSource; sourceKey: string | null }> = [
     { providerId: chosen.providerId, model: chosen.model, effort: chosen.effort, source: chosen.source === "default" ? "role-default" : chosen.source, sourceKey: chosen.sourceKey },
   ];
   if (builtin.model !== chosen.model || builtin.providerId !== chosen.providerId) candidates.push({ providerId: builtin.providerId, model: builtin.model, effort: text(pin?.reasoning) ?? builtin.effort, source: "role-default", sourceKey: null });
+  const fallback = roleFallbackModel(row.id);
+  if (fallback && !candidates.some((c) => c.model === fallback.model && c.providerId === fallback.providerId)) candidates.push({ providerId: fallback.providerId, model: fallback.model, effort: text(pin?.reasoning) ?? fallback.effort, source: "role-default", sourceKey: null });
   if (input.pm) candidates.push({ providerId: input.pm.providerId, model: input.pm.model, effort: text(pin?.reasoning) ?? DEFAULT_REASONING, source: "pm", sourceKey: null });
 
   // The judge against its author, per candidate: the peer in the other family when the machine has it; otherwise the candidate stays, flagged.
@@ -121,7 +124,7 @@ export function resolveAgentModel(input: AgentModelInput): AgentModel {
   let crossed = false, degraded = false, unavailable = false;
   let picked: (typeof candidates)[number] | null = null;
   for (const [index, candidate] of candidates.entries()) {
-    const judged = judges ? judgeAgainstAuthor(candidate, input.author!) : null;
+    const judged = judges ? judgeAgainstAuthor(candidate, input.author!, here) : null;
     // The PM's model is never judged against the catalog: its machine runs it by definition.
     const candidateHere = candidate.source === "pm" || here(candidate.providerId, candidate.model);
     if (judged?.changed && here(judged.providerId, judged.model)) { picked = { ...candidate, providerId: judged.providerId, model: judged.model }; crossed = true; break; }
@@ -139,7 +142,7 @@ export function resolveAgentModel(input: AgentModelInput): AgentModel {
     // The limit comes after the cross-family rule: the move may put a judge back into its author's family (allowed, and said).
     // A specialist and the workflow architect run as a Claude Code agent profile: on another provider the spawn is refused (HTTP 409
     // «native profile needs Claude Code», live 2026-10-27 with Claude's weekly window at 97%). They stay on their pick.
-    const moved = CLAUDE_PROFILE_ROLES.has(roleRowOf(input.role)) ? null : peerOffSpent(picked, input.spent, here);
+    const moved = CLAUDE_PROFILE_ROLES.has(roleRowOf(input.role)) ? null : peerOffSpent(picked, input.spent, here, judges ? modelFamily(input.author!.model) : null, fallback);
     if (moved) {
       const wasIndependent = !judges || !degraded;
       picked = { ...picked, providerId: moved.providerId, model: moved.model };

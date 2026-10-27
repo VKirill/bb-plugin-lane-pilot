@@ -173,10 +173,10 @@ describe("the Models table of a draft", () => {
     const chain = slot.getByTestId("wf-model-chain-build").textContent!;
     expect(chain).toContain("opencode2 · gemini-3.8-flash-high · medium");
     // The code critic is the code-critic row: GPT-6.1 Sol (the pipeline swaps it for Opus when the writer is a GPT model).
-    expect(chain).toContain("Code critic: codex · gpt-6.1-sol · high");
+    expect(chain).toContain("Code critic: opencode2 · gemini-3.8-flash-high · medium");
     const stage = slot.getByTestId("wf-model-row-plan-check");
     expect(stage.textContent).toContain("Set in Settings: role_model.plan-critic");
-    expect(slot.getByTestId("wf-model-line-plan-check").textContent).toBe("codex · gpt-6.1-sol · high · fast");
+    expect(slot.getByTestId("wf-model-line-plan-check").textContent).toBe("opencode2 · gemini-3.8-flash-high · medium · fast");
     expect(slot.getByTestId("wf-model-source-plan-check").textContent).toContain("role default");
     noPickers(slot);
   });
@@ -232,7 +232,7 @@ describe("the Models table of a library workflow", () => {
     // The stages are the rows of their roles; the writer is the writer settings' (Jev's pick per task).
     expect(slot.getByTestId("wf-model-pm-read").getAttribute("title")).toContain("from: role default");
     expect(slot.getByTestId("wf-model-pm-read").textContent).toContain("claude-haiku-5-5");
-    expect(slot.getByTestId("wf-model-plan-critique").textContent).toBe("codex · gpt-6.1-sol · high · fast");
+    expect(slot.getByTestId("wf-model-plan-critique").textContent).toBe("opencode2 · gemini-3.8-flash-high · medium · fast");
     expect(slot.queryByTestId("wf-model-ownership-base")).toBeNull();
     expect(slot.getByTestId("wf-models-hint").textContent).toContain("belongs to the role");
     expect(slot.getByTestId("wf-model-source-writer").textContent).toContain("writer settings");

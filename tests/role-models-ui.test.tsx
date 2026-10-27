@@ -61,7 +61,9 @@ describe("the table «role -> model» on the Team tab", () => {
     expect(slot.getByTestId("role-model-pick-analyst").textContent).toContain("Claude Sonnet 5.5");
     expect(slot.getByTestId("role-effort-pick-analyst").textContent).toBe("low");
     expect(slot.getByTestId("role-model-source-analyst").textContent).toBe(en.roleModelsSource_table);
-    expect(slot.getByTestId("role-model-pick-code-critic").textContent).toContain("GPT-6.1 Sol");
+    expect(slot.getByTestId("role-model-pick-code-critic").textContent).toContain("Gemini 3.8 Flash (9router)");
+    expect(slot.getByTestId("role-model-pick-auditor").textContent).toContain("GPT-6.1 Sol");
+    expect(slot.getByTestId("role-effort-pick-code-critic").textContent).toBe("medium");
     expect(slot.getByTestId("role-model-source-code-critic").textContent).toBe(en.roleModelsSource_default);
     // A model set before the table says which setting it comes from.
     expect(slot.getByTestId("role-model-source-plan-critic").textContent).toBe(en.roleModelsSource_stage.replace("{key}", "plan_critique.model"));
@@ -69,13 +71,14 @@ describe("the table «role -> model» on the Team tab", () => {
     slot.lifecycle.unmount();
   });
 
-  it("offers only the Claude and GPT options, and warns about a light model for a role that judges", async () => {
+  it("offers only the Claude, GPT and Gemini Flash (9router) options, and warns about a light model for a role that judges", async () => {
     const { rpc } = tableRpc(view({ planner: { source: "table", own: true, model: "claude-haiku-5-5", effort: "high", sourceKey: "role_model.planner" } }, (id) => id !== "gpt-6-luna"));
     const slot = await mountPage(rpc);
     await openTeam(slot);
     fireEvent.keyDown(await slot.findByTestId("role-model-pick-analyst"), { key: "Enter" });
     const options = (await slot.findAllByRole("option")).map((option) => option.textContent);
     expect(options).toEqual(ROLE_MODEL_OPTIONS.map((option) => (option.id === "gpt-6-luna" ? `${option.label} (${en.roleModelsNotOffered})` : option.label)));
+    expect(options).toContain("Gemini 3.8 Flash (9router)");
     expect(slot.getByTestId("role-model-light-planner").textContent).toBe(en.roleModelsLight);
     expect(slot.queryByTestId("role-model-light-analyst")).toBeNull();
     slot.lifecycle.unmount();

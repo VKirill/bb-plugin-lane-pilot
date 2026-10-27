@@ -2,7 +2,7 @@ import { unownedExpectedOutputs } from "../../tasks";
 import { hostContract, taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { claimStageSpawn, countAttempts, getRun, getTask, listLiveTasksForRun, listOpenAttempts, listStageReceipts, openDatabase } from "../../storage";
-import { criticAcrossFamilies, criticOffSpent, criticPairCandidates, latestWriterPair, pairApartFromWriter, roleSelection, sdkCriticCatalog } from "../critic-pair";
+import { criticAcrossFamilies, criticOffSpent, criticPairCandidates, effortAfterMove, latestWriterPair, pairApartFromWriter, roleSelection, sdkCriticCatalog } from "../critic-pair";
 import { bbServiceTier, writerExecutionSelection, writerServiceTier, findModelIn, modelFamily, type SpentProbe } from "@lane-pilot/models";
 import { qaSpawnClaimed } from "../../qa";
 import { reconcileCritic } from "../../stability";
@@ -433,7 +433,7 @@ export async function runCodeCritique(input:{
   const criticCatalog = sdkCriticCatalog(input.bb, input.config.hostId);
   const roleCritic = frozen ? null : await roleSelection({ catalog:criticCatalog, settings, role:"code-critic", fallback:{ providerId:stageSelection.providerId, model:stageSelection.model } });
   const liveSelection = roleCritic ? { providerId:roleCritic.providerId, model:roleCritic.model } : stageSelection;
-  const configuredEffort = frozen?.reasoningEffort ?? roleCritic?.effort ?? (typeof settings["code_critique.reasoning_effort"] === "string"
+  let configuredEffort = frozen?.reasoningEffort ?? roleCritic?.effort ?? (typeof settings["code_critique.reasoning_effort"] === "string"
     ? settings["code_critique.reasoning_effort"] as string
     : typeof settings["writer.reasoning_effort"] === "string" ? settings["writer.reasoning_effort"] as string : "medium");
   const savedTier = frozen?.serviceTier ?? settings["code_critique.service_tier"];
@@ -454,6 +454,8 @@ export async function runCodeCritique(input:{
   logLimitMove(input.bb, `code critic for ${input.taskId}`, offSpent?.issues);
   const providerId = frozen?.providerId ?? offSpent?.pair.providerId ?? apart?.pair.providerId ?? liveSelection.providerId;
   const modelId = frozen?.model ?? offSpent?.pair.model ?? apart?.pair.model ?? liveSelection.model;
+  // A Gemini critic that a family rule or a limit moved to GPT or Claude runs on the effort that judge had before the Gemini (high), not on the Gemini's medium.
+  if (!frozen) configuredEffort = effortAfterMove("code-critic", { model:liveSelection.model, effort:configuredEffort }, { providerId, model:modelId });
   // The independence the rule promises is checked on the pair that will really run, after every fallback: not met is said, never silent (F4/R4).
   if (!frozen && writerPair && modelFamily(modelId) && modelFamily(modelId) === modelFamily(writerPair.model)) input.bb.log.warn(`code critic for ${input.taskId}: ${providerId}/${modelId} is of the writer's own family (${writerPair.providerId}/${writerPair.model}); the other family has no usable model here, so the review is not independent`);
   const policy = frozen ?? freezeCritiquePolicy({

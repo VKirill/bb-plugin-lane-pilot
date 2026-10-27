@@ -235,7 +235,9 @@ describe("workflow architect tools", () => {
     // Judged on the machine the step runs on (the fixture project runs on the MacBook): Haiku is on the Mac mini only, Sol is on neither.
     expect(result.models.roles["pm-reader"]).toMatchObject({ provider: "claude-code", model: "claude-haiku-5-5", reasoning: "low", source: "default", offered: false, machines: ["Mac mini"] });
     expect(result.models.roles.planner).toMatchObject({ provider: "claude-code", model: "claude-opus-5-5", reasoning: "high", offered: true });
-    expect(result.models.roles["code-critic"]).toMatchObject({ provider: "codex", model: "gpt-6.1-sol", offered: false });
+    expect(result.models.roles.auditor).toMatchObject({ provider: "codex", model: "gpt-6.1-sol", offered: false });
+    // The reviews' default is the Gemini through 9router: also on neither machine here.
+    expect(result.models.roles["code-critic"]).toMatchObject({ provider: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoning: "medium", offered: false });
     expect(result.models.note).toContain("a step names a `role`, never a model");
     const narrowed = await call("lane_pilot_workflow_capabilities", { sections: ["models"], query: "critic" });
     expect(Object.keys(narrowed.models.roles)).toEqual(["plan-critic", "code-critic"]);

@@ -3,7 +3,7 @@ import type { stepExecutorSchema } from "../../contracts";
 import { automaticEffortRoutingEnabled, writerServiceTier } from "@lane-pilot/models";
 import { resolveStageWriterSelection } from "../../writer";
 import { writerFallbackChain, writerFallbacks } from "../../writer";
-import { costTier, offeredOnHost, peerOffSpent, resolveRoleModel, roleModelKey, roleRowOf, validateChoice, type ModelCatalog, type SpentProbe } from "@lane-pilot/models";
+import { costTier, modelFamily, offeredForRole, peerOffSpent, resolveRoleModel, roleFallbackModel, roleModelKey, roleRowOf, validateChoice, type ModelCatalog, type SpentProbe } from "@lane-pilot/models";
 import { roleSpec } from "./workflow-agent";
 import { pmAuthorOf, resolveAgentModel } from "./workflow-agent-model";
 
@@ -53,7 +53,10 @@ const CODE_CRITIQUE: StageDef = { stage: "code_critique", label: "Code critique"
 const tierWord = (value: unknown): "fast" | "standard" | null => (value === "fast" || value === "standard" ? value : null);
 
 function stageSelection(settings: Settings, def: StageDef, offered?: Offered, spent?: SpentProbe) {
-  const table = resolveRoleModel(def.role, settings);
+  const resolved = resolveRoleModel(def.role, settings);
+  // A Gemini pick the machine does not offer gives way to the row's fallback, as the executor does (critic-pair.ts roleSelection).
+  const own = offered?.(resolved.providerId, resolved.model) === false && modelFamily(resolved.model) === "google" ? roleFallbackModel(def.role) : null;
+  const table = own ?? resolved;
   // The stage asks the same limit rule as the executor (critic-pair.ts criticOffSpent): a nearly spent provider's pick moves to the other family.
   const moved = peerOffSpent(table, spent, (providerId, model) => offered?.(providerId, model) !== false);
   const picked = moved ? { ...table, providerId: moved.providerId, model: moved.model } : table;
@@ -209,7 +212,7 @@ function withInheritedSessions(raws: ReadonlyArray<Raw>, shape: WorkflowShape, s
  */
 export function resolveStepExecutors(input: ResolveInput): StepExecutor[] {
   // The machine the helpers run on decides what is offered: a model another machine has is not one this step can start on.
-  const offered: Offered = input.catalog?.runHostId ? (providerId, model) => offeredOnHost(input.catalog!, providerId, model, input.catalog!.runHostId) : undefined;
+  const offered: Offered = input.catalog?.runHostId ? (providerId, model) => offeredForRole(input.catalog!, providerId, model, input.catalog!.runHostId) : undefined;
 
   const level = (shape: WorkflowShape, tag: StepExecutor["fragment"], path: readonly string[]): StepExecutor[] => {
     const raws = shape.nodes.filter(isRaw);

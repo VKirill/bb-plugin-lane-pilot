@@ -1,6 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { getReasoningTrace, listAttemptsForTask, type LanePilotDatabase } from "../storage";
-import { bbServiceTier, findModelIn, judgeAgainstAuthor, modelFamily, peerOffSpent, resolveRoleModel, SAME_FAMILY_JUDGE_BY_LIMIT, type RoleModelSource, type SpentProbe } from "@lane-pilot/models";
+import { bbServiceTier, crossFamilyPeers, findModelIn, judgeAgainstAuthor, modelFamily, peerOffSpent, resolveRoleModel, roleFallbackModel, roleRowOf, SAME_FAMILY_JUDGE_BY_LIMIT, type RoleModelSource, type SpentProbe } from "@lane-pilot/models";
 
 /**
  * G9: the code critic is another model than the writer. Reviewing the writer's own work with the writer's own model
@@ -57,6 +57,23 @@ export async function pairApartFromWriter(input: {
   return keep;
 }
 
+/**
+ * The effort a pick runs on after a limit or a family rule moved it: the effort of a Gemini (medium, the model's own) is not the effort the
+ * judge it was replaced by ran on before (the row's fallback, high), so the peer takes the fallback's effort; a pick that did not move keeps its own.
+ */
+export function effortAfterMove(role: string, from: { model: string; effort: string }, to: Pair): string {
+  return to.model !== from.model && modelFamily(from.model) === "google" && modelFamily(to.model) !== "google" ? roleFallbackModel(roleRowOf(role))?.effort ?? from.effort : from.effort;
+}
+
+/** Which of the pairs the host catalog offers (provider available, model listed, effort and tier supported), as a synchronous question. */
+async function offeredPeers(catalog: CriticCatalog, pairs: readonly Pair[], effort: string, tier: "fast" | "standard"): Promise<(providerId: string, model: string) => boolean> {
+  const ok = new Set<string>();
+  for (const pair of pairs) {
+    try { if (await usable(catalog, pair, effort, tier)) ok.add(`${pair.providerId}\n${pair.model}`); } catch { /* not offered */ }
+  }
+  return (providerId, model) => ok.has(`${providerId}\n${model}`);
+}
+
 export type RoleSelection = { providerId: string; model: string; effort: string | null; source: RoleModelSource | "fallback"; issues?: string[] };
 
 /**
@@ -66,12 +83,14 @@ export type RoleSelection = { providerId: string; model: string; effort: string 
  */
 export async function criticOffSpent(input: { critic: Pair; writer?: Pair | null; spent: SpentProbe | undefined; effort: string; tier: "fast" | "standard"; catalog: CriticCatalog }): Promise<{ pair: Pair; issues: string[] }> {
   if (!input.spent?.(input.critic.providerId, input.critic.model)) return { pair: input.critic, issues: [] };
-  // The probe and the catalog answer separately: the peer must be offered by the host (asked first) and have room.
-  const peer = peerOffSpent(input.critic, input.spent);
+  // The probe and the catalog answer separately: the peer must be offered by the host (asked first) and have room. The peers of other families
+  // than the writer's come first (a Gemini critic has two: Sol, then Opus).
+  const writerFamily = input.writer ? modelFamily(input.writer.model) : null;
+  const offered = await offeredPeers(input.catalog, crossFamilyPeers(input.critic.model, writerFamily), input.effort, input.tier);
+  const peer = peerOffSpent(input.critic, input.spent, offered, writerFamily);
   if (!peer) return { pair: input.critic, issues: [] };
-  try { if (!(await usable(input.catalog, peer, input.effort, input.tier))) return { pair: input.critic, issues: [] }; } catch { return { pair: input.critic, issues: [] }; }
   const issues = [peer.issue];
-  if (input.writer && modelFamily(peer.model) && modelFamily(peer.model) === modelFamily(input.writer.model)) issues.push(SAME_FAMILY_JUDGE_BY_LIMIT);
+  if (writerFamily && modelFamily(peer.model) === writerFamily) issues.push(SAME_FAMILY_JUDGE_BY_LIMIT);
   return { pair: { providerId: peer.providerId, model: peer.model }, issues };
 }
 
@@ -89,19 +108,23 @@ export async function roleSelection(input: {
     if (await usable(input.catalog, chosen, chosen.effort, input.tier ?? "standard")) {
       // The limit of the table pick's provider moves the stage to the other family (the stage's author is not known here: only the code critic is judged against one).
       const off = await criticOffSpent({ critic: chosen, spent: input.spent, effort: chosen.effort, tier: input.tier ?? "standard", catalog: input.catalog });
-      return { providerId: off.pair.providerId, model: off.pair.model, effort: chosen.effort, source: chosen.source, ...(off.issues.length ? { issues: off.issues } : {}) };
+      return { providerId: off.pair.providerId, model: off.pair.model, effort: effortAfterMove(input.role, chosen, off.pair), source: chosen.source, ...(off.issues.length ? { issues: off.issues } : {}) };
     }
+    // The table's pick is not offered here (a Gemini through 9router on a machine without it): the row's own fallback, the GPT model it ran on
+    // before, comes before what the stage ran on (its selection, else the writer's).
+    const own = roleFallbackModel(roleRowOf(input.role));
+    if (own && modelFamily(chosen.model) === "google" && await usable(input.catalog, own, own.effort, input.tier ?? "standard")) return { providerId: own.providerId, model: own.model, effort: own.effort, source: "default" };
   } catch { /* the catalog cannot be read: the stage's old pick stands */ }
   return { providerId: input.fallback.providerId, model: input.fallback.model, effort: null, source: "fallback" };
 }
 
 /** The cross-family rule for the code critic: the critic is of another family than the writer's model (Opus <-> Sol, Sonnet <-> Terra, Haiku <-> Luna) when the host has the peer. */
 export async function criticAcrossFamilies(input: { critic: Pair; writer: Pair | null; effort: string; tier: "fast" | "standard"; catalog: CriticCatalog }): Promise<{ pair: Pair; changed: boolean }> {
-  const judged = judgeAgainstAuthor(input.critic, input.writer);
+  const offered = await offeredPeers(input.catalog, crossFamilyPeers(input.critic.model), input.effort, input.tier);
+  const judged = judgeAgainstAuthor(input.critic, input.writer, offered);
   if (!judged.changed) return { pair: input.critic, changed: false };
   const peer = { providerId: judged.providerId, model: judged.model };
-  try { if (await usable(input.catalog, peer, input.effort, input.tier)) return { pair: peer, changed: true }; } catch { /* keep the critic */ }
-  return { pair: input.critic, changed: false };
+  return offered(peer.providerId, peer.model) ? { pair: peer, changed: true } : { pair: input.critic, changed: false };
 }
 
 /** The pair of the task's latest attempt that has a reasoning trace (the writer that produced the work), or null. */

@@ -84,28 +84,39 @@ describe("a provider and a model are always a pair that can exist", () => {
   });
 });
 
-const catalog = (hasSol: boolean, hasOpus: boolean): ModelCatalog => ({
+const GEMINI = "router9/ag/gemini-3.8-flash-high";
+const catalog = (hasSol: boolean, hasOpus: boolean, hasGemini = false): ModelCatalog => ({
   hosts: [{ id: "h1", name: "Mini", connected: true }],
   providers: [
     { id: "codex", displayName: "Codex", logoUrl: null, family: null, supportsServiceTier: false, serviceTiers: [], hostIds: ["h1"],
       models: [{ id: "gpt-6.1-sol", model: "gpt-6.1-sol", displayName: "Sol", efforts: ["high"], defaultEffort: "high", isDefault: true, hostIds: hasSol ? ["h1"] : [] }] },
     { id: "claude-code", displayName: "Claude", logoUrl: null, family: null, supportsServiceTier: false, serviceTiers: [], hostIds: ["h1"],
       models: [{ id: "claude-opus-5-5", model: "claude-opus-5-5", displayName: "Opus", efforts: ["high"], defaultEffort: "high", isDefault: true, hostIds: hasOpus ? ["h1"] : [] }] },
+    { id: "opencode2", displayName: "OpenCode", logoUrl: null, family: null, supportsServiceTier: false, serviceTiers: [], hostIds: ["h1"],
+      models: hasGemini ? [{ id: GEMINI, model: GEMINI, displayName: "Gemini 3.8 Flash", efforts: ["medium", "high"], defaultEffort: "medium", isDefault: false, hostIds: ["h1"] }] : [] },
   ],
 });
+const gemini = { providerId: "opencode2", model: GEMINI };
 const opus = { providerId: "claude-code", model: "claude-opus-5-5" };
 const sol = { providerId: "codex", model: "gpt-6.1-sol" };
 
 describe("the resolver's table of inputs (F4: R2, R3, R4)", () => {
+  const geminiAuthor = { [roleModelKey("planner")]: { model: GEMINI } };
+  const solCritic = { [roleModelKey("plan-critic")]: { model: "gpt-6.1-sol" } };
   it.each([
-    ["default: the planner is Opus, the plan critic Sol", "plan-critic", {}, opus, true, true, sol, []],
-    ["the owner moved the author to Sol: the critic goes to Opus (R2)", "plan-critic", { [roleModelKey("planner")]: { model: "gpt-6.1-sol" } }, sol, true, true, opus, ["crossed_family"]],
-    ["the peer is not on the machine: the critic stays and says it is not independent (R4)", "plan-critic", {}, sol, true, false, sol, ["same_family_judge"]],
-    ["the table's Sol is gone and the fallback is the PM's Opus, the author is Opus: still the other family, never back in the author's", "plan-critic", {}, opus, false, true, opus, ["selection_unavailable", "same_family_judge"]],
-    ["a cold catalog (nothing known) judges by the table", "plan-critic", {}, opus, null, null, sol, []],
-  ])("%s", (_name, role, settings, author, hasSol, hasOpus, expected, issues) => {
+    ["default: the planner is Opus, the plan critic Gemini through 9router", "plan-critic", {}, opus, true, true, true, gemini, []],
+    ["9router is not on the machine: the plan critic is Sol, and the move is said", "plan-critic", {}, opus, true, true, false, sol, ["selection_unavailable"]],
+    ["9router and Sol are not on the machine: the PM's Opus is the author's family, kept and said (R4)", "plan-critic", {}, opus, false, true, false, opus, ["selection_unavailable", "same_family_judge"]],
+    ["the owner put the critic on Sol and the author on Sol: the critic goes to Opus (R2)", "plan-critic", { ...solCritic, [roleModelKey("planner")]: { model: "gpt-6.1-sol" } }, sol, true, true, true, opus, ["crossed_family"]],
+    ["the Gemini critic meets a Gemini author: Sol, the strongest of the other families", "plan-critic", geminiAuthor, gemini, true, true, true, sol, ["crossed_family"]],
+    ["a Gemini critic, a Gemini author, Sol gone: Opus, never back in the author's family", "plan-critic", geminiAuthor, gemini, false, true, true, opus, ["crossed_family"]],
+    ["a Gemini critic, a Gemini author, nothing else on the machine: the critic stays and says it is not independent (R4)", "plan-critic", geminiAuthor, gemini, false, false, true, gemini, ["same_family_judge"]],
+    ["a GPT-judge row (the auditor) with the peer gone stays and says it is not independent", "auditor", {}, sol, true, false, true, sol, ["same_family_judge"]],
+    ["the table's Sol is gone and the fallback is the PM's Opus, the author is Opus: still the other family, never back in the author's", "auditor", {}, opus, false, true, true, opus, ["selection_unavailable", "same_family_judge"]],
+    ["a cold catalog (nothing known) judges by the table", "plan-critic", {}, opus, null, null, null, gemini, []],
+  ])("%s", (_name, role, settings, author, hasSol, hasOpus, hasGemini, expected, issues) => {
     const cold = hasSol === null;
-    const answer = resolveSpawnModel({ role, settings, author, pm: opus, ...(cold ? { catalog: null } : { catalog: catalog(hasSol as boolean, hasOpus as boolean), hostId: "h1" }) });
+    const answer = resolveSpawnModel({ role, settings, author, pm: opus, ...(cold ? { catalog: null } : { catalog: catalog(hasSol as boolean, hasOpus as boolean, hasGemini as boolean), hostId: "h1" }) });
     expect({ providerId: answer.providerId, model: answer.model }).toEqual(expected);
     expect(answer.issues).toEqual(issues);
     // Whatever was answered is a pair that can exist.
@@ -119,12 +130,40 @@ describe("the resolver's table of inputs (F4: R2, R3, R4)", () => {
     }
   });
 
+  it("the reviews default to Gemini through 9router on OpenCode v2 with the effort that works there (medium), the auditor and the debugger stay on Sol", () => {
+    for (const role of ["plan-critic", "code-critic", "specialist-reviewer", "triager"]) {
+      expect(resolveSpawnModel({ role, settings: {}, author: opus, pm: opus, catalog: catalog(true, true, true), hostId: "h1" }), role).toMatchObject({ ...gemini, reasoningEffort: "medium", issues: [] });
+    }
+    for (const role of ["auditor", "debugger", "council"]) expect(resolveSpawnModel({ role, settings: {}, author: opus, pm: opus, catalog: catalog(true, true, true), hostId: "h1" }), role).toMatchObject({ ...sol, reasoningEffort: "high" });
+  });
+
+  it("a Gemini author gets a judge that is not Google (the plan critic and the specialist reviewer here; the code critic against the writer is critic-pair.test.ts)", () => {
+    for (const role of ["plan-critic", "specialist-reviewer"]) {
+      const answer = resolveSpawnModel({ role, settings: {}, author: gemini, pm: opus, catalog: catalog(true, true, true), hostId: "h1" });
+      expect(modelFamily(answer.model), role).not.toBe("google");
+      expect(answer, role).toMatchObject({ ...sol, issues: ["crossed_family"] });
+    }
+  });
+
   it("a provider that just hit its limit is out of the offer: the role's next model, judged against the author again", () => {
-    const answer = resolveSpawnModel({ role: "plan-critic", settings: {}, author: opus, pm: opus, catalog: catalog(true, true), hostId: "h1", avoidProvider: "codex" });
+    const answer = resolveSpawnModel({ role: "auditor", settings: {}, author: opus, pm: opus, catalog: catalog(true, true, true), hostId: "h1", avoidProvider: "codex" });
     // Sol is avoided; the only candidates left are the PM's Opus, which is the author's family: kept, and said.
     expect(answer).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", source: "pm" });
     expect(answer.issues).toContain("same_family_judge");
     expect(modelFamily(answer.model)).toBe("claude");
+  });
+
+  it("a reactive limit on opencode2 (9router answered with its quota notice): the review reruns on Sol, never on the Gemini again", () => {
+    for (const role of ["plan-critic", "code-critic", "specialist-reviewer", "triager"]) {
+      const answer = resolveSpawnModel({ role, settings: {}, author: opus, pm: opus, catalog: catalog(true, true, true), hostId: "h1", avoidProvider: "opencode2" });
+      expect({ providerId: answer.providerId, model: answer.model }, role).toEqual(role === "triager" ? { providerId: "codex", model: "gpt-6-luna" } : sol);
+    }
+    // Sol is gone as well: the PM's model of another family than the author... here the author is Gemini, the PM's Opus is fine.
+    const noSol = resolveSpawnModel({ role: "code-critic", settings: {}, author: gemini, pm: opus, catalog: catalog(false, true, true), hostId: "h1", avoidProvider: "opencode2" });
+    expect({ providerId: noSol.providerId, model: noSol.model }).toEqual(opus);
+    // Nothing else is offered: the avoided pair stays, flagged, and the caller fails with the notice instead of running it twice.
+    const none = resolveSpawnModel({ role: "code-critic", settings: {}, author: opus, pm: gemini, catalog: catalog(false, false, true), hostId: "h1", avoidProvider: "opencode2" });
+    expect(none.issues).toContain("model_unavailable_here");
   });
 });
 
@@ -153,10 +192,10 @@ const usageOf = async (percent: Record<string, number | null>, calls: string[] =
   createWriterState({ bb, log: () => undefined } as never);
   const usage = spawnUsageOf({ bb, log: (line) => log.push(line) });
   // The spawn path refreshes in the background (warmSpawnUsage returns at once); a test waits for the cache directly.
-  await usage!.warm({ providerIds: ["claude-code", "codex"], hostId: "h1" });
+  await usage!.warm({ providerIds: ["claude-code", "codex", "opencode2"], hostId: "h1" });
   return usage;
 };
-const base = { settings: {}, pm: opus, catalog: catalog(true, true), hostId: "h1" };
+const base = { settings: {}, pm: opus, catalog: catalog(true, true, true), hostId: "h1" };
 
 describe("a provider's nearly spent limit moves the helpers to the other family", () => {
   it("Opus at 93% weekly: the analyst takes Sol, the result says why and one log line is written", async () => {
@@ -196,22 +235,47 @@ describe("a provider's nearly spent limit moves the helpers to the other family"
     expect(answer.issues).not.toContain(expect.stringContaining("usage_moved"));
   });
 
+  it("9router spent (its usage source says so): the review takes Sol, and the move is said and logged", async () => {
+    const log: string[] = [];
+    const answer = resolveSpawnModel({ role: "code-critic", ...base, author: opus, usage: await usageOf({ "claude-code": 20, codex: 20, opencode2: 96 }, [], log) });
+    expect({ providerId: answer.providerId, model: answer.model }).toEqual(sol);
+    expect(answer.issues).toEqual(["usage_moved: opencode2 weekly 96% → codex/gpt-6.1-sol"]);
+    expect(log).toHaveLength(1);
+    // Room left on 9router: the review stays on Gemini. A source listing the quota under the router's own id counts the same.
+    expect(resolveSpawnModel({ role: "code-critic", ...base, author: opus, usage: await usageOf({ "claude-code": 99, codex: 99, opencode2: 10 }) })).toMatchObject({ ...gemini, issues: [] });
+    expect(resolveSpawnModel({ role: "code-critic", ...base, author: opus, usage: await usageOf({ "claude-code": 20, codex: 20, router9: 97 }) })).toMatchObject({ ...sol });
+  });
+
+  it("the failure triager on a spent 9router goes to Luna, the model it ran on before, not to Sol", async () => {
+    const answer = resolveSpawnModel({ role: "triager", ...base, usage: await usageOf({ "claude-code": 20, codex: 20, opencode2: 96 }) });
+    expect({ providerId: answer.providerId, model: answer.model }).toEqual({ providerId: "codex", model: "gpt-6-luna" });
+    expect(answer.issues).toEqual(["usage_moved: opencode2 weekly 96% → codex/gpt-6-luna"]);
+  });
+
+  it("9router and Sol both spent: Opus when Claude has room (a GPT author: Opus first), else the Gemini stays", async () => {
+    const both = await usageOf({ "claude-code": 20, codex: 97, opencode2: 96 });
+    expect(resolveSpawnModel({ role: "plan-critic", ...base, author: opus, usage: both })).toMatchObject({ ...opus, issues: ["same_family_judge_by_limit", "usage_moved: opencode2 weekly 96% → claude-code/claude-opus-5-5"] });
+    expect(resolveSpawnModel({ role: "plan-critic", ...base, author: sol, usage: both })).toMatchObject({ ...opus, issues: ["usage_moved: opencode2 weekly 96% → claude-code/claude-opus-5-5"] });
+    // Claude's weekly window is at 98% (the situation of 2026-10-27): the reviews stay on Gemini, Claude is not asked.
+    expect(resolveSpawnModel({ role: "plan-critic", ...base, author: opus, usage: await usageOf({ "claude-code": 98, codex: 97, opencode2: 96 }) })).toMatchObject({ ...gemini, issues: [] });
+  });
+
   it("a judge that the limit puts into its author's family stays allowed and records same_family_judge_by_limit", async () => {
-    const answer = resolveSpawnModel({ role: "plan-critic", ...base, author: opus, usage: await usageOf({ "claude-code": 20, codex: 95 }) });
+    const answer = resolveSpawnModel({ role: "auditor", ...base, author: opus, usage: await usageOf({ "claude-code": 20, codex: 95 }) });
     expect({ providerId: answer.providerId, model: answer.model }).toEqual(opus);
     expect(answer.issues).toEqual(["same_family_judge_by_limit", "usage_moved: codex weekly 95% → claude-code/claude-opus-5-5"]);
   });
 
   it("the cross-family rule comes first: the author on Sol puts the critic on Opus, and Opus spent moves it back to Sol with the issue", async () => {
     const settings = { [roleModelKey("planner")]: { model: "gpt-6.1-sol" } };
-    const answer = resolveSpawnModel({ role: "plan-critic", ...base, settings, author: sol, usage: await usageOf({ "claude-code": 94, codex: 10 }) });
+    const answer = resolveSpawnModel({ role: "auditor", ...base, settings, author: sol, usage: await usageOf({ "claude-code": 94, codex: 10 }) });
     expect({ providerId: answer.providerId, model: answer.model }).toEqual(sol);
     expect(answer.issues).toEqual(expect.arrayContaining(["crossed_family", "same_family_judge_by_limit"]));
   });
 
   it("a judge whose limit moves it away from its author's family stops being flagged as not independent", async () => {
     // Sol is gone from the machine, so the judge would stay on the author's Opus; Opus is spent but Sol is not on offer: it stays and says so.
-    const answer = resolveSpawnModel({ role: "plan-critic", ...base, catalog: catalog(false, true), author: opus, usage: await usageOf({ "claude-code": 95, codex: 10 }) });
+    const answer = resolveSpawnModel({ role: "auditor", ...base, catalog: catalog(false, true), author: opus, usage: await usageOf({ "claude-code": 95, codex: 10 }) });
     expect(answer.issues).toContain("same_family_judge");
     expect(answer.issues).not.toContain("same_family_judge_by_limit");
   });

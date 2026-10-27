@@ -26,8 +26,8 @@ async function mount(withCatalog = false) {
       ...(withCatalog ? {
         hosts: { list: async () => [{ id: "mac", name: "Mac mini", status: "connected" }] },
         providers: {
-          list: async () => [info("claude-code"), info("codex")],
-          models: async (args?: { providerId?: string }) => { const providerId = args?.providerId; return { models: providerId === "claude-code" ? [model("claude-opus-5-5", ["low", "high", "max"]), model("claude-sonnet-5-5", ["low", "medium"])] : [model("gpt-6.1-sol", ["medium", "high"])] }; },
+          list: async () => [info("claude-code"), info("codex"), info("opencode2")],
+          models: async (args?: { providerId?: string }) => { const providerId = args?.providerId; if (providerId === "opencode2") return { models: [model("router9/ag/gemini-3.8-flash-high", ["medium", "high"])] }; return { models: providerId === "claude-code" ? [model("claude-opus-5-5", ["low", "high", "max"]), model("claude-sonnet-5-5", ["low", "medium"])] : [model("gpt-6.1-sol", ["medium", "high"])] }; },
         },
       } : {}),
     },
@@ -45,8 +45,10 @@ describe("get_role_models: the table «role -> model» of a place", () => {
     const got = await read(harness, { projectId: GLOBAL });
     expect(got.roles.map((row) => row.role)).toEqual(ROLE_TABLE.map((row) => row.id));
     for (const row of got.roles) expect(row, row.role).toMatchObject({ source: "default", sourceKey: null, own: false, version: 0, offered: null, model: row.defaultModel });
-    expect(got.roles.find((row) => row.role === "code-critic")).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", effort: "high" });
-    expect(got.options.map((option) => option.id)).toEqual(["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-astra", "gpt-6-luna"]);
+    expect(got.roles.find((row) => row.role === "code-critic")).toMatchObject({ providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", effort: "medium" });
+    expect(got.roles.find((row) => row.role === "auditor")).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", effort: "high" });
+    expect(got.options.map((option) => option.id)).toEqual(["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-astra", "gpt-6-luna", "router9/ag/gemini-3.8-flash-high"]);
+    expect(got.options.find((option) => option.id === "router9/ag/gemini-3.8-flash-high")).toMatchObject({ providerId: "opencode2", family: "google", label: "Gemini 3.8 Flash (9router)" });
     await harness.lifecycle.dispose();
   });
 
@@ -110,8 +112,11 @@ describe("get_role_models: the table «role -> model» of a place", () => {
     const { harness } = await mount(true);
     const got = await read(harness, { projectId: GLOBAL });
     expect(got.options.map((option) => [option.id, option.offered])).toEqual([
-      ["claude-fable-5-1", false], ["claude-opus-5-5", true], ["claude-sonnet-5-5", true], ["claude-haiku-5-5", false], ["gpt-6.1-sol", true], ["gpt-6.1-terra", false], ["gpt-6-astra", false], ["gpt-6-luna", false],
+      ["claude-fable-5-1", false], ["claude-opus-5-5", true], ["claude-sonnet-5-5", true], ["claude-haiku-5-5", false], ["gpt-6.1-sol", true], ["gpt-6.1-terra", false], ["gpt-6-astra", false], ["gpt-6-luna", false], ["router9/ag/gemini-3.8-flash-high", true],
     ]);
+    expect(got.options.find((option) => option.id === "router9/ag/gemini-3.8-flash-high")!.efforts).toEqual(["medium", "high"]);
+    // The reviews' default is on offer here; a row that holds the Gemini says so, and the plan critic shows it.
+    expect(got.roles.find((row) => row.role === "plan-critic")).toMatchObject({ model: "router9/ag/gemini-3.8-flash-high", effort: "medium", offered: true });
     expect(got.options.find((option) => option.id === "claude-opus-5-5")!.efforts).toEqual(["low", "high", "max"]);
     expect(got.options.find((option) => option.id === "gpt-6.1-sol")!.efforts).toEqual(["medium", "high"]);
     expect(got.roles.find((row) => row.role === "pm-reader")).toMatchObject({ model: "claude-haiku-5-5", offered: false });

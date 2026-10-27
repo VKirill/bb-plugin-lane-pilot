@@ -176,7 +176,8 @@ describe("task families", () => {
     expect(repeatedFailureReason({ state:"provider_error", reason }, { state:"provider_error", reason })).toBeNull();
     expect(failureClass("spawn_rejected", "writer_provider_unavailable:breaker_open:acp-cursor/grok-4.6: 1 provider failures in 10 min")).toBe("limit");
     for (const text of ["You've hit your usage limit. Try again in 3 hours.", "Error: quota exceeded for this month", "429 Too Many Requests",
-      "You are out of credits.", "Your credit balance is too low to access the API"]) expect(providerLimitNotice(text)).not.toBeNull();
+      "You are out of credits.", "Your credit balance is too low to access the API",
+      "[antigravity/gemini-3.8-flash-high] Unavailable (reset after 2h 7s)"]) expect(providerLimitNotice(text)).not.toBeNull();
   });
 
   // The whole answers of the acp-cursor writers of cakekeeper ck-18, ck-21 and ck-25 (2026-10-12): read as reports, they

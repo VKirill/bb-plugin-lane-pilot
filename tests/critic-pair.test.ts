@@ -65,15 +65,18 @@ describe("code critic on another model than the writer", () => {
 });
 
 describe("the pipeline stages take their model from the role table", () => {
-  const hostCatalog = catalog({ codex: { "gpt-6.1-sol": ["high", "medium"], "gpt-6-luna": ["high"] }, "claude-code": { "claude-opus-5-5": ["high"], "claude-haiku-5-5": ["low"] } });
+  const GEMINI = "router9/ag/gemini-3.8-flash-high";
+  const hostCatalog = catalog({ codex: { "gpt-6.1-sol": ["high", "medium"], "gpt-6-luna": ["high"] }, "claude-code": { "claude-opus-5-5": ["high", "medium"], "claude-haiku-5-5": ["low"] }, opencode2: { [GEMINI]: ["medium", "high"] } });
   const fallback = { providerId: "codex", model: "writer-model" };
 
-  it("uses the code-critic row (GPT-6.1 Sol high) when the owner set nothing, the owner's row when there is one, and the old stage selection until then", async () => {
-    expect(await roleSelection({ catalog: hostCatalog, settings: {}, role: "code-critic", fallback })).toEqual({ providerId: "codex", model: "gpt-6.1-sol", effort: "high", source: "default" });
+  it("uses the code-critic row (Gemini 3.8 Flash through 9router, medium) when the owner set nothing, the owner's row when there is one, and the old stage selection until then", async () => {
+    expect(await roleSelection({ catalog: hostCatalog, settings: {}, role: "code-critic", fallback })).toEqual({ providerId: "opencode2", model: GEMINI, effort: "medium", source: "default" });
+    for (const role of ["plan-critic", "specialist-reviewer"]) expect(await roleSelection({ catalog: hostCatalog, settings: {}, role, fallback }), role).toMatchObject({ providerId: "opencode2", model: GEMINI, effort: "medium" });
+    expect(await roleSelection({ catalog: hostCatalog, settings: {}, role: "auditor", fallback })).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", effort: "high" });
     expect(await roleSelection({ catalog: hostCatalog, settings: { "role_model.code-critic": { model: "claude-opus-5-5" } }, role: "code-critic", fallback }))
       .toEqual({ providerId: "claude-code", model: "claude-opus-5-5", effort: "high", source: "table" });
     expect(await roleSelection({ catalog: hostCatalog, settings: { "code_critique.provider": "codex", "code_critique.model": "gpt-6-luna", "code_critique.reasoning_effort": "high" }, role: "code-critic", fallback }))
-      .toMatchObject({ model: "gpt-6.1-sol", source: "default" });
+      .toMatchObject({ model: GEMINI, source: "default" });
     expect(await roleSelection({ catalog: hostCatalog, settings: { "pm_read.provider": "claude-code", "pm_read.model": "claude-haiku-5-5", "pm_read.reasoning_effort": "low" }, role: "pm-reader", fallback }))
       .toEqual({ providerId: "claude-code", model: "claude-haiku-5-5", effort: "low", source: "stage" });
   });
@@ -85,6 +88,43 @@ describe("the pipeline stages take their model from the role table", () => {
     expect(await roleSelection({ catalog: noEffort, settings: {}, role: "plan-critic", fallback })).toMatchObject({ source: "fallback" });
     const broken: CriticCatalog = { provider: async () => { throw new Error("host offline"); }, models: async () => [] };
     expect(await roleSelection({ catalog: broken, settings: {}, role: "plan-critic", fallback })).toMatchObject({ ...fallback, source: "fallback" });
+  });
+
+  it("9router is not offered on the machine (no model, or no effort): the code critic and the plan critic take Sol, the stage's old pick comes after", async () => {
+    const noGemini = catalog({ codex: { "gpt-6.1-sol": ["high", "medium"], "gpt-6-luna": ["high"] }, opencode2: { "other/model": ["high"] } });
+    expect(await roleSelection({ catalog: noGemini, settings: {}, role: "code-critic", fallback })).toEqual({ providerId: "codex", model: "gpt-6.1-sol", effort: "high", source: "default" });
+    expect(await roleSelection({ catalog: noGemini, settings: {}, role: "plan-critic", fallback })).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol" });
+    expect(await roleSelection({ catalog: noGemini, settings: {}, role: "triager", fallback })).toMatchObject({ providerId: "codex", model: "gpt-6-luna", effort: "high" });
+    const noProvider = catalog({ codex: { "gpt-6.1-sol": ["high"] } });
+    expect(await roleSelection({ catalog: noProvider, settings: {}, role: "code-critic", fallback })).toMatchObject({ model: "gpt-6.1-sol" });
+    // Neither is there: what the stage ran on before the table.
+    expect(await roleSelection({ catalog: catalog({ codex: { "writer-model": ["high"] } }), settings: {}, role: "code-critic", fallback })).toEqual({ ...fallback, effort: null, source: "fallback" });
+    // The owner's own pick of Opus that the machine lacks is not the Gemini's case: the old rule (the stage's pick) stands.
+    expect(await roleSelection({ catalog: noGemini, settings: { "role_model.code-critic": { model: "claude-opus-5-5" } }, role: "code-critic", fallback })).toMatchObject({ source: "fallback" });
+  });
+
+  it("9router spent (usage source): the review takes Sol; Sol spent too: Opus; both unusable: the Gemini stays", async () => {
+    const spentOn = (...ids: string[]) => (providerId: string) => (ids.includes(providerId) ? { percent: 96, window: "weekly" } : null);
+    expect(await roleSelection({ catalog: hostCatalog, settings: {}, role: "plan-critic", fallback, spent: spentOn("opencode2") }))
+      .toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", effort: "high", issues: ["usage_moved: opencode2 weekly 96% → codex/gpt-6.1-sol"] });
+    expect(await roleSelection({ catalog: hostCatalog, settings: {}, role: "plan-critic", fallback, spent: spentOn("opencode2", "codex") }))
+      .toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5" });
+    expect(await roleSelection({ catalog: hostCatalog, settings: {}, role: "plan-critic", fallback, spent: spentOn("opencode2", "codex", "claude-code") }))
+      .toMatchObject({ providerId: "opencode2", model: GEMINI });
+  });
+
+  it("puts the code critic on another family than a Gemini writer's: Sol, else Opus, never the writer's own family while one is offered", async () => {
+    const gem = { providerId: "opencode2", model: GEMINI };
+    const sol = { providerId: "codex", model: "gpt-6.1-sol" };
+    const opus = { providerId: "claude-code", model: "claude-opus-5-5" };
+    const input = { effort: "medium", tier: "standard" as const };
+    expect(await criticAcrossFamilies({ ...input, catalog: hostCatalog, critic: gem, writer: gem })).toEqual({ pair: sol, changed: true });
+    expect(await criticAcrossFamilies({ ...input, catalog: catalog({ "claude-code": { "claude-opus-5-5": ["medium"] }, opencode2: { [GEMINI]: ["medium"] } }), critic: gem, writer: gem })).toEqual({ pair: opus, changed: true });
+    expect(await criticAcrossFamilies({ ...input, catalog: catalog({ opencode2: { [GEMINI]: ["medium"] } }), critic: gem, writer: gem })).toEqual({ pair: gem, changed: false });
+    // A Claude, GPT or Composer writer is another family than the Gemini critic already.
+    expect(await criticAcrossFamilies({ ...input, catalog: hostCatalog, critic: gem, writer: opus })).toEqual({ pair: gem, changed: false });
+    expect(await criticAcrossFamilies({ ...input, catalog: hostCatalog, critic: gem, writer: sol })).toEqual({ pair: gem, changed: false });
+    expect(await criticAcrossFamilies({ ...input, catalog: hostCatalog, critic: gem, writer: { providerId: "acp-cursor", model: "composer-2.5" } })).toEqual({ pair: gem, changed: false });
   });
 
   it("puts the code critic on the other family than the writer's: Claude writer, GPT critic; GPT writer, Claude critic", async () => {
@@ -130,6 +170,17 @@ describe("a nearly spent provider moves the stage's critic to the other family",
     expect(await criticOffSpent({ ...input, catalog: both, spent: undefined })).toEqual({ pair: sol, issues: [] });
     const broken: CriticCatalog = { provider: async () => { throw new Error("host offline"); }, models: async () => [] };
     expect(await criticOffSpent({ ...input, catalog: broken, spent: spentOn("codex") })).toEqual({ pair: sol, issues: [] });
+  });
+
+  it("a Gemini critic on a spent 9router goes to Sol, to Opus when the writer is GPT, and says so", async () => {
+    const gem = { providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high" };
+    const three = catalog({ codex: { "gpt-6.1-sol": ["medium"] }, "claude-code": { "claude-opus-5-5": ["medium"] }, opencode2: { [gem.model]: ["medium"] } });
+    const input = { effort: "medium", tier: "standard" as const, catalog: three, critic: gem };
+    expect(await criticOffSpent({ ...input, writer: null, spent: spentOn("opencode2") })).toEqual({ pair: sol, issues: ["usage_moved: opencode2 weekly 94% → codex/gpt-6.1-sol"] });
+    expect(await criticOffSpent({ ...input, writer: { providerId: "codex", model: "gpt-6-luna" }, spent: spentOn("opencode2") })).toEqual({ pair: opus, issues: ["usage_moved: opencode2 weekly 94% → claude-code/claude-opus-5-5"] });
+    // Only the writer's own family is free: allowed, and said.
+    expect(await criticOffSpent({ ...input, writer: { providerId: "codex", model: "gpt-6-luna" }, spent: spentOn("opencode2", "claude-code") }))
+      .toEqual({ pair: sol, issues: ["usage_moved: opencode2 weekly 94% → codex/gpt-6.1-sol", "same_family_judge_by_limit"] });
   });
 
   it("the pm-reader row of the table (Haiku) goes to Luna when Claude is nearly spent", async () => {

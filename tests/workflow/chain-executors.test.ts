@@ -254,6 +254,31 @@ describe("the agent step", () => {
     expect(String((t.spawned[1]!.pluginMetadata as Row).spawnId)).toMatch(/:limit$/);
   });
 
+  it.each([
+    ["the quota notice", "[antigravity/gemini-3.8-flash-high] [429]: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h"],
+    ["the unavailable notice", "[antigravity/gemini-3.8-flash-high] Unavailable (reset after 2h 7s)"],
+  ])("a review on the Gemini through 9router (opencode2) that answers with %s reruns once on GPT-6.1 Sol, never on the Gemini again", async (_name, notice) => {
+    let calls = 0;
+    const answer = () => ((calls += 1) === 1 ? notice : reply({ count: 3, summary: "three", handoff: "counted" }));
+    const t = await setup({ look: [answer] });
+    dispose = t.dispose;
+    const summary = await t.start(oneAgent({ role: "plan-critic" })).done;
+    expect(summary).toMatchObject({ status: "succeeded", output: { count: 3 } });
+    expect(t.spawned).toHaveLength(2);
+    expect(t.spawned[0]).toMatchObject({ providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high" });
+    expect(t.spawned[1]).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol" });
+    expect(String((t.spawned[1]!.pluginMetadata as Row).spawnId)).toMatch(/:limit$/);
+  });
+
+  it("a Gemini review whose 9router is not on the machine (a warm catalog without it) spawns on Sol at once, not on the Gemini", async () => {
+    const t = await setup({ look: [reply({ count: 1, summary: "one", handoff: "counted" })] }, { offers: [{ providerId: "claude-code", model: "claude-opus-5-5" }, { providerId: "codex", model: "gpt-6.1-sol" }] });
+    dispose = t.dispose;
+    await modelCatalogOf(t.rt.ctx).get();
+    expect((await t.start(oneAgent({ role: "code-critic" })).done).status).toBe("succeeded");
+    expect(t.spawned).toHaveLength(1);
+    expect(t.spawned[0]).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol" });
+  });
+
   it("a limit notice with the other family not on offer fails the step with the notice, it does not run the same pair twice", async () => {
     const t = await setup({ look: ["Upgrade your plan to continue"] }, { offers: [{ providerId: "claude-code", model: "claude-opus-5-5" }, { providerId: "codex", model: "gpt-6.1-sol", host: "other" }] });
     dispose = t.dispose;

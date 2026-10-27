@@ -59,7 +59,7 @@ describe("workflow_step_executors", () => {
     const db = journalDb();
     const ctx = { bb: fake.bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: settings }) } as unknown as ServerCore;
     const draft = { id: "wfd_1", projectId: "proj_1", definition: { nodes: [
-      { id: "a", type: "agent", role: "triager", provider: "acp-opencode", model: "deepseek/v9", reasoning: "high" },
+      { id: "a", type: "agent", role: "rules-analyzer", provider: "acp-opencode", model: "deepseek/v9", reasoning: "high" },
       { id: "w", type: "lp-task" },
     ] } };
     const lib = { nodes: [{ id: "x", type: "agent", role: "planner", model_preset: "cheap-fast" }] };
@@ -74,7 +74,7 @@ describe("workflow_step_executors", () => {
   it("resolves a draft against the project's settings: a step runs on its role's model, whatever the node names, and a model the machines do not list is flagged", async () => {
     const result = await models().stepExecutors({ draftId: "wfd_1" });
     expect(result.found).toBe(true);
-    // The triager's row is GPT-6 Luna (Codex has it); the node's own deepseek/v9 is ignored.
+    // The rules analyzer's row is GPT-6 Luna (Codex has it); the node's own deepseek/v9 is ignored.
     expect(result.executors.map((row) => [row.nodeId, row.model, row.issues])).toEqual([
       ["a", "gpt-6-luna", []], ["w", "gpt-6-luna", ["effort_auto", "effort_unsupported"]],
     ]);

@@ -9,12 +9,17 @@
  *  3. the built-in default below.
  * The writer of a task is NOT in this table: it stays the pick of Jev from the writers' anamnesis (model-profiles.ts).
  *
- * The options of the table are the Claude and GPT models the machines offer, nothing else.
+ * The options of the table are the Claude, GPT and Gemini Flash (through 9router) models the machines offer, nothing else.
  */
 import { belowTier, modelTier, type ModelTier } from "./model-tiers";
+import { offeredOnHost, type ModelCatalog } from "./model-catalog";
 
-export type ModelFamily = "claude" | "gpt";
-export type RoleModelOption = { id: string; providerId: string; label: string; family: ModelFamily; tier: ModelTier };
+export type ModelFamily = "claude" | "gpt" | "google";
+export type RoleModelOption = {
+  id: string; providerId: string; label: string; family: ModelFamily; tier: ModelTier;
+  /** The effort the model runs on when the owner picks it for a row without naming one (the model's own catalog default; the row's effort may not exist for it). */
+  defaultEffort?: string;
+};
 
 export const ROLE_MODEL_OPTIONS: readonly RoleModelOption[] = [
   { id: "claude-fable-5-1", providerId: "claude-code", label: "Claude Fable 5.1", family: "claude", tier: "strong" },
@@ -25,19 +30,26 @@ export const ROLE_MODEL_OPTIONS: readonly RoleModelOption[] = [
   { id: "gpt-6.1-terra", providerId: "codex", label: "GPT-6.1 Terra", family: "gpt", tier: "standard" },
   { id: "gpt-6-astra", providerId: "codex", label: "GPT-6 Astra", family: "gpt", tier: "strong" },
   { id: "gpt-6-luna", providerId: "codex", label: "GPT-6 Luna", family: "gpt", tier: "light" },
+  // The owner's near-free Gemini subscription through 9router (OpenCode v2 provider `opencode2`, 2026-10-27): the judges' default. The «high» is
+  // in the model's name; the reasoning effort stays the catalog default «medium» (what the writer profile and the harness editor run on).
+  { id: "router9/ag/gemini-3.8-flash-high", providerId: "opencode2", label: "Gemini 3.8 Flash (9router)", family: "google", tier: "standard", defaultEffort: "medium" },
 ];
 /** The reasoning efforts the table offers (the narrower the model's own list, the fewer the picker shows). */
 export const ROLE_MODEL_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 
+/** The option with exactly this id (what a stored `role_model.<role>` must name). */
 export const roleModelOption = (model: string): RoleModelOption | undefined => ROLE_MODEL_OPTIONS.find((row) => row.id === model);
+/** The option a model name stands for: its own id, else the id after the last slash (`openai/gpt-6.1-sol` is `gpt-6.1-sol`). */
+const optionOfName = (model: string): RoleModelOption | undefined => roleModelOption(model) ?? roleModelOption(model.slice(model.lastIndexOf("/") + 1));
 
 /** The family of a model: its option's, else read off the name (a legacy stage selection may name any model); null when neither. */
 export function modelFamily(model: string | null | undefined): ModelFamily | null {
   if (!model) return null;
-  const known = roleModelOption(model.slice(model.lastIndexOf("/") + 1));
+  const known = optionOfName(model);
   if (known) return known.family;
   if (/claude|opus|sonnet|haiku/i.test(model)) return "claude";
   if (/gpt-|\bo\d\b|codex/i.test(model)) return "gpt";
+  if (/gemini|router9\/ag\//i.test(model)) return "google";
   return null;
 }
 
@@ -48,32 +60,42 @@ export type RoleRow = {
   default: RoleDefault;
   /** The least a model of this role may be when it was inherited (a legacy selection): a lighter one is raised to the default. The table's own pick is kept. */
   least?: ModelTier;
+  /**
+   * For a row whose default is a Gemini (the 9router subscription may be absent from the machine or spent): the model it runs on then, the
+   * strongest other-family model it ran on before. The resolver tries it right after the default, before the PM chat's model.
+   */
+  fallback?: { model: string; effort: string };
   /** The settings prefixes of the stage selections the role keeps reading, in order. */
   legacy?: readonly string[];
 };
 
 /**
- * Why each default (Maslov: the judge comes from another family than the author; the author is Claude, so the judges are GPT):
+ * Why each default (Maslov: the judge comes from another family than the author; the author is Claude, so the judges are not Claude):
  *  - authors (analyst, planner, architect, specialists): Claude Opus 5.5 high, the strongest author we have; they write the documents and plans;
- *  - judges (plan-critic, code-critic, auditor, debugger, council chair): GPT-6.1 Sol high, the strongest model of the other family; it
+ *  - the reviews (plan-critic, specialist-reviewer, code-critic, which the phase wave review lp.review also runs, and the failure triager):
+ *    Gemini 3.8 Flash through 9router (owner's decision of 2026-10-27: a near-free subscription with many accounts, while Claude's weekly
+ *    window is at 98%, so Claude and GPT limits go to the authors). When the machine does not offer it, or its usage source says spent, or a
+ *    call hits its limit, the review takes `fallback`, the GPT model it ran on before;
+ *  - the judges that stay on GPT (auditor, debugger, council chair): GPT-6.1 Sol high, the strongest model of the other family; it
  *    reads what the Claude authors wrote and finds what they cannot see in their own work. The debugger is a judge of causes, not an author;
- *  - cheap judgments (pm-reader, triager, memory, project-life, errand, browser-qa): the small models, picked by what the job is;
+ *  - cheap judgments (pm-reader, memory, project-life, errand, browser-qa): the small models, picked by what the job is;
  *  - upkeep authors (docs-maintainer: Luna, a text job with a code checker behind it; repairer: Opus, the engineer who fixes Lane Pilot itself).
  */
+const GEMINI_FLASH = "router9/ag/gemini-3.8-flash-high";
 export const ROLE_TABLE: readonly RoleRow[] = [
   { id: "analyst", default: { model: "claude-opus-5-5", effort: "high", why: "Reads the goal and the project and writes the analysis the plan stands on; an author, so Claude." } },
   { id: "planner", default: { model: "claude-opus-5-5", effort: "high", why: "Writes the phase plans every task is cut from; the strongest author." }, least: "strong" },
   { id: "workflow-architect", default: { model: "claude-opus-5-5", effort: "high", why: "Designs a graph from a conversation with the owner; an author." } },
   { id: "specialist", default: { model: "claude-opus-5-5", effort: "high", why: "Design, copy, SEO, video, research and the owner's own agents (unless an agent names its own model); they write text and design." }, legacy: ["specialist"] },
-  { id: "plan-critic", default: { model: "gpt-6.1-sol", effort: "high", why: "Judges the planner's plan; another family than its Claude author." }, legacy: ["plan_critique"] },
-  { id: "specialist-reviewer", default: { model: "gpt-6.1-sol", effort: "high", why: "A second, domain-minded look at the plan before the work starts: a judge, another family than the planner." }, legacy: ["specialist"] },
-  { id: "code-critic", default: { model: "gpt-6.1-sol", effort: "high", why: "Judges the writer's diff; when the writer is a GPT model it runs on Claude Opus instead (cross-family rule)." }, least: "standard", legacy: ["code_critique"] },
+  { id: "plan-critic", default: { model: GEMINI_FLASH, effort: "medium", why: "Judges the planner's plan; another family than its Claude author, on the near-free Gemini subscription so Claude and GPT limits go to the authors. Without it: GPT-6.1 Sol." }, fallback: { model: "gpt-6.1-sol", effort: "high" }, legacy: ["plan_critique"] },
+  { id: "specialist-reviewer", default: { model: GEMINI_FLASH, effort: "medium", why: "A second, domain-minded look at the plan before the work starts: a judge, another family than the planner, on the near-free Gemini subscription. Without it: GPT-6.1 Sol." }, fallback: { model: "gpt-6.1-sol", effort: "high" }, legacy: ["specialist"] },
+  { id: "code-critic", default: { model: GEMINI_FLASH, effort: "medium", why: "Judges the writer's diff and every dimension of a wave review (lp.review), on the near-free Gemini subscription; when the writer is a Gemini model it runs on GPT-6.1 Sol instead (cross-family rule), and so it does when Gemini is not offered or is spent." }, fallback: { model: "gpt-6.1-sol", effort: "high" }, least: "standard", legacy: ["code_critique"] },
   { id: "auditor", default: { model: "gpt-6.1-sol", effort: "high", why: "Audits the finished work against the goal; another family than the Claude authors." }, least: "standard", legacy: ["code_critique", "night_review"] },
   { id: "debugger", default: { model: "gpt-6.1-sol", effort: "high", why: "Finds the cause of a failure by reading logs and code: a judge of causes, strong at terminal-heavy work." }, least: "standard", legacy: ["workflow.debugger", "specialist"] },
   { id: "council", default: { model: "gpt-6.1-sol", effort: "high", why: "The chair weighs the seats' opinions: a judge, not an author." } },
   { id: "pm-reader", default: { model: "claude-haiku-5-5", effort: "low", why: "Reads long files and pulls out what the PM asked for: cheap, fast extraction." }, legacy: ["pm_read"] },
   { id: "rules-analyzer", default: { model: "gpt-6-luna", effort: "high", why: "Reads a project's failed writer attempts at night and writes the project rules that would have prevented them (and rewrites a rule that did not work). Luna with high effort set aside failures that were not the writers' where a stronger author wrote a rule that sent writers outside their paths; it is also the cheap one for a job that runs every night." } },
-  { id: "triager", default: { model: "gpt-6-luna", effort: "high", why: "Sorts a failed gate into its class: a cheap judgment on the failure of a writer's work; Luna is cheap and, with high effort, reads a log as well as a Haiku." } },
+  { id: "triager", default: { model: GEMINI_FLASH, effort: "medium", why: "Sorts a failed gate into its class: a cheap judgment on the failure of a writer's work, on the near-free Gemini subscription. Without it: Luna with high effort, which reads a log as well as a Haiku." }, fallback: { model: "gpt-6-luna", effort: "high" } },
   { id: "memory", default: { model: "claude-haiku-5-5", effort: "medium", why: "Distils notes and facts into the memory: a small, careful text job." }, legacy: ["memory"] },
   { id: "project-life", default: { model: "claude-haiku-5-5", effort: "medium", why: "Keeps PROGRESS and CHANGELOG up to date from what happened: short factual text." }, legacy: ["project_life"] },
   { id: "errand", default: { model: "claude-sonnet-5-5", effort: "medium", why: "Runs a script, a send or a check as told: tool use, no deep thinking." }, legacy: ["errand"] },
@@ -146,13 +168,34 @@ export function roleDefaultModel(rowId: string): RoleModel {
 }
 
 /**
+ * Whether the machine the helpers run on offers a table model. `offeredOnHost` answers unknown (null) for a model the catalog does not list
+ * at all, which is right for Claude and GPT (every machine has their native providers) but wrong for a Gemini through 9router: a machine that
+ * is not set up for it simply does not list it. For such an option a connected machine whose catalog lacks the model does not offer it (false),
+ * so the review takes its fallback instead of failing inside the spawn. A cold catalog, an unknown or disconnected machine stay unknown.
+ */
+export function offeredForRole(catalog: ModelCatalog, providerId: string, model: string, hostId: string | null | undefined): boolean | null {
+  const listed = offeredOnHost(catalog, providerId, model, hostId);
+  if (listed !== null || !hostId || !catalog.providers.length) return listed;
+  const option = optionOfName(model);
+  if (!option || option.providerId === "claude-code" || option.providerId === "codex") return null;
+  return catalog.hosts.find((row) => row.id === hostId)?.connected ? false : null;
+}
+
+/** What a row runs on when its default (a Gemini) is not available: its `fallback`, null for a row that has none. */
+export function roleFallbackModel(rowId: string): RoleModel | null {
+  const row = ROLE_TABLE.find((item) => item.id === rowId);
+  const option = row?.fallback ? roleModelOption(row.fallback.model) : undefined;
+  return row?.fallback && option ? { providerId: option.providerId, model: option.id, effort: row.fallback.effort, source: "default", sourceKey: null } : null;
+}
+
+/**
  * The provider a model runs on, so a provider and a model are never sent as a pair that cannot exist (a GPT model on claude-code).
  * A provider the caller named stands, except that the two native providers cannot serve the other family's model of the table
  * (`claude-code` + `gpt-6.1-sol` is `codex`). With no provider: the model's own row of the table, else what the catalog says
  * (`catalogProvider`, only when it names one), else the family of the name, else null (the caller's default).
  */
 export function consistentProvider(providerId: string | null | undefined, model: string, catalogProvider?: (model: string) => string | null | undefined): string | null {
-  const option = roleModelOption(model.slice(model.lastIndexOf("/") + 1));
+  const option = optionOfName(model);
   const given = providerId?.trim() || null;
   if (given && !(option && option.providerId !== given && (given === "claude-code" || given === "codex"))) return given;
   if (option) return option.providerId;
@@ -163,13 +206,22 @@ export function consistentProvider(providerId: string | null | undefined, model:
 }
 
 /**
+ * The effort of the owner's pick that names none: the row's default when the pick is the row's default model; else the model's own default
+ * (a Gemini: medium), else, for a row whose default is a Gemini, the effort of the model it falls back to (high); else the row's.
+ */
+function pickedEffort(row: RoleRow, option: RoleModelOption): string {
+  if (option.id === row.default.model) return row.default.effort;
+  return option.defaultEffort ?? row.fallback?.effort ?? row.default.effort;
+}
+
+/**
  * The model of a role from the settings alone (no machine consulted): table row, else legacy stage selection, else the default.
  * A legacy selection below the role's least tier is passed over for the default, as the inherited model of a deciding role always was.
  */
 export function resolveRoleModel(role: string, settings: Record<string, unknown>): RoleModel {
   const row = roleRow(role);
   const own = tableRowAt(settings, row.id);
-  if (own) return { providerId: own.option.providerId, model: own.option.id, effort: own.effort ?? row.default.effort, source: "table", sourceKey: roleModelKey(row.id) };
+  if (own) return { providerId: own.option.providerId, model: own.option.id, effort: own.effort ?? pickedEffort(row, own.option), source: "table", sourceKey: roleModelKey(row.id) };
   let escalated = false;
   for (const stage of row.legacy ?? []) {
     const providerId = text(settings[`${stage}.provider`]), model = text(settings[`${stage}.model`]);
@@ -185,23 +237,39 @@ const PEER: Record<string, string> = {
   "claude-fable-5-1": "gpt-6-astra", "claude-opus-5-5": "gpt-6.1-sol", "claude-sonnet-5-5": "gpt-6.1-terra", "claude-haiku-5-5": "gpt-6-luna",
   "gpt-6-astra": "claude-fable-5-1", "gpt-6.1-sol": "claude-opus-5-5", "gpt-6.1-terra": "claude-sonnet-5-5", "gpt-6-luna": "claude-haiku-5-5",
 };
-export function crossFamilyPeer(model: string): { providerId: string; model: string } | null {
-  const peer = PEER[model.slice(model.lastIndexOf("/") + 1)];
-  const option = peer ? roleModelOption(peer) : undefined;
-  return option ? { providerId: option.providerId, model: option.id } : null;
-}
+/**
+ * The peers of a Gemini (the third family), strongest first: GPT-6.1 Sol, then Claude Opus. A Gemini has no equal in the other two, so it is
+ * not paired by strength: its judge-peer is the strongest model of another family that is on offer.
+ */
+const GOOGLE_PEERS: readonly string[] = ["gpt-6.1-sol", "claude-opus-5-5"];
 
 /**
- * The cross-family rule for a judge of someone's work: when the author's model is of the judge's own family, the judge takes its peer in the
- * other family. Unknown families (a Gemini or Composer writer, no writer yet) leave the judge as the table has it. Returns the pair and
- * whether it changed.
+ * The models a pick can hand over to when a rule needs another family, best first. With two families the answer is the one peer of the table
+ * (Claude <-> GPT, same strength). With three: a Claude or GPT model keeps its peer in the other of the two (the pairs of the table do not
+ * change); a Gemini takes the strongest available model that is not of its author's family: with `authorFamily` given, the peers of that
+ * family come last (and are still returned: when nothing else is offered the caller keeps the judge going and says it is not independent).
  */
-export function judgeAgainstAuthor(judge: { providerId: string; model: string }, author: { providerId: string; model: string } | null): { providerId: string; model: string; changed: boolean } {
+export function crossFamilyPeers(model: string, authorFamily?: ModelFamily | null): Array<{ providerId: string; model: string }> {
+  const own = optionOfName(model);
+  const ids = modelFamily(model) === "google" ? GOOGLE_PEERS : (own && PEER[own.id] ? [PEER[own.id]!] : []);
+  const peers = ids.flatMap((id) => { const option = roleModelOption(id); return option ? [{ providerId: option.providerId, model: option.id }] : []; });
+  return authorFamily ? [...peers.filter((peer) => modelFamily(peer.model) !== authorFamily), ...peers.filter((peer) => modelFamily(peer.model) === authorFamily)] : peers;
+}
+/** The first peer of the table (Opus <-> Sol, Gemini -> Sol), or null. */
+export const crossFamilyPeer = (model: string): { providerId: string; model: string } | null => crossFamilyPeers(model)[0] ?? null;
+
+/**
+ * The cross-family rule for a judge of someone's work: when the author's model is of the judge's own family, the judge takes its peer in
+ * another family (`usable` says which are on offer: the first usable peer, else the first one, so the caller can see it is not offered).
+ * Unknown families (a Composer writer, no writer yet) leave the judge as the table has it. Returns the pair and whether it changed.
+ */
+export function judgeAgainstAuthor(judge: { providerId: string; model: string }, author: { providerId: string; model: string } | null, usable?: (providerId: string, model: string) => boolean): { providerId: string; model: string; changed: boolean } {
   const kept = { providerId: judge.providerId, model: judge.model, changed: false };
   if (!author) return kept;
   const family = modelFamily(judge.model);
   if (!family || family !== modelFamily(author.model)) return kept;
-  const peer = crossFamilyPeer(judge.model);
+  const peers = crossFamilyPeers(judge.model);
+  const peer = (usable ? peers.find((row) => usable(row.providerId, row.model)) : undefined) ?? peers[0];
   return peer ? { ...peer, changed: true } : kept;
 }
 
@@ -215,14 +283,17 @@ export const USAGE_MOVED_ISSUE = "usage_moved";
 export const SAME_FAMILY_JUDGE_BY_LIMIT = "same_family_judge_by_limit";
 
 /**
- * A pair whose provider is nearly spent takes its peer in the other family (Opus <-> Sol, Sonnet <-> Terra, Haiku <-> Luna, Fable <-> Astra),
- * when the machine offers the peer (`usable`) and the peer's own provider is not spent as well. Null when it stays: no limit hit, no peer,
- * the peer not on offer or also spent (then the original is kept, the limit is only an ordering).
+ * A pair whose provider is nearly spent takes its peer in another family (Opus <-> Sol, Sonnet <-> Terra, Haiku <-> Luna, Fable <-> Astra,
+ * a Gemini -> Sol, else Opus), when the machine offers the peer (`usable`) and the peer's own provider is not spent as well. `authorFamily`
+ * (a judge's author) puts the peers of other families first; `preferred` (a row's fallback) goes ahead of them for a Gemini. Null when it stays: no limit hit, no peer, the peer not on offer or also spent
+ * (then the original is kept, the limit is only an ordering).
  */
-export function peerOffSpent(pick: { providerId: string; model: string }, spent: SpentProbe | undefined, usable?: (providerId: string, model: string) => boolean): { providerId: string; model: string; issue: string } | null {
+export function peerOffSpent(pick: { providerId: string; model: string }, spent: SpentProbe | undefined, usable?: (providerId: string, model: string) => boolean, authorFamily?: ModelFamily | null, preferred?: { providerId: string; model: string } | null): { providerId: string; model: string; issue: string } | null {
   const hit = spent?.(pick.providerId, pick.model);
   if (!hit) return null;
-  const peer = crossFamilyPeer(pick.model);
-  if (!peer || (usable && !usable(peer.providerId, peer.model)) || spent?.(peer.providerId, peer.model)) return null;
+  // A Gemini of a row that names its fallback (the triager: Luna) goes there first, before the general peers.
+  const first = preferred && modelFamily(pick.model) === "google" && modelFamily(preferred.model) !== authorFamily ? [preferred] : [];
+  const peer = [...first, ...crossFamilyPeers(pick.model, authorFamily)].find((row) => (!usable || usable(row.providerId, row.model)) && !spent?.(row.providerId, row.model));
+  if (!peer) return null;
   return { ...peer, issue: `${USAGE_MOVED_ISSUE}: ${pick.providerId} ${hit.window} ${Math.round(hit.percent)}% → ${peer.providerId}/${peer.model}` };
 }
