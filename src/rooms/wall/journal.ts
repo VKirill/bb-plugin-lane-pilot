@@ -89,6 +89,9 @@ export function collectEntries(db: WallDb, options: JournalOptions): Entry[] {
   const wfRows = db.prepare(`SELECT r.id, r.workflow_id, r.status, r.reason, r.updated_at, r.harness_version, r.project_id, r.link_task_id
     FROM lane_pilot_wf_run r
     WHERE r.updated_at>=? AND r.updated_at<? AND r.status IN (${quoted(WF_FAILED)}) AND r.workflow_id NOT IN (${quoted(WF_SKIPPED)})
+      -- A red browser-check verdict is the product's (the page failed its cases), not Lane Pilot's: it is the task's failure, not a class
+      -- for the night repair. A check that could not run (no browser machine, a crash) still comes through.
+      AND NOT (r.workflow_id='lp.browser-qa' AND COALESCE(r.reason,'') LIKE 'step_failed:verdict%')
       AND NOT EXISTS (SELECT 1 FROM lane_pilot_wf_run c WHERE c.parent_run_id=r.id AND c.status IN (${quoted(WF_FAILED)}))
     ORDER BY r.updated_at`).all(options.since, options.until) as Array<{ id: string; workflow_id: string; status: string; reason: string | null; updated_at: number; harness_version: string | null; project_id: string | null; link_task_id: string | null }>;
   for (const row of wfRows) {
