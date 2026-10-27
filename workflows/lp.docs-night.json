@@ -1,0 +1,117 @@
+{
+  "id": "lp.docs-night",
+  "startedBy": "docs-nightly",
+  "name": {
+    "en": "Nightly docs of one unit",
+    "ru": "Ночные документы одного раздела"
+  },
+  "description": {
+    "en": "One docs folder of a place (a workspace's docs, a business flow's page or the root docs) brought up to date overnight. prepare looks at the code changed since the folder's docs, builds the Jev anchors and finds the gaps (nothing to do ends the run here); write starts the docs agent in the docs worktree and waits for it; verify puts back what the agent changed outside docs and checks the pages (structure, citations, depth) with one repair round to the same agent; commit builds the backlinks, the confidence and the index, commits only the docs and merges them into the project checkout under the writers' merge lock. Lane Pilot starts it from the docs-nightly schedules; the unit record in the plugin's storage stays the index of units in flight.",
+    "ru": "Одна папка документов места (документы рабочей области, страница бизнес-потока или корневые документы), приведённая в порядок за ночь. prepare смотрит на код, изменившийся после документов папки, строит якоря Jev и ищет пробелы (если делать нечего, прогон кончается здесь); write запускает агента документов в docs-worktree и ждёт его; verify возвращает то, что агент изменил вне документов, и проверяет страницы (структура, цитаты, глубина) с одним кругом правки тому же агенту; commit строит обратные ссылки, уверенность и индекс, коммитит только документы и вливает их в рабочую папку проекта под замком слияний писателей. Запускается расписаниями ночных документов; запись раздела в хранилище плагина остаётся индексом разделов в работе."
+  },
+  "not_for": [
+    "anything a person asks for: Lane Pilot starts this itself from the nightly docs schedules"
+  ],
+  "status": "published",
+  "tags": ["docs"],
+  "triggers": ["manual"],
+  "inputs": {
+    "project_id": { "type": "string", "required": true },
+    "host_id": { "type": "string", "required": true, "note": "the machine of the docs worktree" },
+    "path": { "type": "string", "required": true, "note": "the docs worktree (or the project folder when it has none)" },
+    "base_path": { "type": "string", "default": "", "note": "the project checkout the docs commits are merged into; empty when the unit works in place" },
+    "scopes": { "type": "string[]", "default": [], "note": "the settings scopes of the place" },
+    "unit": { "type": "any", "required": true, "note": "the docs unit: docsDir and a workspace, a flow or the flows of the root" },
+    "roots": { "type": "string[]", "default": [] },
+    "exclude": { "type": "string[]", "default": [] },
+    "workspaces": { "type": "any", "default": [] },
+    "base": { "type": "string", "default": "" },
+    "run_key": { "type": "string", "default": "", "note": "the key of this run, kept in the unit record" }
+  },
+  "outputs": {
+    "row": "any"
+  },
+  "budget": {
+    "max_steps": 8,
+    "max_minutes": 420
+  },
+  "nodes": [
+    {
+      "id": "prepare",
+      "type": "action",
+      "action": "lp.docs_prepare",
+      "title": { "en": "Look at the changes and the gaps", "ru": "Посмотреть изменения и пробелы" },
+      "rule": "code: the git scope of the unit, the pages to refresh (Jev anchors and staleness), the pages the folder lacks, the doubts left by the last pass; a unit with nothing to do ends here, a unit with saved progress goes on from it",
+      "out": [
+        { "name": "state", "type": "string" },
+        { "name": "row", "type": "any", "required": false },
+        { "name": "plan", "type": "any", "required": false }
+      ],
+      "guards": { "timeoutMin": 60 }
+    },
+    {
+      "id": "write",
+      "type": "agent",
+      "role": "docs-maintainer",
+      "uses": "lp.docs-unit",
+      "title": { "en": "Write the pages", "ru": "Написать страницы" },
+      "produces": [{ "kind": "report", "version": 1 }],
+      "proof": { "kind": "receipt", "check": "the unit record in the plugin storage names the docs agent's thread; verify reads the pages it wrote" },
+      "out": [
+        { "name": "state", "type": "string" },
+        { "name": "thread_id", "type": "string" }
+      ],
+      "guards": { "timeoutMin": 330 }
+    },
+    {
+      "id": "verify",
+      "type": "action",
+      "action": "lp.docs_verify",
+      "title": { "en": "Check the pages", "ru": "Проверить страницы" },
+      "rule": "code: files changed outside the unit's docs are put back; lint, size, citations, contradictions and depth are checked; one repair round goes to the same agent when a structural check fails",
+      "out": [
+        { "name": "state", "type": "string" },
+        { "name": "row", "type": "any", "required": false },
+        { "name": "checked", "type": "any", "required": false }
+      ],
+      "guards": { "timeoutMin": 330 }
+    },
+    {
+      "id": "commit",
+      "type": "action",
+      "action": "lp.docs_commit",
+      "title": { "en": "Commit and merge", "ru": "Закоммитить и влить" },
+      "rule": "code: backlinks, verified confidence and the index are rebuilt; only the docs pages are committed (gitCommitDocs) and merged into the project checkout under the writers' merge lock; the unit's report is stored",
+      "out": [
+        { "name": "row", "type": "any" }
+      ],
+      "guards": { "timeoutMin": 40 }
+    },
+    { "id": "skipped-prepare", "type": "action", "action": "emit", "map": { "row": "prepare.row" } },
+    { "id": "skipped-verify", "type": "action", "action": "emit", "map": { "row": "verify.row" } },
+    { "id": "done", "type": "action", "action": "emit", "map": { "row": "commit.row" } }
+  ],
+  "edges": [
+    { "from": "start", "to": "prepare" },
+    { "from": "prepare", "to": "skipped-prepare", "label": "nothing to do", "when": { "field": "state", "op": "eq", "value": "skipped" } },
+    { "from": "prepare", "to": "write" },
+    { "from": "write", "to": "verify" },
+    { "from": "verify", "to": "skipped-verify", "label": "skipped", "when": { "field": "state", "op": "eq", "value": "skipped" } },
+    { "from": "verify", "to": "commit" },
+    { "from": "commit", "to": "done" }
+  ],
+  "test": {
+    "id": "docs-night-1",
+    "sim": {
+      "input": { "project_id": "proj_1", "host_id": "host_1", "path": "/tmp/docs", "unit": { "docsDir": "docs" } },
+      "stubs": {
+        "prepare": { "state": "ready", "plan": {} },
+        "write": { "state": "written", "thread_id": "thr_docs", "handoff": "docs written" },
+        "verify": { "state": "ok", "checked": {} },
+        "commit": { "row": { "state": "passed" } }
+      },
+      "expect_path": ["prepare", "write", "verify", "commit", "done"],
+      "expect_output": { "row": { "state": "passed" } }
+    }
+  }
+}

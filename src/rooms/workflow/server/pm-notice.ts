@@ -2,8 +2,11 @@ import { getRun } from "../../storage";
 import { postOwnerItem } from "../../owner-waiting";
 import type { LanePilotDatabase } from "../../storage";
 import type { RunRow } from "../../storage";
-import { AFTER_ACCEPT, LP_TASK_PIPELINE } from "../builtin";
+import { AFTER_ACCEPT, DOCS_MAINTENANCE, DOCS_NIGHT, LP_TASK_PIPELINE } from "../builtin";
 import { startedBySchedule } from "./workflow-runtime";
+
+/** The machine's own upkeep graphs: they tell no PM chat and post nothing to the owner's list (a failed one is the wall's and the next run's to settle). */
+const UPKEEP_WORKFLOWS = new Set<string>([AFTER_ACCEPT, DOCS_NIGHT, DOCS_MAINTENANCE]);
 
 export const WORKFLOW_NOTICE_STATUSES = ["succeeded", "failed", "blocked", "interrupted", "canceled"] as const;
 export type WorkflowNoticeStatus = (typeof WORKFLOW_NOTICE_STATUSES)[number];
@@ -69,7 +72,7 @@ export async function maybeNotifyWorkflowRun(input: {
   if (run.parent_run_id) return false;
   if (run.workflow_id === LP_TASK_PIPELINE || run.idem_key?.startsWith("lp-task:")) return false;
   // The upkeep after an accepted task (memory, project life) is the machine's: a notice per task would wake the PM for nothing.
-  if (run.workflow_id === AFTER_ACCEPT) return false;
+  if (UPKEEP_WORKFLOWS.has(run.workflow_id)) return false;
   // A phase's stage run reports through the phase's gates and book; a notice of each one had the PM step into the machine's stage (live, 2026-10-25).
   if (run.idem_key?.startsWith("phase:")) return false;
   // The browser tools wait for their graph and answer with its result: a notice would wake the PM a second time.
@@ -111,7 +114,7 @@ const OWN_REPORT_WORKFLOWS = new Set(["agent-routine"]);
  */
 export function reportEndToOwner(db: LanePilotDatabase, run: RunRow, scheduled: boolean, unmetGoalIds?: string[]): boolean {
   if (!isNoticeStatus(run.status) || run.parent_run_id || !run.project_id || run.link_run_id) return false;
-  if (run.workflow_id === LP_TASK_PIPELINE || run.workflow_id === AFTER_ACCEPT || run.idem_key?.startsWith("lp-task:") || run.idem_key?.startsWith("phase:")) return false;
+  if (run.workflow_id === LP_TASK_PIPELINE || UPKEEP_WORKFLOWS.has(run.workflow_id) || run.idem_key?.startsWith("lp-task:") || run.idem_key?.startsWith("phase:")) return false;
   const delivered = run.status === "succeeded" ? deliverable(run.output_json ?? null) : null;
   if (scheduled && !delivered) return false;
   if (run.status === "succeeded" && (OWN_REPORT_WORKFLOWS.has(run.workflow_id) || !delivered)) return false;
