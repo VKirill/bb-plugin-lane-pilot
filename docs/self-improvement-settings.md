@@ -21,18 +21,6 @@ sources:
   - tests/improvement/hub.test.ts
   - tests/improvement/improvement-ui.test.tsx
   - tests/improvement/tidy.test.ts
-  - src/rooms/ui-shell/ui/project-nav.tsx
-  - src/rooms/ui-shell/ui/page.tsx
-  - src/rooms/owner-waiting/items.ts
-  - src/rooms/baseline/logic.ts
-  - src/rooms/wall/config.ts
-  - src/rooms/bench/runner.ts
-  - src/rooms/writer/server/plan-fact.ts
-  - src/rooms/critique/quality-mode.ts
-  - packages/memory-core/src/settings.ts
-  - src/rooms/runs/ui/runs-service.tsx
-  - src/rooms/settings/ui/setting-controls.tsx
-  - src/rooms/core/server/core.ts
 ---
 
 # The Self-improvement page and its settings
@@ -54,21 +42,21 @@ Above the sections a status strip shows four numbers from the same read: the las
 | Waiting for the owner (`Ждут владельца`) | `owner_push.*` | deferral counts and how a term is set |
 | Memory (`Память`) | `memory.note_budget` | the pointer to Knowledge, Memory |
 
-The policy is read-only because it is the judge of the night: neither the night nor this page may change it. A deferral term is not a control for the same reason: it has to come from the owner's own message (`src/rooms/owner-waiting/items.ts:30`). Long jobs and decisions for the owner stay commands, listed under «Only by command»: `wall night`, `bench build|run|compare`, `policy-exam`, `coverage`, `rules mechanize`, `task-reverify|task-revert`.
+The policy is read-only because it is the judge of the night: neither the night nor this page may change it. A deferral term is not a control for the same reason: it has to come from the owner's own message (`src/rooms/owner-waiting/items.ts:24`). Long jobs and decisions for the owner stay commands, listed under «Only by command»: `wall night`, `bench build|run|compare`, `policy-exam`, `coverage`, `rules mechanize`, `task-reverify|task-revert`.
 
 ## One mechanism, the old stores as the fallback
 
-A control is a row of `lane_pilot_project_settings` under project `*` (the global level), with the version of `lane_pilot_setting_generation`, validated by `validateSettingValue` (`src/rooms/settings/setting-validation.ts:37`). The keys are listed once (`src/rooms/improvement/keys.ts:28`) with the field of the old config object each stands for.
+A control is a row of `lane_pilot_project_settings` under project `*` (the global level), with the version of `lane_pilot_setting_generation`, validated by `validateSettingValue` (`src/rooms/settings/setting-validation.ts:38`). The keys are listed once (`src/rooms/improvement/keys.ts:28`) with the field of the old config object each stands for.
 
 | Was | Now | Read | Written by |
 |---|---|---|---|
-| plugin key-value `wall:config` | `wall.*` | `src/rooms/wall/service.ts:86` | `wall config key=value`, the screen |
+| plugin key-value `wall:config` | `wall.*` | `src/rooms/wall/service.ts:121` | `wall config key=value`, the screen |
 | plugin key-value `bench:config` | `bench.*` | `src/rooms/bench/service.ts:37` | `bench config`, the screen |
 | table `lane_pilot_owner_config` | `owner_push.*` | `src/rooms/owner-waiting/push.ts:38` | `waiting config`, `owner_waiting_config`, the screen |
-| per-project `harness:config:<id>` | `harness.adopt_by` (the default of every project) | `src/rooms/harness/server/harness.ts:186` | `harness configure`, the screen |
-| project settings, CLI only | `baseline.*`, `checks.require_red_on_base`, `regress.*` in the catalog | `src/rooms/baseline/logic.ts:33` | the screen (default), the project's «Work» tab (own value) |
+| per-project `harness:config:<id>` | `harness.adopt_by` (the default of every project) | `src/rooms/harness/server/harness.ts:185` | `harness configure`, the screen |
+| project settings, CLI only | `baseline.*`, `checks.require_red_on_base`, `regress.*` in the catalog | `src/rooms/baseline/logic.ts:35` | the screen (default), the project's «Work» tab (own value) |
 
-Rules: a field with a row reads the row; a field without one reads the old store, so nothing set before is lost; a write goes to the row only and leaves the old store alone (`src/rooms/wall/service.ts:91`); the CLI commands keep their syntax and their clamping (a value over the limit is stored as the limit). A write from the CLI moves the setting's version, so a page that read before sees the next save as a conflict and reloads (`src/rooms/improvement/hub.ts:72`). A project record of `harness.adopt_by` that was saved before keeps winning over the default.
+Rules: a field with a row reads the row; a field without one reads the old store, so nothing set before is lost; a write goes to the row only and leaves the old store alone (`src/rooms/wall/service.ts:126`); the CLI commands keep their syntax and their clamping (a value over the limit is stored as the limit). A write from the CLI moves the setting's version, so a page that read before sees the next save as a conflict and reloads (`src/rooms/improvement/hub.ts:72`). A project record of `harness.adopt_by` that was saved before keeps winning over the default.
 
 ## The controls
 
@@ -96,16 +84,16 @@ Every row is in the catalog (`scripts/ui-catalog-hand.json`, written by `scripts
 | `owner_push.enabled` | `src/rooms/owner-waiting/push.ts:17` | `export type PushConfig` |
 | `owner_push.quiet` | `src/rooms/owner-waiting/push.ts:23` | `const QUIET` |
 | `owner_push.timezone` | `src/rooms/owner-waiting/push.ts:25` | `function validTimezone` |
-| `checks.require_red_on_base` | `src/rooms/baseline/logic.ts:18` | `requireRed` |
-| `baseline.already_built` | `src/rooms/baseline/logic.ts:12` | `BaselineSettings` |
-| `baseline.time_cap_sec` | `src/rooms/baseline/logic.ts:16` | `timeCapSec: number` |
-| `regress.nightly` | `src/rooms/baseline/logic.ts:182` | `nightly: boolean` |
-| `regress.last_n` | `src/rooms/baseline/logic.ts:184` | `lastN: number` |
-| `regress.last_days` | `src/rooms/baseline/logic.ts:183` | `days: number` |
-| `regress.check_cap_sec` | `src/rooms/baseline/logic.ts:187` | `checkCapSec: number` |
-| `regress.budget_sec` | `src/rooms/baseline/logic.ts:189` | `budgetSec: number` |
-| `regress.bisect_steps` | `src/rooms/baseline/logic.ts:191` | `bisectSteps: number` |
-| `plan_fact.mode` | `src/rooms/writer/server/plan-fact.ts:9` | `PLAN_FACT_MODE_SETTING` |
+| `checks.require_red_on_base` | `src/rooms/baseline/logic.ts:20` | `requireRed` |
+| `baseline.already_built` | `src/rooms/baseline/logic.ts:14` | `BaselineSettings` |
+| `baseline.time_cap_sec` | `src/rooms/baseline/logic.ts:18` | `timeCapSec: number` |
+| `regress.nightly` | `src/rooms/baseline/logic.ts:184` | `nightly: boolean` |
+| `regress.last_n` | `src/rooms/baseline/logic.ts:186` | `lastN: number` |
+| `regress.last_days` | `src/rooms/baseline/logic.ts:187` | `days: number` |
+| `regress.check_cap_sec` | `src/rooms/baseline/logic.ts:189` | `checkCapSec: number` |
+| `regress.budget_sec` | `src/rooms/baseline/logic.ts:191` | `budgetSec: number` |
+| `regress.bisect_steps` | `src/rooms/baseline/logic.ts:193` | `bisectSteps: number` |
+| `plan_fact.mode` | `src/rooms/writer/server/plan-fact.ts:11` | `PLAN_FACT_MODE_SETTING` |
 | `critic.code.default_for_risk` | `src/rooms/critique/quality-mode.ts:49` | `CODE_CRITIC_DEFAULT_SETTING` |
 | `memory.note_budget` | `packages/memory-core/src/settings.ts:7` | `noteBudget` |
 
@@ -121,4 +109,4 @@ Ranges are the readers' own: ``src/rooms/improvement/keys.ts:61`` repeats what `
 - Long enum labels that cut off in a select («Выключено (только если ревью кода включено или качество full)») are short.
 - The baseline and re-check settings, which could be set only by a hand-written `save_setting`, are in the catalog, on the Self-improvement page and in the project's «Work» tab.
 
-Found, not changed: `ops.max_tasks` («Задач в сессии») is read only by the command-line flags of the old runner (`src/rooms/core/server/core.ts:282`), so native writers never see it; its label now says so. `ui.language` is a stored row that the runtime excludes (`src/rooms/core/server/core.ts:261`) and the language switch of the Overview does the work: the row looks orphaned. The owner push has a second editor on the «Waiting for you» board; it writes through the same RPC, so the two cannot disagree.
+Found, not changed: `ops.max_tasks` («Задач в сессии») is read only by the command-line flags of the old runner (`src/rooms/core/server/core.ts:297`), so native writers never see it; its label now says so. `ui.language` is a stored row that the runtime excludes (`src/rooms/core/server/core.ts:276`) and the language switch of the Overview does the work: the row looks orphaned. The owner push has a second editor on the «Waiting for you» board; it writes through the same RPC, so the two cannot disagree.
