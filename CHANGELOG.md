@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.344
+
+**A task in a nested repository with a check outside it is sent back at dispatch.** A task whose files all lie in a git repository inside a folder without git is moved into that repository (a worktree of it, merged into its main) — but only if its checks run there too. With a check whose cwd was the outer folder, Lane Pilot fell back to the live folder without saying so: the file was written untracked into the repository's checkout. Now the dispatch is refused with the fix spelled out: set each check's cwd to the repository and write the command relative to it.
+
+**The drill**: provider_limit turns Jev's per-task writer pick off for its task, so the project's bad writer.model is really tried and the chain moves on; nogit_repo runs its check in the nested repository.
+
 ## 0.1.343
 
 **A project setting save is judged on the key it changes.** The save validated the whole merged settings, so an inherited value the older catalog no longer lists — the global `writer.provider` «acp-cursor» — refused every project save of another writer key (the full drill's provider_limit, and the same in the settings screen). Only the saved key, and the provider/effort pair when the key is one of them, are judged now.
