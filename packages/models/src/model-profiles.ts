@@ -73,6 +73,12 @@ export const WRITER_PROFILES: readonly WriterProfile[] = [
     sources: ["https://docs.z.ai/guides/vlm/glm-5.3-flash", "https://www.datacamp.com/blog/glm-5-3-flash", "https://www.edenai.co/post/glm-5-3-flash-benchmark-vs-gemini-deepseek-gpt-5-6"],
   },
   {
+    key: "zcode-flash", providerId: "zcode", model: "glm-5.3-flash", reasoning: "high", label: "ZCode · GLM-5.3-Flash", tier: "standard", available: true,
+    summary: "GLM-5.3-Flash run inside the owner's ZCode desktop app on the Mac mini (the same model as GLM-5.3 Flash on the coding plan: DeepSWE 63%, good on mechanical and medium coding in our trials). Fits LARGE, self-contained tasks with clear checks: bulk mechanical edits across many similar files, documentation, writing tests for existing code, refactors and migrations that follow a pattern. Weak spots: ZCode adds about 35-43k input tokens of its own system prompt to every task, so a tiny task wastes it; it runs one task at a time on the whole machine (a second waits); it exists on the Mac mini only; it is free only from 15:00 to 01:00 UTC; stopping a task is slow. Not for the hardest design or debugging.",
+    note: "offered only where it can work: the Mac mini, in the free hours (15:00-01:00 UTC, unless the setting zcode.window is always) and while no other ZCode task runs",
+    sources: ["https://zcode.z.ai", "https://docs.z.ai/guides/vlm/glm-5.3-flash", "https://www.datacamp.com/blog/glm-5-3-flash"],
+  },
+  {
     key: "haiku", providerId: "claude-code", model: "claude-haiku-5-5", reasoning: "medium", label: "Claude Haiku 5.5", tier: "light", available: true,
     summary: "Anthropic's fast, very cheap model ($0.10/$0.50 per M tokens up to a 100K prompt, five times that above), built as a coding sub-agent: SWE-Bench Pro 64.8% (Sonnet 5.5 81.3%), SWE-bench Multilingual 83.7%; in a hands-on test it fixed a real production bug. Fits short, well-scoped edits with clear checks: a small fix, a test, a config or copy change, a one-file feature. Weak on long multi-step work (Terminal-Bench 4.0 39.2% against Sonnet's 70.6%) and costly past 100K tokens of context: not for large features or a big repository's wide changes.",
     sources: ["https://www.eesel.ai/blog/claude-haiku-5-5-review", "https://www.mindstudio.ai/blog/claude-haiku-5-5-real-world-test", "https://computingforgeeks.com/claude-haiku-5-5-released-features-benchmarks/", "https://www.developersdigest.tech/blog/claude-opus-5-5-vs-sonnet-5-5-vs-haiku-5-5"],

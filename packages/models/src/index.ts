@@ -7,3 +7,4 @@ export * from "./model-tiers";
 export * from "./model-profiles";
 export * from "./role-models";
 export * from "./agent-model";
+export * from "./zcode";

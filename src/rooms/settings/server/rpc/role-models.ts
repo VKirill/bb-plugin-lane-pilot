@@ -35,7 +35,7 @@ export function roleModelsRpc(ctx: ServerCore) {
         }),
         options: ROLE_MODEL_OPTIONS.map((option) => ({
           id: option.id, providerId: option.providerId, label: option.label, family: option.family, offered: offered(option.providerId, option.id),
-          efforts: known && read ? (findModel(findProvider(read, option.providerId), option.id)?.efforts.filter((effort) => (ROLE_MODEL_EFFORTS as readonly string[]).includes(effort)) ?? []) : [...ROLE_MODEL_EFFORTS],
+          efforts: known && read ? (findModel(findProvider(read, option.providerId), option.id)?.efforts.filter((effort) => (ROLE_MODEL_EFFORTS as readonly string[]).includes(effort)) ?? []) : [...(option.efforts ?? ROLE_MODEL_EFFORTS)],
         })),
       };
     },

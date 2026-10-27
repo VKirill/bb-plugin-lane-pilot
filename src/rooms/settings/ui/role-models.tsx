@@ -8,7 +8,7 @@ type Row = {
   role: string; providerId: string; model: string; effort: string; source: "table" | "stage" | "default"; sourceKey: string | null;
   own: boolean; version: number; defaultModel: string; defaultEffort: string; offered: boolean | null;
 };
-type Option = { id: string; providerId: string; label: string; family: "claude" | "gpt" | "google"; offered: boolean | null; efforts: string[] };
+type Option = { id: string; providerId: string; label: string; family: "claude" | "gpt" | "google" | "glm"; offered: boolean | null; efforts: string[] };
 type View = { roles: Row[]; options: Option[] };
 
 const fill = (text: string, values: Record<string, string>) => Object.entries(values).reduce((out, [key, value]) => out.replaceAll(`{${key}}`, value), text);

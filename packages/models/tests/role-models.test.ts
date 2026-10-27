@@ -5,10 +5,10 @@ import {
 } from "@lane-pilot/models";
 
 describe("the table «role -> model»", () => {
-  it("offers only the Claude, GPT and Gemini Flash (9router) models, with the provider ids the machines use, and each is a model the writers' anamnesis knows", () => {
+  it("offers only the Claude, GPT, Gemini Flash (9router) and ZCode GLM-5.3-Flash models, with the provider ids the machines use, and each is a model the writers' anamnesis knows", () => {
     expect(ROLE_MODEL_OPTIONS.map((option) => `${option.providerId}/${option.id}`)).toEqual([
       "claude-code/claude-fable-5-1", "claude-code/claude-opus-5-5", "claude-code/claude-sonnet-5-5", "claude-code/claude-haiku-5-5", "codex/gpt-6.1-sol", "codex/gpt-6.1-terra", "codex/gpt-6-astra", "codex/gpt-6-luna",
-      "opencode2/router9/ag/gemini-3.8-flash-high",
+      "opencode2/router9/ag/gemini-3.8-flash-high", "zcode/glm-5.3-flash",
     ]);
     for (const option of ROLE_MODEL_OPTIONS) {
       const profile = WRITER_PROFILES.find((row) => row.model === option.id);

@@ -9,16 +9,20 @@
  *  3. the built-in default below.
  * The writer of a task is NOT in this table: it stays the pick of Jev from the writers' anamnesis (model-profiles.ts).
  *
- * The options of the table are the Claude, GPT and Gemini Flash (through 9router) models the machines offer, nothing else.
+ * The options of the table are the Claude, GPT, Gemini Flash (through 9router) and ZCode GLM-5.3-Flash models the machines offer, nothing else.
  */
 import { belowTier, modelTier, type ModelTier } from "./model-tiers";
 import { offeredOnHost, type ModelCatalog } from "./model-catalog";
 
-export type ModelFamily = "claude" | "gpt" | "google";
+export type ModelFamily = "claude" | "gpt" | "google" | "glm";
 export type RoleModelOption = {
   id: string; providerId: string; label: string; family: ModelFamily; tier: ModelTier;
   /** The effort the model runs on when the owner picks it for a row without naming one (the model's own catalog default; the row's effort may not exist for it). */
   defaultEffort?: string;
+  /** The efforts the model has when they are fewer than the table's list (ZCode: low, high, max); a row naming another is not valid. */
+  efforts?: readonly string[];
+  /** Matched by its full id only: a model of another provider whose name ends in the same words (`zai-coding-plan/glm-5.3-flash`) is not this option. */
+  exactOnly?: boolean;
 };
 
 export const ROLE_MODEL_OPTIONS: readonly RoleModelOption[] = [
@@ -33,6 +37,9 @@ export const ROLE_MODEL_OPTIONS: readonly RoleModelOption[] = [
   // The owner's near-free Gemini subscription through 9router (OpenCode v2 provider `opencode2`, 2026-10-27): the judges' default. The «high» is
   // in the model's name; the reasoning effort stays the catalog default «medium» (what the writer profile and the harness editor run on).
   { id: "router9/ag/gemini-3.8-flash-high", providerId: "opencode2", label: "Gemini 3.8 Flash (9router)", family: "google", tier: "standard", defaultEffort: "medium" },
+  // The owner's ZCode app on the Mac mini (BB provider `zcode`, zcbridge): GLM-5.3-Flash, free 15:00-01:00 UTC. Never a default of a row. It is offered only
+  // where packages/models/src/zcode.ts says it can work (the Mac mini, the free window unless `zcode.window` = always, no other ZCode task running); else the row's default runs.
+  { id: "glm-5.3-flash", providerId: "zcode", label: "ZCode · GLM-5.3-Flash", family: "glm", tier: "light", defaultEffort: "high", efforts: ["low", "high", "max"], exactOnly: true },
 ];
 /** The reasoning efforts the table offers (the narrower the model's own list, the fewer the picker shows). */
 export const ROLE_MODEL_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
@@ -40,7 +47,10 @@ export const ROLE_MODEL_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as c
 /** The option with exactly this id (what a stored `role_model.<role>` must name). */
 export const roleModelOption = (model: string): RoleModelOption | undefined => ROLE_MODEL_OPTIONS.find((row) => row.id === model);
 /** The option a model name stands for: its own id, else the id after the last slash (`openai/gpt-6.1-sol` is `gpt-6.1-sol`). */
-const optionOfName = (model: string): RoleModelOption | undefined => roleModelOption(model) ?? roleModelOption(model.slice(model.lastIndexOf("/") + 1));
+const optionOfName = (model: string): RoleModelOption | undefined => {
+  const short = roleModelOption(model.slice(model.lastIndexOf("/") + 1));
+  return roleModelOption(model) ?? (short?.exactOnly ? undefined : short);
+};
 
 /** The family of a model: its option's, else read off the name (a legacy stage selection may name any model); null when neither. */
 export function modelFamily(model: string | null | undefined): ModelFamily | null {
@@ -50,6 +60,7 @@ export function modelFamily(model: string | null | undefined): ModelFamily | nul
   if (/claude|opus|sonnet|haiku/i.test(model)) return "claude";
   if (/gpt-|\bo\d\b|codex/i.test(model)) return "gpt";
   if (/gemini|router9\/ag\//i.test(model)) return "google";
+  if (/glm/i.test(model)) return "glm";
   return null;
 }
 
@@ -144,7 +155,7 @@ export function tableRowAt(settings: Record<string, unknown>, rowId: string): { 
   const option = roleModelOption(text(raw.model) ?? "");
   if (!option) return null;
   const effort = text(raw.reasoning_effort);
-  return { option, effort: effort && (ROLE_MODEL_EFFORTS as readonly string[]).includes(effort) ? effort : null };
+  return { option, effort: effort && (ROLE_MODEL_EFFORTS as readonly string[]).includes(effort) && (!option.efforts || option.efforts.includes(effort)) ? effort : null };
 }
 
 /** Why a stored `role_model.<role>` value is not valid, or null (empty is valid: no row). */
@@ -154,7 +165,9 @@ export function roleModelProblem(key: string, value: unknown): string | null {
   if (value === undefined || value === null || value === "") return null;
   if (!isRecord(value)) return "{model, reasoning_effort?}";
   const effort = value.reasoning_effort;
-  if (!roleModelOption(text(value.model) ?? "")) return `model: one of ${ROLE_MODEL_OPTIONS.map((option) => option.id).join(", ")}`;
+  const option = roleModelOption(text(value.model) ?? "");
+  if (!option) return `model: one of ${ROLE_MODEL_OPTIONS.map((row) => row.id).join(", ")}`;
+  if (typeof effort === "string" && option.efforts && !option.efforts.includes(effort)) return `reasoning_effort for ${option.id}: one of ${option.efforts.join(", ")}`;
   if (effort !== undefined && !(typeof effort === "string" && (ROLE_MODEL_EFFORTS as readonly string[]).includes(effort))) return `reasoning_effort: one of ${ROLE_MODEL_EFFORTS.join(", ")}`;
   if (!Object.keys(value).every((name) => name === "model" || name === "reasoning_effort")) return "{model, reasoning_effort?}";
   return null;
@@ -238,7 +251,7 @@ const PEER: Record<string, string> = {
   "gpt-6-astra": "claude-fable-5-1", "gpt-6.1-sol": "claude-opus-5-5", "gpt-6.1-terra": "claude-sonnet-5-5", "gpt-6-luna": "claude-haiku-5-5",
 };
 /**
- * The peers of a Gemini (the third family), strongest first: GPT-6.1 Sol, then Claude Opus. A Gemini has no equal in the other two, so it is
+ * The peers of a Gemini or a GLM (the third family), strongest first: GPT-6.1 Sol, then Claude Opus. A Gemini has no equal in the other two, so it is
  * not paired by strength: its judge-peer is the strongest model of another family that is on offer.
  */
 const GOOGLE_PEERS: readonly string[] = ["gpt-6.1-sol", "claude-opus-5-5"];
@@ -251,7 +264,7 @@ const GOOGLE_PEERS: readonly string[] = ["gpt-6.1-sol", "claude-opus-5-5"];
  */
 export function crossFamilyPeers(model: string, authorFamily?: ModelFamily | null): Array<{ providerId: string; model: string }> {
   const own = optionOfName(model);
-  const ids = modelFamily(model) === "google" ? GOOGLE_PEERS : (own && PEER[own.id] ? [PEER[own.id]!] : []);
+  const ids = ["google", "glm"].includes(modelFamily(model) ?? "") ? GOOGLE_PEERS : (own && PEER[own.id] ? [PEER[own.id]!] : []);
   const peers = ids.flatMap((id) => { const option = roleModelOption(id); return option ? [{ providerId: option.providerId, model: option.id }] : []; });
   return authorFamily ? [...peers.filter((peer) => modelFamily(peer.model) !== authorFamily), ...peers.filter((peer) => modelFamily(peer.model) === authorFamily)] : peers;
 }
