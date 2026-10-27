@@ -3,6 +3,7 @@ import { createFakePluginHost, makeMessageDispatchHookContext } from "@get-bb/pl
 import plugin from "../server";
 import { findOpenNativeRun, getRun, openDatabase, savePrototypeConfig } from "../src/rooms/storage/database";
 import { nativeSelectionMarker } from "../src/rooms/native-agent/native-session";
+import { switchChatAgent } from "../src/rooms/native-agent/server/chat-agent-switch";
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -165,4 +166,24 @@ it("refuses a chat that is replying, on another provider, or fixed by Lane Pilot
   const spawned = await setup({ role: "pm" });
   expect(await spawned.call("chat_agent_state", { threadId: "thr_x" })).toMatchObject({ eligible: false, reason: "lane_started" });
   await expect(spawned.call("switch_chat_agent", { threadId: "thr_x", agentId: null })).rejects.toThrow(/started this chat itself/);
+});
+
+it("turning Lane Pilot off in a chat whose tasks are at work refuses and changes nothing: the pending pick, the binding and the run stay", async () => {
+  const t = await setup();
+  const { token } = await t.call("prepare_native_session", { projectId: "project_a", agentId: "dev-orchestrator" });
+  await t.hook(context("thr_busy", nativeSelectionMarker(token)));
+  const db = openDatabase(t.fake.bb);
+  const runId = findOpenNativeRun(db, "project_a", "thr_busy")!;
+  // A pick of another agent is waiting for the next message.
+  await t.call("switch_chat_agent", { threadId: "thr_busy", agentId: "copy-lead" });
+  const before = { stops: [...t.stops], metadata: t.metadata.length };
+  expect(await t.call("chat_agent_state", { threadId: "thr_busy" })).toMatchObject({ current: { agentId: "copy-lead", pending: true } });
+
+  const ctx = { bb: t.fake.bb, db, ownedAgents: async () => ({}) } as never;
+  await expect(switchChatAgent(ctx, { threadId: "thr_busy", agentId: null }, async () => { throw new Error("tasks are at work"); })).rejects.toThrow(/tasks are at work/);
+  expect(await t.call("chat_agent_state", { threadId: "thr_busy" })).toMatchObject({ current: { agentId: "copy-lead", pending: true } });
+  expect(await t.call("native_thread", { threadId: "thr_busy" })).not.toBeNull();
+  expect(findOpenNativeRun(db, "project_a", "thr_busy")).toBe(runId);
+  expect(t.state.role).toBe("pm");
+  expect({ stops: t.stops, metadata: t.metadata.length }).toEqual(before);
 });

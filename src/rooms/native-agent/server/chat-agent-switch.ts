@@ -76,15 +76,16 @@ export async function switchChatAgent(
   const bound = await readSelection(ctx, `native-thread:${threadId}`);
 
   if (input.agentId === null) {
-    await bb.storage.kv.delete(nativeSwitchKey(threadId));
     if (bound) {
       const runId = findOpenNativeRun(db, state.projectId, threadId);
-      // Finishing the run also stops the chat and refuses while its tasks are at work.
+      // Finishing the run also stops the chat and refuses while its tasks are at work: nothing is erased before it has gone through,
+      // so a refusal leaves the chat as it was (the pending pick, the binding and the run stay).
       if (runId) await finishRun(state.projectId, runId);
       else await bb.sdk.threads.stop({ threadId });
+      await bb.storage.kv.delete(nativeSwitchKey(threadId));
       await bb.sdk.threads.updatePluginMetadata({ threadId, remove: ["role", "lanePilotRunId"] });
       for (const key of ["native-thread", "native-env", "native-agent-type"]) await bb.storage.kv.delete(`${key}:${threadId}`);
-    }
+    } else await bb.storage.kv.delete(nativeSwitchKey(threadId));
     return { agentId: null, description: null };
   }
 
