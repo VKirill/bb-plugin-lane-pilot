@@ -389,7 +389,7 @@ export function registerTools(ctx: ServerCore, services: Services) {
   mountHealth(ctx, services);
   mountMemorySync(ctx);
   mountCouncilTools(ctx, services.council, (threadId) => services.phaseIntake.launchRefusal(threadId));
-  mountSpecialists(ctx);
+  mountSpecialists(ctx, services);
   services.errands = mountErrands(ctx);
   mountRelay(ctx);
   mountWorkflowTools(ctx, services);

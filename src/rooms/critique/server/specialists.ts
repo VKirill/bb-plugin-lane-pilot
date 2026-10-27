@@ -1,26 +1,19 @@
-import { MAIN_AGENT_ID, compileEffectiveMainAgent, isCustomAgentId } from "../../native-agent";
-import type { HelperRole } from "../../native-agent";
+import { MAIN_AGENT_ID, isCustomAgentId } from "../../native-agent";
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { z } from "zod";
 import { findOpenNativeRun, getRun } from "../../storage";
-import { writerExecutionSelection } from "@lane-pilot/models";
-import { mentionContext } from "../../native-agent";
-import { fullAccessSpawn } from "../../core/server";
-import { spawnTextId } from "../../core/server";
-import { storeNativeSelection } from "../../native-agent/server";
-import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
-import { stringAt } from "../../core/server";
 import { outputText } from "../../writer/server/writer-task";
 import { fenceOutside, registerObservedTool } from "../../core/server";
-import { detectRepoEdits, gitRepoStatus } from "../../verification/server";
-import type { ServerCore } from "../../core/server";
+import type { ServerCore, Services } from "../../core/server";
+import type { ChainRuntime } from "../../workflow/server";
+import type { StepContext, WorkflowEngine } from "../../workflow";
+import { specialistRunOfThread, startSpecialistRun, waitSpecialistRun } from "./specialist-graph";
 
 /** The specialists a PM may hand work to; Explore and Plan stay Claude Code subagents inside the PM session. */
 export const SPECIALIST_ROLES = ["design-lead", "copy-lead", "seo-specialist", "tavily", "video-lead"] as const;
-const SPECIALIST_MODEL = "claude-opus-5-5";
 const WAIT_STEP_MS = 5_000;
 
-export function specialistPrompt(marker: string, role: string, task: string, roleLines: readonly string[] = []): string {
+export function specialistPrompt(marker: string, role: string, task: string, roleLines: readonly string[] = [], tag = "task"): string {
   return [
     marker,
     ...(roleLines.length ? ["", `Lines added to your role in this project (one dated line per review lesson):`, ...roleLines.map((line) => `- ${line}`)] : []),
@@ -28,72 +21,53 @@ export function specialistPrompt(marker: string, role: string, task: string, rol
     `The Lane Pilot PM of this project hands you this work as ${role}. You work in the PM's own checkout, so write only your deliverable (under .agents/, or DESIGN.md files if you are design-lead) and do not change product code, docs/, README.md or PROJECT.md: Lane Pilot's nightly docs pass owns those, and implementation goes to a writer. If the task asks for such a change, do not make it: return it as a task for a writer.`,
     "Do not commit: leave your files in place and give the PM their paths. If you need an account or key, list the names with env_list and read one with env_get; never print a value. Your final message is the PM's only view of your work: what you produced, the paths, open questions.",
     "",
-    "<task>",
+    `<${tag}>`,
     task,
-    "</task>",
+    `</${tag}>`,
   ].join("\n");
 }
 
+/** The `brief` step of a `specialist` run: the task and the role lines of this project; the agent step adds the profile marker and the answer contract. */
+export function registerSpecialistActions(engine: WorkflowEngine, ctx: ServerCore): void {
+  engine.register<ChainRuntime>("lp.specialist_brief", {
+    reentrant: true,
+    run: async (c: StepContext<ChainRuntime>) => {
+      const role = String(c.resolve("$inputs.role") ?? ""), task = String(c.resolve("$inputs.task") ?? "");
+      const lines = ((await ctx.bb.storage.kv.get(`lp.role.lines:${c.runtime?.projectId ?? ""}:${role}`).catch(() => null)) as string[] | null) ?? [];
+      // The step's own <task> wraps this text, so the PM's task stands in <request>.
+      const answer = "In this run your final message ends with the JSON block described below: its report field carries your whole answer to the PM (what you produced, the paths, open questions).";
+      return { output: { text: `${specialistPrompt("", role, task, lines, "request").replace(/^\n+/, "")}\n\n${answer}` } };
+    },
+  } as never);
+}
+
 /**
- * Specialists run as child BB threads of the PM chat with their own Lane Pilot profile, so each one can be opened,
- * read and stopped like a writer. Before this they were Claude Code subagents: BB showed only «a background agent
- * is running» and nobody could look inside.
+ * Specialists run as child BB threads of the PM chat with their own Lane Pilot profile, so each one can be opened, read and stopped like a
+ * writer. The work is a run of the built-in graph `specialist` (specialist-graph.ts); the two tools keep their names and answers.
  */
-export function mountSpecialists(ctx: ServerCore): void {
-  const { bb, db, host } = ctx;
-  const specialistSnapshots = new Map<string, { hostId: string; cwd: string; before: Set<string> }>();
+export function mountSpecialists(ctx: ServerCore, services: Services): void {
+  const { bb, db } = ctx;
 
   async function start(input: { projectId: string; pmThreadId: string; role: string; task: string; title?: string }) {
     const runId = findOpenNativeRun(db, input.projectId, input.pmThreadId);
     const run = runId ? getRun(db, runId) : undefined;
     if (!runId || !run) throw new Error("specialist_needs_open_pm_run: call this from a Lane Pilot PM chat with an open run");
-    const pm = await bb.sdk.threads.get({ threadId: input.pmThreadId });
-    const environmentId = stringAt(pm, "environmentId");
-    if (!environmentId) throw new Error("specialist_needs_pm_environment");
-    const envObj = await bb.sdk.environments.get({ environmentId }).catch(() => null);
-    const checkoutPath = stringAt(envObj, "path") ?? "";
-    const checkoutHostId = stringAt(envObj, "hostId") ?? "";
-    const beforeStatus = checkoutPath && checkoutHostId ? await gitRepoStatus(host, checkoutHostId, checkoutPath) : null;
-    // A bundled specialist, or an agent the owner defined (agents create): the same profile path starts both.
+    // A bundled specialist, or an agent the owner defined (agents create): the same graph runs both.
     const owned = await ctx.ownedAgents();
     const custom = !(SPECIALIST_ROLES as readonly string[]).includes(input.role);
     if (custom && !(isCustomAgentId(input.role) && owned[input.role] && !owned[input.role]?.compiledCorrupt)) throw new Error(`unknown_specialist:${input.role} — use one of ${SPECIALIST_ROLES.join(", ")} or an agent the owner created (bb lane-pilot agents list --custom)`);
-    const { selection, meta } = await storeNativeSelection(ctx, { projectId: input.projectId, agentId: input.role, parentRunId: runId });
-    // The skills and MCP servers an owner's specialist asks for join its role profile (a bundled one has them in ROLE_PROFILES).
-    const profile = custom ? compileEffectiveMainAgent(input.role, owned[input.role]) : null;
-    const extra = profile ? { skills: profile.skills, mcpServers: profile.mcpServers } : undefined;
-    const helperPolicy = requireHelperSpawn({ bb, db, projectId: input.projectId, runId });
-    const placement = await helperChildPlacement({ bb, db, projectId: input.projectId, runId, role: "specialist", taskTitle: input.title ?? `${input.role}: ${input.task.slice(0, 60)}` });
-    const spawned = await fullAccessSpawn(bb, {
-      ...placement,
-      ...requiredPolicyField(bb, helperPolicy, "claude-code", `specialist:${input.role}` as HelperRole, extra),
-      ...writerExecutionSelection("claude-code", meta?.model ?? SPECIALIST_MODEL, meta?.effort ?? "high", null),
-      prompt: specialistPrompt(mentionContext(selection), input.role, input.task, ((await bb.storage.kv.get(`lp.role.lines:${input.projectId}:${input.role}`).catch(() => null)) as string[] | null) ?? []),
-      environment: { type: "reuse", environmentId },
-      pluginMetadata: { role: "specialist", specialist: input.role, spawnId: `${runId}:${input.role}:${spawnTextId(input.task)}`, lanePilotRunId: runId, parentPmThreadId: input.pmThreadId, helperMode: helperPolicy.mode },
-    } as Parameters<typeof fullAccessSpawn>[1]);
-    const threadId = stringAt(spawned, "id");
-    if (!threadId) throw new Error("specialist_thread_id_missing");
-    if (beforeStatus) specialistSnapshots.set(threadId, { hostId: checkoutHostId, cwd: checkoutPath, before: beforeStatus });
-    return { threadId, role: input.role, state: "running" as const, link: `@thread:${threadId}` };
+    const started = await startSpecialistRun(ctx, services, { projectId: input.projectId, pmThreadId: input.pmThreadId, runId, role: input.role, task: input.task, title: input.title ?? `${input.role}: ${input.task.slice(0, 60)}` });
+    return { threadId: started.threadId, role: input.role, state: "running" as const, link: `@thread:${started.threadId}`, workflowRunId: started.workflowRunId };
   }
 
-  async function wait(input: { threadId: string; timeoutSec: number }) {
+  /** A thread that no graph run started: a specialist that was running when the graph came in. Read as before, from the thread alone. */
+  async function waitThread(input: { threadId: string; timeoutSec: number }) {
     const deadline = Date.now() + input.timeoutSec * 1000;
     let detail = "";
     while (Date.now() < deadline) {
       if (ctx.isDisposed()) break;
       const observed = await observeStageChild(bb, input.threadId, Math.min(WAIT_STEP_MS, Math.max(1, deadline - Date.now())));
       if (observed.kind === "completed") {
-        const snapshot = specialistSnapshots.get(input.threadId);
-        if (snapshot) {
-          specialistSnapshots.delete(input.threadId);
-          const afterStatus = await gitRepoStatus(host, snapshot.hostId, snapshot.cwd);
-          const edited = afterStatus ? detectRepoEdits(snapshot.before, afterStatus, (f) => f.startsWith(".agents/") || f === ".agents" || f.startsWith(".bb/chats/")) : [];
-          if (edited.length > 0) {
-            return { threadId: input.threadId, state: "blocked" as const, reason: "repo_edited", files: edited, output: fenceOutside("specialist", `Helper edited repository files: ${edited.join(", ")}`) };
-          }
-        }
         const raw = (await bb.sdk.threads.output({ threadId: input.threadId })).output;
         return { threadId: input.threadId, state: "done" as const, output: fenceOutside("specialist", typeof raw === "string" ? raw : outputText(raw)) };
       }
@@ -123,6 +97,11 @@ export function mountSpecialists(ctx: ServerCore): void {
     description: "Wait for a specialist thread started with lane_pilot_specialist and return its answer.",
     instructions: "Call with the threadId from lane_pilot_specialist (timeoutSec at most 240). While state is running, call it again.",
     parameters: z.object({ threadId: z.string().min(1), timeoutSec: z.number().int().min(5).max(240).default(240) }).strict(),
-    execute: async (params) => JSON.stringify(await wait({ threadId: params.threadId, timeoutSec: params.timeoutSec }), null, 2),
+    execute: async (params, context) => {
+      const runId = await specialistRunOfThread(bb, params.threadId);
+      if (!runId) return JSON.stringify(await waitThread({ threadId: params.threadId, timeoutSec: params.timeoutSec }), null, 2);
+      if (!context.projectId) throw new Error("specialist_needs_pm_thread");
+      return JSON.stringify(await waitSpecialistRun(ctx, services, { projectId: context.projectId, runId, timeoutSec: params.timeoutSec }), null, 2);
+    },
   });
 }

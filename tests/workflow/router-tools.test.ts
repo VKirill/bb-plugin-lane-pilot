@@ -260,6 +260,9 @@ describe("lane_pilot_route", () => {
     const answer = parse(await routeTool(depsOf(db, draftStore, fakeEngine().engine), { intent: "Add pagination to the orders list and cover it with tests" }, ctx));
     expect(answer.workflowId).toBeNull();
     expect(answer.next).toContain("work the usual way");
+    // Research is the one fallback with a graph of its own: the PM starts web-research, not a bare tavily specialist.
+    expect(answer.next).toContain("start `web-research`");
+    expect(answer.next).toContain("not a bare tavily specialist");
   });
 
   it("warns before a milestone close while tasks are open, from the state the tool reads", async () => {
