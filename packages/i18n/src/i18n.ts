@@ -4,6 +4,7 @@ import { workflowEn, workflowRu } from "./i18n-workflows";
 import { editorEn, editorRu } from "./i18n-workflow-editor";
 import { opsEn, opsRu } from "./i18n-workflow-ops";
 import { modelsEn, modelsRu } from "./i18n-workflow-models";
+import { roleModelsEn, roleModelsRu } from "./i18n-role-models";
 import { canvasEn, canvasRu } from "./i18n-workflow-canvas";
 import { scheduleEn, scheduleRu } from "./i18n-schedule";
 import { boardEn, boardRu } from "./i18n-board";
@@ -2178,8 +2179,8 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   accessPurpose_specialist_video_lead: "Планирует и делает видео: ролики-объяснения, рилсы, ролики запуска, процедурные фильмы.",
 };
 
-export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...boardEn, ...ownerEn, ...anamnesisEn, ...tabsEn, ...ownedEn, ...jevEn, ...improvementEn, ...graphEn, ...cockpitEn };
-export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...editorRu, ...opsRu, ...modelsRu, ...canvasRu, ...scheduleRu, ...boardRu, ...ownerRu, ...anamnesisRu, ...tabsRu, ...ownedRu, ...jevRu, ...improvementRu, ...graphRu, ...cockpitRu };
+export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...boardEn, ...ownerEn, ...anamnesisEn, ...tabsEn, ...ownedEn, ...jevEn, ...improvementEn, ...graphEn, ...cockpitEn, ...roleModelsEn };
+export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...editorRu, ...opsRu, ...modelsRu, ...canvasRu, ...scheduleRu, ...boardRu, ...ownerRu, ...anamnesisRu, ...tabsRu, ...ownedRu, ...jevRu, ...improvementRu, ...graphRu, ...cockpitRu, ...roleModelsRu };
 
 export type I18nKey = keyof typeof en;
 export type Locale = "en" | "ru";

@@ -5,7 +5,6 @@ import type { CheckEnv, Ref, Typed } from "./expr";
 import { artifactDef, artifactId } from "./artifacts";
 import { cronProblem, timezoneProblem } from "./cron";
 import { EMIT, executorKey, lowerWorkflow, outputFields } from "./lower";
-import { PRESET_SLUGS, presetSlug } from "@lane-pilot/models";
 import { promptCoverageProblems } from "./prompt-coverage";
 import { END, MAX_SUBWORKFLOW_DEPTH, QUALITY_MODES, START, parseWorkflowObject } from "./schema";
 import type { Field, GraphNode, Workflow, WorkflowNode } from "./schema";
@@ -16,8 +15,6 @@ export type WorkflowProblem = { level: "error" | "warning"; code: string; messag
 export type ValidateOptions = {
   resolve?: (id: string, version?: number) => Workflow | null;
   hasExecutor?: (key: string) => boolean;
-  /** Whether a machine offers a provider/model pair; null when the catalog could not be read (then nothing is said). A pair it does not offer is a warning. */
-  modelOffered?: (providerId: string, model: string) => boolean | null;
   /** Whether `specialist:<id>` names an agent that exists (a bundled specialist or one the owner created); null when that cannot be known yet (then nothing is said). */
   specialistKnown?: (id: string) => boolean | null;
 };
@@ -353,13 +350,13 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
       if (!key) error("executor_missing", `${node.id}: no executor (set "uses"${node.type === "action" ? " or \"action\"" : ""})`, extra);
       else if (!options.hasExecutor(key)) error("executor_missing", `${node.id}: no executor "${key}"`, extra);
     }
-    if (node.model_preset && !presetSlug(node.model_preset)) warn("unknown_preset", `${node.id}: model preset "${node.model_preset}" is not known (${PRESET_SLUGS.join(", ")}); the step falls through to Settings and the PM chat's model`, extra);
+    // The model belongs to the role (the table «role -> model» in Settings), not to the step: a node's own model fields are accepted so older
+    // files load, ignored when the step runs, and say so here instead of looking effective.
+    const named = (["provider", "model", "reasoning", "service_tier", "model_preset"] as const).filter((field) => (node as Record<string, unknown>)[field] !== undefined);
+    if (named.length) warn("model_ignored", `${node.id}: ${named.join(", ")} change nothing: the model belongs to the role ("${(node as { role?: string }).role ?? "the step's role"}"), set once for every graph in Settings, and a step cannot name its own; remove ${named.length > 1 ? "them" : "it"}`, extra);
     if (node.type === "agent") {
       // The helper runs in the PM chat's environment; the field is accepted so older files load, and says so instead of looking protective.
       if (node.environment !== "none") warn("environment_not_executed", `${node.id}: environment "${node.environment}" changes nothing: the helper runs in the PM chat's environment (remove it, or use an lp-task for work in a worktree)`, extra);
-      if (options.modelOffered && node.provider && node.model && options.modelOffered(node.provider, node.model) === false) {
-        warn("unknown_model", `${node.id}: ${node.provider}/${node.model} is not offered by any machine (see the models section of lane_pilot_workflow_capabilities); the step would fail to start`, extra);
-      }
       if (options.specialistKnown && node.role.startsWith("specialist:") && !node.role.includes("{{") && options.specialistKnown(node.role.slice("specialist:".length)) === false) {
         error("unknown_specialist", `${node.id}: role "${node.role}" names no agent: "${node.role.slice("specialist:".length)}" is neither a bundled specialist nor an agent you created (the specialists section of lane_pilot_workflow_capabilities lists them)`, extra);
       }

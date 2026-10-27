@@ -70,7 +70,6 @@
       "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
-      "model_preset": "INS - анализ (Claude Opus 5)",
       "profile": {
         "skills": [
           "social-insights"
@@ -93,7 +92,6 @@
       "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
-      "model_preset": "INS - психология (GPT-5.6 Luna)",
       "profile": {
         "skills": [
           "social-insights"
@@ -114,7 +112,6 @@
       "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "auditor",
-      "model_preset": "INS - проверка (GPT-6.1 Sol)",
       "prompt": "Stage 5: review.yaml - verdict per item against the original comments; reject unsupported quotes, inflated shares, 'unique' claims without a comparison corpus.",
       "out": {
         "rejects_open": "int",
@@ -153,7 +150,6 @@
       "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
-      "model_preset": "INS - сводка (Claude Sonnet 5)",
       "prompt": "Stage 6: summary.md for the author - supported pains, angles and quotes with ids (up to 5/5/10; never pad to a quota).",
       "out": {
         "summary_path": "string"

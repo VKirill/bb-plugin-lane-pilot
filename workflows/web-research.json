@@ -97,7 +97,6 @@
       "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
-      "model_preset": "cheap-fast",
       "title": {
         "en": "Frame the question",
         "ru": "Сформулировать вопрос"
@@ -162,7 +161,6 @@
       "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
-      "model_preset": "strong",
       "title": {
         "en": "Claims and counterevidence",
         "ru": "Утверждения и контрпримеры"

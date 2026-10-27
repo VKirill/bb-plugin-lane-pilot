@@ -4,7 +4,7 @@ import { ROLE_PROFILES } from "../../src/rooms/native-agent/helper-context";
 import { WORKFLOW_ARCHITECT_SESSION } from "../../src/rooms/workflow/workflow-architect";
 import { PURE_ACTION_KEYS } from "@lane-pilot/workflow-engine";
 import { WORKFLOW_REFERENCE } from "@lane-pilot/workflow-engine";
-import { PRESET_SLUGS } from "@lane-pilot/models";
+import { ROLE_IDS, roleModelKey } from "@lane-pilot/models";
 import { nodeSchema, workflowSchema } from "@lane-pilot/workflow-engine";
 import { DELEGATED_ACTIONS } from "../../src/rooms/workflow/server/workflow-step-executors";
 import { resolveAgentModel } from "../../src/rooms/workflow/server/workflow-agent-model";
@@ -20,9 +20,8 @@ describe("the workflow reference the architect reads", () => {
     for (const type of types) expect(Object.keys(WORKFLOW_REFERENCE.nodeTypes), type).toContain(type);
   });
 
-  it("lists every action that has an executor, and every model preset", () => {
+  it("lists every action that has an executor", () => {
     for (const key of [...PURE_ACTION_KEYS, ...DELEGATED_ACTIONS, "fs.write", "git.diff_files", "lp.state_probe", "lp.run_status", "lp.run_close", "lp.lint_contract", "lp.integration_gate_status"]) expect(reference, key).toContain(key);
-    for (const slug of PRESET_SLUGS) expect(reference, slug).toContain(slug);
   });
 
   it("names every trigger type", () => {
@@ -41,23 +40,27 @@ describe("the workflow reference the architect reads", () => {
     expect(roleSpec("specialist:tavily").readOnly).toBe(false);
   });
 
-  it("states the model precedence in the order the resolver applies it", () => {
-    const settings = { "pm_read.provider": "stage-p", "pm_read.model": "stage-m", "workflow.agent.provider": "agent-p", "workflow.agent.model": "agent-m" };
+  it("states the model rule as the resolver applies it: the role's row of the table, then the old stage selection, then the default", () => {
+    const settings = { "pm_read.provider": "stage-p", "pm_read.model": "stage-m", [roleModelKey("pm-reader")]: { model: "gpt-6-luna" } };
     const pm = { providerId: "pm-p", model: "pm-m" };
-    const pick = (node: object, set: Record<string, unknown>) => resolveAgentModel({ role: "analyst", node, settings: set, pm }).source;
-    expect(pick({ model_preset: "cheap-fast" }, settings)).toBe("preset");
-    expect(pick({}, settings)).toBe("stage");
-    expect(pick({}, { "workflow.agent.provider": "agent-p", "workflow.agent.model": "agent-m" })).toBe("agent");
-    expect(pick({}, {})).toBe("pm");
-    expect(pick({ provider: "p", model: "m" }, settings)).toBe("node");
+    const pick = (set: Record<string, unknown>) => resolveAgentModel({ role: "pm-reader", settings: set, pm }).source;
+    expect(pick(settings)).toBe("table");
+    expect(pick({ "pm_read.provider": "stage-p", "pm_read.model": "stage-m" })).toBe("stage");
+    expect(pick({})).toBe("role-default");
     const text = WORKFLOW_REFERENCE.models.precedence;
-    expect(text.indexOf("model_preset")).toBeLessThan(text.indexOf("stage selection"));
-    expect(text.indexOf("stage selection")).toBeLessThan(text.indexOf("workflow.agent"));
-    expect(text.indexOf("workflow.agent")).toBeLessThan(text.indexOf("PM chat"));
+    expect(text.indexOf("one table")).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf("owner's pick")).toBeLessThan(text.indexOf("stage selection"));
+    expect(text.indexOf("stage selection")).toBeLessThan(text.indexOf("built-in default"));
+    // Every role of the table is named in the architect's reference or its text (the roles a step may pick).
+    for (const role of ["analyst", "planner", "plan-critic", "code-critic", "auditor", "debugger", "pm-reader", "errand"]) expect(ROLE_IDS).toContain(role);
+    // Nothing on a node names a model any more, and the reference no longer lists presets or the generic selection.
+    expect(reference).not.toContain("workflow.agent");
+    expect(reference).not.toContain("cheap-fast");
+    expect(WORKFLOW_REFERENCE.models.advice).toContain("put no model on a node");
   });
 
   it("keeps the architect's own text in line with it", () => {
-    for (const phrase of ["role: \"errand\"", "model_preset", "expect_status", "sections: [\"reference\"]", "cheap-fast", "schedule", "telegram"]) expect(WORKFLOW_ARCHITECT_SESSION, phrase).toContain(phrase);
+    for (const phrase of ["role: \"errand\"", "model_preset", "expect_status", "sections: [\"reference\"]", "belongs to the role", "schedule", "telegram"]) expect(WORKFLOW_ARCHITECT_SESSION, phrase).toContain(phrase);
     // telegram.send_rich has an executor (it runs in an errand helper): it is not the example of an action that has none.
     expect(WORKFLOW_ARCHITECT_SESSION).not.toMatch(/telegram\.send_rich[^.]*no executor/);
     expect(WORKFLOW_ARCHITECT_SESSION).not.toContain("environment none|project|worktree|personal");
@@ -66,10 +69,10 @@ describe("the workflow reference the architect reads", () => {
   it("keeps the prompt short and the format in the reference; says the same about a model nobody offers", () => {
     // Audit round 2, item 17: the prompt only summarizes the format, the reference carries it.
     expect(WORKFLOW_ARCHITECT_SESSION.length).toBeLessThan(12_000);
-    // A known preset is used as it is (resolveAgentModel): the note must not promise a fall-through for `offered: false`.
+    // The note of the models section says what a step does when the machine lacks the role's model (resolveAgentModel): the role's default, then the PM's model.
     const source = readFileSync(new URL("../../packages/workflow-engine/src/capabilities.ts", import.meta.url), "utf8");
-    expect(source).not.toContain("offered: false falls through to Settings");
-    expect(WORKFLOW_ARCHITECT_SESSION).toContain("name no pair: use a preset");
+    expect(source).toContain("the step then takes the role's default, then the PM chat's model");
+    expect(WORKFLOW_ARCHITECT_SESSION).toContain("put no model on the node");
     expect(WORKFLOW_ARCHITECT_SESSION).not.toContain("say the pair is unchecked");
   });
 });

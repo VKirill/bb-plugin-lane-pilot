@@ -271,24 +271,22 @@ export const stepExecutorSchema = z.object({
   mode: z.enum(["model", "chain", "helper", "none"]),
   agent: z.object({ role: z.string().nullable(), helper: z.string().nullable(), label: z.string() }).strict(),
   providerId: z.string().nullable(), model: z.string().nullable(), reasoningEffort: z.string().nullable(), serviceTier: z.string().nullable(),
-  source: z.enum(["override", "node", "preset", "stage", "agent", "pm", "role-default", "writer", "helper", "session", "none"]),
-  /** The setting key, the preset name or the helper the value comes from; for `session` the step whose session this one goes on in. */
+  source: z.enum(["table", "stage", "role-default", "pinned", "pm", "writer", "helper", "session", "none"]),
+  /** The setting key or the helper the value comes from; for `session` the step whose session this one goes on in. */
   sourceKey: z.string().nullable(),
   inherited: z.boolean(),
   /** The writer chain after the writer's own model: fallback 1, fallback 2, then the PM's model (`pm`). */
   fallbacks: z.array(z.object({ providerId: z.string().nullable(), model: z.string().nullable(), reasoningEffort: z.string().nullable(), pm: z.boolean() }).strict()),
   /** Further models of the same step: the code critic of a code task. */
   parts: z.array(executorPairSchema.extend({ stage: z.string(), source: z.string(), sourceKey: z.string().nullable() }).strict()),
-  /** Whether a patch of the node changes it; otherwise the Settings of `settingsKey` do. */
-  overridable: z.boolean(), settingsKey: z.string().nullable(),
-  /** Whether the owner can move the step to another model without editing the workflow (a per-step override in settings), and the level of the override in force. */
-  canOverride: z.boolean(), overrideScope: z.enum(["project", "global"]).nullable(),
+  /** The setting that decides the model: the role's row of the table (`role_model.<role>`), or `writer`. */
+  settingsKey: z.string().nullable(),
   costTier: z.enum(["none", "low", "medium", "high", "unknown"]),
-  /** Problems found: `unknown_preset`, `provider_without_model`, `provider_unavailable`, `model_unavailable` ... */
+  /** Problems found: `selection_unavailable`, `light_model_for_role`, `provider_unavailable`, `model_unavailable` ... */
   issues: z.array(z.string()),
   /**
    * Set for a step of a called workflow: `workflowId` is the workflow the step is in (`nodeId` above is its id there) and `nodeId` the
-   * call on the graph being shown. The override of such a step is keyed `<workflowId>/<nodeId>`, which is what the executor reads.
+   * call on the graph being shown.
    */
   fragment: z.object({ nodeId: z.string(), workflowId: z.string() }).strict().optional(),
 }).strict();

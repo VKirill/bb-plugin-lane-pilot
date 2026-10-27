@@ -1,158 +1,263 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { agentRequest, withResolvedModel, type HelperRequest } from "../../src/rooms/workflow/server/workflow-agent";
-import { DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_REASONING, modelOverrideKey, resolveAgentModel } from "../../src/rooms/workflow/server/workflow-agent-model";
+import { DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_REASONING, ROLE_LEAST_TIER, resolveAgentModel } from "../../src/rooms/workflow/server/workflow-agent-model";
 import { resolveStepExecutors, DELEGATED_ACTIONS } from "../../src/rooms/workflow/server/workflow-step-executors";
 import { validateSettingValue, validateSettingsObject } from "../../src/rooms/settings/setting-validation";
 import { VISIBLE_CATALOG } from "@lane-pilot/settings-catalog";
-import { BUILTIN_PRESETS, PRESET_FIELDS, PRESET_SLUGS, presetKey, presetSelection, presetSlug } from "@lane-pilot/models";
+import { BUILTIN_PRESETS, PRESET_FIELDS, PRESET_SLUGS, ROLE_IDS, presetKey, presetSelection, presetSlug, roleModelKey } from "@lane-pilot/models";
 import type { StepContext } from "@lane-pilot/workflow-engine";
 import type { GraphNode } from "@lane-pilot/workflow-engine";
 import { loadWorkflow, parseWorkflow } from "@lane-pilot/workflow-engine";
 import { workflow } from "./fixtures";
 
 const pm = { providerId: "codex", model: "gpt-6-luna" };
-/** A PM on a strong model: the planner keeps it (a light one is raised for the planner, see «a deciding role»). */
 const strongPm = { providerId: "claude-code", model: "claude-opus-5-5" };
-const pick = (role: string, node: Record<string, string> = {}, settings: Record<string, unknown> = {}, pair: typeof pm | null = null) =>
-  resolveAgentModel({ role, node, settings, pm: pair });
+const pick = (role: string, settings: Record<string, unknown> = {}, pair: typeof pm | null = null, extra: Partial<Parameters<typeof resolveAgentModel>[0]> = {}) =>
+  resolveAgentModel({ role, settings, pm: pair, ...extra });
+const row = (model: string, reasoning_effort?: string) => ({ model, ...(reasoning_effort ? { reasoning_effort } : {}) });
 
-describe("which model a workflow agent step runs on", () => {
-  it("falls back to the PM chat's model, and to the built-in default only when the PM is unknown", () => {
-    expect(pick("analyst", {}, {}, pm)).toMatchObject({ providerId: "codex", model: "gpt-6-luna", reasoningEffort: DEFAULT_REASONING, source: "pm", sourceKey: null, inherited: true, issues: [] });
-    expect(pick("analyst")).toMatchObject({ providerId: DEFAULT_PROVIDER, model: DEFAULT_MODEL, reasoningEffort: DEFAULT_REASONING, source: "role-default" });
+describe("which model a workflow agent step runs on: the role's row of one table", () => {
+  it("authors run on Claude Opus 5.5 high, judges on GPT-6.1 Sol high, cheap jobs on the small models, whatever the PM chat runs", () => {
+    for (const role of ["analyst", "planner", "workflow-architect", "specialist:design-lead", "specialist:seo-specialist", "specialist:my-own-agent"]) {
+      expect(pick(role, {}, pm), role).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: "high", source: "role-default", sourceKey: null, issues: [] });
+    }
+    for (const role of ["plan-critic", "specialist-reviewer", "code-critic", "auditor", "debugger", "council"]) {
+      expect(pick(role, {}, strongPm), role).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", reasoningEffort: "high", source: "role-default" });
+    }
+    expect(pick("pm-reader")).toMatchObject({ providerId: "claude-code", model: "claude-haiku-5-5", reasoningEffort: "low" });
+    expect(pick("triager")).toMatchObject({ providerId: "codex", model: "gpt-6-luna", reasoningEffort: "high" });
+    expect(pick("memory")).toMatchObject({ model: "claude-haiku-5-5", reasoningEffort: "medium" });
+    expect(pick("project-life")).toMatchObject({ model: "claude-haiku-5-5", reasoningEffort: "medium" });
+    expect(pick("errand")).toMatchObject({ model: "claude-sonnet-5-5", reasoningEffort: "medium" });
+    expect(pick("browser-qa")).toMatchObject({ model: "claude-sonnet-5-5", reasoningEffort: "medium" });
   });
 
-  it("takes the generic workflow.agent selection before the PM, with its own effort", () => {
-    const settings = { "workflow.agent.provider": "claude-code", "workflow.agent.model": "claude-sonnet-5-5", "workflow.agent.reasoning_effort": "medium" };
-    expect(pick("worker", {}, settings, pm)).toMatchObject({ providerId: "claude-code", model: "claude-sonnet-5-5", reasoningEffort: "medium", source: "agent", sourceKey: "workflow.agent.model" });
-    // Without an effort of its own the step runs on the default effort.
-    expect(pick("worker", {}, { ...settings, "workflow.agent.reasoning_effort": "" }, pm).reasoningEffort).toBe(DEFAULT_REASONING);
+  it("answers for every role of the shipped graphs; an unknown role is the analyst's, the same as roleSpec reads it", () => {
+    const dir = new URL("../../workflows/", import.meta.url);
+    const roles = new Set<string>();
+    for (const file of readdirSync(dir).filter((name) => name.endsWith(".json"))) {
+      const walk = (value: unknown): void => {
+        if (Array.isArray(value)) value.forEach(walk);
+        else if (value && typeof value === "object") {
+          const found = value as Record<string, unknown>;
+          if (found.type === "agent" && typeof found.role === "string" && !found.role.includes("{{")) roles.add(found.role);
+          Object.values(found).forEach(walk);
+        }
+      };
+      walk(JSON.parse(readFileSync(new URL(file, dir), "utf8")));
+    }
+    expect(roles.size).toBeGreaterThan(8);
+    for (const role of roles) expect(pick(role).model, role).toMatch(/^(claude-(opus|sonnet|haiku)-5-5|gpt-6\.1-(sol|terra)|gpt-6-luna)$/);
+    expect(pick("worker")).toEqual(pick("analyst"));
+    expect(pick("something-new")).toEqual(pick("analyst"));
+    expect(pick("gate-triage")).toEqual(pick("triager"));
+    expect(pick("memory-maintainer")).toEqual(pick("memory"));
+    expect(pick("council-seat")).toEqual(pick("council"));
+    expect(ROLE_IDS).toContain("workflow-architect");
   });
 
-  it("takes the role's stage selection before the generic one", () => {
+  it("takes the owner's row of the table: its model, its effort, and says where it comes from", () => {
+    const settings = { [roleModelKey("analyst")]: row("claude-sonnet-5-5", "medium"), [roleModelKey("code-critic")]: row("claude-opus-5-5") };
+    expect(pick("analyst", settings, pm)).toMatchObject({ providerId: "claude-code", model: "claude-sonnet-5-5", reasoningEffort: "medium", source: "table", sourceKey: "role_model.analyst", inherited: true, issues: [] });
+    // No effort in the row: the role's own default effort.
+    expect(pick("code-critic", settings)).toMatchObject({ model: "claude-opus-5-5", reasoningEffort: "high", source: "table" });
+    // One row serves every specialist, in every graph.
+    expect(pick("specialist:copy-lead", { [roleModelKey("specialist")]: row("gpt-6.1-terra", "low") })).toMatchObject({ providerId: "codex", model: "gpt-6.1-terra", reasoningEffort: "low", source: "table" });
+    expect(pick("specialist:tavily", { [roleModelKey("specialist")]: row("gpt-6.1-terra", "low") }).model).toBe("gpt-6.1-terra");
+  });
+
+  it("ignores a row that is not a pick of the table: a model outside the six, a half-set value", () => {
+    for (const bad of [row("zai/glm-5.3-flash"), row("claude-opus-4-8"), { model: "" }, "gpt-6.1-sol", { effort: "high" }, null]) {
+      expect(pick("planner", { [roleModelKey("planner")]: bad }, pm), JSON.stringify(bad)).toMatchObject({ model: "claude-opus-5-5", source: "role-default" });
+    }
+    // An effort the table does not know is dropped; the model stays.
+    expect(pick("analyst", { [roleModelKey("analyst")]: { model: "claude-haiku-5-5", reasoning_effort: "turbo" } })).toMatchObject({ model: "claude-haiku-5-5", reasoningEffort: "high", source: "table" });
+  });
+
+  it("maps a stage selection the owner set before the table into the role it served, and the table wins over it", () => {
     const settings = {
-      "workflow.agent.provider": "claude-code", "workflow.agent.model": "claude-sonnet-5-5",
       "pm_read.provider": "acp-opencode", "pm_read.model": "zai/glm-5.3-flash", "pm_read.reasoning_effort": "high",
       "plan_critique.provider": "codex", "plan_critique.model": "gpt-6-sol",
-      "code_critique.provider": "codex", "code_critique.model": "gpt-6-terra",
+      "code_critique.provider": "codex", "code_critique.model": "gpt-6.1-terra",
       "night_review.provider": "claude-code", "night_review.model": "claude-opus-5",
       "specialist.provider": "claude-code", "specialist.model": "claude-opus-4-8",
+      "errand.provider": "claude-code", "errand.model": "claude-haiku-5-5",
     };
-    expect(pick("analyst", {}, settings, pm)).toMatchObject({ providerId: "acp-opencode", model: "zai/glm-5.3-flash", reasoningEffort: "high", source: "stage", sourceKey: "pm_read.model" });
-    expect(pick("pm-reader", {}, settings).model).toBe("zai/glm-5.3-flash");
-    expect(pick("plan-critic", {}, settings)).toMatchObject({ model: "gpt-6-sol", reasoningEffort: "medium", source: "stage", sourceKey: "plan_critique.model" });
-    // The planner writes the plan: it does not borrow the model chosen to check plans.
-    expect(pick("planner", {}, settings)).not.toMatchObject({ sourceKey: "plan_critique.model" });
-    expect(pick("auditor", {}, settings)).toMatchObject({ model: "gpt-6-terra", sourceKey: "code_critique.model" });
+    expect(pick("pm-reader", settings)).toMatchObject({ providerId: "acp-opencode", model: "zai/glm-5.3-flash", reasoningEffort: "high", source: "stage", sourceKey: "pm_read.model" });
+    expect(pick("plan-critic", settings)).toMatchObject({ model: "gpt-6-sol", reasoningEffort: "medium", source: "stage", sourceKey: "plan_critique.model" });
+    expect(pick("code-critic", settings)).toMatchObject({ model: "gpt-6.1-terra", source: "stage", sourceKey: "code_critique.model" });
+    expect(pick("specialist-reviewer", settings)).toMatchObject({ model: "claude-opus-4-8", source: "stage", sourceKey: "specialist.model" });
+    expect(pick("specialist:seo", settings)).toMatchObject({ model: "claude-opus-4-8", source: "stage" });
+    expect(pick("errand", settings)).toMatchObject({ model: "claude-haiku-5-5", source: "stage", sourceKey: "errand.model" });
     // The auditor goes on to the night review when the code critique is not set.
-    expect(pick("auditor", {}, { ...settings, "code_critique.model": "" }).model).toBe("claude-opus-5");
-    expect(pick("specialist:seo", {}, settings).model).toBe("claude-opus-4-8");
-    // A role with no stage (a worker, the errand helper) goes straight to the generic selection.
-    expect(pick("worker", {}, settings)).toMatchObject({ model: "claude-sonnet-5-5", source: "agent" });
-    expect(pick("errand", {}, settings)).toMatchObject({ source: "agent" });
+    expect(pick("auditor", { ...settings, "code_critique.model": "" }).model).toBe("claude-opus-5");
+    // The analyst and the planner borrow no stage: a cheap model chosen to read files must not write the analysis or the plan.
+    expect(pick("analyst", settings, pm)).toMatchObject({ model: "claude-opus-5-5", source: "role-default" });
+    expect(pick("planner", settings, pm)).toMatchObject({ model: "claude-opus-5-5", source: "role-default" });
+    // The owner's row in the table stands over the stage selection.
+    expect(pick("plan-critic", { ...settings, [roleModelKey("plan-critic")]: row("claude-opus-5-5", "xhigh") })).toMatchObject({ model: "claude-opus-5-5", reasoningEffort: "xhigh", source: "table" });
+    // A half-set stage selection is not a selection.
+    expect(pick("pm-reader", { "pm_read.model": "x" })).toMatchObject({ model: "claude-haiku-5-5", source: "role-default" });
   });
 
-  it("gives the debugger its own selection before the specialist's", () => {
-    const settings = { "specialist.provider": "claude-code", "specialist.model": "claude-opus-4-8", "workflow.debugger.provider": "codex", "workflow.debugger.model": "gpt-6-sol", "workflow.debugger.reasoning_effort": "xhigh" };
-    expect(pick("debugger", {}, settings)).toMatchObject({ providerId: "codex", model: "gpt-6-sol", reasoningEffort: "xhigh", source: "stage", sourceKey: "workflow.debugger.model" });
-    expect(pick("debugger", {}, { "specialist.provider": "claude-code", "specialist.model": "claude-opus-4-8" }).model).toBe("claude-opus-4-8");
+  it("gives the debugger its own old selection before the specialist's", () => {
+    const settings = { "specialist.provider": "claude-code", "specialist.model": "claude-opus-4-8", "workflow.debugger.provider": "codex", "workflow.debugger.model": "gpt-6.1-sol", "workflow.debugger.reasoning_effort": "xhigh" };
+    expect(pick("debugger", settings)).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", reasoningEffort: "xhigh", source: "stage", sourceKey: "workflow.debugger.model" });
+    expect(pick("debugger", { "specialist.provider": "claude-code", "specialist.model": "claude-opus-4-8" }).model).toBe("claude-opus-4-8");
   });
 
-  it("takes the node's preset before the role's stage selection and the generic one", () => {
-    const settings = { "pm_read.provider": "acp-opencode", "pm_read.model": "zai/glm-5.3-flash", "workflow.agent.provider": "codex", "workflow.agent.model": "gpt-6-sol" };
-    expect(pick("analyst", { model_preset: "strong" }, settings, pm)).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: "high", source: "preset", sourceKey: "strong", issues: [] });
-  });
-
-  it("lets the node's own fields override the level below, field by field", () => {
-    const settings = { "workflow.agent.provider": "claude-code", "workflow.agent.model": "claude-sonnet-5-5", "workflow.agent.reasoning_effort": "medium" };
-    expect(pick("worker", { provider: "codex", model: "gpt-6-sol", reasoning: "max" }, settings, pm)).toMatchObject({ providerId: "codex", model: "gpt-6-sol", reasoningEffort: "max", source: "node", sourceKey: null, inherited: false });
-    // Only the effort is the node's: the model comes from the level below.
-    expect(pick("worker", { reasoning: "low" }, settings, pm)).toMatchObject({ providerId: "claude-code", model: "claude-sonnet-5-5", reasoningEffort: "low", source: "node" });
-    expect(pick("analyst", { model_preset: "cheap-fast", reasoning: "high" }, {}, pm)).toMatchObject({ model: BUILTIN_PRESETS["cheap-fast"]!.model, reasoningEffort: "high", source: "node" });
-    expect(pick("analyst", { provider: "codex" }, {}, pm).issues).toEqual(["provider_without_model"]);
-  });
-
-  it("carries the node's fast mode to the spawn and counts it as the node's own choice", () => {
-    expect(pick("worker", { service_tier: "fast" }, {}, pm)).toMatchObject({ providerId: "codex", model: "gpt-6-luna", serviceTier: "fast", source: "node", inherited: false });
-    expect(pick("worker", {}, {}, pm)).toMatchObject({ serviceTier: null, inherited: true });
-    expect(pick("worker", { service_tier: "turbo" }, {}, pm).serviceTier).toBeNull();
-  });
-
-  it("flags a half-set selection and skips it", () => {
-    expect(pick("worker", {}, { "workflow.agent.provider": "codex" }, pm)).toMatchObject({ source: "pm", issues: ["incomplete_selection"] });
-    expect(pick("analyst", {}, { "pm_read.model": "x" }, pm)).toMatchObject({ source: "pm", issues: ["incomplete_selection"] });
+  it("no longer reads the removed levels: the generic workflow.agent.* selection, a per-step override, the presets", () => {
+    const settings = {
+      "workflow.agent.provider": "claude-code", "workflow.agent.model": "claude-sonnet-5-5", "workflow.agent.reasoning_effort": "low",
+      "workflow.model_override.lp.plan/plan": { provider: "codex", model: "gpt-6-sol", reasoning_effort: "low", service_tier: "fast" },
+      [presetKey("strong", "provider")]: "codex", [presetKey("strong", "model")]: "gpt-6-luna",
+    };
+    expect(pick("planner", settings, pm)).toMatchObject({ model: "claude-opus-5-5", reasoningEffort: "high", serviceTier: null, source: "role-default" });
+    expect(pick("worker", settings, pm)).toMatchObject({ model: "claude-opus-5-5", source: "role-default" });
+    // And a step cannot name its own: the resolver has no node to read.
+    expect(Object.keys(pick("analyst"))).not.toContain("node");
   });
 });
 
-describe("model presets", () => {
+describe("a model the machine does not offer", () => {
+  const only = (...ok: string[]) => (_provider: string, model: string) => ok.includes(model);
+
+  it("is passed over for the role's default, then for the PM's model, and says so", () => {
+    const settings = { [roleModelKey("plan-critic")]: row("claude-sonnet-5-5") };
+    expect(pick("plan-critic", settings, pm, { offered: only("gpt-6.1-sol") })).toMatchObject({ model: "gpt-6.1-sol", source: "role-default", issues: ["selection_unavailable"] });
+    expect(pick("plan-critic", settings, strongPm, { offered: only("claude-opus-5-5") })).toMatchObject({ model: "claude-opus-5-5", source: "pm", issues: ["selection_unavailable"] });
+  });
+
+  it("is kept and flagged when nothing known to run there is left, and a pinned model is kept at once: it is the owner's choice", () => {
+    expect(pick("analyst", {}, null, { offered: () => false })).toMatchObject({ model: "claude-opus-5-5", issues: ["selection_unavailable", "model_unavailable_here"] });
+    expect(pick("analyst", {}, null, { offered: () => null })).toMatchObject({ issues: [] });
+    expect(pick("analyst", {}, pm, { offered: () => false, pinned: { model: "gpt-6-sol" } })).toMatchObject({ providerId: DEFAULT_PROVIDER, model: "gpt-6-sol", source: "pinned", issues: ["model_unavailable_here"] });
+  });
+});
+
+describe("a model a run pins for itself (a scheduled agent, an agent the owner created)", () => {
+  it("stands over the table for the fields it sets, and counts as the run's own choice", () => {
+    expect(pick("specialist:mine", {}, pm, { pinned: { provider: "codex", model: "gpt-6-sol", reasoning: "max", service_tier: "fast" } }))
+      .toMatchObject({ providerId: "codex", model: "gpt-6-sol", reasoningEffort: "max", serviceTier: "fast", source: "pinned", sourceKey: null, inherited: false });
+    // A model with no provider runs on the default provider; with no effort, on the role's.
+    expect(pick("analyst", {}, pm, { pinned: { model: "claude-sonnet-5-5" } })).toMatchObject({ providerId: DEFAULT_PROVIDER, model: "claude-sonnet-5-5", reasoningEffort: "high", source: "pinned" });
+    // An effort alone changes the effort and keeps the table's model.
+    expect(pick("analyst", {}, pm, { pinned: { reasoning: "low" } })).toMatchObject({ model: "claude-opus-5-5", reasoningEffort: "low", source: "role-default", inherited: false });
+    expect(pick("analyst", {}, pm, { pinned: { service_tier: "turbo" } }).serviceTier).toBeNull();
+  });
+
+  it("is what withResolvedModel does with the scheduled agent's model and an owner-created agent's model", async () => {
+    const rt = rtFor({}, strongPm);
+    const base = { rt, workflowRunId: "r", stepKey: "s", nodeId: "n", spawnKey: "k", title: "t", prompt: "", fields: [] };
+    const routine = await withResolvedModel({ ...base, role: "specialist:seo-specialist", model: "gpt-6-luna", reasoning: "low", serviceTier: "fast" } as unknown as HelperRequest);
+    expect(routine).toMatchObject({ provider: DEFAULT_PROVIDER, model: "gpt-6-luna", reasoning: "low", serviceTier: "fast" });
+    const plain = await withResolvedModel({ ...base, role: "specialist:seo-specialist" } as unknown as HelperRequest);
+    expect(plain).toMatchObject({ provider: "claude-code", model: "claude-opus-5-5", reasoning: "high" });
+  });
+});
+
+describe("validating the table and the settings of the removed levels", () => {
+  it("accepts a row of the table: one of the six models and an effort, or nothing", () => {
+    for (const role of ROLE_IDS) {
+      expect(validateSettingValue(roleModelKey(role), row("claude-opus-5-5", "high"))).toBeNull();
+      expect(validateSettingValue(roleModelKey(role), row("gpt-6.1-sol"))).toBeNull();
+      expect(validateSettingValue(roleModelKey(role), null)).toBeNull();
+    }
+    for (const bad of [row("zai/glm-5.3-flash"), row("claude-opus-5"), { model: "gpt-6.1-sol", reasoning_effort: "ultra" }, { model: "gpt-6.1-sol", provider: "codex" }, "gpt-6.1-sol", {}, []]) {
+      expect(validateSettingValue(roleModelKey("analyst"), bad), JSON.stringify(bad)).toMatchObject({ code: "invalid_choice", key: roleModelKey("analyst") });
+    }
+    expect(validateSettingValue("role_model.nobody", row("gpt-6.1-sol"))).toMatchObject({ code: "invalid_choice" });
+    expect(validateSettingsObject({ [roleModelKey("analyst")]: row("gpt-6.1-sol") })).toEqual([]);
+  });
+
+  it("keeps the efforts a debugger or preset selection may name, and has no row of the removed generic selection", () => {
+    for (const key of ["workflow.debugger.reasoning_effort", presetKey("strong", "reasoning_effort"), presetKey("ins-check", "reasoning_effort")]) {
+      for (const value of ["low", "medium", "high", "xhigh", "max", ""]) expect(validateSettingValue(key, value)).toBeNull();
+      expect(validateSettingValue(key, "ultra")).toMatchObject({ code: "invalid_choice", key });
+      expect(validateSettingsObject({ [key]: "turbo" })).toHaveLength(1);
+    }
+    for (const field of PRESET_FIELDS) {
+      expect(VISIBLE_CATALOG.some((item) => item.storageKey === `workflow.agent.${field}`)).toBe(false);
+      expect(VISIBLE_CATALOG.some((item) => item.storageKey === `workflow.debugger.${field}`)).toBe(true);
+    }
+  });
+});
+
+describe("model presets (now the scheduled errands' only)", () => {
   it("are named settings with built-in defaults; settings win, a pair first", () => {
-    expect(pick("analyst", { model_preset: "cheap-fast" })).toMatchObject({ providerId: "claude-code", model: "claude-haiku-5-5", reasoningEffort: "low", source: "preset", sourceKey: "cheap-fast" });
-    expect(pick("analyst", { model_preset: "strong" })).toMatchObject({ model: "claude-opus-5-5", reasoningEffort: "high" });
+    expect(presetSelection("cheap-fast", {})).toEqual({ providerId: "claude-code", model: "claude-haiku-5-5", reasoning: "low" });
     const settings = { [presetKey("strong", "provider")]: "codex", [presetKey("strong", "model")]: "gpt-6-sol", [presetKey("strong", "reasoning_effort")]: "xhigh" };
-    expect(pick("analyst", { model_preset: "strong" }, settings)).toMatchObject({ providerId: "codex", model: "gpt-6-sol", reasoningEffort: "xhigh" });
-    // A model without its provider is not a pair: the built-in pair stays, only the effort is taken.
+    expect(presetSelection("strong", settings)).toEqual({ providerId: "codex", model: "gpt-6-sol", reasoning: "xhigh" });
     expect(presetSelection("strong", { [presetKey("strong", "model")]: "gpt-6-sol", [presetKey("strong", "reasoning_effort")]: "low" })).toEqual({ providerId: "claude-code", model: "claude-opus-5-5", reasoning: "low" });
   });
 
-  it("know the long names the Insights chain uses", () => {
+  it("know the long names the Insights chain used", () => {
     const names: Array<[string, string]> = [
       ["INS - анализ (Claude Opus 5)", "ins-analysis"], ["INS - психология (GPT-5.6 Luna)", "ins-psychology"], ["INS - проверка (GPT-6.1 Sol)", "ins-check"], ["INS - сводка (Claude Sonnet 5)", "ins-digest"],
       ["INS — анализ", "ins-analysis"], ["ins - сводка", "ins-digest"], ["cheap-fast", "cheap-fast"], ["strong", "strong"],
     ];
     for (const [name, slug] of names) expect(presetSlug(name)).toBe(slug);
-    expect(pick("analyst", { model_preset: "INS - психология (GPT-5.6 Luna)" })).toMatchObject({ providerId: "codex", model: "gpt-5.6-luna", reasoningEffort: "max", sourceKey: "INS - психология (GPT-5.6 Luna)" });
-  });
-
-  it("are flagged when unknown, and the step goes on to the next level instead of a hidden default", () => {
     expect(presetSlug("fast-ish")).toBeNull();
-    expect(pick("analyst", { model_preset: "fast-ish" }, {}, pm)).toMatchObject({ source: "pm", model: "gpt-6-luna", issues: ["unknown_preset"] });
-    const found = loadWorkflow(workflow({
-      nodes: [{ id: "a", type: "agent", role: "analyst", model_preset: "fast-ish", prompt: "x", output: [{ name: "o", type: "string" }] }],
-      edges: [{ from: "start", to: "a" }, { from: "a", to: "end" }],
-    }));
-    const warnings = found.ok ? found.warnings : found.problems;
-    expect(warnings.filter((problem) => problem.code === "unknown_preset")).toEqual([expect.objectContaining({ level: "warning", node: "a" })]);
   });
 
-  it("are all known to the shipped chains: no chain names a preset that does not exist", () => {
-    const dir = new URL("../../workflows/", import.meta.url);
+  it("have a settings row for each field, with the built-in default shown", () => {
+    for (const slug of PRESET_SLUGS) {
+      for (const field of PRESET_FIELDS) expect(VISIBLE_CATALOG.find((item) => item.storageKey === presetKey(slug, field)), presetKey(slug, field)).toMatchObject({ uiStatus: "editable" });
+      expect(VISIBLE_CATALOG.find((item) => item.storageKey === presetKey(slug, "model"))!.defaultValue).toBe(BUILTIN_PRESETS[slug]!.model);
+    }
+  });
+});
+
+describe("a node names no model", () => {
+  const dir = new URL("../../workflows/", import.meta.url);
+  const MODEL_FIELDS = ["provider", "model", "reasoning", "service_tier", "model_preset"];
+
+  it("is true of every shipped graph: no node carries provider, model, reasoning, service_tier or model_preset", () => {
     const named: string[] = [];
     for (const file of readdirSync(dir).filter((name) => name.endsWith(".json"))) {
       const walk = (value: unknown): void => {
         if (Array.isArray(value)) value.forEach(walk);
         else if (value && typeof value === "object") {
-          const row = value as Record<string, unknown>;
-          if (typeof row.model_preset === "string") named.push(`${file}:${row.model_preset}`);
-          Object.values(row).forEach(walk);
+          const found = value as Record<string, unknown>;
+          if (typeof found.type === "string" && typeof found.id === "string") for (const field of MODEL_FIELDS) if (field in found) named.push(`${file}:${found.id}:${field}`);
+          Object.values(found).forEach(walk);
         }
       };
       walk(JSON.parse(readFileSync(new URL(file, dir), "utf8")));
     }
-    expect(named.length).toBeGreaterThan(8);
-    expect(named.filter((entry) => !presetSlug(entry.slice(entry.indexOf(":") + 1)))).toEqual([]);
+    expect(named).toEqual([]);
   });
 
-  it("have a settings row for each field, with the built-in default shown", () => {
-    for (const slug of PRESET_SLUGS) {
-      for (const field of PRESET_FIELDS) {
-        const row = VISIBLE_CATALOG.find((item) => item.storageKey === presetKey(slug, field));
-        expect(row, presetKey(slug, field)).toMatchObject({ uiStatus: "editable" });
-      }
-      const builtin = BUILTIN_PRESETS[slug]!;
-      expect(VISIBLE_CATALOG.find((item) => item.storageKey === presetKey(slug, "model"))!.defaultValue).toBe(builtin.model);
+  it("is warned about when a file does name one (it loads, the field is ignored when the step runs)", () => {
+    for (const field of MODEL_FIELDS) {
+      const found = loadWorkflow(workflow({
+        nodes: [{ id: "a", type: "agent", role: "analyst", prompt: "x", [field]: field === "reasoning" ? "high" : field === "service_tier" ? "fast" : "gpt-6.1-sol", output: [{ name: "o", type: "string" }] }],
+        edges: [{ from: "start", to: "a" }, { from: "a", to: "end" }],
+      }));
+      const warnings = found.ok ? found.warnings : found.problems;
+      expect(warnings.filter((problem) => problem.code === "model_ignored"), field).toEqual([expect.objectContaining({ level: "warning", node: "a", message: expect.stringContaining(field) })]);
     }
-    for (const prefix of ["workflow.agent", "workflow.debugger"]) for (const field of PRESET_FIELDS) expect(VISIBLE_CATALOG.some((item) => item.storageKey === `${prefix}.${field}`)).toBe(true);
+    const clean = loadWorkflow(workflow({
+      nodes: [{ id: "a", type: "agent", role: "analyst", prompt: "x", output: [{ name: "o", type: "string" }] }],
+      edges: [{ from: "start", to: "a" }, { from: "a", to: "end" }],
+    }));
+    expect((clean.ok ? clean.warnings : clean.problems).some((problem) => problem.code === "model_ignored")).toBe(false);
   });
-});
 
-describe("validating the workflow model settings", () => {
-  it("accepts the efforts a node may name and nothing else", () => {
-    for (const key of ["workflow.agent.reasoning_effort", "workflow.debugger.reasoning_effort", presetKey("strong", "reasoning_effort"), presetKey("ins-check", "reasoning_effort")]) {
-      for (const value of ["low", "medium", "high", "xhigh", "max", ""]) expect(validateSettingValue(key, value)).toBeNull();
-      expect(validateSettingValue(key, "ultra")).toMatchObject({ code: "invalid_choice", key });
-      expect(validateSettingsObject({ [key]: "turbo" })).toHaveLength(1);
-    }
+  it("changes nothing in the request or in what the Models view shows", async () => {
+    const flow = parseWorkflow(workflow({
+      nodes: [{ id: "a", type: "agent", role: "analyst", prompt: "x", provider: "codex", model: "gpt-6-luna", reasoning: "low", service_tier: "fast", model_preset: "cheap-fast", output: [{ name: "o", type: "string" }] }],
+      edges: [{ from: "start", to: "a" }, { from: "a", to: "end", with: { result: "a.o" } }],
+    }));
+    const rt = rtFor({}, pm);
+    const node = flow.nodes.find((candidate) => candidate.id === "a") as Extract<GraphNode, { type: "agent" }>;
+    const request = requestFor(flow, node, rt);
+    expect(request).not.toHaveProperty("model");
+    expect(request).not.toHaveProperty("preset");
+    const spawned = await withResolvedModel(request);
+    expect(spawned).toMatchObject({ provider: "claude-code", model: "claude-opus-5-5", reasoning: "high" });
+    expect(resolveStepExecutors({ nodes: [{ ...node }], settings: {}, pm })[0]).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: "high", source: "role-default" });
   });
 });
 
@@ -163,6 +268,7 @@ const rtFor = (settings: Record<string, unknown>, pair: typeof pm | null) => ({
   ctx: {
     db: { prepare: () => ({ get: () => undefined }) },
     effectiveProjectSettings: async () => ({ values: settings }),
+    ownedAgents: async () => ({}),
     bb: { sdk: { threads: { defaultExecutionOptions: async () => (pair ? { providerId: pair.providerId, model: pair.model } : {}) } } },
   },
   services: {},
@@ -178,9 +284,9 @@ const requestFor = (flow: ReturnType<typeof parseWorkflow>, node: Extract<GraphN
 
 const SETTINGS: Array<[string, Record<string, unknown>]> = [
   ["empty", {}],
-  ["generic", { "workflow.agent.provider": "claude-code", "workflow.agent.model": "claude-sonnet-5-5", "workflow.agent.reasoning_effort": "medium" }],
-  ["stages", { "pm_read.provider": "acp-opencode", "pm_read.model": "zai/glm-5.3-flash", "plan_critique.provider": "codex", "plan_critique.model": "gpt-6-sol", "code_critique.provider": "codex", "code_critique.model": "gpt-6-terra", "workflow.debugger.provider": "codex", "workflow.debugger.model": "gpt-6-sol" }],
-  ["presets", { [presetKey("strong", "provider")]: "codex", [presetKey("strong", "model")]: "gpt-6-sol", [presetKey("cheap-fast", "reasoning_effort")]: "medium", [presetKey("ins-check", "provider")]: "claude-code", [presetKey("ins-check", "model")]: "claude-opus-5" }],
+  ["table", { [roleModelKey("analyst")]: row("claude-sonnet-5-5", "low"), [roleModelKey("errand")]: row("gpt-6.1-terra"), [roleModelKey("specialist")]: row("gpt-6-luna", "max"), [roleModelKey("plan-critic")]: row("claude-opus-5-5") }],
+  ["stages", { "pm_read.provider": "acp-opencode", "pm_read.model": "zai/glm-5.3-flash", "plan_critique.provider": "codex", "plan_critique.model": "gpt-6-sol", "code_critique.provider": "codex", "code_critique.model": "gpt-6.1-terra", "workflow.debugger.provider": "codex", "workflow.debugger.model": "gpt-6-sol", "errand.provider": "claude-code", "errand.model": "claude-sonnet-5-5" }],
+  ["removed", { "workflow.agent.provider": "claude-code", "workflow.agent.model": "claude-haiku-5-5", "workflow.model_override.lp.plan/plan": { provider: "codex", model: "gpt-6-luna" }, [presetKey("strong", "model")]: "gpt-6-luna" }],
 ];
 
 describe("the Models view says what the executor spawns", () => {
@@ -211,7 +317,7 @@ describe("the Models view says what the executor spawns", () => {
             let request: HelperRequest | null = null;
             if (node.type === "agent" && !String(node.uses ?? "").startsWith("lp.")) request = requestFor(flow, node as unknown as Extract<GraphNode, { type: "agent" }>, rt);
             else if (node.type === "action" && (DELEGATED_ACTIONS as readonly string[]).includes(key)) {
-              request = { rt, workflowRunId: "r", stepKey: "s", nodeId: step.id, spawnKey: "k", role: "errand", title: "t", prompt: "", fields: [], ...(node.model_preset ? { preset: String(node.model_preset) } : {}) } as unknown as HelperRequest;
+              request = { rt, workflowRunId: "r", stepKey: "s", nodeId: step.id, spawnKey: "k", role: "errand", title: "t", prompt: "", fields: [] } as unknown as HelperRequest;
             }
             if (!request) continue;
             const spawned = await withResolvedModel(request);
@@ -232,102 +338,52 @@ describe("a deciding role", () => {
   const hub = { "pm_read.provider": "claude-code", "pm_read.model": "claude-haiku-5-5", "plan_critique.provider": "claude-code", "plan_critique.model": "claude-haiku-5-5",
     "night_review.provider": "claude-code", "night_review.model": "claude-haiku-5-5", "code_critique.provider": "codex", "code_critique.model": "gpt-6-sol",
     "specialist.provider": "claude-code", "specialist.model": "claude-haiku-5-5" };
+
   it("never plans or audits on a light model it inherits, and the plan's critic is another model than its planner", () => {
+    expect(ROLE_LEAST_TIER).toEqual({ planner: "strong", "code-critic": "standard", auditor: "standard", debugger: "standard" });
     for (const lightPm of [pm, { providerId: "claude-code", model: "claude-haiku-5-5" }]) {
-      const planner = resolveAgentModel({ role: "planner", node: {}, settings: hub, pm: lightPm });
-      expect(planner).toMatchObject({ model: "claude-opus-5-5", issues: expect.arrayContaining(["escalated_for_role"]) });
-      expect(resolveAgentModel({ role: "auditor", node: {}, settings: { ...hub, "code_critique.provider": "", "code_critique.model": "" }, pm: lightPm }).model).not.toMatch(/haiku|luna/);
-      const critic = resolveAgentModel({ role: "plan-critic", node: {}, settings: hub, pm: lightPm });
+      const planner = pick("planner", hub, lightPm);
+      expect(planner).toMatchObject({ model: "claude-opus-5-5" });
+      expect(pick("auditor", { ...hub, "code_critique.provider": "", "code_critique.model": "" }, lightPm)).toMatchObject({ model: "gpt-6.1-sol", issues: ["escalated_for_role"] });
+      expect(pick("debugger", hub, lightPm).model).not.toMatch(/haiku|luna/);
+      const critic = pick("plan-critic", hub, lightPm);
       expect(critic.model).not.toBe(planner.model);
     }
   });
-  it("keeps a light model the step or the owner names, and says so", () => {
-    expect(resolveAgentModel({ role: "planner", node: { provider: "claude-code", model: "claude-haiku-5-5" }, settings: {}, pm: strongPm })).toMatchObject({ model: "claude-haiku-5-5", issues: ["light_model_for_role"] });
+
+  it("keeps a light model the owner picks in the table, and says so", () => {
+    expect(pick("planner", { [roleModelKey("planner")]: row("claude-haiku-5-5") }, strongPm)).toMatchObject({ model: "claude-haiku-5-5", source: "table", issues: ["light_model_for_role"] });
+    expect(pick("code-critic", { [roleModelKey("code-critic")]: row("gpt-6-luna") })).toMatchObject({ model: "gpt-6-luna", issues: ["light_model_for_role"] });
+    // A role with no minimum does not mind.
+    expect(pick("memory", { [roleModelKey("memory")]: row("gpt-6-luna") }).issues).toEqual([]);
   });
+
   it("tiers the models the team uses", async () => {
     const { modelTier } = await import("@lane-pilot/models");
     expect(["claude-haiku-5-5", "gpt-6-luna", "zai-coding-plan/glm-5.3-flash", "router9/ag/gemini-3.8-flash-low"].map(modelTier)).toEqual(["light", "light", "light", "light"]);
     expect(["claude-sonnet-5-5", "router9/ag/gemini-3.8-flash-high", "composer-2.5", "gpt-5.6-sol", "gpt-6.1-terra"].map(modelTier)).toEqual(["standard", "standard", "standard", "standard", "standard"]);
     expect(["claude-opus-5-5", "gpt-6-sol", "gpt-6.1-sol", "openlux/gemini-4-argon", "openrouter/~google/gemini-pro-latest"].map(modelTier)).toEqual(["strong", "strong", "strong", "strong", "strong"]);
   });
+
+  it("keeps the built-in constants the provider-limit fallback runs on", () => {
+    expect([DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_REASONING]).toEqual(["claude-code", "claude-opus-5-5", "high"]);
+  });
 });
 
-describe("the owner's model override of one step", () => {
-  const at = { workflowId: "lp.plan", nodeId: "plan" };
-  const key = modelOverrideKey("lp.plan", "plan");
-  const overrideRow = { provider: "codex", model: "gpt-6-sol", reasoning_effort: "low", service_tier: "fast" };
-  const pickAt = (node: Record<string, string>, settings: Record<string, unknown>, where: typeof at | null = at) =>
-    resolveAgentModel({ role: "planner", node, settings, pm: strongPm, ...(where ? { at: where } : {}) });
+describe("the Models view is read-only", () => {
+  const nodes = [{ id: "plan", type: "agent", role: "planner" }, { id: "lint", type: "action", action: "lp.lint" }];
 
-  it("beats the node's fields, its preset, the role's stage, the generic selection and the PM, and names its key", () => {
-    const settings = { [key]: overrideRow, "plan_critique.provider": "acp-opencode", "plan_critique.model": "zai/glm-5.3-flash", "workflow.agent.provider": "claude-code", "workflow.agent.model": "claude-sonnet-5-5" };
-    expect(pickAt({ provider: "claude-code", model: "claude-opus-5", model_preset: "strong" }, settings)).toMatchObject({
-      providerId: "codex", model: "gpt-6-sol", reasoningEffort: "low", serviceTier: "fast", source: "override", sourceKey: key, inherited: false, issues: [],
-    });
+  it("shows the role's row for each step and names the setting that decides it; a step with no model has none", () => {
+    const view = resolveStepExecutors({ nodes, settings: { [roleModelKey("planner")]: row("claude-sonnet-5-5") }, pm: strongPm });
+    expect(view[0]).toMatchObject({ nodeId: "plan", model: "claude-sonnet-5-5", source: "table", sourceKey: "role_model.planner", settingsKey: "role_model.planner" });
+    expect(view[0]).not.toHaveProperty("overridable");
+    expect(view[0]).not.toHaveProperty("canOverride");
+    expect(view[0]).not.toHaveProperty("overrideScope");
+    expect(view[1]).toMatchObject({ mode: "none", model: null, settingsKey: null });
   });
 
-  it("applies only to its own workflow and node, and only when it is a complete pair", () => {
-    const settings = { [key]: overrideRow };
-    expect(pickAt({}, settings, { workflowId: "lp.plan", nodeId: "other" }).source).toBe("pm");
-    expect(pickAt({}, settings, { workflowId: "other", nodeId: "plan" }).source).toBe("pm");
-    expect(pickAt({}, settings, null).source).toBe("pm");
-    expect(pickAt({}, { [key]: { provider: "codex" } }).source).toBe("pm");
-    expect(pickAt({}, { [key]: "codex" }).source).toBe("pm");
-  });
-
-  it("keeps the level below's effort when the override names none, and the default tier otherwise", () => {
-    const settings = { [key]: { provider: "codex", model: "gpt-6-sol" }, "plan_critique.provider": "codex", "plan_critique.model": "gpt-6-luna", "plan_critique.reasoning_effort": "high" };
-    expect(pickAt({}, settings)).toMatchObject({ model: "gpt-6-sol", reasoningEffort: "high", serviceTier: null, source: "override" });
-  });
-
-  it("is what the executor spawns and what the Models view shows, for every shipped agent step and errand action", async () => {
-    const dir = new URL("../../workflows/", import.meta.url);
-    let compared = 0;
-    for (const file of readdirSync(dir).filter((name) => name.endsWith(".json"))) {
-      let flow: ReturnType<typeof parseWorkflow>;
-      try { flow = parseWorkflow(JSON.parse(readFileSync(new URL(file, dir), "utf8"))); } catch { continue; }
-      const settings: Record<string, unknown> = {};
-      for (const node of flow.nodes) {
-        settings[modelOverrideKey(flow.id, node.id)] = { provider: "codex", model: "gpt-6-sol", reasoning_effort: "medium", service_tier: "fast" };
-        const child = (node as { child?: unknown }).child;
-        if (node.type === "parallel" && child) settings[modelOverrideKey(flow.id, `${node.id}:child`)] = { provider: "codex", model: "gpt-6-sol", reasoning_effort: "medium", service_tier: "fast" };
-      }
-      const rt = rtFor(settings, pm);
-      const shown = new Map(resolveStepExecutors({ nodes: flow.nodes, settings, pm, workflowId: flow.id, ownKeys: new Set() }).map((row) => [row.nodeId, row]));
-      for (const node of flow.nodes) {
-        const key = String((node as { uses?: string }).uses ?? (node as { action?: string }).action ?? "");
-        let request: HelperRequest | null = null;
-        if (node.type === "agent" && !String((node as { uses?: string }).uses ?? "").startsWith("lp.")) request = requestFor(flow, node as Extract<GraphNode, { type: "agent" }>, rt);
-        else if (node.type === "action" && (DELEGATED_ACTIONS as readonly string[]).includes(key)) {
-          request = { rt, workflowRunId: "r", workflowId: flow.id, stepKey: "s", nodeId: node.id, spawnKey: "k", role: "errand", title: "t", prompt: "", fields: [] } as unknown as HelperRequest;
-        }
-        if (!request) continue;
-        const spawned = await withResolvedModel(request);
-        const row = shown.get(node.id)!;
-        expect({ file, node: node.id, provider: row.providerId, model: row.model, effort: row.reasoningEffort, tier: row.serviceTier, scope: row.overrideScope })
-          .toEqual({ file, node: node.id, provider: spawned.provider, model: spawned.model, effort: spawned.reasoning, tier: spawned.serviceTier ?? null, scope: "global" });
-        compared += 1;
-      }
-    }
-    expect(compared).toBeGreaterThan(40);
-  });
-
-  it("is told apart in the view: the project's own row is «project», one inherited from all projects is «global»", () => {
-    const settings = { [key]: overrideRow };
-    const nodes = [{ id: "plan", type: "agent", role: "planner" }, { id: "lint", type: "action", action: "lp.lint" }];
-    const view = (ownKeys: string[]) => resolveStepExecutors({ nodes, settings, pm: strongPm, workflowId: "lp.plan", ownKeys: new Set(ownKeys) });
-    expect(view([key])[0]).toMatchObject({ source: "override", sourceKey: key, canOverride: true, overrideScope: "project" });
-    expect(view([])[0]).toMatchObject({ source: "override", overrideScope: "global" });
-    // Without a workflow id (a draft of a new workflow) nothing applies; a step with no model cannot be overridden.
-    expect(resolveStepExecutors({ nodes, settings, pm: strongPm })[0]).toMatchObject({ source: "pm", canOverride: false, overrideScope: null });
-    expect(view([key])[1]).toMatchObject({ mode: "none", canOverride: false });
-  });
-
-  it("is validated as a setting", () => {
-    expect(validateSettingValue(key, overrideRow)).toBeNull();
-    expect(validateSettingValue(key, { provider: "codex", model: "x" })).toBeNull();
-    for (const bad of [{ provider: "codex" }, "codex", { provider: "codex", model: "x", reasoning_effort: "ultra" }, { provider: "codex", model: "x", service_tier: "turbo" }]) {
-      expect(validateSettingValue(key, bad)).toMatchObject({ code: "invalid_choice", key });
-    }
+  it("does not move a step on a removed per-step override setting", () => {
+    const settings = { "workflow.model_override.lp.plan/plan": { provider: "codex", model: "gpt-6-sol" } };
+    expect(resolveStepExecutors({ nodes, settings, pm: strongPm, workflowId: "lp.plan" })[0]).toMatchObject({ model: "claude-opus-5-5", source: "role-default" });
   });
 });

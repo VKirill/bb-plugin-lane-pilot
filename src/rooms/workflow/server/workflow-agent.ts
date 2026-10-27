@@ -124,7 +124,7 @@ export type HelperRequest = {
   /** The whole first message (or, into a running thread, the follow-up). */
   prompt: string;
   fields: readonly Field[];
-  provider?: string; model?: string; reasoning?: string; serviceTier?: "default" | "fast"; preset?: string;
+  provider?: string; model?: string; reasoning?: string; serviceTier?: "default" | "fast";
   skills?: readonly string[];
   /** BB plugins and MCP servers the step's session may load on top of its role's. */
   plugins?: readonly string[]; mcp?: readonly string[];
@@ -390,7 +390,6 @@ export function agentRequest(ctx: StepContext<ChainRuntime>, node: Extract<Graph
       readOnly: spec.readOnly, skills: [...(node.skills ?? []), ...(node.profile?.skills ?? [])], ...(goals ? { goals } : {}), ...(packet ? { packet } : {}), ...(node.authorized !== undefined ? { authorized: node.authorized } : {}) });
   return {
     rt, workflowRunId: ctx.runId, workflowId: ctx.workflow.id, stepKey: ctx.stepKey, nodeId: node.id, spawnKey: ctx.spawnKey, role, title, prompt: body, fields,
-    ...(node.provider ? { provider: node.provider } : {}), ...(node.model ? { model: node.model } : {}), ...(node.reasoning ? { reasoning: node.reasoning } : {}), ...(node.service_tier ? { serviceTier: node.service_tier } : {}), ...(node.model_preset ? { preset: node.model_preset } : {}),
     ...(routine ? routineModel(ctx.inputs ?? {}) : {}),
     skills: [...new Set([...(node.skills ?? []), ...(node.profile?.skills ?? [])])], plugins: [...new Set(node.plugins ?? [])], mcp: [...new Set(node.mcp ?? [])], intoThread, signal: ctx.signal,
     ...(node.produces?.length || node.gates?.length ? { contract: { id: node.id, produces: node.produces, gates: node.gates } } : {}),
@@ -407,30 +406,31 @@ export async function pmPairOfThread(bb: ServerCore["bb"], threadId: string): Pr
 }
 
 /**
- * The request with the model the step will run on written into it: the node's fields, its preset, the role's stage selection, the
- * generic agent selection, the PM's model (resolveAgentModel decides; the Models view calls the same function). Applied to the
+ * The request with the model the step will run on written into it: the role's row of the table (resolveAgentModel decides; the Models
+ * view calls the same function), unless a scheduled agent or an owner-created agent pins its own. Applied to the
  * generic agent node and to the actions that run in an errand helper; the router, the architect and the audits keep their own.
  */
 export async function withResolvedModel(request: HelperRequest): Promise<HelperRequest> {
   const { rt } = request;
   const settings = (await rt.ctx.effectiveProjectSettings(rt.projectId, rt.runId ? getRunSettingsScopes(rt.ctx.db, rt.runId) : []).catch(() => ({ values: {} }))).values;
   const pm = rt.pmThreadId ? await pmPairOfThread(rt.ctx.bb, rt.pmThreadId) : null;
-  // The helper starts in the PM chat's environment, on one machine: a model that machine does not offer is passed over (a preset, a Settings
-  // selection) or, when the step names it itself, refused here with the machines that do have it, instead of failing inside the spawn.
+  // The helper starts in the PM chat's environment, on one machine: a model that machine does not offer is passed over (the table's row)
+  // or, when the run pins it itself, refused here with the machines that do have it, instead of failing inside the spawn.
   const hostId = rt.pmThreadId ? await pmHostOf(rt.ctx.bb, rt.pmThreadId).catch(() => null) : (await projectFolder(rt.ctx.bb, rt.projectId))?.hostId ?? null;
   const read = hostId ? modelCatalogOf(rt.ctx).peek() : null;
   const offered = read && hostId ? (providerId: string, model: string) => offeredOnHost(read, providerId, model, hostId) : undefined;
-  // An agent the owner created may name its own model and effort: they stand where the node names none (the node's own fields win).
+  // An agent the owner created may name its own model and effort: they pin the run unless the schedule named one.
   const specialist = request.role.startsWith("specialist:") ? request.role.slice("specialist:".length) : "";
   const agentMeta = specialist && !isBundledSpecialist(specialist) ? (await (async () => rt.ctx.ownedAgents())().catch(() => ({} as Awaited<ReturnType<typeof rt.ctx.ownedAgents>>)))[specialist]?.meta : undefined;
-  const agentPair = agentMeta?.model && !request.preset && !request.model ? { provider: request.provider ?? DEFAULT_PROVIDER, model: agentMeta.model } : null;
-  const chosen = resolveAgentModel({ role: request.role, node: { provider: agentPair?.provider ?? request.provider, model: agentPair?.model ?? request.model, reasoning: request.reasoning ?? agentMeta?.effort, service_tier: request.serviceTier, model_preset: request.preset }, settings, pm, ...(offered ? { offered } : {}), ...(request.workflowId ? { at: { workflowId: request.workflowId, nodeId: request.nodeId } } : {}) });
+  // The only models a run may pin: the one a scheduled agent names, and the one an owner-created agent names. The graph's node names none.
+  const pinned = { provider: request.provider, model: request.model ?? agentMeta?.model, reasoning: request.reasoning ?? agentMeta?.effort, service_tier: request.serviceTier };
+  const chosen = resolveAgentModel({ role: request.role, pinned, settings, pm, ...(offered ? { offered } : {}) });
   if (chosen.issues.includes("model_unavailable_here") && read) {
     const where = findModelIn(read.providers.find((row) => row.id === chosen.providerId)?.models, chosen.model)?.hostIds.map((id) => read.hosts.find((row) => row.id === id)?.name ?? id).join(", ") ?? "";
-    throw new HelperFailure("model_unavailable", `${chosen.providerId}/${chosen.model} is not offered by the machine this workflow's helpers run on (${read.hosts.find((row) => row.id === hostId)?.name ?? hostId})${where ? `; it is on ${where}` : ""}. Pick another model for the step.`);
+    throw new HelperFailure("model_unavailable", `${chosen.providerId}/${chosen.model} is not offered by the machine this workflow's helpers run on (${read.hosts.find((row) => row.id === hostId)?.name ?? hostId})${where ? `; it is on ${where}` : ""}. Change the model of the role \"${request.role}\" in Settings (the role table).`);
   }
-  if (chosen.issues.includes("escalated_for_role")) rt.ctx.log?.(`Lane Pilot: the ${request.role} of ${request.workflowId ?? "a workflow"}/${request.nodeId} inherited a model too light for it; it runs on ${chosen.providerId}/${chosen.model} (the strong preset)`);
-  if (chosen.issues.includes("light_model_for_role")) rt.ctx.log?.(`Lane Pilot: the ${request.role} of ${request.workflowId ?? "a workflow"}/${request.nodeId} runs on ${chosen.model}, a light model for that role, as its step names it`);
+  if (chosen.issues.includes("escalated_for_role")) rt.ctx.log?.(`Lane Pilot: the ${request.role} of ${request.workflowId ?? "a workflow"}/${request.nodeId} inherited a model too light for it; it runs on ${chosen.providerId}/${chosen.model} (the role's default)`);
+  if (chosen.issues.includes("light_model_for_role")) rt.ctx.log?.(`Lane Pilot: the ${request.role} of ${request.workflowId ?? "a workflow"}/${request.nodeId} runs on ${chosen.model}, a light model for that role, as the role table says`);
   return { ...request, provider: chosen.providerId, model: chosen.model, reasoning: chosen.reasoningEffort, ...(chosen.serviceTier ? { serviceTier: chosen.serviceTier } : {}) };
 }
 

@@ -111,21 +111,10 @@ export const rpcWorkflow = {
     input: z.object({ projectId: z.string().min(1).optional(), sectionId: z.string().min(1).optional(), draftId: z.string().min(1).optional() }).strict(),
     output: z.object({ threadId: z.string(), projectId: z.string(), reused: z.boolean() }).strict(),
   },
-  /** Who works on every step of a workflow or draft: agent, provider, model, effort and where each value comes from (node, Settings, role default, writer chain). */
+  /** Who works on every step of a workflow or draft: agent, provider, model, effort and where each value comes from (the role table, a stage selection, the role default, the writer chain). Read-only. */
   workflow_step_executors: {
     input: z.object({ workflowId: z.string().min(1).optional(), draftId: z.string().min(1).optional(), projectId: z.string().min(1).optional() }).strict(),
     output: z.object({ found: z.boolean(), executors: z.array(stepExecutorSchema), pm: z.object({ providerId: z.string(), model: z.string() }).strict().nullable() }).strict(),
-  },
-  /**
-   * Sets (`choice`) or drops (`null`) the owner's model override of one step, for all projects (`scope: "global"`) or for `projectId` only.
-   * Built-in workflows stay untouched: the override is a settings row `workflow.model_override.<workflowId>/<nodeId>`.
-   */
-  workflow_model_override: {
-    input: z.object({
-      projectId: z.string().min(1), scope: z.enum(["project", "global"]), workflowId: z.string().min(1), nodeId: z.string().min(1),
-      choice: z.object({ providerId: z.string().min(1), model: z.string().min(1), effort: z.string().nullable().optional(), serviceTier: z.string().nullable().optional() }).strict().nullable(),
-    }).strict(),
-    output: z.object({ ok: z.boolean(), reason: z.string().optional() }).strict(),
   },
   /** Every provider and model the hub's machines offer, with the machines each is available on; the pickers of the Workflows tab list this. */
   workflow_model_catalog: {

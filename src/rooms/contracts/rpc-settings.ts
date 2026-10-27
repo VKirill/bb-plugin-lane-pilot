@@ -32,6 +32,20 @@ export const rpcSettings = {
       validation: settingValidationSchema.optional(),
     }).strict(),
   },
+  /**
+   * The table «role -> model» for a place: the model in force for each role, where it comes from, whether this place holds a row of its own
+   * (`own`, with the `version` to save or reset it against the key `role_model.<role>`), and the six models the table offers.
+   */
+  get_role_models: {
+    input: z.object({ projectId: z.string().min(1), sectionId: z.string().min(1).optional() }).strict(),
+    output: z.object({
+      roles: z.array(z.object({
+        role: z.string(), providerId: z.string(), model: z.string(), effort: z.string(), source: z.enum(["table", "stage", "default"]), sourceKey: z.string().nullable(),
+        own: z.boolean(), version: z.number().int().min(0), defaultModel: z.string(), defaultEffort: z.string(), offered: z.boolean().nullable(),
+      }).strict()),
+      options: z.array(z.object({ id: z.string(), providerId: z.string(), label: z.string(), family: z.enum(["claude", "gpt"]), offered: z.boolean().nullable(), efforts: z.array(z.string()) }).strict()),
+    }).strict(),
+  },
   /** Every project and section that keeps its own role models, providers, efforts or writer fallbacks over the global ones. */
   list_model_overrides: {
     input: z.object({}).strict(),

@@ -2,7 +2,7 @@ import { unownedExpectedOutputs } from "../../tasks";
 import { hostContract, taskV2Schema } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { claimStageSpawn, countAttempts, getRun, getTask, listLiveTasksForRun, listOpenAttempts, listStageReceipts, openDatabase } from "../../storage";
-import { criticPairCandidates, latestWriterPair, pairApartFromWriter, sdkCriticCatalog } from "../critic-pair";
+import { criticAcrossFamilies, criticPairCandidates, latestWriterPair, pairApartFromWriter, roleSelection, sdkCriticCatalog } from "../critic-pair";
 import { bbServiceTier, writerExecutionSelection, writerServiceTier, findModelIn } from "@lane-pilot/models";
 import { qaSpawnClaimed } from "../../qa";
 import { reconcileCritic } from "../../stability";
@@ -42,8 +42,11 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
     "pm_read.enabled","pm_read.min_lines","pm_read.provider","pm_read.model","pm_read.reasoning_effort","pm_read.service_tier",
   ].map((key)=>[key,configuredSetting(settings,key)])));
   const fallback=resolveStageWriterSelection({settings,config:input.config});
-  const providerId=parsedSettings.provider??fallback.providerId;
-  const modelId=parsedSettings.model??fallback.model;
+  // One role table (packages/models/src/role-models.ts): the owner's row, else the pm_read selection, else the default; the old pick stands when the host lacks it.
+  const picked=await roleSelection({catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:"pm-reader",fallback:{providerId:parsedSettings.provider??fallback.providerId,model:parsedSettings.model??fallback.model}});
+  const providerId=picked.providerId;
+  const modelId=picked.model;
+  parsedSettings.effort=picked.effort??parsedSettings.effort;
   const source=JSON.stringify({taskId:input.taskId,readFirst:input.task.read_first,settings:parsedSettings,providerId,modelId});
   const base={runId:input.runId,taskId:input.taskId,stageId:"pm-read" as const,input:source,attempt:Math.min(countAttempts(input.db,input.runId,input.taskId),MAIN_ATTEMPT_LIMIT)};
   const existing=listStageReceipts(input.db,input.runId,input.taskId).find((row)=>row.stageId==="pm-read");
@@ -155,7 +158,8 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   // quality_mode (task, else project, else standard) decides whether this task goes through the plan critique at all.
   const qualityMode = resolveQualityMode(input.task,projectSettings[QUALITY_MODE_SETTING]);
   const settings = applyQualityMode(projectSettings,qualityMode);
-  const selection=resolveStageWriterSelection({settings,config:input.config,stageProviderKey:"plan_critique.provider",stageModelKey:"plan_critique.model"});
+  const legacy=resolveStageWriterSelection({settings,config:input.config,stageProviderKey:"plan_critique.provider",stageModelKey:"plan_critique.model"});
+  const selection=await roleSelection({catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:"plan-critic",fallback:{providerId:legacy.providerId,model:legacy.model}});
   const providerId=selection.providerId;
   const modelId=selection.model;
   const mode = settings["plan_critique.mode"] === "advisory" ? "advisory" : "gate";
@@ -243,9 +247,9 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
     const model = findModelIn(catalog.models, modelId);
     if (!provider || !model) throw new Error("critique_provider_or_model_unavailable");
     const levels = model.supportedReasoningEfforts.map((item) => item.reasoningEffort);
-    const configuredEffort = typeof settings["plan_critique.reasoning_effort"] === "string"
+    const configuredEffort = selection.effort ?? (typeof settings["plan_critique.reasoning_effort"] === "string"
       ? settings["plan_critique.reasoning_effort"] as string
-      : typeof settings["writer.reasoning_effort"] === "string" ? settings["writer.reasoning_effort"] as string : "medium";
+      : typeof settings["writer.reasoning_effort"] === "string" ? settings["writer.reasoning_effort"] as string : "medium");
     if (!new Set<string>(levels).has(configuredEffort)) throw new Error(`critique_reasoning_effort_unsupported:${configuredEffort}`);
     const savedTier = settings["plan_critique.service_tier"];
     const tier = savedTier === "fast" || savedTier === "standard" ? savedTier : writerServiceTier(settings);
@@ -406,18 +410,27 @@ export async function runCodeCritique(input:{
   if (!(existing && existing.inputSha256 === sha256(source) && existing.state === "running")) {
     recordStage(input.db, { ...base, state:"pending", replaceOnNewInput:true, result:{ ...ledgerCarry, ...hashFields, truncated:input.evidence.truncated } });
   }
-  const liveSelection = resolveStageWriterSelection({
+  // The role table's code-critic (packages/models/src/role-models.ts), else what the stage ran on before it (its selection, else the writer's).
+  const stageSelection = resolveStageWriterSelection({
     settings, config:input.config, stageProviderKey:"code_critique.provider", stageModelKey:"code_critique.model",
   });
-  const configuredEffort = frozen?.reasoningEffort ?? (typeof settings["code_critique.reasoning_effort"] === "string"
+  const criticCatalog = sdkCriticCatalog(input.bb, input.config.hostId);
+  const roleCritic = frozen ? null : await roleSelection({ catalog:criticCatalog, settings, role:"code-critic", fallback:{ providerId:stageSelection.providerId, model:stageSelection.model } });
+  const liveSelection = roleCritic ? { providerId:roleCritic.providerId, model:roleCritic.model } : stageSelection;
+  const configuredEffort = frozen?.reasoningEffort ?? roleCritic?.effort ?? (typeof settings["code_critique.reasoning_effort"] === "string"
     ? settings["code_critique.reasoning_effort"] as string
     : typeof settings["writer.reasoning_effort"] === "string" ? settings["writer.reasoning_effort"] as string : "medium");
   const savedTier = frozen?.serviceTier ?? settings["code_critique.service_tier"];
+  const criticTier = savedTier === "fast" || savedTier === "standard" ? savedTier : writerServiceTier(settings);
+  const writerPair = frozen ? null : latestWriterPair(input.db, input.runId, input.taskId);
+  // Cross-family rule: the critic is of another family than the writer's model (a frozen policy keeps the pair it began with).
+  const across = frozen ? null : await criticAcrossFamilies({ critic:liveSelection, writer:writerPair, effort:configuredEffort, tier:criticTier, catalog:criticCatalog });
+  if (across?.changed) input.bb.log.info(`code critic for ${input.taskId}: ${across.pair.providerId}/${across.pair.model}, the other family than the writer's ${writerPair?.providerId}/${writerPair?.model}`);
   // G9: another model than the writer's when the host has one (a frozen policy keeps the pair it began with).
   const apart = frozen ? null : await pairApartFromWriter({
-    current:{ providerId:liveSelection.providerId, model:liveSelection.model }, writer:latestWriterPair(input.db, input.runId, input.taskId),
+    current:across?.pair ?? liveSelection, writer:writerPair,
     candidates:criticPairCandidates(settings, input.config), effort:configuredEffort,
-    tier:savedTier === "fast" || savedTier === "standard" ? savedTier : writerServiceTier(settings), catalog:sdkCriticCatalog(input.bb, input.config.hostId),
+    tier:criticTier, catalog:criticCatalog,
   });
   if (apart?.changed) input.bb.log.info(`code critic for ${input.taskId}: ${apart.pair.providerId}/${apart.pair.model} instead of the writer's own pair`);
   const providerId = frozen?.providerId ?? apart?.pair.providerId ?? liveSelection.providerId;
@@ -566,11 +579,12 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
     return failedPolicy ? {allowed:false,reason:policy.reason ?? "specialist_policy_invalid"} : {allowed:true};
   }
 
-  const selection=resolveStageWriterSelection({settings,config:input.config,stageProviderKey:"specialist.provider",stageModelKey:"specialist.model"});
+  const legacy=resolveStageWriterSelection({settings,config:input.config,stageProviderKey:"specialist.provider",stageModelKey:"specialist.model"});
+  const selection=await roleSelection({catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:"specialist-reviewer",fallback:{providerId:legacy.providerId,model:legacy.model}});
   const providerId=selection.providerId;
   const modelId=selection.model;
-  const effort = typeof settings["specialist.reasoning_effort"] === "string" && settings["specialist.reasoning_effort"]
-    ? settings["specialist.reasoning_effort"] as string : "high";
+  const effort = selection.effort ?? (typeof settings["specialist.reasoning_effort"] === "string" && settings["specialist.reasoning_effort"]
+    ? settings["specialist.reasoning_effort"] as string : "high");
   const savedTier = settings["specialist.service_tier"];
   const serviceTier = savedTier === "fast" ? "fast" : "standard";
   let threadId:string|null = null;

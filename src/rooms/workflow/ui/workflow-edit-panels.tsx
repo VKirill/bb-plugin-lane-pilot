@@ -13,9 +13,7 @@ import {
   type Clause, type ConditionOp, type ModelError, type NodeType, type Raw, type WhenModel,
 } from "./workflow-edit-model";
 import type { Catalog, DraftEditing } from "./workflow-edit-state";
-import { choiceOps, type ModelChoice } from "./workflow-model-ops";
-import { NativeModelPicker } from "./workflow-native-picker";
-import { issueText, sourceText, useModelCatalog, type StepExecutor } from "./workflow-models";
+import { executorLine, type StepExecutor } from "./workflow-models";
 import { dataTabs, SidePanel, type NodeDataProps } from "./workflow-node-data";
 import type { DraftCaseResult, DraftDoc } from "./workflow-drafts";
 
@@ -111,40 +109,20 @@ function RefMap({ label, rows, suggestions, onChange, hint, testId, check }: { l
 
 // ------------------------------------------------------------------ the model of an agent
 
-function ModelFields({ node, edit, definition, executor }: { node: Raw; edit: DraftEditing; definition: Raw; executor: StepExecutor | null }) {
+function ModelFields({ node, edit, executor }: { node: Raw; edit: DraftEditing; executor: StepExecutor | null }) {
   const id = text(node.id);
-  const models = useModelCatalog(edit.projectId);
-  const [refused, setRefused] = useState<string | null>(null);
-  const reasoning = ["low", "medium", "high", "xhigh", "ultracode", "max"] as const;
-  // BB's own provider and model window over the hub's catalog (the same one the Models table and the card use); without a catalog the names are typed.
-  if (models?.providers.length) {
-    const own = Boolean(text(node.provider) || text(node.model) || text(node.reasoning) || text(node.service_tier));
-    const choose = (choice: ModelChoice) => {
-      const made = choiceOps(definition, models, id, choice);
-      if (!made.ok) { setRefused(issueText(made.code)); return; }
-      setRefused(null);
-      void edit.apply(made.ops);
-    };
-    return (
-      <Field label={t("wfEditModel")} hint={t("wfEditModelHint")}>
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <div className="min-w-0 flex-1 basis-56">
-            <NativeModelPicker catalog={models} testId="wf-edit-model-picker" label={t("wfEditModel")} onChoose={choose}
-              seed={{ providerId: text(node.provider) || executor?.providerId || null, model: text(node.model) || executor?.model || null, effort: text(node.reasoning) || executor?.reasoningEffort || null, serviceTier: text(node.service_tier) || executor?.serviceTier || null }} />
-          </div>
-          {own ? <Button type="button" size="sm" variant="outline" className="lp-raised h-8 px-2.5 text-xs" data-testid="wf-edit-model-default" onClick={() => { setRefused(null); void edit.apply(setNodeOps(id, { provider: null, model: null, reasoning: null, service_tier: null })); }}>{t("wfEditDefault")}</Button> : null}
-        </div>
-        {!own ? <p className="text-xs text-muted-foreground" data-testid="wf-edit-model-inherited">{executor ? t("wfModelFrom").replace("{source}", sourceText(executor)) : t("wfEditDefault")}</p> : null}
-        {refused ? <p className="break-words text-xs text-destructive-text" role="alert" data-testid="wf-edit-model-refused">{t("wfModelRejected").replace("{reason}", refused)}</p> : null}
-      </Field>
-    );
-  }
+  // The model belongs to the role (the table in Settings), not to the step. A node of an older file may still name one: it is ignored when the step
+  // runs, the validator warns about it, and this button takes it off.
+  const named = (["provider", "model", "reasoning", "service_tier", "model_preset"] as const).some((field) => text(node[field]));
   return (
-    <div className="grid min-w-0 gap-3 sm:grid-cols-3">
-      <TextField label={t("wfEditProvider")} value={text(node.provider)} onCommit={(next) => void edit.apply(setNodeOps(id, { provider: next }))} />
-      <TextField label={t("wfEditModelName")} value={text(node.model)} onCommit={(next) => void edit.apply(setNodeOps(id, { model: next }))} />
-      <SelectField label={t("wfEditReasoning")} value={(text(node.reasoning) as (typeof reasoning)[number]) || ""} none={t("wfEditDefault")} options={reasoning.map((level) => ({ value: level, label: level }))} onChange={(next) => void edit.apply(setNodeOps(id, { reasoning: next }))} />
-    </div>
+    <Field label={t("wfEditModel")} hint={t("wfModelsRoleHint")}>
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <p className="min-w-0 flex-1 basis-56 break-words text-xs text-muted-foreground" data-testid="wf-edit-model-inherited">
+          {executor ? t("wfEditModelByRole").replace("{model}", executorLine(executor)).replace("{role}", executor.agent.label) : t("wfEditDefault")}
+        </p>
+        {named ? <Button type="button" size="sm" variant="outline" className="lp-raised h-8 px-2.5 text-xs" data-testid="wf-edit-model-default" onClick={() => void edit.apply(setNodeOps(id, { provider: null, model: null, reasoning: null, service_tier: null, model_preset: null }))}>{t("wfEditModelDrop")}</Button> : null}
+      </div>
+    </Field>
   );
 }
 
@@ -175,7 +153,7 @@ export function NodeForm({ node, definition, catalog, edit, onClose, narrow, onC
         <>
           <TextField label={t("wfEditRole")} value={text(node.role)} list={[...new Set(["worker", "plan-analyst", "builder", "reviewer", "qa-browser", ...catalog.specialists])]} testId="wf-edit-role" hint={t("wfEditRoleHint")} onCommit={(next) => set({ role: next })} />
           <TextArea label={t("wfEditPrompt")} value={text(node.prompt)} rows={6} suggestions={refs} testId="wf-edit-prompt" hint={t("wfEditPromptHint")} onCommit={(next) => set({ prompt: next })} />
-          <ModelFields node={node} edit={edit} definition={definition} executor={executor} />
+          <ModelFields node={node} edit={edit} executor={executor} />
           <ChipsField label={t("wfEditSkills")} values={Array.isArray(node.skills) ? node.skills.filter((item): item is string => typeof item === "string") : []} catalog={catalog.skills.length ? catalog.skills : undefined} testId="wf-edit-skills" hint={t("wfEditSkillsHint")} onChange={(next) => set({ skills: next.slice(0, 8) })} />
           <ChipsField label={t("wfEditNodePlugins")} values={strings(node.plugins)} catalog={catalog.plugins.length ? catalog.plugins : undefined} testId="wf-edit-node-plugins" hint={t("wfEditNodePluginsHint")} onChange={(next) => set({ plugins: next.slice(0, 8) })} />
           <ChipsField label={t("wfEditNodeMcp")} values={strings(node.mcp)} catalog={catalog.mcpServers.length ? catalog.mcpServers.map((value) => ({ value })) : undefined} testId="wf-edit-node-mcp" hint={t("wfEditNodeMcpHint")} onChange={(next) => set({ mcp: next.slice(0, 8) })} />

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createRun, createTask, createAttempt, openDatabase, setRunThread, transitionAttempt } from "../../src/rooms/storage/database";
+import { createRun, createTask, createAttempt, openDatabase, saveProjectSetting, setRunThread, transitionAttempt } from "../../src/rooms/storage/database";
 import { runCommand } from "../../src/rooms/host-worker/host-handlers";
 import { createCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../src/rooms/core/server/services";
@@ -221,9 +221,12 @@ describe("the agent step", () => {
     const answer = () => ((calls += 1) === 1 ? "Upgrade your plan to continue" : reply({ count: 3, summary: "three", handoff: "counted" }));
     const t = await setup({ look: [answer] });
     dispose = t.dispose;
-    const summary = await t.start(oneAgent({ provider: "acp-cursor", model: "grok-4.6" })).done;
+    // The analyst's row of the role table is a Codex model: its plan limit sends the step back to Claude Code.
+    saveProjectSetting(t.db, PROJECT, "role_model.analyst", { model: "gpt-6-luna" });
+    const summary = await t.start(oneAgent()).done;
     expect(summary).toMatchObject({ status: "succeeded", output: { count: 3 } });
     expect(t.spawned).toHaveLength(2);
+    expect(JSON.stringify(t.spawned[0])).toContain("codex");
     expect(JSON.stringify(t.spawned[1])).toContain("claude-code");
     expect(String((t.spawned[1]!.pluginMetadata as Row).spawnId)).toMatch(/:limit$/);
   });

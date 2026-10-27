@@ -59,7 +59,7 @@ describe("workflow_step_executors", () => {
     const db = journalDb();
     const ctx = { bb: fake.bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: settings }) } as unknown as ServerCore;
     const draft = { id: "wfd_1", projectId: "proj_1", definition: { nodes: [
-      { id: "a", type: "agent", role: "analyst", provider: "acp-opencode", model: "deepseek/v9", reasoning: "high" },
+      { id: "a", type: "agent", role: "triager", provider: "acp-opencode", model: "deepseek/v9", reasoning: "high" },
       { id: "w", type: "lp-task" },
     ] } };
     const lib = { nodes: [{ id: "x", type: "agent", role: "planner", model_preset: "cheap-fast" }] };
@@ -71,28 +71,31 @@ describe("workflow_step_executors", () => {
     });
   }
 
-  it("resolves a draft against the project's settings and flags a model the machines do not list", async () => {
+  it("resolves a draft against the project's settings: a step runs on its role's model, whatever the node names, and a model the machines do not list is flagged", async () => {
     const result = await models().stepExecutors({ draftId: "wfd_1" });
     expect(result.found).toBe(true);
+    // The triager's row is GPT-6 Luna (Codex has it); the node's own deepseek/v9 is ignored.
     expect(result.executors.map((row) => [row.nodeId, row.model, row.issues])).toEqual([
-      ["a", "deepseek/v9", ["model_unknown"]], ["w", "gpt-6-luna", ["effort_auto", "effort_unsupported"]],
+      ["a", "gpt-6-luna", []], ["w", "gpt-6-luna", ["effort_auto", "effort_unsupported"]],
     ]);
     expect(result.executors[1]!.fallbacks.at(-1)).toEqual({ providerId: null, model: null, reasoningEffort: null, pm: true });
   });
 
-  it("lists the steps of the workflows a library workflow calls, with the override key of the called workflow, and the session a step goes on in", async () => {
-    const api = models({ "workflow.model_override.frag/gather": { provider: "codex", model: "gpt-6-luna" } });
+  it("lists the steps of the workflows a library workflow calls, each on its role's model, and the session a step goes on in", async () => {
+    const api = models({ "role_model.analyst": { model: "gpt-6-luna" }, "workflow.model_override.frag/gather": { provider: "claude-code", model: "claude-opus-5-5" } });
     const result = await api.stepExecutors({ workflowId: "parent" });
     expect(result.executors.map((row) => [row.nodeId, row.fragment ?? null, row.source])).toEqual([
-      ["analyze", null, "none"], ["gather", { nodeId: "analyze", workflowId: "frag" }, "override"], ["assess", { nodeId: "analyze", workflowId: "frag" }, "session"],
+      ["analyze", null, "none"], ["gather", { nodeId: "analyze", workflowId: "frag" }, "table"], ["assess", { nodeId: "analyze", workflowId: "frag" }, "session"],
     ]);
-    expect(result.executors[1]).toMatchObject({ sourceKey: "workflow.model_override.frag/gather", model: "gpt-6-luna", canOverride: true });
-    expect(result.executors[2]).toMatchObject({ sourceKey: "gather", model: "gpt-6-luna", canOverride: false });
+    // A removed per-step override setting changes nothing.
+    expect(result.executors[1]).toMatchObject({ sourceKey: "role_model.analyst", model: "gpt-6-luna" });
+    expect(result.executors[2]).toMatchObject({ sourceKey: "gather", model: "gpt-6-luna" });
+    expect(result.executors[1]).not.toHaveProperty("canOverride");
   });
 
   it("resolves a workflow of the library, and says when there is none", async () => {
     const api = models();
-    expect((await api.stepExecutors({ workflowId: "lib" })).executors[0]).toMatchObject({ nodeId: "x", source: "preset" });
+    expect((await api.stepExecutors({ workflowId: "lib" })).executors[0]).toMatchObject({ nodeId: "x", source: "role-default", model: "claude-opus-5-5" });
     expect(await api.stepExecutors({ workflowId: "nope" })).toEqual({ found: false, executors: [], pm: null });
     expect(await api.stepExecutors({ draftId: "nope" })).toEqual({ found: false, executors: [], pm: null });
   });

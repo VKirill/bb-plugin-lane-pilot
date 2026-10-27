@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
-import { costTier, nodeEffortsFor, validateChoice, type ModelCatalog } from "@lane-pilot/models";
+import { costTier, nodeEffortsFor, roleModelKey, validateChoice, type ModelCatalog } from "@lane-pilot/models";
 import { DELEGATED_ACTIONS, resolveStepExecutors, type StepExecutor } from "../../src/rooms/workflow/server/workflow-step-executors";
 
 const pm = { providerId: "claude-code", model: "claude-opus-5-5" };
@@ -23,58 +23,48 @@ const catalog: ModelCatalog = {
 };
 
 describe("step executors by node type", () => {
-  it("an agent node with nothing set runs on the PM chat's model; with the PM unknown, on the built-in default (role default)", () => {
+  it("an agent node runs on the model of its role's row of the table, whatever the PM chat runs", () => {
     expect(one({ id: "a", type: "agent", role: "analyst" })).toMatchObject({
-      mode: "model", providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: "high", source: "pm", inherited: true, overridable: true,
-      agent: { role: "analyst", helper: "analyst" }, costTier: "high", issues: [],
+      mode: "model", providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: "high", source: "role-default", sourceKey: null, inherited: true,
+      agent: { role: "analyst", helper: "analyst" }, costTier: "high", settingsKey: "role_model.analyst", issues: [],
     });
-    expect(one({ id: "a", type: "agent", role: "analyst" }, writer, { pm: null })).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", source: "role-default" });
+    expect(one({ id: "c", type: "agent", role: "code-critic" }, writer, { pm: null })).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", reasoningEffort: "high", source: "role-default", settingsKey: "role_model.code-critic" });
+    expect(one({ id: "t", type: "agent", role: "triager" })).toMatchObject({ providerId: "codex", model: "gpt-6-luna", costTier: "low" });
   });
 
-  it("an agent node takes the role's stage selection, then the generic workflow agent, from Settings", () => {
-    expect(one({ id: "a", type: "agent", role: "analyst" }, { ...writer, "pm_read.provider": "opencode2", "pm_read.model": "router9/ag/gemini-3.8-flash-high" }))
+  it("the owner's row of the table, then a stage selection set earlier, decide; the removed levels do not", () => {
+    expect(one({ id: "a", type: "agent", role: "analyst" }, { ...writer, [roleModelKey("analyst")]: { model: "gpt-6.1-terra", reasoning_effort: "low" } }))
+      .toMatchObject({ providerId: "codex", model: "gpt-6.1-terra", reasoningEffort: "low", source: "table", sourceKey: "role_model.analyst", inherited: true, costTier: "medium" });
+    expect(one({ id: "a", type: "agent", role: "pm-reader" }, { ...writer, "pm_read.provider": "opencode2", "pm_read.model": "router9/ag/gemini-3.8-flash-high" }))
       .toMatchObject({ providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "low", source: "stage", sourceKey: "pm_read.model", inherited: true, costTier: "low" });
-    expect(one({ id: "a", type: "agent", role: "worker" }, { ...writer, "workflow.agent.provider": "codex", "workflow.agent.model": "gpt-6-luna", "workflow.agent.reasoning_effort": "medium" }))
-      .toMatchObject({ providerId: "codex", model: "gpt-6-luna", reasoningEffort: "medium", source: "agent", sourceKey: "workflow.agent.model" });
+    expect(one({ id: "a", type: "agent", role: "worker" }, { ...writer, "workflow.agent.provider": "codex", "workflow.agent.model": "gpt-6-luna", "workflow.model_override.demo/a": { provider: "codex", model: "gpt-6-luna" } }))
+      .toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", source: "role-default" });
   });
 
-  it("node fields beat a preset, and a preset beats the default; an unknown preset is flagged and the step goes to the next level", () => {
-    expect(one({ id: "a", type: "agent", role: "analyst", model_preset: "cheap-fast" })).toMatchObject({ model: "claude-haiku-5-5", reasoningEffort: "low", source: "preset", sourceKey: "cheap-fast", inherited: true });
-    expect(one({ id: "a", type: "agent", role: "analyst", model_preset: "cheap-fast", provider: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoning: "medium" }))
-      .toMatchObject({ providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "medium", source: "node", inherited: false, costTier: "low" });
-    expect(one({ id: "a", type: "agent", role: "analyst", model_preset: "strong" })).toMatchObject({ model: "claude-opus-5-5", reasoningEffort: "high", source: "preset", sourceKey: "strong", issues: [] });
-    expect(one({ id: "a", type: "agent", role: "analyst", model_preset: "no-such-preset" })).toMatchObject({ model: "claude-opus-5-5", source: "pm", issues: ["unknown_preset"] });
+  it("a node's own model fields and preset change nothing", () => {
+    expect(one({ id: "a", type: "agent", role: "analyst", model_preset: "cheap-fast", provider: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoning: "medium", service_tier: "fast" }))
+      .toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: "high", serviceTier: null, source: "role-default", inherited: true });
   });
 
-  it("a provider with no model keeps the default model and says so; a model with no provider runs on the default provider", () => {
-    expect(one({ id: "a", type: "agent", role: "analyst", provider: "codex" })).toMatchObject({ providerId: "codex", model: "claude-opus-5-5", issues: ["provider_without_model"] });
-    expect(one({ id: "a", type: "agent", role: "analyst", model: "gpt-6-luna" })).toMatchObject({ providerId: "claude-code", model: "gpt-6-luna", source: "node" });
-    expect(run([{ id: "a", type: "agent", role: "analyst", model: "gpt-6-luna" }], writer, { catalog })[0]!.issues).toEqual(["provider_unknown"]);
-  });
-
-  it("the pipeline's stages take their selection from Settings, then the writer's profile; the effort falls back as the stage does", () => {
+  it("the pipeline's stages run on the rows of their roles (pm-reader, plan-critic, specialist-reviewer), the old stage selection standing in until the owner sets the table", () => {
     const stage = { id: "p", type: "agent", role: "plan-critic", uses: "lp.plan-critique" };
-    expect(one(stage, writer)).toMatchObject({ providerId: "codex", model: "gpt-6-luna", reasoningEffort: "high", serviceTier: "fast", source: "writer", sourceKey: "writer.model", overridable: false, settingsKey: "plan_critique" });
+    expect(one(stage, writer)).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", reasoningEffort: "high", serviceTier: "fast", source: "role-default", settingsKey: "role_model.plan-critic" });
     expect(one(stage, { ...writer, "plan_critique.provider": "claude-code", "plan_critique.model": "claude-opus-5-5", "plan_critique.reasoning_effort": "xhigh", "plan_critique.service_tier": "standard" }))
-      .toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: "xhigh", serviceTier: "standard", source: "stage", sourceKey: "plan_critique.model", inherited: false });
-    // The PM read and the specialist keep their own default effort and ignore the writer's.
-    expect(one({ id: "r", type: "agent", uses: "lp.pm-read" }, writer)).toMatchObject({ reasoningEffort: "low", settingsKey: "pm_read", agent: { label: "PM read" } });
-    expect(one({ id: "s", type: "agent", uses: "lp.specialist-review" }, writer)).toMatchObject({ reasoningEffort: "high", settingsKey: "specialist" });
-  });
-
-  it("a stage with no selection anywhere is flagged", () => {
-    expect(one({ id: "p", type: "agent", uses: "lp.plan-critique" }, {})).toMatchObject({ providerId: null, source: "none", issues: ["no_selection"] });
+      .toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: "xhigh", serviceTier: "standard", source: "stage", sourceKey: "plan_critique.model", inherited: true });
+    expect(one(stage, { ...writer, [roleModelKey("plan-critic")]: { model: "claude-sonnet-5-5" } })).toMatchObject({ model: "claude-sonnet-5-5", source: "table", inherited: false });
+    expect(one({ id: "r", type: "agent", uses: "lp.pm-read" }, writer)).toMatchObject({ model: "claude-haiku-5-5", reasoningEffort: "low", settingsKey: "role_model.pm-reader", agent: { label: "PM read" } });
+    expect(one({ id: "s", type: "agent", uses: "lp.specialist-review" }, writer)).toMatchObject({ model: "gpt-6.1-sol", reasoningEffort: "high", settingsKey: "role_model.specialist-reviewer" });
   });
 
   it("a code task is the writer's chain: writer, fallback 1, fallback 2, then the PM; its code critic is a part", () => {
     const task = one({ id: "w", type: "lp-task", stages: ["writer-agent", "verification", "code-critique"] }, writer);
-    expect(task).toMatchObject({ mode: "chain", providerId: "codex", model: "gpt-6-luna", reasoningEffort: "high", serviceTier: "fast", source: "writer", settingsKey: "writer", overridable: false, costTier: "low" });
+    expect(task).toMatchObject({ mode: "chain", providerId: "codex", model: "gpt-6-luna", reasoningEffort: "high", serviceTier: "fast", source: "writer", settingsKey: "writer", costTier: "low" });
     expect(task.fallbacks).toEqual([
       { providerId: "opencode2", model: "zai-coding-plan/glm-5.3-flash", reasoningEffort: "high", pm: false },
       { providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoningEffort: "medium", pm: false },
       { providerId: "claude-code", model: "claude-opus-5-5", reasoningEffort: null, pm: true },
     ]);
-    expect(task.parts).toEqual([{ stage: "code-critique", providerId: "codex", model: "gpt-6-luna", reasoningEffort: "high", serviceTier: "fast", source: "writer", sourceKey: "writer.model" }]);
+    expect(task.parts).toEqual([{ stage: "code-critique", providerId: "codex", model: "gpt-6.1-sol", reasoningEffort: "high", serviceTier: "fast", source: "role-default", sourceKey: null }]);
   });
 
   it("the chain follows the configured fallbacks, drops an off slot and a repeat of the writer, and leaves the PM open when it is unknown", () => {
@@ -84,26 +74,27 @@ describe("step executors by node type", () => {
     expect(one({ id: "w", type: "lp-task" }, own).fallbacks.map((row) => row.model)).toEqual(["deepseek/v4", "claude-opus-5-5"]);
   });
 
-  it("the code critic takes its own selection", () => {
+  it("the code critic is the code-critic row, and the old code_critique selection stands in for it", () => {
+    expect(one({ id: "w", type: "lp-task" }, writer).parts[0]).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", reasoningEffort: "high", source: "role-default", sourceKey: null });
     const task = one({ id: "w", type: "lp-task" }, { ...writer, "code_critique.provider": "claude-code", "code_critique.model": "claude-opus-5-5" });
     expect(task.parts[0]).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", source: "stage", sourceKey: "code_critique.model" });
   });
 
-  it("an action in a helper thread runs the errand helper on the default; other actions, decisions, questions and calls have no model", () => {
-    expect(one({ id: "t", type: "action", action: "telegram.send_rich" })).toMatchObject({ mode: "helper", agent: { role: "errand", label: "telegram.send_rich" }, source: "helper", providerId: "claude-code", model: "claude-opus-5-5", overridable: false });
+  it("an action in a helper thread runs the errand helper on the errand row; other actions, decisions, questions and calls have no model", () => {
+    expect(one({ id: "t", type: "action", action: "telegram.send_rich" })).toMatchObject({ mode: "helper", agent: { role: "errand", label: "telegram.send_rich" }, source: "helper", providerId: "claude-code", model: "claude-sonnet-5-5", settingsKey: "role_model.errand" });
     for (const node of [{ id: "x", type: "action", action: "items.dedupe" }, { id: "d", type: "decision" }, { id: "h", type: "human", question: "ok?" }, { id: "c", type: "subworkflow", workflow: "child" }]) {
-      expect(one(node)).toMatchObject({ mode: "none", providerId: null, model: null, source: "none", costTier: "none", overridable: false });
+      expect(one(node)).toMatchObject({ mode: "none", providerId: null, model: null, source: "none", costTier: "none", settingsKey: null });
     }
     expect(one({ id: "c", type: "subworkflow", workflow: "child" }).agent.label).toBe("child");
   });
 
   it("a parallel's body is its own step `<id>:child`; notes, joins and the container are not steps", () => {
     const steps = run([
-      { id: "fan", type: "parallel", for_each: "x.items", child: { type: "agent", role: "analyst", model_preset: "cheap-fast" } },
+      { id: "fan", type: "parallel", for_each: "x.items", child: { type: "agent", role: "pm-reader" } },
       { id: "j", type: "join", parallel: "fan" }, { id: "n", type: "note", text: "hi" }, { id: "bare", type: "parallel" },
     ]);
     expect(steps.map((step) => step.nodeId)).toEqual(["fan:child"]);
-    expect(steps[0]).toMatchObject({ source: "preset", model: "claude-haiku-5-5" });
+    expect(steps[0]).toMatchObject({ source: "role-default", model: "claude-haiku-5-5" });
   });
 
   it("works on a draft that is not finished (no type, no role)", () => {
@@ -114,24 +105,22 @@ describe("step executors by node type", () => {
     const pipeline = builtinWorkflow("lp-task-pipeline")!;
     const steps = run(pipeline.nodes, writer);
     const by = Object.fromEntries(steps.map((step) => [step.nodeId, step]));
-    expect(by["pm-read"]).toMatchObject({ settingsKey: "pm_read", mode: "model" });
-    expect(by["plan-critique"]).toMatchObject({ settingsKey: "plan_critique" });
-    expect(by["specialist-review"]).toMatchObject({ settingsKey: "specialist" });
+    expect(by["pm-read"]).toMatchObject({ settingsKey: "role_model.pm-reader", mode: "model" });
+    expect(by["plan-critique"]).toMatchObject({ settingsKey: "role_model.plan-critic" });
+    expect(by["specialist-review"]).toMatchObject({ settingsKey: "role_model.specialist-reviewer" });
     expect(by["writer"]).toMatchObject({ mode: "chain", model: "gpt-6-luna" });
     expect(by["writer"]!.fallbacks.length).toBe(3);
     expect(by["ownership-base"]).toMatchObject({ mode: "none" });
     expect(by["quality-mode"]).toMatchObject({ mode: "none" });
   });
 
-  it("flags a step whose provider or model no machine offers", () => {
+  it("flags a step whose role's model no machine of the catalog lists", () => {
     const steps = run([
-      { id: "ok", type: "agent", role: "analyst", provider: "codex", model: "gpt-6-luna", reasoning: "medium" },
-      { id: "nomodel", type: "agent", role: "analyst", provider: "opencode2", model: "deepseek/v4", reasoning: "high" },
-      { id: "noprov", type: "agent", role: "analyst", provider: "router9", model: "x" },
-      { id: "gone", type: "agent", role: "analyst", provider: "nope", model: "x" },
-      { id: "effort", type: "agent", role: "analyst", provider: "codex", model: "gpt-6-luna", reasoning: "max" },
-    ], writer, { catalog });
-    expect(steps.map((step) => step.issues)).toEqual([[], ["model_unavailable"], ["provider_unavailable"], ["provider_unknown"], ["effort_unsupported"]]);
+      { id: "ok", type: "agent", role: "triager" },
+      { id: "noprov", type: "agent", role: "planner" },
+      { id: "nomodel", type: "agent", role: "analyst" },
+    ], { ...writer, [roleModelKey("analyst")]: { model: "gpt-6.1-terra" } }, { catalog });
+    expect(steps.map((step) => step.issues)).toEqual([[], ["provider_unknown"], ["model_unknown"]]);
   });
 
   it("lists the same delegated actions the executors register", () => {
@@ -172,10 +161,10 @@ describe("the model catalog", () => {
 
 describe("a step that goes on in an earlier step's session", () => {
   const nodes = [
-    { id: "gather", type: "agent", role: "analyst", model_preset: "cheap-fast" },
-    { id: "assess", type: "agent", role: "analyst", provider: "codex", model: "gpt-6-luna" },
-    { id: "again", type: "agent", role: "analyst", provider: "codex", model: "gpt-6-luna", session: "new" },
-    { id: "judge", type: "agent", role: "analyst", provider: "codex", model: "gpt-6-luna" },
+    { id: "gather", type: "agent", role: "pm-reader" },
+    { id: "assess", type: "agent", role: "analyst" },
+    { id: "again", type: "agent", role: "analyst", session: "new" },
+    { id: "judge", type: "agent", role: "auditor" },
   ];
   const edges = [
     { from: "start", to: "gather", pass: "artifact" },
@@ -186,37 +175,36 @@ describe("a step that goes on in an earlier step's session", () => {
   ];
   const by = (steps: StepExecutor[]) => Object.fromEntries(steps.map((step) => [step.nodeId, step]));
 
-  it("shows the model of the session it runs in, with the step it inherits from, and cannot be overridden on its own", () => {
+  it("shows the model of the session it runs in, with the step it inherits from", () => {
     const steps = by(resolveStepExecutors({ nodes, edges, settings: writer, pm, workflowId: "frag" }));
-    // gather starts a session (the entry), so its own model stands, and the loop back into it changes nothing.
-    expect(steps.gather).toMatchObject({ source: "preset", model: "claude-haiku-5-5" });
-    // assess has only a same-session edge in: its own `codex/gpt-6-luna` is never used; the session is gather's.
-    expect(steps.assess).toMatchObject({ providerId: "claude-code", model: "claude-haiku-5-5", source: "session", sourceKey: "gather", inherited: true, canOverride: false, overridable: false, overrideScope: null });
+    // gather starts a session (the entry), so its own role's model stands, and the loop back into it changes nothing.
+    expect(steps.gather).toMatchObject({ source: "role-default", model: "claude-haiku-5-5" });
+    // assess has only a same-session edge in: the analyst's row is never used; the session is gather's.
+    expect(steps.assess).toMatchObject({ providerId: "claude-code", model: "claude-haiku-5-5", source: "session", sourceKey: "gather", inherited: true });
     // `session: new` opens its own session even on a same-session edge; read-prior-session reads, it does not continue.
-    expect(steps.again).toMatchObject({ providerId: "codex", model: "gpt-6-luna", source: "node" });
-    expect(steps.judge).toMatchObject({ providerId: "codex", model: "gpt-6-luna", source: "node" });
+    expect(steps.again).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5", source: "role-default" });
+    expect(steps.judge).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", source: "role-default" });
   });
 
-  it("follows the chain, and an override of the first step moves the whole session", () => {
-    const chain = [{ id: "a", type: "agent", role: "analyst" }, { id: "b", type: "agent", role: "analyst", model: "x" }, { id: "c", type: "agent", role: "analyst", model: "y" }];
+  it("follows the chain: the whole session runs on the first step's model", () => {
+    const chain = [{ id: "a", type: "agent", role: "triager" }, { id: "b", type: "agent", role: "analyst" }, { id: "c", type: "agent", role: "planner" }];
     const links = [{ from: "start", to: "a" }, { from: "a", to: "b", pass: "same-session" }, { from: "b", to: "c", pass: "same-session" }];
-    const settings = { ...writer, "workflow.model_override.frag/a": { provider: "codex", model: "gpt-6-luna" } };
-    const steps = by(resolveStepExecutors({ nodes: chain, edges: links, settings, pm, workflowId: "frag" }));
-    expect(steps.a).toMatchObject({ source: "override", model: "gpt-6-luna" });
+    const steps = by(resolveStepExecutors({ nodes: chain, edges: links, settings: writer, pm, workflowId: "frag" }));
+    expect(steps.a).toMatchObject({ source: "role-default", model: "gpt-6-luna" });
     expect(steps.b).toMatchObject({ source: "session", sourceKey: "a", model: "gpt-6-luna" });
     expect(steps.c).toMatchObject({ source: "session", sourceKey: "b", model: "gpt-6-luna" });
   });
 
-  it("an entry named by `entry` counts as a fresh start; a step whose only same-session source is not an agent keeps its own model", () => {
-    const steps = by(resolveStepExecutors({ nodes: [{ id: "a", type: "agent", role: "analyst", model: "x" }, { id: "lint", type: "action", action: "lint" }, { id: "b", type: "agent", role: "analyst", model: "y" }],
+  it("an entry named by `entry` counts as a fresh start; a step whose only same-session source is not an agent keeps its own role's model", () => {
+    const steps = by(resolveStepExecutors({ nodes: [{ id: "a", type: "agent", role: "triager" }, { id: "lint", type: "action", action: "lint" }, { id: "b", type: "agent", role: "analyst" }],
       edges: [{ from: "a", to: "lint" }, { from: "lint", to: "b", pass: "same-session" }], entry: "a", settings: writer, pm }));
-    expect(steps.b).toMatchObject({ source: "node", model: "y" });
+    expect(steps.b).toMatchObject({ source: "role-default", model: "claude-opus-5-5" });
   });
 
   it("the built-in lp.analyze: assess runs in gather's session", () => {
     const analyze = builtinWorkflow("lp.analyze")!;
     const steps = by(resolveStepExecutors({ nodes: analyze.nodes, edges: analyze.edges, entry: analyze.entry, settings: writer, pm, workflowId: "lp.analyze" }));
-    expect(steps.gather).toMatchObject({ source: "pm" });
+    expect(steps.gather).toMatchObject({ source: "role-default" });
     expect(steps.assess).toMatchObject({ source: "session", sourceKey: "gather", model: steps.gather!.model });
     // second_opinion arrives by artifact: a session of its own.
     expect(steps.second_opinion!.source).not.toBe("session");
@@ -231,15 +219,15 @@ describe("the steps of a called workflow", () => {
   const parent = [{ id: "plan", type: "action", action: "fs.write" }, { id: "analyze", type: "subworkflow", workflow: "lp.analyze" }];
   const fragments = new Map([["lp.analyze", fragment]]);
 
-  it("are listed under their fragment with the override key the executor reads (<child workflow>/<node>), and the parent's own steps stay as they were", () => {
-    const settings = { ...writer, "workflow.model_override.lp.analyze/gather": { provider: "codex", model: "gpt-6-luna", reasoning_effort: "low" } };
-    const steps = resolveStepExecutors({ nodes: parent, settings, pm, workflowId: "analyze-code", fragments, ownKeys: new Set(["workflow.model_override.lp.analyze/gather"]) });
+  it("are listed under their fragment, each on its role's model, and the parent's own steps stay as they were", () => {
+    const settings = { ...writer, [roleModelKey("analyst")]: { model: "gpt-6.1-terra", reasoning_effort: "low" } };
+    const steps = resolveStepExecutors({ nodes: parent, settings, pm, workflowId: "analyze-code", fragments });
     expect(steps.filter((step) => !step.fragment).map((step) => step.nodeId)).toEqual(["plan", "analyze"]);
     const inside = steps.filter((step) => step.fragment);
     expect(inside.map((step) => [step.fragment, step.nodeId])).toEqual([[{ nodeId: "analyze", workflowId: "lp.analyze" }, "gather"], [{ nodeId: "analyze", workflowId: "lp.analyze" }, "assess"], [{ nodeId: "analyze", workflowId: "lp.analyze" }, "done"]]);
-    expect(inside[0]).toMatchObject({ source: "override", sourceKey: "workflow.model_override.lp.analyze/gather", model: "gpt-6-luna", canOverride: true, overrideScope: "project" });
-    // assess is in gather's session, so the override of gather moves it too.
-    expect(inside[1]).toMatchObject({ source: "session", sourceKey: "gather", model: "gpt-6-luna", canOverride: false });
+    expect(inside[0]).toMatchObject({ source: "table", sourceKey: "role_model.analyst", model: "gpt-6.1-terra", reasoningEffort: "low" });
+    // assess is in gather's session, so it runs on gather's model.
+    expect(inside[1]).toMatchObject({ source: "session", sourceKey: "gather", model: "gpt-6.1-terra" });
   });
 
   it("a nested call is followed, a cycle and a missing workflow are not", () => {
@@ -252,10 +240,9 @@ describe("the steps of a called workflow", () => {
     expect(steps.find((step) => step.nodeId === "deep")!.fragment).toEqual({ nodeId: "top", workflowId: "inner" });
   });
 
-  it("a fragment's step has its override key even when the caller is a draft without an id, and a call the library cannot find adds nothing", () => {
-    const steps = resolveStepExecutors({ nodes: parent, settings: { ...writer, "workflow.model_override.lp.analyze/gather": { provider: "codex", model: "gpt-6-luna" } }, pm, fragments });
-    expect(steps.find((step) => step.nodeId === "gather")).toMatchObject({ source: "override", canOverride: true, overrideScope: "global" });
-    expect(steps.find((step) => step.nodeId === "plan")).toMatchObject({ canOverride: false });
+  it("a call the library cannot find adds nothing", () => {
+    const steps = resolveStepExecutors({ nodes: parent, settings: writer, pm, fragments });
+    expect(steps.find((step) => step.nodeId === "gather")).toMatchObject({ source: "role-default", model: "claude-opus-5-5" });
     expect(resolveStepExecutors({ nodes: parent, settings: writer, pm }).map((step) => step.nodeId)).toEqual(["plan", "analyze"]);
   });
 });

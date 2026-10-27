@@ -3,24 +3,23 @@ import type { stepExecutorSchema } from "../../contracts";
 import { automaticEffortRoutingEnabled, writerServiceTier } from "@lane-pilot/models";
 import { resolveStageWriterSelection } from "../../writer";
 import { writerFallbackChain, writerFallbacks } from "../../writer";
-import { costTier, offeredOnHost, validateChoice, type ModelCatalog } from "@lane-pilot/models";
+import { costTier, offeredOnHost, resolveRoleModel, roleModelKey, roleRowOf, validateChoice, type ModelCatalog } from "@lane-pilot/models";
 import { roleSpec } from "./workflow-agent";
-import { modelOverrideAt, modelOverrideKey, resolveAgentModel } from "./workflow-agent-model";
-
-type At = { workflowId: string; ownKeys: ReadonlySet<string> } | undefined;
+import { resolveAgentModel } from "./workflow-agent-model";
 
 /**
  * Who works on a step, and with which model. One place answers it for every node type, from the same rules the executors
  * use, so the card on the graph and the table in the Models view say what will run, not what someone hopes will:
  *
- *  - a generic agent node: the node's own `provider`/`model`/`reasoning`, then its `model_preset` (a named setting), then the
- *    role's stage selection in Settings, the generic `workflow.agent.*` selection and the PM's model (resolveAgentModel,
- *    workflow-agent-model.ts, the function the executor calls);
- *  - the pipeline's stages (`lp.pm-read`, `lp.plan-critique`, `lp.specialist-review`): the stage's selection in Settings,
- *    else the writer's profile (`writer.provider` / `writer.model`), as `resolveStageWriterSelection` does;
- *  - a code task (`lp-task`): the writer's model from `writer.*`, then fallback 1, fallback 2 and the PM's model; its code critic
- *    is the `code_critique` selection;
- *  - an action that goes through a helper thread (a Telegram send, a skill script): the errand helper, resolved like an agent node;
+ * The model belongs to the ROLE: one table «role -> model» (packages/models/src/role-models.ts). This view only READS it, nothing
+ * on a step changes the model.
+ *
+ *  - a generic agent node: the role's row of the table (resolveAgentModel, workflow-agent-model.ts, the function the executor calls);
+ *  - the pipeline's stages (`lp.pm-read`, `lp.plan-critique`, `lp.specialist-review`): the row of their role (pm-reader, plan-critic,
+ *    specialist-reviewer), as the stage runs it (critique-runs.ts);
+ *  - a code task (`lp-task`): the writer's model from `writer.*` (Jev's pick per task), then fallback 1, fallback 2 and the PM's
+ *    model; its code critic is the code-critic row (the other family than the writer's model when the task runs);
+ *  - an action that goes through a helper thread (a Telegram send, a skill script): the errand helper, the errand row;
  *  - every other action, a decision, a question to the owner, a call of another workflow: no model.
  */
 export type StepExecutor = z.infer<typeof stepExecutorSchema>;
@@ -37,58 +36,49 @@ const text = (value: unknown): string | null => (typeof value === "string" && va
 export const DELEGATED_ACTIONS = ["telegram.send_rich", "shell.skill_script", "shell.repo_script", "deploy.post_check", "lp.preflight", "lp.project_checks"] as const;
 
 type StageDef = {
-  /** The settings prefix: `<stage>.provider`, `<stage>.model`, `<stage>.reasoning_effort`, `<stage>.service_tier`. */
+  /** The settings prefix of the stage's tier: `<stage>.service_tier`. */
   stage: string; label: string; helper: string;
-  /** What the effort is when the stage sets none: the writer's, or a fixed level. */
-  effort: { writer: boolean; fallback: string };
+  /** The role-table row the stage runs on. */
+  role: string;
   tier: "writer" | "stage-only";
 };
 /** The agent nodes of the task pipeline (`uses`) that are the pipeline's own stages. */
 const STAGE_NODES: Record<string, StageDef> = {
-  "lp.pm-read": { stage: "pm_read", label: "PM read", helper: "pm-reader", effort: { writer: false, fallback: "low" }, tier: "stage-only" },
-  "lp.plan-critique": { stage: "plan_critique", label: "Plan critique", helper: "plan-critic", effort: { writer: true, fallback: "medium" }, tier: "writer" },
-  "lp.specialist-review": { stage: "specialist", label: "Specialist review", helper: "specialist-reviewer", effort: { writer: false, fallback: "high" }, tier: "stage-only" },
+  "lp.pm-read": { stage: "pm_read", label: "PM read", helper: "pm-reader", role: "pm-reader", tier: "stage-only" },
+  "lp.plan-critique": { stage: "plan_critique", label: "Plan critique", helper: "plan-critic", role: "plan-critic", tier: "writer" },
+  "lp.specialist-review": { stage: "specialist", label: "Specialist review", helper: "specialist-reviewer", role: "specialist-reviewer", tier: "stage-only" },
 };
-const CODE_CRITIQUE: StageDef = { stage: "code_critique", label: "Code critique", helper: "code-critic", effort: { writer: true, fallback: "medium" }, tier: "writer" };
-
-/** Whether the owner's override applies to the step (an errand action takes the override's model too, but keeps saying it is the helper's otherwise). */
-const overridden = (settings: Settings, id: string, at: At): boolean => Boolean(at && modelOverrideAt(settings, modelOverrideKey(at.workflowId, id)));
+const CODE_CRITIQUE: StageDef = { stage: "code_critique", label: "Code critique", helper: "code-critic", role: "code-critic", tier: "writer" };
 
 const tierWord = (value: unknown): "fast" | "standard" | null => (value === "fast" || value === "standard" ? value : null);
 
 function stageSelection(settings: Settings, def: StageDef) {
-  const picked = resolveStageWriterSelection({ settings, config: { writerProviderId: "", writerModel: "" }, stageProviderKey: `${def.stage}.provider`, stageModelKey: `${def.stage}.model` });
-  const effortKey = `${def.stage}.reasoning_effort`;
-  const stageEffort = text(settings[effortKey]);
-  const writerEffort = def.effort.writer ? text(settings["writer.reasoning_effort"]) : null;
+  const picked = resolveRoleModel(def.role, settings);
   const tier = tierWord(settings[`${def.stage}.service_tier`]) ?? (def.tier === "writer" ? writerServiceTier(settings) : "standard");
-  const fromStage = picked.source === "stage";
   return {
-    providerId: text(picked.providerId), model: text(picked.model), reasoningEffort: stageEffort ?? writerEffort ?? def.effort.fallback, serviceTier: tier,
-    source: (fromStage ? "stage" : picked.source === "writer-profile" ? "writer" : "none") as StepExecutor["source"],
-    sourceKey: fromStage ? `${def.stage}.model` : picked.source === "writer-profile" ? "writer.model" : null,
+    providerId: picked.providerId, model: picked.model, reasoningEffort: picked.effort, serviceTier: tier,
+    source: (picked.source === "default" ? "role-default" : picked.source) as StepExecutor["source"], sourceKey: picked.sourceKey,
   };
 }
 
 const none = (node: Raw, id: string, kind: string, label: string, extra: Partial<StepExecutor> = {}): StepExecutor => ({
   nodeId: id, kind, uses: text(node.uses), mode: "none", agent: { role: text(node.role), helper: null, label },
   providerId: null, model: null, reasoningEffort: null, serviceTier: null, source: "none", sourceKey: null, inherited: false, fallbacks: [], parts: [],
-  overridable: false, canOverride: false, overrideScope: null, settingsKey: null, costTier: "none", issues: [], ...extra,
+  settingsKey: null, costTier: "none", issues: [], ...extra,
 });
 
 type Offered = ((providerId: string, model: string) => boolean | null) | undefined;
 
-function agentNode(node: Raw, id: string, settings: Settings, pm: PmPair | null, at: At, offered?: Offered): StepExecutor {
+function agentNode(node: Raw, id: string, settings: Settings, pm: PmPair | null, offered?: Offered): StepExecutor {
   const role = text(node.role) ?? "worker";
   const helper = roleSpec(role).helper;
   // The same function the executor calls (withResolvedModel, workflow-agent.ts): the card says what will be spawned.
-  const chosen = resolveAgentModel({ role, node: { provider: text(node.provider), model: text(node.model), reasoning: text(node.reasoning), service_tier: text(node.service_tier), model_preset: text(node.model_preset) }, settings, pm, ...(offered ? { offered } : {}), ...(at ? { at: { workflowId: at.workflowId, nodeId: id } } : {}) });
+  const chosen = resolveAgentModel({ role, settings, pm, ...(offered ? { offered } : {}) });
   return {
     nodeId: id, kind: "agent", uses: text(node.uses), mode: "model", agent: { role, helper, label: role },
     providerId: chosen.providerId, model: chosen.model, reasoningEffort: chosen.reasoningEffort, serviceTier: chosen.serviceTier,
     source: chosen.source, sourceKey: chosen.sourceKey, inherited: chosen.inherited,
-    fallbacks: [], parts: [], overridable: true, canOverride: Boolean(at), overrideScope: chosen.source === "override" && at ? (chosen.sourceKey && at.ownKeys.has(chosen.sourceKey) ? "project" : "global") : null,
-    settingsKey: null, costTier: costTier(chosen.model), issues: chosen.issues,
+    fallbacks: [], parts: [], settingsKey: roleModelKey(roleRowOf(role)), costTier: costTier(chosen.model), issues: chosen.issues,
   };
 }
 
@@ -97,8 +87,7 @@ function stageNode(node: Raw, id: string, def: StageDef, settings: Settings): St
   return {
     nodeId: id, kind: "agent", uses: text(node.uses), mode: "model", agent: { role: text(node.role) ?? def.helper, helper: def.helper, label: def.label },
     providerId: picked.providerId, model: picked.model, reasoningEffort: picked.reasoningEffort, serviceTier: picked.serviceTier, source: picked.source, sourceKey: picked.sourceKey,
-    inherited: picked.source !== "stage", fallbacks: [], parts: [], overridable: false, canOverride: false, overrideScope: null, settingsKey: def.stage, costTier: costTier(picked.model),
-    issues: picked.providerId && picked.model ? [] : ["no_selection"],
+    inherited: picked.source !== "table", fallbacks: [], parts: [], settingsKey: roleModelKey(def.role), costTier: costTier(picked.model), issues: [],
   };
 }
 
@@ -121,24 +110,24 @@ function codeTask(node: Raw, id: string, settings: Settings, pm: PmPair | null):
   return {
     nodeId: id, kind: "lp-task", uses: text(node.uses), mode: "chain", agent: { role: "writer", helper: "writer", label: "writer" },
     providerId, model, reasoningEffort: effort, serviceTier: tier, source: providerId || model ? "writer" : "none", sourceKey: "writer.model", inherited: true,
-    fallbacks, parts, overridable: false, canOverride: false, overrideScope: null, settingsKey: "writer", costTier: costTier(model), issues,
+    fallbacks, parts, settingsKey: "writer", costTier: costTier(model), issues,
   };
 }
 
-function stepOf(node: Raw, id: string, settings: Settings, pm: PmPair | null, at: At, offered?: Offered): StepExecutor | null {
+function stepOf(node: Raw, id: string, settings: Settings, pm: PmPair | null, offered?: Offered): StepExecutor | null {
   const kind = text(node.type) ?? "agent";
   const uses = text(node.uses);
   switch (kind) {
     case "note": case "join": case "parallel": return null;
     case "agent": {
       const stage = uses ? STAGE_NODES[uses] : undefined;
-      return stage ? stageNode(node, id, stage, settings) : agentNode(node, id, settings, pm, at, offered);
+      return stage ? stageNode(node, id, stage, settings) : agentNode(node, id, settings, pm, offered);
     }
     case "lp-task": return codeTask(node, id, settings, pm);
     case "action": {
       const key = uses ?? text(node.action);
       if (key && (DELEGATED_ACTIONS as readonly string[]).includes(key)) {
-        return { ...agentNode({ role: "errand", model_preset: node.model_preset }, id, settings, pm, at, offered), kind: "action", uses, mode: "helper", agent: { role: "errand", helper: "errand", label: key }, ...(overridden(settings, id, at) ? {} : { source: "helper" as const, sourceKey: "errand", inherited: true }), overridable: false };
+        return { ...agentNode({ role: "errand" }, id, settings, pm, offered), kind: "action", uses, mode: "helper", agent: { role: "errand", helper: "errand", label: key }, source: "helper" as const, sourceKey: "errand", inherited: true };
       }
       return none(node, id, kind, text(node.action) ?? "action");
     }
@@ -158,12 +147,8 @@ export type ResolveInput = WorkflowShape & {
   /** The model the PM chat runs on, when known: the last model of the writer chain. */
   pm: PmPair | null;
   catalog?: ModelCatalog | null;
-  /**
-   * The workflow the nodes belong to and the keys of the settings the project holds itself (the rest is the global level): with them
-   * the owner's per-step overrides (`workflow.model_override.<workflowId>/<nodeId>`) apply and say which level they come from.
-   * Without a workflow id (a draft of a new workflow) none applies to its own steps.
-   */
-  workflowId?: string; ownKeys?: ReadonlySet<string>;
+  /** The workflow the nodes belong to: a call back into it is not followed. */
+  workflowId?: string;
   /** The workflows the subworkflow nodes call, by id: their steps are listed right after the call, with the fragment they belong to. */
   fragments?: ReadonlyMap<string, WorkflowShape>;
 };
@@ -204,7 +189,7 @@ function withInheritedSessions(raws: ReadonlyArray<Raw>, shape: WorkflowShape, s
     const from = seen.has(id) ? null : sourceOf(id);
     const base = from ? finalOf(from, new Set([...seen, id])) : undefined;
     const done: StepExecutor = base && from
-      ? { ...base, nodeId: own.nodeId, uses: own.uses, agent: own.agent, source: "session", sourceKey: from, inherited: true, overridable: false, canOverride: false, overrideScope: null, settingsKey: null }
+      ? { ...base, nodeId: own.nodeId, uses: own.uses, agent: own.agent, source: "session", sourceKey: from, inherited: true, settingsKey: null }
       : own;
     resolved.set(id, done);
     return done;
@@ -219,9 +204,8 @@ function withInheritedSessions(raws: ReadonlyArray<Raw>, shape: WorkflowShape, s
 export function resolveStepExecutors(input: ResolveInput): StepExecutor[] {
   // The machine the helpers run on decides what is offered: a model another machine has is not one this step can start on.
   const offered: Offered = input.catalog?.runHostId ? (providerId, model) => offeredOnHost(input.catalog!, providerId, model, input.catalog!.runHostId) : undefined;
-  const ownKeys = input.ownKeys ?? new Set<string>();
 
-  const level = (shape: WorkflowShape, at: At, tag: StepExecutor["fragment"], path: readonly string[]): StepExecutor[] => {
+  const level = (shape: WorkflowShape, tag: StepExecutor["fragment"], path: readonly string[]): StepExecutor[] => {
     const raws = shape.nodes.filter(isRaw);
     const steps = new Map<string, StepExecutor>();
     const order: string[] = [];
@@ -229,10 +213,10 @@ export function resolveStepExecutors(input: ResolveInput): StepExecutor[] {
     for (const raw of raws) {
       const id = text(raw.id);
       if (!id) continue;
-      const found = stepOf(raw, id, input.settings, input.pm, at, offered);
+      const found = stepOf(raw, id, input.settings, input.pm, offered);
       if (found) { steps.set(id, found); order.push(id); }
       if (text(raw.type) === "parallel" && isRaw(raw.child)) {
-        const body = stepOf(raw.child, `${id}:child`, input.settings, input.pm, at, offered);
+        const body = stepOf(raw.child, `${id}:child`, input.settings, input.pm, offered);
         if (body) { steps.set(`${id}:child`, body); order.push(`${id}:child`); }
       }
       const callee = text(raw.type) === "subworkflow" ? text(raw.workflow) : null;
@@ -242,16 +226,16 @@ export function resolveStepExecutors(input: ResolveInput): StepExecutor[] {
     const out: StepExecutor[] = [];
     for (const id of order) {
       const step = steps.get(id)!;
-      // A step of a called workflow is not a node of this graph: only its override setting changes it.
-      const marked = tag ? { ...step, fragment: tag, overridable: false } : step;
+      // A step of a called workflow is not a node of this graph: it is listed after the call, with the fragment it belongs to.
+      const marked = tag ? { ...step, fragment: tag } : step;
       out.push(input.catalog ? withCatalogIssues(marked, input.catalog) : marked);
       const callee = calls.get(id);
       const child = callee ? input.fragments?.get(callee) : undefined;
       if (callee && child && !path.includes(callee) && path.length <= MAX_FRAGMENT_DEPTH) {
-        out.push(...level(child, { workflowId: callee, ownKeys }, { nodeId: tag?.nodeId ?? id, workflowId: callee }, [...path, callee]));
+        out.push(...level(child, { nodeId: tag?.nodeId ?? id, workflowId: callee }, [...path, callee]));
       }
     }
     return out;
   };
-  return level(input, input.workflowId ? { workflowId: input.workflowId, ownKeys } : undefined, undefined, input.workflowId ? [input.workflowId] : []);
+  return level(input, undefined, input.workflowId ? [input.workflowId] : []);
 }

@@ -62,7 +62,7 @@ describe("six tabs", () => {
     expect(home("writer.model")).toEqual(["team"]);
     expect(home("plan_critique.mode")).toEqual(["work"]);
     expect(home("memory.maintain")).toEqual(["knowledge"]);
-    expect(home("workflow.agent.model")).toEqual(["automation"]);
+    expect(home("workflow.debugger.model")).toEqual(["automation"]);
     expect(home("ops.run_dir")).toEqual(["runs"]);
     expect(home("baseline.already_built")).toEqual(["work"]);
     expect(home("regress.last_n")).toEqual(["work"]);

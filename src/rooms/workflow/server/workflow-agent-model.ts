@@ -1,152 +1,89 @@
-import { belowTier, modelTier, presetSelection, presetSlug, type ModelTier } from "@lane-pilot/models";
+import { belowTier, modelTier, resolveRoleModel, roleDefaultModel, roleRow, ROLE_TABLE, type ModelTier } from "@lane-pilot/models";
 
 /**
  * Which model a generic workflow agent step runs on. ONE function answers it for the executor (what is spawned) and for the Models
- * view (what the card says), so the two cannot drift. The first level that offers a complete provider + model pair is the step's
- * base; the node's own `provider` / `model` / `reasoning` then override that base field by field. Above all of it sits the owner's
- * OVERRIDE of the step, `workflow.model_override.<workflowId>/<nodeId>` (the project's own settings row, else the global one), so a
- * step of a built-in workflow can run on another model without a copy of the workflow:
+ * view (what the card says), so the two cannot drift.
  *
- *  0. the override (provider + model; the effort and fast mode as the picker gave them);
- *  1. the node's `model_preset` (a named setting `workflow.preset.<name>.*`, else the built-in default of that preset);
- *  2. the role's stage selection in project settings: analyst and pm-reader on `pm_read`, plan-critic on `plan_critique` (the planner
- *     borrows none: on `plan_critique` the cheap model chosen to check plans wrote them too, live 2026-10-25; its step's model is set in
- *     the Models table),
- *     code-critic on `code_critique`, auditor on `code_critique` then `night_review`, debugger on `workflow.debugger` then `specialist`,
- *     `specialist:<x>` on `specialist` (only the stage's own keys; the writer's profile is not borrowed);
- *  3. the generic `workflow.agent.*` selection for agent steps;
- *  4. the model the PM chat runs on;
- *  5. the last resort below, when not even the PM's model is known.
+ * The model belongs to the ROLE, not to the step (packages/models/src/role-models.ts): one table «role -> model», the same in every graph.
+ * The step's role picks the row; the row is the owner's pick in Settings (`role_model.<role>`), else a stage selection the owner set
+ * earlier for that role, else the built-in default of the table. Nothing on the node, no per-step override, no preset and no generic
+ * `workflow.agent.*` selection takes part (settings rows of those keys are ignored).
  *
- * The architect and the router are not generic agent steps and do not come through here.
+ * Two callers may pin a model for ONE run of an agent, and only they: a scheduled agent that names its own model, and an agent the owner
+ * created that names its own model (`pinned`). Everything else is the table.
+ *
+ * When the machine the helpers run on does not offer the table's model, the role's built-in default is tried, then the PM chat's model
+ * (which that machine runs by definition); the issue `selection_unavailable` says so. The architect and the router are not generic agent
+ * steps and do not come through here (the architect reads its own row of the table).
  */
 export const DEFAULT_PROVIDER = "claude-code";
 export const DEFAULT_MODEL = "claude-opus-5-5";
 export const DEFAULT_REASONING = "high";
 
-export type AgentModelSource = "override" | "node" | "preset" | "stage" | "agent" | "pm" | "role-default";
+export type AgentModelSource = "table" | "stage" | "role-default" | "pm" | "pinned";
 export type AgentModel = {
   providerId: string; model: string; reasoningEffort: string;
-  /** The node's own `service_tier` (fast mode); null when it names none, so the provider's default applies. */
+  /** The pinned run's service tier (fast mode); null otherwise, so the provider's default applies. */
   serviceTier: "default" | "fast" | null;
   source: AgentModelSource;
-  /** The preset name, or the setting key the value comes from; null for the node's own fields, the PM and the last resort. */
+  /** The setting key the value comes from; null for the built-in default, the PM and a pinned run. */
   sourceKey: string | null;
-  /** True when the node itself names no provider, model or reasoning. */
+  /** True unless the run pinned its own model. */
   inherited: boolean;
   issues: string[];
 };
 export type AgentModelInput = {
   role: string;
-  node: { provider?: string | null; model?: string | null; reasoning?: string | null; service_tier?: string | null; model_preset?: string | null };
+  /** The model a scheduled agent or an owner-created agent names for itself; the table is not consulted for the fields it sets. */
+  pinned?: { provider?: string | null; model?: string | null; reasoning?: string | null; service_tier?: string | null } | undefined;
   settings: Record<string, unknown>;
   pm: { providerId: string; model: string } | null;
-  /** The workflow and node the step belongs to: the key of an override. Without them no override applies. */
-  at?: { workflowId: string; nodeId: string };
   /**
    * Whether the machine the step will run on offers a provider/model: true, false, or null/undefined when that is not known (then it is available).
-   * A preset, a stage or the generic selection whose model it does not offer is passed over for the next level (`preset_unavailable` /
-   * `selection_unavailable`); a model the step itself names (its fields, an override) is kept and flagged `model_unavailable_here`.
+   * A table model it does not offer is passed over for the next candidate; a pinned model is kept and flagged `model_unavailable_here`.
    */
   offered?: (providerId: string, model: string) => boolean | null | undefined;
 };
 
-export const MODEL_OVERRIDE_PREFIX = "workflow.model_override.";
-export const modelOverrideKey = (workflowId: string, nodeId: string): string => `${MODEL_OVERRIDE_PREFIX}${workflowId}/${nodeId}`;
-export type ModelOverride = { provider: string; model: string; reasoning_effort?: string; service_tier?: "fast" | "default" };
-
-/** The override stored under `key` when it is a complete pair; anything else is no override. */
-export function modelOverrideAt(settings: Record<string, unknown>, key: string): ModelOverride | null {
-  const raw = settings[key];
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
-  const row = raw as Record<string, unknown>;
-  const provider = text(row.provider), model = text(row.model), effort = text(row.reasoning_effort), tier = text(row.service_tier);
-  if (!provider || !model) return null;
-  return { provider, model, ...(effort ? { reasoning_effort: effort } : {}), ...(tier === "fast" || tier === "default" ? { service_tier: tier } : {}) };
-}
-
-/** The settings prefixes of the stages a role borrows its model from, in order, with the effort the stage runs on when it sets none. */
-const ROLE_STAGES: Record<string, string[]> = {
-  analyst: ["pm_read"], "pm-reader": ["pm_read"], "plan-critic": ["plan_critique"], "code-critic": ["code_critique"],
-  auditor: ["code_critique", "night_review"], debugger: ["workflow.debugger", "specialist"],
-};
-const STAGE_EFFORT: Record<string, string> = { pm_read: "low", plan_critique: "medium", code_critique: "medium", night_review: "high", specialist: "high" };
 /**
- * The least a deciding role needs. A model this role inherits (a stage, the generic agent selection, the PM's model) that is below it
- * is raised to the `strong` preset, with the issue `escalated_for_role`; a model named on the step or in the owner's override is kept
- * and marked `light_model_for_role`. The planner plans (strong); the auditor, the code critic and the debugger judge (standard).
+ * The least a deciding role needs, from the table. A model this role inherited (a stage selection) that is below it is replaced by the role's
+ * default (`escalated_for_role`); the owner's own pick in the table is kept and marked `light_model_for_role`.
  */
-export const ROLE_LEAST_TIER: Record<string, ModelTier> = { planner: "strong", auditor: "standard", "code-critic": "standard", debugger: "standard" };
-
-export const roleStages = (role: string): string[] => (role.startsWith("specialist:") ? ["specialist"] : ROLE_STAGES[role] ?? []);
+export const ROLE_LEAST_TIER: Record<string, ModelTier> = Object.fromEntries(ROLE_TABLE.flatMap((row) => (row.least ? [[row.id, row.least]] : [])));
 
 const text = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value.trim() : null);
 
-type Level = { providerId: string; model: string; effort: string | null; source: AgentModelSource; sourceKey: string | null };
-
-/** A complete pair under `<prefix>.provider` and `<prefix>.model`; a half-set pair is not a selection and is reported. */
-function pairAt(settings: Record<string, unknown>, prefix: string, issues: string[]): { providerId: string; model: string; effort: string | null } | null {
-  const providerId = text(settings[`${prefix}.provider`]), model = text(settings[`${prefix}.model`]);
-  if (providerId && model) return { providerId, model, effort: text(settings[`${prefix}.reasoning_effort`]) };
-  if (providerId || model) issues.push("incomplete_selection");
-  return null;
-}
-
 export function resolveAgentModel(input: AgentModelInput): AgentModel {
-  const { node, settings } = input;
   const issues: string[] = [];
-  const own = { provider: text(node.provider), model: text(node.model), reasoning: text(node.reasoning) };
-  const presetName = text(node.model_preset);
-  let level: Level | null = null;
-
   const here = (providerId: string, model: string) => input.offered?.(providerId, model) !== false;
-  if (presetName) {
-    const slug = presetSlug(presetName);
-    const preset = slug ? presetSelection(slug, settings) : null;
-    if (preset && !here(preset.providerId, preset.model)) issues.push("preset_unavailable");
-    else if (preset) level = { providerId: preset.providerId, model: preset.model, effort: preset.reasoning, source: "preset", sourceKey: presetName };
-    else issues.push("unknown_preset");
-  }
-  for (const stage of level ? [] : roleStages(input.role)) {
-    const found = pairAt(settings, stage, issues);
-    if (found && !here(found.providerId, found.model)) { issues.push("selection_unavailable"); continue; }
-    if (found) { level = { ...found, effort: found.effort ?? STAGE_EFFORT[stage] ?? null, source: "stage", sourceKey: `${stage}.model` }; break; }
-  }
-  if (!level) {
-    const found = pairAt(settings, "workflow.agent", issues);
-    if (found && !here(found.providerId, found.model)) issues.push("selection_unavailable");
-    else if (found) level = { ...found, source: "agent", sourceKey: "workflow.agent.model" };
-  }
-  if (!level && input.pm) level = { providerId: input.pm.providerId, model: input.pm.model, effort: null, source: "pm", sourceKey: null };
-  level ??= { providerId: DEFAULT_PROVIDER, model: DEFAULT_MODEL, effort: null, source: "role-default", sourceKey: null };
-  const least = ROLE_LEAST_TIER[input.role];
-  if (least && level.source !== "preset" && belowTier(modelTier(level.model), least)) {
-    const strong = presetSelection("strong", settings);
-    if (strong && here(strong.providerId, strong.model) && !belowTier(modelTier(strong.model), least)) {
-      issues.push("escalated_for_role");
-      level = { providerId: strong.providerId, model: strong.model, effort: strong.reasoning, source: "preset", sourceKey: "strong" };
-    }
+  const row = roleRow(input.role);
+  const least = ROLE_LEAST_TIER[row.id];
+  const pin = input.pinned;
+  const pinnedModel = text(pin?.model);
+  const pinnedTier = text(pin?.service_tier);
+  const serviceTier: "default" | "fast" | null = pinnedTier === "fast" || pinnedTier === "default" ? pinnedTier : null;
+
+  const chosen = resolveRoleModel(input.role, input.settings);
+  if (chosen.escalated) issues.push("escalated_for_role");
+  if (pinnedModel) {
+    const providerId = text(pin?.provider) ?? DEFAULT_PROVIDER;
+    if (least && belowTier(modelTier(pinnedModel), least)) issues.push("light_model_for_role");
+    if (!here(providerId, pinnedModel)) issues.push("model_unavailable_here");
+    return { providerId, model: pinnedModel, reasoningEffort: text(pin?.reasoning) ?? chosen.effort, serviceTier, source: "pinned", sourceKey: null, inherited: false, issues };
   }
 
-  const key = input.at ? modelOverrideKey(input.at.workflowId, input.at.nodeId) : null;
-  const override = key ? modelOverrideAt(settings, key) : null;
-  if (override) {
-    if (least && belowTier(modelTier(override.model), least)) issues.push("light_model_for_role");
-    return {
-      providerId: override.provider, model: override.model, reasoningEffort: override.reasoning_effort ?? own.reasoning ?? level.effort ?? DEFAULT_REASONING,
-      serviceTier: override.service_tier ?? null, source: "override", sourceKey: key, inherited: false,
-      issues: here(override.provider, override.model) ? issues : [...issues, "model_unavailable_here"],
-    };
+  const effort = text(pin?.reasoning) ?? chosen.effort;
+  if (chosen.source === "table" && least && belowTier(modelTier(chosen.model), least)) issues.push("light_model_for_role");
+  const base = { reasoningEffort: effort, serviceTier, inherited: !text(pin?.reasoning) };
+  if (here(chosen.providerId, chosen.model)) return { providerId: chosen.providerId, model: chosen.model, ...base, source: chosen.source === "default" ? "role-default" : chosen.source, sourceKey: chosen.sourceKey, issues };
+  issues.push("selection_unavailable");
+  const builtin = roleDefaultModel(row.id);
+  if ((builtin.model !== chosen.model || builtin.providerId !== chosen.providerId) && here(builtin.providerId, builtin.model)) {
+    return { providerId: builtin.providerId, model: builtin.model, ...base, reasoningEffort: text(pin?.reasoning) ?? builtin.effort, source: "role-default", sourceKey: null, issues };
   }
-  if (own.provider && !own.model) issues.push("provider_without_model");
-  if (least && own.model && belowTier(modelTier(own.model), least)) issues.push("light_model_for_role");
-  const tier = text(node.service_tier);
-  const set = Boolean(own.provider || own.model || own.reasoning || tier);
-  // The step's own pair is its choice: it is kept, and said not to run here.
-  if (set && (own.provider || own.model) && !here(own.provider ?? level.providerId, own.model ?? level.model)) issues.push("model_unavailable_here");
-  return {
-    providerId: own.provider ?? level.providerId, model: own.model ?? level.model, reasoningEffort: own.reasoning ?? level.effort ?? DEFAULT_REASONING,
-    serviceTier: tier === "fast" || tier === "default" ? tier : null,
-    source: set ? "node" : level.source, sourceKey: set ? null : level.sourceKey, inherited: !set, issues,
-  };
+  // The PM chat runs on this machine by definition: its model is never judged against the catalog.
+  if (input.pm) return { providerId: input.pm.providerId, model: input.pm.model, ...base, reasoningEffort: text(pin?.reasoning) ?? DEFAULT_REASONING, source: "pm", sourceKey: null, issues };
+  // Nothing on offer is known to run here: keep the table's model and say so; the executor stops with the machines that do have it.
+  issues.push("model_unavailable_here");
+  return { providerId: chosen.providerId, model: chosen.model, ...base, source: chosen.source === "default" ? "role-default" : chosen.source, sourceKey: chosen.sourceKey, issues };
 }

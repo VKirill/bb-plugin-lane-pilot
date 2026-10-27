@@ -226,28 +226,28 @@ describe("workflow architect tools", () => {
     expect(Object.keys(reference.reference.passModes)).toEqual(["artifact", "same-session", "read-prior-session", "fork"]);
   });
 
-  it("lists the provider/model pairs each machine offers, with the presets resolved, and warns about a pair no machine has", async () => {
+  it("lists the table of roles and models as the machine the project runs on sees it, and warns about a model a node names", async () => {
     const { call } = await setup();
     const result = await call("lane_pilot_workflow_capabilities", { sections: ["models"] });
     expect(result.models.status).toBe("ready");
-    const claude = result.models.providers.find((row: { provider: string }) => row.provider === "claude-code");
-    expect(claude).toMatchObject({ machines: ["MacBook", "Mac mini"], serviceTiers: ["fast"] });
-    // The efforts are the ones a node may name; a model only the Mac mini has says so.
-    expect(claude.models).toEqual([{ id: "claude-haiku-5-5", efforts: ["low"], only: ["Mac mini"], notOnThisMachine: true }, { id: "claude-opus-5-5", efforts: ["high"], default: true }].sort((a, b) => claude.models.findIndex((m: { id: string }) => m.id === a.id) - claude.models.findIndex((m: { id: string }) => m.id === b.id)));
-    expect(result.models.providers.find((row: { provider: string }) => row.provider === "codex")).toMatchObject({ machines: ["Mac mini"] });
-    expect(result.models.presets["cheap-fast"]).toMatchObject({ provider: "claude-code", model: "claude-haiku-5-5", reasoning: "low", offered: false, machines: ["Mac mini"] }); // judged on the machine the step runs on (the fixture project runs on the MacBook)
-    expect(result.models.presets["ins-check"]).toMatchObject({ provider: "codex", model: "gpt-6.1-sol", offered: false });
-    const narrowed = await call("lane_pilot_workflow_capabilities", { sections: ["models"], query: "luna" });
-    expect(narrowed.models.providers.map((row: { provider: string }) => row.provider)).toEqual(["codex"]);
+    expect(result.models.providers).toBeUndefined();
+    expect(result.models.presets).toBeUndefined();
+    // Judged on the machine the step runs on (the fixture project runs on the MacBook): Haiku is on the Mac mini only, Sol is on neither.
+    expect(result.models.roles["pm-reader"]).toMatchObject({ provider: "claude-code", model: "claude-haiku-5-5", reasoning: "low", source: "default", offered: false, machines: ["Mac mini"] });
+    expect(result.models.roles.planner).toMatchObject({ provider: "claude-code", model: "claude-opus-5-5", reasoning: "high", offered: true });
+    expect(result.models.roles["code-critic"]).toMatchObject({ provider: "codex", model: "gpt-6.1-sol", offered: false });
+    expect(result.models.note).toContain("a step names a `role`, never a model");
+    const narrowed = await call("lane_pilot_workflow_capabilities", { sections: ["models"], query: "critic" });
+    expect(Object.keys(narrowed.models.roles)).toEqual(["plan-critic", "code-critic"]);
 
-    // The same catalog makes an unknown pair on a node a warning (never an error), once it has been read.
+    // A node that names a model is a warning (never an error): the field is ignored when the step runs.
     const created = await call("lane_pilot_workflow_draft_create", { name: "Model check", description: "pair check", scope: "global" });
     const node = (provider: string, model: string) => ({ op: "add_node", node: { id: `n_${model.replace(/\W/g, "_")}`, type: "agent", prompt: "do it", provider, model, out: [{ name: "handoff", type: "string" }] } });
     const patched = await call("lane_pilot_workflow_draft_patch", { draftId: created.draftId, ops: [node("claude-code", "claude-opus-5-5"), node("claude-code", "claude-mystery-9"),
       { op: "add_edge", edge: { from: "start", to: "n_claude_opus_5_5" } }, { op: "add_edge", edge: { from: "n_claude_opus_5_5", to: "n_claude_mystery_9" } }, { op: "add_edge", edge: { from: "n_claude_mystery_9", to: "end" } }] });
-    const unknown = patched.problems.filter((row: { code: string }) => row.code === "unknown_model");
-    expect(unknown).toHaveLength(1);
-    expect(unknown[0]).toMatchObject({ level: "warning", node: "n_claude_mystery_9" });
+    const ignored = patched.problems.filter((row: { code: string }) => row.code === "model_ignored");
+    expect(ignored.map((row: { node: string; level: string }) => [row.node, row.level])).toEqual([["n_claude_opus_5_5", "warning"], ["n_claude_mystery_9", "warning"]]);
+    expect(patched.problems.some((row: { code: string }) => row.code === "unknown_model")).toBe(false);
   });
 
   it("says a source could not be read instead of listing it empty", async () => {

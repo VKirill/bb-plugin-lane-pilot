@@ -1,7 +1,7 @@
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import type { rpcContract } from "../../contracts";
-import { writerExecutionSelection } from "@lane-pilot/models";
+import { resolveRoleModel, writerExecutionSelection } from "@lane-pilot/models";
 import { mentionContext } from "../../native-agent";
 import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME } from "../workflow-architect";
 import { createDraftStore } from "../../storage";
@@ -12,8 +12,12 @@ import { CONFIG_KEY, SELF_REPAIR_DEFAULTS } from "../../self-repair/server";
 import type { Services } from "../../core/server";
 import { stringAt } from "../../core/server";
 
-/** The architect always runs on these, whatever the project or the owner's remembered choice says. */
-export const ARCHITECT_EXECUTION = { providerId: "claude-code", model: "claude-opus-5-5", reasoningLevel: "high" } as const;
+/** The architect runs on the `workflow-architect` row of the role table (Claude Opus 5.5, high, unless the owner changed it), whatever the owner's remembered chat choice says. */
+const architectExecution = async (ctx: ServerCore, projectId: string) => {
+  const settings = (await ctx.effectiveProjectSettings(projectId).catch(() => ({ values: {} }))).values;
+  const picked = resolveRoleModel("workflow-architect", settings);
+  return { providerId: picked.providerId, model: picked.model, reasoningLevel: picked.effort };
+};
 
 /** Threads in these states are over: a new button press starts a new architect chat instead of returning them. */
 const DEAD_STATUSES = new Set(["error", "stopped"]);
@@ -103,9 +107,10 @@ export function architectStarter(ctx: ServerCore, services: Pick<Services, "docs
 
     const { selection } = await storeNativeSelection(ctx, { projectId, agentId: WORKFLOW_ARCHITECT_ID });
     const described = await bb.sdk.projects.get({ projectId }).catch(() => null) as { name?: unknown } | null;
+    const execution = await architectExecution(ctx, projectId);
     const spawned = await fullAccessSpawn(bb, {
       projectId,
-      ...writerExecutionSelection(ARCHITECT_EXECUTION.providerId, ARCHITECT_EXECUTION.model, ARCHITECT_EXECUTION.reasoningLevel, "default"),
+      ...writerExecutionSelection(execution.providerId, execution.model, execution.reasoningLevel, "default"),
       title: WORKFLOW_ARCHITECT_NAME.ru,
       input: architectOpening({ marker: mentionContext(selection), projectId, projectName: typeof described?.name === "string" ? described.name : null,
         draft: draft ? { id: draft.id, name: String((draft.definition.name as { ru?: unknown; en?: unknown } | undefined)?.ru ?? (draft.definition.name as { en?: unknown } | undefined)?.en ?? draft.workflowId ?? draft.id) } : null,

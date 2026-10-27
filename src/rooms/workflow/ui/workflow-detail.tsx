@@ -15,9 +15,7 @@ import { dataTabs, SidePanel, useLatestRun } from "./workflow-node-data";
 import { useDrill } from "./workflow-drill";
 import { nodeTitle } from "./workflow-titles";
 import { pickRun, runView, type NodeRun, type RunSnapshot } from "./workflow-run";
-import { ModelsPanel, StepModelBlock, executorFor, providerMap, type GraphModels, type ModelsAccess, useModelCatalog, useOverrideApi, useStepExecutors, issueText } from "./workflow-models";
-import { choiceRefusal, clearModelOps, choiceOps, type ModelChoice } from "./workflow-model-ops";
-import { getDraft } from "./workflow-drafts";
+import { ModelsPanel, StepModelBlock, executorFor, providerMap, type GraphModels, useModelCatalog, useStepExecutors } from "./workflow-models";
 import type { Expansions } from "./workflow-layout";
 import { GoalsPanel, RunHistory, WorkflowTrials } from "./workflow-actions";
 
@@ -211,10 +209,6 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
   const drilled = drill.trail.length ? drill.trail[drill.trail.length - 1]! : null;
   const drilledView = useMemo(() => (drilled?.snapshot ? runView(drilled.snapshot) : null), [drilled]);
   const drilledModels = useStepExecutors({ ...(drilled ? { workflowId: drilled.workflowId } : {}), projectId, revision: drilled ? drilled.workflowId : null });
-  // A step of any workflow, a built-in one included, can be moved to another model as a setting; a drilled subworkflow has its own workflow id.
-  const reloadModels = useCallback(() => { stepModels.reload(); drilledModels.reload(); }, [stepModels.reload, drilledModels.reload]);  // eslint-disable-line react-hooks/exhaustive-deps
-  const topOverride = useOverrideApi({ workflowId: id, projectId }, reloadModels);
-  const drilledOverride = useOverrideApi({ workflowId: drilled ? drilled.workflowId : null, projectId }, reloadModels);
   const viewRunMode = drilled ? drilled.snapshot !== null : runMode;
   useEffect(() => { drill.reset(); }, [id, runId]);  // eslint-disable-line react-hooks/exhaustive-deps
   const drillRefresh = useRef(drill.refresh);
@@ -323,40 +317,12 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
       scheduleRef.current(current.run.id);
     } catch (cause) { setRerunning({ busy: false, error: cause instanceof Error ? cause.message : String(cause) }); }
   };
-  /** A model chosen for an own workflow opens a draft of it with the change; the choice is checked against the catalog first, so a refused one opens nothing. */
-  const chooseModel = async (workflow: Detail, nodeId: string, choice: ModelChoice | null): Promise<string | null> => {
-    if (!editProjectId || !onEditDraft || !modelCatalog) return t("wfEditStartError").replace("{error}", "-");
-    const refused = choice ? choiceRefusal(modelCatalog, choice) : null;
-    if (refused) return issueText(refused.code === "no_effort" ? "no_effort" : refused.code);
-    setStarting({ busy: true, error: null });
-    try {
-      const created = await rpc.call("workflow_draft_create", { projectId: editProjectId, workflowId: workflow.id, mode: "edit", scope: projectId ? "project" : "global" });
-      if (!created.draftId) throw new Error(created.reason ?? "no draft");
-      const doc = await getDraft(rpc, created.draftId);
-      if (!doc || typeof doc.workflow !== "object" || doc.workflow === null) throw new Error("no draft");
-      const definition = doc.workflow as Record<string, unknown>;
-      const made = choice ? choiceOps(definition, modelCatalog, nodeId, choice) : { ok: true as const, ops: clearModelOps(definition, nodeId) ?? [] };
-      if (!made.ok) { setStarting({ busy: false, error: null }); return issueText(made.code); }
-      if (!made.ops.length) { setStarting({ busy: false, error: null }); return issueText("no_node"); }
-      const patched = await rpc.call("workflow_draft_patch", { draftId: created.draftId, ops: made.ops, ...(doc.version ? { expectedVersion: doc.version } : {}) });
-      if (!patched.ok) throw new Error("the draft refused the change");
-      setStarting({ busy: false, error: null });
-      onEditDraft(created.draftId);
-      return null;
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
-      setStarting({ busy: false, error: message });
-      return message;
-    }
-  };
-
   const selectedNode = selected ? lookup(selected) : null;
   const direction = width > 0 && width < 560 ? "DOWN" : "RIGHT";
 
   if (detail === "missing") return <p className="text-sm text-muted-foreground" data-testid="wf-missing">{t("wfRunGone")}</p>;
   if (!detail) return <div ref={rootRef}>{error ? <p role="alert" className="text-sm text-destructive">{t("wfLoadError")}: {error}</p> : <p className="text-sm text-muted-foreground" role="status">{t("wfLoading")}</p>}</div>;
 
-  const modelsAccess: ModelsAccess = detail.scope === "builtin" ? "builtin" : editProjectId && onEditDraft ? "own" : "readonly";
   const runLabel = (row: RunRow) => `${t(RUN_STATUS_KEY[row.status] ?? "wfRunStatus_failed")} · ${when(row.createdAt)}`;
   return (
     <div ref={rootRef} className="min-w-0 space-y-4" data-testid="workflow-detail">
@@ -418,9 +384,8 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
                 onSelect={onSelect} {...(drilled ? {} : { onToggleExpand: toggle })} direction={direction} height={direction === "DOWN" ? 440 : 560}
                 onOpen={(key, node) => { setSelected(null); void drill.open(key, node, locale); }} trail={[{ label: detail.name[locale] }, ...drill.trail.map((step) => ({ label: step.label }))]} onTrail={(index) => { setSelected(null); drill.goTo(index); }}
                 {...(viewRunMode ? {} : drilled
-                  ? { models: { executors: drilledModels.byNode, providers: providerMap(modelCatalog), catalog: modelCatalog, access: "readonly" as const, override: drilledOverride } }
-                  : { models: { executors: stepModels.byNode, providers: providerMap(modelCatalog), catalog: modelCatalog, access: modelsAccess, override: topOverride,
-                    onChoose: (nodeId: string, choice: ModelChoice | null) => chooseModel(detail, nodeId, choice), onDuplicate: editProjectId && onEditDraft ? () => void startEdit(detail) : null } })} />
+                  ? { models: { executors: drilledModels.byNode, providers: providerMap(modelCatalog) } }
+                  : { models: { executors: stepModels.byNode, providers: providerMap(modelCatalog) } })} />
             </Suspense>
           ) : null}
         </SurfaceBody>
@@ -434,8 +399,8 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
           return expanded.get(localKey.slice(0, localKey.lastIndexOf("/")))?.graph ?? null;
         })();
         const panelModels: GraphModels = drilled
-          ? { executors: drilledModels.byNode, providers: providerMap(modelCatalog), catalog: modelCatalog, access: "readonly", override: drilledOverride }
-          : { executors: stepModels.byNode, providers: providerMap(modelCatalog), catalog: modelCatalog, access: modelsAccess, override: topOverride };
+          ? { executors: drilledModels.byNode, providers: providerMap(modelCatalog) }
+          : { executors: stepModels.byNode, providers: providerMap(modelCatalog) };
         const stepExecutor = !viewRunMode && !(!drilled && localKey.includes("/")) ? executorFor(panelModels.executors, selectedNode) : undefined;
         const context: NodePanelContext = { node: selectedNode, nodeKey: selected!,
           ...(stepExecutor ? { modelBlock: <StepModelBlock executor={stepExecutor} models={panelModels} title={nodeTitle(selectedNode, locale)} /> } : {}), locale, run: states?.get(localKey) ?? null, definitionOnly: !viewRunMode, readOnly: true,
@@ -455,9 +420,7 @@ export function WorkflowDetail({ id, projectId, locale, onBack, renderNodePanel,
 
       <RunHistory id={detail.id} projectId={projectId} shownRunId={runId} signature={runs.map((row) => `${row.id}:${row.status}`).join()}
         onPick={(id) => { setRunId(id); setFollow(false); setSelected(null); }} />
-      <ModelsPanel graph={detail.graph} locale={locale} executors={stepModels.list} loaded={stepModels.loaded} catalog={modelCatalog} wide={width >= 720} busy={starting.busy}
-        access={modelsAccess} onChoose={(nodeId, choice) => chooseModel(detail, nodeId, choice)}
-        onDuplicate={editProjectId && onEditDraft ? () => void startEdit(detail) : null} override={topOverride} />
+      <ModelsPanel graph={detail.graph} locale={locale} executors={stepModels.list} loaded={stepModels.loaded} catalog={modelCatalog} wide={width >= 720} />
 
       <Surface testId="wf-info">
         <SurfaceHeader><h3 className="text-sm font-medium">{t("wfDefinition")}</h3></SurfaceHeader>

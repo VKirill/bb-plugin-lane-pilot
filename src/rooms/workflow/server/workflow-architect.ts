@@ -18,7 +18,6 @@ import { createStatusResolver } from "../../storage";
 import { checkRequires, effectiveRequires } from "@lane-pilot/workflow-engine";
 import { definitionSha256, globalWorkflowDir } from "../../storage";
 import { loadWorkflow } from "@lane-pilot/workflow-engine";
-import { findModel, findProvider } from "@lane-pilot/models";
 import { configuredSetting } from "../../core/server";
 import { SPECIALIST_ROLES } from "../../critique/server";
 import { isCustomAgentId } from "../../native-agent";
@@ -44,8 +43,6 @@ export type ArchitectDeps = {
   /** A skill, plugin, MCP, secret and machine lister for the project; see collectCapabilities. */
   capabilityPorts: (input: { projectId: string; threadId: string }) => Parameters<typeof collectCapabilities>[0];
   hasExecutor: (key: string) => boolean;
-  /** Whether a machine offers a provider/model pair, from the catalog as last read; null when it is unknown (the validator then says nothing). */
-  modelOffered?: (providerId: string, model: string) => boolean | null;
   /** Whether `specialist:<id>` names a bundled specialist or an agent the owner created; null when the owner's agents have not been read yet. */
   specialistKnown?: (id: string) => boolean | null;
 };
@@ -63,11 +60,6 @@ export function realDeps(ctx: ServerCore, services: Services): ArchitectDeps {
   const catalog = modelCatalogOf(ctx);
   return {
     globalDir: () => globalWorkflowDir(),
-    modelOffered: (providerId, model) => {
-      const read = catalog.peek();
-      if (!read?.providers.length) return null;
-      return Boolean(findModel(findProvider(read, providerId), model)?.hostIds.length);
-    },
     specialistKnown: (id) => {
       if (SPECIALIST_ROLES.includes(id as never)) return true;
       const own = ctx.knownCustomAgentIds();
@@ -132,7 +124,7 @@ export function createWorkflowArchitect(ctx: ServerCore, services: Pick<Services
   const resolve = (id: string, version?: number) => builtinWorkflow(id, version);
   const changed = (draft: DraftRow, threadId?: string) => ctx.realtime.notify(draft.projectId, "workflow-draft", threadId ?? draft.threadId ?? undefined, draft.id);
 
-  const validation = { resolve, ...(deps.modelOffered ? { modelOffered: deps.modelOffered } : {}), ...(deps.specialistKnown ? { specialistKnown: deps.specialistKnown } : {}) };
+  const validation = { resolve, ...(deps.specialistKnown ? { specialistKnown: deps.specialistKnown } : {}) };
   const checkOf = (draft: DraftRow): DraftCheck => checkDraft(draft.definition, validation);
   const loaded = (draft: DraftRow) => loadWorkflow(draft.definition, validation);
 

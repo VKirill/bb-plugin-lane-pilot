@@ -163,7 +163,6 @@
       "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
-      "model_preset": "strong",
       "profile": {
         "skills": [
           "video-to-reels"
@@ -338,7 +337,6 @@
       "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "analyst",
-      "model_preset": "strong",
       "profile": {
         "skills": [
           "procedural-film"

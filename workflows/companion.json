@@ -79,7 +79,6 @@
       "produces": [{"kind": "report", "version": 1}],
       "type": "agent",
       "role": "planner",
-      "model_preset": "cheap-fast",
       "title": {
         "en": "Self-check and contract",
         "ru": "Самопроверка и контракт"

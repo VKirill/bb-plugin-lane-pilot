@@ -1,6 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { getReasoningTrace, listAttemptsForTask, type LanePilotDatabase } from "../storage";
-import { bbServiceTier, findModelIn } from "@lane-pilot/models";
+import { bbServiceTier, findModelIn, judgeAgainstAuthor, resolveRoleModel, type RoleModelSource } from "@lane-pilot/models";
 
 /**
  * G9: the code critic is another model than the writer. Reviewing the writer's own work with the writer's own model
@@ -34,7 +34,7 @@ export function criticPairCandidates(settings: Record<string, unknown>, config: 
   return all.filter((pair, index) => all.findIndex((other) => same(other, pair)) === index);
 }
 
-async function usable(catalog: CriticCatalog, pair: Pair, effort: string, tier: "fast" | "standard"): Promise<boolean> {
+export async function usable(catalog: CriticCatalog, pair: Pair, effort: string, tier: "fast" | "standard"): Promise<boolean> {
   const provider = await catalog.provider(pair.providerId);
   if (!provider?.available) return false;
   const model = findModelIn(await catalog.models(pair.providerId), pair.model);
@@ -55,6 +55,33 @@ export async function pairApartFromWriter(input: {
     } catch { return keep; }
   }
   return keep;
+}
+
+export type RoleSelection = { providerId: string; model: string; effort: string | null; source: RoleModelSource | "fallback" };
+
+/**
+ * The model of a pipeline stage (pm-reader, plan-critic, code-critic, specialist-reviewer) from the one role table: the owner's row, else the
+ * stage selection set before the table, else the built-in default (packages/models/src/role-models.ts). A pick the host does not offer, or
+ * whose effort it lacks, gives way to `fallback` (what the stage ran on before the table: its own selection, else the writer's), and the
+ * stage never stops for it. `effort` is null for the fallback: the stage's own effort rules apply then.
+ */
+export async function roleSelection(input: {
+  catalog: CriticCatalog; settings: Record<string, unknown>; role: string; fallback: Pair; tier?: "fast" | "standard";
+}): Promise<RoleSelection> {
+  const chosen = resolveRoleModel(input.role, input.settings);
+  try {
+    if (await usable(input.catalog, chosen, chosen.effort, input.tier ?? "standard")) return { providerId: chosen.providerId, model: chosen.model, effort: chosen.effort, source: chosen.source };
+  } catch { /* the catalog cannot be read: the stage's old pick stands */ }
+  return { providerId: input.fallback.providerId, model: input.fallback.model, effort: null, source: "fallback" };
+}
+
+/** The cross-family rule for the code critic: the critic is of another family than the writer's model (Opus <-> Sol, Sonnet <-> Terra, Haiku <-> Luna) when the host has the peer. */
+export async function criticAcrossFamilies(input: { critic: Pair; writer: Pair | null; effort: string; tier: "fast" | "standard"; catalog: CriticCatalog }): Promise<{ pair: Pair; changed: boolean }> {
+  const judged = judgeAgainstAuthor(input.critic, input.writer);
+  if (!judged.changed) return { pair: input.critic, changed: false };
+  const peer = { providerId: judged.providerId, model: judged.model };
+  try { if (await usable(input.catalog, peer, input.effort, input.tier)) return { pair: peer, changed: true }; } catch { /* keep the critic */ }
+  return { pair: input.critic, changed: false };
 }
 
 /** The pair of the task's latest attempt that has a reasoning trace (the writer that produced the work), or null. */
