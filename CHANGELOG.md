@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.350
+
+**A worktree of a checkout in a protected macOS folder gets its own packages.** A writer's worktree sits in `~/.lane-pilot/worktrees`, and its `node_modules` linked every package back into the checkout. For a checkout under `~/Documents` (also Desktop, Downloads, iCloud Drive) a writer whose sandbox may not read there stopped before any work with «EPERM … node_modules/vitest/vitest.mjs» (Оживить фото, T3 and T6, 2026-10-27). Such a checkout's packages are now cloned into the worktree (APFS copy-on-write, no extra disk), and links an older worktree holds into the checkout are replaced. Other folders and Linux keep the links.
+
 ## 0.1.349
 
 **Reviews run on Gemini 3.8 Flash.** The plan critic, code critic, specialist review (and the lp.review steps that use the code-critic role) and the triager default to Gemini 3.8 Flash through 9router, a third model family, so the judge never shares the author's family whether Claude or GPT wrote the code. If 9router is not offered, spent, or answers with a limit (its «Unavailable (reset after …)» text now counts as one), the review falls to GPT-6.1 Sol, then Opus (the triager to GPT-6 Luna). The goal audit, the debugger and the council chair stay on Sol.
