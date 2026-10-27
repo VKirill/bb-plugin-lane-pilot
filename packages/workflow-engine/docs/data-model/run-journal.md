@@ -2,7 +2,7 @@
 title: Workflow Run Journal Data
 type: data-model
 created: 2026-10-10
-updated: 2026-10-26
+updated: 2026-10-27
 status: active
 confidence: medium
 tags: [workflow-engine, data-model, journal]
@@ -96,7 +96,7 @@ Status lifecycle:
 | `interrupted` | `running`, `canceled` | `moveStep` (`packages/workflow-engine/src/journal.ts:118-120`) | Resume or cancellation. |
 | Terminal states | — | `STEP_TRANSITIONS` (`packages/workflow-engine/src/journal.ts:120-121`) | `succeeded`, `failed`, `skipped`, and `canceled` have no outgoing transition. |
 
-Invariants: `(run_id,step_key)` is primary key; `(run_id,origin)` is unique; `state` is constrained to the transition vocabulary (`packages/workflow-engine/src/journal.ts:43-69`). A stale step update appends `refused`; a stale run-status update returns false without an event ([journal behavior](../features/engine-journal-actions.md), `packages/workflow-engine/src/journal.ts:174-186`).
+Invariants: `(run_id,step_key)` is primary key; `(run_id,origin)` is unique; `state` is constrained to the transition vocabulary (`packages/workflow-engine/src/journal.ts:43-69`). `moveStep` returns false and appends `refused` when the requested step is missing or outside the expected source states; `setRunStatus` returns false without an event when the run is missing or outside the expected statuses ([journal behavior](../features/engine-journal-actions.md), `packages/workflow-engine/src/journal.ts:174-186`).
 
 Writers/readers: Engine driver writes steps; run summaries, status screens, and reroute logic read them (`packages/workflow-engine/src/engine.ts:151-177`, `packages/workflow-engine/src/journal.ts:150-154`). The package defines no general step-retention job; reroute cleanup removes selected step rows (`packages/workflow-engine/src/engine.ts:1369-1373`).
 

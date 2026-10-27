@@ -2,13 +2,14 @@
 title: Workflow Definitions and Validation
 type: component
 created: 2026-10-10
-updated: 2026-10-26
+updated: 2026-10-27
 status: active
 confidence: medium
 tags: [workflow-engine, schema, validation]
 sources:
   - packages/workflow-engine/src/schema.ts
   - packages/workflow-engine/src/validate.ts
+  - packages/workflow-engine/src/prompt-coverage.ts
   - packages/workflow-engine/src/store.ts
   - packages/workflow-engine/src/lower.ts
   - packages/workflow-engine/src/expr.ts
@@ -18,13 +19,13 @@ TL;DR: Workflow definitions are versioned typed graphs that are normalized, pars
 
 ## Purpose
 
-This capability defines the JSONC workflow format, its typed nodes and edges, the expression language used by conditions and mapped values, and the validation path used by individual definitions and merged workflow stores (`packages/workflow-engine/src/schema.ts:3-8`, `packages/workflow-engine/src/validate.ts:459-482`).
+This capability defines the JSONC workflow format, its typed nodes and edges, the expression language used by conditions and mapped values, and the validation path used by individual definitions and merged workflow stores (`packages/workflow-engine/src/schema.ts:3-8`, `packages/workflow-engine/src/validate.ts:467-490`).
 
 ## How it works
 
-1. `loadWorkflow` accepts an object or JSONC text, parses text with trailing commas enabled, and reports syntax errors as structured problems (`packages/workflow-engine/src/validate.ts:459-465`).
-2. `parseWorkflowObject` normalizes supported authoring spellings, then validates against the closed Zod schema; unknown keys and malformed field definitions are rejected (`packages/workflow-engine/src/schema.ts:3-8`, `packages/workflow-engine/src/schema.ts:25-38`, `packages/workflow-engine/src/validate.ts:466-471`).
-3. `validateWorkflow` checks node and edge references, graph reachability, loops, subworkflow depth, contracts, and lowered graph constraints; errors make `loadWorkflow` return `ok: false` (`packages/workflow-engine/src/validate.ts:67-130`, `packages/workflow-engine/src/validate.ts:470-472`).
+1. `loadWorkflow` accepts an object or JSONC text, parses text with trailing commas enabled, and reports syntax errors as structured problems (`packages/workflow-engine/src/validate.ts:467-473`).
+2. `parseWorkflowObject` normalizes supported authoring spellings, then validates against the closed Zod schema; unknown keys and malformed field definitions are rejected (`packages/workflow-engine/src/schema.ts:3-8`, `packages/workflow-engine/src/schema.ts:25-38`, `packages/workflow-engine/src/validate.ts:474-479`).
+3. `validateWorkflow` checks node and edge references, graph reachability, loops, subworkflow depth, contracts, agent prompt coverage for produced-artifact enum values, and lowered graph constraints; errors make `loadWorkflow` return `ok: false`, while prompt-coverage findings are warnings (`packages/workflow-engine/src/validate.ts:70-133`, `packages/workflow-engine/src/validate.ts:351-374`, `packages/workflow-engine/src/validate.ts:478-487`).
 4. `loadWorkflowStore` loads built-ins and files, chooses the narrowest valid definition by origin, then validates subworkflow references against the merged set; its two passes and lookup results are detailed in [Workflow Validation and Expression Internals](workflow-validation-internals.md) (`packages/workflow-engine/src/store.ts:71-104`).
 5. `lowerWorkflow` expands shorthand such as `for_each` and parallel constructs into graph nodes used by the engine (`packages/workflow-engine/src/lower.ts:52-101`).
 
@@ -32,12 +33,12 @@ This capability defines the JSONC workflow format, its typed nodes and edges, th
 
 | Variant | Behavior |
 |---|---|
-| Definition input as object or JSONC string | Both pass through object parsing and graph checks; JSONC allows trailing commas (`packages/workflow-engine/src/validate.ts:459-471`). |
+| Definition input as object or JSONC string | Both pass through object parsing and graph checks; JSONC allows trailing commas (`packages/workflow-engine/src/validate.ts:467-479`). |
 | Built-in, global, and project files | Definitions that fail per-definition loading checks are omitted before origin precedence is applied; the highest-ranked remaining definition is then checked for merged subworkflow references (`packages/workflow-engine/src/store.ts:71-90`). |
 | Workflow graph node | Typed node forms have node-specific schemas; node IDs use lowercase letters, digits, `_` and `-`, start with a letter, and are at most 48 characters (`packages/workflow-engine/src/schema.ts:19-20`, `packages/workflow-engine/src/schema.ts:223`). |
 | Expression condition or structured condition | Conditions accept bounded recursive `all`, `any`, `not` trees or expression strings; operators include equality, ordering, membership, and existence (`packages/workflow-engine/src/schema.ts:41-57`). |
-| Subworkflow call | Resolver checks the requested workflow and optional version; nesting depth is capped at three (`packages/workflow-engine/src/schema.ts:17`, `packages/workflow-engine/src/validate.ts:50-66`). |
-| Syntax, schema, or graph error | JSONC parse, closed schema, or graph checks fail | `loadWorkflow` returns `ok: false` and a list of structured problems; `parseWorkflow` throws `WorkflowError` containing those problems (`packages/workflow-engine/src/validate.ts:459-482`). |
+| Subworkflow call | Resolver checks the requested workflow and optional version; nesting depth is capped at three (`packages/workflow-engine/src/schema.ts:17`, `packages/workflow-engine/src/validate.ts:53-69`). |
+| Syntax, schema, or graph error | JSONC parse, closed schema, or graph checks fail | `loadWorkflow` returns `ok: false` and a list of structured problems; `parseWorkflow` throws `WorkflowError` containing those problems. Warning-only results remain successful (`packages/workflow-engine/src/validate.ts:467-487`). |
 | Invalid source override | A higher-precedence workflow file has parse or validation errors | The invalid source is added to `problems` and omitted from the final store, so it does not shadow a valid lower-precedence workflow (`packages/workflow-engine/src/store.ts:71-93`). |
 
 ## Business rules
@@ -46,6 +47,8 @@ This capability defines the JSONC workflow format, its typed nodes and edges, th
 - Field names begin with a letter or underscore and permit letters, digits, and underscores up to 48 characters. Enum fields require a `values` list, while non-enum fields reject it (`packages/workflow-engine/src/schema.ts:25-38`).
 - Workflow schema version is `1`; quality modes are `quick`, `standard`, and `full`; pass modes are `artifact`, `same-session`, `read-prior-session`, and `fork` (`packages/workflow-engine/src/schema.ts:10`, `packages/workflow-engine/src/schema.ts:59-64`).
 - Definitions that fail `loadWorkflow` checks without a merged resolver are omitted before origin precedence is applied. The highest-ranked remaining definition per ID is checked against the merged set for subworkflow references; if that check fails, the ID is omitted rather than falling back (`packages/workflow-engine/src/store.ts:71-90`).
+- When `specialistKnown` is supplied, an agent role of the form `specialist:<id>` is an error if its literal ID is not known; templated roles and an unknown availability result are not rejected by this check (`packages/workflow-engine/src/validate.ts:21-22`, `packages/workflow-engine/src/validate.ts:357-365`).
+- For agent nodes, validation warns when an enum accepted by a declared produced-artifact schema is not named in either the node prompt or the generated output contract. It checks literal vocabulary coverage; this finding does not make `loadWorkflow` fail (`packages/workflow-engine/src/prompt-coverage.ts:17-31`, `packages/workflow-engine/src/validate.ts:366-372`, `packages/workflow-engine/src/validate.ts:478-479`).
 
 ## Public API
 
@@ -53,7 +56,7 @@ This capability defines the JSONC workflow format, its typed nodes and edges, th
 |---|---|
 | `workflowSchema`, `parseWorkflowObject`, `Workflow`, node and edge types | Definition format and normalization (`packages/workflow-engine/src/schema.ts:1-8`, `packages/workflow-engine/src/schema.ts:223-237`). |
 | `consumesSchema`, `producesSchema` | Validate the declared artifact input/output contract shapes (`packages/workflow-engine/src/schema.ts:71-84`). |
-| `loadWorkflow`, `parseWorkflow`, `validateWorkflow`, `WorkflowError` | Parse definitions and return or throw structured validation problems (`packages/workflow-engine/src/validate.ts:22-29`, `packages/workflow-engine/src/validate.ts:67-126`, `packages/workflow-engine/src/validate.ts:459-482`). |
+| `loadWorkflow`, `parseWorkflow`, `validateWorkflow`, `WorkflowError` | Parse definitions and return or throw structured validation problems (`packages/workflow-engine/src/validate.ts:22-29`, `packages/workflow-engine/src/validate.ts:70-129`, `packages/workflow-engine/src/validate.ts:467-487`). |
 | `loadWorkflowStore`, `definitionSha256`, `globalWorkflowDir`, `projectWorkflowDir` | Merge workflow sources, resolve definitions, and calculate content identity (`packages/workflow-engine/src/store.ts:24-43`, `packages/workflow-engine/src/store.ts:50-104`). |
 | `refOf`, `parseExpr`, `conditionToExpr`, `toExpr`, `evalExpr`, `evalCondition`, `renderValue` | Resolve references, normalize conditions, and evaluate expressions and templates (`packages/workflow-engine/src/expr.ts:57-155`, `packages/workflow-engine/src/expr.ts:280-362`). |
 
@@ -77,6 +80,8 @@ The schemas use Zod; file parsing and hashing are delegated to the store and `@l
 - A syntactically valid file can still be excluded because graph validation or a subworkflow reference fails (`packages/workflow-engine/src/store.ts:71-93`).
 
 ## Lowering, expression checks, and schema details
+
+The detailed parser, evaluator, schema, validator, and merged-store branches are in [Workflow Definition and Expression Internals](definition-expression-internals.md).
 
 For the detailed expression parser and structured-condition conversion, see [Expression Parsing and Conditions](expression-parsing.md). The two-pass definition-store merge and validation phases are described in [Workflow Store Loading and Validation](workflow-store-loading.md).
 
@@ -103,7 +108,7 @@ Runnable nodes may declare a step contract: up to 12 consumed artifacts, up to 8
 
 `edgeSchema` requires nonempty `from` and `to` strings no longer than 48 characters; `when` is optional; `label` is optional and capped at 80 characters; `with` maps strings to strings; `pass` defaults to `artifact` and accepts the pass-mode enum. The object is strict, so extra fields fail schema parsing (`packages/workflow-engine/src/schema.ts:234-242`).
 
-`consumesSchema` accepts a strict object with a lowercase artifact kind, version 1–99, `required` defaulting to true, optional nonempty `from` string up to 48 characters, and optional `as` field name. It validates this declaration's shape; graph validation checks that the source node declares the consumed artifact (`packages/workflow-engine/src/schema.ts:64-76`, `packages/workflow-engine/src/validate.ts:304-330`).
+`consumesSchema` accepts a strict object with a lowercase artifact kind, version 1–99, `required` defaulting to true, optional nonempty `from` string up to 48 characters, and optional `as` field name. It validates this declaration's shape; graph validation checks that the source node declares the consumed artifact (`packages/workflow-engine/src/schema.ts:64-76`, `packages/workflow-engine/src/validate.ts:307-333`).
 
 Detailed schema branches for conditions, nodes, edges, and consumed artifacts are in [Workflow Validation and Expression Internals](workflow-validation-internals.md) (`packages/workflow-engine/src/schema.ts:51-58`, `packages/workflow-engine/src/schema.ts:77-82`, `packages/workflow-engine/src/schema.ts:228-242`).
 
@@ -134,5 +139,6 @@ Evaluation outcomes, failure codes, recursive template rendering, and `by_mode` 
 <!-- lane-pilot:backlinks -->
 ## Referenced by
 
+- [Workflow Definition and Expression Internals](definition-expression-internals.md)
 - [Workflow Validation and Expression Internals](workflow-validation-internals.md)
 - [Workflow Engine — Overview](../overview.md)
