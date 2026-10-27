@@ -1,5 +1,5 @@
 import { gateVocabularyLines, secretShaped } from "../../tasks";
-import { mountErrands, runBrowserQaGraph } from "../../qa/server";
+import { mountErrands, registerBrowserExecutors, runBrowserQaGraph } from "../../qa/server";
 import { cancelAttemptById } from "../../runs/server";
 import { LANE_PILOT_READ_NAME } from "@lane-pilot/kit";
 import { taskV2Schema } from "../../contracts";
@@ -395,6 +395,9 @@ export function registerTools(ctx: ServerCore, services: Services) {
   mountCouncilTools(ctx, services.council, (threadId) => services.phaseIntake.launchRefusal(threadId));
   mountSpecialists(ctx, services);
   services.errands = mountErrands(ctx, services);
+  // The browser step and the browser check of an accepted task (graphs browser-step and lp.browser-qa), next to the errand graph:
+  // registered from the qa side so the workflow room does not import qa (an import cycle through the errand graph).
+  registerBrowserExecutors(services.workflowEngine, ctx, services);
   mountRelay(ctx);
   mountWorkflowTools(ctx, services);
   mountSelfRepair(ctx);
