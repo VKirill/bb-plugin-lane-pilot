@@ -11,7 +11,7 @@ import { createStability } from "../src/rooms/stability/server/stability";
 import { failureClass } from "../src/rooms/runs/failure-class";
 import { logOrigin } from "../src/rooms/wall/signature";
 
-// log:4b8289a2c542 and its siblings (hub plugin.log, 2026-10-27): the Mac mini had 5–11 GB free, below the 15 GB disk hold, and
+// log:4b8289a2c542 and its siblings (hub plugin.log, 2026-10-27): the Mac mini had 5–11 GB free, below the then 15 GB disk hold (5 GB since 0.1.341), and
 // «writer drill-20261027-023238-b waits: only N GB free on host_7sea4qaad8» was logged 61 times, once for every GB the free space
 // moved; the drill's canceled writers (…-memory, drill-pm-20261027-note) kept waiting and logging for half an hour after their
 // cancel; and the line read as Lane Pilot's own failure («harness»), so the night sent repair rounds for a full disk.
@@ -128,8 +128,8 @@ describe("the disk hold's reason is the machine's", () => {
   }
 
   it("carries disk_low, so the failure classes, the night journal and the metrics read it as infra", async () => {
-    const reason = await holdAt(9, 460);
-    expect(reason).toBe(`disk_low: only 9 GB free on ${HOST}`);
+    const reason = await holdAt(4, 460);
+    expect(reason).toBe(`disk_low: only 4 GB free on ${HOST}`);
     expect(logOrigin(`writer drill-20261027-023238-b waits: ${reason}`)).toBe("infra");
     expect(failureClass("blocked", `waiting: ${reason}; starts by itself once it clears`)).toBe("infra");
     expect(await holdAt(20, 460)).toBeNull();

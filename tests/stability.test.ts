@@ -298,9 +298,11 @@ describe("disk hold", () => {
     const { stability } = createStability({ bb, isDisposed:() => false, db, host, log:() => undefined } as never, { activeWriterTasks:new Set() } as never);
     return stability.diskHolds("host_mini", "/srv/p");
   };
-  it("holds writers below the smaller of 15 GB and 5 % of the disk, never below 3 GB (Mac mini 460 GB held at 16 GB free, 2026-10-08)", async () => {
+  it("holds writers below the smaller of 5 GB and 5 % of the disk, never below 3 GB (the owner: work down to 5 GB, 2026-10-27)", async () => {
     expect(await holds(16, 460)).toBeNull();
-    expect(await holds(14, 460)).toMatch(/only 14 GB free/);
+    expect(await holds(10, 460)).toBeNull();
+    expect(await holds(6, 460)).toBeNull();
+    expect(await holds(4, 460)).toMatch(/only 4 GB free/);
     expect(await holds(6, 100)).toBeNull();
     expect(await holds(4, 100)).toMatch(/GB free/);
     expect(await holds(2, 40)).toMatch(/GB free/);

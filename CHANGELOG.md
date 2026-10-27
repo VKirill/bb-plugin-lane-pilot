@@ -20,6 +20,8 @@
 
 **Switch the agent of an open chat.** The Lane Pilot switch and the agent dropdown are now in existing chats too; the change applies from the next message (the session is restarted on the new profile). Turning Lane Pilot on makes the chat a PM chat bound to the project's run; off closes that and makes it plain again.
 
+**Writers work down to 5 GB free.** The disk hold was the smaller of 15 GB and 5 % of the disk; on the Mac mini it held every writer (and the deploy drill) at 10 GB free. It is now the smaller of 5 GB and 5 %, never below 3 GB (the owner, 2026-10-27).
+
 **GPT-6.1 Terra** (released 2026-10-26, $1/$5) joins the writers Jev picks from, as a standard-tier model for well-specified mid-size work.
 
 ## 0.1.339

@@ -30,9 +30,10 @@ const REDRIVES_KEY = "stability:redrives";
 const REDRIVE_MEMO_MS = 24 * 3600_000;
 /** A task parked for a secret is dropped from the sweep after this long; the PM sends it again. */
 const SECRET_PARK_MS = 24 * 3600_000;
-// Writers wait while a machine has less than 15 GB or 5 % of its disk free, whichever is SMALLER: a large disk needs no 5 % (23 GB
-// of a 460 GB Mac mini held every writer at 16 GB free, 2026-10-08), a small one never has 15 GB to spare. Never below 3 GB.
-const DISK_MIN_FREE_BYTES = 15 * 2 ** 30;
+// Writers wait while a machine has less than 5 GB or 5 % of its disk free, whichever is SMALLER: a large disk needs no 5 % (23 GB
+// of a 460 GB Mac mini held every writer at 16 GB free, 2026-10-08), and 15 GB held the drills on the Mac mini at 10 GB free; the
+// owner's word 2026-10-27: work down to 5 GB. Never below 3 GB.
+const DISK_MIN_FREE_BYTES = 5 * 2 ** 30;
 const DISK_MIN_FREE_SHARE = 0.05;
 const DISK_FLOOR_BYTES = 3 * 2 ** 30;
 
