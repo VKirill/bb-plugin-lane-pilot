@@ -356,8 +356,10 @@ describe("Enable Lane Pilot composer action", () => {
     fireEvent.click(laneSwitch());
     await waitFor(() => expect(laneSwitch().getAttribute("aria-checked")).toBe("true"));
     expect(getPendingNativeAgent()?.agentId).toBe("dev-orchestrator");
+    expect(slot.getByRole("button", { name: "Lane Pilot" }).getAttribute("data-lp-agent")).toBe("lane-pilot");
     pickAgent(slot, "Night desk");
     await waitFor(() => expect(laneSwitch().getAttribute("aria-checked")).toBe("false"));
+    expect(slot.getByRole("button", { name: "Night desk" }).getAttribute("data-lp-agent")).toBe("specialist");
     expect(slot.getByRole("combobox", { name: "Agent" }).textContent).toBe("Night desk");
     expect(prepared).toEqual(["dev-orchestrator", "copy-lead"]);
     expect(getPendingNativeAgent()?.agentId).toBe("copy-lead");
@@ -371,6 +373,7 @@ describe("Enable Lane Pilot composer action", () => {
     await waitFor(() => expect(laneSwitch().getAttribute("aria-checked")).toBe("false"));
     expect(getPendingNativeAgent()).toBeNull();
     expect(hiddenData.value).toBeNull();
+    expect(slot.getByRole("button", { name: "Lane Pilot / agent" }).getAttribute("data-lp-agent")).toBe("off");
     slot.lifecycle.unmount();
   });
 

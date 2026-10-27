@@ -217,7 +217,9 @@ export function EnableLanePilotAction() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button type="button" variant="outline" size="sm" className="h-7 min-h-7 max-w-[10rem] px-2 text-xs" disabled={disabled} aria-label={triggerLabel}>
+        {/* data-lp-agent tells a theme what the chat runs (off, lane-pilot or a specialist) without reading the label. */}
+        <Button type="button" variant="outline" size="sm" className="h-7 min-h-7 max-w-[10rem] px-2 text-xs" disabled={disabled} aria-label={triggerLabel}
+          data-lp-agent={!selected ? "off" : laneOn ? "lane-pilot" : "specialist"}>
           <span className="truncate whitespace-nowrap">{triggerLabel}</span>
         </Button>
       </PopoverTrigger>
