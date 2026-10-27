@@ -37,6 +37,7 @@ import lpReview from "../../../workflows/lp.review.json";
 import lpHarnessEdit from "../../../workflows/lp.harness-edit.json";
 import lpHarnessReflect from "../../../workflows/lp.harness-reflect.json";
 import lpWallHunt from "../../../workflows/lp.wall-hunt.json";
+import lpRoute from "../../../workflows/lp.route.json";
 import lpRulesAsk from "../../../workflows/lp.rules-ask.json";
 import lpRulesScan from "../../../workflows/lp.rules-scan.json";
 import lpSelfRepair from "../../../workflows/lp.self-repair.json";
@@ -118,6 +119,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "lp.harness-edit.json", value: lpHarnessEdit },
   { name: "lp.harness-reflect.json", value: lpHarnessReflect },
   { name: "lp.wall-hunt.json", value: lpWallHunt },
+  { name: "lp.route.json", value: lpRoute },
   { name: "lp.rules-ask.json", value: lpRulesAsk },
   { name: "lp.rules-scan.json", value: lpRulesScan },
   { name: "lp.self-repair.json", value: lpSelfRepair },
@@ -160,6 +162,8 @@ export const DOCS_NIGHT = "lp.docs-night";
 export const DOCS_MAINTENANCE = "lp.docs-maintenance";
 /** The graph of one self-repair (worktree, repair thread, verdict and merge), started by the self-repair watcher. */
 export const SELF_REPAIR = "lp.self-repair";
+/** The graph of the router's model step (`lane_pilot_route` escalates a request System One cannot decide alone): one read-only helper thread, a real run of its own. */
+export const ROUTE_WORKFLOW = "lp.route";
 /** The outer chain of the chains spec: analyze, plan, build, check, close. */
 export const ANALYZE_PLAN_EXECUTE = "analyze-plan-execute";
 

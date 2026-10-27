@@ -2,11 +2,11 @@ import { getRun } from "../../storage";
 import { postOwnerItem } from "../../owner-waiting";
 import type { LanePilotDatabase } from "../../storage";
 import type { RunRow } from "../../storage";
-import { AFTER_ACCEPT, DOCS_MAINTENANCE, DOCS_NIGHT, LP_TASK_PIPELINE, SELF_REPAIR } from "../builtin";
+import { AFTER_ACCEPT, DOCS_MAINTENANCE, DOCS_NIGHT, LP_TASK_PIPELINE, ROUTE_WORKFLOW, SELF_REPAIR } from "../builtin";
 import { startedBySchedule } from "./workflow-runtime";
 
 /** The machine's own upkeep graphs: they tell no PM chat and post nothing to the owner's list (a failed one is the wall's and the next run's to settle). */
-const UPKEEP_WORKFLOWS = new Set<string>([AFTER_ACCEPT, DOCS_NIGHT, DOCS_MAINTENANCE, SELF_REPAIR]);
+const UPKEEP_WORKFLOWS = new Set<string>([AFTER_ACCEPT, DOCS_NIGHT, DOCS_MAINTENANCE, SELF_REPAIR, ROUTE_WORKFLOW]);
 
 export const WORKFLOW_NOTICE_STATUSES = ["succeeded", "failed", "blocked", "interrupted", "canceled"] as const;
 export type WorkflowNoticeStatus = (typeof WORKFLOW_NOTICE_STATUSES)[number];

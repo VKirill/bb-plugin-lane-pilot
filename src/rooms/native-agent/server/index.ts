@@ -8,4 +8,4 @@ export { LANE_WORKTREE_PROVIDER_ID, registerLaneWorktreeProvider } from "./envir
 export { createBbShimEnv, createRoleMarkerEnv, mountBbShim } from "./helper-bb-shim";
 export { storeNativeSelection } from "./native-profile";
 export { workspaceProviderRpc } from "./rpc/workspace-provider";
-export { chatAgentState, switchChatAgent } from "./chat-agent-switch";
+export { chatAgentState, isPmChat, switchChatAgent } from "./chat-agent-switch";

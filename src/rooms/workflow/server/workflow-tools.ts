@@ -12,7 +12,7 @@ import { preflightRefusal } from "@lane-pilot/workflow-engine";
 import type { PreflightResult } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import type { WorkflowStore } from "../../storage";
-import { fenceOutside, registerObservedTool, ToolError } from "../../core/server";
+import { bindGraphStepLookup, fenceOutside, registerObservedTool, ToolError } from "../../core/server";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 import { jev } from "@lane-pilot/jev";
@@ -200,6 +200,14 @@ export async function amendGoalsTool(deps: WorkflowToolDeps, params: { runId: st
 
 export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
   const { bb, db } = ctx;
+  // A graph marker on a spawn counts (quiet helper) only when the journal has that run and step. A journal that cannot be read does not decide: the marker stands.
+  bindGraphStepLookup(bb, (runId, stepKey) => {
+    try {
+      return stepKey === undefined
+        ? Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_run WHERE id=?").get(runId))
+        : Boolean(db.prepare("SELECT 1 FROM lane_pilot_wf_step WHERE run_id=? AND step_key=?").get(runId, stepKey));
+    } catch { return true; }
+  });
   const preflight = createWorkflowPreflight(ctx, realDeps(ctx, services));
   const library = createWorkflowLibrary(ctx, services);
   const deps: WorkflowToolDeps = {
@@ -220,7 +228,7 @@ export function mountWorkflowTools(ctx: ServerCore, services: Services): void {
     // Jev decides a clear case; the helper thread (needs a run) is the escalation. A chat without a run and without Jev has no model.
     model: ({ pmThreadId, projectId, runId }) => (runId || jev()
       ? createJevRouterModel({ jev, settings: async () => (await ctx.effectiveProjectSettings(projectId)).values, projectId, runId,
-        legacy: runId ? createRouterModel({ ctx, services, pmThreadId, projectId, runId }, services.workflowAgents) : null })
+        legacy: runId ? createRouterModel({ ctx, services, pmThreadId, projectId, runId }, services.workflowEngine) : null })
       : undefined),
     warn: (message) => bb.log.warn(message),
   };

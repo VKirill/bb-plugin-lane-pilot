@@ -156,12 +156,40 @@ describe("self-repair as a graph", () => {
     expect(t.spawns[0]!.pluginMetadata).toMatchObject({ role: "self-repair" });
   });
 
-  it("tells the engine's own failures from the rest by the code and the tables they name", () => {
-    expect(pointsAtEngine("log:x:Lane Pilot workflow: run wfrun_1 stopped", [])).toBe(true);
+  it("tells the engine's own failures from the rest by a fault in its code, its tables or its availability", () => {
+    // An error in the engine's code (a stack frame or a site), a database error on its tables, the engine reported down or its drive crashed.
     expect(pointsAtEngine("triage:x:y", [{ reason: "TypeError at packages/workflow-engine/src/journal.ts:12" }])).toBe(true);
+    expect(pointsAtEngine("triage:x:y", [{ reason: "TypeError: x is undefined\n    at Engine.drive (/srv/lane-pilot/packages/workflow-engine/src/engine.ts:905:12)" }])).toBe(true);
+    expect(pointsAtEngine("triage:x:y", [{ reason: "internal_error: packages/workflow-engine/src/engine.ts: the journal refused step wfrun_1" }])).toBe(true);
     expect(pointsAtEngine("triage:x:y", [{ reason: "no such column in lane_pilot_wf_step" }])).toBe(true);
+    expect(pointsAtEngine("triage:x:y", [{ reason: "SqliteError: SQLITE_CONSTRAINT: UNIQUE constraint failed: lane_pilot_wf_run.idem_key" }])).toBe(true);
     expect(pointsAtEngine("night:x:y", [], "SITE: src/rooms/workflow/server/workflow-executors.ts:40")).toBe(true);
-    expect(pointsAtEngine("triage:x:merge_failed: conflict", [{ reason: "merge_failed: another writer holds the base" }])).toBe(false);
-    expect(pointsAtEngine("blocked:x:step_failed:verify", [{ reason: "step_failed:verify in the docs graph" }])).toBe(false);
+    expect(pointsAtEngine("log:x:y", [{ reason: "Lane Pilot workflow run wfrun_1 (code-review) stopped with an error: x is not a function" }])).toBe(true);
+    expect(pointsAtEngine("triage:x:y", [{ reason: "the workflow engine is not up yet" }])).toBe(true);
+    expect(pointsAtEngine("triage:x:y", [{ reason: "engine_unavailable: the workflow engine is not running; the task was not changed" }])).toBe(true);
+  });
+
+  it("does not take for an engine fault what only names the engine: a path, a table, a phrase or a log prefix with no fault in it", () => {
+    for (const reason of [
+      "merge_failed: another writer holds the base",
+      "step_failed:verify in the docs graph",
+      // a task that touches the engine's files is not the engine failing
+      "ownership: the writer edited src/rooms/workflow/server/workflow-router-model.ts outside owns_paths",
+      "expected_outputs missing: packages/workflow-engine/src/schema.ts was not produced",
+      "validation_failed: owns_paths src/rooms/workflow/ and packages/workflow-engine/ overlap with a running task",
+      // a check or a test that reads the engine's tables or fails in a test file of the engine's folder
+      "tests/workflow/router.test.ts failed: expected 2 rows in lane_pilot_wf_run, got 3",
+      "FAIL packages/workflow-engine/src/engine.test.ts:40 AssertionError: expected succeeded",
+      "the verification query SELECT count(*) FROM lane_pilot_wf_step ran in 3 s and returned 40",
+      // the phrases and prefixes a healthy engine's runs carry
+      "the docs graph run in the workflow engine failed at verify: the docs were not updated",
+      "Lane Pilot workflow: run wfrun_1 stopped",
+      "Lane Pilot workflow run wfrun_1 (code-review) failed: writer attempt blocked",
+      "wfe-1 harness_version 0.1.300 run blocked: unmet goals",
+      "WorkflowEngine run wfrun_9 is waiting for the owner's answer",
+    ]) {
+      expect(pointsAtEngine("triage:x:y", [{ reason }]), reason).toBe(false);
+      expect(pointsAtEngine("night:x:y", [], reason), reason).toBe(false);
+    }
   });
 });

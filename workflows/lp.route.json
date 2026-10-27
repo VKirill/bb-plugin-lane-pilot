@@ -1,0 +1,128 @@
+{
+  "id": "lp.route",
+  "startedBy": "lane_pilot_route",
+  "name": {
+    "en": "Workflow routing question",
+    "ru": "Вопрос маршрутизатора"
+  },
+  "description": {
+    "en": "The model step of lane_pilot_route when System One cannot decide a request alone: a read-only helper thread sees the owner's request and the cards of the top candidate workflows and chooses among them, with the pattern, the rejected options, a confidence and up to three questions. Started by lane_pilot_route; the router discards an answer outside the candidates.",
+    "ru": "Модельный шаг lane_pilot_route, когда System One не может решить запрос сам: читающий помощник видит запрос владельца и карточки лучших кандидатов и выбирает среди них, с образцом, отклонёнными вариантами, уверенностью и не более чем тремя вопросами. Запускается lane_pilot_route; ответ вне кандидатов маршрутизатор отбрасывает."
+  },
+  "not_for": [
+    "anything a person asks in a chat: lane_pilot_route starts this itself"
+  ],
+  "status": "published",
+  "tags": [
+    "router"
+  ],
+  "triggers": [
+    "manual"
+  ],
+  "inputs": {
+    "intent": {
+      "type": "string"
+    },
+    "context": {
+      "type": "string",
+      "default": ""
+    },
+    "candidates": {
+      "type": "any",
+      "note": "the cards of the top candidate workflows"
+    }
+  },
+  "outputs": {
+    "choice": "string",
+    "confidence": "number",
+    "pattern": "string",
+    "rejected": "any",
+    "questions": "any"
+  },
+  "budget": {
+    "max_steps": 3,
+    "max_minutes": 15
+  },
+  "nodes": [
+    {
+      "id": "route",
+      "type": "agent",
+      "role": "pm-reader",
+      "uses": "lp.route",
+      "title": {
+        "en": "Choose the workflow",
+        "ru": "Выбрать сценарий"
+      },
+      "proof": {
+        "kind": "advisory",
+        "reason": "a choice among the candidates; the router checks it against them and falls back to its scorer",
+        "form": "JSON: choice, confidence, pattern, rejected, questions, handoff"
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "out": {
+        "choice": "string",
+        "confidence": "number",
+        "pattern": "string",
+        "rejected": "any",
+        "questions": "any"
+      },
+      "guards": {
+        "timeoutMin": 12
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "choice": "route.choice",
+        "confidence": "route.confidence",
+        "pattern": "route.pattern",
+        "rejected": "route.rejected",
+        "questions": "route.questions"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "route"
+    },
+    {
+      "from": "route",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "route-1",
+    "sim": {
+      "input": {
+        "intent": "Review and fix the login code",
+        "candidates": []
+      },
+      "stubs": {
+        "route": {
+          "choice": "code-review",
+          "confidence": 80,
+          "pattern": "review then fix",
+          "rejected": [],
+          "questions": [],
+          "handoff": "chose code-review"
+        }
+      },
+      "expect_path": [
+        "route",
+        "done"
+      ],
+      "expect_output": {
+        "choice": "code-review"
+      }
+    },
+    "live": "lane_pilot_route asks it when System One does not decide; read the run of lp.route"
+  }
+}

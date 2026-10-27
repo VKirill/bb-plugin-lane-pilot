@@ -210,11 +210,27 @@ const MERGE_TRIES = 4;
 const ABANDON_MS = 86_400_000;
 
 /**
- * Whether a kind of failure points at the workflow engine itself: its signature, its samples or the night loop's brief name the engine's code
- * (packages/workflow-engine, src/rooms/workflow/), its tables or its log lines. Such a repair is not a graph run: a broken engine cannot run its
- * own repair, so the watcher spawns that thread directly, as it always did.
+ * Whether a kind of failure is the workflow engine itself failing: its signature, its samples or the night loop's brief show a fault in the engine's code, on its
+ * tables or in its availability. Such a repair is not a graph run: a broken engine cannot run its own repair, so the watcher spawns that thread directly.
+ * Only a fault counts, never a mention: a task that edits the engine's files, a check that reads its tables, a test of its folder and the words «workflow engine»
+ * or the log prefix of a healthy run name the engine without the engine being broken (Astra's recheck of .341, F6: the first version matched the names alone).
  */
-const ENGINE_FAULT = /packages\/workflow-engine|src\/rooms\/workflow\/|\bworkflow[- ]engine\b|\bWorkflowEngine\b|\blane_pilot_wf_(?:run|step|effect|event)\b|\bLane Pilot workflow:|\bwfe-\d/i;
+const ENGINE_PATH = String.raw`(?:packages/workflow-engine/src|src/rooms/workflow)/[\w./-]*?(?<!\.test)\.tsx?`;
+const FAULT_WORD = String.raw`(?:\bSITE:|\binternal_error\b|\b[A-Za-z]+Error\b|\bunhandled\b|\buncaught\b)`;
+const DB_FAULT = String.raw`(?:no such (?:table|column)|SQLITE_\w+|constraint failed|database is locked|malformed)`;
+const ENGINE_FAULT = new RegExp([
+  // a stack frame in the engine's code
+  String.raw`\bat\s[^\n]*?${ENGINE_PATH}:\d+`,
+  // an error, a site or an internal error on the same line as the engine's code
+  String.raw`${FAULT_WORD}[^\n]*?${ENGINE_PATH}`,
+  String.raw`${ENGINE_PATH}[^\n]*?${FAULT_WORD}`,
+  // a database error on one of the engine's tables
+  String.raw`${DB_FAULT}[^\n]*\blane_pilot_wf_\w+`,
+  String.raw`\blane_pilot_wf_\w+[^\n]*${DB_FAULT}`,
+  // the engine is down, or the drive of a run crashed (a step that fails ends the run, it does not reject the drive)
+  String.raw`\bthe workflow engine (?:is not running|is not up yet|is off)\b`,
+  String.raw`\bLane Pilot workflow run \S+ \([^)]*\) stopped with an error`,
+].join("|"), "i");
 export function pointsAtEngine(signature: string, samples: ReadonlyArray<Pick<Incident, "reason">>, brief = ""): boolean {
   return ENGINE_FAULT.test(`${signature}\n${brief}\n${samples.map((sample) => sample.reason).join("\n")}`);
 }

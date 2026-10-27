@@ -5,7 +5,7 @@ export type { ServerContext } from "./context";
 export type { ServerCore } from "./core";
 export { CATALOG_WAIT_MS, createModelCatalog, modelCatalogOf, pmHostOf, within } from "./model-catalog-reader";
 export type { ModelCatalogReader } from "./model-catalog-reader";
-export { bindRunChildBudget, fullAccessSpawn, graphStepMetadata, pmHasGuard, pmPrompt, providerSupportsServiceTier } from "./pm-spawn";
+export { bindGraphStepLookup, bindRunChildBudget, fullAccessSpawn, graphStepMetadata, pmHasGuard, pmPrompt, providerSupportsServiceTier } from "./pm-spawn";
 export { abortable, scheduleIsolated } from "./schedules";
 export { folderEnvironment, hiddenPlacement, projectFolder } from "./standalone-place";
 export type { ProjectFolder } from "./standalone-place";
