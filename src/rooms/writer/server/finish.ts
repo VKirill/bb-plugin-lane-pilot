@@ -1,6 +1,6 @@
 import { appetiteStop, breakerKey, runningWriterBudgetStop, tokenUsageFromEvent } from "@lane-pilot/resilience";
 import { checkTimeoutSec } from "../check-timing";
-import { pipelineWriterTag } from "./pipeline-tag";
+import { pipelineWriterStep, pipelineWriterTag } from "./pipeline-tag";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { countAttempts, countThreadTurns, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt, taskBasePath } from "../../storage";
 import { saveBlockedBy, type BlockedBy } from "../../runs/server";
@@ -358,6 +358,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           const recritique = await runCodeCritique({
             bb, db, projectId:input.projectId, runId:input.runId, taskId:input.taskId,
             config:input.config, task:input.task, evidence, disputes, frozenPolicy, criticDefault:taskCriticDefault,
+            workflow:pipelineWriterStep(db, input.runId, input.taskId) ?? undefined,
           });
           if (recritique.policy) frozenPolicy = recritique.policy;
           if (recritique.allowed) { review = recritique.review; approvedArtifact = evidence.artifactRevisionSha256; break; }
@@ -415,6 +416,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
         const critique = await runCodeCritique({
           bb, db, projectId:input.projectId, runId:input.runId, taskId:input.taskId,
           config:input.config, task:input.task, evidence, frozenPolicy, criticDefault:taskCriticDefault,
+          workflow:pipelineWriterStep(db, input.runId, input.taskId) ?? undefined,
         });
         if (critique.policy) frozenPolicy = critique.policy;
         if (critique.allowed) { review = critique.review; approvedArtifact = evidence.artifactRevisionSha256; break; }

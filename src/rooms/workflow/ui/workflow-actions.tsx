@@ -134,8 +134,8 @@ export function WorkflowTrials({ detail, projectId, runProjectId = projectId, on
     } catch (cause) { setError(errorText(cause)); } finally { setBusy(false); }
   };
 
-  // A published workflow runs on the owner's word; a tested one only as a first real run, which the button says.
-  const runnable = Boolean(runProjectId) && !detail.internal && detail.id !== "lp-task-pipeline" && (detail.status === "published" || detail.status === "tested");
+  // A published workflow runs on the owner's word; a tested one only as a first real run, which the button says. A starter graph (`startedBy`) is run by Lane Pilot itself, never by a button.
+  const runnable = Boolean(runProjectId) && !detail.internal && !detail.startedBy && (detail.status === "published" || detail.status === "tested");
   const live = detail.status === "tested";
   const runNow = async (inputs: Record<string, unknown>) => {
     if (!runProjectId) return;

@@ -23,7 +23,7 @@ export function useOpenRunThread() {
 
 /** What a run used and where: the model and cost from the run thread's usage («unknown» when none was reported) and the machine it ran on. */
 function RunMeta({ run }: { run: RunView }) {
-  const thread = run.refKind === "thread";
+  const thread = run.threadId !== null;
   const cost = !run.usageKnown ? t("schRunCostUnknown") : run.costUsd === null ? t("schRunCostNoPrice") : fill(t("schRunCost"), { usd: usdText(run.costUsd) });
   const model = [providerShort(run.providerId), modelShort(run.model)].filter(Boolean).join(" · ");
   if (!model && !thread && !run.hostName) return null;
@@ -47,8 +47,8 @@ export function RunRow({ run, name, onCancel }: { run: RunView; name: string; on
         <span className="text-muted-foreground">{t(`schTrigger_${run.trigger}` as I18nKey)}</span>
         {detail ? <span className="min-w-0 break-words text-muted-foreground">{detail}</span> : null}
         <span className="ml-auto flex gap-1">
-          {run.refKind === "thread" && run.refId ? <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" data-testid={`sch-run-open-${run.id}`} onClick={() => openThread(run.refId!, name)}>{t("schOpenThread")}</Button> : null}
-          {run.refKind && run.refKind !== "thread" && run.refId ? <span className="font-mono text-[11px] text-muted-foreground" data-testid={`sch-run-ref-${run.id}`}>{run.refKind} {run.refId}</span> : null}
+          {run.threadId ? <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" data-testid={`sch-run-open-${run.id}`} onClick={() => openThread(run.threadId!, name)}>{t("schOpenThread")}</Button> : null}
+          {run.refKind && run.refKind !== "thread" && run.refId && !run.threadId ? <span className="font-mono text-[11px] text-muted-foreground" data-testid={`sch-run-ref-${run.id}`}>{run.refKind} {run.refId}</span> : null}
           {onCancel && LIVE.has(run.status) ? <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" data-testid={`sch-run-cancel-${run.id}`} onClick={() => onCancel(run.id)}>{t("schCancelRun")}</Button> : null}
         </span>
       </div>

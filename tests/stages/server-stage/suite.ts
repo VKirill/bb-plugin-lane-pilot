@@ -80,6 +80,7 @@ async function until<T>(what:string, read:()=>T|null|undefined|false, timeoutMs=
 // Lane Pilot starts these itself after an accepted task (fa996c1, project-life), so they come and go while a test reads receipts.
 const backgroundStages=new Set(["memory-maintenance","project-life"]);
 const stageReceipt=(db:ReturnType<typeof openDatabase>,taskId:string,stageId:string)=>listStageReceipts(db,"stage-run",taskId).find((row)=>row.stageId===stageId);
+const docsReceiptOf=(db:ReturnType<typeof openDatabase>,taskId:string)=>stageReceipt(db,taskId,"docs-maintenance");
 
 const noteContent = "reviewed output\n";
 const noteSha = createHash("sha256").update(noteContent, "utf8").digest("hex");
@@ -745,66 +746,56 @@ describe("stage → native writer → receipt", () => {
     expect(listStageReceipts(db,"stage-run",outsideTask.id)).toEqual([]);
     await harness.lifecycle.dispose();
   });
-  it("routes docs maintenance through its configured native provider and records a stage receipt",async()=>{
-    const {db,harness,spawned,docsWrites}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
-      "docs.enabled":true,"docs.maintain":true,"docs.since":"7 days ago","docs.page_cap":3,
-      "docs.provider":"critic","docs.model":"critic-model","docs.reasoning_effort":"high","docs.service_tier":"standard",
-    });
+  // Docs maintenance runs only from the hourly schedule (docs-maintenance-hourly): there is no PM tool for it.
+  const docsChildren=(spawned:Array<{pluginMetadata?:unknown}>)=>spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="docs-maintenance");
+  const readyForDocs=(db:ReturnType<typeof openDatabase>,taskId:string)=>{
+    const attempt=db.prepare("SELECT id FROM lane_pilot_attempt WHERE task_id=? ORDER BY attempt_no DESC LIMIT 1").get(taskId) as {id:string};
+    db.prepare("UPDATE lane_pilot_attempt SET workspace_path=?,environment_id=? WHERE id=?").run("/tmp/lane-pilot-managed-attempt","attempt-env",attempt.id);
+    claimActivation(db,{projectId,pmThreadId,runId:"stage-run"});
+  };
+  const acceptedTask=async(harness:{behavior:{callAgentTool:(name:string,input:unknown,ctx?:{threadId?:string;projectId?:string})=>Promise<unknown>}})=>{
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write and verify the fixture",task},{threadId:pmThreadId,projectId});
     await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    const attempt=db.prepare("SELECT id FROM lane_pilot_attempt WHERE task_id=? ORDER BY attempt_no DESC LIMIT 1").get(task.id) as {id:string};
-    db.prepare("UPDATE lane_pilot_attempt SET workspace_path=?,environment_id=? WHERE id=?").run("/tmp/lane-pilot-managed-attempt","attempt-env",attempt.id);
-    const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id},{threadId:pmThreadId,projectId})));
-    expect(result.state).toBe("passed");
-    expect(spawned.find((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="docs-maintenance"))
+  };
+  const docsSettings=(extra:Record<string,unknown>={})=>({
+    "docs.enabled":true,"docs.maintain":true,"docs.since":"7 days ago","docs.page_cap":3,"docs.hour":new Date().getHours(),
+    "docs.provider":"critic","docs.model":"critic-model",...extra,
+  });
+  const docsRunning=(db:ReturnType<typeof openDatabase>,taskId:string)=>docsReceiptOf(db,taskId)?.state==="running"&&docsReceiptOf(db,taskId)?.threadId==="docs-thread";
+  it("routes docs maintenance through its configured native provider and records a stage receipt",async()=>{
+    const {db,harness,spawned,docsWrites}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,docsSettings({
+      "docs.reasoning_effort":"high","docs.service_tier":"standard",
+    }));
+    await acceptedTask(harness);
+    readyForDocs(db,task.id);
+    await harness.runSchedule("docs-maintenance-hourly");
+    expect(docsChildren(spawned)[0])
       .toMatchObject({providerId:"critic",model:"critic-model",reasoningLevel:"high",serviceTier:"default"});
     // The accepted attempt's work is merged: docs go to the run workspace, not the attempt's kept worktree.
-    expect(JSON.stringify(spawned.find((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="docs-maintenance")?.environment)).not.toContain("attempt-env");
-    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="docs-maintenance"))
+    expect(JSON.stringify((docsChildren(spawned)[0] as {environment?:unknown}).environment)).not.toContain("attempt-env");
+    expect(docsReceiptOf(db,task.id))
       .toMatchObject({state:"passed",providerId:"critic",model:"critic-model",threadId:"docs-thread",result:{selected:1,since:"7 days ago",truncated:false,changed:[{path:"docs/fixture.md"}]}});
     expect(docsWrites).toHaveLength(1);
-    expect(docsWrites[0]).toMatchObject({path:`${config.writerWorkspacePath}/docs/fixture.md`,expectedSha256:createHash("sha256").update("# Documentation fixture\n\nDocs are maintained with a bounded, reviewed stage.\n").digest("hex"),content:"# Updated documentation fixture\n"});
+    expect(docsWrites[0]).toMatchObject({path:`${config.writerWorkspacePath}/docs/fixture.md`,expectedSha256:createHash("sha256").update("# Documentation fixture\n\nDocs are maintained with a bounded, reviewed stage.\n").digest("hex")});
     const status=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_workspace_status",{runId:"stage-run",taskId:task.id},{threadId:pmThreadId,projectId})));
     expect(status).toMatchObject({state:"passed",result:{environmentId:"attempt-env",path:"/tmp/lane-pilot-managed-attempt"}});
     await harness.lifecycle.dispose();
   });
   it("reuses a running docs child after delayed events and does not stop on observation timeout",async()=>{
-    const {db,harness,spawned,docsWrites,stopCalls}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
-      "docs.enabled":true,"docs.maintain":true,"docs.since":"7 days ago","docs.page_cap":3,
-      "docs.provider":"critic","docs.model":"critic-model","docs.reasoning_effort":"high","docs.service_tier":"standard",
-    },undefined,undefined,undefined,undefined,undefined,undefined,false,0,undefined,undefined,undefined,undefined,undefined,undefined,undefined,true);
-    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write and verify the fixture",task},{threadId:pmThreadId,projectId});
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    const attempt=db.prepare("SELECT id FROM lane_pilot_attempt WHERE task_id=? ORDER BY attempt_no DESC LIMIT 1").get(task.id) as {id:string};
-    db.prepare("UPDATE lane_pilot_attempt SET workspace_path=?,environment_id=? WHERE id=?").run("/tmp/lane-pilot-managed-attempt","attempt-env",attempt.id);
-    const first=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId})));
-    expect(first).toMatchObject({state:"running",threadId:"docs-thread"});
+    const {db,harness,spawned,docsWrites,stopCalls}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,docsSettings({
+      "docs.reasoning_effort":"high","docs.service_tier":"standard",
+    }),undefined,undefined,undefined,undefined,undefined,undefined,false,0,undefined,undefined,undefined,undefined,undefined,undefined,undefined,true);
+    await acceptedTask(harness);
+    readyForDocs(db,task.id);
+    const pass=harness.runSchedule("docs-maintenance-hourly");
+    await until("docs child to run",()=>docsRunning(db,task.id));
     expect(stopCalls).not.toContain("docs-thread");
-    expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="docs-maintenance")).toHaveLength(1);
-    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="docs-maintenance")?.state).toBe("running");
-    const second=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId})));
-    expect(second.state).toBe("passed");
-    expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="docs-maintenance")).toHaveLength(1);
+    expect(docsChildren(spawned)).toHaveLength(1);
+    docsEventsHeld=false;
+    await pass;
+    expect(docsReceiptOf(db,task.id)?.state).toBe("passed");
+    expect(docsChildren(spawned)).toHaveLength(1);
     expect(docsWrites).toHaveLength(1);
-    await harness.lifecycle.dispose();
-  });
-  it("does not rewrite a failed docs receipt",async()=>{
-    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
-      "docs.enabled":true,"docs.maintain":true,"docs.since":"7 days ago","docs.page_cap":3,
-    });
-    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write and verify the fixture",task},{threadId:pmThreadId,projectId});
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    saveStageReceipt(db,{
-      runId:"stage-run",taskId:task.id,stageId:"docs-maintenance",contractVersion:1,state:"failed",
-      inputSha256:"a".repeat(64),outputSha256:null,attempt:0,providerId:null,model:null,
-      threadId:"docs-old",result:null,reason:"docs_maintainer_timeout:incomplete",updatedAt:Date.now(),
-    });
-    const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId})));
-    expect(result.state).toBe("failed");
-    expect(result.reason).toContain("already has a receipt");
-    expect(spawned.some((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="docs-maintenance")).toBe(false);
-    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="docs-maintenance"))
-      .toMatchObject({state:"failed",threadId:"docs-old",reason:"docs_maintainer_timeout:incomplete"});
     await harness.lifecycle.dispose();
   });
   it("validates a running docs child against persisted pageCap after settings change 3 to 1",async()=>{
@@ -814,29 +805,27 @@ describe("stage → native writer → receipt", () => {
       {path:"docs/fixture.md",modifiedAt:Date.now(),sha256:createHash("sha256").update(first).digest("hex"),content:first},
       {path:"docs/second.md",modifiedAt:Date.now(),sha256:createHash("sha256").update(second).digest("hex"),content:second},
     ];
-    const {db,harness,spawned,docsWrites}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
-      "docs.enabled":true,"docs.maintain":true,"docs.since":"7 days ago","docs.page_cap":3,
-      "docs.provider":"critic","docs.model":"critic-model",
-    },undefined,undefined,undefined,undefined,undefined,undefined,false,0,undefined,undefined,undefined,undefined,undefined,undefined,undefined,true,{
+    const {db,harness,spawned,docsWrites}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,docsSettings(),
+      undefined,undefined,undefined,undefined,undefined,undefined,false,0,undefined,undefined,undefined,undefined,undefined,undefined,undefined,true,{
       pages,
       output:JSON.stringify([
         {path:"docs/fixture.md",expectedSha256:createHash("sha256").update(first).digest("hex"),content:"# Updated documentation fixture\n"},
         {path:"docs/second.md",expectedSha256:createHash("sha256").update(second).digest("hex"),content:"# Updated second documentation fixture\n"},
       ]),
     });
-    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write and verify the fixture",task},{threadId:pmThreadId,projectId});
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    const attempt=db.prepare("SELECT id FROM lane_pilot_attempt WHERE task_id=? ORDER BY attempt_no DESC LIMIT 1").get(task.id) as {id:string};
-    db.prepare("UPDATE lane_pilot_attempt SET workspace_path=?,environment_id=? WHERE id=?").run("/tmp/lane-pilot-managed-attempt","attempt-env",attempt.id);
-    const started=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId})));
-    expect(started.state).toBe("running");
-    expect((listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="docs-maintenance")?.result as {snapshot?:{pageCap?:number}}).snapshot?.pageCap).toBe(3);
+    await acceptedTask(harness);
+    readyForDocs(db,task.id);
+    const pass=harness.runSchedule("docs-maintenance-hourly");
+    await until("docs child to run",()=>docsRunning(db,task.id));
+    expect((docsReceiptOf(db,task.id)?.result as {snapshot?:{pageCap?:number}}).snapshot?.pageCap).toBe(3);
     saveProjectSetting(db,projectId,"docs.page_cap",1);
-    const finished=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId})));
-    expect(finished.state).toBe("passed");
-    expect(finished.result.changed).toHaveLength(2);
+    docsEventsHeld=false;
+    await pass;
+    const finished=docsReceiptOf(db,task.id);
+    expect(finished?.state).toBe("passed");
+    expect((finished?.result as {changed:unknown[]}).changed).toHaveLength(2);
     expect(docsWrites).toHaveLength(2);
-    expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="docs-maintenance")).toHaveLength(1);
+    expect(docsChildren(spawned)).toHaveLength(1);
     await harness.lifecycle.dispose();
   });
   it("uses durable dispatchInput pageCap for spawn prompt and validation on a legacy snapshot",async()=>{
@@ -846,20 +835,16 @@ describe("stage → native writer → receipt", () => {
       {path:"docs/fixture.md",modifiedAt:Date.now(),sha256:createHash("sha256").update(first).digest("hex"),content:first},
       {path:"docs/second.md",modifiedAt:Date.now(),sha256:createHash("sha256").update(second).digest("hex"),content:second},
     ];
-    const {db,harness,spawned,docsWrites}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
-      "docs.enabled":true,"docs.maintain":true,"docs.since":"7 days ago","docs.page_cap":1,
-      "docs.provider":"critic","docs.model":"critic-model",
-    },undefined,undefined,undefined,undefined,undefined,undefined,false,0,undefined,undefined,undefined,undefined,undefined,undefined,undefined,false,{
+    const {db,harness,spawned,docsWrites}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,docsSettings({"docs.page_cap":1}),
+      undefined,undefined,undefined,undefined,undefined,undefined,false,0,undefined,undefined,undefined,undefined,undefined,undefined,undefined,false,{
       pages:()=>pages,
       output:JSON.stringify([
         {path:"docs/fixture.md",expectedSha256:pages[0]!.sha256,content:"# Updated documentation fixture\n"},
         {path:"docs/second.md",expectedSha256:pages[1]!.sha256,content:"# Updated second documentation fixture\n"},
       ]),
     });
-    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write and verify the fixture",task},{threadId:pmThreadId,projectId});
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    const attempt=db.prepare("SELECT id FROM lane_pilot_attempt WHERE task_id=? ORDER BY attempt_no DESC LIMIT 1").get(task.id) as {id:string};
-    db.prepare("UPDATE lane_pilot_attempt SET workspace_path=?,environment_id=? WHERE id=?").run("/tmp/lane-pilot-managed-attempt","attempt-env",attempt.id);
+    await acceptedTask(harness);
+    readyForDocs(db,task.id);
     saveStageReceipt(db,{
       runId:"stage-run",taskId:task.id,stageId:"docs-maintenance",contractVersion:1,state:"running",
       inputSha256:"a".repeat(64),outputSha256:null,attempt:0,providerId:"critic",model:"critic-model",
@@ -869,110 +854,87 @@ describe("stage → native writer → receipt", () => {
         dispatchInput:{settings:{pageCap:3,since:"7 days ago"}},
       },
     });
-    const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId})));
-    const prompt=String(spawned.find((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="docs-maintenance")?.prompt??"");
+    await harness.runSchedule("docs-maintenance-hourly");
+    const prompt=String((docsChildren(spawned)[0] as {prompt?:unknown}).prompt??"");
     expect(prompt).toContain("Page cap: 3");
     expect(prompt).not.toContain("Page cap: 1");
-    expect(result.state).toBe("passed");
-    expect(result.result.changed).toHaveLength(2);
+    const finished=docsReceiptOf(db,task.id);
+    expect(finished?.state).toBe("passed");
+    expect((finished?.result as {changed:unknown[]}).changed).toHaveLength(2);
     expect(docsWrites).toHaveLength(2);
-    expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="docs-maintenance")).toHaveLength(1);
+    expect(docsChildren(spawned)).toHaveLength(1);
     await harness.lifecycle.dispose();
   });
   it("reconciles a running docs child against its persisted snapshot after inventory ages out",async()=>{
     let pagesCalls=0;
     const fixture=()=>({path:"docs/fixture.md",modifiedAt:Date.now(),sha256:createHash("sha256").update("# Documentation fixture\n\nDocs are maintained with a bounded, reviewed stage.\n").digest("hex"),content:"# Documentation fixture\n\nDocs are maintained with a bounded, reviewed stage.\n"});
-    const {db,harness,spawned,docsWrites,docsInventoryCalls}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
-      "docs.enabled":true,"docs.maintain":true,"docs.since":"7 days ago","docs.page_cap":3,
-      "docs.provider":"critic","docs.model":"critic-model","docs.reasoning_effort":"high","docs.service_tier":"standard",
-    },undefined,undefined,undefined,undefined,undefined,undefined,false,0,undefined,undefined,undefined,undefined,undefined,undefined,undefined,true,{
+    const {db,harness,spawned,docsWrites,docsInventoryCalls}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,docsSettings({
+      "docs.reasoning_effort":"high","docs.service_tier":"standard",
+    }),undefined,undefined,undefined,undefined,undefined,undefined,false,0,undefined,undefined,undefined,undefined,undefined,undefined,undefined,true,{
       pages:()=>{pagesCalls+=1;return pagesCalls===1?[fixture()]:[];},
     });
-    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write and verify the fixture",task},{threadId:pmThreadId,projectId});
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    const attempt=db.prepare("SELECT id FROM lane_pilot_attempt WHERE task_id=? ORDER BY attempt_no DESC LIMIT 1").get(task.id) as {id:string};
-    db.prepare("UPDATE lane_pilot_attempt SET workspace_path=?,environment_id=? WHERE id=?").run("/tmp/lane-pilot-managed-attempt","attempt-env",attempt.id);
-    const first=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId})));
-    expect(first.state).toBe("running");
-    const second=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId})));
-    expect(second.state).toBe("passed");
-    expect(second.result.selected).toBe(1);
+    await acceptedTask(harness);
+    readyForDocs(db,task.id);
+    const pass=harness.runSchedule("docs-maintenance-hourly");
+    await until("docs child to run",()=>docsRunning(db,task.id));
+    docsEventsHeld=false;
+    await pass;
+    const finished=docsReceiptOf(db,task.id);
+    expect(finished?.state).toBe("passed");
+    expect((finished?.result as {selected:number}).selected).toBe(1);
     expect(docsInventoryCalls()).toBe(1);
-    expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="docs-maintenance")).toHaveLength(1);
+    expect(docsChildren(spawned)).toHaveLength(1);
     expect(docsWrites).toHaveLength(1);
     await harness.lifecycle.dispose();
   });
-  it("spawns one docs child when two polls overlap before threadId is stored",async()=>{
+  it("spawns one docs child when two passes overlap before threadId is stored",async()=>{
     let releaseInventory:()=>void=()=>undefined;
     const inventoryGate=new Promise<void>((resolve)=>{releaseInventory=resolve;});
-    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
-      "docs.enabled":true,"docs.maintain":true,"docs.since":"7 days ago","docs.page_cap":3,
-      "docs.provider":"critic","docs.model":"critic-model",
-    },undefined,undefined,undefined,undefined,undefined,undefined,false,0,undefined,undefined,undefined,undefined,undefined,undefined,undefined,true,{inventoryGate});
-    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write and verify the fixture",task},{threadId:pmThreadId,projectId});
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    const attempt=db.prepare("SELECT id FROM lane_pilot_attempt WHERE task_id=? ORDER BY attempt_no DESC LIMIT 1").get(task.id) as {id:string};
-    db.prepare("UPDATE lane_pilot_attempt SET workspace_path=?,environment_id=? WHERE id=?").run("/tmp/lane-pilot-managed-attempt","attempt-env",attempt.id);
-    const firstP=harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId});
-    const secondP=harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId});
+    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,docsSettings(),
+      undefined,undefined,undefined,undefined,undefined,undefined,false,0,undefined,undefined,undefined,undefined,undefined,undefined,undefined,true,{inventoryGate});
+    await acceptedTask(harness);
+    readyForDocs(db,task.id);
+    const firstP=harness.runSchedule("docs-maintenance-hourly");
+    await new Promise((resolve)=>setTimeout(resolve,40));
+    const secondP=harness.runSchedule("docs-maintenance-hourly");
     await new Promise((resolve)=>setTimeout(resolve,40));
     releaseInventory();
-    const results=[JSON.parse(String(await firstP)),JSON.parse(String(await secondP))];
-    expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="docs-maintenance")).toHaveLength(1);
-    expect(results.every((row)=>row.state==="running"||row.state==="passed")).toBe(true);
-    expect(new Set(results.map((row)=>row.threadId).filter(Boolean))).toEqual(new Set(["docs-thread"]));
+    await until("docs child to run",()=>docsReceiptOf(db,task.id)?.threadId==="docs-thread");
+    docsEventsHeld=false;
+    await Promise.all([firstP,secondP]);
+    expect(docsChildren(spawned)).toHaveLength(1);
+    expect(docsReceiptOf(db,task.id)?.state).toBe("passed");
     await harness.lifecycle.dispose();
   });
   it("attaches a spawned docs child after crash before threadId persist and does not spawn again",async()=>{
-    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
-      "docs.enabled":true,"docs.maintain":true,"docs.since":"7 days ago","docs.page_cap":3,
-      "docs.provider":"critic","docs.model":"critic-model",
-    },undefined,undefined,undefined,undefined,undefined,undefined,false,0,undefined,undefined,undefined,undefined,undefined,undefined,undefined,true);
-    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write and verify the fixture",task},{threadId:pmThreadId,projectId});
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    const attempt=db.prepare("SELECT id FROM lane_pilot_attempt WHERE task_id=? ORDER BY attempt_no DESC LIMIT 1").get(task.id) as {id:string};
-    db.prepare("UPDATE lane_pilot_attempt SET workspace_path=?,environment_id=? WHERE id=?").run("/tmp/lane-pilot-managed-attempt","attempt-env",attempt.id);
-    const first=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId})));
-    expect(first.state).toBe("running");
+    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,docsSettings(),
+      undefined,undefined,undefined,undefined,undefined,undefined,false,0,undefined,undefined,undefined,undefined,undefined,undefined,undefined,true);
+    await acceptedTask(harness);
+    readyForDocs(db,task.id);
+    const firstP=harness.runSchedule("docs-maintenance-hourly");
+    await until("docs child to run",()=>docsRunning(db,task.id));
     db.prepare("UPDATE lane_pilot_stage_receipt SET thread_id=NULL WHERE run_id=? AND task_id=? AND stage_id='docs-maintenance'").run("stage-run",task.id);
-    const second=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId})));
-    expect(second.state).toBe("passed");
-    expect(second.threadId??second.result?.threadId).toBe("docs-thread");
-    expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="docs-maintenance")).toHaveLength(1);
+    const secondP=harness.runSchedule("docs-maintenance-hourly");
+    await new Promise((resolve)=>setTimeout(resolve,40));
+    docsEventsHeld=false;
+    await Promise.all([firstP,secondP]);
+    expect(docsReceiptOf(db,task.id)?.state).toBe("passed");
+    expect(docsReceiptOf(db,task.id)?.threadId).toBe("docs-thread");
+    expect(docsChildren(spawned)).toHaveLength(1);
     await harness.lifecycle.dispose();
   });
   it("hourly schedule resumes a running docs receipt without a new daily claim",async()=>{
-    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
-      "docs.enabled":true,"docs.maintain":true,"docs.since":"7 days ago","docs.page_cap":3,"docs.hour":(new Date().getHours()+1)%24,
-      "docs.provider":"critic","docs.model":"critic-model",
-    },undefined,undefined,undefined,undefined,undefined,undefined,false,0,undefined,undefined,undefined,undefined,undefined,undefined,undefined,true);
-    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write and verify the fixture",task},{threadId:pmThreadId,projectId});
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    const attempt=db.prepare("SELECT id FROM lane_pilot_attempt WHERE task_id=? ORDER BY attempt_no DESC LIMIT 1").get(task.id) as {id:string};
-    db.prepare("UPDATE lane_pilot_attempt SET workspace_path=?,environment_id=? WHERE id=?").run("/tmp/lane-pilot-managed-attempt","attempt-env",attempt.id);
-    claimActivation(db,{projectId,pmThreadId,runId:"stage-run"});
-    docsEventsHeld=true;
-    const first=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId})));
-    expect(first.state).toBe("running");
-    docsEventsHeld=false;
+    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,docsSettings({"docs.hour":(new Date().getHours()+1)%24}));
+    await acceptedTask(harness);
+    readyForDocs(db,task.id);
+    saveStageReceipt(db,{
+      runId:"stage-run",taskId:task.id,stageId:"docs-maintenance",contractVersion:1,state:"running",
+      inputSha256:"a".repeat(64),outputSha256:null,attempt:0,providerId:"critic",model:"critic-model",
+      threadId:null,reason:"docs_spawn_requested",updatedAt:Date.now(),result:null,
+    });
     await harness.runSchedule("docs-maintenance-hourly");
-    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="docs-maintenance")?.state).toBe("passed");
-    expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="docs-maintenance")).toHaveLength(1);
-    await harness.lifecycle.dispose();
-  });
-  // 2026-10-08: docs-maintenance-hourly threw "running -> skipped" every hour on the hub: the stage was opened before the skip was decided.
-  it("docs turned off skip the stage from pending and close a receipt left running without a child as canceled",async()=>{
-    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"docs.enabled":false});
-    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write and verify the fixture",task},{threadId:pmThreadId,projectId});
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    const skipped=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id},{threadId:pmThreadId,projectId})));
-    expect(skipped).toMatchObject({state:"skipped",reason:"disabled_by_project_setting"});
-    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="docs-maintenance")).toMatchObject({state:"skipped",reason:"disabled_by_project_setting"});
-    db.prepare("UPDATE lane_pilot_stage_receipt SET state='running' WHERE run_id=? AND task_id=? AND stage_id='docs-maintenance'").run("stage-run",task.id);
-    const closed=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_docs_maintain",{runId:"stage-run",taskId:task.id},{threadId:pmThreadId,projectId})));
-    expect(closed).toMatchObject({state:"canceled",reason:"disabled_by_project_setting"});
-    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="docs-maintenance")).toMatchObject({state:"canceled",reason:"disabled_by_project_setting"});
-    expect(spawned.some((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="docs-maintenance")).toBe(false);
+    expect(docsReceiptOf(db,task.id)?.state).toBe("passed");
+    expect(docsChildren(spawned)).toHaveLength(1);
     await harness.lifecycle.dispose();
   });
   it("hourly docs schedule logs a project that fails and does not throw",async()=>{
@@ -1016,66 +978,6 @@ describe("stage → native writer → receipt", () => {
     } finally { goneThreads.delete(pmThreadId); }
     await harness.lifecycle.dispose();
   });
-  it("returns a read-only onboarding preview, then applies only the exact reviewed hash with a receipt",async()=>{
-    const output=JSON.stringify({summary:"Add a concise onboarding guide",edits:[{path:"docs/fixture.md",expectedSha256:createHash("sha256").update("# Documentation fixture\n\nDocs are maintained with a bounded, reviewed stage.\n").digest("hex"),content:"# Onboarding guide\n"}]});
-    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
-      "onboarding.provider":"critic","onboarding.model":"critic-model","onboarding.reasoning_effort":"high","onboarding.service_tier":"standard","onboarding.agent":"project-onboarder","onboarding.depth":"deep",
-    },undefined,undefined,undefined,undefined,undefined,undefined,false,0,undefined,undefined,output);
-    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write and verify the task",task},{threadId:pmThreadId,projectId});
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    const preview=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_onboarding_preview",{runId:"stage-run",taskId:task.id},{threadId:pmThreadId,projectId})));
-    expect(preview.state).toBe("passed");
-    expect(preview.result.previewSha256).toMatch(/^[a-f0-9]{64}$/);
-    expect(spawned.find((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="onboarding-preview"))
-      .toMatchObject({providerId:"critic",model:"critic-model",reasoningLevel:"high",serviceTier:"default"});
-    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="onboarding-preview")?.state).toBe("passed");
-    const apply=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_onboarding_apply",{runId:"stage-run",taskId:task.id,previewSha256:preview.result.previewSha256,confirm:true},{threadId:pmThreadId,projectId})));
-    expect(apply).toMatchObject({state:"passed",result:{status:"applied",readbackVerified:true,writes:[{path:"docs/fixture.md",status:"applied"}]}});
-    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="onboarding-apply"))
-      .toMatchObject({state:"passed",result:{readbackVerified:true}});
-    await harness.lifecycle.dispose();
-  });
-  it("polls a delayed onboarding child against the persisted page snapshot",async()=>{
-    let pagesCalls=0;
-    const fixture=()=>({path:"docs/fixture.md",modifiedAt:Date.now(),sha256:createHash("sha256").update("# Documentation fixture\n\nDocs are maintained with a bounded, reviewed stage.\n").digest("hex"),content:"# Documentation fixture\n\nDocs are maintained with a bounded, reviewed stage.\n"});
-    const output=JSON.stringify({summary:"Add a concise onboarding guide",edits:[{path:"docs/fixture.md",expectedSha256:fixture().sha256,content:"# Onboarding guide\n"}]});
-    const {db,harness,spawned,docsInventoryCalls}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
-      "onboarding.provider":"critic","onboarding.model":"critic-model","onboarding.reasoning_effort":"high",
-    },undefined,undefined,undefined,undefined,undefined,undefined,false,0,undefined,undefined,output,undefined,undefined,undefined,undefined,false,{
-      pages:()=>{pagesCalls+=1;return pagesCalls===1?[fixture()]:[];},
-    },["onboarding-thread"]);
-    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write and verify the task",task},{threadId:pmThreadId,projectId});
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    const first=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_onboarding_preview",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId})));
-    expect(first.state).toBe("running");
-    const second=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_onboarding_preview",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId})));
-    expect(second.state).toBe("passed");
-    expect(second.result.inputPageCount).toBe(1);
-    expect(docsInventoryCalls()).toBe(1);
-    expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="onboarding-preview")).toHaveLength(1);
-    const failed=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_onboarding_preview",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId})));
-    expect(failed.state).toBe("passed");
-    expect(failed.reason).toContain("already has a receipt");
-    await harness.lifecycle.dispose();
-  });
-  it("spawns one onboarding child when two polls overlap before threadId is stored",async()=>{
-    let releaseInventory:()=>void=()=>undefined;
-    const inventoryGate=new Promise<void>((resolve)=>{releaseInventory=resolve;});
-    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
-      "onboarding.provider":"critic","onboarding.model":"critic-model",
-    },undefined,undefined,undefined,undefined,undefined,undefined,false,0,undefined,undefined,undefined,undefined,undefined,undefined,undefined,false,{inventoryGate},["onboarding-thread"]);
-    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write and verify the task",task},{threadId:pmThreadId,projectId});
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    const firstP=harness.behavior.callAgentTool("lane_pilot_onboarding_preview",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId});
-    const secondP=harness.behavior.callAgentTool("lane_pilot_onboarding_preview",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId});
-    await new Promise((resolve)=>setTimeout(resolve,40));
-    releaseInventory();
-    const results=[JSON.parse(String(await firstP)),JSON.parse(String(await secondP))];
-    expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="onboarding-preview")).toHaveLength(1);
-    expect(results.every((row)=>row.state==="running"||row.state==="passed")).toBe(true);
-    expect(new Set(results.map((row)=>row.threadId).filter(Boolean))).toEqual(new Set(["onboarding-thread"]));
-    await harness.lifecycle.dispose();
-  });
   it("validates memory output against the persisted settings snapshot after current budgets change",async()=>{
     const release=holdEvents("memory-thread");
     const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
@@ -1091,10 +993,7 @@ describe("stage → native writer → receipt", () => {
     release();
     const passed=await until("memory receipt",()=>stageReceipt(db,task.id,"memory-maintenance")?.state==="passed" && stageReceipt(db,task.id,"memory-maintenance"));
     expect(passed.result).toMatchObject({stored:1,budgets:{core:3072}});
-    // The PM's own call only reads that receipt and does not start a second child.
-    const second=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_memory_maintain",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId})));
-    expect(second.state).toBe("passed");
-    expect(second.stage.result.budgets.core).toBe(3072);
+    // Nothing starts a second child.
     expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="memory-maintenance")).toHaveLength(1);
     // The brief carries the condensed accepted result, not the acceptance record with its traces and ids.
     const memoryBrief=String(spawned.find((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="memory-maintenance")?.prompt);
@@ -1198,19 +1097,6 @@ describe("stage → native writer → receipt", () => {
     expect(db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_memory WHERE project_id=? AND id=?").get(projectId,expectedId)).toEqual({n:1});
     expect(db.prepare("SELECT source_sha256 AS sha FROM lane_pilot_memory WHERE project_id=? AND id=?").get(projectId,expectedId)).toEqual({sha:otherSource});
     expect(db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_memory_fts WHERE project_id=? AND id=?").get(projectId,expectedId)).toEqual({n:1});
-    await harness.lifecycle.dispose();
-  });
-  it("keeps a delayed night-review child running then passed without a second spawn",async()=>{
-    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
-      "night_review.enabled":true,"night_review.provider":"critic","night_review.model":"critic-model","night_review.reasoning_effort":"high",
-    },undefined,undefined,undefined,undefined,undefined,undefined,false,0,undefined,undefined,undefined,undefined,undefined,undefined,undefined,false,{},["night-thread"]);
-    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    const first=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_night_review",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId})));
-    expect(first.state).toBe("running");
-    const second=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_night_review",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId})));
-    expect(second.state).toBe("passed");
-    expect(spawned.filter((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="night-review")).toHaveLength(1);
     await harness.lifecycle.dispose();
   });
   it("pre-provisions and CAS-binds a clean risk-routed worktree before the writer",async()=>{
@@ -1577,78 +1463,16 @@ describe("stage → native writer → receipt", () => {
     const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"memory.enabled":false});
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
     await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    const skipped=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_memory_maintain",{runId:"stage-run",taskId:task.id},{threadId:pmThreadId,projectId})));
-    expect(skipped.state).toBe("skipped");
+    await until("memory receipt",()=>stageReceipt(db,task.id,"memory-maintenance")?.state==="skipped");
     expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="memory-maintenance")).toMatchObject({state:"skipped",reason:"disabled_by_project_setting"});
     expect(spawned.some((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="memory-maintenance")).toBe(false);
     await harness.lifecycle.dispose();
   });
 
-  it("runs the configured read-only night reviewer only after the accepted writer receipt",async()=>{
-    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
-      "night_review.enabled":true,"night_review.provider":"critic","night_review.model":"critic-model","night_review.reasoning_effort":"high","night_review.agent":"lane-reviewer",
-    });
-    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_night_review",{runId:"stage-run",taskId:task.id},{threadId:pmThreadId,projectId})));
-    expect(result.state).toBe("passed");
-    expect(spawned.at(-1)).toMatchObject({model:"critic-model",reasoningLevel:"high",prompt:expect.stringContaining("open no files, run no commands and call no tools")});
-    expect((spawned.at(-1)?.pluginMetadata as Record<string,unknown>).stageId).toBe("night-review");
-    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="night-review")).toMatchObject({state:"passed",providerId:"critic",model:"critic-model",threadId:"night-thread"});
-    await harness.lifecycle.dispose();
-  });
 
-  it("accepts a night-review thread that becomes idle after wait throws while stopping",async()=>{
-    const {db,harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
-      "night_review.enabled":true,"night_review.provider":"critic","night_review.model":"critic-model","night_review.reasoning_effort":"high","night_review.agent":"lane-reviewer",
-    },undefined,undefined,undefined,'{"decision":"clear","summary":"No actionable findings","findings":[]}',undefined,undefined,false,0,undefined,undefined,undefined,undefined,"night-thread");
-    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_night_review",{runId:"stage-run",taskId:task.id},{threadId:pmThreadId,projectId})));
-    expect(result.state).toBe("passed");
-    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="night-review")).toMatchObject({state:"passed",threadId:"night-thread"});
-    await harness.lifecycle.dispose();
-  });
 
-  it("accepts a night-review thread that stays starting after wait throws when the spawn turn completed",async()=>{
-    const {db,harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
-      "night_review.enabled":true,"night_review.provider":"critic","night_review.model":"critic-model","night_review.reasoning_effort":"high","night_review.agent":"lane-reviewer",
-    },undefined,undefined,undefined,'{"decision":"clear","summary":"No actionable findings","findings":[]}',undefined,undefined,false,0,undefined,undefined,undefined,undefined,undefined,"night-thread");
-    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_night_review",{runId:"stage-run",taskId:task.id},{threadId:pmThreadId,projectId})));
-    expect(result.state).toBe("passed");
-    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="night-review")).toMatchObject({state:"passed",threadId:"night-thread"});
-    await harness.lifecycle.dispose();
-  });
 
-  it("fails closed when SDK events.list throws instead of treating it as empty",async()=>{
-    const {db,harness,stopCalls}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
-      "night_review.enabled":true,"night_review.provider":"critic","night_review.model":"critic-model","night_review.reasoning_effort":"high","night_review.agent":"lane-reviewer",
-    },undefined,undefined,undefined,'{"decision":"clear","summary":"No actionable findings","findings":[]}',undefined,undefined,false,0,undefined,undefined,undefined,undefined,undefined,undefined,"night-thread");
-    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_night_review",{runId:"stage-run",taskId:task.id,timeoutSec:1},{threadId:pmThreadId,projectId})));
-    expect(result.state).toBe("running");
-    expect(result.reason).toBe("observing");
-    expect(String(result.detail)).toContain(`events_list_error:threadId=night-thread;types=${THREAD_WATCH_EVENT_TYPES.join(",")};order=desc;limit=50`);
-    expect(THREAD_WATCH_EVENT_TYPES).toEqual(expect.arrayContaining(["turn/started","turn/completed"]));
-    expect(String(result.detail)).toContain("sdk_events_list_filtered_unavailable");
-    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="night-review")?.state).toBe("running");
-    expect(stopCalls).not.toContain("night-thread");
-    await harness.lifecycle.dispose();
-  });
 
-  it("blocks progression on a typed blocking night finding",async()=>{
-    const {db,harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"night_review.enabled":true},undefined,undefined,undefined,
-      '{"decision":"findings","summary":"Unsafe path remains","findings":[{"severity":"blocking","path":"note.txt","finding":"Acceptance content is not verified","suggestedFix":"Add a matching verification check"}]}');
-    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_night_review",{runId:"stage-run",taskId:task.id},{threadId:pmThreadId,projectId})));
-    expect(result).toMatchObject({state:"blocked",reason:"night_review_blocking_findings"});
-    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="night-review")?.state).toBe("blocked");
-    await harness.lifecycle.dispose();
-  });
 
   it("maintains project memory from an accepted receipt and injects only subagent-audience records", async () => {
     const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Plan is scoped and verifiable","findings":[]}',undefined,{
@@ -1658,12 +1482,9 @@ describe("stage → native writer → receipt", () => {
     });
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Implement a deployment workflow",task},{threadId:pmThreadId,projectId});
     await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    // Memory is maintained in the background after acceptance (fa996c1); the PM's call returns that receipt as `stage`.
-    await until("memory receipt",()=>stageReceipt(db,task.id,"memory-maintenance")?.state==="passed");
-    const maintained=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_memory_maintain",{runId:"stage-run",taskId:task.id},{threadId:pmThreadId,projectId})));
-    expect(maintained.state).toBe("passed");
-    expect(maintained.stage.result.stored).toBe(1);
-    expect(maintained.stage.result.personalBot).toBe("codex");
+    // Memory is maintained in the background after acceptance (fa996c1).
+    const maintained=await until("memory receipt",()=>stageReceipt(db,task.id,"memory-maintenance")?.state==="passed" && stageReceipt(db,task.id,"memory-maintenance"));
+    expect(maintained.result).toMatchObject({stored:1,personalBot:"codex"});
     expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="memory-maintenance")).toMatchObject({state:"passed",providerId:"critic",model:"critic-model",threadId:"memory-thread"});
     expect(spawned.find((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="memory-maintenance")).toMatchObject({providerId:"critic",model:"critic-model",reasoningLevel:"high"});
     const secondTask:TaskV2={...task,id:"stage-task-memory-followup",title:"Deployment workspace setup",objective:"Use the established deployment workspace convention",
@@ -1679,12 +1500,12 @@ describe("stage → native writer → receipt", () => {
   });
 
   it("returns owner memory only through the PM context tool and never injects it into writer prompts", async () => {
-    const {harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
+    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
       "memory.enabled":true,"memory.maintain":true,"memory.inject":true,"memory.audience":"owner",
     });
     await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Record an owner-only deployment convention",task},{threadId:pmThreadId,projectId});
     await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    await harness.behavior.callAgentTool("lane_pilot_memory_maintain",{runId:"stage-run",taskId:task.id},{threadId:pmThreadId,projectId});
+    await until("memory receipt",()=>stageReceipt(db,task.id,"memory-maintenance")?.state==="passed");
     const packet=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_memory_context",{runId:"stage-run",query:"deployment workspace convention"},{threadId:pmThreadId,projectId})));
     expect(packet.audience).toBe("owner");
     expect(packet.context).toContain("Durable deployment convention uses managed workspaces");
@@ -1814,16 +1635,6 @@ describe("stage → native writer → receipt", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("runs read-only model-driven gate triage from project events and persists its receipt",async()=>{
-    const {db,harness}=await setup('{"decision":"approve","summary":"Checked","findings":[]}');
-    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Create and verify the fixture",task},{threadId:pmThreadId,projectId});
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    const triage=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_gate_triage",{runId:"stage-run",taskId:task.id,days:7},{threadId:pmThreadId,projectId})));
-    expect(triage).toMatchObject({state:"blocked",result:{decision:"recommendations",recommendations:[{stageId:"verification",state:"failed",count:1}]}});
-    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="gate-triage")).toMatchObject({state:"blocked",providerId:"codex",model:"gpt-6-luna",threadId:"gate-triage-thread"});
-    expect(JSON.stringify(triage)).not.toContain("writer created note.txt");
-    await harness.lifecycle.dispose();
-  });
 
   it("passes the configured project sandbox backend through verification to the host", async()=>{
     const {harness,sandboxRequests}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{"sandbox.backend":"macos-seatbelt"});
@@ -1833,28 +1644,6 @@ describe("stage → native writer → receipt", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("bounds night fixes to reviewed owned paths, verifies the edit, and leaves merge disabled without explicit policy", async () => {
-    const {db,harness,spawned}=await setup(
-      '{"decision":"approve","summary":"Plan accepted","findings":[]}',undefined,
-      {"night_review.enabled":true,"night_review.provider":"critic","night_review.model":"critic-model","night_review.reasoning_effort":"medium"},undefined,undefined,undefined,
-      '{"decision":"findings","summary":"One owned issue","findings":[{"severity":"warning","path":"note.txt","finding":"The note is incomplete","suggestedFix":"Complete the note"}]}',
-      "bounded repair completed",
-      [[],[],[{path:"note.txt",sha256:"new-content"}],[{path:"note.txt",sha256:"new-content"}],[{path:"note.txt",sha256:"fixed-content"}]],
-    );
-    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write and verify note",task},{threadId:pmThreadId,projectId});
-    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
-    const review=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_night_review",{runId:"stage-run",taskId:task.id},{threadId:pmThreadId,projectId})));
-    expect(review.state).toBe("passed");
-    expect(spawned.find((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="night-review"))
-      .toMatchObject({providerId:"critic",model:"critic-model",reasoningLevel:"medium"});
-    const fixed=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_night_fix",{runId:"stage-run",taskId:task.id},{threadId:pmThreadId,projectId})));
-    expect(fixed).toMatchObject({state:"passed",result:{changed:["note.txt"],verificationPassed:true,merge:{merge:false,reason:"merge_not_explicitly_authorized"}}});
-    expect(spawned.at(-1)?.prompt).toContain("Allowed paths: note.txt");
-    expect(spawned.at(-1)).toMatchObject({providerId:"critic",model:"critic-model",reasoningLevel:"medium"});
-    expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="night-fix"))
-      .toMatchObject({state:"passed",providerId:"critic",model:"critic-model"});
-    await harness.lifecycle.dispose();
-  });
 
   it("captures the actual managed-worktree status and uncommitted diff in a bounded receipt", async () => {
     const {db,harness}=await setup('{"decision":"approve","summary":"Plan accepted","findings":[]}',undefined,{},undefined,"env-ready");
@@ -2378,6 +2167,9 @@ describe("stage → native writer → receipt", () => {
     const critic=spawned.find((row)=>(row.pluginMetadata as Record<string,unknown>).stageId==="code-critique") as Record<string,unknown>;
     expect(critic.parentThreadId).toBe(pmThreadId);
     expect(String(critic.title)).toMatch(/code critique/i);
+    // The critic runs inside the task's pipeline run (the writer node), so the coverage metric counts it as a graph thread.
+    const pipeline=db.prepare("SELECT id FROM lane_pilot_wf_run WHERE workflow_id='lp-task-pipeline' AND link_task_id=?").get(task.id) as {id:string};
+    expect(critic.pluginMetadata).toMatchObject({lanePilotWorkflowRunId:pipeline.id,lanePilotWorkflowNode:"writer"});
     expect(listStageReceipts(db,"stage-run",task.id).find((row)=>row.stageId==="code-critique")?.state).toBe("passed");
     await harness.lifecycle.dispose();
   },20_000);

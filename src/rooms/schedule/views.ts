@@ -13,6 +13,8 @@ export const runViewSchema = z.object({
   queuedAt: z.number(), startedAt: z.number().nullable(), finishedAt: z.number().nullable(), durationMs: z.number().nullable(),
   /** thread: the errand's thread (link `@thread:<refId>`); workflow_run: the workflow run id; host_job: the job on `hostId`. */
   refKind: z.string().nullable(), refId: z.string().nullable(), hostId: z.string().nullable(),
+  /** The thread the board opens for the run: the thread itself, or the one an errand's graph run spawned; null when the run has none. */
+  threadId: z.string().nullable(),
   exitCode: z.number().nullable(), output: z.string().nullable(), error: z.string().nullable(), truncated: z.boolean(),
   /**
    * What the run used, read from the run thread's token usage (schedule_runs / schedule_get fill it; elsewhere it is empty).

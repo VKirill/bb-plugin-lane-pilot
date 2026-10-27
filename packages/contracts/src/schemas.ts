@@ -325,6 +325,8 @@ export const workflowDetailSchema = workflowSummarySchema.extend({
   triggers: z.array(z.string()), requires: z.array(z.string()),
   budget: z.object({ maxSteps: z.number().nullable(), maxTokens: z.number().nullable(), maxCostUsd: z.number().nullable(), maxWallSeconds: z.number().nullable() }).strict(),
   qualityMode: z.string().nullable(), source: z.string(), sha256: z.string(),
+  /** The tool or event that starts this graph (a starter graph: Lane Pilot itself runs it, never the owner's button); null for any other. */
+  startedBy: z.string().nullable(),
   /** The live run that proved this version (a `tested` workflow whose run succeeded counts as published); null until one did. */
   proven: z.object({ runId: z.string(), at: z.number().int() }).strict().nullable(),
   /** The BB automations that run this workflow's schedule triggers (own, published workflows only). */

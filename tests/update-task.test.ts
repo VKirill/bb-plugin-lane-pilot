@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase, createRun, createTask, createAttempt, countAttempts, getAttempt, getTask, getTaskPlan, loadPrototypeConfig,
+import { openDatabase, createRun, createTask, createAttempt, countAttempts, getAttempt, getTask, getTaskGitBase, getTaskPlan, loadPrototypeConfig,
   savePrototypeConfig, listStageReceipts, saveProjectSetting, transitionAttempt } from "../src/rooms/storage/database";
 import { createWriterUpdateTask } from "../src/rooms/writer/server/update-task";
+import { registerDispatchExecutors, startDispatchRun } from "../src/rooms/writer/server/dispatch-workflow";
+import { builtinWorkflow } from "../src/rooms/workflow";
+import { WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { TaskV2 } from "../src/rooms/contracts";
 import type { ServerCore } from "../src/rooms/core/server/core";
 import type { Services } from "../src/rooms/core/server/services";
@@ -63,6 +66,21 @@ describe("lane_pilot_update_task", () => {
     verification: [{ command: "npm test", cwd: "/ws" }],
   };
 
+  /** The task's pipeline run as a dispatch leaves it: the real executors on a real engine, waiting at the writer (the folder is not git, the writer queue is a stub). */
+  async function dispatched(ctx: ServerCore, services: Services, task: TaskV2 = baseTask, config = loadPrototypeConfig(db, projectId)!) {
+    const engine = new WorkflowEngine({ db, harnessVersion: "1.0.0", resolveWorkflow: (id, version) => builtinWorkflow(id, version) });
+    registerDispatchExecutors(engine);
+    const started: string[] = [];
+    Object.assign(services, { workflowEngine: engine, isLiveFolder: async () => false, startWriterTask: (input: { task: TaskV2 }) => { started.push(input.task.title); } });
+    const mutable = ctx as unknown as { host?: unknown; refreshRun?: unknown };
+    mutable.host ??= { call: async (method: string) => (method === "gitOwnershipBase" ? { status: "not-git" } : { status: "ready", entries: [] }) };
+    mutable.refreshRun ??= () => undefined;
+    const run = startDispatchRun(engine, { ctx, services, threadId: pmThreadId, projectId, runId, taskId, attemptId: "att-1", config, runConfig: config,
+      workspacePath: "/ws", task, plan: task.objective, lintWarnings: [] });
+    expect((await run.done).status).toBe("waiting");
+    return { engine, started, pipelineRunId: run.runId };
+  }
+
   beforeEach(() => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     db = openDatabase(bb);
@@ -103,6 +121,7 @@ describe("lane_pilot_update_task", () => {
       stability: { loadParked: async () => [] },
     } as unknown as Services;
 
+    const { engine, started, pipelineRunId } = await dispatched(ctx, services);
     const { updateTask } = createWriterUpdateTask(ctx, services);
 
     const updatedTask: TaskV2 = {
@@ -135,18 +154,68 @@ describe("lane_pilot_update_task", () => {
 
     const receipts = listStageReceipts(db, runId, taskId);
     expect(receipts.some((r) => r.stageId === "plan-critique")).toBe(true);
+    expect(res.critiqueAllowed).toBe(true);
+
+    // The critique went again through the task's own pipeline run, from pm-read, and the run waits for the writer once more.
+    expect(engine.get(pipelineRunId)?.status).toBe("waiting");
+    const rerun = db.prepare("SELECT detail FROM lane_pilot_wf_event WHERE run_id=? AND kind='rerun'").all(pipelineRunId) as Array<{ detail: string }>;
+    expect(rerun).toHaveLength(1);
+    expect(rerun[0]!.detail).toContain("node pm-read");
+    const critiques = db.prepare("SELECT input_json FROM lane_pilot_wf_step WHERE run_id=? AND node_id IN ('plan-critique','plan-critique-quick') AND state='succeeded'").all(pipelineRunId);
+    expect(critiques).toHaveLength(1);
+    // The one pipeline run: no second run was started, and the writer's own queue was not started a second time by the update.
+    expect(db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_wf_run WHERE workflow_id='lp-task-pipeline'").get()).toEqual({ n: 1 });
+    expect(started.length).toBeGreaterThanOrEqual(1);
+    expect(getAttempt(db, "att-1")).toMatchObject({ state: "queued", reason: null });
+
+    // A second update goes again the same way: the first left the run waiting and the attempt free.
+    const again = await updateTask({ projectId, runId, pmThreadId, taskId, task: { ...updatedTask, title: "Updated twice" }, plan: "Third plan" });
+    expect(again.ok).toBe(true);
+    expect(engine.get(pipelineRunId)?.status).toBe("waiting");
+    expect(db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_wf_event WHERE run_id=? AND kind='rerun'").get(pipelineRunId)).toEqual({ n: 2 });
+    expect((getTask(db, taskId)?.contract as TaskV2).title).toBe("Updated twice");
+  });
+
+  it("keeps the base commit the task already has when its pipeline goes again", async () => {
+    createTask(db, { id: taskId, runId, kind: "bb", contract: baseTask });
+    createAttempt(db, { id: "att-1", runId, taskId });
+    const sha = "a".repeat(40);
+    const ctx = { bb: fakeBb as never, db, state: { disposed: false }, configForRun: async (id: string) => loadPrototypeConfig(db, id), log: () => {},
+      host: { call: async (method: string) => (method === "gitOwnershipBase"
+        ? { status: "ready", baseRef: "main", baseSha: sha, headSha: sha, branch: "main", compareCommitted: true } : { status: "ready", entries: [] }) } } as unknown as ServerCore;
+    const services = { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
+    const { engine, pipelineRunId } = await dispatched(ctx, services);
+    expect(getTaskGitBase(db, taskId)).toMatchObject({ base_sha: sha });
+    const res = await createWriterUpdateTask(ctx, services).updateTask({ projectId, runId, pmThreadId, taskId, task: { ...baseTask, title: "Updated title" }, plan: "New plan" });
+    expect(res.ok).toBe(true);
+    expect(engine.get(pipelineRunId)?.status).toBe("waiting");
+    expect(getTaskGitBase(db, taskId)).toMatchObject({ base_sha: sha });
+  });
+
+  it("refuses an update of a task that has no pipeline run, and changes nothing", async () => {
+    createTask(db, { id: taskId, runId, kind: "bb", contract: baseTask });
+    createAttempt(db, { id: "att-1", runId, taskId });
+    const ctx = { bb: fakeBb as never, db, state: { disposed: false }, configForRun: async (id: string) => loadPrototypeConfig(db, id), log: () => {} } as unknown as ServerCore;
+    const engine = new WorkflowEngine({ db, harnessVersion: "1.0.0" });
+    const { updateTask } = createWriterUpdateTask(ctx, { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] }, workflowEngine: engine } as unknown as Services);
+    const res = await updateTask({ projectId, runId, pmThreadId, taskId, task: { ...baseTask, title: "Updated title" }, plan: "New plan" });
+    expect(res).toMatchObject({ ok: false, error: { code: "pipeline_run_missing", sideEffects: "none" } });
+    expect((getTask(db, taskId)?.contract as TaskV2).title).toBe("Original title");
   });
 
   it("updates a task of a chat that switched Lane Pilot on in the composer: no project config, the run's own (Vampirism Fire 2026-10-23)", async () => {
     createTask(db, { id: taskId, runId, kind: "bb", contract: baseTask });
     createAttempt(db, { id: "att-1", runId, taskId });
     const runConfig = loadPrototypeConfig(db, projectId);
-    db.prepare("DELETE FROM lane_pilot_project_settings WHERE project_id=? AND key=?").run(projectId, "hostId");
-    expect(loadPrototypeConfig(db, projectId)).toBeNull();
     const asked: string[] = [];
     const ctx = { bb: fakeBb as never, db, state: { disposed: false }, log: () => {},
       configForRun: async (id: string) => { asked.push(id); return runConfig; } } as unknown as ServerCore;
-    const { updateTask } = createWriterUpdateTask(ctx, { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services);
+    const services = { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
+    await dispatched(ctx, services);
+    db.prepare("DELETE FROM lane_pilot_project_settings WHERE project_id=? AND key=?").run(projectId, "hostId");
+    expect(loadPrototypeConfig(db, projectId)).toBeNull();
+    asked.length = 0;
+    const { updateTask } = createWriterUpdateTask(ctx, services);
     const res = await updateTask({ projectId, runId, pmThreadId, taskId, task: { ...baseTask, title: "Updated title" }, plan: "New plan" });
     expect(res.ok).toBe(true);
     expect(asked).toEqual([projectId]);
@@ -159,6 +228,7 @@ describe("lane_pilot_update_task", () => {
     createAttempt(db, { id: "att-1", runId, taskId });
     const ctx = { bb: fakeBb as never, db, state: { disposed: false }, configForRun: async (id: string) => loadPrototypeConfig(db, id), log: () => {} } as unknown as ServerCore;
     const services = { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
+    await dispatched(ctx, services, moved);
     const { updateTask } = createWriterUpdateTask(ctx, services);
     // The PM sends it as it wrote it: from the run folder, with a reference file of another plugin.
     const asWritten: TaskV2 = { ...baseTask, title: "Updated title", owns_paths: ["plugins/p/src/**"], expected_outputs: ["plugins/p/out.txt"],
@@ -218,6 +288,7 @@ describe("lane_pilot_update_task", () => {
         host: {
           call: async (method: string, input: { paths?: string[] }) => {
             calls.push(method);
+            if (method === "gitOwnershipBase") return { status: "not-git" };
             if (method === "snapshotDryRun") {
               return { entries: (input.paths ?? []).map((path) => ({ path, kind: kinds[path.slice("/ws/".length)] ?? "missing" })) };
             }
@@ -229,7 +300,7 @@ describe("lane_pilot_update_task", () => {
         log: () => {},
       } as unknown as ServerCore;
       const services = { activeWriterTasks: new Set<string>(), stability: { loadParked: async () => [] } } as unknown as Services;
-      return { updateTask: createWriterUpdateTask(ctx, services).updateTask, calls };
+      return { updateTask: createWriterUpdateTask(ctx, services).updateTask, calls, ctx, services };
     };
     const update = (updateTask: ReturnType<typeof setup>["updateTask"], task: Partial<TaskV2>) =>
       updateTask({ projectId, runId, pmThreadId, taskId, task: { ...baseTask, depends_on: [], ...task } });
@@ -295,7 +366,8 @@ describe("lane_pilot_update_task", () => {
     });
 
     it("does not count the task being updated as an open task to overlap", async () => {
-      const { updateTask } = setup({});
+      const { updateTask, ctx, services } = setup({});
+      await dispatched(ctx, services);
       const res = await update(updateTask, { title: "New" });
       expect(res.ok).toBe(true);
       expect((getTask(db, taskId)?.contract as TaskV2).title).toBe("New");

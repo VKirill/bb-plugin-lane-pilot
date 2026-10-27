@@ -127,4 +127,20 @@ describe("re-running one node of a finished run", () => {
     expect(engine.get(runId)).toMatchObject({ status: "succeeded" });
     expect(audited).toEqual([false]);
   });
+
+  it("hands the re-run the runtime the caller gives, in place of the run's own", async () => {
+    const db = journalDb();
+    const seen: unknown[] = [];
+    let fail = true;
+    const engine = engineOn(db, {
+      search: ok((ctx: StepContext) => { seen.push(ctx.runtime); return { items: ["a"], count: 1, kind: "fresh" }; }),
+      write: ok(() => { if (fail) throw new Error("down"); return { text: "written" }; }),
+    });
+    const { runId, done } = engine.start({ workflow: wf(), inputs: { query: "q" }, runtime: { task: "old" } });
+    expect(await done).toMatchObject({ status: "failed" });
+    fail = false;
+    expect(await engine.rerunNode(runId, "search", { task: "new" })).toMatchObject({ ok: true });
+    await engine.idle();
+    expect(seen).toEqual([{ task: "old" }, { task: "new" }]);
+  });
 });

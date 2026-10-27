@@ -79,6 +79,10 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
     return rows.filter((row) => row.kind !== "internal").map((row) => ({ id: row.id, displayName: row.displayName ?? agentPickerLabel(row, (key) => t(key)), description: row.description }));
   }
 
+  /** The thread a run opens: an errand is a graph run (`workflow_run`), and the graph step noted the thread it spawned. */
+  const threadOfRun = (row: { ref_kind: string | null; ref_id: string | null }): string | null =>
+    row.ref_kind === "workflow_run" && row.ref_id ? errandRunThread(db, row.ref_id) : null;
+
   type Hosts = Awaited<ReturnType<typeof hostOptions>>;
   /** `extra` carries what only BB can tell (host names, the project's folder and section); without it `where` holds what the row itself knows. */
   function viewOf(row: ScheduleRow, next: number, extra?: { place?: ProjectPlace | undefined; hosts?: Hosts | undefined }): ScheduleView {
@@ -88,7 +92,7 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
     const model = task.kind === "errand" ? errandModelView(db, row.project_id, task) : null;
     const cost = model ? scheduleCost(db, row.id, model.model) : null;
     const where = whereOf(task, extra?.place, (id) => extra?.hosts?.find((host) => host.id === id)?.name ?? null);
-    return scheduleView(row, { nextFires: scheduler.nextFires(row, Math.min(Math.max(next, 0), MAX_NEXT)), machine: machineOf(row.project_id, task), last, active, model, cost, where });
+    return scheduleView(row, { nextFires: scheduler.nextFires(row, Math.min(Math.max(next, 0), MAX_NEXT)), machine: machineOf(row.project_id, task), last, active, model, cost, where, threadOf: threadOfRun });
   }
 
   /** The views of rows with the names and folders BB knows: the project, its section, the machine. */
@@ -230,13 +234,13 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
     return done;
   }
 
-  const runs = (id: string, limit = 50, offset = 0) => store.runsOf(id, Math.min(Math.max(limit, 1), 200), Math.max(offset, 0)).map(runView);
+  const runs = (id: string, limit = 50, offset = 0) => store.runsOf(id, Math.min(Math.max(limit, 1), 200), Math.max(offset, 0)).map((row) => runView(row, threadOfRun));
   const threadHost = createThreadHosts(ctx);
   /** The runs with what each used (model and cost from its thread's token usage) and the machine it ran on. */
   async function runsDetailed(id: string, limit = 50, offset = 0) {
     const hosts = await hostOptions();
     return Promise.all(runs(id, limit, offset).map(async (run) => {
-      const thread = run.refKind === "thread" && run.refId ? run.refId : run.refKind === "workflow_run" && run.refId ? errandRunThread(db, run.refId) : null;
+      const thread = run.threadId;
       const hostId = (thread ? await threadHost(thread).catch(() => null) : null) ?? run.hostId;
       return { ...run, ...(thread ? threadUsage(db, thread) : NO_USAGE), hostName: hostId ? hosts.find((host) => host.id === hostId)?.name ?? hostId : null };
     }));
@@ -254,7 +258,7 @@ export function createScheduleService(ctx: ServerCore, services: Services) {
       planned.push(...times.slice(0, CALENDAR_CAP).map((at) => ({ scheduleId: row.id, at })));
     }
     const past = (db.prepare(`SELECT * FROM lane_pilot_schedule_run WHERE scheduled_at>=? AND scheduled_at<=? AND status<>'skipped' AND schedule_id IN (${rows.map(() => "?").join(",") || "''"}) ORDER BY scheduled_at LIMIT 2000`)
-      .all(input.from, Math.min(input.to, Date.now()), ...rows.map((row) => row.id)) as Parameters<typeof runView>[0][]).map(runView);
+      .all(input.from, Math.min(input.to, Date.now()), ...rows.map((row) => row.id)) as Parameters<typeof runView>[0][]).map((row) => runView(row, threadOfRun));
     return { planned: planned.sort((a, b) => a.at - b.at), past, truncated };
   }
 

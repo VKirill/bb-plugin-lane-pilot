@@ -50,7 +50,6 @@ import { createStageChildren } from "./src/rooms/qa/server";
 import { createDocsStage } from "./src/rooms/docs/server";
 import { createMemoryStage } from "./src/rooms/memory/server";
 import { createNightStages } from "./src/rooms/night/server";
-import { createOnboardingStage } from "./src/rooms/project-life/server";
 import { createProjectLifeStage } from "./src/rooms/project-life/server";
 import { createQaStages } from "./src/rooms/qa/server";
 import { registerTools } from "./src/rooms/tools/server/tools";
@@ -103,10 +102,9 @@ export default async function plugin(bb: BbPluginApi) {
     createQaStages(ctx),
     createStageChildren(ctx),
     createDocsStage(ctx, services),
-    createOnboardingStage(ctx, services),
     createMemoryStage(ctx, services),
     createProjectLifeStage(ctx, services),
-    createNightStages(ctx, services),
+    createNightStages(ctx),
     createDocsNightly(ctx, services),
     createProbes(ctx, services),
     createWriterHost(ctx),

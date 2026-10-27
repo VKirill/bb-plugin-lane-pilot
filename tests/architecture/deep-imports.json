@@ -12,7 +12,6 @@
  "native-agent > settings": 1,
  "native-agent > ui-shell": 1,
  "native-agent > writer": 3,
- "night > tasks": 1,
  "relay > native-agent": 2,
  "runs > native-agent": 3,
  "runs > settings": 1,
