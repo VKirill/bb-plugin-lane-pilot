@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { roleModelKey, writerCandidates, type ModelCatalog } from "@lane-pilot/models";
+import { roleModelKey, writerCandidates, zcodeEnvironmentError, type ModelCatalog } from "@lane-pilot/models";
 import { resolveSpawnModel, spawnUsageOf } from "../src/rooms/core/server/spawn-model";
 import { fullAccessSpawn } from "../src/rooms/core/server/pm-spawn";
 import { noteZcodeThread, zcodeBusy, zcodeBusyPeek } from "../src/rooms/core/server/zcode-slot";
@@ -94,6 +94,29 @@ describe("the slot: a thread Lane Pilot started on ZCode holds it until BB says 
     expect(zcodeBusyPeek(bb)).toBe(false);
     for (const n of [1, 2, 3]) await fullAccessSpawn(bb, { providerId: "zcode", model: `glm-5.3-flash`, title: `z${n}` } as never);
     expect(zcodeBusyPeek(bb)).toBe(true);
+  });
+});
+
+describe("the last slot: two spawns checked in the same second", () => {
+  it("gives it to one; the other is refused with the bridge's «ZCode is busy», a free environment failure", async () => {
+    let n = 0;
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => { open = resolve; });
+    const spawn = vi.fn(async () => { await gate; return { id: `z${++n}` }; });
+    const bb = { sdk: { threads: { spawn, get: async () => ({ status: "active" }) }, providers: { list: async () => [] } }, log: { warn: () => undefined } } as never;
+    noteZcodeThread(bb, "busy-1");
+    noteZcodeThread(bb, "busy-2");
+    const first = fullAccessSpawn(bb, { providerId: "zcode", model: "glm-5.3-flash", title: "a" } as never);
+    const second = fullAccessSpawn(bb, { providerId: "zcode", model: "glm-5.3-flash", title: "b" } as never).catch((cause: Error) => cause);
+    const refused = await second;
+    open();
+    await first;
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(String(refused)).toMatch(/ZCode is busy/);
+    expect(zcodeEnvironmentError(String(refused))).not.toBeNull();
+    // Another provider never waits for ZCode's slots.
+    await fullAccessSpawn(bb, { providerId: "claude-code", model: "m", title: "c" } as never);
+    expect(spawn).toHaveBeenCalledTimes(2);
   });
 });
 

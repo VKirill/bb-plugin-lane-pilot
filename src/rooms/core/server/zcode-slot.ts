@@ -51,7 +51,22 @@ function stale(bb: object, now: number): string[] {
 
 /** How many tasks Lane Pilot keeps on ZCode at once: the bridge's default limit. */
 export const ZCODE_PARALLEL = 3;
-const anyBusy = (bb: object): boolean => [...mapOf(bb).values()].filter((seen) => seen.busy).length >= ZCODE_PARALLEL;
+/** Spawns on their way: counted with the busy threads, so two writers checked in the same second do not both get the last slot. */
+const pendingOf = new WeakMap<object, number>();
+const taken = (bb: object): number => [...mapOf(bb).values()].filter((seen) => seen.busy).length + (pendingOf.get(bb) ?? 0);
+const anyBusy = (bb: object): boolean => taken(bb) >= ZCODE_PARALLEL;
+
+/**
+ * Takes a slot for a spawn about to start on ZCode, at once (no await between the check and the count), or answers false when all are
+ * taken. The live test of 2026-10-27 started two writers in the same second: both had passed the check, the thread was noted only after
+ * its spawn, and both went to ZCode. The caller calls the returned release after the spawn, whatever its outcome.
+ */
+export function reserveZcodeSlot(bb: object): (() => void) | null {
+  if (anyBusy(bb)) return null;
+  pendingOf.set(bb, (pendingOf.get(bb) ?? 0) + 1);
+  let released = false;
+  return () => { if (!released) { released = true; pendingOf.set(bb, Math.max(0, (pendingOf.get(bb) ?? 1) - 1)); } };
+}
 
 /** Whether ZCode's slots are all taken by Lane Pilot threads, as last known; stale entries are read again in the background. Never waits, never throws. */
 export function zcodeBusyPeek(bb: BbPluginApi, now = Date.now()): boolean {

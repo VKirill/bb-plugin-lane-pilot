@@ -4,7 +4,7 @@ import { RunBudgetExceeded, type RunBudget } from "@lane-pilot/resilience";
 import { isZcodeProvider } from "@lane-pilot/models";
 import { spawnKeyed } from "./thread-keys";
 import { stringAt } from "./values";
-import { noteZcodeThread } from "./zcode-slot";
+import { noteZcodeThread, reserveZcodeSlot } from "./zcode-slot";
 
 /**
  * The PM agents the machine's guard (~/.agents/hooks/guard_shell.py: PM_AGENTS, lane-pilot-pm) reads the rules of: it keys
@@ -165,10 +165,15 @@ export function fullAccessSpawn(bb: BbPluginApi, args: Parameters<BbPluginApi["s
       },
     } as Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0] & Record<string, unknown>;
     // With the VK thread keys the spawn is idempotent: a lost answer repeated returns the same thread (thread-keys.ts).
-    const spawned = await spawnKeyed(bb, full, () => bb.sdk.threads.spawn(full));
-    // The ZCode app takes one task at a time: the thread holds its slot until BB says it is idle (zcode-slot.ts).
-    if (isZcodeProvider(args.providerId)) noteZcodeThread(bb, stringAt(spawned, "id"));
-    return spawned as Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["spawn"]>>;
+    // ZCode runs a few tasks at once: a spawn takes its slot before it starts, and the thread holds it until BB says it is idle (zcode-slot.ts).
+    // All slots taken is the bridge's own «ZCode is busy», a free environment failure: the task goes to another model.
+    const release = isZcodeProvider(args.providerId) ? reserveZcodeSlot(bb) : () => undefined;
+    if (!release) throw new Error("ZCode is busy: all its parallel slots are taken by Lane Pilot tasks");
+    try {
+      const spawned = await spawnKeyed(bb, full, () => bb.sdk.threads.spawn(full));
+      if (isZcodeProvider(args.providerId)) noteZcodeThread(bb, stringAt(spawned, "id"));
+      return spawned as Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["spawn"]>>;
+    } finally { release(); }
   })();
 }
 
