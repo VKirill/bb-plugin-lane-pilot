@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.337
+
+The second review round (Fable's and Astra's rechecks of 0.1.330–0.1.336, `.bb/chats/thr_grntj73eg5/artifacts/*/RECHECK-336.md`) found that some fixes of 0.1.336 were made unsafely. This release corrects them.
+
+**A stage that fails for Lane Pilot's own reasons never cuts the phase.** Every live stage failure ever booked (repo_edited, a missing output field, guard:maxVisits, plugin_stopped, budget_exceeded, provider_error, a binary read) was Lane Pilot's; under 0.1.336 two of them would have stopped an owner's phase for good. They now wait for a release that fixes them and run again; only verdicts about the work (a plan not admitted, a drawing not confirmed) count toward the phase's tries. A gate's refusal books its reasons. An analysis that names a security risk writes and signs SECURITY.md with the context — the live drill phase failed its plan gate on the missing threat model.
+
+**A spent loop stops the phase as partial; it never closes it.** 0.1.336 closed a phase «on its proved pieces» even with the goal unmet and a critic's block. Now it stops with a partial record (accepted pieces kept, unproven pieces and unmet obligations listed, lessons needed); `closed` comes only from the normal acceptance. A piece with no plan-fact or checks receipt, or a code-critic block, is not proven. The spent-replans outcome is entered once.
+
+**A walled topic stays closed.** A finished hunt — even one that never ran or found nothing — reopened the topic. Now a topic in the backlog is refused for any task id, redo, mainfix or workflow task; one new try is allowed only with `incident: <wall key>`, a new `hypothesis:` and a check no earlier try used, and the wall closes only when that try is accepted.
+
+**One reading of a check's result** (`readCheckRun`: pass / product_fail / environment_error / not_run) for the writer, the merge replay, the post-merge check and the gate. A real red is not erased by a re-run the machine killed; a check that could not run holds the merge as «environment» (free) — except on a host with no sandbox at all, where the merge goes on and main's check runs it; a mainfix needs a reproduced product red; the gate refuses a zero-test green; several named scenarios each must run a test.
+
+**Night acceptance and bench.** A repair whose class recurred on its version is reverted, not kept; a missing drill receipt is no evidence (pending); recurrence counts attempts exposed to the class. A bench verdict needs 80% of the asked tasks paired, a budget-stopped arm is unfinished, and a pass says «not worse» or «better».
+
+**Questions, waves, roles, deferrals.** A writer's product-decision question is not answered by the machine's default: the attempt ends uncharged with the question, and the owner's morning list gets it. A blocked wave pilot that nothing will redo releases its wave at once instead of holding it six hours. Only the author of a phase stage writes its documents; a critic writes none. A deferral has no term unless a human gave one: open, no term, unproven in its project's acceptance, never silently «overdue»; the wall backlog no longer opens agent-term deferrals.
+
+**Check history by folder.** A check is (project, folder, command): `cd appA && npm test` and `cd appB && npm test` no longer share timeouts, quoted text is not rewritten, `cd game && X` from the root equals X run in game/.
+
+**Releases check types.** The 11 old type errors in five tests are fixed and the deploy runs `tsc` before the tests. The PM reads the gate vocabulary in the dispatch tool's instructions.
+
 ## 0.1.336
 
 The machine, not the PM chat, ends its own loops (Fable's review against Matvey Maslov's system, `.bb/chats/thr_grntj73eg5/artifacts/fable-review/`, and Astra's Vampirism Fire audit).
