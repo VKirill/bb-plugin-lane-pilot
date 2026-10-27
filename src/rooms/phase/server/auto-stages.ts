@@ -14,6 +14,9 @@ export type AutoKind = "analyze" | "plan" | "draw" | "review" | "close" | "lesso
 /** Not a workflow: the machine signs again the documents a return to discussion left (the PM's or the owner's correction). */
 export type AutoDue = { kind: AutoKind; wave?: number } | { kind: "resign" } | { kind: "replan" };
 /** How many times the machine returns a phase to planning after a failed verdict before the loop is spent. */
+/** A stage run that failed for Lane Pilot's own reasons (its guard, its output contract, its runtime, a provider), not because of the work. */
+export const MACHINE_STAGE_FAILURE = /repo_edited|artifact_invalid|output_invalid|output field "[^"]+" is missing|thread_failed|thread_id_missing|plugin_stopped|interrupted by a reload|budget_exceeded|provider_error|writer_stream_error|read_binary_rejected|guard:|no_pm_environment|internal_error|timed out waiting/i;
+
 export const AUTO_REPLANS = 2;
 export const AUTO_WORKFLOWS: Record<AutoKind, string> = { analyze: "lp.analyze", plan: "lp.plan", draw: "lp.draw", review: "lp.review", close: "lp.close", lessons: "retrospective" };
 /** Failed runs of one stage's workflow before the loop is spent. */
@@ -173,6 +176,18 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
   const version = deps.version ?? packageJson.version;
   /** Counts a failed run of a stage's workflow. True when that spent the stage's tries: the loop is ended by the machine (scope cut, hunters, backlog), not handed to the PM. */
   const fail = async (phase: Phase, kind: AutoKind, why: string): Promise<boolean> => {
+    // Lane Pilot's own fault is no loop of the product: the stage waits for a release that fixes it and runs again then (auto_retry on a new
+    // version); it does not count toward the phase's life and never cuts its scope. Every one of the 15 live stage failures before 0.1.336 was
+    // of this kind (repo_edited, a missing output field, guard:maxVisits, plugin_stopped, budget_exceeded, provider_error, a binary read),
+    // and under 0.1.336 a pair of them would have stopped the owner's phase for good (Fable's recheck, 2026-10-27).
+    if (MACHINE_STAGE_FAILURE.test(why)) {
+      const failures = { ...(phase.record.autoFailures ?? {}), [kind]: (phase.record.autoFailures?.[kind] ?? 0) + 1 };
+      const waits = failures[kind]! >= AUTO_TRIES;
+      deps.book(phase, "decisions", "auto_failed", `${AUTO_WORKFLOWS[kind]} did not finish (${why}): Lane Pilot's own fault, not the work's — ${waits ? "the stage waits for a release that fixes it and runs again then" : "run again on the next pass"}; the phase's scope is not cut`);
+      ctx.log(`phase stage failed from Lane Pilot: ${AUTO_WORKFLOWS[kind]}: ${why.slice(0, 300)}`);
+      deps.save(phase.id, { ...phase.record, auto: undefined, autoFailures: failures, autoFailuresVersion: version });
+      return false;
+    }
     const failures = { ...(phase.record.autoFailures ?? {}), [kind]: (phase.record.autoFailures?.[kind] ?? 0) + 1 };
     const total = { ...(phase.record.autoFailuresTotal ?? {}), [kind]: (phase.record.autoFailuresTotal?.[kind] ?? 0) + 1 };
     const lifetime = total[kind]! >= AUTO_LIFETIME_TRIES;

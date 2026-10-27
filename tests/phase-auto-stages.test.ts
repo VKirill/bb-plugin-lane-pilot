@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AUTO_LIFETIME_TRIES, AUTO_TRIES, autoDue, contextDoc, createAutoStages, planItems } from "../src/rooms/phase/server/auto-stages";
+import { MACHINE_STAGE_FAILURE, AUTO_LIFETIME_TRIES, AUTO_TRIES, autoDue, contextDoc, createAutoStages, planItems } from "../src/rooms/phase/server/auto-stages";
 import type { Phase, PhaseRecord } from "../src/rooms/phase/logic";
 
 const phaseAt = (stage: string, record: PhaseRecord = {}, state = "active"): Phase => ({ id: "ph_1", projectId: "p", pmThreadId: "thr_pm", runId: "run1", title: "Notes",
@@ -186,6 +186,21 @@ describe("the machine's pass", () => {
     expect(await w.auto.step(w.get())).toBe(false);
     expect(w.get().record.autoFailures).toBeUndefined();
     expect(w.get().record.auto).toBeUndefined();
+  });
+  it("a stage that fails for Lane Pilot's own reasons waits for a fixed release: it never cuts the phase's scope (Fable's recheck, 2026-10-27)", async () => {
+    // Every stage failure the live phases ever booked, before 0.1.336. Only the planner's and the drawing's verdicts are about the work.
+    const machine = ["thread_failed: workflow_goal_audit:error:thread_status_error:provider_error:Provider error", "guard:maxVisits:plan_critic: \"plan\" has used its visits", "thread_failed: workflow_plan_critic:plugin_stopped", "budget_exceeded:steps", "output field \"scores_min\" is missing", "repo_edited: the analyst helper edited repository files it may not touch: .agents/phases/ph_26f65b142d/CONTEXT.md", "repo_edited: the planner helper edited repository files it may not touch: .agents/plans/ui3/plan-items.json", "repo_edited: the plan-critic helper edited repository files it may not touch: .agents/phases/ph_26f65b142d/design/src/fonts/fredoka-500.ttf,", "cannot read .agents/phases/ph_26f65b142d/design/00-kit.png: lane_pilot_read_binary_rejected"];
+    for (const why of machine) expect(MACHINE_STAGE_FAILURE.test(why), why).toBe(true);
+    for (const why of ["the drawing is not confirmed", "the plan is not admitted"]) expect(MACHINE_STAGE_FAILURE.test(why), why).toBe(false);
+    const w = world(null, "failed");
+    for (const run of ["wfrun_1", "wfrun_2", "wfrun_3"]) {
+      await w.auto.step(w.get());
+      w.runs.set(run, { status: "failed", output: null, error: "repo_edited: the analyst helper edited repository files it may not touch: src/app.ts" } as never);
+      await w.auto.step(w.get());
+    }
+    expect(w.calls.filter((call) => call.startsWith("exhausted"))).toEqual([]);
+    expect(w.get().record.autoFailuresTotal).toBeUndefined();
+    expect(w.get().record.autoFailures).toEqual({ analyze: AUTO_TRIES });
   });
   it("a run that fails counts and is run again on the next pass; the second failure ends the loop (the machine's outcome, not the PM's)", async () => {
     const w = world(null, "failed");
