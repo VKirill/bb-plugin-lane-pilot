@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.342
+
+The third review round (Astra's and Fable's RECHECK-341) and the full drill against 0.1.341 found these; all are fixed with reproducing tests.
+
+**Graphs tell the truth.** A graph whose work went red ended green: after-accept with project life failed, docs maintenance, a failed browser check. They now end red, the wall sees exactly one failure for each, and an accepted task stays accepted. A red browser-check verdict is the product's failure and opens no Lane Pilot class. The pipeline's browser-check gate waits for the acceptance receipt (up to 30 minutes, across a reload) instead of skipping the required check after 15 seconds.
+
+**A reload is no cancel.** It stopped the helper thread of every night graph (rules, wall hunters, harness); now the thread goes on and the next instance finds it again. A scheduled agent's hand-over with the same key returns the same phase, live or finished, and never opens a second one.
+
+**One model resolver before every spawn.** Every wrapper (helpers, council chair, architect, memory, project life, docs, browser QA, errand, self-repair, rules analyzer, router, goal audit) takes its model from the role table through one resolver; a provider and model always form a real pair (a GPT model never goes to claude-code); a judge is from the other family than its author for the plan critic, the auditor and the council chair too, applied after an availability fallback. Deliberate exceptions (council seats, the writer, a writer's repair turn, the PM chat, probes, bench, harness) are listed in a test.
+
+**Usage is charged per turn.** A sticky writer was charged the whole thread on every task; a reload charged nothing; browser QA and nested critics were never passed up. Each attempt now reads its own window of the thread, and the charges add up to the thread's real total.
+
+**The coverage line is honest.** The router's model step is a real graph run (`lp.route`); a thread counts as inside a graph only if its run and step exist; provider probes are left out. The self-repair «engine fault» direct path is taken only for a real engine fault.
+
+**Switching the agent of a PM chat hands the lead back**: the run is finished and nothing reads the chat as the PM any more; it is refused while writers, a phase or a graph of the run are at work. A failed switch changes nothing.
+
+**Phases.** A phase stopped by Lane Pilot's own fault resumes by itself once the fix ships, and a context signed without its threat model gets SECURITY.md written and re-signed (live ph_5cd09d1c7a). An approved plan that waits only for the owner's word is no longer planned again (the machine ran lp.plan six times). A later release voids a night repair's evidence only if it touched the repair's files.
+
+**The drill**: `live_word` left `owner.words` on in the sandbox (reset refuses that key silently), which held every later task and phase of the full drill; it now restores with a save and clears a leftover before it starts. A setting save retries once on a version conflict.
+
 ## 0.1.341
 
 **Every piece of Lane Pilot's work is a graph.** «Воркфлоу», «цепочка» and «граф» were three words for one thing, and next to the graph engine ran a dozen older side paths with no step journal, no schema-checked output, no budget, no goal audit and no nightly repair by failure class. Now there is one way: 69 built-in graphs, and the PM chat is the door, not the engine.
