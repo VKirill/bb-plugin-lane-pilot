@@ -83,14 +83,13 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
     sites: [{ file: "src/rooms/critique/server/critique-runs.ts", primitive: "reviewerMemoryFor", count: 1 }] },
   { id: "night.review", consumer: "the night review's prompt", carries: ["note", "core"], alwaysOn: ["core"], status: "probed",
     sites: [
-      { file: "src/rooms/night/server/night.ts", primitive: "reviewerMemoryFor", count: 1 },
       { file: "src/rooms/memory/server/memory-mix.ts", primitive: "mixReviewerMemory", count: 1 },
       { file: "src/rooms/memory/server/memory-mix.ts", primitive: "searchMemoryRecords", count: 1 },
       { file: "src/rooms/memory/server/memory-mix.ts", primitive: "listMemory", count: 2 },
     ] },
   { id: "council.evidence", consumer: "the evidence pack of a council of directors", carries: ["note", "core"], alwaysOn: [], status: "probed",
     sites: [
-      { file: "src/rooms/council/server/council.ts", primitive: "councilMemoryBlock", count: 1 },
+      { file: "src/rooms/council/server/council-graph.ts", primitive: "councilMemoryBlock", count: 1 },
       { file: "src/rooms/council/server/council.ts", primitive: "searchMemoryRecords", count: 1 },
       { file: "src/rooms/council/server/council.ts", primitive: "memoryContext", count: 1 },
     ] },

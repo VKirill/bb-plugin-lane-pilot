@@ -106,7 +106,7 @@ Every row is in the catalog (`scripts/ui-catalog-hand.json`, written by `scripts
 | `regress.budget_sec` | `src/rooms/baseline/logic.ts:189` | `budgetSec: number` |
 | `regress.bisect_steps` | `src/rooms/baseline/logic.ts:191` | `bisectSteps: number` |
 | `plan_fact.mode` | `src/rooms/writer/server/plan-fact.ts:9` | `PLAN_FACT_MODE_SETTING` |
-| `critic.code.default_for_risk` | `src/rooms/critique/quality-mode.ts:39` | `CODE_CRITIC_DEFAULT_SETTING` |
+| `critic.code.default_for_risk` | `src/rooms/critique/quality-mode.ts:49` | `CODE_CRITIC_DEFAULT_SETTING` |
 | `memory.note_budget` | `packages/memory-core/src/settings.ts:7` | `noteBudget` |
 
 Ranges are the readers' own: ``src/rooms/improvement/keys.ts:61`` repeats what `parseBaselineSettings` and `parseRegressSettings` clamp to, so a value the reader would silently change is refused when it is saved. `memory.note_budget` was saved unchecked and the memory reader threw on a value outside 1 to 1 000 000; it is now checked.
