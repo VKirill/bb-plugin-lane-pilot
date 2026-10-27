@@ -665,6 +665,11 @@ def scenario_provider_limit(ctx: Context) -> dict:
     row: dict = {}
     try:
         changed = setting_rpc("save_setting", {"projectId": ctx.project, "key": key, "value": BAD_MODEL, "expectedVersion": version})
+        if not changed.get("ok") and changed.get("conflict"):
+            # A reset row keeps its version generation (the settings table has no row, the RPC still knows version N): take the version
+            # the refusal names and save once more (live 2026-10-27: version 28, value null).
+            version = int(changed.get("version") or 0)
+            changed = setting_rpc("save_setting", {"projectId": ctx.project, "key": key, "value": BAD_MODEL, "expectedVersion": version})
         if not changed.get("ok"):
             return verdict("provider_limit", [f"could not set {key}: {json.dumps(changed)[:200]}"])
         version = int(changed["version"])
@@ -747,6 +752,9 @@ def owner_words(ctx: "Context", value: str) -> tuple[object, int]:
     saved = hubsql(f"select value, version from lane_pilot_project_settings where project_id='{ctx.project}' and binding_id='' and key='owner.words';")
     original, version = (json.loads(saved[0]["value"]), int(saved[0]["version"])) if saved else (None, 0)
     changed = setting_rpc("save_setting", {"projectId": ctx.project, "key": "owner.words", "value": value, "expectedVersion": version})
+    if not changed.get("ok") and changed.get("conflict"):
+        version = int(changed.get("version") or 0)
+        changed = setting_rpc("save_setting", {"projectId": ctx.project, "key": "owner.words", "value": value, "expectedVersion": version})
     return original, int(changed["version"])
 
 
