@@ -42,6 +42,12 @@ export const findProvider = (catalog: ModelCatalog, providerId: string): Catalog
 export const findModelIn = <T extends { id?: string; model?: string }>(models: readonly T[] | undefined, model: string): T | undefined => models?.find((row) => row.id === model || row.model === model);
 export const findModel = (provider: CatalogProvider | undefined, model: string): CatalogModel | undefined => findModelIn(provider?.models, model);
 
+/** The one provider that lists the model (by id or name); null when none or several do. */
+export function catalogProviderOf(catalog: ModelCatalog, model: string): string | null {
+  const owners = catalog.providers.filter((row) => findModel(row, model));
+  return owners.length === 1 ? owners[0]!.id : null;
+}
+
 /**
  * Whether the machine the helpers run on offers the model: true or false when the catalog can say, null when it cannot (no such machine in the
  * catalog, the machine did not answer, the provider or the model is not listed at all): unknown is never a reason to stop a step.

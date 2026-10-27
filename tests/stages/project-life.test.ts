@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  PROJECT_LIFE_DEFAULT_WRITER,
+  projectLifeServiceTier,
   projectLifeWriterSelection,
   findOutOfScopeProjectLifeWrites,
   foldCoveredTaskIds,
@@ -18,9 +18,11 @@ describe("project-life settings", () => {
     expect(parseProjectLifeSettings({ "project_life.enabled": "false" })).toEqual({ enabled: false });
   });
 
-  it("defaults the writer to codex/gpt-6-luna/high/fast", () => {
-    expect(PROJECT_LIFE_DEFAULT_WRITER).toEqual({ providerId: "codex", model: "gpt-6-luna", reasoningEffort: "high", serviceTier: "fast" });
-    expect(projectLifeWriterSelection({ "writer.provider": "acp-cursor", "writer.model": "grok-4.6" })).toEqual({ providerId: "codex", model: "gpt-6-luna" });
+  it("takes the project-life row of the role table (Haiku), never the project writer; the fast tier only on codex", () => {
+    expect(projectLifeWriterSelection({ "writer.provider": "acp-cursor", "writer.model": "grok-4.6" })).toEqual({ providerId: "claude-code", model: "claude-haiku-5-5" });
+    expect(projectLifeServiceTier({}, "codex")).toBe("fast");
+    expect(projectLifeServiceTier({ "project_life.service_tier": "standard" }, "codex")).toBe("standard");
+    expect(projectLifeServiceTier({}, "claude-code")).toBe("standard");
     expect(projectLifeWriterSelection({ "project_life.provider": "qwen", "project_life.model": "qwen-max" })).toEqual({ providerId: "qwen", model: "qwen-max" });
   });
 });

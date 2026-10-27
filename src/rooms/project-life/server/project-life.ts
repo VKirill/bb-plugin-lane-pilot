@@ -2,9 +2,9 @@ import { acceptanceArtifactDir } from "../../tasks";
 import { taskV2Schema } from "../../contracts";
 import { claimStageSpawn, getRun, getTask, listStageReceipts } from "../../storage";
 import { bbServiceTier, writerExecutionSelection } from "@lane-pilot/models";
-import { PROJECT_LIFE_DEFAULT_WRITER, findOutOfScopeProjectLifeWrites, foldCoveredTaskIds, parseProjectLifeFinalMessage, parseProjectLifeSettings, projectLifePrompt, projectLifeWriterSelection } from "../project-life";
+import { findOutOfScopeProjectLifeWrites, foldCoveredTaskIds, parseProjectLifeFinalMessage, parseProjectLifeSettings, projectLifePrompt, projectLifeServiceTier } from "../project-life";
 import { ProjectLifeChildSnapshot, childResultObject, projectLifeChildSnapshot, spawnRefused } from "../../runs/server";
-import { configuredSetting, stageHelperSettings } from "../../core/server";
+import { configuredSetting, modelCatalogOf, resolveSpawnModel, stageHelperSettings } from "../../core/server";
 import { fullAccessSpawn, graphStepMetadata } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { recordStage } from "../../runs/server";
@@ -33,12 +33,12 @@ export function createProjectLifeStage(ctx: ServerCore, services: Services) {
 
     const settings=await stageHelperSettings(bb,db,args.projectId,args.runId);
     const projectLifeSettings=parseProjectLifeSettings({"project_life.enabled":configuredSetting(settings,"project_life.enabled")});
-    const projectLifeSelection=projectLifeWriterSelection(settings);
-    const projectLifeProviderId=projectLifeSelection.providerId;
-    const projectLifeModel=projectLifeSelection.model;
-    const projectLifeEffort=typeof settings["project_life.reasoning_effort"]==="string"&&settings["project_life.reasoning_effort"]
-      ? settings["project_life.reasoning_effort"] as string : PROJECT_LIFE_DEFAULT_WRITER.reasoningEffort;
-    const projectLifeTier=settings["project_life.service_tier"]==="standard"?"standard":PROJECT_LIFE_DEFAULT_WRITER.serviceTier;
+    // The project-life row of the role table (the stage's own project_life.* settings still win), through the one resolver.
+    const projectLifeRole=resolveSpawnModel({role:"project-life",settings,catalog:modelCatalogOf(ctx).peek(),hostId:config.hostId});
+    const projectLifeProviderId=projectLifeRole.providerId;
+    const projectLifeModel=projectLifeRole.model;
+    const projectLifeEffort=projectLifeRole.reasoningEffort;
+    const projectLifeTier=projectLifeServiceTier(settings,projectLifeProviderId);
 
     const runReceipts=listStageReceipts(db,args.runId);
     const acceptedTaskIds=[...new Set(runReceipts.filter((row)=>row.stageId==="acceptance-receipt"&&row.state==="passed").map((row)=>row.taskId))];

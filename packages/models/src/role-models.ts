@@ -74,11 +74,11 @@ export const ROLE_TABLE: readonly RoleRow[] = [
   { id: "pm-reader", default: { model: "claude-haiku-5-5", effort: "low", why: "Reads long files and pulls out what the PM asked for: cheap, fast extraction." }, legacy: ["pm_read"] },
   { id: "rules-analyzer", default: { model: "gpt-6-luna", effort: "high", why: "Reads a project's failed writer attempts at night and writes the project rules that would have prevented them (and rewrites a rule that did not work). Luna with high effort set aside failures that were not the writers' where a stronger author wrote a rule that sent writers outside their paths; it is also the cheap one for a job that runs every night." } },
   { id: "triager", default: { model: "gpt-6-luna", effort: "high", why: "Sorts a failed gate into its class: a cheap judgment on the failure of a writer's work; Luna is cheap and, with high effort, reads a log as well as a Haiku." } },
-  { id: "memory", default: { model: "claude-haiku-5-5", effort: "medium", why: "Distils notes and facts into the memory: a small, careful text job." } },
-  { id: "project-life", default: { model: "claude-haiku-5-5", effort: "medium", why: "Keeps PROGRESS and CHANGELOG up to date from what happened: short factual text." } },
+  { id: "memory", default: { model: "claude-haiku-5-5", effort: "medium", why: "Distils notes and facts into the memory: a small, careful text job." }, legacy: ["memory"] },
+  { id: "project-life", default: { model: "claude-haiku-5-5", effort: "medium", why: "Keeps PROGRESS and CHANGELOG up to date from what happened: short factual text." }, legacy: ["project_life"] },
   { id: "errand", default: { model: "claude-sonnet-5-5", effort: "medium", why: "Runs a script, a send or a check as told: tool use, no deep thinking." }, legacy: ["errand"] },
-  { id: "browser-qa", default: { model: "claude-sonnet-5-5", effort: "medium", why: "Drives a browser and reports what it sees: fast, steady tool use." } },
-  { id: "docs-maintainer", default: { model: "gpt-6-luna", effort: "high", why: "Writes and refreshes the repository docs overnight from the code diff, many pages, each held to cited lines and then checked by code and Jev; Luna is cheap and, at high effort, careful enough for a text job with a hard checker behind it (the project's own docs.* settings still win)." } },
+  { id: "browser-qa", default: { model: "claude-sonnet-5-5", effort: "medium", why: "Drives a browser and reports what it sees: fast, steady tool use." }, legacy: ["browser_qa"] },
+  { id: "docs-maintainer", default: { model: "gpt-6-luna", effort: "high", why: "Writes and refreshes the repository docs overnight from the code diff, many pages, each held to cited lines and then checked by code and Jev; Luna is cheap and, at high effort, careful enough for a text job with a hard checker behind it (a docs.* selection set before the table keeps working until the table gets its own row)." }, legacy: ["docs"] },
   { id: "repairer", default: { model: "claude-opus-5-5", effort: "high", why: "The self-repair engineer: reads logs and the hub's data, finds the cause of Lane Pilot's own fault, fixes the code and adds the test that fails without the fix; an author of code, so the strongest author we have." } },
 ];
 
@@ -143,6 +143,23 @@ export function roleDefaultModel(rowId: string): RoleModel {
   const row = ROLE_TABLE.find((item) => item.id === rowId) ?? ROLE_TABLE[0]!;
   const option = roleModelOption(row.default.model)!;
   return { providerId: option.providerId, model: option.id, effort: row.default.effort, source: "default", sourceKey: null };
+}
+
+/**
+ * The provider a model runs on, so a provider and a model are never sent as a pair that cannot exist (a GPT model on claude-code).
+ * A provider the caller named stands, except that the two native providers cannot serve the other family's model of the table
+ * (`claude-code` + `gpt-6.1-sol` is `codex`). With no provider: the model's own row of the table, else what the catalog says
+ * (`catalogProvider`, only when it names one), else the family of the name, else null (the caller's default).
+ */
+export function consistentProvider(providerId: string | null | undefined, model: string, catalogProvider?: (model: string) => string | null | undefined): string | null {
+  const option = roleModelOption(model.slice(model.lastIndexOf("/") + 1));
+  const given = providerId?.trim() || null;
+  if (given && !(option && option.providerId !== given && (given === "claude-code" || given === "codex"))) return given;
+  if (option) return option.providerId;
+  const listed = catalogProvider?.(model);
+  if (listed) return listed;
+  const family = modelFamily(model);
+  return family === "claude" ? "claude-code" : family === "gpt" ? "codex" : null;
 }
 
 /**

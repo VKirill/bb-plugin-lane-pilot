@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { createHandoff } from "@lane-pilot/handoff";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import type { NodeExecutor, StepContext } from "@lane-pilot/workflow-engine";
-import { judgeAgainstAuthor, modelFamily, resolveRoleModel, writerExecutionSelection, findModelIn } from "@lane-pilot/models";
+import { modelFamily, writerExecutionSelection, findModelIn } from "@lane-pilot/models";
 import {
   CHAIR_SEAT_ID, IMPULSE_SCORES, MODERATOR_SEAT_ID,
   addCouncilMessage, agendaPrompt, chairPrompt, chooseSpeaker, createCouncilSession, decideRequestedIn, decisionFileName, decisionMarkdown, getCouncilSession,
@@ -14,7 +14,7 @@ import { getRun } from "../../storage";
 import { builtinWorkflow } from "../../workflow";
 import type { ChainRuntime } from "../../workflow/server";
 import { withUsage } from "../../usage/server";
-import { configuredSetting, fullAccessSpawn, graphStepMetadata, findThreadsByMetadata, keyedSpawnSupported, stringAt } from "../../core/server";
+import { configuredSetting, fullAccessSpawn, graphStepMetadata, findThreadsByMetadata, keyedSpawnSupported, modelCatalogOf, resolveSpawnModel, stringAt } from "../../core/server";
 import type { ServerCore, Services } from "../../core/server";
 import { councilOwnerForm, ownerLocale } from "../../relay/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
@@ -99,10 +99,10 @@ export function mountCouncilGraph(ctx: ServerCore, services: Services, council: 
     const seatModels = seats.map((seat) => (seat.providerId && seat.model ? { providerId: seat.providerId, model: seat.model } : null));
     const seatFamilies = new Set(seatModels.map((seat) => (seat ? modelFamily(seat.model) : null)));
     const seatAuthor = seatModels.length && seatFamilies.size === 1 && !seatFamilies.has(null) ? seatModels[0]! : null;
-    const tableChair = resolveRoleModel("council", settings);
-    const judged = judgeAgainstAuthor(tableChair, seatAuthor);
-    const chairRole = judged.changed ? { ...tableChair, providerId: judged.providerId, model: judged.model } : tableChair;
-    const chair: ChairPair = chairOwn ? { providerId: chairOwn.providerId, model: chairOwn.model, effort: chairOwn.effort ?? chairRole.effort } : { providerId: chairRole.providerId, model: chairRole.model, effort: chairRole.effort };
+    // The one resolver (core/server/spawn-model.ts): the table's chair, passed over for what the machine offers, then judged against the seats.
+    const chairRole = resolveSpawnModel({ role: "council", settings, author: seatAuthor, catalog: modelCatalogOf(ctx).peek(), hostId: config.hostId,
+      ...(chairOwn ? { pinned: { provider: chairOwn.providerId, model: chairOwn.model, reasoning: chairOwn.effort } } : {}) });
+    const chair: ChairPair = { providerId: chairRole.providerId, model: chairRole.model, effort: chairRole.reasoningEffort };
     const place = { hostId: config.hostId, workspace: config.writerWorkspacePath };
     if (existing) return { session: existing, place, chair };
     const roundsSetting = configuredSetting(settings, "council.max_rounds");

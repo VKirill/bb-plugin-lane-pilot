@@ -19,9 +19,9 @@ describe("the judge is of another family than the author, for every judge whose 
     expect(resolveAgentModel({ role: "plan-critic", settings: {}, pm: null })).toMatchObject({ model: "gpt-6.1-sol", issues: [] });
   });
 
-  it("keeps the table's pick when the peer is not offered on the machine, and never touches a pinned run or an author", () => {
+  it("keeps the table's pick, and says its independence is not met, when the peer is not offered on the machine; never touches a pinned run or an author", () => {
     const offered = (_: string, model: string) => model !== "claude-opus-5-5";
-    expect(resolveAgentModel({ role: "plan-critic", settings: {}, pm: null, author: sol, offered })).toMatchObject({ model: "gpt-6.1-sol", issues: [] });
+    expect(resolveAgentModel({ role: "plan-critic", settings: {}, pm: null, author: sol, offered })).toMatchObject({ model: "gpt-6.1-sol", issues: ["same_family_judge"] });
     expect(resolveAgentModel({ role: "auditor", settings: {}, pm: null, author: sol, pinned: { model: "gpt-6.1-sol", provider: "codex" } })).toMatchObject({ model: "gpt-6.1-sol", source: "pinned" });
     expect(resolveAgentModel({ role: "planner", settings: {}, pm: null, author: opus })).toMatchObject({ model: "claude-opus-5-5", issues: [] });
   });

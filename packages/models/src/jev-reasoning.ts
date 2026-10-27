@@ -1,3 +1,5 @@
+import { consistentProvider } from "./role-models";
+
 export type JevStatus = "ok"|"disabled"|"timeout"|"error";
 const SDK_REASONING_LEVELS = new Set(["none", "low", "medium", "high", "xhigh", "ultracode", "max", "ultra"]);
 
@@ -55,8 +57,9 @@ export function writerExecutionSelection(
   serviceTier:BbServiceTier|null,
   sources?: { reasoningLevel?: ExecutionFieldSource },
 ) {
+  // The last stop before a spawn for every wrapper: a provider and a model are never sent as a pair that cannot exist (a GPT model on claude-code).
   return {
-    providerId,
+    providerId:consistentProvider(providerId, model) ?? providerId,
     model,
     reasoningLevel:reasoningLevel as "none"|"low"|"medium"|"high"|"xhigh"|"ultracode"|"max"|"ultra",
     ...(serviceTier ? { serviceTier } : {}),
