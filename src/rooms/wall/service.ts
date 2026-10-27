@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { HeadPart } from "@lane-pilot/contracts";
 import { extractModelJson } from "../critique";
 import type { ChangeDescriptor } from "../policy";
-import { decideAcceptance, gateRepair, repairChange, type Acceptance, type AcceptanceEvidence, type GateDecision, type RepairFile } from "./acceptance";
+import { EVIDENCE_WAIT_MS, decideAcceptance, gateRepair, laterReleaseTouches, repairChange, type Acceptance, type AcceptanceEvidence, type GateDecision, type RepairFile } from "./acceptance";
 import { analysisPrompt, hunterPrompt, parseNightReport, repairBrief, taskWallMessage } from "./brief";
 import { hubFields, writeHubFields } from "../improvement";
 import { postOwnerItem } from "../owner-waiting";
@@ -64,6 +64,8 @@ export type WallPorts = {
   release: {
     drill(): Promise<{ version: string; at: number; ok: boolean } | null>;
     canary(): Promise<{ version: string; tripped: boolean; windowOpen: boolean } | null>;
+    /** The repository files changed from one released version to a later one; null when unknown (the release tags are not there). Absent in fakes: then a later release voids. */
+    changedBetween?(from: string, to: string): Promise<string[] | null>;
   };
   bench: {
     available(): Promise<boolean>;
@@ -546,6 +548,7 @@ export function createWall(deps: WallDeps) {
     const notes: string[] = [];
     const cfg = await config();
     notes.push(...resumeStuckRollbacks(now));
+    notes.push(...await rejudgeSuperseded(now));
     for (const row of listRepairs(db, { states: OPEN_REPAIR_STATES })) {
       if (row.state === "queued" && now - row.createdAt > QUEUED_STALE_MS) {
         updateRepair(db, row.id, { state: "failed", outcome: "never started within 12 hours" }, now);
@@ -578,6 +581,37 @@ export function createWall(deps: WallDeps) {
     return notes;
   }
 
+  const voidCache = new Map<string, boolean>();
+  /** Whether the releases from `shipped` to `later` touched the repair's files or the source files of its class (see `laterReleaseTouches`). Unknown files void. */
+  async function laterReleaseVoids(row: RepairRow, shipped: string, later: string): Promise<boolean> {
+    const key = `${row.id}:${shipped}:${later}`;
+    const known = voidCache.get(key);
+    if (known !== undefined) return known;
+    const laterFiles = await ports.release.changedBetween?.(shipped, later).catch(() => null) ?? null;
+    const cls = classOf(row);
+    const classFiles = laterFiles && cls ? (await ports.codeFiles(cls.reasonNorm.split(/<[a-z]+>/).map((part) => part.trim()).filter((part) => part.length >= 12).slice(0, 3)).catch(() => [])).map((file) => file.path) : [];
+    const repairFiles = ((row.policy as { change?: { files?: string[] } } | null)?.change?.files ?? []);
+    const voids = laterReleaseTouches({ repairFiles, classFiles, laterFiles });
+    if (laterFiles) voidCache.set(key, voids);
+    return voids;
+  }
+
+  /**
+   * Repairs the old rule set aside («a later release came in») within the evidence wait, judged again once under the rule of `laterReleaseVoids`, when it says the later release
+   * did not touch them: put back to `deployed`, so the next `followRelease` measures them on the running version.
+   */
+  async function rejudgeSuperseded(now: number): Promise<string[]> {
+    const notes: string[] = [];
+    for (const row of listRepairs(db, { states: ["unproven"] })) {
+      const acceptance = (row.acceptance ?? {}) as { rejudgedAt?: number };
+      if (acceptance.rejudgedAt || !row.shippedVersion || !/was released after/.test(row.outcome ?? "") || now - row.updatedAt > EVIDENCE_WAIT_MS || ports.version === row.shippedVersion) continue;
+      if (await laterReleaseVoids(row, row.shippedVersion, ports.version)) continue;
+      updateRepair(db, row.id, { state: "deployed", acceptance: { ...acceptance, rejudgedAt: now }, outcome: null }, now);
+      notes.push(`${row.id}: set aside by a later release, judged again`);
+    }
+    return notes;
+  }
+
   async function followRelease(row: RepairRow, cfg: WallConfig, now: number): Promise<string[]> {
     const acceptance = (row.acceptance ?? {}) as { mergedAtVersion?: string; deployedAt?: number; benchScore?: number; baselineScore?: number; revertedAt?: number };
     const mergedAt = acceptance.mergedAtVersion ?? row.versionBefore;
@@ -595,8 +629,11 @@ export function createWall(deps: WallDeps) {
     // The repair is judged by the release that carried it, not by whatever runs now: repairs shipped in 0.1.307 were compared with 0.1.328 and the
     // many changes between them were charged to three repairs. A later release means the candidate's own evidence is gone (the canary and the bench
     // arm describe the running version); the experiment is then inconclusive, not decided on the newer one.
+    // A later release voids this only when it touched the repair's files or its class's code; otherwise the running version carries on the measuring.
     const shipped = row.shippedVersion ?? ports.version;
-    const superseded = ports.version !== shipped ? ports.version : null;
+    let superseded = ports.version !== shipped ? ports.version : null;
+    let evidence = shipped;
+    if (superseded && !(await laterReleaseVoids(row, shipped, superseded))) { evidence = superseded; superseded = null; }
     const deployedAt = acceptance.deployedAt ?? now;
     const drill = await ports.release.drill().catch(() => null);
     const canary = await ports.release.canary().catch(() => null);
@@ -604,8 +641,8 @@ export function createWall(deps: WallDeps) {
     let bench: AcceptanceEvidence["bench"] = "unavailable";
     let benchScore: number | undefined, baselineScore: number | undefined;
     let benchCompare: { base: string; arm: string } | undefined;
-    if (benchOk && canary && canary.version === shipped && !canary.windowOpen) {
-      const base = `night-${mergedAt}`, arm = `night-${shipped}`;
+    if (benchOk && canary && canary.version === evidence && !canary.windowOpen) {
+      const base = `night-${mergedAt}`, arm = `night-${evidence}`;
       const state = await ports.bench.ensureArm(arm).catch(() => "unavailable" as const);
       bench = state === "done" ? await ports.bench.compare(base, arm).catch(() => "unavailable" as const) : state === "running" ? "pending" : "unavailable";
       if (bench === "pass" || bench === "fail") {
@@ -614,9 +651,9 @@ export function createWall(deps: WallDeps) {
         benchCompare = { base, arm };
       }
     }
-    const recurrence = recurrenceOn(row.classKey, shipped, deployedAt);
+    const recurrence = recurrenceOn(row.classKey, evidence, deployedAt);
     const requireBench = (row.policy as { requireBench?: boolean } | null)?.requireBench === true;
-    const result = decideAcceptance({ merged: true, versionBefore: mergedAt, deployedVersion: shipped, drill, deployedAt, canary, bench, recurrence, trainRolledBack: false, requireBench, supersededBy: superseded, now });
+    const result = decideAcceptance({ merged: true, versionBefore: mergedAt, deployedVersion: evidence, drill, deployedAt, canary, bench, recurrence, trainRolledBack: false, requireBench, supersededBy: superseded, now });
     return await settleAcceptance(row, result, { ...acceptance, deployedAt, ...(benchScore !== undefined ? { benchScore } : {}), ...(baselineScore !== undefined ? { baselineScore } : {}), ...(benchCompare ? { benchCompare } : {}) }, now, recurrence);
   }
 

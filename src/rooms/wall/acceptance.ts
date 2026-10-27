@@ -162,3 +162,17 @@ export function gateRepair(change: ChangeDescriptor): GateDecision {
     : [attrs.bench_available !== true && "no runnable bench subset", attrs.rollback_path_ok !== true && "the revert is not in working order", attrs.tests_untouched !== true && "an existing test was changed or deleted"].filter(Boolean).join(", ");
   return { ...base, decision: "reject", reason: `${answer.reason}; rejected: ${missing}` };
 }
+
+/** Files every release rewrites (its notes and version): a later release touching only these says nothing about a repair. */
+const RELEASE_NOISE = /^(CHANGELOG\.md|README\.md|package(-lock)?\.json|docs\/)/;
+
+/**
+ * Whether a release that came after the repair's own voids its evidence: only when it changed a file the repair changed or a source file of its failure
+ * class. With 4-6 releases a day a rule that voided on any release let the night accept nothing (Fable's recheck of 0.1.341, R5). `laterFiles` null
+ * (the files of the release are unknown) cannot show the release was unrelated, so it voids.
+ */
+export function laterReleaseTouches(input: { repairFiles: readonly string[]; classFiles: readonly string[]; laterFiles: readonly string[] | null }): boolean {
+  if (!input.laterFiles) return true;
+  const mine = new Set([...input.repairFiles, ...input.classFiles].filter((path) => !RELEASE_NOISE.test(path)));
+  return input.laterFiles.some((path) => mine.has(path));
+}
