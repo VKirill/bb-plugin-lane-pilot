@@ -2,7 +2,7 @@ import { ARCHITECT_LAUNCH } from "../workflow-architect";
 
 /**
  * «Build with the architect»: the Workflows tab asks for the architect and sends the owner to the new-chat composer of
- * the project; the composer's «Enable Lane Pilot» button, once it mounts for that project, picks the agent and
+ * the project; the composer's «Lane Pilot / agent» popover, once it mounts for that project, picks the agent and
  * prepares the session exactly as if the owner had chosen it in the popover (one click on «Send» then starts it).
  *
  * The tab's side is two lines:

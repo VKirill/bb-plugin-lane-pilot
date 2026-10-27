@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useComposerView, useRpc } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "../../contracts";
 import { detectLocale, setLocaleOverride, t } from "@lane-pilot/i18n";
-import { agentPickerLabel } from "../agent-display";
+import { composerAgentLabel } from "../agent-display";
 import { nativeAgentCliId } from "../native-agent-id";
 import { findComposerPromptBox, promptBoxFrameStyle, PROMPT_BOX_AGENT_LABEL_LEFT } from "./composer-prompt-box";
 import { getPendingNativeAgent, subscribePendingNativeAgent } from "./pending-native-agent";
@@ -64,7 +64,7 @@ function AgentNameBadge(agent: { agentId: string; description: string; helpers?:
       }}
       aria-label={t("composerAgentBadge")}
     >
-      {agentPickerLabel({ id, description: agent.description }, t)}
+      {composerAgentLabel({ id, description: agent.description }, t)}
     </span>
   );
   // The label and the working helpers' squares sit together on the box's top border.

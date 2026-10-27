@@ -64,3 +64,29 @@ export function agentBadgeChart(id: string): 1 | 2 | 3 | 4 | 5 {
   for (let i = 0; i < id.length; i += 1) sum += id.charCodeAt(i);
   return ((sum % 5) + 1) as 1 | 2 | 3 | 4 | 5;
 }
+
+/** One row of the composer picker. `custom` and `kind` come from the agent registry; both may be absent. */
+export type PickableAgent = {
+  id: string;
+  description: string;
+  custom?: boolean;
+  kind?: "coordinator" | "specialist" | "internal";
+};
+
+const COORDINATOR_ID = "dev-orchestrator";
+const INTERNAL_IDS: ReadonlySet<string> = new Set(["project-onboarder"]);
+
+export function agentKind(agent: Pick<PickableAgent, "id" | "kind">): "coordinator" | "specialist" | "internal" {
+  if (agent.kind) return agent.kind;
+  if (agent.id === COORDINATOR_ID) return "coordinator";
+  return INTERNAL_IDS.has(agent.id) ? "internal" : "specialist";
+}
+
+/** The name on the composer: the coordinator is «Lane Pilot» itself, every other agent keeps its own name. */
+export function composerAgentLabel(
+  agent: { id: string; description: string; kind?: PickableAgent["kind"] },
+  translate: (key: I18nKey) => string,
+): string {
+  if (agentKind(agent) === "coordinator") return translate("panelTitle");
+  return agentPickerLabel(agent, translate);
+}

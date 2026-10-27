@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compileMainAgentProfile, MAIN_AGENT_PROFILE_IDS } from "../src/rooms/native-agent/agent-profile";
-import { agentBadgeChart, agentPickerLabel, STOCK_AGENT_SEED_DESCRIPTIONS } from "../src/rooms/native-agent/agent-display";
+import { agentBadgeChart, agentKind, agentPickerLabel, composerAgentLabel, STOCK_AGENT_SEED_DESCRIPTIONS } from "../src/rooms/native-agent/agent-display";
 import { t, setLocaleOverride } from "@lane-pilot/i18n";
 
 describe("agent picker display labels", () => {
@@ -33,5 +33,20 @@ describe("agent picker display labels", () => {
     expect(agentBadgeChart("design-lead")).toBe(4);
     expect(agentBadgeChart("copy-lead")).not.toBe(agentBadgeChart("seo-specialist"));
     expect(agentBadgeChart("night-desk")).toBe(agentBadgeChart("night-desk"));
+  });
+
+  it("classifies agents by the registry kind, falling back to the ids", () => {
+    expect(agentKind({ id: "dev-orchestrator" })).toBe("coordinator");
+    expect(agentKind({ id: "project-onboarder" })).toBe("internal");
+    expect(agentKind({ id: "copy-lead" })).toBe("specialist");
+    expect(agentKind({ id: "custom-video" })).toBe("specialist");
+    expect(agentKind({ id: "copy-lead", kind: "internal" })).toBe("internal");
+    expect(agentKind({ id: "dev-orchestrator", kind: "specialist" })).toBe("specialist");
+  });
+
+  it("names the coordinator Lane Pilot on the composer and keeps other labels", () => {
+    expect(composerAgentLabel({ id: "dev-orchestrator", description: "Development coordinator" }, t)).toBe("Lane Pilot");
+    expect(composerAgentLabel({ id: "copy-lead", description: "Copy editor" }, t)).toBe("Copy editor");
+    expect(composerAgentLabel({ id: "my-lead", description: "Mine", kind: "coordinator" }, t)).toBe("Lane Pilot");
   });
 });
