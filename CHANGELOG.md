@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.345
+
+**The drill stays out of the owner's way.** Items of the drill's sandbox projects («LP sandbox …») never reach the morning list, the digest or a push: yesterday's drill phase posted «loop ran out of tries» and a drill writer's colour question with a push. The sandbox leftovers (an old drill phase that 0.1.342's resume rule would have restarted, eighteen open sandbox runs, two owner items) are closed.
+
 ## 0.1.344
 
 **A task in a nested repository with a check outside it is sent back at dispatch.** A task whose files all lie in a git repository inside a folder without git is moved into that repository (a worktree of it, merged into its main) — but only if its checks run there too. With a check whose cwd was the outer folder, Lane Pilot fell back to the live folder without saying so: the file was written untracked into the repository's checkout. Now the dispatch is refused with the fix spelled out: set each check's cwd to the repository and write the command relative to it.
