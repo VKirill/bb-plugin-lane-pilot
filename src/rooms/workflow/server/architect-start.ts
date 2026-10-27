@@ -22,7 +22,7 @@ type OpeningPart = { type: "text"; text: string; mentions: []; visibility?: "age
 
 /**
  * The architect's first message. The visible part carries the profile token (the dispatch hook turns the thread into a real
- * architect session from it, as for the composer's «Enable Lane Pilot») and one line the owner can read; the brief is
+ * architect session from it, as for the composer's «Lane Pilot / agent») and one line the owner can read; the brief is
  * `agent-only`, so the chat opens with the architect's own greeting. The visible part comes first: a message that opens
  * with an agent-only part reads to BB as a seed.
  */

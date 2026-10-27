@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { setLocaleOverride } from "@lane-pilot/i18n";
-import { setPendingNativeAgent } from "../src/rooms/native-agent/ui/pending-native-agent";
+import { getPendingNativeAgent, setPendingNativeAgent } from "../src/rooms/native-agent/ui/pending-native-agent";
 import { requestArchitectLaunch, takeArchitectLaunch } from "../src/rooms/workflow/ui/architect-launch";
 
 const hiddenData = vi.hoisted(() => ({ value: null as null | { token: string } }));
@@ -30,7 +30,7 @@ async function mountComposer(input: {
     bindingStatus: "resolved" | "setup_required" | null;
     projects: Array<{ id: string; name: string }>;
     compiledMainAgent?: "supported" | "none";
-    mainAgents?: Array<{ id: string; description: string }>;
+    mainAgents?: Array<{ id: string; description: string; custom?: boolean; kind?: "coordinator" | "specialist" | "internal" }>;
     pluginRole?: string | null;
     threadStatus?: string | null;
     liveRun?: { threadId: string; runId: string } | null;
@@ -100,7 +100,7 @@ describe("Enable Lane Pilot composer action", () => {
         scope: { kind: "thread", threadId: "thr_existing" },
         context,
       });
-      expect(slot.queryByRole("button", { name: "Enable Lane Pilot" })).toBeNull();
+      expect(slot.queryByRole("button", { name: "Lane Pilot / agent" })).toBeNull();
       expect(slot.queryByRole("button", { name: /New Lane Pilot session/ })).toBeNull();
       expect(slot.queryByRole("button", { name: "Open Lane Pilot run" })).toBeNull();
       slot.lifecycle.unmount();
@@ -114,12 +114,12 @@ describe("Enable Lane Pilot composer action", () => {
       scope: { kind: "new-thread", projectId: null },
       context: { bindingStatus: null, projects: [{ id: "proj_a", name: "Alpha" }] },
     });
-    const enable = await slot.findByRole("button", { name: "Enable Lane Pilot" });
+    const enable = await slot.findByRole("button", { name: "Lane Pilot / agent" });
     expect((enable as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(enable);
     await slot.findByTestId("activation-popover");
     expect(slot.queryByLabelText("Choose a project")).toBeNull();
-    expect((slot.getByRole("button", { name: "Enable for this chat" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((slot.getByRole("switch", { name: "Lane Pilot" }) as HTMLButtonElement).disabled).toBe(true);
     expect(slot.getByText(/BB composer first/i)).toBeTruthy();
     slot.lifecycle.unmount();
   });
@@ -131,17 +131,19 @@ describe("Enable Lane Pilot composer action", () => {
       scope: { kind: "new-thread", projectId: "proj_a" },
       context: { bindingStatus: "resolved", projects: [{ id: "proj_a", name: "Alpha" }] },
     });
-    fireEvent.click(await slot.findByRole("button", { name: "Enable Lane Pilot" }));
+    fireEvent.click(await slot.findByRole("button", { name: "Lane Pilot / agent" }));
     await slot.findByTestId("activation-popover");
-    fireEvent.click(slot.getByRole("button", { name: "Enable for this chat" }));
+    fireEvent.click(slot.getByRole("switch", { name: "Lane Pilot" }));
     await waitFor(() => expect(hiddenData.value).toEqual({ token: "11111111-1111-1111-1111-111111111111" }));
+    expect(prepared).toEqual(["dev-orchestrator"]);
+    expect(slot.getByRole("switch", { name: "Lane Pilot" }).getAttribute("aria-checked")).toBe("true");
     await waitFor(() => expect(installStarts).toEqual(["host_a"]));
     expect(slot.inspection.composer.mentions).toEqual([]);
     expect(slot.inspection.composer.text).toBe("Please review this project");
     expect(slot.inspection.composer.selections).toEqual([{ providerId: "claude-code", model: "claude-opus-5-5[1m]", permissionMode: "full" }]);
-    fireEvent.click(slot.getByRole("button", { name: "Lane Pilot enabled" }));
-    fireEvent.click(await slot.findByRole("button", { name: "Disable for this chat" }));
+    fireEvent.click(slot.getByRole("switch", { name: "Lane Pilot" }));
     expect(hiddenData.value).toBeNull();
+    expect(slot.getByRole("switch", { name: "Lane Pilot" }).getAttribute("aria-checked")).toBe("false");
     expect(slot.inspection.navigateCalls).toEqual([]);
     slot.lifecycle.unmount();
   });
@@ -156,8 +158,8 @@ describe("Enable Lane Pilot composer action", () => {
     });
     await waitFor(() => expect(hiddenData.value).toEqual({ token: "11111111-1111-1111-1111-111111111111" }));
     expect(prepared).toEqual(["copy-lead"]);
-    fireEvent.click(await slot.findByRole("button", { name: "Lane Pilot enabled" }));
-    fireEvent.click(await slot.findByRole("button", { name: "Disable for this chat" }));
+    fireEvent.click(await slot.findByRole("button", { name: "Night desk" }));
+    fireEvent.click(await slot.findByRole("radio", { name: "No agent" }));
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(hiddenData.value).toBeNull();
     expect(prepared).toEqual(["copy-lead"]);
@@ -171,7 +173,7 @@ describe("Enable Lane Pilot composer action", () => {
       scope: { kind: "new-thread", projectId: "proj_a" },
       context: { bindingStatus: "resolved", projects: [{ id: "proj_a", name: "Alpha" }] },
     });
-    await slot.findByRole("button", { name: "Enable Lane Pilot" });
+    await slot.findByRole("button", { name: "Lane Pilot / agent" });
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(prepared).toEqual([]);
     slot.lifecycle.unmount();
@@ -216,9 +218,8 @@ describe("Enable Lane Pilot composer action", () => {
         mainAgents: [{ id: "dev-orchestrator", description: "Section developer" }],
       },
     });
-    fireEvent.click(await slot.findByRole("button", { name: "Enable Lane Pilot" }));
-    await slot.findByText("Section developer");
-    const start = slot.getByRole("button", { name: "Enable for this chat" }) as HTMLButtonElement;
+    fireEvent.click(await slot.findByRole("button", { name: "Lane Pilot / agent" }));
+    const start = await slot.findByRole("switch", { name: "Lane Pilot" }) as HTMLButtonElement;
     expect(start.disabled).toBe(false);
     fireEvent.click(start);
     await waitFor(() => expect(hiddenData.value?.token).toBeTruthy());
@@ -227,7 +228,34 @@ describe("Enable Lane Pilot composer action", () => {
     slot.lifecycle.unmount();
   });
 
-  it("shows locale stock labels and keeps a custom agent name", async () => {
+  it("lists specialists and custom agents, not the coordinator or internal agents", async () => {
+    const slot = await mountComposer({
+      projectId: "proj_a",
+      threadId: null,
+      scope: { kind: "new-thread", projectId: "proj_a" },
+      context: {
+        bindingStatus: "resolved",
+        projects: [{ id: "proj_a", name: "Alpha" }],
+        mainAgents: [
+          { id: "dev-orchestrator", description: "Lane Pilot development orchestrator" },
+          { id: "copy-lead", description: "Lane Pilot copy lead" },
+          { id: "project-onboarder", description: "Lane Pilot project onboarder" },
+          { id: "my-video", description: "Video agent", custom: true, kind: "specialist" },
+          { id: "hidden-helper", description: "Hidden helper", kind: "internal" },
+          { id: "my-lead", description: "Own coordinator", kind: "coordinator" },
+        ],
+      },
+    });
+    fireEvent.click(await slot.findByRole("button", { name: "Lane Pilot / agent" }));
+    await slot.findByTestId("activation-popover");
+    expect(slot.getAllByRole("radio").map((row) => row.textContent)).toEqual(["No agent", "Copy editor", "Video agent"]);
+    expect(slot.queryByText("Development coordinator")).toBeNull();
+    expect(slot.queryByText("Project onboarding")).toBeNull();
+    expect(slot.queryByText("Lane Pilot development orchestrator")).toBeNull();
+    slot.lifecycle.unmount();
+  });
+
+  it("picking a specialist turns Lane Pilot off, and the switch turns the specialist off", async () => {
     const slot = await mountComposer({
       projectId: "proj_a",
       threadId: null,
@@ -241,14 +269,49 @@ describe("Enable Lane Pilot composer action", () => {
         ],
       },
     });
-    fireEvent.click(await slot.findByRole("button", { name: "Enable Lane Pilot" }));
+    fireEvent.click(await slot.findByRole("button", { name: "Lane Pilot / agent" }));
     await slot.findByTestId("activation-popover");
-    fireEvent.click(slot.getByLabelText("Lane Pilot agent"));
-    expect(slot.queryByText("No specialist agent")).toBeNull();
-    expect(slot.getAllByText("Development coordinator").length).toBeGreaterThan(0);
-    expect(slot.getByText("Night desk")).toBeTruthy();
-    expect(slot.queryByText("Lane Pilot development orchestrator")).toBeNull();
-    expect(slot.queryByText("Lane Pilot copy lead")).toBeNull();
+    const laneSwitch = () => slot.getByRole("switch", { name: "Lane Pilot" });
+    fireEvent.click(laneSwitch());
+    await waitFor(() => expect(laneSwitch().getAttribute("aria-checked")).toBe("true"));
+    expect(getPendingNativeAgent()?.agentId).toBe("dev-orchestrator");
+    fireEvent.click(slot.getByRole("radio", { name: "Night desk" }));
+    await waitFor(() => expect(laneSwitch().getAttribute("aria-checked")).toBe("false"));
+    expect(slot.getByRole("radio", { name: "Night desk" }).getAttribute("aria-checked")).toBe("true");
+    expect(prepared).toEqual(["dev-orchestrator", "copy-lead"]);
+    expect(getPendingNativeAgent()?.agentId).toBe("copy-lead");
+    expect(hiddenData.value).toEqual({ token: "11111111-1111-1111-1111-111111111111" });
+    expect(slot.inspection.composer.text).toBe("Please review this project");
+    // The switch back on replaces the specialist; «No agent» clears everything.
+    fireEvent.click(laneSwitch());
+    await waitFor(() => expect(laneSwitch().getAttribute("aria-checked")).toBe("true"));
+    expect(slot.getByRole("radio", { name: "Night desk" }).getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(slot.getByRole("radio", { name: "No agent" }));
+    expect(laneSwitch().getAttribute("aria-checked")).toBe("false");
+    expect(getPendingNativeAgent()).toBeNull();
+    expect(hiddenData.value).toBeNull();
+    slot.lifecycle.unmount();
+  });
+
+  it("names the trigger after the chosen agent and the coordinator «Lane Pilot»", async () => {
+    const slot = await mountComposer({
+      projectId: "proj_a",
+      threadId: null,
+      scope: { kind: "new-thread", projectId: "proj_a" },
+      context: {
+        bindingStatus: "resolved",
+        projects: [{ id: "proj_a", name: "Alpha" }],
+        mainAgents: [
+          { id: "dev-orchestrator", description: "Lane Pilot development orchestrator" },
+          { id: "copy-lead", description: "Lane Pilot copy lead" },
+        ],
+      },
+    });
+    fireEvent.click(await slot.findByRole("button", { name: "Lane Pilot / agent" }));
+    fireEvent.click(await slot.findByRole("radio", { name: "Copy editor" }));
+    await slot.findByRole("button", { name: "Copy editor" });
+    fireEvent.click(slot.getByRole("switch", { name: "Lane Pilot" }));
+    await waitFor(() => expect(slot.getByRole("button", { name: "Lane Pilot" })).toBeTruthy());
     slot.lifecycle.unmount();
   });
 });

@@ -94,6 +94,21 @@ describe("Lane Pilot composer agent badge", () => {
     slot.lifecycle.unmount();
   });
 
+  it("calls the coordinator «Lane Pilot» on a new thread and on a bound thread", async () => {
+    setPendingNativeAgent({ agentId: "dev-orchestrator", description: "Development coordinator" });
+    const fresh = await mountBadge({ scope: { kind: "new-thread", projectId: "proj_a" } });
+    expect(fresh.getByLabelText("Lane Pilot agent").textContent).toBe("Lane Pilot");
+    expect(fresh.queryByText("Development coordinator")).toBeNull();
+    fresh.lifecycle.unmount();
+    setPendingNativeAgent(null);
+    const bound = await mountBadge({
+      scope: { kind: "thread", threadId: "thr_pm" },
+      nativeThread: { token: "11111111-1111-1111-1111-111111111111", agentId: "dev-orchestrator", agentType: "dev-orchestrator", projectId: "proj_a", description: "Lane Pilot development orchestrator" },
+    });
+    await waitFor(() => expect(bound.getByLabelText("Lane Pilot agent").textContent).toBe("Lane Pilot"));
+    bound.lifecycle.unmount();
+  });
+
   it("copies the prompt box stroke so the label matches the chat frame", () => {
     const box = document.createElement("form");
     box.style.border = "1px dashed rgb(20, 30, 40)";

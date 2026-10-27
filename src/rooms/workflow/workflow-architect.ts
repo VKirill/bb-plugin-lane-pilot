@@ -1,6 +1,6 @@
 /**
  * The Workflow architect: an agent profile of Lane Pilot's own (not part of the Claude Lane Stack catalog in
- * bundled-agents.json). It starts like the PM, from the composer's «Enable Lane Pilot» popover, in any chat of any
+ * bundled-agents.json). It starts like the PM, from the composer's «Lane Pilot / agent» popover, in any chat of any
  * project, and builds chains with the lane_pilot_workflow_* tools while the owner watches the graph take shape.
  */
 export const WORKFLOW_ARCHITECT_ID = "workflow-architect";
