@@ -1,0 +1,101 @@
+{
+  "id": "browser-step",
+  "startedBy": "lane_pilot_browser",
+  "name": {
+    "en": "Browser step",
+    "ru": "Шаг в браузере"
+  },
+  "description": {
+    "en": "One goal in the owner's signed-in Chrome on the browser machine through jev-ultrafast, then the page it ends on: its address, a status, the number of actions and the visible text. Lane Pilot starts it from lane_pilot_browser; the action browser.goal can be used in any graph.",
+    "ru": "Одна цель в браузере владельца (с его входами) на браузерной машине через jev-ultrafast и страница, на которой всё закончилось: адрес, статус, число действий и видимый текст. Запускается инструментом lane_pilot_browser; действие browser.goal можно ставить в любой граф."
+  },
+  "not_for": [
+    "anything a person asks in a chat: the PM starts it with lane_pilot_browser"
+  ],
+  "status": "published",
+  "tags": [
+    "browser"
+  ],
+  "triggers": [
+    "manual"
+  ],
+  "inputs": {
+    "url": { "type": "string", "required": true, "note": "the page to open" },
+    "goal": { "type": "string", "required": true, "note": "what to reach or read, in words" },
+    "changes": { "type": "bool", "default": false, "note": "true when the goal changes, submits, deletes, pays or publishes anything; then authorized must be true" },
+    "authorized": { "type": "bool", "default": false },
+    "timeout_sec": { "type": "int", "default": 180 }
+  },
+  "outputs": {
+    "status": "string",
+    "hostId": "string?",
+    "exitCode": "int?",
+    "url": "string?",
+    "actions": "int?",
+    "title": "string?",
+    "text": "string?",
+    "log": "string?",
+    "reason": "string?"
+  },
+  "budget": {
+    "max_steps": 4,
+    "max_minutes": 15
+  },
+  "nodes": [
+    {
+      "id": "goal",
+      "type": "action",
+      "action": "browser.goal",
+      "title": { "en": "Do the goal in the browser", "ru": "Выполнить цель в браузере" },
+      "rule": "code: one host call to the browser machine (browser_qa.host_id); read-only unless changes and authorized are both true; a goal that changes something is never repeated after a reload",
+      "url": "{{$inputs.url}}",
+      "goal": "{{$inputs.goal}}",
+      "changes": "{{$inputs.changes}}",
+      "authorized": "{{$inputs.authorized}}",
+      "timeout_sec": "{{$inputs.timeout_sec}}",
+      "out": {
+        "status": "string",
+        "reason": "string?",
+        "hostId": "string?",
+        "exitCode": "int?",
+        "url": "string?",
+        "actions": "int?",
+        "title": "string?",
+        "text": "string?",
+        "log": "string?"
+      },
+      "guards": { "timeoutMin": 12 }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "status": "goal.status",
+        "reason": "goal.reason",
+        "hostId": "goal.hostId",
+        "exitCode": "goal.exitCode",
+        "url": "goal.url",
+        "actions": "goal.actions",
+        "title": "goal.title",
+        "text": "goal.text",
+        "log": "goal.log"
+      }
+    }
+  ],
+  "edges": [
+    { "from": "start", "to": "goal" },
+    { "from": "goal", "to": "done" }
+  ],
+  "test": {
+    "id": "browser-step-1",
+    "sim": {
+      "input": { "url": "https://example.com/", "goal": "Read the page title", "changes": false },
+      "stubs": {
+        "goal": { "status": "done", "hostId": "host_mini", "url": "https://example.com/", "actions": 1, "title": "Example", "text": "Example Domain" }
+      },
+      "expect_path": ["goal", "done"],
+      "expect_output": { "status": "done" }
+    }
+  }
+}

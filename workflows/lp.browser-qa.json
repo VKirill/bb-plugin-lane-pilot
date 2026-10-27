@@ -1,0 +1,87 @@
+{
+  "id": "lp.browser-qa",
+  "startedBy": "lane_pilot_browser_qa",
+  "name": {
+    "en": "Browser check of an accepted task",
+    "ru": "Проверка принятой задачи в браузере"
+  },
+  "description": {
+    "en": "The browser check of an accepted task: a child thread drives the BB browser on the project's Browser QA machine and returns a verdict per case and viewport. The stage receipt browser-qa is written as always. Lane Pilot starts it from lane_pilot_browser_qa.",
+    "ru": "Проверка принятой задачи в браузере: дочерний тред ведёт браузер BB на браузерной машине проекта и возвращает вердикт по каждому случаю и ширине экрана. Квитанция этапа browser-qa пишется как всегда. Запускается инструментом lane_pilot_browser_qa."
+  },
+  "not_for": [
+    "anything a person asks in a chat: the PM starts it with lane_pilot_browser_qa"
+  ],
+  "status": "published",
+  "tags": [
+    "browser",
+    "qa"
+  ],
+  "triggers": [
+    "manual"
+  ],
+  "inputs": {
+    "run_id": { "type": "string", "required": true, "note": "the Lane Pilot run of the PM chat (lprun_...)" },
+    "task_id": { "type": "string", "required": true, "note": "the accepted task" },
+    "url": { "type": "string", "required": true },
+    "cases": { "type": "string[]", "required": true },
+    "env_class": { "type": "local|staging|preview|production|unknown", "required": true },
+    "viewports": { "type": "string", "default": "375,768,1280" },
+    "authorized": { "type": "bool", "default": false },
+    "dev_server": { "type": "string", "default": "", "note": "the start command of a dev server that is not running; the check starts it in a BB terminal and closes it afterwards" }
+  },
+  "outputs": {
+    "state": "string",
+    "reply": "any"
+  },
+  "budget": {
+    "max_steps": 4,
+    "max_minutes": 45
+  },
+  "nodes": [
+    {
+      "id": "qa",
+      "type": "action",
+      "action": "lp.browser-qa",
+      "title": { "en": "Run the browser check", "ru": "Выполнить проверку в браузере" },
+      "rule": "code: runBrowserQa writes the browser-qa stage receipt; a check still running after a reload is read back from that receipt until it is final",
+      "run_id": "{{$inputs.run_id}}",
+      "task_id": "{{$inputs.task_id}}",
+      "url": "{{$inputs.url}}",
+      "cases": "{{$inputs.cases}}",
+      "env_class": "{{$inputs.env_class}}",
+      "viewports": "{{$inputs.viewports}}",
+      "authorized": "{{$inputs.authorized}}",
+      "dev_server": "{{$inputs.dev_server}}",
+      "out": {
+        "state": "string",
+        "reply": "any"
+      },
+      "guards": { "timeoutMin": 40 }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "state": "qa.state",
+        "reply": "qa.reply"
+      }
+    }
+  ],
+  "edges": [
+    { "from": "start", "to": "qa" },
+    { "from": "qa", "to": "done" }
+  ],
+  "test": {
+    "id": "lp-browser-qa-1",
+    "sim": {
+      "input": { "run_id": "lprun_1", "task_id": "t1", "url": "http://127.0.0.1:5173/", "cases": ["Open home"], "env_class": "local" },
+      "stubs": {
+        "qa": { "state": "passed", "reply": { "state": "passed" } }
+      },
+      "expect_path": ["qa", "done"],
+      "expect_output": { "state": "passed" }
+    }
+  }
+}

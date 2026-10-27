@@ -16,6 +16,7 @@ import { allowedSecretNames, secretFixLines, secretProblem, waitingSecretReason 
 import type { CatalogEntry } from "../../secrets/server";
 import { detectRepoEdits, gitRepoStatus } from "../../verification/server";
 import type { ServerCore } from "../../core/server";
+import { runBrowserStep } from "./browser-graphs";
 
 const WAIT_STEP_MS = 5_000;
 
@@ -134,20 +135,8 @@ export function mountErrands(ctx: ServerCore) {
     execute: async (params, context) => {
       if (!context.threadId || !context.projectId) throw new Error("browser_needs_pm_thread");
       const runId = openRun(context.projectId, context.threadId);
-      if (params.changes && !params.authorized) {
-        return JSON.stringify({ status: "refused", reason: "changes_need_owner_authorization: ask the owner, then pass authorized=true" });
-      }
-      const setup = browserSetup(context.projectId, runId);
-      if (!setup.hostId) return JSON.stringify({ status: "refused", reason: `no_browser_machine: set ${QA_HOST_KEY} (Browser QA machine) in Lane Pilot settings` });
-      const goal = params.changes ? params.goal : `${params.goal}\nRead-only: do not submit, change, delete, pay or publish anything.`;
-      const result = await host.call("browserGoal", { requestedHostId: setup.hostId, url: params.url, goal, timeoutSec: params.timeoutSec },
-        { hostId: setup.hostId, timeoutMs: (params.timeoutSec + 30) * 1000 });
-      bb.log.info(`browser goal on ${setup.hostId}: ${result.status} ${result.url ?? ""} (${result.actions ?? "?"} actions)`);
-      const { text, ...rest } = result;
-      return JSON.stringify({
-        ...rest,
-        text: typeof text === "string" ? fenceOutside("browser", text) : text,
-      }, null, 2);
+      // The graph `browser-step` does the goal (browser-graphs.ts); the reply is the one this tool always gave.
+      return runBrowserStep(ctx, { projectId: context.projectId, runId, pmThreadId: context.threadId, url: params.url, goal: params.goal, changes: params.changes, authorized: params.authorized, timeoutSec: params.timeoutSec });
     },
   });
 

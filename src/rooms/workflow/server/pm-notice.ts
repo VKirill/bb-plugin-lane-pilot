@@ -45,7 +45,10 @@ export function deliverable(outputJson: string | null): string | null {
   return name ? (output[name] as string).trim().slice(0, 12_000) : null;
 }
 
-const isNoticeStatus = (status: string): status is WorkflowNoticeStatus =>
+/** Starter graphs whose PM tool waits for the run and returns its result (graph ids of the browser tools). */
+const PM_WAITS_FOR = new Set(["browser-step", "lp.browser-qa"]);
+
+const isNoticeStatus =(status: string): status is WorkflowNoticeStatus =>
   (WORKFLOW_NOTICE_STATUSES as readonly string[]).includes(status);
 
 /** Send one PM message for a terminal or blocked run, or skip (schedule, no chat, already sent, not a PM workflow). */
@@ -63,6 +66,8 @@ export async function maybeNotifyWorkflowRun(input: {
   if (run.workflow_id === LP_TASK_PIPELINE || run.idem_key?.startsWith("lp-task:")) return false;
   // A phase's stage run reports through the phase's gates and book; a notice of each one had the PM step into the machine's stage (live, 2026-10-25).
   if (run.idem_key?.startsWith("phase:")) return false;
+  // The browser tools wait for their graph and answer with its result: a notice would wake the PM a second time.
+  if (PM_WAITS_FOR.has(run.workflow_id)) return false;
   if (!input.pmThreadId) return false;
   // A scheduled run is not watched live, but what it was scheduled for (a report, a digest) is the owner's: the PM shows it. Its
   // failures are the schedule board's to tell (the live weekly report reached no one, 2026-10-25).
