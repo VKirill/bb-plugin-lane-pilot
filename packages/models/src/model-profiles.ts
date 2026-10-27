@@ -33,6 +33,11 @@ export const WRITER_PROFILES: readonly WriterProfile[] = [
     sources: ["https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-8-flash", "https://www.mindstudio.ai/blog/gemini-3-8-flash-harness-demos", "https://bloxbot.ai/guide/best-ai-models-roblox-development"],
   },
   {
+    key: "gpt-astra", providerId: "codex", model: "gpt-6-astra", reasoning: "high", label: "GPT-6 Astra (Codex)", tier: "strong", available: true,
+    summary: "OpenAI's top model ($10/$50 per million): leads Terminal-Bench Science (68.1%), but GPT-6.1 Sol matches it on DeepSWE at a fifth of the cost and an independent test found a tie in accuracy with Sol faster (7 vs 10 minutes a run). Fits only the most demanding scientific or research-heavy coding where Sol already failed. Slow and heavy on the subscription's limits: not for ordinary features or fixes.",
+    sources: ["https://thenewstack.io/gpt-6-1-sol-vs-gpt-6-astra/?p=22839578", "https://propakistani.pk/2026/09/30/gpt-6-1-sol-brings-astra-level-performance-at-5x-lower-cost/"],
+  },
+  {
     key: "gpt-sol", providerId: "codex", model: "gpt-6.1-sol", reasoning: "high", label: "GPT-6.1 Sol (Codex)", tier: "strong", available: true,
     summary: "OpenAI's strong coding model: DeepSWE 75.2% at high effort, near GPT-6 Astra at a fifth of the price; reviewers praise polished front ends and it leads terminal-heavy agent work. Fits hard bugs, algorithmic and backend logic, tricky integrations, terminal and build work, and polished UI. Verbose (writes much more code than needed); costs more per task than Luna or Composer.",
     sources: ["https://www.vellum.ai/blog/gpt-6-1-sol-benchmarks-explained", "https://www.sonarsource.com/blog/openai-gpt-6-1-sol-evaluation/", "https://www.layer3labs.io/guides/gpt-6-1-sol-for-coding"],
@@ -44,13 +49,18 @@ export const WRITER_PROFILES: readonly WriterProfile[] = [
   },
   {
     key: "gpt-luna", providerId: "codex", model: "gpt-6-luna", reasoning: "high", label: "GPT-6 Luna (Codex)", tier: "light", available: true,
-    summary: "OpenAI's cheap model: DeepSWE 66.6% at max effort for about $0.22 a task (Sol 68.8% at $2.74), but well behind Sol on broad agent work (Artificial Analysis coding index 41 vs 57). Fits small, well-scoped tasks with clear checks: tests, config, small fixes, scripts, mechanical edits, documentation. Not for open-ended features or architecture.",
+    summary: "OpenAI's cheap model: DeepSWE 66.6% at max effort for about $0.22 a task (Sol 68.8% at $2.74), but well behind Sol on broad agent work (Artificial Analysis coding index 41 vs 57). Fits only small, mechanical tasks with clear checks: a config value, a test, a one-file fix, a script, documentation. On our hub it was accepted on 63% of 43 tasks (Composer 91%, Grok 90%, 2026-10-13..27), so anything with judgment goes to Terra or Sonnet. Not for features, UI, refactors or architecture.",
     sources: ["https://www.vellum.ai/blog/gpt-6-sol-and-luna-benchmarks-explained", "https://benchlm.ai/compare/gpt-6-luna-vs-gpt-6-sol"],
   },
   {
     key: "sonnet", providerId: "claude-code", model: "claude-sonnet-5-5", reasoning: "medium", label: "Claude Sonnet 5.5", tier: "standard", available: true,
     summary: "Anthropic's everyday coder: Terminal-Bench 4.0 70.6% (ahead of Opus 5.5), CursorBench within two points of Opus at half the price. Fits daily features, bug fixes, refactors and code that must follow the project's conventions closely; writes clear Russian and English text, so good for docs and UI copy changes too. Opus is clearly stronger on long, ambiguous work.",
     sources: ["https://www.anthropic.com/claude-sonnet-5-5", "https://www.developersdigest.tech/blog/claude-opus-5-5-vs-sonnet-5-5-vs-haiku-5-5", "https://www.coderabbit.ai/blog/sonnet-5-5-model-review"],
+  },
+  {
+    key: "fable", providerId: "claude-code", model: "claude-fable-5-1", reasoning: "high", label: "Claude Fable 5.1", tier: "strong", available: true,
+    summary: "Anthropic's top model ($10/$50 per million, cache reads $0.25): Terminal-Bench 4.0 55.8% (Opus 5 52.3%), CursorBench 3.2 73.4%, and its biggest gains are on long-horizon agent work (Browserbase hard browser tasks 82% vs Opus 5 74%); figures are mostly vendor-reported. Fits the hardest tasks: long multi-step features across many files, deep debugging, architecture-heavy changes, work where Opus already failed. Slow and the heaviest on the Claude subscription's limits: not for routine or well-specified tasks.",
+    sources: ["https://www.eesel.ai/blog/claude-fable-5-1-review", "https://codersera.com/blog/claude-fable-5-1-vs-opus-5-2026/amp/", "https://rits.shanghai.nyu.edu/ai/claude-fable-5-1-cache-read-price-cut/"],
   },
   {
     key: "opus", providerId: "claude-code", model: "claude-opus-5-5", reasoning: "high", label: "Claude Opus 5.5", tier: "strong", available: true,

@@ -46,7 +46,7 @@ describe("get_role_models: the table «role -> model» of a place", () => {
     expect(got.roles.map((row) => row.role)).toEqual(ROLE_TABLE.map((row) => row.id));
     for (const row of got.roles) expect(row, row.role).toMatchObject({ source: "default", sourceKey: null, own: false, version: 0, offered: null, model: row.defaultModel });
     expect(got.roles.find((row) => row.role === "code-critic")).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", effort: "high" });
-    expect(got.options.map((option) => option.id)).toEqual(["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"]);
+    expect(got.options.map((option) => option.id)).toEqual(["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-astra", "gpt-6-luna"]);
     await harness.lifecycle.dispose();
   });
 
@@ -106,11 +106,11 @@ describe("get_role_models: the table «role -> model» of a place", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("says which of the six the machines offer, and the efforts of each", async () => {
+  it("says which of the options the machines offer, and the efforts of each", async () => {
     const { harness } = await mount(true);
     const got = await read(harness, { projectId: GLOBAL });
     expect(got.options.map((option) => [option.id, option.offered])).toEqual([
-      ["claude-opus-5-5", true], ["claude-sonnet-5-5", true], ["claude-haiku-5-5", false], ["gpt-6.1-sol", true], ["gpt-6.1-terra", false], ["gpt-6-luna", false],
+      ["claude-fable-5-1", false], ["claude-opus-5-5", true], ["claude-sonnet-5-5", true], ["claude-haiku-5-5", false], ["gpt-6.1-sol", true], ["gpt-6.1-terra", false], ["gpt-6-astra", false], ["gpt-6-luna", false],
     ]);
     expect(got.options.find((option) => option.id === "claude-opus-5-5")!.efforts).toEqual(["low", "high", "max"]);
     expect(got.options.find((option) => option.id === "gpt-6.1-sol")!.efforts).toEqual(["medium", "high"]);

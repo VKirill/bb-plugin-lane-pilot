@@ -17,11 +17,13 @@ export type ModelFamily = "claude" | "gpt";
 export type RoleModelOption = { id: string; providerId: string; label: string; family: ModelFamily; tier: ModelTier };
 
 export const ROLE_MODEL_OPTIONS: readonly RoleModelOption[] = [
+  { id: "claude-fable-5-1", providerId: "claude-code", label: "Claude Fable 5.1", family: "claude", tier: "strong" },
   { id: "claude-opus-5-5", providerId: "claude-code", label: "Claude Opus 5.5", family: "claude", tier: "strong" },
   { id: "claude-sonnet-5-5", providerId: "claude-code", label: "Claude Sonnet 5.5", family: "claude", tier: "standard" },
   { id: "claude-haiku-5-5", providerId: "claude-code", label: "Claude Haiku 5.5", family: "claude", tier: "light" },
   { id: "gpt-6.1-sol", providerId: "codex", label: "GPT-6.1 Sol", family: "gpt", tier: "strong" },
   { id: "gpt-6.1-terra", providerId: "codex", label: "GPT-6.1 Terra", family: "gpt", tier: "standard" },
+  { id: "gpt-6-astra", providerId: "codex", label: "GPT-6 Astra", family: "gpt", tier: "strong" },
   { id: "gpt-6-luna", providerId: "codex", label: "GPT-6 Luna", family: "gpt", tier: "light" },
 ];
 /** The reasoning efforts the table offers (the narrower the model's own list, the fewer the picker shows). */
@@ -159,8 +161,8 @@ export function resolveRoleModel(role: string, settings: Record<string, unknown>
 
 /** The same strength in the other family: Opus <-> Sol, Sonnet <-> Terra, Haiku <-> Luna. */
 const PEER: Record<string, string> = {
-  "claude-opus-5-5": "gpt-6.1-sol", "claude-sonnet-5-5": "gpt-6.1-terra", "claude-haiku-5-5": "gpt-6-luna",
-  "gpt-6.1-sol": "claude-opus-5-5", "gpt-6.1-terra": "claude-sonnet-5-5", "gpt-6-luna": "claude-haiku-5-5",
+  "claude-fable-5-1": "gpt-6-astra", "claude-opus-5-5": "gpt-6.1-sol", "claude-sonnet-5-5": "gpt-6.1-terra", "claude-haiku-5-5": "gpt-6-luna",
+  "gpt-6-astra": "claude-fable-5-1", "gpt-6.1-sol": "claude-opus-5-5", "gpt-6.1-terra": "claude-sonnet-5-5", "gpt-6-luna": "claude-haiku-5-5",
 };
 export function crossFamilyPeer(model: string): { providerId: string; model: string } | null {
   const peer = PEER[model.slice(model.lastIndexOf("/") + 1)];

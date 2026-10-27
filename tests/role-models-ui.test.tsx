@@ -69,7 +69,7 @@ describe("the table «role -> model» on the Team tab", () => {
     slot.lifecycle.unmount();
   });
 
-  it("offers only the six Claude and GPT models, and warns about a light model for a role that judges", async () => {
+  it("offers only the Claude and GPT options, and warns about a light model for a role that judges", async () => {
     const { rpc } = tableRpc(view({ planner: { source: "table", own: true, model: "claude-haiku-5-5", effort: "high", sourceKey: "role_model.planner" } }, (id) => id !== "gpt-6-luna"));
     const slot = await mountPage(rpc);
     await openTeam(slot);

@@ -13,7 +13,7 @@ const task = { title: "Fix the jump button", objective: "the jump button sits un
 describe("the writers' anamnesis", () => {
   it("offers only the models the subscriptions have and the owner keeps: no Gemini Pro, Argon or MiniMax", () => {
     const keys = writerCandidates({}).map((row) => row.key);
-    expect(keys).toEqual(expect.arrayContaining(["composer", "gemini-flash", "gpt-sol", "gpt-terra", "gpt-luna", "sonnet", "opus", "glm-flash", "haiku"]));
+    expect(keys).toEqual(expect.arrayContaining(["composer", "gemini-flash", "gpt-sol", "gpt-terra", "gpt-luna", "fable", "gpt-astra", "sonnet", "opus", "glm-flash", "haiku"]));
     for (const off of ["gemini-pro", "gemini-argon", "minimax-flash"]) expect(keys).not.toContain(off);
     expect(writerCandidates({ "writer.models": ["composer", "gemini-flash"] }).map((row) => row.key)).toEqual(["composer", "gemini-flash"]);
     for (const row of WRITER_PROFILES.filter((item) => item.available)) expect(row.sources.length).toBeGreaterThan(0);
