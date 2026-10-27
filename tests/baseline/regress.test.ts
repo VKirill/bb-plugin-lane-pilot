@@ -152,7 +152,7 @@ describe("the regression pass over accepted tasks (D1-2)", () => {
 
   it("leaves out what is not cheap, what carried secrets, what was not green at acceptance, reverted tasks and the ones outside the window", async () => {
     const w = await world({ settings: { "regress.check_cap_sec": 60, "regress.last_n": 4 } });
-    for (let index = 0; index < 3; index += 1) recordCheckDuration(w.db, { projectId: "projA", command: "sleep 100", durationMs: 100_000, exitCode: 0 });
+    for (let index = 0; index < 3; index += 1) recordCheckDuration(w.db, { projectId: "projA", command: "sleep 100", cwd: w.base, root: w.base, durationMs: 100_000, exitCode: 0 });
     await w.acceptedTask("S", async (dir) => { await writeFile(join(dir, "s.txt"), "s\n"); }, ["sleep 100"]);
     await w.acceptedTask("T", async (dir) => { await writeFile(join(dir, "t.txt"), "t\n"); }, ["test -f t.txt", { command: "echo $KEY", timeout_sec: 5, secrets: ["KEY"] } as never]);
     await w.acceptedTask("U", async (dir) => { await writeFile(join(dir, "u.txt"), "u\n"); }, ["test -f u.txt", "test -f nothere.txt"]);

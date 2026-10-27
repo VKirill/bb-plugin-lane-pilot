@@ -121,7 +121,7 @@ export function createRegression(ctx: ServerCore, services: Services) {
       report.mergeCommit = change.mergeCommit;
       const green = greenAtAcceptance(target.runId, row.task_id, target.task.verification);
       const plan = planChecks(target.task.verification,
-        (item) => estimateSec(listCheckDurations(db, projectId, item.command), item.timeout_sec ?? 120),
+        (item) => estimateSec(listCheckDurations(db, projectId, { command: item.command, cwd: item.cwd, root: target.task.project_cwd }), item.timeout_sec ?? 120),
         { totalCapSec: Number.MAX_SAFE_INTEGER, perCheckCapSec: settings.checkCapSec });
       const eligible: VerificationItem[] = [];
       for (const entry of plan) {

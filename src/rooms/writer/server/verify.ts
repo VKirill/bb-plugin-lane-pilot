@@ -159,11 +159,11 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
       const backend=(loadProjectSettings(db,config.projectId,verificationScopes)["sandbox.backend"] as "auto"|"macos-seatbelt"|"linux-bubblewrap"|undefined) ?? "auto";
       // The sandbox gives a command 120 s when the task names no limit; waiting only 30 s cut longer checks short.
       // History widens it for a check that is slow in this project: max(that, p95 of its last 20 green runs x 2), capped.
-      const timeoutSec=checkTimeoutSec(db,config.projectId,command.command,command.timeout_sec ?? 120);
+      const timeoutSec=checkTimeoutSec(db,config.projectId,{command:command.command,cwd:command.cwd,root:task.project_cwd},command.timeout_sec ?? 120);
       const startedAt=Date.now();
       // A timeout (124) and a host that failed say nothing about how long the check takes: not kept.
       const recorded=<T extends {exitCode:number;hostError?:true}>(result:T):T=>{
-        if(result.exitCode!==124&&!result.hostError) try { recordCheckDuration(db,{projectId:config.projectId,command:command.command,durationMs:Date.now()-startedAt,exitCode:result.exitCode}); } catch { /* history is a hint only */ }
+        if(result.exitCode!==124&&!result.hostError) try { recordCheckDuration(db,{projectId:config.projectId,command:command.command,cwd:command.cwd,root:task.project_cwd,durationMs:Date.now()-startedAt,exitCode:result.exitCode}); } catch { /* history is a hint only */ }
         return result;
       };
       // A check with secrets runs through the host call, not a BB terminal: a terminal's command line and screen would carry the values.

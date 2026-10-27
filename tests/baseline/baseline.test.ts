@@ -75,7 +75,7 @@ describe("the baseline before a writer (D1-3)", () => {
   it("skips what is too slow or carries secrets, says so, and then does not claim «already built»", async () => {
     const w = await world({ settings: { "baseline.time_cap_sec": 30 } });
     // its own history says «sleep 100» takes about 100 s
-    for (let index = 0; index < 3; index += 1) recordCheckDuration(w.db, { projectId: "projA", command: "sleep 100", durationMs: 100_000, exitCode: 0 });
+    for (let index = 0; index < 3; index += 1) recordCheckDuration(w.db, { projectId: "projA", command: "sleep 100", cwd: w.base, root: w.base, durationMs: 100_000, exitCode: 0 });
     const input = w.pendingTask("t1", ["test -f keep.txt", { command: "sleep 100", timeout_sec: 600 }, { command: "echo $TOKEN", secrets: ["TOKEN"] }]);
     await w.services.baseline.preflight(input);
     const row = getBaseline(w.db, "run1", "t1")!;

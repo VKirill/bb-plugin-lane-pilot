@@ -750,7 +750,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           backend:(checkSettings["sandbox.backend"] as "auto" | "macos-seatbelt" | "linux-bubblewrap" | undefined) ?? "auto",
           // A check with secrets cannot run on the host's replay (it has no Env Catalog); the post-merge check on main still runs it.
           // The same limit as the writer's own check: its history widens it (a replay at a raw 120 s killed checks the attempt had passed).
-          commands:input.task.verification.filter((command) => !command.secrets?.length).slice(0, 20).map((command) => ({ command:command.command, cwd:command.cwd, timeoutSec:checkTimeoutSec(db, input.projectId, command.command, command.timeout_sec ?? 120) })),
+          commands:input.task.verification.filter((command) => !command.secrets?.length).slice(0, 20).map((command) => ({ command:command.command, cwd:command.cwd, timeoutSec:checkTimeoutSec(db, input.projectId, { command:command.command, cwd:command.cwd, root:input.task.project_cwd }, command.timeout_sec ?? 120) })),
         } : null;
         const replayMs = (replayChecks?.commands ?? []).reduce((sum, command) => sum + 2 * command.timeoutSec * 1000, 0);
         // The merge is acceptance too: the attempt stays «running» with its writer idle while it queues behind another task's

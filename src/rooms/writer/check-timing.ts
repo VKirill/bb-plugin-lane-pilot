@@ -1,4 +1,4 @@
-import { listCheckDurations, type LanePilotDatabase } from "../storage";
+import { listCheckDurations, type CheckRef, type LanePilotDatabase } from "../storage";
 import { CHECK_HISTORY_MIN_RUNS, p95 } from "../tasks";
 
 export { CHECK_HISTORY_MIN_RUNS, p95 };
@@ -13,6 +13,6 @@ export function historyTimeoutSec(configuredSec: number, durationsMs: readonly n
   return Math.max(configuredSec, Math.min(capSec, Math.ceil((p95(durationsMs) * 2) / 1000)));
 }
 
-export function checkTimeoutSec(db: LanePilotDatabase, projectId: string, command: string, configuredSec: number): number {
-  return historyTimeoutSec(configuredSec, listCheckDurations(db, projectId, command, CHECK_HISTORY_RUNS));
+export function checkTimeoutSec(db: LanePilotDatabase, projectId: string, check: CheckRef, configuredSec: number): number {
+  return historyTimeoutSec(configuredSec, listCheckDurations(db, projectId, check, CHECK_HISTORY_RUNS));
 }

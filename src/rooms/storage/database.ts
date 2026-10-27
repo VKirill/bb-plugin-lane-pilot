@@ -1627,15 +1627,43 @@ export function listSecretIssuance(db: LanePilotDatabase, projectId: string, lim
       secretName: row.secret_name as string, hostId: (row.host_id as string | null) ?? null, network: (row.network as string | null) ?? null }));
 }
 
+/** A verification check as the contract names it: its command, the folder it starts in, and the project root that folder is read against (the task's project_cwd). */
+export type CheckRef = { command: string; cwd: string; root?: string };
+
+const CD_PREFIX = /^cd\s+("[^"$`\\]+"|'[^']+'|[^\s&|;<>()$`"'\\~*?]+)\s*&&\s*/;
+const NO_ROOT = "/.lane-pilot-no-root";
+
 /**
- * One check whatever folder it is started from: `cd game && python3 -I scripts/studio_test.py` and `python3 -I scripts/studio_test.py`
- * time out alike, yet as two keys the second had no history and was killed five times at 120 s (Vampirism Fire, wc35ef88c-T1).
+ * Where a check really runs and what it really runs: a leading `cd <dir> &&` moves into the folder (relative to the check's cwd), and the folder
+ * is read relative to the project root, so a check started from another worktree of the same project is the same check. The rest of the command
+ * is kept as written (only its outer whitespace goes): a quoted literal is never rewritten.
  */
-export const checkHistoryKey = (command: string): string => command.trim().replace(/^cd\s+\S+\s*&&\s*/, "").replace(/\s+/g, " ");
+export function checkIdentity(ref: CheckRef): { cwd: string; command: string } {
+  const root = resolve(ref.root ?? NO_ROOT);
+  let dir = resolve(root, ref.cwd);
+  let command = ref.command.trim();
+  for (let found = CD_PREFIX.exec(command); found; found = CD_PREFIX.exec(command)) {
+    dir = resolve(dir, found[1]!.replace(/^(["'])(.*)\1$/, "$2"));
+    command = command.slice(found[0].length);
+  }
+  const inside = relative(root, dir);
+  const logical = inside === "" ? "." : inside === ".." || inside.startsWith("../") || isAbsolute(inside) ? dir : inside;
+  return { cwd: logical, command: command.trim() };
+}
+
+/**
+ * One check is (logical folder, command): `cd game && python3 -I scripts/studio_test.py` from the root and `python3 -I scripts/studio_test.py` from game/
+ * time out alike, yet as two keys the second had no history and was killed five times at 120 s (Vampirism Fire, wc35ef88c-T1);
+ * `cd appA && npm test` and `cd appB && npm test` are two checks, and so are two commands that differ inside a quoted literal.
+ */
+export const checkHistoryKey = (ref: CheckRef): string => { const { cwd, command } = checkIdentity(ref); return JSON.stringify([cwd, command]); };
+
+/** Rows written before the folder joined the key were keyed by the trimmed command alone: still read, for that exact command string. */
+const legacyCheckKey = (command: string): string => sha256Buffer(command.trim());
 
 /** One finished verification command run. The command is keyed by its hash: it can be long and may carry a secret name. */
-export function recordCheckDuration(db: LanePilotDatabase, input: { projectId: string; command: string; durationMs: number; exitCode: number; now?: number }): void {
-  const key = sha256Buffer(checkHistoryKey(input.command));
+export function recordCheckDuration(db: LanePilotDatabase, input: CheckRef & { projectId: string; durationMs: number; exitCode: number; now?: number }): void {
+  const key = sha256Buffer(checkHistoryKey(input));
   db.prepare("INSERT INTO lane_pilot_check_duration(project_id,command_key,duration_ms,exit_code,at) VALUES (?,?,?,?,?)")
     .run(input.projectId, key, Math.max(0, Math.round(input.durationMs)), input.exitCode, input.now ?? Date.now());
   db.prepare(`DELETE FROM lane_pilot_check_duration WHERE project_id=? AND command_key=? AND rowid NOT IN
@@ -1644,22 +1672,35 @@ export function recordCheckDuration(db: LanePilotDatabase, input: { projectId: s
 }
 
 /**
- * The limits (seconds) one command timed out at in one project, newest first. A timeout is not kept in lane_pilot_check_duration
+ * The limits (seconds) one check timed out at in one project, newest first. A timeout is not kept in lane_pilot_check_duration
  * (it says nothing about how long the check takes), so its trace is the attempt's final reason «verification failed (cmd): verification
  * timed out after 120s» (live 2026-10-26, Vampirism Fire: the whole Studio suite, no timeout_sec, killed five times at 120 s).
+ * The reason carries no folder, so it is joined to the attempt's task contract: the contract's check with that command string gives the folder
+ * (task level: two checks of one task with the same command at different folders count for neither); a command the contract does not list is a
+ * harness check, which runs at the task root; an attempt whose task is gone cannot be placed and is left out.
  */
-export function listCheckTimeouts(db: LanePilotDatabase, projectId: string, command: string, limit = 20): number[] {
-  const want = checkHistoryKey(command);
-  const rows = db.prepare("SELECT a.reason FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.project_id=? AND instr(a.reason, '): verification timed out after ') > 0 ORDER BY a.created_at DESC, a.attempt_no DESC LIMIT ?")
-    .all(projectId, limit * 10) as Array<{ reason: string }>;
+export function listCheckTimeouts(db: LanePilotDatabase, projectId: string, check: CheckRef, limit = 20): number[] {
+  const want = checkHistoryKey(check);
+  const rows = db.prepare(`SELECT a.reason AS reason, t.contract_json AS contract FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
+      LEFT JOIN lane_pilot_task t ON t.id=a.task_id AND t.run_id=a.run_id
+      WHERE r.project_id=? AND instr(a.reason, '): verification timed out after ') > 0 ORDER BY a.created_at DESC, a.attempt_no DESC LIMIT ?`)
+    .all(projectId, limit * 10) as Array<{ reason: string; contract: string | null }>;
   return rows.flatMap((row) => {
     const found = /verification failed \((.+?)\): verification timed out after (\d+)s/.exec(row.reason);
-    return found && checkHistoryKey(found[1]!) === want ? [Number(found[2])] : [];
+    if (!found || !row.contract) return [];
+    let task: { project_cwd?: unknown; verification?: unknown };
+    try { task = JSON.parse(row.contract) as typeof task; } catch { return []; }
+    if (typeof task.project_cwd !== "string") return [];
+    const root = task.project_cwd;
+    const listed = (Array.isArray(task.verification) ? task.verification : [])
+      .filter((entry): entry is { command: string; cwd: string } => typeof entry?.command === "string" && typeof entry?.cwd === "string" && entry.command.trim() === found[1]!.trim());
+    const keys = new Set((listed.length ? listed : [{ command: found[1]!, cwd: root }]).map((entry) => checkHistoryKey({ command: entry.command, cwd: entry.cwd, root })));
+    return keys.size === 1 && keys.has(want) ? [Number(found[2])] : [];
   }).slice(0, limit);
 }
 
-/** Durations (ms) of the last green runs of one command in one project, newest first. */
-export function listCheckDurations(db: LanePilotDatabase, projectId: string, command: string, limit = 20): number[] {
-  return (db.prepare("SELECT duration_ms FROM lane_pilot_check_duration WHERE project_id=? AND command_key=? AND exit_code=0 ORDER BY at DESC, rowid DESC LIMIT ?")
-    .all(projectId, sha256Buffer(checkHistoryKey(command)), limit) as Array<{ duration_ms: number }>).map((row) => row.duration_ms);
+/** Durations (ms) of the last green runs of one check in one project, newest first (rows of the old command-only key included). */
+export function listCheckDurations(db: LanePilotDatabase, projectId: string, check: CheckRef, limit = 20): number[] {
+  return (db.prepare("SELECT duration_ms FROM lane_pilot_check_duration WHERE project_id=? AND command_key IN (?,?) AND exit_code=0 ORDER BY at DESC, rowid DESC LIMIT ?")
+    .all(projectId, sha256Buffer(checkHistoryKey(check)), legacyCheckKey(check.command), limit) as Array<{ duration_ms: number }>).map((row) => row.duration_ms);
 }

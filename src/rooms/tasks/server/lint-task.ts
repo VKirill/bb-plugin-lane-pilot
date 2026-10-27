@@ -73,7 +73,7 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
     }
     const ownerWords = String(settings["owner.words"] ?? "off") === "on";
     // What the project recorded of each check: its green durations (the store checkTimeoutSec reads) and the limits it timed out at.
-    const checkHistory = (command:string) => ({ greenMs:listCheckDurations(db, projectId, command), timedOutSec:listCheckTimeouts(db, projectId, command) });
+    const checkHistory = (check:{ command:string; cwd:string }) => { const ref = { command:check.command, cwd:check.cwd, root:task.project_cwd }; return { greenMs:listCheckDurations(db, projectId, ref), timedOutSec:listCheckTimeouts(db, projectId, ref) }; };
     return lintContract({ task, workspacePath, hostId, kinds, listings, sandboxUnsafe, gate, openTasks, deadDependencies, programs, ownerWords, checkHistory, ...(secrets ? { secrets } : {}) });
   };
 }

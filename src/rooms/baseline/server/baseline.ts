@@ -81,7 +81,7 @@ export function createBaseline(ctx: ServerCore, services: Services) {
 
       const cache = cachedChecks(db, input.projectId, baseSha);
       const plan = planChecks(input.task.verification,
-        (item) => estimateSec(listCheckDurations(db, input.projectId, item.command), item.timeout_sec ?? 120),
+        (item) => estimateSec(listCheckDurations(db, input.projectId, { command: item.command, cwd: item.cwd, root: input.task.project_cwd }), item.timeout_sec ?? 120),
         { totalCapSec: settings.timeCapSec, perCheckCapSec: settings.timeCapSec, free: (item) => cache.has(checkKey(item.command, item.cwd)) });
 
       const checks: BaselineCheck[] = plan.map((entry) => {

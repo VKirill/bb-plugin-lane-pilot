@@ -283,7 +283,7 @@ describe("contract lint rules", () => {
   describe("a check with a history of running out of time", () => {
     const folder = { "src/a.ts":"file" as const };
     const suite = "cd game && python3 -I scripts/studio_test.py --filter Par";
-    const history = (greenMs:number[], timedOutSec:number[]) => ({ checkHistory:(command:string) => command === suite ? { greenMs, timedOutSec } : { greenMs:[], timedOutSec:[] } });
+    const history = (greenMs:number[], timedOutSec:number[]) => ({ checkHistory:(check:{ command:string }) => check.command === suite ? { greenMs, timedOutSec } : { greenMs:[], timedOutSec:[] } });
     const lintCheck = (timeout_sec:number | undefined, input:Partial<LintInput>) => lint({ verification:[{ command:suite, cwd:root, ...(timeout_sec ? { timeout_sec } : {}) }] }, input, folder);
     it("asks for a timeout_sec with a number when the command timed out at the default limit", () => {
       const { errors } = lintCheck(undefined, history([], [120, 120, 120]));
@@ -405,12 +405,18 @@ describe("contract lint at dispatch", () => {
     expect(whole).toMatchObject({ state:"validation_failed" });
     expect(String(whole.reason)).toContain("the integration gate (python3 -I scripts/studio_test.py) runs the whole suite once per batch");
     const slow = "cd game && python3 -I scripts/studio_test.py --filter Par010";
-    for (const seconds of [300, 320, 340]) recordCheckDuration(db, { projectId, command:slow, durationMs:seconds * 1000, exitCode:0 });
+    for (const seconds of [300, 320, 340]) recordCheckDuration(db, { projectId, command:slow, cwd:root, root, durationMs:seconds * 1000, exitCode:0 });
     const timeout = await dispatch({ verification:[{ command:slow, cwd:root }] });
     expect(timeout).toMatchObject({ state:"validation_failed" });
     expect(String(timeout.reason)).toContain("took up to 340 s in its last 3 green runs");
     expect(String(timeout.reason)).toContain("set timeout_sec to 720 or more");
     expect(taskCount(db)).toBe(0);
+    // The history is the check's own: the same check started from its folder is refused by it...
+    const inFolder = await dispatch({ verification:[{ command:"python3 -I scripts/studio_test.py --filter Par010", cwd:`${root}/game` }] });
+    expect(String(inFolder.reason)).toContain("took up to 340 s in its last 3 green runs");
+    // ...and the same command in another folder of the project is not.
+    const other = await dispatch({ verification:[{ command:slow, cwd:root }, { command:"python3 -I scripts/studio_test.py --filter Par010", cwd:`${root}/other` }] });
+    expect(String(other.reason ?? "").match(/verification\[\d\][^\n]*green runs/g)).toHaveLength(1);
     await harness.lifecycle.dispose();
   });
 

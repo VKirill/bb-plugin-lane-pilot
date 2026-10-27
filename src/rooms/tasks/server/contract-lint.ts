@@ -32,7 +32,7 @@ export type LintInput = {
   /** The project's integration gate (explicit or detected) runs the whole suite once per batch; absent or null when there is none. */
   gate?:{ command:string } | null;
   /** What the project has recorded of one check command: the durations of its green runs and the limits it timed out at; absent when the history was not asked. */
-  checkHistory?:(command:string) => { greenMs:readonly number[]; timedOutSec:readonly number[] };
+  checkHistory?:(check:{ command:string; cwd:string }) => { greenMs:readonly number[]; timedOutSec:readonly number[] };
   /** The project asks for the owner's word (setting owner.words = on): a clarification counts only with his answer. */
   ownerWords?:boolean;
   /** Other open tasks of the project. */
@@ -390,7 +390,7 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
   // A check that has outrun its limit in this project fails whatever the writer does: the recorded timeouts and green runs say how long it needs.
   // (Vampirism Fire 2026-10-26: wc35ef88c-T1 ran the whole Studio suite, 5–10 min, with no timeout_sec: killed at 120 s five times.)
   for (const [index, check] of task.verification.entries()) {
-    const history = input.checkHistory?.(check.command);
+    const history = input.checkHistory?.(check);
     if (!history) continue;
     const limit = check.timeout_sec ?? DEFAULT_CHECK_TIMEOUT_SEC;
     const timedOut = Math.max(0, ...history.timedOutSec);

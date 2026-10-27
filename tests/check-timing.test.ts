@@ -1,7 +1,12 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { createAttempt, createRun, listCheckDurations, listCheckTimeouts, openDatabase, recordCheckDuration, transitionAttempt } from "../src/rooms/storage/database";
+import { sha256Buffer } from "@lane-pilot/kit";
+import { checkHistoryKey, createAttempt, createRun, createTask, listCheckDurations, listCheckTimeouts, openDatabase, recordCheckDuration, transitionAttempt } from "../src/rooms/storage/database";
 import { CHECK_TIMEOUT_CAP_SEC, checkTimeoutSec, historyTimeoutSec, p95 } from "../src/rooms/writer/check-timing";
+
+const ROOT = "/work/proj";
+const STUDIO = "python3 -I scripts/studio_test.py";
+const rowsOf = (db: ReturnType<typeof openDatabase>, projectId: string) => (db.prepare("SELECT COUNT(*) n FROM lane_pilot_check_duration WHERE project_id=?").get(projectId) as { n: number }).n;
 
 describe("check timeout from history", () => {
   it("takes the nearest-rank 95th percentile", () => {
@@ -22,59 +27,146 @@ describe("check timeout from history", () => {
     expect(historyTimeoutSec(3600, [2_000_000, 2_000_000, 2_000_000])).toBe(3600);
   });
 
-  it("reads the limits a command timed out at from the final reasons of its attempts, per project (a timeout is kept in no duration row)", async () => {
+  it("reads the limits a check timed out at from the final reasons of its attempts and the task contract's folder, per project (a timeout is kept in no duration row)", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
     createRun(db, "runA", "A");
     createRun(db, "runB", "B");
-    const attempt = (run:string, id:string, reason:string) => { createAttempt(db, { id, runId:run, taskId:id }); transitionAttempt(db, id, "blocked", { reason }); };
-    attempt("runA", "a1", "verification failed (python3 -I scripts/studio_test.py): verification timed out after 120s");
-    attempt("runA", "a2", "turn limit 5 reached: verification failed (python3 -I scripts/studio_test.py): verification timed out after 600s");
-    attempt("runA", "a3", "verification failed (python3 -I scripts/studio_test.py): exit 1");
-    attempt("runA", "a4", "verification failed (python3 -I scripts/studio_test.py --filter X): verification timed out after 90s");
-    attempt("runB", "b1", "verification failed (python3 -I scripts/studio_test.py): verification timed out after 30s");
-    expect(listCheckTimeouts(db, "A", "python3 -I scripts/studio_test.py").sort((a, b) => a - b)).toEqual([120, 600]);
-    expect(listCheckTimeouts(db, "A", "python3 -I scripts/studio_test.py --filter X")).toEqual([90]);
-    expect(listCheckTimeouts(db, "B", "python3 -I scripts/studio_test.py")).toEqual([30]);
-    expect(listCheckTimeouts(db, "A", "npm test")).toEqual([]);
-    // The same check started from its folder is the same history.
-    expect(listCheckTimeouts(db, "A", "cd game && python3 -I scripts/studio_test.py").sort((a, b) => a - b)).toEqual([120, 600]);
+    const attempt = (run:string, id:string, reason:string, verification:Array<{ command:string; cwd:string }> = [{ command:STUDIO, cwd:ROOT }]) => {
+      createTask(db, { id, runId:run, kind:"cli", contract:{ project_cwd:ROOT, verification } });
+      createAttempt(db, { id, runId:run, taskId:id });
+      transitionAttempt(db, id, "blocked", { reason });
+    };
+    attempt("runA", "a1", `verification failed (${STUDIO}): verification timed out after 120s`);
+    attempt("runA", "a2", `turn limit 5 reached: verification failed (${STUDIO}): verification timed out after 600s`);
+    attempt("runA", "a3", `verification failed (${STUDIO}): exit 1`);
+    attempt("runA", "a4", `verification failed (${STUDIO} --filter X): verification timed out after 90s`, [{ command:`${STUDIO} --filter X`, cwd:ROOT }]);
+    attempt("runB", "b1", `verification failed (${STUDIO}): verification timed out after 30s`);
+    const at = (command:string, cwd = ROOT) => ({ command, cwd, root:ROOT });
+    expect(listCheckTimeouts(db, "A", at(STUDIO)).sort((a, b) => a - b)).toEqual([120, 600]);
+    expect(listCheckTimeouts(db, "A", at(`${STUDIO} --filter X`))).toEqual([90]);
+    expect(listCheckTimeouts(db, "B", at(STUDIO))).toEqual([30]);
+    expect(listCheckTimeouts(db, "A", at("npm test"))).toEqual([]);
+    // The same check started from its folder is the same history; another folder is another check.
+    expect(listCheckTimeouts(db, "A", at(`cd game && ${STUDIO}`)).sort((a, b) => a - b)).toEqual([]);
+    expect(listCheckTimeouts(db, "A", at(STUDIO, `${ROOT}/game`))).toEqual([]);
     await harness.lifecycle.dispose();
   });
 
-  it("stores each passing run per project and command and reads the last 20, newest first", async () => {
+  it("places a timeout by the folder its task contract gave the command: appA and appB do not share it, root and game/ do", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
-    for (let i = 1; i <= 25; i += 1) recordCheckDuration(db, { projectId: "A", command: "npm test", durationMs: i * 1000, exitCode: 0, now: i });
-    recordCheckDuration(db, { projectId: "A", command: "npm run lint", durationMs: 7_000, exitCode: 0, now: 30 });
-    recordCheckDuration(db, { projectId: "B", command: "npm test", durationMs: 9_000, exitCode: 0, now: 31 });
+    createRun(db, "runA", "A");
+    const attempt = (id:string, command:string, cwd:string, sec:number, extra:Array<{ command:string; cwd:string }> = []) => {
+      createTask(db, { id, runId:"runA", kind:"cli", contract:{ project_cwd:ROOT, verification:[{ command, cwd }, ...extra] } });
+      createAttempt(db, { id, runId:"runA", taskId:id });
+      transitionAttempt(db, id, "blocked", { reason:`verification failed (${command}): verification timed out after ${sec}s` });
+    };
+    attempt("t1", "cd appA && npm test", ROOT, 120);
+    attempt("t2", STUDIO, `${ROOT}/game`, 300);
+    attempt("t3", "npm test", "appA", 60);
+    // Two checks of one task with the same command at two folders: the reason cannot say which, so it counts for neither.
+    attempt("t4", "npm run lint", ROOT, 45, [{ command:"npm run lint", cwd:"appB" }]);
+    const at = (command:string, cwd = ROOT) => ({ command, cwd, root:ROOT });
+    // t1 (cd appA from the root) and t3 (appA as the folder) are one check.
+    expect(listCheckTimeouts(db, "A", at("npm test", "appA")).sort((a, b) => a - b)).toEqual([60, 120]);
+    expect(listCheckTimeouts(db, "A", at("cd appA && npm test")).sort((a, b) => a - b)).toEqual([60, 120]);
+    expect(listCheckTimeouts(db, "A", at("npm test", "appB"))).toEqual([]);
+    expect(listCheckTimeouts(db, "A", at("cd appB && npm test"))).toEqual([]);
+    expect(listCheckTimeouts(db, "A", at(`cd game && ${STUDIO}`))).toEqual([300]);
+    expect(listCheckTimeouts(db, "A", at(STUDIO))).toEqual([]);
+    expect(listCheckTimeouts(db, "A", at("npm run lint"))).toEqual([]);
+    expect(listCheckTimeouts(db, "A", at("npm run lint", "appB"))).toEqual([]);
+    await harness.lifecycle.dispose();
+  });
+
+  it("stores each passing run per project and check and reads the last 20, newest first", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const at = (command:string, extra:object = {}) => ({ command, cwd:ROOT, root:ROOT, ...extra });
+    for (let i = 1; i <= 25; i += 1) recordCheckDuration(db, { projectId: "A", ...at("npm test"), durationMs: i * 1000, exitCode: 0, now: i });
+    recordCheckDuration(db, { projectId: "A", ...at("npm run lint"), durationMs: 7_000, exitCode: 0, now: 30 });
+    recordCheckDuration(db, { projectId: "B", ...at("npm test"), durationMs: 9_000, exitCode: 0, now: 31 });
     // A red run ends early and says nothing about how long a green one takes.
-    recordCheckDuration(db, { projectId: "A", command: "npm test", durationMs: 1, exitCode: 1, now: 32 });
-    const rows = listCheckDurations(db, "A", "npm test");
+    recordCheckDuration(db, { projectId: "A", ...at("npm test"), durationMs: 1, exitCode: 1, now: 32 });
+    const rows = listCheckDurations(db, "A", at("npm test"));
     expect(rows).toHaveLength(20);
     expect(rows[0]).toBe(25_000);
     expect(rows[19]).toBe(6_000);
-    expect(listCheckDurations(db, "A", "npm run lint")).toEqual([7_000]);
-    expect(listCheckDurations(db, "B", "npm test")).toEqual([9_000]);
+    expect(listCheckDurations(db, "A", at("npm run lint"))).toEqual([7_000]);
+    expect(listCheckDurations(db, "B", at("npm test"))).toEqual([9_000]);
+    await harness.lifecycle.dispose();
+  });
+
+  it("keeps the durations of two folders apart and of one folder together, whether the cwd is the check's or a leading cd's", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    recordCheckDuration(db, { projectId: "A", command: "cd appA && npm test", cwd: ROOT, root: ROOT, durationMs: 111_000, exitCode: 0 });
+    recordCheckDuration(db, { projectId: "A", command: "npm test", cwd: `${ROOT}/appB`, root: ROOT, durationMs: 5_000, exitCode: 0 });
+    expect(listCheckDurations(db, "A", { command: "npm test", cwd: "appA", root: ROOT })).toEqual([111_000]);
+    expect(listCheckDurations(db, "A", { command: "cd appB && npm test", cwd: ROOT, root: ROOT })).toEqual([5_000]);
+    expect(listCheckDurations(db, "A", { command: "npm test", cwd: ROOT, root: ROOT })).toEqual([]);
+    // checkTimeoutSec reads the same store: appA's slow history does not widen appB.
+    for (let i = 0; i < 3; i += 1) recordCheckDuration(db, { projectId: "A", command: "npm test", cwd: `${ROOT}/appA`, root: ROOT, durationMs: 100_000, exitCode: 0 });
+    expect(checkTimeoutSec(db, "A", { command: "npm test", cwd: `${ROOT}/appA`, root: ROOT }, 120)).toBe(222);
+    expect(checkTimeoutSec(db, "A", { command: "npm test", cwd: `${ROOT}/appB`, root: ROOT }, 120)).toBe(120);
+    await harness.lifecycle.dispose();
+  });
+
+  it("still reads the rows written before the folder joined the key, for the exact same command string only", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const legacy = (projectId:string, command:string, ms:number, at:number) => db.prepare("INSERT INTO lane_pilot_check_duration(project_id,command_key,duration_ms,exit_code,at) VALUES (?,?,?,?,?)").run(projectId, sha256Buffer(command.trim()), ms, 0, at);
+    legacy("A", "npm test", 40_000, 1);
+    legacy("A", "  npm test ", 41_000, 2);
+    legacy("A", "npm  test", 99_000, 3);
+    legacy("B", "npm test", 77_000, 4);
+    const ref = { command: "npm test", cwd: ROOT, root: ROOT };
+    expect(listCheckDurations(db, "A", ref)).toEqual([41_000, 40_000]);
+    // New rows are written under the new key and win by recency; the old rows stay readable beside them.
+    recordCheckDuration(db, { projectId: "A", ...ref, durationMs: 50_000, exitCode: 0, now: 10 });
+    expect(listCheckDurations(db, "A", ref)).toEqual([50_000, 41_000, 40_000]);
+    expect(listCheckDurations(db, "B", ref)).toEqual([77_000]);
+    expect(rowsOf(db, "A")).toBe(4);
     await harness.lifecycle.dispose();
   });
 
   it("checkTimeoutSec widens a slow check from its own history and leaves a new one alone", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     const db = openDatabase(bb);
-    expect(checkTimeoutSec(db, "A", "npm test", 120)).toBe(120);
-    for (const ms of [100_000, 105_000, 110_000, 98_000]) recordCheckDuration(db, { projectId: "A", command: "npm test", durationMs: ms, exitCode: 0 });
-    expect(checkTimeoutSec(db, "A", "npm test", 120)).toBe(220);
-    expect(checkTimeoutSec(db, "B", "npm test", 120)).toBe(120);
+    const ref = { command: "npm test", cwd: ROOT, root: ROOT };
+    expect(checkTimeoutSec(db, "A", ref, 120)).toBe(120);
+    for (const ms of [100_000, 105_000, 110_000, 98_000]) recordCheckDuration(db, { projectId: "A", ...ref, durationMs: ms, exitCode: 0 });
+    expect(checkTimeoutSec(db, "A", ref, 120)).toBe(220);
+    expect(checkTimeoutSec(db, "B", ref, 120)).toBe(120);
     await harness.lifecycle.dispose();
   });
 });
 
-describe("one check whatever folder starts it", () => {
-  it("shares its durations and timeouts with and without a leading cd (wc35ef88c-T1, 2026-10-26)", async () => {
-    const { checkHistoryKey } = await import("../src/rooms/storage/database");
-    expect(checkHistoryKey("cd game && python3 -I scripts/studio_test.py")).toBe(checkHistoryKey("python3  -I scripts/studio_test.py"));
-    expect(checkHistoryKey("cd game && python3 -I scripts/studio_test.py --filter Par030")).not.toBe(checkHistoryKey("python3 -I scripts/studio_test.py"));
+describe("the identity of a check is (logical folder, command)", () => {
+  const key = (command:string, cwd = ROOT) => checkHistoryKey({ command, cwd, root: ROOT });
+  it("is one check with and without a leading cd, from the root or from the folder (wc35ef88c-T1, 2026-10-26)", () => {
+    expect(key(`cd game && ${STUDIO}`)).toBe(key(STUDIO, `${ROOT}/game`));
+    expect(key(`cd game && ${STUDIO}`)).toBe(key(STUDIO, "game"));
+    expect(key(`  cd game &&   ${STUDIO}  `)).toBe(key(STUDIO, "game/"));
+    expect(key("cd a && cd b && npm test")).toBe(key("npm test", "a/b"));
+    expect(key("cd ../web && npm test", "api")).toBe(key("npm test", "web"));
+    // The same folder reached from another worktree of the project is the same check.
+    expect(checkHistoryKey({ command: STUDIO, cwd: "/wt/attempt-1/game", root: "/wt/attempt-1" })).toBe(key(STUDIO, `${ROOT}/game`));
+    expect(key(`cd game && ${STUDIO} --filter Par030`)).not.toBe(key(STUDIO));
+  });
+  it("keeps different folders apart (Astra RECHECK-336 P2)", () => {
+    expect(key("cd appA && npm test")).not.toBe(key("cd appB && npm test"));
+    expect(key("npm test", "appA")).not.toBe(key("npm test", "appB"));
+    expect(key("npm test", "appA")).not.toBe(key("npm test"));
+    expect(key("cd /elsewhere && npm test")).not.toBe(key("npm test"));
+  });
+  it("never rewrites inside quotes or inside the command: only its outer whitespace goes", () => {
+    expect(key(`node -e "console.log('a  b')"`)).not.toBe(key(`node -e "console.log('a b')"`));
+    expect(key("echo   hi")).not.toBe(key("echo hi"));
+    expect(key("  npm test \n")).toBe(key("npm test"));
+    expect(key(`cd "my app" && npm test`)).toBe(key("npm test", "my app"));
+    // a cd the key cannot resolve statically stays part of the command
+    expect(key("cd $APP && npm test")).not.toBe(key("npm test"));
   });
 });
-
