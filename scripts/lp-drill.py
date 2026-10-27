@@ -389,7 +389,13 @@ NOGIT_REPO = "repo-a"
 
 def task_nogit_repo(cwd: str) -> dict:
     # Written from the folder without git, as the BB-сервис PM writes a plugin task.
-    return note_task(f"drill-{STAMP}-nogit-repo", f"{NOGIT_REPO}/notes/drill-{STAMP}.md", f"Drill {STAMP} nogit repo", cwd) | {"risk": "low"}
+    spec = note_task(f"drill-{STAMP}-nogit-repo", f"{NOGIT_REPO}/notes/drill-{STAMP}.md", f"Drill {STAMP} nogit repo", cwd) | {"risk": "low"}
+    # The check runs inside the repository, as a plugin task's does: a check with cwd in the folder without git keeps the task out of the
+    # repository (it cannot run in the repository's worktree), and Lane Pilot sends such a task back (2026-10-27: the task ran in the live folder).
+    text, inside = f"Drill {STAMP} nogit repo", f"notes/drill-{STAMP}.md"
+    spec["verification"] = [{"command": f"test \"$(sed -n 1p {shlex.quote(inside)})\" = {shlex.quote('# ' + text)} && test \"$(sed -n 2p {shlex.quote(inside)})\" = {shlex.quote('ok: ' + text)}",
+                             "cwd": str(Path(cwd) / NOGIT_REPO)}]
+    return spec
 
 
 def scenario_parallel3(ctx: Context) -> dict:
@@ -1265,9 +1271,11 @@ def scenario_nogit_repo(tmp: Path) -> dict:
         if ctx.run_id:
             ctx.quiet()
         problems += ctx.finish()
-        if (repo / inside).exists():
+        if git(str(repo), "ls-files", "--", inside):
             git(str(repo), "rm", "-q", "--", inside)
             git(str(repo), "-c", "user.name=Lane Pilot drill", "-c", "user.email=drill@local.invalid", "commit", "-q", "-m", f"drill {STAMP}: clean up")
+        # An untracked file (the task did not land in the repository) is a finding, not a crash of the cleanup that hides it.
+        (repo / inside).unlink(missing_ok=True)
     return verdict("nogit_repo", problems, tasks=[row] if row else [], project=NOGIT["project"], runId=ctx.run_id or None, configuredByDrill=configured)
 
 

@@ -176,6 +176,29 @@ describe("a task over one repository of a run folder without git (BB-серви�
     await env.harness.lifecycle.dispose();
   });
 
+  it("sends back a task whose files lie in one repository but whose check runs in the folder without git (drill nogit_repo 2026-10-27)", async () => {
+    const env = await setup((workspace) => {
+      put(workspace, "src/hello.ts", "export const hello = \"hello\";\n");
+      return "Changed src/hello.ts";
+    });
+    // The check as the drill wrote it: cwd is the run folder, the path starts with the repository. Silently running this task in the live folder
+    // left its file untracked in the repository, so the PM is told to put the check in the repository instead.
+    const check = { command: "grep -q hello plugins/p/src/hello.ts", cwd: env.folder, timeout_sec: 60 };
+    const sent = await env.dispatch({ verification: [check] });
+    expect(sent).toMatchObject({ state: "rejected" });
+    expect(String(sent.reason)).toContain("plugins/p");
+    expect(String(sent.reason)).toContain("cwd");
+    expect(getTask(env.db, "p-hello")).toBeUndefined();
+    // The same check from inside the repository moves the task.
+    const fixed = await env.dispatch({ verification: [{ command: "grep -q hello src/hello.ts", cwd: join(env.folder, "plugins", "p"), timeout_sec: 60 }] });
+    expect(fixed.state).not.toBe("rejected");
+    expect((getTask(env.db, "p-hello")!.contract as TaskV2).project_cwd).toBe(join(env.folder, "plugins", "p"));
+    const attempt = await env.finished();
+    expect(attempt.state).toBe("accepted");
+    expect(git(join(env.folder, "plugins", "p"), "status", "--porcelain")).toBe("");
+    await env.harness.lifecycle.dispose();
+  });
+
   it("refuses a project_cwd outside the run folder or one that is no repository top", async () => {
     const env = await setup(() => "nothing");
     const outside = await env.dispatch({ project_cwd: "/somewhere/else" });

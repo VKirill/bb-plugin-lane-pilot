@@ -135,10 +135,16 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       return { rejected:`task.project_cwd must equal the configured writerWorkspacePath (${runFolder}) or a git repository inside it` };
     }
     const fixed = { ...task, project_cwd:runFolder };
-    const folder = commonTaskFolder(fixed);
+    // The folder of the task's files alone: a check run elsewhere must not hide the repository (drill nogit_repo 2026-10-27).
+    const folder = commonTaskFolder({ ...fixed, verification:[] });
     if (!folder || !await services.isLiveFolder(runId, hostId, runFolder)) return { task:fixed, plan };
     const repo = await repoOf(resolve(runFolder, folder));
     const moved = repo ? rerootTask(fixed, repo) : null;
+    if (repo && !moved && rerootTask({ ...fixed, verification:[] }, repo)) {
+      // Every file is in the repository, so the task cannot work in the folder without git (one writer, no commit, files left untracked in the repository):
+      // a check whose cwd lies outside it cannot run in the repository's worktree, and the PM puts it inside.
+      return { rejected:`every file of this task is inside the git repository ${repo} of ${runFolder}, so the task works there (its own worktree, merged into its main), but a verification check has its cwd outside it. Set each check's cwd to ${resolve(runFolder, repo)} and write its command with paths relative to that repository (not ${repo}/...)` };
+    }
     if (!repo || !moved) return { task:fixed, plan };
     ctx.log(`Lane Pilot: task ${task.id} works in the repository ${repo} of ${runFolder} (its own worktree and merge, not the folder without git)`);
     return { task:moved.task, plan:planWithOutsideReads(plan, moved.outsideReads), movedInto:repo };
