@@ -54,7 +54,7 @@ describe("a task returned to its writer while the writer works", () => {
       runBudgetFor: () => ({ check: () => ({ ok: true }), noteAttempt: () => undefined, noteTokens: () => undefined, snapshot: () => ({ limits: {} }) }),
       runWriterPool: { acquire: async () => () => undefined },
       stability: { breakerHolds: () => null, diskHolds: async () => null, onTaskFailed: async () => false, loadParked: async () => [] },
-      maintainMemoryAfterAcceptance: () => undefined, maintainProjectLifeAfterAcceptance: () => undefined,
+      startAfterAcceptance: () => undefined,
       isLiveFolder: async () => false, workspaceDirt: async () => ({ ok: true, paths: [], snapshots: [] }),
       rollback: { noteStopped: async () => undefined },
       spawnWriterAttempt: async (input: { attemptId: string; continuation?: { workspacePath: string; dirtBefore: unknown[]; brief: string } }) => {

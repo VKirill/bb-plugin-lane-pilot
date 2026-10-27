@@ -2,5 +2,5 @@
 // Add a name here to make it public; scripts/refactor/barrels.ts wrote the first version from the existing imports.
 export { acceptedOnboardingEvidence } from "./onboarding";
 export type { OnboardingAcceptedEvidence, OnboardingInputPage } from "./onboarding";
-export { isAllowedProjectLifePath } from "./project-life";
+export { isAllowedProjectLifePath, shouldTriggerProjectLife } from "./project-life";
 export type { ProjectLifeTaskSummary } from "./project-life";

@@ -300,7 +300,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n292: ["have", "книга закрыта до «принято»: книга фазы пишется на каждом шаге", "src/rooms/phase/server/driver.ts#BOOK.md"],
   n293: ["have", "путь наследия без барьера: verify none записывается", "packages/contracts/src/schemas.ts#verify: z.enum([\"none\""],
   n294: ["have", "копия идёт с одобрением: посадка после «да» владельца", "src/rooms/writer/server/finish.ts#OWNER_WORD_WAIT_MS"],
-  n295: ["have", "урок уходит в корпус", "src/rooms/memory/server/memory.ts#maintainMemoryAfterAcceptance"],
+  n295: ["have", "урок уходит в корпус", "src/rooms/workflow/server/after-accept.ts#registerAfterAcceptExecutors"],
   n296: ["have", "рваная посадка восстановлена", "src/rooms/stability/server/reconcile.ts#function reconcileAttemptThread"],
   n297: ["have", "другой кандидат той же работы: версия x.N", "src/rooms/runs/failure-class.ts#export function taskFamily("],
   n298: ["have", "другое дерево — новое решение: main сдвинулся", "src/rooms/runs/failure-class.ts#REPLAY_CHECK_FAILED"],

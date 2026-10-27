@@ -269,9 +269,9 @@ export default async function plugin(bb: BbPluginApi) {
         // A reload drops the loops that watch background helpers; the stages are idempotent and find their child thread
         // again. Started in the factory, their first host call failed with «unavailable during factory registration».
         await step("resume of background helpers", () => {
+          // The after-acceptance graph run of a task is keyed by the task: a run the reload cut off is picked up again, one that never existed starts.
           for (const stage of listUnfinishedStages(db, ["memory-maintenance", "project-life"])) {
-            if (stage.stageId === "memory-maintenance") services.maintainMemoryAfterAcceptance(stage.projectId, stage.runId, stage.taskId, stage.pmThreadId);
-            else services.maintainProjectLifeAfterAcceptance(stage.projectId, stage.runId, stage.taskId, stage.pmThreadId);
+            services.startAfterAcceptance(stage.projectId, stage.runId, stage.taskId, stage.pmThreadId);
           }
         });
         await step("restore of the breakers", () => services.stability.restoreBreakers());

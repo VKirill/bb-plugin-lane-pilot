@@ -15,9 +15,8 @@ import { withUsage } from "../../usage/server";
 
 /**
  * The built-in workflow `lp-task-pipeline` (workflows/lp-task-pipeline.json) executed by the workflow engine.
- * Each executor wraps the stage function dispatchWriter's `runStages` calls; the blocking branches repeat that closure's
- * glue line by line (the closure stays as the kill-switch path, `LANE_PILOT_WORKFLOW_ENGINE=0`), and the equivalence test
- * compares the receipts of both paths.
+ * Each executor wraps a stage function (pm-read, the critiques, the writer loop); this is the only path a dispatch takes, and the
+ * equivalence test pins the receipts it leaves.
  */
 
 /** What the executors need from the dispatch that started the run. It lives in memory: a reload ends this pipeline (see `resumePolicy`) and start-up recovery starts it again from the stored task (`resumeDispatch`). */
@@ -29,9 +28,14 @@ export type DispatchRuntime = {
   task: TaskV2; plan: string; lintWarnings: string[];
 };
 
-/** Off only for `0`, `off`, `false`: nothing else, and no setting. Read at call time. */
-export const workflowEngineEnabled = (env: NodeJS.ProcessEnv = process.env): boolean =>
-  !["0", "off", "false"].includes((env.LANE_PILOT_WORKFLOW_ENGINE ?? "").trim().toLowerCase());
+/** Why the task pipeline cannot start on this engine, or null when it can: no engine, no pipeline graph, or a graph the engine refuses. */
+export function pipelineUnavailable(engine: WorkflowEngine | undefined): string | null {
+  if (!engine) return "the workflow engine is not running";
+  const workflow = builtinWorkflow(LP_TASK_PIPELINE);
+  if (!workflow) return `built-in workflow ${LP_TASK_PIPELINE} is not loaded`;
+  const problems = engine.preflight(workflow);
+  return problems.length ? problems.slice(0, 3).join("; ") : null;
+}
 
 const WRITER_STAGES = ["writer-agent", "verification", "acceptance-receipt"] as const;
 const TERMINAL_ATTEMPT = ["accepted", "blocked", "canceled"];

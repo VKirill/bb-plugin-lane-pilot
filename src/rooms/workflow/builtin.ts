@@ -22,6 +22,7 @@ import issueFull from "../../../workflows/issue-full.json";
 import issueQuick from "../../../workflows/issue-quick.json";
 import issueBatch from "../../../workflows/issue-batch.json";
 import lpTaskPipeline from "../../../workflows/lp-task-pipeline.json";
+import lpAfterAccept from "../../../workflows/lp.after-accept.json";
 import lpAnalyze from "../../../workflows/lp.analyze.json";
 import lpBrainstorm from "../../../workflows/lp.brainstorm.json";
 import lpBuild from "../../../workflows/lp.build.json";
@@ -92,6 +93,7 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
   { name: "issue-quick.json", value: issueQuick },
   { name: "issue-batch.json", value: issueBatch },
   { name: "lp-task-pipeline.json", value: lpTaskPipeline },
+  { name: "lp.after-accept.json", value: lpAfterAccept },
   { name: "lp.analyze.json", value: lpAnalyze },
   { name: "lp.brainstorm.json", value: lpBrainstorm },
   { name: "lp.build.json", value: lpBuild },
@@ -130,6 +132,8 @@ export const BUILTIN_SOURCES: ReadonlyArray<{ name: string; value: unknown }> = 
 
 /** The per-task pipeline every dispatch runs through (PM read, critiques, ownership base, writer). */
 export const LP_TASK_PIPELINE = "lp-task-pipeline";
+/** The graph that runs once a task is accepted: memory maintenance and project life, side by side (started by the merge, never offered). */
+export const AFTER_ACCEPT = "lp.after-accept";
 /** The outer chain of the chains spec: analyze, plan, build, check, close. */
 export const ANALYZE_PLAN_EXECUTE = "analyze-plan-execute";
 

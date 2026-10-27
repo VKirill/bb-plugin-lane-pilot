@@ -14,6 +14,7 @@ import { chainRuntimeFor, registerChainExecutors } from "./workflow-executors";
 import { notifyWorkflowIfEnded } from "./pm-notice";
 import { registerDispatchExecutors } from "../../writer/server";
 import { registerBrowserExecutors } from "../../qa/server";
+import { createAfterAcceptStarter, registerAfterAcceptExecutors } from "./after-accept";
 import { registerInvoiceActions } from "./workflow-invoice";
 import { registerAnamnesisActions } from "../../anamnesis";
 import { anamnesisFor } from "../../anamnesis";
@@ -64,6 +65,8 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
   });
   engineRef.current = engine;
   registerDispatchExecutors(engine);
+  // What runs once a task is accepted (memory and project life), started by the merge.
+  registerAfterAcceptExecutors(engine, ctx, services);
   // The chains of workflows/: the code-only actions and the joins' reducers, then the executors that need the host (agents, the owner, code tasks, files).
   registerPureActions(engine);
   registerReducers(engine);
@@ -75,5 +78,5 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
   // The browser step and the browser check of an accepted task (graphs browser-step and lp.browser-qa).
   registerBrowserExecutors(engine, ctx, services);
   bb.onDispose(() => engine.dispose());
-  return { workflowEngine: engine, workflowCatalog, workflowAgents };
+  return { workflowEngine: engine, workflowCatalog, workflowAgents, startAfterAcceptance: createAfterAcceptStarter(engine, ctx) };
 }

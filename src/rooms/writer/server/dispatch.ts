@@ -1,7 +1,6 @@
 import { isTaskSatisfied, loadBlockedBy } from "../../runs/server";
 import { setRunHalted } from "../../runs/server";
 import { isLiveDecision } from "../live-folder";
-import { pmReadBrief } from "../writer-brief";
 import { buildCliInvocation } from "../argv-builder";
 import { requiredCliFlags } from "../cli-flags";
 import { classifyCliOutcome } from "../cli-outcome";
@@ -11,20 +10,18 @@ import type { TaskV2 } from "../../contracts";
 import { QUALITY_MODE_SETTING, browserQaRequired, resolveQualityMode } from "../../critique";
 import type { CodeCriticDefault } from "../../critique";
 import { saveCriticCodeDefault } from "./critic-override";
-import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskGitBase, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, recordFinishedAttempt, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskGitBase, saveTaskPlan, setRunState, transitionAttempt } from "../../storage";
+import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskGitBase, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, recordFinishedAttempt, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskPlan, setRunState, transitionAttempt } from "../../storage";
 import { sha256 , spendReserve, type BirthKind } from "../../tasks";
 import { liveFolderLockNote, nextStep, taskFamily } from "../../runs";
 import { commonTaskFolder, isMainfixTask, isTaskBase, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask } from "../../tasks";
 import { validateTaskV2 } from "../../tasks/task-v2";
-import { appendExcludeCommand, persistTaskFolder } from "../../verification";
 import { lintReply } from "../../tasks/server";
 import type { LintFinding } from "../../tasks/server";
 import { createTaskLinter } from "../../tasks/server";
-import { runPlanCritique, runPmRead, runSpecialistReview } from "../../critique/server";
 import { closeWriterStages, recordStage, resetHelperStages } from "../../runs/server";
 import { id, stringAt, valueAt } from "../../core/server";
 import { buildTask } from "./writer-task";
-import { dispatchReply, dispatchRunKey, endedAttemptReply, startDispatchRun, workflowEngineEnabled } from "./dispatch-workflow";
+import { dispatchReply, dispatchRunKey, startDispatchRun, pipelineUnavailable } from "./dispatch-workflow";
 import { batchAdviceFor, topicLoopGuard } from "./dispatch-guards";
 import { reviveCanceledTask } from "./revive";
 import { countRunNudges } from "./writer-silence";
@@ -223,6 +220,13 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
       const reserve = spendReserve({ budgetTokens:budgetNow.limits.maxTokens, spentTokens:budgetNow.tokens, openAppetites, appetite:task.appetite.tokens });
       if (!reserve.ok) return lintReply(runId, [{ code:"spend_reserve", message:`spend reserve: ${reserve.why}; lower the appetite, wait for an open task, or raise the run's budget` }]);
     }
+    // The pipeline runs only on the workflow engine: when the engine cannot take it, nothing is created and the PM is told so. The warning is a wall entry (the journal reads the plugin log).
+    const unavailable = pipelineUnavailable(services.workflowEngine);
+    if (unavailable) {
+      bb.log.warn(`Lane Pilot dispatch of ${taskId} refused: engine_unavailable: ${unavailable}`);
+      const hint = `the task pipeline runs on the workflow engine and it cannot start now (${unavailable}); nothing was created. Send the task again in a minute; if it repeats, tell the owner.`;
+      return { ok:false, error:{ code:"engine_unavailable", retryable:true, sideEffects:"none", hint }, hint };
+    }
     createTask(db, { id:taskId, runId, kind:"bb", contract:task, birth:args.birth ?? "pm" });
     await saveCriticCodeDefault(bb.storage.kv as never, taskId, args.criticCodeDefault);
     saveTaskPlan(db, taskId, canonicalPlan);
@@ -244,131 +248,22 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
       recordStage(db, { runId, taskId, stageId, state:"pending", input:canonicalPlan });
     }
-    // A cancel while the stages run ends the attempt: a stage verdict after it leaves the attempt, its stages and the run alone.
-    const ended = () => endedAttemptReply(db, runId, taskId, attemptId);
-    const runStages = async (): Promise<Record<string,unknown>> => {
-      const pmRead=await runPmRead({bb,db,projectId:args.projectId,runId,taskId,pmThreadId:args.threadId,config:taskConfig,task:task});
-      if(pmRead.state==="failed") {
-        { const stopped=ended(); if(stopped) return stopped; }
-        const reason=`pm_read_failed:${pmRead.reason ?? "unknown"}`;
-        recordStage(db,{runId,taskId,stageId:"plan-critique",state:"skipped",input:canonicalPlan,reason:"PM read stage failed"});
-        recordStage(db,{runId,taskId,stageId:"specialist-review",state:"skipped",input:canonicalPlan,reason:"PM read stage failed"});
-        for(const stageId of ["writer-agent","verification","acceptance-receipt"] as const) recordStage(db,{runId,taskId,stageId,state:"skipped",input:canonicalPlan,reason:"PM read stage failed"});
-        transitionAttempt(db,attemptId,"blocked",{reason});
-        setRunState(db,runId,"blocked");
-        refreshRun(runId);
-        return {runId,taskId,attemptId,state:"blocked",reason,stages:listStageReceipts(db,runId,taskId)};
-      }
-      { const stopped=ended(); if(stopped) return stopped; }
-      const critique = await runPlanCritique({ bb, db, projectId:args.projectId, runId, taskId,
-        config:taskConfig, task:task, plan:canonicalPlan, pmReadContext:pmRead.summary || undefined });
-      if (!critique.allowed) {
-        { const stopped=ended(); if(stopped) return stopped; }
-        recordStage(db, { runId, taskId, stageId:"specialist-review", state:"skipped", input:canonicalPlan,
-          reason:"plan-critique did not allow dispatch" });
-        for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
-          recordStage(db, { runId, taskId, stageId, state:"skipped", input:canonicalPlan,
-            reason:"upstream plan-critique stage did not pass" });
-        }
-        transitionAttempt(db, attemptId, "blocked", { reason:critique.reason ?? "plan-critique did not allow dispatch" });
-        setRunState(db, runId, "blocked");
-        return { runId, taskId, attemptId, state:"blocked", reason:critique.reason, stages:listStageReceipts(db, runId, taskId) };
-      }
-      { const stopped=ended(); if(stopped) return stopped; }
-      const specialist = await runSpecialistReview({bb,db,projectId:args.projectId,runId,taskId,
-        config:taskConfig,task:task,plan:canonicalPlan});
-      if (!specialist.allowed) {
-        { const stopped=ended(); if(stopped) return stopped; }
-        for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
-          recordStage(db,{runId,taskId,stageId,state:"skipped",input:canonicalPlan,reason:"specialist review did not allow dispatch"});
-        }
-        transitionAttempt(db,attemptId,"blocked",{reason:specialist.reason ?? "specialist review did not allow dispatch"});
-        setRunState(db,runId,"blocked");
-        return {runId,taskId,attemptId,state:"blocked",reason:specialist.reason,stages:listStageReceipts(db,runId,taskId)};
-      }
-      // A folder without git has no base commit to measure ownership against: the writer's work is the difference of
-      // two content snapshots of the folder.
-      const live=await services.isLiveFolder(runId,config.hostId,taskBase);
-      const gitBase=live?null:await host.call("gitOwnershipBase",{
-        requestedHostId:config.hostId,projectCwd:taskBase,...(args.baseRef===undefined?{}:{baseRef:args.baseRef}),
-      },{hostId:config.hostId,timeoutMs:30_000});
-      if(gitBase&&gitBase.status!=="ready"&&(args.baseRef!==undefined||gitBase.status!=="not-git")) {
-        { const stopped=ended(); if(stopped) return stopped; }
-        const reason=`git ownership base unavailable: ${gitBase.reason??gitBase.status}`;
-        recordStage(db,{runId,taskId,stageId:"run-gate",state:"blocked",input:canonicalPlan,
-          result:{decision:"ownership_base_unavailable",baseRef:args.baseRef??null},reason});
-        for(const stageId of ["writer-agent","verification","acceptance-receipt"] as const) {
-          recordStage(db,{runId,taskId,stageId,state:"skipped",input:canonicalPlan,reason:"git ownership base preflight failed"});
-        }
-        transitionAttempt(db,attemptId,"blocked",{reason});
-        setRunState(db,runId,"blocked");
-        refreshRun(runId);
-        return {runId,taskId,attemptId,state:"blocked",reason,stages:listStageReceipts(db,runId,taskId)};
-      }
-      if(gitBase?.status==="ready"&&!saveTaskGitBase(db,taskId,{
-        baseRef:gitBase.baseRef,baseSha:gitBase.baseSha,initialHeadSha:gitBase.headSha!,branch:gitBase.branch!,compareCommitted:gitBase.compareCommitted,
-      })) {
-        { const stopped=ended(); if(stopped) return stopped; }
-        const reason="could not persist immutable git ownership base snapshot";
-        recordStage(db,{runId,taskId,stageId:"run-gate",state:"blocked",input:canonicalPlan,result:{decision:"ownership_base_persist_failed"},reason});
-        for(const stageId of ["writer-agent","verification","acceptance-receipt"] as const) recordStage(db,{runId,taskId,stageId,state:"skipped",input:canonicalPlan,reason});
-        transitionAttempt(db,attemptId,"blocked",{reason});
-        setRunState(db,runId,"blocked");refreshRun(runId);
-        return {runId,taskId,attemptId,state:"blocked",reason,stages:listStageReceipts(db,runId,taskId)};
-      }
-      try {
-        await persistTaskFolder({
-          taskId, plan:canonicalPlan,
-          // The line goes into the repository's real info/exclude, resolved by git on the workspace's own host —
-          // never into a stray `.git` of a subfolder workspace (OVH 2026-10-06). PLAN.md is written regardless.
-          exclude: live ? undefined : async (line) => {
-            const ran=await runOnHost(host, { hostId: config.hostId, cwd: taskBase, command: appendExcludeCommand(line), timeoutSec: 30, timeoutMs: 30_000 });
-            if(ran.exitCode!==0) throw new Error(ran.stderr.trim()||`git exited ${ran.exitCode}`);
-          },
-          writeFile: async (rel, content) => {
-            await bb.sdk.files.write({
-              hostId:config.hostId, rootPath:taskBase, path:`${taskBase}/${rel}`,
-              content, contentEncoding:"utf8", createParents:true, expectedSha256:null,
-            });
-          },
-        });
-      } catch (cause) {
-        bb.log.warn(`Lane Pilot could not persist task folder for ${taskId}: ${cause instanceof Error ? cause.message : String(cause)}`);
-      }
-      // A cancel during the stages ends the queued attempt: the writer must not start for it.
-      const stopped = ended();
-      if (stopped) return stopped;
-      transitionAttempt(db, attemptId, "queued");
-      services.startWriterTask({
-        projectId:args.projectId, runId, taskId, firstAttemptId:attemptId,
-        pmThreadId:args.threadId, config:taskConfig, task:task, plan:canonicalPlan, pmReadContext:pmRead.summary || undefined,
-      });
-      // The writer's brief carries the read stage's facts, not its open questions: those are the PM's to settle.
-      const openQuestions = pmRead.summary ? pmReadBrief(pmRead.summary).openQuestions : [];
-      const warnings: string[] = [...lint.warnings.map((warning) => warning.message), ...(movedNote ? [movedNote] : [])];
-      if (live) warnings.push("mode live-folder: this folder has no git. The writer edits the live files in place; nothing is committed or merged, so there is no ship step. One writer at a time works in the folder, later tasks queue. A task that is not accepted is rolled back from a backup of its owns_paths (~/.lane-pilot/live-backups, kept 7 days); files outside owns_paths are not rolled back.");
-      return { runId, taskId, attemptId, writerThreadId:null, state:"queued", stages:listStageReceipts(db, runId, taskId),
-        ...(warnings.length ? { warnings } : {}),
-        ...(openQuestions.length ? { pmReadOpenQuestions:openQuestions,
-          pmReadNote:"The writer does not see these questions. If one changes what the writer should do, wait for this attempt's receipt and, if it is not accepted, dispatch again with the answer in the plan; otherwise the writer decides from the code." } : {}) };
-    };
     const pendingReply = (): Record<string,unknown> => ({ runId, taskId, attemptId, writerThreadId:null, state:"queued", stagesPending:true, stages:listStageReceipts(db, runId, taskId),
       note:"pm-read and plan critique are still running; the writer starts by itself once they pass. Poll lane_pilot_wait_writer or end your turn; Lane Pilot sends you the results. Do not send the task again: the same id and contract returns this task." });
-    // The same pipeline as a workflow run (workflows/lp-task-pipeline.json, executors in dispatch-workflow.ts). The direct
-    // `runStages` above stays as the path for LANE_PILOT_WORKFLOW_ENGINE=0 and for an engine that cannot start the run.
+    // The pipeline is a workflow run (workflows/lp-task-pipeline.json, executors in dispatch-workflow.ts); there is no other path.
     const runViaEngine = async (): Promise<Record<string,unknown>> => {
       let started: ReturnType<typeof startDispatchRun>;
       try {
         started = startDispatchRun(services.workflowEngine, { ctx, services, threadId:args.threadId, projectId:args.projectId, baseRef:args.baseRef, runId, taskId, attemptId,
           config, runConfig:taskConfig, workspacePath:taskBase, task, plan:canonicalPlan, lintWarnings:[...lint.warnings.map((warning) => warning.message), ...(movedNote ? [movedNote] : [])] });
       } catch (cause) {
-        bb.log.warn(`Lane Pilot workflow engine could not start the dispatch of ${taskId}, running it directly: ${cause instanceof Error ? cause.message : String(cause)}`);
-        return runStages();
+        // The engine took the dispatch after the early check and then refused it: the attempt ends blocked, which is a wall entry like any failed attempt.
+        throw new Error(`engine_unavailable: ${cause instanceof Error ? cause.message : String(cause)}`);
       }
       return dispatchReply(await started.done) ?? pendingReply();
     };
     liveDispatches.add(attemptId);
-    const work = (workflowEngineEnabled() && services.workflowEngine ? runViaEngine() : runStages())
+    const work = runViaEngine()
       .catch((cause): Record<string,unknown> => failDispatch(runId, taskId, attemptId, canonicalPlan, cause))
       .finally(() => liveDispatches.delete(attemptId));
     // Stages that finish within the budget answer as before; slower ones go on in the background and the PM polls.
@@ -641,13 +536,12 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
   async function resumeDispatch(attemptId:string): Promise<{ resumed:true; live?:true } | { resumed:false; why:string }> {
     if (liveDispatches.has(attemptId)) return { resumed:true, live:true };
     const engine = services.workflowEngine;
-    if (!workflowEngineEnabled() || !engine) return { resumed:false, why:"the workflow engine is off" };
+    if (!engine) return { resumed:false, why:"the workflow engine is off" };
     const attempt = getAttempt(db, attemptId);
     if (!attempt || attempt.state !== "queued" || attempt.thread_id || attempt.reason !== DISPATCH_STAGES_PENDING) return { resumed:false, why:"the attempt no longer waits for its stages" };
     const key = dispatchRunKey(attemptId);
     const pipelines = db.prepare("SELECT inputs_json FROM lane_pilot_wf_run WHERE idem_key=? OR idem_key LIKE ? ORDER BY created_at")
       .all(key, `${key}:resume-%`) as Array<{ inputs_json:string }>;
-    // The direct path (LANE_PILOT_WORKFLOW_ENGINE=0) keeps no record, so a baseRef the PM gave is not known.
     if (!pipelines.length) return { resumed:false, why:"its dispatch left no pipeline record" };
     if (pipelines.length > MAX_DISPATCH_RESUMES) return { resumed:false, why:`reloads interrupted it ${pipelines.length} times` };
     // The base is taken once per task; one already taken means the stages were past it, a moment before the writer.
