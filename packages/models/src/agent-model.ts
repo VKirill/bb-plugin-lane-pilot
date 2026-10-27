@@ -1,6 +1,9 @@
 import { belowTier, modelTier, type ModelTier } from "./model-tiers";
 import { SAME_FAMILY_JUDGE_BY_LIMIT, consistentProvider, judgeAgainstAuthor, modelFamily, peerOffSpent, resolveRoleModel, roleDefaultModel, roleRow, ROLE_TABLE, type SpentProbe } from "./role-models";
 
+/** Roles that run as a Claude Code agent profile (a specialist, the workflow architect): never moved to another provider. */
+export const CLAUDE_PROFILE_ROLES: ReadonlySet<string> = new Set(["specialist", "workflow-architect"]);
+
 /**
  * Which model a generic workflow agent step runs on. ONE function answers it for the executor (what is spawned) and for the Models
  * view (what the card says), so the two cannot drift.
@@ -134,7 +137,9 @@ export function resolveAgentModel(input: AgentModelInput): AgentModel {
   const base = { serviceTier, inherited: !text(pin?.reasoning) };
   if (picked) {
     // The limit comes after the cross-family rule: the move may put a judge back into its author's family (allowed, and said).
-    const moved = peerOffSpent(picked, input.spent, here);
+    // A specialist and the workflow architect run as a Claude Code agent profile: on another provider the spawn is refused (HTTP 409
+    // «native profile needs Claude Code», live 2026-10-27 with Claude's weekly window at 97%). They stay on their pick.
+    const moved = CLAUDE_PROFILE_ROLES.has(input.role) ? null : peerOffSpent(picked, input.spent, here);
     if (moved) {
       const wasIndependent = !judges || !degraded;
       picked = { ...picked, providerId: moved.providerId, model: moved.model };

@@ -322,6 +322,8 @@ export function createWorkflowAgents() {
     // «Upgrade your plan to continue»). The step runs once more in a fresh thread on another provider instead of failing the run.
     // Any provider, Claude included: the resolver answers with the failed provider taken out of the offer (the peer of the other family).
     const limit = providerLimitNotice(text);
+    // A specialist or the architect runs as a Claude Code agent profile: another provider would refuse it (409), so its limit fails the step.
+    if (limit && !request.intoThread && (request.role.startsWith("specialist") || request.role === "workflow-architect")) throw new HelperFailure("provider_limit", `the ${request.role} helper hit Claude's limit (${limit}); a specialist runs only on Claude Code, so it waits for the window to reset`);
     if (limit && !request.intoThread) {
       const failed = request.provider ?? DEFAULT_PROVIDER;
       const again = await withResolvedModel({ ...request, provider: undefined as never, model: undefined as never, reasoning: undefined as never, resolved: undefined as never }, { avoidProvider: failed }).catch(() => null);

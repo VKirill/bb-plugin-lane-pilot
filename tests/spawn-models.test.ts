@@ -236,6 +236,16 @@ describe("a provider's nearly spent limit moves the helpers to the other family"
     expect(spawnUsageOf({ bb: {} })).toBeUndefined();
   });
 
+  it("a specialist and the workflow architect stay on Claude Code with Claude spent: their profile needs it (409 otherwise, live 2026-10-27)", async () => {
+    const usage = await usageOf({ "claude-code": 97, codex: 20 });
+    for (const role of ["specialist", "workflow-architect"]) {
+      const got = resolveSpawnModel({ role, ...base, usage });
+      expect(got.providerId, role).toBe("claude-code");
+      expect(got.issues.some((issue) => issue.startsWith("usage_moved")), role).toBe(false);
+    }
+    expect(resolveSpawnModel({ role: "analyst", ...base, usage }).providerId).toBe("codex");
+  });
+
   it("a spawn never waits for the usage source: warmSpawnUsage returns at once", async () => {
     const bb = { events: { on: () => () => undefined }, sdk: { plugins: { experimental_discoverRpc: () => new Promise(() => undefined), callRpc: async () => ({}) } } } as never;
     createWriterState({ bb, log: () => undefined } as never);
