@@ -76,9 +76,11 @@ describe("gitIntegrate with replayChecks (the host runs the task's checks in the
     expect(await integrate()).toMatchObject({ status: "merged", rebased: true });
   });
 
-  it("does not hold the merge for a check the machine broke, or one that could not run", async () => {
+  it("a check the machine broke is not a pass: the merge waits as «not run», marked environment, and the next check still runs", async () => {
     sandbox.run.mockResolvedValue(ran(1, "", "Error: EACCES: permission denied, rmSync '/work/base/.output'"));
-    expect(await integrate()).toMatchObject({ status: "merged" });
+    const res = await integrate();
+    expect(res).toMatchObject({ status: "conflict", reason: expect.stringContaining("environment: ") });
+    expect(JSON.stringify(res.checks)).toContain("environment: the check did not run");
   });
 
   // The same reading as the writer's own check (Astra's Vampirism Fire audit, 2026-10-27): before, each of these merged.
@@ -109,8 +111,57 @@ describe("gitIntegrate with replayChecks (the host runs the task's checks in the
     expect(sandbox.run).toHaveBeenCalledTimes(1);
   });
 
-  it("merges when no sandbox is available for the check", async () => {
+  it("no sandbox for the check is not a pass either: not run, the merge waits", async () => {
     sandbox.run.mockRejectedValue(new Error("sandbox_backend_unavailable: Seatbelt launch was denied by the host"));
+    const res = await integrate();
+    expect(res).toMatchObject({ status: "conflict", reason: expect.stringContaining("environment: ") });
+    expect(JSON.stringify(res.checks)).toContain("sandbox_backend_unavailable");
+  });
+
+  // Astra's recheck of 0.1.336 (P1): the first real red must not be erased by a re-run the machine killed.
+  const studioDown = "studio_test error: Unable to reach Roblox Studio right now.";
+  const productRed = () => ran(1, "FAIL BG4 leak\n19 checks, 1 failed", "AssertionError: incorrect damage");
+
+  it("a real red, then a re-run that died of Studio: the first red stands and holds the merge, with its output", async () => {
+    sandbox.run.mockResolvedValueOnce(productRed()).mockResolvedValueOnce(ran(1, "", studioDown));
+    const res = await integrate();
+    expect(res).toMatchObject({ status: "conflict", checks: [{ command: "npm test", exitCode: 1 }] });
+    expect(JSON.stringify(res.checks)).toContain("19 checks, 1 failed");
+    expect(JSON.stringify(res.checks)).toContain("incorrect damage");
+    expect(res.reason).not.toContain("environment: ");
+  });
+
+  it("a real red, then a re-run that threw: the first red stands", async () => {
+    sandbox.run.mockResolvedValueOnce(productRed()).mockRejectedValueOnce(new Error("sandbox exploded"));
+    const res = await integrate();
+    expect(res).toMatchObject({ status: "conflict", checks: [{ command: "npm test", exitCode: 1 }] });
+    expect(JSON.stringify(res.checks)).toContain("incorrect damage");
+  });
+
+  it("an environment red twice is not run: held, marked environment (it used to merge)", async () => {
+    sandbox.run.mockResolvedValue(ran(1, "", studioDown));
+    const res = await integrate();
+    expect(sandbox.run).toHaveBeenCalledTimes(2);
+    expect(res).toMatchObject({ status: "conflict", reason: expect.stringContaining("environment: ") });
+  });
+
+  it("an environment red that the re-run turns green is a pass", async () => {
+    sandbox.run.mockResolvedValueOnce(ran(1, "", studioDown)).mockResolvedValueOnce(ran(0, "19 checks, 0 failed"));
     expect(await integrate()).toMatchObject({ status: "merged" });
+  });
+
+  it("an environment red, then a real red on the re-run: the real red holds the merge", async () => {
+    sandbox.run.mockResolvedValueOnce(ran(1, "", studioDown)).mockResolvedValueOnce(productRed());
+    const res = await integrate();
+    expect(res).toMatchObject({ status: "conflict", checks: [{ command: "npm test", exitCode: 1 }] });
+    expect(res.reason).not.toContain("environment: ");
+  });
+
+  it("a chained command whose second scenario ran nothing is a green that ran no test", async () => {
+    sandbox.run.mockResolvedValue(ran(0, "3 checks, 0 failed\n0 checks, 0 failed"));
+    const res = await gitIntegrate({ requestedHostId: "h", basePath: base, worktreePath: two, message: "two",
+      replayChecks: { workspacePath: two, backend: "auto", commands: [{ command: "python3 studio_test.py --filter A && python3 studio_test.py --filter B", cwd: two, timeoutSec: 90 }] } } as never, undefined as never);
+    expect(res).toMatchObject({ status: "conflict" });
+    expect(JSON.stringify(res)).toContain("1 of its 2 runs ran no test");
   });
 });

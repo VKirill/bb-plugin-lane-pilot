@@ -1,5 +1,5 @@
 import { networkInterfaces } from "node:os";
-import { createWorktree, integrateWorktree, mergeInfo, prepareWorktree, removeLaneWorktree, revertCommitsInWorktree, syncWorktree, snapshotWorktree, worktreeState, type ReplayCheckOutcome } from "../verification";
+import { createWorktree, integrateWorktree, mergeInfo, prepareWorktree, removeLaneWorktree, revertCommitsInWorktree, syncWorktree, snapshotWorktree, worktreeState, type ReplayCheck, type ReplayCheckOutcome } from "../verification";
 import { attributeGateOnHost, bisectGateOnHost, runGateOnHost } from "../verification";
 import { buildDocsAnchors, docsDepth as readDocsDepth, docsStaleness, jevApiKey, jevProviderOfKey, provideJevKey, verifyDocsCitations } from "../verification";
 import { buildDocsFlows } from "../verification";
@@ -14,8 +14,8 @@ import { basename, delimiter, dirname, isAbsolute, join, relative, sep } from "n
 import { homedir } from "node:os";
 import type { ExperimentalHostRpcHandlers } from "@get-bb/plugin-sdk";
 import { hostContract } from "../contracts";
-import { isEnvironmentCheckFailure } from "../runs";
-import { hollowRerun, noTestRanReason } from "../tasks/server";
+import { ENVIRONMENT_REASON } from "../runs";
+import { readCheckRun } from "../tasks/server";
 import { readBoundedWorkspaceFile, sha256Hex } from "@lane-pilot/kit";
 import { casWriteWorkflowFile } from "../storage";
 import { inventoryCoexistence, runCoexistenceOperation } from "../native-install";
@@ -82,32 +82,40 @@ export const gitIntegrate: ExperimentalHostRpcHandlers<typeof hostContract>["git
 
 /**
  * The task's checks in the sandbox, in the attempt's worktree, while the integration holds the base checkout. The first red
- * one (twice red: a flaky one passes the second time) ends it. A check that cannot run (no sandbox backend, a folder gone)
- * says nothing about the code, so it blocks nothing; the post-merge check on main still runs.
+ * one (twice red: a flaky one passes the second time) ends it. A check that could not run (no sandbox backend, a folder gone, the
+ * machine broke it) proves nothing either way: it is not a pass. It is reported as «not run» (`environment`), which holds the
+ * merge, and the writer is not charged for it; a real red found by another check still wins over it.
  */
 async function runReplayChecks(requestedHostId:string,checks:NonNullable<Parameters<ExperimentalHostRpcHandlers<typeof hostContract>["gitIntegrate"]>[0]["replayChecks"]>):Promise<ReplayCheckOutcome> {
-  // The same reading of a result as the writer's own check (verify.ts): a timeout is not run again, an empty re-run is not a pass,
-  // a zero-test green is red, and the machine's own failure skips only that check — the rest still run. Before, one environment
-  // line made the whole set «ok», a hollow re-run passed and a timeout ran twice (Astra's Vampirism Fire audit, 2026-10-27).
+  // The same reading of a result as the writer's own check (verify.ts, readCheckRun): a timeout is not run again, an empty re-run is
+  // not a pass, a zero-test green is red, and the first real red stands whatever the re-run says (a re-run that died of the machine
+  // does not erase it, as the writer's runWithFlakyRerun keeps the first result too). The machine's own failure skips only that check.
+  type Ran={exitCode:number;stdout:string;stderr:string;threw?:true};
+  const notRun:ReplayCheck[]=[];
   for(const check of checks.commands) {
-    const run=()=>runSandboxedCommandOnHost({requestedHostId,workspacePath:checks.workspacePath,cwd:check.cwd,backend:checks.backend,command:check.command,timeoutSec:check.timeoutSec});
-    const red=(result:{exitCode:number;stdout:string;stderr:string},why?:string):ReplayCheckOutcome=>({ok:false,failed:[{command:check.command,exitCode:result.exitCode||1,stdout:result.stdout,stderr:why?`${why}\n${result.stderr}`:result.stderr}]});
-    try {
-      const first=await run();
-      let result=first;
-      if(first.exitCode!==0&&first.exitCode!==124) {
-        const again=await run();
-        const hollow=again.exitCode===0?hollowRerun(first,again):null;
-        result=hollow?first:again;
-      }
-      // The machine broke the check (root-owned files, Studio not answering): no writer can fix that; the post-merge check on main still runs it.
-      if(result.exitCode!==0&&isEnvironmentCheckFailure(result)) { console.warn(`lane-pilot: replay check failed from the environment, not held against the merge: ${check.command}`); continue; }
-      if(result.exitCode!==0) return red(result);
-      const none=noTestRanReason(`${result.stdout}\n${result.stderr}`);
-      if(none) return red(result,`check failed: ${none}`);
-    } catch(cause) {
-      console.warn(`lane-pilot: replay check could not run, the next one still runs: ${check.command}: ${cause instanceof Error?cause.message:String(cause)}`);
+    const attempt=():Promise<Ran>=>runSandboxedCommandOnHost({requestedHostId,workspacePath:checks.workspacePath,cwd:check.cwd,backend:checks.backend,command:check.command,timeoutSec:check.timeoutSec})
+      .catch((cause:unknown)=>({exitCode:1,stdout:"",stderr:cause instanceof Error?cause.message:String(cause),threw:true as const}));
+    const row=(result:Ran,why?:string):ReplayCheck=>({command:check.command,exitCode:result.exitCode||1,stdout:result.stdout,stderr:why?`${why}\n${result.stderr}`:result.stderr});
+    const red=(result:Ran,why?:string):ReplayCheckOutcome=>({ok:false,failed:[row(result,why)]});
+    const first=await attempt();
+    const readFirst=readCheckRun(first,{command:check.command});
+    if(readFirst.verdict==="pass") continue;
+    if(readFirst.verdict==="not_run") return red(first,`check failed: ${readFirst.reason}`);
+    if(first.exitCode===124) { if(readFirst.verdict==="product_fail") return red(first); notRun.push(row(first)); continue; }
+    const again=await attempt();
+    const readAgain=readCheckRun(again,{command:check.command,first});
+    if(readAgain.verdict==="pass") continue;
+    if(readFirst.verdict==="product_fail") {
+      const why=readAgain.verdict==="product_fail"?undefined:`the re-run did not settle it (${readAgain.verdict==="environment_error"?"the check could not run again":readAgain.reason}); the first failure stands`;
+      return red(first,why);
     }
+    // The first run was the machine's: a real red on the re-run is the code's, anything else is not run.
+    if(readAgain.verdict==="product_fail") return red(again);
+    notRun.push(row(again));
+  }
+  if(notRun.length) {
+    console.warn(`lane-pilot: replay check could not run, the merge waits for the environment: ${notRun.map((check)=>check.command).join(", ")}`);
+    return {ok:false,environment:true,failed:notRun.map((check)=>({...check,stderr:`${ENVIRONMENT_REASON}the check did not run, so it proves nothing; no writer can fix that\n${check.stderr}`}))};
   }
   return {ok:true};
 }

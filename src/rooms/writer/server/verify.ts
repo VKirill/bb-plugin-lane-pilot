@@ -61,9 +61,9 @@ export async function runWithFlakyRerun<T extends {exitCode:number;stdout?:strin
  * filter that matches no file) proves nothing: it fails, and the writer reads why in the check's stderr (the retry brief
  * quotes it). Output that is not a test runner's summary (tsc, lint, a script) is left as it is.
  */
-export function failIfNoTestRan<T extends {exitCode:number;stdout:string;stderr:string}>(result:T):T {
+export function failIfNoTestRan<T extends {exitCode:number;stdout:string;stderr:string;command?:string}>(result:T):T {
   if(result.exitCode!==0) return result;
-  const reason=noTestRanReason(`${result.stdout}\n${result.stderr}`);
+  const reason=noTestRanReason(`${result.stdout}\n${result.stderr}`,result.command);
   return reason ? {...result,exitCode:1,stderr:`check failed: ${reason}\n${result.stderr}`.trim()} : result;
 }
 

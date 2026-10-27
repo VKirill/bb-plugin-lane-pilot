@@ -8,6 +8,7 @@ import type { Services } from "../../core/server";
 import { saveFollowUp } from "../../writer/server/sticky";
 import { sendServiceMessage } from "../../relay/server";
 import { isEnvironmentCheckFailure } from "../../runs";
+import { readCheckRun } from "../../tasks";
 import { gateLabel, gateResolverFor, type ResolvedGate } from "./gate-detect";
 import { continuesEpisode, fixesInFlight, type GateEpisode } from "./gate-episode";
 import { attributeFailures, testLabel } from "./gate-attribution";
@@ -392,7 +393,9 @@ export class IntegrationGateRunner {
     const exitCode = ran.exitCode;
     const stdout = ran.stdout;
     const stderr = ran.stderr;
-    const passed = exitCode === 0;
+    // The same reading as the writer's check, the replay and the post-merge check (readCheckRun): a green that ran no test is no pass.
+    const reading = readCheckRun({ exitCode, stdout, stderr }, { command: gateCommand });
+    const passed = reading.verdict === "pass";
 
     // turbo answers a task from its cache without running it: a result the PM should know was not rerun.
     const cache = extractCacheHits(`${stdout}\n${stderr}`);
@@ -425,6 +428,18 @@ export class IntegrationGateRunner {
       // Save the commit the gate ran on as the last green one
       if (ran.head) this.lastGreenCommit = ran.head;
       return { ran: true, passed: true };
+    }
+
+    // Exit 0 with no test run: nothing is red, so no culprit; but nothing is proven either, and the merges stay counted for the next run.
+    if (exitCode === 0) {
+      this.ctx.log(`integration-gate: \`${gateCommand}\` exited 0 but proved nothing, no culprit searched: ${reading.reason}`);
+      const { episode, repeat } = this.enterEpisode(runId, gateCommand, ["(no test ran)"]);
+      if (repeat) {
+        await this.repeatRed(runId, pmThreadId, episode, [], `Lane Pilot: integration gate ${label} is still not proving anything: it exits 0 but runs no test. Fix the gate command or its tests, then the gate runs again.`);
+        return { ran: true, passed: false, culpritTaskId: null };
+      }
+      await this.tellPm(pmThreadId, `Lane Pilot: integration gate ${label} exited 0 but ran no test (${reading.reason}). That is not a green gate, and no commit is to blame, so no culprit was searched. Fix the gate command or its tests; it runs again on the next merge.`, episode);
+      return { ran: true, passed: false, culpritTaskId: null };
     }
 
     // The machine broke the gate (root-owned files, a permission error before any test ran): no commit is to blame and no
@@ -461,7 +476,9 @@ export class IntegrationGateRunner {
         return null;
       });
 
-      if (rechecked && rechecked.exitCode === 0) {
+      // A recheck counts only when it shows it ran a test; a command that filtered every test away, or printed no summary the first run printed, is no green.
+      const recheckReading = rechecked ? readCheckRun(rechecked, { command: recheckCmd, first: { stdout, stderr } }) : null;
+      if (rechecked && recheckReading?.verdict === "pass") {
         // The first run's failure is kept with the readings, so «load» is a measured verdict or «unexplained», not the log's guess.
         const evidence = flakyEvidence({ exitCode, outputTail: outputTail({ stdout, stderr }) }, beforeGate, beforeRecheck);
         this.ctx.log(`integration-gate: ${failingTests.length} timeouts passed on recheck, gate green (${evidence.classification}: ${evidence.basis})`);
@@ -501,7 +518,11 @@ export class IntegrationGateRunner {
         return { ran: true, passed: true };
       }
 
-      if (rechecked) {
+      if (rechecked && recheckReading?.verdict === "not_run") {
+        // The recheck proved nothing: the timeouts stand, the culprit flow continues on the original output.
+        this.ctx.log(`integration-gate: recheck \`${recheckCmd}\` exited 0 but proved nothing (${recheckReading.reason}); the timeouts stand`);
+        repeatedTimeouts = true;
+      } else if (rechecked) {
         const recheckFailingTests = extractFailingTests(`${rechecked.stderr}\n${rechecked.stdout}`);
         if (allFailuresAreTimeouts(`${rechecked.stderr}\n${rechecked.stdout}`, recheckFailingTests)) {
           // Still timeouts on recheck: continue normal culprit flow with original output, note repeated timeouts

@@ -22,6 +22,7 @@ import { isLiveDecision } from "../live-folder";
 import { TASK_WORDS_KEY, acceptanceProofGap, isMainfixTask, landingWordGap, questionsFromFile, referenceTestEdits, taskWordKey, writerMarkers } from "../../tasks";
 import type { TaskWord } from "../../tasks";
 import type { StageId } from "../../tasks";
+import { readCheckRun } from "../../tasks/server";
 import { IntegrationGateRunner, parseIntegrationGateSettings } from "../../verification/server";
 import { gateResolverFor } from "../../verification/server";
 import { THREAD_WATCH_EVENT_TYPES, listThreadEventsRaw, sleepUntilThreadSignal, startLimitWaiting, threadFailure, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -926,10 +927,13 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const names = new Set(candidates.map((check) => check.command));
       const again = await services.runVerification(input.config, { ...onMain, verification:onMain.verification.filter((command) => names.has(command.command)) }, input.runId, undefined,
         { background:true, jobKey:`post-merge:${input.attemptId ?? input.task.id}:${input.mergeCommit ?? ""}:rerun` }).catch(() => null);
-      // A re-run the host could not run says nothing: the first red stands.
-      const passed = new Set((again ?? []).filter((check) => check.exitCode === 0 && !check.hostError).map((check) => check.command));
-      flaky = candidates.filter((check) => passed.has(check.command)).map((check) => check.command);
-      confirmed = candidates.filter((check) => !passed.has(check.command));
+      // Only a re-run that is a product red again reproduces the defect (readCheckRun, the reading replay and the gate share). One the
+      // machine or the host broke, that threw, or that ran no test says nothing: the first red stays recorded, no writer is sent.
+      const readings = new Map((again ?? []).map((check) => [check.command, readCheckRun(check, { command: check.command })] as const));
+      flaky = candidates.filter((check) => readings.get(check.command)?.verdict === "pass").map((check) => check.command);
+      confirmed = candidates.filter((check) => readings.get(check.command)?.verdict === "product_fail");
+      const unsettled = candidates.filter((check) => !flaky.includes(check.command) && !confirmed.includes(check));
+      if (unsettled.length) ctx.log(`post-merge check of ${input.task.id}: red on main once, the re-run did not reproduce it (${unsettled.map((check) => `${check.command}: ${readings.get(check.command)?.verdict ?? "no result"}`).join(", ")}); no repair task, the red stays recorded`);
     }
     if (flaky.length || redBefore.length) {
       ctx.log(`post-merge check of ${input.task.id} on main: no repair task for ${[...flaky, ...redBefore].join(", ")} (${flaky.length ? "flaky" : "red before this task too"})`);

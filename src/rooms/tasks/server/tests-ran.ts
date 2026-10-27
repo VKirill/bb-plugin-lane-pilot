@@ -82,15 +82,54 @@ export function testSummaries(output: string): TestSummary[] {
   return found;
 }
 
+/** Splits a shell command at top-level `&&`, `;` and newlines; quoted text stays whole. */
+function shellSegments(command: string): string[] {
+  const parts: string[] = [];
+  let current = "", quote = "";
+  for (let at = 0; at < command.length; at++) {
+    const char = command[at]!;
+    if (quote) { current += char; if (char === quote) quote = ""; continue; }
+    if (char === "'" || char === '"') { quote = char; current += char; continue; }
+    if ((char === "&" && command[at + 1] === "&") || char === ";" || char === "\n") { if (char === "&") at++; parts.push(current); current = ""; continue; }
+    current += char;
+  }
+  parts.push(current);
+  return parts.map((part) => part.trim()).filter(Boolean);
+}
+
+const RUNNER_SEGMENT = /\b(?:vitest|jest|pytest|py\.test|mocha|playwright)\b|\bnode\b[^|]*--test\b|\b\w*test\w*\.(?:py|mjs|cjs|js|ts|sh)\b|\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test\b|\b(?:go|cargo) test\b/i;
+
+/**
+ * How many separate test runs a command names: chained runners (`vitest -t A && vitest -t B`, `a.py; b.py`) and a `for m in A B` loop
+ * around one (one run per item). One runner that prints several summaries (a workspace run) is still 1.
+ */
+export function namedRuns(command: string): number {
+  let runs = 0, loop = 1;
+  for (const segment of shellSegments(command)) {
+    const each = /^for\s+\S+\s+in\s+(.+?)(?:\s+do\b.*)?$/.exec(segment);
+    if (each) { loop = each[1]!.split(/\s+/).filter(Boolean).length; const inline = /\bdo\s+(.+)$/.exec(segment); if (inline && RUNNER_SEGMENT.test(inline[1]!)) runs += loop; continue; }
+    if (/^done\b/.test(segment)) { loop = 1; continue; }
+    if (RUNNER_SEGMENT.test(segment.replace(/^do\b/, ""))) runs += loop;
+  }
+  return runs;
+}
+
 /**
  * Why a check that exited 0 proves nothing, or null when it ran a test or its output is not a test summary. Several summaries
- * (`a && b`, a workspace run) are added up: one mistyped filter beside a real run still leaves tests that ran.
+ * of one command (a workspace run) are added up: one mistyped filter beside a real run still leaves tests that ran. When the
+ * command names several runs itself (`namedRuns` >= 2) and the output has one summary per run, each of them must have run a test:
+ * `3 checks, 0 failed` then `0 checks, 0 failed` is an empty scenario hidden by its neighbour (Astra's recheck, 2026-10-27).
  */
-export function noTestRanReason(output: string): string | null {
+export function noTestRanReason(output: string, command?: string): string | null {
   const summaries = testSummaries(output);
-  if (!summaries.length || summaries.some((summary) => summary.executed > 0)) return null;
-  const detail = [...new Set(summaries.map((summary) => summary.detail).filter(Boolean))].join("; ") || "no test was counted";
-  return `the check exited 0 but ran no test: ${detail} (${summaries[0]!.runner}) — the filter, file or test name matches nothing, or every test is skipped; a skipped, todo or pending test does not count, so fix the command or the test until at least one test runs`;
+  if (!summaries.length) return null;
+  const named = command ? namedRuns(command) : 0;
+  const empty = named >= 2 && summaries.length === named ? summaries.filter((summary) => summary.executed === 0) : [];
+  if (summaries.some((summary) => summary.executed > 0) && !empty.length) return null;
+  const shown = empty.length ? empty : summaries;
+  const detail = [...new Set(shown.map((summary) => summary.detail).filter(Boolean))].join("; ") || "no test was counted";
+  const which = empty.length ? `${empty.length} of its ${named} runs ` : "";
+  return `the check exited 0 but ${which}ran no test: ${detail} (${shown[0]!.runner}) — the filter, file or test name matches nothing, or every test is skipped; a skipped, todo or pending test does not count, so fix the command or the test until at least one test runs`;
 }
 
 /** A sandbox's refusal of a tool's own files: the command did not run what it was asked to. */

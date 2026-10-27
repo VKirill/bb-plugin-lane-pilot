@@ -739,5 +739,58 @@ AssertionError: expected 1 to be 2
       const pmMsg = sentMessages.find((m) => m.threadId === "pm-thread-999");
       expect(pmMsg?.text).toContain("timed out twice, also on recheck");
     });
+
+    // Astra's recheck of 0.1.336 (P1): exit 0 alone is not a pass for the gate or for its recheck.
+    const gateWith = (answers: Array<{ exitCode: number; stdout?: string; stderr?: string }>) => {
+      const gateRuns: string[] = [];
+      const core = {
+        ...mockCore,
+        host: {
+          call: async (method: string, input: any) => {
+            if (method === "gateRun") {
+              gateRuns.push(input.command);
+              return { hostId: "host-1", stdout: "", stderr: "", head: "sha-head", ...answers[Math.min(gateRuns.length - 1, answers.length - 1)]! };
+            }
+            if (method === "readBoundedFile") return { content: "" };
+            return (hostHandlers as any)[method]?.(input);
+          },
+        },
+      } as unknown as ServerCore;
+      saveProjectSetting(db, "proj-1", "integration.gate_command", "npx vitest run");
+      for (const id of ["task-1", "task-2"]) db.prepare(`INSERT INTO lane_pilot_task (id, run_id, kind, contract_json, created_at) VALUES (?, 'run-1', 'bb', '{}', 0)`).run(id);
+      const runner = new IntegrationGateRunner(core, mockServices);
+      runner.noteMergedTask({ taskId: "task-1", commitSha: "sha-1", threadId: "thr-1", attemptId: "att-1", produced: ["src/a.ts"] });
+      runner.noteMergedTask({ taskId: "task-2", commitSha: "sha-2", threadId: "thr-2", attemptId: "att-2", produced: ["src/b.ts"] });
+      const run = () => runner.maybeRunGate({ runId: "run-1", projectId: "proj-1", pmThreadId: "pm-thread-999", basePath: "/tmp/project", configHostId: "host-1", trigger: "drain" });
+      return { gateRuns, run };
+    };
+
+    it("a gate that exits 0 but ran no test is not green: no culprit, the PM is told, the merges stay counted", async () => {
+      const { gateRuns, run } = gateWith([{ exitCode: 0, stdout: " No test files found, exiting with code 0\n" }]);
+      expect(await run()).toMatchObject({ ran: true, passed: false, culpritTaskId: null });
+      expect(gateRuns).toEqual(["npx vitest run"]);
+      expect(sentMessages.find((m) => m.threadId === "pm-thread-999")?.text).toContain("ran no test");
+      const events = db.prepare(`SELECT status FROM lane_pilot_gate_event WHERE run_id='run-1' AND gate='verification'`).all() as { status: string }[];
+      expect(events.map((e) => e.status)).toEqual(["failed"]);
+    });
+
+    it("a gate that exits 0 after running tests is still green", async () => {
+      const { run } = gateWith([{ exitCode: 0, stdout: "      Tests  12 passed (12)\n" }]);
+      expect(await run()).toMatchObject({ ran: true, passed: true });
+    });
+
+    it("a recheck that exits 0 without the summary the first run printed is not a green: the timeouts stand", async () => {
+      const first = { exitCode: 1, stderr: " FAIL  tests/timeout.test.ts\nError: Test timed out in 5000ms.\n      Tests  1 failed | 4 passed (5)" };
+      const { gateRuns, run } = gateWith([first, { exitCode: 0, stdout: "", stderr: "" }]);
+      expect(await run()).toMatchObject({ ran: true, passed: false, culpritTaskId: null });
+      expect(gateRuns).toEqual(["npx vitest run", "npx vitest run tests/timeout.test.ts"]);
+      expect(sentMessages.find((m) => m.threadId === "pm-thread-999")?.text).toContain("timed out twice, also on recheck");
+    });
+
+    it("a recheck that exits 0 with every test skipped is not a green either", async () => {
+      const first = { exitCode: 1, stderr: " FAIL  tests/timeout.test.ts\nError: Test timed out in 5000ms." };
+      const { run } = gateWith([first, { exitCode: 0, stdout: "      Tests  1 skipped (1)\n" }]);
+      expect(await run()).toMatchObject({ ran: true, passed: false });
+    });
   });
 });

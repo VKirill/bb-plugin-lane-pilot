@@ -206,7 +206,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n198: ["have", "форма работы: kind/area", "packages/contracts/src/schemas.ts#kind: z.enum(TASK_KINDS)"],
   n199: ["have", "артефакт исполнения есть: expected_outputs", "packages/contracts/src/schemas.ts#expected_outputs: z.array"],
   n200: ["have", "доставляема ли работа: линт", "src/rooms/tasks/server/contract-lint.ts#export function lintContract("],
-  n201: ["have", "пригодно ли окружение", "src/rooms/host-worker/host-handlers.ts#isEnvironmentCheckFailure"],
+  n201: ["have", "пригодно ли окружение", "src/rooms/runs/failure-class.ts#export const isEnvironmentCheckFailure"],
   n202: ["have", "классифицировать отказ", "src/rooms/runs/failure-class.ts#export function failureClass("],
   n203: ["have", "номер попытки только растёт", "src/rooms/storage/database.ts#attempt_no"],
   n204: ["have", "новая попытка стартует с исполнения: квитанции до писателя переиспользуются", "src/rooms/runs/server/stage-records.ts#recordStage"],

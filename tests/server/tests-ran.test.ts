@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { noTestRanReason, testSummaries } from "../../src/rooms/tasks/server/tests-ran";
+import { namedRuns, noTestRanReason, testSummaries } from "../../src/rooms/tasks/server/tests-ran";
 
 /** Real outputs, captured 2026-10-26 by running vitest 4.1 and node 26 `--test` in a scratch dir (exit codes in the comments). */
 const out = (name: string) => readFileSync(new URL(`../fixtures/test-runner-output/${name}.txt`, import.meta.url), "utf8");
@@ -91,5 +91,43 @@ describe("noTestRanReason: a check that exited 0 must have run a test", () => {
     expect(testSummaries("12 checks, 0 failed\r\n")).toEqual([{ runner: "studio", executed: 12, notRun: 0, detail: "0 checks" }]);
     expect(noTestRanReason("12 checks, 0 failed\n")).toBeNull();
     expect(noTestRanReason("0 checks, 0 failed\n")).toContain("0 checks (studio)");
+  });
+});
+
+describe("noTestRanReason with the command: a named scenario that ran nothing is not hidden by its neighbour (Astra's recheck, 2026-10-27)", () => {
+  const masked = "3 checks, 0 failed\n0 checks, 0 failed";
+
+  it("counts the runs a command names itself", () => {
+    expect(namedRuns("npx vitest run")).toBe(1);
+    expect(namedRuns("npx tsc --noEmit && npx vitest run a.test.ts")).toBe(1);
+    expect(namedRuns("npx vitest run -t A && npx vitest run -t B")).toBe(2);
+    expect(namedRuns("python3 studio_test.py --filter A && python3 studio_test.py --filter B; python3 studio_test.py --filter C")).toBe(3);
+    expect(namedRuns("for m in A B C; do python3 studio_test.py --filter $m; done")).toBe(3);
+    expect(namedRuns("echo 'a && b' && npx vitest run")).toBe(1);
+  });
+
+  it("chained runs: an empty scenario beside a non-empty one is a green that ran no test", () => {
+    const reason = noTestRanReason(masked, "python3 studio_test.py --filter A && python3 studio_test.py --filter B");
+    expect(reason).toContain("1 of its 2 runs ran no test");
+    expect(reason).toContain("0 checks");
+  });
+
+  it("a for loop over scenarios names one run per item", () => {
+    expect(noTestRanReason(`${masked}\n2 checks, 0 failed`, "for m in A B C; do python3 studio_test.py --filter $m; done")).toContain("1 of its 3 runs ran no test");
+    expect(noTestRanReason("3 checks, 0 failed\n2 checks, 0 failed\n1 checks, 0 failed", "for m in A B C; do python3 studio_test.py --filter $m; done")).toBeNull();
+  });
+
+  it("keeps adding up one command whose runner prints several summaries (a workspace run)", () => {
+    expect(noTestRanReason(masked, "npm test --workspaces")).toBeNull();
+    expect(noTestRanReason(masked, "npx vitest run")).toBeNull();
+  });
+
+  it("without the command the old reading stands", () => {
+    expect(noTestRanReason(masked)).toBeNull();
+  });
+
+  it("chained runs that all ran stay green; a count that does not match the runs is not guessed", () => {
+    expect(noTestRanReason("3 checks, 0 failed\n2 checks, 0 failed", "python3 a_test.py && python3 b_test.py")).toBeNull();
+    expect(noTestRanReason("3 checks, 0 failed", "python3 a_test.py && python3 b_test.py")).toBeNull();
   });
 });

@@ -6,7 +6,7 @@ import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { spawnAsync } from "@lane-pilot/kit";
 import { isBookkeepingPath } from "@lane-pilot/settings-catalog";
 import { matchOwnsPath } from "@lane-pilot/kit";
-import { REPLAY_CHECK_FAILED } from "../runs";
+import { ENVIRONMENT_REASON, REPLAY_CHECK_FAILED } from "../runs";
 import { isAllowedProjectLifePath } from "../project-life";
 
 export type GitIntegration = {
@@ -41,8 +41,11 @@ export async function changedBetween(cwd:string,from:string,to:string):Promise<C
 }
 
 export type ReplayCheck = {command:string;exitCode:number;stdout:string;stderr:string};
-/** What the checks run on the replayed attempt said: green, or the checks that are red. A check that could not run is no red. */
-export type ReplayCheckOutcome = {ok:true} | {ok:false;failed:ReplayCheck[]};
+/**
+ * What the checks run on the replayed attempt said: green, or the checks that are red. `environment`: no check is red, but some could
+ * not run (the machine broke them, no sandbox) — that is not a pass, the merge waits, and the writer is not charged.
+ */
+export type ReplayCheckOutcome = {ok:true} | {ok:false;failed:ReplayCheck[];environment?:true};
 
 /** The base checkout is held by a live integration; the caller waits and tries again instead of failing. */
 export class BaseLockBusyError extends Error {
@@ -341,7 +344,7 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
         }
         const replay=await input.replayCheck();
         if(!replay.ok) {
-          return {status:"conflict",commit:null,conflicts:[],reason:`${REPLAY_CHECK_FAILED}: verification failed (${replay.failed.map((check)=>check.command).join(", ")})`,checks:replay.failed};
+          return {status:"conflict",commit:null,conflicts:[],reason:`${REPLAY_CHECK_FAILED}: verification failed (${replay.failed.map((check)=>check.command).join(", ")})${replay.environment?`: ${ENVIRONMENT_REASON}the check did not run`:""}`,checks:replay.failed};
         }
       }
       const merged=await merge(input.basePath,rebased??sha,input.message,input.bookkeeping,input.ownsPaths,input.indexLockWaitMs);

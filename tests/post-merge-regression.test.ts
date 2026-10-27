@@ -15,13 +15,13 @@ const red = (command: string): Row => ({ command, exitCode: 1, stdout: "FAIL src
 const green = (command: string): Row => ({ command, exitCode: 0, stdout: "", stderr: "" });
 
 // Vampirism Fire: 8 of 12 -mainfix ran on a green main. A repair task needs a red that is this task's and reproduces.
-async function mergeThenCheck(runs: Row[][], baseline?: { turned: string[]; redBefore?: string[] }, taskId = "site-fix", greenInWorktree?: string[]) {
+async function mergeThenCheck(runs: Array<Row[] | Error>, baseline?: { turned: string[]; redBefore?: string[] }, taskId = "site-fix", greenInWorktree?: string[]) {
   const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
   const sent: string[] = [];
   const dispatchWriter = vi.fn(async () => ({ state: "queued" }));
   const ctx = { bb: { storage: bb.storage, sdk: { threads: { send: async (input: { input: Array<{ text: string }> }) => { sent.push(input.input[0]!.text); } }, files: { write: async () => ({}) } } }, db: {}, log: vi.fn(), state: { disposed: false }, host: { call: async () => ({}) } };
   const queue = [...runs];
-  const runVerification = vi.fn(async () => queue.shift() ?? []);
+  const runVerification = vi.fn(async () => { const next = queue.shift(); if (next instanceof Error) throw next; return next ?? []; });
   const services = { runVerification, dispatchWriter, ...(baseline ? { baseline: { afterMerge: () => baseline.turned, redBefore: () => baseline.redBefore ?? [] } } : {}) };
   const finish = createWriterFinish(ctx as never, services as never);
   await finish.checkMainAfterMerge({ projectId: "P", pmThreadId: "pm", config: { hostId: "h" } as never, runId: "run", task: { ...task, id: taskId }, basePath: "/work/base", worktreePath: "/work/wt", attemptId: "att", mergeCommit: "abc", ...(greenInWorktree ? { greenInWorktree } : {}) });
@@ -93,4 +93,23 @@ it("redBeforeAndAfter keeps only checks that were red on the base and are red no
   expect(redBeforeAndAfter([base("a", "red"), base("b", "green"), base("c", "unknown"), base("d", "red")], [
     { command: "a", exitCode: 1 }, { command: "b", exitCode: 1 }, { command: "c", exitCode: 1 }, { command: "d", exitCode: 1, hostError: true },
   ])).toEqual(["a"]);
+});
+
+// Astra's recheck of 0.1.336 (P1): «the re-run did not turn green» is not «the defect reproduced». Only a product red again is.
+const studioDown = (command: string): Row => ({ command, exitCode: 1, stdout: "", stderr: "studio_test error: Unable to reach Roblox Studio right now." });
+
+it.each([
+  ["a re-run that is an environment red", [studioDown("npm run build")]],
+  ["a re-run the host could not run", [{ ...red("npm run build"), hostError: true }]],
+  ["a re-run that threw (no result)", new Error("host unreachable")],
+  ["a re-run that exited 0 but ran no test", [{ command: "npm run build", exitCode: 1, stdout: "", stderr: "check failed: the check exited 0 but ran no test: 4 skipped (vitest)" }]],
+])("%s does not dispatch a repair task: the first red stays recorded, one log line, nobody is woken", async (_name, rerun) => {
+  const { sent, dispatchWriter } = await mergeThenCheck([[red("npm run build")], rerun as Row[] | Error], { turned: ["npm run build"] });
+  expect(dispatchWriter).not.toHaveBeenCalled();
+  expect(sent).toHaveLength(0);
+});
+
+it("a re-run that reproduces the product red still dispatches the repair task", async () => {
+  const { dispatchWriter } = await mergeThenCheck([[red("npm run build")], [red("npm run build")]], { turned: ["npm run build"] });
+  expect(dispatchWriter).toHaveBeenCalledTimes(1);
 });
