@@ -18,8 +18,8 @@ export const RUNGS = [
 /** Origins that are Lane Pilot's own side; a class from one of them is picked whatever its recurrence. */
 export const LANE_ORIGINS: readonly string[] = ["orchestrator", "harness", "infra"];
 
-export type Sources = { attempt: number; triage: number; gate: number; stage: number; log: number };
-export const EMPTY_SOURCES: Sources = { attempt: 0, triage: 0, gate: 0, stage: 0, log: 0 };
+export type Sources = { attempt: number; triage: number; gate: number; stage: number; log: number; wf: number };
+export const EMPTY_SOURCES: Sources = { attempt: 0, triage: 0, gate: 0, stage: 0, log: 0, wf: 0 };
 
 export type HuntState = "none" | "running" | "usable" | "unknown";
 export type LadderStage = "moves" | "hunt" | "informed" | "backlog";

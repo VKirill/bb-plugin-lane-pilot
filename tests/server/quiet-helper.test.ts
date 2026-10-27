@@ -10,6 +10,11 @@ describe("quietHelper", () => {
     for (const role of ["pm", "errand", "specialist", "self-repair"]) {
       expect(quietHelper(child(role)).pluginMetadata).not.toHaveProperty("experimental_vkQuietChild");
     }
+    // A step of a graph run never wakes the PM chat, whatever its role: the run-end notice still comes.
+    for (const role of ["errand", "specialist", "self-repair"]) {
+      expect(quietHelper({ parentThreadId: "thr_pm", pluginMetadata: { role, lanePilotWorkflowRunId: "wfr_1" } }).pluginMetadata).toMatchObject({ role, experimental_vkQuietChild: true });
+    }
+    expect(quietHelper({ parentThreadId: "thr_pm", pluginMetadata: { role: "errand", lanePilotWorkflowRunId: "" } }).pluginMetadata).not.toHaveProperty("experimental_vkQuietChild");
     expect(quietHelper({ pluginMetadata: { role: "writer" } }).pluginMetadata).not.toHaveProperty("experimental_vkQuietChild");
     expect(quietHelper({ parentThreadId: "thr_pm" })).toEqual({ parentThreadId: "thr_pm" });
   });

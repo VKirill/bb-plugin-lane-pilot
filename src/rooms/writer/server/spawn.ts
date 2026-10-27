@@ -8,6 +8,7 @@ import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { HARNESS_VERSION, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, saveReasoningTrace, setAttemptDirtBefore, setAttemptEnvironment, setAttemptHolderThread, setAttemptWorkspace, setReasoningThread, transitionAttempt, taskBasePath } from "../../storage";
 import { automaticEffortRoutingEnabled, bbServiceTier, resolveJevReasoning, writerExecutionSelection, writerServiceTier, findModelIn } from "@lane-pilot/models";
 import { spawnWithSeam } from "../spawn-seam";
+import { pipelineWriterTag } from "./pipeline-tag";
 import { buildExecutionPacket, renderExecutionPacket } from "../../tasks/execution-packet";
 import { retargetTask } from "../../tasks";
 import { parseMemorySettings } from "../../memory";
@@ -502,6 +503,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
           lanePilotTaskId:input.taskId,
           attemptId:input.attemptId,
           parentPmThreadId:input.pmThreadId,
+          ...pipelineWriterTag(db, input.runId, input.taskId),
         },
       };
       const launch = (target:WriterEnvironment) => spawnWithSeam(() => fullAccessSpawn(bb, { ...launchArgs, environment:target }));

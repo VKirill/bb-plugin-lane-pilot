@@ -76,6 +76,15 @@ describe("lane_pilot_run_workflow", () => {
     expect(started).toEqual([]);
   });
 
+  it("refuses any graph with startedBy, naming the tool it starts with", async () => {
+    const { db } = setup();
+    const { engine, started } = fakeEngine();
+    const starterStore = await loadWorkflowStore({ builtin: published().map((source) => ((source.value as { id: string }).id === "code-review" ? { ...source, value: { ...(source.value as object), startedBy: "lane_pilot_errand" } } : source)) });
+    expect(parse(await runWorkflowTool(depsOf(db, starterStore, engine), { workflowId: "code-review", inputs: {} }, ctx)).reason).toContain('"code-review" starts with lane_pilot_errand');
+    expect(parse(await runWorkflowTool(depsOf(db, publishedStore, engine), { workflowId: "lp-task-pipeline", inputs: {} }, ctx)).reason).toContain("starts with lane_pilot_dispatch_writer");
+    expect(started).toEqual([]);
+  });
+
   it("refuses when a required input is missing and says which", async () => {
     const { db } = setup();
     const { engine, started } = fakeEngine();

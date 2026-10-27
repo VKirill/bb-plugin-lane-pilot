@@ -56,12 +56,22 @@ export function logSignature(message: string): Signature {
 }
 
 /**
+ * A graph run that ended badly is its own class: the workflow and what stopped it, from the reason's prefix (`step_failed:<node>`, `output_invalid`,
+ * `budget_exceeded:cost`...). The words after the prefix are the run's own message and vary; the prefix is what repeats.
+ */
+export function wfSignature(workflowId: string, status: string, reason: string | null | undefined): Signature {
+  const head = (reason ?? "").trim().split(/[\s(]/)[0]!.replace(/[0-9a-f]{12,}/gi, "<id>").slice(0, 80) || status;
+  const reasonNorm = `${workflowId} ${status}: ${head}`;
+  return { failureClass: "workflow", reasonNorm, classKey: `workflow:${sha12(`workflow|${reasonNorm}`)}` };
+}
+
+/**
  * Whose fault, from the triage when it has an answer and from the failure class otherwise:
  * `orchestrator` (triage), `harness` and `infra` (the class), else the writer's / the task's / the environment's.
  */
 export function originOf(cls: string, triageOrigin: string | null | undefined): string {
   if (triageOrigin === "orchestrator") return "orchestrator";
-  if (cls === "harness" || cls === "log") return "harness";
+  if (cls === "harness" || cls === "log" || cls === "workflow") return "harness";
   if (cls === "infra") return "infra";
   if (triageOrigin === "environment") return "infra";
   if (triageOrigin) return triageOrigin;

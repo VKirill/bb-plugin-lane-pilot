@@ -126,6 +126,17 @@ export function buildClassPack(db: WallDb, classKey: string, extra: { files?: Pa
   for (const row of db.prepare("SELECT samples_json FROM lane_pilot_wall_entry WHERE class_key=? ORDER BY night DESC LIMIT 12").all(classKey) as Array<{ samples_json: string }>) {
     try { for (const id of JSON.parse(row.samples_json) as string[]) if (!id.startsWith("log:")) ids.add(id); } catch { /* skip */ }
   }
+  // A graph run is not an attempt: its sample ids (`wf:<run>`) become facts, with the step that failed it.
+  const wfFacts: string[] = [];
+  for (const id of [...ids].filter((item) => item.startsWith("wf:")).slice(0, 8)) {
+    ids.delete(id);
+    try {
+      const run = db.prepare("SELECT workflow_id, status, reason, project_id, harness_version, updated_at FROM lane_pilot_wf_run WHERE id=?").get(id.slice(3)) as { workflow_id: string; status: string; reason: string | null; project_id: string | null; harness_version: string | null; updated_at: number } | undefined;
+      if (!run) continue;
+      const step = db.prepare("SELECT node_id, error FROM lane_pilot_wf_step WHERE run_id=? AND state IN ('failed','interrupted') ORDER BY updated_at DESC LIMIT 1").get(id.slice(3)) as { node_id: string; error: string | null } | undefined;
+      wfFacts.push(`graph run ${id.slice(3)}: ${run.workflow_id} ${run.status}, reason ${(run.reason ?? "-").slice(0, 300)}${step ? `, step ${step.node_id}: ${(step.error ?? "").slice(0, 300)}` : ""} (project ${run.project_id ?? "-"}, version ${run.harness_version ?? "-"}, at ${run.updated_at})`);
+    } catch { /* a database without the engine's tables has no graph runs */ }
+  }
   const stmt = db.prepare(`SELECT a.id, a.run_id, a.task_id, a.state, a.reason, a.updated_at, a.harness_version, r.project_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.id=?`);
   const attempts = [...ids].slice(0, 8).map((id) => stmt.get(id) as AttemptRow | undefined).filter((row): row is AttemptRow => Boolean(row));
   const queries: PackQuery[] = [
@@ -135,7 +146,7 @@ export function buildClassPack(db: WallDb, classKey: string, extra: { files?: Pa
   ];
   return {
     kind: "class", subject: classKey,
-    facts: [`class ${classKey}: ${cls?.failure_class ?? "?"} / ${cls?.reason_norm ?? "?"} (origin ${cls?.origin ?? "?"})`, ...(extra.facts ?? [])],
+    facts: [`class ${classKey}: ${cls?.failure_class ?? "?"} / ${cls?.reason_norm ?? "?"} (origin ${cls?.origin ?? "?"})`, ...wfFacts, ...(extra.facts ?? [])],
     attempts: attempts.map(attemptView), receipts: receiptsOf(db, attempts), files: extra.files ?? [], checkOutputs: attempts.map((row) => row.reason ?? ""), queries,
   };
 }

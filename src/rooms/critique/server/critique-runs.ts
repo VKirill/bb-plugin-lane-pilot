@@ -25,7 +25,7 @@ import type { CodeCriticDefault } from "../quality-mode";
 import type { Verdict, VerdictStatus } from "@lane-pilot/workflow-engine";
 import { MAIN_ATTEMPT_LIMIT } from "../../runs";
 import { configuredSetting, stageHelperSettings } from "../../core/server";
-import { fullAccessSpawn } from "../../core/server";
+import { fullAccessSpawn, graphStepMetadata } from "../../core/server";
 import { reviewerMemoryFor } from "../../memory/server";
 import { clearSpawnMarker } from "../../core/server";
 import { CRITIC_OUTCOME_UNKNOWN, criticReconcilePort, helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
@@ -35,7 +35,7 @@ import { dependsOnTask } from "../../writer/server/start";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { resolve } from "node:path";
-export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;pmThreadId:string;config:PrototypeConfig;task:TaskV2})
+export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;pmThreadId:string;config:PrototypeConfig;task:TaskV2;workflow?:{runId:string;stepKey:string;nodeId:string}})
   :Promise<{state:"skipped"|"passed"|"failed";summary:string;reason?:string}> {
   const settings=await stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
   const parsedSettings=parsePmReadSettings(Object.fromEntries([
@@ -94,7 +94,7 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
       ...writerExecutionSelection(providerId,modelId,parsedSettings.effort,serviceTier),
       prompt:pmReadPrompt({agent:"pm-read",packet:renderPacketExcerpts(packet),task:input.task}),
       environment:{type:"host",hostId:input.config.hostId,workspace:{type:"unmanaged",path:input.task.project_cwd}},
-      pluginMetadata:{role:"pm-reader",lanePilotRunId:input.runId,lanePilotTaskId:input.taskId,stageId:"pm-read",parentPmThreadId:input.pmThreadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true}});
+      pluginMetadata:{role:"pm-reader",lanePilotRunId:input.runId,lanePilotTaskId:input.taskId,stageId:"pm-read",parentPmThreadId:input.pmThreadId,helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true,...graphStepMetadata(input.workflow)}});
     threadId=stringAt(spawned,"id");
     if(!threadId) throw new Error("pm_read_thread_id_missing");
     recordStage(input.db,{...base,state:"running",providerId,model:modelId,threadId});
@@ -149,7 +149,7 @@ function verdictReasons(result:{status?:VerdictStatus;summary?:string;verdict?:V
   return { receipt:text, returned:text };
 }
 
-export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;config:PrototypeConfig;task:TaskV2;plan:string;pmReadContext?:string})
+export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;config:PrototypeConfig;task:TaskV2;plan:string;pmReadContext?:string;workflow?:{runId:string;stepKey:string;nodeId:string}})
   : Promise<{allowed:boolean;reason?:string;critique?:unknown}> {
   const projectSettings = await stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
   // quality_mode (task, else project, else standard) decides whether this task goes through the plan critique at all.
@@ -266,7 +266,7 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
         workspace:{ type:"unmanaged", path:input.task.project_cwd } },
       pluginMetadata:{ role:"plan-critic", lanePilotRunId:input.runId, lanePilotTaskId:input.taskId,
         stageId:"plan-critique", parentPmThreadId:getRun(input.db, input.runId)?.pm_thread_id ?? null,
-        helperMode:helperPolicy.mode, helperRequired:helperPolicy.policy?.required===true },
+        helperMode:helperPolicy.mode, helperRequired:helperPolicy.policy?.required===true, ...graphStepMetadata(input.workflow) },
     });
     threadId = stringAt(spawned, "id");
     if (!threadId) throw new Error("critique_thread_id_missing");
@@ -552,7 +552,7 @@ export async function runCodeCritique(input:{
   }
 }
 
-export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;config:PrototypeConfig;task:TaskV2;plan:string})
+export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<typeof openDatabase>;projectId:string;runId:string;taskId:string;config:PrototypeConfig;task:TaskV2;plan:string;workflow?:{runId:string;stepKey:string;nodeId:string}})
   : Promise<{allowed:boolean;reason?:string;review?:unknown}> {
   const settings = await stageHelperSettings(input.bb,input.db,input.projectId,input.runId);
   const policy = shouldRunSpecialist({enabled:settings["specialist.enabled"],when:settings["specialist.when"],risk:input.task.risk});
@@ -600,7 +600,7 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
       environment:{type:"host",hostId:input.config.hostId,workspace:{type:"unmanaged",path:input.task.project_cwd}},
       pluginMetadata:{role:"specialist-reviewer",lanePilotRunId:input.runId,lanePilotTaskId:input.taskId,
         stageId:"specialist-review",parentPmThreadId:getRun(input.db,input.runId)?.pm_thread_id ?? null,
-        helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true},
+        helperMode:helperPolicy.mode,helperRequired:helperPolicy.policy?.required===true,...graphStepMetadata(input.workflow)},
     });
     threadId = stringAt(spawned,"id");
     if (!threadId) throw new Error("specialist_thread_id_missing");

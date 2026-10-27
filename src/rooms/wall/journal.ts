@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { classKeyOf, logOrigin, logSignature, originOf, wallSignature } from "./signature";
+import { classKeyOf, logOrigin, logSignature, originOf, wallSignature, wfSignature } from "./signature";
 import { EMPTY_SOURCES, RUNGS, type Sources, type WallClass } from "./types";
 
 export type WallDb = Pick<Database.Database, "prepare" | "transaction">;
@@ -9,6 +9,11 @@ export const FAILED_STATES = ["blocked", "provider_error", "timeout", "empty_out
 /** An attempt still in flight has neither succeeded nor failed (the same rule as scripts/lp-metrics-views.sql). */
 const IN_FLIGHT = ["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"] as const;
 const quoted = (list: readonly string[]) => list.map((item) => `'${item}'`).join(",");
+
+/** Graph run statuses that are a failure of the run (the others are running, waiting, succeeded or canceled by the owner). */
+export const WF_FAILED = ["failed", "blocked", "interrupted"] as const;
+/** The per-task pipeline is not read here: its failure is the attempt's, counted from the attempt already. */
+const WF_SKIPPED = ["lp-task-pipeline"] as const;
 
 const DAY = 86_400_000;
 export const nightOf = (at: number): string => new Date(at).toISOString().slice(0, 10);
@@ -76,6 +81,23 @@ export function collectEntries(db: WallDb, options: JournalOptions): Entry[] {
     if (stageRows.length) entry.sources.stage += 1;
     for (const stage of stageRows) entry.stages[stage.stage_id] = (entry.stages[stage.stage_id] ?? 0) + stage.n;
   }
+  // Graph runs that ended failed, blocked or interrupted. A run whose child run failed is left to the child, which names the cause: one failure, one count.
+  const wfRows = db.prepare(`SELECT r.id, r.workflow_id, r.status, r.reason, r.updated_at, r.harness_version, r.project_id, r.link_task_id
+    FROM lane_pilot_wf_run r
+    WHERE r.updated_at>=? AND r.updated_at<? AND r.status IN (${quoted(WF_FAILED)}) AND r.workflow_id NOT IN (${quoted(WF_SKIPPED)})
+      AND NOT EXISTS (SELECT 1 FROM lane_pilot_wf_run c WHERE c.parent_run_id=r.id AND c.status IN (${quoted(WF_FAILED)}))
+    ORDER BY r.updated_at`).all(options.since, options.until) as Array<{ id: string; workflow_id: string; status: string; reason: string | null; updated_at: number; harness_version: string | null; project_id: string | null; link_task_id: string | null }>;
+  for (const row of wfRows) {
+    const projectId = row.project_id ?? "-";
+    if (!options.isReal(projectId, row.link_task_id ?? "")) continue;
+    const sig = wfSignature(row.workflow_id, row.status, row.reason);
+    const key = { classKey: sig.classKey, version: row.harness_version ?? "", projectId };
+    const entry = slot(key, () => ({ ...key, failureClass: sig.failureClass, reasonNorm: sig.reasonNorm, origin: originOf(sig.failureClass, null) }), row.updated_at);
+    entry.n += 1;
+    entry.taskSet.add(`wf:${row.id}`);
+    entry.sources.wf += 1;
+    if (entry.samples.length < 6) entry.samples.push(`wf:${row.id}`);
+  }
   // The version a log line was written under: the newest attempt started before it (one read of the recent attempts, not one per line).
   const timeline = options.logLines?.length
     ? (db.prepare("SELECT created_at, harness_version FROM lane_pilot_attempt WHERE harness_version IS NOT NULL AND created_at<=? ORDER BY created_at DESC LIMIT 2000").all(options.until) as Array<{ created_at: number; harness_version: string }>).reverse()
@@ -110,6 +132,19 @@ export function writeEntries(db: WallDb, entries: readonly Entry[], now: number)
     for (const e of entries) put.run(e.night, e.classKey, e.failureClass, e.reasonNorm, e.origin, e.version, e.projectId, e.n, e.tasks,
       JSON.stringify(e.sources), JSON.stringify(e.gates), JSON.stringify(e.stages), JSON.stringify(e.samples), e.firstAt, e.lastAt, now);
   })();
+}
+
+/**
+ * A graph class is measured on the finished runs of its own workflow (the first word of its reason) under the shipped version, not on writer attempts,
+ * which can never fail in it. `undefined`: the class is not a graph class, the caller measures it on attempts; `null`: no run of that workflow since.
+ */
+export function graphRecurrence(db: WallDb, classKey: string, version: string, since: number): { failures: number; attempts: number; exposed: boolean } | null | undefined {
+  const graph = db.prepare("SELECT reason_norm FROM lane_pilot_wall_class WHERE class_key=? AND failure_class='workflow'").get(classKey) as { reason_norm: string } | undefined;
+  if (!graph) return undefined;
+  const workflowId = graph.reason_norm.split(" ")[0]!;
+  const runs = db.prepare("SELECT status, reason FROM lane_pilot_wf_run WHERE workflow_id=? AND harness_version=? AND created_at>=? AND status NOT IN ('running','waiting','canceled')").all(workflowId, version, since) as Array<{ status: string; reason: string | null }>;
+  if (!runs.length) return null;
+  return { attempts: runs.length, failures: runs.filter((run) => wfSignature(workflowId, run.status, run.reason).classKey === classKey).length, exposed: true };
 }
 
 /** The rung a class has reached: 3/10, then 5/100, then 6/500 (Maslov). Counts are failures among the last 10 / 100 / 500 finished attempts. */
@@ -185,6 +220,16 @@ export function refreshClasses(db: WallDb, options: { now: number; isReal: Journ
       FROM lane_pilot_wall_entry WHERE failure_class='log' AND last_at>=? AND last_at<=? GROUP BY class_key`)
       .all(now - 7 * DAY, now - DAY, now - 7 * DAY, since, now) as Array<{ class_key: string; reason_norm: string; origin: string; first_at: number; last_at: number; total: number; r7: number; r1: number; nights: number }>;
     const seen = [...byKey.keys()];
+    // A graph's failure class has no attempts either: it recurs when the workflow ended that way twice in the last seven days.
+    const graphs = db.prepare(`SELECT class_key, reason_norm, origin, min(first_at) AS first_at, max(last_at) AS last_at, sum(n) AS total,
+        sum(CASE WHEN last_at>=? THEN n ELSE 0 END) AS r7, sum(CASE WHEN last_at>=? THEN n ELSE 0 END) AS r1
+      FROM lane_pilot_wall_entry WHERE failure_class='workflow' AND last_at>=? AND last_at<=? GROUP BY class_key`)
+      .all(now - 7 * DAY, now - DAY, since, now) as Array<{ class_key: string; reason_norm: string; origin: string; first_at: number; last_at: number; total: number; r7: number; r1: number }>;
+    for (const row of graphs) {
+      const recurring = row.r7 >= 2;
+      upsert.run(row.class_key, "workflow", row.reason_norm, row.origin, row.first_at, row.last_at, row.total, 0, 0, 0, 0, 0, 0, recurring ? 0 : 3, recurring ? "open" : "closed", row.r7, row.r1, recurring ? null : now, now);
+      seen.push(row.class_key);
+    }
     for (const row of logs) {
       const recurring = row.nights >= 2 && row.r7 >= 3;
       upsert.run(row.class_key, "log", row.reason_norm, row.origin, row.first_at, row.last_at, row.total, 0, 0, 0, 0, 0, 0, recurring ? 0 : 3, recurring ? "open" : "closed", row.r7, row.r1, recurring ? null : now, now);

@@ -7,9 +7,11 @@ import { LP_TASK_PIPELINE, builtinWorkflow } from "../../workflow";
 import type { NodeExecutor, RunSummary, StepContext, WorkflowEngine } from "../../workflow";
 import { runPlanCritique, runPmRead, runSpecialistReview } from "../../critique/server";
 import { recordStage } from "../../runs/server";
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 import { runOnHost } from "@lane-pilot/host-calls";
+import { withUsage } from "../../usage/server";
 
 /**
  * The built-in workflow `lp-task-pipeline` (workflows/lp-task-pipeline.json) executed by the workflow engine.
@@ -63,14 +65,28 @@ function blockedReply(r: DispatchRuntime, reason: string | undefined): Record<st
 /** The agent-typed nodes also hand over a line saying what was done: the engine requires a handoff from every agent. */
 const handoffOf = (stage: string, state: string, reason?: string) => `${stage} ${state}${reason ? `: ${reason}` : ""}`;
 
-export function registerDispatchExecutors(engine: WorkflowEngine): void {
-  const exec = (key: string, run: (r: DispatchRuntime, ctx: StepContext<DispatchRuntime>) => Promise<Record<string, unknown>>, extra: Partial<NodeExecutor<DispatchRuntime>> = {}) =>
-    engine.register<DispatchRuntime>(key, { run: async (ctx) => ({ output: await run(need(ctx), ctx) }), ...extra });
+/** The graph step a stage function runs for: its helper threads carry these ids in their metadata. */
+const stepRef = (ctx: StepContext<DispatchRuntime>) => ({ runId: ctx.runId, stepKey: ctx.stepKey, nodeId: ctx.nodeId });
 
-  exec("lp.pm-read", async (r) => {
-    const pmRead = await runPmRead({ bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId, pmThreadId: r.threadId, config: r.runConfig, task: r.task });
+export function registerDispatchExecutors(engine: WorkflowEngine): void {
+  /**
+   * `stage`: the stage whose helper thread this step runs. Once the stage function returns, the thread its receipt names is read for what it spent
+   * and the engine adds that to the run (`lane_pilot_wf_run.tokens_used`), so a budget sees the cost. A receipt the stage did not write now (an
+   * earlier run's, found again) is not charged a second time.
+   */
+  const exec = (key: string, run: (r: DispatchRuntime, ctx: StepContext<DispatchRuntime>) => Promise<Record<string, unknown>>, extra: Partial<NodeExecutor<DispatchRuntime>> = {}, stage?: "pm-read" | "plan-critique" | "specialist-review") =>
+    engine.register<DispatchRuntime>(key, { run: async (ctx) => {
+      const r = need(ctx);
+      const since = Date.now();
+      const output = await run(r, ctx);
+      const receipt = stage ? listStageReceipts(r.ctx.db, r.runId, r.taskId).find((row) => row.stageId === stage) : undefined;
+      return { output, ...(receipt?.threadId && receipt.updatedAt >= since ? await withUsage(r.ctx.bb, receipt.threadId) : {}) };
+    }, ...extra });
+
+  exec("lp.pm-read", async (r, ctx) => {
+    const pmRead = await runPmRead({ bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId, pmThreadId: r.threadId, config: r.runConfig, task: r.task, workflow: stepRef(ctx) });
     return { state: pmRead.state, summary: pmRead.summary, ...(pmRead.reason !== undefined ? { reason: pmRead.reason } : {}), handoff: handoffOf("pm-read", pmRead.state, pmRead.reason) };
-  });
+  }, {}, "pm-read");
 
   exec("lp.block-pm-read", async (r, ctx) => {
     const ended = endedReply(r);
@@ -95,9 +111,9 @@ export function registerDispatchExecutors(engine: WorkflowEngine): void {
     // A canceled task starts no new helper: the block branch then answers with the ended attempt.
     if (endedReply(r)) return { allowed: false, reason: "attempt ended before its stages finished", handoff: handoffOf("plan-critique", "skipped", "attempt ended") };
     const critique = await runPlanCritique({ bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId,
-      config: r.runConfig, task: r.task, plan: r.plan, pmReadContext: text(ctx.input.with.pmReadContext) || undefined });
+      config: r.runConfig, task: r.task, plan: r.plan, pmReadContext: text(ctx.input.with.pmReadContext) || undefined, workflow: stepRef(ctx) });
     return { allowed: critique.allowed, ...(critique.reason !== undefined ? { reason: critique.reason } : {}), handoff: handoffOf("plan-critique", critique.allowed ? "allowed" : "blocked", critique.reason) };
-  });
+  }, {}, "plan-critique");
 
   exec("lp.block-plan-critique", async (r, ctx) => {
     const ended = endedReply(r);
@@ -111,12 +127,12 @@ export function registerDispatchExecutors(engine: WorkflowEngine): void {
     return { reply: blockedReply(r, reason) };
   });
 
-  exec("lp.specialist-review", async (r) => {
+  exec("lp.specialist-review", async (r, ctx) => {
     // A canceled task starts no new helper: the block branch then answers with the ended attempt.
     if (endedReply(r)) return { allowed: false, reason: "attempt ended before its stages finished", handoff: handoffOf("specialist-review", "skipped", "attempt ended") };
-    const specialist = await runSpecialistReview({ bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId, config: r.runConfig, task: r.task, plan: r.plan });
+    const specialist = await runSpecialistReview({ bb: r.ctx.bb, db: r.ctx.db, projectId: r.projectId, runId: r.runId, taskId: r.taskId, config: r.runConfig, task: r.task, plan: r.plan, workflow: stepRef(ctx) });
     return { allowed: specialist.allowed, ...(specialist.reason !== undefined ? { reason: specialist.reason } : {}), handoff: handoffOf("specialist-review", specialist.allowed ? "allowed" : "blocked", specialist.reason) };
-  });
+  }, {}, "specialist-review");
 
   exec("lp.block-specialist", async (r, ctx) => {
     const ended = endedReply(r);
@@ -220,20 +236,23 @@ export function lpTaskPipelineExecutor(engine: WorkflowEngine): NodeExecutor<Dis
       return { wait: { kind: "attempt", detail: { runId: r.runId, taskId: r.taskId, attemptId: r.attemptId } }, partial: { reply } };
     },
     /** The step ends when the task's latest attempt does. A retry is a new attempt of the same task, so the latest one counts. */
-    poll: async (step) => {
+    poll: async (step, ctx) => {
       const detail = step.await.detail as { runId: string; taskId: string } | undefined;
       if (!detail) return { error: "the waiting step does not say which task it waits for" };
-      return pollAttempt(engine, detail.runId, detail.taskId);
+      return pollAttempt(engine, detail.runId, detail.taskId, ctx.runtime?.ctx.bb);
     },
   };
 }
 
-function pollAttempt(engine: WorkflowEngine, runId: string, taskId: string) {
+/** `bb` is there while the dispatch is in memory: the writer threads of every attempt of the task are then read for what they spent, once, when the task is over. */
+async function pollAttempt(engine: WorkflowEngine, runId: string, taskId: string, bb?: BbPluginApi) {
   const db = engine.journal.db;
-  const listed = listAttemptsForTask(db, runId, taskId).at(-1);
+  const attempts = listAttemptsForTask(db, runId, taskId);
+  const listed = attempts.at(-1);
   const latest = listed ? getAttempt(db, listed.id) : null;
   if (!latest || !TERMINAL_ATTEMPT.includes(latest.state)) return null;
-  return { output: { reply: { runId, taskId, attemptId: latest.id, state: latest.state, ...(latest.reason ? { reason: latest.reason } : {}) } } };
+  const threads = bb ? attempts.map((row) => getAttempt(db, row.id)?.thread_id) : [];
+  return { output: { reply: { runId, taskId, attemptId: latest.id, state: latest.state, ...(latest.reason ? { reason: latest.reason } : {}) } }, ...(bb ? await withUsage(bb, threads) : {}) };
 }
 
 /** The engine key of an attempt's dispatch run; a restart after a reload is a run of its own (`:resume-N`). */

@@ -37,6 +37,8 @@ type Scenario = {
   expect?: { state: string; reason?: RegExp };
   /** The PM cancels the task while its PM read runs (live 2026-10-09, fallback-continues-session). */
   cancelDuringPmRead?: boolean;
+  /** Every helper thread reports 1,000 tokens (its events carry a `thread/tokenUsage/updated`). */
+  usage?: boolean;
 };
 
 async function runScenario(engine: "on" | "off", scenario: Scenario) {
@@ -62,7 +64,8 @@ async function runScenario(engine: "on" | "off", scenario: Scenario) {
         },
         wait: async () => ({ matched: true, thread: { status: "idle" } }),
         get: async ({ threadId }) => ({ id: threadId, status: "idle", projectId, sourceThreadId: pmThreadId, lifecycleOwnerThreadId: pmThreadId }) as never,
-        events: { list: async ({ threadId }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } }] },
+        events: { list: async ({ threadId }) => [{ type: "turn/started", threadId, seq: 1 }, { type: "turn/completed", threadId, seq: 2, data: { status: "completed" } },
+          ...(scenario.usage ? [{ type: "thread/tokenUsage/updated", threadId, seq: 3, createdAt: 2, data: { turnId: "t1", tokenUsage: { last: { inputTokens: 600, outputTokens: 400, totalTokens: 1000 }, total: { inputTokens: 600, outputTokens: 400, totalTokens: 1000 } } } }] : [])] },
         send: async () => ({}) as never,
         stop: async () => ({ ok: true }) as never,
         output: async ({ threadId }) => {
@@ -146,6 +149,8 @@ async function runScenario(engine: "on" | "off", scenario: Scenario) {
     spawned: spawned.map((row) => `${String((row.pluginMetadata as Record<string, unknown>).role)}:${String((row.pluginMetadata as Record<string, unknown>).stageId ?? "")}`),
     engineRuns: (db.prepare("SELECT id, workflow_id, status FROM lane_pilot_wf_run").all() as Array<{ id: string; workflow_id: string; status: string }>),
     engineSteps: (db.prepare("SELECT node_id, state FROM lane_pilot_wf_step ORDER BY rowid").all() as Array<{ node_id: string; state: string }>),
+    engineTokens: (db.prepare("SELECT tokens_used FROM lane_pilot_wf_run").all() as Array<{ tokens_used: number }>).map((row) => row.tokens_used),
+    spawnedMeta: spawned.map((row) => row.pluginMetadata as Record<string, unknown>),
   };
   await harness.lifecycle.dispose();
   return out;
@@ -156,7 +161,7 @@ function normal(value: unknown): unknown {
   // Receipts of the stages that follow an acceptance hash its result, which carries the clock; their results are compared whole.
   const hashOfClock = new Set(["docs-maintenance", "memory-maintenance", "project-life", "acceptance-receipt", "writer-agent"]);
   const text = JSON.stringify(value, function (this: Record<string, unknown>, key, item) {
-    if (key === "updatedAt" || key === "engineRuns" || key === "engineSteps" || key === "outputSha256") return undefined;
+    if (key === "updatedAt" || key === "engineRuns" || key === "engineSteps" || key === "engineTokens" || key === "spawnedMeta" || key === "outputSha256") return undefined;
     if (key === "inputSha256" && hashOfClock.has(String(this.stageId))) return undefined;
     return item;
   });
@@ -211,6 +216,23 @@ describe("dispatch through the workflow engine equals the direct path", () => {
       expect(engine.engineRuns.map((row) => row.workflow_id)).toEqual(scenario.runGate === "pre-merge" ? [] : ["lp-task-pipeline"]);
     }, 30_000);
   }
+
+  it("charges the helper threads to the run and tags them with the run and step that spawned them", async () => {
+    const run = await runScenario("on", { name: "usage", usage: true, settings: { "pm_read.enabled": true, "pm_read.min_lines": 50, "pm_read.reasoning_effort": "medium" }, task: { read_first: ["README.md"] }, finish: true,
+      pmRead: '{"summary":"README names the contract","keyFacts":["Managed workspaces isolate task edits."],"openQuestions":[]}' });
+    const [runRow] = run.engineRuns;
+    // pm-read and plan-critique each spent 1,000 tokens: the run's total is no longer 0. The writer step is charged when the engine's poll sees the task
+    // end (every five minutes in production); tests/workflow/step-usage.test.ts pins that poll.
+    expect(run.engineTokens[0]).toBe(2000);
+    const byStage = (role: string) => run.spawnedMeta.find((meta) => meta.role === role)!;
+    for (const [role, node] of [["pm-reader", "pm-read"], ["plan-critic", "plan-critique"], ["writer", "writer"]] as const) {
+      expect(byStage(role), role).toMatchObject({ lanePilotWorkflowRunId: runRow!.id, lanePilotWorkflowNode: node });
+      expect(byStage(role).lanePilotWorkflowStep, role).toBeTruthy();
+    }
+    // The direct path is no graph: its threads carry no run id.
+    const direct = await runScenario("off", { name: "usage-direct", usage: true, settings: { "plan_critique.enabled": false } });
+    expect(direct.spawnedMeta.some((meta) => "lanePilotWorkflowRunId" in meta)).toBe(false);
+  }, 30_000);
 
   it("records the journal of a finished dispatch: one step per stage, the writer step settled when the task ends", async () => {
     const { engineRuns, engineSteps } = await runScenario("on", { name: "journal", settings: { "plan_critique.enabled": false }, finish: true });
