@@ -207,7 +207,7 @@ export const cockpitRu: { [K in keyof typeof cockpitEn]: string } = {
   ckCoordClear: "Снять заявку сессии",
   ckCoordSession: "Сессия",
   ckCoordReason: "Почему",
-  ckShipLead: "Фаза отгружается воркфлоу: проверить покрытие, открыть чистую ветку PR, отгрузить PR.",
+  ckShipLead: "Фаза отгружается графом: проверить покрытие, открыть чистую ветку PR, отгрузить PR.",
   ckShipRun: "Запустить {w}",
   ckShipStarted: "Запущено: {s}",
   ckUpdate: "Обновить Lane Stack",

@@ -61,5 +61,5 @@ export function englishSelfRepairChoice(choiceId: string): string | undefined {
 }
 
 export function workflowHumanDetail(locale: OwnerLocale, runId: string, stepId: string): string {
-  return locale === "en" ? `Workflow run ${runId}, step ${stepId}.` : `Запуск сценария ${runId}, шаг ${stepId}.`;
+  return locale === "en" ? `Workflow run ${runId}, step ${stepId}.` : `Запуск графа ${runId}, шаг ${stepId}.`;
 }

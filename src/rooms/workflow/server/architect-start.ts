@@ -48,7 +48,7 @@ export function architectOpening(input: { marker: string; projectId: string; pro
   ].join("\n\n");
   return [
     // The profile marker rides in the hidden part: the dispatch hook reads the whole message, the owner sees one plain line.
-    part("Собрать цепочку с архитектором.", false),
+    part("Собрать граф с архитектором.", false),
     part(`${input.marker}\n\n${brief}`, true),
   ];
 }

@@ -41,7 +41,7 @@ describe("workflow_architect_start", () => {
     expect(started).toEqual({ threadId: "thr_architect_1", projectId, reused: false });
     const args = spawned[0]!;
     expect(args).toMatchObject({
-      projectId, providerId: "claude-code", model: "claude-opus-5-5", reasoningLevel: "high", serviceTier: "default", title: "Архитектор цепочек", visibility: "visible",
+      projectId, providerId: "claude-code", model: "claude-opus-5-5", reasoningLevel: "high", serviceTier: "default", title: "Архитектор графов", visibility: "visible",
       environment: { type: "host", hostId: "host_arch", workspace: { type: "unmanaged", path: "/work/arch" } },
       executionInputSources: { providerId: "explicit", model: "explicit", reasoningLevel: "explicit", serviceTier: "explicit" },
     });
