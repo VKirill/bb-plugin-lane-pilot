@@ -146,7 +146,7 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
     instructions: "Use from a Lane Pilot PM chat for work that is not a change to this project's code (code goes through lane_pilot_dispatch_writer). Give the whole task: goal, where, what to report. `authorized: true` when the task makes changes. Authorization follows the owner's goal, as in your instructions. Otherwise the helper only reads and reports. For a step that needs an SSH, FTP or login account (a deploy to a server or hosting), pass its Env Catalog names in `accounts`: the helper reads them from the catalog and keeps the keys out of every repository; the project list secrets.allow, when it is not empty, must include the name, and if one is missing or left out of that list nothing starts and the answer says what to do (env_request for a missing one, add a left-out one to secrets.allow), then call again. The helper never changes, commits or pushes repository files: if the task asks for that it stops with ERRAND: blocked and you must dispatch a writer task. Returns at once with the run and the thread; call lane_pilot_wait_errand with its workflowRunId (or threadId), again while it is running, and show the owner the @thread link. The same task asked twice is the same run.",
     parameters: z.object({
       task: z.string().min(10).max(20_000),
-      title: z.string().min(1).max(120).optional(),
+      title: z.string().min(1).max(1000).optional(),
       authorized: z.boolean().default(false),
       accounts: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/)).max(8).optional(),
     }).strict(),

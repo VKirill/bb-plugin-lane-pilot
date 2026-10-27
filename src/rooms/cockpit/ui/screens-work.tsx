@@ -108,7 +108,7 @@ function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId
 type TaskView = { displayTitle: string | null; objective: string | null; area: string | null; clarify: { questions?: string[]; answers?: Array<{ question: string; answer: string; by: string }> } | null; drawing: string[]; priority: string; heldUntil: number | null; approach: { approach?: string | null; lesson?: string | null } | null };
 
 const TITLE_MAX = 60;
-/** Suggest task words: the task standard said before the PM refuses it — a person's words, no ids or paths, at most 60 characters. */
+/** Suggest task words: the task standard said before the PM refuses it — a person's words, no ids or paths, short (~60 characters). */
 export function taskWords(title: string): string | null {
   const text = title.trim();
   if (!text) return "Опишите, что изменится для человека";

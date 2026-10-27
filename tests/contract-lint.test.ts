@@ -48,16 +48,17 @@ describe("contract lint rules", () => {
     it("asks for a card title, a kind and an area, each with the fix", () => {
       const missing = standard({ display_title:undefined, kind:undefined, area:undefined });
       expect(missing.map((error) => error.code)).toEqual(["display_title_missing", "kind_missing", "area_missing"]);
-      expect(missing[0]!.message).toContain("at most 60 characters");
+      expect(missing[0]!.message).toContain("~60 characters");
       expect(missing[1]!.message).toContain("feature, fix, check, docs, refactor, research, chore");
       expect(missing[2]!.message).toContain("page:/tools/cards");
     });
     it("treats a blank title or area as missing and a kind outside the list as missing", () => {
       expect(standard({ display_title:"  ", area:" ", kind:"bug" as never }).map((error) => error.code)).toEqual(["display_title_missing", "kind_missing", "area_missing"]);
     });
-    it("refuses a title over 60 characters and takes exactly 60", () => {
-      expect(standard({ display_title:"я".repeat(61) }).map((error) => error.code)).toEqual(["display_title_too_long"]);
-      expect(standard({ display_title:"я".repeat(60) })).toEqual([]);
+    it("takes a long title up to 1000 characters and refuses only beyond (owner 2026-10-27: no retries over title length)", () => {
+      expect(standard({ display_title:"я".repeat(240) })).toEqual([]);
+      expect(standard({ display_title:"я".repeat(1000) })).toEqual([]);
+      expect(standard({ display_title:"я".repeat(1001) }).map((error) => error.code)).toEqual(["display_title_too_long"]);
     });
     it("accepts a Lane Pilot mainfix task, which fills the three itself", () => {
       const fix = postMergeRepair({ ...baseTask, id:"x".repeat(100), area:undefined }, [{ command:"npm test", exitCode:1 }]).fix;

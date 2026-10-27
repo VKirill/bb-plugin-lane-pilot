@@ -49,7 +49,7 @@ export const recordInputSchema = z.object({
   kind: z.enum(KINDS),
   /** The stable name inside the kind; the id is `<kind>:<slug(key)>`, which is what makes a second pass land on the same record. */
   key: z.string().trim().min(1).max(120),
-  title: z.string().trim().min(1).max(160),
+  title: z.string().trim().min(1).max(1000),
   statement: z.string().trim().max(MAX_STATEMENT).default(""),
   attributes: z.record(z.string(), z.unknown()).default({}),
   sensitivity: z.enum(SENSITIVITIES).optional(),

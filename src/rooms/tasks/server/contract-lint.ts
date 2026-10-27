@@ -224,7 +224,8 @@ export function lintProbePaths(task:TaskV2, workspacePath:string):string[] {
   return [...new Set([...hints, ...folderFilters(task).map((filter) => filter.path), ...tests, ...checkNamedPaths(task)])].slice(0, MAX_PROBES);
 }
 
-export const DISPLAY_TITLE_MAX = 60;
+/** The board shows about 60 characters; a longer title is cut there, never refused below this (owner, 2026-10-27: models must not stumble on title length). */
+export const DISPLAY_TITLE_MAX = 1000;
 
 /**
  * The task standard the Tasks board shows from: a card title in the owner's language, a kind and an area. Lane Pilot's own tasks
@@ -233,7 +234,7 @@ export const DISPLAY_TITLE_MAX = 60;
 export function taskStandardFindings(task:Pick<TaskV2, "display_title" | "kind" | "area">):LintFinding[] {
   const found:LintFinding[] = [];
   const title = task.display_title?.trim() ?? "";
-  if (!title) found.push({ code:"display_title_missing", message:"display_title is missing: add the card title for the Tasks board, in the language the owner writes in, at most 60 characters, what changes for a person, no ids or paths (for a Russian-speaking owner: \"Страница заказов в кабинете\")" });
+  if (!title) found.push({ code:"display_title_missing", message:"display_title is missing: add the card title for the Tasks board, in the language the owner writes in, short (~60 characters read best), what changes for a person, no ids or paths (for a Russian-speaking owner: \"Страница заказов в кабинете\")" });
   else if ([...title].length > DISPLAY_TITLE_MAX) found.push({ code:"display_title_too_long", message:`display_title is ${[...title].length} characters, the limit is ${DISPLAY_TITLE_MAX}; shorten it to what changes for a person (for a Russian-speaking owner: "Страница заказов в кабинете")` });
   if (!task.kind || !(TASK_KINDS as readonly string[]).includes(task.kind)) found.push({ code:"kind_missing", message:`kind is missing or not one of ${TASK_KINDS.join(", ")}: add the one that fits (a new capability is "feature", a bug is "fix", a verification-only task is "check")` });
   if (!task.area?.trim()) found.push({ code:"area_missing", message:"area is missing: add the page or feature the task belongs to, one per task (\"page:/tools/cards\", \"feature:checkout\"); tasks of one area run one at a time in the same writer thread" });

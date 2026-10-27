@@ -10,7 +10,7 @@ const kinds = z.array(z.enum(KINDS)).max(KINDS.length);
 const statuses = z.array(z.enum(STATUSES)).max(STATUSES.length);
 const source = z.enum(SOURCES);
 export const editPatchSchema = z.object({
-  title: z.string().trim().min(1).max(160).optional(), statement: z.string().trim().max(600).optional(),
+  title: z.string().trim().min(1).max(1000).optional(), statement: z.string().trim().max(600).optional(),
   attributes: z.record(z.string(), z.unknown()).optional(), sensitivity: z.enum(SENSITIVITIES).optional(),
   confidence: z.number().min(0).max(1).optional(), status: z.enum(STATUSES).optional(),
 }).strict().refine((patch) => Object.keys(patch).length > 0, "Supply at least one changed field");

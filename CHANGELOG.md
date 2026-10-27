@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.347
+
+**Titles may be long.** A phase plan item's title was capped at 200 characters, a phase's at 200, a specialist's, errand's and schedule's at 120, a task's card title (`display_title`) at 60; a model that wrote a fuller title got «Too big» and spent a turn rewriting it. Every title now takes up to 1000 characters; the hints still ask for a short card title (about 60 characters read best), and the board clips long ones to two lines.
+
 ## 0.1.346
 
 **The PM knows every tool's arguments.** BB shows a model only `type: object` for a tool whose parameters are a union on `action`, so ten PM tools (phase, helpers, council, memory, relay, schedule, workflow drafts, queue, check, forge) published no argument names and the PM guessed — `lane_pilot_phase revise` failed twice on `goal` and `note` before it worked. Each such tool now publishes one flat schema and a signature line per action generated from its zod schema (`revise {phaseId, goal, note}`), and a refusal names what the action needs. The PM prompt, specialist prompts, phase next steps, graph descriptions, hook refusals and 13 skills were checked against the real tools and corrected; a test keeps them in line.

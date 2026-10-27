@@ -84,7 +84,7 @@ export function mountSpecialists(ctx: ServerCore, services: Services): void {
     parameters: z.object({
       role: z.string().regex(MAIN_AGENT_ID),
       task: z.string().min(1).max(20_000),
-      title: z.string().min(1).max(120).optional(),
+      title: z.string().min(1).max(1000).optional(),
     }).strict(),
     execute: async (params, context) => {
       if (!context.threadId || !context.projectId) throw new Error("specialist_needs_pm_thread");

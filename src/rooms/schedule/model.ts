@@ -18,7 +18,7 @@ export const workflowTaskSchema = z.object({
 export const errandTaskSchema = z.object({
   kind: z.literal("errand"),
   task: z.string().min(10).max(20_000),
-  title: z.string().min(1).max(120).optional(),
+  title: z.string().min(1).max(1000).optional(),
   /** The errand may change things inside the owner's accounts (the PM's `authorized`); false reads and reports only. */
   authorized: z.boolean().default(false),
   /** Env Catalog names the helper reads itself (the owner must have allowed each for the project). */
@@ -40,7 +40,7 @@ export const agentTaskSchema = z.object({
   agentId: z.string().regex(AGENT_ID),
   /** The standing instruction, the same at every run. */
   task: z.string().min(10).max(20_000),
-  title: z.string().min(1).max(120).optional(),
+  title: z.string().min(1).max(1000).optional(),
   /** As for an errand: false reads and reports only. */
   authorized: z.boolean().default(false),
   accounts: z.array(envName).max(8).default([]),

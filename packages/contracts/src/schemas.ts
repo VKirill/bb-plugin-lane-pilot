@@ -102,8 +102,8 @@ export const taskV2Schema = z.object({
     /** Env Catalog names this check needs (kind secret or login): the server passes their values to the check as environment variables, by name; the writer never sees them. */
     secrets: z.array(secretNameSchema).max(16).optional(),
   }).strict()),
-  /** What changes for a person, in the language the owner writes in, up to 60 characters, no ids or paths: the task board's card title. Optional in the schema so stored contracts parse; the contract lint requires it on a dispatch. */
-  display_title: z.string().trim().describe("Card title in the language the owner writes in, at most 60 characters: what changes for a person, no ids or paths (Russian owner: «Страница заказов в кабинете»).").optional(),
+  /** What changes for a person, in the language the owner writes in, short (~60 characters read best, at most 1000), no ids or paths: the task board's card title. Optional in the schema so stored contracts parse; the contract lint requires it on a dispatch. */
+  display_title: z.string().trim().describe("Card title in the language the owner writes in, short, ~60 characters: what changes for a person, no ids or paths (Russian owner: «Страница заказов в кабинете»).").optional(),
   /** What kind of work it is (the board's badge and colour). Optional in the schema; the contract lint requires it on a dispatch. */
   kind: z.enum(TASK_KINDS).describe("feature, fix, check, docs, refactor, research or chore.").optional(),
   /** The page or feature the task belongs to («page:/tools/cards»): one writer at a time per area, and the area's writer continues its next task. */

@@ -18,12 +18,12 @@ function asJson<S extends z.ZodType>(schema: S) {
 }
 
 const promise = z.object({ given: z.string().trim().min(1).max(600), when: z.string().trim().min(1).max(600), then: z.string().trim().min(1).max(600) }).strict();
-const item = z.object({ id: z.string().trim().min(1).max(80), title: z.string().trim().min(1).max(200), wave: z.number().int().min(1).max(20), promise, task: taskV2Schema,
+const item = z.object({ id: z.string().trim().min(1).max(80), title: z.string().trim().min(1).max(1000), wave: z.number().int().min(1).max(20), promise, task: taskV2Schema,
   covers: z.array(z.string().trim().min(1).max(40)).max(40).optional() }).strict();
 const phaseId = z.string().trim().min(1).max(40);
 
 export const phaseToolParams = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("open"), title: z.string().trim().min(1).max(200), goal: z.string().trim().min(1).max(4000), legacy: asJson(z.boolean()).optional(), roadmapRow: z.string().regex(/^\d+(\.\d+)*$/).optional() }).strict(),
+  z.object({ action: z.literal("open"), title: z.string().trim().min(1).max(1000), goal: z.string().trim().min(1).max(4000), legacy: asJson(z.boolean()).optional(), roadmapRow: z.string().regex(/^\d+(\.\d+)*$/).optional() }).strict(),
   z.object({ action: z.literal("status"), phaseId: phaseId.optional() }).strict(),
   z.object({ action: z.literal("next"), phaseId }).strict(),
   z.object({ action: z.literal("rubric"), stage: z.enum(["discussion", "planning", "design", "execution", "verification", "acceptance", "lessons"]).optional(), phaseId: phaseId.optional() }).strict(),

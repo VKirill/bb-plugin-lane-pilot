@@ -45,7 +45,7 @@ function view(stored: StoredHandoff) {
 
 const createParams = z.object({
   runId: z.string().min(1),
-  title: z.string().trim().min(1).max(200),
+  title: z.string().trim().min(1).max(1000),
   objective: z.string().trim().min(1).max(4000),
   acceptance: z.array(z.string().trim().min(1).max(1000)).min(1).max(20),
   toAgent: z.string().trim().min(1).max(120).optional(),
