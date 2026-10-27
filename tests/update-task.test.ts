@@ -323,7 +323,7 @@ describe("lane_pilot_update_task", () => {
 
     it("sends the task standard back too: a title missing, too long, no kind, no area", async () => {
       const { updateTask } = setup();
-      const res = await update(updateTask, { title: "New", display_title: "x".repeat(61), kind: undefined, area: undefined });
+      const res = await update(updateTask, { title: "New", display_title: "x".repeat(1001), kind: undefined, area: undefined });
       expect(res.ok).toBe(false);
       expect(res.error).toMatchObject({ code: "validation_failed", findings: expect.arrayContaining([
         expect.objectContaining({ code: "display_title_too_long" }), expect.objectContaining({ code: "kind_missing" }), expect.objectContaining({ code: "area_missing" })]) });
