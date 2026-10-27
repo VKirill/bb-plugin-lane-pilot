@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.351
+
+**ZCode · GLM-5.3-Flash is a writer and a role-table option.** The ZCode app on the Mac mini (BB provider `zcode`, GLM-5.3-Flash) is in the writers' anamnesis (`zcode-flash`: large self-contained mechanical or medium tasks, docs, tests, refactors; not tiny tasks, one at a time, Mac mini only) and in the role table (`glm-5.3-flash`, GLM family, efforts low/high/max), never a default. It is offered only where it can work: a machine whose provider list has `zcode`, 15:00–01:00 UTC (setting `zcode.window`: `promo` by default, `always` to lift it), and while no Lane Pilot thread works on it. A held pick goes to the next writer or the role's built-in default. The app's refusals (`ZCode is busy`, `text-not-visible`, `foreground_required`, `session_expired`) are a free limit failure: the task or graph step runs on another model, and the provider breaker opens at once.
+
+**A regression pass's worktree no longer outlives a reload.** A plugin reload in the middle of a pass skipped its cleanup, and cakekeeper.ru's regress worktree (1.3 GB) stayed four days. Each pass worktree is recorded while it lives; the next pass removes any older than six hours.
+
 ## 0.1.350
 
 **A worktree of a checkout in a protected macOS folder gets its own packages.** A writer's worktree sits in `~/.lane-pilot/worktrees`, and its `node_modules` linked every package back into the checkout. For a checkout under `~/Documents` (also Desktop, Downloads, iCloud Drive) a writer whose sandbox may not read there stopped before any work with «EPERM … node_modules/vitest/vitest.mjs» (Оживить фото, T3 and T6, 2026-10-27). Such a checkout's packages are now cloned into the worktree (APFS copy-on-write, no extra disk), and links an older worktree holds into the checkout are replaced. Other folders and Linux keep the links.
