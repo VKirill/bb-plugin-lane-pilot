@@ -1,14 +1,14 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { HEAVY_WITHOUT_JEV, intakeByRules, isMachineMessage } from "../src/rooms/phase/intake";
-import { createPhaseIntake, type IntakePhases } from "../src/rooms/phase/server/intake";
+import { createPhaseIntake, type IntakePhases, type IntakeTrain } from "../src/rooms/phase/server/intake";
 import type { Phase } from "../src/rooms/phase/logic";
 import { createRun, openDatabase } from "../src/rooms/storage";
 
 const PM = "thr_pm";
 const goal = `Нужно сделать раздел блога заново: авторы, категории, поиск, SEO-разметка каждой страницы, перенос старых статей и редиректы. ${"Подробности и требования к каждому экрану. ".repeat(20)}`;
 
-function world(options: { settings?: Record<string, unknown>; role?: string } = {}) {
+function world(options: { settings?: Record<string, unknown>; role?: string; train?: IntakeTrain } = {}) {
   let request = { requestId: "creq_1", initiator: "user", input: [{ type: "text", text: goal }] } as Record<string, unknown>;
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
   harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: options.role ?? "pm", lanePilotRunId: "run1" }));
@@ -29,8 +29,11 @@ function world(options: { settings?: Record<string, unknown>; role?: string } = 
     list: (filter) => opened.filter((phase) => (!filter.pmThreadId || phase.pmThreadId === filter.pmThreadId) && (!filter.live || !["closed", "stopped"].includes(phase.state))),
     status: () => ({ next: { text: "write the discussion files and report them with context" } }),
   };
-  const intake = createPhaseIntake({ bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: options.settings ?? {} }) } as never, phases);
-  return { intake, opened, say: (text: string, id: string, initiator = "user") => { request = { requestId: id, initiator, input: [{ type: "text", text }] }; } };
+  const deps = { bb, db, log: () => undefined, effectiveProjectSettings: async () => ({ values: options.settings ?? {} }) } as never;
+  const intake = createPhaseIntake(deps, phases, options.train);
+  /** The plugin after a reload: a new intake over the same store and the same phases. */
+  const reloaded = () => createPhaseIntake(deps, phases, options.train);
+  return { intake, reloaded, opened, say: (text: string, id: string, initiator = "user") => { request = { requestId: id, initiator, input: [{ type: "text", text }] }; } };
 }
 
 describe("phase intake rules", () => {
@@ -255,5 +258,43 @@ describe("a reply about work under way", () => {
     const unsure = intakeJudgment.decide({ weight: { type: "choice", probabilities: { small: 0.4, reply: 0.35, question: 0.25 } } } as never, { min_p: 0.55 }, { text: "а меня зачем спрашиваешь?" });
     expect(unsure.decision).toEqual({ kind: "reply" });
     expect(JSON.stringify(intakeJudgment.questions({ text: "x" }))).toMatch(/complaint or feedback on how the work goes/);
+  });
+});
+
+describe("a hand-over from a scheduled agent is one start per key (RECHECK-341 F7)", () => {
+  const hand = (intake: ReturnType<typeof world>["intake"], text: string, key: string) => intake.handOver({ projectId: "projA", pmThreadId: PM, runId: "run1", text, key, origin: "Work found by the scheduled agent" });
+
+  it("a late replay after the phase finished returns the same phase and opens no second one, also after a reload", async () => {
+    const { intake, reloaded, opened } = world();
+    expect(await hand(intake, goal, "schedule:run-a")).toMatchObject({ started: true, via: "phase", id: "ph_1" });
+    opened[0]!.state = "closed";
+    expect(await hand(intake, goal, "schedule:run-a")).toMatchObject({ started: true, via: "phase", id: "ph_1" });
+    expect(await hand(reloaded(), goal, "schedule:run-a")).toMatchObject({ started: true, via: "phase", id: "ph_1" });
+    expect(opened).toHaveLength(1);
+    // Another key is a new piece of work and opens its own phase as before.
+    expect(await hand(intake, goal, "schedule:run-b")).toMatchObject({ started: true, via: "phase", id: "ph_2" });
+  });
+
+  it("a replay while the phase is alive returns its id instead of a refusal, and a replay racing the first call opens one phase", async () => {
+    const { intake, reloaded, opened } = world();
+    expect(await hand(intake, goal, "schedule:run-a")).toMatchObject({ started: true, id: "ph_1" });
+    expect(await hand(reloaded(), goal, "schedule:run-a")).toMatchObject({ started: true, via: "phase", id: "ph_1" });
+    // A different key while the phase is live is still refused: it is not the same hand-over.
+    expect(await hand(intake, goal, "schedule:run-b")).toMatchObject({ started: false, reason: expect.stringContaining("already live") });
+    const racing = world();
+    const both = await Promise.all([hand(racing.intake, goal, "schedule:run-c"), hand(racing.intake, goal, "schedule:run-c")]);
+    expect(both.map((row) => (row.started ? row.id : null))).toEqual(["ph_1", "ph_1"]);
+    expect(racing.opened).toHaveLength(1);
+    expect(opened).toHaveLength(1);
+  });
+
+  it("the small and batch roads start their graph once per key", async () => {
+    const started: Array<{ requestId: string; kind: string }> = [];
+    const train: IntakeTrain = { start: (input) => { started.push({ requestId: input.requestId, kind: input.kind }); return `wfrun_${started.length}`; }, status: () => "succeeded" };
+    const { intake, reloaded } = world({ train });
+    expect(await hand(intake, "поправь опечатку в футере", "schedule:run-a")).toMatchObject({ started: true, via: "issue-quick", id: "wfrun_1" });
+    expect(await hand(reloaded(), "поправь опечатку в футере", "schedule:run-a")).toMatchObject({ started: true, via: "issue-quick", id: "wfrun_1" });
+    expect(started).toHaveLength(1);
+    expect(await hand(intake, "поправь опечатку в хедере", "schedule:run-b")).toMatchObject({ started: true, id: "wfrun_2" });
   });
 });
