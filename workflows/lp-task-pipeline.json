@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "lp-task-pipeline",
+  "startedBy": "lane_pilot_dispatch_writer",
   "name": "Task pipeline",
   "description": {
     "en": "The Lane Pilot task pipeline: the PM read, the plan critique (by quality mode), the specialist risk review, the ownership base, then the code task in its own worktree with checks, code critique and merge.",

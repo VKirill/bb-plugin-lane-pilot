@@ -103,7 +103,7 @@ export async function runWorkflowTool(deps: WorkflowToolDeps, params: { workflow
   const published = store.list().filter((item) => isOffered(item.workflow) && item.workflow.status === "published").map((item) => item.workflow.id);
   if (!stored) return refused(`unknown_workflow: there is no workflow "${params.workflowId}". Call lane_pilot_route, or choose one of: ${runnable.join(", ") || "(none published)"}`, { workflow: params.workflowId });
   const { workflow } = stored;
-  if (isPipeline(workflow)) return refused(`not_runnable: "${workflow.id}" is how Lane Pilot runs every writer task; it starts with lane_pilot_dispatch_writer`, { workflow: workflow.id });
+  if (isPipeline(workflow)) return refused(`not_runnable: "${workflow.id}" starts with ${workflow.startedBy}, not with lane_pilot_run_workflow`, { workflow: workflow.id });
   if (workflow.internal) return refused(`not_runnable: "${workflow.id}" is a fragment of other workflows, not a workflow to start`, { workflow: workflow.id });
   // A tested workflow has passed its stub tests but never run for real: it starts only on the owner's word (liveTrial), and its first successful run makes it published.
   if (workflow.status !== "published" && !(workflow.status === "tested" && params.liveTrial === true)) {

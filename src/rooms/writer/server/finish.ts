@@ -1,5 +1,6 @@
 import { appetiteStop, breakerKey, runningWriterBudgetStop, tokenUsageFromEvent } from "@lane-pilot/resilience";
 import { checkTimeoutSec } from "../check-timing";
+import { pipelineWriterTag } from "./pipeline-tag";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { countAttempts, countThreadTurns, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTaskPlan, listOpenAttempts, listStageReceipts, loadProjectSettings, transitionAttempt, taskBasePath } from "../../storage";
 import { saveBlockedBy, type BlockedBy } from "../../runs/server";
@@ -570,6 +571,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
                 attemptId:input.attemptId, repairRound:nextRound,
                 revisionSha256:evidence.revisionSha256, findingsHash:frozenHash, stageId:"writer-agent",
                 writer:writerSnapshot,
+                ...pipelineWriterTag(db, input.runId, input.taskId),
               },
             });
           } catch {

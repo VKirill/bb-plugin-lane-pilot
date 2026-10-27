@@ -7,7 +7,7 @@ import { analysisPrompt, hunterPrompt, parseNightReport, repairBrief, taskWallMe
 import { hubFields, writeHubFields } from "../improvement";
 import { postOwnerItem } from "../owner-waiting";
 import { WALL_CONFIG_KEY, parseWallConfig, type WallConfig } from "./config";
-import { classVersions, collectEntries, getClass, listClasses, nightOf, refreshClasses, writeEntries, type WallDb } from "./journal";
+import { classVersions, collectEntries, getClass, graphRecurrence, listClasses, nightOf, refreshClasses, writeEntries, type WallDb } from "./journal";
 import { afterFailedMove, ladderStep } from "./ladder";
 import { composeWallMorning } from "./morning";
 import { HUNT_ANGLES, buildClassPack, buildLoopPack, buildTaskPack, judgeHunt, parseFinding, type CheckedFinding, type EvidencePack, type HuntOutcome, type LoopEvidence, type PackFile } from "./pack";
@@ -577,6 +577,8 @@ export function createWall(deps: WallDeps) {
    * attempt that failed in the class). Attempts of other projects say nothing about a class that never ran there; with no journaled project the exposure is unknown.
    */
   function recurrenceOn(classKey: string, version: string, since: number): { failures: number; attempts: number; exposed: boolean } | null {
+    const graph = graphRecurrence(db, classKey, version, since);
+    if (graph !== undefined) return graph;
     const rows = db.prepare(`SELECT a.state, a.reason, r.project_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.harness_version=? AND a.created_at>=? AND a.state NOT IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested','canceled')`)
       .all(version, since) as Array<{ state: string; reason: string | null; project_id: string }>;
     const projects = new Set((db.prepare("SELECT DISTINCT project_id FROM lane_pilot_wall_entry WHERE class_key=?").all(classKey) as Array<{ project_id: string }>).map((row) => row.project_id));

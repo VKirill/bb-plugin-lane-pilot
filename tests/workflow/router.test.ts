@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { builtinWorkflows } from "../../src/rooms/workflow/builtin";
-import { MAX_QUESTIONS, MIN_CONFIDENCE, TOP_N, normalizeText, routeIntent, setRouterModel, stateProblem, stems } from "@lane-pilot/workflow-engine";
+import { MAX_QUESTIONS, MIN_CONFIDENCE, TOP_N, isOffered, normalizeText, routeIntent, setRouterModel, stateProblem, stems } from "@lane-pilot/workflow-engine";
 import type { RouterModel, RouterState } from "@lane-pilot/workflow-engine";
 import { publishedCatalog } from "./router-catalog";
 
@@ -27,6 +27,13 @@ describe("what is offered", () => {
     const published = await route("Build the lp.build fragment tasks waves and run the task pipeline for an attempt", {});
     const ids = new Set(published.candidates.map((candidate) => candidate.id));
     for (const id of ["lp-task-pipeline", "lp.build", "lp.plan", "lp.analyze", "lp.review", "lp.close", "lp.draw", "lp.brainstorm", "ins.post"]) expect(ids.has(id)).toBe(false);
+    // `startedBy` is what keeps a graph out of the router, not its id: the pipeline carries it, and any other starter graph gets the same treatment.
+    expect(builtinWorkflows().find((workflow) => workflow.id === "lp-task-pipeline")?.startedBy).toBe("lane_pilot_dispatch_writer");
+    const starter = catalog.map((workflow) => (workflow.id === "deploy" ? { ...workflow, startedBy: "lane_pilot_errand" } : workflow));
+    const hidden = await routeIntent({ intent: "Вывези релиз на прод", workflows: starter });
+    expect(hidden.candidates.map((candidate) => candidate.id)).not.toContain("deploy");
+    const unmarked = catalog.map((workflow) => (workflow.id === "lp-task-pipeline" ? { ...workflow, startedBy: undefined } : workflow));
+    expect(isOffered(unmarked.find((workflow) => workflow.id === "lp-task-pipeline")!)).toBe(true);
     const deprecated = catalog.map((workflow) => (workflow.id === "deploy" ? { ...workflow, status: "deprecated" as const } : workflow));
     const result = await routeIntent({ intent: "Вывези релиз на прод", workflows: deprecated });
     expect(result.candidates.map((candidate) => candidate.id)).not.toContain("deploy");

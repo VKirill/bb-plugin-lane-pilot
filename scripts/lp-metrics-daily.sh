@@ -1,6 +1,6 @@
 #!/bin/bash
 # Daily Lane Pilot stability metrics → Telegram topic BB-сервис. Runs on the hub (automation auto_-fzjydlvnow, 09:00 Europe/Madrid), read-only on the hub DB.
-# Install: copy this file to ~/.config/lp-metrics/daily.sh, scripts/lp-metrics-views.sql to ~/.config/lp-metrics/views.sql , scripts/lp-morning.sql to ~/.config/lp-metrics/morning.sql and scripts/lp-wall-morning.sql to ~/.config/lp-metrics/wall-morning.sql on the hub.
+# Install: copy this file to ~/.config/lp-metrics/daily.sh, scripts/lp-metrics-views.sql to ~/.config/lp-metrics/views.sql , scripts/lp-morning.sql to ~/.config/lp-metrics/morning.sql and scripts/lp-wall-morning.sql to ~/.config/lp-metrics/wall-morning.sql and scripts/lp-graph-coverage.sql to ~/.config/lp-metrics/graph-coverage.sql on the hub.
 # Real projects on the current version and newer only (SINCE_VERSION=X.Y.Z, default: the newest attempt's version on the hub, never below 0.1.193);
 # real projects on older versions and sandbox / drill traffic are separate lines (see lp-metrics-views.sql). DRY_RUN=1 prints the text without sending it.
 set -euo pipefail
@@ -38,6 +38,9 @@ morning=$( { echo "create temp table lp_morning(since integer, now integer); ins
 # What the night loop did (three lines, scripts/lp-wall-morning.sql, src/rooms/wall): the same rule, a missing file or table leaves it out.
 wall=$( { echo "create temp table lp_morning(since integer); insert into lp_morning values ($(( ($(date +%s) - 86400) * 1000 )));"; cat "$HOME/.config/lp-metrics/wall-morning.sql"; } | sqlite3 -readonly "$DB" 2>/dev/null ) || wall=""
 [ -z "$wall" ] || text="${text}"$'\n'"${wall}"
+# Graph coverage (scripts/lp-graph-coverage.sql): per helper role, the threads of the last day that ran outside a graph, out of all. The same rule: no file, no core database or no thread leaves it out.
+cover=$( { echo "attach 'file:$CORE?mode=ro' as core; create temp table lp_cover(since integer); insert into lp_cover values ($(( ($(date +%s) - 86400) * 1000 )));"; cat "$HOME/.config/lp-metrics/graph-coverage.sql"; } | sqlite3 -readonly "$DB" 2>/dev/null ) || cover=""
+[ -z "$cover" ] || text="${text}"$'\n'"${cover}"
 # Outages of the last day (src/rooms/outage: gaps of more than 5 minutes in the plugin's heartbeat); none, or no table yet, leaves it out.
 outages=$(sqlite3 -readonly "$DB" "select 'Простои Lane Pilot: '||count(*)||' ('||sum(minutes)||' мин, дольше всего '||max(minutes)||' мин).' from lane_pilot_outage where to_at >= $(( ($(date +%s) - 86400) * 1000 )) having count(*) > 0" 2>/dev/null) || outages=""
 [ -z "$outages" ] || text="${text}"$'\n'"${outages}"

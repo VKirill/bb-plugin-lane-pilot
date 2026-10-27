@@ -189,6 +189,16 @@ function enforceRunChildBudget(bb: BbPluginApi, args: Parameters<BbPluginApi["sd
   if (!reserved.ok) throw new RunBudgetExceeded(reserved);
 }
 
+/**
+ * The plugin metadata that ties a helper thread to the graph step that spawned it (the keys `workflow-agent.ts` writes for an agent node):
+ * a thread with `lanePilotWorkflowRunId` ran inside a graph, which is what the daily graph-coverage line and the quiet-helper rule read.
+ * Spread it into the `pluginMetadata` of a spawn made by a wrapper executor; with no step given it adds nothing.
+ */
+export function graphStepMetadata(step: { runId: string; stepKey?: string | undefined; nodeId?: string | undefined } | null | undefined): Record<string, string> {
+  if (!step?.runId) return {};
+  return { lanePilotWorkflowRunId: step.runId, ...(step.stepKey ? { lanePilotWorkflowStep: step.stepKey } : {}), ...(step.nodeId ? { lanePilotWorkflowNode: step.nodeId } : {}) };
+}
+
 /** Children the PM itself waits for or talks to; every other helper is watched by Lane Pilot. */
 const LOUD_ROLES = new Set(["pm", "errand", "specialist", "self-repair"]);
 
@@ -197,9 +207,13 @@ const LOUD_ROLES = new Set(["pm", "errand", "specialist", "self-repair"]);
  * turn does not wake the PM. Before this BB sent the whole output of each finished helper into the PM as a new turn —
  * 52 in one SelfyStudio chat — and an owner message that arrived in the same turn went unanswered (2026-10-03).
  * Needs VK core `quiet-child` (runtime vk.16); older core stores the key and ignores it.
+ * A step of a graph run is always quiet, even for a loud role: the run's own end notice tells the PM, so an errand or
+ * specialist step must not wake the PM chat a second time.
  */
 export function quietHelper<T extends { parentThreadId?: string | null; pluginMetadata?: Record<string, unknown> }>(args: T): T {
   const role = args.pluginMetadata?.role;
-  if (!args.parentThreadId || !args.pluginMetadata || (typeof role === "string" && LOUD_ROLES.has(role))) return args;
+  const graphRun = args.pluginMetadata?.lanePilotWorkflowRunId;
+  const inGraph = typeof graphRun === "string" && graphRun !== "";
+  if (!args.parentThreadId || !args.pluginMetadata || (typeof role === "string" && LOUD_ROLES.has(role) && !inGraph)) return args;
   return { ...args, pluginMetadata: { ...args.pluginMetadata, experimental_vkQuietChild: true } };
 }

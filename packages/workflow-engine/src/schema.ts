@@ -267,6 +267,8 @@ export const workflowSchema = z.object({
   tags: z.array(z.string().max(40)).max(20).default([]),
   /** A fragment called by a subworkflow node; it is not offered by the router. */
   internal: z.boolean().default(false),
+  /** A starter graph: Lane Pilot starts it itself from this tool or event (e.g. `lane_pilot_dispatch_writer`). The router never offers it and `lane_pilot_run_workflow` refuses it. */
+  startedBy: z.string().min(1).max(80).optional(),
   inputs: z.array(fieldSchema).max(40).default([]),
   outputs: z.array(fieldSchema).max(40).default([]),
   requires: z.object({

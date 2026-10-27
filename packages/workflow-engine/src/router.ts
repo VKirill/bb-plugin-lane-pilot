@@ -14,8 +14,6 @@ import type { Workflow } from "./schema";
 export const TOP_N = 5;
 export const MIN_CONFIDENCE = 60;
 export const MAX_QUESTIONS = 3;
-/** The per-task pipeline of a dispatch: run by Lane Pilot itself, never a choice for the PM. */
-const NEVER_OFFERED = new Set(["lp-task-pipeline"]);
 
 // ------------------------------------------------------------------ ports
 
@@ -276,9 +274,10 @@ const W_NAME = 3, W_TAG = 2.5, W_DESC = 1.5, W_EXAMPLE = 1, K1 = 1.2, BM_B = 0.6
  * The router offers a published or tested workflow that is not a fragment and not Lane Pilot's own per-task pipeline. A tested one has never
  * run for real: it is offered with a «not yet run live» flag (`needsLiveTrial`) and starts only on the owner's word.
  */
-export const isOffered = (workflow: Workflow): boolean => (workflow.status === "published" || workflow.status === "tested") && !workflow.internal && !NEVER_OFFERED.has(workflow.id);
+export const isOffered = (workflow: Workflow): boolean => (workflow.status === "published" || workflow.status === "tested") && !workflow.internal && !workflow.startedBy;
 export const needsLiveTrial = (workflow: Workflow): boolean => workflow.status === "tested";
-export const isPipeline = (workflow: Workflow): boolean => NEVER_OFFERED.has(workflow.id);
+/** A starter graph: Lane Pilot itself starts it (the tool or event named in `startedBy`), so it is never a choice for the PM or the router. */
+export const isPipeline = (workflow: Workflow): boolean => Boolean(workflow.startedBy);
 
 function buildIndex(workflows: ReadonlyArray<Workflow>) {
   const docs: Doc[] = workflows.filter(isOffered).map((workflow) => {
@@ -575,7 +574,7 @@ export async function routeIntent(input: RouteInput): Promise<RouteDecision> {
 
   // A rule that names a workflow the owner cannot have now (a draft, a fragment's sibling, a missing plugin or secret) and points there more strongly than at
   // anything offered means the best match is not on the list: the pick among the rest is a neighbour's, so it is asked about, never trusted.
-  const hiddenBest = input.workflows.filter((workflow) => !workflow.internal && !NEVER_OFFERED.has(workflow.id) && (!isOffered(workflow) || excluded.some((e) => e.id === workflow.id)))
+  const hiddenBest = input.workflows.filter((workflow) => !workflow.internal && !workflow.startedBy && (!isOffered(workflow) || excluded.some((e) => e.id === workflow.id)))
     .map((workflow) => ({ workflow, boost: boost.get(workflow.id) ?? 0 })).sort((a, b) => b.boost - a.boost)[0];
   const missedBest = hiddenBest && hiddenBest.boost >= 0.3 && hiddenBest.boost > (chosen ? boost.get(chosen.id) ?? 0 : 0) ? hiddenBest.workflow : null;
   if (missedBest) warnings.push(`the closest match ${missedBest.id} is not available: ${excluded.find((e) => e.id === missedBest.id)?.reason ?? `it is ${missedBest.status}, not published`}`);
