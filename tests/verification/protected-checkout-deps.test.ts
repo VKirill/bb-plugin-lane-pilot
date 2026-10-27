@@ -13,7 +13,10 @@ import { git } from "./git-integrate-helpers";
  */
 describe("a checkout in a protected macOS folder", () => {
   const home = process.env.HOME;
-  afterEach(() => { process.env.HOME = home; });
+  const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+  // The rule is macOS's; on another host the test plays macOS (the clone falls back to a plain copy there), so it runs everywhere.
+  const asMac = () => Object.defineProperty(process, "platform", { ...platform, value: "darwin" });
+  afterEach(() => { process.env.HOME = home; Object.defineProperty(process, "platform", platform); });
 
   it("is recognised only on macOS, under Documents, Desktop, Downloads or iCloud Drive", () => {
     expect(protectedCheckout("/Users/k/Documents/Мои проекты/bot", "/Users/k", "darwin")).toBe(true);
@@ -23,9 +26,10 @@ describe("a checkout in a protected macOS folder", () => {
     expect(protectedCheckout("/home/k/Documents/bot", "/home/k", "linux")).toBe(false);
   });
 
-  it.skipIf(process.platform !== "darwin")("gives the worktree its own packages, not links into the checkout", async () => {
+  it("gives the worktree its own packages, not links into the checkout", async () => {
     const fakeHome = await realpath(await mkdtemp(join(tmpdir(), "lp-home-")));
     process.env.HOME = fakeHome;
+    asMac();
     const base = join(fakeHome, "Documents", "Оживить фото");
     await mkdir(join(base, "node_modules", "vitest"), { recursive: true });
     await writeFile(join(base, "node_modules", "vitest", "vitest.mjs"), "export {}\n");
@@ -48,9 +52,10 @@ describe("a checkout in a protected macOS folder", () => {
     expect(await readFile(join(attempt, "node_modules", "vitest", "vitest.mjs"), "utf8")).toBe("export {}\n");
   });
 
-  it.skipIf(process.platform !== "darwin")("replaces the links an older worktree already holds", async () => {
+  it("replaces the links an older worktree already holds", async () => {
     const fakeHome = await realpath(await mkdtemp(join(tmpdir(), "lp-home-")));
     process.env.HOME = fakeHome;
+    asMac();
     const base = join(fakeHome, "Documents", "bot");
     await mkdir(join(base, "node_modules", "vitest"), { recursive: true });
     await writeFile(join(base, "node_modules", "vitest", "vitest.mjs"), "export {}\n");
