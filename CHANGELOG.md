@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.339
+
+**The agent is picked from a dropdown again.** 0.1.338 listed the specialists as a column of rows under the Lane Pilot switch; the owner found the old dropdown handier. The «Агент» field is a dropdown now («Без агента» and the specialists); the Lane Pilot switch above it is unchanged.
+
 ## 0.1.338
 
 **The composer separates Lane Pilot from the agent you talk to.** The popover used to be one dropdown «Агент Lane Pilot» with «Координатор разработки» and the specialists, plus «Включить / Отключить для этого чата». Now it has a «Lane Pilot» switch on top (on: the chat is the door to the development machine, the coordinator profile) and a separate «Агент» list below: «Без агента», the copy editor, SEO specialist, designer, researcher, workflow architect. Picking a specialist turns Lane Pilot off and the chat runs that specialist with its own skills and MCP servers; one chat is one agent. The badge above the composer says «Lane Pilot» for the coordinator and the specialist's name otherwise. Internal agents Lane Pilot runs itself (project onboarding) are no longer offered. The choice still applies when the message is sent; the folder and draft text are kept. Works at 375 px.

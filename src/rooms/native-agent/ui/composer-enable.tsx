@@ -7,6 +7,7 @@ import { Button } from "@lane-pilot/ui-kit";
 import { Label } from "@lane-pilot/ui-kit";
 import { Popover, PopoverContent, PopoverTrigger } from "@lane-pilot/ui-kit";
 import { Switch } from "@lane-pilot/ui-kit";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@lane-pilot/ui-kit";
 import { CONTROL_H } from "@lane-pilot/ui-kit";
 import {
   activationDisabledPredicate,
@@ -19,6 +20,9 @@ import { selectionHostId } from "../composer-selection";
 import { setPendingNativeAgent } from "./pending-native-agent";
 import { useNativeComposerSelection } from "./composer-selection-hook";
 import { takeArchitectLaunch } from "../../workflow/ui";
+
+/** The «Без агента» row of the agent dropdown (a Select item cannot have an empty value). */
+const NO_AGENT = "__none__";
 
 type ContextPayload = {
   projectId: string | null;
@@ -183,25 +187,19 @@ export function EnableLanePilotAction() {
             onCheckedChange={(on) => { if (on) void prepare(coordinatorId); else disable(); }}
           />
         </div>
-        <div className="space-y-1" role="radiogroup" aria-label={t("composerAgentMenu")}>
-          <Label>{t("composerAgentLabel")}</Label>
-          {[{ id: "", label: t("composerAgentNone") }, ...specialists.map((agent) => ({ id: agent.id, label: composerAgentLabel(agent, t) }))].map((row) => {
-            const checked = row.id === "" ? !selected : selected?.id === row.id;
-            return (
-              <Button
-                key={row.id || "none"}
-                type="button"
-                role="radio"
-                aria-checked={checked}
-                variant={checked ? "secondary" : "ghost"}
-                className={`${CONTROL_H} w-full justify-start`}
-                disabled={busy}
-                onClick={() => { if (row.id === "") disable(); else void prepare(row.id); }}
-              >
-                <span className="truncate">{row.label}</span>
-              </Button>
-            );
-          })}
+        <div className="space-y-1">
+          <Label htmlFor="lp-composer-agent">{t("composerAgentLabel")}</Label>
+          <Select
+            value={selected && !laneOn ? selected.id : NO_AGENT}
+            disabled={busy}
+            onValueChange={(id) => { if (id === NO_AGENT) disable(); else void prepare(id); }}
+          >
+            <SelectTrigger id="lp-composer-agent" className={`${CONTROL_H} w-full min-w-0`} aria-label={t("composerAgentLabel")}><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_AGENT}>{t("composerAgentNone")}</SelectItem>
+              {specialists.map((agent) => <SelectItem key={agent.id} value={agent.id}>{composerAgentLabel(agent, t)}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
         <p className="text-xs text-muted-foreground">{t("nativeComposerHint")}</p>
         {blocks.filter((row) => row.code !== "pending").length ? (

@@ -83,6 +83,12 @@ afterEach(() => {
   setPendingNativeAgent(null);
 });
 
+/** Opens the «Agent» dropdown of the popover and picks a row by its label. */
+function pickAgent(slot: { getByRole: (role: string, options?: { name: string }) => HTMLElement }, name: string): void {
+  fireEvent.click(slot.getByRole("combobox", { name: "Agent" }));
+  fireEvent.click(slot.getByRole("option", { name }));
+}
+
 describe("Enable Lane Pilot composer action", () => {
   it("registers the launch action only on the new-thread composer", async () => {
     const app = await loadPluginApp(() => import("../app"));
@@ -159,7 +165,8 @@ describe("Enable Lane Pilot composer action", () => {
     await waitFor(() => expect(hiddenData.value).toEqual({ token: "11111111-1111-1111-1111-111111111111" }));
     expect(prepared).toEqual(["copy-lead"]);
     fireEvent.click(await slot.findByRole("button", { name: "Night desk" }));
-    fireEvent.click(await slot.findByRole("radio", { name: "No agent" }));
+    await slot.findByTestId("activation-popover");
+    pickAgent(slot, "No agent");
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(hiddenData.value).toBeNull();
     expect(prepared).toEqual(["copy-lead"]);
@@ -248,7 +255,8 @@ describe("Enable Lane Pilot composer action", () => {
     });
     fireEvent.click(await slot.findByRole("button", { name: "Lane Pilot / agent" }));
     await slot.findByTestId("activation-popover");
-    expect(slot.getAllByRole("radio").map((row) => row.textContent)).toEqual(["No agent", "Copy editor", "Video agent"]);
+    fireEvent.click(slot.getByRole("combobox", { name: "Agent" }));
+    expect(slot.getAllByRole("option").map((row) => row.textContent)).toEqual(["No agent", "Copy editor", "Video agent"]);
     expect(slot.queryByText("Development coordinator")).toBeNull();
     expect(slot.queryByText("Project onboarding")).toBeNull();
     expect(slot.queryByText("Lane Pilot development orchestrator")).toBeNull();
@@ -275,9 +283,9 @@ describe("Enable Lane Pilot composer action", () => {
     fireEvent.click(laneSwitch());
     await waitFor(() => expect(laneSwitch().getAttribute("aria-checked")).toBe("true"));
     expect(getPendingNativeAgent()?.agentId).toBe("dev-orchestrator");
-    fireEvent.click(slot.getByRole("radio", { name: "Night desk" }));
+    pickAgent(slot, "Night desk");
     await waitFor(() => expect(laneSwitch().getAttribute("aria-checked")).toBe("false"));
-    expect(slot.getByRole("radio", { name: "Night desk" }).getAttribute("aria-checked")).toBe("true");
+    expect(slot.getByRole("combobox", { name: "Agent" }).textContent).toBe("Night desk");
     expect(prepared).toEqual(["dev-orchestrator", "copy-lead"]);
     expect(getPendingNativeAgent()?.agentId).toBe("copy-lead");
     expect(hiddenData.value).toEqual({ token: "11111111-1111-1111-1111-111111111111" });
@@ -285,9 +293,9 @@ describe("Enable Lane Pilot composer action", () => {
     // The switch back on replaces the specialist; «No agent» clears everything.
     fireEvent.click(laneSwitch());
     await waitFor(() => expect(laneSwitch().getAttribute("aria-checked")).toBe("true"));
-    expect(slot.getByRole("radio", { name: "Night desk" }).getAttribute("aria-checked")).toBe("false");
-    fireEvent.click(slot.getByRole("radio", { name: "No agent" }));
-    expect(laneSwitch().getAttribute("aria-checked")).toBe("false");
+    expect(slot.getByRole("combobox", { name: "Agent" }).textContent).toBe("No agent");
+    fireEvent.click(laneSwitch());
+    await waitFor(() => expect(laneSwitch().getAttribute("aria-checked")).toBe("false"));
     expect(getPendingNativeAgent()).toBeNull();
     expect(hiddenData.value).toBeNull();
     slot.lifecycle.unmount();
@@ -308,7 +316,8 @@ describe("Enable Lane Pilot composer action", () => {
       },
     });
     fireEvent.click(await slot.findByRole("button", { name: "Lane Pilot / agent" }));
-    fireEvent.click(await slot.findByRole("radio", { name: "Copy editor" }));
+    await slot.findByTestId("activation-popover");
+    pickAgent(slot, "Copy editor");
     await slot.findByRole("button", { name: "Copy editor" });
     fireEvent.click(slot.getByRole("switch", { name: "Lane Pilot" }));
     await waitFor(() => expect(slot.getByRole("button", { name: "Lane Pilot" })).toBeTruthy());
