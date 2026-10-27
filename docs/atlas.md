@@ -17,7 +17,7 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | acceptance | — | 5 | 330 | tests (2) |
 | anamnesis | ANAMNESIS_USAGE, EventLike, OwnerMessage, OwnerMessageConsumer, OwnerMessageHub, OwnerMessageMeta, TURN_REQUESTED, ThreadLike, anamnesisFor, anamnesisHandler, anamnesisHostMethods, anamnesisRpcMethods, isOwnerThread, maskPii, mountAnamnesis, ownerCardBlock, ownerMessagesOf, registerAnamnesisActions, sensitiveReason | 32 | 4225 | tests (2) |
 | atlas | AtlasInput, AtlasRoom, atlasHash, atlasStructure, renderAtlas | 2 | 66 | tests (1) |
-| backlog | BacklogBoard, MAX_ESTIMATE, TodoMeta, backlogBoard, backlogMigrations, backlogReadCommand, issueMessage, parseBacklogOutput, parseTodoMeta | 5 | 163 | tests (1) |
+| backlog | BacklogBoard, MAX_ESTIMATE, TodoMeta, backlogBoard, backlogMigrations, backlogReadCommand, issueMessage, parseBacklogOutput, parseTodoMeta | 5 | 164 | tests (1) |
 | baseline | BaselineRecord, EXISTENCE_ONLY_WORDS, NO_RED_KINDS, RegressionRecord, baselineMigrations, getBaseline, isExistenceOnly, listBaselines, listRegressions | 9 | 1210 | tests (4) |
 | bench | BenchProjectControl, benchMigrations, getBenchProject, saveVerdict, verdictForHarness | 17 | 1721 | tests (2) |
 | capability | CAPABILITIES, Capability, CapabilityReceipt, CapabilityState, adapterVersions, capabilityMigrations, capabilityTable, dueProbes, listReceipts, probeSetupFailed, providersInUse | 8 | 225 | drill: helper_providers |
@@ -25,13 +25,13 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | cockpit | cockpitRpc | 9 | 883 | tests (1) |
 | contracts | AcceptanceCard, HOST_JOB_KINDS, HostJobKind, PrototypeConfig, TASK_KINDS, TASK_V2_OPTIONAL, TaskV2, WORKFLOW_NODE_TONES, hostContract, installReceiptSchema, modelCatalogSchema, prototypeConfigSchema, secretNameSchema, settingValidationSchema, stepExecutorSchema, taskV2Schema, workflowDraftCheckSchema, workflowDraftPatchResultSchema, workflowDraftPublishResultSchema, workflowDraftSummarySchema, workflowDraftTestResultSchema, workflowStatsSchema, workflowTrialCaseSchema, workflowViewEdgeSchema, workflowViewNodeSchema, workflowViewSchema | 10 | 2169 | drill: parallel3 |
 | conveyor | CONVEYOR_KEY, ConveyorState, conveyorState, setConveyor | 2 | 25 | tests (2) |
-| core | — | 19 | 1776 | drill: parallel3 |
-| council | — | 17 | 6872 | tests (4) |
+| core | — | 20 | 1820 | drill: parallel3 |
+| council | — | 17 | 6879 | tests (4) |
 | coverage | COVERAGE, COVERAGE_USAGE, CoverageEntry, CoverageRow, CoverageStatus, CoverageSummary, DrillReceipt, NODE_KINDS, NodeKind, REQUIRED_MECHANISMS, checkReceipt, codeNodes, coverageRows, holes, renderCoverage, runCoverageCli, summarize, transitionId, untermedGaps | 4 | 319 | tests (1) |
-| critique | CODE_CRITIC_DEFAULTS, CODE_CRITIC_DEFAULT_SETTING, CodeCriticDefault, FAILURE_TRIAGE_METHOD, FRONTEND_VERIFY_METHOD, MAX_FILE_EXCERPT_BYTES, NO_TOOLS_LINE, QUALITY_MODE_SETTING, QualityMode, SCIENTIFIC_DEBUG_METHOD, SUBJECTIVE_WORDS, TaskQaPlan, Verdict, VerdictFinding, VerdictStatus, WriterIdentity, actionableFindings, applyCodeCriticDefault, applyQualityMode, boundedAgentName, browserQaRequired, buildCandidateEvidence, clipped, codeCritiquePrompt, codeCritiqueSource, codeRepairPrompt, criticStats, critiquePrompt, extractModelJson, findSandboxUnsafeMissingExcludes, findingsHash, isCodeCriticDefault, nextRepairAction, parseCodeCritique, parseCodeCritiqueSettings, parseCritique, parseSandboxUnsafePatterns, parseWriterRepairReply, qaStateToStatus, repairLedgerFromResult, resolveCodeCriticDefault, resolveQualityMode, resolveRetryEffort, roleMethod, runnerFilterArgs, runsWholeSuite, sameUnresolvedFindings, sameWriterIdentity, scanCritiqueCoverage, settingsFromFrozenPolicy, settleVerdict, shouldRequestRepair, taskQaPlan, verdictSchema, verdictSummary | 19 | 2575 | tests (2) |
+| critique | CODE_CRITIC_DEFAULTS, CODE_CRITIC_DEFAULT_SETTING, CodeCriticDefault, FAILURE_TRIAGE_METHOD, FRONTEND_VERIFY_METHOD, MAX_FILE_EXCERPT_BYTES, NO_TOOLS_LINE, QUALITY_MODE_SETTING, QualityMode, SCIENTIFIC_DEBUG_METHOD, SUBJECTIVE_WORDS, TaskQaPlan, Verdict, VerdictFinding, VerdictStatus, WriterIdentity, actionableFindings, applyCodeCriticDefault, applyQualityMode, boundedAgentName, browserQaRequired, buildCandidateEvidence, clipped, codeCritiquePrompt, codeCritiqueSource, codeRepairPrompt, criticStats, critiquePrompt, extractModelJson, findSandboxUnsafeMissingExcludes, findingsHash, isCodeCriticDefault, nextRepairAction, parseCodeCritique, parseCodeCritiqueSettings, parseCritique, parseSandboxUnsafePatterns, parseWriterRepairReply, qaStateToStatus, repairLedgerFromResult, resolveCodeCriticDefault, resolveQualityMode, resolveRetryEffort, roleMethod, runnerFilterArgs, runsWholeSuite, sameUnresolvedFindings, sameWriterIdentity, scanCritiqueCoverage, settingsFromFrozenPolicy, settleVerdict, shouldRequestRepair, taskQaPlan, verdictSchema, verdictSummary | 19 | 2577 | tests (2) |
 | deferral | deferralKindMigrations, deferralMigrations | 11 | 735 | drill: deferrals |
 | design-eval | CRITIQUE_AXES, Criterion, CritiqueAxis, DesignJournalLine, DrawingCritique, MEASURE_SCRIPT, Measurement, RUBRIC, compareDesigns, critiqueProblems, designScore, mergeFrames, readinessWords, roleLine, scoreMeasurement, trainedConditions, trainingRatios | 3 | 159 | tests (1) |
-| docs | CITATION_SOURCE, DocsPage, expandCitationLists, parseDocsSettings | 10 | 2040 | tests (4) |
+| docs | CITATION_SOURCE, DocsPage, expandCitationLists, parseDocsSettings | 10 | 2051 | tests (4) |
 | forecast | Calibration, Forecast, ForecastFact, ForecastScore, calibrate, calibrationLine, scoreForecast | 6 | 166 | tests (1) |
 | forge | FORBIDDEN_GRANTS, FORGE_KINDS, ForgeKind, ForgeReceipt, LintFinding, creatorBrief, draftFile, draftFolder, enabledPath, lintDraft, mountForge | 3 | 183 | tests (1) |
 | front | FIRST_RUN_STEPS, FirstRunDraft, FirstRunStep, ForeignHelper, FrontApi, MUTATING_RPC, PeerSnapshot, answerFirstRun, createFront, firstRunNeeded, firstRunSettings, helperDraft, mountFront, parseHelper, peerLine | 3 | 198 | tests (1) |
@@ -41,12 +41,12 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | hypotheses | BriefMode, HypothesisState, SEEDED, armsOf, briefMode, briefParts, hypothesisMigrations, settingsPair | 7 | 179 | tests (1) |
 | improvement | HUB_KEYS, HUB_SPECS, HubArea, HubDb, HubKind, HubSpec, PROJECT_DEFAULT_KEYS, QUIET_PATTERN, hubFields, hubSettingProblem, readHubRows, specOf, validTimeZone, writeHubFields, writeHubSettings | 8 | 720 | tests (2) |
 | learning | FRUSTRATION_KEY, FrustrationRecord, LEARNING_USAGE, MemoryUnanswered, frustrationReason, learningFor, memoryUnanswered, mountLearning, pmResumeInstructions, pmRulesOf, pmRulesPromptBlock, ruleBudget, runLearningCli | 23 | 2339 | tests (2) |
-| memory | MEMORY_PATHS, MEMORY_PRIMITIVES, MemoryPath, MemoryPrimitive, MemorySettings, ProbeKind, parseMemorySettings, pathById | 12 | 885 | drill: memory_paths |
+| memory | MEMORY_PATHS, MEMORY_PRIMITIVES, MemoryPath, MemoryPrimitive, MemorySettings, ProbeKind, parseMemorySettings, pathById | 12 | 884 | drill: memory_paths |
 | memory-eval | — | 8 | 765 | tests (2) |
 | memory-probe | — | 2 | 223 | drill: memory_paths |
 | memory-tiers | Episode, episodeLines, memoryTierMigrations, minHits, queryWords, wordHits | 5 | 135 | tests (1) |
 | money | DailyRow, MoneyApi, PAID_PROVIDERS, PRICE_LIST, Price, UsageWindow, capOf, createMoney, isPaid, moneyHold, priceOf, rowUsd, spendBook, windowHold | 3 | 117 | tests (2) |
-| native-agent | ACCESS_GROUPS, ACCESS_SWITCHES, AgentFailure, AgentKind, AgentListItem, CORE_PROVIDER_GROUPS, CustomAgentMeta, DEFAULT_NATIVE_AGENT, ExtraAccess, HELPER_ROLES, HelperPolicySnapshot, HelperRole, ListedProject, MAIN_AGENT_ID, MAIN_AGENT_PROFILE_IDS, MANDATORY_BB_PLUGINS, MANDATORY_MCP_SERVERS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_MENTION_PROVIDER, ProjectSourceBinding, ROLE_PROFILES, WriterBindingResolution, agentKind, agentListItem, agentPickerLabel, applyResourceMode, collectAgentInventory, compileEffectiveMainAgent, compileMainAgentProfile, createAgentInputSchema, detectCompiledMainAgentCapability, detectRequiredSessionPolicyCapability, discoverClaudeAgents, effectiveGroup, effectiveSwitch, finalizeNativeLaneBinding, handleNativeDispatch, isCustomAgentId, isReservedAgentId, isStockProfileId, mentionContext, nativeAgentCliId, nativeContributedEnv, nativeRunReady, nativeSelectionSchema, ownedNativePmRun, parseAgentFile, parseHelperContextSettings, parseOwnedAgents, parseRoleAccess, pendingSwitch, pickableAgent, prepareBbShim, prepareNativeClaude, reconcileClaudeLane, resolveWriterBinding, roleAccessKey, sessionInventory, updateAgentInputSchema, userVisibleProjects, writerWorkspaceForPmInstructions | 43 | 5872 | drill: helper_providers, provider |
+| native-agent | ACCESS_GROUPS, ACCESS_SWITCHES, AgentFailure, AgentKind, AgentListItem, CORE_PROVIDER_GROUPS, CustomAgentMeta, DEFAULT_NATIVE_AGENT, ExtraAccess, HELPER_ROLES, HelperPolicySnapshot, HelperRole, ListedProject, MAIN_AGENT_ID, MAIN_AGENT_PROFILE_IDS, MANDATORY_BB_PLUGINS, MANDATORY_MCP_SERVERS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_MENTION_PROVIDER, ProjectSourceBinding, ROLE_PROFILES, WriterBindingResolution, agentKind, agentListItem, agentPickerLabel, applyResourceMode, collectAgentInventory, compileEffectiveMainAgent, compileMainAgentProfile, createAgentInputSchema, detectCompiledMainAgentCapability, detectRequiredSessionPolicyCapability, discoverClaudeAgents, effectiveGroup, effectiveSwitch, finalizeNativeLaneBinding, handleNativeDispatch, isCustomAgentId, isReservedAgentId, isStockProfileId, mentionContext, nativeAgentCliId, nativeContributedEnv, nativeRunReady, nativeSelectionSchema, ownedNativePmRun, parseAgentFile, parseHelperContextSettings, parseOwnedAgents, parseRoleAccess, pendingSwitch, pickableAgent, prepareBbShim, prepareNativeClaude, reconcileClaudeLane, resolveWriterBinding, roleAccessKey, sessionInventory, updateAgentInputSchema, userVisibleProjects, writerWorkspaceForPmInstructions | 43 | 5919 | drill: helper_providers, provider |
 | native-install | HostContext, NATIVE_HOOK_SOURCES, PathWindows, atomicText, connectOpencodeStack, createNativeInstaller, detectStack, experimental_vkLifecycle, importConfigStack, installStack, inventoryCoexistence, parseExecutionLineWindows, rollbackStack, runCoexistenceOperation, snapshotStack | 24 | 6606 | tests (1) |
 | night | emergencyFallbackDecision, nightReviewPrompt | 6 | 205 | tests (4) |
 | night-graphs | — | 4 | 282 | tests (3) |
@@ -55,21 +55,21 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | owner-presence | PRESENCE_FILE, PRESENCE_WINDOW_MS, Presence, presenceHold, readPresence | 4 | 76 | tests (2) |
 | owner-waiting | Overnight, OwnerAction, OwnerEvidence, OwnerItem, OwnerWaiting, PostOwnerItem, closeOwnerItem, collectOwnerWaiting, loadPushConfig, ownerWaitingCounts, ownerWaitingMigrations, postOwnerItem | 9 | 601 | tests (3) |
 | permits | — | 1 | 54 | tests (1) |
-| phase | ACCEPTANCE_LINES, AcceptanceLine, BOOK_SECTIONS, BookPart, BookSection, ContextDoc, FrozenVerdict, GENESIS, GateResult, NextAction, PHASE_STAGES, Phase, PhaseRecord, PhaseStage, PhaseState, PlanItem, RETURN_STAGES, TaskFact, acceptanceLines, blindVerdict, brokenLink, canonical, contextSignature, designDecision, designGate, discussionGate, executionGate, getPhase, issuable, lessonsNeeded, listParts, listPhases, nextAction, partHash, phaseFolder, phaseMigrations, pieceProblems, planGate, planSignature, renderBook, staleAfterReturn, waveProblems | 14 | 2793 | drill: phase |
+| phase | ACCEPTANCE_LINES, AcceptanceLine, BOOK_SECTIONS, BookPart, BookSection, ContextDoc, FrozenVerdict, GENESIS, GateResult, NextAction, PHASE_STAGES, Phase, PhaseRecord, PhaseStage, PhaseState, PlanItem, RETURN_STAGES, TaskFact, acceptanceLines, blindVerdict, brokenLink, canonical, contextSignature, designDecision, designGate, discussionGate, executionGate, getPhase, issuable, lessonsNeeded, listParts, listPhases, nextAction, partHash, phaseFolder, phaseMigrations, pieceProblems, planGate, planSignature, renderBook, staleAfterReturn, waveProblems | 14 | 2870 | drill: phase |
 | pilot | PILOT_MIN_SIBLINGS, RunTask, pilotOf, pilotUnderWall, runTasks | 3 | 123 | tests (2) |
 | policy | ChangeDescriptor, EXAM_RESULT_KEY, POLICY, POLICY_USAGE, StoredExam, TIERS, Tier, authorize, classifyChange, collectAndAppend, composeMorningList, explainChange, globMatch, loadLiveExam, recordOwnerDecision, runExam, runLiveExam, runPolicyCli, shouldStopCycle | 8 | 673 | tests (2) |
-| project-life | OnboardingAcceptedEvidence, OnboardingInputPage, ProjectLifeTaskSummary, acceptedOnboardingEvidence, isAllowedProjectLifePath, shouldTriggerProjectLife | 5 | 425 | drill: parallel3 |
-| qa | QA_HOST_KEY, mapListedQaHosts, qaSpawnClaimed, runBrowserQaOnHost | 10 | 1582 | tests (1) |
+| project-life | OnboardingAcceptedEvidence, OnboardingInputPage, ProjectLifeTaskSummary, acceptedOnboardingEvidence, isAllowedProjectLifePath, shouldTriggerProjectLife | 5 | 431 | drill: parallel3 |
+| qa | QA_HOST_KEY, mapListedQaHosts, qaSpawnClaimed, runBrowserQaOnHost | 10 | 1629 | tests (1) |
 | receipts | — | 1 | 70 | tests (2) |
 | relay | OWNER_ASK_RENDERER_ID | 11 | 1327 | tests (2) |
 | rollback | rollbackMigrations | 7 | 604 | tests (1) |
 | rule-forms | FormAsk, MECHANISMS, Mechanism, RULES_USAGE, RulesCliDeps, applyJevForms, buildMechanismTask, formDistribution, jevPickForms, listPromotions, mechanismFor, promotionWhy, proposePromotions, runRulesCli | 5 | 429 | tests (2) |
 | run-goal | GoalVerdict, MIN_ACCEPTED, RedCheck, RunGoalRecord, TaskState, getRunGoal, goalVerdict, pmGoalMessage, runGoalMigrations, runReady | 8 | 235 | tests (2) |
 | runs | AttemptState, DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING, ENVIRONMENT_REASON, EXTERNAL_OPS, EXTERNAL_OPS_WARNING, FREE_CLASSES, FREE_RETRY_LIMIT, FailureClass, IllegalTransitionError, MAIN_ATTEMPT_LIMIT, NO_ANSWER_REASON, PARKED_CLASSES, REPLAY_CHECK_FAILED, RETRY_ELIGIBLE, S8_RELATIVE_PATHS, SESSION_MAX_MS, SESSION_MAX_TURNS, TARGET_SHA, TRANSITION_TABLE, UPSTREAM_REPO, WRITER_SILENT_REASON, acceptanceStats, aggregateRun, beginChecks, checksInFlight, checksMoved, cliReceiptAttemptKey, cliReceiptRunKey, failureClass, failureFingerprint, isEnvironmentCheckFailure, isKnownReason, isLegalMove, isOwnerDecision, isPreStartStop, isWaitingSecret, isWriterSilent, judgedFailureClass, liveFolderLockNote, nextStep, repeatedFailureReason, taskFamily, turnFailureKey, unknownReasons | 35 | 3561 | drill: parallel3 |
-| schedule | ERRAND_BUILTIN, SCHEDULE_ERRAND_DEFAULT_KEY, createScheduleStore, errandDefaultProblem, scheduleAgentMigrations, scheduleMigrations, scheduleRpcContract, taskOf | 32 | 3679 | tests (1) |
+| schedule | ERRAND_BUILTIN, SCHEDULE_ERRAND_DEFAULT_KEY, createScheduleStore, errandDefaultProblem, scheduleAgentMigrations, scheduleMigrations, scheduleRpcContract, taskOf | 32 | 3682 | tests (1) |
 | secrets | — | 4 | 243 | tests (1) |
 | self-improve | — | 1 | 65 | tests (2) |
-| self-repair | — | 8 | 2557 | tests (4) |
+| self-repair | — | 8 | 2586 | tests (4) |
 | settings | SettingValidationError, readImportConfig, validateSettingValue, validateSettingsObject, validationErrorText | 20 | 2943 | drill: provider_limit |
 | sma-map | LiveRow, LiveSource, ProofRoots, SMA_ENTRIES, SMA_LINKS, SMA_LIVE, SMA_MAP_USAGE, SMA_NODES, SMA_REGIONS, SmaCounts, SmaEntry, SmaKind, SmaLinkKind, SmaNode, SmaRow, SmaStatus, brokenProof, defaultProofRoots, isDone, readSmaLive, renderSmaLive, renderSmaMap, runSmaLiveCli, runSmaMapCli, smaCounts, smaDonePercent, smaGroups, smaHoles, smaRows | 6 | 6411 | tests (1) |
 | stability | ReconcileResult, parseOpenCodeToolTelemetry, reconcile, reconcileCritic | 13 | 1379 | drill: reload |
@@ -79,15 +79,15 @@ Each room is one component: `index.ts` is its public API, `server/` its services
 | tools | foldedToolHome, rewriteFoldedToolNames | 7 | 1519 | drill: parallel3 |
 | twins | RECORD_MAX_AGE_MS, Shape, shapeOf, twinDiffers | 2 | 38 | tests (1) |
 | ui-shell | — | 19 | 2470 | tests (3) |
-| usage | AttemptMetrics, AttemptMetricsReport, CostState, TokenBreakdown, attemptMetrics, billedFrom, parseBreakdown, tokenBreakdown, tokenDelta | 10 | 1321 | tests (3) |
+| usage | AttemptMetrics, AttemptMetricsReport, CostState, TokenBreakdown, attemptMetrics, billedFrom, parseBreakdown, tokenBreakdown, tokenDelta | 10 | 1330 | tests (3) |
 | verification | EXCLUDE_NOT_GIT, FlakyEvidence, HostMachineFacts, MachineReading, MergeInfo, OwnershipTask, PRESSURE_LIMITS, ReplayCheck, ReplayCheckOutcome, RevertResult, SANDBOX_OWN_ENV, WORKSPACE_DIRT_COMMAND, WorktreeState, appendExcludeCommand, attributeGateOnHost, bisectGateOnHost, buildDocsAnchors, buildDocsFlows, commitDocs, createProviderGate, createWorktree, darwinAvailableBytes, docsDepth, docsLineCounts, docsStaleness, docsWorthinessFacts, ensureExcludeLinesCommand, findUnownedChanges, findUnownedRunChanges, flakyEvidence, gateTriagePrompt, gitDocsScope, gitOwnershipChangedPaths, integrateWorktree, jevApiKey, jevProviderOfKey, mergeInfo, outputTail, parseGateTriageResult, parseWorkspaceMode, persistTaskFolder, prepareSandboxedCommandLine, prepareWorktree, pressureOf, provideJevKey, providerListed, providerSwitchOn, readMachineFacts, readingFrom, readingNote, releaseSandboxedCommandLine, removeLaneWorktree, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveGitOwnershipBase, resolveManagedWorkspace, resolveRunOwnershipScope, revertCommitsInWorktree, revertPaths, runGateOnHost, runSandboxedCommandOnHost, runStabilityDrill, safeRelative, snapshotWorktree, syncWorktree, taskFolderRel, undoCheckWrites, userToolBins, usesManagedWorktree, validateOwnershipContract, verifyDocsCitations, waitManagedWorktreeReady, waitProviderEnvironment, worktreeState | 29 | 4967 | drill: parallel3 |
-| wall | wallDeferralKindMigrations, wallMigrations | 21 | 2791 | tests (4) |
+| wall | wallDeferralKindMigrations, wallMigrations | 21 | 2853 | tests (4) |
 | wires | WIRE_MARK, Wire, WireHop, WireResult, brokenWireReason, readWires, wiresCommand | 2 | 52 | tests (2) |
 | work-graph | AttemptIn, CellState, CostState, ExecutorRow, GRAPH_STAGES, GraphStats, ModelStageStat, ReceiptIn, Role, StageBlock, StageCell, StageEventIn, StageStat, TaskGraph, TaskSummary, Tokens, UsageIn, graphStats, median, roleOf, stageCells, taskGraph | 11 | 642 | tests (2) |
-| workflow | DOCS_MAINTENANCE, DOCS_NIGHT, DraftCheck, DraftOp, DraftScope, DraftTestResult, LP_TASK_PIPELINE, NodeExecutor, RawDefinition, Refusal, RunSummary, SELF_REPAIR, StepContext, ValidateOptions, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY, WORKFLOW_ARCHITECT_TOOLS, Workflow, WorkflowEngine, WorkflowProblem, builtinWorkflow | 54 | 8375 | tests (3) |
+| workflow | DOCS_MAINTENANCE, DOCS_NIGHT, DraftCheck, DraftOp, DraftScope, DraftTestResult, LP_TASK_PIPELINE, NodeExecutor, RawDefinition, Refusal, RunSummary, SELF_REPAIR, StepContext, ValidateOptions, WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY, WORKFLOW_ARCHITECT_TOOLS, Workflow, WorkflowEngine, WorkflowProblem, builtinWorkflow | 55 | 8447 | tests (3) |
 | world | worldMigrations | 7 | 534 | tests (4) |
 | world-assets | — | 2 | 65 | tests (4) |
-| writer | DirtSnapshot, attachStreamRetry, attemptProduced, buildCliInvocation, droppedStreamDetail, memoryLine, parseDirtSnapshots, pathAnchors, resolveStageWriterSelection, reviewerMemoryPicks, runCliOnHost, runCommandOnHost, writePmSettingsOnHost, writerBriefStats, writerFallbackChain, writerFallbackKeys, writerFallbacks, writerMemory, writerMemoryPicks, writerReuseStats | 47 | 8465 | drill: parallel3 |
+| writer | DirtSnapshot, attachStreamRetry, attemptProduced, buildCliInvocation, droppedStreamDetail, memoryLine, parseDirtSnapshots, pathAnchors, resolveStageWriterSelection, reviewerMemoryPicks, runCliOnHost, runCommandOnHost, writePmSettingsOnHost, writerBriefStats, writerFallbackChain, writerFallbackKeys, writerFallbacks, writerMemory, writerMemoryPicks, writerReuseStats | 49 | 8544 | drill: parallel3 |
 
 ## Task stages (20)
 
@@ -183,16 +183,16 @@ States: (new), queued, spawn_requested, running, spawn_rejected, spawn_unknown, 
 | packages/i18n/src/i18n-fields.ts | 1946 |
 | src/rooms/sma-map/entries.ts | 1777 |
 | src/rooms/storage/database.ts | 1732 |
-| packages/workflow-engine/src/engine.ts | 1411 |
-| src/rooms/self-repair/server/self-repair.ts | 1216 |
+| packages/workflow-engine/src/engine.ts | 1423 |
+| src/rooms/self-repair/server/self-repair.ts | 1236 |
 | src/rooms/writer/server/start.ts | 1103 |
-| src/rooms/docs/server/docs-nightly.ts | 980 |
+| src/rooms/docs/server/docs-nightly.ts | 989 |
 | src/rooms/writer/server/finish.ts | 959 |
 | src/rooms/verification/git-integrate.ts | 944 |
 | src/rooms/council/ui/council-office.tsx | 942 |
 | src/rooms/host-worker/host-handlers.ts | 910 |
-| src/rooms/phase/server/driver.ts | 880 |
-| src/rooms/wall/service.ts | 796 |
+| src/rooms/phase/server/driver.ts | 888 |
+| src/rooms/wall/service.ts | 833 |
 | src/rooms/council/ui/office-layout.ts | 786 |
 | src/rooms/native-install/coexistence.ts | 771 |
 | src/rooms/harness/server/harness.ts | 752 |
