@@ -963,7 +963,7 @@ export function latestTaskAttempt(db: LanePilotDatabase, projectId: string, task
   return row ? { state:row.state, updated_at:row.updated_at } : null;
 }
 
-/** A task result the PM has not been told: the latest attempt of a task of a PM's run ended accepted, blocked or canceled. */
+/** A task result the PM has not been told: the latest attempt of a task of a PM's run ended accepted, blocked or canceled. A closed run tells no one: its PM chat has handed the lead back or the run is over. */
 export type TaskOutcome = { transitionId:number; attemptId:string; projectId:string; pmThreadId:string; taskId:string; state:string; reason:string|null; at:number };
 
 /**
@@ -977,7 +977,7 @@ export function listUnreportedTaskOutcomes(db: LanePilotDatabase, since: number)
     FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
     JOIN lane_pilot_attempt_transition t ON t.rowid=(SELECT t2.rowid FROM lane_pilot_attempt_transition t2
       WHERE t2.attempt_id=a.id AND t2.refused=0 AND t2.to_state=a.state ORDER BY t2.at DESC, t2.rowid DESC LIMIT 1)
-    WHERE a.state IN ('accepted','blocked','canceled') AND r.pm_thread_id IS NOT NULL AND a.updated_at>=? AND t.at>=?
+    WHERE a.state IN ('accepted','blocked','canceled') AND r.pm_thread_id IS NOT NULL AND r.closed_at IS NULL AND a.updated_at>=? AND t.at>=?
       AND a.attempt_no=(SELECT MAX(b.attempt_no) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)
       AND NOT EXISTS (SELECT 1 FROM lane_pilot_attempt c JOIN lane_pilot_run rc ON rc.id=c.run_id
         WHERE rc.project_id=r.project_id AND c.created_at>=a.created_at AND substr(c.task_id,1,length(a.task_id)+1)=a.task_id || '.')

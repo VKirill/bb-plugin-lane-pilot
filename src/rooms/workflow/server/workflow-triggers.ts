@@ -10,6 +10,7 @@ import { isPipeline } from "@lane-pilot/workflow-engine";
 import type { Workflow } from "@lane-pilot/workflow-engine";
 import type { StoredWorkflow, WorkflowStore } from "../../storage";
 import type { ServerCore } from "../../core/server";
+import { isPmChat } from "../../native-agent/server";
 import type { Services } from "../../core/server";
 import { SCHEDULE_RUN_KEY_PREFIX, type ChainRuntime } from "./workflow-runtime";
 
@@ -106,7 +107,8 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     // report sent there was read as someone else's (live, 2026-10-25). Only the owner's PM chat takes a run.
     for (const row of rows) {
       const metadata = await ctx.bb.sdk.threads.getPluginMetadata({ threadId: row.pm_thread_id }).catch(() => null) as Record<string, unknown> | null;
-      if (metadata?.role === "pm" && !metadata.architectProjectId) return { pmThreadId: row.pm_thread_id, runId: row.id };
+      // A chat that runs a specialist has a run and the role pm as well (its tools need them) but does not lead the project.
+      if (metadata?.role === "pm" && !metadata.architectProjectId && await isPmChat(ctx, row.pm_thread_id)) return { pmThreadId: row.pm_thread_id, runId: row.id };
     }
     return null;
   }

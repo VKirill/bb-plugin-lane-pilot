@@ -12,6 +12,7 @@ import type { Field, GraphNode } from "@lane-pilot/workflow-engine";
 import { createTaskLinter } from "../../tasks/server";
 import { agentRequest, createWorkflowAgents, stepPacket, withResolvedModel } from "./workflow-agent";
 import type { WorkflowAgents } from "./workflow-agent";
+import { registerRouterExecutor } from "./workflow-router-model";
 import { lpTaskPipelineExecutor } from "../../writer/server";
 import type { DispatchRuntime } from "../../writer/server";
 import { keyedSpawnSupported, projectFolder } from "../../core/server";
@@ -215,6 +216,9 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     const row = runId ? engine.journal.getRun(runId) : undefined;
     return row ? rebuild(row) : undefined;
   };
+
+  // The model step of the router's graph `lp.route`.
+  registerRouterExecutor(engine, agents);
 
   // ---------------------------------------------------------------- agent
   engine.register<ChainRuntime>("agent", {

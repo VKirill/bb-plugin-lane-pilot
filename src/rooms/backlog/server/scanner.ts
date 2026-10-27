@@ -1,5 +1,6 @@
 import { loadPrototypeConfig } from "../../storage";
 import { scheduleIsolated, type ServerCore } from "../../core/server";
+import { isPmChat } from "../../native-agent/server";
 import { backlogBoard, backlogReadCommand, issueMessage, parseBacklogOutput, type BacklogBoard } from "../logic";
 
 /**
@@ -21,7 +22,7 @@ export function createBacklog(ctx: ServerCore) {
     // A workflow architect's chat has a run and the role pm too, marked by architectProjectId; the backlog's task goes to the owner's PM chat only.
     for (const row of rows) {
       const metadata = await bb.sdk.threads.getPluginMetadata({ threadId: row.pm_thread_id }).catch(() => null) as Record<string, unknown> | null;
-      if (metadata?.role === "pm" && !metadata.architectProjectId) return row.pm_thread_id;
+      if (metadata?.role === "pm" && !metadata.architectProjectId && await isPmChat(ctx, row.pm_thread_id)) return row.pm_thread_id;
     }
     return null;
   }

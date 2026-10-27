@@ -141,7 +141,7 @@ export function fullAccessSpawn(bb: BbPluginApi, args: Parameters<BbPluginApi["s
     const namedTier = args.serviceTier === "default" || args.serviceTier === "fast";
     const sendTier = supportsTier === true || (supportsTier === null && namedTier);
 
-    const quiet = quietHelper(args);
+    const quiet = quietHelper(args, graphStepLookupByApi.get(bb));
     const { serviceTier: _incomingTier, ...restQuiet } = quiet;
     let executionInputSources = restQuiet.executionInputSources ? { ...restQuiet.executionInputSources } : undefined;
     if (executionInputSources) {
@@ -189,6 +189,16 @@ function enforceRunChildBudget(bb: BbPluginApi, args: Parameters<BbPluginApi["sd
   if (!reserved.ok) throw new RunBudgetExceeded(reserved);
 }
 
+/** Whether a run, and the step of it when one is named, exist in the workflow journal. */
+type GraphStepLookup = (runId: string, stepKey?: string) => boolean;
+
+const graphStepLookupByApi = new WeakMap<BbPluginApi, GraphStepLookup>();
+
+/** Plugin start binds this so a graph marker counts only when it points at a real run and step (`lane_pilot_wf_run`, `lane_pilot_wf_step`). */
+export function bindGraphStepLookup(bb: BbPluginApi, exists: GraphStepLookup): void {
+  graphStepLookupByApi.set(bb, exists);
+}
+
 /**
  * The plugin metadata that ties a helper thread to the graph step that spawned it (the keys `workflow-agent.ts` writes for an agent node):
  * a thread with `lanePilotWorkflowRunId` ran inside a graph, which is what the daily graph-coverage line and the quiet-helper rule read.
@@ -210,10 +220,13 @@ const LOUD_ROLES = new Set(["pm", "errand", "specialist", "self-repair"]);
  * A step of a graph run is always quiet, even for a loud role: the run's own end notice tells the PM, so an errand or
  * specialist step must not wake the PM chat a second time.
  */
-export function quietHelper<T extends { parentThreadId?: string | null; pluginMetadata?: Record<string, unknown> }>(args: T): T {
+export function quietHelper<T extends { parentThreadId?: string | null; pluginMetadata?: Record<string, unknown> }>(args: T, stepExists?: GraphStepLookup): T {
   const role = args.pluginMetadata?.role;
   const graphRun = args.pluginMetadata?.lanePilotWorkflowRunId;
-  const inGraph = typeof graphRun === "string" && graphRun !== "";
+  const graphStep = args.pluginMetadata?.lanePilotWorkflowStep;
+  // The marker is a claim, not proof: with a journal lookup bound it must name a run (and a step) that exist, or the helper is not «inside a graph».
+  const inGraph = typeof graphRun === "string" && graphRun !== ""
+    && (!stepExists || stepExists(graphRun, typeof graphStep === "string" && graphStep !== "" ? graphStep : undefined));
   if (!args.parentThreadId || !args.pluginMetadata || (typeof role === "string" && LOUD_ROLES.has(role) && !inGraph)) return args;
   return { ...args, pluginMetadata: { ...args.pluginMetadata, experimental_vkQuietChild: true } };
 }
