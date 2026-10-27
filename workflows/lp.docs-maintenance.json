@@ -24,7 +24,7 @@
     "state": "string"
   },
   "budget": {
-    "max_steps": 4,
+    "max_steps": 5,
     "max_minutes": 120
   },
   "nodes": [
@@ -42,18 +42,29 @@
       ],
       "guards": { "timeoutMin": 110 }
     },
-    { "id": "done", "type": "action", "action": "emit", "map": { "state": "docs.state" } }
+    {
+      "id": "verdict",
+      "type": "action",
+      "action": "lp.docs-maintenance.verdict",
+      "title": { "en": "Fail the run when the upkeep failed", "ru": "Провалить запуск, если поддержка не удалась" },
+      "rule": "code: a docs-maintenance stage that ended failed or blocked fails the run; the accepted task is not touched",
+      "out": [
+        { "name": "state", "type": "string" }
+      ]
+    },
+    { "id": "done", "type": "action", "action": "emit", "map": { "state": "verdict.state" } }
   ],
   "edges": [
     { "from": "start", "to": "docs" },
-    { "from": "docs", "to": "done" }
+    { "from": "docs", "to": "verdict" },
+    { "from": "verdict", "to": "done" }
   ],
   "test": {
     "id": "docs-maintenance-1",
     "sim": {
       "input": { "run_id": "lprun_1", "task_id": "t1", "pm_thread_id": "thr_pm" },
-      "stubs": { "docs": { "state": "passed", "handoff": "docs passed" } },
-      "expect_path": ["docs", "done"],
+      "stubs": { "docs": { "state": "passed", "handoff": "docs passed" }, "verdict": { "state": "passed" } },
+      "expect_path": ["docs", "verdict", "done"],
       "expect_output": { "state": "passed" }
     }
   }

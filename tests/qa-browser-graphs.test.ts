@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { WorkflowEngine, parseWorkflow } from "@lane-pilot/workflow-engine";
 import { HARNESS_VERSION } from "../src/rooms/storage";
-import { createRun, openDatabase, saveProjectSetting } from "../src/rooms/storage/database";
+import { createAttempt, createRun, openDatabase, saveProjectSetting } from "../src/rooms/storage/database";
 import { QA_HOST_KEY } from "../src/rooms/qa/qa-host";
 import { builtinWorkflow } from "../src/rooms/workflow/builtin";
 import { recordStage } from "../src/rooms/runs/server";
@@ -103,7 +103,17 @@ describe("lp.browser-qa", () => {
     t.setQa(() => full);
     expect(await runBrowserQaGraph(t.ctx, { ...qaInput, devServer: "npm run dev" })).toEqual(full);
     expect(t.qaCalls).toEqual([{ threadId: "pm", projectId: "proj", runId: "lprun_1", taskId: "task-1", url: "http://127.0.0.1:5173/", cases: ["Open home"], envClass: "local", viewports: "375", authorized: false, devServer: "npm run dev" }]);
-    expect(t.db.prepare("SELECT workflow_id, status, link_run_id, link_task_id FROM lane_pilot_wf_run").all()).toEqual([{ workflow_id: "lp.browser-qa", status: "succeeded", link_run_id: "lprun_1", link_task_id: "task-1" }]);
+    // The tool still gets the verdict, but a red one leaves the graph run red: a task's pipeline and the wall see it.
+    expect(t.db.prepare("SELECT workflow_id, status, reason, link_run_id, link_task_id FROM lane_pilot_wf_run").all()).toEqual([{ workflow_id: "lp.browser-qa", status: "failed", reason: "step_failed:verdict", link_run_id: "lprun_1", link_task_id: "task-1" }]);
+  });
+
+  it("a passed or skipped check leaves the run succeeded", async () => {
+    for (const state of ["passed", "skipped"]) {
+      const t = setup();
+      t.setQa((args) => ({ runId: args.runId, taskId: args.taskId, state }));
+      expect(await runBrowserQaGraph(t.ctx, qaInput)).toMatchObject({ state });
+      expect(t.db.prepare("SELECT status FROM lane_pilot_wf_run").all()).toEqual([{ status: "succeeded" }]);
+    }
   });
 
   it("answers a blocked call (a login that cannot be served) as runBrowserQa did, with no receipt written by the graph", async () => {
@@ -112,13 +122,14 @@ describe("lp.browser-qa", () => {
     t.setQa(() => blocked);
     expect(await runBrowserQaGraph(t.ctx, qaInput)).toEqual(blocked);
     expect(t.db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_stage_receipt").get()).toEqual({ n: 0 });
+    expect(t.db.prepare("SELECT status FROM lane_pilot_wf_run").all()).toEqual([{ status: "failed" }]);
   });
 
-  it("a call that does not fit throws runBrowserQa's own message and leaves a finished run, not a graph failure", async () => {
+  it("a call that does not fit throws runBrowserQa's own message and leaves the run failed: no check was done", async () => {
     const t = setup();
     t.setQa(() => { throw new Error("runId does not belong to this Lane Pilot PM thread"); });
     await expect(runBrowserQaGraph(t.ctx, qaInput)).rejects.toThrow("runId does not belong to this Lane Pilot PM thread");
-    expect(t.db.prepare("SELECT status FROM lane_pilot_wf_run").all()).toEqual([{ status: "succeeded" }]);
+    expect(t.db.prepare("SELECT status FROM lane_pilot_wf_run").all()).toEqual([{ status: "failed" }]);
   });
 
   it("a check still running waits on its receipt and, after a reload, ends from the receipt the adopter writes", async () => {
@@ -146,5 +157,74 @@ describe("lp.browser-qa", () => {
     const done = reloaded.get(run.id)!;
     expect(done.status).toBe("succeeded");
     expect(done.output).toMatchObject({ state: "passed", reply: { runId: "lprun_1", taskId: "task-1", state: "passed", link: "@thread:thr_qa", result: { verdict: "passed" }, stage: { stageId: "browser-qa", state: "passed" } } });
+  });
+});
+
+describe("lp.qa-gate", () => {
+  const plainTask = {
+    schema_version: 2, display_title: "Тестовая задача", kind: "feature", area: "feature:task-1", id: "task-1", title: "Write a fixture", risk: "low", lane: "writer", project_cwd: "/work/p", read_first: ["README.md L1-L2"],
+    interfaces: ["note.txt exists"], invariants: ["Only write note.txt"], out_of_scope: ["Plugin source"], expected_outputs: ["note.txt"], owns_paths: ["note.txt"],
+    never_touch: [".git/**"], depends_on: [], objective: "Write note.txt", acceptance: ["note.txt is present"], verify: "tests",
+    verification: [{ command: "test -f note.txt", cwd: "/work/p", timeout_sec: 30 }],
+  };
+  const contract = { ...plainTask, qa_cases: ["Open home"], qa_url: "http://127.0.0.1:5173/" };
+  const gateGraph = parseWorkflow({
+    id: "gate-only", name: "Gate only", description: { en: "the gate of the task pipeline", ru: "ворота конвейера задачи" }, status: "published",
+    inputs: {}, outputs: { run: "bool", url: "string?" },
+    nodes: [
+      { id: "gate", type: "decision", uses: "lp.qa-gate", out: { run: "bool", run_id: "string?", task_id: "string?", url: "string?", cases: "string[]?", env_class: "string?", dev_server: "string?" } },
+      { id: "done", type: "action", action: "emit", map: { run: "gate.run", url: "gate.url" } },
+    ],
+    edges: [{ from: "start", to: "gate" }, { from: "gate", to: "done" }],
+  });
+
+  /** An accepted task with qa_cases and qa_url and, unless said otherwise, no acceptance receipt yet. */
+  function accepted(options: { contract?: Record<string, unknown>; state?: string } = {}) {
+    const t = setup();
+    createRun(t.db, "lprun_1", "proj", "bb");
+    t.db.prepare("INSERT INTO lane_pilot_task(id, run_id, kind, contract_json, created_at) VALUES ('task-1','lprun_1','bb',?,1)").run(JSON.stringify(options.contract ?? contract));
+    createAttempt(t.db, { id: "att-1", runId: "lprun_1", taskId: "task-1" });
+    t.db.prepare("UPDATE lane_pilot_attempt SET state=? WHERE id='att-1'").run(options.state ?? "accepted");
+    const receipt = () => recordStage(t.db, { runId: "lprun_1", taskId: "task-1", stageId: "acceptance-receipt", state: "passed", input: "x" });
+    const start = (engine = t.engine) => engine.start({ workflow: gateGraph, inputs: {}, link: { projectId: "proj", runId: "lprun_1", taskId: "task-1" } });
+    return { ...t, receipt, start };
+  }
+
+  it("a passed receipt that is already there: the check is due, at once", async () => {
+    const t = accepted();
+    t.receipt();
+    expect(await t.start().done).toMatchObject({ status: "succeeded", output: { run: true, url: "http://127.0.0.1:5173/" } });
+  });
+
+  it("no qa_cases and qa_url, or a task that did not end accepted: no check, at once", async () => {
+    const plain = accepted({ contract: plainTask });
+    expect(await plain.start().done).toMatchObject({ status: "succeeded", output: { run: false } });
+    const rejected = accepted({ state: "rejected" });
+    expect(await rejected.start().done).toMatchObject({ status: "succeeded", output: { run: false } });
+  });
+
+  it("a receipt that comes late is waited for, across a reload, and the check is then due exactly once", async () => {
+    const t = accepted();
+    const summary = await t.start().done;
+    // Not skipped: the run waits on the receipt.
+    expect(summary).toMatchObject({ status: "waiting" });
+    expect(summary.waiting[0]).toMatchObject({ nodeId: "gate", await: { kind: "qa-receipt" } });
+    const reloaded = t.newEngine();
+    expect(await reloaded.poll()).toBe(0);
+    expect(reloaded.get(summary.runId)?.status).toBe("waiting");
+    t.receipt();
+    expect(await reloaded.poll()).toBe(1);
+    expect(reloaded.get(summary.runId)).toMatchObject({ status: "succeeded", output: { run: true, url: "http://127.0.0.1:5173/" } });
+    expect(await reloaded.poll()).toBe(0);
+  });
+
+  it("a receipt that never comes ends the step failed with the reason, never as «no check»", async () => {
+    const t = accepted();
+    const summary = await t.start().done;
+    const old = JSON.stringify({ kind: "qa-receipt", detail: { runId: "lprun_1", taskId: "task-1", attemptId: "att-1", startedAt: Date.now() - 31 * 60_000 }, partial: null });
+    t.db.prepare("UPDATE lane_pilot_wf_step SET await_json=? WHERE run_id=? AND node_id='gate'").run(old, summary.runId);
+    expect(await t.engine.poll()).toBe(1);
+    expect(t.engine.get(summary.runId)).toMatchObject({ status: "failed", reason: "step_failed:gate", error: expect.stringContaining("qa_receipt_missing") });
+    expect(t.engine.get(summary.runId)?.output).not.toMatchObject({ run: false });
   });
 });

@@ -303,8 +303,9 @@ describe("the dispatch runs on the workflow engine", () => {
     expect(states["acceptance-receipt"]).toBe("passed");
     // Both stages ran as steps of one graph run, which ended well; the memory thread carries the run and step it ran in.
     expect(run.afterAccept).toHaveLength(1);
-    expect(run.afterAccept[0]!.status).toBe("succeeded");
-    expect(JSON.parse(run.afterAccept[0]!.output_json!)).toEqual({ memory_state: "failed", life_state: "skipped" });
+    // The failed stage fails the graph run (the join), not the task: the run has no output, the task stays accepted.
+    expect(run.afterAccept[0]!.status).toBe("failed");
+    expect(run.afterAccept[0]!.output_json).toBeNull();
     const memory = run.spawnedMeta.find((meta) => meta.role === "memory-maintainer")!;
     expect(memory).toMatchObject({ stageId: "memory-maintenance", lanePilotWorkflowNode: "memory" });
     expect(memory.lanePilotWorkflowRunId).toBeTruthy();

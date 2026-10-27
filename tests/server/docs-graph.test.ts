@@ -7,6 +7,7 @@ import { DOCS_MAINTENANCE, DOCS_NIGHT, builtinWorkflow } from "../../src/rooms/w
 import { claimActivation, createAttempt, createRun, openDatabase, saveProjectSetting, savePrototypeConfig, setRunThread } from "../../src/rooms/storage/database";
 import { recordStage } from "../../src/rooms/runs/server";
 import { maybeNotifyWorkflowRun } from "../../src/rooms/workflow/server/pm-notice";
+import { collectEntries } from "../../src/rooms/wall/journal";
 
 let dispose: (() => Promise<void> | void) | null = null;
 afterEach(async () => { await dispose?.(); dispose = null; });
@@ -154,7 +155,7 @@ describe("the nightly docs of a unit is the graph lp.docs-night", () => {
     const projectId = "proj_docs_task";
     const { bb, harness } = createFakePluginHost({
       pluginId: "lane-pilot",
-      // The stage function fails here (the fake host has no PM thread metadata): the run still ends, the failure is its state, not a notice.
+      // The stage function fails here (the fake host has no PM thread metadata): the run ends failed, with the stage's failure as its reason, and tells no one.
       sdk: { threads: { get: async () => ({ id: "thr_pm", status: "idle" }) as never } as never },
     });
     await plugin(bb);
@@ -174,8 +175,10 @@ describe("the nightly docs of a unit is the graph lp.docs-night", () => {
     await settle(() => (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_wf_run WHERE workflow_id=? AND status<>'running'").get(DOCS_MAINTENANCE) as { n: number }).n > 0);
     const runs = db.prepare("SELECT * FROM lane_pilot_wf_run WHERE workflow_id=?").all(DOCS_MAINTENANCE) as Array<Record<string, unknown>>;
     expect(runs).toHaveLength(1);
-    expect(runs[0]).toMatchObject({ idem_key: "docs-maintenance:run-1:T1:0", status: "succeeded", link_run_id: "run-1", link_task_id: "T1" });
-    expect(JSON.parse(String(runs[0]!.output_json))).toMatchObject({ state: "failed" });
+    expect(runs[0]).toMatchObject({ idem_key: "docs-maintenance:run-1:T1:0", status: "failed", reason: "step_failed:verdict", link_run_id: "run-1", link_task_id: "T1" });
+    // The docs step keeps what the stage answered; the verdict step is what failed the run. The wall sees this one run, once.
+    expect(db.prepare("SELECT output_json FROM lane_pilot_wf_step WHERE run_id=? AND node_id='docs'").get(runs[0]!.id)).toEqual({ output_json: expect.stringContaining('"state":"failed"') });
+    expect(collectEntries(db, { since: 0, until: Date.now() + 60_000, isReal: () => true }).map((entry) => `${entry.failureClass}:${entry.n}:${entry.sources.wf}`)).toEqual(["workflow:1:1"]);
     // The upkeep graphs tell no one: not the PM chat of the run, not the owner's list.
     const sent: unknown[] = [];
     const told = await maybeNotifyWorkflowRun({ bb: { sdk: { threads: { send: async (request: never) => { sent.push(request); } } }, storage: bb.storage as never }, log: () => undefined, run: { ...runs[0], status: "failed" } as never, pmThreadId: "thr_pm", startedBySchedule: false });

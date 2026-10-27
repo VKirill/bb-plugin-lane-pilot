@@ -15,8 +15,8 @@ describe("browser-step", () => {
 describe("lp.browser-qa", () => {
   it("the check of an accepted task: its reply comes out as it is", async () => {
     const reply = { runId: "lprun_1", taskId: "t1", state: "failed", reason: "case 1 failed" };
-    const r = await runSim("lp.browser-qa", { input: { run_id: "lprun_1", task_id: "t1", url: "http://127.0.0.1:5173/", cases: ["Open home"], env_class: "local" }, stubs: { qa: { state: "failed", reply } } });
-    expect(pathOf(r)).toBe("qa done");
+    const r = await runSim("lp.browser-qa", { input: { run_id: "lprun_1", task_id: "t1", url: "http://127.0.0.1:5173/", cases: ["Open home"], env_class: "local" }, stubs: { qa: { state: "failed", reply }, verdict: { state: "failed" } } });
+    expect(pathOf(r)).toBe("qa verdict done");
     expect(out(r)).toEqual({ state: "failed", reply });
   });
 });

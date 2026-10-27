@@ -87,8 +87,8 @@
     { "from": "start", "to": "split" },
     { "from": "split", "to": "memory" },
     { "from": "split", "to": "life" },
-    { "from": "memory", "to": "gather", "with": { "memory_state": "memory.state" } },
-    { "from": "life", "to": "gather", "with": { "life_state": "life.state" } },
+    { "from": "memory", "to": "gather", "with": { "memory_state": "memory.state", "memory_reason": "memory.reason" } },
+    { "from": "life", "to": "gather", "with": { "life_state": "life.state", "life_reason": "life.reason" } },
     { "from": "gather", "to": "done" }
   ]
 }

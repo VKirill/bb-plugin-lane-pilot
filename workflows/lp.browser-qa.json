@@ -35,7 +35,7 @@
     "reply": "any"
   },
   "budget": {
-    "max_steps": 4,
+    "max_steps": 5,
     "max_minutes": 45
   },
   "nodes": [
@@ -60,6 +60,16 @@
       "guards": { "timeoutMin": 40 }
     },
     {
+      "id": "verdict",
+      "type": "action",
+      "action": "lp.browser-qa.verdict",
+      "title": { "en": "Fail the run when the check is red", "ru": "Провалить запуск, если проверка красная" },
+      "rule": "code: a check that ended failed, blocked or could not be run fails the run; the reply stays in the qa step",
+      "out": {
+        "state": "string"
+      }
+    },
+    {
       "id": "done",
       "type": "action",
       "action": "emit",
@@ -71,16 +81,18 @@
   ],
   "edges": [
     { "from": "start", "to": "qa" },
-    { "from": "qa", "to": "done" }
+    { "from": "qa", "to": "verdict" },
+    { "from": "verdict", "to": "done" }
   ],
   "test": {
     "id": "lp-browser-qa-1",
     "sim": {
       "input": { "run_id": "lprun_1", "task_id": "t1", "url": "http://127.0.0.1:5173/", "cases": ["Open home"], "env_class": "local" },
       "stubs": {
-        "qa": { "state": "passed", "reply": { "state": "passed" } }
+        "qa": { "state": "passed", "reply": { "state": "passed" } },
+        "verdict": { "state": "passed" }
       },
-      "expect_path": ["qa", "done"],
+      "expect_path": ["qa", "verdict", "done"],
       "expect_output": { "state": "passed" }
     }
   }

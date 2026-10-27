@@ -12,6 +12,7 @@ import { fullAccessSpawn } from "../../core/server";
 import { withUsage } from "../../usage/server";
 import { DOCS_MAINTENANCE, DOCS_NIGHT, builtinWorkflow } from "../../workflow";
 import type { StepContext, WorkflowEngine } from "../../workflow";
+import { requireGreen } from "../../workflow/server";
 import { stringAt, valueAt } from "../../core/server";
 import { recordStage } from "../../runs/server";
 import { sleepUntilThreadSignal, threadWatchMark, waitThreadIdle } from "@lane-pilot/thread-observe";
@@ -849,6 +850,14 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       const state=text(result.state), reason=text(result.reason);
       return {output:{state,...(reason?{reason}:{}),handoff:`docs-maintenance ${state}${reason?`: ${reason}`:""}`},...usage};
     })});
+
+    // The verdict of the upkeep: a stage that failed or was blocked fails the graph run (its step above keeps the output and what it spent).
+    // `running` is not red: the stage is still observing and the next hour's run picks its receipt up again.
+    engine.register("lp.docs-maintenance.verdict",{reentrant:true,run:async(c)=>{
+      const state=text(earlier(c,"docs.state")), reason=text(earlier(c,"docs.reason"));
+      requireGreen("docs_maintenance",[{stage:"docs-maintenance",state,reason}],new Set(["failed","blocked"]));
+      return {output:{state}};
+    }});
   }
 
   /**

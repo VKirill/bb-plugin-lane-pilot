@@ -6,6 +6,7 @@ import { AFTER_ACCEPT, builtinWorkflow } from "../../src/rooms/workflow/builtin"
 import { maybeNotifyWorkflowRun } from "../../src/rooms/workflow/server/pm-notice";
 import { createAttempt, createRun, listStageReceipts, openDatabase, setRunThread } from "../../src/rooms/storage/database";
 import { recordStage } from "../../src/rooms/runs/server";
+import { collectEntries } from "../../src/rooms/wall/journal";
 
 const spent = (total: number) => [{ type: "turn/started", seq: 1 }, { type: "thread/tokenUsage/updated", seq: 2, createdAt: 2, data: { turnId: "t1", tokenUsage: { last: { inputTokens: total, outputTokens: 0, totalTokens: total }, total: { inputTokens: total, outputTokens: 0, totalTokens: total } } } }];
 
@@ -70,20 +71,46 @@ describe("the after-acceptance graph", () => {
     expect(row!.tokens_used).toBe(1300);
   });
 
-  it("leaves the run and the task alone when a stage throws or fails: the other stage still runs", async () => {
+  it("a stage that throws or fails fails the graph run, never the task: the other stage still runs", async () => {
     const t = setup({ "memory-maintenance": () => { throw new Error("memory_writer_provider_or_model_unavailable"); } });
     t.start("proj-1", "run-1", "T1", "pm-1");
     await t.engine.idle();
     const [row] = t.rows();
-    expect(row).toMatchObject({ status: "succeeded" });
-    expect(outputOf(row!)).toEqual({ memory_state: "failed", life_state: "passed" });
+    expect(row).toMatchObject({ status: "failed", reason: "step_failed:gather" });
+    expect(t.calls.map((call) => call.stage).sort()).toEqual(["memory-maintenance", "project-life"]);
+    // Both stages' own outputs stay in their steps.
+    expect(t.db.prepare("SELECT node_id, state, output_json FROM lane_pilot_wf_step WHERE node_id IN ('memory','life') ORDER BY node_id").all()).toEqual([
+      { node_id: "life", state: "succeeded", output_json: expect.stringContaining('"state":"passed"') },
+      { node_id: "memory", state: "succeeded", output_json: expect.stringContaining("memory_writer_provider_or_model_unavailable") },
+    ]);
     expect(listStageReceipts(t.db, "run-1", "T1").map((receipt) => `${receipt.stageId}:${receipt.state}`)).toEqual(["project-life:passed"]);
     const failed = setup({ "project-life": () => ({ state: "failed", reason: "project_life_out_of_scope_write" }) });
     failed.start("proj-1", "run-1", "T1", "pm-1");
     await failed.engine.idle();
-    expect(outputOf(failed.rows()[0]!)).toEqual({ memory_state: "passed", life_state: "failed" });
+    expect(failed.rows()[0]).toMatchObject({ status: "failed" });
+    expect(failed.engine.get(String(failed.rows()[0]!.id))?.error).toBe("after_accept_failed: project-life failed (project_life_out_of_scope_write)");
     // The accepted task's own rows are not touched by the graph.
     expect(failed.db.prepare("SELECT count(*) AS n FROM lane_pilot_task WHERE id='T1'").get()).toEqual({ n: 1 });
+  });
+
+  it("a stage still running after the last round fails the run: nothing proves the work was done", async () => {
+    const t = setup({ "memory-maintenance": () => ({ state: "running", reason: "observing" }) });
+    t.start("proj-1", "run-1", "T1", "pm-1");
+    await t.engine.idle();
+    expect(t.rows()[0]).toMatchObject({ status: "failed" });
+    expect(t.engine.get(String(t.rows()[0]!.id))?.error).toBe("after_accept_failed: memory-maintenance did not finish (observing)");
+  });
+
+  it("the wall sees exactly one failure when an accepted task's maintenance failed, and the task stays accepted", async () => {
+    const t = setup({ "project-life": () => ({ state: "failed", reason: "project_life_out_of_scope_write" }) });
+    createAttempt(t.db, { id: "att-1", runId: "run-1", taskId: "T1" });
+    t.db.prepare("UPDATE lane_pilot_attempt SET state='accepted' WHERE id='att-1'").run();
+    t.start("proj-1", "run-1", "T1", "pm-1");
+    await t.engine.idle();
+    const entries = collectEntries(t.db, { since: 0, until: Date.now() + 60_000, isReal: () => true });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ n: 1, failureClass: "workflow", sources: expect.objectContaining({ wf: 1, attempt: 0 }) });
+    expect(t.db.prepare("SELECT state FROM lane_pilot_attempt WHERE id='att-1'").get()).toEqual({ state: "accepted" });
   });
 
   it("watches a stage that is still running until its receipt is final", async () => {

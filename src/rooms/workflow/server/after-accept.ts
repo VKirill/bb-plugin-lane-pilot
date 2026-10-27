@@ -2,6 +2,7 @@ import { getRun, listOpenAttempts, listStageReceipts } from "../../storage";
 import { shouldTriggerProjectLife } from "../../project-life";
 import { withUsage } from "../../usage/server";
 import { AFTER_ACCEPT, builtinWorkflow } from "../builtin";
+import { requireGreen } from "./require-green";
 import type { NodeExecutor, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
@@ -9,8 +10,9 @@ import type { Services } from "../../core/server";
 /**
  * The graph `lp.after-accept` (workflows/lp.after-accept.json): once a task is accepted, the memory maintainer and the project-life
  * maintainer run side by side as two steps of one graph run. Each step wraps the stage function the PM tools already used
- * (`runMemoryMaintenance`, `runProjectLifeMaintenance`); the stage receipts are the same. Neither step ever fails the run: a stage
- * that cannot be done is recorded in its receipt and in the step's output, and the accepted task is never touched.
+ * (`runMemoryMaintenance`, `runProjectLifeMaintenance`); the stage receipts are the same. A stage that cannot be done never stops the other
+ * one and is recorded in its receipt and in the step's output; the join then fails the run, so the graph is red when its work is red.
+ * The accepted task is never touched either way.
  */
 
 /** The idempotency key of a task's run: a second merge event for the same task finds the first run. */
@@ -66,7 +68,18 @@ export function registerAfterAcceptExecutors(engine: WorkflowEngine, ctx: Server
   });
 
   // The join hands each stage's state on under its own name: the branches' rows merge into one.
-  engine.register("lp.after-accept.join", { reentrant: true, run: async (c: StepContext) => ({ output: Object.assign({}, ...((c.input.with.results as Row[] | undefined) ?? [])) as Row }) });
+  // A stage that failed, was blocked or never finished fails the run (not the task): the output of both stays in their steps.
+  engine.register("lp.after-accept.join", {
+    reentrant: true,
+    run: async (c: StepContext) => {
+      const { memory_reason, life_reason, ...output } = Object.assign({}, ...((c.input.with.results as Row[] | undefined) ?? [])) as Row;
+      requireGreen("after_accept", [
+        { stage: "memory-maintenance", state: text(output.memory_state), reason: text(memory_reason) },
+        { stage: "project-life", state: text(output.life_state), reason: text(life_reason) },
+      ]);
+      return { output };
+    },
+  });
 
   engine.register("lp.memory-maintenance", stageStep("memory-maintenance", null, (args) => services.runMemoryMaintenance(args)));
 

@@ -6,6 +6,7 @@ import { QA_HOST_KEY } from "../qa-host";
 import { builtinWorkflow } from "../../workflow";
 import { configuredSetting, fenceOutside } from "../../core/server";
 import type { ServerCore, Services } from "../../core/server";
+import { requireGreen } from "../../workflow/server";
 import type { ChainRuntime } from "../../workflow/server";
 
 /**
@@ -69,12 +70,21 @@ export function registerBrowserExecutors(engine: WorkflowEngine, ctx: ServerCore
   } as NodeExecutor<ChainRuntime>);
 
   // ---------------------------------------------------------------- browser check of an accepted task
-  /** How long the gate waits for the acceptance receipt of an attempt that already reads accepted (the writer records the two a moment apart). */
-  const RECEIPT_WAIT_MS = 15_000;
+  /** How long the gate looks at the acceptance receipt of an attempt that already reads accepted before it parks the step (the writer records the two a moment apart). */
+  const RECEIPT_WAIT_MS = 2_000;
+  /** How long a parked gate waits for the receipt before it ends blocked: far beyond any normal delay, so a missing receipt is a fault, not «no check». */
+  const RECEIPT_BOUND_MS = 30 * 60_000;
+
+  const acceptanceReceiptPassed = (runId: string, taskId: string): boolean =>
+    listStageReceipts(db, runId, taskId).find((item) => item.stageId === "acceptance-receipt")?.state === "passed";
+  const gateRun = (runId: string, taskId: string, plan: NonNullable<ReturnType<typeof taskQaPlan>>) =>
+    ({ run: true, run_id: runId, task_id: taskId, url: plan.url, cases: plan.cases, env_class: plan.envClass, dev_server: plan.devServer });
 
   /**
    * The decision after the code task of `lp-task-pipeline`: is a browser check due? It is when the task ended accepted and its contract has
    * qa_cases and qa_url. It reads the stored task, not the dispatch's memory: the pipeline may have outlived a plugin reload.
+   * «No check» is only ever the answer to «nothing to check»: a task that is due a check but whose acceptance receipt is not there yet parks
+   * the step (`qa-receipt`); the poll runs the check when the receipt appears, also after a reload, and ends the step blocked when it never does.
    */
   engine.register("lp.qa-gate", {
     reentrant: true,
@@ -88,11 +98,33 @@ export function registerBrowserExecutors(engine: WorkflowEngine, ctx: ServerCore
       if (!plan) return none;
       const last = listAttemptsForTask(db, runId, taskId).at(-1);
       if (!last || getAttempt(db, last.id)?.state !== "accepted") return none;
-      for (const until = Date.now() + RECEIPT_WAIT_MS; listStageReceipts(db, runId, taskId).find((item) => item.stageId === "acceptance-receipt")?.state !== "passed";) {
-        if (Date.now() > until || c.signal.aborted) return none;
+      for (const until = Date.now() + RECEIPT_WAIT_MS; !acceptanceReceiptPassed(runId, taskId) && Date.now() <= until && !c.signal.aborted;) {
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
-      return { output: { run: true, run_id: runId, task_id: taskId, url: plan.url, cases: plan.cases, env_class: plan.envClass, dev_server: plan.devServer } };
+      if (acceptanceReceiptPassed(runId, taskId)) return { output: gateRun(runId, taskId, plan) };
+      return { wait: { kind: "qa-receipt", detail: { runId, taskId, attemptId: last.id, startedAt: Date.now() } } };
+    },
+    poll: async (step) => {
+      const detail = step.await.detail as { runId?: string; taskId?: string; attemptId?: string; startedAt?: number } | undefined;
+      if (!detail?.runId || !detail.taskId) return { error: "qa_gate_lost_task: the waiting gate does not say which task's acceptance it waits for" };
+      const contract = taskV2Schema.safeParse(getTask(db, detail.taskId)?.contract);
+      const plan = contract.success ? taskQaPlan(contract.data) : null;
+      if (!plan) return { error: `qa_gate_lost_plan: task ${detail.taskId} no longer carries qa_cases and qa_url` };
+      if (acceptanceReceiptPassed(detail.runId, detail.taskId)) return { output: gateRun(detail.runId, detail.taskId, plan) };
+      if (detail.attemptId && getAttempt(db, detail.attemptId)?.state !== "accepted") return { error: `qa_gate_not_accepted: attempt ${detail.attemptId} stopped being accepted before its acceptance receipt appeared` };
+      if (Date.now() - (detail.startedAt ?? 0) > RECEIPT_BOUND_MS) return { error: `qa_receipt_missing: the task is accepted and carries qa_cases and qa_url, but its acceptance receipt did not appear in ${RECEIPT_BOUND_MS / 60_000} minutes; the browser check was not run` };
+      return null;
+    },
+  } as NodeExecutor);
+
+  // The verdict of the check: a check that failed, was blocked or could not be run leaves the graph run failed. The `qa` step before it keeps the reply.
+  engine.register("lp.browser-qa.verdict", {
+    reentrant: true,
+    run: async (c: StepContext) => {
+      const state = str(c.resolve("qa.state")), reply = c.resolve("qa.reply") as Row | null;
+      const reason = str(reply?.reason) || str((reply?.stage as Row | undefined)?.reason) || str(reply?.error);
+      requireGreen("browser_qa", [{ stage: "browser-qa", state, reason }]);
+      return { output: { state } };
     },
   } as NodeExecutor);
 
@@ -193,7 +225,10 @@ export async function runBrowserQaGraph(ctx: ServerCore, input: { pmThreadId: st
     runtime: { ctx, services, pmThreadId: input.pmThreadId, projectId: input.projectId, runId: input.runId } satisfies ChainRuntime,
     link: { projectId: input.projectId, runId: input.runId, taskId: input.taskId },
   });
-  const out = stopped(await started.done);
+  const summary = await started.done;
+  // A red verdict fails the graph run (its `verdict` step), but the tool still answers with the check's own reply, read from the `qa` step.
+  const checked = summary.status === "failed" && engine.journal.steps(summary.runId).find((step) => step.node_id === "qa" && step.state === "succeeded");
+  const out = checked ? JSON.parse(checked.output_json ?? "{}") as Row : stopped(summary);
   const reply = (out.reply ?? {}) as Row;
   if (out.state === "error") throw new Error(str(reply.error) || "browser check failed");
   return reply;
