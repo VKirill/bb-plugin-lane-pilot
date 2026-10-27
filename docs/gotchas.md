@@ -2,7 +2,7 @@
 title: Cross-cutting gotchas
 type: gotchas
 created: 2026-10-10
-updated: 2026-10-26
+updated: 2026-10-27
 status: active
 confidence: medium
 tags: [gotchas, runtime, failure-modes]
@@ -28,6 +28,7 @@ sources:
   - packages/kit/src/spawn-async.ts
   - packages/kit/src/output-capture.ts
   - src/rooms/native-agent/server/helper-bb-shim.ts
+  - src/rooms/native-agent/native-dispatch.ts
   - src/rooms/stability/server/deploy-drain.ts
   - src/rooms/core/server/lifecycle-events.ts
   - packages/thread-observe/src/signals.ts
@@ -49,7 +50,7 @@ TL;DR: Workspace mode, host capabilities, event delivery, and isolated test setu
 
 ## Writer workspace modes
 
-- A folder without Git uses live-folder snapshots and rollback backups; it has no worktree, commit, or merge. Within one plugin instance, admitted tasks hold their path ownership until their writer loop ends. Another live-folder task waits; for Git workspaces, another task waits when its area or owned paths overlap (`src/rooms/writer/server/start.ts:88-95`, `:289-347`, `:501`, `:1059-1063`). Snapshots are capped at 50,000 paths, and files above 20 MiB use size/mtime fingerprints (`src/rooms/writer/live-folder.ts:5-22`, `:89-111`).
+- A folder without Git uses live-folder snapshots and rollback backups; it has no worktree, commit, or merge. In the same project and checkout, a queued task waits behind an admitted task when the workspace is a live folder, the task areas match, or owned paths overlap. Queued tasks still waiting on dependencies do not block others; dependent tasks are exempted from waiting on their prerequisite, and different checkouts wait only for overlapping paths (`src/rooms/writer/server/start.ts:337-357`). The admission hold is in memory and spans redo/fallback attempts (`src/rooms/writer/server/start.ts:89-96`, `:322-335`, `:526`, `:1084-1088`). Snapshots are capped at 50,000 paths, and files above 20 MiB use size/mtime fingerprints (`src/rooms/writer/live-folder.ts:5-22`, `:89-111`).
 - Live-folder backups retain seven days of data and refuse owned-file sets above 2 GiB (`src/rooms/writer/live-folder.ts:20-22`). Snapshot output has its own 6 MiB ceiling because host calls cap `runCommand` output (`src/rooms/writer/live-folder.ts:23-32`).
 - Task ownership filters snapshot paths through `owns_paths` and `never_touch`; the backup listing walks every file and symlink under the task's owned roots, including clean files and nested repositories (`src/rooms/writer/live-folder.ts:197-212`, `:215-253`).
 - A snapshot cap or malformed response returns a concrete refusal reason; dispatch must not treat it as an empty snapshot (`src/rooms/writer/live-folder.ts:119-139`).
@@ -58,11 +59,11 @@ TL;DR: Workspace mode, host capabilities, event delivery, and isolated test setu
 
 A repeat dispatch of the same task id, contract, and plan within 30 minutes returns the existing task when its latest attempt is neither blocked nor canceled; before an attempt exists, it returns the existing task only if no stage receipt is blocked or failed (`src/rooms/writer/server/dispatch.ts:98-111`, `:184-186`). A task from the same task-id family is rejected while a sibling attempt is open or parked, except `mainfix` tasks (`src/rooms/writer/server/dispatch.ts:114-122`, `:187-192`).
 
-A task dispatched in a run with `run_gate=pre-merge` is stored, then receives a blocked `run-gate` receipt and skipped PM-read, plan-critique, specialist-review, writer-agent, verification, and acceptance-receipt stages; dispatch returns before creating an attempt (`src/rooms/writer/server/dispatch.ts:211-220`).
+A task dispatched in a run with `run_gate=pre-merge` is created with its canonical plan, receives a blocked `run-gate` receipt and skipped PM-read, plan-critique, specialist-review, writer-agent, verification, and acceptance-receipt stages, and blocks the run. Dispatch returns this result before creating an attempt (`src/rooms/writer/server/dispatch.ts:226-243`).
 
 If a reload interrupts dispatch before the ownership base is taken, recovery restarts its stored stages for the same attempt when the workflow engine has a pipeline record; helper stages restart except a passed PM-read. It blocks with a reason when the engine is off, no pipeline record exists, the base was taken, or the resume limit was exceeded (`src/rooms/writer/server/dispatch.ts:608-645`). A writer reopened after a PM answer or contract fix is sent directly back into its existing thread and skips admission waits it already passed on the first start (`src/rooms/writer/server/reopen-attempt.ts:77-111`, `src/rooms/writer/server/start.ts:417-423`).
 
-After a task passes writer admission, it holds its ownership paths through its redo and fallback attempts. A queued task in the same project and checkout waits when its `owns_paths` overlap or its area matches; the hold is in memory and is released when the writer loop finishes (`src/rooms/writer/server/start.ts:63-70`, `:254-305`, `:422-423`, `:954-958`).
+After a task passes writer admission, it holds its checkout against relevant queued tasks through its redo and fallback attempts. In a Git checkout, the blocker predicate checks same area or overlapping `owns_paths`; in a live folder, any other task in the same checkout waits. Dependency ordering can exempt a task from blocking or being blocked to avoid deadlock (`src/rooms/writer/server/start.ts:337-357`). The admitted-task map is per core instance and released at the end of the writer loop (`src/rooms/writer/server/start.ts:89-96`, `:322-335`, `:526`, `:1084-1088`).
 
 On reload recovery, a writer thread found idle or errored while its attempt is still running is restarted through `startWriterTask` with `turnSent: true`; that re-enters the current writer turn in the same thread with its saved workspace and prior failure context. A cancellation observed during recovery becomes canceled; a missing matching thread ends as a spawn failure, and an ambiguous scan blocks the attempt (`src/rooms/stability/server/reconcile.ts:82-109`, `:111-145`).
 
@@ -82,11 +83,11 @@ Stability breakers are persisted across plugin reloads and restored only for the
 
 OpenCode v2 runs every session in one shared service per host, so a thread's process environment cannot change its config. Lane Pilot's OpenCode writers get `agent=lane-pilot` (the lane hooks act only under a `lane-` agent) and a git-excluded `.opencode/opencode.jsonc` that turns OpenCode's own compaction off; a project's own config is kept (`src/rooms/core/server/pm-spawn.ts:88-124`, `src/rooms/writer/server/skill-materialize.ts:13-21`).
 
-Codex, OpenCode (`opencode2`, which sets them as the session's shell environment) and Cursor helpers use the BB shim contributor. Only Lane Pilot threads with role metadata receive `LANE_PILOT_ROLE` and a host-prepared wrapper `PATH`; PM and owner threads are left alone (`src/rooms/native-agent/server/helper-bb-shim.ts:5-18`, `:63-82`). A host that reports an unknown `prepareBbShim` call is allowed to start without wrappers, but other preparation failures reject the helper start. If thread metadata cannot be read, the helper starts without wrappers (`src/rooms/native-agent/server/helper-bb-shim.ts:45-76`).
+Codex, OpenCode (`opencode2`) and Cursor helper providers get environment entries only when a thread id and non-PM Lane Pilot role are available. Those entries include `LANE_PILOT_ROLE` and, when host preparation succeeds, a guarded `PATH`. Unknown `prepareBbShim` calls leave the marker but omit the wrapper path; other preparation failures reject environment resolution. If metadata lookup fails, it returns no entries. A Codex writer also receives a task-specific `CODEX_HOME` when `worker.strict_user` is on and the host creates it (`src/rooms/native-agent/server/helper-bb-shim.ts:19-22`, `:43-64`, `:71-98`).
 
 Reload drain covers checkout-writing host methods and `runSandboxedCommand` acceptance checks. Other host calls bypass the drain; an active drain blocks new covered calls while existing calls finish, and an expired drain stops blocking after 20 minutes (`src/rooms/stability/server/deploy-drain.ts:1-25`). A lifecycle drain can reach its deadline with calls still in flight and records `clean: false` with their method names and ages (`src/rooms/stability/server/deploy-drain.ts:65-79`).
 
-Before saving a non-dry-run tick, self-repair drops the oldest eligible signatures while its serialized state exceeds 200 KiB; it does not prune signatures with a worktree or pending spawn. Loading state truncates each stored sample reason to 1,000 characters (`src/rooms/self-repair/server/self-repair.ts:406`, `:410-423`); the repair prompt separately clips displayed reasons to 600 characters (`:302-304`).
+Before saving a non-dry-run tick, self-repair drops the oldest eligible signatures while its serialized state exceeds 200 KiB; it does not prune signatures with a worktree or pending spawn. Loading state truncates each stored sample reason to 1,000 characters, and the repair prompt clips displayed incident reasons to 600 characters (`src/rooms/self-repair/server/self-repair.ts:188-195`, `:408-412`, `:345-347`).
 
 The self-repair prompt tells its agent to contact a live PM only when that PM must act; for an idle PM it puts the next action in the repair report (`src/rooms/self-repair/server/self-repair.ts:374-385`). A queued-attempt incident is collected only after two hours with no working attempt in the run and no other recent non-queued attempt; a dependency in a holding state or still inside the blocked-dependency redo window suppresses that incident (`src/rooms/self-repair/server/self-repair.ts:122-129`, `:426-439`, `:483-497`). If a fallback chain ends without acceptance, its last retry-eligible attempt transitions to `blocked` (`src/rooms/writer/server/start.ts:843-847`).
 

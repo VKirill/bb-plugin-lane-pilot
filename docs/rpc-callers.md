@@ -2,11 +2,12 @@
 title: RPC and host-call contracts
 type: component
 created: 2026-09-30
-updated: 2026-10-26
+updated: 2026-10-27
 status: active
 confidence: medium
 tags: [rpc, contracts, host-api]
 sources:
+  - server.ts
   - src/rooms/core/server/rpc.ts
   - src/rooms/core/server/rpc-timing.ts
   - src/rooms/contracts/index.ts
@@ -70,11 +71,21 @@ Keep BB app-to-server calls and plugin-server-to-host calls typed independently.
 
 ### `rpcKnowledge` contract flow
 
-The route families, input validation, result variants, and failure behavior are documented in [RPC route details](rpc-details.md).
+1. `rpcKnowledge` declares council reads/actions, routing hints, rule proposal and scan operations, then spreads the Anamnesis methods and declares session-memory, lesson, memory-record, documentation, usage, secret, Jev-provider, and workspace-provider routes (`src/rooms/contracts/rpc-knowledge.ts:15-62`, `:63-131`, `:133-250`).
+2. Each route uses a strict input schema; its output is structured, a declared union, or `z.unknown()` for handler-defined results. Bounds include text lengths, enum selections, list sizes, date/range formats, and optional filters (`src/rooms/contracts/rpc-knowledge.ts:16-236`).
+3. `registerRpc` combines handlers from the corresponding domain factories, including session memory, insights, token usage, secrets, Jev providers, and workspace providers, then registers the complete app contract (`src/rooms/core/server/rpc.ts:48-65`).
+4. Contract validation rejects malformed payloads before handlers run. Valid calls can return route-specific empty, nullable, or status results; handler throws propagate through the timing wrapper (`src/rooms/contracts/rpc-knowledge.ts:16-236`, `src/rooms/core/server/rpc-timing.ts:12-40`).
+
+| Route group | Branches and outputs | Failure behavior |
+|---|---|---|
+| Council, routing, rules | Council list/detail/defaults/say/stop; routing stats; rule proposal, scan, analyzer and audience routes (`src/rooms/contracts/rpc-knowledge.ts:16-61`, `:86-89`, `:116-131`). | Invalid ids, bounds or enums fail strict schema validation. |
+| Session memory | Project lookup, bounded writes/search, core/list reads, lesson proposal and record deletion (`src/rooms/contracts/rpc-knowledge.ts:63-101`). | Storage/handler failures reject; route-specific not-found or stored flags come from handlers. |
+| Docs and usage | Docs overview/recheck, token usage range/month/project filters, attempt metrics and sync/rebuild (`src/rooms/contracts/rpc-knowledge.ts:103-204`). | Invalid ranges/dates reject validation; rebuild can return `started:false` while a sync is active. |
+| Provider/security | Secret issuance journal, Jev provider status/save/test, workspace provider status/reset (`src/rooms/contracts/rpc-knowledge.ts:204-236`). | Key material is not in route output; provider availability is represented by result fields. |
 
 ### `rpcShell` contract flow
 
-1. The map spreads schedule methods first, then declares preferences, locale, remembered project, sections, projects, globals, inventory, and agent-profile methods; each object is strict (`src/rooms/contracts/rpc-shell.ts:1-8`, `:12-32`, `:33-72`, `:74-109`).
+1. The map spreads `scheduleRpcContract` first, then declares preferences, locale, remembered project, sections, projects, globals, inventory, and agent-profile methods; each route's input object is strict (`src/rooms/contracts/rpc-shell.ts:35-47`, `:50-72`, `:74-109`).
 2. `get_preferences` normalizes unknown saved locale values to `auto`, resolves that value with the UI's suggested locale, stores the resolved `en|ru` locale for owner-facing text, and returns last project or null. `set_locale` stores `auto|en|ru` and records the resolved `en|ru` value; auto uses the suggested locale (`src/rooms/contracts/rpc-shell.ts:8-15`, `src/rooms/settings/server/rpc/preferences.ts:15-29`). Council and self-repair owner forms, plus workflow human-step detail strings, use explicit `en|ru` preference first, then the last resolved locale, then Russian (`src/rooms/relay/server/owner-locale.ts:1-28`, `src/rooms/council/server/council.ts:167`, `src/rooms/workflow/server/workflow-executors.ts:171`, `src/rooms/self-repair/server/self-repair.ts:616`).
 3. Project and section reads return lists; section listing delegates to the shared Project Folders helper. Global reads parse stored defaults and revision, list profiles, and attach host data; host-list failure becomes an empty host list (`src/rooms/contracts/rpc-shell.ts:20-60`, `src/rooms/settings/server/rpc/preferences.ts:35-64`).
 4. `get_agent_inventory` uses explicit project/host ids when given, otherwise falls back to remembered/first visible project and connected/first host. It asks the catalogs for skills and host MCP servers where those ids resolve; inventory groups preserve ready, unavailable, or error status (`src/rooms/contracts/rpc-shell.ts:62-72`, `src/rooms/settings/server/rpc/preferences.ts:66-104`, `packages/contracts/src/schemas.ts:152-156`).
@@ -97,6 +108,22 @@ Project and section list errors can reject the handler call; global host-list er
 | Agent inventory | Project and host ids are nullable; each resource category has a status and optional error. | An unavailable catalog stays distinct from an empty list. |
 
 These distinctions are declared by the schemas; they do not themselves authorize access or decide write conflicts (`src/rooms/contracts/rpc-shell.ts:62-109`, `packages/contracts/src/schemas.ts:152-156`).
+
+### `rpcOps` and cockpit handlers
+
+1. `rpcOps` declares run control, retry/resume, statistics, deploy, self-repair, stack, harness, and cockpit route schemas. Inputs are strict; several complex outputs remain `z.unknown()` and take their result shape from handler implementations (`src/rooms/contracts/rpc-ops.ts:4-27`, `:36-93`, `:95-250`).
+2. `cockpitRpc(ctx, services)` captures SQLite, BB KV, and an on-demand host client, then returns the cockpit handlers for Today, workers, memory, forge, designer, subscription windows, screen impressions, task/request/queue actions, updates, and fault reports (`src/rooms/cockpit/server.ts:17-23`, `:25-128`).
+3. Read handlers aggregate attempts, token usage, phases, actions, capability receipts, and the design journal. Mutation handlers persist seen/fault/queue state or send an instruction to the active project PM (`src/rooms/cockpit/server.ts:25-49`, `:61-106`, `:121-126`).
+4. Run-scoped memory actions require a checkout and host; forge/request calls require an active PM thread. Host and thread-send failures propagate. Missing task detail returns `null`; seen/fault KV reads default to empty maps or lists (`src/rooms/cockpit/server.ts:50-59`, `:61-66`, `:77-92`, `:113-126`).
+
+| Cockpit branch | Inputs and result | Failure behavior |
+|---|---|---|
+| Read views | Project and run ids produce aggregates or task detail (`src/rooms/cockpit/server.ts:25-49`, `:113-120`). | Missing task detail is `null`; malformed saved task JSON can throw. |
+| Memory action | `lint`, `index`, `tags`, or `consolidate` runs on the run checkout (`src/rooms/contracts/rpc-ops.ts:238-240`, `src/rooms/cockpit/server.ts:50-59`). | Missing checkout/host throws; command completion returns exit code and clipped output. |
+| Request/forge | Project, kind and text/brief are sent to the active PM thread (`src/rooms/contracts/rpc-ops.ts:241`, `:246`, `src/rooms/cockpit/server.ts:61-66`, `:87-93`). | No active PM thread throws. |
+| Queue update | Up to 50 task ids receive hold, release or priority changes (`src/rooms/contracts/rpc-ops.ts:247`, `src/rooms/cockpit/server.ts:95-107`). | Missing priority targets and absent task ids are skipped and omitted from `changed`. |
+| Designer/windows | Designer returns ratios, trained conditions, readiness and up to 20 recent journal entries; windows forwards the host usage-window call (`src/rooms/cockpit/server.ts:68-75`). | Host call rejection propagates; designer KV read failure returns an empty journal. |
+| Seen/fault/update | Seen increments views and caps added duration at one hour; faults keep the newest 200 records; update runs report or apply with 60- or 600-second command timeout (`src/rooms/cockpit/server.ts:77-85`, `:108-112`, `:121-126`). | Read errors for seen/fault default to empty state; KV writes and update host failures propagate. |
 
 ### Memory routes and accepted-task maintenance
 
@@ -126,7 +153,7 @@ RPC schemas use strict object validation at method boundaries (`src/rooms/contra
 
 ## Public API or commands
 
-`rpcContract` is exported from the contracts room and re-exported by `server.ts` for BB discovery (`src/rooms/contracts/index.ts:15-27`, `server.ts:52-53`). See [Host RPC contract](rpc-callers/host-contract.md) for `hostContract` registration, validation, execution modes, outcomes, and failures; see [Server core construction](rpc-callers/create-core.md) for how `createCore` builds the shared host client and handler context. `runOnHost` wraps `runCommand` and supplies the default host transport deadline (`packages/host-calls/src/run-on-host.ts:8-31`).
+`rpcContract` is assembled from the room maps in the contracts room and re-exported by the root `server.ts` entry for BB discovery (`src/rooms/contracts/index.ts:18-27`, `server.ts:75`). See [Host RPC contract](rpc-callers/host-contract.md) for `hostContract` registration, validation, execution modes, outcomes, and failures; see [Server core construction](rpc-callers/create-core.md) for how `createCore` builds the shared host client and handler context. `runOnHost` wraps `runCommand` and supplies the default host transport deadline (`packages/host-calls/src/run-on-host.ts:8-31`).
 
 `main` in `record_and_guard.py` requires a log path and guard path, otherwise prints usage and returns exit code 2. It reads stdin as JSON, substitutes `{}` on JSON syntax failure, records the unmodified parsed payload and raw/normalized agent markers as one JSONL line, and only adds `agent_type: lane-pilot-pm` to the subprocess payload when the input is a mapping with no agent type and `LANE_PILOT_PM=1` (`scripts/record_and_guard.py:19-41`). It invokes the guard with the current Python executable, JSON stdin, inherited environment plus `AGENT_HOOK_CLIENT=claude`, and returns the child exit code; log-write or process-launch exceptions are not caught (`scripts/record_and_guard.py:42-49`).
 
@@ -144,6 +171,7 @@ The RPC contract is a shape contract; authorization and ownership checks remain 
 - [Lane Pilot architecture](architecture.md)
 - [Protecting Lane Pilot database access](decisions/2026-10-08-lane-pilot-data-db-access.md)
 - [Lane Pilot overview](overview.md)
+- [Shared packages](packages.md)
 - [RPC contract composition and route families](rpc-callers/contract-map.md)
 - [Server core construction](rpc-callers/create-core.md)
 - [Handoff message](rpc-callers/handoff-message.md)

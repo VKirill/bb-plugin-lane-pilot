@@ -2,7 +2,7 @@
 title: The baseline before a writer and the regression pass after acceptance
 type: component
 created: 2026-10-22
-updated: 2026-10-26
+updated: 2026-10-27
 status: active
 confidence: medium
 tags: [baseline, regression, bisect, sma, acceptance]
@@ -41,8 +41,8 @@ TL;DR: before a task's first writer starts, its `verification[]` runs once on th
 
 | Mode or state | Branch and failure handling |
 |---|---|
-| `baseline.already_built=notify` | Reports that every check already passes and continues to the writer; this is the default (`src/rooms/baseline/server/baseline.ts:142-149`). |
-| `baseline.already_built=stop` | Blocks the attempt and returns the base evidence to the PM (`src/rooms/baseline/server/baseline.ts:142-149`). |
+| `baseline.already_built=notify` | Reports that every check already passes and continues to the writer; this is the default (`src/rooms/baseline/logic.ts:24`, `:35-41`, `src/rooms/baseline/server/baseline.ts:161-168`). |
+| `baseline.already_built=stop` | Blocks the attempt and returns the base evidence to the PM (`src/rooms/baseline/logic.ts:35-41`, `src/rooms/baseline/server/baseline.ts:161-168`). |
 | Red-on-base gate | For configured risk levels, all checks passing on base blocks the task; skipped or unknown checks prevent the all-green conclusion (`src/rooms/baseline/logic.ts:1-100`). |
 | Regression check red on task merge | Records `unstable`; it is not bisected (`src/rooms/baseline/server/regress.ts:183-193`). |
 | Worktree, host, or check trouble | Records an unknown result and allows writer start to continue (`src/rooms/baseline/server/baseline.ts:103-129`, `:150-152`). |
@@ -51,18 +51,34 @@ TL;DR: before a task's first writer starts, its `verification[]` runs once on th
 
 ### How it works
 
-1. Writer start invokes preflight before spawning a writer, except for resumed turns, live folders, and mainfix tasks (`src/rooms/writer/server/start.ts:560-565`).
+1. Writer start invokes preflight before reusing an area writer or spawning a fresh writer only when there is no writer thread, the turn was not already sent, the workspace is not a live folder, and the task is not a mainfix (`src/rooms/writer/server/start.ts:600-605`).
 2. Preflight estimates check duration, filters checks that exceed the cap or need secrets, runs eligible checks on a throwaway base worktree, and stores the result (`src/rooms/baseline/server/baseline.ts:82-110`, `:132-149`).
 3. The already-built and red-on-base policies decide whether the writer proceeds or the attempt blocks; preflight errors are logged and do not throw (`src/rooms/baseline/server/baseline.ts:132-152`, `src/rooms/baseline/logic.ts:1-100`).
 
 | Mode or failure | Result |
 |---|---|
-| `notify` | Continues and tells the PM that all checks already passed on base (`src/rooms/baseline/server/baseline.ts:142-149`). |
-| `stop` | Blocks the attempt with the baseline evidence (`src/rooms/baseline/server/baseline.ts:142-149`). |
+| `notify` | Continues and tells the PM that all checks already passed on base; this is the default (`src/rooms/baseline/logic.ts:24`, `:35-41`, `src/rooms/baseline/server/baseline.ts:161-168`). |
+| `stop` | Blocks the attempt with the baseline evidence (`src/rooms/baseline/logic.ts:35-41`, `src/rooms/baseline/server/baseline.ts:161-168`). |
 | All required checks green for a gated task | Blocks under the red-on-base policy (`src/rooms/baseline/logic.ts:1-100`). |
 | Error or timeout | Records an unknown/partial result and lets writer start continue (`src/rooms/baseline/server/baseline.ts:113-129`, `:150-152`). |
 
-`services.baseline.preflight` is called in `startWriterTask` (`src/rooms/writer/server/start.ts`) right after the task passed the waits and before the area's hot writer or a fresh writer is asked. It is skipped for a mainfix (it has its own preflight: its checks must still be red), for a folder without git (no base to run on), and for an attempt that arrives with a writer thread already (a reload, a PM answer). It never throws: any trouble is a record and the attempt starts.
+`services.baseline.preflight` is called in `startWriterTask` after admission waits and before the area's hot writer or fresh writer is selected. It is skipped when a writer thread already exists, `turnSent` is true, the workspace is a live folder, or the task is a mainfix. Mainfix checks have their own current-main preflight; baseline preflight errors are logged and do not throw (`src/rooms/writer/server/start.ts:600-615`, `src/rooms/baseline/server/baseline.ts:132-152`).
+
+### `createBaseline`
+
+1. It reads project/run-scoped settings, returns without a record when baseline is disabled or the task has no verification checks, and reuses a prior same-check record unless its action was `stopped` (`src/rooms/baseline/server/baseline.ts:38-40`, `:62-71`).
+2. It asks the project host for the base commit. A missing Git base records skipped checks and proceeds; otherwise it retrieves cached command results and plans uncached checks under the total and per-check time cap using historical duration estimates (`src/rooms/baseline/server/baseline.ts:43-47`, `:72-93`).
+3. If checks must run, it acquires one baseline slot per project, creates a worktree at that base, runs the planned checks, maps host errors to `unknown` and exit results to `green` or `red`, then releases the slot and removes the worktree. The await is bounded by `2 × timeCap + 60` seconds; late results become unknown while cleanup continues (`src/rooms/baseline/server/baseline.ts:95-129`).
+4. Before applying `already_built`, it stops checks proven unrunnable or checks red only in files outside the task's ownership. It also stops tasks subject to `checks.require_red_on_base` when their checks are vacuous on the base (`src/rooms/baseline/server/baseline.ts:132-159`).
+5. It records the verdict and action. An `already_built` result notifies the PM; `notify` proceeds, while `stop` returns a `verdict_block`. Any unexpected exception is logged and returns `stop: null`, allowing the writer start to continue (`src/rooms/baseline/server/baseline.ts:161-171`).
+
+| Condition or mode | Outcome | Failure behavior |
+|---|---|---|
+| Disabled (`timeCapSec=0`), no checks, or matching prior non-stopped answer | No new baseline run; writer continues (`src/rooms/baseline/server/baseline.ts:65-71`). | Settings lookup failure uses parsed defaults (`:38-40`). |
+| No Git base | Records skipped/unknown evidence and proceeds (`src/rooms/baseline/server/baseline.ts:74-80`). | Host lookup errors are treated as no ready base (`:43-47`). |
+| Check/worktree/host failure or timeout | Records unknown checks and proceeds unless an independent gate stops the task (`src/rooms/baseline/server/baseline.ts:103-129`). | Recording failure is logged; the result may have no saved row (`:49-55`). |
+| Unrunnable/outside-owned red check or required-red gate | Records `stopped` and returns a block before writer start (`src/rooms/baseline/server/baseline.ts:132-159`). | PM notice send errors are swallowed; the task remains stopped. |
+| `already_built=notify` / `stop` | Notify sends the PM a message and proceeds; stop returns a block with evidence (`src/rooms/baseline/server/baseline.ts:161-168`). | A PM send failure does not change the proceed/stop result (`:167`, `:179-188`). |
 
 - **Where it runs.** A throwaway worktree of the base checkout's HEAD on the project's host (`rollback.kit.makeWorktree`, dependencies linked like a writer's), the checks through the same runner as the acceptance (`services.runVerification`: the host sandbox, a failing check run once more). The worktree is removed afterwards. One baseline at a time per project (a pool slot `baseline:<project>`).
 - **What is bounded.** `baseline.time_cap_sec` (default 300, 0 turns the baseline off) is the sum of the estimated durations of the checks that run. The estimate is the p95 of the check's last green runs (`lane_pilot_check_duration`) when there are three, else a nominal 30 s or its own `timeout_sec` when lower. A check over the cap, or one that carries `secrets`, is skipped and says so; the rest are taken in order while their estimates fit. Each check is cut at `min(its timeout, the cap)`, and the whole wait at `2 × cap + 60 s` (a run that outlives it finishes and removes its worktree on its own, and the attempt starts without an answer).
@@ -79,6 +95,16 @@ TL;DR: before a task's first writer starts, its `verification[]` runs once on th
 1. Select recent accepted tasks and eligible checks, excluding tasks without a merge commit or usable checks (`src/rooms/baseline/server/regress.ts:95-132`).
 2. Run each check on current main within per-check and overall budgets; when a check is red, rerun it at the task's merge commit to distinguish an unstable check from a regression (`src/rooms/baseline/server/regress.ts:204-260`, `:183-202`).
 3. Bisect a confirmed regression within the configured commit limit, store the finding, and expose it through list/close routes (`src/rooms/baseline/server/regress.ts:138-158`, `:193-202`, `src/rooms/baseline/server/rpc.ts:7-13`).
+
+`createRegression` builds a pass that reads settings, chooses candidate accepted tasks, groups them by host/checkout, reads current main, and creates a shared main worktree per checkout. It runs each distinct eligible check once, compares red checks at the task's merge commit, and bisects only checks green at merge. Green checks close open findings; non-dry runs persist the pass summary. Missing Git, no eligible candidate, worktree errors, abort/disposal, and time-budget exhaustion are reported as skipped work (`src/rooms/baseline/server/regress.ts:70-78`, `:96-135`, `:207-280`).
+
+| Option or result | Branch behavior | Outcome or failure |
+|---|---|---|
+| `plan` | Returns after candidate selection, before worktree/check execution (`src/rooms/baseline/server/regress.ts:217-225`). | Report contains selected/skipped candidates and no findings. |
+| `dryRun` | Runs checks but does not close, insert, settle, or persist findings/pass rows (`src/rooms/baseline/server/regress.ts:170-183`, `:257-278`). | Existing rows are observed without mutation. |
+| Red on main, green at task merge | Classifies as regression, then attempts bounded `git bisect` and stores the culprit/evidence (`src/rooms/baseline/server/regress.ts:138-159`, `:184-204`). | Bisect can be skipped, fail, find no commit, or name the first bad commit. |
+| Red on main and red at task merge | Classifies `unstable` and skips bisect (`src/rooms/baseline/server/regress.ts:184-196`). | If the merge-check worktree cannot be made, the pass adds an unconfirmed note and still attempts the bounded bisect (`src/rooms/baseline/server/regress.ts:187-196`). |
+| Green again on main or task reverted | Closes the open finding or settlement (`src/rooms/baseline/server/regress.ts:218-222`, `:257-262`). | Close failures do not create a replacement finding. |
 
 | Mode or failure | Result |
 |---|---|
@@ -101,6 +127,15 @@ TL;DR: before a task's first writer starts, its `verification[]` runs once on th
 The baseline server API is assembled by `baselineRpc`: `baseline_status` returns a task's stored baseline rows, while `regress_run`, `regress_list`, and `regress_close` delegate to the regression service (`src/rooms/baseline/server/rpc.ts:6-13`). The baseline service compares checks before and after merge; regression creation selects recent accepted tasks, executes eligible checks, confirms red checks on the task merge, then bisects a bounded commit range (`src/rooms/baseline/server/baseline.ts:33-92`, `src/rooms/baseline/server/regress.ts:69-128`). The acceptance card reads the baseline receipt and derives the baseline display alongside stage evidence (`src/rooms/acceptance/card.ts:26-85`).
 
 `checks.require_red_on_base` has a catalog row (s478, section stages). Plain project settings (no catalog row yet): `baseline.already_built` (`notify` | `stop`), `baseline.time_cap_sec`, `regress.nightly` (`on` | `off`), `regress.last_n`, `regress.last_days`, `regress.check_cap_sec`, `regress.budget_sec`, `regress.bisect_steps`. A bad value is the default, never a stopped task (`parseBaselineSettings`, `parseRegressSettings`).
+
+## Acceptance card projection
+
+`buildAcceptanceCard(db, {runId, taskId})` returns `null` when either task or run is absent. Otherwise it assembles the task contract, risk, captured Git base, ordered pipeline receipts with code/advisory proof labels, missing/skipped stage explanations, gate events, plan-fact evidence, baseline evidence, and attempt cost from existing storage records (`src/rooms/acceptance/card.ts:26-88`).
+
+1. It indexes stage receipts by stage, projects plan-fact fields only when a receipt exists, and adds absent or skipped stages to `notRun` (`src/rooms/acceptance/card.ts:30-55`).
+2. It reads gate events in id order and obtains base and attempt metrics; cost sums only measured attempts and keeps partial/not-measured notes (`src/rooms/acceptance/card.ts:57-64`).
+3. It appends the baseline verdict, action, mode, bounded check notes, and post-merge turned-red evidence when a baseline record exists (`src/rooms/acceptance/card.ts:66-82`).
+4. A missing task or run returns `null`; database read errors are not caught in this function (`src/rooms/acceptance/card.ts:26-32`, `:57-67`).
 
 ## Tables
 
