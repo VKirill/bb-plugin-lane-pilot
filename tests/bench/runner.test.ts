@@ -255,8 +255,44 @@ describe("bench compare: too little measured is inconclusive (review section 4)"
     expect(result.pairedTasks).toBe(2);
     expect(result.cost.pairedTasks).toBe(1);
     expect(result.verdict).toBe("inconclusive");
-    expect(result.checks.find((check) => check.name === "coverage")!.detail).toMatch(/2 paired tasks of 8 asked \(at least 4 needed\)/);
+    expect(result.checks.find((check) => check.name === "coverage")!.detail).toMatch(/2 paired tasks of 8 asked \(at least 7 needed\)/);
     expect(compareArms(a, b).verdict).toBe("inconclusive");
+  });
+
+  it("most of the asked set must be paired: 4 of 8 identical pairs is inconclusive, 7 of 8 passes", () => {
+    const half = compareArms(summarizeArm("A", [all(4)]), summarizeArm("B", [[...all(4), ...ids(8).slice(4).map(skipped)]]));
+    expect(half.verdict).toBe("inconclusive");
+    const sparse = (arm: string) => summarizeArm(arm, [[...all(4), ...ids(8).slice(4).map((id) => row(id, { state: "error", accepted: false, costState: "not_measured", costUsd: null, tokens: null, seconds: null }))]]);
+    expect(compareArms(sparse("A"), sparse("B")).verdict).toBe("inconclusive");
+    const seven = (arm: string) => summarizeArm(arm, [[...all(7), skipped("t8")]]);
+    expect(compareArms(summarizeArm("A", [all(8)]), summarizeArm("B", [all(8)])).verdict).toBe("pass");
+    expect(compareArms(summarizeArm("A", [all(7)]), summarizeArm("B", [all(7)])).verdict).toBe("pass");
+    expect(compareArms(summarizeArm("A", [all(6)]), summarizeArm("B", [all(6)])).verdict).toBe("pass");   // 6 asked: 5 needed
+    expect(seven("B").incomplete.length).toBe(1);
+  });
+
+  it("an arm that ran out of its budget before the hard half is unfinished, not a smaller set", () => {
+    const base = summarizeArm("A", [all(8)]);
+    const budget = summarizeArm("B", [[...all(4), ...ids(8).slice(4).map(skipped)]]);
+    expect(budget.incomplete[0]).toMatch(/4 task run\(s\) not run: the arm's budget ran out/);
+    // Four easy tasks look fine, and the arm is still not compared: the other four never ran.
+    const result = compareArms(base, budget);
+    expect(result.verdict).toBe("inconclusive");
+    expect(result.checks.find((check) => check.name === "coverage")!.detail).toMatch(/B: 4 task run\(s\) not run/);
+    // Even when the pairs would be enough, the unfinished arm keeps the verdict back.
+    const late = summarizeArm("B", [[...all(7), skipped("t8")]]);
+    expect(compareArms(base, late).verdict).toBe("inconclusive");
+  });
+
+  it("a pass says «not worse», and only a task that failed on A and passes on B makes it «better»", () => {
+    const base = summarizeArm("A", [all(4)]);
+    const same = compareArms(base, summarizeArm("B", [all(4)]));
+    expect(same).toMatchObject({ verdict: "pass", improvements: [] });
+    expect(renderComparison(same)).toMatch(/Verdict: PASS \(not worse on every criterion measured; no improvement shown/);
+    const weak = summarizeArm("A", [[row("t1"), row("t2", { state: "not_accepted", accepted: false }), row("t3"), row("t4")]]);
+    const better = compareArms(weak, summarizeArm("B", [all(4)]));
+    expect(better).toMatchObject({ verdict: "pass", improvements: ["t2"] });
+    expect(renderComparison(better)).toMatch(/not worse on every criterion, and better on t2/);
   });
 
   it("a cost or a time measured on fewer than two pairs compares nothing; a real regression with enough coverage still fails", () => {

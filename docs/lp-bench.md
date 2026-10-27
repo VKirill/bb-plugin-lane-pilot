@@ -135,7 +135,8 @@ model or another edit; three numbers: how many stages passed, what it cost, how 
 
 `src/rooms/bench/compare.ts:90`. Paired by task: tasks passed, stages passed, total cost on the tasks where both arms measured it (the rest are listed as not measured),
 median time, the list of flips. A task passes on an arm when it was accepted in more than half of that arm's repeats. The change is accepted when stages are
-not worse, cost and time are not worse by more than 10%, and no task that passed on A fails on B.
+not worse, cost and time are not worse by more than 10%, and no task that passed on A fails on B. It needs at least 80% of the asked tasks paired (and 3), an arm stopped by its
+budget is unfinished, and a pass reads «not worse»; it reads «better» only when a task that failed on A passes on B. There is no lower floor for a quick or canary comparison, and no A/A runner yet.
 
 `bench noise X Y` (`computeNoise`, `src/rooms/bench/compare.ts:66`) compares two identical arms: the tasks that flipped become *unstable* (reported, they cannot fail the rule), and the
 relative spread of cost and time widens the 10% tolerance. `compare` uses the newest noise record of the set, or `--noise X,Y`.

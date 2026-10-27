@@ -52,7 +52,7 @@ describe("what the hunters say is checked by code against the pack", () => {
 
 const evidence = (patch: Partial<AcceptanceEvidence> = {}): AcceptanceEvidence => ({
   merged: true, versionBefore: "0.1.268", deployedVersion: "0.1.269", drill: { version: "0.1.269", at: 20, ok: true }, deployedAt: 10,
-  canary: { version: "0.1.269", tripped: false, windowOpen: false }, bench: "pass", recurrence: { failures: 0, attempts: 25 }, trainRolledBack: false, ...patch,
+  canary: { version: "0.1.269", tripped: false, windowOpen: false }, bench: "pass", recurrence: { failures: 0, attempts: 25, exposed: true }, trainRolledBack: false, ...patch,
 });
 
 describe("acceptance of a night repair", () => {
@@ -65,9 +65,13 @@ describe("acceptance of a night repair", () => {
   it("waits for each fact in turn", () => {
     expect(decideAcceptance(evidence({ merged: false })).state).toBe("pending");
     expect(decideAcceptance(evidence({ deployedVersion: null })).reason).toMatch(/waits for the release train/);
-    // No fire drill of this version: the release train's own drill stands (a red one rolls the deploy back), so nothing waits on it.
-    expect(decideAcceptance(evidence({ drill: null })).checks.find((row) => row.name === "deploy drill")).toMatchObject({ ok: true, detail: expect.stringMatching(/release train's drill/) });
-    expect(decideAcceptance(evidence({ drill: { version: "0.1.268", at: 20, ok: true } })).checks.find((row) => row.name === "deploy drill")?.ok).toBe(true);
+    // No drill receipt of this version is no evidence: the train's rollback on a red drill is an inference, not a receipt (Astra, 2026-10-27).
+    const noDrill = decideAcceptance(evidence({ drill: null }));
+    expect(noDrill).toMatchObject({ state: "pending", action: "none", reason: expect.stringMatching(/no drill receipt/) });
+    expect(noDrill.checks.find((row) => row.name === "deploy drill")).toMatchObject({ ok: null });
+    expect(decideAcceptance(evidence({ drill: { version: "0.1.268", at: 20, ok: true } })).state).toBe("pending");
+    expect(decideAcceptance(evidence({ drill: { version: "0.1.269", at: 5, ok: true } })).state).toBe("pending");
+    expect(decideAcceptance(evidence({ drill: { version: "0.1.269", at: 20, ok: true } })).checks.find((row) => row.name === "deploy drill")?.ok).toBe(true);
     expect(decideAcceptance(evidence({ canary: { version: "0.1.269", tripped: false, windowOpen: true } })).reason).toMatch(/window is still open/);
     expect(decideAcceptance(evidence({ bench: "pending" })).state).toBe("pending");
   });
@@ -79,9 +83,9 @@ describe("acceptance of a night repair", () => {
     expect(decideAcceptance(evidence({ trainRolledBack: true })).state).toBe("rolled_back");
   });
 
-  it("a repair that stays but did not stop the class counts as a failed round; too few attempts prove nothing", () => {
-    expect(decideAcceptance(evidence({ recurrence: { failures: 2, attempts: 30 } }))).toMatchObject({ state: "accepted", recurred: true });
-    expect(decideAcceptance(evidence({ recurrence: { failures: 2, attempts: 4 } })).recurred).toBe(false);
+  it("a repair whose class recurred is not accepted: a failed round that the night reverts; too few attempts prove nothing", () => {
+    expect(decideAcceptance(evidence({ recurrence: { failures: 2, attempts: 30, exposed: true } }))).toMatchObject({ state: "red", action: "revert", recurred: true });
+    expect(decideAcceptance(evidence({ recurrence: { failures: 2, attempts: 4, exposed: true } })).recurred).toBe(false);
     expect(decideAcceptance(evidence({ bench: "unavailable" })).checks.find((row) => row.name === "bench subset")!.ok).toBeNull();
   });
 });
@@ -95,15 +99,37 @@ describe("acceptance asks for evidence, absence is not proof (review of 2026-10-
     expect(result.reason).toMatch(/no proof yet/);
   });
 
+  it("Astra's call: a quiet closed canary, no bench, no drill, the class in 10 of 10 attempts: not accepted, reverted; quiet, it is still pending", () => {
+    const quiet = { drill: null, bench: "unavailable" as const };
+    const recurred = decideAcceptance(evidence({ ...quiet, recurrence: { failures: 10, attempts: 10, exposed: true } }));
+    expect(recurred).toMatchObject({ state: "red", action: "revert", recurred: true });
+    expect(recurred.reason).toMatch(/not accepted/);
+    // Clean attempts, but no drill receipt: the repair waits for it.
+    expect(decideAcceptance(evidence({ ...quiet, recurrence: { failures: 0, attempts: 10, exposed: true } }))).toMatchObject({ state: "pending" });
+  });
+
+  it("attempts that were not exposed to the class prove nothing: no failure among them is not a fix", () => {
+    const unknown = decideAcceptance(evidence({ bench: "unavailable", recurrence: { failures: 0, attempts: 40, exposed: false } }));
+    expect(unknown.state).toBe("pending");
+    expect(unknown.reason).toMatch(/exposed to the class/);
+    // A failure of the class is a failure wherever it came from.
+    expect(decideAcceptance(evidence({ bench: "unavailable", recurrence: { failures: 1, attempts: 40, exposed: false } }))).toMatchObject({ state: "red", action: "revert" });
+    expect(decideAcceptance(evidence({ bench: "pass", recurrence: { failures: 0, attempts: 40, exposed: false } })).state).toBe("accepted");
+  });
+
+  it("a repair of the judge or the graph is judged by the bench alone, not by the recurrence of its class", () => {
+    expect(decideAcceptance(evidence({ requireBench: true, bench: "pass", recurrence: { failures: 3, attempts: 30, exposed: true } }))).toMatchObject({ state: "accepted", recurred: true });
+  });
+
   it("an inconclusive bench is no evidence either: only enough attempts of the new version, or a passed bench, accept", () => {
-    expect(decideAcceptance(evidence({ bench: "inconclusive", recurrence: { failures: 0, attempts: 3 } })).state).toBe("pending");
-    expect(decideAcceptance(evidence({ bench: "inconclusive", recurrence: { failures: 0, attempts: 3 } })).checks.find((row) => row.name === "bench subset")).toMatchObject({ ok: null });
-    expect(decideAcceptance(evidence({ bench: "inconclusive", recurrence: { failures: 0, attempts: 12 } })).state).toBe("accepted");
+    expect(decideAcceptance(evidence({ bench: "inconclusive", recurrence: { failures: 0, attempts: 3, exposed: true } })).state).toBe("pending");
+    expect(decideAcceptance(evidence({ bench: "inconclusive", recurrence: { failures: 0, attempts: 3, exposed: true } })).checks.find((row) => row.name === "bench subset")).toMatchObject({ ok: null });
+    expect(decideAcceptance(evidence({ bench: "inconclusive", recurrence: { failures: 0, attempts: 12, exposed: true } })).state).toBe("accepted");
     expect(decideAcceptance(evidence({ bench: "pass", recurrence: null })).state).toBe("accepted");
   });
 
   it("a repair of the judge or the graph needs the passed bench itself; attempts alone do not accept it", () => {
-    expect(decideAcceptance(evidence({ requireBench: true, bench: "unavailable", recurrence: { failures: 0, attempts: 40 } })).state).toBe("pending");
+    expect(decideAcceptance(evidence({ requireBench: true, bench: "unavailable", recurrence: { failures: 0, attempts: 40, exposed: true } })).state).toBe("pending");
     expect(decideAcceptance(evidence({ requireBench: true, bench: "inconclusive" })).state).toBe("pending");
     expect(decideAcceptance(evidence({ requireBench: true, bench: "pass" })).state).toBe("accepted");
     expect(decideAcceptance(evidence({ requireBench: true, bench: "fail" }))).toMatchObject({ state: "red", action: "revert" });

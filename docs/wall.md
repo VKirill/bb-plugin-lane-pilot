@@ -96,9 +96,9 @@ patch after a week). Today the exam has no unseen owner decisions, so `authorize
 nothing alone yet. The bench proof is claimed only when a runnable bench set exists, and it is enforced after the deploy, not before it (see below).
 
 After a merge the loop watches the release train (`acceptance.ts`, `decideAcceptance`): the train ran the whole suite and shipped a version; the
-drill of that version is green (else the train rolled back: the plugin runs the old version again, state `rolled_back`); the canary is quiet; the
+drill of that version is green (a red one rolls the deploy back: the plugin runs the old version again, state `rolled_back`; a version with no drill receipt of its own is not accepted, the repair waits for one and settles as `unproven` after 72 hours); the canary is quiet; the
 bench subset (`benchSubset` tasks of the newest set, arm `night-<version>` against `night-<version before>`, noise aware through `bench compare`)
-is not worse; the class stopped recurring on the new version. A tripped canary or a worse bench reverts the merge in code (a revert commit through the
+is not worse; the class stopped recurring on the new version, judged on attempts exposed to the class (the projects it was journaled in). A class that recurred in 10 or more of those attempts is not accepted: red, the merge is reverted. A tripped canary or a worse bench reverts the merge in code (a revert commit through the
 merge queue; it ships with the next release). In every red case the class stays open and the round counts as a failed move.
 
 ## The loop guard (wall ladder)

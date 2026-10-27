@@ -18,7 +18,7 @@ function world(patch: { changed?: unknown; seed?: boolean } = {}) {
     for (let i = 0; i < 5; i++) h.attempt("blocked", REASON, NOW - 3 * HOUR + i * 1000, { version: "0.1.268", task: `tf${i}` });
   }
   const state = {
-    version: "0.1.268", time: NOW, benchAvailable: true, compare: "pass" as "pass" | "fail" | "inconclusive" | "pending" | "unavailable",
+    version: "0.1.268", time: NOW, benchAvailable: true, drillReceipt: true, compare: "pass" as "pass" | "fail" | "inconclusive" | "pending" | "unavailable",
     canary: null as { version: string; tripped: boolean; windowOpen: boolean } | null,
     ensured: [] as string[], compared: [] as Array<[string, string]>, reverted: [] as string[],
     changed: (patch.changed ?? ["src/rooms/relay/server/relay.ts"]) as unknown,
@@ -31,7 +31,7 @@ function world(patch: { changed?: unknown; seed?: boolean } = {}) {
       report: async () => "", tokens: async () => 1, busy: async () => false, changedFiles: async () => state.changed as never,
       revert: async (sha) => { state.reverted.push(sha); return { ok: true, detail: "merged abc" }; },
     },
-    release: { drill: async () => null, canary: async () => state.canary },
+    release: { drill: async () => (state.drillReceipt ? { version: state.version, at: state.time + 1, ok: true } : null), canary: async () => state.canary },
     bench: {
       available: async () => state.benchAvailable,
       ensureArm: async (arm) => { state.ensured.push(arm); return "done"; },
@@ -143,6 +143,42 @@ describe("acceptance without evidence (review section 2)", () => {
     await w.wall.advance(NOW + HOUR + EVIDENCE_WAIT_MS + 1);
     expect(listRepairs(w.h.db)[0]).toMatchObject({ state: "unproven" });
     expect(fixedIn(w)).toBeNull();
+  });
+});
+
+describe("a drill receipt and the exposure of the class (Astra, 2026-10-27)", () => {
+  it("a passed bench and a quiet canary without a drill receipt of the shipped version wait; with the receipt the repair is accepted", async () => {
+    const w = world();
+    await deployed(w);
+    w.state.canary = { version: "0.1.269", tripped: false, windowOpen: false };
+    w.state.drillReceipt = false;
+    await w.wall.advance(NOW + 3 * HOUR);
+    expect(listRepairs(w.h.db)[0]).toMatchObject({ state: "deployed" });
+    w.state.drillReceipt = true;
+    await w.wall.advance(NOW + 4 * HOUR);
+    expect(listRepairs(w.h.db)[0]).toMatchObject({ state: "accepted" });
+  });
+
+  it("the class failing in 10 of 10 attempts of the shipped version in its own project: not accepted, the merge is reverted", async () => {
+    const w = world();
+    await deployed(w);
+    w.state.canary = { version: "0.1.269", tripped: false, windowOpen: false };
+    w.state.compare = "inconclusive";
+    for (let i = 0; i < 10; i++) w.h.attempt("blocked", REASON, NOW + 2 * HOUR + i * 1000, { version: "0.1.269", task: `tg${i}` });
+    await w.wall.advance(NOW + 3 * HOUR);
+    expect(listRepairs(w.h.db)[0]).toMatchObject({ state: "red" });
+    expect(w.state.reverted).toEqual(["c0ffee".padEnd(40, "1")]);
+    expect(fixedIn(w)).toBeNull();
+  });
+
+  it("clean attempts in projects the class never ran in do not accept the repair", async () => {
+    const w = world();
+    await deployed(w);
+    w.state.canary = { version: "0.1.269", tripped: false, windowOpen: false };
+    w.state.compare = "inconclusive";
+    for (let i = 0; i < 20; i++) w.h.attempt("accepted", null, NOW + 2 * HOUR + i, { version: "0.1.269", run: "run_sand" });
+    await w.wall.advance(NOW + 3 * HOUR);
+    expect(listRepairs(w.h.db)[0]).toMatchObject({ state: "deployed" });
   });
 });
 

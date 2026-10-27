@@ -22,8 +22,11 @@ export type AcceptanceEvidence = {
    * were compared and too little was measured to call it; it is no evidence either way, like `unavailable`.
    */
   bench: "pass" | "fail" | "unavailable" | "pending" | "inconclusive";
-  /** Failures of the repaired class among the attempts of the deployed version. */
-  recurrence: { failures: number; attempts: number } | null;
+  /**
+   * Failures of the repaired class among the attempts of the deployed version. `exposed`: the attempts counted are those exposed to the class (projects the
+   * class was journaled in); false when that is unknown, and then a quiet run of attempts says nothing about the class.
+   */
+  recurrence: { failures: number; attempts: number; exposed: boolean } | null;
   /** The plugin runs `versionBefore` again after a deploy: the train rolled back. */
   trainRolledBack: boolean;
   /**
@@ -74,10 +77,9 @@ export function decideAcceptance(e: AcceptanceEvidence): Acceptance {
     checks.push({ name: "deploy drill", ok: false, detail: "red" });
     return out("rolled_back", "the drill is red: the train restores the previous dist", { action: "none" });
   }
-  // The release train runs the drill on every deploy and rolls back on a red one, so the version the plugin runs had a green drill.
-  // Waiting for the weekly fire drill of this exact version never ended while versions shipped daily (night repair wr_de6a97453070,
-  // 2026-10-24: «waiting for the drill of the deployed version» through thirteen releases).
-  checks.push({ name: "deploy drill", ok: true, detail: fireDrill ? "green (fire drill of this version)" : "green: the release train's drill passed (a red one rolls the deploy back, and the plugin runs this version)" });
+  // A drill receipt of this exact version is the evidence; the train's rollback on a red one is an inference («the plugin runs it, so its drill was green»), not a
+  // receipt. Without a receipt the drill is unmeasured and the repair is not accepted on it (Astra, 2026-10-27); the wait ends in `inconclusive`, never in `accepted`.
+  checks.push({ name: "deploy drill", ok: fireDrill ? true : null, detail: fireDrill ? "green (drill receipt of this version)" : "no drill receipt for the deployed version: not evidence" });
   if (!e.canary || e.canary.version !== e.deployedVersion) {
     checks.push({ name: "canary", ok: null, detail: "no canary report for the deployed version yet" });
     return wait("waiting for the canary of the deployed version");
@@ -89,18 +91,25 @@ export function decideAcceptance(e: AcceptanceEvidence): Acceptance {
     detail: e.bench === "unavailable" ? "no runnable bench set: not compared" : e.bench === "inconclusive" ? "compared, and too little was measured to call it: no evidence either way" : e.bench });
   if (e.bench === "fail") return out("red", "the bench subset is worse than the previous version: the night reverts the merge", { action: "revert" });
   if (e.bench === "pending") return wait("the bench subset is running");
-  const recurred = Boolean(e.recurrence && e.recurrence.attempts >= RECURRENCE_MIN_ATTEMPTS && e.recurrence.failures > 0);
+  const attempts = e.recurrence?.attempts ?? 0;
+  const recurred = Boolean(e.recurrence && attempts >= RECURRENCE_MIN_ATTEMPTS && e.recurrence.failures > 0);
   checks.push({ name: "class recurrence on the new version", ok: e.recurrence ? !recurred : null,
-    detail: e.recurrence ? `${e.recurrence.failures} of ${e.recurrence.attempts} attempts${e.recurrence.attempts < RECURRENCE_MIN_ATTEMPTS ? " (too few to judge)" : ""}` : "no attempts yet" });
+    detail: e.recurrence ? `${e.recurrence.failures} of ${e.recurrence.attempts} ${e.recurrence.exposed ? "attempts exposed to the class" : "attempts (exposure to the class unknown)"}${attempts < RECURRENCE_MIN_ATTEMPTS ? " (too few to judge)" : ""}` : "no attempts yet" });
+  // A repair whose class kept failing on the new version did not do what it was made for. Nothing in these inputs measures an effect of a kept part (there is no
+  // baseline), so it is not accepted: a failed round, and the night reverts the merge. A repair of the judge or the graph is judged by the bench alone.
+  if (recurred && !e.requireBench) {
+    return out("red", `the class still happens on the new version (${e.recurrence!.failures} of ${attempts} attempts) and nothing measured shows the repair helped: not accepted, the night reverts the merge`, { action: "revert", recurred: true });
+  }
   // A quiet canary and a shipped version are the absence of a failure, not a proof. The repair stays only on a result: the bench subset passed, or enough
-  // attempts of the new version to judge its class. A repair of the judge or the graph needs the bench result itself (an unavailable bench with no
-  // attempts once read «all checks green»).
-  const judged = Boolean(e.recurrence && e.recurrence.attempts >= RECURRENCE_MIN_ATTEMPTS);
+  // attempts of the new version that were exposed to the class (attempts of projects it never ran in prove nothing). A repair of the judge or the graph needs
+  // the bench result itself (an unavailable bench with no attempts once read «all checks green»).
+  const judged = Boolean(e.recurrence?.exposed && attempts >= RECURRENCE_MIN_ATTEMPTS);
   if (e.requireBench ? e.bench !== "pass" : e.bench !== "pass" && !judged) {
     return wait(e.requireBench ? `no proof yet: a repair of the judge or the graph needs a passed bench subset (bench ${e.bench})`
-      : `no proof yet: no passed bench subset (bench ${e.bench}) and ${e.recurrence?.attempts ?? 0} of ${RECURRENCE_MIN_ATTEMPTS} attempts of the new version to judge the class`);
+      : `no proof yet: no passed bench subset (bench ${e.bench}) and ${e.recurrence?.exposed ? attempts : 0} of ${RECURRENCE_MIN_ATTEMPTS} attempts of the new version exposed to the class`);
   }
-  return out("accepted", recurred ? "the repair stays (nothing else got worse) but the class still happens: the round counts as failed"
+  if (!fireDrill) return wait("no drill receipt for the deployed version");
+  return out("accepted", recurred ? "the repair stays (the bench subset of the judge or graph repair passed) but the class still happens: the round counts as failed"
     : checks.every((check) => check.ok === true) ? "all checks green" : "no check is red and the proof holds", { recurred });
 }
 

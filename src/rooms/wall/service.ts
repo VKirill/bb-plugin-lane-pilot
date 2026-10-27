@@ -559,14 +559,21 @@ export function createWall(deps: WallDeps) {
     return await settleAcceptance(row, result, { ...acceptance, deployedAt, ...(benchScore !== undefined ? { benchScore } : {}), ...(baselineScore !== undefined ? { baselineScore } : {}), ...(benchCompare ? { benchCompare } : {}) }, now, recurrence);
   }
 
-  function recurrenceOn(classKey: string, version: string, since: number): { failures: number; attempts: number } | null {
-    const attempts = db.prepare(`SELECT a.state, a.reason FROM lane_pilot_attempt a WHERE a.harness_version=? AND a.created_at>=? AND a.state NOT IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested','canceled')`)
-      .all(version, since) as Array<{ state: string; reason: string | null }>;
-    if (!attempts.length) return null;
-    return { attempts: attempts.length, failures: attempts.filter((row) => row.state !== "accepted" && wallSignature(row.state, row.reason).classKey === classKey).length };
+  /**
+   * The class's failures among the attempts of the shipped version, out of the attempts exposed to it: those of the projects the journal saw the class in (plus any
+   * attempt that failed in the class). Attempts of other projects say nothing about a class that never ran there; with no journaled project the exposure is unknown.
+   */
+  function recurrenceOn(classKey: string, version: string, since: number): { failures: number; attempts: number; exposed: boolean } | null {
+    const rows = db.prepare(`SELECT a.state, a.reason, r.project_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE a.harness_version=? AND a.created_at>=? AND a.state NOT IN ('queued','spawn_requested','spawn_unknown','running','cancel_requested','canceled')`)
+      .all(version, since) as Array<{ state: string; reason: string | null; project_id: string }>;
+    const projects = new Set((db.prepare("SELECT DISTINCT project_id FROM lane_pilot_wall_entry WHERE class_key=?").all(classKey) as Array<{ project_id: string }>).map((row) => row.project_id));
+    const failed = (row: { state: string; reason: string | null }) => row.state !== "accepted" && wallSignature(row.state, row.reason).classKey === classKey;
+    const scope = projects.size ? rows.filter((row) => projects.has(row.project_id) || failed(row)) : rows;
+    if (!scope.length) return null;
+    return { attempts: scope.length, failures: scope.filter(failed).length, exposed: projects.size > 0 };
   }
 
-  async function settleAcceptance(row: RepairRow, result: Acceptance, acceptance: Record<string, unknown>, now: number, recurrence: { failures: number; attempts: number } | null = null): Promise<string[]> {
+  async function settleAcceptance(row: RepairRow, result: Acceptance, acceptance: Record<string, unknown>, now: number, recurrence: { failures: number; attempts: number; exposed: boolean } | null = null): Promise<string[]> {
     const payload: Record<string, unknown> = { ...acceptance, checks: result.checks, reason: result.reason, recurred: result.recurred };
     if (result.state === "pending") { updateRepair(db, row.id, { acceptance: payload }, now); return []; }
     if (result.state === "accepted") {
