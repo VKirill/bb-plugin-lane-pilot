@@ -60,6 +60,8 @@ export type PhaseRecord = {
   autoFailures?: Partial<Record<"analyze" | "plan" | "draw" | "review" | "close" | "lessons", number>>;
   /** Failed runs of each stage's workflow over the phase's whole life, across versions (a new version forgets autoFailures, not this). */
   autoFailuresTotal?: Partial<Record<"analyze" | "plan" | "draw" | "review" | "close" | "lessons", number>>;
+  /** Set before the machine's outcome for a spent loop runs (exhausted), so a pass that finds the phase still active does not run it again. */
+  exhausted?: { at: number };
   /** The machine's returns to planning after a failed verdict: what to plan for (cleared once planned) and how many so far. */
   replan?: { gaps?: string; count: number };
   /** The Lane Pilot version the failures were counted under: a new version tries the stages again. */

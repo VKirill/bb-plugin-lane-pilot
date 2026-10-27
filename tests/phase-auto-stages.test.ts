@@ -46,6 +46,7 @@ describe("the machine's pass", () => {
     let phase = start;
     let stopped = false;
     let planRefusal: Error | null = null;
+    let exhaustFails = false;
     const booked: string[] = [];
     const calls: string[] = [];
     const runs = new Map<string, { status: string; output: Record<string, unknown> | null }>();
@@ -54,7 +55,7 @@ describe("the machine's pass", () => {
       workflowEngine: Object.assign(engine, { start: (input: { workflow: { id: string } }) => { const runId = `wfrun_${runs.size + 1}`; calls.push(`start ${input.workflow.id}`); runs.set(runId, { status: "running", output: null }); return { runId, created: true, done: new Promise(() => undefined) }; },
         get: (runId: string) => ({ runId, reason: null, error: null, failedNode: null, waiting: [], stopped: false, ...runs.get(runId)! }) }) as never,
     }, {
-      exhausted: async (_phase, input) => { calls.push(`exhausted ${input.kind} ${input.stage}`); },
+      exhausted: async (_phase, input) => { calls.push(`exhausted ${input.kind} ${input.stage}`); if (exhaustFails) throw new Error("the attempt could not be canceled"); },
       api: {
         context: async (input) => { calls.push(`context ${input.docs.join(",")}`); phase = phaseAt("planning", { ...phase.record, context: { docs: [], sha: "c", signedAt: 1 } }); return phase; },
         plan: (input) => { calls.push(`plan ${input.items.length}${input.alreadyMet ? ` already_met: ${input.alreadyMet}` : ""}`); return phase; }, planCheck: async (input) => { calls.push(`planCheck ${input.decision}`); if (planRefusal) throw planRefusal; return phase; }, question: (input) => { calls.push(`question ${input.text}`); return phase; }, waveReview: () => phase, goalAudit: (input) => { calls.push(`goalAudit ${input.state}\n${input.summary}`); return phase; }, lessons: () => phase, drawing: async () => phase,
@@ -70,7 +71,7 @@ describe("the machine's pass", () => {
       now: () => 1,
       runStopped: async () => stopped,
     });
-    return { auto, calls, runs, engine, booked, failPlan: (error: Error) => { planRefusal = error; }, stop: (value = true) => { stopped = value; }, get: () => phase, finish: () => { runs.set("wfrun_1", { status, output }); } };
+    return { auto, calls, runs, engine, booked, failExhaust: () => { exhaustFails = true; }, failPlan: (error: Error) => { planRefusal = error; }, stop: (value = true) => { stopped = value; }, get: () => phase, finish: () => { runs.set("wfrun_1", { status, output }); } };
   }
   it("starts no stage workflow while the run is halted or paused, and starts it once the run goes on", async () => {
     const w = world({ decisions: [], risks: [], open_questions: [] });
@@ -221,6 +222,18 @@ describe("the machine's pass", () => {
     expect(w.calls.filter((call) => call.startsWith("exhausted"))).toEqual([]);
     expect(w.get().record.autoFailuresTotal).toBeUndefined();
     expect(w.get().record.autoFailures).toEqual({ analyze: AUTO_TRIES });
+  });
+  it("spent replans end the loop once: if the machine's outcome throws before it saves, the next passes do not book and call it again (Fable's recheck E5)", async () => {
+    const w = world(null, "succeeded", phaseAt("verification", { verification: { verdict: { state: "failed", detail: "b not accepted", inputSha: "x", at: 1, mainSha: null } }, replan: { count: 2 } } as never));
+    w.failExhaust();
+    expect(await w.auto.step(w.get())).toBe(true);
+    expect(await w.auto.step(w.get())).toBe(true);
+    expect(await w.auto.step(w.get())).toBe(true);
+    expect(w.calls.filter((call) => call === "exhausted replan replan")).toHaveLength(1);
+    expect(w.calls.filter((call) => call === "book replans_spent")).toHaveLength(1);
+    expect(w.get().record.exhausted).toEqual({ at: 1 });
+    // The failure of the outcome is booked once, so the owner and the PM can see why the phase stands.
+    expect(w.calls.filter((call) => call === "book exhaust_failed")).toHaveLength(1);
   });
   it("a run that fails counts and is run again on the next pass; the second failure ends the loop (the machine's outcome, not the PM's)", async () => {
     const w = world(null, "failed");

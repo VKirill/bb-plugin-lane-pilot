@@ -319,10 +319,17 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
     if (!due) {
       // Two machine replans did not make the verification pass: the loop of replans is spent and the machine ends it.
       if (!replansSpent(phase)) return false;
+      // The outcome runs once per verdict: marked before its side effects, so a pass that finds the phase still active (the outcome threw before it saved)
+      // does not book and run it again. A verdict newer than the mark (the phase went back to planning and failed again) is a new loop.
+      if (phase.record.exhausted && phase.record.exhausted.at >= (phase.record.verification?.verdict?.at ?? 0)) return true;
       if (await deps.runStopped?.(phase)) return true;
+      deps.save(phase.id, { ...phase.record, exhausted: { at: deps.now() } });
       deps.book(phase, "decisions", "replans_spent", `the verification failed again after ${AUTO_REPLANS} machine replans — the loop is spent, the machine ends it: scope cut, hunters, backlog`);
       await deps.exhausted(phase, { kind: "replan", stage: "replan", why: `${AUTO_REPLANS} replans did not make the verification pass; now: ${phase.record.verification?.verdict?.detail ?? "failed"}` })
-        .catch((cause: unknown) => ctx.log(`phase ${phase.id}: the ended replan loop could not be closed out: ${cause instanceof Error ? cause.message : String(cause)}`));
+        .catch((cause: unknown) => {
+          ctx.log(`phase ${phase.id}: the ended replan loop could not be closed out: ${cause instanceof Error ? cause.message : String(cause)}`);
+          deps.book(phase, "decisions", "exhaust_failed", `the machine could not close out the spent replan loop (${cause instanceof Error ? cause.message : String(cause)}); it does not try again by itself`);
+        });
       return true;
     }
     // A run the owner stopped or paused starts no stage on the machine's own; the stage is held (the PM is not poked) until it goes on.
