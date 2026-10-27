@@ -63,7 +63,7 @@ export function createWorkflowEngine(ctx: ServerCore, services: Services) {
     resumePolicy: (run) => (run.workflow_id === LP_TASK_PIPELINE || run.idem_key?.startsWith("lp-task:") ? "interrupt" : "continue"),
   });
   engineRef.current = engine;
-  registerDispatchExecutors(engine);
+  registerDispatchExecutors(engine, ctx.bb);
   // What runs once a task is accepted (memory and project life), started by the merge.
   registerAfterAcceptExecutors(engine, ctx, services);
   // The chains of workflows/: the code-only actions and the joins' reducers, then the executors that need the host (agents, the owner, code tasks, files).

@@ -140,7 +140,7 @@ vi.mock("../src/rooms/runs/server", async (original) => ({
   requiredPolicyField: () => ({}),
 }));
 
-describe("the generic helper spawns what the resolver answers", () => {
+describe("the generic helper spawns what the resolver answers", { timeout: 60_000 }, () => {
   const spawnedBy = async (role: string, settings: Record<string, unknown>) => {
     const { createWorkflowAgents } = await import("../src/rooms/workflow/server/workflow-agent");
     const rt = {

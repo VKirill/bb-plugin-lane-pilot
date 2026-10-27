@@ -46,6 +46,9 @@ export async function runGraphHelper(ctx: ServerCore, c: StepContext<ChainRuntim
     return { threadId: started.threadId, text, usage: await withUsage(bb, started.threadId) };
   } catch (cause) {
     await bb.sdk.threads.stop({ threadId: started.threadId }).catch(() => undefined);
+    // A helper that failed or was cut off still spent: the error carries what, and the engine charges the run for it.
+    const spent = await withUsage(bb, started.threadId).catch(() => ({} as Awaited<ReturnType<typeof withUsage>>));
+    if (spent.usage && cause instanceof Error) (cause as Error & { usage?: unknown }).usage = spent.usage;
     throw cause;
   } finally {
     // A reload ends the step where it stands and the next instance reads the thread again: only a step that ends here archives it.
