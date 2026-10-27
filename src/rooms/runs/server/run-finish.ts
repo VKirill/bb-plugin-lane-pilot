@@ -5,7 +5,9 @@ import { STICKY_WINDOW_MS } from "../../writer/server/sticky";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 export function cancelRejection(db: ReturnType<typeof openDatabase>, attempt: NonNullable<ReturnType<typeof getAttempt>>): string | null {
   const run = getRun(db, attempt.run_id);
-  if (!run || run.closed_at || (run.state !== "pending" && run.state !== "running")) {
+  // A blocked run that is not closed still owns its open attempts: they must be cancellable, or the run can neither be finished
+  // (it refuses while attempts are open) nor freed, and it holds the project's activation for good (live drill 2026-10-27).
+  if (!run || run.closed_at || (run.state !== "pending" && run.state !== "running" && run.state !== "blocked")) {
     return `cancel is not legal for ${run?.state ?? "missing"} run`;
   }
   if (!["queued", "spawn_requested", "spawn_unknown", "running", "cancel_requested"].includes(attempt.state)) {

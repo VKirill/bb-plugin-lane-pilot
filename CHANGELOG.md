@@ -22,6 +22,8 @@
 
 **Writers work down to 5 GB free.** The disk hold was the smaller of 15 GB and 5 % of the disk; on the Mac mini it held every writer (and the deploy drill) at 10 GB free. It is now the smaller of 5 GB and 5 %, never below 3 GB (the owner, 2026-10-27).
 
+**A blocked run can be freed.** A run that ended `blocked` with attempts still queued could neither cancel them («cancel is not legal for blocked run») nor be finished («running attempts remain»), so it held the project's activation for good — it stopped the 0.1.340 deploy drill. Attempts of an unclosed blocked run can now be cancelled, and the drill frees a leftover sandbox run before it starts.
+
 **GPT-6.1 Terra** (released 2026-10-26, $1/$5) joins the writers Jev picks from, as a standard-tier model for well-specified mid-size work.
 
 ## 0.1.339

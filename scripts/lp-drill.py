@@ -179,11 +179,29 @@ class Context:
             time.sleep(5)
         else:
             raise RuntimeError("source thread did not settle")
+        self.free_sandbox()
         rc, out, err = bb("lane-pilot", "activate", self.project, self.source)
         self.pm, self.run_id = thread_field(out, "threadId"), thread_field(out, "runId")
         if rc != 0 or not self.pm or not self.run_id:
             raise RuntimeError(f"activate failed: {(err.strip() or out)[:300]}")
         log(f"PM {self.pm}, run {self.run_id} ({self.project})")
+
+    def free_sandbox(self) -> None:
+        """An earlier drill that died (a full disk, a killed deploy) can leave an open run in the sandbox project, which holds the
+        project's activation: cancel its open attempts and finish it, so this drill can start its PM (live 2026-10-27)."""
+        try:
+            left = hubsql(f"select id from lane_pilot_run where project_id='{self.project}' and closed_at is null and state in ('pending','running','blocked');")
+        except RuntimeError as cause:
+            log(f"sandbox check skipped: {cause}")
+            return
+        for row in left:
+            run = row["id"]
+            for attempt in hubsql(f"select id from lane_pilot_attempt where run_id='{run}' and state in ({','.join(repr(s) for s in OPEN_STATES)});"):
+                log(f"leftover run {run}: cancelling {attempt['id']}")
+                bb("lane-pilot", "cancel", attempt["id"])
+        for row in left:
+            rc, out, err = bb("lane-pilot", "finish", self.project, row["id"])
+            log(f"leftover run {row['id']}: finish {'ok' if rc == 0 else (out + err).strip()[:200]}")
 
     def dispatch(self, spec: dict) -> bool:
         rc, out, err = bb("lane-pilot", "dispatch-bb", self.project, self.pm, json.dumps(spec))
