@@ -2,6 +2,10 @@
 
 ## 0.1.347
 
+**A phase issues pieces the planner left bare.** A piece without `project_cwd` or `objective` failed task-v2 at issue, and the PM had to return the phase to planning and add them by hand (live, a bot phase, 2026-10-27). The machine fills them: the PM's checkout and the piece's own promise.
+
+**Specialists stay on Claude Code.** With Claude's weekly window at 97%, the new limit rule moved a copy-lead to GPT, and BB refused the spawn (HTTP 409: a specialist is a Claude Code agent profile). A specialist and the workflow architect are never moved to another provider; when Claude's limit stops one, the step fails with that reason.
+
 **Titles may be long.** A phase plan item's title was capped at 200 characters, a phase's at 200, a specialist's, errand's and schedule's at 120, a task's card title (`display_title`) at 60; a model that wrote a fuller title got «Too big» and spent a turn rewriting it. Every title now takes up to 1000 characters; the hints still ask for a short card title (about 60 characters read best), and the board clips long ones to two lines.
 
 ## 0.1.346
