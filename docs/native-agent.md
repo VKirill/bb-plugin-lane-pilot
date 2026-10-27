@@ -35,7 +35,7 @@ TL;DR: The composer action prepares a Lane Pilot agent selection for a new proje
 
 ## Purpose
 
-Enable a new BB composer thread as a Lane Pilot PM session and route its first dispatch through the selected native agent (`src/rooms/native-agent/ui/composer-enable.tsx:49-60`, `src/rooms/native-agent/server/activation.ts:63-80`).
+Enable a new BB composer thread as a Lane Pilot PM session and route its first dispatch through the selected native agent. The PM prompt (`src/rooms/native-agent/native-agent-overlay.ts`, copied to `bundled-agents.json` by `scripts/sync-bundled-prompts.ts`) says that every piece of work runs as a graph and that the PM chat is the door: it talks to the owner, passes his words into the machine (phases, `lane_pilot_dispatch_writer`, `lane_pilot_route`, `lane_pilot_run_workflow`), reads the phase book and the run results, and ships. The tools `lane_pilot_errand`, `lane_pilot_specialist`, `lane_pilot_browser`, `lane_pilot_browser_qa` and `lane_pilot_council_start` start the graphs `errand`, `specialist`, `browser-step`, `lp.browser-qa` and `council` (`src/rooms/native-agent/ui/composer-enable.tsx:49-60`, `src/rooms/native-agent/server/activation.ts:63-80`).
 
 ## How it works
 

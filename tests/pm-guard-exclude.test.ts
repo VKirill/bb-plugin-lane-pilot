@@ -46,6 +46,6 @@ it("points a denied product-file edit at a writer task, not a pasted command or 
   const reason = JSON.parse(result.stdout).reason as string;
   expect(reason).toContain(
     "Send this edit as a lane_pilot_dispatch_writer task (a one-line change is a fine task); "
-    + "never hand the owner a command to paste and never route a repository edit through an errand.",
+    + "never hand the owner a command to paste and never route a repository edit through the errand or specialist graph.",
   );
 });

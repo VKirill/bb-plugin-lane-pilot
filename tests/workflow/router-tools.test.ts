@@ -255,12 +255,15 @@ describe("lane_pilot_route", () => {
     expect(answer.next).toContain("Start no workflow");
   });
 
-  it("tells the PM to work the usual way while nothing is published", async () => {
+  it("names the fallback graphs while nothing is published", async () => {
     const { db } = setup();
     const answer = parse(await routeTool(depsOf(db, draftStore, fakeEngine().engine), { intent: "Add pagination to the orders list and cover it with tests" }, ctx));
     expect(answer.workflowId).toBeNull();
-    expect(answer.next).toContain("work the usual way");
-    // Research is the one fallback with a graph of its own: the PM starts web-research, not a bare tavily specialist.
+    expect(answer.next).toContain("lp-task-pipeline");
+    expect(answer.next).toContain("graph errand");
+    expect(answer.next).toContain("graph specialist");
+    expect(answer.next).not.toContain("usual way");
+    // Research: the PM starts web-research, not a bare tavily specialist.
     expect(answer.next).toContain("start `web-research`");
     expect(answer.next).toContain("not a bare tavily specialist");
   });

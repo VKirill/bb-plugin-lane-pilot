@@ -18,9 +18,9 @@ sources:
 
 # Schedule board: Lane Pilot's own scheduler
 
-TL;DR: A core scheduler materializes workflow, agent-errand, and host-script runs from persisted schedule definitions, then supervises them across ticks.
+TL;DR: A core scheduler materializes graph runs (workflow, errand, agent routine) and host-script runs from persisted schedule definitions, then supervises them across ticks.
 
-Lane Pilot runs scheduled work itself: a workflow, an agent errand, a script on a chosen machine, or a named agent that runs as itself and decides from its earlier runs, once or on a cron. It does not need
+Lane Pilot runs scheduled work itself: a graph (a workflow, an errand, or a named agent that runs as itself and decides from its earlier runs) or a script on a chosen machine, once or on a cron. It does not need
 the official Automations plugin (that one stays on until every automation has moved and run seven days clean; `workflow-triggers.ts` still
 creates its automations for the schedule triggers of workflows, see [workflow-triggers.md](workflow-triggers.md)).
 
@@ -80,7 +80,7 @@ are in `tests/schedule/time.test.ts`. A one-time task takes `runAt` (ms) or `del
 | `task.kind` | Fields | Runs as |
 | --- | --- | --- |
 | `workflow` | `workflowId`, `inputs` | a workflow run of the engine, started like the Run button (published, inputs whole, requirements met, a PM chat of the project). A `tested` workflow is refused until its first live run (Workflows tab, Run for real). Output: the run's output JSON |
-| `errand` | `task` (text), `title`, `authorized`, `accounts` (Env Catalog names), `providerId`, `model`, `reasoning`, `serviceTier`, `preset` (who runs it, see below) | a hidden, detached helper thread filed with the PM project and section; it reuses the PM environment, resolves named accounts, and receives a scheduled-run brief that says nobody is watching and to return `ERRAND: blocked` when it needs a decision, approval or access. The thread carries `origin: "schedule"`. Its report is redacted and checked by the output guard; only a final `ERRAND: done` counts as success (`src/rooms/schedule/server/schedule-executors.ts:54-73`, `src/rooms/qa/server/errands.ts:80-85`, `:188-224`) |
+| `errand` | `task` (text), `title`, `authorized`, `accounts` (Env Catalog names), `providerId`, `model`, `reasoning`, `serviceTier`, `preset` (who runs it, see below) | the `errand` graph: a hidden, detached helper thread filed with the PM project and section; it reuses the PM environment, resolves named accounts, and receives a scheduled-run brief that says nobody is watching and to return `ERRAND: blocked` when it needs a decision, approval or access. The thread carries `origin: "schedule"`. Its report is redacted and checked by the output guard; only a final `ERRAND: done` counts as success (`src/rooms/schedule/server/schedule-executors.ts:54-73`, `src/rooms/qa/server/errands.ts:80-85`, `:188-224`) |
 | `script` | `hostId`, `command`, `cwd`, `env` (Env Catalog names), `maxOutputBytes` | the host job `runScript` (`bash -lc`, own process group, killed at the timeout) on that machine. The secrets are resolved by the hub (allowed for the project, or the owner is asked), reach the script as environment variables only, are masked on the host and again on the hub; the host deletes `input.json` once the job has read it. stdout and stderr are kept head and tail up to the cap; exit code 0 is success |
 | `agent` | `agentId` (a profile id such as `seo-specialist`), `task` (the standing instruction, 10 to 20000 characters), `title`, `authorized`, `accounts`, `historyRuns` (0 to 20, default 5), `model`, `reasoning`, `serviceTier` | the agent's own native profile (the one a chat started with it from the composer gets: prompt, skills, MCP servers) in a hidden thread with no parent chat, filed with the PM project and section and belonging to the PM's run. Carries `origin: "schedule"`, so it cannot create or change schedules. Its first message holds the standing task, the last `historyRuns` finished runs of this schedule (time, state, the outcome each reported, a marker for a change already handed over) and the project memory for the task. It ends with an `OUTCOME` block (summary, decision, follow-ups, code-change, urgent, status); the whole report is the run's output, so the next run reads it. A report without the block is a failed run (`no_outcome`); `status: blocked: why` is a failed run (`blocked`). One line goes to the owner's morning list (`lane_pilot_owner_item`, source `schedule`, `wake` only when the agent says `urgent: yes`). It edits no code: a `code-change` goes down the road of an owner's request in the PM chat (`phaseIntake.handOver`: a heavy goal opens a phase, a small job starts issue-quick, a batch issue-batch), at most once per run and never twice for the same text as the run before; with no PM chat the morning line only. An unknown agent id fails the run with `agent_unknown` (`src/rooms/schedule/server/schedule-executors.ts`, `src/rooms/critique/server/scheduled-agent.ts`, `src/rooms/schedule/outcome.ts`) |
 
@@ -179,8 +179,8 @@ re-read `schedule_list`. The usual slow poll covers a missed signal.
 
 ## Skill section (for the canon `lane-pilot-workflows`, `references/schedule.md`)
 
-> **Scheduling a chain.** A chain with a `schedule` trigger gets its BB automation as before (`docs/workflow-triggers.md`). For a one-off or
-> anything that is not a chain, use the schedule board: `lane_pilot_schedule` (PM) with `action: list` to see what exists, `create` with
+> **Scheduling a graph.** A graph with a `schedule` trigger gets its BB automation as before (`docs/workflow-triggers.md`). For a one-off or
+> anything that is not such a graph, use the schedule board: `lane_pilot_schedule` (PM) with `action: list` to see what exists, `create` with
 > `{name, task, when}`. `task` is `{kind:"workflow", workflowId, inputs}`, `{kind:"errand", task, authorized, accounts, model}` or
 > `{kind:"script", hostId, command, cwd, env}`; `env` and `accounts` are Env Catalog names, never values. `when` is
 > `{type:"cron", cron:"0 9 * * 1-5", timezone:"Europe/Madrid"}` or `{type:"once", delay:"2h"}`. Defaults: ticks missed while Lane Pilot was off

@@ -25,7 +25,7 @@ Only `published`, not `internal` workflows, and never `lp-task-pipeline` (how La
 
 ## Tools
 
-- `lane_pilot_route { intent, context? }`: runs the pipeline on the catalog; nothing starts. The answer adds `next` (what the PM does with it). With nothing published it says to work the usual way.
+- `lane_pilot_route { intent, context? }`: runs the pipeline on the catalog; nothing starts. The answer adds `next` (what the PM does with it). With nothing published it names the fallback graph to start with its tool: `lane_pilot_dispatch_writer` (graph `lp-task-pipeline`) for a change to the code, `lane_pilot_errand` (graph `errand`), `lane_pilot_helpers` with action `specialist` (graph `specialist`), or `web-research` for research.
 - `lane_pilot_run_workflow { workflowId, inputs }`: finds the PM's Lane Pilot run (the open one, else the latest of the chat), refuses an unknown, unpublished, fragment or pipeline id and missing required inputs, then `engine.start({ workflow, inputs, key, runtime, link })` with the `ChainRuntime` of `workflow-runtime.ts`. The key is `wf:<run id>:<workflow id>:<hash of the sorted inputs>`, so a repeated call is the same workflow run. `done` is not awaited (a rejection is logged). A refusal of the engine (a node's executor not registered, an input that does not fit) comes back as `{ status: "refused", reason: "cannot_start: ..." }`.
 - `lane_pilot_workflow_status { runId }`: status, reason, steps as node/state/visit, waiting steps, output (fenced as data from outside). A run of another project is answered as not found.
 
