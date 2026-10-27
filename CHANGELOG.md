@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+**A full disk is the machine's: one wait, one line, and a canceled writer stops waiting.** On 2026-10-27 the Mac mini had 5–11 GB free, below the 15 GB disk hold, so the drill writers waited (correctly). The hold's line «writer … waits: only N GB free on host_…» was logged again every time the free space moved by a GB (61 lines for one drill writer); writers the drill had canceled went on waiting and logging for half an hour; and the hold's reason lacked `disk_low`, the token the failure classes, the night journal and the metrics take for the machine's fault, so the night filed it as Lane Pilot's own and sent repair rounds for a full disk. The disk hold now says `disk_low: only N GB free on host_…`, a writer logs a wait once per kind of hold (a new number only refreshes the stage reason), and a writer whose attempt is canceled while it waits for room stops and closes its stages.
+
 **No more «thread null» guard warnings.** BB's model catalog runs every provider's env resolver with no thread (threadId null) to fingerprint the catalog launch. Lane Pilot's Codex/OpenCode/Cursor resolver then asked BB for the metadata of thread null, got HTTP 404 and logged «could not tell whether thread null is a helper … starts without the bb guard wrappers» about 190 times a day, though no thread was starting. The env resolvers (guard wrappers, the Claude Code lane marker, the native session env) now contribute nothing to a launch with no thread, without a call to BB or the machine. Real threads are unchanged.
 
 ## 0.1.340

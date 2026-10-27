@@ -256,7 +256,9 @@ export function createStability(ctx:ServerCore, services:Services) {
     const free = await ctx.host.call("diskFree", { requestedHostId:hostId, path }, { hostId, timeoutMs:15_000 }).catch(() => null);
     if (!free || !free.totalBytes) return null;
     const low = free.freeBytes < Math.max(DISK_FLOOR_BYTES, Math.min(DISK_MIN_FREE_BYTES, free.totalBytes * DISK_MIN_FREE_SHARE));
-    return low ? `only ${Math.round(free.freeBytes / 2 ** 30)} GB free on ${hostId}` : null;
+    // `disk_low` is the token every reader of a reason takes for the machine's fault (runs/failure-class.ts, the night journal's logOrigin,
+    // lp-metrics-views.sql); without it the hold read as Lane Pilot's own failure and opened night repairs for a full disk (2026-10-27).
+    return low ? `disk_low: only ${Math.round(free.freeBytes / 2 ** 30)} GB free on ${hostId}` : null;
   }
 
   /**

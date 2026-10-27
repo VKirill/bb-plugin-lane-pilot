@@ -459,6 +459,16 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
           if (ctx.isDisposed()) return false;
           const budgetStop = wallOrTokenStop();
           if (budgetStop) { blockBeforeWriter(budgetStop); return false; }
+          // An attempt canceled while it waits stops waiting: the drill's canceled writers kept polling the full Mac mini disk and
+          // logging for half an hour after their cancel (2026-10-27, drill-20261027-023238-memory, drill-pm-20261027-note).
+          const waiting = getAttempt(db, attemptId);
+          if (!waiting || ["canceled", "blocked", "accepted"].includes(waiting.state)) {
+            if (waiting?.state === "canceled") {
+              markCanceledWriterStages(waiting, "writer attempt canceled while it waited for room");
+              refreshRun(input.runId);
+            }
+            return false;
+          }
           const base = taskBasePath(db, input.runId, input.taskId);
           // Money and the subscription window: a paid lane over the month's cap, or a Claude window at 98%, waits (src/rooms/money).
           const moneyProvider = typeof runSettings["writer.provider"] === "string" && runSettings["writer.provider"] ? runSettings["writer.provider"] as string : input.config.writerProviderId;
@@ -467,13 +477,15 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
             ?? (base ? await services.stability.diskHolds(input.config.hostId, base) : null)
             ?? (services.money ? await services.money.holds(moneyProvider, moneyModel, input.config.hostId) : null);
           if (!held) break;
+          // One wait is one log line: a busy disk's free space moves by a GB every few polls, and «only 9 GB free» → «8» → «7» → «9»
+          // logged 61 warnings for one drill writer (Mac mini, 2026-10-27). A new number only refreshes the stage reason.
           if (noted !== held) {
+            if (noted.replace(/\d+/g, "<n>") !== held.replace(/\d+/g, "<n>")) ctx.log(`writer ${input.taskId} waits: ${held}`);
             noted = held;
-            ctx.log(`writer ${input.taskId} waits: ${held}`);
             recordStage(db, { runId:input.runId, taskId:input.taskId, stageId:"writer-agent", state:"pending", input:input.plan,
               reason:`waiting: ${held}; starts by itself once it clears` });
           }
-          await new Promise((wake) => setTimeout(wake, 30_000));
+          await new Promise((wake) => setTimeout(wake, pollPause(30_000)));
         }
         releaseWriterSlot=liveFolder
           ? await services.runWriterPool.acquire(`live-folder:${input.config.hostId}:${resolve(runFolder)}`,1)
