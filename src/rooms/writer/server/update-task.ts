@@ -11,13 +11,12 @@ import {
   getTaskPlan,
   listAttemptsForTask,
   listStageReceipts,
+  transitionAttempt,
   saveTaskPlan,
   updateTaskContract,
 } from "../../storage";
 import { lintReply } from "../../tasks/server";
 import { createTaskLinter } from "../../tasks/server";
-import { runPlanCritique, runPmRead } from "../../critique/server";
-import { recordStage } from "../../runs/server";
 import { markTaskSatisfied } from "../../runs/server";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
@@ -26,8 +25,12 @@ import { applyTrustedTooling } from "../../tasks";
 import { planWithOutsideReads, rerootTask } from "../../tasks";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification";
 import { runOnHost } from "@lane-pilot/host-calls";
+import { dispatchRunOf, rerunDispatchStages } from "./dispatch-workflow";
 import { awaitsWriterAnswer, contractFixRecord, contractFixTurnPrompt, createAttemptReopen, writerQuestion } from "./reopen-attempt";
 import type { FieldChange } from "./reopen-attempt";
+
+/** How long an update waits for the stages that go again before it answers «queued». */
+const STAGES_WAIT_MS = 240_000;
 
 /** What a PM may change on a task its writer is waiting on a question about; any other field needs a redispatch. */
 const IN_PLACE_FIELDS: readonly string[] = ["verification", "acceptance", "expected_outputs", "owns_paths", "never_touch", "plan", "display_title", "kind"];
@@ -254,6 +257,15 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
         note: "The writer continues in its own thread and worktree under the fixed contract; no attempt was spent. Poll lane_pilot_wait_writer with the same runId. The change is kept in the task folder's QA.md." };
     }
 
+    // The pm-read and the plan critique go again through the task's pipeline run (the graph), so that run must exist and the engine be up.
+    const engine = services.workflowEngine;
+    if (!engine) {
+      return { ok: false, error: { code: "engine_unavailable", retryable: true, sideEffects: "none", hint: "the workflow engine is not running; the task was not changed. Try again in a minute." } };
+    }
+    if (!dispatchRunOf(db, input.runId, input.taskId)) {
+      return { ok: false, error: { code: "pipeline_run_missing", retryable: false, sideEffects: "none", hint: `${input.taskId} has no pipeline run to go again; cancel the task and dispatch it again.` } };
+    }
+
     // Save updated contract and plan in database
     updateTaskContract(db, input.taskId, valid.task);
     saveTaskPlan(db, input.taskId, canonicalPlan);
@@ -261,42 +273,32 @@ export function createWriterUpdateTask(ctx: ServerCore, services: Services) {
     // Persist PLAN.md to task folder
     await persistPlan(config.hostId, taskBase, input.taskId, canonicalPlan);
 
-    // Rerun pmRead and plan critique
-    const pmRead = await runPmRead({
-      bb,
-      db,
-      projectId: input.projectId,
-      runId: input.runId,
-      taskId: input.taskId,
-      pmThreadId: input.pmThreadId,
-      config: taskConfig,
-      task: valid.task,
-    });
-
-    const critique = await runPlanCritique({
-      bb,
-      db,
-      projectId: input.projectId,
-      runId: input.runId,
-      taskId: input.taskId,
-      config: taskConfig,
-      task: valid.task,
-      plan: canonicalPlan,
-      pmReadContext: pmRead.summary || undefined,
-    });
-
-    for (const stageId of ["writer-agent", "verification", "acceptance-receipt"] as const) {
-      recordStage(db, { runId: input.runId, taskId: input.taskId, stageId, state: "pending", input: canonicalPlan });
+    // The stages go again from pm-read through the task's pipeline run; while they do, the attempt says so and a second update waits.
+    transitionAttempt(db, latestAttempt.id, "queued", { reason: DISPATCH_STAGES_PENDING });
+    const rerun = await rerunDispatchStages(engine, {
+      ctx, services, threadId: input.pmThreadId, projectId: input.projectId, runId: input.runId, taskId: input.taskId, attemptId: latestAttempt.id,
+      config, runConfig: taskConfig, workspacePath: taskBase, task: valid.task, plan: canonicalPlan, lintWarnings: [],
+    }, STAGES_WAIT_MS);
+    if (!rerun.ok) {
+      // Nothing went again: the stored task and its PLAN.md go back as they were.
+      transitionAttempt(db, latestAttempt.id, "queued");
+      updateTaskContract(db, input.taskId, row.contract);
+      saveTaskPlan(db, input.taskId, oldPlan);
+      await persistPlan(config.hostId, taskBase, input.taskId, oldPlan);
+      return { ok: false, error: { code: "rerun_refused", retryable: false, sideEffects: "none", hint: `the task's stages could not go again (${rerun.reason}); the task was not changed. Cancel it and dispatch it again.` } };
     }
+    const critique = rerun.critique;
+    const state = getAttempt(db, latestAttempt.id)?.state ?? "queued";
 
     return {
       ok: true,
       runId: input.runId,
       taskId: input.taskId,
-      state: "queued",
+      state,
       stages: listStageReceipts(db, input.runId, input.taskId),
-      critiqueAllowed: critique.allowed,
-      ...(critique.reason ? { critiqueReason: critique.reason } : {}),
+      ...(critique ? { critiqueAllowed: critique.allowed } : {}),
+      ...(critique?.reason ? { critiqueReason: critique.reason } : {}),
+      ...(rerun.settled ? {} : { stagesPending: true, note: "pm-read and plan critique are still running again; the writer starts by itself once they pass." }),
     };
   }
 

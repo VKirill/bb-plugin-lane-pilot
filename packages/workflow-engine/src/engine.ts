@@ -1326,8 +1326,9 @@ export class WorkflowEngine {
    * steps it routed to, their branches, the joins that waited for it, the child runs, the effects) is removed, and the run goes on
    * from there. A canceled step that was waiting for its turn when the run ended is revived. Refused while the run is active, for a
    * child run (re-run from its parent) and for a node that never ran. The new try has its own spawn key, so an agent step opens a new thread.
+   * `runtime`: the caller's own state for the steps that go again (the dispatch pipeline keeps the task there); it replaces the one the run had.
    */
-  async rerunNode(runId: string, nodeId: string): Promise<{ ok: true; stepKey: string; removed: number } | { ok: false; reason: string }> {
+  async rerunNode(runId: string, nodeId: string, runtime?: unknown): Promise<{ ok: true; stepKey: string; removed: number } | { ok: false; reason: string }> {
     const j = this.journal;
     const run = j.getRun(runId);
     if (!run) return { ok: false, reason: "not_found" };
@@ -1383,6 +1384,7 @@ export class WorkflowEngine {
       j.event(runId, target.step_key, "rerun", target.state, "pending", `node ${nodeId}: ${doomed.size} step(s) reset or removed`);
     })();
     this.compiledRuns.delete(runId);
+    if (runtime !== undefined) this.runtimes.set(runId, runtime);
     this.aborts.set(runId, new AbortController()); // a failed or blocked run fired its controller; the re-run's steps and goal audit need a live one
     void this.kick(runId).catch((cause) => this.log(`run ${runId} stopped after a re-run: ${cause instanceof Error ? cause.message : String(cause)}`));
     return { ok: true, stepKey: target.step_key, removed: gone.size };

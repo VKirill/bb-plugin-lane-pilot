@@ -572,7 +572,8 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
   const agent=boundedAgentName(settings["specialist.agent"],"specialist-reviewer");
   const source = `${input.plan}\n\n${JSON.stringify(input.task)}\n\nagent=${agent}`;
   const base = {runId:input.runId,taskId:input.taskId,stageId:"specialist-review" as const,input:source};
-  recordStage(input.db,{...base,state:"pending"});
+  // An updated task goes through its review again over the receipt of the earlier contract (lane_pilot_update_task).
+  recordStage(input.db,{...base,state:"pending",replaceOnNewInput:true,restart:true});
   if (!policy.run) {
     const failedPolicy = policy.reason?.startsWith("invalid_") || policy.reason?.startsWith("unsupported_");
     recordStage(input.db,{...base,state:failedPolicy ? "blocked" : "skipped",reason:policy.reason ?? undefined});

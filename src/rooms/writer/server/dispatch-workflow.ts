@@ -1,4 +1,4 @@
-import { getAttempt, getRunSettingsScopes, listAttemptsForTask, listStageReceipts, loadProjectSettings, saveTaskGitBase, setRunState, transitionAttempt } from "../../storage";
+import { getAttempt, getRunSettingsScopes, getTaskGitBase, listAttemptsForTask, listStageReceipts, loadProjectSettings, saveTaskGitBase, setRunState, transitionAttempt } from "../../storage";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { QUALITY_MODE_SETTING, resolveQualityMode } from "../../critique";
 import { appendExcludeCommand, persistTaskFolder } from "../../verification";
@@ -160,9 +160,10 @@ export function registerDispatchExecutors(engine: WorkflowEngine): void {
     if (gitBase && gitBase.status !== "ready" && (r.baseRef !== undefined || gitBase.status !== "not-git")) {
       return { ok: false, live, kind: "unavailable", reason: `git ownership base unavailable: ${gitBase.reason ?? gitBase.status}` };
     }
+    // The base is taken once per task and never changes: a pipeline that goes again (the PM updated the task) keeps the one it has.
     if (gitBase?.status === "ready" && !saveTaskGitBase(db, r.taskId, {
       baseRef: gitBase.baseRef, baseSha: gitBase.baseSha, initialHeadSha: gitBase.headSha!, branch: gitBase.branch!, compareCommitted: gitBase.compareCommitted,
-    })) {
+    }) && !getTaskGitBase(db, r.taskId)) {
       return { ok: false, live, kind: "persist_failed", reason: "could not persist immutable git ownership base snapshot" };
     }
     return { ok: true, live };
@@ -282,4 +283,52 @@ export function dispatchReply(summary: RunSummary): Record<string, unknown> | nu
   if (summary.status === "waiting") return (summary.waiting[0]?.partial?.reply as Record<string, unknown> | undefined) ?? null;
   if (summary.status === "failed") throw new Error(summary.error ?? summary.reason ?? "workflow failed");
   return null;
+}
+
+/** The newest pipeline run of a task (`lp-task-pipeline`, linked to the Lane Pilot run and the task), or null. */
+export function dispatchRunOf(db: ServerCore["db"], runId: string, taskId: string): string | null {
+  const row = db.prepare("SELECT id FROM lane_pilot_wf_run WHERE workflow_id='lp-task-pipeline' AND link_run_id=? AND link_task_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1")
+    .get(runId, taskId) as { id: string } | undefined;
+  return row?.id ?? null;
+}
+
+export type DispatchRerun =
+  | { ok: true; pipelineRunId: string; settled: boolean; critique: { allowed: boolean; reason?: string } | null }
+  | { ok: false; reason: string };
+
+/**
+ * The PM updated a task that waits for its writer: its pipeline run goes again from `pm-read` with the new contract and plan, by the
+ * engine's re-run. The run waits at the `writer` node, so it is canceled first (which ends that wait; the writer queue of the task is
+ * not touched and reads the stored task when its turn comes), and `runtime` carries the new task to the steps that go again. Resolves once
+ * the run waits for the writer again or ends, or after `waitMs`.
+ */
+export async function rerunDispatchStages(engine: WorkflowEngine, runtime: DispatchRuntime, waitMs: number): Promise<DispatchRerun> {
+  const pipelineRunId = dispatchRunOf(runtime.ctx.db, runtime.runId, runtime.taskId);
+  if (!pipelineRunId) return { ok: false, reason: "no_pipeline_run" };
+  // The PM's baseRef is kept only in the pipeline run's inputs.
+  try {
+    const row = runtime.ctx.db.prepare("SELECT inputs_json FROM lane_pilot_wf_run WHERE id=?").get(pipelineRunId) as { inputs_json: string } | undefined;
+    const baseRef = (JSON.parse(row?.inputs_json || "{}") as { baseRef?: unknown }).baseRef;
+    if (typeof baseRef === "string") runtime.baseRef = baseRef;
+  } catch { /* no baseRef */ }
+  engine.cancel(pipelineRunId, "the task was updated");
+  const pause = () => new Promise<void>((resolve) => setTimeout(resolve, 50));
+  // The drive of the canceled run winds down on its own; the re-run is refused until it has.
+  const until = Date.now() + 5_000;
+  let again = await engine.rerunNode(pipelineRunId, "pm-read", runtime);
+  while (!again.ok && again.reason === "run_active" && Date.now() < until) {
+    await pause();
+    again = await engine.rerunNode(pipelineRunId, "pm-read", runtime);
+  }
+  if (!again.ok) return { ok: false, reason: again.reason };
+  const deadline = Date.now() + waitMs;
+  while (engine.get(pipelineRunId)?.status === "running" && Date.now() < deadline) await pause();
+  const status = engine.get(pipelineRunId)?.status;
+  const critique = engine.snapshot(pipelineRunId)?.steps.filter((step) => (step.node_id === "plan-critique" || step.node_id === "plan-critique-quick") && step.state === "succeeded").at(-1);
+  let verdict: { allowed: boolean; reason?: string } | null = null;
+  try {
+    const out = JSON.parse(critique?.output_json ?? "null") as { allowed?: unknown; reason?: unknown } | null;
+    if (out && typeof out.allowed === "boolean") verdict = { allowed: out.allowed, ...(typeof out.reason === "string" ? { reason: out.reason } : {}) };
+  } catch { /* no verdict yet */ }
+  return { ok: true, pipelineRunId, settled: status !== "running", critique: verdict };
 }
