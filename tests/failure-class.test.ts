@@ -13,6 +13,20 @@ describe("failure classes", () => {
     expect(failureClass("empty_output", "writer returned no output")).toBe("provider");
   });
 
+  it("reads the ZCode app's own refusals (busy, text-not-visible, foreground_required, session_expired) as a limit: free, and the task moves down the writer chain", () => {
+    const busy = "provider_error:ZCode is busy with another chat (one task at a time); try again in a few minutes.";
+    for (const reason of [busy, "provider_error:ZCode (text-not-visible): the answer is not on screen", "turn_failed:ZCode (foreground_required): bring ZCode to the front",
+      "provider_error:Authentication required: sign in inside the ZCode app. ZCode (session_expired): login"]) {
+      expect(failureClass("provider_error", reason), reason).toBe("limit");
+      expect(FREE_CLASSES.has(failureClass("provider_error", reason))).toBe(true);
+    }
+    expect(failureClass("spawn_rejected", busy)).toBe("limit");
+    expect(nextStep("provider_error", busy)).toMatch(/writer chain/);
+    // A check that merely prints the word is still the task's red check, and a real ZCode fault of the model's work stays a provider fault.
+    expect(failureClass("validation_failed", "verification failed (npm test): expected session_expired to be handled")).toBe("task");
+    expect(failureClass("provider_error", "ZCode (turn_failed): the model errored")).toBe("provider");
+  });
+
   it("reads an empty_output with a writer answer as the task's failure, not the model's", () => {
     expect(failureClass("empty_output", "writer answered but changed no files")).toBe("task");
     expect(failureClass("empty_output", "writer changed no files")).toBe("task");

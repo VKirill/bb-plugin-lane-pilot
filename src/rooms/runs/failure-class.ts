@@ -11,7 +11,7 @@
  * - contract, judgment: the PM's to fix or answer; never retried as is.
  * - contract also holds a task that waits for a secret (`waiting_secret:NAME`, Env Catalog): uncharged and restarted when the secret is saved.
  * - budget: a run hit run.max_*; uncharged, not parked, not retried.
- * - limit: the writer's provider takes no work now (plan, quota, credits, or its breaker is open); uncharged, the task
+ * - limit: the writer's provider takes no work now (plan, quota, credits, its breaker is open, or the ZCode app is busy or signed out); uncharged, the task
  *   moves down the writer chain at once.
  * - reassign: the PM moved the task to a fresh writer thread (lane_pilot_reassign_task); its old writer's stop is not a
  *   failure: uncharged, the new writer continues the worktree.
@@ -19,6 +19,7 @@
 export type FailureClass = "task" | "provider" | "merge" | "dirty_base" | "harness" | "infra" | "contract" | "judgment" | "budget" | "limit" | "reassign";
 
 import { cleanCheckOutput } from "@lane-pilot/kit";
+import { zcodeEnvironmentError } from "@lane-pilot/models";
 
 /** The reason recorded when the writer gave no answer at all; the only empty_output that reads as a provider fault. */
 export const NO_ANSWER_REASON = "writer returned no output";
@@ -97,6 +98,9 @@ export function classifyFailure(state:string, reason:string | null | undefined):
   if (JUDGMENT.test(text)) return sure("judgment");
   if (BUDGET.test(text) || RETRY_BUDGET.test(text)) return sure("budget");
   if (LIMIT.test(text)) return sure("limit");
+  // The ZCode app cannot take the work now (another task holds it, its text is not visible, it needs the foreground, its sign-in expired): the
+  // machine's state, not the model's work. Free, and the task moves down the writer chain at once. A red check that prints the word is the task's.
+  if (!CHECK_FAILED.test(text) && zcodeEnvironmentError(text)) return sure("limit");
   if (SILENT.test(text)) return sure("provider");
   if (NO_GIT.test(text) || WAITING_SECRET.test(text)) return sure("contract");
   if (MERGE.test(text)) return sure("merge");

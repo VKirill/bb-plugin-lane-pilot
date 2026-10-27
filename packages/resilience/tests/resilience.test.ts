@@ -36,6 +36,12 @@ describe("provider breaker", () => {
     expect(breaker.decide("acp-cursor/grok-4.6", 1)).toMatchObject({ allow:false, state:"open" });
   });
 
+  it("opens at once when the ZCode app cannot take the work (busy, text-not-visible, foreground_required, session_expired)", () => {
+    for (const text of ["provider_error:ZCode is busy with another chat (one task at a time)", "provider_error:ZCode (text-not-visible): x", "turn_failed:ZCode (foreground_required): y",
+      "provider_error:Authentication required: sign in inside the ZCode app. ZCode (session_expired): z"]) expect(classifyFailure(text), text).toBe("exhausted");
+    expect(classifyFailure("provider_error:ZCode (turn_failed): the model errored")).toBe("failure");
+  });
+
   it("re-opens at once when the trial call fails", () => {
     const breaker = createProviderBreaker({ failureThreshold: 1, windowMs: 1000, cooldownMs: 100 });
     breaker.record(key, "failure", 0);

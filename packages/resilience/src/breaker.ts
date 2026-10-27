@@ -27,7 +27,8 @@ export function breakerKey(providerId: string, model: string): string {
 }
 
 // The provider refused for the plan, quota or credits: no retry inside the window will pass, so the pair opens at once.
-const EXHAUSTED = /writer_provider_limit:/;
+// The ZCode app (provider zcode) cannot take the work now: another task holds it, its text is not visible, it needs the foreground, its sign-in expired.
+const EXHAUSTED = /writer_provider_limit:|ZCode is busy|ZCode \((?:text-not-visible|foreground_required|session_expired)\)|sign in inside the ZCode app/;
 const TRANSIENT = /rate.?limit|overload|429|503|stream.?(closed|disconnected)|ECONNRESET|socket hang up|timeout|provider_not_started|reconnect/i;
 const HARD = /provider_error|system_error|thread_status_error|spawn_rejected|turn_rejected|provisioning_(failed|cancelled)|model.*not (found|available)|unauthori[sz]ed|401|403/i;
 

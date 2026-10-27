@@ -1,5 +1,5 @@
 import { PROVIDER_POOL_KEY, providerPoolProblem } from "@lane-pilot/settings-catalog";
-import { ROLE_MODEL_KEY_PREFIX, roleModelProblem } from "@lane-pilot/models";
+import { ROLE_MODEL_KEY_PREFIX, ZCODE_WINDOW_KEY, roleModelProblem, zcodeWindowProblem } from "@lane-pilot/models";
 import { SCHEDULE_ERRAND_DEFAULT_KEY, errandDefaultProblem } from "../schedule";
 import "../workflow/route-workflow";
 import "@lane-pilot/jev/judgments/repair-group";
@@ -72,6 +72,11 @@ export function validateSettingValue(key: string, value: unknown): SettingValida
   }
   if (key === "jev.thresholds" || key === "jev.modes") {
     const problem = jevSettingProblem(key, value, listJudgments());
+    return problem ? { code:"invalid_choice", key, params:[key, problem] } : null;
+  }
+  // When the ZCode app may be used: only in its free hours (promo, the default) or at any hour (always).
+  if (key === ZCODE_WINDOW_KEY) {
+    const problem = zcodeWindowProblem(value);
     return problem ? { code:"invalid_choice", key, params:[key, problem] } : null;
   }
   if (key === "usage.skip_percent" && value !== undefined && value !== null && value !== "") {
