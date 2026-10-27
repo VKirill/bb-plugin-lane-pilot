@@ -232,6 +232,20 @@ describe("Run", () => {
     expect(draft.queryByTestId("wf-run")).toBeNull();
   });
 
+  it("offers no Run button for a starter graph: Lane Pilot starts it from the tool named in startedBy", async () => {
+    const { rpc } = await world();
+    const slot = await mount(rpc, "proj_ui");
+    fireEvent.click(await slot.findByTestId("wf-row-demo"));
+    await slot.findByTestId("wf-run");
+    expect((await rpc.workflow_get({ id: "demo" })).workflow!.startedBy).toBeNull();
+    cleanup();
+
+    const started = await mount({ ...rpc, workflow_get: async (input: { id: string }) => ({ workflow: { ...(await rpc.workflow_get(input as never)).workflow!, startedBy: "lane_pilot_errand" } }) }, "proj_ui");
+    fireEvent.click(await started.findByTestId("wf-row-demo"));
+    await started.findByTestId("wf-dry-run");
+    expect(started.queryByTestId("wf-run")).toBeNull();
+  });
+
   it("tells the owner when a schedule has its automation", async () => {
     const { rpc } = await world();
     const withSchedule = async (input: { id: string }) => ({ workflow: { ...(await rpc.workflow_get(input as never)).workflow!, triggers: ["schedule 0 9 * * *"], schedules: [{ projectId: "p", slot: 0, automationId: "auto_1" }] } });
