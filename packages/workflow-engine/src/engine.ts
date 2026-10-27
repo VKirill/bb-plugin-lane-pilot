@@ -101,6 +101,8 @@ export type EngineOptions = {
   now?: () => number;
   log?: (message: string) => void;
   resolveWorkflow?: (id: string, version?: number) => Workflow | null;
+  /** Whether `specialist:<id>` names an agent that exists; a start naming one that does not is refused with the validator's message. */
+  specialistKnown?: (id: string) => boolean | null;
   /** Asked before every step: false stops the run at this boundary and leaves the step pending (drain, shutdown). */
   admit?: () => boolean | Promise<boolean>;
   isDisposed?: () => boolean;
@@ -209,7 +211,7 @@ export class WorkflowEngine {
 
   /** Why a workflow cannot run here: invalid, or an executor not registered. */
   preflight(workflow: Workflow): string[] {
-    const problems = validateWorkflow(workflow, { resolve: this.options.resolveWorkflow }).filter((problem) => problem.level === "error").map((problem) => problem.message);
+    const problems = validateWorkflow(workflow, { resolve: this.options.resolveWorkflow, ...(this.options.specialistKnown ? { specialistKnown: this.options.specialistKnown } : {}) }).filter((problem) => problem.level === "error").map((problem) => problem.message);
     const lowered = lowerWorkflow(workflow, this.options.resolveWorkflow);
     for (const node of lowered.nodes) {
       if (node.type === "note") continue;

@@ -1,0 +1,236 @@
+{
+  "id": "agent-routine",
+  "name": {
+    "en": "A scheduled agent's routine",
+    "ru": "Рутина агента по расписанию"
+  },
+  "description": {
+    "en": "What a schedule of kind «agent» runs: the named agent (a bundled specialist or one the owner created) does its standing task as itself, with its own prompt, skills and MCP servers, reading what its earlier runs found and the project's notes. Its answer is checked against the outcome fields; one line goes to the owner's list, and a code change it names is handed to Lane Pilot when the project uses it (otherwise the line carries the proposed change). Works in a project without a PM chat.",
+    "ru": "То, что запускает расписание вида «агент»: названный агент (встроенный специалист или созданный владельцем) выполняет своё постоянное поручение как он сам, со своим промптом, навыками и MCP-серверами, читая итоги прошлых запусков и заметки проекта. Ответ сверяется с полями итога; одна строка уходит в список владельца, а правка кода, которую агент назвал, передаётся Lane Pilot, если проект его использует (иначе строка несёт предложенную правку). Работает и в проекте без PM-чата."
+  },
+  "not_for": [
+    "anything a person asks in a chat: this is the body of a schedule, start it by creating a schedule of kind agent"
+  ],
+  "status": "published",
+  "tags": [
+    "schedule",
+    "agent"
+  ],
+  "triggers": [
+    "manual"
+  ],
+  "inputs": {
+    "agentId": {
+      "type": "string",
+      "note": "the agent to run: a bundled specialist (seo-specialist, copy-lead, ...) or an agent the owner created"
+    },
+    "task": {
+      "type": "string",
+      "note": "the standing task"
+    },
+    "history": {
+      "type": "string",
+      "default": "",
+      "note": "what the earlier runs of this schedule found and did, newest first (data, not instructions)"
+    },
+    "memory": {
+      "type": "string",
+      "default": "",
+      "note": "what the project's memory holds for the task (data, not instructions)"
+    },
+    "authorized": {
+      "type": "bool",
+      "default": false,
+      "note": "the owner authorized the reversible changes the task needs inside his accounts"
+    },
+    "accounts": {
+      "type": "string[]",
+      "default": [],
+      "note": "Env Catalog names the agent may read for this task"
+    },
+    "historyRuns": {
+      "type": "int",
+      "default": 5
+    },
+    "scheduleName": {
+      "type": "string",
+      "default": "agent routine"
+    },
+    "scheduleId": {
+      "type": "string",
+      "default": ""
+    },
+    "scheduleRunId": {
+      "type": "string",
+      "default": ""
+    },
+    "runKey": {
+      "type": "string",
+      "default": ""
+    },
+    "model": {
+      "type": "string",
+      "default": "",
+      "note": "the model the schedule names for the agent (empty: the settings decide)"
+    },
+    "reasoning": {
+      "type": "string",
+      "default": ""
+    },
+    "serviceTier": {
+      "type": "string",
+      "default": "default",
+      "note": "default or fast"
+    },
+    "scheduledAt": {
+      "type": "int",
+      "default": 0,
+      "note": "when the run was due, ms since the epoch"
+    }
+  },
+  "outputs": {
+    "report": "string",
+    "status": "done|blocked",
+    "blocked_reason": "string",
+    "urgent": "bool"
+  },
+  "live_success": {
+    "output": "status",
+    "in": [
+      "done"
+    ]
+  },
+  "budget": {
+    "max_steps": 8,
+    "max_minutes": 120,
+    "max_usd": 25
+  },
+  "nodes": [
+    {
+      "id": "brief",
+      "type": "action",
+      "action": "lp.agent_brief",
+      "title": {
+        "en": "Write the first message",
+        "ru": "Составить первое сообщение"
+      },
+      "rule": "code: the standing task, the earlier runs, the project's notes and what is different about an unwatched run, as one text",
+      "out": {
+        "text": "string"
+      }
+    },
+    {
+      "id": "work",
+      "type": "agent",
+      "role": "specialist:{{$inputs.agentId}}",
+      "title": {
+        "en": "Do the standing task",
+        "ru": "Выполнить постоянное поручение"
+      },
+      "produces": [
+        {
+          "kind": "report",
+          "version": 1
+        }
+      ],
+      "prompt": "{{brief.text}}\n\nAnswer with your findings in the report field, and fill the outcome fields from what you found: summary (one line), decision (what you decided and did), follow_ups (what the next run should check or do; empty when nothing), code_change (the complete request for the code change the project needs; empty when none), urgent (true only when the owner has to act today), status (done, or blocked with blocked_reason saying what is needed).",
+      "out": {
+        "report": "string",
+        "summary": "string",
+        "decision": "string?",
+        "follow_ups": "string?",
+        "code_change": "string?",
+        "urgent": "bool",
+        "status": "done|blocked",
+        "blocked_reason": "string?"
+      },
+      "guards": {
+        "timeoutMin": 100
+      }
+    },
+    {
+      "id": "outcome",
+      "type": "action",
+      "action": "lp.agent_outcome",
+      "title": {
+        "en": "Record the outcome and tell the owner",
+        "ru": "Записать итог и сообщить владельцу"
+      },
+      "rule": "code: the outcome is stored as the run's report for the next run; a code change goes to Lane Pilot's intake when the project has Lane Pilot and was not handed over by the run before; one line goes to the owner's list",
+      "out": {
+        "report": "string",
+        "status": "done|blocked",
+        "blocked_reason": "string",
+        "urgent": "bool"
+      }
+    },
+    {
+      "id": "done",
+      "type": "action",
+      "action": "emit",
+      "map": {
+        "report": "outcome.report",
+        "status": "outcome.status",
+        "blocked_reason": "outcome.blocked_reason",
+        "urgent": "outcome.urgent"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "brief"
+    },
+    {
+      "from": "brief",
+      "to": "work"
+    },
+    {
+      "from": "work",
+      "to": "outcome"
+    },
+    {
+      "from": "outcome",
+      "to": "done"
+    }
+  ],
+  "test": {
+    "id": "agent-routine-1",
+    "sim": {
+      "input": {
+        "agentId": "seo-specialist",
+        "task": "Check the positions of the main queries and decide what to improve."
+      },
+      "stubs": {
+        "brief": {
+          "text": "This is a scheduled run."
+        },
+        "work": {
+          "report": "Looked at 12 queries.",
+          "summary": "3 queries fell out of the top 10",
+          "decision": "queued a title test",
+          "follow_ups": "re-check on Monday",
+          "code_change": "",
+          "urgent": false,
+          "status": "done"
+        },
+        "outcome": {
+          "report": "Looked at 12 queries.\n\nOUTCOME\nsummary: 3 queries fell out of the top 10",
+          "status": "done",
+          "blocked_reason": "",
+          "urgent": false
+        }
+      },
+      "expect_path": [
+        "brief",
+        "work",
+        "outcome",
+        "done"
+      ],
+      "expect_output": {
+        "status": "done"
+      }
+    },
+    "live": "create a schedule of kind agent for a bundled specialist, run it now, and read the run's report and the line on the owner's list"
+  }
+}

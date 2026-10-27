@@ -6,6 +6,7 @@ import { createWorkflowLibrary } from "../workflow-library";
 import { realDeps } from "../workflow-architect";
 import { createWorkflowOps } from "../workflow-ops";
 import { createWorkflowPreflight } from "../workflow-preflight";
+import { answerWorkflowQuestion } from "../workflow-answer";
 
 /** The Workflows tab's actions on a workflow: its run history, re-running one node, a dry run, the tests of a file. */
 export function workflowOpsRpc(ctx: ServerCore, services: Services) {
@@ -19,7 +20,11 @@ export function workflowOpsRpc(ctx: ServerCore, services: Services) {
       return result.ok ? { ok: true, runId: result.runId, created: result.created, status: result.status, notChecked: result.notChecked }
         : { ok: false, reason: result.reason, message: result.message, ...(result.missing ? { missing: result.missing } : {}), ...(result.issues ? { issues: result.issues } : {}), ...(result.envRequests ? { envRequests: result.envRequests } : {}) };
     },
+    workflow_answer: async (input) => {
+      const result = await answerWorkflowQuestion(ctx, services, input);
+      return result.ok ? { ok: true, stepKey: result.stepKey } : { ok: false, reason: result.reason, message: result.message, ...(result.options ? { options: result.options } : {}) };
+    },
     workflow_dry_run: (input) => ops.dryRun(input),
     workflow_run_tests: (input) => ops.runTests(input),
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "workflow_runs" | "workflow_rerun_node" | "workflow_preflight" | "workflow_run" | "workflow_dry_run" | "workflow_run_tests">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "workflow_runs" | "workflow_rerun_node" | "workflow_preflight" | "workflow_run" | "workflow_answer" | "workflow_dry_run" | "workflow_run_tests">;
 }

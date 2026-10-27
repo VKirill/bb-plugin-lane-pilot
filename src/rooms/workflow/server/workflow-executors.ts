@@ -5,6 +5,7 @@ import { validateTaskV2 } from "../../tasks/task-v2";
 import { agentPrompt, outputContract, parseAgentOutput } from "@lane-pilot/workflow-engine";
 import type { NodeExecutor, PollResult, StepContext, WorkflowEngine } from "@lane-pilot/workflow-engine";
 import type { RunRow } from "../../storage";
+import { postOwnerItem } from "../../owner-waiting";
 import { outputFields } from "@lane-pilot/workflow-engine";
 import { BUILTIN_PRESETS } from "@lane-pilot/models";
 import type { Field, GraphNode } from "@lane-pilot/workflow-engine";
@@ -13,7 +14,7 @@ import { agentRequest, createWorkflowAgents, stepPacket, withResolvedModel } fro
 import type { WorkflowAgents } from "./workflow-agent";
 import { lpTaskPipelineExecutor } from "../../writer/server";
 import type { DispatchRuntime } from "../../writer/server";
-import { keyedSpawnSupported } from "../../core/server";
+import { keyedSpawnSupported, projectFolder } from "../../core/server";
 import { threadUsage } from "../../usage/server";
 import { stringAt } from "../../core/server";
 import { startedBySchedule, type ChainRuntime } from "./workflow-runtime";
@@ -32,11 +33,16 @@ const rec = (value: unknown): Row => (typeof value === "object" && value !== nul
 const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 const str = (value: unknown): string => (typeof value === "string" ? value : "");
 
+/** The line of the owner's list a question of a run with no PM chat is (answered with `workflow_answer`, which closes it). */
+export const workflowQuestionKey = (runId: string, stepKey: string) => `workflow-question:${runId}:${stepKey}`;
+
 /** The runtime of a chain run rebuilt from its row after a reload; undefined for the per-task pipeline, which needs its own in-memory runtime. */
 export function chainRuntimeFor(ctx: ServerCore, services: Services) {
   return (run: RunRow): ChainRuntime | undefined => {
     if (run.workflow_id === "lp-task-pipeline" || run.idem_key?.startsWith("lp-task:")) return undefined;
-    if (!run.project_id || !run.link_run_id) return undefined;
+    if (!run.project_id) return undefined;
+    // A run started in a project without a PM chat has no link: it works on its own.
+    if (!run.link_run_id) return { ctx, services, pmThreadId: null, projectId: run.project_id, runId: null, ...(startedBySchedule(ctx.db, run) ? { origin: "schedule" as const } : {}) };
     const linked = getRun(ctx.db, run.link_run_id);
     if (!linked?.pm_thread_id) return undefined;
     return { ctx, services, pmThreadId: linked.pm_thread_id, projectId: run.project_id, runId: run.link_run_id, ...(startedBySchedule(ctx.db, run) ? { origin: "schedule" as const } : {}) };
@@ -48,9 +54,21 @@ const need = (c: StepContext<ChainRuntime>): ChainRuntime => {
   return c.runtime;
 };
 
-/** The PM's checkout: where a chain writes its reports and reads its diffs. */
+/** The steps that build code or read the Lane Pilot run need a PM chat and its run; a run of a project without Lane Pilot stops there with the way out. */
+type WithPm = ChainRuntime & { pmThreadId: string; runId: string };
+const needLanePilot = (rt: ChainRuntime, what: string): WithPm => {
+  if (!rt.pmThreadId || !rt.runId) throw new Error(`needs_lane_pilot: ${what} needs Lane Pilot in the project (an open PM chat) and this run has none; enable Lane Pilot in a chat of the project`);
+  return rt as WithPm;
+};
+
+/** The PM's checkout: where a chain writes its reports and reads its diffs. Without a PM chat it is the project's own first folder. */
 async function pmCheckout(rt: ChainRuntime): Promise<{ hostId: string; path: string }> {
   const { bb } = rt.ctx;
+  if (!rt.pmThreadId) {
+    const folder = await projectFolder(bb, rt.projectId);
+    if (!folder) throw new Error("the project has no folder on a machine to work in");
+    return folder;
+  }
   const pm = await bb.sdk.threads.get({ threadId: rt.pmThreadId });
   const environmentId = stringAt(pm, "environmentId");
   const env = environmentId ? await bb.sdk.environments.get({ environmentId }).catch(() => null) : null;
@@ -260,6 +278,19 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   const ask = async (rt: ChainRuntime, runId: string, stepKey: string, node: Extract<GraphNode, { type: "human" }>, question: string, deadline?: number, base: string = question): Promise<void> => {
     const key = `${runId}|${stepKey}`;
     if (openForms.has(key)) return;
+    // No PM chat to show a form in: the question is a line of the owner's list, with a push, answered by `workflow-answer` or its button.
+    if (!rt.pmThreadId) {
+      const options = humanOptions(node);
+      const workflowId = engine.journal.getRun(runId)?.workflow_id ?? "a workflow";
+      postOwnerItem(db, {
+        key: workflowQuestionKey(runId, stepKey), source: "workflow", kind: "workflow_question", projectId: rt.projectId, wake: true,
+        what: `«${workflowId}» asks: ${base}`,
+        why: `Run ${runId} waits at ${node.id}.${options.length ? ` Options: ${options.map((value) => value.replace(/_/g, " ")).join(" / ")}.` : ""} ${node.timeoutSec ? "If you do not answer, the step's own timeout settles it. " : ""}Answer: bb lane-pilot workflow-answer ${runId} ${stepKey} <${options.length ? "option" : "words"}> [words].`,
+        actions: options.map((value) => ({ id: value, label: value.replace(/_/g, " "), cli: `bb lane-pilot workflow-answer ${runId} ${stepKey} ${value}`, rpc: { method: "workflow_answer", input: { runId, stepKey, choice: value } } })),
+      });
+      openForms.add(key);
+      return;
+    }
     const worded = await composeQuestion(rt, runId, stepKey, node, base);
     if (openForms.has(key)) return;
     const options = humanOptions(node);
@@ -324,7 +355,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   const chainTask: NodeExecutor<ChainRuntime> = {
     reentrant: true,
     run: async (c) => {
-      const rt = need(c);
+      const rt = needLanePilot(need(c), "a code task");
       const node = c.node as LpTaskNode;
       const { contract, usage: planned } = await contractOf(c, rt, node);
       const run = getRun(db, rt.runId);
@@ -381,6 +412,7 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
 
   /** The merge commit of an accepted attempt (found by the trailer every merge commit carries) and the files it changed. */
   async function mergeFacts(rt: ChainRuntime, attemptId: string): Promise<{ commit: string; files: string[] }> {
+    if (!rt.runId) return { commit: "", files: [] };
     const run = getRun(db, rt.runId);
     const hostId = getRunWriterHost(db, rt.runId);
     if (!run?.writer_workspace_path || !hostId) return { commit: "", files: [] };
@@ -467,7 +499,8 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
     return { has_passport: hasPassport, open_tasks: open, plan_exists: open > 0, has_ui: hasUi };
   });
 
-  action("lp.run_status", async (c, rt) => {
+  action("lp.run_status", async (c, lane) => {
+    const rt = needLanePilot(lane, "lp.run_status");
     const runId = str(c.resolve("$inputs.run_id")) || rt.runId;
     const open = listOpenAttempts(db).filter((row) => row.run_id === runId);
     const tasks = db.prepare("SELECT id FROM lane_pilot_task WHERE run_id=?").all(runId) as Array<{ id: string }>;
@@ -479,13 +512,15 @@ export function registerChainExecutors(engine: WorkflowEngine, ctx: ServerCore, 
   // The integration gate keeps no receipt of its own (a red gate dispatches a repair task and tells the PM), so there is nothing to read here yet.
   action("lp.integration_gate_status", async () => ({ ok: true, failing: [], skipped: true }));
 
-  action("lp.run_close", async (c, rt) => {
+  action("lp.run_close", async (c, lane) => {
+    const rt = needLanePilot(lane, "lp.run_close");
     const runId = str(c.resolve("$inputs.run_id")) || rt.runId;
     // The PM's run is closed by the PM chat's own lifecycle (closeAbandonedRuns); this marks the workflow's end and leaves the run to it.
     return { archived: Boolean(getRun(db, runId)) };
   });
 
-  action("lp.lint_contract", async (c, rt) => {
+  action("lp.lint_contract", async (c, lane) => {
+    const rt = needLanePilot(lane, "lp.lint_contract");
     const tasks = list(c.resolve("plan.tasks"));
     const waves = list(c.resolve("plan.waves")).map((wave) => list(wave).map(String));
     const run = getRun(db, rt.runId);

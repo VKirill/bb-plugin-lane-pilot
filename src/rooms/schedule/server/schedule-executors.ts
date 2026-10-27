@@ -1,11 +1,9 @@
 import { observeStageChild } from "@lane-pilot/thread-observe";
 import { loadProjectSettings, recordSecretIssuance } from "../../storage";
 import { redactKnown } from "@lane-pilot/kit";
-import { agentHistoryBlock, agentOwnerLine, alreadyHandedOver, finalRuleOf, handOverTrailer, parseAgentOutcome, workflowFinish, type HandOver } from "../outcome";
+import { agentHistoryBlock, finalRuleOf, workflowFinish } from "../outcome";
 import { createScheduleStore } from "../store";
-import { agentBrief } from "./schedule-agent-brief";
 import { taskMemoryContext } from "../../memory/server";
-import { postOwnerItem } from "../../owner-waiting";
 import type { Executor, ExecutorInput, PollResult } from "../scheduler";
 import type { ScheduleKind, ScheduleTask } from "../model";
 import type { ServerCore } from "../../core/server";
@@ -125,72 +123,43 @@ export function createScheduleExecutors(ctx: ServerCore, services: Services): Re
   };
 
   /**
-   * A named agent run as itself (src/rooms/critique/server/scheduled-agent.ts). Its first message carries the standing task, the last runs'
-   * outcomes of this schedule and the project's notes; it must end with an OUTCOME block, which is read back for the next run and for the
-   * owner's morning list. The agent edits no code: a change it finds necessary is named in its outcome and in the list.
+   * A named agent run as itself: an alias of the workflow kind. The executor builds what only the schedule knows (the last runs' outcomes, the
+   * project's notes) and starts the built-in graph `agent-routine` as an ordinary workflow run, so the journal, the limits, the schema check on the
+   * agent's answer and the repairs apply to it as to any chain (workflows/agent-routine.json; its code steps are schedule-agent-actions.ts). The agent
+   * edits no code: a change it finds necessary is named in its outcome, handed to Lane Pilot when the project has it, and told to the owner.
+   * Works in a project that has no PM chat.
    */
   const agent: Executor = {
     async start({ schedule, task, run }: ExecutorInput) {
       if (task.kind !== "agent") return wrongKind(task, "agent");
       const pm = await services.workflowTriggers.pmOf(schedule.project_id);
-      if (!pm) throw new Error("no_pm_chat: the project has no open Lane Pilot PM chat to hold the agent's thread; enable Lane Pilot in a chat of the project");
       if (task.accounts.length) {
-        const resolved = await services.errands.resolveAccounts({ projectId: schedule.project_id, runId: pm.runId, pmThreadId: pm.pmThreadId, names: task.accounts });
+        const resolved = await services.errands.resolveAccounts({ projectId: schedule.project_id, runId: pm?.runId ?? null, pmThreadId: pm?.pmThreadId ?? null, names: task.accounts });
         if (!resolved.ok) throw new Error(`${resolved.blocked.reason}: ${resolved.blocked.fix.join(" ")}`);
       }
       const history = task.historyRuns > 0 ? agentHistoryBlock(createScheduleStore(db).finishedRuns(schedule.id, run.id, task.historyRuns)) : "";
-      const brief = agentBrief({ scheduleName: schedule.name, scheduledAt: run.scheduled_at, task, history, memory: taskMemoryContext(db, schedule.project_id, pm.runId, task.task) });
-      const started = await services.agentRuns.start({
-        projectId: schedule.project_id, runId: pm.runId, pmThreadId: pm.pmThreadId, agentId: task.agentId, brief, title: task.title ?? schedule.name, spawnId: `schedule:${run.run_key}`,
-        model: task.model, reasoning: task.reasoning, serviceTier: task.serviceTier,
-        // A thread that carries this origin cannot create or change schedules (schedule-tools.ts).
-        metadata: { origin: "schedule", scheduleId: schedule.id, scheduleRunKey: run.run_key },
+      const result = await services.workflowTriggers.start({
+        projectId: schedule.project_id, workflowId: "agent-routine", source: "manual", key: run.run_key, origin: "schedule",
+        inputs: {
+          agentId: task.agentId, task: task.task, history, memory: taskMemoryContext(db, schedule.project_id, pm?.runId ?? null, task.task), authorized: task.authorized,
+          accounts: task.accounts, historyRuns: task.historyRuns, scheduleName: schedule.name, scheduleId: schedule.id, scheduleRunId: run.id, runKey: run.run_key, scheduledAt: run.scheduled_at,
+          model: task.model ?? "", reasoning: task.reasoning ?? "", serviceTier: task.serviceTier ?? "default",
+        },
       });
-      return { refKind: "thread", refId: started.threadId };
+      if (!result.ok) throw new Error(`${result.reason}: ${result.message}`);
+      return { refKind: "workflow_run", refId: result.runId };
     },
-    async poll({ schedule, task, run }: ExecutorInput): Promise<PollResult> {
-      if (task.kind !== "agent") return wrongKind(task, "agent");
-      const observed = await observeStageChild(bb, run.ref_id!, 1);
-      if (observed.kind === "product_failure") return { state: "done", status: "failed", error: redactKnown(`${observed.via}: ${observed.detail}`) };
-      if (observed.kind !== "completed") return { state: "running" };
-      const report = await services.agentRuns.completedReport(run.ref_id!, schedule.project_id ?? "-");
-      if (report.state === "blocked") return { state: "done", status: "failed", output: report.output, error: report.files?.length ? `the agent changed repository files: ${report.files.join(", ")}` : report.reason ?? "blocked", reason: report.reason ?? "blocked" };
-      const outcome = parseAgentOutcome(report.output);
-      if (!outcome) return { state: "done", status: "failed", output: report.output, reason: "no_outcome", error: "the agent ended without an OUTCOME block (summary, decision, follow-ups, code-change, urgent, status), so the next run would not know what this one did" };
-      // A code change the agent named is not left as a sentence: it goes down the road an owner's request in the PM chat takes (phase, issue-quick,
-      // issue-batch), at most one hand-over per run, and not again when the run before handed over the same text. No PM chat: the morning line only.
-      let handOver: HandOver = { state: "none", reason: "" };
-      let output = report.output;
-      if (outcome.codeChange) {
-        try {
-          if (alreadyHandedOver(createScheduleStore(db).finishedRuns(schedule.id, run.id, 1)[0], outcome.codeChange)) handOver = { state: "repeat" };
-          else {
-            const pm = await services.workflowTriggers.pmOf(schedule.project_id);
-            if (!pm) handOver = { state: "none", reason: "в проекте нет Lane Pilot (нет открытого PM-чата)" };
-            else {
-              const started = await services.phaseIntake.handOver({
-                projectId: schedule.project_id, pmThreadId: pm.pmThreadId, runId: pm.runId, text: outcome.codeChange, key: `schedule:${run.run_key}`,
-                origin: `Work found by the scheduled agent ${task.agentId} («${schedule.name}», schedule ${schedule.id}, run ${new Date(run.scheduled_at).toISOString()}); source: schedule. What it found: ${outcome.summary}`,
-              });
-              if (started.started) { handOver = { state: "started", via: started.via, id: started.id }; output = `${report.output.trimEnd()}\n\n${handOverTrailer(started.via, started.id)}`; }
-              else handOver = { state: "none", reason: started.reason };
-            }
-          }
-        } catch (cause) {
-          handOver = { state: "none", reason: `передача не удалась: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 200) };
-          bb.log.warn(`Lane Pilot schedule «${schedule.name}»: hand-over failed: ${cause instanceof Error ? cause.message : String(cause)}`);
-        }
-      }
-      // One line on the owner's morning list; the key is the run's, so a poll repeated after a crash posts nothing twice. It informs; nothing waits for the owner.
-      try {
-        const line = agentOwnerLine(schedule, task.agentId, outcome, handOver);
-        postOwnerItem(db, { key: `schedule-agent:${run.run_key}`, source: "schedule", kind: outcome.status === "blocked" ? "agent_blocked" : "agent_outcome", projectId: schedule.project_id, wake: outcome.urgent, ...line });
-      } catch (cause) { bb.log.warn(`Lane Pilot schedule «${schedule.name}»: owner line not posted: ${cause instanceof Error ? cause.message : String(cause)}`); }
-      return outcome.status === "blocked"
-        ? { state: "done", status: "failed", output, error: outcome.blockedReason, reason: "blocked" }
+    async poll(input: ExecutorInput): Promise<PollResult> {
+      // The routine's last step stores the outcome as text (the next run reads it back); an agent that ended `blocked` is a failed run with its reason.
+      const summary = services.workflowEngine.get(input.run.ref_id!);
+      if (summary?.status !== "succeeded") return workflow.poll(input);
+      const out = (summary.output ?? {}) as { report?: unknown; status?: unknown; blocked_reason?: unknown };
+      const output = typeof out.report === "string" ? out.report : "";
+      return out.status === "blocked"
+        ? { state: "done", status: "failed", output, error: typeof out.blocked_reason === "string" && out.blocked_reason ? out.blocked_reason : "blocked", reason: "blocked" }
         : { state: "done", status: "succeeded", output };
     },
-    async cancel({ run }: ExecutorInput) { if (run.ref_id) await bb.sdk.threads.stop({ threadId: run.ref_id }).catch(() => undefined); },
+    cancel: (input: ExecutorInput) => workflow.cancel(input),
   };
 
   return { workflow, errand, script, agent };

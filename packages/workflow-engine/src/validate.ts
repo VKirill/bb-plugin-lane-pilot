@@ -18,6 +18,8 @@ export type ValidateOptions = {
   hasExecutor?: (key: string) => boolean;
   /** Whether a machine offers a provider/model pair; null when the catalog could not be read (then nothing is said). A pair it does not offer is a warning. */
   modelOffered?: (providerId: string, model: string) => boolean | null;
+  /** Whether `specialist:<id>` names an agent that exists (a bundled specialist or one the owner created); null when that cannot be known yet (then nothing is said). */
+  specialistKnown?: (id: string) => boolean | null;
 };
 
 export class WorkflowError extends Error {
@@ -357,6 +359,9 @@ export function validateWorkflow(workflow: Workflow, options: ValidateOptions = 
       if (node.environment !== "none") warn("environment_not_executed", `${node.id}: environment "${node.environment}" changes nothing: the helper runs in the PM chat's environment (remove it, or use an lp-task for work in a worktree)`, extra);
       if (options.modelOffered && node.provider && node.model && options.modelOffered(node.provider, node.model) === false) {
         warn("unknown_model", `${node.id}: ${node.provider}/${node.model} is not offered by any machine (see the models section of lane_pilot_workflow_capabilities); the step would fail to start`, extra);
+      }
+      if (options.specialistKnown && node.role.startsWith("specialist:") && !node.role.includes("{{") && options.specialistKnown(node.role.slice("specialist:".length)) === false) {
+        error("unknown_specialist", `${node.id}: role "${node.role}" names no agent: "${node.role.slice("specialist:".length)}" is neither a bundled specialist nor an agent you created (the specialists section of lane_pilot_workflow_capabilities lists them)`, extra);
       }
       const handoff = node.out.find((field) => field.name === "handoff");
       if (handoff && handoff.type !== "string") error("handoff_type", `${node.id}: handoff must be a string`, extra);

@@ -109,32 +109,29 @@ describe("the outcome block", () => {
   });
 });
 
-/** A world with the real executors on an in-memory database and fake services. */
-function world(options: { pm?: boolean; report?: string; start?: (args: Record<string, any>) => Promise<{ threadId: string }>; handOver?: (args: Record<string, any>) => Promise<any> } = {}) {
+/** A world with the real executors on an in-memory database and fake services: the routine graph is started as a workflow run, its end is a summary. */
+function world(options: { pm?: boolean; output?: Record<string, unknown>; status?: string; start?: (args: Record<string, any>) => Promise<any> } = {}) {
   const db = createDb();
   for (const statement of ownerWaitingMigrations) db.exec(statement);
-  const calls = { agentStart: [] as Array<Record<string, any>>, handOver: [] as Array<Record<string, any>> };
-  let report = options.report ?? "";
+  const calls = { start: [] as Array<Record<string, any>>, accounts: [] as Array<Record<string, any>> };
+  const state = { output: options.output ?? { report: "", status: "done", blocked_reason: "", urgent: false }, status: options.status ?? "succeeded" };
   const pm = options.pm === false ? null : { pmThreadId: "thr_pm", runId: "lprun_1" };
   const services = {
-    workflowTriggers: { pmOf: async () => pm },
-    errands: { resolveAccounts: async () => ({ ok: true, accounts: [] }) },
-    agentRuns: {
-      start: options.start ?? (async (args: Record<string, any>) => { calls.agentStart.push(args); return { threadId: `thr_agent_${calls.agentStart.length}` }; }),
-      completedReport: async () => ({ state: "done" as const, output: report }),
+    workflowTriggers: {
+      pmOf: async () => pm,
+      start: options.start ?? (async (args: Record<string, any>) => { calls.start.push(args); return { ok: true, runId: `wfrun_${calls.start.length}` }; }),
     },
-    phaseIntake: { handOver: async (args: Record<string, any>) => { calls.handOver.push(args); return options.handOver ? options.handOver(args) : { started: true, via: "issue-quick", id: `wfrun_${calls.handOver.length}` }; } },
+    workflowEngine: { get: () => ({ status: state.status, output: state.output, error: state.status === "failed" ? "the agent step failed" : undefined, waiting: [] }), cancel: () => undefined },
+    errands: { resolveAccounts: async (args: Record<string, any>) => { calls.accounts.push(args); return { ok: true, accounts: [] }; } },
   } as never;
   const ctx = { bb: { sdk: { threads: { stop: async () => undefined } }, log: { warn: () => undefined } }, db, host: {}, secrets: {} } as never;
   const executors = createScheduleExecutors(ctx, services);
   const clock = createClock(Date.UTC(2026, 9, 26, 5));
   const schedule = addSchedule(db, clock, { task, name: "Positions", when: { type: "cron", cron: "0 9 * * 1", timezone: "UTC" } });
   const store = createScheduleStore(db, clock.now);
-  let n = 0;
   /** A run of the schedule: queued, claimed, started, polled once; returns the poll result and finishes the row like the scheduler does. */
-  async function runOnce(at: number, text?: string) {
-    if (text !== undefined) report = text;
-    n += 1;
+  async function runOnce(at: number, report?: string, extra: Record<string, unknown> = {}) {
+    if (report !== undefined) state.output = { report, status: "done", blocked_reason: "", urgent: false, ...extra };
     const row = store.addRun({ scheduleId: schedule.id, runKey: `${schedule.id}:${at}`, scheduledAt: at, trigger: "tick" }).run;
     store.claim(row.id, at + 3_600_000);
     const fresh = store.getRun(row.id) as RunRow;
@@ -143,10 +140,9 @@ function world(options: { pm?: boolean; report?: string; start?: (args: Record<s
     db.prepare("UPDATE lane_pilot_schedule_run SET ref_kind=?,ref_id=? WHERE id=?").run(started.refKind, started.refId, row.id);
     const polled = await executors.agent.poll({ schedule: current, task, run: store.getRun(row.id) as RunRow });
     if (polled.state === "done") store.finish(row.id, polled.status, { output: polled.output, error: polled.error, reason: polled.reason });
-    return { polled, runId: row.id, n };
+    return { polled, started, runId: row.id };
   }
-  const ownerItems = () => db.prepare("SELECT key,source,kind,project_id,what,why,wake FROM lane_pilot_owner_item ORDER BY created_at, key").all() as Array<Record<string, any>>;
-  return { db, calls, executors, schedule, store, runOnce, ownerItems };
+  return { db, calls, state, executors, schedule, store, runOnce };
 }
 
 const report = (extra: Record<string, string> = {}) => ["Looked at the positions.", "OUTCOME", `summary: ${extra.summary ?? "3 queries fell out of the top 10"}`, `decision: ${extra.decision ?? "queued a title test"}`, `follow-ups: ${extra.followUps ?? "re-check on Monday"}`,
@@ -157,40 +153,40 @@ beforeEach(() => { observe.result = { kind: "completed" }; });
 describe("a run of kind agent", () => {
   const T1 = Date.UTC(2026, 9, 19, 6), T2 = Date.UTC(2026, 9, 26, 6), T3 = Date.UTC(2026, 10, 2, 6);
 
-  it("starts the agent's own profile in a thread a schedule marks, with the standing task, the memory and the outcome format in the first message", async () => {
-    const w = world({ report: report() });
-    const { polled } = await w.runOnce(T1);
+  it("starts the built-in graph agent-routine as an ordinary workflow run, keyed by the run, with the standing task, the notes and the schedule's own facts", async () => {
+    const w = world();
+    const { polled, started } = await w.runOnce(T1, report());
+    expect(started).toEqual({ refKind: "workflow_run", refId: "wfrun_1" });
     expect(polled).toMatchObject({ state: "done", status: "succeeded" });
-    const start = w.calls.agentStart[0]!;
-    expect(start).toMatchObject({ projectId: "p1", runId: "lprun_1", pmThreadId: "thr_pm", agentId: "seo-specialist", title: "Positions", spawnId: expect.stringMatching(/^schedule:sch_.*:\d+$/),
-      metadata: { origin: "schedule", scheduleId: w.schedule.id } });
-    expect(start.brief).toContain("This is a scheduled run of «Positions»");
-    expect(start.brief).toContain("<standing_task>\nCheck the positions of the main queries and decide what to improve.\n</standing_task>");
-    expect(start.brief).toContain("<project_memory>\nNOTE for «Check the positions »: the site is on Yandex Webmaster\n</project_memory>");
-    expect(start.brief).toContain("no previous runs to read");
-    expect(start.brief).toContain("OUTCOME\nsummary:");
-    expect(start.brief).toContain("Read and report only");
+    const start = w.calls.start[0]!;
+    expect(start).toMatchObject({ projectId: "p1", workflowId: "agent-routine", source: "manual", origin: "schedule", key: expect.stringMatching(/^sch_.*:\d+$/) });
+    expect(start.inputs).toMatchObject({
+      agentId: "seo-specialist", task: "Check the positions of the main queries and decide what to improve.", authorized: false, accounts: [], historyRuns: 5, scheduleName: "Positions", scheduleId: w.schedule.id,
+      runKey: start.key, scheduledAt: T1, model: "", reasoning: "", serviceTier: "default",
+    });
+    expect(start.inputs.memory).toBe("NOTE for «Check the positions »: the site is on Yandex Webmaster");
+    expect(start.inputs.history).toBe("");
   });
 
-  it("stores the outcome as the run's output, so the next run's first message lists it, and the owner line is one row, quiet unless urgent", async () => {
+  it("passes the model, the effort and the tier the schedule names", async () => {
+    const w = world();
+    const named = { ...task, model: "claude-sonnet-5-5", reasoning: "medium", serviceTier: "fast" as const };
+    const row = w.store.addRun({ scheduleId: w.schedule.id, runKey: "k9", scheduledAt: T1, trigger: "tick" }).run;
+    w.store.claim(row.id, T1 + 1);
+    await w.executors.agent.start({ schedule: w.store.get(w.schedule.id)!, task: named as never, run: w.store.getRun(row.id)! });
+    expect(w.calls.start[0]!.inputs).toMatchObject({ model: "claude-sonnet-5-5", reasoning: "medium", serviceTier: "fast" });
+  });
+
+  it("stores the routine's report as the run's output, so the next run's history lists it", async () => {
     const w = world();
     await w.runOnce(T1, report({ summary: "positions dropped for three queries", decision: "queued a title test", followUps: "re-check on Monday" }));
     expect(w.store.runsOf(w.schedule.id)[0]).toMatchObject({ status: "succeeded", output: expect.stringContaining("summary: positions dropped for three queries") });
-    expect(w.ownerItems()).toHaveLength(1);
-    expect(w.ownerItems()[0]).toMatchObject({ source: "schedule", kind: "agent_outcome", project_id: "p1", wake: 0 });
-    expect(w.ownerItems()[0]!.what).toBe("«Positions» (seo-specialist): positions dropped for three queries");
-    expect(w.ownerItems()[0]!.why).toContain("Решение: queued a title test");
-    expect(w.ownerItems()[0]!.why).toContain("Дальше: re-check on Monday");
-
-    await w.runOnce(T2, report({ summary: "two of the three recovered", urgent: "yes" }));
-    const second = w.calls.agentStart[1]!.brief as string;
-    expect(second).toContain("<previous_runs>");
-    expect(second).toContain("2026-10-19T06:00Z · succeeded");
-    expect(second).toContain("summary: positions dropped for three queries");
-    expect(second).toContain("decision: queued a title test");
-    expect(second).toContain("follow-ups: re-check on Monday");
-    expect(w.ownerItems()).toHaveLength(2);
-    expect(w.ownerItems()[1]).toMatchObject({ wake: 1 });
+    await w.runOnce(T2, report({ summary: "two of the three recovered" }));
+    const history = w.calls.start[1]!.inputs.history as string;
+    expect(history).toContain("2026-10-19T06:00Z · succeeded");
+    expect(history).toContain("summary: positions dropped for three queries");
+    expect(history).toContain("decision: queued a title test");
+    expect(history).toContain("follow-ups: re-check on Monday");
   });
 
   it("reads only the last historyRuns runs", async () => {
@@ -200,82 +196,29 @@ describe("a run of kind agent", () => {
     const fresh = w.store.addRun({ scheduleId: w.schedule.id, runKey: "k4", scheduledAt: T3 + 7 * 86_400_000, trigger: "tick" }).run;
     w.store.claim(fresh.id, T3 + 8 * 86_400_000);
     await w.executors.agent.start({ schedule: w.store.get(w.schedule.id)!, task: withOne, run: w.store.getRun(fresh.id)! });
-    const brief = w.calls.agentStart.at(-1)!.brief as string;
-    expect(brief).toContain("run number 3");
-    expect(brief).not.toContain("run number 2");
+    const history = w.calls.start.at(-1)!.inputs.history as string;
+    expect(history).toContain("run number 3");
+    expect(history).not.toContain("run number 2");
   });
 
-  it("fails with the reason when the agent is gone, there is no PM chat, or the agent skipped its outcome", async () => {
-    const gone = world({ start: async () => { throw new Error('agent_unknown: there is no agent "seo-specialist" any more'); } });
-    await expect(gone.runOnce(T1)).rejects.toThrow(/agent_unknown/);
-    const noPm = world({ pm: false });
-    await expect(noPm.runOnce(T1)).rejects.toThrow(/no_pm_chat/);
-    const bare = world({ report: "I did a thing and forgot the block." });
-    expect((await bare.runOnce(T1)).polled).toMatchObject({ state: "done", status: "failed", reason: "no_outcome" });
-    expect(bare.ownerItems()).toEqual([]);
-    const stuck = world({ report: report({ status: "blocked: Webmaster login expired" }) });
+  it("runs in a project without a Lane Pilot PM chat: nothing refuses it, the accounts are checked without a run, the graph is started the same way", async () => {
+    const w = world({ pm: false });
+    const named = { ...task, accounts: ["MY_LOGIN"] };
+    const row = w.store.addRun({ scheduleId: w.schedule.id, runKey: "k5", scheduledAt: T1, trigger: "tick" }).run;
+    w.store.claim(row.id, T1 + 1);
+    const started = await w.executors.agent.start({ schedule: w.store.get(w.schedule.id)!, task: named as never, run: w.store.getRun(row.id)! });
+    expect(started).toEqual({ refKind: "workflow_run", refId: "wfrun_1" });
+    expect(w.calls.accounts[0]).toMatchObject({ projectId: "p1", runId: null, pmThreadId: null, names: ["MY_LOGIN"] });
+    expect(w.calls.start[0]).toMatchObject({ workflowId: "agent-routine", inputs: { accounts: ["MY_LOGIN"] } });
+  });
+
+  it("fails with the reason when the routine cannot start, or its run failed; an agent that ended blocked is a failed run with its reason", async () => {
+    const refused = world({ start: async () => ({ ok: false, reason: "requirements_missing", message: "a skill is missing" }) });
+    await expect(refused.runOnce(T1)).rejects.toThrow(/requirements_missing: a skill is missing/);
+    const failed = world({ status: "failed" });
+    expect((await failed.runOnce(T1)).polled).toMatchObject({ state: "done", status: "failed", error: "the agent step failed" });
+    const stuck = world({ output: { report: report({ status: "blocked: Webmaster login expired" }), status: "blocked", blocked_reason: "Webmaster login expired", urgent: false } });
     expect((await stuck.runOnce(T1)).polled).toMatchObject({ status: "failed", reason: "blocked", error: "Webmaster login expired" });
-    expect(stuck.ownerItems()[0]).toMatchObject({ kind: "agent_blocked" });
-  });
-});
-
-describe("the hand-over of a code change", () => {
-  const T1 = Date.UTC(2026, 9, 19, 6), T2 = Date.UTC(2026, 9, 26, 6), T3 = Date.UTC(2026, 10, 2, 6);
-  const change = "Add the canonical tag to the /pricing template: it omits it, so two URLs compete.";
-
-  it("starts the road once with the agent's text marked as the schedule's, records it in the output and tells the owner", async () => {
-    const w = world();
-    const { polled } = await w.runOnce(T1, report({ codeChange: change }));
-    expect(w.calls.handOver).toHaveLength(1);
-    expect(w.calls.handOver[0]).toMatchObject({ projectId: "p1", pmThreadId: "thr_pm", runId: "lprun_1", text: change, key: expect.stringMatching(/^schedule:sch_/) });
-    expect(w.calls.handOver[0]!.origin).toMatch(/seo-specialist.*«Positions».*source: schedule/);
-    expect(polled).toMatchObject({ status: "succeeded", output: expect.stringContaining("HAND-OVER: issue-quick wfrun_1") });
-    expect(w.ownerItems()[0]!.why).toContain("Передано Lane Pilot (issue-quick wfrun_1)");
-  });
-
-  it("does not start the same change again at the next run, and says so in the history and on the list", async () => {
-    const w = world();
-    await w.runOnce(T1, report({ codeChange: change }));
-    await w.runOnce(T2, report({ codeChange: change.toLowerCase().replace(".", "") }));
-    expect(w.calls.handOver).toHaveLength(1);
-    expect(w.calls.agentStart[1]!.brief).toContain("handed over to Lane Pilot: issue-quick wfrun_1");
-    expect(w.ownerItems()[1]!.why).toContain("та же правка");
-    await w.runOnce(T3, report({ codeChange: "Fix the sitemap generator: it lists redirected URLs." }));
-    expect(w.calls.handOver).toHaveLength(2);
-  });
-
-  it("starts nothing without Lane Pilot in the project, and the owner's line still names the change", async () => {
-    // start() needs the PM chat for the thread, so a run cannot begin without one; the hand-over path alone is checked on the poll of a thread started while the project still had one.
-    const world2 = world({ pm: false, report: report({ codeChange: change }) });
-    const row2 = world2.store.addRun({ scheduleId: world2.schedule.id, runKey: "k1", scheduledAt: T1, trigger: "tick" }).run;
-    world2.store.claim(row2.id, T1 + 1);
-    world2.db.prepare("UPDATE lane_pilot_schedule_run SET ref_kind='thread',ref_id='thr_x' WHERE id=?").run(row2.id);
-    const polled = await world2.executors.agent.poll({ schedule: world2.store.get(world2.schedule.id)!, task, run: world2.store.getRun(row2.id)! });
-    expect(polled).toMatchObject({ state: "done", status: "succeeded" });
-    expect((polled as { output: string }).output).not.toContain("HAND-OVER");
-    expect(world2.calls.handOver).toEqual([]);
-    expect(world2.ownerItems()).toHaveLength(1);
-    expect(world2.ownerItems()[0]!.why).toContain("Нужна правка кода");
-    expect(world2.ownerItems()[0]!.why).toContain(change);
-    expect(world2.ownerItems()[0]!.why).toContain("нет Lane Pilot");
-  });
-
-  it("keeps the line when the road refuses or fails, and tries again at the next run because nothing was handed over", async () => {
-    const refused = world({ handOver: async () => ({ started: false, kind: "question", reason: "the text reads as question, not as work to build" }) });
-    const first = await refused.runOnce(T1, report({ codeChange: change }));
-    expect((first.polled as { output: string }).output).not.toContain("HAND-OVER");
-    expect(refused.ownerItems()[0]!.why).toContain("Lane Pilot её не взял: the text reads as question");
-    await refused.runOnce(T2, report({ codeChange: change }));
-    expect(refused.calls.handOver).toHaveLength(2);
-    const broken = world({ handOver: async () => { throw new Error("boom"); } });
-    expect((await broken.runOnce(T1, report({ codeChange: change }))).polled).toMatchObject({ status: "succeeded" });
-    expect(broken.ownerItems()[0]!.why).toContain("передача не удалась: boom");
-  });
-
-  it("hands over nothing when the agent names no code change", async () => {
-    const w = world();
-    await w.runOnce(T1, report());
-    expect(w.calls.handOver).toEqual([]);
   });
 });
 

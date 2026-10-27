@@ -148,7 +148,7 @@ export function preferencesRpc(ctx: ServerCore, services: Services) {
       const old = owned[id]?.meta;
       const meta = isCustomAgentId(id) ? { ...old, displayName: description ?? old?.displayName ?? compiled.description, createdAt: old?.createdAt ?? now, updatedAt: now } : old;
       owned[id] = { prompt, ...(description ? { description } : {}), compiled, ...(meta ? { meta } : {}) };
-      await bb.storage.kv.set(LP_AGENT_OVERRIDES_KEY, owned);
+      await ctx.saveOwnedAgents(owned);
       return { ok: true, id, sourceHash: compiled.sourceHash };
     }),
     list_agents: async ({ custom }) => ({ agents: (await services.listedAgentProfiles()).filter((row) => !custom || row.custom) }),

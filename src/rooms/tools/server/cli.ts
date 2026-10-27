@@ -9,6 +9,7 @@ import { RUN_BUDGET_SETTINGS, runHealth } from "../../stability/server";
 import { configuredSetting } from "../../core/server";
 import { getCouncilSession } from "@lane-pilot/council";
 import { SCHEDULE_USAGE, runScheduleCli } from "../../schedule/server";
+import { answerWorkflowQuestion } from "../../workflow/server";
 import { AGENTS_USAGE, agentRegistry, runAgentsCli } from "../../native-agent/server";
 import type { Services } from "../../core/server";
 import { ANAMNESIS_USAGE } from "../../anamnesis";
@@ -90,6 +91,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
     "bb lane-pilot events-list <thread-id>",
     "bb lane-pilot wait-thread <thread-id>",
     "bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]",
+    "bb lane-pilot workflow-answer <run-id> <step-key> <option or words>",
     SCHEDULE_USAGE,
     AGENTS_USAGE,
     ANAMNESIS_USAGE,
@@ -173,6 +175,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"sma-map", summary:"The SMA product map node by node: what Lane Pilot has for each of its 1768 nodes, the proof in the code, what is missing, and the share done", usage:SMA_MAP_USAGE },
       { name:"rules", summary:"The rules by form (always | skill | check | hook | memory) and the mechanism that enforces each; classify them, generate mechanism tasks for the recurring check rules, retire the text a mechanism now holds", usage:RULES_USAGE },
       { name:"workflow-trigger", summary:"Start a workflow in a project as its schedule trigger does (the automation of a schedule calls this); exit 1 with the reason when it cannot start", usage:"bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]" },
+      { name:"workflow-answer", summary:"Answer the question a workflow run in a project without a PM chat put on the owner's list (the option, or words that name one, or a free answer)", usage:"bb lane-pilot workflow-answer <run-id> <step-key> <option or words>" },
       { name:"defer", summary:"Put a mandatory check off: write it in the register with the reason. It is born with no term (only a date in a message of the owner sets one, --owner-msg) and counts as unproven in its project's phase acceptance until closed with evidence", usage:"bb lane-pilot defer <what> --kind drill_scenario|skipped_test|gate|plan_decision --reason \"…\" [--area A] [--project P]" },
       { name:"defer-close", summary:"Close a deferral with the evidence that settles it", usage:"bb lane-pilot defer-close <dfr_id> --evidence <text>" },
       { name:"deferrals", summary:"The register of deferrals: overdue and open, with their terms", usage:"bb lane-pilot deferrals [--project P] [--state open|overdue|closed]" },
@@ -302,6 +305,11 @@ export function registerCli(ctx: ServerCore, services: Services) {
           if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("inputs must be a JSON object");
           // The tick's id is the key: a retried tick is the same run, not a second one.
           const result = await services.workflowTriggers.start({ projectId:args[0]!, workflowId:args[1]!, inputs:parsed as Record<string, unknown>, source:"schedule", key:args[3] || undefined });
+          return { exitCode:result.ok ? 0 : 1, stdout:JSON.stringify(result, null, 2) };
+        }
+        if (command === "workflow-answer" && args.length >= 3) {
+          const words = args.slice(2).join(" ");
+          const result = await answerWorkflowQuestion(ctx, services, { runId:args[0]!, stepKey:args[1]!, choice:words });
           return { exitCode:result.ok ? 0 : 1, stdout:JSON.stringify(result, null, 2) };
         }
         if (command === "defer" || command === "defer-close" || command === "deferrals") {

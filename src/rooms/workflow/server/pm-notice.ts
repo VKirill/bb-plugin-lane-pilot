@@ -1,4 +1,5 @@
 import { getRun } from "../../storage";
+import { postOwnerItem } from "../../owner-waiting";
 import type { LanePilotDatabase } from "../../storage";
 import type { RunRow } from "../../storage";
 import { LP_TASK_PIPELINE } from "../builtin";
@@ -88,6 +89,27 @@ export async function maybeNotifyWorkflowRun(input: {
   }
 }
 
+/** The workflows that post their own line to the owner's list when they end well (the scheduled agent's routine). */
+const OWN_REPORT_WORKFLOWS = new Set(["agent-routine"]);
+
+/**
+ * The end of a run that has no PM chat to tell: one line on the owner's list instead, with a push when it went wrong. The same cases as the
+ * PM notice: a scheduled run reports only the result it was scheduled for (its failures are the schedule board's), any other run reports its end.
+ */
+export function reportEndToOwner(db: LanePilotDatabase, run: RunRow, scheduled: boolean, unmetGoalIds?: string[]): boolean {
+  if (!isNoticeStatus(run.status) || run.parent_run_id || !run.project_id || run.link_run_id) return false;
+  if (run.workflow_id === LP_TASK_PIPELINE || run.idem_key?.startsWith("lp-task:") || run.idem_key?.startsWith("phase:")) return false;
+  const delivered = run.status === "succeeded" ? deliverable(run.output_json ?? null) : null;
+  if (scheduled && !delivered) return false;
+  if (run.status === "succeeded" && (OWN_REPORT_WORKFLOWS.has(run.workflow_id) || !delivered)) return false;
+  const failed = run.status !== "succeeded";
+  const why = delivered ?? workflowEndedText({ workflowRunId: run.id, workflowId: run.workflow_id, status: run.status, reason: run.reason, unmetGoalIds: run.status === "blocked" ? unmetGoalIds : undefined });
+  return postOwnerItem(db, {
+    key: `workflow-end:${run.id}:${run.status}`, source: "workflow", kind: `workflow_${run.status}`, projectId: run.project_id, wake: failed,
+    what: `«${run.workflow_id}» (run ${run.id}) ${failed ? `is ${run.status}` : "finished"}`, why,
+  }).created;
+}
+
 export async function notifyWorkflowIfEnded(input: {
   bb: WorkflowNoticeSend;
   db: LanePilotDatabase;
@@ -96,6 +118,7 @@ export async function notifyWorkflowIfEnded(input: {
   unmetGoalIds?: string[];
 }): Promise<boolean> {
   const linked = input.run.link_run_id ? getRun(input.db, input.run.link_run_id) : undefined;
+  if (!input.run.link_run_id) return reportEndToOwner(input.db, input.run, startedBySchedule(input.db, input.run), input.unmetGoalIds);
   return maybeNotifyWorkflowRun({
     bb: input.bb, log: input.log, run: input.run,
     pmThreadId: linked?.pm_thread_id ?? null,

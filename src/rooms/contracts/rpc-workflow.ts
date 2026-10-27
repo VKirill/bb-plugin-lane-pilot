@@ -43,6 +43,14 @@ export const rpcWorkflow = {
       issues: z.array(z.object({ kind: z.string(), name: z.string(), level: z.enum(["missing", "unverified"]), message: z.string() }).strict()).optional(),
       envRequests: z.array(z.object({ name: z.string(), kind: z.literal("secret"), purpose: z.string() }).strict()).optional() }).strict(),
   },
+  /**
+   * The owner's answer to a question of a run in a project with no PM chat (his list holds the question with a button per option). `choice` is an
+   * option or words that name one; `text` is a free answer. `reason`: not_found, not_waiting, answer_decides_nothing.
+   */
+  workflow_answer: {
+    input: z.object({ runId: z.string().min(1), stepKey: z.string().min(1).optional(), choice: z.string().max(200).optional(), text: z.string().max(4000).optional() }).strict(),
+    output: z.object({ ok: z.boolean(), stepKey: z.string().optional(), reason: z.string().optional(), message: z.string().optional(), options: z.array(z.string()).optional() }).strict(),
+  },
   /** Whether what the workflow `requires` exists where it would run (skills, plugins, MCP servers, secrets by name, commands, logins). */
   workflow_preflight: {
     input: z.object({ id: z.string().min(1), projectId: z.string().min(1).optional() }).strict(),

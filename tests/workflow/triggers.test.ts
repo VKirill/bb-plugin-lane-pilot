@@ -203,7 +203,7 @@ describe("starting a workflow from the tab, a schedule or Telegram", () => {
     await engine.idle();
   });
 
-  it("refuses with a reason: unknown workflow, draft, missing input, no PM chat, no telegram trigger", async () => {
+  it("refuses with a reason: unknown workflow, draft, missing input, no telegram trigger", async () => {
     const { triggers } = world({ items: [stored(digest()), stored(digest({ id: "wip", status: "draft" })), stored(digest({ id: "no-schedule", triggers: [{ type: "manual" }] }))] });
     const start = (workflowId: string, extra: Partial<Parameters<typeof triggers.start>[0]> = {}) => triggers.start({ projectId: PROJECT, workflowId, inputs: { query: "q" }, source: "manual", ...extra });
     expect(await start("nope")).toMatchObject({ ok: false, reason: "unknown_workflow" });
@@ -211,7 +211,15 @@ describe("starting a workflow from the tab, a schedule or Telegram", () => {
     expect(await start("daily-digest", { inputs: {} })).toMatchObject({ ok: false, reason: "missing_inputs", missing: ["query"] });
     expect(await start("daily-digest", { source: "telegram" })).toMatchObject({ ok: false, reason: "no_trigger" });
     expect(await start("no-schedule", { source: "schedule" })).toMatchObject({ ok: false, reason: "no_trigger" });
-    expect(await triggers.start({ projectId: "proj_other", workflowId: "daily-digest", inputs: { query: "q" }, source: "manual" })).toMatchObject({ ok: false, reason: "no_pm_chat" });
+  });
+
+  it("starts a run in a project that has no PM chat: the run has no chat and no Lane Pilot run behind it, and it is not linked to one", async () => {
+    const { triggers, engine, db } = world({ pm: false });
+    const started = await triggers.start({ projectId: PROJECT, workflowId: "daily-digest", inputs: { query: "q" }, source: "manual" });
+    expect(started).toMatchObject({ ok: true });
+    const row = db.prepare("SELECT project_id, link_run_id FROM lane_pilot_wf_run WHERE id=?").get((started as { runId: string }).runId);
+    expect(row).toEqual({ project_id: PROJECT, link_run_id: null });
+    void engine;
   });
 
   it("runs in the PM chat, not in the newer chat of a workflow architect that has an open run too", async () => {

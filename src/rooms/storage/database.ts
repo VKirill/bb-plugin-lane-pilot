@@ -1601,6 +1601,27 @@ export function removeOwnSettings(db: LanePilotDatabase, levels: ReadonlyArray<{
   })();
 }
 
+/**
+ * Removes every accepted row of `key` whose value is `value`, at every level (project, section, the global one), as a reset does: the generations
+ * move on, so a save made on an older read conflicts. Returns the project ids that held such a row.
+ */
+export function clearSettingValue(db: LanePilotDatabase, key: string, value: string): string[] {
+  return db.transaction((): string[] => {
+    const rows = db.prepare("SELECT project_id, binding_id, value FROM lane_pilot_project_settings WHERE key=?").all(key) as Array<{ project_id: string; binding_id: string; value: string }>;
+    const projects = new Set<string>();
+    for (const row of rows) {
+      let stored: unknown = row.value;
+      try { stored = JSON.parse(row.value); } catch { /* the text itself */ }
+      if (stored !== value) continue;
+      const version = getSettingVersions(db, row.project_id, [key], row.binding_id)[key]!;
+      db.prepare("DELETE FROM lane_pilot_project_settings WHERE project_id=? AND binding_id=? AND key=?").run(row.project_id, row.binding_id, key);
+      bumpSettingGeneration(db, row.project_id, key, version + 1, row.binding_id);
+      projects.add(row.project_id);
+    }
+    return [...projects];
+  })();
+}
+
 const CHECK_DURATION_KEPT = 100;
 
 export type SecretIssuance = {
