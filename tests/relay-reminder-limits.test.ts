@@ -88,4 +88,14 @@ describe("time-only reminder caps", () => {
     const again = await h.relay.remind({ projectId:"P", threadId:"pm", note:"same wait", inMinutes:121 });
     expect(again.id).toBe(first.id);
   });
+  it("lets the plugin set the owner's own date days ahead and keeps it out of the PM's chain", async () => {
+    const h = harness();
+    const owner = await h.relay.remind({ projectId:"P", threadId:"pm", note:"The owner asked to be reminded: Monday report", inMinutes:7_522, ownerDate:true });
+    expect(owner.ownerDate).toBe(true);
+    expect(owner.chainDepth).toBeUndefined();
+    expect(owner.dueAt - 10_000_000).toBe(7_522 * 60_000);
+    await fireDue(h, 7_522);
+    const next = await h.relay.remind({ projectId:"P", threadId:"pm", note:"check later", inMinutes:5 });
+    expect(next.chainDepth).toBe(1);
+  });
 });

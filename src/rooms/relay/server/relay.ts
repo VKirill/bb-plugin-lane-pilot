@@ -33,6 +33,11 @@ export type RelayReminder = {
   queuedMessageId?:string|null;
   /** Consecutive time-only reminders of this thread; 1 is a new chain. */
   chainDepth?:number;
+  /**
+   * A date the owner named himself (learning: «remind me on Monday»), set by the plugin server, not by an agent: it may be days
+   * away, so the 2-hour cap and the chain of time-only reminders, which stop a PM snoozing, do not apply to it.
+   */
+  ownerDate?:true;
 };
 export type RelayItem = RelayAsk | RelayReminder;
 
@@ -238,7 +243,7 @@ export function createRelay(deps:RelayDeps) {
     });
   }
 
-  async function remind(input:{projectId:string; threadId:string; note:string; inMinutes:number; watchThreadId?:string|null; taskIds?:string[]}) {
+  async function remind(input:{projectId:string; threadId:string; note:string; inMinutes:number; watchThreadId?:string|null; taskIds?:string[]; ownerDate?:boolean}) {
     return update(async (items) => {
       const mine = items.filter((row):row is RelayReminder => row.kind === "remind" && row.threadId === input.threadId);
       if (mine.filter((row) => !row.firedAt).length >= RELAY_LIMITS.openRemindersPerThread) {
@@ -253,13 +258,13 @@ export function createRelay(deps:RelayDeps) {
       const twin = mine.find((row) => !row.firedAt && row.note.trim().toLowerCase() === input.note.trim().toLowerCase() && (row.watchThreadId ?? null) === (input.watchThreadId ?? null)
         && sameTasks(row) && Math.abs(row.dueAt - dueAt) <= DUPLICATE_REMINDER_MS);
       if (twin) return twin;
-      const timeOnly = !input.watchThreadId && !input.taskIds?.length;
+      const timeOnly = !input.watchThreadId && !input.taskIds?.length && !input.ownerDate;
       if (timeOnly && input.inMinutes > RELAY_LIMITS.timeOnlyMaxMinutes) {
         throw new Error("relay limit: a wait longer than 2 hours on nothing Lane Pilot can see — tell the owner what you wait for and end the turn, or use lane_pilot_schedule for a recurring check.");
       }
       let chainDepth:number | undefined;
       if (timeOnly) {
-        const prev = mine.filter((row) => row.firedBy === "time" && row.firedAt && !row.watchThreadId && !row.taskIds?.length)
+        const prev = mine.filter((row) => row.firedBy === "time" && row.firedAt && !row.watchThreadId && !row.taskIds?.length && !row.ownerDate)
           .reduce<RelayReminder | undefined>((latest, row) => !latest || row.firedAt! > latest.firedAt! ? row : latest, undefined);
         chainDepth = prev && deps.now() - prev.firedAt! <= RELAY_LIMITS.chainWindowMs ? (prev.chainDepth ?? 1) + 1 : 1;
         if (chainDepth > RELAY_LIMITS.chainMax) {
@@ -269,7 +274,7 @@ export function createRelay(deps:RelayDeps) {
       const item:RelayReminder = { kind:"remind", id:id("rem"), projectId:input.projectId, threadId:input.threadId, note:input.note,
         dueAt, watchThreadId:input.watchThreadId ?? null, createdAt:deps.now(), firedAt:null, firedBy:null,
         ...(input.taskIds?.length ? { taskIds:[...new Set(input.taskIds)] } : {}),
-        ...(chainDepth ? { chainDepth } : {}) };
+        ...(chainDepth ? { chainDepth } : {}), ...(input.ownerDate ? { ownerDate:true as const } : {}) };
       // BB's queue keeps the time: the reminder is a card in the chat, due at `dueAt`, and survives a reload of this plugin.
       if (deps.scheduleQueued) {
         item.queuedMessageId = await deps.scheduleQueued(item.threadId, reminderText(item, "time"), item.dueAt)

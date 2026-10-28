@@ -120,7 +120,7 @@ export function createLearning(ctx: ServerCore, services: Services) {
     db, rules, notes,
     remind: async (item) => {
       const minutes = Math.max(1, Math.round(((item.dueAt ?? Date.now()) - Date.now()) / 60_000));
-      const reminder = await relayFor(ctx).remind({ projectId: item.projectId, threadId: item.threadId, note: `The owner asked to be reminded: ${item.text} (${item.evidence})`, inMinutes: minutes }) as { id?: string };
+      const reminder = await relayFor(ctx).remind({ projectId: item.projectId, threadId: item.threadId, note: `The owner asked to be reminded: ${item.text} (${item.evidence})`, inMinutes: minutes, ownerDate: true }) as { id?: string };
       return reminder.id ?? "set";
     },
   });
