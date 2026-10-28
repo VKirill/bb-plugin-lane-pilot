@@ -4,10 +4,12 @@ import { describe, expect, it } from "vitest";
 import { taskV2Schema } from "../src/rooms/contracts";
 
 const script = fileURLToPath(new URL("../scripts/lp-drill.sh", import.meta.url));
+// The drill's own settings (LP_DRILL_*) are left out: a deploy exports them for its sandbox (OVH's since 2026-10-28), and these runs check the defaults.
+const ownEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith("LP_DRILL_")));
 
 describe("scripts/lp-drill.sh (E3)", () => {
   it("--dry-run prints three valid, non-overlapping task-v2 documents and touches nothing", () => {
-    const run = spawnSync("bash", [script, "--dry-run"], { encoding: "utf8", timeout: 30_000, env: { ...process.env, BB_CLI: "/nonexistent/bb" } });
+    const run = spawnSync("bash", [script, "--dry-run"], { encoding: "utf8", timeout: 30_000, env: { ...ownEnv, BB_CLI: "/nonexistent/bb" } });
     expect(run.status).toBe(0);
     const tasks = run.stdout.split("\n").filter((line) => line.startsWith("{")).map((line) => taskV2Schema.parse(JSON.parse(line)));
     expect(tasks).toHaveLength(3);
@@ -20,7 +22,7 @@ describe("scripts/lp-drill.sh (E3)", () => {
   });
 
   it("--dry-run also prints a valid task for every other scenario, each in the project folder it runs in", () => {
-    const run = spawnSync("bash", [script, "--dry-run"], { encoding: "utf8", timeout: 30_000, env: { ...process.env, BB_CLI: "/nonexistent/bb" } });
+    const run = spawnSync("bash", [script, "--dry-run"], { encoding: "utf8", timeout: 30_000, env: { ...ownEnv, BB_CLI: "/nonexistent/bb" } });
     const lines = run.stdout.split("\n").filter((line) => line.startsWith("scenario "));
     const byScenario = new Map<string, ReturnType<typeof taskV2Schema.parse>[]>();
     for (const line of lines) {
@@ -38,11 +40,11 @@ describe("scripts/lp-drill.sh (E3)", () => {
   });
 
   it("--quick is the guard hash check, the register of deferrals, the checker drill, the memory paths, the helper per provider and the three-task scenario, and an unknown scenario is refused", () => {
-    const quick = spawnSync("bash", [script, "--quick", "--dry-run"], { encoding: "utf8", timeout: 30_000, env: { ...process.env, BB_CLI: "/nonexistent/bb" } });
+    const quick = spawnSync("bash", [script, "--quick", "--dry-run"], { encoding: "utf8", timeout: 30_000, env: { ...ownEnv, BB_CLI: "/nonexistent/bb" } });
     expect(quick.status).toBe(0);
     expect(quick.stdout).toContain("scenarios: guard_hash, deferrals, checkers, memory_paths, helper_providers, parallel3");
     expect(quick.stdout).not.toContain("scenario conflict");
-    const unknown = spawnSync("bash", [script, "--scenario", "nope", "--dry-run"], { encoding: "utf8", timeout: 30_000 });
+    const unknown = spawnSync("bash", [script, "--scenario", "nope", "--dry-run"], { encoding: "utf8", timeout: 30_000, env: ownEnv });
     expect(unknown.status).toBe(2);
   });
 });
