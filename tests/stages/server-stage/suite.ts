@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { THREAD_WATCH_EVENT_TYPES } from "@lane-pilot/thread-observe";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
@@ -1000,6 +1001,29 @@ describe("stage → native writer → receipt", () => {
     const memoryBrief=String(spawned.find((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="memory-maintenance")?.prompt);
     expect(memoryBrief).toContain("each check shows its exit code and the last lines of its output");
     expect(memoryBrief).not.toMatch(/"reasoning"|"runV2"|"executionPacketSha256"/);
+    await harness.lifecycle.dispose();
+  });
+  it("passes on a full project core: the maintainer sees the fill, core entries that do not fit are kept as notes",async()=>{
+    // The real batch of item-fixes (hub 2026-10-28) on a core of 3070/3072 tokens: refused whole before, the after-acceptance graph went red.
+    const realOutput=readFileSync(resolve(__dirname,"../../fixtures/memory-maintainer/item-fixes-core-full.json"),"utf8");
+    const release=holdEvents("memory-thread");
+    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
+      "memory.enabled":true,"memory.maintain":true,"memory.inject":true,"memory.audience":"subagent",
+      "memory.provider":"critic","memory.model":"critic-model","memory.reasoning_effort":"high",
+    },undefined,undefined,realOutput,undefined,undefined,undefined,false,0,undefined,undefined,undefined,undefined,undefined,undefined,undefined,false,{});
+    storeMemoryRecords(db,{projectId,audience:"subagent",sourceSha256:"b".repeat(64),coreBudget:1_000_000,noteBudget:24000,indexBudget:65536,
+      entries:[...Array.from({length:30},(_,index)=>({kind:"core" as const,content:`Convention ${index} `.padEnd(400,"x"),concepts:["convention"]})),{kind:"core" as const,content:"Last convention ".padEnd(280,"y"),concepts:["convention"]}]});
+    await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{confirm:true,objective:"Проверка диспетча",plan:"Write a verified fixture",task},{threadId:pmThreadId,projectId});
+    await harness.behavior.callAgentTool("lane_pilot_wait_writer",{runId:"stage-run",timeoutSec:3},{threadId:pmThreadId,projectId});
+    await until("memory child to be spawned",()=>stageReceipt(db,task.id,"memory-maintenance")?.threadId==="memory-thread");
+    release();
+    const passed=await until("memory receipt",()=>["passed","failed"].includes(String(stageReceipt(db,task.id,"memory-maintenance")?.state)) && stageReceipt(db,task.id,"memory-maintenance"));
+    expect(passed.reason ?? null).toBeNull();
+    expect(passed.state).toBe("passed");
+    expect(passed.result).toMatchObject({stored:8,coreDemotedToNotes:2});
+    const memoryBrief=String(spawned.find((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)==="memory-maintenance")?.prompt);
+    expect(memoryBrief).toContain("CORE holds 3070 of 3072 tokens now");
+    expect(memoryBrief).toContain("EXISTING CORE");
     await harness.lifecycle.dispose();
   });
   it("fails a memory stage whose spawn BB refused instead of leaving it running",async()=>{
