@@ -4,14 +4,14 @@ import { breakerKey, budgetStopReason, classifyFailure, runningWriterBudgetStop,
 import type { DirtSnapshot } from "../cli-outcome";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { providerPoolCap } from "@lane-pilot/settings-catalog";
-import { isZcodeProvider } from "@lane-pilot/models";
+import { isZcodeProvider, WRITER_PROFILES, type WriterProfile } from "@lane-pilot/models";
 import { DEPENDENCY_REDO_WAIT_MS, countAttempts, countChargedAttempts, countThreadTurns, createAttempt, endSpawnFailure, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getTask, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listStageReceipts, listUnansweredWriterQuestions, loadProjectSettings, noteToldPmDirectly, transitionAttempt, taskBasePath } from "../../storage";
 import { taskV2Schema } from "../../contracts";
 import { ownsPathsOverlap, pollPause } from "@lane-pilot/kit";
 import { reconcile } from "../../stability";
 import { emergencyFallbackDecision } from "../../night";
 import { rotatedWriterSettings, writerFallbackChain, writerFallbacks } from "../writer-fallbacks";
-import { writerPickOverlay } from "../writer-model-pick";
+import { writerPickOverlay, type WriterLoad } from "../writer-model-pick";
 import { reassignedReason, takeReassignRequest, type ReassignRequest } from "./reassign";
 import { usageHoldReason, usageSkipPercent } from "../../usage/server";
 import { MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE } from "../../runs";
@@ -132,9 +132,33 @@ export function createWriterStart(ctx: ServerCore, services: Services) {
   /** Jev's writer for a task, once per task (kept in the KV), as the settings it changes; null keeps the project's writer. */
   const pickWriter = (settings:Record<string, unknown>, input:{ projectId:string; runId:string; taskId:string; task:TaskV2; config:PrototypeConfig }) =>
     writerPickOverlay({ kv:bb.storage.kv as never, jev:jev(), log:(line) => bb.log.warn(line),
-      // ZCode is not offered to Jev where it cannot work now (no zcode provider on the task's machine, outside its free hours, or busy).
-      held:async (profile) => isZcodeProvider(profile.providerId) && Boolean(await services.providerUsage.hold({ providerId:profile.providerId, model:profile.model, hostId:input.config.hostId, threshold:0, settings })) },
+      // A writer whose provider window is spent (usage.skip_percent) is not offered to Jev; ZCode neither where it cannot work now (no zcode
+      // provider on the task's machine, outside its free hours, or busy).
+      held:async (profile) => Boolean(await services.providerUsage.hold({ providerId:profile.providerId, model:profile.model, hostId:input.config.hostId,
+        threshold:isZcodeProvider(profile.providerId) ? 0 : usageSkipPercent(settings), settings })),
+      load:(profiles) => writerLoad(profiles, input.config.hostId, settings) },
       settings, input);
+
+  /**
+   * How busy each offered writer's provider is, for Jev to spread the tasks: the spent share of its usage window (from the cached
+   * readings; null when nothing is measured) and the writer tasks running on that provider now (the picks kept for running tasks).
+   */
+  async function writerLoad(profiles:readonly WriterProfile[], hostId:string, settings:Record<string, unknown>):Promise<Record<string, WriterLoad>> {
+    // ponytail: counts only tasks whose writer Jev picked (a task on the project's own writer has no kept pick); count attempts by writer pair if that skews the spread.
+    const running = new Map<string, number>();
+    const picks = await Promise.all([...services.activeWriterTasks].map((key) => bb.storage.kv.get(`writer-pick:${key}`).catch(() => null)));
+    for (const picked of picks) {
+      const provider = typeof picked === "string" && picked ? WRITER_PROFILES.find((row) => row.key === picked)?.providerId : undefined;
+      if (provider) running.set(provider, (running.get(provider) ?? 0) + 1);
+    }
+    const out:Record<string, WriterLoad> = {};
+    await Promise.all(profiles.map(async (profile) => {
+      const spent = isZcodeProvider(profile.providerId) ? null
+        : await services.providerUsage.hold({ providerId:profile.providerId, model:profile.model, hostId, threshold:1, settings }).catch(() => null);
+      out[profile.key] = { percent:spent?.percent ?? null, running:running.get(profile.providerId) ?? 0 };
+    }));
+    return out;
+  }
 
   function startWriterTask(input:{
     projectId:string; runId:string; taskId:string; firstAttemptId:string; pmThreadId:string;

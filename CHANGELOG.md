@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.363
+
+**Jev spreads the writer tasks across providers.** Jev picks the writer of each task from the model profiles, but it saw only the task and the models' strengths: of the last 107 picks on the hub 44 went to GPT-6 Luna, and nearly everything else stayed on the project's writer, so the tasks piled up on Codex. Now a writer whose provider usage window is spent (`usage.skip_percent`, 90% by default) is not offered at all, not only ZCode outside its hours; and every offered model carries how busy its provider is: the spent share of its window and the writer tasks running on it. The judgment (version 2) tells Jev to choose, between models that fit the task about equally, the one whose provider has more room and fewer tasks.
+
 ## 0.1.362
 
 **«Reset everywhere» takes agents back too, and leaves the bench alone.** The global Team tab lists the projects and sections with their own role models and gives them the global ones back. The owner wants every project to inherit agents as well: the list and the reset now cover every `<role>.agent` row (`main.agent`, `docs.agent`, …) beside the model rows (`isRoleOverrideKey`). «LP bench …» projects and the sandboxes pin their models on purpose (the bench compares them): they are no longer listed, and the reset refuses them even when a caller names them.

@@ -14,13 +14,19 @@ export type WriterPickTask = {
   title: string; objective: string; kind?: string | null; area?: string | null; risk?: string | null;
   owns_paths: readonly string[]; expected_outputs: readonly string[]; acceptance: readonly string[];
 };
-export type WriterPickInput = { task: WriterPickTask; candidates: readonly WriterProfile[] };
+/** How busy a candidate's provider is now: the spent share of its usage window (null — not measured) and the writer tasks running on it. */
+export type WriterLoad = { percent: number | null; running: number };
+export type WriterPickInput = { task: WriterPickTask; candidates: readonly WriterProfile[]; load?: Readonly<Record<string, WriterLoad>> };
+
+const loadNote = (load: WriterLoad | undefined): string => (load
+  ? ` [provider now: ${load.percent === null ? "no spent usage measured" : `${load.percent}% of its usage window spent`}, ${load.running} writer task${load.running === 1 ? "" : "s"} running]`
+  : "");
 
 const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
 export const writerModelJudgment = defineJudgment<WriterPickInput, { key: string | null }>({
   id: WRITER_MODEL_JUDGMENT_ID,
-  version: 1,
+  version: 2,
   defaultMode: "active",
   timeoutMs: 8_000,
   stateBuilder: (input) => ({
@@ -32,8 +38,8 @@ export const writerModelJudgment = defineJudgment<WriterPickInput, { key: string
   }),
   questions: (input) => ({
     writer: choice(
-      "`task` is one coding task a writer agent will carry out in a project's repository: what it changes (`files`, `outputs`), why (`objective`), how it is checked (`acceptance`), its kind and risk. Which coding model should write it? Judge by the work: the languages and stack the files show, how hard and open-ended the change is, how much it risks, and what each model is known to do well and badly. Prefer the cheaper model when it fits the task as well.",
-      Object.fromEntries(input.candidates.map((profile) => [profile.key, `${profile.label}: ${profile.summary}`])),
+      "`task` is one coding task a writer agent will carry out in a project's repository: what it changes (`files`, `outputs`), why (`objective`), how it is checked (`acceptance`), its kind and risk. Which coding model should write it? Judge by the work: the languages and stack the files show, how hard and open-ended the change is, how much it risks, and what each model is known to do well and badly. Prefer the cheaper model when it fits the task as well. Each model ends with how busy its provider is now; the work must be spread across providers: between models that fit the task about equally, choose the one whose provider has more of its usage window left and fewer writer tasks running.",
+      Object.fromEntries(input.candidates.map((profile) => [profile.key, `${profile.label}: ${profile.summary}${loadNote(input.load?.[profile.key])}`])),
     ),
   }),
   thresholds: {
@@ -77,7 +83,9 @@ type PickTaskContract = { title: string; display_title?: string; objective?: str
  */
 export async function writerPickOverlay(deps: { kv: { get(key: string): Promise<unknown>; set(key: string, value: unknown): Promise<void> }; jev: Pick<Jev, "judge" | "enabled"> | null; log(line: string): void;
   /** Whether a writer cannot work where this task runs now (ZCode: other machine, outside its free hours, busy); such a writer is not offered to Jev. A pick already kept for the task stands. */
-  held?(profile: WriterProfile): Promise<boolean> },
+  held?(profile: WriterProfile): Promise<boolean>;
+  /** How busy each offered writer's provider is now; Jev spreads the tasks with it. */
+  load?(profiles: readonly WriterProfile[]): Promise<Record<string, WriterLoad>> },
   settings: Record<string, unknown>, input: { projectId: string; runId: string; taskId: string; task: PickTaskContract }): Promise<Record<string, unknown> | null> {
   if (settings["writer.pick"] === false || settings["writer.pick"] === "off") return null;
   const key = `writer-pick:${input.runId}:${input.taskId}`;
@@ -87,8 +95,9 @@ export async function writerPickOverlay(deps: { kv: { get(key: string): Promise<
   let picked = ((await deps.kv.get(key).catch(() => null)) ?? null) as string | null;
   if (picked === null && offered.length > 1 && deps.jev?.enabled(settings as never)) {
     const task = input.task;
+    const load = deps.load ? await deps.load(offered).catch(() => undefined) : undefined;
     const verdict = await deps.jev.judge(writerModelJudgment, { task: { title: task.display_title ?? task.title, objective: task.objective ?? "", kind: task.kind ?? null, area: task.area ?? null,
-      risk: task.risk ?? null, owns_paths: task.owns_paths, expected_outputs: task.expected_outputs, acceptance: task.acceptance ?? [] }, candidates: offered },
+      risk: task.risk ?? null, owns_paths: task.owns_paths, expected_outputs: task.expected_outputs, acceptance: task.acceptance ?? [] }, candidates: offered, ...(load ? { load } : {}) },
       { projectId: input.projectId, runId: input.runId, subject: input.taskId, settings: settings as never }).catch(() => null);
     // Only a writer that was offered can be the answer (a held ZCode was not).
     picked = verdict?.by === "jev" && verdict.decision.key && offered.some((row) => row.key === verdict.decision.key) ? verdict.decision.key : "";

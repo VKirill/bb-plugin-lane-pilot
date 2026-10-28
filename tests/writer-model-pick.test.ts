@@ -53,6 +53,20 @@ describe("asking for the pick", () => {
     await writerPickOverlay({ kv, jev, log: () => undefined }, settings, input);
     expect(asked).toBe(1);
   });
+  it("offers Jev only writers with room and tells it how busy each provider is, so it spreads the tasks", async () => {
+    let seen: { candidates: Array<{ key: string }>; load?: Record<string, unknown> } | null = null;
+    const jev = { enabled: () => true, judge: async (_judgment: unknown, asked: never) => { seen = asked; return { by: "jev", decision: { key: "sonnet" } }; } } as never;
+    const held = async (row: { providerId: string }) => row.providerId === "codex"; // its window is spent
+    const load = async (rows: readonly { key: string }[]) => Object.fromEntries(rows.map((row) => [row.key, { percent: 40, running: 3 }]));
+    await writerPickOverlay({ ...kvOf(), jev, log: () => undefined, held, load }, settings, input);
+    const offered = seen!.candidates.map((row) => row.key);
+    expect(offered).toContain("sonnet");
+    expect(offered.some((key) => key.startsWith("gpt-"))).toBe(false);
+    expect(seen!.load).toMatchObject({ sonnet: { percent: 40, running: 3 } });
+    const questions = JSON.stringify(writerModelJudgment.questions(seen as never));
+    expect(questions).toContain("40% of its usage window spent, 3 writer tasks running");
+    expect(questions).toContain("spread across providers");
+  });
   it("keeps the project's writer when Jev is unsure, off, or the pick is off", async () => {
     const unsure = { enabled: () => true, judge: async () => ({ by: "jev", decision: { key: null } }) } as never;
     expect(await writerPickOverlay({ ...kvOf(), jev: unsure, log: () => undefined }, settings, input)).toBeNull();
