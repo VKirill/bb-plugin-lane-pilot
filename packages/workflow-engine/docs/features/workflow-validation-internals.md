@@ -2,7 +2,7 @@
 title: Workflow Validation and Expression Internals
 type: component
 created: 2026-10-26
-updated: 2026-10-27
+updated: 2026-10-28
 status: active
 confidence: high
 tags: [workflow-engine, validation, expressions, schema]
@@ -25,7 +25,7 @@ This page records the detailed branches of the parser, expression checker, runti
 ## How it works
 
 1. `loadWorkflow` parses JSONC text when given a string, turns syntax errors into `syntax` problems, parses the normalized object against `workflowSchema`, and returns `schema` problems when parsing fails. `parseWorkflow` returns the checked workflow or throws `WorkflowError` containing the load problems (`packages/workflow-engine/src/validate.ts:467-487`, `packages/workflow-engine/src/schema.ts:3-8`).
-2. `validateWorkflow` checks authoring-level rules, lowers shorthand forms, validates the resulting graph, checks expressions and references, then checks node contracts and node-specific constraints. It also checks literal specialist IDs when a lookup is supplied and warns when produced-artifact enum values are absent from the agent prompt and generated output contract (`packages/workflow-engine/src/validate.ts:21-22`, `packages/workflow-engine/src/validate.ts:351-374`, `packages/workflow-engine/src/prompt-coverage.ts:17-31`). It returns diagnostics with `error` or `warning` levels (`packages/workflow-engine/src/validate.ts:70-129`, `packages/workflow-engine/src/validate.ts:170-213`, `packages/workflow-engine/src/validate.ts:307-461`).
+2. `validateWorkflow` checks authoring-level rules, lowers shorthand forms, validates the resulting graph, checks expressions and references, then checks node contracts and node-specific constraints. Node-level model fields are accepted for older definitions but are ignored and reported with a `model_ignored` warning because the model belongs to the role. It also checks literal specialist IDs when a lookup is supplied and warns when produced-artifact enum values are absent from the agent prompt and generated output contract (`packages/workflow-engine/src/validate.ts:21-22`, `packages/workflow-engine/src/validate.ts:351-367`, `packages/workflow-engine/src/prompt-coverage.ts:17-31`). It returns diagnostics with `error` or `warning` levels (`packages/workflow-engine/src/validate.ts:70-129`, `packages/workflow-engine/src/validate.ts:170-213`, `packages/workflow-engine/src/validate.ts:307-461`).
 3. Expression strings are tokenized and parsed into an AST; structured conditions are converted to that same AST. Static checking collects reference/type diagnostics, while runtime evaluation returns a value or throws `MissingValueError` (`packages/workflow-engine/src/expr.ts:34-54`, `packages/workflow-engine/src/expr.ts:72-155`, `packages/workflow-engine/src/expr.ts:203-312`).
 4. `loadWorkflowStore` reads built-ins and configured files, excludes per-definition failures, selects the highest-ranked remaining definition per ID, then validates references against that selected set (`packages/workflow-engine/src/store.ts:58-90`).
 5. The store exposes only its final map through `list`, `get`, and version-aware `resolve`; source and validation problems remain available in `problems` (`packages/workflow-engine/src/store.ts:95-103`).
@@ -104,7 +104,7 @@ The expression pass parses edge conditions, mappings, node templates, `skip_when
 
 It then rejects unbounded graph cycles unless a loop node has `maxVisits` or an internal edge condition counts visits to a node in that cycle. It checks that skippable nodes provide the fields read by downstream nodes, and validates artifact producer/consumer relations and output gates (`packages/workflow-engine/src/validate.ts:281-346`).
 
-The node pass checks configured executor availability, model preset/model warnings, agent environment and prompt rules, contracts, human defaults, decision source/order/type compatibility, parallel list/filter/join shape, and subworkflow input/output mappings. With a resolver, it also checks subworkflow cycles and caps depth at the smaller of the workflow guard and `MAX_SUBWORKFLOW_DEPTH`. Diagnostics are returned together; `loadWorkflow` fails only when at least one is an error (`packages/workflow-engine/src/validate.ts:351-461`, `packages/workflow-engine/src/validate.ts:478-480`).
+The node pass checks configured executor availability, warns about ignored node-level model fields, and checks agent environment and prompt rules, contracts, human defaults, decision source/order/type compatibility, parallel list/filter/join shape, and subworkflow input/output mappings. With a resolver, it also checks subworkflow cycles and caps depth at the smaller of the workflow guard and `MAX_SUBWORKFLOW_DEPTH`. Diagnostics are returned together; `loadWorkflow` fails only when at least one is an error (`packages/workflow-engine/src/validate.ts:351-456`, `packages/workflow-engine/src/validate.ts:475-480`).
 
 ### `loadWorkflowStore`
 
@@ -116,7 +116,7 @@ The returned `list` reads final values, `get` reads by ID, and `resolve` additio
 
 ## Gotchas
 
-- `refOf` classifies a name but does not validate it; `checkRef` performs workflow-aware validation (`packages/workflow-engine/src/expr.ts:57-69`, `packages/workflow-engine/src/expr.ts:203-230`).
+- `refOf` classifies a name but does not validate it; `checkRef` checks node existence, order, and fields against `CheckEnv` (`packages/workflow-engine/src/expr.ts:57-69`, `packages/workflow-engine/src/expr.ts:203-230`).
 - Static checking can return `any` after adding a problem, so callers must inspect the diagnostics array as well as the inferred type (`packages/workflow-engine/src/expr.ts:213-230`, `packages/workflow-engine/src/expr.ts:252-263`).
 - Merged-reference errors exclude the selected store entry after precedence; lower-ranked definitions are not reconsidered (`packages/workflow-engine/src/store.ts:81-93`).
 

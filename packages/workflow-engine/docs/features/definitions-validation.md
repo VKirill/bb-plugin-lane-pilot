@@ -2,7 +2,7 @@
 title: Workflow Definitions and Validation
 type: component
 created: 2026-10-10
-updated: 2026-10-27
+updated: 2026-10-28
 status: active
 confidence: medium
 tags: [workflow-engine, schema, validation]
@@ -19,13 +19,13 @@ TL;DR: Workflow definitions are versioned typed graphs that are normalized, pars
 
 ## Purpose
 
-This capability defines the JSONC workflow format, its typed nodes and edges, the expression language used by conditions and mapped values, and the validation path used by individual definitions and merged workflow stores (`packages/workflow-engine/src/schema.ts:3-8`, `packages/workflow-engine/src/validate.ts:467-490`).
+This capability defines the JSONC workflow format, its typed nodes and edges, the expression language used by conditions and mapped values, and the validation path used by individual definitions and merged workflow stores (`packages/workflow-engine/src/schema.ts:3-8`, `packages/workflow-engine/src/validate.ts:467-487`).
 
 ## How it works
 
 1. `loadWorkflow` accepts an object or JSONC text, parses text with trailing commas enabled, and reports syntax errors as structured problems (`packages/workflow-engine/src/validate.ts:467-473`).
 2. `parseWorkflowObject` normalizes supported authoring spellings, then validates against the closed Zod schema; unknown keys and malformed field definitions are rejected (`packages/workflow-engine/src/schema.ts:3-8`, `packages/workflow-engine/src/schema.ts:25-38`, `packages/workflow-engine/src/validate.ts:474-479`).
-3. `validateWorkflow` checks node and edge references, graph reachability, loops, subworkflow depth, contracts, agent prompt coverage for produced-artifact enum values, and lowered graph constraints; errors make `loadWorkflow` return `ok: false`, while prompt-coverage findings are warnings (`packages/workflow-engine/src/validate.ts:70-133`, `packages/workflow-engine/src/validate.ts:351-374`, `packages/workflow-engine/src/validate.ts:478-487`).
+3. `validateWorkflow` checks node and edge references, graph reachability, loops, subworkflow depth, contracts, agent prompt coverage for produced-artifact enum values, and lowered graph constraints. Node-level model fields are accepted for older definitions but ignored and reported with a `model_ignored` warning; errors make `loadWorkflow` return `ok: false`, while warnings leave it successful (`packages/workflow-engine/src/validate.ts:70-133`, `packages/workflow-engine/src/validate.ts:351-367`, `packages/workflow-engine/src/validate.ts:478-487`).
 4. `loadWorkflowStore` loads built-ins and files, chooses the narrowest valid definition by origin, then validates subworkflow references against the merged set; its two passes and lookup results are detailed in [Workflow Validation and Expression Internals](workflow-validation-internals.md) (`packages/workflow-engine/src/store.ts:71-104`).
 5. `lowerWorkflow` expands shorthand such as `for_each` and parallel constructs into graph nodes used by the engine (`packages/workflow-engine/src/lower.ts:52-101`).
 
@@ -48,6 +48,7 @@ This capability defines the JSONC workflow format, its typed nodes and edges, th
 - Workflow schema version is `1`; quality modes are `quick`, `standard`, and `full`; pass modes are `artifact`, `same-session`, `read-prior-session`, and `fork` (`packages/workflow-engine/src/schema.ts:10`, `packages/workflow-engine/src/schema.ts:59-64`).
 - Definitions that fail `loadWorkflow` checks without a merged resolver are omitted before origin precedence is applied. The highest-ranked remaining definition per ID is checked against the merged set for subworkflow references; if that check fails, the ID is omitted rather than falling back (`packages/workflow-engine/src/store.ts:71-90`).
 - When `specialistKnown` is supplied, an agent role of the form `specialist:<id>` is an error if its literal ID is not known; templated roles and an unknown availability result are not rejected by this check (`packages/workflow-engine/src/validate.ts:21-22`, `packages/workflow-engine/src/validate.ts:357-365`).
+- The model belongs to the agent's role. `provider`, `model`, `reasoning`, `service_tier`, and `model_preset` remain schema-compatible but do not select a model and produce a `model_ignored` warning when present (`packages/workflow-engine/src/schema.ts:117-118`, `packages/workflow-engine/src/schema.ts:123-131`, `packages/workflow-engine/src/validate.ts:353-356`).
 - For agent nodes, validation warns when an enum accepted by a declared produced-artifact schema is not named in either the node prompt or the generated output contract. It checks literal vocabulary coverage; this finding does not make `loadWorkflow` fail (`packages/workflow-engine/src/prompt-coverage.ts:17-31`, `packages/workflow-engine/src/validate.ts:366-372`, `packages/workflow-engine/src/validate.ts:478-479`).
 
 ## Public API
@@ -103,6 +104,22 @@ The function does not catch errors from a supplied resolver. Invalid generated g
 `conditionSchema` lazily validates either a strict field/operator/value object, a nonempty `all` or `any` list capped at 20 children, or a strict recursive `not` object. `whenSchema` also accepts a nonempty expression string up to 600 characters; unsupported object shapes and extra keys fail Zod parsing (`packages/workflow-engine/src/schema.ts:41-57`).
 
 `nodeSchema` dispatches on the required `type` discriminator to one of nine strict schemas: agent, lp-task, action, decision, human, parallel, join, subworkflow, or note. The selected node schema enforces its required fields, defaults, and type-specific constraints; a missing/unknown discriminator, wrong field type, or unknown property fails parsing (`packages/workflow-engine/src/schema.ts:223-227`, `packages/workflow-engine/src/schema.ts:180-221`).
+
+The dispatch is a Zod discriminated union on `type`; each ordinary node variant requires an ID, while a parallel child uses the same runnable variants without an authoring ID. All variants except note include `nodeBase` fields such as outputs, executor key, retry/timeout bounds, quality-mode skips, inputs, and contracts (`packages/workflow-engine/src/schema.ts:87-120`, `packages/workflow-engine/src/schema.ts:180-230`).
+
+| `type` | Variant-specific inputs and defaults | Parse failures |
+|---|---|---|
+| `agent` | Role defaults to `worker`, prompt to empty; accepts skills/plugins/MCP lists, environment/session/authorization, and 1–9 votes. Node model fields remain accepted for compatibility (`packages/workflow-engine/src/schema.ts:123-142`). | Strict-object errors, invalid enum/list bounds, or invalid field types fail Zod parsing (`packages/workflow-engine/src/schema.ts:196`, `packages/workflow-engine/src/schema.ts:128-141`). |
+| `lp-task` | Optional quality mode and contract templates; owned paths and stages default to empty arrays, with optional per-stage proofs (`packages/workflow-engine/src/schema.ts:143-152`). | Invalid contract union, empty path/stage item, or list over its cap fails parsing (`packages/workflow-engine/src/schema.ts:143-152`, `packages/workflow-engine/src/schema.ts:197`). |
+| `action` | Action key is optional; `params` defaults to `{}`; optional output `map` is a record or string (`packages/workflow-engine/src/schema.ts:153-159`). | Bad action key or wrong params/map shape fails parsing (`packages/workflow-engine/src/schema.ts:153-159`, `packages/workflow-engine/src/schema.ts:198`). |
+| `decision` | Optional `reads_node` selects a prior node's output; otherwise the executor computes the decision (`packages/workflow-engine/src/schema.ts:199-203`). | Invalid node ID or extra field fails strict parsing (`packages/workflow-engine/src/schema.ts:199-203`). |
+| `human` | Requires a 1–4,000 character question; options default empty; timeout defaults to `stop`; optional default option (`packages/workflow-engine/src/schema.ts:160-166`). | Missing/empty question, overlong options, bad timeout value, or unknown property fails parsing (`packages/workflow-engine/src/schema.ts:160-166`, `packages/workflow-engine/src/schema.ts:204`). |
+| `parallel` | Optional list source/child/join; `max_fan_out` and concurrency cap at 50; `batch_size` caps at 500; overflow defaults to `fail` (`packages/workflow-engine/src/schema.ts:174-219`). | Invalid `for_each` union or bounds fail parsing. Missing child/join pairing and child without `for_each` are later validation errors, not schema errors (`packages/workflow-engine/src/schema.ts:174-219`, `packages/workflow-engine/src/validate.ts:113-119`). |
+| `join` | Requires parallel ID; `wait` defaults to `all`; policy defaults to `all` and schema also accepts `majority` and `all_or_low_confidence` (`packages/workflow-engine/src/schema.ts:220-226`). | Invalid parallel ID, wait value, policy, or extra property fails parsing (`packages/workflow-engine/src/schema.ts:220-226`). |
+| `subworkflow` | Requires a workflow ID; optional positive version; input mapping defaults to `{}` (`packages/workflow-engine/src/schema.ts:167-172`, `packages/workflow-engine/src/schema.ts:227`). | Invalid ID/version/input mapping or unknown property fails parsing; whether the workflow exists is checked later when a resolver is supplied (`packages/workflow-engine/src/schema.ts:167-172`, `packages/workflow-engine/src/validate.ts:435-449`). |
+| `note` | Carries text, default empty and capped at 2,000 characters; position is optional (`packages/workflow-engine/src/schema.ts:228`). | It has no common `nodeBase`; extra fields or overlong text fail strict parsing (`packages/workflow-engine/src/schema.ts:228`). |
+
+Parsing validates only each variant's shape. Cross-node rules such as executor availability, `reads_node` existence/order, parallel join topology, and subworkflow resolution belong to `validateWorkflow` (`packages/workflow-engine/src/validate.ts:345-456`).
 
 Runnable nodes may declare a step contract: up to 12 consumed artifacts, up to 8 produced artifacts, up to 10 output gates, and a stage proof definition. Each consumed or produced artifact has a kind and version; production may select an output field or check each item. Gates are expressions over the node's own output, and `proof` uses the shared stage-proof schema (`packages/workflow-engine/src/schema.ts:87-95`, `packages/workflow-engine/src/schema.ts:77-83`).
 
