@@ -47,7 +47,7 @@ describe("get_role_models: the table «role -> model» of a place", () => {
     for (const row of got.roles) expect(row, row.role).toMatchObject({ source: "default", sourceKey: null, own: false, version: 0, offered: null, model: row.defaultModel });
     expect(got.roles.find((row) => row.role === "code-critic")).toMatchObject({ providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", effort: "medium" });
     expect(got.roles.find((row) => row.role === "auditor")).toMatchObject({ providerId: "codex", model: "gpt-6.1-sol", effort: "high" });
-    expect(got.options.map((option) => option.id)).toEqual(["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-astra", "gpt-6-luna", "router9/ag/gemini-3.8-flash-high", "glm-5.3-flash"]);
+    expect(got.options.map((option) => option.id)).toEqual(["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-astra", "gpt-6-luna", "router9/ag/gemini-3.8-flash-high", "glm-5.3-flash-free"]);
     expect(got.options.find((option) => option.id === "router9/ag/gemini-3.8-flash-high")).toMatchObject({ providerId: "opencode2", family: "google", label: "Gemini 3.8 Flash (9router)" });
     await harness.lifecycle.dispose();
   });
@@ -112,7 +112,7 @@ describe("get_role_models: the table «role -> model» of a place", () => {
     const { harness } = await mount(true);
     const got = await read(harness, { projectId: GLOBAL });
     expect(got.options.map((option) => [option.id, option.offered])).toEqual([
-      ["claude-fable-5-1", false], ["claude-opus-5-5", true], ["claude-sonnet-5-5", true], ["claude-haiku-5-5", false], ["gpt-6.1-sol", true], ["gpt-6.1-terra", false], ["gpt-6-astra", false], ["gpt-6-luna", false], ["router9/ag/gemini-3.8-flash-high", true], ["glm-5.3-flash", false],
+      ["claude-fable-5-1", false], ["claude-opus-5-5", true], ["claude-sonnet-5-5", true], ["claude-haiku-5-5", false], ["gpt-6.1-sol", true], ["gpt-6.1-terra", false], ["gpt-6-astra", false], ["gpt-6-luna", false], ["router9/ag/gemini-3.8-flash-high", true], ["glm-5.3-flash-free", false],
     ]);
     expect(got.options.find((option) => option.id === "router9/ag/gemini-3.8-flash-high")!.efforts).toEqual(["medium", "high"]);
     // The reviews' default is on offer here; a row that holds the Gemini says so, and the plan critic shows it.

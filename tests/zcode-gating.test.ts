@@ -18,10 +18,10 @@ const catalog = (zcodeHosts: string[] = ["mini"]): ModelCatalog => ({
   providers: [
     { id: "claude-code", displayName: "Claude Code", logoUrl: null, family: null, supportsServiceTier: false, serviceTiers: [], hostIds: ["mini", "ovh"], models: [] },
     ...(zcodeHosts.length ? [{ id: "zcode", displayName: "ZCode", logoUrl: null, family: "acp", supportsServiceTier: false, serviceTiers: [], hostIds: zcodeHosts,
-      models: [{ id: "glm-5.3-flash", model: "glm-5.3-flash", displayName: "GLM-5.3-Flash", efforts: ["low", "high", "max"], defaultEffort: "high", isDefault: true, hostIds: zcodeHosts }] }] : []),
+      models: [{ id: "glm-5.3-flash-free", model: "glm-5.3-flash-free", displayName: "GLM-5.3-Flash", efforts: ["low", "high", "max"], defaultEffort: "high", isDefault: true, hostIds: zcodeHosts }] }] : []),
   ],
 });
-const memoryOnZcode = { [roleModelKey("memory")]: { model: "glm-5.3-flash" } };
+const memoryOnZcode = { [roleModelKey("memory")]: { model: "glm-5.3-flash-free" } };
 const at = (now: number) => { vi.useFakeTimers(); vi.setSystemTime(now); };
 afterEach(() => vi.useRealTimers());
 
@@ -31,7 +31,7 @@ describe("the helpers' resolver offers ZCode only where it works", () => {
 
   it("uses the owner's pick (memory on ZCode) on the Mac mini in the free hours", () => {
     at(IN_WINDOW);
-    expect(ask()).toMatchObject({ providerId: "zcode", model: "glm-5.3-flash", reasoningEffort: "high", source: "table" });
+    expect(ask()).toMatchObject({ providerId: "zcode", model: "glm-5.3-flash-free", reasoningEffort: "high", source: "table" });
   });
   it("keeps the role's own default on a machine without the zcode provider, and with a catalog that is not known", () => {
     at(IN_WINDOW);
@@ -55,8 +55,8 @@ describe("the helpers' resolver offers ZCode only where it works", () => {
   it("makes a graph agent step (any role) able to run on it when the table points there", () => {
     at(IN_WINDOW);
     for (const role of ["memory", "project-life", "docs-maintainer", "errand", "analyst"]) {
-      const settings = { [roleModelKey(role)]: { model: "glm-5.3-flash", reasoning_effort: "max" } };
-      expect(resolveSpawnModel({ role, settings, pm: null, catalog: catalog(), hostId: "mini" }), role).toMatchObject({ providerId: "zcode", model: "glm-5.3-flash", reasoningEffort: "max" });
+      const settings = { [roleModelKey(role)]: { model: "glm-5.3-flash-free", reasoning_effort: "max" } };
+      expect(resolveSpawnModel({ role, settings, pm: null, catalog: catalog(), hostId: "mini" }), role).toMatchObject({ providerId: "zcode", model: "glm-5.3-flash-free", reasoningEffort: "max" });
     }
   });
 });
@@ -106,8 +106,8 @@ describe("the last slot: two spawns checked in the same second", () => {
     const bb = { sdk: { threads: { spawn, get: async () => ({ status: "active" }) }, providers: { list: async () => [] } }, log: { warn: () => undefined } } as never;
     noteZcodeThread(bb, "busy-1");
     noteZcodeThread(bb, "busy-2");
-    const first = fullAccessSpawn(bb, { providerId: "zcode", model: "glm-5.3-flash", title: "a" } as never);
-    const second = fullAccessSpawn(bb, { providerId: "zcode", model: "glm-5.3-flash", title: "b" } as never).catch((cause: Error) => cause);
+    const first = fullAccessSpawn(bb, { providerId: "zcode", model: "glm-5.3-flash-free", title: "a" } as never);
+    const second = fullAccessSpawn(bb, { providerId: "zcode", model: "glm-5.3-flash-free", title: "b" } as never).catch((cause: Error) => cause);
     const refused = await second;
     open();
     await first;
@@ -124,15 +124,15 @@ describe("the writers: a hold on the zcode pair, whatever the usage threshold", 
   it("holds with the machine's reason (no percentage), at threshold 0 too, and not another provider", async () => {
     const closed = { code: "window" as const, detail: "ZCode is free only 15:00-01:00 UTC", resetsAt: "2026-10-28T15:00:00.000Z" };
     const usage = createProviderUsage({ sdk: {} } as never, Date.now, async () => closed);
-    const hold = await usage.hold({ providerId: "zcode", model: "glm-5.3-flash", hostId: "mini", threshold: 0 });
+    const hold = await usage.hold({ providerId: "zcode", model: "glm-5.3-flash-free", hostId: "mini", threshold: 0 });
     expect(hold).toMatchObject({ window: closed.detail, resetsAt: closed.resetsAt });
-    const reason = usageHoldReason("zcode", "glm-5.3-flash", hold!);
-    expect(reason).toBe("writer_provider_unavailable:usage_window:zcode/glm-5.3-flash: ZCode is free only 15:00-01:00 UTC, resets 2026-10-28T15:00:00.000Z");
+    const reason = usageHoldReason("zcode", "glm-5.3-flash-free", hold!);
+    expect(reason).toBe("writer_provider_unavailable:usage_window:zcode/glm-5.3-flash-free: ZCode is free only 15:00-01:00 UTC, resets 2026-10-28T15:00:00.000Z");
     expect(failureClass("spawn_rejected", reason)).toBe("limit");
     expect(await usage.hold({ providerId: "claude-code", model: "m", hostId: "mini", threshold: 0 })).toBeNull();
-    expect(await createProviderUsage({ sdk: {} } as never, Date.now, async () => null).hold({ providerId: "zcode", model: "glm-5.3-flash", hostId: "mini", threshold: 90 })).toBeNull();
+    expect(await createProviderUsage({ sdk: {} } as never, Date.now, async () => null).hold({ providerId: "zcode", model: "glm-5.3-flash-free", hostId: "mini", threshold: 90 })).toBeNull();
     // A probe that cannot answer is a hold: the app is never sent work blind.
-    expect(await createProviderUsage({ sdk: {} } as never, Date.now, async () => { throw new Error("x"); }).hold({ providerId: "zcode", model: "glm-5.3-flash", hostId: "mini", threshold: 90 })).toMatchObject({ percent: 100 });
+    expect(await createProviderUsage({ sdk: {} } as never, Date.now, async () => { throw new Error("x"); }).hold({ providerId: "zcode", model: "glm-5.3-flash-free", hostId: "mini", threshold: 90 })).toMatchObject({ percent: 100 });
   });
 
   it("through the real writer state: free on the Mac mini in the free hours, held elsewhere, outside the hours and while its slot is taken", async () => {
@@ -143,13 +143,13 @@ describe("the writers: a hold on the zcode pair, whatever the usage threshold", 
         hosts: { list: async () => [{ id: "mini", name: "Mac mini", status: "connected" }, { id: "ovh", name: "OVH", status: "connected" }] },
         providers: {
           list: async ({ hostId }: { hostId: string }) => (hostId === "mini" ? [{ id: "zcode", displayName: "ZCode", available: true }] : [{ id: "claude-code", displayName: "Claude Code", available: true }]),
-          models: async ({ providerId }: { providerId: string }) => ({ models: providerId === "zcode" ? [{ id: "glm-5.3-flash", model: "glm-5.3-flash", displayName: "GLM", supportedReasoningEfforts: [{ reasoningEffort: "high" }], defaultReasoningEffort: "high", isDefault: true }] : [] }),
+          models: async ({ providerId }: { providerId: string }) => ({ models: providerId === "zcode" ? [{ id: "glm-5.3-flash-free", model: "glm-5.3-flash-free", displayName: "GLM", supportedReasoningEfforts: [{ reasoningEffort: "high" }], defaultReasoningEffort: "high", isDefault: true }] : [] }),
         },
         threads: { get: async ({ threadId }: { threadId: string }) => ({ id: threadId, status: threads.get(threadId) ?? "idle" }) },
       },
     } as never;
     const state = createWriterState({ bb, log: () => undefined } as never);
-    const hold = (hostId: string, settings: Record<string, unknown> = {}) => state.providerUsage.hold({ providerId: "zcode", model: "glm-5.3-flash", hostId, threshold: 90, settings });
+    const hold = (hostId: string, settings: Record<string, unknown> = {}) => state.providerUsage.hold({ providerId: "zcode", model: "glm-5.3-flash-free", hostId, threshold: 90, settings });
     at(IN_WINDOW);
     expect(await hold("mini")).toBeNull();
     expect(await hold("ovh")).toMatchObject({ window: expect.stringContaining("only the Mac mini") });
@@ -186,7 +186,7 @@ describe("the writer pick does not offer ZCode where it cannot work", () => {
     expect(held).toBeNull();
     const free = await writerPickOverlay({ kv: kv(), jev, log: () => undefined, held: async () => false }, settings, { ...input, taskId: "t2" });
     expect(seen[1]).toContain("zcode-flash");
-    expect(free).toMatchObject({ "writer.provider": "zcode", "writer.model": "glm-5.3-flash", "writer.reasoning_effort": "high", "writer.picked": "zcode-flash", "writer.fallback1.model": "composer-2.5" });
+    expect(free).toMatchObject({ "writer.provider": "zcode", "writer.model": "glm-5.3-flash-free", "writer.reasoning_effort": "high", "writer.picked": "zcode-flash", "writer.fallback1.model": "composer-2.5" });
     expect(WRITER_FALLBACK_SLOTS).toHaveLength(3);
     expect(writerCandidates({}).map((row) => row.key)).toContain("zcode-flash");
   });
@@ -195,14 +195,14 @@ describe("the writer pick does not offer ZCode where it cannot work", () => {
 describe("the pipeline's critics: a held ZCode pick gives way to the row's default", () => {
   const critic: CriticCatalog = {
     provider: async (id) => ({ id, available: true, supportsServiceTier: false, serviceTiers: [] }),
-    models: async (id) => (id === "zcode" ? [{ id: "glm-5.3-flash", model: "glm-5.3-flash", efforts: ["low", "high", "max"] }] : [{ id: "gpt-6.1-sol", model: "gpt-6.1-sol", efforts: ["high", "medium"] }, { id: "router9/ag/gemini-3.8-flash-high", model: "router9/ag/gemini-3.8-flash-high", efforts: ["medium"] }]),
+    models: async (id) => (id === "zcode" ? [{ id: "glm-5.3-flash-free", model: "glm-5.3-flash-free", efforts: ["low", "high", "max"] }] : [{ id: "gpt-6.1-sol", model: "gpt-6.1-sol", efforts: ["high", "medium"] }, { id: "router9/ag/gemini-3.8-flash-high", model: "router9/ag/gemini-3.8-flash-high", efforts: ["medium"] }]),
   };
-  const settings = { [roleModelKey("code-critic")]: { model: "glm-5.3-flash", reasoning_effort: "high" } };
+  const settings = { [roleModelKey("code-critic")]: { model: "glm-5.3-flash-free", reasoning_effort: "high" } };
   const fallback = { providerId: "claude-code", model: "claude-sonnet-5-5" };
 
   it("runs on ZCode in the free hours with the slot free, on the row's default outside them or while busy", async () => {
     at(IN_WINDOW);
-    expect(await roleSelection({ catalog: critic, settings, role: "code-critic", fallback })).toMatchObject({ providerId: "zcode", model: "glm-5.3-flash", effort: "high", source: "table" });
+    expect(await roleSelection({ catalog: critic, settings, role: "code-critic", fallback })).toMatchObject({ providerId: "zcode", model: "glm-5.3-flash-free", effort: "high", source: "table" });
     expect(await roleSelection({ catalog: critic, settings, role: "code-critic", fallback, zcodeBusy: true })).toMatchObject({ providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", source: "default" });
     at(OUT_OF_WINDOW);
     expect(await roleSelection({ catalog: critic, settings, role: "code-critic", fallback })).toMatchObject({ providerId: "opencode2", source: "default" });

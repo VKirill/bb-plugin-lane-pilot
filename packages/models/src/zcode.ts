@@ -66,7 +66,18 @@ export function zcodeBlock(input: { settings: Record<string, unknown>; catalog: 
  * sign-in expired. They are the machine's state, not the model's work: the task runs again at once on another model, uncharged. Null otherwise.
  * Only the bridge's own forms count (`ZCode (code): …`, `ZCode is busy …`, the sign-in hint), so a word in a check's output never matches.
  */
-const ZCODE_ENVIRONMENT = /ZCode is busy|ZCode \((?:text-not-visible|foreground_required|session_expired)\)|sign in inside the ZCode app/i;
+const ZCODE_ENVIRONMENT = /ZCode is busy|ZCode \((?:text-not-visible|foreground_required|session_expired|promo_unavailable)\)|sign in inside the ZCode app/i;
+
+/** The model of ZCode Lane Pilot runs: GLM-5.3-Flash on the Start Plan's free tokens (bb-plugin-zcode refuses it with `promo_unavailable` rather than bill the plan). */
+export const ZCODE_FREE_MODEL = "glm-5.3-flash-free";
+/**
+ * Background rows that try ZCode first in its free hours (the owner's ask of 2026-10-28: spend the free tokens on background work), unless the
+ * owner picked a model for the row: cheap text jobs with a checker or a reader behind them. Outside the hours, off the Mac mini, with every
+ * slot taken or the free tokens gone, the row's own model runs. `zcode.background` = false turns it off.
+ */
+export const ZCODE_FREE_ROWS: readonly string[] = ["docs-maintainer", "rules-analyzer", "memory", "project-life"];
+export const ZCODE_BACKGROUND_KEY = "zcode.background";
+export const zcodeBackgroundOn = (settings: Record<string, unknown>): boolean => settings[ZCODE_BACKGROUND_KEY] !== false && settings[ZCODE_BACKGROUND_KEY] !== "off";
 export function zcodeEnvironmentError(text: string | null | undefined): string | null {
   const match = ZCODE_ENVIRONMENT.exec(text ?? "");
   return match ? (text ?? "").slice(match.index).replace(/\s+/g, " ").trim().slice(0, 200) : null;

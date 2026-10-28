@@ -37,9 +37,10 @@ export const ROLE_MODEL_OPTIONS: readonly RoleModelOption[] = [
   // The owner's near-free Gemini subscription through 9router (OpenCode v2 provider `opencode2`, 2026-10-27): the judges' default. The «high» is
   // in the model's name; the reasoning effort stays the catalog default «medium» (what the writer profile and the harness editor run on).
   { id: "router9/ag/gemini-3.8-flash-high", providerId: "opencode2", label: "Gemini 3.8 Flash (9router)", family: "google", tier: "standard", defaultEffort: "medium" },
-  // The owner's ZCode app on the Mac mini (BB provider `zcode`, zcbridge): GLM-5.3-Flash, free 15:00-01:00 UTC. Never a default of a row. It is offered only
+  // The owner's ZCode app on the Mac mini (BB provider `zcode`, zcbridge): GLM-5.3-Flash on the Start Plan's free tokens («· Free», bb-plugin-zcode 0.4.3:
+  // it never bills the plan), 15:00-01:00 UTC. Never a default of a row; the rows of ZCODE_FREE_ROWS try it first in its hours. It is offered only
   // where packages/models/src/zcode.ts says it can work (the Mac mini, the free window unless `zcode.window` = always, no other ZCode task running); else the row's default runs.
-  { id: "glm-5.3-flash", providerId: "zcode", label: "ZCode · GLM-5.3-Flash", family: "glm", tier: "light", defaultEffort: "high", efforts: ["low", "high", "max"], exactOnly: true },
+  { id: "glm-5.3-flash-free", providerId: "zcode", label: "ZCode · GLM-5.3-Flash · Free", family: "glm", tier: "light", defaultEffort: "high", efforts: ["low", "high", "max"], exactOnly: true },
 ];
 /** The reasoning efforts the table offers (the narrower the model's own list, the fewer the picker shows). */
 export const ROLE_MODEL_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;

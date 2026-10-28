@@ -1,4 +1,5 @@
 import { belowTier, modelTier, type ModelTier } from "./model-tiers";
+import { ZCODE_FREE_MODEL, ZCODE_FREE_ROWS, ZCODE_PROVIDER_ID, ZCODE_BACKGROUND_KEY, zcodeBackgroundOn } from "./zcode";
 import { SAME_FAMILY_JUDGE_BY_LIMIT, consistentProvider, roleRowOf, judgeAgainstAuthor, modelFamily, peerOffSpent, resolveRoleModel, roleDefaultModel, roleFallbackModel, roleRow, ROLE_TABLE, type SpentProbe } from "./role-models";
 
 /** Roles that run as a Claude Code agent profile (a specialist, the workflow architect): never moved to another provider. */
@@ -114,6 +115,11 @@ export function resolveAgentModel(input: AgentModelInput): AgentModel {
   const candidates: Array<{ providerId: string; model: string; effort: string; source: AgentModelSource; sourceKey: string | null }> = [
     { providerId: chosen.providerId, model: chosen.model, effort: chosen.effort, source: chosen.source === "default" ? "role-default" : chosen.source, sourceKey: chosen.sourceKey },
   ];
+  // A background row the owner left on its default tries ZCode's free tokens first, only where the caller says ZCode can work now (its machine,
+  // its hours, a free slot); a caller that cannot tell (no `offered`) never gets it. ZCode refusing at run time hands the step to the next candidate.
+  if (chosen.source === "default" && ZCODE_FREE_ROWS.includes(row.id) && zcodeBackgroundOn(input.settings) && input.offered?.(ZCODE_PROVIDER_ID, ZCODE_FREE_MODEL) === true) {
+    candidates.unshift({ providerId: ZCODE_PROVIDER_ID, model: ZCODE_FREE_MODEL, effort: "high", source: "role-default", sourceKey: ZCODE_BACKGROUND_KEY });
+  }
   if (builtin.model !== chosen.model || builtin.providerId !== chosen.providerId) candidates.push({ providerId: builtin.providerId, model: builtin.model, effort: text(pin?.reasoning) ?? builtin.effort, source: "role-default", sourceKey: null });
   const fallback = roleFallbackModel(row.id);
   if (fallback && !candidates.some((c) => c.model === fallback.model && c.providerId === fallback.providerId)) candidates.push({ providerId: fallback.providerId, model: fallback.model, effort: text(pin?.reasoning) ?? fallback.effort, source: "role-default", sourceKey: null });

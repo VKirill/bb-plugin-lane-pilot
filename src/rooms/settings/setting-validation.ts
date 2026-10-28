@@ -1,5 +1,5 @@
 import { PROVIDER_POOL_KEY, providerPoolProblem } from "@lane-pilot/settings-catalog";
-import { ROLE_MODEL_KEY_PREFIX, ZCODE_WINDOW_KEY, roleModelProblem, zcodeWindowProblem } from "@lane-pilot/models";
+import { ROLE_MODEL_KEY_PREFIX, ZCODE_BACKGROUND_KEY, ZCODE_WINDOW_KEY, roleModelProblem, zcodeWindowProblem } from "@lane-pilot/models";
 import { SCHEDULE_ERRAND_DEFAULT_KEY, errandDefaultProblem } from "../schedule";
 import "../workflow/route-workflow";
 import "@lane-pilot/jev/judgments/repair-group";
@@ -78,6 +78,10 @@ export function validateSettingValue(key: string, value: unknown): SettingValida
   if (key === ZCODE_WINDOW_KEY) {
     const problem = zcodeWindowProblem(value);
     return problem ? { code:"invalid_choice", key, params:[key, problem] } : null;
+  }
+  // Whether the background rows try ZCode's free tokens first in its hours (on by default).
+  if (key === ZCODE_BACKGROUND_KEY && value !== undefined && value !== null && value !== "" && typeof value !== "boolean" && value !== "on" && value !== "off") {
+    return { code:"invalid_choice", key, params:[key, "true, false, on or off"] };
   }
   if (key === "usage.skip_percent" && value !== undefined && value !== null && value !== "") {
     const parsed = typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value;

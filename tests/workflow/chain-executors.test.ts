@@ -277,15 +277,15 @@ describe("the agent step", () => {
   ])("a step the owner put on ZCode whose app answers %s runs once more on another model, as for a provider limit", async (_name, notice) => {
     let calls = 0;
     const answer = () => ((calls += 1) === 1 ? notice : reply({ count: 3, summary: "three", handoff: "counted" }));
-    const t = await setup({ look: [answer] }, { offers: [{ providerId: "claude-code", model: "claude-opus-5-5" }, { providerId: "zcode", model: "glm-5.3-flash" }] });
+    const t = await setup({ look: [answer] }, { offers: [{ providerId: "claude-code", model: "claude-opus-5-5" }, { providerId: "zcode", model: "glm-5.3-flash-free" }] });
     dispose = t.dispose;
     await modelCatalogOf(t.rt.ctx).get();
-    saveProjectSetting(t.db, PROJECT, "role_model.analyst", { model: "glm-5.3-flash" });
+    saveProjectSetting(t.db, PROJECT, "role_model.analyst", { model: "glm-5.3-flash-free" });
     saveProjectSetting(t.db, PROJECT, "zcode.window", "always");
     const summary = await t.start(oneAgent()).done;
     expect(summary).toMatchObject({ status: "succeeded", output: { count: 3 } });
     expect(t.spawned).toHaveLength(2);
-    expect(t.spawned[0]).toMatchObject({ providerId: "zcode", model: "glm-5.3-flash" });
+    expect(t.spawned[0]).toMatchObject({ providerId: "zcode", model: "glm-5.3-flash-free" });
     expect(t.spawned[1]).toMatchObject({ providerId: "claude-code", model: "claude-opus-5-5" });
     expect(String((t.spawned[1]!.pluginMetadata as Row).spawnId)).toMatch(/:limit$/);
   });
