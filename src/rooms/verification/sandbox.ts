@@ -124,6 +124,12 @@ export function userToolBins(home:string = homedir()):string[] {
  * folder, as the user's cache is not writable from the sandbox.
  */
 export const USER_BROWSER_CACHES = [".cache/ms-playwright", "Library/Caches/ms-playwright"] as const;
+/**
+ * Docker's CLI finds its plugins (`docker compose`, `docker buildx`) and its context through ~/.docker: under the temp HOME `docker compose`
+ * was «unknown command» and a writer spent five attempts on a check it could not pass (Docker Desktop on macOS, 2026-10-28). The temp HOME
+ * gets a .docker folder of its own with links to the config, the plugins and the contexts; the state Docker writes (buildx) stays the temp folder's.
+ */
+export const USER_DOCKER_ENTRIES = ["config.json", "cli-plugins", "contexts"] as const;
 
 /** Links the user's tool homes that exist into the sandbox's temp HOME, and the browsers of the user's browser caches. */
 export async function linkUserToolHomes(tempPath:string, home:string = homedir()):Promise<string[]> {
@@ -140,6 +146,12 @@ export async function linkUserToolHomes(tempPath:string, home:string = homedir()
     if (!browsers.length) continue;
     await mkdir(join(tempPath,cache),{recursive:true});
     for (const browser of browsers) await symlink(join(source,browser.name),join(tempPath,cache,browser.name),"dir").then(()=>linked.push(join(cache,browser.name)),()=>undefined);
+  }
+  for (const entry of USER_DOCKER_ENTRIES) {
+    const source=join(home,".docker",entry);
+    if (!existsSync(source)) continue;
+    await mkdir(join(tempPath,".docker"),{recursive:true});
+    await symlink(source,join(tempPath,".docker",entry)).then(()=>linked.push(join(".docker",entry)),()=>undefined);
   }
   return linked;
 }

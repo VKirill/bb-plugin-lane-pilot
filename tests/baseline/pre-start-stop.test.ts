@@ -17,6 +17,9 @@ describe("a check that cannot run on the base (texts of the writers' needs_human
     expect(unrunnableReason(red("npm install && npm run typecheck", "npm error code ENOENT\nnpm error syscall open\nnpm error path /w/apps/package.json\nnpm error enoent Could not read package.json"), task)).toMatch(/no package.json/);
     expect(unrunnableReason(red("npx vitest run --minWorkers=2 a.test.ts", "CACError: Unknown option `--minWorkers`"), task)).toMatch(/--minWorkers/);
     expect(unrunnableReason(red("cd missing-dir && npm test", "bash: line 1: cd: missing-dir: No such file or directory"), task)).toMatch(/missing-dir/);
+    // Docker without its compose plugin in the check sandbox (T8 of a bot project, 2026-10-28)
+    expect(unrunnableReason(red("docker compose config -q", "docker: unknown command: docker compose\n\nRun 'docker --help' for more information", { exitCode: 125 }), task)).toMatch(/`docker compose` is not available/);
+    expect(unrunnableReason(red("docker buildx build .", "docker: 'buildx' is not a docker command.\nSee 'docker --help'", { exitCode: 1 }), task)).toMatch(/`docker buildx` is not available/);
   });
 
   it("leaves alone what the task itself creates, project-local tools, ordinary red checks and green ones", () => {
@@ -28,6 +31,8 @@ describe("a check that cannot run on the base (texts of the writers' needs_human
     // the name in the output is not the command the contract wrote (a script's own failure)
     expect(unrunnableReason(red("npm run build", "sh: 1: rollup-plugin-x: not found", { exitCode: 127 }), task)).toBeNull();
     expect(unrunnableReason(red("npx vitest run a.test.ts", "AssertionError: expected 1 to be 2"), task)).toBeNull();
+    // the project's own CLI that does not have the command yet: that is the work, not the machine
+    expect(unrunnableReason(red("node cli.js deploy", "mycli: unknown command: deploy"), task)).toBeNull();
     expect(unrunnableReason({ ...red("true", ""), status: "green", exitCode: 0 }, task)).toBeNull();
   });
 });

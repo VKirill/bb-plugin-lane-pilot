@@ -132,6 +132,10 @@ export function unrunnableReason(check: BaselineCheck, task: TaskFiles): string 
   }
   const cd = /\bcd: ([^\s:]+): No such file or directory/.exec(note);
   if (cd) return taskOwns(inRepo(check, task, cd[1]!), task) ? null : `the folder ${cd[1]} does not exist on the base and the task does not create it`;
+  // Docker without the CLI plugin a check calls (`docker compose`, `docker buildx`): exit 125, the machine's setup, not the project's code
+  // (a writer spent five attempts on one, 2026-10-28).
+  const dockerPlugin = /docker: unknown command: docker (\S+)|docker: '([^']+)' is not a docker command/.exec(note);
+  if (dockerPlugin && mentions(check.command, "docker")) return `\`docker ${dockerPlugin[1] ?? dockerPlugin[2]}\` is not available on the machine that runs the checks (the Docker CLI plugin is missing)`;
   if (/CACError: Unknown option `([^`]+)`/.test(note)) return `the runner rejects the option ${/Unknown option `([^`]+)`/.exec(note)![1]}, so the check fails before any test runs`;
   return null;
 }

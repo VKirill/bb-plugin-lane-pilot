@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.357
+
+**`docker compose` works in the check sandbox.** The sandbox gives checks a temp HOME, and Docker Desktop on macOS finds its CLI plugins (`compose`, `buildx`) and its context through `~/.docker`. A check `docker compose config -q` answered «docker: unknown command: docker compose» (exit 125) whatever the writer did: task T8 of a bot project spent five attempts and ended `needs_human` (2026-10-28). The temp HOME now gets a `.docker` folder of its own with links to `config.json`, `cli-plugins` and `contexts`; the state Docker writes (`buildx`) stays in the temp folder. Checked through the real Seatbelt sandbox: `docker compose version` and `docker compose config -q` pass, before the change they failed.
+
+**A Docker check whose plugin is missing stops the task before any writer.** The pre-start baseline knew a check that cannot run only by exit 127 and «command not found». «docker: unknown command: docker X» and «'X' is not a docker command» now count too (`check_cannot_run`): the PM hears which check and why, and no attempt is spent. A project's own CLI that does not have a command yet is still the task's work.
+
 ## 0.1.356
 
 **The PM calls the other BB plugins' tools itself.** Its compiled profile now carries the whole BB bridge (`mcp__bb-bridge`) next to the Lane Pilot tools. In a PM thread the bridge holds only the PM's own Lane Pilot tools, so this adds the other plugins' tools and no writer tool: one picture or one item card in Image Studio, a file in File Gateway, an Env Catalog entry no longer needs a helper on Opus. Two bridge tools stay out (`disallowedTools`): `update_environment_directory`, which would move the PM chat away from its run's checkout, and `bb_workflow_run`, which starts agents outside Lane Pilot. Long work (a model in Blender, a click-through) still goes to an errand with `plugins`/`mcp`. Checked on Claude Code 2.1.311: a server entry in an agent's `tools` opens all its tools, and a name in `disallowedTools` closes one.
