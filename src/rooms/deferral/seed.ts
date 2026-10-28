@@ -32,6 +32,8 @@ export const SEED_ENTRIES: readonly SeedEntry[] = [
   skip("server_stage_live_browser", "stages/server-stage/suite.ts", "LANE_PILOT_LIVE_BROWSER is not 1 (a live host browser runner)"),
   skip("git_lock", "verification/git-lock.test.ts", "lsof is missing (stale git lock handling)"),
   skip("sandbox_home", "verification/sandbox-home.test.ts", "the host is not macOS with /usr/bin/sandbox-exec"),
+  skip("guard_private_tmp", "guard.test.ts", "the host is Linux: /private/tmp is the real temp folder on macOS only"),
+  skip("evidence_one_argument", "harness/evidence.test.ts", "the host is Linux: one `bash -c` argument is capped at 128 KB (writeFileCommands splits under it)"),
   decision("harness_eval", "Harness eval / replay: a fixed set of past accepted tasks replayed against a candidate version (which projects, token budget per eval)"),
   decision("containment", "Containment of writers and critics: read-only spawn for critics, per-role bb-bridge tool filter, verify sandbox without machine env (needs BB core work)"),
   decision("code_critique_default", "Code critique on by default for risk >= medium (check critic_stats first)"),

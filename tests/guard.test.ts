@@ -171,7 +171,9 @@ const pmFileCases: Case[] = [
 
 describe("E3 Lane Pilot PM temp files, chat folder, cd-relative redirects and heredoc bodies", () => {
   for (const testCase of pmFileCases) {
-    it(`${testCase.name}: ${testCase.allowed ? "allow" : "deny"}`, () => {
+    // /private/tmp is the real folder of /tmp on macOS only; on Linux it is just a path outside the temp roots.
+    // deferral:dfr_seed_skip_guard_private_tmp
+    it.skipIf(process.platform === "linux" && testCase.name.includes("private temp"))(`${testCase.name}: ${testCase.allowed ? "allow" : "deny"}`, () => {
       const result = invoke(guard,testCase);
       expect(result.status, result.stdout + result.stderr).toBe(testCase.allowed ? 0 : 2);
     });
