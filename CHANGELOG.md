@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+**`red_outside_task` reads only the lines that report a failure.** The baseline took every file name in a red check's tail for the reason it was red. A chain `tsc && tests && bb plugin build && grep -q '"version": "0.8.15"' package.json` passed everything up to the silent `grep` (the version bump was the task's work), and the tail ended with the build's list of `dist/*` files, so the task was stopped as «red in dist/server.js …» (image-studio `model-guide-fix`, 2026-10-27). A file now counts only on a line with a failure sign (error, FAIL, ✖, a line:column, a traceback line), or on a bare path line followed by one (eslint). Passing lines (✔, PASS) never count.
+
 ## 0.1.352
 
 **ZCode takes three tasks at once, and only three.** The ZCode app runs tasks concurrently (bb-plugin-zcode 0.3.0 measured six without errors), so Lane Pilot's gate allows three of its own tasks there instead of one. A spawn takes its slot before it starts: two writers checked in the same second both went to ZCode before (live test 2026-10-27), now the second gets «ZCode is busy», a free environment failure, and runs on another model.

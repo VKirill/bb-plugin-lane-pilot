@@ -53,6 +53,22 @@ describe("a check red on the base outside the task's files", () => {
     expect(redOutsideTaskFiles(typecheck("at run (node_modules/vitest/dist/chunk.js:12:3)"), task)).toEqual([]);
     expect(redOutsideTaskFiles({ ...typecheck("src/other/b.ts error"), status: "green" }, task)).toEqual([]);
   });
+
+  it("claims nothing from the files a passing step lists: a build's outputs before a silent red grep (image-studio 2026-10-27)", () => {
+    // baseline 539 on the hub: tsc, 275 tests and the build passed; `grep -q` on the version the task bumps was red with no output
+    const note = "✔ the gallery keeps the newest 80 (106.834084ms)\n✔ long prompts never push a gallery list past the plugin KV size limit (1093.894917ms)\n"
+      + "ℹ tests 275\nℹ suites 0\nℹ pass 275\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 13641.784292\n"
+      + "dist/server.js\ndist/server.js.map\ndist/server.meta.json\ndist/app.js\ndist/app.css\ndist/app.meta.json\ndist/host.js\ndist/host.js.map\ndist/host.meta.json";
+    const command = "npx tsc --noEmit && node --test --experimental-strip-types tests/*.test.ts && bb plugin build && grep -q '\"version\": \"0.8.15\"' package.json";
+    expect(redOutsideTaskFiles(red(command, note), { project_cwd: "/p", owns_paths: ["src/models/**", "tests/model-guidefix.test.ts"], expected_outputs: [] })).toEqual([]);
+    // a passing test whose title names a file, and a file whose name holds «error», are not failures either
+    expect(redOutsideTaskFiles(typecheck("✔ src/other/b.ts fails over to the cache (3ms)\nsrc/other/errors.ts"), task)).toEqual([]);
+  });
+
+  it("still names a file the line after it reports as failing (eslint names the file, then its errors)", () => {
+    expect(redOutsideTaskFiles(red("npx eslint .", "src/other/b.ts\n  3:5  error  'x' is never used  no-unused-vars\n\n✖ 1 problem"), task)).toEqual(["src/other/b.ts"]);
+    expect(redOutsideTaskFiles(red("python -m pytest", "  File \"src/other/c.py\", line 3, in <module>\nNameError: name 'x' is not defined"), task)).toEqual(["src/other/c.py"]);
+  });
 });
 
 describe("the baseline stops the attempt before any writer", () => {
