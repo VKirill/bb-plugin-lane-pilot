@@ -42,6 +42,8 @@ export const rpcSettings = {
       roles: z.array(z.object({
         role: z.string(), providerId: z.string(), model: z.string(), effort: z.string(), source: z.enum(["table", "stage", "default"]), sourceKey: z.string().nullable(),
         own: z.boolean(), version: z.number().int().min(0), defaultModel: z.string(), defaultEffort: z.string(), offered: z.boolean().nullable(),
+        /** The other models of the row's pool (`role_model.<role>.pool`): the role's runs go to the least loaded of them and the row's model. */
+        pool: z.array(z.string()),
       }).strict()),
       options: z.array(z.object({ id: z.string(), providerId: z.string(), label: z.string(), family: z.enum(["claude", "gpt", "google", "glm"]), offered: z.boolean().nullable(), efforts: z.array(z.string()) }).strict()),
     }).strict(),

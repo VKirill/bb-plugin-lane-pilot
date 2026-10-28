@@ -42,7 +42,18 @@ export async function warmSpawnUsage(usage: SpawnUsageUse | undefined, hostId: s
   void usage?.warm({ providerIds: TABLE_PROVIDERS, hostId }).catch(() => undefined);
 }
 
-export type SpawnModelInput = Omit<AgentModelInput, "offered" | "providerOf" | "pm"> & {
+/** Helper starts per provider over the last half hour, for a row with a pool of models to spread its runs (resolveAgentModel's `load`). */
+const RECENT_MS = 30 * 60_000;
+const recentStarts = new Map<string, number[]>();
+function recentOf(providerId: string, now: number): number {
+  const kept = (recentStarts.get(providerId) ?? []).filter((at) => now - at < RECENT_MS);
+  recentStarts.set(providerId, kept);
+  return kept.length;
+}
+/** Test hook: forget the recent starts. */
+export function resetRecentStarts(): void { recentStarts.clear(); }
+
+export type SpawnModelInput = Omit<AgentModelInput, "offered" | "providerOf" | "pm" | "load"> & {
   pm?: AgentModelInput["pm"];
   /** The catalog as last read (`modelCatalogOf(ctx).peek()`); null when it is cold: then every model counts as offered. */
   catalog?: ModelCatalog | null;
@@ -64,8 +75,14 @@ export function resolveSpawnModel(input: SpawnModelInput): AgentModel {
     return catalog && hostId ? offeredForRole(catalog, providerId, model, hostId) : null;
   };
   const usageSpent: SpentProbe | undefined = usage ? (providerId, model) => usage.peek({ providerId, model, hostId: hostId ?? null, settings: rest.settings }) : undefined;
+  const now = Date.now();
+  // The spent share of a window from the cache (a threshold of 1% returns the reading itself; ZCode has no window) and the recent starts.
+  const load = (providerId: string, model: string) => ({
+    percent: usage && !isZcodeProvider(providerId) ? usage.peek({ providerId, model, hostId: hostId ?? null, settings: { ...rest.settings, "usage.skip_percent": 1 } })?.percent ?? null : null,
+    recent: recentOf(providerId, now),
+  });
   const resolve = (avoided: boolean, spent: SpentProbe | undefined): AgentModel => resolveAgentModel({
-    ...rest, pm: pm ?? null, offered: offeredAt(avoided),
+    ...rest, pm: pm ?? null, offered: offeredAt(avoided), load,
     ...(catalog ? { providerOf: (model: string) => catalogProviderOf(catalog, model) } : {}), ...(spent ? { spent } : {}),
   });
   let answer = resolve(true, usageSpent);
@@ -79,5 +96,6 @@ export function resolveSpawnModel(input: SpawnModelInput): AgentModel {
   }
   const moved = answer.issues.find((issue) => issue.startsWith("usage_moved:"));
   if (moved && usage?.log) usage.log(`Lane Pilot: the ${rest.role} helper moves to the other model family, ${moved.slice("usage_moved: ".length)}`);
+  recentStarts.set(answer.providerId, [...(recentStarts.get(answer.providerId) ?? []), now]);
   return answer;
 }

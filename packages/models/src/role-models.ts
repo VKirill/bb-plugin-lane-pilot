@@ -160,6 +160,25 @@ export function tableRowAt(settings: Record<string, unknown>, rowId: string): { 
   return { option, effort: effort && (ROLE_MODEL_EFFORTS as readonly string[]).includes(effort) && (!option.efforts || option.efforts.includes(effort)) ? effort : null };
 }
 
+/**
+ * The other models the owner allows for a row (`role_model.<role>` = `{ model, reasoning_effort?, pool: [{ model, reasoning_effort? }] }`): the row's
+ * model and these share the role's work, the least loaded provider first (resolveAgentModel). Invalid or repeated entries are dropped.
+ */
+export function tablePoolAt(settings: Record<string, unknown>, rowId: string): Array<{ option: RoleModelOption; effort: string | null }> {
+  const raw = settings[roleModelKey(rowId)];
+  if (!isRecord(raw) || !Array.isArray(raw.pool)) return [];
+  const main = text(raw.model);
+  const out: Array<{ option: RoleModelOption; effort: string | null }> = [];
+  for (const entry of raw.pool) {
+    if (!isRecord(entry)) continue;
+    const option = roleModelOption(text(entry.model) ?? "");
+    if (!option || option.id === main || out.some((row) => row.option.id === option.id)) continue;
+    const effort = text(entry.reasoning_effort);
+    out.push({ option, effort: effort && (ROLE_MODEL_EFFORTS as readonly string[]).includes(effort) && (!option.efforts || option.efforts.includes(effort)) ? effort : null });
+  }
+  return out;
+}
+
 /** Why a stored `role_model.<role>` value is not valid, or null (empty is valid: no row). */
 export function roleModelProblem(key: string, value: unknown): string | null {
   const row = key.slice(ROLE_MODEL_KEY_PREFIX.length);
@@ -171,7 +190,14 @@ export function roleModelProblem(key: string, value: unknown): string | null {
   if (!option) return `model: one of ${ROLE_MODEL_OPTIONS.map((row) => row.id).join(", ")}`;
   if (typeof effort === "string" && option.efforts && !option.efforts.includes(effort)) return `reasoning_effort for ${option.id}: one of ${option.efforts.join(", ")}`;
   if (effort !== undefined && !(typeof effort === "string" && (ROLE_MODEL_EFFORTS as readonly string[]).includes(effort))) return `reasoning_effort: one of ${ROLE_MODEL_EFFORTS.join(", ")}`;
-  if (!Object.keys(value).every((name) => name === "model" || name === "reasoning_effort")) return "{model, reasoning_effort?}";
+  if (!Object.keys(value).every((name) => name === "model" || name === "reasoning_effort" || name === "pool")) return "{model, reasoning_effort?, pool?}";
+  if (value.pool !== undefined) {
+    if (!Array.isArray(value.pool)) return "pool: [{model, reasoning_effort?}]";
+    for (const entry of value.pool) {
+      const problem = roleModelProblem(key, isRecord(entry) ? { model: entry.model, ...(entry.reasoning_effort !== undefined ? { reasoning_effort: entry.reasoning_effort } : {}) } : entry);
+      if (problem || !isRecord(entry) || !Object.keys(entry).every((name) => name === "model" || name === "reasoning_effort")) return `pool: ${problem ?? "[{model, reasoning_effort?}]"}`;
+    }
+  }
   return null;
 }
 
@@ -224,7 +250,7 @@ export function consistentProvider(providerId: string | null | undefined, model:
  * The effort of the owner's pick that names none: the row's default when the pick is the row's default model; else the model's own default
  * (a Gemini: medium), else, for a row whose default is a Gemini, the effort of the model it falls back to (high); else the row's.
  */
-function pickedEffort(row: RoleRow, option: RoleModelOption): string {
+export function pickedEffort(row: RoleRow, option: RoleModelOption): string {
   if (option.id === row.default.model) return row.default.effort;
   return option.defaultEffort ?? row.fallback?.effort ?? row.default.effort;
 }

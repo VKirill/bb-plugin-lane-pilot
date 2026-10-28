@@ -9,13 +9,13 @@ import { useMatrixHooks } from "./ui-matrix/helpers";
 
 vi.mock("sonner", () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
 
-type Row = { role: string; providerId: string; model: string; effort: string; source: "table" | "stage" | "default"; sourceKey: string | null; own: boolean; version: number; defaultModel: string; defaultEffort: string; offered: boolean | null };
+type Row = { role: string; providerId: string; model: string; effort: string; source: "table" | "stage" | "default"; sourceKey: string | null; own: boolean; version: number; defaultModel: string; defaultEffort: string; offered: boolean | null; pool: string[] };
 
 /** The table as the server reads it for a place: every role on its default, except what the test changes. */
 function view(changes: Record<string, Partial<Row>> = {}, offered: (id: string) => boolean | null = () => true) {
   const roles: Row[] = ROLE_TABLE.map((row) => {
     const builtin = roleDefaultModel(row.id);
-    return { role: row.id, providerId: builtin.providerId, model: builtin.model, effort: builtin.effort, source: "default", sourceKey: null, own: false, version: 0, defaultModel: builtin.model, defaultEffort: builtin.effort, offered: offered(builtin.model), ...changes[row.id] };
+    return { role: row.id, providerId: builtin.providerId, model: builtin.model, effort: builtin.effort, source: "default", sourceKey: null, own: false, version: 0, defaultModel: builtin.model, defaultEffort: builtin.effort, offered: offered(builtin.model), pool: [], ...changes[row.id] };
   });
   return { roles, options: ROLE_MODEL_OPTIONS.map((option) => ({ id: option.id, providerId: option.providerId, label: option.label, family: option.family, offered: offered(option.id), efforts: ["low", "medium", "high"] })) };
 }
@@ -99,6 +99,21 @@ describe("the table «role -> model» on the Team tab", () => {
     await choose(slot, "role-effort-pick-debugger", "low");
     await waitFor(() => expect(calls.filter((call) => call.method === "save_setting")).toHaveLength(2));
     expect(calls.filter((call) => call.method === "save_setting")[1]!.input).toMatchObject({ key: roleModelKey("debugger"), value: { model: "claude-opus-5-5", reasoning_effort: "low" }, expectedVersion: 5 });
+    slot.lifecycle.unmount();
+  });
+
+  it("a row's pool of models: shown, kept when the effort changes, and a model taken out of it with ×", async () => {
+    const pooled = { source: "table" as const, own: true, version: 3, model: "claude-sonnet-5-5", effort: "medium", sourceKey: "role_model.errand", pool: ["gpt-6.1-terra", "gpt-6-luna"] };
+    const { rpc, calls } = tableRpc(view({ errand: pooled }));
+    const slot = await mountPage(rpc);
+    await openTeam(slot);
+    expect((await slot.findByTestId("role-model-pool-errand")).textContent).toContain("GPT-6.1 Terra");
+    await choose(slot, "role-effort-pick-errand", "high");
+    await waitFor(() => expect(calls.filter((call) => call.method === "save_setting")).toHaveLength(1));
+    expect(calls.find((call) => call.method === "save_setting")!.input).toMatchObject({ value: { model: "claude-sonnet-5-5", reasoning_effort: "high", pool: [{ model: "gpt-6.1-terra" }, { model: "gpt-6-luna" }] } });
+    fireEvent.click(slot.getByTestId("role-model-pool-remove-errand-gpt-6.1-terra"));
+    await waitFor(() => expect(calls.filter((call) => call.method === "save_setting")).toHaveLength(2));
+    expect(calls.filter((call) => call.method === "save_setting")[1]!.input).toMatchObject({ value: { model: "claude-sonnet-5-5", reasoning_effort: "medium", pool: [{ model: "gpt-6-luna" }] } });
     slot.lifecycle.unmount();
   });
 

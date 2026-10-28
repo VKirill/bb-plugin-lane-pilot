@@ -6,8 +6,9 @@ import type { LpPage } from "../../ui-shell/ui";
 
 type Row = {
   role: string; providerId: string; model: string; effort: string; source: "table" | "stage" | "default"; sourceKey: string | null;
-  own: boolean; version: number; defaultModel: string; defaultEffort: string; offered: boolean | null;
+  own: boolean; version: number; defaultModel: string; defaultEffort: string; offered: boolean | null; pool: string[];
 };
+type RowValue = { model: string; reasoning_effort: string; pool?: Array<{ model: string }> };
 type Option = { id: string; providerId: string; label: string; family: "claude" | "gpt" | "google" | "glm"; offered: boolean | null; efforts: string[] };
 type View = { roles: Row[]; options: Option[] };
 
@@ -36,7 +37,7 @@ export function RoleModelsPanel({ page }: { page: LpPage }) {
   }, [rpc, projectId, selectedSectionId]);
   useEffect(() => { void load(); }, [load]);
 
-  const save = async (row: Row, value: { model: string; reasoning_effort: string } | null) => {
+  const save = async (row: Row, value: RowValue | null) => {
     setBusy(true);
     try {
       const key = roleModelKey(row.role);
@@ -70,7 +71,7 @@ export function RoleModelsPanel({ page }: { page: LpPage }) {
   );
 }
 
-function RoleModelRow({ row, options, busy, onSave }: { row: Row; options: Option[]; busy: boolean; onSave: (value: { model: string; reasoning_effort: string } | null) => void }) {
+function RoleModelRow({ row, options, busy, onSave }: { row: Row; options: Option[]; busy: boolean; onSave: (value: RowValue | null) => void }) {
   const name = t(nameKey(row.role));
   const picked = options.find((option) => option.id === row.model);
   // The model in force may be one the table does not list (an earlier stage setting named any model): it is shown, and the six stay the choices.
@@ -80,11 +81,18 @@ function RoleModelRow({ row, options, busy, onSave }: { row: Row; options: Optio
   const least: ModelTier | undefined = roleRow(row.role).least;
   const light = row.source === "table" && Boolean(least) && belowTier(modelTier(row.model), least!);
   const source = row.source === "table" ? t("roleModelsSource_table") : row.source === "stage" ? fill(t("roleModelsSource_stage"), { key: row.sourceKey ?? "" }) : t("roleModelsSource_default");
+  // The pool travels with every save of the row, so changing the model or the effort keeps the other models of the role.
+  const withPool = (model: string, effort: string, pool: string[] = row.pool): RowValue => {
+    const rest = pool.filter((id) => id !== model);
+    return { model, reasoning_effort: effort, ...(rest.length ? { pool: rest.map((id) => ({ model: id })) } : {}) };
+  };
   const choose = (model: string) => {
     const option = options.find((item) => item.id === model);
     const effort = option && option.efforts.length && !option.efforts.includes(row.effort) ? (option.efforts.includes("high") ? "high" : option.efforts[0]!) : row.effort;
-    onSave({ model, reasoning_effort: effort });
+    onSave(withPool(model, effort));
   };
+  const labelOf = (id: string) => options.find((option) => option.id === id)?.label ?? id;
+  const addable = options.filter((option) => option.id !== row.model && !row.pool.includes(option.id) && option.offered !== false);
   return (
     <li className="grid min-w-0 items-center gap-x-3 gap-y-1 border-t border-[var(--lp-hairline)] px-3 py-2 first:border-t-0 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1.4fr)_6rem_minmax(0,1fr)]" data-testid={`role-model-${row.role}`} data-source={row.source} data-own={row.own ? "1" : "0"}>
       <div className="min-w-0">
@@ -100,7 +108,7 @@ function RoleModelRow({ row, options, busy, onSave }: { row: Row; options: Optio
         </Select>
       </div>
       <div className="min-w-0">
-        <Select value={row.effort} disabled={busy} onValueChange={(effort) => onSave({ model: row.model, reasoning_effort: effort })}>
+        <Select value={row.effort} disabled={busy} onValueChange={(effort) => onSave(withPool(row.model, effort))}>
           <SelectTrigger aria-label={fill(t("roleModelsEffortLabel"), { role: name })} className="h-8 w-full text-sm" data-testid={`role-effort-pick-${row.role}`}><SelectValue /></SelectTrigger>
           <SelectContent>{effortList.map((effort) => <SelectItem key={effort} value={effort}>{effort}</SelectItem>)}</SelectContent>
         </Select>
@@ -109,6 +117,22 @@ function RoleModelRow({ row, options, busy, onSave }: { row: Row; options: Optio
         <span className={row.source === "table" ? "text-foreground" : "italic"} data-testid={`role-model-source-${row.role}`}>{source}</span>
         {row.own ? <Button type="button" size="sm" variant="ghost" className="h-6 px-1.5 text-xs" disabled={busy} data-testid={`role-model-reset-${row.role}`} onClick={() => onSave(null)}>{t("roleModelsReset")}</Button> : null}
         {light ? <span className="basis-full break-words lp-text-warning" data-testid={`role-model-light-${row.role}`}>{t("roleModelsLight")}</span> : null}
+      </div>
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground md:col-span-4" data-testid={`role-model-pool-${row.role}`}>
+        <span>{row.pool.length ? t("roleModelsPool") : t("roleModelsPoolNone")}</span>
+        {row.pool.map((id) => (
+          <span key={id} className="inline-flex items-center gap-1 rounded-md border border-[var(--lp-hairline)] px-1.5 py-0.5 text-foreground">
+            {labelOf(id)}
+            <button type="button" className="text-muted-foreground hover:text-foreground" disabled={busy} aria-label={fill(t("roleModelsPoolRemove"), { model: labelOf(id) })}
+              data-testid={`role-model-pool-remove-${row.role}-${id}`} onClick={() => onSave(withPool(row.model, row.effort, row.pool.filter((item) => item !== id)))}>×</button>
+          </span>
+        ))}
+        {addable.length ? (
+          <Select value="" disabled={busy} onValueChange={(id) => onSave(withPool(row.model, row.effort, [...row.pool, id]))}>
+            <SelectTrigger aria-label={fill(t("roleModelsPoolAdd"), { role: name })} className="h-6 w-auto gap-1 px-1.5 text-xs" data-testid={`role-model-pool-add-${row.role}`}><SelectValue placeholder="+" /></SelectTrigger>
+            <SelectContent>{addable.map((option) => <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>)}</SelectContent>
+          </Select>
+        ) : null}
       </div>
     </li>
   );

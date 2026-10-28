@@ -1,6 +1,6 @@
 import { belowTier, modelTier, type ModelTier } from "./model-tiers";
 import { ZCODE_FREE_MODEL, ZCODE_FREE_ROWS, ZCODE_PROVIDER_ID, ZCODE_BACKGROUND_KEY, zcodeBackgroundOn } from "./zcode";
-import { SAME_FAMILY_JUDGE_BY_LIMIT, consistentProvider, roleRowOf, judgeAgainstAuthor, modelFamily, peerOffSpent, resolveRoleModel, roleDefaultModel, roleFallbackModel, roleRow, ROLE_TABLE, type SpentProbe } from "./role-models";
+import { SAME_FAMILY_JUDGE_BY_LIMIT, consistentProvider, pickedEffort, tablePoolAt, roleRowOf, judgeAgainstAuthor, modelFamily, peerOffSpent, resolveRoleModel, roleDefaultModel, roleFallbackModel, roleRow, ROLE_TABLE, type SpentProbe } from "./role-models";
 
 /** Roles that run as a Claude Code agent profile (a specialist, the workflow architect): never moved to another provider. */
 export const CLAUDE_PROFILE_ROLES: ReadonlySet<string> = new Set(["specialist", "workflow-architect"]);
@@ -63,7 +63,24 @@ export type AgentModelInput = {
    * its author's family keeps going and says `same_family_judge_by_limit`. Absent or unknown: the table's pick stands.
    */
   spent?: SpentProbe;
+  /**
+   * How busy a provider is now, for a row with a pool of models (`tablePoolAt`): the spent share of its usage window (null: not measured) and
+   * how many helpers started on it lately. The row's model and its pool are tried least loaded first; absent: the row's model first, as stored.
+   */
+  load?: (providerId: string, model: string) => { percent: number | null; recent: number };
 };
+/**
+ * The row's model and its pool in the order they should take the next run: a spent provider last, then the less spent window (in steps of
+ * ten percent, so a few points do not flip it), then the fewer recent starts, then the order the owner gave.
+ */
+export function rankPool<T extends { providerId: string; model: string }>(rows: readonly T[], load: AgentModelInput["load"], spent: SpentProbe | undefined): T[] {
+  if (rows.length < 2 || !load) return [...rows];
+  const score = rows.map((row, index) => {
+    const now = load(row.providerId, row.model);
+    return { row, index, spent: spent?.(row.providerId, row.model) ? 1 : 0, band: Math.floor((now.percent ?? 0) / 10), recent: now.recent };
+  });
+  return score.sort((a, b) => a.spent - b.spent || a.band - b.band || a.recent - b.recent || a.index - b.index).map((item) => item.row);
+}
 
 /** The author rows each judge row is judged against, in order: the first one whose model is known is the author. Other roles judge no one. */
 export const AUTHOR_ROWS: Record<string, readonly string[]> = {
@@ -112,9 +129,13 @@ export function resolveAgentModel(input: AgentModelInput): AgentModel {
   // The candidates in order: the table's pick, the role's built-in default, the role's fallback (a review whose Gemini is not offered here takes
   // the GPT model it ran on before), the PM chat's model (which this machine runs by definition).
   const builtin = roleDefaultModel(row.id);
-  const candidates: Array<{ providerId: string; model: string; effort: string; source: AgentModelSource; sourceKey: string | null }> = [
-    { providerId: chosen.providerId, model: chosen.model, effort: chosen.effort, source: chosen.source === "default" ? "role-default" : chosen.source, sourceKey: chosen.sourceKey },
-  ];
+  type Candidate = { providerId: string; model: string; effort: string; source: AgentModelSource; sourceKey: string | null };
+  const first: Candidate = { providerId: chosen.providerId, model: chosen.model, effort: chosen.effort, source: chosen.source === "default" ? "role-default" : chosen.source, sourceKey: chosen.sourceKey };
+  // The owner's row may share the role between several models (its pool): the least loaded provider takes this run, the others follow it.
+  const pool: Candidate[] = chosen.source === "table"
+    ? tablePoolAt(input.settings, row.id).map(({ option, effort }) => ({ providerId: option.providerId, model: option.id, effort: effort ?? pickedEffort(row, option), source: "table", sourceKey: chosen.sourceKey }))
+    : [];
+  const candidates: Candidate[] = rankPool([first, ...pool], input.load, input.spent);
   // A background row the owner left on its default tries ZCode's free tokens first, only where the caller says ZCode can work now (its machine,
   // its hours, a free slot); a caller that cannot tell (no `offered`) never gets it. ZCode refusing at run time hands the step to the next candidate.
   if (chosen.source === "default" && ZCODE_FREE_ROWS.includes(row.id) && zcodeBackgroundOn(input.settings) && input.offered?.(ZCODE_PROVIDER_ID, ZCODE_FREE_MODEL) === true) {

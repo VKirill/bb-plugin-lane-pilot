@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.364
+
+**A role can share its work between several models.** The table «role -> model» gave each role one model, so every docs pass, review or memory note of every project went to one provider. Each row now takes a pool: «Also takes» under the model, «+» to add a table model, «×» to take one out (stored with the row, `role_model.<role>` = `{ model, reasoning_effort, pool: [{ model, reasoning_effort? }] }`). Every run of the role goes to the model of the pool whose provider is least loaded: a spent provider last, then the less spent usage window (in steps of ten percent), then the fewer helper starts in the last half hour, then the owner's order (`rankPool`). The cross-family rule for judges, ZCode's free hours and the move off a spent provider apply on top, as for a single model. A row without a pool runs as before. No Jev call: the pick is instant and free.
+
 ## 0.1.363
 
 **Jev spreads the writer tasks across providers.** Jev picks the writer of each task from the model profiles, but it saw only the task and the models' strengths: of the last 107 picks on the hub 44 went to GPT-6 Luna, and nearly everything else stayed on the project's writer, so the tasks piled up on Codex. Now a writer whose provider usage window is spent (`usage.skip_percent`, 90% by default) is not offered at all, not only ZCode outside its hours; and every offered model carries how busy its provider is: the spent share of its window and the writer tasks running on it. The judgment (version 2) tells Jev to choose, between models that fit the task about equally, the one whose provider has more room and fewer tasks.
