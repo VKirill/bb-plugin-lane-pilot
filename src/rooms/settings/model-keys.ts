@@ -5,3 +5,9 @@ const MODEL_KEY = new RegExp(`^(?:(?:${ROLE_PREFIXES.join("|")})\\.(?:provider|m
 
 /** A setting that names who works a role: its provider, model, effort or tier, and the writer's fallback chain. Nothing else (no switches, folders, agents). */
 export const isModelSettingKey = (key: string): boolean => MODEL_KEY.test(key);
+
+/** Who a role's chat runs as: `main.agent`, `docs.agent` and the other `<role>.agent` rows. */
+export const isAgentSettingKey = (key: string): boolean => /^[a-z_]+\.agent$/.test(key);
+
+/** What «give every project the global models» takes back: a role's model rows and its agent. */
+export const isRoleOverrideKey = (key: string): boolean => isModelSettingKey(key) || isAgentSettingKey(key);

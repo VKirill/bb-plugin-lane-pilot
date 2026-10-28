@@ -113,7 +113,7 @@ describe("giving every project and section the global models back, from the glob
     await waitFor(() => expect(slot.getByTestId("project-settings").querySelector("h1")?.textContent).toBe(ru.navGlobals));
     openTab(slot, "team");
     await slot.findByTestId("model-overrides");
-    await waitFor(() => expect(slot.getByTestId("model-overrides-count").textContent).toBe("Мест со своими моделями: 3"));
+    await waitFor(() => expect(slot.getByTestId("model-overrides-count").textContent).toBe("Мест со своими моделями или агентами: 3"));
     expect(slot.getByTestId("model-overrides-reset").textContent).toBe("Сбросить везде");
     slot.lifecycle.unmount();
   });

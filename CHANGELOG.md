@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.362
+
+**«Reset everywhere» takes agents back too, and leaves the bench alone.** The global Team tab lists the projects and sections with their own role models and gives them the global ones back. The owner wants every project to inherit agents as well: the list and the reset now cover every `<role>.agent` row (`main.agent`, `docs.agent`, …) beside the model rows (`isRoleOverrideKey`). «LP bench …» projects and the sandboxes pin their models on purpose (the bench compares them): they are no longer listed, and the reset refuses them even when a caller names them.
+
 ## 0.1.361
 
 **A section with a folder on several machines works in every copy.** Project Folders keeps a section's folder per device (`path-set`), but Lane Pilot read only the home copy: the nightly docs pass walked the lane-pilot section on the Mac mini alone, though the repository now lives on OVH, and a run started in the OVH copy got none of the section's settings (its gate command among them). Project Folders 0.7.9 returns every copy in `sections_list` (`paths`); the nightly docs pass now treats each copy as a place, as it already did for each source of a project, and the section of a run or a schedule is found by whichever copy holds its folder. An older Project Folders without `paths` keeps the home copy only. Self-repair defaults now name the OVH checkout and key, as the stored setting has since the move.

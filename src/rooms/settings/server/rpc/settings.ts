@@ -5,7 +5,8 @@ import { detectCompiledMainAgentCapability, pickableAgent } from "../../../nativ
 import { buildCliInvocation } from "../../../writer";
 import { cliReceiptAttemptKey, cliReceiptRunKey } from "../../../runs";
 import { casResetSettings, casUpsertSetting, casUpsertSettings, getReasoningTrace, countStageReceipts, getSettingVersions, getStageReceiptResult, listOwnSettingLevels, listRunsPage, listSettingRows, listStageReceiptSummaries, loadProjectSettings, loadPrototypeConfig, removeOwnSettings, sectionBindingId } from "../../../storage";
-import { isModelSettingKey } from "../../model-keys";
+import { isModelSettingKey, isRoleOverrideKey } from "../../model-keys";
+import { isSandboxProjectName } from "../../../stability/server";
 import type { RunHistoryRow } from "../../../storage";
 import { writerServiceTier, findModelIn } from "@lane-pilot/models";
 import { LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
@@ -330,17 +331,23 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
       return casResetSettings(db, { projectId, bindingId, keys, expectedVersions, validationKeys: [...new Set([...keys, ...affected.flat()])], validatedRows: rows });
     }),
     list_model_overrides: async () => {
-      const levels = listOwnSettingLevels(db, isModelSettingKey);
       // Names are a courtesy: a project the host no longer lists is shown by its id.
       const projectNames = new Map<string, string>();
       try { for (const project of await bb.sdk.projects.list({ includePersonal: true })) projectNames.set(project.id, project.name); } catch { /* ids only */ }
+      // «LP bench …» and the sandboxes pin their models on purpose (the bench compares them): never offered for the reset.
+      const levels = listOwnSettingLevels(db, isRoleOverrideKey).filter((level) => !isSandboxProjectName(projectNames.get(level.projectId)));
       const sectionNames = new Map<string, string>();
       for (const projectId of new Set(levels.filter((level) => level.sectionId).map((level) => level.projectId))) {
         for (const section of await listProjectSections(projectId)) sectionNames.set(section.id, section.name);
       }
       return { levels: levels.map((level) => ({ ...level, projectName: projectNames.get(level.projectId) ?? null, sectionName: level.sectionId ? sectionNames.get(level.sectionId) ?? null : null })) };
     },
-    reset_model_overrides: ({ levels }) => ({ ok: true, levels: levels.length, removed: removeOwnSettings(db, levels, isModelSettingKey) }),
+    reset_model_overrides: async ({ levels }) => {
+      const sandbox = new Set<string>();
+      try { for (const project of await bb.sdk.projects.list({ includePersonal: true })) if (isSandboxProjectName(project.name)) sandbox.add(project.id); } catch { /* the list was screened already */ }
+      const kept = levels.filter((level) => !sandbox.has(level.projectId));
+      return { ok: true, levels: kept.length, removed: removeOwnSettings(db, kept, isRoleOverrideKey) };
+    },
     save_settings: ({ projectId, sectionId, changes }) => {
       const bindingId = sectionId ? sectionBindingId(sectionId) : "";
       const memoryKey=changes.find(({key})=>NATIVE_MEMORY_KEYS.has(key))?.key;
