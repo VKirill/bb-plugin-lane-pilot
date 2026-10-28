@@ -3,7 +3,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import plugin from "../../server";
 import { createRun, openDatabase, setRunThread } from "../../src/rooms/storage/database";
 import { setJevForTests } from "@lane-pilot/jev";
-import { listSignals } from "../../src/rooms/learning/store";
+import { getItem, insertItem, listSignals } from "../../src/rooms/learning/store";
 import { jevWith } from "./helpers";
 
 describe("the learning room in the mounted plugin", () => {
@@ -63,5 +63,24 @@ describe("the learning room in the mounted plugin", () => {
     expect(answer).toContain("Владелец закрыл вопрос");
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(listSignals(db, { kind: "owner_question" })).toMatchObject([{ projectId: "project-a", p: 0.9 }]);
+  });
+  // Hub 2026-10-28: lrn_52ee07f334eb («каждый понедельник утром…», due 2026-11-02, ~5 days ahead) failed every 30 minutes with
+  // «relay limit: a wait longer than 2 hours on nothing Lane Pilot can see»: the cap for a PM snoozing caught the owner's own date.
+  it("accepts a date the owner named days ahead as a reminder, not a refused long wait", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
+    await plugin(bb);
+    dispose = () => harness.lifecycle.dispose();
+    const db = openDatabase(bb);
+    const dueAt = Date.now() + 7_522 * 60_000;
+    insertItem(db, { id: "lrn_52ee07f334eb", obsId: "thr_5y9sdypguf:1:0", projectId: "project-a", threadId: "thr_5y9sdypguf", kind: "deadline",
+      text: "Каждый понедельник утром присылать в этот чат отчёт о файлах репозитория, менявшихся за прошедшую неделю.", audience: null, reach: "project",
+      dueAt, state: "pending_owner", target: "reminder", evidence: "owner message thr_5y9sdypguf:1:0 (2026-10-25 12:04) «Каждый понедельник утром собирай отчёт»",
+      duplicateOf: null, confirmations: 0, note: null, createdAt: Date.now(), decidedAt: null, announcedAt: null } as never);
+    const result = JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_memory", { action: "learned", op: "accept", id: "lrn_52ee07f334eb" }, ctx)));
+    expect(result.ok).not.toBe(false);
+    expect(JSON.stringify(result)).not.toMatch(/relay limit/);
+    const item = getItem(db, "lrn_52ee07f334eb")!;
+    expect(item.state).toBe("accepted");
+    expect(item.target).toMatch(/^reminder:rem/);
   });
 });
