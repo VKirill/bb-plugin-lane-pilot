@@ -2,7 +2,7 @@
 title: Owner profile and learning data
 type: data-model
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-28
 status: active
 confidence: medium
 tags: [data-model, anamnesis, learning]
@@ -18,6 +18,7 @@ sources:
   - src/rooms/learning/observe.ts
   - packages/memory-core/src/store.ts
   - packages/memory-core/src/lifecycle.ts
+  - packages/memory-core/src/candidates.ts
 ---
 
 # Owner profile and learning data
@@ -59,6 +60,8 @@ The Anamnesis store creates its own SQLite tables (`src/rooms/anamnesis/store.ts
 | `lane_pilot_learning_signal` | Id; signal kind; optional project; reference; confidence probability; detail; state; event time. | Unique `(kind,ref)` prevents duplicate signal rows; initial state `observed` (`src/rooms/learning/migrations.ts:71-81`). | Signal collectors write; daily learning pass reads. |
 
 ## Project memory
+
+Maintainer candidate parsing is an input boundary, not a separate stored entity: supported fields become memory records, recognized boolean review labels become concepts, empty extras are ignored, and other non-empty unknown fields reject the candidate batch (`packages/memory-core/src/candidates.ts:51-66`).
 
 | Table | Meaning | Lifecycle and invariants | Writers and readers |
 |---|---|---|---|

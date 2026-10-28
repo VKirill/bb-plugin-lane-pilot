@@ -2,7 +2,7 @@
 title: Session memory RPC
 type: component
 created: 2026-10-16
-updated: 2026-10-20
+updated: 2026-10-28
 status: active
 confidence: medium
 tags: [rpc, memory, sessions]
@@ -56,7 +56,7 @@ Malformed payloads fail schema validation before a handler runs; `timeRpcHandler
 
 1. `session_memory_project` resolves the requested path, lists personal and standard projects, and checks each project docs place for the same host and a containing path. It returns the deepest matching place's project id and scopes, or `{projectId:null, scopes:[]}`. Project-list and docs-place errors are treated as empty lists (`src/rooms/memory/server/session-memory.ts:18-31`).
 2. `session_memory_write` reads effective memory settings. If memory is disabled, it returns `stored:false`, null id and `memory_disabled`; otherwise it parses one `{kind,content,concepts}` candidate with budget checks disabled at parse time (`src/rooms/memory/server/session-memory.ts:32-37`).
-3. A parse error is caught and returned in `reason`. The parser checks kind/content/concepts and candidate token budgets; this handler sets those budget checks to effectively unbounded values, leaving the store to apply configured retention budgets. If parsing succeeds, it stores audience `subagent`, trust `observed`, origin `session`, and a hash of the optional source marker. It returns the inserted or corroborated id; a no-insert result is `corroborated` or `duplicate`, and storage exceptions return their message (`src/rooms/memory/server/session-memory.ts:35-48`, `packages/memory-core/src/candidates.ts:37-63`, `packages/memory-core/src/store.ts:83-110`).
+3. A parse error is caught and returned in `reason`. The parser checks kind/content/concepts and candidate token budgets; this handler sets those budget checks to effectively unbounded values, leaving the store to apply configured retention budgets. Unknown non-empty fields are rejected, empty extras are removed, and recognized boolean review labels are folded into `concepts` when that array exists (`packages/memory-core/src/candidates.ts:51-65`). If parsing succeeds, it stores audience `subagent`, trust `observed`, origin `session`, and a hash of the optional source marker. It returns the inserted or corroborated id; a no-insert result is `corroborated` or `duplicate`, and storage exceptions return their message (`src/rooms/memory/server/session-memory.ts:35-48`, `packages/memory-core/src/candidates.ts:37-75`, `packages/memory-core/src/store.ts:83-110`).
 4. `session_memory_search` applies configured search engine and personal-bot settings, searches the `subagent` audience including observed records, and projects each result to id, kind, content and concepts. Omitted limit defaults to eight (`src/rooms/memory/server/session-memory.ts:50-53`).
 5. `session_memory_core` selects active core records for the project and `subagent` audience whose validity has not expired, ordered by creation time (`src/rooms/memory/server/session-memory.ts:55-59`).
 6. `session_lesson` upserts a lesson proposal. The upsert increments occurrences for a similar pending or accepted rule; only a newly created proposal is offered for adoption. The handler reloads the proposal and returns its id, repeat id, current state or `proposed` fallback, and adopted flag (`src/rooms/memory/server/session-memory.ts:60-66`, `packages/run-insights/src/rules.ts:314-338`).
