@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.356
+
+**The PM calls the other BB plugins' tools itself.** Its compiled profile now carries the whole BB bridge (`mcp__bb-bridge`) next to the Lane Pilot tools. In a PM thread the bridge holds only the PM's own Lane Pilot tools, so this adds the other plugins' tools and no writer tool: one picture or one item card in Image Studio, a file in File Gateway, an Env Catalog entry no longer needs a helper on Opus. Two bridge tools stay out (`disallowedTools`): `update_environment_directory`, which would move the PM chat away from its run's checkout, and `bb_workflow_run`, which starts agents outside Lane Pilot. Long work (a model in Blender, a click-through) still goes to an errand with `plugins`/`mcp`. Checked on Claude Code 2.1.311: a server entry in an agent's `tools` opens all its tools, and a name in `disallowedTools` closes one.
+
 ## 0.1.355
 
 **ZCode runs on the free tokens only, and background work uses them.** bb-plugin-zcode 0.4.3 offers every Flash model twice: `GLM-5.3-Flash` bills the owner's Z.ai plan, `GLM-5.3-Flash · Free` (`glm-5.3-flash-free`) runs only on the Start Plan's free tokens and refuses with `ZCode (promo_unavailable)` rather than bill the plan (ZCode's plan is app-wide, so a free task cannot start while paid ones hold it). Lane Pilot's ZCode writer (`zcode-flash`) and the ZCode option of the role table now name the Free model, and the refusal is a machine state like «ZCode is busy»: the task moves to the next model uncharged. The background rows `docs-maintainer`, `rules-analyzer`, `memory` and `project-life`, when the owner left them on their default, try ZCode-Free first where ZCode can work now (the Mac mini, 15:00-01:00 UTC, a free slot); otherwise their own model runs. `zcode.background` = false turns that off. The writers' anamnesis says ZCode costs nothing in its hours, so Jev, told to prefer the cheaper model when it fits, takes it for the tasks it suits.
