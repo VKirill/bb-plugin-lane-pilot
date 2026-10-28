@@ -203,6 +203,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
             let waiting = true;
             const idle = waitThreadIdle(bb, input.writerThreadId, "writer_follow_up", undefined, followUpSince, deleted)
               .finally(() => { waiting = false; });
+            // A budget stop returns before this wait ends; its later rejection (thread_interrupted) must not go unhandled, which kills the BB server.
+            idle.catch(() => undefined);
             while (waiting) {
               await noteWriterTokens();
               const budgetStop = overBudget();

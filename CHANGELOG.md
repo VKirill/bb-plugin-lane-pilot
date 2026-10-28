@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.353
+
+**A budget stop during a follow-up no longer kills the BB server.** A continued writer (sticky thread) whose run has a wall, token or appetite budget waits for its follow-up turn while the budget is checked every 2 s. When the budget ran out, Lane Pilot stopped the thread and returned, but the wait was still pending; the stopped thread then failed it with `writer_follow_up:error:thread_interrupted:manual-stop`, nobody handled that rejection, and the whole hub `bb-server` exited (2026-10-28 03:04 UTC, again in the restarted process at 03:05, the outside watchdog saw «plugin is not running (status: starting)»). The wait's rejection is now handled.
+
 **`red_outside_task` reads only the lines that report a failure.** The baseline took every file name in a red check's tail for the reason it was red. A chain `tsc && tests && bb plugin build && grep -q '"version": "0.8.15"' package.json` passed everything up to the silent `grep` (the version bump was the task's work), and the tail ended with the build's list of `dist/*` files, so the task was stopped as «red in dist/server.js …» (image-studio `model-guide-fix`, 2026-10-27). A file now counts only on a line with a failure sign (error, FAIL, ✖, a line:column, a traceback line), or on a bare path line followed by one (eslint). Passing lines (✔, PASS) never count.
 
 ## 0.1.352
