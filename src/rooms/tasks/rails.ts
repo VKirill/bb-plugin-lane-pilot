@@ -153,7 +153,7 @@ export const WORKER_ENVELOPE = {
   network: "checks run in Seatbelt or bubblewrap with the project's own sandbox settings (src/rooms/verification/sandbox.ts)",
   tools: "the role's MCP servers, BB plugins and skills only (src/rooms/native-agent/helper-context.ts)",
   time: "the appetite's minutes, the session's turn ceiling and the run's wall clock (packages/resilience)",
-  tokens: "the appetite's tokens and the run's token budget, with the spend reserve at dispatch (src/rooms/tasks/rails.ts spendReserve)",
+  tokens: "the run's token budget when the owner sets run.max_tokens, with the spend reserve at dispatch (src/rooms/tasks/rails.ts spendReserve); the appetite's tokens are a forecast, they stop no writer",
 } as const;
 
 // ---------------------------------------------------------------- conversation and stage questions (SMA: Conversation and intake)

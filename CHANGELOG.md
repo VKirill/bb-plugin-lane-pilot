@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.358
+
+**A task's appetite in tokens no longer stops its writer.** The contract's `appetite.tokens` stopped a writer in the middle of its work as soon as it passed the number the PM had written: four stops in two weeks on the hub, one of them on an appetite of 6,000 tokens for a task that needed 229,434. The tokens are now a forecast only: no stop and no «80% of the appetite» question to the PM. The appetite's minutes still stop a writer that runs too long, and the run's own budget (`run.max_tokens`, `run.max_wall_minutes`) still applies where the owner sets it (no project sets it today). The core-memory limit of a project (`memory.core_budget`) stays: it caps the memory every agent of the project carries in its prompt, and since 0.1.354 a full core no longer fails a task (an entry that does not fit becomes a note).
+
 ## 0.1.357
 
 **`docker compose` works in the check sandbox.** The sandbox gives checks a temp HOME, and Docker Desktop on macOS finds its CLI plugins (`compose`, `buildx`) and its context through `~/.docker`. A check `docker compose config -q` answered «docker: unknown command: docker compose» (exit 125) whatever the writer did: task T8 of a bot project spent five attempts and ended `needs_human` (2026-10-28). The temp HOME now gets a `.docker` folder of its own with links to `config.json`, `cli-plugins` and `contexts`; the state Docker writes (`buildx`) stays in the temp folder. Checked through the real Seatbelt sandbox: `docker compose version` and `docker compose config -q` pass, before the change they failed.

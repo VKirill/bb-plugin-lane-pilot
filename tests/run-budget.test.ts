@@ -265,20 +265,14 @@ describe("running writer budget stop", () => {
     expect(attempt).toMatchObject({ state: "blocked", reason: "run_budget_exceeded:tokens" });
   });
 
-  it("stops a writer past the task's own appetite even when the run has no budget", async () => {
-    const { result, stopped, attempt } = await finishWithBudget(createRunBudget({}), { ...task, appetite: { tokens: 40 } });
-    expect(result).toMatchObject({ status: "blocked", reason: "run_budget_exceeded:appetite tokens 50 > 40" });
-    expect(stopped).toEqual(["writer-1"]);
-    expect(failureClass("blocked", attempt!.reason!)).toBe(failureClass("blocked", "run_budget_exceeded:tokens"));
-  });
 });
 
 describe("the task's appetite", () => {
-  it("stops past tokens or minutes, never before, and not on tokens the provider has not reported", () => {
+  it("stops past the minutes, never before, and never on tokens", () => {
     expect(appetiteStop(undefined, { tokens: 9e9, elapsedMs: 9e9 })).toBeNull();
-    expect(appetiteStop({ tokens: 100 }, { tokens: 100, elapsedMs: 0 })).toBeNull();
-    expect(appetiteStop({ tokens: 100 }, { tokens: null, elapsedMs: 9e9 })).toBeNull();
-    expect(appetiteStop({ tokens: 100, minutes: 5 }, { tokens: 101, elapsedMs: 0 })).toBe("run_budget_exceeded:appetite tokens 101 > 100");
+    expect(appetiteStop({ tokens: 100 }, { tokens: 9e9, elapsedMs: 9e9 })).toBeNull();
+    expect(appetiteStop({ tokens: 100, minutes: 5 }, { tokens: 101, elapsedMs: 0 })).toBeNull();
+    expect(appetiteStop({ tokens: 100, minutes: 5 }, { tokens: 101, elapsedMs: 6 * 60_000 })).toBe("run_budget_exceeded:appetite minutes 6 > 5");
     expect(appetiteStop({ minutes: 5 }, { tokens: 1, elapsedMs: 6 * 60_000 })).toBe("run_budget_exceeded:appetite minutes 6 > 5");
   });
 });

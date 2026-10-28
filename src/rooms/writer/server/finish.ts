@@ -158,9 +158,9 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       const appetite = input.task.appetite;
       const attemptStartedAt = Date.now();
       let writerTokens: number | null = null;
-      const watchBudget = budget.snapshot().limits.maxWallMs !== undefined || budget.snapshot().limits.maxTokens !== undefined || appetite !== undefined;
+      const watchBudget = budget.snapshot().limits.maxWallMs !== undefined || budget.snapshot().limits.maxTokens !== undefined || appetite?.minutes !== undefined;
       const noteWriterTokens = async () => {
-        if (budget.snapshot().limits.maxTokens === undefined && appetite?.tokens === undefined) return;
+        if (budget.snapshot().limits.maxTokens === undefined) return;
         try {
           const usageListed = await bb.sdk.threads.events.list({ threadId:input.writerThreadId, types:["thread/tokenUsage/updated"], order:"desc", limit:"50" });
           const usage = Array.isArray(usageListed) ? tokenUsageFromEvent(usageListed[0]) : null;
@@ -169,15 +169,15 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           // Usage is informational; a host that cannot list events does not fail the attempt.
         }
       };
-      // Stage budget question: at four fifths of the task's appetite the PM is asked once whether to extend it (lane_pilot_update_task) or let it stop.
+      // Stage budget question: at four fifths of the task's appetite minutes the PM is asked once whether to extend them (lane_pilot_update_task)
+      // or let the writer stop. The appetite's tokens are a forecast only (packages/resilience/src/appetite.ts): no question, no stop.
       let budgetAsked = false;
       const askBudgetOnce = () => {
-        if (budgetAsked || !appetite || !input.pmThreadId) return;
-        const used = appetite.tokens && writerTokens !== null ? writerTokens / appetite.tokens : 0;
-        const timeUsed = appetite.minutes ? (Date.now() - attemptStartedAt) / (appetite.minutes * 60_000) : 0;
-        if (Math.max(used, timeUsed) < 0.8) return;
+        if (budgetAsked || !appetite?.minutes || !input.pmThreadId) return;
+        const timeUsed = (Date.now() - attemptStartedAt) / (appetite.minutes * 60_000);
+        if (timeUsed < 0.8) return;
         budgetAsked = true;
-        void Promise.resolve().then(() => bb.sdk.threads.send({ threadId:input.pmThreadId!, mode:"queue-if-active", input:[{ type:"text", mentions:[], text:`[Lane Pilot] Task ${input.taskId} has spent ${Math.round(Math.max(used, timeUsed) * 100)}% of its appetite (${appetite.tokens ? `${writerTokens ?? 0}/${appetite.tokens} tokens` : ""}${appetite.tokens && appetite.minutes ? ", " : ""}${appetite.minutes ? `${Math.round((Date.now() - attemptStartedAt) / 60_000)}/${appetite.minutes} min` : ""}). Its writer stops at the appetite: raise it with lane_pilot_update_task now if the work is worth more, or let it stop.` }] } as never)).catch(() => undefined);
+        void Promise.resolve().then(() => bb.sdk.threads.send({ threadId:input.pmThreadId!, mode:"queue-if-active", input:[{ type:"text", mentions:[], text:`[Lane Pilot] Task ${input.taskId} has spent ${Math.round(timeUsed * 100)}% of its appetite (${Math.round((Date.now() - attemptStartedAt) / 60_000)}/${appetite.minutes} min). Its writer stops at the appetite: raise it with lane_pilot_update_task now if the work is worth more, or let it stop.` }] } as never)).catch(() => undefined);
       };
       const overBudget = () => { askBudgetOnce(); return runningWriterBudgetStop(budget.check()) ?? appetiteStop(appetite, { tokens:writerTokens, elapsedMs:Date.now() - attemptStartedAt }); };
       const stopRunningWriter = async (reason:string) => {

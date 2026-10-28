@@ -134,12 +134,13 @@ export const taskV2Schema = z.object({
     target: z.string().min(1).max(200).optional(),
     change: z.string().min(1).max(1000),
   }).strict()).max(40).optional(),
-  /** SMA «Appetite before solution»: what the task may spend at most. A writer over it is stopped (`run_budget_exceeded:appetite …`, packages/resilience/src/appetite.ts). */
+  /** SMA «Appetite before solution»: what the task should spend. A writer past the minutes is stopped (`run_budget_exceeded:appetite …`,
+   *  packages/resilience/src/appetite.ts); the tokens are a forecast only. */
   appetite: z.object({
     tokens: z.number().int().positive().max(50_000_000).optional(),
     minutes: z.number().int().positive().max(24 * 60).optional(),
   }).strict().refine((value) => value.tokens !== undefined || value.minutes !== undefined, "appetite names tokens, minutes or both")
-    .describe("The most this task may spend: {tokens?, minutes?}; the writer is stopped past it.").optional(),
+    .describe("What this task should spend: {tokens?, minutes?}; the writer is stopped past the minutes, the tokens are only a forecast.").optional(),
   /** SMA «Plan prediction»: the PM's forecast before dispatch; after acceptance the code measures the error (src/rooms/forecast). */
   forecast: z.object({
     files: z.number().int().min(0).max(500),
