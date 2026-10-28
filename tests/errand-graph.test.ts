@@ -5,6 +5,7 @@ import { createRun, openDatabase, setRunThread } from "../src/rooms/storage/data
 import { mountErrands } from "../src/rooms/qa/server/errands";
 import { builtinWorkflow } from "../src/rooms/workflow/builtin";
 import { validateWorkflow } from "@lane-pilot/workflow-engine";
+import { coreRequiredSessionAdvertisement } from "../src/rooms/native-agent/helper-context";
 
 /**
  * The errand as a graph (workflows/errand.json): the account check, the helper's step wrapping the errand core, and the PM tools that start and read the run.
@@ -17,7 +18,7 @@ const TASK = "Open the CRM in the owner's Chrome and report the number of new le
 
 type Gate = { missing: string[]; denied: string[]; wrongKind: string[]; unavailable: boolean; catalog?: Array<{ name: string; kind: string }> };
 
-function world(options: { pm?: boolean; output?: string; gate?: (names: string[]) => Gate } = {}) {
+function world(options: { pm?: boolean; output?: string; gate?: (names: string[]) => Gate; requiredPolicy?: boolean } = {}) {
   const state = { ended: false, output: options.output ?? "Found 12 new leads.\nERRAND: done", status: "", spawned: [] as Array<Record<string, any>>, stopped: [] as string[], disposed: false, issued: [] as string[] };
   const withPm = options.pm !== false;
   const sdk = {
@@ -34,6 +35,8 @@ function world(options: { pm?: boolean; output?: string; gate?: (names: string[]
       environments: { get: async () => ({ id: "env-1", path: "/checkout", hostId: "host-1" }) },
     } as never;
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot", sdk });
+  // A core that narrows helper sessions (VK required session policy): the spawn then carries the role's policy.
+  if (options.requiredPolicy) Object.assign(bb.agents, { experimental_vkRequiredSessionPolicy: () => coreRequiredSessionAdvertisement() });
   const db = openDatabase(bb);
   if (withPm) { createRun(db, RUN, PROJECT, "cli", "/checkout"); setRunThread(db, RUN, PM); }
   const commands: string[] = [];
@@ -121,6 +124,20 @@ describe("the errand graph", () => {
     expect(started.threadId).toBe("errand-thr-1");
     expect(w.state.issued).toEqual(["DEPLOY_KEY"]);
     expect(String(w.state.spawned[0]!.prompt)).toContain("DEPLOY_KEY (ssh)");
+  });
+
+  it("the helper loads the BB plugins, skills and MCP servers the errand names on top of its role's; none named keeps the role's alone", async () => {
+    const w = world({ requiredPolicy: true });
+    await w.call("lane_pilot_errand", { task: TASK });
+    const plain = w.state.spawned[0]!.experimental_vkRequiredSessionPolicy.policy;
+    expect(plain.bbPlugins.names).not.toContain("image-studio");
+    expect(plain.mcpServers.names).toEqual(["bb-bridge"]);
+
+    await w.call("lane_pilot_errand", { task: `${TASK} Then draw it.`, plugins: ["image-studio"], mcp: ["blender"], skills: ["blender-modeler"] });
+    const named = w.state.spawned[1]!.experimental_vkRequiredSessionPolicy.policy;
+    expect(named.bbPlugins.names).toEqual(expect.arrayContaining(["browser-automation", "env-catalog", "image-studio"]));
+    expect(named.mcpServers.names).toEqual(expect.arrayContaining(["bb-bridge", "blender"]));
+    expect(named.skills.names).toEqual(expect.arrayContaining(["computer-use", "blender-modeler"]));
   });
 
   it("the same task asked twice is the same run and the same thread; another task is another run", async () => {

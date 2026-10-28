@@ -18,6 +18,7 @@ import { runBrowserStep } from "./browser-graphs";
 import type { Services } from "../../core/server";
 import { mountErrandGraph } from "./errand-graph";
 import type { ErrandRunStart } from "./errand-graph";
+import type { ExtraAccess } from "../../native-agent";
 
 const WAIT_STEP_MS = 5_000;
 
@@ -92,6 +93,8 @@ export type ErrandSnapshot = { hostId: string; cwd: string; before: string[] };
 
 export type ErrandStart = {
   projectId: string; runId: string | null; pmThreadId: string | null; task: string; title?: string | undefined; authorized: boolean; accounts: readonly CatalogEntry[];
+  /** BB plugins, skills and MCP servers this errand needs on top of the errand role's own (Image Studio, a Blender MCP server). */
+  access?: ExtraAccess | undefined;
   /** Provider, model, reasoning and fast mode of the helper thread; the errand default (claude-code, claude-opus-5-5, high) when absent. */
   providerId?: string | undefined; model?: string | undefined; reasoning?: string | undefined; serviceTier?: "default" | "fast" | undefined;
   /** Names this one spawn: the same id repeated returns the same thread. Default: derived from the task. */
@@ -211,7 +214,7 @@ function mountErrandCore(ctx: ServerCore) {
     const providerId = errandRole.providerId;
     const spawned = await fullAccessSpawn(bb, {
       ...placement,
-      ...requiredPolicyField(bb, helperPolicy, providerId, "errand"),
+      ...requiredPolicyField(bb, helperPolicy, providerId, "errand", input.access),
       ...writerExecutionSelection(providerId, errandRole.model, errandRole.reasoningEffort, input.serviceTier ?? "default"),
       prompt: errandPrompt({ task: input.task, browserHostId: setup.hostId, authorized: input.authorized, accounts: [...input.accounts] }),
       environment: place.environment,

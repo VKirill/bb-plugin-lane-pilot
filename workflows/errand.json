@@ -39,6 +39,20 @@
       "default": [],
       "note": "Env Catalog names the helper may read for this task"
     },
+    "plugins": {
+      "type": "string[]",
+      "default": [],
+      "note": "BB plugin ids the helper loads besides the errand role's (image-studio)"
+    },
+    "skills": {
+      "type": "string[]",
+      "default": []
+    },
+    "mcp": {
+      "type": "string[]",
+      "default": [],
+      "note": "MCP server names the helper loads (blender)"
+    },
     "providerId": {
       "type": "string",
       "default": ""

@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.354
+
+**An errand can carry the BB plugins and MCP servers its task needs.** The PM's own tool list holds only Lane Pilot's tools (its compiled profile keeps the agent's tools plus `lane_pilot_*`; every other `bb-bridge` tool is left out), so a BB plugin tool described in its context, such as Image Studio's `image_studio_item`, is out of its reach. The errand helper was no way round it: its role loads only browser-automation and Env Catalog, with no MCP server but bb-bridge. On 2026-10-28 an errand for a test accessory in lava-arena found neither `image_studio_item` nor the Blender MCP server, filled `item.json` by hand and drove Blender through its port. `lane_pilot_errand` now takes `plugins` (BB plugin ids such as `image-studio`), `mcp` (server names such as `blender`) and `skills`; the helper's session policy adds them to the role's own, and the tool tells the PM to route a BB plugin tool through such an errand.
 
 **A date the owner named days ahead becomes a reminder again.** Learning accepts a date from the owner's message («каждый понедельник утром собирай отчёт») as a reminder in the chat it was said in, through the relay. Since the relay refuses a time-only reminder longer than 2 hours (the cap that stops a PM snoozing), every such date was refused: the item stayed waiting and the settle loop logged «learning: could not settle lrn_…: relay limit: a wait longer than 2 hours…» every 30 minutes (two items of 2026-10-25, 18 lines in 7 days on the hub). The plugin now marks the owner's own date (`ownerDate`), which the 2-hour cap and the chain of time-only reminders do not count; agents still cannot set a reminder at all.
 

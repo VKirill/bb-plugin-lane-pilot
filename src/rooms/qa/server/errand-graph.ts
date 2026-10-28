@@ -9,6 +9,7 @@ import { withUsage } from "../../usage/server";
 import { fenceOutside, findThreadsByMetadata, keyedSpawnSupported, registerObservedTool, spawnTextId } from "../../core/server";
 import type { ServerCore, Services } from "../../core/server";
 import type { ErrandCore, ErrandSnapshot } from "./errands";
+import type { ExtraAccess } from "../../native-agent";
 
 /**
  * The errand as a graph (workflows/errand.json): `accounts` (code: the Env Catalog names are usable) -> `work` (the helper thread, wrapping the errand
@@ -30,6 +31,8 @@ export type ErrandRunStart = {
   /** Names the run: the same key is the same run (a schedule's: the key of its run). */
   key: string;
   task: string; title?: string | undefined; authorized: boolean; accounts: readonly string[];
+  /** BB plugins, skills and MCP servers the helper loads on top of the errand role's own. */
+  plugins?: readonly string[] | undefined; skills?: readonly string[] | undefined; mcp?: readonly string[] | undefined;
   providerId?: string | undefined; model?: string | undefined; reasoning?: string | undefined; serviceTier?: "default" | "fast" | undefined;
   /** A hidden thread with no parent chat. */
   detached?: boolean | undefined;
@@ -45,9 +48,18 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
     if (!c.runtime) throw new Error("this errand has no project to work in (its PM chat was closed or the plugin lost it); start it again");
     return c.runtime;
   };
-  const names = (c: StepContext<ChainRuntime>): string[] => {
-    const value = c.resolve("$inputs.accounts");
+  const list = (c: StepContext<ChainRuntime>, input: string): string[] => {
+    const value = c.resolve(`$inputs.${input}`);
     return Array.isArray(value) ? value.map(String) : [];
+  };
+  const names = (c: StepContext<ChainRuntime>): string[] => list(c, "accounts");
+  /** What the errand asked for besides the role's profile; nothing asked keeps the profile alone. */
+  const access = (c: StepContext<ChainRuntime>): ExtraAccess | undefined => {
+    const extra: ExtraAccess = {};
+    if (list(c, "plugins").length) extra.bbPlugins = list(c, "plugins");
+    if (list(c, "skills").length) extra.skills = list(c, "skills");
+    if (list(c, "mcp").length) extra.mcpServers = list(c, "mcp");
+    return Object.keys(extra).length ? extra : undefined;
   };
 
   engine.register<ChainRuntime>("lp.errand_accounts", {
@@ -75,7 +87,7 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
       const snapshot = await c.effect<ErrandSnapshot | null>("before", "errand.before", () => core.errandSnapshot(place), { reconcile: async () => ({ happened: false }) });
       const spawnId = c.spawnKey;
       const started = await c.effect<{ threadId: string; browserMachine: string | null }>("spawn", "errand.spawn", () => core.startErrand({
-        ...place, runId: rt.runId, task: text(input("task")), title: text(input("title")) || undefined, authorized: input("authorized") === true, accounts: resolved.accounts,
+        ...place, runId: rt.runId, task: text(input("task")), title: text(input("title")) || undefined, authorized: input("authorized") === true, accounts: resolved.accounts, access: access(c),
         providerId: text(input("providerId")) || undefined, model: text(input("model")) || undefined, reasoning: text(input("reasoning")) || undefined,
         serviceTier: tier === "fast" ? "fast" : undefined, spawnId, detached,
         metadata: {
@@ -120,6 +132,7 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
       workflow, key, runtime, link: { projectId: input.projectId, ...(input.runId ? { runId: input.runId } : {}) },
       inputs: {
         task: input.task, title: input.title ?? "", authorized: input.authorized, accounts: [...input.accounts],
+        plugins: [...input.plugins ?? []], skills: [...input.skills ?? []], mcp: [...input.mcp ?? []],
         providerId: input.providerId ?? "", model: input.model ?? "", reasoning: input.reasoning ?? "", serviceTier: input.serviceTier ?? "default",
         detached: input.detached === true, scheduleId: input.schedule?.id ?? "", scheduleRunKey: input.schedule?.runKey ?? "",
       },
@@ -143,12 +156,15 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
   registerObservedTool(bb.agents, {
     name: "lane_pilot_errand",
     description: "Start the `errand` graph for a non-code task: a helper thread works in a cloud console in the owner's browser, a mailbox, a screen recording, an account in Env Catalog.",
-    instructions: "Use from a Lane Pilot PM chat for work that is not a change to this project's code (code goes through lane_pilot_dispatch_writer). Give the whole task: goal, where, what to report. `authorized: true` when the task makes changes. Authorization follows the owner's goal, as in your instructions. Otherwise the helper only reads and reports. For a step that needs an SSH, FTP or login account (a deploy to a server or hosting), pass its Env Catalog names in `accounts`: the helper reads them from the catalog and keeps the keys out of every repository; the project list secrets.allow, when it is not empty, must include the name, and if one is missing or left out of that list nothing starts and the answer says what to do (env_request for a missing one, add a left-out one to secrets.allow), then call again. The helper never changes, commits or pushes repository files: if the task asks for that it stops with ERRAND: blocked and you must dispatch a writer task. Returns at once with the run and the thread; call lane_pilot_wait_errand with its workflowRunId (or threadId), again while it is running, and show the owner the @thread link. The same task asked twice is the same run.",
+    instructions: "Use from a Lane Pilot PM chat for work that is not a change to this project's code (code goes through lane_pilot_dispatch_writer). Give the whole task: goal, where, what to report. `authorized: true` when the task makes changes. Authorization follows the owner's goal, as in your instructions. Otherwise the helper only reads and reports. For a step that needs an SSH, FTP or login account (a deploy to a server or hosting), pass its Env Catalog names in `accounts`: the helper reads them from the catalog and keeps the keys out of every repository; the project list secrets.allow, when it is not empty, must include the name, and if one is missing or left out of that list nothing starts and the answer says what to do (env_request for a missing one, add a left-out one to secrets.allow), then call again. The helper loads only the browser, computer use and Env Catalog: when the task needs another BB plugin's tools (Image Studio's image_studio_*, File Gateway), an MCP server (blender, chrome-devtools) or a skill, name them in `plugins` (BB plugin ids such as image-studio), `mcp` (server names) and `skills`, and say in the task which tools to use. Your own tool list holds only Lane Pilot's tools, so a BB plugin tool described in your context is called through such an errand. The helper never changes, commits or pushes repository files: if the task asks for that it stops with ERRAND: blocked and you must dispatch a writer task. Returns at once with the run and the thread; call lane_pilot_wait_errand with its workflowRunId (or threadId), again while it is running, and show the owner the @thread link. The same task asked twice is the same run.",
     parameters: z.object({
       task: z.string().min(10).max(20_000),
       title: z.string().min(1).max(1000).optional(),
       authorized: z.boolean().default(false),
       accounts: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/)).max(8).optional(),
+      plugins: z.array(z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/)).max(8).optional(),
+      skills: z.array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$/)).max(16).optional(),
+      mcp: z.array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/)).max(8).optional(),
     }).strict(),
     execute: async (params, context) => {
       if (!context.threadId || !context.projectId) throw new Error("errand_needs_pm_thread");
@@ -159,6 +175,7 @@ export function mountErrandGraph(ctx: ServerCore, services: Services, core: Erra
       const started = startRun({
         projectId: context.projectId, pmThreadId: context.threadId, runId, key: `errand:${runId}:${spawnTextId(params.task)}`,
         task: params.task, title: params.title, authorized: params.authorized, accounts: params.accounts ?? [],
+        plugins: params.plugins, skills: params.skills, mcp: params.mcp,
       });
       const deadline = Date.now() + SPAWN_WAIT_MS;
       for (;;) {
