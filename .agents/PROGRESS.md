@@ -20,3 +20,12 @@
 - Open todos: none (`.agents/todos/INDEX.md`)
 - Active plans: `2026-10-05-harness-engineering-gaps.md` — awaiting owner decisions; `2026-10-07-lane-pilot-handoff.md` — §2–§8 open
 - Changelog: `.agents/CHANGELOG.md`
+
+<!-- auto:session-ledger -->
+## Auto (session ledger)
+- last flush: 2026-10-29 00:15 MSK
+- client/agent: `agent` / `unknown`
+- entry: `.agents/session-log/2026-10-29/001548-agent-d9d07f21.md`
+- files this session: 0 · shell samples: 0
+- open INDEX: `.agents/session-log/INDEX.md`
+<!-- /auto:session-ledger -->
