@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+**A full project core no longer turns the after-acceptance graph red.** The memory maintainer's batch was refused whole as soon as the project's core memory was full: the store counts the active core plus the new core entries against `memory.core_budget`, and core is never evicted. On the hub the core of two projects stood at 3058 and 3070 of 3072 tokens, so every task whose maintainer proposed a core entry failed `lp.after-accept` at its `gather` step with «memory core budget exceeded: 3135/3072 tokens», and its notes were lost with it (17 of 20 failures on 2026-10-27/28). Now a core entry that does not fit is stored as a note, the last one first, and the stage result says how many (`coreDemotedToNotes`). The maintainer also sees how full the core is and its core records with their ids, so it can name an outdated one in `supersedes` and free room.
+
+**A stray key in one memory entry no longer loses the batch.** `"review": true` (the concept the prompt names, written as a field) is read as that concept, and an empty extra like `"concepts_extra": []` is dropped. Any other unknown key is still refused (2 failures on 2026-10-27).
+
 ## 0.1.353
 
 **A budget stop during a follow-up no longer kills the BB server.** A continued writer (sticky thread) whose run has a wall, token or appetite budget waits for its follow-up turn while the budget is checked every 2 s. When the budget ran out, Lane Pilot stopped the thread and returned, but the wait was still pending; the stopped thread then failed it with `writer_follow_up:error:thread_interrupted:manual-stop`, nobody handled that rejection, and the whole hub `bb-server` exited (2026-10-28 03:04 UTC, again in the restarted process at 03:05, the outside watchdog saw «plugin is not running (status: starting)»). The wait's rejection is now handled.
