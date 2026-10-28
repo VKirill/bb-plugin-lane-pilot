@@ -1,5 +1,5 @@
 import bundledAgents from "./bundled-agents.json";
-import { NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_SPECIALIST_TOOLS, unionLpBridgeTools, withoutLpBridgeTools } from "./native-session-hooks";
+import { BB_BRIDGE_MCP_SERVER, NATIVE_LP_BRIDGE_ARCHITECT_TOOLS, NATIVE_LP_BRIDGE_PM_TOOLS, NATIVE_LP_BRIDGE_SPECIALIST_TOOLS, unionLpBridgeTools, withoutLpBridgeTools } from "./native-session-hooks";
 import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_SESSION, WORKFLOW_ARCHITECT_SUMMARY } from "../workflow";
 import { rewriteFoldedToolNames } from "../tools";
 
@@ -44,6 +44,19 @@ const CLI_SESSION_TOOLS = new Set(["SendMessage", "ListAgents", "TaskStop"]);
  * (Opus PMs: 36.6k tokens at the start, 15k of them MCP). The PM list adds it.
  */
 export const DEFERRED_MCP_LOADER = "ToolSearch";
+/**
+ * The whole BB bridge for the PM: the other BB plugins' tools (Image Studio, File Gateway, Env Catalog…) for a one-off call. In a PM thread
+ * the bridge carries only the PM's own Lane Pilot tools (tools.ts), so the server entry adds no writer or architect tool.
+ */
+export const PM_BRIDGE_SERVER_ENTRY = `mcp__${BB_BRIDGE_MCP_SERVER}`;
+/** Bridge tools the PM never calls: moving the chat to another folder breaks the run's binding; a BB workflow starts agents outside Lane Pilot. */
+export const PM_DISALLOWED_BRIDGE_TOOLS = ["update_environment_directory", "bb_workflow_run"].map((name) => `mcp__${BB_BRIDGE_MCP_SERVER}__${name}`);
+
+/** The PM's disallowed tools with the bridge tools it never calls; other agents keep theirs. */
+export function overlayDisallowedTools(agentId: string, disallowed: readonly string[] | undefined): string[] | undefined {
+  if (!isLanePmAgent(agentId)) return disallowed ? [...disallowed] : undefined;
+  return [...new Set([...(disallowed ?? []), ...PM_DISALLOWED_BRIDGE_TOOLS])];
+}
 
 export function splitClaudeToolList(raw: string): string[] {
   const out: string[] = [];
@@ -473,7 +486,7 @@ export function overlaySessionTools(agentId: string, tools: string[]): string[] 
     const specialist = unionLpBridgeTools(base, NATIVE_LP_BRIDGE_SPECIALIST_TOOLS);
     return specialist.includes(DEFERRED_MCP_LOADER) ? specialist : [...specialist, DEFERRED_MCP_LOADER];
   }
-  const withBridge = unionLpBridgeTools(base, NATIVE_LP_BRIDGE_PM_TOOLS);
+  const withBridge = unionLpBridgeTools(base.includes(PM_BRIDGE_SERVER_ENTRY) ? base : [...base, PM_BRIDGE_SERVER_ENTRY], NATIVE_LP_BRIDGE_PM_TOOLS);
   return withBridge.includes(DEFERRED_MCP_LOADER) ? withBridge : [...withBridge, DEFERRED_MCP_LOADER];
 }
 
@@ -528,6 +541,8 @@ export function stockAgentsOverlayFromInstalled(input: {
     }
     definition[key] = value;
   }
+  const disallowed = overlayDisallowedTools(input.agentId, definition.disallowedTools as string[] | undefined);
+  if (disallowed) definition.disallowedTools = disallowed;
   return withPmCompanions(input.agentId, { [input.agentId]: definition });
 }
 
@@ -543,6 +558,9 @@ export function unionLpBridgeToolsOnAgentsJson(agentId: string, agentsJson: stri
   const tools = definition.tools;
   if (Array.isArray(tools) && tools.every((item) => typeof item === "string") && !tools.includes("*")) {
     definition.tools = overlaySessionTools(agentId, tools);
+    const denied = definition.disallowedTools;
+    const disallowed = overlayDisallowedTools(agentId, Array.isArray(denied) && denied.every((item) => typeof item === "string") ? denied : undefined);
+    if (disallowed) definition.disallowedTools = disallowed;
   }
   return withPmCompanions(agentId, { [agentId]: definition });
 }

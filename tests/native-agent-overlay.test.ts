@@ -13,6 +13,7 @@ import {
   overlayLanePmPrompt,
   overlayLaneAgentPrompt,
   overlaySessionTools,
+  overlayDisallowedTools,
   laneSessionOverlayPrompt,
 } from "../src/rooms/native-agent/native-agent-overlay";
 import { resolveInstalledAgentFile } from "../src/rooms/native-agent/native-claude-host";
@@ -110,6 +111,8 @@ it("gives specialists the schedule and no other bb-bridge tool, and keeps the fo
   expect(overlaySessionTools("project-onboarder", ["Read", "mcp__bb-bridge__lane_pilot_read"])).toEqual(["Read"]);
   expect(overlaySessionTools("dev-orchestrator", ["Read", "mcp__bb-bridge__lane_pilot_night_review"])).toEqual([
     "Read",
+    // The whole bridge: the other BB plugins' tools (Image Studio, File Gateway…); in a PM thread it carries no other Lane Pilot tool.
+    "mcp__bb-bridge",
     "mcp__bb-bridge__lane_pilot_read",
     "mcp__bb-bridge__lane_pilot_dispatch_writer",
     "mcp__bb-bridge__lane_pilot_wait_writer",
@@ -144,6 +147,12 @@ it("gives specialists the schedule and no other bb-bridge tool, and keeps the fo
   ]);
   expect(overlaySessionTools("project-onboarder", ["Read"])).not.toContain("ToolSearch");
   expect(overlaySessionTools("dev-orchestrator", ["Read", "ToolSearch"]).filter((tool) => tool === "ToolSearch")).toHaveLength(1);
+  // Applied twice (a stored profile compiled again), the bridge entry stays one.
+  expect(overlaySessionTools("dev-orchestrator", overlaySessionTools("dev-orchestrator", ["Read"])).filter((tool) => tool === "mcp__bb-bridge")).toHaveLength(1);
+  // The PM never moves its chat to another folder or starts a BB workflow; other agents keep their own lists.
+  expect(overlayDisallowedTools("dev-orchestrator", ["Bash"])).toEqual(["Bash", "mcp__bb-bridge__update_environment_directory", "mcp__bb-bridge__bb_workflow_run"]);
+  expect(overlayDisallowedTools("copy-lead", undefined)).toBeUndefined();
+  expect(compileMainAgentProfile("dev-orchestrator").disallowedTools).toEqual(expect.arrayContaining(["mcp__bb-bridge__update_environment_directory", "mcp__bb-bridge__bb_workflow_run"]));
   const overlay = stockAgentsOverlayFromInstalled({
     agentId: "dev-orchestrator",
     source: "plugin:lane-stack",

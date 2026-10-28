@@ -9,6 +9,7 @@ it("emits --agents JSON from the plugin profile, including unedited stock", () =
       description: compiled.description,
       prompt: compiled.prompt,
       ...(compiled.tools ? { tools: compiled.tools } : {}),
+      ...(compiled.disallowedTools ? { disallowedTools: compiled.disallowedTools } : {}),
       ...(compiled.skills ? { skills: compiled.skills } : {}),
       ...(compiled.mcpServers ? { mcpServers: compiled.mcpServers } : {}),
     },

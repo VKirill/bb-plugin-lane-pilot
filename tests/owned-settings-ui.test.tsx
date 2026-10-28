@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import plugin from "../server";
@@ -110,8 +110,8 @@ describe("owned settings source DOM", () => {
       expect(order.findIndex((name) => name?.includes("gitnexus-exploring"))).toBeLessThan(order.findIndex((name) => name?.includes("copywriter")));
       fireEvent.click(slot.getByRole("combobox", { name: "Allowed tools" }));
       fireEvent.click(slot.getByRole("option", { name: "Selected" }));
-      expect(slot.getByRole("checkbox", { name: /^Read$/ })).toBeTruthy();
       const tools = slot.getByTestId("agent-resource-tools");
+      expect(within(tools).getByRole("checkbox", { name: /^Read$/ })).toBeTruthy();
       expect(tools.querySelector("ul")?.className).toContain("border");
       if (tools.textContent?.includes("Saved")) {
         expect(tools.textContent).not.toMatch(/not in the current list/i);

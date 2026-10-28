@@ -1,6 +1,6 @@
 import { z } from "zod";
 import bundledAgents from "./bundled-agents.json";
-import { isCliLaneAgentPrompt, isInternalAgent, isLanePmAgent, laneSessionOverlayPrompt, overlaySessionTools } from "./native-agent-overlay";
+import { isCliLaneAgentPrompt, isInternalAgent, isLanePmAgent, laneSessionOverlayPrompt, overlayDisallowedTools, overlaySessionTools } from "./native-agent-overlay";
 import { WORKFLOW_ARCHITECT_ID, WORKFLOW_ARCHITECT_NAME, WORKFLOW_ARCHITECT_TOOLS } from "../workflow";
 import { sha256Hex } from "@lane-pilot/kit";
 
@@ -235,7 +235,7 @@ export function compileMainAgentProfile(
   if (!description || !prompt) throw new Error(`incomplete_main_agent_profile:${id}`);
   const stockTools = template?.tools?.length ? overlaySessionTools(id, template.tools) : undefined;
   const tools = pickResource(overrides?.tools, stockTools);
-  const disallowedTools = pickResource(overrides?.disallowedTools, template?.disallowedTools);
+  const disallowedTools = pickResource(overrides?.disallowedTools, stockTools ? overlayDisallowedTools(id, template?.disallowedTools) : template?.disallowedTools);
   const skills = pickResource(overrides?.skills, template?.skills);
   const mcpServers = pickResource(overrides?.mcpServers, template?.mcpServers);
   const unsigned = {
