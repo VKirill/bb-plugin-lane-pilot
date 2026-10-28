@@ -60,7 +60,7 @@ export type SelfRepairConfig = {
 export const SELF_REPAIR_DEFAULTS: SelfRepairConfig = {
   enabled: true,
   projectId: "proj_ejbam66722",
-  environmentId: "env_bfv6wmb79r",
+  environmentId: "env_7etjwdpbuw",
   sectionId: "9b66deb6-0e31-42d3-840f-19fa9601380c",
   // GPT-6.1 Sol, not Opus: the owner moved the repairs off Claude on 2026-10-28 (the `repairer` row of the role table says the same).
   providerId: "codex",
@@ -68,7 +68,7 @@ export const SELF_REPAIR_DEFAULTS: SelfRepairConfig = {
   reasoningLevel: "high",
   maxPerDay: 4,
   ignoreProjects: ["proj_3tb652jpsi"],
-  hubSsh: "ssh -i ~/.ssh/oracle_bb ubuntu@10.8.0.1",
+  hubSsh: "ssh -i ~/.ssh/id_ed25519 ubuntu@10.8.0.1",
   hubDb: "/home/ubuntu/.bb/plugins/lane-pilot/data.db",
   hubLog: "/home/ubuntu/.bb/plugins/lane-pilot/logs/plugin.log",
 };
