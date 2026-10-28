@@ -12,7 +12,7 @@ import { nightReviewPrompt } from "../../night";
 import { councilMemoryBlock } from "../../council/server";
 import { adoptRuleProposal, deleteMemoryRecord, memorySettingsFor, retireAdoptedRule } from "../../self-repair/server";
 import { HARNESS_VERSION, loadPrototypeConfig } from "../../storage";
-import { SANDBOX_PROJECT_ID } from "../../stability/server";
+import { DRILL_SANDBOX_PROJECT_IDS } from "../../stability/server";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 
@@ -33,7 +33,7 @@ export const PROBE_ANCHOR = "lp-probe/memory";
 const PROBE_TTL_MS = 24 * 3_600_000;
 const GIBBERISH = "zqxjvk wkpqzt";
 /** Projects the probe may write to without `force`: the drill sandboxes. */
-const sandboxProjects = () => new Set([SANDBOX_PROJECT_ID, ...(process.env.LP_MEMORY_PROBE_PROJECTS ?? "").split(",").map((item) => item.trim()).filter(Boolean)]);
+const sandboxProjects = () => new Set([...DRILL_SANDBOX_PROJECT_IDS, ...(process.env.LP_MEMORY_PROBE_PROJECTS ?? "").split(",").map((item) => item.trim()).filter(Boolean)]);
 
 export type MemoryProbeRow = { path: string; found: boolean; negativeOk: boolean | null; latencyMs: number; detail: string };
 export type MemoryProbeReport = {

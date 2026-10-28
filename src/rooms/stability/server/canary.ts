@@ -36,6 +36,8 @@ const ALERTED_KEY = (version: string) => `canary:alerted:${version}`;
  * round 4, P1-12). The same rule as scripts/lp-metrics-views.sql (`scope`), which tests/lp-metrics.test.ts keeps in step.
  */
 export const SANDBOX_PROJECT_ID = "proj_3tb652jpsi";
+/** Every drill sandbox: the Mac mini's and, since 2026-10-28, OVH's («LP sandbox OVH (drill)», where deploys from OVH run the drill). */
+export const DRILL_SANDBOX_PROJECT_IDS: readonly string[] = [SANDBOX_PROJECT_ID, "proj_ibu6v9g64j"];
 export const isSandboxProjectName = (name: string | null | undefined): boolean => typeof name === "string" && (name.startsWith("LP sandbox") || name.startsWith("LP native") || name.startsWith("LP bench"));
 export const isDrillTask = (taskId: string): boolean => taskId.startsWith("drill-");
 

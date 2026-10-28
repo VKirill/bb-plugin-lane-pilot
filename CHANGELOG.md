@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.360
+
+**Lane Pilot is developed and deployed from OVH.** The Mac mini that held the checkout runs Roblox Studio, a Docker VM and the writers of several projects; with its swap full a deploy waited 15 to 30 minutes on the typecheck and once rolled back because the drill could not start its PM. The working repository is now on OVH (16 cores, 125 GB), and deploys run there: the typecheck takes about 30 s, the full suite about 100 s, and the drill runs in its own OVH sandbox project «LP sandbox OVH (drill)». That project counts as a drill sandbox everywhere the old one did: the memory probe may write in it, and self-repair leaves its deliberate failures alone (`DRILL_SANDBOX_PROJECT_IDS`). The Mac mini keeps its sandbox for drills run there.
+
 ## 0.1.359
 
 **An attempt whose branch already exists starts on it instead of failing.** A worktree of an attempt is made once; when the answer of that create is lost (a plugin reload, a host call that timed out on a machine deep in swap), the next create ran `git worktree add -b lane/<attempt>` again and git refused: «a branch named … already exists». Two Vampirism Fire tasks were parked that way on 2026-10-28 with their worktrees on disk. `createWorktree` now takes the attempt's own branch as it is: the worktree that holds it, or the branch attached again at the attempt's path with its commits.

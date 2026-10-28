@@ -15,7 +15,7 @@ import { HOOK_TIMEOUTS_KEY, type HookTimeoutRecord } from "../../stability/serve
 import { tableRowAt, writerExecutionSelection } from "@lane-pilot/models";
 import { stringAt } from "../../core/server";
 import { writerBriefStats } from "../../writer";
-import { BREAKERS_KEY, DRILL_KEY, PARKED_KEY, type DrillOutcome, type ParkedTask } from "../../stability/server";
+import { BREAKERS_KEY, DRILL_KEY, DRILL_SANDBOX_PROJECT_IDS, PARKED_KEY, type DrillOutcome, type ParkedTask } from "../../stability/server";
 import { criticStats } from "../../critique";
 import { FAILURE_TRIAGE_METHOD, SCIENTIFIC_DEBUG_METHOD } from "../../critique";
 import type { VerdictStatus } from "../../critique";
@@ -536,7 +536,7 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
 
   /** Failures since the cursor that look like Lane Pilot's fault, plus attempts stuck now. */
   async function collect(since: number, cfg: SelfRepairConfig): Promise<Incident[]> {
-    const ignored = new Set(cfg.ignoreProjects);
+    const ignored = new Set([...cfg.ignoreProjects, ...DRILL_SANDBOX_PROJECT_IDS]);
     const out: Incident[] = [];
     const runPm = (runId: string) => (db.prepare("SELECT pm_thread_id FROM lane_pilot_run WHERE id=?").get(runId) as { pm_thread_id: string | null } | undefined)?.pm_thread_id ?? null;
     const triage = db.prepare(`SELECT t.project_id, t.run_id, t.task_id, t.attempt_id, t.reason, t.triaged_at, t.failed_at, a.thread_id FROM lane_pilot_failure_triage t
@@ -905,7 +905,7 @@ export function createSelfRepair(ctx: ServerCore, engineOf?: () => WorkflowEngin
         await settleRecord(signature, record, now);
       }
     }
-    const ignored = new Set(cfg.ignoreProjects);
+    const ignored = new Set([...cfg.ignoreProjects, ...DRILL_SANDBOX_PROJECT_IDS]);
     const due = Object.entries(current.signatures)
       // A night repair is started by the night loop's assignment, never by the watcher's own due rule.
       .filter(([signature, record]) => !signature.startsWith("night:") && isDue(record, now))
