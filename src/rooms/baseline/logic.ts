@@ -138,18 +138,43 @@ export function unrunnableReason(check: BaselineCheck, task: TaskFiles): string 
 
 const FILE_IN_OUTPUT = /(?<![\w@./-])((?:\.{1,2}\/)?[\w@.-]+(?:\/[\w@.[\]()-]+)*\.(?:tsx?|jsx?|mjs|cjs|mts|vue|py|rs|go|luau?|php|s?css|json|md|sh|rb|java|kt|swift))(?![\w/-])/g;
 
+/** A sign that a line of output reports a failure (read with the file names cut out, so `src/errors.ts` is not one). */
+const FAILURE_SIGN = /\b(?:error|fail(?:ed|ure|s)?|ERR!?|exception|panic(?:ked)?|cannot|not found|expected|assert\w*|undefined|missing|line \d+)\b|✖|✗|×|❯|-->|:\d+(?::\d+)?\b|\(\d+,\d+\)/i;
+/** A line that reports a pass: a test title there may contain any word. */
+const PASS_LINE = /^\s*(?:✔|✓|√|PASS\b|ok \d)/;
+
+/**
+ * The lines of a red check's output that report a failure: the file names a check prints while it works (a build's list of what it
+ * wrote, a passing test) are not why it is red. A line with a path and nothing else counts when the line after it reports the failure
+ * (eslint names the file, then its errors).
+ */
+function failureLines(note: string): Set<number> {
+  const lines = note.split("\n");
+  const failing = (line: string | undefined) => line !== undefined && !PASS_LINE.test(line) && FAILURE_SIGN.test(line.replace(FILE_IN_OUTPUT, " "));
+  const found = new Set<number>();
+  lines.forEach((line, index) => {
+    if (failing(line)) found.add(index);
+    else if (!line.replace(FILE_IN_OUTPUT, "").trim() && failing(lines.slice(index + 1).find((next) => next.trim()))) found.add(index);
+  });
+  return found;
+}
+
 /**
  * The files a red check names in its output when ALL of them lie outside the task (not under owns_paths, not an expected output) and the
- * check's own command does not name them: the base is red for reasons the task cannot touch. Empty when the output names no file, names
- * an owned one, or shows a path it cannot place: nothing is claimed then.
+ * check's own command does not name them: the base is red for reasons the task cannot touch. Only files on lines that report a failure
+ * count. Empty when the output names no such file, names an owned one, or shows a path it cannot place: nothing is claimed then.
  */
 export function redOutsideTaskFiles(check: BaselineCheck, task: TaskFiles): string[] {
   if (check.status !== "red" || /(?:^|[\s(])\/[\w.-]+\//.test(check.note)) return [];
   const cut = check.note.length >= CHECK_NOTE_TAIL;
+  const failing = failureLines(check.note);
+  const lineOf = (offset: number) => check.note.slice(0, offset).split("\n").length - 1;
   const files = new Set<string>();
   for (const found of check.note.matchAll(FILE_IN_OUTPUT)) {
     // The tail may begin in the middle of a path.
     if (cut && found.index === 0) continue;
+    // `bb plugin build` lists dist/* after it succeeds, and a later `grep -q` is red silently: those names are not the failure.
+    if (!failing.has(lineOf(found.index))) continue;
     if (/(^|\/)node_modules\//.test(found[1]!)) continue;
     // `Node.js v26` closes every uncaught Node error; it names the runtime, not a file.
     if (/^(?:node|next|nuxt|vue|express)\.js$/i.test(found[1]!)) continue;
