@@ -30,11 +30,14 @@ async function placeOf(ctx: ServerCore, services: Services, projectId: string): 
   const hostId = stringAt(environment, "hostId") ?? project?.sources?.[0]?.hostId ?? null;
   const sections = await ctx.listProjectSections(projectId).catch(() => []);
   const own = stringAt(thread, "sectionId");
-  const section = (own ? sections.find((row) => row.id === own) : undefined)
-    ?? (folderPath ? sections.filter((row) => row.kind === "folder" && row.path && within(folderPath, row.path)).sort((a, b) => b.path.length - a.path.length)[0] : undefined);
+  const copies = sections.filter((row) => row.kind === "folder").flatMap((row) => row.paths.filter(({ path }) => path).map(({ path }) => ({ row, path })));
+  const matched = folderPath ? copies.filter(({ path }) => within(folderPath, path)).sort((a, b) => b.path.length - a.path.length)[0] : undefined;
+  const ownRow = own ? sections.find((row) => row.id === own) : undefined;
+  const section = ownRow ?? matched?.row;
+  const sectionPath = ownRow ? (ownRow.paths.find(({ hostId: copyHost }) => copyHost === hostId)?.path ?? ownRow.path) : matched?.path;
   return {
     projectName: typeof project?.name === "string" && project.name ? project.name : null,
-    sectionId: section?.id ?? null, sectionName: section?.name ?? null, sectionPath: section?.path || null, folderPath, hostId,
+    sectionId: section?.id ?? null, sectionName: section?.name ?? null, sectionPath: sectionPath || null, folderPath, hostId,
   };
 }
 

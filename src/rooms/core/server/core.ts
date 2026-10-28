@@ -335,21 +335,25 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
       writerProviderId, writerModel };
   }
 
-  const sectionRowSchema = z.object({ id:z.string(), projectId:z.string(), parentId:z.string().nullable(), name:z.string(), path:z.string(), hostId:z.string(), kind:z.enum(["folder","group"]) });
+  const sectionPathSchema = z.object({ hostId:z.string(), path:z.string() });
+  // `paths`: the section's folder on each device (Project Folders `path-set`); `hostId`/`path` stay its home copy.
+  const sectionRowSchema = z.object({ id:z.string(), projectId:z.string(), parentId:z.string().nullable(), name:z.string(), path:z.string(), hostId:z.string(), kind:z.enum(["folder","group"]), paths:z.array(sectionPathSchema).optional() });
+  type SectionRow = Omit<z.infer<typeof sectionRowSchema>, "paths"> & { paths:Array<z.infer<typeof sectionPathSchema>> };
 
   /** Sections come from Project Folders; without it a project simply has none. */
-  async function listProjectSections(projectId:string): Promise<Array<z.infer<typeof sectionRowSchema>>> {
+  async function listProjectSections(projectId:string): Promise<SectionRow[]> {
     const plugins = (bb.sdk as { plugins?: { callRpc?: (args:{pluginId:string;method:string;input?:unknown;outputSchema:z.ZodType<unknown>}) => Promise<unknown> } }).plugins;
     if (!plugins?.callRpc) return [];
     try {
       const listed = await plugins.callRpc({ pluginId:"project-folders", method:"sections_list", input:{ projectId },
         outputSchema:z.object({ sections:z.array(sectionRowSchema) }) }) as { sections:Array<z.infer<typeof sectionRowSchema>> };
-      return listed.sections;
+      // An older Project Folders sends no `paths`: the home copy is then the only one.
+      return listed.sections.map((row) => ({ ...row, paths: row.paths?.length ? row.paths : row.path ? [{ hostId:row.hostId, path:row.path }] : [] }));
     } catch { return []; }
   }
 
   /** Settings scopes of a section, outermost first: its ancestors, then the section itself. */
-  function sectionChain(sections:Array<z.infer<typeof sectionRowSchema>>, sectionId:string): string[] {
+  function sectionChain(sections:Array<Pick<SectionRow, "id"|"parentId">>, sectionId:string): string[] {
     const byId = new Map(sections.map((row) => [row.id, row]));
     const chain:string[] = [];
     for (let current = byId.get(sectionId); current && !chain.includes(sectionBindingId(current.id)); current = current.parentId ? byId.get(current.parentId) : undefined) {
@@ -369,7 +373,8 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
     const sections = await listProjectSections(projectId);
     const target = resolve(workspacePath);
     const owner = sections
-      .filter((row) => row.kind === "folder" && row.path && (target === resolve(row.path) || target.startsWith(`${resolve(row.path)}/`)))
+      .filter((row) => row.kind === "folder")
+      .flatMap((row) => row.paths.filter(({ path }) => path && (target === resolve(path) || target.startsWith(`${resolve(path)}/`))).map(({ path }) => ({ id:row.id, path })))
       .sort((a, b) => b.path.length - a.path.length)[0];
     return owner ? sectionChain(sections, owner.id) : [];
   }

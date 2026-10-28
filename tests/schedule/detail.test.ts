@@ -17,14 +17,14 @@ const sections = [
   { id: "sec_deep", projectId, parentId: "sec_root", name: "Ads", path: "/work/selfy/marketing/ads", hostId: "h1", kind: "folder" as const },
 ];
 
-async function setup(options: { threadSectionId?: string | null; noSdkProject?: boolean } = {}) {
+async function setup(options: { threadSectionId?: string | null; noSdkProject?: boolean; sectionRows?: unknown[]; environment?: { hostId: string; path: string } } = {}) {
   const { bb, harness } = createFakePluginHost({
     pluginId: "lane-pilot",
     sdk: {
       hosts: { list: async () => [{ id: "h1", name: "Mac mini", status: "connected" }, { id: "h2", name: "Hub", status: "connected" }] },
       projects: { get: async () => (options.noSdkProject ? null : { id: projectId, name: "SelfyStudio", sources: [{ hostId: "h2", path: "/srv/selfy" }] }) },
       plugins: { list: async () => [], callRpc: async ({ pluginId, method }: { pluginId: string; method: string }) => {
-        if (pluginId === "project-folders" && method === "sections_list") return { sections };
+        if (pluginId === "project-folders" && method === "sections_list") return { sections: options.sectionRows ?? sections };
         throw new Error(`unexpected rpc ${pluginId}.${method}`);
       } },
       threads: {
@@ -34,7 +34,7 @@ async function setup(options: { threadSectionId?: string | null; noSdkProject?: 
           : { id: threadId, status: "idle", projectId, environmentId: "env_pm" }),
         defaultExecutionOptions: async () => ({ providerId: "claude-code", model: "claude-opus-5-5" }),
       },
-      environments: { get: async () => ({ id: "env_pm", hostId: "h1", path: "/work/selfy/marketing/ads/site" }) },
+      environments: { get: async () => ({ id: "env_pm", ...(options.environment ?? { hostId: "h1", path: "/work/selfy/marketing/ads/site" }) }) },
     } as never,
   });
   (bb.background as unknown as Record<string, unknown>).experimental_vkSchedule = () => undefined;
@@ -163,6 +163,13 @@ describe("schedule_list: where it runs", () => {
     const { rpc } = await setup({ threadSectionId: "sec_root" });
     const made = (await rpc("schedule_upsert", { definition: errand() })).schedule;
     expect(made.where).toMatchObject({ sectionId: "sec_root", sectionName: "Marketing", sectionPath: "/work/selfy/marketing" });
+  });
+
+  it("a chat in the section's copy on another machine finds the section by that copy's folder", async () => {
+    const copies = [{ ...sections[0], paths: [{ hostId: "h1", path: "/work/selfy/marketing" }, { hostId: "h2", path: "/srv/selfy-marketing" }] }];
+    const { rpc } = await setup({ sectionRows: copies, environment: { hostId: "h2", path: "/srv/selfy-marketing/site" } });
+    const made = (await rpc("schedule_upsert", { definition: errand() })).schedule;
+    expect(made.where).toMatchObject({ sectionId: "sec_root", sectionPath: "/srv/selfy-marketing", hostId: "h2", cwd: "/srv/selfy-marketing/site" });
   });
 
   it("a script names its own machine and folder; the project and section are the chat's", async () => {

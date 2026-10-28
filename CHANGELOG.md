@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.361
+
+**A section with a folder on several machines works in every copy.** Project Folders keeps a section's folder per device (`path-set`), but Lane Pilot read only the home copy: the nightly docs pass walked the lane-pilot section on the Mac mini alone, though the repository now lives on OVH, and a run started in the OVH copy got none of the section's settings (its gate command among them). Project Folders 0.7.9 returns every copy in `sections_list` (`paths`); the nightly docs pass now treats each copy as a place, as it already did for each source of a project, and the section of a run or a schedule is found by whichever copy holds its folder. An older Project Folders without `paths` keeps the home copy only. Self-repair defaults now name the OVH checkout and key, as the stored setting has since the move.
+
 ## 0.1.360
 
 **Lane Pilot is developed and deployed from OVH.** The Mac mini that held the checkout runs Roblox Studio, a Docker VM and the writers of several projects; with its swap full a deploy waited 15 to 30 minutes on the typecheck and once rolled back because the drill could not start its PM. The working repository is now on OVH (16 cores, 125 GB), and deploys run there: the typecheck takes about 30 s, the full suite about 100 s, and the drill runs in its own OVH sandbox project «LP sandbox OVH (drill)». That project counts as a drill sandbox everywhere the old one did: the memory probe may write in it, and self-repair leaves its deliberate failures alone (`DRILL_SANDBOX_PROJECT_IDS`). The Mac mini keeps its sandbox for drills run there.

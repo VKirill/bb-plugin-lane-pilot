@@ -108,7 +108,8 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
       if(source.hostId&&source.path&&!places.some((place)=>place.hostId===source.hostId&&place.path===source.path)) places.push({scopes:[],hostId:source.hostId,path:source.path,name:described?.name??basename(source.path)});
     }
     const sections=await listProjectSections(projectId);
-    for(const section of sections) if(section.kind==="folder"&&section.path&&section.hostId) places.push({scopes:sectionChain(sections,section.id),hostId:section.hostId,path:section.path,name:section.name});
+    // Every device copy of a section is a place, like every source of the project above.
+    for(const section of sections) if(section.kind==="folder") for(const copy of section.paths) if(copy.path&&copy.hostId) places.push({scopes:sectionChain(sections,section.id),hostId:copy.hostId,path:copy.path,name:section.name});
     return places;
   }
 
@@ -247,7 +248,7 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
         if(source.hostId&&source.path&&!places.some((place)=>place.hostId===source.hostId&&place.path===source.path)) places.push({scopes:[],hostId:source.hostId,path:source.path});
       }
       const sections=await listProjectSections(project.id);
-      for(const section of sections) if(section.kind==="folder"&&section.path&&section.hostId) places.push({scopes:sectionChain(sections,section.id),hostId:section.hostId,path:section.path});
+      for(const section of sections) if(section.kind==="folder") for(const copy of section.paths) if(copy.path&&copy.hostId) places.push({scopes:sectionChain(sections,section.id),hostId:copy.hostId,path:copy.path});
       for(const place of places){
         opts.signal?.throwIfAborted();
         if(opts.path&&resolve(place.path)!==resolve(opts.path)) continue;
