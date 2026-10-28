@@ -2,9 +2,9 @@
 title: Package operation details
 type: component
 created: 2026-10-14
-updated: 2026-10-27
+updated: 2026-10-28
 status: active
-confidence: medium
+confidence: high
 tags: [jev, pixel-world, batching, navigation]
 sources:
   - packages/jev/src/run.ts
@@ -110,7 +110,7 @@ Describe the execution and failure behavior of selected package APIs summarized 
 
 1. `runOnHost(host, args)` takes host id, cwd, command, command timeout and an optional hub transport timeout (`packages/host-calls/src/run-on-host.ts:8-24`).
 2. It calls `runCommand` with the host id duplicated as `requestedHostId` in the request and `hostId` in options, and forwards command, cwd and `timeoutSec` (`packages/host-calls/src/run-on-host.ts:26-31`).
-3. An explicit `timeoutMs` is used as the transport timeout; otherwise the transport gets command timeout plus five seconds. The host promise and result are returned unchanged (`packages/host-calls/src/run-on-host.ts:22-31`).
+3. An explicit `timeoutMs` is used as the transport timeout; otherwise the transport gets command timeout plus five seconds. The function returns the `host.call` promise directly, so a fulfilled host result and a rejected call pass through without translation (`packages/host-calls/src/run-on-host.ts:26-31`).
 
 | Branch | Outcome or failure |
 |---|---|
@@ -135,7 +135,7 @@ The pixel-world batcher is intended for completed static scene geometry before d
 
 ## Public API or commands
 
-`@lane-pilot/jev` exports `createJev` through its package root; `@lane-pilot/pixel-world` exports `batchStatic` and `createNavGrid` plus navigation types (`packages/jev/src/index.ts:1-9`, `packages/pixel-world/src/index.ts:1-8`). `rpcContract` is exported by the contracts room (`src/rooms/contracts/index.ts:13-27`).
+`@lane-pilot/jev` exports `createJev` through its package root; `@lane-pilot/pixel-world` exports `batchStatic` and `createNavGrid` plus navigation types (`packages/jev/src/index.ts:1-9`, `packages/pixel-world/src/index.ts:1-8`). `rpcContract` is exported by the contracts room after the route maps are composed (`src/rooms/contracts/index.ts:18-27`).
 
 ## Gotchas
 

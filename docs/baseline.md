@@ -2,7 +2,7 @@
 title: The baseline before a writer and the regression pass after acceptance
 type: component
 created: 2026-10-22
-updated: 2026-10-27
+updated: 2026-10-28
 status: active
 confidence: medium
 tags: [baseline, regression, bisect, sma, acceptance]
@@ -96,7 +96,7 @@ TL;DR: before a task's first writer starts, its `verification[]` runs once on th
 2. Run each check on current main within per-check and overall budgets; when a check is red, rerun it at the task's merge commit to distinguish an unstable check from a regression (`src/rooms/baseline/server/regress.ts:204-260`, `:183-202`).
 3. Bisect a confirmed regression within the configured commit limit, store the finding, and expose it through list/close routes (`src/rooms/baseline/server/regress.ts:138-158`, `:193-202`, `src/rooms/baseline/server/rpc.ts:7-13`).
 
-`createRegression` builds a pass that reads settings, chooses candidate accepted tasks, groups them by host/checkout, reads current main, and creates a shared main worktree per checkout. It runs each distinct eligible check once, compares red checks at the task's merge commit, and bisects only checks green at merge. Green checks close open findings; non-dry runs persist the pass summary. Missing Git, no eligible candidate, worktree errors, abort/disposal, and time-budget exhaustion are reported as skipped work (`src/rooms/baseline/server/regress.ts:70-78`, `:96-135`, `:207-280`).
+`createRegression` builds a pass that reads settings, chooses candidate accepted tasks, groups them by host/checkout, reads current main, and creates a shared main worktree per checkout. It runs each distinct eligible check once, compares red checks at the task's merge commit, and bisects only checks green at merge. Green checks close open findings; non-dry runs persist the pass summary. Candidate exclusions appear in the skipped list; setup and execution errors are recorded in the pass result, and budget exhaustion stops starting further checks (`src/rooms/baseline/server/regress.ts:95-135`, `:169-202`, `:207-280`).
 
 | Option or result | Branch behavior | Outcome or failure |
 |---|---|---|

@@ -2,9 +2,9 @@
 title: Lane Pilot overview
 type: overview
 created: 2026-10-10
-updated: 2026-10-26
+updated: 2026-10-28
 status: active
-confidence: medium
+confidence: low
 tags: [overview, bb-plugin, orchestration]
 sources:
   - package.json

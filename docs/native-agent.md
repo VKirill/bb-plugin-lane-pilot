@@ -2,7 +2,7 @@
 title: Native agent activation and dispatch
 type: component
 created: 2026-10-10
-updated: 2026-10-27
+updated: 2026-10-28
 status: active
 confidence: medium
 tags: [native-agent, composer, activation]
@@ -68,7 +68,7 @@ Enable a new BB composer thread as a Lane Pilot PM session and route its first d
 | Mention selection token | Read and parse the stored session record before building mention context (`src/rooms/core/server/native-wiring.ts:13-25`). | Missing tokens log a debug trace and throw an instruction to choose the profile again; malformed records fail schema parsing (`src/rooms/core/server/native-wiring.ts:18-24`). |
 | Stream retry ownership | Retry handling receives failure details and an ownership predicate (`src/rooms/core/server/native-wiring.ts:35-57`). | Canceled attempts are excluded; event-list failure produces no failure detail; role/run metadata or the native-thread KV marker identifies owned threads (`src/rooms/core/server/native-wiring.ts:40-57`). |
 | Native dispatch token | Hidden composer submission and mention markers are deduplicated; a handoff inherits the source thread's profile only when its first block is BB's continue-from marker with a matching thread mention (`src/rooms/native-agent/native-dispatch.ts:143-167`, `:185-230`). | Multiple tokens, invalid hidden data, missing selection, provider mismatch, project mismatch, workspace failure, and CLI Agents collision return a rejection; an ordinary unselected chat proceeds (`src/rooms/native-agent/native-dispatch.ts:185-256`, `:258-280`). |
-| Native launcher refresh | `nativeContributedEnv` refreshes from the actual attached environment and caches the returned env and agent id (`src/rooms/native-agent/native-dispatch.ts:364-406`). | With a cached launcher it waits up to 2.5 seconds then returns the cached env; a failed refresh also uses cache. Without usable cache it returns an empty list (`src/rooms/native-agent/native-dispatch.ts:361-362`, `:407-423`). |
+| Native launcher refresh | `nativeContributedEnv` refreshes from the actual attached environment and caches the returned env and agent id (`src/rooms/native-agent/native-dispatch.ts:369-406`). | With a cached launcher it waits up to 2.5 seconds then returns the cached env; a failed refresh also uses cache. If refresh and cache both provide no env, it returns an empty list (`src/rooms/native-agent/native-dispatch.ts:407-423`). |
 | No ready native snapshot | Detect configured PM workspace and test compatible installed engine (`src/rooms/native-agent/server/activation.ts:72-90`). | Throws if project setup is missing or no compatible engine exists. |
 
 The helper environment branch also depends on the provider and thread role:

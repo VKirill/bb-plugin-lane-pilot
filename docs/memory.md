@@ -2,9 +2,9 @@
 title: Project memory
 type: component
 created: 2026-10-10
-updated: 2026-10-22
+updated: 2026-10-28
 status: active
-confidence: high
+confidence: medium
 tags: [memory, knowledge, maintenance]
 sources:
   - src/rooms/memory/server/memory.ts
@@ -20,6 +20,7 @@ sources:
   - src/rooms/memory/server/memory-conflicts.ts
   - packages/memory-core/src/conflicts.ts
   - packages/memory-core/src/conflict-store.ts
+  - packages/memory-core/src/candidates.ts
   - src/rooms/memory/memory-paths.ts
   - src/rooms/writer/server/writer-knowledge.ts
   - src/rooms/writer/server/spawn.ts
@@ -66,6 +67,11 @@ Keep project facts and rules available to PM, writer, and terminal sessions thro
 | Rule record | Displayed separately and cannot be deleted through the facts action (`src/rooms/memory/ui/memory-records.tsx:36-46`). |
 | List request failed | The UI stores an empty list; its disclosures render their empty state rather than an RPC error (`src/rooms/memory/ui/memory-records.tsx:18-21`, `:56-61`). |
 | Delete refused or throws | A refusal displays the rule or gone message and reloads; a thrown error displays its message; both clear the busy state (`src/rooms/memory/ui/memory-records.tsx:25-34`). |
+| Core budget full | During accepted-task maintenance, a core candidate that does not fit is stored as a note; `coreDemotedToNotes` reports the number demoted. Other budget failures still reject storage (`src/rooms/memory/server/memory.ts:100-120`, `packages/memory-core/src/store.ts:194-204`). |
+
+Maintainer output accepts a JSON array directly, inside a JSON fence, or within surrounding text. Empty extra fields are discarded; `review`, `pitfall`, `invariant`, `security`, or `regression` set to `true` becomes a concept when `concepts` is an array. Other non-empty unknown fields reject the candidate batch. Credential-like content and instruction-override text are also rejected (`packages/memory-core/src/candidates.ts:15-23`, `:25-29`, `:51-65`).
+
+The maintenance prompt includes current core fill and replaceable core records. If core entries exceed the remaining core budget, the storage helper retries by changing the last core candidate to a note until the batch fits; it reports the number changed. The retry does not waive note or total-index budgets (`packages/memory-core/src/context.ts:6-17`, `packages/memory-core/src/store.ts:183-204`, `src/rooms/memory/server/memory.ts:100-120`).
 
 ## Business rules
 

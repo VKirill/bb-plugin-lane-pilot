@@ -2,7 +2,7 @@
 title: RPC and host-call contracts
 type: component
 created: 2026-09-30
-updated: 2026-10-27
+updated: 2026-10-28
 status: active
 confidence: medium
 tags: [rpc, contracts, host-api]
@@ -44,6 +44,7 @@ sources:
   - src/rooms/host-worker/host-handlers.ts
   - src/rooms/anamnesis/contract.ts
   - src/rooms/baseline/server/rpc.ts
+  - packages/memory-core/src/store.ts
 ---
 
 # RPC and host-call contracts
@@ -113,8 +114,8 @@ These distinctions are declared by the schemas; they do not themselves authorize
 
 1. `rpcOps` declares run control, retry/resume, statistics, deploy, self-repair, stack, harness, and cockpit route schemas. Inputs are strict; several complex outputs remain `z.unknown()` and take their result shape from handler implementations (`src/rooms/contracts/rpc-ops.ts:4-27`, `:36-93`, `:95-250`).
 2. `cockpitRpc(ctx, services)` captures SQLite, BB KV, and an on-demand host client, then returns the cockpit handlers for Today, workers, memory, forge, designer, subscription windows, screen impressions, task/request/queue actions, updates, and fault reports (`src/rooms/cockpit/server.ts:17-23`, `:25-128`).
-3. Read handlers aggregate attempts, token usage, phases, actions, capability receipts, and the design journal. Mutation handlers persist seen/fault/queue state or send an instruction to the active project PM (`src/rooms/cockpit/server.ts:25-49`, `:61-106`, `:121-126`).
-4. Run-scoped memory actions require a checkout and host; forge/request calls require an active PM thread. Host and thread-send failures propagate. Missing task detail returns `null`; seen/fault KV reads default to empty maps or lists (`src/rooms/cockpit/server.ts:50-59`, `:61-66`, `:77-92`, `:113-126`).
+3. Read handlers aggregate attempts, token usage, phases and actions, while worker and designer reads build their respective summaries. Queue updates write task priority or hold state; seen writes view counts and duration; fault reports append a bounded record; forge and request calls send text to the active project PM (`src/rooms/cockpit/server.ts:25-35`, `:38-49`, `:62-66`, `:87-93`, `:95-106`, `:77-82`, `:121-126`).
+4. Run-scoped memory actions require a checkout and host (`src/rooms/cockpit/server.ts:50-59`). Forge/request calls require an active PM thread, and host or thread-send errors propagate (`src/rooms/cockpit/server.ts:62-66`, `:87-93`, `:75`). Missing task detail returns `null` (`src/rooms/cockpit/server.ts:113-120`); seen/fault KV read failures default to empty objects or lists (`src/rooms/cockpit/server.ts:77-79`, `:84-85`, `:122-124`).
 
 | Cockpit branch | Inputs and result | Failure behavior |
 |---|---|---|
@@ -134,7 +135,7 @@ These distinctions are declared by the schemas; they do not themselves authorize
 | Skipped | Memory or maintenance disabled and there is no live child. | `src/rooms/memory/server/memory.ts:61-70` |
 | Running/observing | Child is live, spawn ownership is held elsewhere, a snapshot is unavailable, or a transient host/event error needs reconciliation. | `src/rooms/memory/server/memory.ts:95-106`, `:151-155`, `:183-209` |
 | Failed | Product failure, invalid provider/model settings, empty child output, or a non-transient spawn/processing error. | `src/rooms/memory/server/memory.ts:100-109`, `:157-166`, `:183-212` |
-| Passed | Child output parses to candidates, records are stored within configured budgets, and the stage receipt records stored/evicted/superseded ids and audience. | `src/rooms/memory/server/memory.ts:108-126` |
+| Passed | Child output parses to candidates, records are stored, and the receipt records stored ids plus any `coreDemotedToNotes`, evicted/superseded ids, and audience. A core candidate that exceeds the core budget is retried as a note; other budget errors fail the stage. | `src/rooms/memory/server/memory.ts:100-120`, `packages/memory-core/src/store.ts:190-206` |
 
 The spawn claim and terminal receipt make maintenance idempotent; a second call returns the saved terminal receipt instead of spawning another child (`src/rooms/memory/server/memory.ts:22-25`, `:61-64`, `:151-155`).
 
@@ -159,7 +160,7 @@ RPC schemas use strict object validation at method boundaries (`src/rooms/contra
 
 See [Handoff message](rpc-callers/handoff-message.md) for `handoffMessage` formatting, its caller, receipt extraction, and failure outcomes.
 
-`runOnHost` forwards a `runCommand` call with `requestedHostId`, command, cwd and command timeout; the same host id is also supplied in call options. An explicit transport timeout wins, otherwise the wrapper waits for command timeout plus five seconds. The returned promise and any host rejection pass through (`packages/host-calls/src/run-on-host.ts:17-31`).
+`runOnHost` forwards a `runCommand` call with `requestedHostId`, command, cwd and command timeout; the same host id is also supplied in call options. An explicit transport timeout wins, otherwise the wrapper waits for command timeout plus five seconds. It returns the host call's promise directly, so the host result and rejection pass through (`packages/host-calls/src/run-on-host.ts:26-31`).
 
 ## Gotchas
 

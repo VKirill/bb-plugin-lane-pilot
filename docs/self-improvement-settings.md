@@ -21,6 +21,18 @@ sources:
   - tests/improvement/hub.test.ts
   - tests/improvement/improvement-ui.test.tsx
   - tests/improvement/tidy.test.ts
+  - src/rooms/ui-shell/ui/project-nav.tsx
+  - src/rooms/ui-shell/ui/page.tsx
+  - src/rooms/owner-waiting/items.ts
+  - src/rooms/baseline/logic.ts
+  - src/rooms/wall/config.ts
+  - src/rooms/bench/runner.ts
+  - src/rooms/writer/server/plan-fact.ts
+  - src/rooms/critique/quality-mode.ts
+  - packages/memory-core/src/settings.ts
+  - src/rooms/runs/ui/runs-service.tsx
+  - src/rooms/settings/ui/setting-controls.tsx
+  - src/rooms/core/server/core.ts
 ---
 
 # The Self-improvement page and its settings
