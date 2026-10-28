@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { inspectState, setRunObjective, appendGateEvaluation, casSetting, claimDailySchedule, claimDocsSpawn, claimStageSpawn, closeRun, createAttempt, createRun, createTask, freezeRunBinding, getAttempt, getRunWriterHost, getTaskGitBase, importSettingsOnce, listGateEvents, listStageEvents, listStageReceipts, listUnfinishedStages, migrations, openDatabase, saveStageReceipt, saveTaskGitBase, setAttemptHolderThread, setAttemptWorkspace, setRunWorkspace, getRun, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
+import { inspectAttempt, inspectState, setRunObjective, appendGateEvaluation, casSetting, claimDailySchedule, claimDocsSpawn, claimStageSpawn, closeRun, createAttempt, createRun, createTask, freezeRunBinding, getAttempt, getRunWriterHost, getTaskGitBase, importSettingsOnce, listGateEvents, listStageEvents, listStageReceipts, listUnfinishedStages, migrations, openDatabase, saveStageReceipt, saveTaskGitBase, setAttemptHolderThread, setAttemptWorkspace, setRunWorkspace, getRun, setRunThread, transitionAttempt } from "../src/rooms/storage/database";
 
 describe("section 9 storage.database DDL", () => {
   it("migrates an existing populated database without losing rows and expands the run state check", async () => {
@@ -270,6 +270,38 @@ describe("section 9 storage.database DDL", () => {
     expect((inspectState(db,"A").runs as Array<{id:string;objective:string|null}>).find((row)=>row.id==="run-objective")?.objective).toBe("Make checkout survive a double click");
     await harness.lifecycle.dispose();
   });
+
+  it("pages a long history under the CLI bridge's 1 MB and gives one attempt's heavy columns on request (audit 2026-10-28: 147 MB)", async () => {
+    const {bb,harness}=createFakePluginHost({pluginId:"lane-pilot"});
+    const db=openDatabase(bb);
+    // One attempt carries a big dirt snapshot (2000 files, ~200 KB); every attempt a 30 KB reason: 14 MB of history in all.
+    const dirt=JSON.stringify(Array.from({length:2000},(_,i)=>({path:`src/file-${i}.ts`,status:" M",sha256:"a".repeat(64)})));
+    for (let r=0;r<40;r++) {
+      createRun(db,`run-${String(r).padStart(2,"0")}`,"BIG");
+      db.prepare("UPDATE lane_pilot_run SET created_at=? WHERE id=?").run(1_000+r,`run-${String(r).padStart(2,"0")}`);
+      for (let a=0;a<12;a++) {
+        const id=`att-${r}-${a}`;
+        db.prepare("INSERT INTO lane_pilot_attempt(id,run_id,task_id,state,reason,created_at,updated_at,attempt_no,dirt_before_json) VALUES(?,?,?,?,?,?,?,?,?)")
+          .run(id,`run-${String(r).padStart(2,"0")}`,`t${a}`,"validation_failed","x".repeat(30_000),1_000+r,1_000+r,1,id==="att-3-4"?dirt:"[]");
+      }
+    }
+    const first=inspectState(db,"BIG");
+    expect(JSON.stringify(first,null,2).length).toBeLessThan(1_048_576);
+    expect((first.runs as Array<{id:string}>).map((run)=>run.id).slice(0,2)).toEqual(["run-39","run-38"]);
+    expect(first.totals).toEqual({runs:40,attempts:480});
+    expect(((first.attempts as Array<{reason:string}>)[0]!.reason)).toHaveLength(301);
+    expect(first.next).toBe("bb lane-pilot state BIG --before 1030");
+    const second=inspectState(db,"BIG",{before:1030});
+    expect((second.runs as Array<{id:string}>)[0]!.id).toBe("run-29");
+    const last=inspectState(db,"BIG",{before:1010,limit:100});
+    expect((last.runs as unknown[]).length).toBe(10);
+    expect(last.next).toBeUndefined();
+    const one=inspectAttempt(db,"BIG","att-3-4")!;
+    expect(one).toMatchObject({id:"att-3-4",dirt_before_count:2000});
+    expect((one.dirt_before as unknown[]).length).toBe(200);
+    expect(inspectAttempt(db,"OTHER","att-3-4")).toBeNull();
+    await harness.lifecycle.dispose();
+  }, 60_000);
 
   it("binds an immutable workspace and routing decision to a queued attempt with CAS", async () => {
     const {bb,harness}=createFakePluginHost({pluginId:"lane-pilot"});

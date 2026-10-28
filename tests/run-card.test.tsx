@@ -64,6 +64,53 @@ describe("lane-run message directive", () => {
     expect(calls).toBeGreaterThan(0);
   });
 
+  it("keeps reading an open run with no tasks or only ended ones, and shows each failed state by its name (audit 2026-10-28)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      type Card = { runId: string; state: string; closed: boolean; tasks: Array<{ id: string; title: string; state: string | null; threadId: string | null; checkLog: null }> };
+      let answer: Card = { ...card, runId: "run_live", tasks: [] };
+      const slot = await mount({ get_run_card: () => answer }, { id: "run_live" });
+      await slot.findByTestId("run-card");
+      // empty -> queued: the open run is read again although «every task» of an empty list has ended
+      answer = { ...answer, tasks: [{ id: "t1", title: "Write the bot", state: "queued", threadId: null, checkLog: null }] };
+      await vi.advanceTimersByTimeAsync(16_000);
+      await waitFor(() => expect(slot.getByTestId("run-card").textContent).toContain("Queued"));
+      // blocked -> running -> validation_failed: a blocked task resumed from outside reaches the card
+      answer = { ...answer, tasks: [{ ...answer.tasks[0]!, state: "blocked" }] };
+      await vi.advanceTimersByTimeAsync(6_000);
+      await waitFor(() => expect(slot.getByTestId("run-card").textContent).toContain("Blocked"));
+      answer = { ...answer, tasks: [{ ...answer.tasks[0]!, state: "running" }] };
+      await vi.advanceTimersByTimeAsync(16_000);
+      await waitFor(() => expect(slot.getByTestId("run-card").textContent).toContain("In progress"));
+      answer = { ...answer, tasks: [{ ...answer.tasks[0]!, state: "validation_failed" }] };
+      await vi.advanceTimersByTimeAsync(6_000);
+      await waitFor(() => expect(slot.getByTestId("run-card").textContent).toContain("Checks failed"));
+      expect(slot.getByTestId("run-card").textContent).not.toContain("In progress");
+    } finally { vi.useRealTimers(); }
+  }, 60_000);
+
+  it("says when the run cannot be read, keeps the last rows marked as old, and clears it when the server answers again", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let fail = true;
+      const live = { ...card, runId: "run_net" };
+      const slot = await mount({ get_run_card: () => { if (fail) throw new Error("offline"); return live; } }, { id: "run_net" });
+      expect((await slot.findByTestId("run-card-offline")).textContent).toContain("Could not load");
+      fail = false;
+      await vi.advanceTimersByTimeAsync(16_000);
+      await slot.findByTestId("run-card");
+      expect(slot.queryByTestId("run-card-stale")).toBeNull();
+      fail = true;
+      // every task of this card has ended, so the open run is read every 15 s
+      await vi.advanceTimersByTimeAsync(16_000);
+      expect((await slot.findByTestId("run-card-stale")).textContent).toContain("last known");
+      expect(slot.getByTestId("run-card").textContent).toContain("Add the footer");
+      fail = false;
+      await vi.advanceTimersByTimeAsync(16_000);
+      await waitFor(() => expect(slot.queryByTestId("run-card-stale")).toBeNull());
+    } finally { vi.useRealTimers(); }
+  }, 60_000);
+
   it("says so when the run is unknown", async () => {
     expect(await (await mount({ get_run_card: () => null }, { id: "nope" })).findByText("This Lane Pilot run is no longer available.")).toBeTruthy();
   }, 60_000);
@@ -96,4 +143,34 @@ describe("get_run_card RPC", () => {
       { id: "t2", title: "t2", state: null, threadId: null, checkLog: null },
     ]);
   });
+
+  it("marks an accepted task whose memory or project log failed after acceptance, and nothing for a passed or a not-accepted one", async () => {
+    const { bb } = createFakePluginHost({ pluginId: "lane-pilot" });
+    const db = openDatabase(bb);
+    const handlers = runsRpc(createCore(bb, db), {} as unknown as Services);
+    createRun(db, "run_bg", "proj_1", "bb");
+    const receipt = (taskId: string, stageId: "memory-maintenance" | "project-life", state: "failed" | "passed") => saveStageReceipt(db, { runId: "run_bg", taskId, stageId, contractVersion: 1, state, inputSha256: "s",
+      outputSha256: null, attempt: 1, providerId: null, model: null, threadId: null, result: {}, reason: null, updatedAt: Date.now() });
+    for (const [id, end] of [["ok", "accepted"], ["bg", "accepted"], ["red", "blocked"]] as const) {
+      createTask(db, { id, runId: "run_bg", kind: "bb", contract: { id, title: id } });
+      createAttempt(db, { id: `a_${id}`, runId: "run_bg", taskId: id });
+      if (end === "accepted") { transitionAttempt(db, `a_${id}`, "spawn_requested"); transitionAttempt(db, `a_${id}`, "running"); }
+      transitionAttempt(db, `a_${id}`, end);
+    }
+    receipt("ok", "memory-maintenance", "passed");
+    receipt("bg", "memory-maintenance", "failed");
+    receipt("bg", "project-life", "failed");
+    receipt("red", "memory-maintenance", "failed");
+    const tasks = (await handlers.get_run_card({ runId: "run_bg" }))!.tasks;
+    expect(tasks.find((task) => task.id === "bg")!.background).toEqual(["memory-maintenance", "project-life"]);
+    expect(tasks.find((task) => task.id === "ok")!.background).toBeUndefined();
+    expect(tasks.find((task) => task.id === "red")!.background).toBeUndefined();
+  });
+});
+
+describe("the run card's background mark", () => {
+  it("says the code is in and names what was not done", async () => {
+    const slot = await mount({ get_run_card: () => ({ ...card, runId: "run_bgui", tasks: [{ ...card.tasks[0]!, background: ["memory-maintenance"] }] }) }, { id: "run_bgui" });
+    expect((await slot.findByTestId("run-card-background")).textContent).toBe("code is in; not done: memory");
+  }, 60_000);
 });

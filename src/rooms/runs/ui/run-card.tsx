@@ -11,13 +11,19 @@ const DONE = new Set(["accepted", "blocked", "canceled", "failed"]);
 
 type RunCard = {
   runId: string; state: string; closed: boolean;
-  tasks: Array<{ id: string; title: string; state: string | null; threadId: string | null; checkLog: { hostId: string; path: string } | null }>;
+  tasks: Array<{ id: string; title: string; state: string | null; threadId: string | null; checkLog: { hostId: string; path: string } | null; background?: string[] }>;
 };
 
+// Every ended state of an attempt has its own words: a failed one shown as «In progress» told the owner to wait for a failure (audit 2026-10-28).
 const STATE_LABEL: Record<string, I18nKey> = {
   accepted: "runCardState_accepted", blocked: "runCardState_blocked", canceled: "runCardState_canceled", queued: "runCardState_queued",
+  validation_failed: "runCardState_validation_failed", provider_error: "runCardState_provider_error", empty_output: "runCardState_empty_output",
+  spawn_rejected: "runCardState_spawn_rejected", internal_error: "runCardState_internal_error",
 };
 const stateText = (state: string | null) => state === null ? t("runCardState_none") : t(STATE_LABEL[state] ?? "runCardState_working");
+const BACKGROUND_LABEL: Record<string, I18nKey> = { "memory-maintenance": "runCardStage_memory", "project-life": "runCardStage_projectLife", "docs-maintenance": "runCardStage_docs" };
+const backgroundText = (stages: string[] | undefined) => stages?.length
+  ? t("runCardBackgroundFailed").replace("{stages}", stages.map((stage) => BACKGROUND_LABEL[stage] ? t(BACKGROUND_LABEL[stage]!) : stage).join(", ")) : null;
 
 /**
  * A live card for one Lane Pilot run inside the PM's message: its tasks with their latest state, each with its writer's
@@ -38,21 +44,30 @@ export function RunCardDirective({ attributes, source }: PluginMessageDirectiveP
   const runId = attributes.id ?? "";
   const [card, setCardState] = useState<RunCard | "missing" | null>(() => lastCard.get(runId) ?? null);
   const [expanded, setExpanded] = useState(false);
+  // The last read failed: the card says so instead of pulsing (no card yet) or showing old rows as current.
+  const [offline, setOffline] = useState(false);
   const setCard = (value: RunCard | "missing") => { lastCard.set(runId, value); setCardState(value); };
   useEffect(() => {
     if (!runId) { setCard("missing"); return; }
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // An open run is read until it closes: a run with no tasks yet, or with every task ended (blocked ones can be resumed from outside),
+    // still gets new ones; those are read less often.
     const read = () => void rpc.call("get_run_card", { runId }).then((result) => {
       if (!alive) return;
+      setOffline(false);
       setCard(result ?? "missing");
-      if (result && !result.closed && !result.tasks.every((task) => DONE.has(task.state ?? ""))) timer = setTimeout(read, POLL_MS);
-    }).catch(() => { if (alive) timer = setTimeout(read, POLL_MS * 3); });
+      if (result && !result.closed) timer = setTimeout(read, result.tasks.length && !result.tasks.every((task) => DONE.has(task.state ?? "")) ? POLL_MS : POLL_MS * 3);
+    }).catch(() => { if (alive) { setOffline(true); timer = setTimeout(read, POLL_MS * 3); } });
     read();
     return () => { alive = false; if (timer) clearTimeout(timer); };
   }, [rpc, runId]);
 
-  if (card === null) return <div role="status" aria-busy="true" className="my-2 h-12 animate-pulse rounded-md border border-border bg-muted/40" />;
+  if (card === null) {
+    return offline
+      ? <div role="status" data-testid="run-card-offline" className="my-2 rounded-md border border-border px-3 py-2 text-sm text-muted-foreground">{t("runCardLoadFailed")}</div>
+      : <div role="status" aria-busy="true" className="my-2 h-12 animate-pulse rounded-md border border-border bg-muted/40" />;
+  }
   if (card === "missing") return <div className="my-2 rounded-md border border-border px-3 py-2 text-sm text-muted-foreground" title={source}>{t("runCardGone")}</div>;
   const done = card.tasks.filter((task) => task.state === "accepted").length;
   const shown = expanded ? card.tasks : card.tasks.slice(0, ROWS_SHOWN);
@@ -62,11 +77,13 @@ export function RunCardDirective({ attributes, source }: PluginMessageDirectiveP
         <span className="font-medium">{t("runCardTitle")}</span>
         <span className="text-xs text-muted-foreground">{card.closed ? t("runCardClosed") : t("runCardProgress").replace("{done}", String(done)).replace("{total}", String(card.tasks.length))}</span>
       </div>
+      {offline ? <div role="status" data-testid="run-card-stale" className="border-b border-border px-3 py-1.5 text-xs text-muted-foreground">{t("runCardStale")}</div> : null}
       <ul className="divide-y divide-border">
         {shown.map((task) => (
           <li key={task.id} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5">
             <span className="min-w-0 flex-1 truncate" title={`${task.id}: ${task.title}`}>{task.title}</span>
             <span className="shrink-0 text-xs text-muted-foreground">{stateText(task.state)}</span>
+            {backgroundText(task.background) ? <span data-testid="run-card-background" className="shrink-0 text-xs text-amber-600 dark:text-amber-400">{backgroundText(task.background)}</span> : null}
             {task.threadId ? (
               <button type="button" className="shrink-0 text-xs underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 onClick={() => {

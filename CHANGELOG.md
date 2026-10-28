@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.359
+
+**An attempt whose branch already exists starts on it instead of failing.** A worktree of an attempt is made once; when the answer of that create is lost (a plugin reload, a host call that timed out on a machine deep in swap), the next create ran `git worktree add -b lane/<attempt>` again and git refused: «a branch named … already exists». Two Vampirism Fire tasks were parked that way on 2026-10-28 with their worktrees on disk. `createWorktree` now takes the attempt's own branch as it is: the worktree that holds it, or the branch attached again at the attempt's path with its commits.
+
+**The run card tells the truth.** A task whose checks failed showed «In progress»; it now says «Checks failed», and so do a provider error, an attempt with no result, one that did not start and a Lane Pilot error. An open run keeps being read when it has no tasks yet or every task has ended (a blocked task resumed from outside, a task added later): the card stopped polling as soon as `every()` of an empty list said true. A failed read shows «Could not load» instead of a pulsing placeholder, and old rows are marked «No connection» until the server answers. An accepted task whose memory, project log or docs stage failed after acceptance says «code is in; not done: memory». (Audit of 2026-10-28.)
+
+**`bb lane-pilot state` answers again.** It read the whole history with every column, 147 MB for one project against the CLI bridge's 1 MB. It now gives the newest runs first, ten a page (`--limit`, up to 100), their attempts in short rows (the reason cut at 300 characters), totals and the command for the next page (`--before`); `--attempt <id>` gives one attempt's heavy columns, its dirt snapshot cut at 200 entries.
+
+**The deploy drill proves that checks run.** The three parallel tasks of the quick drill had an empty `verification`, so «verification passed» proved nothing about running a project's checks. Each now carries a real check, red on the base and green only with the writer's file, and the scenario fails unless every task's verification receipt lists its command with exit 0.
+
+**Self-repair runs on GPT-6.1 Sol.** The repair engineer moved off Claude Opus (owner, 2026-10-28) so the repairs do not all fall on Claude's weekly window: the `repairer` row of the role table and the watcher's defaults are `codex / gpt-6.1-sol / high`.
+
+**`npm run test:changed` runs what a change touches, not everything that imports a shared file.** A file imported by more than 15 tests (the i18n strings, storage, the role table) now selects only the importers that name an identifier the change touched: a top-level declaration, an object key, a table row's `id`. Today's change selected 61 test files instead of 299. `--list` prints the selection and runs nothing. The deploy's partial run uses the same script; the full suite still runs once a day.
+
 ## 0.1.358
 
 **A task's appetite in tokens no longer stops its writer.** The contract's `appetite.tokens` stopped a writer in the middle of its work as soon as it passed the number the PM had written: four stops in two weeks on the hub, one of them on an appetite of 6,000 tokens for a task that needed 229,434. The tokens are now a forecast only: no stop and no «80% of the appetite» question to the PM. The appetite's minutes still stop a writer that runs too long, and the run's own budget (`run.max_tokens`, `run.max_wall_minutes`) still applies where the owner sets it (no project sets it today). The core-memory limit of a project (`memory.core_budget`) stays: it caps the memory every agent of the project carries in its prompt, and since 0.1.354 a full core no longer fails a task (an entry that does not fit becomes a note).

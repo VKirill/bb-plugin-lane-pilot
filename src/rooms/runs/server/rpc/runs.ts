@@ -221,16 +221,23 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         const found = /"checkLogPath"\s*:\s*"([^"]+)"/.exec(row.result_json ?? "");
         if (found) logs.set(row.task_id, found[1]!);
       }
+      // Accepted code and the background work after it are two results: a failed memory write is shown, not hidden behind «Accepted».
+      const background = new Map<string, string[]>();
+      for (const row of db.prepare(`SELECT task_id, stage_id FROM lane_pilot_stage_receipt WHERE run_id=? AND state IN ('failed','blocked')
+        AND stage_id IN ('memory-maintenance','project-life','docs-maintenance') ORDER BY stage_id`).all(runId) as Array<{ task_id: string; stage_id: string }>) {
+        background.set(row.task_id, [...(background.get(row.task_id) ?? []), row.stage_id]);
+      }
       const titleOf = (json: string, fallback: string) => {
         try { const title = (JSON.parse(json) as { title?: unknown }).title; return typeof title === "string" && title ? title : fallback; } catch { return fallback; }
       };
-      const tasks = new Map<string, { id: string; title: string; state: string | null; threadId: string | null; checkLog: { hostId: string; path: string } | null }>();
+      const tasks = new Map<string, { id: string; title: string; state: string | null; threadId: string | null; checkLog: { hostId: string; path: string } | null; background?: string[] }>();
       for (const row of rows) {
         const rel = logs.get(row.id);
         const safe = rel && !rel.startsWith("/") && !rel.split("/").includes("..") ? rel : null;
         tasks.set(row.id, {
           id: row.id, title: titleOf(row.contract_json, row.id), state: row.state, threadId: row.thread_id,
           checkLog: safe && run.writer_host_id && row.workspace_path ? { hostId: run.writer_host_id, path: `${row.workspace_path.replace(/\/+$/, "")}/${safe}` } : null,
+          ...(row.state === "accepted" && background.has(row.id) ? { background: background.get(row.id)! } : {}),
         });
       }
       return { runId: run.id, state: run.state, closed: run.closed_at !== null, tasks: [...tasks.values()] };

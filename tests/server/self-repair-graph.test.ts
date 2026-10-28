@@ -72,7 +72,7 @@ describe("self-repair as a graph", () => {
     const result = await t.repair.tick({ since: 0 });
     expect(result).toMatchObject({ spawned: "thr_repair1", reason: "started" });
     expect(t.spawns[0]).toMatchObject({
-      projectId: "proj_ejbam66722", providerId: "claude-code", model: "claude-opus-5-5", reasoningLevel: "high", permissionMode: "full",
+      projectId: "proj_ejbam66722", providerId: "codex", model: "gpt-6.1-sol", reasoningLevel: "high", permissionMode: "full",
       environment: { type: "host", hostId: "host_mac", workspace: { type: "unmanaged", path: expect.stringMatching(/^\/wt\/self-repair-[0-9a-f]{8}-[a-z0-9]+\/lane-pilot$/) } },
     });
     const [run] = t.runs();

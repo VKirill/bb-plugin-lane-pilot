@@ -62,8 +62,9 @@ export const SELF_REPAIR_DEFAULTS: SelfRepairConfig = {
   projectId: "proj_ejbam66722",
   environmentId: "env_bfv6wmb79r",
   sectionId: "9b66deb6-0e31-42d3-840f-19fa9601380c",
-  providerId: "claude-code",
-  model: "claude-opus-5-5",
+  // GPT-6.1 Sol, not Opus: the owner moved the repairs off Claude on 2026-10-28 (the `repairer` row of the role table says the same).
+  providerId: "codex",
+  model: "gpt-6.1-sol",
   reasoningLevel: "high",
   maxPerDay: 4,
   ignoreProjects: ["proj_3tb652jpsi"],

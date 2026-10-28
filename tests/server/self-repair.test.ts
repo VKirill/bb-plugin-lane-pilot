@@ -75,7 +75,7 @@ describe("self-repair", () => {
       .toBe(reasonSignature("triage", "writer changed paths outside owns_paths: packages/infra/b.test.ts"));
   });
 
-  it("starts one Opus high repair thread in the Lane Pilot section for Lane Pilot's own fault, not for others", async () => {
+  it("starts one GPT-6.1 Sol high repair thread in the Lane Pilot section for Lane Pilot's own fault, not for others", async () => {
     const { ctx, spawns, placed, attempt, triage } = setup();
     attempt("lpattempt_1", "lprun_a", "validation_failed", "cannot read writer-workspace git diff: host plugin calls are unavailable");
     triage("lpattempt_1", "proj_real", "lprun_a", "cannot read writer-workspace git diff: host plugin calls are unavailable");
@@ -91,7 +91,7 @@ describe("self-repair", () => {
     expect(spawns[0]).toMatchObject({
       projectId: "proj_ejbam66722",
       environment: { type: "host", hostId: "host_mac", workspace: { type: "unmanaged", path: expect.stringMatching(/^\/wt\/self-repair-[0-9a-f]{8}-[a-z0-9]+\/lane-pilot$/) } },
-      providerId: "claude-code", model: "claude-opus-5-5", reasoningLevel: "high", serviceTier: "default", permissionMode: "full",
+      providerId: "codex", model: "gpt-6.1-sol", reasoningLevel: "high", serviceTier: "default", permissionMode: "full",
     });
     expect(String(spawns[0]!.prompt)).toContain("@thread:thr_pm");
     expect(placed).toEqual([["thread_place", { threadId: "thr_repair1", projectId: "proj_ejbam66722", folderId: "9b66deb6-0e31-42d3-840f-19fa9601380c" }]]);

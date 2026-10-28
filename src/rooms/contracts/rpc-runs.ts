@@ -91,6 +91,8 @@ export const rpcRuns = {
         threadId: z.string().nullable(),
         /** The failed check's log on the writer's machine, when the task left one. */
         checkLog: z.object({ hostId: z.string(), path: z.string() }).strict().nullable(),
+        /** The after-acceptance stages (memory, project log, docs) whose current receipt is failed or blocked: the code is in, these are not. */
+        background: z.array(z.string()).optional(),
       }).strict()),
     }).strict().nullable(),
   },

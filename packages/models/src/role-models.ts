@@ -91,7 +91,8 @@ export type RoleRow = {
  *  - the judges that stay on GPT (auditor, debugger, council chair): GPT-6.1 Sol high, the strongest model of the other family; it
  *    reads what the Claude authors wrote and finds what they cannot see in their own work. The debugger is a judge of causes, not an author;
  *  - cheap judgments (pm-reader, memory, project-life, errand, browser-qa): the small models, picked by what the job is;
- *  - upkeep authors (docs-maintainer: Luna, a text job with a code checker behind it; repairer: Opus, the engineer who fixes Lane Pilot itself).
+ *  - upkeep authors (docs-maintainer: Luna, a text job with a code checker behind it; repairer: GPT-6.1 Sol, the engineer who fixes Lane Pilot
+ *    itself — moved off Opus by the owner on 2026-10-28 so the repairs do not all land on Claude's weekly window).
  */
 const GEMINI_FLASH = "router9/ag/gemini-3.8-flash-high";
 export const ROLE_TABLE: readonly RoleRow[] = [
@@ -113,7 +114,7 @@ export const ROLE_TABLE: readonly RoleRow[] = [
   { id: "errand", default: { model: "claude-sonnet-5-5", effort: "medium", why: "Runs a script, a send or a check as told: tool use, no deep thinking." }, legacy: ["errand"] },
   { id: "browser-qa", default: { model: "claude-sonnet-5-5", effort: "medium", why: "Drives a browser and reports what it sees: fast, steady tool use." } },
   { id: "docs-maintainer", default: { model: "gpt-6-luna", effort: "high", why: "Writes and refreshes the repository docs overnight from the code diff, many pages, each held to cited lines and then checked by code and Jev; Luna is cheap and, at high effort, careful enough for a text job with a hard checker behind it (a docs.* selection set before the table keeps working until the table gets its own row)." }, legacy: ["docs"] },
-  { id: "repairer", default: { model: "claude-opus-5-5", effort: "high", why: "The self-repair engineer: reads logs and the hub's data, finds the cause of Lane Pilot's own fault, fixes the code and adds the test that fails without the fix; an author of code, so the strongest author we have." } },
+  { id: "repairer", default: { model: "gpt-6.1-sol", effort: "high", why: "The self-repair engineer: reads logs and the hub's data, finds the cause of Lane Pilot's own fault, fixes the code and adds the test that fails without the fix; the strongest GPT model, so the repairs do not all fall on Claude (owner, 2026-10-28)." } },
 ];
 
 export const ROLE_IDS: readonly string[] = ROLE_TABLE.map((row) => row.id);

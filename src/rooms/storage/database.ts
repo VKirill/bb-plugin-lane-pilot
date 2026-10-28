@@ -1233,13 +1233,41 @@ export function recordFinishedAttempt(db: LanePilotDatabase, attemptId: string, 
   if (status !== "running") transitionAttempt(db, attemptId, status, { reason });
 }
 
-export function inspectState(db: LanePilotDatabase, projectId: string): Record<string,unknown> {
-  const runs = db.prepare("SELECT * FROM lane_pilot_run WHERE project_id=? ORDER BY created_at").all(projectId);
-  const attempts = db.prepare(`SELECT a.* FROM lane_pilot_attempt a
-    JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.project_id=? ORDER BY a.created_at`).all(projectId);
+/**
+ * One page of a project's state for `bb lane-pilot state`: the newest runs first, their attempts in short rows. The whole history with
+ * every column was 147 MB for one project (the dirt snapshots alone 126 MB) against the CLI bridge's 1 MB (audit 2026-10-28); the
+ * heavy columns of one attempt come from `state <project> --attempt <id>` (inspectAttempt).
+ */
+export const STATE_REASON_CHARS = 300;
+export function inspectState(db: LanePilotDatabase, projectId: string, page: { limit?: number; before?: number } = {}): Record<string,unknown> {
+  const limit = Math.max(1, Math.min(page.limit ?? 10, 100));
+  const runs = db.prepare(`SELECT id,state,kind,pm_thread_id,created_at,updated_at,closed_at,closed_by,writer_host_id,writer_workspace_path,run_gate,objective
+    FROM lane_pilot_run WHERE project_id=? AND created_at < ? ORDER BY created_at DESC LIMIT ?`).all(projectId, page.before ?? Number.MAX_SAFE_INTEGER, limit + 1) as Array<{ id: string; created_at: number }>;
+  const more = runs.length > limit;
+  const shown = runs.slice(0, limit);
+  const ids = shown.map((run) => run.id);
+  const attempts = ids.length ? db.prepare(`SELECT id,run_id,task_id,attempt_no,state,
+      CASE WHEN length(reason) > ${STATE_REASON_CHARS} THEN substr(reason,1,${STATE_REASON_CHARS}) || '…' ELSE reason END AS reason,
+      thread_id,holder_thread_id,created_at,updated_at
+    FROM lane_pilot_attempt WHERE run_id IN (${ids.map(() => "?").join(",")}) ORDER BY created_at`).all(...ids) : [];
   const settings = db.prepare(`SELECT project_id,binding_id,key,version,updated_at
     FROM lane_pilot_project_settings WHERE project_id=? ORDER BY binding_id,key`).all(projectId);
-  return { projectId, settings, runs, attempts };
+  const totals = db.prepare(`SELECT (SELECT count(*) FROM lane_pilot_run WHERE project_id=?) AS runs,
+    (SELECT count(*) FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.project_id=?) AS attempts`).get(projectId, projectId);
+  return { projectId, totals, settings, runs: shown, attempts,
+    ...(more ? { next: `bb lane-pilot state ${projectId} --before ${shown[shown.length - 1]!.created_at}${page.limit ? ` --limit ${limit}` : ""}` } : {}),
+    detail: `bb lane-pilot state ${projectId} --attempt <attempt-id>` };
+}
+
+/** Every column of one attempt of the project, the dirt snapshot cut to its first 200 entries. */
+export function inspectAttempt(db: LanePilotDatabase, projectId: string, attemptId: string): Record<string,unknown> | null {
+  const row = db.prepare(`SELECT a.* FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.project_id=? AND a.id=?`).get(projectId, attemptId) as Record<string, unknown> | undefined;
+  if (!row) return null;
+  const { dirt_before_json, workspace_decision_json, ...rest } = row;
+  const dirt = parseDirtSnapshots(typeof dirt_before_json === "string" ? dirt_before_json : "[]");
+  let workspace_decision: unknown = null;
+  if (typeof workspace_decision_json === "string") { try { workspace_decision = JSON.parse(workspace_decision_json); } catch { workspace_decision = { invalidStoredDecision: true }; } }
+  return { ...rest, workspace_decision, dirt_before: dirt.slice(0, 200), dirt_before_count: dirt.length };
 }
 
 export function getAttempt(db: LanePilotDatabase, attemptId: string): {

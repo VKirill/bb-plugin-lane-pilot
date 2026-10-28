@@ -351,9 +351,15 @@ def commit_file(cwd: str, rel: str, text: str, message: str) -> str:
 # --- scenarios ----------------------------------------------------------------------------------------------------------
 
 def tasks_parallel3(cwd: str) -> list[dict]:
+    # Each task carries a real check, red on the base and green only with the writer's file: the quick drill that gates a deploy ran
+    # these with an empty verification, so its «verification passed» proved nothing about running a project's checks (audit 2026-10-28).
+    def check(letter: str) -> list[dict]:
+        path = f"notes/drill/{STAMP}-{letter}.md"
+        return [{"command": f"test \"$(sed -n 1p {shlex.quote(path)})\" = {shlex.quote(f'# Drill {STAMP} {letter}')} && test \"$(sed -n 2p {shlex.quote(path)})\" = {shlex.quote(f'ok: {letter}')}", "cwd": cwd}]
     return [task(f"drill-{STAMP}-{letter}", f"Drill {STAMP} {letter}: one note", [f"notes/drill/{STAMP}-{letter}.md"],
                  f"Create the file notes/drill/{STAMP}-{letter}.md with exactly two lines. Line 1: `# Drill {STAMP} {letter}`. Line 2: `ok: {letter}`. Nothing else.",
-                 [f"notes/drill/{STAMP}-{letter}.md exists, its first line is `# Drill {STAMP} {letter}` and its second line is `ok: {letter}`."], cwd)
+                 [f"notes/drill/{STAMP}-{letter}.md exists, its first line is `# Drill {STAMP} {letter}` and its second line is `ok: {letter}`."], cwd,
+                 verification=check(letter))
             for letter in "abc"]
 
 
@@ -398,6 +404,19 @@ def task_nogit_repo(cwd: str) -> dict:
     return spec
 
 
+def verification_ran(ctx: "Context", task_ids: list[str]) -> dict[str, bool]:
+    """task id -> its verification receipt lists at least one command, every one with exit 0."""
+    found = {task_id: False for task_id in task_ids}
+    quoted = ",".join("'" + task_id.replace("'", "''") + "'" for task_id in task_ids)
+    for row in hubsql(f"select task_id, result_json from lane_pilot_stage_receipt where run_id='{ctx.run_id}' and stage_id='verification' and state='passed' and task_id in ({quoted});"):
+        try:
+            checks = json.loads(row.get("result_json") or "{}").get("verification") or []
+        except ValueError:
+            continue
+        found[row["task_id"]] = bool(checks) and all(isinstance(c, dict) and c.get("exitCode") == 0 for c in checks)
+    return found
+
+
 def scenario_parallel3(ctx: Context) -> dict:
     specs = tasks_parallel3(ctx.cwd)
     with ThreadPoolExecutor(3) as pool:
@@ -416,8 +435,12 @@ def scenario_parallel3(ctx: Context) -> dict:
         problems.append("tasks did not each get a worktree of their own")
     if accepted and not merged:
         problems.append("an accepted task's file is not in the sandbox")
+    # The verification stage must have run each task's own check, green (exit 0 in its receipt): «passed» on an empty list proves nothing.
+    ran = verification_ran(ctx, ids)
+    if accepted and not all(ran.values()):
+        problems.append(f"the verification stage did not run the task's check with exit 0: {', '.join(t for t, ok in ran.items() if not ok)}")
     problems += provider_problems(tasks)
-    return verdict("parallel3", problems, tasks=tasks, checks={"allAccepted": accepted, "eachInOwnWorktree": own, "filesInSandbox": merged},
+    return verdict("parallel3", problems, tasks=tasks, checks={"allAccepted": accepted, "eachInOwnWorktree": own, "filesInSandbox": merged, "checksRan": all(ran.values())},
                    dispatch={s["id"]: ctx.dispatches.get(s["id"]) for s in specs})
 
 

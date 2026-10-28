@@ -416,6 +416,15 @@ export async function workspaceGitLayout(workspacePath:string):Promise<
   return {ok:true,repoTop,nested,prefix:nested?prefix:""};
 }
 
+/** The folder of the worktree that has `branch` checked out, from `git worktree list --porcelain`; null when none has. */
+export function worktreeOfBranch(porcelain:string, branch:string):string|null {
+  for(const block of porcelain.split(/\n\n+/)) {
+    const lines=block.split("\n");
+    if(lines.includes(`branch refs/heads/${branch}`)) return lines.find((line)=>line.startsWith("worktree "))?.slice("worktree ".length)??null;
+  }
+  return null;
+}
+
 /**
  * Creates Lane Pilot's own worktree of a section repository on a fresh lane/<name> branch from its HEAD. A chat folder
  * nested in a larger repo gets a worktree of that repo; `path` is then the same subfolder inside it, where the writer works.
@@ -431,12 +440,27 @@ export async function createWorktree(input:{basePath:string;targetPath:string;na
   const branch=`lane/${input.name}`;
   await mkdir(join(input.targetPath,".."),{recursive:true});
   await recoverStaleGitLock(repoRoot);
-  const added=await git(repoRoot,["worktree","add","-q","-b",branch,input.targetPath,input.commit??"HEAD"]);
-  if(!added.ok) return {status:"failed",path:null,branch:null,baseSha:null,reason:added.reason};
-  // git may have given this worktree the admin name a half-removed old folder still points at.
-  await retireCollidingWorktrees(input.targetPath);
-  const head=await git(input.targetPath,["rev-parse","HEAD"]);
-  const path=layout.nested?join(input.targetPath,layout.prefix):input.targetPath;
+  // The branch of this attempt already exists: an earlier create made it and its answer was lost (a plugin reload, a host call that
+  // timed out on a machine deep in swap). Taking it again is safe, the name is the attempt's own; `-b` failed with «a branch named
+  // lane/<attempt> already exists» and parked the task (2026-10-28, Vampirism Fire: two tasks blocked with their worktrees on disk).
+  let root=input.targetPath;
+  if((await git(repoRoot,["rev-parse","--verify","-q",`refs/heads/${branch}`])).ok) {
+    const holder=worktreeOfBranch((await git(repoRoot,["worktree","list","--porcelain"])).stdout,branch);
+    if(holder&&existsSync(holder)) root=holder;
+    else {
+      await git(repoRoot,["worktree","prune"]);
+      const attached=await git(repoRoot,["worktree","add","-q",input.targetPath,branch]);
+      if(!attached.ok) return {status:"failed",path:null,branch:null,baseSha:null,reason:attached.reason};
+      await retireCollidingWorktrees(input.targetPath);
+    }
+  } else {
+    const added=await git(repoRoot,["worktree","add","-q","-b",branch,input.targetPath,input.commit??"HEAD"]);
+    if(!added.ok) return {status:"failed",path:null,branch:null,baseSha:null,reason:added.reason};
+    // git may have given this worktree the admin name a half-removed old folder still points at.
+    await retireCollidingWorktrees(input.targetPath);
+  }
+  const head=await git(root,["rev-parse","HEAD"]);
+  const path=layout.nested?join(root,layout.prefix):root;
   // A subfolder with no tracked file yet is not in the checkout.
   if(layout.nested) await mkdir(path,{recursive:true});
   return {status:"ready",path,branch,reason:null,baseSha:head.ok&&/^[a-f0-9]{40,64}$/.test(head.stdout.trim())?head.stdout.trim():null};

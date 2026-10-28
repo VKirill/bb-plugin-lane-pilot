@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Everyday check: the tests next to what you changed, not the whole suite (that stays the gate for a deploy: npm test / scripts/test-full.sh).
 //
-//   npm run test:changed              tests that import a changed file directly, tests named after it, and changed test files
+//   npm run test:changed              tests that import a changed file directly, tests named after it, and changed test files; for a
+//                                     wide file (imported by more than 15 tests: i18n, storage, contracts, the role table) only the
+//                                     importers that name an identifier the change touched (a function, a constant, a key)
 //   npm run test:changed -- --graph   every test that reaches a changed file through any import chain (vitest --changed; the
 //                                     plugin's barrels connect most files, so a change in a shared file selects half the suite)
 //   npm run test:changed -- <ref>     compare with another base; other flags go to vitest
@@ -18,7 +20,9 @@ const git = (...args) => { try { return execFileSync("git", args, { encoding: "u
 
 const argv = process.argv.slice(2);
 const graph = argv.includes("--graph");
-let rest = argv.filter((arg) => arg !== "--graph");
+// --list: print the selection and run nothing
+const listOnly = argv.includes("--list");
+let rest = argv.filter((arg) => arg !== "--graph" && arg !== "--list");
 let base = rest[0] && !rest[0].startsWith("-") ? rest.shift() : "";
 if (!base) base = git("status", "--porcelain") ? "HEAD" : (git("merge-base", "HEAD", "main") || "HEAD");
 console.log(`test:changed: ${graph ? "dependency graph" : "direct importers"} of changes since ${git("rev-parse", "--short", base)}`);
@@ -58,13 +62,43 @@ const stems = sources.map((file) => {
   const stem = name === "index" ? basename(dirname(file)) : name;
   return { file, stem, pattern: new RegExp(`from\\s+["'][^"']*/${stem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(/index)?(\\.[a-z]+)?["']|import\\(["'][^"']*/${stem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(/index)?["']`) };
 });
-if (stems.length) {
-  for (const test of testFiles) {
-    const text = readFileSync(test, "utf8");
-    for (const { stem, pattern } of stems) {
-      if (basename(test).includes(stem) || pattern.test(text)) { selected.add(test); break; }
+// The identifiers a change touches in one file: declarations on changed lines and in the hunk headers git gives (the enclosing
+// top-level declaration), object keys on changed lines (an i18n key, an RPC handler), `id: "…"` values (a role row). Short names
+// (`en`, `id`) say nothing and are left out.
+// Only top-level declarations count: a local `const limit` inside a function names nothing a test would.
+const DECL = /^(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function\*?|const|let|var|class|type|interface|enum)\s+([A-Za-z_$][\w$]*)/g;
+const KEY = /^\s{0,6}["']?([A-Za-z_$][\w$-]{7,})["']?\s*:/;
+const ID_VALUE = /\bid:\s*["']([\w.:-]+)["']/g;
+function touchedIdentifiers(file) {
+  const names = new Set();
+  for (const line of git("diff", "-U0", base, "--", file).split("\n")) {
+    const header = line.startsWith("@@") ? line.replace(/^@@[^@]*@@\s?/, "") : null;
+    const body = header ?? (/^[+-](?![+-])/.test(line) ? line.slice(1) : null);
+    if (body === null) continue;
+    for (const match of body.matchAll(DECL)) names.add(match[1]);
+    if (header === null) {
+      const key = KEY.exec(body);
+      if (key) names.add(key[1]);
+      for (const match of body.matchAll(ID_VALUE)) names.add(match[1]);
     }
   }
+  return [...names].filter((name) => name.length >= 4);
+}
+const WIDE = 15;
+const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const texts = new Map(testFiles.map((test) => [test, readFileSync(test, "utf8")]));
+for (const { file, stem, pattern } of stems) {
+  const importers = testFiles.filter((test) => basename(test).includes(stem) || pattern.test(texts.get(test)));
+  const names = importers.length > WIDE ? touchedIdentifiers(file) : [];
+  if (!names.length) {
+    if (importers.length) console.log(`test:changed: ${file}: ${importers.length} importer${importers.length === 1 ? "" : "s"}`);
+    for (const test of importers) selected.add(test);
+    continue;
+  }
+  const named = new RegExp(`\\b(?:${names.map(escape).join("|")})\\b`);
+  const kept = importers.filter((test) => basename(test).includes(stem) || named.test(texts.get(test)));
+  console.log(`test:changed: ${file} is imported by ${importers.length} tests; ${kept.length} name what changed (${names.slice(0, 8).join(", ")}${names.length > 8 ? ", …" : ""})`);
+  for (const test of kept) selected.add(test);
 }
 // Tests of a package are the package's own.
 for (const file of sources) {
@@ -77,5 +111,6 @@ if (!selected.size) {
   process.exit(0);
 }
 console.log(`test:changed: ${selected.size} test file${selected.size === 1 ? "" : "s"}`);
+if (listOnly) { for (const test of [...selected].sort()) console.log(test); process.exit(0); }
 const run = spawnSync("npx", ["vitest", "run", ...selected, ...rest], { stdio: "inherit" });
 process.exit(run.status ?? 1);
