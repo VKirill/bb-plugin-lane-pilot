@@ -75,21 +75,16 @@ describe("Jev key from Env Catalog", () => {
 
 describe("Jev key on the machine", () => {
   it("prefers the key the server sent over the machine's env, and knows whose key it is", async () => {
-    const { jevApiKey, jevProviderOfKey, provideJevKey } = await import("../../src/rooms/verification/docs-jev");
+    const { jevCallFor } = await import("../../src/rooms/verification/docs-jev");
     const before = process.env.TYPESAFE_API_KEY;
     process.env.TYPESAFE_API_KEY = "machine-key";
     try {
-      expect(await jevApiKey()).toBe("machine-key");
-      expect(jevProviderOfKey("machine-key").id).toBe("typesafe");
-      provideJevKey("  ");
-      expect(await jevApiKey()).toBe("machine-key");
-      provideJevKey("catalog-key");
-      expect(await jevApiKey()).toBe("catalog-key");
-      expect(jevProviderOfKey("catalog-key").id).toBe("typesafe");
-      provideJevKey("openlux-key", "openlux");
-      expect(await jevApiKey()).toBe("openlux-key");
-      expect(jevProviderOfKey("openlux-key")).toMatchObject({ id:"openlux", url:"https://api.openlux.ai/v1/systemone", model:"jev-1.14.0:stable" });
-      expect(jevProviderOfKey("machine-key").id).toBe("typesafe");
+      expect((await jevCallFor())?.key).toBe("machine-key");
+      expect((await jevCallFor())?.provider.id).toBe("typesafe");
+      expect((await jevCallFor({ jevApiKey:"  " }))?.key).toBe("machine-key");
+      expect(await jevCallFor({ jevApiKey:"catalog-key" })).toMatchObject({ key:"catalog-key", provider:{ id:"typesafe" } });
+      expect((await jevCallFor({ jevApiKey:"openlux-key", jevProvider:"openlux" }))?.provider).toMatchObject({ id:"openlux", url:"https://api.openlux.ai/v1/systemone", model:"jev-1.14.0:stable" });
+      expect((await jevCallFor())?.key).toBe("machine-key");
     } finally {
       if (before === undefined) delete process.env.TYPESAFE_API_KEY; else process.env.TYPESAFE_API_KEY = before;
     }

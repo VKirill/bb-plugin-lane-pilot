@@ -32,21 +32,10 @@ export type JevStatus = "ok" | "partial" | "disabled";
 type JevQuestion = { type:"noul" | "choice" | "score"; instructions:unknown; criteria?:unknown };
 type JevAnswer = { noul?:number; choice?:string; probabilities?:Record<string, number>; score?:number; confidence?:number };
 
-let providedJevKey = "";
-let providedJevProvider: JevProvider = JEV_PROVIDERS.typesafe;
+export type JevCallAuth = { key: string; provider: JevProvider };
+export type JevCallSource = { jevApiKey?: string; jevProvider?: string };
 
-/** The server sends the key from BB's Env Catalog and the provider it belongs to with each Jev call; they win over this machine's env and file. */
-export function provideJevKey(key: string | undefined, provider?: string): void {
-  if (!key?.trim()) return;
-  providedJevKey = key.trim();
-  providedJevProvider = jevProviderOfHostCall(provider);
-}
-
-/** Whose key this is: the provider the server named for the key it sent; every other key (env, file) is TypeSafe's, as before providers. */
-export const jevProviderOfKey = (key: string): JevProvider => key === providedJevKey ? providedJevProvider : JEV_PROVIDERS.typesafe;
-
-export async function jevApiKey(): Promise<string> {
-  if (providedJevKey) return providedJevKey;
+async function machineJevKey(): Promise<string> {
   const fromEnv = (process.env.TYPESAFE_API_KEY || process.env.JEV_API_KEY || "").trim();
   if (fromEnv) return fromEnv;
   const text = await readFile(join(homedir(), "secrets", "typesafe.env"), "utf8").catch(() => "");
@@ -57,25 +46,61 @@ export async function jevApiKey(): Promise<string> {
   return "";
 }
 
-/** Shrinks the longest strings until the state fits Jev's window; the head and tail of a text carry most of its meaning. */
-export function boundJevState<T>(state:T, limit = JEV_STATE_CHARS): T {
+/**
+ * Key and endpoint for this call only. A catalog key on the input never leaves that call.
+ * A call without one uses this machine's TypeSafe key, or no key. (2026-10-29 audit A-030)
+ */
+export async function jevCallFor(input?: JevCallSource): Promise<JevCallAuth | null> {
+  const key = input?.jevApiKey?.trim();
+  if (key) return { key, provider: jevProviderOfHostCall(input?.jevProvider) };
+  const machine = await machineJevKey();
+  return machine ? { key: machine, provider: JEV_PROVIDERS.typesafe } : null;
+}
+
+export async function jevApiKey(): Promise<string> {
+  return (await jevCallFor())?.key ?? "";
+}
+
+const tooLarge = (size: number, limit: number) => new Error(`jev state is ${size} characters, over the limit of ${limit} (2026-10-29 audit A-031)`);
+
+/** Shrinks the longest strings until the state fits. Refuses when nothing left can shrink. (2026-10-29 audit A-031) */
+export function boundJevState<T>(state: T, limit = JEV_STATE_CHARS): T {
   let copy = JSON.parse(JSON.stringify(state)) as unknown;
-  for (let round = 0; round < 20 && JSON.stringify(copy).length > limit; round++) {
-    const excess = JSON.stringify(copy).length - limit;
-    let longest:{ holder:Record<string, unknown> | unknown[]; key:string | number; length:number } | null = null;
-    const visit = (value:unknown, holder:Record<string, unknown> | unknown[] | null, key:string | number | null) => {
-      if (typeof value === "string" && holder && key !== null && (!longest || value.length > longest.length)) longest = { holder, key, length:value.length };
+  const size = () => JSON.stringify(copy).length;
+  let spins = 0;
+  while (size() > limit) {
+    if (++spins > 100_000) throw tooLarge(size(), limit);
+    const excess = size() - limit;
+    if (typeof copy === "string") {
+      const next = shrinkText(copy, excess);
+      if (next.length >= copy.length) throw tooLarge(size(), limit);
+      copy = next;
+      continue;
+    }
+    let longest: { holder: Record<string, unknown> | unknown[]; key: string | number; length: number } | null = null;
+    const visit = (value: unknown, holder: Record<string, unknown> | unknown[] | null, key: string | number | null) => {
+      if (typeof value === "string" && holder && key !== null && value.length > 0 && (!longest || value.length > longest.length)) longest = { holder, key, length: value.length };
       else if (Array.isArray(value)) value.forEach((item, index) => visit(item, value, index));
       else if (value && typeof value === "object") for (const [name, item] of Object.entries(value)) visit(item, value as Record<string, unknown>, name);
     };
-    if (typeof copy === "string") { copy = shorten(copy, copy.length - excess - 64); continue; }
     visit(copy, null, null);
-    if (!longest) break;
-    const target = longest as { holder:Record<string, unknown> | unknown[]; key:string | number; length:number };
-    const text = (target.holder as Record<string | number, unknown>)[target.key] as string;
-    (target.holder as Record<string | number, unknown>)[target.key] = shorten(text, Math.max(200, text.length - excess - 64));
+    if (!longest) throw tooLarge(size(), limit);
+    const target = longest as { holder: Record<string, unknown> | unknown[]; key: string | number; length: number };
+    const holder = target.holder as Record<string | number, unknown>;
+    const text = holder[target.key] as string;
+    const next = shrinkText(text, excess);
+    if (next.length >= text.length) throw tooLarge(size(), limit);
+    holder[target.key] = next;
   }
   return copy as T;
+}
+
+function shrinkText(text: string, excess: number): string {
+  const marked = shorten(text, Math.max(200, text.length - excess - 64));
+  if (marked.length < text.length) return marked;
+  const half = shorten(text, Math.floor(text.length / 2));
+  if (half.length < text.length) return half;
+  return text.slice(0, Math.max(0, text.length - Math.max(1, excess)));
 }
 
 function shorten(text:string, keep:number):string {
@@ -92,15 +117,16 @@ const JEV_MACHINE_LIMIT = 48;
 let jevInFlight = 0;
 const jevWaiting:Array<() => void> = [];
 
-export async function jevAsk(key:string, state:unknown, questions:Record<string, JevQuestion>, timeoutMs = 20_000):Promise<Record<string, JevAnswer> | null> {
+export async function jevAsk(key:string, state:unknown, questions:Record<string, JevQuestion>, timeoutMs = 20_000, provider: JevProvider = JEV_PROVIDERS.typesafe):Promise<Record<string, JevAnswer> | null> {
   if (jevInFlight >= JEV_MACHINE_LIMIT) await new Promise<void>((ready) => jevWaiting.push(ready));
   jevInFlight++;
   try {
-    const provider = jevProviderOfKey(key);
+    // A state that cannot be shrunk under the limit is not sent. (2026-10-29 audit A-031)
+    const bounded = boundJevState(state);
     const response = await fetch(provider.url, {
       method:"POST",
       headers:{ authorization:`Bearer ${key}`, "content-type":"application/json" },
-      body:JSON.stringify({ model:provider.model, state:boundJevState(state), questions }),
+      body:JSON.stringify({ model:provider.model, state:bounded, questions }),
       signal:AbortSignal.timeout(timeoutMs + provider.timeoutPadMs),
     });
     if (!response.ok) return null;
@@ -229,7 +255,7 @@ export type DocsWorkspaceRef = { path:string; name:string; docsDir:string | null
  * One docs folder's code: `prefix` narrows it to a monorepo workspace, `exclude` takes the workspaces with their
  * own docs out of the root's share, and `workspaces` gives the root brief its map of the monorepo.
  */
-export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ path:string; title:string }>; prefix?:string; exclude?:string[]; workspaces?:DocsWorkspaceRef[] }):Promise<{ briefPath:string; anchors:number; jev:JevStatus; productFiles:string[]; core:Array<{ name:string; file:string; line:number; endLine:number }>; tables:string[]; deploy:boolean }> {
+export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ path:string; title:string }>; prefix?:string; exclude?:string[]; workspaces?:DocsWorkspaceRef[] } & JevCallSource):Promise<{ briefPath:string; anchors:number; jev:JevStatus; productFiles:string[]; core:Array<{ name:string; file:string; line:number; endLine:number }>; tables:string[]; deploy:boolean }> {
   const prefix = input.prefix ?? "";
   const files = await trackedCode(input.projectCwd, prefix, input.exclude);
   const tests:string[] = [];
@@ -244,12 +270,12 @@ export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ 
     routes.push(...extractRoutes(file, text));
   }
   anchors = spreadAnchors(anchors, MAX_ANCHORS);
-  const key = await jevApiKey();
+  const auth = await jevCallFor(input);
   let answered = 0;
-  if (key) {
+  if (auth) {
     const questions = ANCHOR_QUESTIONS(input.pages);
     await pool(anchors.filter((anchor) => anchor.kind !== "type"), async (anchor) => {
-      const answers = await jevAsk(key, { file:anchor.file, symbol:anchor.name, kind:anchor.kind, code:anchor.snippet }, questions);
+      const answers = await jevAsk(auth.key, { file:anchor.file, symbol:anchor.name, kind:anchor.kind, code:anchor.snippet }, questions, 20_000, auth.provider);
       if (!answers) return;
       answered++;
       anchor.businessRule = answers.business_rule?.noul;
@@ -259,7 +285,7 @@ export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ 
       if (answers.page?.choice && answers.page.choice !== "none") anchor.page = answers.page.choice;
     });
   }
-  const asked = key ? anchors.filter((anchor) => anchor.kind !== "type").length : 1;
+  const asked = auth ? anchors.filter((anchor) => anchor.kind !== "type").length : 1;
   const gitDir = (await run("git", ["-C", input.projectCwd, "rev-parse", "--git-dir"])).stdout.trim();
   const briefName = prefix ? `docs-anchors-${prefix.replace(/[^A-Za-z0-9]+/g, "-").replace(/-+$/, "")}.md` : "docs-anchors.md";
   const briefPath = join(isAbsolute(gitDir) ? gitDir : join(input.projectCwd, gitDir), "lane-pilot", briefName);
@@ -282,7 +308,7 @@ export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ 
   }
   const routeList = routes.length ? ["", "## Routes and bot commands", "", "Every one belongs on a page (api.md or the feature page): method, path, who calls it, what it does, auth.", "",
     ...routes.slice(0, 600).map((route) => `- ${route.method} ${route.path} - ${route.file}:${route.line}`), ...(routes.length > 600 ? [`- …and ${routes.length - 600} more`] : []), ""] : [];
-  await writeFile(briefPath, renderAnchorBrief(anchors, tests, await dependencies(input.projectCwd, prefix), key ? status(asked, answered) : "disabled") + routeList.join("\n") + workspaceMap.join("\n") + dataMap.join("\n"));
+  await writeFile(briefPath, renderAnchorBrief(anchors, tests, await dependencies(input.projectCwd, prefix), auth ? status(asked, answered) : "disabled") + routeList.join("\n") + workspaceMap.join("\n") + dataMap.join("\n"));
   // Files with code Jev judged specific to this product; generic kits and helpers do not call for docs.
   const productFiles = [...new Set(anchors.filter((anchor) => anchor.kind !== "type" && (anchor.projectSpecific ?? 1) >= 0.5).map((anchor) => anchor.file))].sort();
   // Core product behaviour the docs must cover: Jev's top importance on product code.
@@ -300,7 +326,7 @@ export async function buildDocsAnchors(input:{ projectCwd:string; pages:Array<{ 
   // A monorepo is built and deployed from its root, so only the root docs get the page.
   const scripts = prefix ? {} : await readFile(join(input.projectCwd, "package.json"), "utf8").then((text) => (JSON.parse(text) as { scripts?:Record<string, string> }).scripts ?? {}).catch(() => ({} as Record<string, string>));
   const deploy = Boolean(scripts.build || scripts.install || scripts.start || scripts.deploy);
-  return { briefPath, anchors:anchors.length, jev:key ? status(asked, answered) : "disabled", productFiles, core, tables, deploy };
+  return { briefPath, anchors:anchors.length, jev:auth ? status(asked, answered) : "disabled", productFiles, core, tables, deploy };
 }
 
 /** The monorepo map for the root docs: each workspace, where its docs live and which workspaces it uses. */
@@ -391,10 +417,10 @@ export function pageClaims(body:string):Array<{ claim:string; refs:ClaimRef[] }>
 const refLabel = (ref:ClaimRef) => `${ref.file}:${ref.start}${ref.end !== ref.start ? `-${ref.end}` : ""}`;
 
 /** Asks Jev whether the cited code backs each claim; an unsupported one becomes a lint finding. */
-export async function verifyDocsCitations(input:{ projectCwd:string; pages:Array<{ path:string; content:string }>; related?:Array<{ path:string; content:string }> }):Promise<{ jev:JevStatus; checked:number;
+export async function verifyDocsCitations(input:{ projectCwd:string; pages:Array<{ path:string; content:string }>; related?:Array<{ path:string; content:string }> } & JevCallSource):Promise<{ jev:JevStatus; checked:number;
   findings:Array<{ path:string; rule:string; detail:string }>; pageStats:Array<{ path:string; checked:number; supported:number; partial:number }> }> {
-  const key = await jevApiKey();
-  if (!key) return { jev:"disabled", checked:0, findings:[], pageStats:[] };
+  const auth = await jevCallFor(input);
+  if (!auth) return { jev:"disabled", checked:0, findings:[], pageStats:[] };
   // The check budget is shared round-robin, so every written page gets its claims sampled, not just the first ones.
   const perPage = input.pages.map((page) => pageClaims(page.content.replace(/^---\n[\s\S]*?\n---\n?/, "")).map((claim) => ({ path:page.path, ...claim })));
   const checks:Array<{ path:string; claim:string; refs:ClaimRef[] }> = [];
@@ -421,8 +447,8 @@ export async function verifyDocsCitations(input:{ projectCwd:string; pages:Array
       return [{ cited:refLabel(ref), from, to, code:lines.slice(from - 1, to).join("\n") }];
     });
     if (!excerpts.length) return;
-    const answers = await jevAsk(key, { excerpts },
-      { support:{ type:"choice", instructions:{ claim:check.claim, question:"Does the cited code in `excerpts` show what `claim` says it shows?" }, criteria } });
+    const answers = await jevAsk(auth.key, { excerpts },
+      { support:{ type:"choice", instructions:{ claim:check.claim, question:"Does the cited code in `excerpts` show what `claim` says it shows?" }, criteria } }, 20_000, auth.provider);
     if (!answers) return;
     answered++;
     const stat = stats.get(check.path) ?? { checked:0, supported:0, partial:0 };
@@ -436,7 +462,7 @@ export async function verifyDocsCitations(input:{ projectCwd:string; pages:Array
         detail:`${check.refs.map(refLabel).join(", ")} do not back "${check.claim.slice(0, 160)}" (Jev ${Math.round(unsupported * 100)}%)` });
     }
   });
-  const contradictions = await findContradictions(key, [...input.pages, ...(input.related ?? [])], new Set(input.pages.map((page) => page.path)));
+  const contradictions = await findContradictions(auth, [...input.pages, ...(input.related ?? [])], new Set(input.pages.map((page) => page.path)));
   findings.push(...contradictions.findings);
   return { jev:status(checks.length + contradictions.asked, answered + contradictions.answered), checked:checks.length, findings,
     pageStats:[...stats].map(([path, stat]) => ({ path, ...stat })) };
@@ -448,7 +474,7 @@ const MAX_CONTRADICTION_PAIRS = 150;
  * Two pages that cite the same lines describe the same code; Jev checks each such pair of claims
  * for a contradiction. Pairs involve at least one page written now; the rest of the docs are context.
  */
-async function findContradictions(key:string, pages:Array<{ path:string; content:string }>, written:Set<string>):Promise<{ asked:number; answered:number; findings:Array<{ path:string; rule:string; detail:string }> }> {
+async function findContradictions(auth:JevCallAuth, pages:Array<{ path:string; content:string }>, written:Set<string>):Promise<{ asked:number; answered:number; findings:Array<{ path:string; rule:string; detail:string }> }> {
   const claims = pages.flatMap((page) => pageClaims(page.content.replace(/^---\n[\s\S]*?\n---\n?/, "")).map((claim) => ({ path:page.path, ...claim })));
   const overlaps = (a:ClaimRef, b:ClaimRef) => a.file === b.file && a.start <= b.end && b.start <= a.end;
   const pairs:Array<[typeof claims[number], typeof claims[number]]> = [];
@@ -460,10 +486,10 @@ async function findContradictions(key:string, pages:Array<{ path:string; content
   const findings:Array<{ path:string; rule:string; detail:string }> = [];
   let answered = 0;
   await pool(pairs, async ([a, b]) => {
-    const answers = await jevAsk(key, { first:{ page:a.path, statement:a.claim }, second:{ page:b.path, statement:b.claim } }, { relation:{ type:"choice",
+    const answers = await jevAsk(auth.key, { first:{ page:a.path, statement:a.claim }, second:{ page:b.path, statement:b.claim } }, { relation:{ type:"choice",
       instructions:"Both statements describe the same lines of code. Can both be true at the same time?",
       criteria:{ consistent:"Both can be true: they agree, or describe different aspects without conflict.",
-        contradict:"They state different values, behaviour or names for the same thing, so one of them must be wrong." } } });
+        contradict:"They state different values, behaviour or names for the same thing, so one of them must be wrong." } } }, 20_000, auth.provider);
     if (!answers) return;
     answered++;
     const p = answers.relation?.probabilities?.contradict ?? 0;
@@ -492,9 +518,9 @@ async function diffSince(projectCwd:string, base:string, files:string[]):Promise
  * Pages whose sections describe code the diff actually changed in behaviour, as Jev judges it;
  * draft pages always. Without Jev the caller falls back to the sources intersection.
  */
-export async function docsStaleness(input:{ projectCwd:string; base:string; changed:string[]; pages:Array<{ path:string; content:string }> }):Promise<{ jev:JevStatus; refresh:string[]; reasons:Array<{ path:string; section:string; p:number }> }> {
-  const key = await jevApiKey();
-  if (!key) return { jev:"disabled", refresh:[], reasons:[] };
+export async function docsStaleness(input:{ projectCwd:string; base:string; changed:string[]; pages:Array<{ path:string; content:string }> } & JevCallSource):Promise<{ jev:JevStatus; refresh:string[]; reasons:Array<{ path:string; section:string; p:number }> }> {
+  const auth = await jevCallFor(input);
+  if (!auth) return { jev:"disabled", refresh:[], reasons:[] };
   const changed = new Set(input.changed);
   // A page with no citations at all (the people's README) is judged whole against the changed code.
   const uncited = input.pages.filter((page) => ![...page.content.matchAll(CITATION)].length && input.changed.length)
@@ -509,9 +535,9 @@ export async function docsStaleness(input:{ projectCwd:string; base:string; chan
   let answered = 0;
   const asked = sections.filter((section) => section.files.some((file) => diffs.has(file)));
   await pool(asked, async (section) => {
-    const answers = await jevAsk(key, { section:section.text.slice(0, 12_000), diff:section.files.map((file) => diffs.get(file) ?? "").join("\n") }, {
+    const answers = await jevAsk(auth.key, { section:section.text.slice(0, 12_000), diff:section.files.map((file) => diffs.get(file) ?? "").join("\n") }, {
       stale:{ type:"noul", instructions:"Does `diff` change behaviour, names, commands, limits, data or flows that `section` describes, so that `section` is now wrong or incomplete?",
-        criteria:{ true:"The section needs an update to stay accurate.", false:"The change is internal, cosmetic, or outside what the section describes." } } });
+        criteria:{ true:"The section needs an update to stay accurate.", false:"The change is internal, cosmetic, or outside what the section describes." } } }, 20_000, auth.provider);
     if (!answers) return;
     answered++;
     const p = answers.stale?.noul ?? 0;
@@ -529,10 +555,10 @@ const MAX_DEPTH_CHECKS = 40;
  * Whether the docs explain the core code well enough that a reader need not open it: for each core anchor a
  * written page cites, Jev reads the code and the page's sentences about it. A weak explanation becomes a finding.
  */
-export async function docsDepth(input:{ projectCwd:string; pages:Array<{ path:string; content:string }>; core:Array<{ name:string; file:string; line:number; endLine:number }> }):Promise<{ jev:JevStatus;
+export async function docsDepth(input:{ projectCwd:string; pages:Array<{ path:string; content:string }>; core:Array<{ name:string; file:string; line:number; endLine:number }> } & JevCallSource):Promise<{ jev:JevStatus;
   findings:Array<{ path:string; rule:string; detail:string }> }> {
-  const key = await jevApiKey();
-  if (!key) return { jev:"disabled", findings:[] };
+  const auth = await jevCallFor(input);
+  if (!auth) return { jev:"disabled", findings:[] };
   const claims = input.pages.flatMap((page) => pageClaims(page.content.replace(/^---\n[\s\S]*?\n---\n?/, "")).map((claim) => ({ path:page.path, ...claim })));
   const checks = input.core.filter((anchor) => !anchor.name.startsWith("routes ")).flatMap((anchor) => {
     const about = claims.filter((claim) => claim.refs.some((ref) => ref.file === anchor.file && ref.start <= anchor.endLine && ref.end >= anchor.line));
@@ -544,9 +570,9 @@ export async function docsDepth(input:{ projectCwd:string; pages:Array<{ path:st
   await pool(checks, async (check) => {
     const lines = (await readFile(join(input.projectCwd, check.anchor.file), "utf8").catch(() => "")).split("\n");
     const code = lines.slice(check.anchor.line - 1, Math.min(check.anchor.endLine, check.anchor.line + 120)).join("\n");
-    const answers = await jevAsk(key, { code:{ file:check.anchor.file, symbol:check.anchor.name, code }, docs:{ page:check.page, text:check.text } }, {
+    const answers = await jevAsk(auth.key, { code:{ file:check.anchor.file, symbol:check.anchor.name, code }, docs:{ page:check.page, text:check.text } }, {
       explains:{ type:"noul", instructions:"Do the sentences in `docs` explain what `code` does - its steps, the conditions and modes it branches on, and its outcomes and failures - well enough that a reader would not need to open the code to understand it?" },
-    });
+    }, 20_000, auth.provider);
     if (!answers) return;
     answered++;
     if ((answers.explains?.noul ?? 1) < 0.4) findings.push({ path:check.page, rule:"depth",

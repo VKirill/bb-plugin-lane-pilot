@@ -78,22 +78,15 @@ import {
 } from "./src/rooms/host-worker";
 import { sessionInventory } from "./src/rooms/native-agent";
 import { nativeInstallHost } from "./src/rooms/native-install/native-install-host";
-import { provideJevKey } from "./src/rooms/verification";
 import { anamnesisHandler } from "./src/rooms/anamnesis";
-
-/** Takes the Env Catalog key the server attached to a Jev call before the handler runs. */
-const withJevKey = <I extends { jevApiKey?: string; jevProvider?: string }, C, O>(handler: (input: I, context: C) => O | Promise<O>) => async (input: I, context: C) => {
-  provideJevKey(input.jevApiKey, input.jevProvider);
-  return await handler(input, context);
-};
 
 export default experimental_defineHostEntry({
   contract: hostContract,
   handlers: {
     nativeInstall: nativeInstallHost,
     anamnesis: anamnesisHandler,
-    detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, gitDocsScope, docsWorthinessFacts, docsLineCounts, gitCommitDocs, gitRevertPaths, gitUndoCheckWrites, docsAnchors:withJevKey(docsAnchors), docsFlows:withJevKey(docsFlows), docsDepth:withJevKey(docsDepth), docsVerifyCitations:withJevKey(docsVerifyCitations), docsStaleness:withJevKey(docsStalenessHandler), gitIntegrate, gateRun, gateBisect, gateAttribute, jobStart, jobStatus, jobCancel, gitPrepareWorktree, gitCreateWorktree, gitRemoveWorktree, gitSyncWorktree, diskFree, stabilityDrill, gitWorktreeSnapshot, gitWorktreeState, gitMergeInfo, gitRevertCommits, openCodeLimitProbe, readOpenCodeTelemetry, readBoundedFile, listDocsPages, listWorkflowFiles, applyOnboardingPages, writeDocsPages, writePhaseBook, writeForgeEnabled, writeForgeDraft, prepareWorkerHome, whichPrograms, listFolders, closeBacklogItem, readUsageWindows, listPermitTickets, answerPermit, writeWorkflowFile, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan:withJevKey(classifyPlan), inspectCritiqueCoverage,
-    councilJudge:withJevKey(councilJudge), browserGoal, runCli, runCommand, runScript, runSandboxedCommand, sandboxCommandLine, sandboxRelease, vpnAddress, runBrowserQa, probeBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
+    detect, coexistenceInventory, coexistenceOperation, gitOwnershipBase, gitOwnershipChanges, gitDocsScope, docsWorthinessFacts, docsLineCounts, gitCommitDocs, gitRevertPaths, gitUndoCheckWrites, docsAnchors, docsFlows, docsDepth, docsVerifyCitations, docsStaleness:docsStalenessHandler, gitIntegrate, gateRun, gateBisect, gateAttribute, jobStart, jobStatus, jobCancel, gitPrepareWorktree, gitCreateWorktree, gitRemoveWorktree, gitSyncWorktree, diskFree, stabilityDrill, gitWorktreeSnapshot, gitWorktreeState, gitMergeInfo, gitRevertCommits, openCodeLimitProbe, readOpenCodeTelemetry, readBoundedFile, listDocsPages, listWorkflowFiles, applyOnboardingPages, writeDocsPages, writePhaseBook, writeForgeEnabled, writeForgeDraft, prepareWorkerHome, whichPrograms, listFolders, closeBacklogItem, readUsageWindows, listPermitTickets, answerPermit, writeWorkflowFile, snapshotDryRun, snapshot, install, rollback, importConfig, connectOpencode, classifyPlan, inspectCritiqueCoverage,
+    councilJudge, browserGoal, runCli, runCommand, runScript, runSandboxedCommand, sandboxCommandLine, sandboxRelease, vpnAddress, runBrowserQa, probeBrowserQaTarget, writePmSettings, session_inventory: sessionInventory,
     discoverClaudeAgents: discoverClaudeAgentsHost, prepareNativeClaude: prepareNativeClaudeHost,
     prepareBbShim: prepareBbShimHost,
   },
