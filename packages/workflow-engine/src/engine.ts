@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 
 import { MissingValueError, evalCondition, evalSpec, parseExpr, refOf, renderValue, toExpr, valueSpecOf } from "./expr";
 import type { EvalEnv, Expr, Ref } from "./expr";
-import { END, MAX_SUBWORKFLOW_DEPTH, QUALITY_MODES, START } from "./schema";
+import { resolveTaskQualityMode } from "./quality-mode";
+import { END, MAX_SUBWORKFLOW_DEPTH, START } from "./schema";
 import type { Field, GraphNode as WorkflowNode, PassMode, QualityMode, Workflow, WorkflowEdge } from "./schema";
 import { createJournal, sha256, stableId, TERMINAL_RUN } from "./journal";
 import type { EffectRow, Journal, RunRow, RunStatus, StepRow } from "./journal";
@@ -280,11 +281,12 @@ export class WorkflowEngine {
     const inputs = checkOutput(workflow.inputs, withDefaults);
     const depth = input.depth ?? 0;
     if (depth > Math.min(workflow.guards.maxSubworkflowDepth, MAX_SUBWORKFLOW_DEPTH)) throw new MissingValueError("subworkflow_depth", `subworkflows go ${depth} deep; the limit is ${MAX_SUBWORKFLOW_DEPTH}`);
-    // The mode the caller asked for: the input as given, else the mode passed along (a subworkflow inherits its parent's), else the default.
+    // Contract and an explicit input beat the workflow; `fixed` still wins over an inherited `$mode`. full inside fixed quick is a conflict.
     const given = (input.inputs ?? {}).quality_mode;
-    const asked: QualityMode = (QUALITY_MODES as readonly unknown[]).includes(given) ? given as QualityMode : input.mode ?? workflow.quality_mode?.default ?? "standard";
-    const floor = workflow.quality_mode?.min;
-    const mode: QualityMode = workflow.quality_mode?.fixed ?? (floor && QUALITY_MODES.indexOf(asked) < QUALITY_MODES.indexOf(floor) ? floor : asked);
+    const explicitAsk = (["quick", "standard", "full"] as readonly unknown[]).includes(given);
+    const picked = resolveTaskQualityMode({ asked: explicitAsk ? given : input.mode, explicitAsk, workflow: workflow.quality_mode ?? null });
+    if (!picked.ok) throw new WorkflowError([{ level: "error", code: picked.code, message: picked.detail }]);
+    const mode = picked.mode;
     const goals = goalsSchema.parse(input.goals ?? []);
     const runId = `wfrun_${randomUUID().replaceAll("-", "")}`;
     const j = this.journal, at = this.now();

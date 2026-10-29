@@ -305,7 +305,8 @@ export const workflowSchema = z.object({
   }).strict().default({ maxSteps: 60, maxFanOut: 12, maxSubworkflowDepth: MAX_SUBWORKFLOW_DEPTH }),
   /**
    * `default` is `$mode` when the run is started without one; `effect` says in words what the mode changes here; `min` raises a lower
-   * request to this mode (a refactor is never run `quick`); `fixed` is the mode whatever is asked (a companion run is always `quick`).
+   * request to this mode (a refactor is never run `quick`); `fixed` is the mode of an inherited `$mode`. A task contract or an
+   * explicit input of `full` inside `fixed: quick` is a conflict, not a silent quick (quality-mode.ts).
    */
   quality_mode: z.object({ default: z.enum(QUALITY_MODES).default("standard"), effect: z.string().max(600).optional(), min: z.enum(QUALITY_MODES).optional(), fixed: z.enum(QUALITY_MODES).optional() }).strict().optional(),
   triggers: z.array(trigger).max(10).default([]),

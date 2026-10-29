@@ -96,7 +96,7 @@ export const WORKFLOW_REFERENCE = {
   guards: "every loop needs `maxVisits` on one of its nodes or a `visits()` condition; `maxAttempts` (at most 5) retries a step; `timeoutSec` bounds one; guards.maxSteps (default 60) and `budget` {maxSteps, maxTokens, maxCostUsd, maxWallSeconds} cap a run (over budget: the run is blocked)",
   edges: "`from: start` begins the chain; every path ends in an `emit` action (or an edge to `end`); several conditional edges plus at most one unconditional fallback leave a node",
   skipping: "`applicable_modes` (the node runs only in these quality modes), `skip_when` (an expression) and `skip_out` (the output of a skipped node; required when a later node reads its fields)",
-  workflowQualityMode: "workflow `quality_mode` {default, effect, min, fixed}: `min` raises a lower request, `fixed` ignores it; an lp-task node may carry its own",
+  workflowQualityMode: "workflow `quality_mode` {default, effect, min, fixed}: order is contract, node, workflow, project; `min` raises a lower request; `fixed` wins over an inherited mode; a contract or explicit input of full inside fixed quick is a conflict, not a silent quick",
   roles: {
     "analyst, planner, auditor, debugger": "read-only thin roles: they read the code graph (gitnexus) and nothing else, no browser, no accounts. An unknown role, the default `worker` included, runs as `analyst`",
     "plan-critic, pm-reader, council, memory": "answer from the message alone: no tools, no code graph",
