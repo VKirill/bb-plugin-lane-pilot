@@ -132,8 +132,10 @@ export function resolveAgentModel(input: AgentModelInput): AgentModel {
   type Candidate = { providerId: string; model: string; effort: string; source: AgentModelSource; sourceKey: string | null };
   const first: Candidate = { providerId: chosen.providerId, model: chosen.model, effort: chosen.effort, source: chosen.source === "default" ? "role-default" : chosen.source, sourceKey: chosen.sourceKey };
   // The owner's row may share the role between several models (its pool): the least loaded provider takes this run, the others follow it.
+  // A Claude Code agent profile role (a specialist, the workflow architect) takes only Claude models of its pool: another provider refuses the profile.
+  const profileOnly = CLAUDE_PROFILE_ROLES.has(row.id);
   const pool: Candidate[] = chosen.source === "table"
-    ? tablePoolAt(input.settings, row.id).map(({ option, effort }) => ({ providerId: option.providerId, model: option.id, effort: effort ?? pickedEffort(row, option), source: "table", sourceKey: chosen.sourceKey }))
+    ? tablePoolAt(input.settings, row.id).filter(({ option }) => !profileOnly || option.providerId === "claude-code").map(({ option, effort }) => ({ providerId: option.providerId, model: option.id, effort: effort ?? pickedEffort(row, option), source: "table", sourceKey: chosen.sourceKey }))
     : [];
   const candidates: Candidate[] = rankPool([first, ...pool], input.load, input.spent);
   // A background row the owner left on its default tries ZCode's free tokens first, only where the caller says ZCode can work now (its machine,

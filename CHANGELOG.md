@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.366
+
+**A specialist's or the workflow architect's pool keeps only Claude models.** Both run as a Claude Code agent profile, which another provider refuses (HTTP 409 «native profile needs Claude Code»); a pool entry of another provider could have been picked as the least loaded and failed the spawn. Their pool is now read for `claude-code` entries only. The global role table now spreads every other role over Claude, Codex, Gemini (9router) and GLM (Z.AI coding plan).
+
 ## 0.1.365
 
 **The table «role -> model» takes any provider's model, in BB's own window.** A role's model was one of ten table models in a plain list. Each row now opens BB's own provider/model window (the composer's: provider tabs, search, reasoning), so any provider the machines have can work a role: Grok on Cursor, GLM on the Z.AI coding plan, Composer. The «+» of the pool opens the same window. A pick names its provider (`role_model.<role>` = `{ provider, model, reasoning_effort?, pool: [{ provider, model, reasoning_effort? }] }`); a table model named alone keeps working, a table model on the other native provider (Claude Opus on `codex`) is refused. A model outside the table has its family read off the name, `other` when the name says nothing, so the cross-family rule for judges treats it as another family.

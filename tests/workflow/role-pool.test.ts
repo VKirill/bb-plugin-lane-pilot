@@ -47,4 +47,10 @@ describe("a role with a pool of models", () => {
     expect(picked).toMatchObject({ providerId: "opencode2", model: "zai-coding-plan/glm-5.3-flash", source: "table" });
     expect(resolveAgentModel({ role: "errand", settings: { "role_model.errand": any }, pm: null })).toMatchObject({ providerId: "acp-cursor", model: "grok-4.6", reasoningEffort: "high" });
   });
+
+  it("a Claude Code profile role keeps only the Claude models of its pool", () => {
+    const pooled = { "role_model.specialist": { model: "claude-opus-5-5", pool: [{ model: "gpt-6.1-sol" }, { model: "claude-sonnet-5-5" }] } };
+    const busyClaudeOpus = (providerId: string, model?: string) => (model === "claude-opus-5-5" ? { percent: 90, recent: 0 } : { percent: providerId === "codex" ? 0 : 10, recent: 0 });
+    expect(resolveAgentModel({ role: "specialist", settings: pooled, pm: null, load: busyClaudeOpus as never })).toMatchObject({ providerId: "claude-code", model: "claude-sonnet-5-5" });
+  });
 });
