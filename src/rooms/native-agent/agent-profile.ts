@@ -14,6 +14,18 @@ export const MAIN_AGENT_PROFILE_IDS = [
   "tavily",
   "video-lead",
   WORKFLOW_ARCHITECT_ID,
+  // (2026-10-29 lane-stack port) standalone roles. browser-qa stays reserved for the lp.browser-qa graph.
+  "advisor-researcher",
+  "ai-researcher",
+  "animator",
+  "doc-classifier",
+  "domain-researcher",
+  "eval-auditor",
+  "eval-planner",
+  "framework-selector",
+  "mempalace-curator",
+  "nyquist-auditor",
+  "ui-researcher",
 ] as const;
 
 export const compiledMainAgentSchema = z.object({
