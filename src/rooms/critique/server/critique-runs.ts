@@ -336,6 +336,26 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
  * The BB environment the task's attempt works in. BB refuses a thread at a path inside an environment's directory
  * (HTTP 409 «reuse that environment instead»), so a critic of a worktree attempt runs in that environment.
  */
+/**
+ * The change of each produced file as BB's own unified diff (environments.diffPatch, uncommitted) in the attempt's environment, else
+ * in the BB environment at the task folder. A path BB cut or could not diff is left out: the packet then shows its file.
+ */
+export async function candidatePatches(bb:{ sdk:{ environments:{ list:(args:{ hostId:string; path:string }) => Promise<Array<{ id:string }>>; diffPatch:(args:{ environmentId:string; paths:string[]; target:{ type:"uncommitted" } }) => Promise<unknown> } } },
+  db:ReturnType<typeof openDatabase>, input:{ runId:string; taskId:string; hostId:string; cwd:string; paths:string[] }):Promise<Record<string,string>> {
+  if (!input.paths.length) return {};
+  try {
+    const environmentId = attemptEnvironment(db, input.runId, input.taskId, input.cwd)?.environmentId
+      ?? (await bb.sdk.environments.list({ hostId:input.hostId, path:input.cwd }))[0]?.id;
+    if (!environmentId) return {};
+    const result = await bb.sdk.environments.diffPatch({ environmentId, paths:input.paths, target:{ type:"uncommitted" } }) as { outcome?:string; patches?:Array<{ path:string; patch:string; truncated:boolean }> };
+    if (result.outcome !== "available") return {};
+    const wanted = new Set(input.paths);
+    return Object.fromEntries((result.patches ?? []).filter((row) => wanted.has(row.path) && !row.truncated && row.patch).map((row) => [row.path, row.patch]));
+  } catch {
+    return {};
+  }
+}
+
 export function attemptEnvironment(db:ReturnType<typeof openDatabase>, runId:string, taskId:string, path:string):{ type:"reuse"; environmentId:string } | null {
   const row = db.prepare(`SELECT environment_id AS environmentId FROM lane_pilot_attempt
     WHERE run_id=? AND task_id=? AND workspace_path=? AND environment_id IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(runId, taskId, path) as { environmentId:string } | undefined;

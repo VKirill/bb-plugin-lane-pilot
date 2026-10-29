@@ -146,7 +146,7 @@ describe("code critique policy", () => {
     })).toMatchObject({ repairRound:1, spawnAttempted:true, repairThreadId:"thr_repair" });
   });
 
-  it("marks verification stdout/stderr truncation at N+1 and keeps N complete", () => {
+  it("keeps output up to the limit whole and cuts a longer one to its head and tail without blocking", () => {
     const content = "ok\n";
     const hashes = { "note.txt": sha256Text(content) };
     const atLimit = "x".repeat(MAX_VERIFICATION_IO_BYTES);
@@ -157,20 +157,17 @@ describe("code critique policy", () => {
     });
     expect(complete.truncated).toBe(false);
     expect(complete.verification[0]?.stdout).toBe(atLimit);
+    // A lint with 247 warnings blocked every gated selfystudio task (2026-10-29): the error at the end must reach the critic.
+    const long = `${"warning: unused\n".repeat(600)}error: the real failure\n`;
     const over = buildCandidateEvidence({
       produced:["note.txt"], hashes, files:[{ path:"note.txt", content }],
-      verification:[{ command:"echo", exitCode:0, stdout:atLimit + "y", stderr:"" }],
+      verification:[{ command:"npm run lint", exitCode:1, stdout:"", stderr:long }],
       output:"ok", ownsPaths:["note.txt"], neverTouch:[".git/**"], dirtOk:true,
     });
-    expect(over.truncated).toBe(true);
-    expect(over.truncateReason).toContain("verification_io_truncated");
-    expect(over.verification[0]?.stdout).toBe(atLimit);
-    const stderrOver = buildCandidateEvidence({
-      produced:["note.txt"], hashes, files:[{ path:"note.txt", content }],
-      verification:[{ command:"echo", exitCode:1, stdout:"", stderr:atLimit + "z" }],
-      output:"ok", ownsPaths:["note.txt"], neverTouch:[".git/**"], dirtOk:true,
-    });
-    expect(stderrOver.truncateReason).toContain("verification_io_truncated");
+    expect(over.truncated).toBe(false);
+    expect(over.verification[0]?.stderr).toContain("error: the real failure");
+    expect(over.verification[0]?.stderr).toContain("bytes cut by Lane Pilot");
+    expect(Buffer.byteLength(over.verification[0]!.stderr, "utf8")).toBeLessThan(MAX_VERIFICATION_IO_BYTES + 100);
   });
 
   it("marks unknown when host-read bytes do not match the captured path hash", () => {

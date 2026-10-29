@@ -191,9 +191,14 @@ export function parseCodeCritiqueSettings(settings: Record<string, unknown>): Co
   };
 }
 
-const MAX_CRITIQUE_PACKET_BYTES = 24 * 1024;
+// The packet carries each file's change as a unified diff from BB (environments.diffPatch) and the whole file only when it is small:
+// a 30-line edit in a 40 KB file used to cut the file to its first 8 KB and block every gated task (selfystudio, 2026-10-29: 13 of
+// 14 code critiques that week ended code_critique_evidence_unknown:packet_truncated).
+const MAX_CRITIQUE_PACKET_BYTES = 96 * 1024;
 export const MAX_FILE_EXCERPT_BYTES = 8 * 1024;
 export const MAX_VERIFICATION_IO_BYTES = 4_000;
+/** Of a long command output the critic sees the head and the tail (errors come last); the cut is said, it does not block. */
+const VERIFICATION_IO_HEAD_BYTES = 1_000;
 
 export function buildCandidateEvidence(input: {
   produced: string[];
@@ -201,6 +206,8 @@ export function buildCandidateEvidence(input: {
   baselineHashes?: Record<string, string | null>;
   verification: Array<{ command: string; exitCode: number; stdout?: string; stderr?: string }>;
   files?: Array<{ path: string; content: string | null }>;
+  /** Unified diff per produced path (BB environments.diffPatch, uncommitted); a path without one is shown as its whole file. */
+  patches?: Record<string, string>;
   output: string;
   ownsPaths: string[];
   neverTouch: string[];
@@ -221,36 +228,30 @@ export function buildCandidateEvidence(input: {
     if (typeof raw !== "string") continue;
     const captured = input.hashes[path];
     if (captured && sha256Text(raw) !== captured) hashMismatches.push(path);
-    const excerptBytes = Buffer.from(raw, "utf8");
-    const content = excerptBytes.byteLength > MAX_FILE_EXCERPT_BYTES
-      ? excerptBytes.subarray(0, MAX_FILE_EXCERPT_BYTES).toString("utf8")
-      : raw;
-    if (excerptBytes.byteLength > MAX_FILE_EXCERPT_BYTES) packetOver = true;
-    const header = Buffer.byteLength(path, "utf8") + Buffer.byteLength(content, "utf8");
-    if (packetBytes + header > MAX_CRITIQUE_PACKET_BYTES) { packetOver = true; break; }
-    packetBytes += header;
+    const patch = input.patches?.[path];
+    const small = Buffer.byteLength(raw, "utf8") <= MAX_FILE_EXCERPT_BYTES;
+    // A large file without a diff cannot be shown whole: that alone is unknown evidence. With its diff the change is complete.
+    if (!small && typeof patch !== "string") packetOver = true;
+    const content = small ? raw : typeof patch === "string" ? "" : Buffer.from(raw, "utf8").subarray(0, MAX_FILE_EXCERPT_BYTES).toString("utf8");
     const current = input.hashes[path] ?? null;
     const baseline = baselineHashes[path] ?? null;
-    files.push({
-      path,
-      sha256: current,
-      baselineSha256: baseline,
-      content,
-      diff: baseline && current && baseline !== current
-        ? `hash ${baseline} -> ${current}\n${content}`
-        : `new ${current ?? "unknown"}\n${content}`,
-    });
+    const diff = typeof patch === "string"
+      ? patch
+      : baseline && current && baseline !== current ? `hash ${baseline} -> ${current}\n${content}` : `new ${current ?? "unknown"}\n${content}`;
+    const header = Buffer.byteLength(path, "utf8") + Buffer.byteLength(content, "utf8") + (typeof patch === "string" ? Buffer.byteLength(patch, "utf8") : 0);
+    if (packetBytes + header > MAX_CRITIQUE_PACKET_BYTES) { packetOver = true; break; }
+    packetBytes += header;
+    files.push({ path, sha256: current, baselineSha256: baseline, content, diff });
   }
-  let verifyIoTruncated = false;
   const verification: CritiqueVerifyPacket[] = input.verification.map((row) => {
+    // Lane Pilot ran these commands itself and holds their exit codes; a long output (a lint with 247 warnings) is cut to its head
+    // and tail with the cut said, and is no longer unknown evidence (2026-10-29).
     const bound = (value: string | undefined) => {
       if (typeof value !== "string") return "";
       const bytes = Buffer.from(value, "utf8");
-      if (bytes.byteLength > MAX_VERIFICATION_IO_BYTES) {
-        verifyIoTruncated = true;
-        return bytes.subarray(0, MAX_VERIFICATION_IO_BYTES).toString("utf8");
-      }
-      return value;
+      if (bytes.byteLength <= MAX_VERIFICATION_IO_BYTES) return value;
+      const tail = MAX_VERIFICATION_IO_BYTES - VERIFICATION_IO_HEAD_BYTES;
+      return `${bytes.subarray(0, VERIFICATION_IO_HEAD_BYTES).toString("utf8")}\n[… ${bytes.byteLength - MAX_VERIFICATION_IO_BYTES} bytes cut by Lane Pilot …]\n${bytes.subarray(bytes.byteLength - tail).toString("utf8")}`;
     };
     return {
       command: row.command,
@@ -266,7 +267,6 @@ export function buildCandidateEvidence(input: {
   if (missingHash.length) reasons.push(`missing_hash:${missingHash.join(",")}`);
   if (missingContent.length) reasons.push(`missing_content:${missingContent.join(",")}`);
   if (missingVerifyIo) reasons.push("missing_verification_io");
-  if (verifyIoTruncated) reasons.push("verification_io_truncated");
   if (hashMismatches.length) reasons.push(`content_hash_mismatch:${hashMismatches.join(",")}`);
   if (packetOver) reasons.push("packet_truncated");
   const truncated = reasons.length > 0;

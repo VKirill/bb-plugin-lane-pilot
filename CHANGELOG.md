@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.383
+
+- **Code critic packet.** The critic gets each file's change as BB's own unified diff (`environments.diffPatch`, uncommitted, in the attempt's environment) and the whole file only when it is small; the packet holds 96 KB. A 30-line edit in a large file used to cut the file to its first 8 KB and the gated critic blocked the task with `code_critique_evidence_unknown:packet_truncated` (13 of 14 code critiques on the hub that week, selfystudio). A long check output is cut to its head and tail with the cut said, and no longer blocks.
+
 ## 0.1.382
 
 - **Guard.** A quoted heredoc body inside a `bash -c` script is data again (a regression of the A-023 rewrite, caught by Claude Lane's own guard test); a real `git push --force` after a newline in the script is still refused.

@@ -12,7 +12,7 @@ import type { WriterIdentity } from "../../critique";
 import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode } from "../../critique";
 import { loadCriticCodeDefault } from "./critic-override";
 import { runPlanFactStage } from "./plan-fact";
-import { runCodeCritique } from "../../critique/server";
+import { candidatePatches, runCodeCritique } from "../../critique/server";
 import { fullAccessSpawn } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { closeWriterStages, recordGateEvaluation, recordStage } from "../../runs/server";
@@ -338,6 +338,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           hashes,
           baselineHashes,
           files,
+          patches:await candidatePatches(bb, db, { runId:input.runId, taskId:input.taskId, hostId:input.config.hostId, cwd:input.task.project_cwd, paths:candidate.produced ?? [] }),
           verification:(candidate.verification ?? []).map((row) => ({
             command:row.command, exitCode:row.exitCode,
             stdout:row.stdout, stderr:row.stderr,
