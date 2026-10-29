@@ -6,7 +6,7 @@
 
 ## 0.1.368
 
-**The team roster names what every role runs on.** Half the rows of the Team tab's roster showed «—» in the model column (the code repair, the night fixer, the gate triage, errands, the five specialists, the analyst, planner, auditor and debugger), and the critics, memory and docs still showed the old stage pickers although a row of the table «role -> model» now outranks them. A role's model column now reads the table: its model, effort and «+N» for the other models of its pool (the hint says it is set in the table above); the code repair and the night fixer say they run on the task writer's model. An old stage picker stays only while no row of the table outranks it. The writer, the rules analyzer and the onboarder keep their own pickers.
+**The team roster names what every role runs on.** Half the rows of the Team tab's roster showed «—» in the model column (the code repair, the night fixer, the gate triage, errands, the five specialists, the analyst, planner, auditor and debugger), and the critics, memory and docs still showed the old stage pickers although a row of the table «role -> model» now outranks them. A role's model column now reads the table: its model, effort and «+N» for the other models of its pool (the hint says it is set in the table above); the code repair and the night fixer say they run on the task writer's model. An old stage picker stays only while no row of the table outranks it. The writer, the rules analyzer and the onboarder keep their own pickers. The model column is BB's own provider/model window, as in the table «role -> model» above: a choice there is saved into the role's row of the table, its pool kept, and the two views read each other's saves.
 
 ## 0.1.367
 

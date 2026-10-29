@@ -95,11 +95,18 @@ describe("the table «role -> model» on the Team tab", () => {
 
   it("the roster above names what a role runs on instead of a dash: the table's row with its pool, or the task writer's model", async () => {
     installPickerTestDriver();
-    const { rpc } = tableRpc(view({ analyst: { source: "table", own: true, version: 1, model: "claude-opus-5-5", effort: "high", sourceKey: "role_model.analyst", pool: [{ providerId: "codex", model: "gpt-6.1-sol", effort: null }] } }));
+    const { rpc, calls } = tableRpc(view({ analyst: { source: "table", own: true, version: 1, model: "claude-opus-5-5", effort: "high", sourceKey: "role_model.analyst", pool: [{ providerId: "codex", model: "gpt-6.1-sol", effort: null }] } }));
     const slot = await mountPage(rpc);
     await openTeam(slot);
-    await waitFor(() => expect(slot.getByTestId("team-model-analyst").textContent).toBe("Opus 5.5 · high +1"));
+    const analyst = await picker(slot, "team-model-analyst");
+    expect(analyst.getAttribute("data-model")).toBe("claude-opus-5-5");
+    expect(slot.getByTestId("team-model-analyst").textContent).toContain("+1");
     expect(slot.getByTestId("team-model-code-repair").textContent).toBe(en.teamModelAsWriter);
+    // A choice in the roster's window goes into the role's row of the table, its pool kept.
+    await choosePickerValue({ providerId: "acp-cursor", model: "grok-4.6", reasoningLevel: "medium" }, analyst);
+    await waitFor(() => expect(saves(calls)).toHaveLength(1));
+    expect(saves(calls)[0]!.input).toMatchObject({ key: roleModelKey("analyst"), expectedVersion: 1,
+      value: { provider: "acp-cursor", model: "grok-4.6", reasoning_effort: "medium", pool: [{ provider: "codex", model: "gpt-6.1-sol" }] } });
     slot.lifecycle.unmount();
   });
 

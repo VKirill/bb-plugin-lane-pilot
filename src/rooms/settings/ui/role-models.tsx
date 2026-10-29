@@ -28,7 +28,7 @@ const whyKey = (role: string) => `roleModelWhy_${role.replace(/-/g, "_")}` as I1
  * place the page shows (global, project or section) as the setting `role_model.<role>`; «Default» drops that row. A role whose model comes
  * from a setting made before the table says so. The writer of a task is not here: it is picked per task from the writers' anamnesis.
  */
-export function RoleModelsPanel({ page }: { page: LpPage }) {
+export function RoleModelsPanel({ page, refreshKey = 0, onSaved }: { page: LpPage; refreshKey?: number; onSaved?: () => void }) {
   const { rpc, projectId, selectedSectionId, isGlobal } = page;
   const [view, setView] = useState<View | null>(null);
   const [error, setError] = useState("");
@@ -40,7 +40,7 @@ export function RoleModelsPanel({ page }: { page: LpPage }) {
     if (!projectId) return Promise.resolve();
     return rpc.call("get_role_models", place).then((next: View) => { setView(next); setError(""); }, (cause: unknown) => { setView(null); setError(fill(t("roleModelsLoadFailed"), { error: message(cause) })); });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rpc, projectId, selectedSectionId]);
+  }, [rpc, projectId, selectedSectionId, refreshKey]);
   useEffect(() => { void load(); }, [load]);
 
   const save = async (row: Row, value: RowValue | null) => {
@@ -53,7 +53,9 @@ export function RoleModelsPanel({ page }: { page: LpPage }) {
       // The table is read again either way (a refused save leaves it as it was); the reason is told after, or the read would wipe it.
       const why = result.ok ? "" : String(result.validation ? result.validation.params[1] ?? result.validation.code : result.conflict ? "conflict" : "refused");
       await load();
+      // Only a save that went in changes the roster above; a refused one keeps its reason on screen.
       if (why) setError(fill(t("roleModelsSaveFailed"), { error: why }));
+      else onSaved?.();
     } catch (cause) { setError(fill(t("roleModelsSaveFailed"), { error: message(cause) })); }
     setBusy(false);
   };

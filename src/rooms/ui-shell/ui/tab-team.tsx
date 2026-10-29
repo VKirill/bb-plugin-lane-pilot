@@ -19,7 +19,10 @@ import type { LpPage } from "./use-lp-page";
 import { roleRowOf } from "@lane-pilot/models";
 
 /** A row of the table «role -> model» as `get_role_models` reads it for the place: what the role runs on now. */
-type TableRole = { role: string; providerId: string; model: string; effort: string; source: "table" | "stage" | "default"; pool: ReadonlyArray<unknown> };
+type TableRole = { role: string; providerId: string; model: string; effort: string; source: "table" | "stage" | "default"; version: number;
+  pool: ReadonlyArray<{ providerId: string; model: string; effort: string | null }> };
+/** The picker's levels a table row may store (the table's efforts); «none» and the rest leave the effort to the model's default. */
+const TABLE_EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
 /** Roles that run on the model of the task's writer, not on a row of the table. */
 const AS_WRITER = new Set(["code-repair", "night-fixer"]);
 /** Roles that keep a picker of their own outside the table: the writer, the rules analyzer (its own config) and the onboarder. */
@@ -60,9 +63,9 @@ function useRoleModel(page: LpPage) {
 }
 
 /** One role of the table: name, on/off, model picker, origin and access, with a drawer for what is specific to the role. */
-function RoleRow({ spec, page, access, rules, open, onToggle, fallbackNames, tableRoles }: {
+function RoleRow({ spec, page, access, rules, open, onToggle, fallbackNames, tableRoles, saveTableRole }: {
   spec: RoleSpec; page: LpPage; access: AccessApi; rules: ReturnType<typeof useRulesAnalyzer>; open: boolean; onToggle: () => void; fallbackNames: ReadonlyMap<string, string>;
-  tableRoles: ReadonlyMap<string, TableRole> | null;
+  tableRoles: ReadonlyMap<string, TableRole> | null; saveTableRole: (row: TableRole, next: { providerId: string; model: string; reasoningLevel: string }) => void;
 }) {
   const { data, isGlobal, selectedSectionId, displayedValue, applySetting, catalogRow, modelPicker, pickerValue, saveWriterSelection, pickers, inheritReset, stackControls, wideTable } = page;
   const id = roleKey(spec.id);
@@ -104,8 +107,11 @@ function RoleRow({ spec, page, access, rules, open, onToggle, fallbackNames, tab
   else if (!OWN_PICKER.has(spec.id)) {
     const row = tableRoles?.get(roleRowOf(spec.id));
     if (row && (row.source === "table" || !spec.model || spec.detail === "browser" || spec.detail === "council")) {
-      const label = `${fallbackNames.get(`${row.providerId}/${row.model}`) ?? row.model} · ${row.effort}${row.pool.length ? ` +${row.pool.length}` : ""}`;
-      model = <span className="min-w-0 truncate text-xs" title={t("teamModelFromTable")} data-testid={`team-model-${spec.id}`}>{label}</span>;
+      // BB's own window, as everywhere; a choice is saved into the role's row of the table (its pool stays), «+N» is the rest of the pool.
+      model = <div className="flex min-w-0 items-center gap-1.5" title={t("teamModelFromTable")} data-testid={`team-model-${spec.id}`}>
+        <div className="min-w-0 flex-1">{modelPicker({ providerId: row.providerId, model: row.model, reasoningLevel: row.effort as never }, (next) => saveTableRole(row, next))}</div>
+        {row.pool.length ? <span className="shrink-0 text-xs text-muted-foreground">+{row.pool.length}</span> : null}
+      </div>;
     }
   }
 
@@ -229,15 +235,24 @@ export function TeamTab({ page }: { page: LpPage }) {
     return () => { live = false; };
   }, [rpc, projectId]);
   const fallbackNames = useMemo(() => fallbackModelNames(catalog), [catalog]);
-  // The table «role -> model» of this place, read again whenever the page's settings change (a save in the table above changes them).
+  // The table «role -> model» of this place, read again whenever the page's settings change or either view of the table saves a row.
   const [tableRoles, setTableRoles] = useState<ReadonlyMap<string, TableRole> | null>(null);
+  const [tableTick, setTableTick] = useState(0);
+  const saveTableRole = (row: TableRole, next: { providerId: string; model: string; reasoningLevel: string }) => {
+    const effort = TABLE_EFFORTS.has(next.reasoningLevel) ? next.reasoningLevel : null;
+    const pool = row.pool.filter((entry) => !(entry.providerId === next.providerId && entry.model === next.model))
+      .map((entry) => ({ provider: entry.providerId, model: entry.model, ...(entry.effort ? { reasoning_effort: entry.effort } : {}) }));
+    const value = { provider: next.providerId, model: next.model, ...(effort ? { reasoning_effort: effort } : {}), ...(pool.length ? { pool } : {}) };
+    void rpc.call("save_setting", { projectId: projectId!, ...(selectedSectionId ? { sectionId: selectedSectionId } : {}), key: `role_model.${row.role}`, value, expectedVersion: row.version })
+      .finally(() => setTableTick((tick) => tick + 1));
+  };
   useEffect(() => {
     let live = true;
     if (!projectId) return;
     void rpc.call("get_role_models", { projectId, ...(selectedSectionId ? { sectionId: selectedSectionId } : {}) })
       .then((value: { roles: TableRole[] }) => { if (live) setTableRoles(new Map(value.roles.map((row) => [row.role, row]))); }, () => undefined);
     return () => { live = false; };
-  }, [rpc, projectId, selectedSectionId, data]);
+  }, [rpc, projectId, selectedSectionId, data, tableTick]);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const toggle = (id: string) => setOpen((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const wide = wideTable && !stackControls;
@@ -254,7 +269,7 @@ export function TeamTab({ page }: { page: LpPage }) {
   return (
     <div className="space-y-6" data-testid="agent-access" data-scope={access.scope}>
       {isGlobal ? null : <PmRow page={page} />}
-      <RoleModelsPanel page={page} />
+      <RoleModelsPanel page={page} refreshKey={tableTick} onSaved={() => setTableTick((tick) => tick + 1)} />
       <Surface testId="team-table">
         <SurfaceHeader className="justify-between"><h2 className="text-sm font-medium">{t("teamTitle")}</h2></SurfaceHeader>
         <SurfaceBody className="space-y-3">
@@ -270,7 +285,7 @@ export function TeamTab({ page }: { page: LpPage }) {
                 <section key={group.id} data-testid={`access-section-${group.id}`}>
                   <h3 className="border-t border-[var(--lp-hairline)] bg-[var(--lp-well)] px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground first:border-t-0">{t(`accessGroup_${group.id}` as I18nKey)}</h3>
                   {group.roles.map((spec) => (
-                    <RoleRow key={spec.id} spec={spec} page={page} access={access} rules={rules} open={open.has(spec.id)} onToggle={() => toggle(spec.id)} fallbackNames={fallbackNames} tableRoles={tableRoles} />
+                    <RoleRow key={spec.id} spec={spec} page={page} access={access} rules={rules} open={open.has(spec.id)} onToggle={() => toggle(spec.id)} fallbackNames={fallbackNames} tableRoles={tableRoles} saveTableRole={saveTableRole} />
                   ))}
                 </section>
               ))}
