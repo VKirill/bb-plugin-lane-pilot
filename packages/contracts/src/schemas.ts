@@ -308,7 +308,15 @@ export const modelCatalogSchema = z.object({
 }).strict();
 export const workflowStatsSchema = z.object({
   runs: z.number().int(), succeeded: z.number().int(), failed: z.number().int(), active: z.number().int(),
-  /** Succeeded over finished runs; null before any run has finished. */
+  /** The graph executed (engine status succeeded). */
+  executed: z.number().int(),
+  /** The output was completed work, not a refusal, an escalation or an unfinished run. */
+  workDone: z.number().int(),
+  /** The graph executed and the output was a correct refusal (`blocked`). */
+  refused: z.number().int(),
+  /** The graph executed and handed the job on (`proposed`). Not completed work and not a failure. */
+  escalated: z.number().int(),
+  /** Completed work over executed runs plus engine failures; null before any of those exist. */
   successRate: z.number().nullable(), lastRunAt: z.number().int().nullable(), lastStatus: z.string().nullable(), lastRunId: z.string().nullable(),
 }).strict();
 export const workflowSummarySchema = z.object({

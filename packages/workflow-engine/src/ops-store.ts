@@ -1,5 +1,6 @@
 import type { LanePilotDatabase } from "./db";
 
+import { workflowFinish } from "./business-outcome";
 import { legacyDefinitionSha256, type StoredWorkflow } from "./store";
 import type { Workflow } from "./schema";
 import type { WorkflowProblem } from "./validate";
@@ -89,15 +90,18 @@ export function createStatusResolver(db: LanePilotDatabase) {
   const receipt = (workflowId: string, sha256: string) =>
     db.prepare("SELECT green, results_json, at FROM lane_pilot_wf_test WHERE workflow_id=? AND definition_sha256=?").get(workflowId, sha256) as { green: number; results_json: string; at: number } | undefined;
   /**
-   * The newest live run of this version that proves the chain: a succeeded top-level run, and, when the chain says which final
-   * statuses count (`live_success`), one that ended with one of them (a run also succeeds on the branches that did not do the job).
+   * The newest live run of this version that did the job: engine succeeded, and the shared outcome says the output is completed work
+   * (a chain's `live_success` list, otherwise anything that is not a refusal, an escalation or a known failure).
    */
   const liveSuccess = (workflowId: string, version: number, rule?: Workflow["live_success"]) => {
     const rows = db.prepare("SELECT id, updated_at, output_json FROM lane_pilot_wf_run WHERE workflow_id=? AND workflow_version=? AND status='succeeded' AND parent_run_id IS NULL ORDER BY updated_at DESC LIMIT 200")
       .all(workflowId, version) as Array<{ id: string; updated_at: number; output_json: string | null }>;
     const proves = (row: { output_json: string | null }) => {
-      if (!rule) return true;
-      try { return rule.in.includes(String((JSON.parse(row.output_json ?? "null") as Record<string, unknown> | null)?.[rule.output])); } catch { return false; }
+      try {
+        const parsed = JSON.parse(row.output_json ?? "null") as unknown;
+        const output = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+        return workflowFinish(output, rule ?? null).ok;
+      } catch { return false; }
     };
     const hit = rows.find(proves);
     return hit ? { id: hit.id, updated_at: hit.updated_at } : undefined;

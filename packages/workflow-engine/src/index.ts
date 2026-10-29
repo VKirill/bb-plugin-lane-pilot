@@ -1,4 +1,5 @@
 export * from "./actions";
+export * from "./business-outcome";
 export * from "./agent-output";
 export * from "./artifacts";
 export * from "./capabilities";

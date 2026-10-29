@@ -7,7 +7,7 @@ import { sha256Text } from "../../storage";
 import { parseGoals } from "@lane-pilot/workflow-engine";
 import { createStatusResolver } from "../../storage";
 import { globalWorkflowDir, loadWorkflowStore, nodeFileSource, projectWorkflowDir, type StoredWorkflow, type WorkflowFileSource, type WorkflowStore } from "../../storage";
-import { workflowView, type WorkflowView } from "@lane-pilot/workflow-engine";
+import { tallyOutcomes, workDoneRate, workflowView, type WorkflowView } from "@lane-pilot/workflow-engine";
 import type { ServerCore } from "../../core/server";
 import type { Services } from "../../core/server";
 
@@ -16,7 +16,6 @@ export type WorkflowSummary = Output<"workflow_list">["workflows"][number];
 export type WorkflowStats = WorkflowSummary["stats"];
 type ProjectState = Output<"workflow_list">["project"];
 
-const FAILED = ["failed", "blocked", "interrupted"];
 const RECENT_RUNS = 10;
 const STEP_OUTPUT_LIMIT = 4_000;
 const EVENT_TAIL = 80;
@@ -70,14 +69,12 @@ export function createWorkflowLibrary(ctx: ServerCore, services: Pick<Services, 
   function statsFor(workflowId: string, projectId?: string): WorkflowStats {
     const where = projectId ? "workflow_id=? AND project_id=?" : "workflow_id=?";
     const args = projectId ? [workflowId, projectId] : [workflowId];
-    const row = db.prepare(`SELECT COUNT(*) AS runs,
-        COALESCE(SUM(status='succeeded'),0) AS ok,
-        COALESCE(SUM(status IN (${FAILED.map(() => "?").join(",")})),0) AS bad,
-        COALESCE(SUM(status IN ('running','waiting')),0) AS active
-      FROM lane_pilot_wf_run WHERE ${where}`).get(...FAILED, ...args) as { runs: number; ok: number; bad: number; active: number };
+    // ponytail: the same full scan as runRecords. Ceiling: a workflow with a very long history. Upgrade: a stored outcome column.
+    const rows = db.prepare(`SELECT status, output_json, definition_json FROM lane_pilot_wf_run WHERE ${where}`).all(...args) as Array<{ status: string; output_json: string | null; definition_json: string | null }>;
+    const tally = tallyOutcomes(rows);
     const last = db.prepare(`SELECT id, status, created_at FROM lane_pilot_wf_run WHERE ${where} ORDER BY created_at DESC, rowid DESC LIMIT 1`).get(...args) as { id: string; status: string; created_at: number } | undefined;
-    const finished = row.ok + row.bad;
-    return { runs: row.runs, succeeded: row.ok, failed: row.bad, active: row.active, successRate: finished > 0 ? row.ok / finished : null,
+    return { runs: tally.runs, succeeded: tally.executed, failed: tally.engineBad, active: tally.active, successRate: workDoneRate(tally),
+      executed: tally.executed, workDone: tally.workDone, refused: tally.refused, escalated: tally.escalated,
       lastRunAt: last?.created_at ?? null, lastStatus: last?.status ?? null, lastRunId: last?.id ?? null };
   }
 

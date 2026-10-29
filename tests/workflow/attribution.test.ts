@@ -37,7 +37,7 @@ describe("runs of the old per-task pipeline", () => {
     expect(await stats("lp-task-pipeline")).toMatchObject({ runs: 25, succeeded: 21, failed: 4 });
     expect(await stats("review-fix")).toMatchObject({ runs: 1 });
     // The router's record reads the same attribution.
-    expect(runRecords(db).get("analyze-plan-execute")).toEqual({ succeeded: 1, failed: 0, lastRunAt: 200 });
+    expect(runRecords(db).get("analyze-plan-execute")).toEqual({ succeeded: 1, failed: 0, lastRunAt: 200, executed: 1, workDone: 1, refused: 0, escalated: 0 });
     expect(runRecords(db).get("lp-task-pipeline")).toMatchObject({ succeeded: 21, failed: 4 });
     // Running the update again moves nothing more.
     db.prepare(PIPELINE_RUNS_ATTRIBUTION).run();

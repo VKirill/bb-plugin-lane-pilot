@@ -45,11 +45,15 @@ describe("a tested chain becomes published only after a live run that did the jo
     }
   });
 
-  it("a chain without a rule keeps the old meaning: any succeeded run proves it", () => {
+  it("F-004: a succeeded run that did not do the job does not prove a chain", () => {
     const db = journalDb();
     const resolver = createStatusResolver(db);
     const plain = { ...load("invoice-send"), id: "plain", live_success: undefined };
     run(db, plain, "r1", { status: "aborted" });
+    expect(resolver.resolve(stored(plain)).status).toBe("tested");
+    run(db, plain, "r2", { status: "blocked" });
+    expect(resolver.resolve(stored(plain)).status).toBe("tested");
+    run(db, plain, "r3", { status: "done" });
     expect(resolver.resolve(stored(plain)).status).toBe("published");
   });
 });

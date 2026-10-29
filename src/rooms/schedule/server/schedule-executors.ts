@@ -38,6 +38,8 @@ export function createScheduleExecutors(ctx: ServerCore, services: Services): Re
           const rule = (() => { try { return finalRuleOf((db.prepare("SELECT definition_json FROM lane_pilot_wf_run WHERE id=?").get(run.ref_id!) as { definition_json?: string } | undefined)?.definition_json); } catch { return null; } })();
           const finish = workflowFinish(summary.output, rule);
           const output = summary.output ? clip(JSON.stringify(summary.output, null, 2), 16_000) : "";
+          // A correct escalation or unfinished work is not a schedule failure (that would pause the schedule) and not completed work.
+          if (finish.kind === "escalated" || finish.kind === "incomplete") return { state: "done", status: "succeeded", output, reason: `ended_${finish.kind}` };
           return finish.ok ? { state: "done", status: "succeeded", output } : { state: "done", status: "failed", output, error: finish.detail, reason: `ended_${finish.status}` };
         }
         case "failed": case "blocked": case "canceled": case "interrupted": case "not_verified":

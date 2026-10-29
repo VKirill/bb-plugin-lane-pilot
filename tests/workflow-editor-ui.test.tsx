@@ -561,7 +561,7 @@ describe("editing a draft in the Workflows tab", () => {
 describe("starting an edit from a workflow of the library", () => {
   const detail = (scope: "builtin" | "global") => ({
     id: scope === "builtin" ? "analyze-plan-execute" : "mine", name: { en: "W", ru: "В" }, description: { en: "d", ru: "о" }, status: "published", version: 1, scope, internal: false, tags: [], nodes: 1, warnings: 0,
-    stats: { runs: 0, succeeded: 0, failed: 0, active: 0, successRate: null, lastRunAt: null, lastStatus: null, lastRunId: null },
+    stats: { runs: 0, succeeded: 0, failed: 0, active: 0, executed: 0, workDone: 0, refused: 0, escalated: 0, successRate: null, lastRunAt: null, lastStatus: null, lastRunId: null },
     examples: { en: [], ru: [] }, inputs: [], outputs: [], triggers: [], requires: [], budget: { maxSteps: null, maxTokens: null, maxCostUsd: null, maxWallSeconds: null }, qualityMode: null, source: "x.json", sha256: "s", warningMessages: [],
     graph: { nodes: [], edges: [] }, runs: [],
   });
