@@ -10,7 +10,7 @@ import { rpcContract } from "../src/rooms/contracts";
 
 // SMA px_stop (2026-10-29 conformance audit, C-02): a stop ends the phase's work at hand before the phase. The phase used to turn
 // «stopped» while its piece's writer went on running, and the screen had no stop of the phase at all, only «hold the wave».
-async function fixture(failStop = false) {
+async function fixture(failStop = false, cancelThrows = false) {
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
   const calls: string[] = [];
   let stopFails = failStop;
@@ -22,7 +22,7 @@ async function fixture(failStop = false) {
   const db = openDatabase(bb);
   createRun(db, "run1", "projA");
   db.prepare("UPDATE lane_pilot_run SET pm_thread_id=? WHERE id=?").run("thr_pm", "run1");
-  const workflowEngine = { cancel: (id: string) => { calls.push(`workflow.cancel:${id}`); return true; } };
+  const workflowEngine = { cancel: (id: string) => { calls.push(`workflow.cancel:${id}`); if (cancelThrows) throw new Error("workflow journal unavailable"); return true; } };
   const phases = createPhaseDriver(createCore(bb, db), { runBudgets: { get: () => undefined }, workflowEngine } as never).phases;
   const phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "stop probe", goal: "deliver one piece", rails: true });
   const item = { id: "piece", title: "one piece", wave: 1, promise: { given: "g", when: "w", then: "t" }, task: { id: "piece", project_cwd: "/repo", owns_paths: ["src/**"], verification: [{ command: "npm test" }], acceptance: ["works"] } };
@@ -68,6 +68,15 @@ describe("stopping a phase", () => {
     expect(after.state).toBe("stopped");
     expect(after.record.stopping).toBeUndefined();
     expect((f.db.prepare("SELECT state FROM lane_pilot_attempt WHERE id='att1'").get() as { state: string }).state).toBe("canceled");
+  });
+
+  // SMA audit R-01: a stage workflow whose cancel threw was dropped from the record and the phase stopped over it.
+  it("[sma:px_stop] keeps the stage workflow and the phase open when its cancel gives no answer", async () => {
+    const f = await fixture(false, true);
+    const result = await f.phases.stop({ phaseId: f.id, by: "owner" });
+    expect(result.phase.state).toBe("active");
+    expect(result.phase.record.auto?.wfRunId).toBe("wf-live");
+    expect(result.unconfirmed).toEqual([expect.stringContaining("stage workflow wf-live (workflow journal unavailable)")]);
   });
 });
 

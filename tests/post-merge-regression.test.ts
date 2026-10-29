@@ -132,3 +132,12 @@ it("a re-run that reproduces the product red still dispatches the repair task", 
   const { dispatchWriter } = await mergeThenCheck([[red("npm run build")], [red("npm run build")]], { turned: ["npm run build"] });
   expect(dispatchWriter).toHaveBeenCalledTimes(1);
 });
+
+// SMA audit R-05: a re-run that never reached the host (hostError) lost that mark and was read as a reproduced product red.
+it("a red whose own re-run never reached the host is run again before any repair task", async () => {
+  const runs = [red("npm run build"), { command: "npm run build", exitCode: 1, stdout: "", stderr: "RPC channel closed", hostError: true }];
+  const reading = await runWithFlakyRerun("npm run build", async () => runs.shift()!, () => {});
+  const { dispatchWriter, runVerification } = await mergeThenCheck([[reading as Row], [green("npm run build")]], { turned: ["npm run build"] });
+  expect(runVerification).toHaveBeenCalledTimes(2);
+  expect(dispatchWriter).not.toHaveBeenCalled();
+});

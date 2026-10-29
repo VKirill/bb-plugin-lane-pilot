@@ -5,7 +5,7 @@ import type { Services } from "../src/rooms/core/server/services";
 import { createPhaseDriver } from "../src/rooms/phase/server/driver";
 import { candidatePath } from "../src/rooms/phase/server/candidate";
 import { autoInputs } from "../src/rooms/phase/server/auto-stages";
-import { planSignature, type PlanItem } from "../src/rooms/phase/logic";
+import { candidateOn, planSignature, type PlanItem } from "../src/rooms/phase/logic";
 import { recordStage } from "../src/rooms/runs/server";
 import { listParts, savePhase } from "../src/rooms/phase/store";
 import { createAttempt, createRun, createTask, openDatabase } from "../src/rooms/storage";
@@ -27,6 +27,7 @@ function world(opts: { sync?: string; integrate?: string; ensureFail?: boolean }
   bb.hosts.experimental_client = (() => ({ call: async (method: string, input: Record<string, unknown>) => {
     calls.push({ method, input });
     if (method === "runCommand" && opts.ensureFail && String(input.command).includes("worktree add")) return { exitCode: 4, stdout: "", stderr: "disk full" };
+    if (method === "runCommand" && input.cwd === "/repo2" && String(input.command).includes("worktree add")) return { exitCode: 3, stdout: "", stderr: ".git is a file" };
     if (method === "runCommand") return { exitCode: 0, stdout: `${head}\n`, stderr: "" };
     if (method === "gitSyncWorktree") return { status: opts.sync ?? "up-to-date", head, reason: null, conflicts: opts.sync === "conflict" ? ["src/hud.ts"] : [] };
     if (method === "gitIntegrate") return { status: opts.integrate ?? "merged", commit: SHA(9), conflicts: [], reason: null, base: SHA(1) };
@@ -173,5 +174,19 @@ describe("the phase candidate", () => {
     expect(w.sent).toHaveLength(0);
     expect(phase.record.candidate?.off).toBeUndefined();
     expect(phase.record.execution?.issueErrors?.hud).toContain("disk full");
+  });
+
+  // SMA audit R-04: a second checkout that cannot branch switched the whole candidate off after a piece was on it, and its piece went to main.
+  it("a checkout without a branch of its own holds its piece and leaves the phase's candidate on [sma:p6_merge]", async () => {
+    const w = world();
+    const id = await admitted(w);
+    const phase = w.phases.status(id).phase;
+    const pieces = [piece, { ...piece, id: "second", task: { ...piece.task, id: "second", project_cwd: "/repo2", verification: [{ command: "npm test", cwd: "/repo2" }] } }];
+    const sha = planSignature(pieces, "ctx");
+    savePhase(w.db, id, { record: { ...phase.record, plan: { items: pieces, contextSha: "ctx", sha, admittedSha: sha } } as never, at: 3 });
+    const after = await w.phases.drive(w.phases.status(id).phase);
+    expect(candidateOn(after.record)).toBe(true);
+    expect(w.sent.map((task) => task.project_cwd)).not.toContain("/repo2");
+    expect(after.record.execution?.issueErrors?.second).toContain("lands as one package");
   });
 });

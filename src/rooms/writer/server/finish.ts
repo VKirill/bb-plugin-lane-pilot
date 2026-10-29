@@ -930,8 +930,8 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     // A red that already failed its own re-run (runWithFlakyRerun: `reran`) as a product red both times is reproduced; running it again
     // only repeated the same command twice more (2026-10-29 audit). A re-run that timed out or broke reproduced nothing (audit N-05).
     const reproduced = candidates.filter((check) => {
-      const rerun = (check as { rerun?:{ exitCode:number; stdout?:string; stderr?:string } }).rerun;
-      return !!rerun && rerun.exitCode !== 124 && readCheckRun(check, { command: check.command }).verdict === "product_fail" && readCheckRun({ ...check, ...rerun }, { command: check.command }).verdict === "product_fail";
+      const rerun = (check as { rerun?:{ exitCode:number; stdout?:string; stderr?:string; hostError?:boolean; threw?:boolean } }).rerun;
+      return !!rerun && rerun.exitCode !== 124 && readCheckRun(check, { command: check.command }).verdict === "product_fail" && readCheckRun({ ...check, hostError:false, threw:false, ...rerun }, { command: check.command }).verdict === "product_fail";
     });
     const toRerun = candidates.filter((check) => !reproduced.includes(check));
     let confirmed = candidates;

@@ -11,6 +11,8 @@ import { isAllowedProjectLifePath } from "../project-life";
 
 /** The reason a baseInHead merge refused: main moved after the candidate took it in. */
 export const BASE_MOVED = "base moved since the candidate took it in";
+/** The reason an expectedHead merge refused: the worktree is not at the verified commit any more. */
+export const HEAD_MOVED = "the candidate moved since it was verified";
 
 export type GitIntegration = {
   status:"merged"|"up-to-date"|"conflict"|"failed"|"busy";
@@ -305,6 +307,8 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
   /** Merge only when main, read under the base lock, is already an ancestor of the worktree's head (a phase candidate that took main in
    *  and was verified): main that moved in between is not merged into the verified package; it says `moved` (BASE_MOVED). */
   baseInHead?:boolean;
+  /** The worktree head the merge must find under the base lock, and the commit it merges: a candidate that moved after it was verified says `moved` (HEAD_MOVED). */
+  expectedHead?:string;
   /** Run once the attempt was replayed on a moved main, before the merge (a semantic clash shows only there). */
   replayCheck?:()=>Promise<ReplayCheckOutcome>;
   /** How long a merge stopped by another git's fresh index.lock in the base waits for that lock to go before it gives up. */
@@ -335,7 +339,12 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
       await abortStaleMerge(input.basePath);
       await settleStagedBookkeeping(input.basePath,input.bookkeeping??[],input.stagedWaitMs);
       const before=(await git(input.basePath,["rev-parse","HEAD"])).stdout.trim();
-      if(input.baseInHead&&before&&!(await git(input.worktreePath,["merge-base","--is-ancestor",before,sha])).ok) return fail(`${BASE_MOVED}: main is at ${before.slice(0,12)}, not in ${sha.slice(0,12)}`);
+      if(input.expectedHead) {
+        const now=(await git(input.worktreePath,["rev-parse","HEAD"])).stdout.trim();
+        if(now!==input.expectedHead) return fail(`${HEAD_MOVED}: it is at ${now.slice(0,12)}, the verdict saw ${input.expectedHead.slice(0,12)}`);
+      }
+      const target=input.expectedHead??sha;
+      if(input.baseInHead&&before&&!(await git(input.worktreePath,["merge-base","--is-ancestor",before,target])).ok) return fail(`${BASE_MOVED}: main is at ${before.slice(0,12)}, not in ${target.slice(0,12)}`);
       // Main moved while the writer worked: replay the attempt on the current main first. Clean, it merges without
       // another writer turn; a real conflict is left as it was and the merge below reports it for the free redo.
       // The attempt's own branch only: Lane Pilot's lane/<attempt> and the BB-managed bb/<attempt> worktree (one per attempt too).
@@ -354,7 +363,7 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
           return {status:"conflict",commit:null,conflicts:[],reason:`${REPLAY_CHECK_FAILED}: verification failed (${replay.failed.map((check)=>check.command).join(", ")})${replay.environment?`: ${ENVIRONMENT_REASON}the check did not run`:""}`,checks:replay.failed};
         }
       }
-      const merged=await merge(input.basePath,rebased??sha,input.message,input.bookkeeping,input.ownsPaths,input.indexLockWaitMs);
+      const merged=await merge(input.basePath,rebased??input.expectedHead??sha,input.message,input.bookkeeping,input.ownsPaths,input.indexLockWaitMs);
       if(rebased&&merged.status==="merged") merged.rebased=true;
       // What main was and what the merge changed in it, so the record can say «roll back to what» without the checkout.
       if(merged.status==="merged"&&before&&merged.commit) { merged.base=before; merged.changed=await changedBetween(input.basePath,before,merged.commit); }

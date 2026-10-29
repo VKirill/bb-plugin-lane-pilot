@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createWorktree, integrateWorktree, syncWorktree } from "../../src/rooms/verification/git-integrate";
-import { candidateCommand, candidatePath } from "../../src/rooms/phase/server/candidate";
+import { candidateCommand, candidatePath, createCandidates } from "../../src/rooms/phase/server/candidate";
 
 // SMA p6_prepared → p6_merge on real git: the phase's pieces merge into phase/<id> in a worktree inside the checkout's .git, main stays
 // as it was until the accepted branch lands, and a main that moved or conflicts is found before the landing.
@@ -101,6 +101,25 @@ describe("the phase candidate on a real repository", () => {
     expect(refused.reason).toContain("base moved since the candidate took it in");
     expect(git(base, "rev-parse", "HEAD")).toBe(mainBefore);
     expect(git(tree, "rev-parse", "HEAD")).toBe(verified);
+  });
+
+  // SMA audit R-03: a commit made on the candidate after its head was read and synced landed on main unreviewed.
+  it("a landing refuses a candidate that got a commit after it was verified", async () => {
+    expect(sh(base, candidateCommand("ph_race")).status).toBe(0);
+    const tree = candidatePath(base, "ph_race");
+    await commit(tree, "verified.txt", "approved bytes\n");
+    const verified = git(tree, "rev-parse", "HEAD");
+    const mainBefore = git(base, "rev-parse", "HEAD");
+    const host = { call: async (method: string, input: any) => {
+      if (method === "runCommand") { const ran = sh(input.cwd, input.command); return { exitCode: ran.status, stdout: ran.stdout, stderr: ran.stderr }; }
+      if (method === "gitSyncWorktree") return syncWorktree(input);
+      if (method === "gitIntegrate") { await commit(tree, "unreviewed.txt", "not in the approved commit\n"); return integrateWorktree(input); }
+      throw new Error(`unexpected ${method}`);
+    } };
+    const result = await createCandidates(host, "h").land(base, { path: tree, startSha: mainBefore }, verified, "land phase", []);
+    expect(result.state).toBe("moved");
+    expect(git(base, "rev-parse", "HEAD")).toBe(mainBefore);
+    expect(sh(base, "test -f unreviewed.txt").status).not.toBe(0);
   });
 });
 

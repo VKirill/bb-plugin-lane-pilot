@@ -228,7 +228,10 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   const base = { runId:input.runId, taskId:input.taskId, stageId:"plan-critique" as const, input:source };
   // A resumed dispatch keeps a critique that passed on this very input (resetHelperStages): it is not bought twice.
   const kept = listStageReceipts(input.db,input.runId,input.taskId).find((row) => row.stageId === "plan-critique");
+  const structuralBlock=mode==="gate"&&structuralFindings.some((finding)=>finding.severity==="error");
   if (kept?.state === "passed" && kept.inputSha256 === sha256(source)) {
+    // A structural error blocks under a gate whatever was kept: the same input without the receipt blocks too (SMA audit R-06).
+    if (structuralBlock) return { allowed:false, reason:"structural_plan_critique_blocked", critique:{ structuralFindings } };
     // An advisory «changes requested» is kept as passed; read under a gate it blocks as a fresh one would (SMA audit N-06). The
     // receipt stays: passed cannot turn back, and the same input blocks the same way until the task changes.
     const keptResult = kept.result as { decision?: string } | null;
@@ -240,7 +243,6 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   }
   // An updated task runs its critique again over the receipt of the earlier contract (lane_pilot_update_task).
   recordStage(input.db, { ...base, state:"pending", replaceOnNewInput:true, restart:true });
-  const structuralBlock=mode==="gate"&&structuralFindings.some((finding)=>finding.severity==="error");
   if(structuralBlock) {
     recordStage(input.db,{...base,state:"blocked",reason:"structural_plan_critique_blocked",result:{decision:"changes_requested",mode,
       structuralCoverage:{status:coverageStatus,pathCount:coveragePathCount},structuralFindings}});

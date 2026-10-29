@@ -1,4 +1,5 @@
 import type { BenchApi } from "./service";
+import { renderBaseline } from "./baseline";
 import type { Fault } from "./runner";
 
 export const BENCH_USAGE = [
@@ -11,6 +12,7 @@ export const BENCH_USAGE = [
   "bb lane-pilot bench compare <armA> <armB> [--set vN] [--noise X,Y] [--harness-id <tree id>] [--json]   (A is the baseline; --harness-id records the verdict harness.adopt_by=bench waits for)",
   "bb lane-pilot bench status [--set vN]                  (without --set: every set)",
   "bb lane-pilot bench config [budget_tokens=N] [budget_hours=H]   (bench.budget_tokens / bench.budget_hours: the cap of one arm)",
+  "bb lane-pilot bench baseline [--days 14] [--project ID] [--json]   (no model: false-done rate, phantom writes, git loss recoverability of the accepted attempts)",
 ].join("\n");
 
 type Result = { exitCode: number; stdout?: string; stderr?: string };
@@ -113,6 +115,11 @@ export async function runBenchCli(bench: BenchApi, argv: string[]): Promise<Resu
     if (sub === "status") {
       const { flags } = parseBenchArgs(rest, ["set"]);
       return out(bench.status(flags.set));
+    }
+    if (sub === "baseline") {
+      const { flags } = parseBenchArgs(rest, ["days", "project", "json"]);
+      const metrics = await bench.baseline({ days: positive("days", flags.days), ...(flags.project ? { projectId: flags.project } : {}) });
+      return out(flags.json ? metrics : renderBaseline(metrics));
     }
     if (sub === "config") {
       const patch: Record<string, number> = {};

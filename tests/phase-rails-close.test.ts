@@ -113,14 +113,17 @@ describe("the phase tool takes JSON text for its lists and objects", () => {
   });
 });
 
+let submittedPlanSha: string | null = null;
 /** A finished lp.plan run in the journal: [node, role, thread, started, ended] per agent step. */
 function seedPlanRun(db: ReturnType<typeof openDatabase>, id: string, steps: Array<[string, string, string, number, number]>,
-  run: { projectId?: string; output?: Record<string, unknown>; createdAt?: number } = {}) {
+  run: { projectId?: string; output?: Record<string, unknown>; createdAt?: number; planSha?: string | null } = {}) {
   const nodes = steps.map(([node, role]) => ({ id: node, type: "agent", role }));
   // The run is the phase project's, made after the plan was submitted, and its critic's own output passed the plan (unless a test says otherwise).
   const createdAt = run.createdAt ?? Date.now() + 60_000;
-  db.prepare("INSERT INTO lane_pilot_wf_run(id,workflow_id,workflow_version,workflow_sha256,definition_json,project_id,status,output_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
-    .run(id, "lp.plan", 1, "sha", JSON.stringify({ id: "lp.plan", nodes }), run.projectId ?? "projA", "succeeded", JSON.stringify(run.output ?? { status: "ok", plan_verdict: "pass" }), createdAt, createdAt);
+  // A plan the PM submitted is checked by a run handed its signature (plan_sha); by default the one planned() submitted last.
+  const planSha = run.planSha === undefined ? submittedPlanSha : run.planSha;
+  db.prepare("INSERT INTO lane_pilot_wf_run(id,workflow_id,workflow_version,workflow_sha256,definition_json,project_id,status,inputs_json,output_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+    .run(id, "lp.plan", 1, "sha", JSON.stringify({ id: "lp.plan", nodes }), run.projectId ?? "projA", "succeeded", JSON.stringify(planSha ? { plan_sha: planSha } : {}), JSON.stringify(run.output ?? { status: "ok", plan_verdict: "pass" }), createdAt, createdAt);
   steps.forEach(([node, , thread, started, ended], index) => db.prepare("INSERT INTO lane_pilot_wf_step(run_id,step_key,origin,node_id,visit,state,receipt_json,started_at,ended_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
     .run(id, `${node}#${index + 1}`, `${node}#${index + 1}`, node, index + 1, "succeeded", JSON.stringify({ threadId: thread }), started, ended, ended));
 }
@@ -132,6 +135,7 @@ describe("the plan checker is proven independent by the run journal, never by a 
     const risks = { technical: "none", product: "none", operations: "none", security: "none" };
     savePhase(phases.db, phase.id, { stage: "planning", record: { context: { docs: [], sha: contextSignature([]), signedAt: 1, risks, requirements: ["R1"] } }, at: 1 });
     phases.plan({ phaseId: phase.id, items: [], alreadyMet: "the planner checked the repository: stats already exist", by: "lp.plan" });
+    submittedPlanSha = phases.status(phase.id).phase.record.plan!.sha;
     return { phases, phase };
   }
 
@@ -164,6 +168,9 @@ describe("the plan checker is proven independent by the run journal, never by a 
     await expect(phases.planCheck({ phaseId: phase.id, decision: "approve", by: "critic", wfRunId: "wfrun_other" })).rejects.toMatchObject({ why: [expect.stringMatching(/belongs to project OTHER/)] });
     seedPlanRun(phases.db, "wfrun_old", steps, { createdAt: 1 });
     await expect(phases.planCheck({ phaseId: phase.id, decision: "approve", by: "critic", wfRunId: "wfrun_old" })).rejects.toMatchObject({ why: [expect.stringMatching(/did not check this plan/)] });
+    // SMA audit R-02: a fresh approving run of the same project that was handed another plan admitted this one.
+    seedPlanRun(phases.db, "wfrun_another", steps, { planSha: "another-plan" });
+    await expect(phases.planCheck({ phaseId: phase.id, decision: "approve", by: "critic", wfRunId: "wfrun_another" })).rejects.toMatchObject({ why: [expect.stringMatching(/was not handed plan_sha/)] });
     seedPlanRun(phases.db, "wfrun_no", steps, { output: { status: "fail", plan_verdict: "changes_requested" } });
     await expect(phases.planCheck({ phaseId: phase.id, decision: "approve", by: "critic", wfRunId: "wfrun_no" })).rejects.toMatchObject({ why: [expect.stringMatching(/did not approve: its output says changes_requested/)] });
     expect(phases.status(phase.id).phase.stage).toBe("planning");
@@ -188,6 +195,7 @@ describe("a plan that found the goal already met", () => {
     const risks = { technical: "none", product: "none", operations: "none", security: "none" };
     savePhase(phases.db, phase.id, { stage: "planning", record: { context: { docs: [], sha: contextSignature([]), signedAt: 1, risks, requirements: ["R1"] } }, at: 1 });
     phases.plan({ phaseId: phase.id, items: [], alreadyMet: "the planner checked the repository: stats already exist", by: "lp.plan" });
+    submittedPlanSha = phases.status(phase.id).phase.record.plan!.sha;
     seedPlanRun(phases.db, "wfrun_plan", [["plan", "planner", "thr_planner", 10, 20], ["plan_critic", "plan-critic", "thr_critic", 30, 40]]);
     const admitted = await phases.planCheck({ phaseId: phase.id, decision: "approve", by: "lp.plan, plan critic", wfRunId: "wfrun_plan" });
     expect(admitted.stage).toBe("execution");

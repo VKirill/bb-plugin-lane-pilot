@@ -72,6 +72,20 @@ describe("helper stages decide before they prepare, and reuse only a receipt of 
     expect(again.reason).toBeTruthy();
   });
 
+  // SMA audit R-06: a kept advisory approval with a structural error was reused under a gate that blocks the same input without it.
+  it("a structural error blocks under a gate even over a kept advisory approval", async () => {
+    const w = world();
+    const bad = { ...(task as Record<string, unknown>), expected_outputs:["src/outside.ts"] } as never;
+    saveProjectSetting(w.db, "P", "plan_critique.mode", "advisory");
+    await runPlanCritique({ ...w, projectId:"P", runId:"r", taskId:"t1", config, task:bad, plan:"write note" });
+    const receipt = listStageReceipts(w.db, "r", "t1").find((row) => row.stageId === "plan-critique")!;
+    expect((receipt.result as { structuralFindings: Array<{ severity: string }> }).structuralFindings.some((row) => row.severity === "error")).toBe(true);
+    w.db.prepare("UPDATE lane_pilot_stage_receipt SET state='passed', result_json=? WHERE run_id='r' AND task_id='t1' AND stage_id='plan-critique'").run(JSON.stringify({ ...(receipt.result as object), decision:"approve", mode:"advisory" }));
+    saveProjectSetting(w.db, "P", "plan_critique.mode", "gate");
+    const cached = await runPlanCritique({ ...w, projectId:"P", runId:"r", taskId:"t1", config, task:bad, plan:"write note" });
+    expect(cached).toMatchObject({ allowed:false, reason:"structural_plan_critique_blocked" });
+  });
+
   it("resetHelperStages keeps a passed plan critique and specialist review and drops the rest", async () => {
     const w = world();
     for (const stageId of ["plan-critique", "specialist-review", "pm-read"] as const) {

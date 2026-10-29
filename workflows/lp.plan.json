@@ -28,6 +28,10 @@
     "boundary": {
       "type": "Boundary"
     },
+    "plan_sha": {
+      "type": "string",
+      "note": "the signature of the phase plan this run checks (the phase gate admits an approval only for that plan)"
+    },
     "extra_rules": {
       "type": "string[]",
       "note": "дополнительные обязательные правила планирования от графа"

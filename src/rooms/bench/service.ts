@@ -1,4 +1,5 @@
 import { hubFields, writeHubFields } from "../improvement";
+import { baselineMetrics } from "./baseline";
 import { buildSet, type BuildReport } from "./build";
 import { compareArms, computeNoise, renderComparison, summarizeArm, type ArmSummary, type Comparison } from "./compare";
 import type { HostPort, PipelinePort } from "./ports";
@@ -150,7 +151,10 @@ export function createBench(deps: BenchDeps) {
     return Promise.all([...seen.values()].map(async (entry) => ({ ...entry, exists: (await deps.pipeline.findProject(entry.name)) !== null, create: `bb project create --name '${entry.name}' --root <empty folder on ${entry.hostId}> --machine ${entry.hostId}` })));
   }
 
-  return { settings, configure, build, lastBuild, run, noise, compare, status, show, prepare, armSummary };
+  /** The three model-free numbers of the baseline metric bench (SMA k_lib_bench), over the accepted attempts of the last `days`. */
+  const baseline = (opts: { days?: number; projectId?: string } = {}) => baselineMetrics(deps.db, deps.host, opts);
+
+  return { settings, configure, build, lastBuild, run, noise, compare, status, show, prepare, armSummary, baseline };
 }
 
 export type BenchApi = ReturnType<typeof createBench>;

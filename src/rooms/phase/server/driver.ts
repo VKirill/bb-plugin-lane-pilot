@@ -236,17 +236,22 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
 
   /**
    * Is this journal the check of this plan (SMA audit N-03): a run of the phase's own project and run, made for this plan — the run
-   * whose planner made it (plan.fromRun), or for a plan the PM submitted, a run started after it — and an approval its critic's own
+   * whose planner made it (plan.fromRun), or for a plan the PM submitted, a run handed its plan_sha after it — and an approval its critic's own
    * output gives (plan_verdict pass), not one the caller says over a «changes requested». The reason it is not; null when it is.
    */
   function checkerRunBinding(phase: Phase, wfRunId: string, decision: "approve" | "changes_requested"): string | null {
-    const run = db.prepare("SELECT project_id, link_run_id, created_at, output_json FROM lane_pilot_wf_run WHERE id=?").get(wfRunId) as
-      { project_id: string | null; link_run_id: string | null; created_at: number; output_json: string | null } | undefined;
+    const run = db.prepare("SELECT project_id, link_run_id, created_at, inputs_json, output_json FROM lane_pilot_wf_run WHERE id=?").get(wfRunId) as
+      { project_id: string | null; link_run_id: string | null; created_at: number; inputs_json: string | null; output_json: string | null } | undefined;
     if (!run) return `workflow run ${wfRunId} is not in the journal`;
     if (run.project_id !== phase.projectId) return `workflow run ${wfRunId} belongs to project ${run.project_id ?? "none"}, not to this phase's ${phase.projectId}`;
     if (run.link_run_id && run.link_run_id !== phase.runId) return `workflow run ${wfRunId} belongs to run ${run.link_run_id}, not to this phase's ${phase.runId ?? "(none yet)"}`;
     const plan = phase.record.plan!;
-    if (plan.fromRun ? plan.fromRun !== wfRunId : run.created_at < (plan.submittedAt ?? 0)) return `workflow run ${wfRunId} did not check this plan (${plan.fromRun ? `the plan came from ${plan.fromRun}` : "it started before the plan was submitted"})`;
+    // The plan the run checked is this plan: the run whose planner made it, or a run handed its signature (plan_sha) after it was
+    // submitted. A fresh run of the same project that checked another plan does not admit this one (SMA audit R-02).
+    let handed: { plan_sha?: unknown } = {};
+    try { handed = JSON.parse(run.inputs_json ?? "{}") ?? {}; } catch { /* no inputs: no plan handed */ }
+    if (plan.fromRun ? plan.fromRun !== wfRunId : handed.plan_sha !== plan.sha || run.created_at < (plan.submittedAt ?? 0))
+      return `workflow run ${wfRunId} did not check this plan (${plan.fromRun ? `the plan came from ${plan.fromRun}` : `it was not handed plan_sha ${plan.sha.slice(0, 12)} after the plan was submitted`})`;
     if (decision === "approve") {
       let output: { status?: unknown; plan_verdict?: unknown } = {};
       try { output = JSON.parse(run.output_json ?? "{}") ?? {}; } catch { /* no output: no approval in it */ }
@@ -596,12 +601,16 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     }
     const auto = phase.record.auto;
     if (auto) {
-      try { services.workflowEngine.cancel(auto.wfRunId, `phase ${phase.id} stopped`); } catch { /* a finished or unknown run: nothing to end */ }
-      savePhase(db, phase.id, { record: { ...phase.record, auto: undefined }, at: now() });
+      // cancel answers false for a finished or unknown run (nothing to end); a throw is no answer: the run may go on, the phase keeps it
+      // and asks again (SMA audit R-01: the reference was dropped and the phase stopped over a live stage workflow).
+      let ended = true;
+      try { services.workflowEngine.cancel(auto.wfRunId, `phase ${phase.id} stopped`); }
+      catch (cause) { ended = false; unconfirmed.push(`stage workflow ${auto.wfRunId} (${cause instanceof Error ? cause.message : String(cause)})`); }
+      if (ended) savePhase(db, phase.id, { record: { ...mustGet(phase.id).record, auto: undefined }, at: now() });
     }
     const asked = phase.record.stopping;
     const line = [canceled.length ? `canceled: ${canceled.join(", ")}` : "no piece at work",
-      ...(auto ? [`stage workflow ${auto.wfRunId} ended`] : []), ...(unconfirmed.length ? [`stop not observed yet: ${unconfirmed.join(", ")}`] : [])].join("; ");
+      ...(auto && !unconfirmed.some((line) => line.startsWith(`stage workflow ${auto.wfRunId}`)) ? [`stage workflow ${auto.wfRunId} ended`] : []), ...(unconfirmed.length ? [`stop not observed yet: ${unconfirmed.join(", ")}`] : [])].join("; ");
     if (!asked || canceled.length || line !== listParts(db, phase.id).filter((part) => part.kind === "work_stopped").at(-1)?.text) book(phase, "execution", "work_stopped", line);
     const by = asked?.by ?? input.by ?? "pm";
     const words = asked?.words ?? input.words;
@@ -671,6 +680,10 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     const made = await candidates(phase)?.ensure(base, phase.id) ?? { off: "the phase's run has no writer host", permanent: false };
     // A passing failure holds the piece: issued into main instead, it would land before the phase's acceptance (SMA p6_merge).
     if ("off" in made && !made.permanent) return { wait: `the phase branch could not be made in ${base}: ${made.off}` };
+    // The phase lands as one package or merges piece by piece, never both (SMA audit R-04: a second checkout without a branch of its own
+    // switched the whole candidate off after a piece was already on it, and sent its own piece to main before the acceptance).
+    if ("off" in made && Object.keys(candidate.trees).length)
+      return { wait: `${base} cannot have a phase branch (${made.off}) while the phase's other pieces collect on ${candidate.branch}: the phase lands as one package — plan this piece in a checkout with a .git folder of its own, or return the phase to planning` };
     if ("off" in made) {
       candidate.off = `no phase branch in ${base}: ${made.off}`;
       book(phase, "execution", "candidate_off", `${candidate.off}; the pieces merge into main one by one`);

@@ -63,11 +63,13 @@ export function createCandidates(host: Host, hostId: string) {
     if (synced.status === "conflict") return { state: "conflict", conflicts: synced.conflicts ?? [], why: `main does not merge into the candidate: ${(synced.conflicts ?? []).join(", ") || synced.reason || "conflict"}` };
     if (synced.status === "synced") return { state: "moved", why: `main moved since the verdict and was merged into the candidate (now ${String(synced.head ?? "?").slice(0, 12)}): the new tree is verified again` };
     if (synced.status !== "up-to-date") return { state: "wait", why: `the candidate could not take main in: ${synced.status}${synced.reason ? ` (${synced.reason})` : ""}` };
-    const merged = await host.call("gitIntegrate", { requestedHostId: hostId, basePath: base, worktreePath: tree.path, message, removeWorktree: false, committedOnly: true, bookkeeping, baseInHead: true },
+    const merged = await host.call("gitIntegrate", { requestedHostId: hostId, basePath: base, worktreePath: tree.path, message, removeWorktree: false, committedOnly: true, bookkeeping, baseInHead: true, expectedHead: verifiedSha },
       { hostId, timeoutMs: 300_000 }).catch((cause: unknown) => ({ status: "failed", reason: cause instanceof Error ? cause.message : String(cause), conflicts: [], commit: null }));
     if (merged.status === "merged" || merged.status === "up-to-date") return { state: "landed", commit: merged.commit ?? null, mainBefore: merged.base ?? null };
     // Main moved between taking it in and the merge: the merge would not be the verified tree (SMA audit of C-03).
     if (merged.status === "failed" && String(merged.reason ?? "").startsWith("base moved since the candidate took it in")) return { state: "moved", why: `main moved during the landing: ${merged.reason}` };
+    // The candidate got a commit after its head was read (SMA audit R-03): that commit is no part of the verified package.
+    if (merged.status === "failed" && String(merged.reason ?? "").startsWith("the candidate moved since it was verified")) return { state: "moved", why: `the candidate moved during the landing: ${merged.reason}` };
     if (merged.status === "conflict") return { state: "conflict", conflicts: merged.conflicts ?? [], why: `the candidate does not merge into main: ${(merged.conflicts ?? []).join(", ")}` };
     return { state: "wait", why: `the landing waits: ${merged.status}${merged.reason ? ` (${merged.reason})` : ""}` };
   }
