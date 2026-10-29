@@ -157,7 +157,7 @@ export function runLiveExam(policy: Policy = POLICY, exam: { items: readonly Liv
   return { ...base, passed, split: "exam-v2", inSplit: exam.items.length, seenExcluded: exam.items.length - unseen.length, needed, enough, verdict };
 }
 
-/** Where the last run is kept (plugin key-value store), for the morning list and `bb lane-pilot policy`. The gate itself never reads it: it recomputes. */
+/** Where the last run is kept (plugin key-value store), for the morning list and `bb lane-pilot policy`. authorize does not read it. A failed exam does not block night_decides. */
 export const EXAM_RESULT_KEY = "policy:exam-result";
 export type StoredExam = { at: number; accuracy: number; correct: number; total: number; passed: boolean; unsafe: number; fingerprint: string; split?: string; needed?: number; enough?: boolean };
 export const storedExam = (result: ExamResult | LiveExamResult, at: number): StoredExam => ({
