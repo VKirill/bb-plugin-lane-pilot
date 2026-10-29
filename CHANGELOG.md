@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.369
+
+**Observation survives boundary cases.** Run cards include tasks beyond the first 200 and choose the latest attempt by its sequence, even when creation timestamps tie. The Tasks board reports failed reads and stale data, recovers on its next successful poll, and exposes cards beyond the 120th in a column. State pagination uses a timestamp + run ID cursor so same-millisecond runs are not skipped; large attempt reasons are read in bounded chunks with `--reason-offset` and a continuation command. Six regression scenarios cover the original failures, CLI continuation, and UI recovery.
+
 ## 0.1.368
 
 **The team roster names what every role runs on.** Half the rows of the Team tab's roster showed «—» in the model column (the code repair, the night fixer, the gate triage, errands, the five specialists, the analyst, planner, auditor and debugger), and the critics, memory and docs still showed the old stage pickers although a row of the table «role -> model» now outranks them. A role's model column now reads the table: its model, effort and «+N» for the other models of its pool (the hint says it is set in the table above); the code repair and the night fixer say they run on the task writer's model. An old stage picker stays only while no row of the table outranks it. The writer, the rules analyzer and the onboarder keep their own pickers.

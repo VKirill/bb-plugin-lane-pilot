@@ -131,11 +131,14 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
   const [drills, setDrills] = useState(false);
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<Item[] | null>(null);
+  const [offline, setOffline] = useState(false);
   const [open, setOpen] = useState<Item | null>(null);
   useEffect(() => {
     let alive = true;
+    setItems(null);
+    setOffline(false);
     const read = () => void rpc.call("task_board", { ...(projectId === "all" ? {} : { projectId }), doneHours })
-      .then((result) => { if (alive) setItems(result.items); }).catch(() => undefined);
+      .then((result) => { if (alive) { setItems(result.items); setOffline(false); } }).catch(() => { if (alive) setOffline(true); });
     read();
     const timer = setInterval(read, POLL_MS);
     return () => { alive = false; clearInterval(timer); };
@@ -209,9 +212,10 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
           </label>
         ) : null}
       </div>
+      {offline && view !== "stats" ? <p role="status" data-testid="board-offline" className="text-sm text-muted-foreground">{t(items === null ? "boardLoadFailed" : "boardStale")}</p> : null}
       {view === "stats" ? (
         <StageModelStats locale={locale} projectId={projectId === "all" ? undefined : projectId} excludeProjectIds={drills ? [] : serviceProjectIds} />
-      ) : items === null ? <p className="text-sm text-muted-foreground">{t("boardLoading")}</p> : view === "board" ? (
+      ) : items === null ? (offline ? null : <p className="text-sm text-muted-foreground">{t("boardLoading")}</p>) : view === "board" ? (
         <div className="-mx-1 flex items-start gap-3 overflow-x-auto px-1 pb-3" data-testid="board-columns">
           {COLUMNS.map((column) => {
             const cards = shown.filter((item) => item.column === column.id);
@@ -223,7 +227,7 @@ export function TaskBoard({ projects = [], serviceProjectIds = [], initialProjec
                   <span className="font-normal text-muted-foreground">{cards.length}</span>
                 </div>
                 <div className="flex min-h-16 flex-col gap-2 rounded-lg bg-[var(--lp-well,transparent)] p-1">
-                  {cards.length ? cards.slice(0, 120).map(tile) : <p className="px-1.5 py-2 text-xs text-muted-foreground">{t("boardEmptyColumn")}</p>}
+                  {cards.length ? cards.map(tile) : <p className="px-1.5 py-2 text-xs text-muted-foreground">{t("boardEmptyColumn")}</p>}
                 </div>
               </section>
             );

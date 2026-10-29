@@ -290,7 +290,7 @@ describe("section 9 storage.database DDL", () => {
     expect((first.runs as Array<{id:string}>).map((run)=>run.id).slice(0,2)).toEqual(["run-39","run-38"]);
     expect(first.totals).toEqual({runs:40,attempts:480});
     expect(((first.attempts as Array<{reason:string}>)[0]!.reason)).toHaveLength(301);
-    expect(first.next).toBe("bb lane-pilot state BIG --before 1030");
+    expect(first.next).toBe("bb lane-pilot state BIG --before 1030:run-30");
     const second=inspectState(db,"BIG",{before:1030});
     expect((second.runs as Array<{id:string}>)[0]!.id).toBe("run-29");
     const last=inspectState(db,"BIG",{before:1010,limit:100});

@@ -212,8 +212,9 @@ export function runsRpc(ctx: ServerCore, services: Services) {
         SELECT t.id, t.contract_json, a.state, a.thread_id, a.workspace_path
         FROM lane_pilot_task t
         LEFT JOIN lane_pilot_attempt a ON a.run_id=t.run_id AND a.task_id=t.id
-          AND a.created_at=(SELECT MAX(b.created_at) FROM lane_pilot_attempt b WHERE b.run_id=a.run_id AND b.task_id=a.task_id)
-        WHERE t.run_id=? ORDER BY t.created_at LIMIT 200
+          AND a.id=(SELECT b.id FROM lane_pilot_attempt b WHERE b.run_id=t.run_id AND b.task_id=t.id
+            ORDER BY b.attempt_no DESC, b.created_at DESC, b.id DESC LIMIT 1)
+        WHERE t.run_id=? ORDER BY t.created_at, t.id
       `).all(runId) as Array<{ id: string; contract_json: string; state: string | null; thread_id: string | null; workspace_path: string | null }>;
       const logs = new Map<string, string>();
       for (const row of db.prepare("SELECT task_id, result_json FROM lane_pilot_stage_receipt WHERE run_id=? AND result_json LIKE '%checkLogPath%'")

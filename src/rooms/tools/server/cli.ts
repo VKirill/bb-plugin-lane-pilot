@@ -61,7 +61,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
   const usage = [
     "bb lane-pilot configure <json>",
     "bb lane-pilot activate <project-id> <ordinary-source-thread-id>",
-    "bb lane-pilot state <project-id> [--limit N] [--before <created-at>] [--attempt <attempt-id>]",
+    "bb lane-pilot state <project-id> [--limit N] [--before <created-at[:id]>] [--attempt <attempt-id> [--reason-offset N]]",
     "bb lane-pilot metrics <project-id> [--days N] [--json]",
     "bb lane-pilot finish <project-id>",
     "bb lane-pilot deactivate <project-id>",
@@ -110,7 +110,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
     commands:[
       { name:"configure", summary:"Save prototype project settings", usage:"bb lane-pilot configure '<json>'" },
       { name:"activate", summary:"Spawn a visible isolated PM thread", usage:"bb lane-pilot activate <project-id> <ordinary-source-thread-id>" },
-      { name:"state", summary:"Inspect a project's runs and attempts, newest first, one page at a time", usage:"bb lane-pilot state <project-id> [--limit N] [--before <created-at>] [--attempt <attempt-id>]" },
+      { name:"state", summary:"Inspect a project's runs and attempts, newest first, one page at a time", usage:"bb lane-pilot state <project-id> [--limit N] [--before <created-at[:id]>] [--attempt <attempt-id> [--reason-offset N]]" },
       { name:"budget", summary:"Set or show the run budget of a project (attempts, wall minutes, tokens, child threads; empty value clears)", usage:"bb lane-pilot budget <project-id> [run.max_attempts=N] [run.max_wall_minutes=N] [run.max_tokens=N] [run.max_children=N]" },
       { name:"metrics", summary:"Per attempt: stages passed or failed, seconds per stage, writer tokens and list-price cost; cost shows not measured where the provider reports no usage, never 0", usage:"bb lane-pilot metrics <project-id> [--days N] [--json]" },
       { name:"health", summary:"Provider breaker state and the budgets of open runs", usage:"bb lane-pilot health [run-id]" },
@@ -437,14 +437,19 @@ export function registerCli(ctx: ServerCore, services: Services) {
           const opt = (name:string) => { const at = args.indexOf(name); return at > 0 ? args[at + 1] : undefined; };
           const attemptId = opt("--attempt");
           if (attemptId) {
-            const attempt = inspectAttempt(db, args[0]!, attemptId);
+            const reasonOffset = Number(opt("--reason-offset") ?? 0);
+            if (!Number.isSafeInteger(reasonOffset) || reasonOffset < 0) throw new Error("--reason-offset must be a non-negative integer");
+            const attempt = inspectAttempt(db, args[0]!, attemptId, reasonOffset);
             if (!attempt) throw new Error(`no attempt ${attemptId} in project ${args[0]}`);
             return { exitCode:0, stdout:JSON.stringify(attempt, null, 2) };
           }
           const number = (name:string, max:number) => { const raw = opt(name); if (raw === undefined) return undefined; const n = Number(raw); if (!Number.isSafeInteger(n) || n < 1 || n > max) throw new Error(`${name} must be an integer from 1 to ${max}`); return n; };
           const limit = number("--limit", 100);
-          const before = number("--before", Number.MAX_SAFE_INTEGER);
-          return { exitCode:0, stdout:JSON.stringify(inspectState(db, args[0]!, { ...(limit ? { limit } : {}), ...(before ? { before } : {}) }), null, 2) };
+          const cursor = opt("--before")?.split(":");
+          const before = cursor ? Number(cursor[0]) : undefined;
+          if (cursor && (cursor.length > 2 || !Number.isSafeInteger(before) || before! < 1 || (cursor.length === 2 && !cursor[1]))) throw new Error("--before must be a timestamp or timestamp:id cursor from state.next");
+          const beforeId = cursor?.[1] ? decodeURIComponent(cursor[1]) : undefined;
+          return { exitCode:0, stdout:JSON.stringify(inspectState(db, args[0]!, { ...(limit ? { limit } : {}), ...(before ? { before } : {}), ...(beforeId ? { beforeId } : {}) }), null, 2) };
         }
         if ((command === "finish" || command === "deactivate") && (args.length === 1 || args.length === 2)) {
           const projectId = args[0]!;

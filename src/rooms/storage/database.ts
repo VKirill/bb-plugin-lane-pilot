@@ -1239,10 +1239,11 @@ export function recordFinishedAttempt(db: LanePilotDatabase, attemptId: string, 
  * heavy columns of one attempt come from `state <project> --attempt <id>` (inspectAttempt).
  */
 export const STATE_REASON_CHARS = 300;
-export function inspectState(db: LanePilotDatabase, projectId: string, page: { limit?: number; before?: number } = {}): Record<string,unknown> {
+export function inspectState(db: LanePilotDatabase, projectId: string, page: { limit?: number; before?: number; beforeId?: string } = {}): Record<string,unknown> {
   const limit = Math.max(1, Math.min(page.limit ?? 10, 100));
   const runs = db.prepare(`SELECT id,state,kind,pm_thread_id,created_at,updated_at,closed_at,closed_by,writer_host_id,writer_workspace_path,run_gate,objective
-    FROM lane_pilot_run WHERE project_id=? AND created_at < ? ORDER BY created_at DESC LIMIT ?`).all(projectId, page.before ?? Number.MAX_SAFE_INTEGER, limit + 1) as Array<{ id: string; created_at: number }>;
+    FROM lane_pilot_run WHERE project_id=? AND (created_at < ? OR (created_at = ? AND id < ?))
+    ORDER BY created_at DESC, id DESC LIMIT ?`).all(projectId, page.before ?? Number.MAX_SAFE_INTEGER, page.before ?? Number.MAX_SAFE_INTEGER, page.beforeId ?? "", limit + 1) as Array<{ id: string; created_at: number }>;
   const more = runs.length > limit;
   const shown = runs.slice(0, limit);
   const ids = shown.map((run) => run.id);
@@ -1255,19 +1256,25 @@ export function inspectState(db: LanePilotDatabase, projectId: string, page: { l
   const totals = db.prepare(`SELECT (SELECT count(*) FROM lane_pilot_run WHERE project_id=?) AS runs,
     (SELECT count(*) FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.project_id=?) AS attempts`).get(projectId, projectId);
   return { projectId, totals, settings, runs: shown, attempts,
-    ...(more ? { next: `bb lane-pilot state ${projectId} --before ${shown[shown.length - 1]!.created_at}${page.limit ? ` --limit ${limit}` : ""}` } : {}),
+    ...(more ? { next: `bb lane-pilot state ${projectId} --before ${shown[shown.length - 1]!.created_at}:${encodeURIComponent(shown[shown.length - 1]!.id)}${page.limit ? ` --limit ${limit}` : ""}` } : {}),
     detail: `bb lane-pilot state ${projectId} --attempt <attempt-id>` };
 }
 
-/** Every column of one attempt of the project, the dirt snapshot cut to its first 200 entries. */
-export function inspectAttempt(db: LanePilotDatabase, projectId: string, attemptId: string): Record<string,unknown> | null {
+/** One attempt: at most 200 dirt entries and one page of its failure reason, with a command to read the rest. */
+export const STATE_REASON_PAGE_CHARS = 16_384;
+export function inspectAttempt(db: LanePilotDatabase, projectId: string, attemptId: string, reasonOffset = 0): Record<string,unknown> | null {
   const row = db.prepare(`SELECT a.* FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id WHERE r.project_id=? AND a.id=?`).get(projectId, attemptId) as Record<string, unknown> | undefined;
   if (!row) return null;
   const { dirt_before_json, workspace_decision_json, ...rest } = row;
   const dirt = parseDirtSnapshots(typeof dirt_before_json === "string" ? dirt_before_json : "[]");
   let workspace_decision: unknown = null;
   if (typeof workspace_decision_json === "string") { try { workspace_decision = JSON.parse(workspace_decision_json); } catch { workspace_decision = { invalidStoredDecision: true }; } }
-  return { ...rest, workspace_decision, dirt_before: dirt.slice(0, 200), dirt_before_count: dirt.length };
+  const reason = typeof rest.reason === "string" ? rest.reason : null;
+  const end = reasonOffset + STATE_REASON_PAGE_CHARS;
+  return { ...rest, reason: reason?.slice(reasonOffset, end) ?? null,
+    reason_offset: reasonOffset, reason_chars: reason?.length ?? 0, reason_truncated: reason !== null && (reasonOffset > 0 || reason.length > end),
+    ...(reason && reason.length > end ? { reason_next: `bb lane-pilot state ${projectId} --attempt ${attemptId} --reason-offset ${end}` } : {}),
+    workspace_decision, dirt_before: dirt.slice(0, 200), dirt_before_count: dirt.length };
 }
 
 export function getAttempt(db: LanePilotDatabase, attemptId: string): {
