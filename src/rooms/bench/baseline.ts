@@ -18,7 +18,7 @@ export type BaselineMetrics = {
   window: { since: number; until: number; projectId: string | null };
   accepted: number;
   falseDone: { count: number; rate: number | null; tasks: string[] };
-  phantomWrites: { count: number; rate: number | null; attempts: Array<{ attemptId: string; taskId: string; missing: string[] }> };
+  phantomWrites: { count: number; rate: number | null; measured: number; unmeasured: number; attempts: Array<{ attemptId: string; taskId: string; missing: string[] }> };
   gitLoss: { merged: number; checked: number; recoverable: number; rate: number | null; lost: string[]; unchecked: number };
 };
 
@@ -45,7 +45,9 @@ export async function baselineMetrics(db: BenchDb, host: HostPort | null, opts: 
   }
 
   const phantom: BaselineMetrics["phantomWrites"]["attempts"] = [];
-  for (const row of rows) {
+  // An attempt with no change record says nothing about what it wrote: it is unmeasured, never a phantom write.
+  const recorded = rows.filter((row) => row.changed !== null);
+  for (const row of recorded) {
     let expected: string[] = [];
     try { expected = ((JSON.parse(row.contract) as { expected_outputs?: unknown }).expected_outputs as string[] | undefined)?.filter((entry) => typeof entry === "string") ?? []; } catch { /* no contract: nothing expected */ }
     if (!expected.length) continue;
@@ -80,7 +82,7 @@ export async function baselineMetrics(db: BenchDb, host: HostPort | null, opts: 
     window: { since, until, projectId: opts.projectId ?? null },
     accepted: tasks.length,
     falseDone: { count: contradicted.size, rate: rate(contradicted.size, tasks.length), tasks: [...contradicted].slice(0, 50) },
-    phantomWrites: { count: phantom.length, rate: rate(phantom.length, rows.length), attempts: phantom.slice(0, 50) },
+    phantomWrites: { count: phantom.length, rate: rate(phantom.length, recorded.length), measured: recorded.length, unmeasured: rows.length - recorded.length, attempts: phantom.slice(0, 50) },
     gitLoss: { merged: merged.length, checked, recoverable, rate: rate(recoverable, checked), lost: lost.slice(0, 50), unchecked: new Set(merged.map((row) => row.mergeCommit)).size - checked },
   };
 }
@@ -90,7 +92,7 @@ export function renderBaseline(m: BaselineMetrics): string {
   return [
     `baseline (no model), ${new Date(m.window.since).toISOString().slice(0, 10)}..${new Date(m.window.until).toISOString().slice(0, 10)}${m.window.projectId ? `, project ${m.window.projectId}` : ""}: ${m.accepted} accepted task(s)`,
     `false-done rate ${pct(m.falseDone.rate)} (${m.falseDone.count}: regression, merged revert or -mainfix after acceptance)`,
-    `phantom writes ${pct(m.phantomWrites.rate)} (${m.phantomWrites.count} accepted attempt(s) whose merge lacks an expected output)`,
+    `phantom writes ${pct(m.phantomWrites.rate)} (${m.phantomWrites.count} of ${m.phantomWrites.measured} recorded accepted attempt(s) whose merge lacks an expected output${m.phantomWrites.unmeasured ? `; ${m.phantomWrites.unmeasured} without a change record` : ""})`,
     `git loss recoverability ${pct(m.gitLoss.rate)} (${m.gitLoss.recoverable} of ${m.gitLoss.checked} merge commit(s) still in their checkout${m.gitLoss.unchecked ? `; ${m.gitLoss.unchecked} not checked` : ""})`,
   ].join("\n");
 }

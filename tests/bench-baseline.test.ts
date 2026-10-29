@@ -21,6 +21,10 @@ function world() {
   accepted("phantom", ["src/b.ts", "docs/"], ["docs/x.md"], "b".repeat(40));
   accepted("broke", ["src/c.ts"], ["app/src/c.ts"], "c".repeat(40));
   accepted("reverted", [], [], null);
+  // An accepted attempt with no change record at all is unmeasured, not a phantom write.
+  createTask(db, { id: "unrecorded", runId: "run1", kind: "bb", contract: { id: "unrecorded", expected_outputs: ["src/d.ts"] } });
+  createAttempt(db, { id: "att-unrecorded", runId: "run1", taskId: "unrecorded" });
+  db.prepare("UPDATE lane_pilot_attempt SET state='accepted', updated_at=? WHERE id='att-unrecorded'").run(Date.now() - 3_600_000);
   db.prepare("INSERT INTO lane_pilot_regression(found_at,updated_at,project_id,run_id,task_id,command,kind,bisect_status,culprit_task) VALUES (1,1,'projA','run1','other','npm test','regression','found','broke')").run();
   db.prepare("INSERT INTO lane_pilot_task_receipt(at,kind,project_id,run_id,task_id,state,summary) VALUES (1,'revert','projA','run1','reverted','merged','reverted')").run();
   createTask(db, { id: "good-mainfix", runId: "run1", kind: "bb", contract: { id: "good-mainfix" } });
@@ -33,15 +37,16 @@ describe("the baseline metric bench", () => {
     const ran: string[] = [];
     const host = { run: async (_host: string, _cwd: string, command: string) => { ran.push(command); return { exitCode: 0, stdout: `ok ${"a".repeat(40)}\nok ${"b".repeat(40)}\nlost ${"c".repeat(40)}\n`, stderr: "" }; } };
     const m = await baselineMetrics(db as never, host);
-    expect(m.accepted).toBe(4);
+    expect(m.accepted).toBe(5);
     // a regression with the task as culprit, a merged revert, a -mainfix made for it: three of four accepted tasks are contradicted.
-    expect(m.falseDone).toMatchObject({ count: 3, rate: 0.75 });
+    expect(m.falseDone).toMatchObject({ count: 3, rate: 0.6 });
     expect(m.falseDone.tasks.sort()).toEqual(["broke", "good", "reverted"]);
     // src/b.ts was promised and not changed; a nested project's path (app/src/c.ts) holds its output.
     expect(m.phantomWrites.attempts).toEqual([{ attemptId: "att-phantom", taskId: "phantom", missing: ["src/b.ts"] }]);
+    expect(m.phantomWrites).toMatchObject({ measured: 4, unmeasured: 1 });
     expect(m.gitLoss).toMatchObject({ merged: 3, checked: 3, recoverable: 2, lost: ["c".repeat(40)] });
     expect(ran).toHaveLength(1);
-    expect(renderBaseline(m)).toContain("false-done rate 75%");
+    expect(renderBaseline(m)).toContain("false-done rate 60%");
   });
 
   it("checks no git without a host and says so", async () => {
