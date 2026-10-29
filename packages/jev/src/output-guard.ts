@@ -59,6 +59,35 @@ export function createOutputGuard(deps: {
       await deps.kv.set(GUARD_STATS_KEY, stats as never);
     } catch { /* statistics only */ }
   };
+  // Overlapping get/append/set calls each wrote their own snapshot and the later set dropped the other block.
+  // Every block accepted on this guard is included in the next write, so a stale read cannot erase its neighbour.
+  // ponytail: one guard instance; a second instance on the same KV can still lose a block. Upgrade path: one SQLite row per block. (2026-10-29 audit A-032)
+  const pending: GuardBlock[] = [];
+  const blockId = (block: GuardBlock) => `${block.at}\0${block.runId ?? ""}\0${block.projectId}\0${block.kind}\0${block.reason}\0${block.subject ?? ""}`;
+  const appendBlock = async (block: GuardBlock): Promise<void> => {
+    pending.push(block);
+    try {
+      const known = await deps.kv.get<GuardBlock[]>(GUARD_BLOCKED_KEY).catch(() => null);
+      const base = Array.isArray(known) ? known : [];
+      const persisted = new Set(base.map(blockId));
+      for (let index = pending.length - 1; index >= 0; index--) if (persisted.has(blockId(pending[index]!))) pending.splice(index, 1);
+      const seen = new Set(persisted);
+      const merged = [...base];
+      for (const item of pending) {
+        const id = blockId(item);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        merged.push(item);
+      }
+      const kept = merged.slice(-KEEP_BLOCKS);
+      await deps.kv.set(GUARD_BLOCKED_KEY, kept as never);
+      const keptIds = new Set(kept.map(blockId));
+      for (let index = pending.length - 1; index >= 0; index--) {
+        const id = blockId(pending[index]!);
+        if (persisted.has(id) || !keptIds.has(id)) pending.splice(index, 1);
+      }
+    } catch { /* the output stays withheld; the ledger write is best-effort, as before */ }
+  };
   return async (input) => {
     const text = redactKnown(input.text);
     const instance = deps.jev();
@@ -77,8 +106,7 @@ export function createOutputGuard(deps: {
       if (verdict.by !== "jev" || !verdict.decision.blocked) return { blocked: false, text };
       const reason = verdict.decision.reason;
       const block: GuardBlock = { at: (deps.now ?? Date.now)(), kind: input.kind, reason, projectId: input.projectId, runId: input.runId ?? null, subject: input.subject ?? null };
-      const known = await deps.kv.get<GuardBlock[]>(GUARD_BLOCKED_KEY).catch(() => null);
-      await deps.kv.set(GUARD_BLOCKED_KEY, [...(Array.isArray(known) ? known : []), block].slice(-KEEP_BLOCKS) as never).catch(() => undefined);
+      await appendBlock(block);
       deps.log(`Lane Pilot output guard blocked a ${input.kind} output (${reason}) in ${input.projectId}${input.runId ? ` run ${input.runId}` : ""}${input.subject ? ` ${input.subject}` : ""}`);
       return { blocked: true, text: withheldText(input.kind, reason), reason };
     } catch { return { blocked: false, text }; }
