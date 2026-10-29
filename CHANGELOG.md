@@ -5,9 +5,11 @@
 ## 0.1.384
 
 - **Code critic answer.** A finding without `evidence` (or `file`) is read instead of refusing the whole answer; it cannot count as critical or high. The missing key blocked a selfystudio task with `code_critique_failed` right after 0.1.383.
-- **Guard in every Lane Pilot Claude thread.** PM, helpers, specialists, errands and reviewers started by Lane Pilot get its bundled guard through the claude-code launcher env, not through the machine-wide `~/.agents/hooks/guard_shell.py` entry; an owner thread gets nothing.
-- **Owner presence from BB.** A message the owner sends in a thread Lane Pilot did not start is the presence signal; Claude Lane hook file `~/.agents/state/owner-presence.json` is no longer read.
-- **SMA map.** 192 cards now have a behaviour test (61 of them with a known gap); a card whose test found its behaviour missing (`it.todo`) is partial on the map.
+- **Claude Lane is no longer needed on a machine** (owner decision 2026-10-29). Install and enable place only Lane Pilot's own pieces: its guard, its OpenCode plugin and its own `agent-trash` in `~/.agents/lane-pilot/bin`; no Claude Lane checkout, no `install.sh`. `bb lane-pilot remove-claude-lane-leftovers <host>` (dry run, `--apply`) takes Claude Lane's hook entries out of `~/.claude/settings.json`, `codex-lane` out of `~/.codex/config.toml`, and moves `~/.agents/hooks` and the lane bins into a dated backup; the owner's own hooks and `~/.agents/skills` stay.
+- **Guard in every Lane Pilot Claude thread.** PM, helpers, specialists, errands and reviewers started by Lane Pilot get its bundled guard through the claude-code launcher env, not through the machine-wide hook entry; an owner thread gets nothing. A writer's `git push` and `git merge` are refused (they passed before; found by the SMA task-graph tests).
+- **Owner presence from BB.** A message the owner sends in a thread Lane Pilot did not start is the presence signal; Claude Lane's hook file is no longer read.
+- **Dead CLI conveyor removed.** `lane-ctl`/`run-controller` dispatch (no receipt on the hub ever), its host handler and settings; the CLI memory file sync is gone, the hub memory stays.
+- **SMA map.** 296 cards now have a behaviour test; 140 of them name a gap (`it.todo`) and count as partial on the map, not have.
 
 ## 0.1.383
 

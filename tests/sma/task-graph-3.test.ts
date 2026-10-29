@@ -89,8 +89,8 @@ describe("baseline, a receipt and a fault that is not the work", () => {
 });
 
 describe("gaps the code does not keep", () => {
-  it.todo("[sma:ac_baseline_red] a red baseline asks a person before the attempt proceeds");
-  it.todo("[sma:ag_infra] a vendor abort, a context overflow, a background tail and the turn ceiling are non-work stops");
-  it.todo("[sma:as_launchable] the drawing and the consent are checked again between the person's yes and the launch");
-  it.todo("[sma:ap_already_built] an already-green task is closed without a writer even when the baseline is set to notify");
+  it.todo("[sma:ac_baseline_red] a red baseline asks a person before the attempt proceeds"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:ag_infra] a vendor abort, a context overflow, a background tail and the turn ceiling are non-work stops"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:as_launchable] the drawing and the consent are checked again between the person's yes and the launch"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:ap_already_built] an already-green task is closed without a writer even when the baseline is set to notify"); // deferral:dfr_seed_skip_sma_gaps
 });

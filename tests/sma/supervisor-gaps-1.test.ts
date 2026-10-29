@@ -32,17 +32,17 @@ describe("supervisor scripts", () => {
     }
   });
 
-  it.todo("[sma:m_sp_watch_loop] the loop waits before the first look, then caps a fallen watchdog's restarts");
+  it.todo("[sma:m_sp_watch_loop] the loop waits before the first look, then caps a fallen watchdog's restarts"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:m_sp_logon_xml] the logon task starts 30 seconds after logon, restarts three times, and is shipped disabled");
+  it.todo("[sma:m_sp_logon_xml] the logon task starts 30 seconds after logon, restarts three times, and is shipped disabled"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:m_sp_pg_sandbox] the product queue is a Postgres sandbox");
+  it.todo("[sma:m_sp_pg_sandbox] the product queue is a Postgres sandbox"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:m_sp_pg_old_road] Postgres comes from the hand-made sandbox");
+  it.todo("[sma:m_sp_pg_old_road] Postgres comes from the hand-made sandbox"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:m_sp_pg_db] the queue database is created");
+  it.todo("[sma:m_sp_pg_db] the queue database is created"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:m_sp_tjournal] a terminal journal records work done outside the daemon");
+  it.todo("[sma:m_sp_tjournal] a terminal journal records work done outside the daemon"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:m_sp_tjournal_report] the report's last number is a week of work from the window");
+  it.todo("[sma:m_sp_tjournal_report] the report's last number is a week of work from the window"); // deferral:dfr_seed_skip_sma_gaps
 });

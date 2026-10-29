@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { chmod, mkdtemp, writeFile } from "node:fs/promises";
+import { chmod, readFile, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -9,7 +9,7 @@ import { materializeAgentTrash, ownedAgentTrashPath } from "../src/rooms/writer/
 const moduleUrl = pathToFileURL(join(__dirname, "../src/rooms/writer/agent-trash.ts")).href;
 
 describe("bundled agent-trash", () => {
-  it("copies the script, treats a missing path with -f as success, and keeps a diverged copy", async () => {
+  it("copies the script, treats a missing path with -f as success, and replaces an older copy with the bundled one (Lane Pilot owns it)", async () => {
     const home = await mkdtemp(join(tmpdir(), "lp-trash-"));
     const first = await materializeAgentTrash({ homeDir: home, moduleUrl });
     expect(first).toEqual({ path: ownedAgentTrashPath(home), changed: true });
@@ -18,6 +18,7 @@ describe("bundled agent-trash", () => {
     expect(await materializeAgentTrash({ homeDir: home, moduleUrl })).toMatchObject({ changed: false });
     await writeFile(first.path, "diverged\n");
     await chmod(first.path, 0o755);
-    await expect(materializeAgentTrash({ homeDir: home, moduleUrl })).rejects.toThrow(/diverged/);
+    expect(await materializeAgentTrash({ homeDir: home, moduleUrl })).toMatchObject({ changed: true });
+    expect(await readFile(first.path, "utf8")).not.toBe("diverged\n");
   });
 });

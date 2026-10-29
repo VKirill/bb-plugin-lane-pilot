@@ -1523,7 +1523,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n1513: ["have", "последняя версия в реестре: новейший тег origin", "lane-stack:bin/lane-stack-update#ls-remote\", \"--tags\", \"origin\""],
   n1514: ["have", "локальный чекаут рядом", "lane-stack:bin/lane-stack-update#claude-lane-stack-installed"],
   n1515: ["have", "что сохраняет обновление", "lane-stack:bin/lane-stack-update#What an update preserves"],
-  n1516: ["have", "проверка переналоженных правок: закреплённый SHA Lane Stack", "tests/native-install-sha.test.ts#NATIVE_STACK_SHA"],
+  n1516: ["have", "проверка переналоженных правок: строки владельца переживают установку стража", "src/rooms/native-install/guard-apply.ts#export async function applyInstalledGuard("],
   n1517: ["have", "статус", "lane-stack:hooks/lane_coord.py#cmd == \"status\""],
   n1518: ["have", "пульс", "lane-stack:hooks/lane_coord.py#def pulse("],
   n1519: ["have", "заявка", "lane-stack:hooks/lane_coord.py#def claim("],

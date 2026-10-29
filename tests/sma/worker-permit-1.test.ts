@@ -45,5 +45,5 @@ describe("permit decision", () => {
     }
   });
 
-  it.todo("[sma:wb_decision] the decision is applied on an after-turn wheel");
+  it.todo("[sma:wb_decision] the decision is applied on an after-turn wheel"); // deferral:dfr_seed_skip_sma_gaps
 });

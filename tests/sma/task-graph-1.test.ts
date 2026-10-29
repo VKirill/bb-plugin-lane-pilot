@@ -358,14 +358,14 @@ describe("attempt ledger", () => {
 });
 
 describe("gaps the code does not keep", () => {
-  it.todo("[sma:ac_open] registration stores a token, ceilings and action kinds");
-  it.todo("[sma:ac_pocket] an exhausted batch budget asks the owner");
-  it.todo("[sma:tb_contract] a word change mints a numbered hashed contract edition and keeps the history");
-  it.todo("[sma:tr_token] a stale worker cannot close somebody else's fresh attempt");
-  it.todo("[sma:f_verifying] [sma:f_waiting_human] [sma:f_rejected] [sma:f_dead_letter] the ledger stamps these attempt states");
-  it.todo("[sma:av_test_edit_hold] an unauthorised reference-test edit holds the hand-in until a person allows it");
-  it.todo("[sma:ag_doc_gate] the document stage also checks that its roles ran separately");
-  it.todo("[sma:ap_caps] a documentary stage cannot run while that capability is unproven");
-  it.todo("[sma:ap_caps_held] a probe that fails in its own setup holds the row");
-  it.todo("[sma:ts_needs_clarify] a batch service drawing may proceed while other words are still open");
+  it.todo("[sma:ac_open] registration stores a token, ceilings and action kinds"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:ac_pocket] an exhausted batch budget asks the owner"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:tb_contract] a word change mints a numbered hashed contract edition and keeps the history"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:tr_token] a stale worker cannot close somebody else's fresh attempt"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:f_verifying] [sma:f_waiting_human] [sma:f_rejected] [sma:f_dead_letter] the ledger stamps these attempt states"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:av_test_edit_hold] an unauthorised reference-test edit holds the hand-in until a person allows it"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:ag_doc_gate] the document stage also checks that its roles ran separately"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:ap_caps] a documentary stage cannot run while that capability is unproven"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:ap_caps_held] a probe that fails in its own setup holds the row"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:ts_needs_clarify] a batch service drawing may proceed while other words are still open"); // deferral:dfr_seed_skip_sma_gaps
 });

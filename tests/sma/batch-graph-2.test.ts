@@ -159,7 +159,7 @@ describe("batch graph", () => {
     expect(again.changed).toBe(false);
   });
 
-  it.todo("[sma:bi_pause] a pause is refused when the target run is not this batch");
+  it.todo("[sma:bi_pause] a pause is refused when the target run is not this batch"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:bi_revise] trimming the scope revokes the earlier issue permission");
+  it.todo("[sma:bi_revise] trimming the scope revokes the earlier issue permission"); // deferral:dfr_seed_skip_sma_gaps
 });
