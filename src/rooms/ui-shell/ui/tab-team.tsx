@@ -16,6 +16,14 @@ import { originOfKeys, roleKey, roleName, rolePurpose, ROLE_GROUPS, type RoleOri
 import { Pill, type PillTone } from "./pill";
 import { Surface, SurfaceBody, SurfaceHeader } from "@lane-pilot/ui-kit";
 import type { LpPage } from "./use-lp-page";
+import { roleRowOf } from "@lane-pilot/models";
+
+/** A row of the table «role -> model» as `get_role_models` reads it for the place: what the role runs on now. */
+type TableRole = { role: string; providerId: string; model: string; effort: string; source: "table" | "stage" | "default"; pool: ReadonlyArray<unknown> };
+/** Roles that run on the model of the task's writer, not on a row of the table. */
+const AS_WRITER = new Set(["code-repair", "night-fixer"]);
+/** Roles that keep a picker of their own outside the table: the writer, the rules analyzer (its own config) and the onboarder. */
+const OWN_PICKER = new Set(["writer", "rules-analyzer", "onboarder"]);
 
 const ORIGIN_TONE: Record<RoleOrigin, PillTone> = { here: "info", inherited: "neutral", default: "muted" };
 
@@ -52,8 +60,9 @@ function useRoleModel(page: LpPage) {
 }
 
 /** One role of the table: name, on/off, model picker, origin and access, with a drawer for what is specific to the role. */
-function RoleRow({ spec, page, access, rules, open, onToggle, fallbackNames }: {
+function RoleRow({ spec, page, access, rules, open, onToggle, fallbackNames, tableRoles }: {
   spec: RoleSpec; page: LpPage; access: AccessApi; rules: ReturnType<typeof useRulesAnalyzer>; open: boolean; onToggle: () => void; fallbackNames: ReadonlyMap<string, string>;
+  tableRoles: ReadonlyMap<string, TableRole> | null;
 }) {
   const { data, isGlobal, selectedSectionId, displayedValue, applySetting, catalogRow, modelPicker, pickerValue, saveWriterSelection, pickers, inheritReset, stackControls, wideTable } = page;
   const id = roleKey(spec.id);
@@ -88,6 +97,16 @@ function RoleRow({ spec, page, access, rules, open, onToggle, fallbackNames }: {
   else if (spec.detail === "browser") {
     const pair = [displayedValue("browser_qa.provider"), displayedValue("browser_qa.model")].filter(Boolean).join(" · ");
     model = <span className="min-w-0 truncate text-xs text-muted-foreground">{pair || "—"}</span>;
+  }
+  // What the role really runs on: the task writer's model, or the row of the table «role -> model» above. A row of the table outranks an
+  // older stage picker (plan_critique.*, memory.*…), so such a picker is replaced by what the table says, not left on screen doing nothing.
+  if (AS_WRITER.has(spec.id)) model = <span className="text-xs text-muted-foreground" data-testid={`team-model-${spec.id}`}>{t("teamModelAsWriter")}</span>;
+  else if (!OWN_PICKER.has(spec.id)) {
+    const row = tableRoles?.get(roleRowOf(spec.id));
+    if (row && (row.source === "table" || !spec.model || spec.detail === "browser" || spec.detail === "council")) {
+      const label = `${fallbackNames.get(`${row.providerId}/${row.model}`) ?? row.model} · ${row.effort}${row.pool.length ? ` +${row.pool.length}` : ""}`;
+      model = <span className="min-w-0 truncate text-xs" title={t("teamModelFromTable")} data-testid={`team-model-${spec.id}`}>{label}</span>;
+    }
   }
 
   let toggle: ReactNode = null;
@@ -210,6 +229,15 @@ export function TeamTab({ page }: { page: LpPage }) {
     return () => { live = false; };
   }, [rpc, projectId]);
   const fallbackNames = useMemo(() => fallbackModelNames(catalog), [catalog]);
+  // The table «role -> model» of this place, read again whenever the page's settings change (a save in the table above changes them).
+  const [tableRoles, setTableRoles] = useState<ReadonlyMap<string, TableRole> | null>(null);
+  useEffect(() => {
+    let live = true;
+    if (!projectId) return;
+    void rpc.call("get_role_models", { projectId, ...(selectedSectionId ? { sectionId: selectedSectionId } : {}) })
+      .then((value: { roles: TableRole[] }) => { if (live) setTableRoles(new Map(value.roles.map((row) => [row.role, row]))); }, () => undefined);
+    return () => { live = false; };
+  }, [rpc, projectId, selectedSectionId, data]);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const toggle = (id: string) => setOpen((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const wide = wideTable && !stackControls;
@@ -242,7 +270,7 @@ export function TeamTab({ page }: { page: LpPage }) {
                 <section key={group.id} data-testid={`access-section-${group.id}`}>
                   <h3 className="border-t border-[var(--lp-hairline)] bg-[var(--lp-well)] px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground first:border-t-0">{t(`accessGroup_${group.id}` as I18nKey)}</h3>
                   {group.roles.map((spec) => (
-                    <RoleRow key={spec.id} spec={spec} page={page} access={access} rules={rules} open={open.has(spec.id)} onToggle={() => toggle(spec.id)} fallbackNames={fallbackNames} />
+                    <RoleRow key={spec.id} spec={spec} page={page} access={access} rules={rules} open={open.has(spec.id)} onToggle={() => toggle(spec.id)} fallbackNames={fallbackNames} tableRoles={tableRoles} />
                   ))}
                 </section>
               ))}

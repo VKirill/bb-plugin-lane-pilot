@@ -93,6 +93,16 @@ describe("the table «role -> model» on the Team tab", () => {
     slot.lifecycle.unmount();
   });
 
+  it("the roster above names what a role runs on instead of a dash: the table's row with its pool, or the task writer's model", async () => {
+    installPickerTestDriver();
+    const { rpc } = tableRpc(view({ analyst: { source: "table", own: true, version: 1, model: "claude-opus-5-5", effort: "high", sourceKey: "role_model.analyst", pool: [{ providerId: "codex", model: "gpt-6.1-sol", effort: null }] } }));
+    const slot = await mountPage(rpc);
+    await openTeam(slot);
+    await waitFor(() => expect(slot.getByTestId("team-model-analyst").textContent).toBe("Opus 5.5 · high +1"));
+    expect(slot.getByTestId("team-model-code-repair").textContent).toBe(en.teamModelAsWriter);
+    slot.lifecycle.unmount();
+  });
+
   it("warns about a light model for a role that judges", async () => {
     installPickerTestDriver();
     const { rpc } = tableRpc(view({ planner: { source: "table", own: true, model: "claude-haiku-5-5", effort: "high", sourceKey: "role_model.planner" } }));

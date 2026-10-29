@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.368
+
+**The team roster names what every role runs on.** Half the rows of the Team tab's roster showed «—» in the model column (the code repair, the night fixer, the gate triage, errands, the five specialists, the analyst, planner, auditor and debugger), and the critics, memory and docs still showed the old stage pickers although a row of the table «role -> model» now outranks them. A role's model column now reads the table: its model, effort and «+N» for the other models of its pool (the hint says it is set in the table above); the code repair and the night fixer say they run on the task writer's model. An old stage picker stays only while no row of the table outranks it. The writer, the rules analyzer and the onboarder keep their own pickers.
+
 ## 0.1.367
 
 **Jev can pick Grok 4.6 to write a task.** Grok was not among the writers' profiles, so the pick could never choose it, though on the hub it was accepted on 90% of its tasks (Composer 91%, Luna 63%). The profile `grok` (Cursor, `acp-cursor/grok-4.6`, medium) is for routine features and long runs that follow a clear plan, and it spends a provider other than Claude and Codex. Grok 4.7 stays out: twice the output tokens and worse in tests.
