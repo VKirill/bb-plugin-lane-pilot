@@ -69,3 +69,4 @@ The key lookup is cached for ten minutes in the plugin core (`src/rooms/core/ser
 
 - [Lane Pilot overview](overview.md)
 - [Shared packages](packages.md)
+- [Who works a role — the role table and model pools](role-models.md)

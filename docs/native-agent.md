@@ -2,7 +2,7 @@
 title: Native agent activation and dispatch
 type: component
 created: 2026-10-10
-updated: 2026-10-28
+updated: 2026-10-29
 status: active
 confidence: medium
 tags: [native-agent, composer, activation]
@@ -27,6 +27,12 @@ sources:
   - src/rooms/core/server/rpc.ts
   - src/rooms/core/server/rpc-timing.ts
   - src/rooms/contracts/rpc-ops.ts
+  - src/rooms/qa/server/errand-graph.ts
+  - src/rooms/qa/server/errands.ts
+  - src/rooms/qa/server/browser-graphs.ts
+  - src/rooms/critique/server/specialists.ts
+  - src/rooms/tools/server/tools.ts
+  - src/rooms/council/server/council.ts
 ---
 
 # Native agent activation and dispatch
@@ -35,7 +41,7 @@ TL;DR: The composer action prepares a Lane Pilot agent selection for a new proje
 
 ## Purpose
 
-Enable a new BB composer thread as a Lane Pilot PM session and route its first dispatch through the selected native agent. The PM prompt (`src/rooms/native-agent/native-agent-overlay.ts`, copied to `bundled-agents.json` by `scripts/sync-bundled-prompts.ts`) says that every piece of work runs as a graph and that the PM chat is the door: it talks to the owner, passes his words into the machine (phases, `lane_pilot_dispatch_writer`, `lane_pilot_route`, `lane_pilot_run_workflow`), reads the phase book and the run results, and ships. The tools `lane_pilot_errand`, `lane_pilot_specialist`, `lane_pilot_browser`, `lane_pilot_browser_qa` and `lane_pilot_council_start` start the graphs `errand`, `specialist`, `browser-step`, `lp.browser-qa` and `council` (`src/rooms/native-agent/ui/composer-enable.tsx:49-60`, `src/rooms/native-agent/server/activation.ts:63-80`).
+Enable a new BB composer thread as a Lane Pilot PM session and route its first dispatch through the selected native agent. The PM prompt (`src/rooms/native-agent/native-agent-overlay.ts`, copied to `bundled-agents.json` by `scripts/sync-bundled-prompts.ts`) says that every piece of work runs as a graph and that the PM chat is the door: it talks to the owner, passes his words into the machine (phases, `lane_pilot_dispatch_writer`, `lane_pilot_route`, `lane_pilot_run_workflow`), reads the phase book and the run results, and ships. The tools start the graphs they name: `lane_pilot_errand` runs `errand` (`src/rooms/qa/server/errand-graph.ts:21`, `:157`), `lane_pilot_specialist` runs `specialist` (`src/rooms/critique/server/specialists.ts:81-96`), `lane_pilot_browser` runs `browser-step` (`src/rooms/qa/server/errands.ts:131-147`), `lane_pilot_browser_qa` runs `lp.browser-qa` (`src/rooms/tools/server/tools.ts:255`, `src/rooms/qa/server/browser-graphs.ts:224`) and `lane_pilot_council_start` runs `council` (`src/rooms/council/server/council.ts:194-196`).
 
 ## How it works
 
@@ -126,8 +132,8 @@ The host-worker public index exports the typed handler implementations, includin
 3. Its Jev endpoint reads the global chosen provider setting and Env Catalog key through a ten-minute cache. Catalog RPC failures become missing keys; if the chosen non-TypeSafe provider has no key, a TypeSafe key is tried. It logs provider/key-presence changes and installs Jev with database receipts; the cache can be explicitly cleared after a key change (`src/rooms/core/server/core.ts:51-82`).
 4. It binds deploy drain and creates host jobs. The wrapped host call adds a schedule abort signal when the caller has none, runs under the drain, injects Jev credentials for named Jev methods, and uses host jobs for eligible methods unless jobs are disabled; `runSandboxedCommand` needs explicit job mode. Other calls go directly to the raw host client (`src/rooms/core/server/core.ts:83-108`).
 5. It builds a native installer whose support flag follows BB's lifecycle capability, exposes a native host wrapper that ensures installation before `prepareNativeClaude`, and defines serialized KV, agent/settings, screen writer-binding, coexistence, and run/workspace helpers (`src/rooms/core/server/core.ts:122-183`).
-6. The remaining helpers compute task workspace binding, runtime settings, run policies, native run configuration, Project Folders section scopes, and current config. `configForRun` selects native configuration for CLI runs and stored prototype configuration otherwise (`src/rooms/core/server/core.ts:194-217`, `:260-320`, `:323-373`).
-7. It creates secrets and the Jev output guard, then returns the SDK/database, state, wrapped host, drain, installers, and helper functions as one shared context (`src/rooms/core/server/core.ts:375-384`).
+6. The remaining helpers compute task workspace binding, runtime settings, run policies, native run configuration, Project Folders section scopes, and current config. `configForRun` selects native configuration for CLI runs and stored prototype configuration otherwise (`src/rooms/core/server/core.ts:194-217`, `:260-320`, `:322-396`).
+7. It creates secrets and the Jev output guard, then returns the SDK/database, state, wrapped host, drain, installers, and helper functions as one shared context (`src/rooms/core/server/core.ts:401-402`).
 
 | Mode or condition | Behavior | Failure or fallback |
 |---|---|---|
