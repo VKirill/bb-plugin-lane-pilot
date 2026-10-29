@@ -39,7 +39,7 @@ export type KnowledgeInput={ projectId:string; runId:string; hostId:string; task
 export async function writerRules(deps:KnowledgeDeps, input:KnowledgeInput) {
   const memoryOn=input.memorySettings.enabled&&input.memorySettings.inject;
   // Confirmed rules reach every writer; retrieval skips their records so they are not repeated as memory.
-  const allRules=memoryOn?acceptedRules(deps.db,input.projectId,await deps.chainForRun(input.runId)):[];
+  const allRules=memoryOn?acceptedRules(deps.db,input.projectId,await deps.chainForRun(input.runId),[...input.task.owns_paths,...input.task.read_first]):[];
   const rules=await relevantWriterRules(deps.host,allRules,input.task as unknown as Record<string,unknown>,input.hostId);
   return { allRules, rules, rulesText:rules.map((rule)=>`- ${rule.rule}`).join("\n") };
 }
