@@ -170,8 +170,8 @@ describe("phase gates", () => {
     expect(autoDue({ ...phase, state: "active", record: {} })).toEqual({ kind: "analyze" });
   });
 
-  it.todo("[sma:p5_record_after] UAT is written at acceptance, not only after the phase is in main; the card's proof points at the regression schedule");
-  it.todo("[sma:pc_folder] a number or a folder name resolves to one phase and an ambiguous name is refused; the card's proof points at writePhaseBook");
-  it.todo("[sma:k_lib_pkgcheck] publishable() checks version, changelog, a clean tree, LICENSE and the atlas, not bin files or a badge receipt");
-  it.todo("[sma:p6_observe] the regression window defaults to 14 days, not seven, and the pass never reverts an acceptance");
+  it.todo("[sma:p5_record_after] UAT is written at acceptance, not only after the phase is in main; the card's proof points at the regression schedule"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:pc_folder] a number or a folder name resolves to one phase and an ambiguous name is refused; the card's proof points at writePhaseBook"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:k_lib_pkgcheck] publishable() checks version, changelog, a clean tree, LICENSE and the atlas, not bin files or a badge receipt"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:p6_observe] the regression window defaults to 14 days, not seven, and the pass never reverts an acceptance"); // deferral:dfr_seed_skip_sma_gaps
 });

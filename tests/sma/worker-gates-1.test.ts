@@ -46,7 +46,7 @@ describe("worker gates", () => {
     ]))).toEqual([]);
   });
 
-  it.todo("[sma:wc_mandatory] four mandatory cells — pause, call accounting, progress saving, pre-effect gate — each have a receipt");
+  it.todo("[sma:wc_mandatory] four mandatory cells — pause, call accounting, progress saving, pre-effect gate — each have a receipt"); // deferral:dfr_seed_skip_sma_gaps
 
   it("[sma:wi_probe] a name that is not a worker user is not a pass, and a user sudo cannot reach is not a pass", async () => {
     await expect(workerReachable("")).resolves.toBe(false);

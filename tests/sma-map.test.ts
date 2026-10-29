@@ -40,7 +40,7 @@ describe("the SMA map registry", () => {
     expect(notDone).toEqual([]);
   });
 
-  it("counts a card whose behaviour test found a gap (it.todo) as partial, not have", () => {
+  it("counts a card whose behaviour test names a gap (a todo test) as partial, not have", () => {
     const gapped = smaRows().filter((row) => row.gaps.length);
     expect(gapped.length).toBeGreaterThan(0);
     for (const row of gapped) expect(row.status).not.toBe("have");

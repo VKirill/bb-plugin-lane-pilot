@@ -144,7 +144,7 @@ describe("batch gates", () => {
     expect(lines.every((line) => line.ok === false && /\ba\b/.test(line.detail) && !/\bb\b/.test(line.detail))).toBe(true);
   });
 
-  it.todo("[sma:bw_lines] the wave package and each piece share the same seven acceptance lines");
+  it.todo("[sma:bw_lines] the wave package and each piece share the same seven acceptance lines"); // deferral:dfr_seed_skip_sma_gaps
 
   it("[sma:bw_package] the same pieces and facts hash to the same package; a changed state is a new package", () => {
     const items = [piece("a", 1)];

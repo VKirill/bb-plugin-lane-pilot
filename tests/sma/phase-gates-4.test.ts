@@ -76,5 +76,5 @@ describe("phase gates", () => {
     expect(page).not.toContain("<script>");
   });
 
-  it.todo("[sma:px_return_exec] a return to execution queues the piece one attempt higher — returnTo only withdraws the later stage");
+  it.todo("[sma:px_return_exec] a return to execution queues the piece one attempt higher — returnTo only withdraws the later stage"); // deferral:dfr_seed_skip_sma_gaps
 });

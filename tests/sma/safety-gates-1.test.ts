@@ -42,13 +42,13 @@ describe("daemon tick gates", () => {
     expect(await isHeld(kv as never, "run1")).toBe(false);
   });
 
-  it.todo("[sma:dt_switch] the conveyor is off when nothing has been stored");
+  it.todo("[sma:dt_switch] the conveyor is off when nothing has been stored"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:dt_all_busy] nothing is claimed when every enabled worker already runs an attempt");
+  it.todo("[sma:dt_all_busy] nothing is claimed when every enabled worker already runs an attempt"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:dt_lease] a holder beats for a claimed attempt that has no process yet");
+  it.todo("[sma:dt_lease] a holder beats for a claimed attempt that has no process yet"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:dt_finally] every exit releases the seat, stops the lease and closes the coordination window");
+  it.todo("[sma:dt_finally] every exit releases the seat, stops the lease and closes the coordination window"); // deferral:dfr_seed_skip_sma_gaps
 });
 
 describe("money and an overspent batch", () => {
@@ -153,7 +153,7 @@ describe("guard tools", () => {
     expect(parityGaps(["Read", "Bash"], ["Bash", "Read"])).toEqual({ onlySession: [], onlyTerminal: [] });
   });
 
-  it.todo("[sma:m_tl_rebrand] the leak scanner flags the old brand, colours and internal ids");
+  it.todo("[sma:m_tl_rebrand] the leak scanner flags the old brand, colours and internal ids"); // deferral:dfr_seed_skip_sma_gaps
 
   it("[sma:k_lib_actionclient] a writer command is refused until the controller grants it, and the grant is used once", () => {
     const dir = mkdtempSync(join(tmpdir(), "sma-permit-"));
@@ -188,8 +188,8 @@ print("ok")
 });
 
 describe("guards the pointed code does not keep", () => {
-  it.todo("[sma:k_lib_stpa] a protection disabled without renewal is re-armed as a warning");
-  it.todo("[sma:k_v_gates] a full-gate marker, a firing report and a false-alarm ack");
-  it.todo("[sma:k_v_breaker] tripped rules are listed and re-armed only after review");
-  it.todo("[sma:k_v_evidence] [sma:k_lib_evidence] a reason and checks are recorded before a force push or a foreign-claim clear");
+  it.todo("[sma:k_lib_stpa] a protection disabled without renewal is re-armed as a warning"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:k_v_gates] a full-gate marker, a firing report and a false-alarm ack"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:k_v_breaker] tripped rules are listed and re-armed only after review"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:k_v_evidence] [sma:k_lib_evidence] a reason and checks are recorded before a force push or a foreign-claim clear"); // deferral:dfr_seed_skip_sma_gaps
 });

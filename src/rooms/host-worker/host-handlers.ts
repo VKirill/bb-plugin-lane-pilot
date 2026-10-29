@@ -30,7 +30,7 @@ import { runScriptOnHost } from "./script-run";
 import { probeOpenCodeLimit } from "./opencode-limit";
 import { execFile } from "node:child_process";
 import { discoverClaudeAgents, prepareNativeClaude } from "../native-agent";
-import { prepareClaudeGuard } from "../native-agent/claude-guard-launch";
+import { prepareClaudeGuard } from "../native-agent";
 import { prepareBbShim } from "../native-agent";
 import {
   connectOpencodeStack,

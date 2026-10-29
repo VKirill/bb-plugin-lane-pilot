@@ -71,15 +71,15 @@ describe("intake, backlog read, spend book", () => {
     expect(booked.series.find((row) => row.day === utcDay(now))?.models[0]?.model).toBe("sonnet");
   });
 
-  it.todo("[sma:m_cf_book_usage] a fallback from the chosen model is booked, but the mismatch is not named");
-  it.todo("[sma:m_in_scan] the scan does not git-fetch before reading and does not label the data's age");
-  it.todo("[sma:m_cb_append] [sma:m_cb_read] thread-live builds a task board; it does not append a transcript of at most 200 turns or read those lines as data");
-  it.todo("[sma:m_cb_turn_registry] countThreadTurns counts writer turns; a stop that arrives before the start is not remembered for two minutes");
-  it.todo("[sma:m_cd_door] message.dispatch does not cap a body at 8 KB or take keys by list");
-  it.todo("[sma:m_ce_turn] lane_pilot_facts answers from the books; it does not store the turn before the answer");
-  it.todo("[sma:m_ce_put_pending] admitIfReady admits the phase plan when its gate holds; it does not bind consent to the latest draft of the conversation");
-  it.todo("[sma:m_ce_recover] reconcileAttemptThread finds a writer thread after a reload; it does not finish a stored conversation turn when the door is built");
-  it.todo("[sma:m_cd_put] [sma:m_sg_words] lane_pilot_dispatch_writer starts a contract the caller already wrote; a yes does not enqueue a draft, and no dictionary proposes a title or a promise");
-  it.todo("[sma:m_q_engine] [sma:m_q_exec_ckpt] QUESTIONS.md and CHECKPOINT.md are read from the task folder into a kv note; answers are not written back to the phase folder");
-  it.todo("[sma:m_cf_hard_calls] release, phase boundaries, money and seizure are not gated in this repo; the proof is a lane-stack shell hook");
+  it.todo("[sma:m_cf_book_usage] a fallback from the chosen model is booked, but the mismatch is not named"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_in_scan] the scan does not git-fetch before reading and does not label the data's age"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_cb_append] [sma:m_cb_read] thread-live builds a task board; it does not append a transcript of at most 200 turns or read those lines as data"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_cb_turn_registry] countThreadTurns counts writer turns; a stop that arrives before the start is not remembered for two minutes"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_cd_door] message.dispatch does not cap a body at 8 KB or take keys by list"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_ce_turn] lane_pilot_facts answers from the books; it does not store the turn before the answer"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_ce_put_pending] admitIfReady admits the phase plan when its gate holds; it does not bind consent to the latest draft of the conversation"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_ce_recover] reconcileAttemptThread finds a writer thread after a reload; it does not finish a stored conversation turn when the door is built"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_cd_put] [sma:m_sg_words] lane_pilot_dispatch_writer starts a contract the caller already wrote; a yes does not enqueue a draft, and no dictionary proposes a title or a promise"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_q_engine] [sma:m_q_exec_ckpt] QUESTIONS.md and CHECKPOINT.md are read from the task folder into a kv note; answers are not written back to the phase folder"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_cf_hard_calls] release, phase boundaries, money and seizure are not gated in this repo; the proof is a lane-stack shell hook"); // deferral:dfr_seed_skip_sma_gaps
 });

@@ -66,5 +66,5 @@ describe("batch stop", () => {
     expect((db.prepare("SELECT state FROM lane_pilot_attempt WHERE id='open-a'").get() as { state: string }).state).toBe("canceled");
   });
 
-  it.todo("[sma:bi_decide] a broken piece has exactly three ways out — skip, retry, cancel — and no fourth");
+  it.todo("[sma:bi_decide] a broken piece has exactly three ways out — skip, retry, cancel — and no fourth"); // deferral:dfr_seed_skip_sma_gaps
 });

@@ -211,17 +211,17 @@ describe("conversation gates", () => {
     expect(questionKind("needs secret")).toBe("secret");
   });
 
-  it.todo("[sma:m_ce_classify] consent, stage and task are not kinds factKind returns (only board, limit, history, failure, free)");
-  it.todo("[sma:m_ck_answer] a check has no request hash or journal, so a repeated turn starts another run");
-  it.todo("[sma:m_ck_stop] the check id is returned only after the run, and the running map entry is deleted before that, so a stop cannot end the process");
-  it.todo("[sma:m_ck_required] the five measures on the receipt are command, folder, exit, time and evidence — not a snapshot, a throwaway copy, no ambient secrets, closed publication and a roots manifest");
-  it.todo("[sma:m_ck_isolated] there is no project snapshot and no protected-roots manifest taken before and after the check");
-  it.todo("[sma:m_q_free_text] question kind does not decide whether free text is allowed; questionsFromFile only labels the line");
-  it.todo("[sma:m_q_kinds] the card's five kinds are checkpoint, budget, pause, decision and worker question; the code's five are decision, secret, access, clarification, contradiction");
-  it.todo("[sma:m_ce_proposal] a draft has a hash but no expiry, and consent is not checked against that hash");
-  it.todo("[sma:m_ce_claim_proposal] a second yes to one proposal is not consumed; the cited window only collapses a writer dispatch");
-  it.todo("[sma:m_in_priority] within one urgency band the queue is by age, not by size");
-  it.todo("[sma:m_in_cadence] the scan interval is the hardcoded cron 41 * * * *, not a setting, and the tick does not carry a last-scan time");
-  it.todo("[sma:m_ck_recipes] the three recipes are constants, not read from the project's pinned package.json");
-  it.todo("[sma:m_ce_validate] lintContract refuses a bad task contract before a writer starts; it does not shape-check a model's chat answer before a person sees it");
+  it.todo("[sma:m_ce_classify] consent, stage and task are not kinds factKind returns (only board, limit, history, failure, free)"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_ck_answer] a check has no request hash or journal, so a repeated turn starts another run"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_ck_stop] the check id is returned only after the run, and the running map entry is deleted before that, so a stop cannot end the process"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_ck_required] the five measures on the receipt are command, folder, exit, time and evidence — not a snapshot, a throwaway copy, no ambient secrets, closed publication and a roots manifest"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_ck_isolated] there is no project snapshot and no protected-roots manifest taken before and after the check"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_q_free_text] question kind does not decide whether free text is allowed; questionsFromFile only labels the line"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_q_kinds] the card's five kinds are checkpoint, budget, pause, decision and worker question; the code's five are decision, secret, access, clarification, contradiction"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_ce_proposal] a draft has a hash but no expiry, and consent is not checked against that hash"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_ce_claim_proposal] a second yes to one proposal is not consumed; the cited window only collapses a writer dispatch"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_in_priority] within one urgency band the queue is by age, not by size"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_in_cadence] the scan interval is the hardcoded cron 41 * * * *, not a setting, and the tick does not carry a last-scan time"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_ck_recipes] the three recipes are constants, not read from the project's pinned package.json"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_ce_validate] lintContract refuses a bad task contract before a writer starts; it does not shape-check a model's chat answer before a person sees it"); // deferral:dfr_seed_skip_sma_gaps
 });

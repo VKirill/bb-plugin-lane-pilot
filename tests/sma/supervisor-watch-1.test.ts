@@ -110,7 +110,7 @@ describe("hub watchdog", () => {
     }
   });
 
-  it.todo("[sma:m_sp_utf8] a database encoding cannot change, so a new database is made and swapped in");
+  it.todo("[sma:m_sp_utf8] a database encoding cannot change, so a new database is made and swapped in"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:m_sp_utf8_refuse] the swap is refused while the daemon is connected");
+  it.todo("[sma:m_sp_utf8_refuse] the swap is refused while the daemon is connected"); // deferral:dfr_seed_skip_sma_gaps
 });

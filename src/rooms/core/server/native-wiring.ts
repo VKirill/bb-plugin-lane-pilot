@@ -1,7 +1,7 @@
 import { getAttempt } from "../../storage";
 import { handleNativeDispatch, mentionContext, nativeContributedEnv } from "../../native-agent";
 import { NATIVE_MENTION_PROVIDER, nativeSelectionSchema } from "../../native-agent";
-import { createClaudeGuardEnv } from "../../native-agent/claude-guard-launch";
+import { createClaudeGuardEnv } from "../../native-agent";
 import { attachStreamRetry, droppedStreamDetail } from "../../writer";
 import { createRoleMarkerEnv, mountBbShim } from "../../native-agent/server";
 import { observeOwnerDispatch } from "../../owner-presence/server";

@@ -24,6 +24,6 @@ describe("verification roles", () => {
     expect(blindVerdict(items, unaccepted, { state: "passed" }, 1).detail).toContain("not accepted");
   });
 
-  it.todo("[sma:k_ag_verifier] the verdict is not written to VERIFICATION.md");
-  it.todo("[sma:k_ag_executor] the writer brief does not execute PLAN.md, make atomic commits, or write SUMMARY.md");
+  it.todo("[sma:k_ag_verifier] the verdict is not written to VERIFICATION.md"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:k_ag_executor] the writer brief does not execute PLAN.md, make atomic commits, or write SUMMARY.md"); // deferral:dfr_seed_skip_sma_gaps
 });

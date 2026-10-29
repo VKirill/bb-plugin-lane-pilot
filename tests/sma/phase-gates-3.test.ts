@@ -71,5 +71,5 @@ describe("phase gates", () => {
     expect(action.text).not.toContain("issues the next wave");
   });
 
-  it.todo("[sma:k_lib_landing] accepting a merge runs the suite and stamps the badge — createMergeIntentRecovery only reconciles a merge that already landed");
+  it.todo("[sma:k_lib_landing] accepting a merge runs the suite and stamps the badge — createMergeIntentRecovery only reconciles a merge that already landed"); // deferral:dfr_seed_skip_sma_gaps
 });

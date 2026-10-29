@@ -3,7 +3,6 @@ import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { sha256Hex } from "@lane-pilot/kit";
-import { stringAt } from "../core/server/values";
 import { installedClaudeExecutable, shellQuote } from "./native-claude-host";
 import { materializeNativeHookSession } from "./native-session-hooks";
 
@@ -124,7 +123,7 @@ export function createClaudeGuardEnv(ctx: { bb: BbPluginApi; nativeHost: HostCal
       ctx.bb.log.warn(`Lane Pilot: could not tell whether thread ${thread.threadId} needs the claude guard (${reasonOf(cause)}); it starts without a bundled guard`);
       return [];
     }
-    const role = stringAt(metadata, "role");
+    const role = metadata && typeof metadata === "object" && typeof (metadata as Record<string, unknown>).role === "string" ? (metadata as Record<string, unknown>).role as string : undefined;
     if (!role) return [];
     let cwd: string | null = null;
     try {
