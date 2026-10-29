@@ -41,17 +41,22 @@ Scenarios (each writes its verdict into the receipt, .agents/runs/drills/<date>.
   nogit_repo     a task over one git repository inside that folder (repo-a): it moves into the repository, works in its own
                  worktree and is merged into its main as a commit; the folder still has no .git
 
-Usage: scripts/lp-drill.sh [--quick] [--scenario a,b] [--dry-run] [--repair-guard]
-  --quick      the scenarios marked [--quick] (what bb-plugin-push runs before a deploy)
+Usage: scripts/lp-drill.sh [--quick] [--quick-all] [--scenario a,b] [--dry-run] [--repair-guard]
+  --quick      the scenarios marked [--quick] (what bb-plugin-push runs after a deploy), minus the live ones (memory_paths,
+               helper_providers, parallel3) whose code did not change since that scenario last passed here and that passed within
+               a day: their models and five minutes are not spent on a change they do not read (owner 2026-10-29). The receipt
+               lists each skipped one with its reason; LP_DRILL_SELECT=0 runs them all
+  --quick-all  every [--quick] scenario
   --scenario   only the named scenarios
   --dry-run    print the tasks, change nothing
 Exit: 0 pass, 1 a scenario failed (the receipt says why), 2 could not start. The last stdout line is `RECEIPT=<path>`.
-Settings (env): LP_DRILL_TIMEOUT_MIN (20, per scenario), LP_DRILL_PROJECT, LP_DRILL_ENVIRONMENT, LP_DRILL_CWD,
+Settings (env): LP_DRILL_TIMEOUT_MIN (20, per scenario), LP_DRILL_PARALLEL3_TIMEOUT_MIN (10), LP_DRILL_SELECT (0: --quick runs every live scenario), LP_DRILL_PROJECT, LP_DRILL_ENVIRONMENT, LP_DRILL_CWD,
 LP_DRILL_PROVIDERS (`provider=model,...` instead of the providers read from the sandbox project's settings), LP_DRILL_GUARD_HOSTS (JSON list of machines for guard_hash), LP_DRILL_RECEIPT_DIR, LP_DRILL_NOGIT_PROJECT, LP_DRILL_NOGIT_ENVIRONMENT, LP_DRILL_NOGIT_CWD, LP_DRILL_BAD_MODEL, BB_CLI, BB_HUB_HOST, BB_HUB_KEY.
 """
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import shlex
 import os
@@ -70,6 +75,8 @@ HUB = os.environ.get("BB_HUB_HOST", "ubuntu@10.8.0.1")
 KEY = os.environ.get("BB_HUB_KEY", str(Path.home() / ".ssh/oracle_bb"))
 HUB_DB = os.environ.get("LP_DRILL_HUB_DB", "/home/ubuntu/.bb/plugins/lane-pilot/data.db")
 TIMEOUT_MIN = int(os.environ.get("LP_DRILL_TIMEOUT_MIN", "20"))
+# parallel3 ends in 2-4 minutes: a stall (2026-10-29: three finished tasks waiting on a dirty base) is told in ten, not twenty.
+PARALLEL3_TIMEOUT_MIN = int(os.environ.get("LP_DRILL_PARALLEL3_TIMEOUT_MIN", str(min(TIMEOUT_MIN, 10))))
 PHASE_TIMEOUT_MIN = int(os.environ.get("LP_DRILL_PHASE_TIMEOUT_MIN", "35"))
 POLL_SEC = int(os.environ.get("LP_DRILL_POLL_SEC", "20"))
 BAD_MODEL = os.environ.get("LP_DRILL_BAD_MODEL", "lp-drill-model-that-does-not-exist")
@@ -90,6 +97,111 @@ QUICK = ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_provider
 PROVIDER_FALLBACK_MODEL = {"claude-code": "claude-sonnet-5-5", "codex": "gpt-6-luna", "opencode2": "zai-coding-plan/glm-5.3-flash"}
 # Scenarios that need no PM and no run of their own: they run before the PM starts (guard_hash) or on a project of their own (nogit).
 STANDALONE = ("guard_hash", "deferrals", "checkers", "watchdog", "nogit", "nogit_repo")
+
+# Which changed files a live scenario reads. A path no live scenario reads (NOT_LIVE) starts none; a shared one (FOUNDATION, and anything
+# outside src/ and packages/ that is not NOT_LIVE) starts every one; else parallel3 runs unless the path is in a room it does not pass
+# through, and the narrow scenarios run only for their own code. Unsure means run: a wrong row costs one more drill, not a missed one,
+# and every live scenario runs at least once a day (LIVE_MAX_AGE_SEC) whatever changed.
+LIVE = ("memory_paths", "helper_providers", "parallel3")
+LIVE_MAX_AGE_SEC = 24 * 3600
+NOT_LIVE = ["docs/**", "tests/**", ".agents/**", ".bb/**", "**/*.md", "src/**/ui/**", "src/**/*.tsx", "src/rooms/sma-map/**", "src/rooms/atlas/**",
+            "src/rooms/world/**", "src/rooms/world-assets/**", "src/rooms/ui-shell/**", "packages/i18n/**", "packages/ui-kit/**", "packages/pixel-world/**",
+            "packages/world-sim/**", "scripts/**", "vitest*", "tsconfig*", ".gitignore", ".gitnexus/**", "CLAUDE.md", "AGENTS.md"]
+FOUNDATION = ["scripts/lp-drill.py", "scripts/lp-drill.sh", "package-lock.json", "src/rooms/core/**", "src/rooms/storage/**", "src/rooms/contracts/**",
+              "src/rooms/settings/**", "packages/contracts/**", "packages/kit/**", "packages/settings-catalog/**", "packages/host-calls/**", "packages/models/**"]
+# Rooms a writer task's road (dispatch, writer, checks, merge, acceptance) does not pass through.
+PARALLEL3_SKIP = [f"src/rooms/{room}/**" for room in ("phase", "council", "cockpit", "night", "night-graphs", "hypotheses", "bench", "forge", "money",
+                  "forecast", "coverage", "docs", "backlog", "anamnesis", "twins", "outbound", "owner-presence", "memory-eval", "design-eval", "deferral", "checkers")]
+SCENARIO_CODE = {
+    "helper_providers": ["src/rooms/native-agent/**", "src/rooms/runs/server/run-routing*", "src/rooms/stability/server/probes.ts", "src/rooms/tools/server/cli.ts",
+                         "src/rooms/critique/pm-read.ts", "packages/thread-observe/**"],
+    "memory_paths": ["src/rooms/memory/**", "src/rooms/memory-probe/**", "src/rooms/memory-tiers/**", "packages/memory-core/**", "src/rooms/native-agent/**",
+                     "src/rooms/writer/server/writer-task.ts", "src/rooms/writer/server/writer-knowledge.ts", "src/rooms/critique/**", "src/rooms/council/server/**"],
+}
+
+
+def glob_match(path: str, pattern: str) -> bool:
+    """owns_paths-style globs: `**` spans folders, `*` stays inside one; a pattern without a slash matches the file name at any depth."""
+    if "/" not in pattern:
+        return fnmatch.fnmatchcase(path.rsplit("/", 1)[-1], pattern)
+    regex = re.escape(pattern).replace(r"\*\*/", "(?:.*/)?").replace(r"\*\*", ".*").replace(r"\*", "[^/]*")
+    return re.fullmatch(regex, path) is not None
+
+
+def live_reads(name: str, path: str) -> bool:
+    """Does the live scenario `name` read the changed file `path`?"""
+    if any(glob_match(path, pattern) for pattern in FOUNDATION):
+        return True
+    if any(glob_match(path, pattern) for pattern in NOT_LIVE):
+        return False
+    if not path.startswith(("src/", "packages/")):
+        return True
+    if name == "parallel3":
+        return not any(glob_match(path, pattern) for pattern in PARALLEL3_SKIP)
+    return any(glob_match(path, pattern) for pattern in SCENARIO_CODE[name])
+
+
+def changed_since(commit: str, head: str = "HEAD") -> list[str] | None:
+    """Files changed from `commit` to `head` in this checkout; None when the commit is not in its history. package.json and its lock
+    whose only change is the plugin's own version do not count: every deploy bumps it (a dependency's version line still counts)."""
+    rc, _, _ = run(["git", "-C", str(ROOT), "merge-base", "--is-ancestor", commit, head], timeout=30)
+    if rc != 0:
+        return None
+    rc, out, _ = run(["git", "-C", str(ROOT), "diff", "--name-only", commit, head], timeout=60)
+    if rc != 0:
+        return None
+    files = [line for line in out.splitlines() if line]
+    versions = set()
+    for ref in (commit, head):
+        _, text, _ = run(["git", "-C", str(ROOT), "show", f"{ref}:package.json"], timeout=30)
+        try:
+            versions.add(json.loads(text).get("version"))
+        except ValueError:
+            pass
+    for name in ("package.json", "package-lock.json"):
+        if name not in files:
+            continue
+        _, diff, _ = run(["git", "-C", str(ROOT), "diff", "-U0", commit, head, "--", name], timeout=30)
+        lines = [line for line in diff.splitlines() if line[:1] in "+-" and not line.startswith(("+++", "---"))]
+        own = [re.match(r'^[+-]\s*"version":\s*"([^"]+)",?\s*$', line) for line in lines]
+        if all(match and match.group(1) in versions for match in own):
+            files.remove(name)
+    return files
+
+
+def last_passed(name: str, receipt_dir: Path) -> tuple[str, float] | None:
+    """The commit and finish time of the newest receipt here in which `name` ran and passed."""
+    for path in sorted(receipt_dir.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True):
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict) or not data.get("commit"):
+            continue
+        if any(row.get("name") == name and row.get("result") == "pass" for row in data.get("scenarios") or []):
+            return data["commit"], (data.get("finishedAt") or 0) / 1000
+    return None
+
+
+def select_quick(receipt_dir: Path, now: float | None = None) -> tuple[list[str], dict[str, str]]:
+    """The --quick scenarios this deploy needs, and why each live one left out is left out."""
+    now = time.time() if now is None else now
+    names, skipped = [], {}
+    for name in QUICK:
+        if name not in LIVE:
+            names.append(name)
+            continue
+        last = last_passed(name, receipt_dir)
+        if not last or now - last[1] > LIVE_MAX_AGE_SEC:
+            names.append(name)
+            continue
+        files = changed_since(last[0])
+        reads = [path for path in files if live_reads(name, path)] if files is not None else None
+        if reads is None or reads:
+            names.append(name)
+            continue
+        skipped[name] = f"passed at {last[0][:12]} {round((now - last[1]) / 3600, 1)} h ago; none of the {len(files)} file(s) changed since is its code"
+    return names, skipped
 
 
 def log(message: str) -> None:
@@ -423,7 +535,7 @@ def scenario_parallel3(ctx: Context) -> dict:
         sent = list(pool.map(ctx.dispatch, specs))
     problems = ["a dispatch-bb call exited with an error (see receipt dispatch output)"] if not all(sent) else []
     ids = [s["id"] for s in specs]
-    rows = ctx.wait_ended(ids)
+    rows = ctx.wait_ended(ids, PARALLEL3_TIMEOUT_MIN)
     tasks = [summarize(rows, s["id"], ctx.cwd, s["expected_outputs"][0]) for s in specs]
     accepted = all(t["state"] == "accepted" for t in tasks)
     spaces = [t["workspace"] for t in tasks]
@@ -1358,14 +1470,16 @@ def series_preparation() -> dict:
     return {"commit": commit, "version": version, "scout": scout(), "sandboxClean": not dirty.strip()}
 
 
-def write_receipt(path: Path, start: float, scenarios: list[dict], ctx: Context | None, problems: list[str], names: list[str]) -> str:
+def write_receipt(path: Path, start: float, scenarios: list[dict], ctx: Context | None, problems: list[str], names: list[str],
+                  skipped: dict[str, str] | None = None, quick: bool = False) -> str:
     first = next((s for s in scenarios if s["name"] == "parallel3"), None)
     failed = [s["name"] for s in scenarios if s["result"] == "fail"]
     result = "pass" if not problems and not failed and scenarios else "fail"
     data = {
         "kind": "lane-pilot-sandbox-drill", "date": DATE, "stamp": STAMP, "startedAt": int(start * 1000), "finishedAt": int(time.time() * 1000),
         "durationSec": round(time.time() - start), "project": SANDBOX["project"], "runId": (ctx.run_id or None) if ctx else None, "pmThread": (ctx.pm or None) if ctx else None,
-        "sourceThread": (ctx.source or None) if ctx else None, "mode": "quick" if names == QUICK else "full", "scenarioNames": names,
+        "sourceThread": (ctx.source or None) if ctx else None, "mode": "quick" if quick or names == QUICK else "full", "scenarioNames": names,
+        "commit": git(str(ROOT), "rev-parse", "HEAD"), "skipped": skipped or {},
         "result": result, "problems": problems + [f"{s['name']}: {p}" for s in scenarios for p in s["problems"]],
         "checks": first.get("checks") if first else None, "tasks": first.get("tasks") if first else None, "dispatch": first.get("dispatch") if first else None,
         "scenarios": scenarios,
@@ -1384,13 +1498,21 @@ def write_receipt(path: Path, start: float, scenarios: list[dict], ctx: Context 
 def main() -> int:
     parser = argparse.ArgumentParser(add_help=True, description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--quick", action="store_true")
+    parser.add_argument("--quick-all", action="store_true")
     parser.add_argument("--scenario", default="")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--repair-guard", action="store_true")
     parser.add_argument("--series", action="store_true", help="the release series: preparation, every scenario in a process of its own, the judges")
     parser.add_argument("--scout", action="store_true", help="only list the named suites against the scenario functions")
     args = parser.parse_args()
-    names = QUICK if args.quick else [n for n in args.scenario.split(",") if n] or ALL
+    receipt_dir = Path(os.environ.get("LP_DRILL_RECEIPT_DIR") or ROOT / ".agents/runs/drills")
+    skipped: dict[str, str] = {}
+    if args.quick and os.environ.get("LP_DRILL_SELECT") != "0":
+        names, skipped = select_quick(receipt_dir)
+    else:
+        names = QUICK if args.quick or args.quick_all else [n for n in args.scenario.split(",") if n] or ALL
+    for name, why in skipped.items():
+        log(f"scenario {name}: skipped ({why})")
     repair_guard = args.repair_guard or os.environ.get("LP_DRILL_REPAIR_GUARD") == "1"
     unknown = [n for n in names if n not in ALL]
     if unknown:
@@ -1427,7 +1549,6 @@ def main() -> int:
         return 2
     start = time.time()
     tmp = Path(tempfile.mkdtemp(prefix="lp-drill-"))
-    receipt_dir = Path(os.environ.get("LP_DRILL_RECEIPT_DIR") or ROOT / ".agents/runs/drills")
     receipt = receipt_dir / f"{DATE}.json"
     if receipt.exists():
         receipt = receipt_dir / f"{DATE}-{STAMP.split('-')[1]}.json"
@@ -1507,7 +1628,7 @@ def main() -> int:
     finally:
         if ctx and ctx.memory_probe:
             clean_memory_probe()  # also when the PM did not start or a scenario broke: a probe rule must not outlive the drill
-        result = write_receipt(receipt, start, scenarios, ctx, problems, names)
+        result = write_receipt(receipt, start, scenarios, ctx, problems, names, skipped, quick=args.quick or args.quick_all)
         shutil.rmtree(tmp, ignore_errors=True)
         lock.rmdir()
     log(f"receipt: {receipt}")

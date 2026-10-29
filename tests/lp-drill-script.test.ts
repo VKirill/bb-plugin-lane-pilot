@@ -47,4 +47,32 @@ describe("scripts/lp-drill.sh (E3)", () => {
     const unknown = spawnSync("bash", [script, "--scenario", "nope", "--dry-run"], { encoding: "utf8", timeout: 30_000, env: ownEnv });
     expect(unknown.status).toBe(2);
   });
+
+  it("--quick leaves out a live scenario whose code did not change since it passed within a day, and runs it otherwise", () => {
+    const code = String.raw`
+import importlib.util, json, sys, tempfile, time, pathlib
+spec = importlib.util.spec_from_file_location("drill", sys.argv[1]); d = importlib.util.module_from_spec(spec); spec.loader.exec_module(d)
+reads = {p: [n for n in d.LIVE if d.live_reads(n, p)] for p in ["src/rooms/phase/server/driver.ts", "src/rooms/writer/server/plan-fact.ts", "src/rooms/workflow/ui/editor.tsx",
+  "docs/atlas.md", "src/rooms/storage/database.ts", "src/rooms/native-agent/server/helper-probe.ts", "src/rooms/memory/memory-paths.ts", "bb-plugin.json"]}
+head = d.git(str(d.ROOT), "rev-parse", "HEAD")
+out = {"reads": reads}
+for label, age in (("fresh", 3600), ("stale", 30 * 3600)):
+    folder = pathlib.Path(tempfile.mkdtemp())
+    (folder / "r.json").write_text(json.dumps({"commit": head, "finishedAt": (time.time() - age) * 1000, "scenarios": [{"name": n, "result": "pass"} for n in d.QUICK]}))
+    names, skipped = d.select_quick(folder)
+    out[label] = {"names": names, "skipped": sorted(skipped)}
+print(json.dumps(out))
+`;
+    const run = spawnSync("python3", ["-I", "-c", code, fileURLToPath(new URL("../scripts/lp-drill.py", import.meta.url))], { encoding: "utf8", timeout: 30_000, env: { ...ownEnv, BB_CLI: "/nonexistent/bb" } });
+    expect(run.status, run.stderr).toBe(0);
+    const out = JSON.parse(run.stdout.trim().split("\n").at(-1)!);
+    expect(out.reads).toEqual({
+      "src/rooms/phase/server/driver.ts": [], "src/rooms/writer/server/plan-fact.ts": ["parallel3"], "src/rooms/workflow/ui/editor.tsx": [], "docs/atlas.md": [],
+      "src/rooms/storage/database.ts": ["memory_paths", "helper_providers", "parallel3"], "src/rooms/native-agent/server/helper-probe.ts": ["memory_paths", "helper_providers", "parallel3"],
+      "src/rooms/memory/memory-paths.ts": ["memory_paths", "parallel3"], "bb-plugin.json": ["memory_paths", "helper_providers", "parallel3"],
+    });
+    // Nothing changed since HEAD passed an hour ago: only the scenarios without models run; a day later all of them do.
+    expect(out.fresh).toEqual({ names: ["guard_hash", "deferrals", "checkers"], skipped: ["helper_providers", "memory_paths", "parallel3"] });
+    expect(out.stale).toEqual({ names: ["guard_hash", "deferrals", "checkers", "memory_paths", "helper_providers", "parallel3"], skipped: [] });
+  });
 });
