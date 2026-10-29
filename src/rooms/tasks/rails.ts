@@ -196,8 +196,9 @@ export const CHECK_RECIPES = ["quick", "full", "browser"] as const;
 export type CheckRecipe = (typeof CHECK_RECIPES)[number];
 export function checkRecipe(request: string): CheckRecipe {
   const text = request.toLowerCase();
-  if (/браузер|страниц|экран|верстк|ui\b|browser|page|screen|375|1280/.test(text)) return "browser";
-  if (/всё|все тесты|полн|full|whole|целиком|регресс/.test(text)) return "full";
+  // «window» is the window check; «sma green» is the planning-home green run. The phrase is never a command (SMA m_ck_request, 2026-10-29).
+  if (/браузер|страниц|экран|верстк|ui\b|browser|page|screen|375|1280|\bwindow\b|окно|окна|окон/.test(text)) return "browser";
+  if (/sma\s*green|всё|все тесты|полн|full|whole|целиком|регресс/.test(text)) return "full";
   return "quick";
 }
 
