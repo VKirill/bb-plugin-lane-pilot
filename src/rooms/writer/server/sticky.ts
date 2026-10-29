@@ -11,6 +11,7 @@ import type { Services } from "../../core/server";
 import { sendServiceMessage } from "../../relay/server";
 import { isWriterStreamError } from "./writer-task";
 import { markAttemptStart } from "./attempt-marker";
+import { buildCapsule, capsuleRestored } from "../../session-hooks/logic";
 
 /**
  * Sticky writers: an area's writer thread takes the area's next task, and a task-side failure is redone in the thread
@@ -197,21 +198,23 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
   }
 
   /** Compacts a thread whose context is mostly used, then waits for the compaction to finish. */
-  async function compactIfFull(threadId: string): Promise<void> {
+  async function compactIfFull(threadId: string): Promise<boolean> {
     const context = await bb.sdk.threads.context({ threadId }).catch(() => null) as { usage?: { usedTokens?: number; modelContextWindow?: number } | null } | null;
     const used = context?.usage?.usedTokens ?? 0;
     const window = context?.usage?.modelContextWindow ?? 0;
-    if (!window || used / window < STICKY_COMPACT_SHARE) return;
+    if (!window || used / window < STICKY_COMPACT_SHARE) return false;
     ctx.log(`sticky writer ${threadId}: context ${Math.round(100 * used / window)}% full, compacting before the next turn`);
-    await bb.sdk.threads.compact({ threadId }).catch(() => undefined);
+    const compacted = await bb.sdk.threads.compact({ threadId }).then(() => true, () => false);
+    if (!compacted) return false;
     let first = true;
     for (const deadline = Date.now() + 5 * 60_000; Date.now() < deadline && !ctx.isDisposed();) {
       // The first look comes after a plain pause: the compaction has not started the moment the call returns.
       if (first) { first = false; await new Promise((wake) => setTimeout(wake, 2_000)); }
       const mark = threadWatchMark(bb);
-      if (stringAt(await bb.sdk.threads.get({ threadId }).catch(() => null), "status") === "idle") return;
+      if (stringAt(await bb.sdk.threads.get({ threadId }).catch(() => null), "status") === "idle") return true;
       await sleepUntilThreadSignal(bb, threadId, mark, 2_000, undefined, { deadlineAt: deadline });
     }
+    return true;
   }
 
   /**
@@ -251,7 +254,7 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
         if (!dirt.ok) return { ok:false, reason:`workspace_snapshot:${dirt.reason}`, bound:false };
         dirtBefore = dirt.snapshots;
       }
-      await compactIfFull(writer.threadId);
+      const compacted = await compactIfFull(writer.threadId);
       if (!setAttemptWorkspace(db, input.attemptId, { path:writer.workspacePath, environmentId:writer.environmentId, decision:writer.decision })) {
         return { ok:false, reason:"attempt_workspace_cas_conflict", bound:false };
       }
@@ -282,7 +285,9 @@ export function createWriterSticky(ctx: ServerCore, services: Services) {
       // Where this attempt's own turns begin in a thread that already has a history: the task is charged from here (attempt-usage.ts).
       await markAttemptStart(bb.storage.kv, input.attemptId, since);
       try {
-        const text = [typeof input.prompt === "function" ? input.prompt(conflicts) : input.prompt, ...harnessLines].join("\n\n");
+        const turn = typeof input.prompt === "function" ? input.prompt(conflicts) : input.prompt;
+        const lead = compacted ? capsuleRestored(buildCapsule({ asks: [turn.slice(0, 300)], files: [], claims: [] })) : "";
+        const text = [lead, turn, ...harnessLines].filter(Boolean).join("\n\n");
         await sendServiceMessage(bb, { threadId:writer.threadId, text, senderThreadId:getRun(db, input.runId)?.pm_thread_id });
       } catch (cause) {
         // The task went round on the same thread before (live 2026-10-25: «sticky_send_failed: HTTP 409 … section is archived or moving»).
