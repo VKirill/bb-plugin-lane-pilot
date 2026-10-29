@@ -207,7 +207,7 @@ describe("agents from a file and from the CLI", () => {
 
 describe("every specialist can plan an automation", () => {
   it("names the schedule tool in its session text, and the specialist list has the tool", () => {
-    for (const id of ["copy-lead", "seo-specialist", "design-lead", "tavily", "video-lead"]) {
+    for (const id of ["copy-lead", "seo-specialist", "design-lead", "tavily", "video-lead", "advisor-researcher", "ai-researcher", "animator", "doc-classifier", "domain-researcher", "eval-auditor", "eval-planner", "framework-selector", "mempalace-curator", "nyquist-auditor", "ui-researcher"]) {
       expect(BB_AGENT_SESSIONS[id], id).toContain("lane_pilot_schedule");
       expect(BB_AGENT_SESSIONS[id], id).toContain("cannot create schedules");
     }

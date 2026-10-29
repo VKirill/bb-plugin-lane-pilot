@@ -9,7 +9,31 @@ import {
 import bundledAgents from "../src/rooms/native-agent/bundled-agents.json";
 
 describe("bundled BB session profiles", () => {
-  it("loads all eight profiles under schema limits with resources and no model fields", () => {
+  it("pins the composer agents, including the lane-stack roles ported on 2026-10-29", () => {
+    expect([...MAIN_AGENT_PROFILE_IDS]).toEqual([
+      "dev-orchestrator",
+      "copy-lead",
+      "seo-specialist",
+      "design-lead",
+      "project-onboarder",
+      "tavily",
+      "video-lead",
+      "workflow-architect",
+      "advisor-researcher",
+      "ai-researcher",
+      "animator",
+      "doc-classifier",
+      "domain-researcher",
+      "eval-auditor",
+      "eval-planner",
+      "framework-selector",
+      "mempalace-curator",
+      "nyquist-auditor",
+      "ui-researcher",
+    ]);
+  });
+
+  it("loads every bundled profile under schema limits with resources and no model fields", () => {
     for (const id of MAIN_AGENT_PROFILE_IDS) {
       const bundled = (bundledAgents as unknown as Record<string, { displayName: string; skills: string[]; mcpServers: string[] } | undefined>)[id] ?? (id === "video-lead" ? { displayName: "Video", skills: compileMainAgentProfile(id).skills ?? [], mcpServers: [] } : { displayName: "Workflow architect", skills: [], mcpServers: [] });
       const compiled = compileMainAgentProfile(id);
@@ -34,6 +58,11 @@ describe("bundled BB session profiles", () => {
     expect(orchestrator.prompt).toContain("lane_pilot_dispatch_writer");
     expect(orchestrator.prompt).not.toContain("Boot solo dev-orchestrator");
     expect(compileMainAgentProfile("seo-specialist").mcpServers).toHaveLength(9);
+    for (const id of ["advisor-researcher", "ai-researcher", "animator", "doc-classifier", "domain-researcher", "eval-auditor", "eval-planner", "framework-selector", "mempalace-curator", "nyquist-auditor", "ui-researcher"]) {
+      const compiled = compileMainAgentProfile(id);
+      expect(compiled.prompt, id).not.toMatch(/lane-ctl|run-controller|run-supervisor|SendMessage|docs-maintain-project/);
+      expect(compiled.tools?.join(" ") ?? "", id).not.toMatch(/SendMessage|ListAgents|lane-ctl|run-controller/);
+    }
     expect(compileMainAgentProfile("video-lead").skills).toEqual([
       "video-lead-playbook", "hyperframes", "hyperframes-cli", "hyperframes-registry", "media-use", "procedural-film", "video-to-reels", "business-motion-film",
       "video-transcribe", "video-sound", "manimgx", "anatomy", "claude-video",
