@@ -57,4 +57,33 @@ describe("a stop and its two conditions", () => {
       await vi.waitFor(() => expect(getAttempt(db, "a")?.state).toBe("canceled"), { timeout: 10_000, interval: 100 });
     } finally { await harness.lifecycle.dispose(); }
   });
+
+  it("does not count a failed read of the worktree as its record", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot", sdk: { threads: { stop: async () => {}, get: async () => ({ id: "writer", status: "idle" }), listRunning: async () => [] } } as never });
+    const db = runningAttempt(bb);
+    db.prepare("UPDATE lane_pilot_run SET writer_host_id='h',writer_workspace_path='/repo' WHERE id='run'").run();
+    db.prepare("UPDATE lane_pilot_attempt SET workspace_path='/repo/writer' WHERE id='a'").run();
+    const { rollback } = createRollback({ db, log: () => {}, host: { call: async () => ({ hostId: "h", status: "failed", head: null, base: null, dirty: 0, ahead: 0, changed: [], reason: "git status failed" }) } } as never, {} as never);
+    try {
+      const result = await cancelAttemptById({ bb, db } as never, "a", rollback);
+      expect(result).toMatchObject({ ok: false, state: "canceled" });
+      expect(result.reason).toContain("git status failed");
+    } finally { await harness.lifecycle.dispose(); }
+  });
+
+  it("records the worktree when recovery finds the canceled writer already idle", async () => {
+    let records = 0;
+    const triple = { lanePilotRunId: "run", lanePilotTaskId: "task", attemptId: "a" };
+    const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot", sdk: { threads: {
+      get: async () => ({ id: "writer", status: "idle" }), list: async () => [{ id: "writer" }], listRunning: async () => [], getPluginMetadata: async () => triple, stop: async () => {} } } as never });
+    const db = runningAttempt(bb);
+    transitionAttempt(db, "a", "cancel_requested");
+    const api = createReconcile({ bb, db, isDisposed: () => false, refreshRun: () => {}, log: () => {} } as never,
+      { startWriterTask: () => {}, rollback: { noteStopped: async () => { records++; return { recorded: true }; } } } as never);
+    try {
+      await api.resumeOrphans();
+      expect(getAttempt(db, "a")?.state).toBe("canceled");
+      expect(records).toBe(1);
+    } finally { await harness.lifecycle.dispose(); }
+  });
 });

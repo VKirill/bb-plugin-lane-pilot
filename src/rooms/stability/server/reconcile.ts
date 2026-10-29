@@ -116,6 +116,7 @@ export function createReconcile(ctx: ServerCore, services: Services) {
     const status = stringAt(thread, "status");
     if (status !== "idle" && status !== "error") return false;
     if (input.attempt.state === "cancel_requested") {
+      await services.rollback?.noteStopped(input.attempt.id).catch(() => undefined);
       transitionAttempt(db, input.attempt.id, "canceled", { threadId:input.writerThreadId, reason:"writer stop observed during recovery" });
       refreshRun(input.attempt.run_id);
       return true;

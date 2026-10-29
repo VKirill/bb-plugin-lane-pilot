@@ -106,7 +106,8 @@ export function createRollback(ctx: ServerCore, services: Services) {
       const state = await host.call("gitWorktreeState", { requestedHostId: input.hostId, basePath: input.basePath, worktreePath: input.worktreePath }, { hostId: input.hostId, timeoutMs: 60_000 });
       if (state.status !== "ready") {
         upsertAttemptChange(db, { attemptId: input.attemptId, runId: attempt.run_id, taskId: attempt.task_id }, { outcome: input.outcome });
-        return { recorded: true };
+        // A missing worktree holds nothing to record; a failed read is no record (2026-10-29 audit A-004 recheck).
+        return state.status === "missing" ? { recorded: true } : { recorded: false, error: state.reason ?? "the worktree could not be read" };
       }
       upsertAttemptChange(db, { attemptId: input.attemptId, runId: attempt.run_id, taskId: attempt.task_id }, {
         baseSha: state.base, outcome: input.outcome, changed: state.changed,
