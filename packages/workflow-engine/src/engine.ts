@@ -32,6 +32,13 @@ const UNKNOWN_USAGE_MAX_STEPS = 40;
 const UNKNOWN_USAGE_MAX_WALL_SECONDS = 2 * 3600;
 /** What a step spent. `unknown`: the provider reports no usage, so the numbers are a floor, not zero; the run records it per step and holds a token or money budget to a time and step limit. */
 export type Usage = { tokens?: number; costUsd?: number; unknown?: boolean };
+
+/** Two spends as one: tokens and cost add up, and one unknown part makes the whole unknown. */
+function addSpend(a: Usage | undefined, b: Usage | undefined): Usage | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return { tokens: (a.tokens ?? 0) + (b.tokens ?? 0), costUsd: (a.costUsd ?? 0) + (b.costUsd ?? 0), ...(a.unknown || b.unknown ? { unknown: true } : {}) };
+}
 export type StepDone = { output: Record<string, unknown>; usage?: Usage; threadId?: string | null; detail?: unknown };
 export type StepWait = { wait: { kind: string; detail?: unknown; deadline?: number }; partial?: Record<string, unknown>; usage?: Usage; threadId?: string | null };
 export type StepOutcome = StepDone | StepWait;
@@ -794,6 +801,9 @@ export class WorkflowEngine {
     const abort = this.aborts.get(runId) ?? new AbortController();
     this.aborts.set(runId, abort);
     let outcome: StepOutcome | null = null, lastError: unknown = null;
+    // What the failed attempts spent: a retry that succeeds does not erase it (2026-10-29 audit A-003: 100 tokens of a failed try
+    // were dropped when the second try spent 5). Kept in memory: a reload mid-step loses it rather than charging it twice.
+    let spentBefore: Usage | undefined;
     for (let attempt = startAttempt; attempt <= node.maxAttempts; attempt += 1) {
       if (attempt !== startAttempt) j.db.prepare("UPDATE lane_pilot_wf_step SET attempt=?, spawn_key=?, updated_at=? WHERE run_id=? AND step_key=?").run(attempt, this.spawnKeyOf(runId, step, attempt), this.now(), runId, stepKey);
       try {
@@ -819,6 +829,7 @@ export class WorkflowEngine {
       } catch (cause) {
         if (isEngineBug(cause)) throw cause;
         lastError = cause; outcome = null;
+        spentBefore = addSpend(spentBefore, (cause as { usage?: Usage } | null)?.usage);
         j.event(runId, stepKey, "attempt_failed", null, null, `${attempt}/${node.maxAttempts}: ${cause instanceof Error ? cause.message : String(cause)}`);
         if (abort.signal.aborted) break;
       }
@@ -831,7 +842,7 @@ export class WorkflowEngine {
       const message = lastError instanceof Error ? lastError.message : String(lastError);
       const code = lastError instanceof MissingValueError ? lastError.code : "step_failed";
       // A step that failed after its helper had spent still spent: an error may carry what (`usage`), and the run is charged for it, once.
-      const spentOnFailure = (lastError as { usage?: Usage } | null)?.usage;
+      const spentOnFailure = spentBefore;
       if (spentOnFailure && typeof spentOnFailure.tokens === "number") {
         j.db.prepare("UPDATE lane_pilot_wf_run SET tokens_used=tokens_used+?, cost_micro_usd=cost_micro_usd+? WHERE id=?").run(Math.round(spentOnFailure.tokens ?? 0), Math.round((spentOnFailure.costUsd ?? 0) * 1_000_000), runId);
         if (spentOnFailure.unknown) j.event(runId, stepKey, "usage", null, "unknown", node.id);
@@ -840,7 +851,7 @@ export class WorkflowEngine {
       if (j.moveStep(runId, stepKey, "running", "failed", { error: message, ended: true, receipt_json: receipt({ code }) })) this.failStep(runId, c, stepKey, `${code}:${node.id}`, message);
       return "done";
     }
-    const usage = outcome.usage;
+    const usage = addSpend(spentBefore, outcome.usage);
     const addUsage = () => {
       if (!usage) return;
       j.db.prepare("UPDATE lane_pilot_wf_run SET tokens_used=tokens_used+?, cost_micro_usd=cost_micro_usd+? WHERE id=?").run(Math.round(usage.tokens ?? 0), Math.round((usage.costUsd ?? 0) * 1_000_000), runId);
@@ -872,12 +883,14 @@ export class WorkflowEngine {
     const settled = await Promise.allSettled(Array.from({ length: votes }, (_unused, index) =>
       executor.run({ ...context, vote: { index, of: votes }, spawnKey: sha256(`${context.spawnKey}|vote${index}`).slice(0, 32) })));
     const answers: StepDone[] = [];
+    let failedSpend: Usage | undefined;
     for (const item of settled) {
-      if (item.status === "rejected") { if (isEngineBug(item.reason)) throw item.reason; continue; }
+      if (item.status === "rejected") { if (isEngineBug(item.reason)) throw item.reason; failedSpend = addSpend(failedSpend, (item.reason as { usage?: Usage } | null)?.usage); continue; }
       if ("wait" in item.value) throw new Error(`node ${node.id}: votes need an executor that answers in one step`);
       answers.push(item.value);
     }
-    if (answers.length * 2 <= votes) throw new Error(`votes: ${answers.length} of ${votes} answered, a majority is needed`);
+    const spent = answers.reduce<Usage | undefined>((sum, answer) => addSpend(sum, answer.usage), failedSpend);
+    if (answers.length * 2 <= votes) throw Object.assign(new Error(`votes: ${answers.length} of ${votes} answered, a majority is needed`), spent ? { usage: spent } : {});
     const fields = outputFields(c.wf, node);
     const names = fields === "unknown" ? [...new Set(answers.flatMap((answer) => Object.keys(answer.output)))] : fields.map((field) => field.name);
     const types = new Map((fields === "unknown" ? [] : fields).map((field) => [field.name, field.type]));
@@ -898,8 +911,7 @@ export class WorkflowEngine {
     const booleans = Object.entries(decided).filter(([, value]) => typeof value === "boolean");
     const agreeing = answers.find((answer) => booleans.every(([name, value]) => answer.output[name] === value)) ?? answers[0]!;
     for (const name of names) if (decided[name] === undefined && agreeing.output[name] !== undefined) decided[name] = agreeing.output[name];
-    const tokens = answers.reduce((sum, answer) => sum + (answer.usage?.tokens ?? 0), 0), costUsd = answers.reduce((sum, answer) => sum + (answer.usage?.costUsd ?? 0), 0);
-    return { output: decided, usage: { tokens, costUsd }, threadId: answers.find((answer) => answer.threadId)?.threadId ?? null,
+    return { output: decided, usage: spent ?? { tokens: 0, costUsd: 0 }, threadId: answers.find((answer) => answer.threadId)?.threadId ?? null,
       detail: { votes: answers.map((answer) => ({ output: answer.output, threadId: answer.threadId ?? null })), asked: votes } };
   }
 

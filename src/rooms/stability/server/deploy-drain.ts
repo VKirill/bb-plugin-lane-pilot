@@ -20,6 +20,7 @@ export function createDeployDrain(disposed:() => boolean, now = () => Date.now()
     async around<T>(method:string, call:() => Promise<T>, signal?:AbortSignal):Promise<T> {
       if (!CHECKOUT_WRITING_METHODS.has(method) && !ACCEPTANCE_METHODS.has(method)) return await call();
       while (draining() && !disposed()) { signal?.throwIfAborted(); await new Promise((wake) => setTimeout(wake, pollMs)); }
+      signal?.throwIfAborted();
       const token = next++;
       inFlight.set(token, { method, startedAt:now() });
       try { return await call(); } finally { inFlight.delete(token); }

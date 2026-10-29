@@ -145,6 +145,35 @@ export function createReconcile(ctx: ServerCore, services: Services) {
     return true;
   }
 
+  /**
+   * A cancel a reload cut off while its writer still works: the stop is sent again and the cancel ends once the stop is seen, as
+   * cancelAttemptById ends it (2026-10-29 audit A-006: recovery listed the attempt as resumed with no stop and no watcher).
+   */
+  async function finishCancel(attemptId:string, runId:string, threadId:string): Promise<void> {
+    try {
+      await bb.sdk.threads.stop({ threadId });
+      if (!await stopSeen(threadId) || ctx.isDisposed()) return;
+      await services.rollback?.noteStopped(attemptId).catch(() => undefined);
+      if (getAttempt(db, attemptId)?.state !== "cancel_requested") return;
+      transitionAttempt(db, attemptId, "canceled", { threadId, reason:"writer stop observed during recovery" });
+      refreshRun(runId);
+    } catch (cause) {
+      ctx.log(`recovery could not finish the cancel of ${attemptId}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+  }
+
+  /** The bounded wait of runs/server/writer-stop.ts: the runs room imports this one, so it is not imported back. */
+  async function stopSeen(threadId:string): Promise<boolean> {
+    const listRunning = (bb.sdk.threads as { listRunning?: (query?: Record<string, unknown>) => Promise<Array<{ id: string }>> }).listRunning;
+    for (const deadline = Date.now() + 30_000;;) {
+      const status = stringAt(await bb.sdk.threads.get({ threadId }), "status");
+      const running = listRunning ? await listRunning({}) : [];
+      if (status !== "active" && status !== "running" && !running.some((thread) => thread.id === threadId)) return true;
+      if (Date.now() >= deadline || ctx.isDisposed()) return false;
+      await new Promise((wake) => setTimeout(wake, 1_000));
+    }
+  }
+
   async function resumeOrphans(projectId?: string): Promise<{ resumed:string[]; skipped:string[]; finished:string[] }> {
     const resumed: string[] = [];
     const skipped: string[] = [];
@@ -217,6 +246,8 @@ export function createReconcile(ctx: ServerCore, services: Services) {
               ...(current.state === "running" && writerThreadId ? { turnSent:true } : {}),
             });
           }
+        } else if (current?.state === "cancel_requested" && writerThreadId) {
+          void finishCancel(current.id, current.run_id, writerThreadId);
         }
         resumed.push(row.id);
       } catch {

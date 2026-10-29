@@ -57,6 +57,8 @@ export function createHostJobs(deps: {
         else deps.log?.(`lane-pilot: host ${kind} picked up job ${entry.jobId} (${last.state})`);
       }
       if (!entry) {
+        // Aborted before the job exists: nothing is started (2026-10-29 audit A-005: a canceled merge was still sent to the host).
+        options.signal?.throwIfAborted();
         let jobId: string;
         try {
           ({ jobId } = await deps.call("jobStart", { requestedHostId: hostId, kind, input, timeoutSec: Math.ceil(waitMs / 1000) + JOB_SLACK_SEC }, { hostId, timeoutMs: 30_000 }) as { jobId: string });

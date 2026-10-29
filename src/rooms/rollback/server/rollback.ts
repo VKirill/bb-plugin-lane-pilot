@@ -99,20 +99,25 @@ export function createRollback(ctx: ServerCore, services: Services) {
    * (deletions as D), how much is uncommitted. Called when a stop is confirmed and before a failed attempt's worktree goes,
    * so the work that comes back is on record before anything is cleaned up (rule 9).
    */
-  async function noteWorktree(input: { attemptId: string; hostId: string; basePath: string; worktreePath: string; outcome: string; savedAs?: string | null }): Promise<void> {
+  async function noteWorktree(input: { attemptId: string; hostId: string; basePath: string; worktreePath: string; outcome: string; savedAs?: string | null }): Promise<{ recorded: boolean; error?: string }> {
     try {
       const attempt = getAttempt(db, input.attemptId);
-      if (!attempt) return;
+      if (!attempt) return { recorded: true };
       const state = await host.call("gitWorktreeState", { requestedHostId: input.hostId, basePath: input.basePath, worktreePath: input.worktreePath }, { hostId: input.hostId, timeoutMs: 60_000 });
       if (state.status !== "ready") {
         upsertAttemptChange(db, { attemptId: input.attemptId, runId: attempt.run_id, taskId: attempt.task_id }, { outcome: input.outcome });
-        return;
+        return { recorded: true };
       }
       upsertAttemptChange(db, { attemptId: input.attemptId, runId: attempt.run_id, taskId: attempt.task_id }, {
         baseSha: state.base, outcome: input.outcome, changed: state.changed,
         worktree: { head: state.head, dirty: state.dirty, ahead: state.ahead, savedAs: input.savedAs ?? null, at: Date.now() },
       });
-    } catch (cause) { log(`rollback record: worktree of ${input.attemptId} not kept: ${cause instanceof Error ? cause.message : String(cause)}`); }
+      return { recorded: true };
+    } catch (cause) {
+      const error = cause instanceof Error ? cause.message : String(cause);
+      log(`rollback record: worktree of ${input.attemptId} not kept: ${error}`);
+      return { recorded: false, error };
+    }
   }
 
   /** The worktree was returned (saved as a patch) and removed: where the saved work is goes on the attempt's record. */
@@ -128,12 +133,12 @@ export function createRollback(ctx: ServerCore, services: Services) {
   }
 
   /** A stop was confirmed: what the attempt's own worktree holds goes on record before anything is cleaned up (rule 9). A shared folder is not the attempt's to describe. */
-  async function noteStopped(attemptId: string): Promise<void> {
+  async function noteStopped(attemptId: string): Promise<{ recorded: boolean; error?: string }> {
     const attempt = getAttempt(db, attemptId);
     const basePath = attempt ? taskBasePath(db, attempt.run_id, attempt.task_id) : null;
     const hostId = attempt ? getRunWriterHost(db, attempt.run_id) : null;
-    if (!attempt?.workspace_path || !basePath || !hostId || resolve(attempt.workspace_path) === resolve(basePath)) return;
-    await noteWorktree({ attemptId, hostId, basePath, worktreePath: attempt.workspace_path, outcome: "stopped" });
+    if (!attempt?.workspace_path || !basePath || !hostId || resolve(attempt.workspace_path) === resolve(basePath)) return { recorded: true };
+    return await noteWorktree({ attemptId, hostId, basePath, worktreePath: attempt.workspace_path, outcome: "stopped" });
   }
 
   // ---- finding what to roll back ----
