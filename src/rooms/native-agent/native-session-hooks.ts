@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { cp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { basename, isAbsolute, join } from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { parse } from "jsonc-parser/lib/esm/main.js";
 import { NATIVE_HOOK_SOURCES } from "../native-install";
 import { hookCommandIdentity } from "@lane-pilot/kit";
@@ -192,6 +192,16 @@ function pythonPaths(command: string): string[] {
   return command.split(/\s+/).filter((part) => part.endsWith(".py") && (isAbsolute(part) || part.startsWith("./")));
 }
 
+/** Absolute, or `./…` under the project. A path that leaves the project is odd and is left uncopied. (2026-10-29 audit A-028) */
+function hookModuleSource(token: string, projectCwd: string | null): string | null {
+  if (isAbsolute(token)) return token;
+  if (!projectCwd || !token.startsWith("./")) return null;
+  const abs = resolve(projectCwd, token);
+  const rel = relative(projectCwd, abs);
+  if (!rel || rel.startsWith("..") || isAbsolute(rel)) return null;
+  return abs;
+}
+
 async function copyBeside(source: string, destDir: string, name: string): Promise<string> {
   const dest = join(destDir, name);
   await cp(source, dest, { dereference: true });
@@ -245,12 +255,14 @@ export async function materializeNativeHookSession(input: {
   for (const { matcher, command, fields } of originals) {
     let next = command;
     for (const path of pythonPaths(command)) {
+      const source = hookModuleSource(path, cwd);
+      if (!source) continue;
       try {
-        const copied = await copyBeside(path, hooksDir, `orig-${index}-${basename(path)}`);
+        const copied = await copyBeside(source, hooksDir, `orig-${index}-${basename(source)}`);
         next = next.split(path).join(copied);
         index += 1;
       } catch {
-        throw new Error(`native hook module could not be copied: ${path}`);
+        // (2026-10-29 audit A-028) a missing or unreadable hook stays as written; it must not reject the session.
       }
     }
     const line = `python3 ${shellQuote(inject)} -- ${next}`;
