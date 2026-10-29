@@ -1,7 +1,7 @@
 import { builtinWorkflow } from "../../workflow";
 import type { ServerCore, Services } from "../../core/server";
 import { threatGap } from "../stages";
-import { PLAN_WORD_GAP, phaseFolder, planGate, sha256, type Phase, type PhaseRecord, type PlanItem, type RiskKey } from "../logic";
+import { PLAN_WORD_GAP, INDEPENDENCE_GAP, phaseFolder, planGate, sha256, type Phase, type PhaseRecord, type PlanItem, type RiskKey } from "../logic";
 import packageJson from "../../../../package.json";
 
 /**
@@ -68,8 +68,10 @@ export function recoverStopped(phase: Phase, version: string = packageJson.versi
   const r = phase.record;
   if (phase.state !== "stopped" || phase.stage !== "planning" || r.closing?.by !== LOOP_STOP || !r.plan || r.plan.critique?.decision !== "approve" || r.autoFailuresVersion === version) return null;
   const threat = threatGap(r);
+  // An approval from before the independence proof (0.1.375) is no gap here: the phase plans anew once its context is signed with the threat model.
   const gate = planGate(r);
-  if (!threat || gate.ok || gate.why.length !== 1 || gate.why[0] !== threat) return null;
+  const why = gate.ok ? [] : gate.why.filter((reason) => !reason.startsWith(INDEPENDENCE_GAP));
+  if (!threat || why.length !== 1 || why[0] !== threat) return null;
   const restored = new Set(r.partial?.unproven.map((piece) => piece.id) ?? (r.scope?.revisions ? [] : r.scope?.withdrawn ?? []));
   const { closing: _closing, partial: _partial, lessons: _lessons, ...rest } = r;
   return { record: { ...rest, scope: { revisions: r.scope?.revisions ?? 0, withdrawn: (r.scope?.withdrawn ?? []).filter((id) => !restored.has(id)) }, auto: undefined, autoFailures: undefined, autoFailuresTotal: undefined, autoFailuresVersion: undefined },
@@ -195,7 +197,7 @@ export function planItems(phase: Phase, output: Record<string, unknown>): PlanIt
 export type AutoApi = {
   context(input: { phaseId: string; docs: string[]; risks: Partial<Record<RiskKey, string>>; decisions?: string[]; appetite?: string; noGos?: string[]; by: string }): Promise<Phase>;
   plan(input: { phaseId: string; items: PlanItem[]; design?: boolean; alreadyMet?: string; by: string }): Phase;
-  planCheck(input: { phaseId: string; decision: "approve" | "changes_requested"; by: string; summary?: string }): Promise<Phase>;
+  planCheck(input: { phaseId: string; decision: "approve" | "changes_requested"; by: string; summary?: string; wfRunId?: string }): Promise<Phase>;
   question(input: { phaseId: string; text: string; blocking: boolean; by: string }): Phase;
   waveReview(input: { phaseId: string; wave: number; state: "passed" | "failed"; by: string; summary: string }): Phase;
   goalAudit(input: { phaseId: string; state: "met" | "unmet"; by: string; summary: string }): Phase;
@@ -277,9 +279,9 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       const lastWave = Math.max(0, ...old.map((item) => item.wave));
       const items = old.length ? [...old.filter((item) => !fresh.some((next) => next.id === item.id)), ...fresh.map((item) => ({ ...item, wave: lastWave + item.wave }))] : fresh;
       const planned = deps.api.plan({ phaseId: phase.id, items, design: output.has_ui === true, ...(met ? { alreadyMet: `the planner checked the repository: ${text(output.objective, 600) || phase.goal}` } : {}), by });
-      // lp.plan has the whole plan critiqued by its own critic role: that is the independent check of this plan.
-      const approved = output.status === "ok" && !/reject|changes|rework|fail/i.test(text(output.plan_verdict, 200));
-      await deps.api.planCheck({ phaseId: planned.id, decision: approved ? "approve" : "changes_requested", by: `${by}, plan critic`, summary: text(output.plan_verdict, 2000) });
+      // lp.plan has the whole plan critiqued by its own critic role in a session of its own; the gate reads that from the run's journal.
+      const approved = output.status === "ok" && text(output.plan_verdict, 200) === "pass";
+      await deps.api.planCheck({ phaseId: planned.id, decision: approved ? "approve" : "changes_requested", by: `${by}, plan critic`, summary: text(output.plan_verdict, 2000), wfRunId: auto.wfRunId });
       // The replan's gaps hold until the plan is admitted: a second round still merges into the pieces that were.
       const checked = deps.get(planned.id);
       if (checked.record.replan?.gaps && checked.record.plan?.admittedSha) deps.save(checked.id, { ...checked.record, replan: { count: checked.record.replan.count } });
@@ -424,7 +426,9 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
     try {
       // The goal audit is told from git which recorded proofs are stale, so it does not work currency out by hand; a failed lookup only leaves the facts out.
       const currency = due.kind === "close" && deps.proofCurrency ? await deps.proofCurrency(phase).catch(() => null) : null;
+      // The plan runs in full mode: lp.plan's critic otherwise skips a plan below three tasks, and SMA checks every plan (p2_checker).
       const started = services.workflowEngine.start({ workflow, inputs: { ...autoInputs(phase, due), ...(currency ? { proof_currency: currency } : {}) }, key: `phase:${phase.id}:${due.kind}:${phase.edition}:${deps.now()}`, runtime,
+        ...(due.kind === "plan" ? { mode: "full" as const } : {}),
         link: { projectId: phase.projectId, ...(phase.runId ? { runId: phase.runId } : {}) } });
       started.done.catch((cause: unknown) => ctx.log(`phase ${phase.id}: ${AUTO_WORKFLOWS[due.kind]} stopped: ${cause instanceof Error ? cause.message : String(cause)}`));
       deps.save(phase.id, { ...phase.record, auto: { kind: due.kind, wfRunId: started.runId, startedAt: deps.now(), ...(due.wave ? { wave: due.wave } : {}) } });

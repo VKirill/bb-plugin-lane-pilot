@@ -52,13 +52,13 @@ describe("the machine's pass", () => {
     const runs = new Map<string, { status: string; output: Record<string, unknown> | null }>();
     const engine: Record<string, unknown> = {};
     const auto = createAutoStages({ log: () => undefined }, {
-      workflowEngine: Object.assign(engine, { start: (input: { workflow: { id: string } }) => { const runId = `wfrun_${runs.size + 1}`; calls.push(`start ${input.workflow.id}`); runs.set(runId, { status: "running", output: null }); return { runId, created: true, done: new Promise(() => undefined) }; },
+      workflowEngine: Object.assign(engine, { start: (input: { workflow: { id: string }; mode?: string }) => { const runId = `wfrun_${runs.size + 1}`; calls.push(`start ${input.workflow.id}${input.mode ? ` mode ${input.mode}` : ""}`); runs.set(runId, { status: "running", output: null }); return { runId, created: true, done: new Promise(() => undefined) }; },
         get: (runId: string) => ({ runId, reason: null, error: null, failedNode: null, waiting: [], stopped: false, ...runs.get(runId)! }) }) as never,
     }, {
       exhausted: async (_phase, input) => { calls.push(`exhausted ${input.kind} ${input.stage}`); if (exhaustFails) throw new Error("the attempt could not be canceled"); },
       api: {
         context: async (input) => { calls.push(`context ${input.docs.join(",")}`); phase = phaseAt("planning", { ...phase.record, context: { docs: [], sha: "c", signedAt: 1 } }); return phase; },
-        plan: (input) => { calls.push(`plan ${input.items.length}${input.alreadyMet ? ` already_met: ${input.alreadyMet}` : ""}`); return phase; }, planCheck: async (input) => { calls.push(`planCheck ${input.decision}`); if (planRefusal) throw planRefusal; return phase; }, question: (input) => { calls.push(`question ${input.text}`); return phase; }, waveReview: () => phase, goalAudit: (input) => { calls.push(`goalAudit ${input.state}\n${input.summary}`); return phase; }, lessons: () => phase, drawing: async () => phase,
+        plan: (input) => { calls.push(`plan ${input.items.length}${input.alreadyMet ? ` already_met: ${input.alreadyMet}` : ""}`); return phase; }, planCheck: async (input) => { calls.push(`planCheck ${input.decision}${input.wfRunId ? ` ${input.wfRunId}` : ""}`); if (planRefusal) throw planRefusal; return phase; }, question: (input) => { calls.push(`question ${input.text}`); return phase; }, waveReview: () => phase, goalAudit: (input) => { calls.push(`goalAudit ${input.state}\n${input.summary}`); return phase; }, lessons: () => phase, drawing: async () => phase,
         returnTo: (input) => { calls.push(`return ${input.to}`); phase = { ...phase, stage: input.to } as Phase; return phase; },
       },
       get: () => phase,
@@ -125,16 +125,26 @@ describe("the machine's pass", () => {
     expect(w.calls).toContain("start lp.analyze");
     expect(w.calls).toContain("book auto_retry");
   });
+  // 2026-10-29 audit C-05: the plan critic is skipped below three tasks unless the run is full, and «block» read as an approval.
+  it("runs the plan with its critic every time and takes only its pass as an approval, with the run for the journal proof [sma:p2_checker]", async () => {
+    const planning = phaseAt("planning", { context: { docs: [], sha: "c", signedAt: 1 } });
+    const w = world({ status: "ok", tasks: [], waves: [], task_count: 0, already_met: true, objective: "x", has_ui: false, plan_verdict: "block" }, "succeeded", planning);
+    await w.auto.step(w.get());
+    expect(w.calls).toContain("start lp.plan mode full");
+    w.finish();
+    await w.auto.step(w.get());
+    expect(w.calls).toContain("planCheck changes_requested wfrun_1");
+  });
   // Review 2026-10-26 §1: lp.plan answers «already met» with no tasks; apply() threw on the empty list and the phase demanded work again.
   it("an empty plan with already_met is booked and reported through the gates, not failed", async () => {
     const planning = phaseAt("planning", { context: { docs: [], sha: "c", signedAt: 1 } });
-    const w = world({ status: "ok", tasks: [], waves: [], task_count: 0, already_met: true, objective: "notes module with a CLI exists", has_ui: false }, "succeeded", planning);
+    const w = world({ status: "ok", tasks: [], waves: [], task_count: 0, already_met: true, objective: "notes module with a CLI exists", has_ui: false, plan_verdict: "pass" }, "succeeded", planning);
     await w.auto.step(w.get());
-    expect(w.calls).toContain("start lp.plan");
+    expect(w.calls).toContain("start lp.plan mode full");
     w.finish();
     expect(await w.auto.step(w.get())).toBe(true);
     expect(w.calls).toContain("plan 0 already_met: the planner checked the repository: notes module with a CLI exists");
-    expect(w.calls).toContain("planCheck approve");
+    expect(w.calls).toContain("planCheck approve wfrun_1");
     expect(w.calls).toContain("book auto_done");
     expect(w.calls).not.toContain("book auto_failed");
     expect(w.get().record.autoFailures).toBeUndefined();

@@ -113,6 +113,57 @@ describe("the phase tool takes JSON text for its lists and objects", () => {
   });
 });
 
+/** A finished lp.plan run in the journal: [node, role, thread, started, ended] per agent step. */
+function seedPlanRun(db: ReturnType<typeof openDatabase>, id: string, steps: Array<[string, string, string, number, number]>) {
+  const nodes = steps.map(([node, role]) => ({ id: node, type: "agent", role }));
+  db.prepare("INSERT INTO lane_pilot_wf_run(id,workflow_id,workflow_version,workflow_sha256,definition_json,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)")
+    .run(id, "lp.plan", 1, "sha", JSON.stringify({ id: "lp.plan", nodes }), "succeeded", 1, 1);
+  steps.forEach(([node, , thread, started, ended], index) => db.prepare("INSERT INTO lane_pilot_wf_step(run_id,step_key,origin,node_id,visit,state,receipt_json,started_at,ended_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
+    .run(id, `${node}#${index + 1}`, `${node}#${index + 1}`, node, index + 1, "succeeded", JSON.stringify({ threadId: thread }), started, ended, ended));
+}
+
+describe("the plan checker is proven independent by the run journal, never by a name", () => {
+  async function planned() {
+    const phases = driver();
+    const phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Stats", goal: "stats module" });
+    const risks = { technical: "none", product: "none", operations: "none", security: "none" };
+    savePhase(phases.db, phase.id, { stage: "planning", record: { context: { docs: [], sha: contextSignature([]), signedAt: 1, risks, requirements: ["R1"] } }, at: 1 });
+    phases.plan({ phaseId: phase.id, items: [], alreadyMet: "the planner checked the repository: stats already exist", by: "lp.plan" });
+    return { phases, phase };
+  }
+
+  it("refuses an approval that names no run, or a run whose critic was skipped [sma:p2_checker]", async () => {
+    const { phases, phase } = await planned();
+    await expect(phases.planCheck({ phaseId: phase.id, decision: "approve", by: "lp.plan, plan critic" })).rejects.toMatchObject({ why: [expect.stringMatching(/not proven independent: it names no workflow run/)] });
+    seedPlanRun(phases.db, "wfrun_small", [["plan", "planner", "thr_planner", 10, 20]]);
+    await expect(phases.planCheck({ phaseId: phase.id, decision: "approve", by: "critic", wfRunId: "wfrun_small" })).rejects.toMatchObject({ why: [expect.stringMatching(/no plan-critic session finished/)] });
+  });
+
+  it("refuses a critic that went on in the planner's session or in the PM's [sma:p2_checker]", async () => {
+    const { phases, phase } = await planned();
+    seedPlanRun(phases.db, "wfrun_same", [["plan", "planner", "thr_planner", 10, 20], ["plan_critic", "plan-critic", "thr_planner", 30, 40]]);
+    await expect(phases.planCheck({ phaseId: phase.id, decision: "approve", by: "critic", wfRunId: "wfrun_same" })).rejects.toMatchObject({ why: [expect.stringMatching(/went on in the planner's session/)] });
+    seedPlanRun(phases.db, "wfrun_pm", [["plan_critic", "plan-critic", "thr_pm", 30, 40]]);
+    await expect(phases.planCheck({ phaseId: phase.id, decision: "approve", by: "critic", wfRunId: "wfrun_pm" })).rejects.toMatchObject({ why: [expect.stringMatching(/went on in the planner's session thr_pm/)] });
+  });
+
+  it("refuses a critic that started before the planner was done [sma:p2_order]", async () => {
+    const { phases, phase } = await planned();
+    seedPlanRun(phases.db, "wfrun_early", [["plan", "planner", "thr_planner", 10, 50], ["plan_critic", "plan-critic", "thr_critic", 30, 60]]);
+    await expect(phases.planCheck({ phaseId: phase.id, decision: "approve", by: "critic", wfRunId: "wfrun_early" })).rejects.toMatchObject({ why: [expect.stringMatching(/started before the plan was done/)] });
+  });
+
+  it("refuses a plan the planner rewrote after the check, and admits the one the critic had the last word on [sma:p2_session_end]", async () => {
+    const { phases, phase } = await planned();
+    seedPlanRun(phases.db, "wfrun_after", [["plan", "planner", "thr_planner", 10, 20], ["plan_critic", "plan-critic", "thr_critic", 30, 40], ["plan", "planner", "thr_planner", 50, 60]]);
+    await expect(phases.planCheck({ phaseId: phase.id, decision: "approve", by: "critic", wfRunId: "wfrun_after" })).rejects.toMatchObject({ why: [expect.stringMatching(/wrote again after the check/)] });
+    seedPlanRun(phases.db, "wfrun_rework", [["plan", "planner", "thr_planner", 10, 20], ["plan_critic", "plan-critic", "thr_critic", 30, 40], ["plan", "planner", "thr_planner", 50, 60], ["plan_critic", "plan-critic", "thr_critic2", 70, 80]]);
+    const admitted = await phases.planCheck({ phaseId: phase.id, decision: "approve", by: "critic", wfRunId: "wfrun_rework" });
+    expect(admitted.stage).toBe("execution");
+    expect(admitted.record.plan!.critique!.independence).toMatchObject({ ok: true, checker: "thr_critic2", planners: ["thr_planner", "thr_pm"], checkerStartedAt: 70, plannedUntil: 60 });
+  });
+});
+
 // Review 2026-10-26 §1: lp.plan may return already_met with no tasks; the phase refused that and demanded work again.
 describe("a plan that found the goal already met", () => {
   it("is admitted without pieces, skips execution, and reaches the goal audit with the planner's evidence", async () => {
@@ -121,7 +172,8 @@ describe("a plan that found the goal already met", () => {
     const risks = { technical: "none", product: "none", operations: "none", security: "none" };
     savePhase(phases.db, phase.id, { stage: "planning", record: { context: { docs: [], sha: contextSignature([]), signedAt: 1, risks, requirements: ["R1"] } }, at: 1 });
     phases.plan({ phaseId: phase.id, items: [], alreadyMet: "the planner checked the repository: stats already exist", by: "lp.plan" });
-    const admitted = await phases.planCheck({ phaseId: phase.id, decision: "approve", by: "lp.plan, plan critic" });
+    seedPlanRun(phases.db, "wfrun_plan", [["plan", "planner", "thr_planner", 10, 20], ["plan_critic", "plan-critic", "thr_critic", 30, 40]]);
+    const admitted = await phases.planCheck({ phaseId: phase.id, decision: "approve", by: "lp.plan, plan critic", wfRunId: "wfrun_plan" });
     expect(admitted.stage).toBe("execution");
     expect(admitted.record.plan).toMatchObject({ items: [], alreadyMet: { evidence: expect.stringContaining("stats already exist") } });
     expect(admitted.record.plan!.admittedSha).toBe(admitted.record.plan!.sha);

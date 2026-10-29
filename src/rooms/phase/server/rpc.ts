@@ -13,7 +13,7 @@ export function phaseRpc(api: PhaseApi) {
       const done = action === "open" ? await api.open({ projectId, pmThreadId, title: p.title, goal: p.goal, roadmapRow: p.roadmapRow })
         : action === "context" ? await api.context({ phaseId: need(), docs: p.docs, risks: p.risks, appetite: p.appetite, noGos: p.noGos, requirements: p.requirements, decisions: p.decisions, by: "screen" })
         : action === "plan" ? api.plan({ phaseId: need(), items: p.items, design: p.design })
-        : action === "plan_check" ? await api.planCheck({ phaseId: need(), decision: p.decision, by: p.by, summary: p.summary })
+        : action === "plan_check" ? await api.planCheck({ phaseId: need(), decision: p.decision, by: p.by, summary: p.summary, wfRunId: p.wfRunId })
         : action === "drawing" ? await api.drawing({ phaseId: need(), paths: p.paths, designer: p.designer, feasible: p.feasible, contradiction: p.contradiction, reviewer: p.reviewer, critique: p.critique, lesson: p.lesson })
         : action === "goal_audit" ? api.goalAudit({ phaseId: need(), state: p.state, by: p.by, summary: p.summary })
         // Context note: the owner's note goes to the writers of the pieces at work; an answer settles a stage question.

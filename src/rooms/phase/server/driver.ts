@@ -12,6 +12,7 @@ import {
   PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceKey, acceptanceLines, alreadyMetVerdict, blindVerdict, canonical, pieceSha, contextSignature, openQuestions, phaseFolder, planGate as planGateOf, piecesOfWave, waveCleared, waveLines, wavePackage, wavesOf, wordOf, designDecision, designGate, discussionGate,
   executionGate, issuable, lessonsNeeded, nextAction, planGate, planSignature, provenPieces, renderBook, sha256, staleAfterReturn,
   type ContextDoc, type Phase, type PhaseRecord, type PhaseStage, type PlanItem, type RiskKey, type TaskFact, type WordTurn,
+  checkerIndependence, type JournalStep,
 } from "../logic";
 import { appendPart, getPhase, insertPhase, listParts, listPhases, notePoked, savePhase } from "../store";
 import { archiveDrawing, binaryFileCommand, binaryFileFingerprint, conclusionText, markRoadmap, nextRoadmapRow, stateText, uatState, uatText, waveTable } from "../stages";
@@ -140,7 +141,9 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       const mine = attempts.filter((row) => taskFamily(row.task_id) === family);
       const latestTask = mine.at(-1)?.task_id ?? taskId;
       const stage = (id: string) => (receipts.find((row) => row.task_id === latestTask && row.stage_id === id)?.state ?? null) as never;
-      out.set(pieceId, { taskId: latestTask, state: mine.at(-1)?.state ?? null, planFact: stage("plan-fact"), verification: stage("verification"), codeCritique: stage("code-critique"), browserQa: stage("browser-qa") });
+      const contract = getTask(db, latestTask)?.contract as { qa_cases?: unknown[] } | undefined;
+      out.set(pieceId, { taskId: latestTask, state: mine.at(-1)?.state ?? null, planFact: stage("plan-fact"), verification: stage("verification"), codeCritique: stage("code-critique"), browserQa: stage("browser-qa"),
+        qaPlanned: Array.isArray(contract?.qa_cases) && contract.qa_cases.length > 0 });
     }
     return out;
   }
@@ -206,7 +209,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     const items = input.items.map((item) => ({ ...item, task: { ...item.task, id: item.id } }));
     const contextSha = phase.record.context.sha;
     // `alreadyMet`: the planner found the repository already doing what the goal asks, a plan with no pieces that the plan gate admits as such.
-    const record: PhaseRecord = { ...phase.record, plan: { items, contextSha, sha: planSignature(items, contextSha), rounds: phase.record.plan?.rounds ?? 0, ...(input.alreadyMet ? { alreadyMet: { evidence: input.alreadyMet.slice(0, 1000) } } : {}) } };
+    const record: PhaseRecord = { ...phase.record, plan: { items, contextSha, sha: planSignature(items, contextSha), rounds: phase.record.plan?.rounds ?? 0, submittedAt: now(), ...(input.alreadyMet ? { alreadyMet: { evidence: input.alreadyMet.slice(0, 1000) } } : {}) } };
     if (input.design) record.design = { decision: "needed", why: "the PM asked for a drawing" };
     savePhase(db, phase.id, { record, at: now() });
     if (input.alreadyMet) book(phase, "plan", "already_met", `the planner found the goal already met, no pieces to build: ${input.alreadyMet.slice(0, 1000)}`);
@@ -214,7 +217,21 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     return mustGet(phase.id);
   }
 
-  async function planCheck(input: Reported & { decision: "approve" | "changes_requested"; by: string; summary?: string }): Promise<Phase> {
+  /** The journal of a workflow run as the independence check reads it: each step's role from the run's own stored definition. */
+  function journalSteps(wfRunId: string): JournalStep[] | null {
+    const run = db.prepare("SELECT definition_json FROM lane_pilot_wf_run WHERE id=?").get(wfRunId) as { definition_json: string } | undefined;
+    if (!run) return null;
+    let roles = new Map<string, string>();
+    try { roles = new Map(((JSON.parse(run.definition_json) as { nodes?: Array<{ id: string; role?: string }> }).nodes ?? []).filter((node) => node.role).map((node) => [node.id, node.role!])); } catch { /* no roles: no critic */ }
+    const rows = db.prepare("SELECT node_id, state, receipt_json, started_at, ended_at FROM lane_pilot_wf_step WHERE run_id=? ORDER BY rowid").all(wfRunId) as Array<{ node_id: string; state: string; receipt_json: string | null; started_at: number | null; ended_at: number | null }>;
+    return rows.map((row) => {
+      let threadId: string | null = null;
+      try { threadId = (JSON.parse(row.receipt_json ?? "null") as { threadId?: string | null } | null)?.threadId ?? null; } catch { /* no receipt */ }
+      return { nodeId: row.node_id, role: roles.get(row.node_id) ?? null, state: row.state, threadId, startedAt: row.started_at, endedAt: row.ended_at };
+    });
+  }
+
+  async function planCheck(input: Reported & { decision: "approve" | "changes_requested"; by: string; summary?: string; wfRunId?: string }): Promise<Phase> {
     const phase = mustGet(input.phaseId);
     if (phase.stage !== "planning" || !phase.record.plan) throw new PhaseRefusal("no plan at planning to check");
     // Context files unchanged: the documents the plan stands on are read again; an edit after the signature sends the phase back.
@@ -226,7 +243,10 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       }
     }
     const rounds = (phase.record.plan.rounds ?? 0) + (input.decision === "changes_requested" ? 1 : 0);
-    const record: PhaseRecord = { ...phase.record, plan: { ...phase.record.plan, rounds, critique: { decision: input.decision, by: input.by, ...(input.summary ? { summary: input.summary } : {}) } } };
+    const steps = input.wfRunId ? journalSteps(input.wfRunId) : null;
+    const independence = !input.wfRunId ? undefined : steps ? checkerIndependence(input.wfRunId, steps, { pmThread: phase.pmThreadId, submittedAt: phase.record.plan.submittedAt })
+      : { ok: false, wfRunId: input.wfRunId, why: `workflow run ${input.wfRunId} is not in the journal` };
+    const record: PhaseRecord = { ...phase.record, plan: { ...phase.record.plan, rounds, critique: { decision: input.decision, by: input.by, ...(input.summary ? { summary: input.summary } : {}), ...(independence ? { independence } : {}) } } };
     book(phase, "plan", "checked", `${input.by}: ${input.decision}${input.summary ? ` — ${input.summary}` : ""}`);
     savePhase(db, phase.id, { record, at: now() });
     const check = planGate(record);
@@ -615,7 +635,8 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       const taskIdForIssue = redoOf ? redoId(item.id, runId) : item.id;
       const reply: Record<string, unknown> = await services.dispatchWriter({ threadId: phase.pmThreadId, projectId: phase.projectId, birth: "phase",
         // Stage above ordinary work: a phase's pieces start before the run's ordinary tasks when writers are scarce.
-        task: { ...item.task, id: taskIdForIssue, priority: (item.task.priority as string | undefined) ?? "high", ...(phase.record.design?.drawing ? { drawing: phase.record.design.drawing.paths } : {}),
+        // quality_mode full: the piece goes through every review stage, so its acceptance lines read verdicts, not their absence (SMA p6_l_verdict).
+        task: { ...item.task, id: taskIdForIssue, quality_mode: "full", priority: (item.task.priority as string | undefined) ?? "high", ...(phase.record.design?.drawing ? { drawing: phase.record.design.drawing.paths } : {}),
           ...(typeof item.task.project_cwd === "string" && item.task.project_cwd ? {} : { project_cwd: (checkout ??= await pmCheckoutPath(phase)) ?? undefined }),
           ...(typeof item.task.objective === "string" && item.task.objective.trim() ? {} : { objective: `${item.title}: given ${item.promise.given}, when ${item.promise.when}, then ${item.promise.then}` }) } as never,
         plan: `Phase ${phase.id} «${phase.title}», wave ${item.wave}, piece ${item.id}. Promise — given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}.${phase.record.design?.drawing ? ` The phase drawing: ${phase.record.design.drawing.paths.join(", ")} — the screens follow it.` : ""}`,

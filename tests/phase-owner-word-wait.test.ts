@@ -13,7 +13,7 @@ const approved = (ownerWords: boolean, extra: Partial<PhaseRecord> = {}): Phase 
   const docs = [{ path: "docs/CONTEXT.md", sha256: "a".repeat(64), bytes: 120 }];
   const context = { docs, sha: contextSignature(docs), signedAt: 1, risks: { technical: "none", product: "users miss totals", operations: "none", security: "none" } };
   const items = [piece("a", 1)];
-  const record: PhaseRecord = { ownerWords, context, plan: { items, contextSha: context.sha, sha: planSignature(items, context.sha), critique: { decision: "approve", by: "plan-critic" } }, ...extra };
+  const record: PhaseRecord = { ownerWords, context, plan: { items, contextSha: context.sha, sha: planSignature(items, context.sha), critique: { decision: "approve", by: "plan-critic", independence: { ok: true, why: "checker thr_c started after planner thr_p and had the last word" } } }, ...extra };
   return { id: "ph_1", projectId: "p", pmThreadId: "t", runId: "r", title: "Sums", goal: "sums are right", stage: "planning", state: "active", record, edition: 1, createdAt: 0, updatedAt: 0 } as Phase;
 };
 

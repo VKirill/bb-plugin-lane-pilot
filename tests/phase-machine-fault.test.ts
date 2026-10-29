@@ -58,7 +58,8 @@ describe("R1: the drill phase's own data", () => {
     const docs = [{ path: `${FOLDER}/CONTEXT.md` }, { path: `${FOLDER}/SECURITY.md` }];
     expect(threatGap({ context: { docs, risks: doc.risks } } as never)).toBeNull();
     // What the hub holds: the context of the drill was signed under 0.1.336 with CONTEXT.md alone, so the gate refused its plan for the threat model only.
-    expect(whyOf(refused().record)).toEqual([expect.stringMatching(/needs a threat model/)]);
+    // Its approval predates the journal's proof of the checker (0.1.375), which the gate now names too; the replan after the threat model brings it.
+    expect(whyOf(refused().record)).toEqual([expect.stringMatching(/needs a threat model/), expect.stringMatching(/not proven independent/)]);
   });
 
   it("a gate refusal that only asks for the threat model is the machine's gap, never the product's loop", async () => {

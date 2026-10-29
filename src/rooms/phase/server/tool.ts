@@ -33,7 +33,7 @@ export const phaseToolParams = z.discriminatedUnion("action", [
     appetite: z.string().trim().min(1).max(600), noGos: asJson(z.array(z.string().trim().min(1).max(300)).min(1).max(30)),
     requirements: asJson(z.array(z.string().trim().min(1).max(40)).max(100)).optional(), decisions: asJson(z.array(z.string().trim().min(1).max(40)).max(100)).optional() }).strict(),
   z.object({ action: z.literal("plan"), phaseId, items: asJson(z.array(item).min(1).max(60)), design: asJson(z.boolean()).optional() }).strict(),
-  z.object({ action: z.literal("plan_check"), phaseId, decision: z.enum(["approve", "changes_requested"]), by: z.string().trim().min(1).max(120), summary: z.string().max(2000).optional() }).strict(),
+  z.object({ action: z.literal("plan_check"), phaseId, decision: z.enum(["approve", "changes_requested"]), by: z.string().trim().min(1).max(120), summary: z.string().max(2000).optional(), wfRunId: z.string().trim().min(1).max(80).optional() }).strict(),
   z.object({ action: z.literal("drawing"), phaseId, paths: asJson(z.array(z.string().trim().min(1).max(1024)).min(1).max(30)), designer: z.string().trim().min(1).max(120), feasible: asJson(z.boolean()), contradiction: z.string().max(2000).optional(), reviewer: z.string().trim().min(1).max(120).optional(),
     critique: asJson(z.object({ scores: z.record(z.string(), z.number().int().min(0).max(3)), verdict: z.enum(["pass", "rework"]), notes: z.string().max(2000) }).strict()).optional(), lesson: z.string().trim().min(5).max(300).optional() }).strict(),
   z.object({ action: z.literal("goal_audit"), phaseId, state: z.enum(["met", "unmet"]), by: z.string().trim().min(1).max(120), summary: z.string().trim().min(1).max(2000) }).strict(),
@@ -100,7 +100,7 @@ export function registerPhaseTool(ctx: ServerCore, services: Services): void {
           }
           case "context": return json(summary(await api.context({ phaseId: input.phaseId, docs: input.docs, risks: input.risks, appetite: input.appetite, noGos: input.noGos, requirements: input.requirements, decisions: input.decisions, by: context.threadId })));
           case "plan": return json(summary(api.plan({ phaseId: input.phaseId, items: input.items as never, design: input.design })));
-          case "plan_check": return json(summary(await api.planCheck({ phaseId: input.phaseId, decision: input.decision, by: input.by, summary: input.summary })));
+          case "plan_check": return json(summary(await api.planCheck({ phaseId: input.phaseId, decision: input.decision, by: input.by, summary: input.summary, wfRunId: input.wfRunId })));
           case "drawing": return json(summary(await api.drawing({ phaseId: input.phaseId, paths: input.paths, designer: input.designer, feasible: input.feasible, contradiction: input.contradiction, reviewer: input.reviewer, critique: input.critique as never, lesson: input.lesson })));
           case "goal_audit": return json(summary(api.goalAudit({ phaseId: input.phaseId, state: input.state, by: input.by, summary: input.summary })));
           case "lessons": return json(summary(api.lessons({ phaseId: input.phaseId, analysis: input.analysis, author: input.author, reviewer: input.reviewer, reviewedHash: input.reviewedHash })));

@@ -23,7 +23,29 @@ export type Promise3 = { given: string; when: string; then: string };
 export type PlanItem = { id: string; title: string; wave: number; promise: Promise3; task: Record<string, unknown>; /** Requirement ids and locked decision ids this piece carries out (coverage gates). */ covers?: string[] };
 
 export type ContextDoc = { path: string; sha256: string; bytes: number };
-export type PlanCritique = { decision: "approve" | "changes_requested"; by: string; summary?: string };
+/** What the run journal says about the plan checker (SMA p2_checker, p2_order, p2_session_end): a session of its own, started after the
+ *  plan was done, with the last word. `ok` false names why; the gate admits an approval only with `ok`. */
+export type CheckerIndependence = { ok: boolean; why: string; wfRunId?: string; checker?: string; planners?: string[]; checkerStartedAt?: number; plannedUntil?: number };
+export type PlanCritique = { decision: "approve" | "changes_requested"; by: string; summary?: string; independence?: CheckerIndependence };
+export type JournalStep = { nodeId: string; role: string | null; state: string; threadId: string | null; startedAt: number | null; endedAt: number | null };
+
+/** Is the plan checker of this workflow run independent of the planner: judged by the journal's sessions and times, never by a name.
+ *  `pmThread` and `submittedAt` stand for the planner when the run itself has no planner step (the PM wrote the plan). */
+export function checkerIndependence(wfRunId: string, steps: readonly JournalStep[], opts: { pmThread: string; submittedAt?: number }): CheckerIndependence {
+  const critics = steps.filter((step) => step.role === "plan-critic" && step.state === "succeeded" && step.threadId && step.startedAt != null)
+    .sort((a, b) => a.startedAt! - b.startedAt!);
+  const critic = critics.at(-1);
+  if (!critic) return { ok: false, wfRunId, why: `no plan-critic session finished in workflow run ${wfRunId} (a skipped or missing critic is no check)` };
+  const planners = steps.filter((step) => step.role === "planner" && step.threadId);
+  const plannerThreads = [...new Set([...planners.map((step) => step.threadId!), opts.pmThread])];
+  const plannedUntil = planners.length ? Math.max(...planners.map((step) => step.endedAt ?? step.startedAt ?? 0)) : opts.submittedAt ?? 0;
+  const base = { wfRunId, checker: critic.threadId!, planners: plannerThreads, checkerStartedAt: critic.startedAt!, plannedUntil };
+  if (plannerThreads.includes(critic.threadId!)) return { ...base, ok: false, why: `the plan checker went on in the planner's session ${critic.threadId}: continuing by message is no independent check` };
+  const after = planners.filter((step) => (step.startedAt ?? 0) > (critic.endedAt ?? critic.startedAt!));
+  if (after.length) return { ...base, ok: false, why: "the planner wrote again after the check: the checker must have the last word" };
+  if (critic.startedAt! < plannedUntil) return { ...base, ok: false, why: "the plan checker started before the plan was done: the check must come after the planner" };
+  return { ...base, ok: true, why: `checker ${critic.threadId} started after the planner (${plannerThreads.join(", ")}) and had the last word` };
+}
 export type Drawing = { paths: string[]; sha256: string; designer: string; reviewer?: string; feasible?: boolean; contradiction?: string };
 export type FrozenVerdict = { state: "passed" | "failed"; detail: string; mainSha: string | null; at: number; inputSha: string };
 /** What blindVerdict returns while the run's goal check is still running; it is never stored. */
@@ -80,7 +102,7 @@ export type PhaseRecord = {
   words?: OwnerWord[];
   /** Goal revisions and withdrawn pieces, each one a decision in the book. */
   scope?: { revisions: number; withdrawn: string[] };
-  plan?: { items: PlanItem[]; sha: string; contextSha: string; critique?: PlanCritique; admittedSha?: string; admittedAt?: number; /** Rounds of the independent check that asked for changes. */ rounds?: number;
+  plan?: { items: PlanItem[]; sha: string; contextSha: string; critique?: PlanCritique; admittedSha?: string; admittedAt?: number; /** When the plan was submitted. */ submittedAt?: number; /** Rounds of the independent check that asked for changes. */ rounds?: number;
     /** The planner checked that the repository already does what the goal asks: no pieces, no execution; the goal audit checks the claim. */ alreadyMet?: { evidence: string } };
   design?: { decision: "needed" | "not_needed"; why: string; drawing?: Drawing; confirmedAt?: number; mode?: "screens" | "system" | "mixed"; motion?: string[]; archived?: Drawing[] };
   /** The roadmap row this phase is (lane-plan ROADMAP.md), marked done when the phase closes. */
@@ -206,6 +228,7 @@ export function acceptanceCommands(line: string): string[] {
 
 /** The plan gate's last refusal when the project asks for the owner's word: it is the owner's to give, not a gap of the plan the machine could plan away. */
 export const PLAN_WORD_GAP = "the plan awaits the owner's word (owner.words is on)";
+export const INDEPENDENCE_GAP = "the plan check is not proven independent";
 
 /** Planning → admission: every piece becomes a work, waves are computable, the plan was built on the signed context, and an independent checker approved it. */
 export function planGate(record: PhaseRecord): GateResult {
@@ -221,8 +244,9 @@ export function planGate(record: PhaseRecord): GateResult {
   const threat = threatGap(record);
   if (threat) why.push(threat);
   if ((plan.rounds ?? 0) >= PLAN_ROUNDS_MAX && plan.critique?.decision !== "approve") why.push(`${plan.rounds} rounds of the plan check asked for changes: stop revising — return the phase to discussion with what the checker keeps finding, or close it`);
-  if (!plan.critique) why.push("no independent plan check: run the plan critic (workflow lp.plan or grill-plan) and report its decision");
+  if (!plan.critique) why.push("no independent plan check: run the plan critic (workflow lp.plan) and report its decision with the run's wfRunId");
   else if (plan.critique.decision !== "approve") why.push(`the plan checker asked for changes${plan.critique.summary ? `: ${plan.critique.summary}` : ""}`);
+  else if (!plan.critique.independence?.ok) why.push(`${INDEPENDENCE_GAP}: ${plan.critique.independence?.why ?? "it names no workflow run: report the wfRunId of the lp.plan run whose plan critic approved"}`);
   why.push(...openQuestions(record, "planning").map((question) => `open question ${question.id}: ${question.text}`));
   if (record.ownerWords && wordOf(record, "planning")?.decision !== "yes") why.push(PLAN_WORD_GAP);
   return gate(why);
@@ -267,7 +291,7 @@ export function designGate(record: PhaseRecord): GateResult {
   return gate(why);
 }
 
-export type TaskFact = { taskId: string; state: string | null; planFact: "passed" | "failed" | "skipped" | null; verification: "passed" | "failed" | "skipped" | null; codeCritique: "passed" | "blocked" | "skipped" | "failed" | null; browserQa?: "passed" | "failed" | "skipped" | null };
+export type TaskFact = { taskId: string; state: string | null; planFact: "passed" | "failed" | "skipped" | null; verification: "passed" | "failed" | "skipped" | null; codeCritique: "passed" | "blocked" | "skipped" | "failed" | null; browserQa?: "passed" | "failed" | "skipped" | null; qaPlanned?: boolean };
 
 /** The pieces that may be issued now: wave by wave, the next wave only once every piece of the earlier waves is accepted. */
 /** What a piece's work is: its contract and its promise. A changed one after a return to planning is new work. */
@@ -405,8 +429,12 @@ export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFac
   const qaRed = failed((fact) => fact?.browserQa === "failed");
   // What did read the pieces, said as it is: no receipt is no reading (2026-10-29 audit: «no independent checker blocks» and «the
   // browser checks read clean» were printed for pieces no critic and no browser check had seen; the code critic is off by default).
-  const critiqued = failed((fact) => fact?.codeCritique === "passed").length;
+  // SMA p6_l_verdict / p6_evidence: a line is green on a positive verdict only. A piece with no critic receipt is unread, and a piece
+  // whose contract plans a browser check (qa_cases) is unread until that check passed; a piece without qa_cases says it has none.
+  const uncritiqued = failed((fact) => fact?.codeCritique !== "passed");
+  const qaOwed = failed((fact) => !!fact?.qaPlanned && fact.browserQa !== "passed");
   const qaPassed = failed((fact) => fact?.browserQa === "passed").length;
+  const qaNone = failed((fact) => !fact?.qaPlanned).length;
   const model = phase.record.verification?.model;
   // The person's two decisions count only under the key of the package now shown (a word on an older candidate is not this one's).
   const latest = wordOf(phase.record, "acceptance");
@@ -419,13 +447,14 @@ export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFac
     line("contract_current", !!phase.record.plan?.admittedSha && phase.record.plan.admittedSha === phase.record.plan.sha, phase.record.plan?.admittedSha === phase.record.plan?.sha ? "the plan is the admitted one" : "the plan changed after its admission"),
     line("promises_proved", notProved.length === 0, notProved.length ? `not proved by plan-fact: ${notProved.join(", ")}` : `${items.length} promises proved`),
     line("checks_passed", notChecked.length === 0, notChecked.length ? `checks failed: ${notChecked.join(", ")}` : "every piece's checks passed"),
-    line("independent_check", blockedByCritic.length === 0, blockedByCritic.length ? `the code critic blocks: ${blockedByCritic.join(", ")}`
-      : critiqued === items.length ? `the code critic passed all ${items.length} piece(s)` : `nothing blocks; the code critic passed ${critiqued} of ${items.length} piece(s), the rest had no code critic — the blind verdict and the goal audit are their independent check`),
+    line("independent_check", blockedByCritic.length === 0 && uncritiqued.length === 0, blockedByCritic.length ? `the code critic blocks: ${blockedByCritic.join(", ")}`
+      : uncritiqued.length ? `the code critic has not passed: ${uncritiqued.join(", ")} (no critic receipt is no reading)` : `the code critic passed all ${items.length} piece(s)`),
     line("landed", notLanded.length === 0, notLanded.length ? `not merged: ${notLanded.join(", ")}` : "every piece is merged into main"),
     line("composition_verified", verdict?.state === "passed", verdict ? verdict.detail : "no blind verdict yet"),
     line("main_unmoved", !verdict?.mainSha || !now.mainSha || verdict.mainSha === now.mainSha, verdict?.mainSha && now.mainSha && verdict.mainSha !== now.mainSha ? `main moved from ${verdict.mainSha.slice(0, 12)} to ${now.mainSha.slice(0, 12)} since the verdict — verify again` : "main is where the verdict saw it"),
-    line("qa_read", qaRed.length === 0, qaRed.length ? `the browser check failed: ${qaRed.join(", ")}`
-      : qaPassed ? `no browser check failed; ${qaPassed} of ${items.length} piece(s) passed one, the rest had none` : "no browser check failed; none ran for these pieces"),
+    line("qa_read", qaRed.length === 0 && qaOwed.length === 0, qaRed.length ? `the browser check failed: ${qaRed.join(", ")}`
+      : qaOwed.length ? `the planned browser check has not passed: ${qaOwed.join(", ")}`
+      : `${qaPassed} piece(s) passed their browser check${qaNone ? `; ${qaNone} piece(s) plan none (no qa_cases)` : ""}`),
     line("goal_met", model?.state === "met", model ? `${model.by}: ${model.summary}` : "no goal audit yet"),
     // A put-off check with no term from the owner is unproven work of this project: it holds the acceptance until an agent closes it with evidence.
     // Limits acknowledged (SMA p6_l_limits): a person's decision on what stays open and how to recover, after every put-off check has its term.
@@ -486,7 +515,7 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
     case "planning": {
       const check = planGate(r);
       return { key: key(`${r.plan?.sha ?? "none"}:${r.plan?.critique?.decision ?? "-"}`), stage: phase.stage, waitsForPm: true,
-        text: `${head} — stage 2, planning, on context ${r.context?.sha.slice(0, 12) ?? "?"}.\nSubmit the plan with ${tool("plan", `, phaseId:"${id}", items:[{id, title, wave, promise:{given, when, then}, task:<task-v2>}]`)}; then run the independent plan checker (workflow lp.plan's critic or grill-plan) and report it with ${tool("plan_check", `, phaseId:"${id}", decision:"approve"|"changes_requested", by, summary`)} (round ${(r.plan?.rounds ?? 0) + 1} of ${PLAN_ROUNDS_MAX}; a checker of another model than the planner).\nRead first: ${stageInit(phase).join(", ")}. ${rubricLine("planning")}${check.ok ? "" : `\nOpen: ${check.why.slice(0, 8).join("; ")}`}` };
+        text: `${head} — stage 2, planning, on context ${r.context?.sha.slice(0, 12) ?? "?"}.\nSubmit the plan with ${tool("plan", `, phaseId:"${id}", items:[{id, title, wave, promise:{given, when, then}, task:<task-v2>}]`)}; then run the independent plan checker (workflow lp.plan, whose plan critic is a session of its own) and report it with ${tool("plan_check", `, phaseId:"${id}", decision:"approve"|"changes_requested", by, summary, wfRunId`)} (round ${(r.plan?.rounds ?? 0) + 1} of ${PLAN_ROUNDS_MAX}; the approval counts only with the wfRunId of the run whose plan critic started after the plan and had the last word).\nRead first: ${stageInit(phase).join(", ")}. ${rubricLine("planning")}${check.ok ? "" : `\nOpen: ${check.why.slice(0, 8).join("; ")}`}` };
     }
     case "design": {
       const check = designGate(r);

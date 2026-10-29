@@ -1723,7 +1723,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n1713: ["have", "экзамен", "src/rooms/policy/exam.ts#export function runExam"],
   n1714: ["have", "арена", "src/rooms/bench/server/weekly.ts#export function mountBenchWeekly("],
   n1715: ["have", "бенч", "src/rooms/bench/service.ts#async function run("],
-  n1716: ["have", "базовая линия", "src/rooms/baseline/server/baseline.ts#export function createBaseline("],
+  n1716: ["have", "повторяемый замер памяти: memory-eval с seed и выгрузкой данных хаба", "src/rooms/memory-eval/server/command.ts#export async function runMemoryEvalCommand("],
   n1717: ["have", "оценка памяти", "src/rooms/memory-eval/server/shelf.ts#export"],
   n1718: ["have", "раскопки", "src/rooms/self-improve/index.ts#export function excavate("],
   n1719: ["have", "предложить одобрения", "src/rooms/self-improve/index.ts#export function approvalSuggestions("],
