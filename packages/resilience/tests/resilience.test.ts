@@ -23,7 +23,7 @@ describe("provider breaker", () => {
     expect(open.allow).toBe(false);
     expect(open.state).toBe("open");
     const trial = breaker.decide(key, 600);
-    expect(trial).toEqual({ allow: true, state: "half_open" });
+    expect(trial).toEqual({ allow: true, state: "half_open", trialToken: 1 });
     expect(breaker.decide(key, 610).allow).toBe(false);
     breaker.record(key, "ok", 700);
     expect(breaker.decide(key, 710)).toEqual({ allow: true, state: "closed" });
@@ -59,6 +59,30 @@ describe("provider breaker", () => {
     breaker.record(key, "failure", 500);
     expect(breaker.decide(key, 501).allow).toBe(true);
     expect(breaker.snapshot(501)[0]?.failures).toBe(1);
+  });
+
+  it("releases only the trial token this call reserved (A-034)", () => {
+    const breaker = createProviderBreaker({ failureThreshold: 1, cooldownMs: 10 });
+    const key = breakerKey("codex", "gpt-6-luna");
+    const other = breakerKey("other", "m");
+    breaker.record(key, "failure", 0);
+    const first = breaker.decide(key, 100);
+    if (!first.allow || first.state !== "half_open") throw new Error("expected a trial");
+    breaker.releaseTrial(key, first.trialToken);
+    const second = breaker.decide(key, 110);
+    if (!second.allow || second.state !== "half_open") throw new Error("expected a second trial");
+    breaker.releaseTrial(key, first.trialToken);
+    expect(breaker.decide(key, 120).allow).toBe(false);
+    breaker.record(other, "failure", 0);
+    const foreign = breaker.decide(other, 100);
+    if (!foreign.allow || foreign.state !== "half_open") throw new Error("expected a foreign trial");
+    breaker.releaseTrial(other, second.trialToken);
+    expect(breaker.decide(other, 120).allow).toBe(false);
+    breaker.releaseTrial(key, second.trialToken);
+    expect(breaker.decide(key, 130)).toMatchObject({ allow: true, state: "half_open" });
+    expect(breaker.decide(other, 130).allow).toBe(false);
+    breaker.releaseTrial(other, foreign.trialToken);
+    expect(breaker.decide(other, 140)).toMatchObject({ allow: true, state: "half_open" });
   });
 });
 
