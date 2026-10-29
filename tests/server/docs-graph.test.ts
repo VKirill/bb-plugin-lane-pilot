@@ -125,7 +125,7 @@ describe("the nightly docs of a unit is the graph lp.docs-night", () => {
       experimental_callHostRpc: (call) => {
         calls.push(call.method);
         const input = call.input as Record<string, unknown>;
-        if (call.method === "gitDocsScope") return { hostId: "ovh", status: "ready", isRepoRoot: true, hasDocs: false, changed: ["src/a.ts"], dirty: input.docsDir ? ["docs/overview.md"] : [], base: null, workspaces: [], localDate: "2026-10-27", localHour: 4, reason: null };
+        if (call.method === "gitDocsScope") return { hostId: "ovh", status: "ready", isRepoRoot: true, hasDocs: false, changed: ["src/a.ts"], dirty: input.docsDir ? ["docs/overview.md"] : [], base: null, workspaces: [], localDate: localDateKey(new Date()), localHour: 4, reason: null };
         if (call.method === "gitCreateWorktree") return { hostId: "ovh", status: "failed", path: null, branch: null, reason: "no worktree in the test" };
         if (call.method === "listDocsPages") return { hostId: "ovh", pages: [], oversized: [] };
         if (call.method === "docsFlows") return { hostId: "ovh", briefPath: "/tmp/flows.md", jev: "disabled", routes: 0, flows: [] };

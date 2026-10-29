@@ -256,6 +256,11 @@ export function createDocsNightly(ctx: ServerCore, services: Services) {
           const settings=loadProjectSettings(db,project.id,place.scopes);
           const docs=parseDocsSettings(Object.fromEntries(["docs.enabled","docs.maintain","docs.since","docs.page_cap","docs.hour"].map((key)=>[key,configuredSetting(settings,key)])));
           if(!docs.enabled||!docs.maintain) continue;
+          // Project sources and section copies can be Windows paths; the docs host RPCs accept POSIX workspaces only.
+          if(!place.path.startsWith("/")){
+            results.push({projectId:project.id,path:place.path,hostId:place.hostId,state:"skipped",reason:"unsupported_workspace_path"});
+            continue;
+          }
           const scope=await host.call("gitDocsScope",{requestedHostId:place.hostId,projectCwd:place.path,sinceEpochMs:docsSinceEpoch(docs.since,new Date())},{hostId:place.hostId,timeoutMs:120_000});
           if(scope.status!=="ready"||!scope.isRepoRoot) continue;
           // A pass that broke off (a reload, a crash) or left units failed is picked up at the next hours of the same
