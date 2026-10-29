@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+**A relay sweep stopped by reload is not reported as a failure.** The service stops immediately on abort, but an in-flight sweep can reject later through the retired BB API handle. Its detached catch used to log `relay sweep failed: … stale API handle` after a successful reload (hub, 2026-10-29), triggering self-repair. The catch now reports failures only while that service and plugin instance are active; the same error during active work is still reported. Regression: `tests/server/relay-lifecycle.test.ts`, using the captured reload/error lines in `tests/fixtures/relay-reload-2026-10-29.json`.
+
 **PM activation does not start a phase for its own instructions.** BB records the prompt that Lane Pilot uses to start a PM as `source: spawn`, `initiator: user`. The phase intake mistook the long fixture/guard instruction for a heavy owner goal and started `lp.analyze`; three drill runs on 2026-10-29 left unwanted analysis helpers that ended `workflow_gather:canceled:turn_interrupted`. The machine-message filter now recognizes both PM bootstrap headers together with their run-id line, including native and managed-workspace activation. Real owner goals, including a native chat's first spawned message, still enter the intake. Regression: `tests/phase-intake.test.ts`, replaying the three original request events in `tests/fixtures/phase-intake-pm-bootstrap-2026-10-29.json`.
 
 ## 0.1.370

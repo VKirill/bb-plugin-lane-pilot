@@ -651,7 +651,11 @@ export function mountRelay(ctx:ServerContext):Relay {
     // degraded («service relay-sweep did not stop») after a rollback reload (2026-10-25).
     const stopped = new Promise<null>((resolve) => { if (signal.aborted) resolve(null); else signal.addEventListener("abort", () => resolve(null), { once:true }); });
     while (!signal.aborted) {
-      const result = await Promise.race([relay.sweep().catch((cause) => { ctx.log(`relay sweep failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; }), stopped]);
+      const result = await Promise.race([relay.sweep().catch((cause) => {
+        // The stopped race can finish before this sweep rejects through the retired API handle.
+        if (!signal.aborted && !ctx.isDisposed()) ctx.log(`relay sweep failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+        return null;
+      }), stopped]);
       if (signal.aborted) break;
       if (result && (result.fired || result.settled)) ctx.log(`relay: fired ${result.fired}, settled ${result.settled}`);
       await Promise.race([refreshWatched(), stopped]);
