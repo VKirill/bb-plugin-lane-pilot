@@ -1,7 +1,7 @@
 import { networkInterfaces } from "node:os";
 import { createWorktree, integrateWorktree, mergeInfo, prepareWorktree, removeLaneWorktree, revertCommitsInWorktree, syncWorktree, snapshotWorktree, worktreeState, type ReplayCheck, type ReplayCheckOutcome } from "../verification";
 import { attributeGateOnHost, bisectGateOnHost, runGateOnHost } from "../verification";
-import { buildDocsAnchors, docsDepth as readDocsDepth, docsStaleness, jevApiKey, jevProviderOfKey, provideJevKey, verifyDocsCitations } from "../verification";
+import { buildDocsAnchors, docsDepth as readDocsDepth, docsStaleness, jevCallFor, verifyDocsCitations } from "../verification";
 import { buildDocsFlows } from "../verification";
 import { readMachineFacts, runStabilityDrill, userToolBins } from "../verification";
 import { commitDocs, docsLineCounts as readDocsLineCounts, docsWorthinessFacts as readDocsWorthinessFacts, gitDocsScope as readGitDocsScope, revertPaths } from "../verification";
@@ -17,6 +17,7 @@ import { hostContract } from "../contracts";
 import { ENVIRONMENT_REASON } from "../runs";
 import { readCheckRun } from "../tasks/server";
 import { readBoundedWorkspaceFile, sha256Hex } from "@lane-pilot/kit";
+import { JEV_PROVIDERS } from "@lane-pilot/jev/provider";
 import { casWriteWorkflowFile } from "../storage";
 import { inventoryCoexistence, runCoexistenceOperation } from "../native-install";
 import { runBrowserQaOnHost } from "../qa";
@@ -239,25 +240,27 @@ export const gitUndoCheckWrites: ExperimentalHostRpcHandlers<typeof hostContract
   ...await undoCheckWrites({projectCwd:input.projectCwd,keep:input.keep,ownsPaths:input.ownsPaths,neverTouch:input.neverTouch,bookkeeping:input.bookkeeping}),
 });
 
+const jevSource = (input: { jevApiKey?: string; jevProvider?: "openlux" | "typesafe" }) => ({ jevApiKey: input.jevApiKey, jevProvider: input.jevProvider });
+
 export const docsAnchors: ExperimentalHostRpcHandlers<typeof hostContract>["docsAnchors"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId, ...await buildDocsAnchors({projectCwd:input.projectCwd,pages:input.pages,prefix:input.prefix,exclude:input.exclude,workspaces:input.workspaces}),
+  hostId:process.env.BB_HOST_ID??input.requestedHostId, ...await buildDocsAnchors({projectCwd:input.projectCwd,pages:input.pages,prefix:input.prefix,exclude:input.exclude,workspaces:input.workspaces,...jevSource(input)}),
 });
 
 export const docsFlows: ExperimentalHostRpcHandlers<typeof hostContract>["docsFlows"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId, ...await buildDocsFlows({projectCwd:input.projectCwd,workspaces:input.workspaces,keep:input.keep}),
+  hostId:process.env.BB_HOST_ID??input.requestedHostId, ...await buildDocsFlows({projectCwd:input.projectCwd,workspaces:input.workspaces,keep:input.keep,...jevSource(input)}),
 });
 
 export const docsDepth: ExperimentalHostRpcHandlers<typeof hostContract>["docsDepth"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId, ...await readDocsDepth({projectCwd:input.projectCwd,pages:input.pages,core:input.core}),
+  hostId:process.env.BB_HOST_ID??input.requestedHostId, ...await readDocsDepth({projectCwd:input.projectCwd,pages:input.pages,core:input.core,...jevSource(input)}),
 });
 
 export const docsVerifyCitations: ExperimentalHostRpcHandlers<typeof hostContract>["docsVerifyCitations"] = async (input) => ({
-  hostId:process.env.BB_HOST_ID??input.requestedHostId, ...await verifyDocsCitations({projectCwd:input.projectCwd,pages:input.pages,related:input.related}),
+  hostId:process.env.BB_HOST_ID??input.requestedHostId, ...await verifyDocsCitations({projectCwd:input.projectCwd,pages:input.pages,related:input.related,...jevSource(input)}),
 });
 
 export const docsStalenessHandler: ExperimentalHostRpcHandlers<typeof hostContract>["docsStaleness"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
-  ...await docsStaleness({projectCwd:input.projectCwd,base:input.base,changed:input.changed,pages:input.pages}),
+  ...await docsStaleness({projectCwd:input.projectCwd,base:input.base,changed:input.changed,pages:input.pages,...jevSource(input)}),
 });
 
 export const docsLineCounts: ExperimentalHostRpcHandlers<typeof hostContract>["docsLineCounts"] = async (input) => ({
@@ -746,8 +749,9 @@ export const classifyPlan: ExperimentalHostRpcHandlers<typeof hostContract>["cla
   const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
   const planSha256 = sha256Hex(input.plan);
   const sourceLength = Buffer.byteLength(input.plan, "utf8");
-  const apiKey = await jevApiKey();
-  const provider = jevProviderOfKey(apiKey);
+  const auth = await jevCallFor(input);
+  const apiKey = auth?.key ?? "";
+  const provider = auth?.provider ?? JEV_PROVIDERS.typesafe;
   const payload = { model:provider.model, state:{ task:input.plan }, questions:{ effort:PLAN_EFFORT_QUESTION } };
   const body = JSON.stringify(payload);
   const decodedPlan = (JSON.parse(body) as { state:{ task:string } }).state.task;
@@ -786,13 +790,14 @@ export const classifyPlan: ExperimentalHostRpcHandlers<typeof hostContract>["cla
 /** One System One call with several choice questions over a JSON state; the council's moderator and the seats' impulse to speak use it. */
 export const councilJudge: ExperimentalHostRpcHandlers<typeof hostContract>["councilJudge"] = async (input) => {
   const hostId = process.env.BB_HOST_ID ?? input.requestedHostId;
-  const apiKey = await jevApiKey();
-  if (!apiKey) return { hostId, status:"disabled", answers:{}, reason:"missing_typesafe_api_key" };
+  const auth = await jevCallFor(input);
+  const apiKey = auth?.key ?? "";
+  if (!apiKey || !auth) return { hostId, status:"disabled", answers:{}, reason:"missing_typesafe_api_key" };
   let state: unknown = input.state;
   try { state = JSON.parse(input.state); } catch { /* a plain text state is allowed */ }
   const questions = Object.fromEntries(Object.entries(input.questions).map(([name, question]) => [name, { type:"choice", instructions:question.instructions, criteria:question.criteria }]));
   try {
-    const provider = jevProviderOfKey(apiKey);
+    const provider = auth.provider;
     const response = await fetch(provider.url, {
       method:"POST",
       headers:{ authorization:`Bearer ${apiKey}`, "content-type":"application/json" },
