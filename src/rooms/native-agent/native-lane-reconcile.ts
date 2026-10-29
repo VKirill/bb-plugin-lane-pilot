@@ -1,9 +1,10 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { join } from "node:path";
-import { copyFile, lstat, mkdir, readFile, readdir, rename, rm } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { lstat, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { applyEdits, modify, parse, type ParseError } from "jsonc-parser/lib/esm/main.js";
 import { atomicText } from "../native-install";
+import { NATIVE_OPENCODE_SOURCES } from "../native-install/native-opencode-sources";
 
 const execute = promisify(execFile);
 const exists = (path: string) => lstat(path).then(() => true, () => false);
@@ -50,32 +51,14 @@ export async function codexRpc(command: string, env: NodeJS.ProcessEnv, method: 
 export type LaneReconcileReport = { claudePlugin: "fresh" | "refreshed"; codexHooks: "absent" | "trusted" | "newly-trusted"; openCode: "absent" | "registered" | "newly-registered" };
 
 /**
- * Brings an existing Claude Lane install to a working state that its own install.sh leaves behind:
- * a Claude plugin cache matching the checkout (same version, newer files), trusted Codex Lane hooks,
- * and the OpenCode v2 Lane plugin also when the user's config is opencode.jsonc.
+ * Trusts Codex Lane hooks and writes Lane Pilot's slim OpenCode plugin.
+ * `source` is the Claude Lane checkout callers still pass; OpenCode files come from the bundle, not from it.
+ * The lane-stack Claude plugin is not installed or refreshed.
  */
 export async function reconcileClaudeLane(input: { home: string; source: string; env: NodeJS.ProcessEnv; signal?: AbortSignal }): Promise<LaneReconcileReport> {
   const { home, source, env, signal } = input;
+  void source;
   const report: LaneReconcileReport = { claudePlugin: "fresh", codexHooks: "absent", openCode: "absent" };
-
-  const installedPath = join(home, ".claude/plugins/installed_plugins.json");
-  const knownPath = join(home, ".claude/plugins/known_marketplaces.json");
-  const installed = JSON.parse(await readFile(installedPath, "utf8").catch(() => "{}")) as { plugins?: Record<string, Array<{ installPath?: string; gitCommitSha?: string }>> };
-  const entry = installed.plugins?.["lane-stack@claude-lane-stack"]?.[0];
-  const known = JSON.parse(await readFile(knownPath, "utf8").catch(() => "{}")) as Record<string, { installLocation?: string }>;
-  const marketplace = known["claude-lane-stack"]?.installLocation;
-  if (entry?.installPath && marketplace && await exists(join(marketplace, ".git"))) {
-    const head = (await execute("git", ["-C", marketplace, "rev-parse", "HEAD"], { env, signal })).stdout.trim();
-    if (head && entry.gitCommitSha !== head) {
-      // Claude skips a same-version reinstall; move the stale cache aside so install copies the new files.
-      const stale = `${entry.installPath}.stale-${Date.now()}`;
-      await rename(entry.installPath, stale).catch(() => undefined);
-      try { await execute("claude", ["plugin", "install", "lane-stack@claude-lane-stack", "-s", "user"], { env, signal, timeout: 300_000 }); }
-      catch (error) { await rename(stale, entry.installPath).catch(() => undefined); throw error; }
-      await rm(stale, { recursive: true, force: true });
-      report.claudePlugin = "refreshed";
-    }
-  }
 
   if (await which("codex", env) && await exists(join(home, ".codex/config.toml"))) {
     const inventory = await codexRpc("codex", env, "hooks/list", { cwds: [home] }, signal) as { data: Array<{ hooks: Array<{ pluginId: string; key: string; currentHash: string; trustStatus?: string }> }> };
@@ -102,28 +85,21 @@ export async function reconcileClaudeLane(input: { home: string; source: string;
   }
 
   const openCodeDir = join(home, ".config/opencode");
-  const profile = join(source, "profiles/opencode");
   const config = await exists(join(openCodeDir, "opencode.jsonc")) ? join(openCodeDir, "opencode.jsonc")
     : await exists(join(openCodeDir, "opencode.json")) ? join(openCodeDir, "opencode.json") : null;
-  // Lane Stack 1.66 layout for OpenCode v2 (`opencode2`): the modules in opencode-lane/ next to plugins/, the entry in plugins/ with
-  // its import one level up. v2 loads every folder under plugins/ as a plugin, so the v1-era plugins/opencode-lane/ goes.
-  if (config && await which("opencode2", env) && await exists(join(profile, "opencode-lane.ts"))) {
+  // Modules live in opencode-lane/ beside plugins/; the entry in plugins/ imports one level up.
+  // v2 loads every folder under plugins/ as a plugin, so the v1-era plugins/opencode-lane/ goes.
+  if (config && await which("opencode2", env)) {
     await rm(join(openCodeDir, "plugins/opencode-lane"), { recursive: true, force: true });
-    await mkdir(join(openCodeDir, "plugins"), { recursive: true });
     await mkdir(join(openCodeDir, "opencode-lane"), { recursive: true });
-    await mkdir(join(openCodeDir, "commands"), { recursive: true });
-    await mkdir(join(openCodeDir, "agents"), { recursive: true });
     for (const name of await readdir(join(openCodeDir, "opencode-lane"))) {
       if (name.endsWith(".ts")) await rm(join(openCodeDir, "opencode-lane", name), { force: true });
     }
-    for (const name of await readdir(join(profile, "opencode-lane"))) {
-      if (name.endsWith(".ts")) await copyFile(join(profile, "opencode-lane", name), join(openCodeDir, "opencode-lane", name));
-    }
-    const entry = (await readFile(join(profile, "opencode-lane.ts"), "utf8")).replaceAll('"./opencode-lane/', '"../opencode-lane/');
-    await atomicText(join(openCodeDir, "plugins/opencode-lane.ts"), entry);
-    await copyFile(join(profile, "commands/opencode-lane.md"), join(openCodeDir, "commands/opencode-lane.md"));
-    for (const name of await readdir(join(profile, "agents")).catch(() => [] as string[])) {
-      if (name.endsWith(".md")) await copyFile(join(profile, "agents", name), join(openCodeDir, "agents", name));
+    for (const [rel, text] of Object.entries(NATIVE_OPENCODE_SOURCES)) {
+      const dest = join(openCodeDir, rel === "opencode-lane.ts" ? "plugins/opencode-lane.ts" : rel);
+      const body = rel === "opencode-lane.ts" ? text.replaceAll('"./opencode-lane/', '"../opencode-lane/') : text;
+      await mkdir(dirname(dest), { recursive: true });
+      await atomicText(dest, body);
     }
     const text = await readFile(config, "utf8");
     const errors: ParseError[] = [];

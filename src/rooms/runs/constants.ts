@@ -13,9 +13,6 @@ export const S8_RELATIVE_PATHS = [
 export const EXTERNAL_OPS = [
   "npm install -g @rama_nigg/open-cursor",
   "open-cursor install",
-  "claude plugin marketplace add/update",
-  "claude plugin install lane-stack@claude-lane-stack",
-  "claude plugin uninstall fast-jev-compaction@*",
 ] as const;
 
 export const EXTERNAL_OPS_BY_ACTION = {

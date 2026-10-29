@@ -43,6 +43,12 @@ function assertChannelValue(spec: SettingSpec, value: unknown): void {
     expect(cli.unapplied.find((row) => row.key === spec.key)?.reason, label).toMatch(/native Lane Pilot/i);
     return;
   }
+  if (spec.key === "install.LANE_INSTALL_CLAUDE_PLUGIN") {
+    const result = installEnv({ homeDir: "/tmp/home", confirmExternalOps: true, settings: { [spec.key]: value } });
+    expect(result.applied, label).not.toContain(spec.key);
+    expect(result.env.LANE_INSTALL_CLAUDE_PLUGIN, label).toBe("0");
+    return;
+  }
   if (spec.channel === "INSTALL-ENV") {
     const result = installEnv({
       homeDir: "/tmp/home",

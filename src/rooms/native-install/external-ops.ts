@@ -20,13 +20,8 @@ async function run(command: string, args: string[], env: NodeJS.ProcessEnv): Pro
 export async function observeExternalOps(homeDir?: string): Promise<ExternalOpsSnapshot> {
   const env = { ...process.env, ...(homeDir ? { HOME: homeDir } : {}) };
   const npm = await run("npm", ["ls", "-g", "@rama_nigg/open-cursor", "--json"], env);
-  const plugins = await run("claude", ["plugin", "list"], env);
-  const markets = await run("claude", ["plugin", "marketplace", "list"], env);
   return {
     [EXTERNAL_OPS[0]]: npm,
     [EXTERNAL_OPS[1]]: npm,
-    [EXTERNAL_OPS[2]]: markets,
-    [EXTERNAL_OPS[3]]: plugins,
-    [EXTERNAL_OPS[4]]: plugins,
   };
 }
