@@ -2,7 +2,7 @@
 title: Native session and activation RPC
 type: component
 created: 2026-10-20
-updated: 2026-10-20
+updated: 2026-10-29
 status: active
 confidence: high
 tags: [rpc, native-agent, activation]
@@ -38,7 +38,7 @@ This page follows the native route contract through its handlers and the profile
 |---|---|---|
 | `finish_run` | Returns `{projectId, finishedRunIds:[runId], closed:true}` after safe close. | Wrong project, remaining open attempts, or unavailable PM status rejects through the handler (`src/rooms/runs/server/rpc/runs.ts:28-30`, `src/rooms/runs/server/run-finish.ts:175-199`). |
 | `activate_pm` | Delegates to activation; success carries thread and run ids and may include new bookkeeping exclusions (`src/rooms/contracts/rpc-native.ts:79-80`, `src/rooms/runs/server/rpc/runs.ts:32-34`). | Invalid snapshot fails schema validation; activation service rejection propagates. |
-| Activation context | Null project/thread are accepted; metadata fields with no match are nullable and binding status has five declared states (`src/rooms/contracts/rpc-native.ts:82-104`). | Handler-specific unavailable thread metadata is returned as null (`src/rooms/runs/server/rpc/runs.ts:252-302`). |
+| Activation context | Null project/thread are accepted; metadata fields with no match are nullable and binding status has five declared states (`src/rooms/contracts/rpc-native.ts:82-104`). | Handler-specific unavailable thread metadata is returned as null (`src/rooms/runs/server/rpc/runs.ts:253-303`). |
 | Native install | Start reports `started`; status returns install status and nullable error (`src/rooms/contracts/rpc-native.ts:106-113`). | Start only launches when no pending install exists; status reports `installing`, host status or `offline` (`src/rooms/runs/server/rpc/runs.ts:35-39`, `src/rooms/native-install/native-install-lifecycle.ts:76-85`). |
 | `storeNativeSelection` | A known profile becomes a token-backed selection, with optional parent run id. | Compiled-profile corruption and unknown profile throw; effective compiler exceptions are caught so stock fallback remains possible (`src/rooms/native-agent/server/native-profile.ts:12-30`). KV write or record preparation errors reject. |
 | `list_helper_threads` | Returns unarchived children, queued ids and an optional graph for the open run (`src/rooms/contracts/rpc-native.ts:127-144`). | Listing failure returns rows collected so far; route-wide uncaught handler errors reject (`src/rooms/runs/server/rpc/runs.ts:46-103`, `src/rooms/core/server/rpc-timing.ts:12-40`). |

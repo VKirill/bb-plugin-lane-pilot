@@ -2,7 +2,7 @@
 title: Native agent activation and dispatch
 type: component
 created: 2026-10-10
-updated: 2026-10-28
+updated: 2026-10-29
 status: active
 confidence: medium
 tags: [native-agent, composer, activation]
@@ -127,7 +127,7 @@ The host-worker public index exports the typed handler implementations, includin
 4. It binds deploy drain and creates host jobs. The wrapped host call adds a schedule abort signal when the caller has none, runs under the drain, injects Jev credentials for named Jev methods, and uses host jobs for eligible methods unless jobs are disabled; `runSandboxedCommand` needs explicit job mode. Other calls go directly to the raw host client (`src/rooms/core/server/core.ts:83-108`).
 5. It builds a native installer whose support flag follows BB's lifecycle capability, exposes a native host wrapper that ensures installation before `prepareNativeClaude`, and defines serialized KV, agent/settings, screen writer-binding, coexistence, and run/workspace helpers (`src/rooms/core/server/core.ts:122-183`).
 6. The remaining helpers compute task workspace binding, runtime settings, run policies, native run configuration, Project Folders section scopes, and current config. `configForRun` selects native configuration for CLI runs and stored prototype configuration otherwise (`src/rooms/core/server/core.ts:194-217`, `:260-320`, `:323-373`).
-7. It creates secrets and the Jev output guard, then returns the SDK/database, state, wrapped host, drain, installers, and helper functions as one shared context (`src/rooms/core/server/core.ts:375-384`).
+7. It creates secrets and the Jev output guard, then returns the SDK/database, state, wrapped host, drain, installers, and helper functions as one shared context (`src/rooms/core/server/core.ts:380-389`).
 
 | Mode or condition | Behavior | Failure or fallback |
 |---|---|---|
@@ -138,7 +138,7 @@ The host-worker public index exports the typed handler implementations, includin
 | CLI run config | Uses run-bound host/workspace and current effective writer settings. | Missing host/workspace returns null; missing writer provider/model throws a setup error. |
 | Project Folders sections | Lists sections through plugin RPC and derives deepest matching folder scopes. | Missing RPC or list failure returns no sections. |
 
-`createCore` is the shared dependency object for server rooms; host contract shapes remain separate from app RPC shapes (`src/rooms/core/server/core.ts:31-49`, `src/rooms/contracts/index.ts:11-27`). A native CLI run takes host, workspace, and writer model from run binding/current settings rather than stale prototype configuration (`src/rooms/core/server/core.ts:306-320`, `:370-373`).
+`createCore` is the shared dependency object for server rooms; host contract shapes remain separate from app RPC shapes (`src/rooms/core/server/core.ts:31-49`, `src/rooms/contracts/index.ts:11-27`). A native CLI run takes host, workspace, and writer model from run binding/current settings rather than stale prototype configuration (`src/rooms/core/server/core.ts:306-320`, `:374-377`).
 
 ## Gotchas
 

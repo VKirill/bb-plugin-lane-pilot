@@ -2,7 +2,7 @@
 title: RPC contract composition and route families
 type: component
 created: 2026-10-20
-updated: 2026-10-20
+updated: 2026-10-29
 status: active
 confidence: medium
 tags: [rpc, contracts, validation]
@@ -54,8 +54,8 @@ The shell map first spreads `scheduleRpcContract`, then declares preference, pro
 
 The operations map defines strict methods for run control, statistics and deployment drain in its first 73 lines. Run controls return declared state/refusal values; statistics return either a typed result or `unknown`; deploy methods deliberately leave output shape to the stability handler (`src/rooms/contracts/rpc-ops.ts:5-73`).
 
-1. `cancel_attempt` delegates to the attempt cancellation handler, which waits a bounded time for the writer to be gone and records its worktree before it marks the attempt canceled (`docs/rollback.md`). `pause_run` and `resume_run` set and clear the run's pause flag and report what runs and what waits (`src/rooms/runs/server/rpc/runs.ts:306-307`). `halt_run` first marks the run halted, lists open attempts, tries cancellation for each, collects successful ids in `canceled` and failures in `left`, removes the run from parked work when KV contains an array, and reports `ok` only when `left` is empty (`src/rooms/runs/server/rpc/runs.ts:305-319`).
-2. `retry_attempt` returns `ok:false` for a missing attempt, a state outside the retry-eligible set, or exhausted attempt limit. Exhaustion transitions the existing attempt to `blocked`; an eligible retry creates a new queued attempt and returns its id (`src/rooms/runs/server/rpc/runs.ts:320-335`). `resume_runs` delegates to orphan recovery for the project and returns its resumed, skipped and finished ids (`src/rooms/runs/server/rpc/runs.ts:336-337`).
+1. `cancel_attempt` delegates to the attempt cancellation handler, which waits a bounded time for the writer to be gone and records its worktree before it marks the attempt canceled (`docs/rollback.md`). `pause_run` and `resume_run` set and clear the run's pause flag and report what runs and what waits (`src/rooms/runs/server/rpc/runs.ts:319-320`). `halt_run` first marks the run halted, lists open attempts, tries cancellation for each, collects successful ids in `canceled` and failures in `left`, removes the run from parked work when KV contains an array, and reports `ok` only when `left` is empty (`src/rooms/runs/server/rpc/runs.ts:321-331`).
+2. `retry_attempt` returns `ok:false` for a missing attempt, a state outside the retry-eligible set, or exhausted attempt limit. Exhaustion transitions the existing attempt to `blocked`; an eligible retry creates a new queued attempt and returns its id (`src/rooms/runs/server/rpc/runs.ts:333-347`). `resume_runs` delegates to orphan recovery for the project and returns its resumed, skipped and finished ids (`src/rooms/runs/server/rpc/runs.ts:349`).
 3. `writer_brief_stats` uses the required `since` and optional `until`, defaulting the end to current time. Critic and reuse stats convert the validated days window into a timestamp; acceptance statistics use their typed contract schema (`src/rooms/contracts/rpc-ops.ts:36-64`, `src/rooms/self-repair/server/self-repair.ts:829-837`).
 4. `deploy_drain` passes `on` to the core drain and returns its state with the running version; `deploy_status` returns the same version plus current drain status (`src/rooms/self-repair/server/self-repair.ts:831-832`). The methods return domain refusals and results as values; exceptions not caught inside their handler reject through the timing wrapper (`src/rooms/core/server/rpc-timing.ts:12-40`).
 

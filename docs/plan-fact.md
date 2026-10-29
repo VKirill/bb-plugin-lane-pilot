@@ -2,7 +2,7 @@
 title: Plan against fact and the acceptance card
 type: component
 created: 2026-10-22
-updated: 2026-10-26
+updated: 2026-10-29
 status: active
 confidence: low
 tags: [sma, acceptance, critic, ui]
@@ -106,7 +106,7 @@ RPC `task_acceptance_card` (`src/rooms/contracts/rpc-runs.ts:60`) returns `build
 - `notRun`: stages with no receipt or a skipped one, and what the plan→fact check could not look at;
 - the cost of the task's attempts from `attemptMetrics` (`src/rooms/usage/server/attempt-metrics.ts:66-126`, filtered by `taskId`): measured, partial («1 of 2 attempts measured») or `not measured`, never 0.
 
-The component is `AcceptanceCard` (`src/rooms/acceptance/ui/acceptance-card.tsx`), shown in the task page of the board (`src/rooms/runs/ui/task-board.tsx:379`) in place of the plain objective and acceptance list; when the RPC fails it falls back to that list. Verified at 375 and 1280 px on the real component and the built CSS (`.bb/tmp/p13-live`), without horizontal overflow.
+The component is `AcceptanceCard` (`src/rooms/acceptance/ui/acceptance-card.tsx`), shown in the task page of the board (`src/rooms/runs/ui/task-board.tsx:383`) in place of the plain objective and acceptance list; when the RPC fails it falls back to that list. Verified at 375 and 1280 px on the real component and the built CSS (`.bb/tmp/p13-live`), without horizontal overflow.
 
 ## Tests
 

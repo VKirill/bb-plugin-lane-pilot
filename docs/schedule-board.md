@@ -2,7 +2,7 @@
 title: Schedule board: Lane Pilot's own scheduler
 type: component
 created: 2026-10-08
-updated: 2026-10-20
+updated: 2026-10-29
 status: active
 confidence: medium
 tags: [schedule, automation, component]
@@ -152,7 +152,7 @@ Only `schedule_runs` and `schedule_get` fill these; `lastRun`, `active` and the 
 ### Where it runs
 
 `ScheduleView.where` is `{projectName, sectionId, sectionName, sectionPath, hostId, hostName, cwd}` (`src/rooms/schedule/server/schedule-place.ts`). The project's name comes from BB;
-the Project Folders section is the one the project's PM chat is filed in (the thread's `sectionId`, else the deepest folder section whose path holds the chat's environment);
+the Project Folders section is the one the project's PM chat is filed in (the thread's `sectionId`, else the deepest folder section whose path — among the section's copies on every device — holds the chat's environment; when the section comes from the thread's `sectionId`, `sectionPath` is that section's copy on the chat's machine);
 the machine and folder of an errand and a chain are the PM chat's environment (the helper thread reuses it; the project's first source when no chat is open); a script names its own
 machine and folder. Whatever BB does not tell stays `null`. The card line reads «SelfyStudio › Marketing · Mac mini». The project, the section and an errand's machine are shown, not
 edited: a schedule cannot move to another project, and where a chat is filed is set in Project Folders. `RunView.hostName` is the machine the work ran on: the errand thread's own
