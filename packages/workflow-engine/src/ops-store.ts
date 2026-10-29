@@ -84,19 +84,20 @@ export type StatusVerdict = { status: Workflow["status"]; notes: WorkflowProblem
  * The status a workflow has here, which is not always the status its file says:
  * - a file of the owner (global or project) that says `tested` or `published` counts only with a green test receipt for exactly
  *   this definition; without it the workflow is a `draft` (it is not offered, not run by the PM), so a hand-written `published` cannot skip the tests;
- * - a `tested` workflow (the built-in own chains, or the owner's) whose current version has had a live run that succeeded is `published`.
+ * - a `tested` workflow (the built-in own chains, or the owner's) is `published` after a live run of this definition that did the job. Canvas positions are not part of that definition.
  */
 export function createStatusResolver(db: LanePilotDatabase) {
   const receipt = (workflowId: string, sha256: string) =>
     db.prepare("SELECT green, results_json, at FROM lane_pilot_wf_test WHERE workflow_id=? AND definition_sha256=?").get(workflowId, sha256) as { green: number; results_json: string; at: number } | undefined;
   /**
-   * The newest live run of this version that did the job: engine succeeded, and the shared outcome says the output is completed work
-   * (a chain's `live_success` list, otherwise anything that is not a refusal, an escalation or a known failure).
+   * The newest live run of this version that did the job: engine succeeded, the output is completed work, and the run was of this
+   * definition (`definitionSha256`, which ignores canvas positions, or the older hash that still includes them).
    */
-  const liveSuccess = (workflowId: string, version: number, rule?: Workflow["live_success"]) => {
-    const rows = db.prepare("SELECT id, updated_at, output_json FROM lane_pilot_wf_run WHERE workflow_id=? AND workflow_version=? AND status='succeeded' AND parent_run_id IS NULL ORDER BY updated_at DESC LIMIT 200")
-      .all(workflowId, version) as Array<{ id: string; updated_at: number; output_json: string | null }>;
-    const proves = (row: { output_json: string | null }) => {
+  const liveSuccess = (workflowId: string, version: number, rule?: Workflow["live_success"], sha?: { current: string; legacy: string }) => {
+    const rows = db.prepare("SELECT id, updated_at, output_json, workflow_sha256 FROM lane_pilot_wf_run WHERE workflow_id=? AND workflow_version=? AND status='succeeded' AND parent_run_id IS NULL ORDER BY updated_at DESC LIMIT 200")
+      .all(workflowId, version) as Array<{ id: string; updated_at: number; output_json: string | null; workflow_sha256: string }>;
+    const proves = (row: { output_json: string | null; workflow_sha256: string }) => {
+      if (sha && row.workflow_sha256 !== sha.current && row.workflow_sha256 !== sha.legacy) return false;
       try {
         const parsed = JSON.parse(row.output_json ?? "null") as unknown;
         const output = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
@@ -126,7 +127,7 @@ export function createStatusResolver(db: LanePilotDatabase) {
             message: `The file says "${file}", but there is no green test run for exactly this version of it: it counts as a draft until its tests pass (run its tests from the Workflows tab).` }] };
         }
       }
-      if (file === "tested" && liveSuccess(workflow.id, workflow.version, workflow.live_success)) return { status: "published", notes: [] };
+      if (file === "tested" && liveSuccess(workflow.id, workflow.version, workflow.live_success, { current: item.sha256, legacy: legacyDefinitionSha256(workflow) })) return { status: "published", notes: [] };
       return { status: file, notes: [] };
     },
   };

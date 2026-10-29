@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { definitionSha256, type StoredWorkflow } from "@lane-pilot/workflow-engine";
+import { definitionSha256, legacyDefinitionSha256, type StoredWorkflow } from "@lane-pilot/workflow-engine";
 import { createStatusResolver } from "@lane-pilot/workflow-engine";
 import { parseWorkflowObject } from "@lane-pilot/workflow-engine";
 import { journalDb } from "./engine-helpers";
@@ -18,7 +18,7 @@ const stored = (workflow: ReturnType<typeof load>): StoredWorkflow => ({ workflo
 
 function run(db: ReturnType<typeof journalDb>, workflow: ReturnType<typeof load>, id: string, output: unknown, extra: { status?: string; parent?: string | null } = {}) {
   db.prepare("INSERT INTO lane_pilot_wf_run(id,workflow_id,workflow_version,workflow_sha256,definition_json,status,output_json,parent_run_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
-    .run(id, workflow.id, workflow.version, "x", "{}", extra.status ?? "succeeded", output === null ? null : JSON.stringify(output), extra.parent ?? null, 1, 1);
+    .run(id, workflow.id, workflow.version, definitionSha256(workflow), "{}", extra.status ?? "succeeded", output === null ? null : JSON.stringify(output), extra.parent ?? null, 1, 1);
 }
 
 describe("a tested chain becomes published only after a live run that did the job", () => {
@@ -55,5 +55,26 @@ describe("a tested chain becomes published only after a live run that did the jo
     expect(resolver.resolve(stored(plain)).status).toBe("tested");
     run(db, plain, "r3", { status: "done" });
     expect(resolver.resolve(stored(plain)).status).toBe("published");
+  });
+
+  it("F-007: a live run proves only its own definition, and moving canvas cards keeps the proof", () => {
+    const db = journalDb();
+    const resolver = createStatusResolver(db);
+    const invoice = load("invoice-send");
+    run(db, invoice, "r-sent", { status: "sent" });
+    expect(resolver.resolve(stored(invoice)).status).toBe("published");
+
+    const moved = { ...invoice, ui: { positions: { ...(invoice.ui?.positions ?? {}), card: { x: 9, y: 9 } } } };
+    expect(definitionSha256(moved)).toBe(definitionSha256(invoice));
+    expect(resolver.resolve(stored(moved)).status).toBe("published");
+
+    const changed = { ...invoice, description: { ...invoice.description, en: `${invoice.description.en} changed` } };
+    expect(definitionSha256(changed)).not.toBe(definitionSha256(invoice));
+    expect(resolver.resolve(stored(changed)).status).toBe("tested");
+
+    const legacy = { ...invoice, id: "legacy-proof" };
+    db.prepare("INSERT INTO lane_pilot_wf_run(id,workflow_id,workflow_version,workflow_sha256,definition_json,status,output_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)")
+      .run("r-legacy", legacy.id, legacy.version, legacyDefinitionSha256(legacy), "{}", "succeeded", JSON.stringify({ status: "sent" }), 1, 1);
+    expect(resolver.resolve(stored(legacy)).status).toBe("published");
   });
 });
