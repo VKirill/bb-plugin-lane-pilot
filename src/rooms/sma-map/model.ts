@@ -26,10 +26,10 @@ export function smaRows(): SmaRow[] {
 }
 
 /**
- * Mapped: we have it and a proof points at the code, or SMA itself left it unwired and we hold the same state. A proof link is not
+ * Mapped: a proof on what we have, SMA left it unwired, or a recorded skip (Claude Lane removed 2026-10-30; the reason is the ours text). A proof link is not
  * a check of behaviour (2026-10-29 conformance audit: the «100%» counted links): conformance is `isChecked`, a contract test.
  */
-export const isDone = (row: SmaRow) => (row.status === "have" && !!row.proof) || row.status === "upstream";
+export const isDone = (row: SmaRow) => (row.status === "have" && !!row.proof) || row.status === "upstream" || (row.status === "skip" && row.ours.trim().length > 0);
 /** Checked: a contract test (`[sma:<id>]` in its title, contracts.ts) holds our code to the card's behaviour. */
 export const isChecked = (row: SmaRow) => row.contracts.length > 0;
 
@@ -49,13 +49,14 @@ export const smaDonePercent = (rows: readonly SmaRow[]) => percent(rows.filter(i
 /** Share of the map a contract test checks: the measure of conformance. */
 export const smaCheckedPercent = (rows: readonly SmaRow[]) => percent(rows.filter(isChecked).length, rows.length);
 
-/** Registry holes: map nodes without an entry, entries for nodes the map does not have, and any node left out (skip). */
+/** Registry holes: a node without an entry, an entry for a node the map does not have, or a skip that gives no reason.
+ * A skip with a reason is a recorded decision, not a hole (Claude Lane removed 2026-10-30). */
 export function smaHoles(): string[] {
   const ids = new Set(SMA_NODES.map(([id]) => id));
   const holes: string[] = [];
   for (const id of ids) if (!SMA_ENTRIES[id]) holes.push(`${id}: no entry`);
   for (const id of Object.keys(SMA_ENTRIES)) if (!ids.has(id)) holes.push(`${id}: entry for a node the map does not have`);
-  for (const [id, entry] of Object.entries(SMA_ENTRIES)) if (entry[0] === "skip") holes.push(`${id}: left out — the whole map is built`);
+  for (const [id, entry] of Object.entries(SMA_ENTRIES)) if (entry[0] === "skip" && !entry[1].trim()) holes.push(`${id}: skip without a reason`);
   return holes;
 }
 
