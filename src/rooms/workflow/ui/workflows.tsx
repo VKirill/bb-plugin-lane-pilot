@@ -37,6 +37,7 @@ function Stats({ stats }: { stats: Row["stats"] }) {
     <>
       <span>{stats.runs === 1 ? t("wfRunCountOne") : t("wfRunCount").replace("{n}", String(stats.runs))}</span>
       {stats.successRate !== null ? <span>{t("wfSuccessRate").replace("{pct}", String(Math.round(stats.successRate * 100)))}</span> : null}
+      {stats.successRate !== null ? <span>{t("wfOutcomeCounts").replace("{executed}", String(stats.executed)).replace("{done}", String(stats.workDone)).replace("{refused}", String(stats.refused)).replace("{escalated}", String(stats.escalated))}</span> : null}
       {stats.active ? <span className="font-medium text-timeline-accent">{t("wfActiveRuns").replace("{n}", String(stats.active))}</span> : null}
       {stats.lastRunAt ? <span>{t("wfLastRun").replace("{time}", shortTime(stats.lastRunAt))}</span> : null}
     </>

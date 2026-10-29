@@ -20,6 +20,7 @@ import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { appendPart, getPhase, insertPhase, listParts, listPhases, notePoked, savePhase } from "../store";
 import { archiveDrawing, binaryFileCommand, binaryFileFingerprint, conclusionText, markRoadmap, nextRoadmapRow, stateText, uatState, uatText, waveTable } from "../stages";
 import { runOnHost } from "@lane-pilot/host-calls";
+import { intakeRunGoals } from "../intake";
 import { createPhaseIntake } from "./intake";
 import { createAutoStages, recoverStopped } from "./auto-stages";
 import { checkProofs, hostGit, phaseProofRecords, renderProofCurrency } from "./proof-currency";
@@ -1175,7 +1176,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       if (!workflow) return null;
       const title = input.text.trim().split("\n").find((line) => line.trim())?.trim().slice(0, 120) ?? "Owner's request";
       try {
-        const started = services.workflowEngine.start({ workflow, inputs: { title, text: input.text.slice(0, 8000) }, key: `intake:${input.pmThreadId}:${input.requestId}`,
+        const started = services.workflowEngine.start({ workflow, inputs: { title, text: input.text.slice(0, 8000) }, goals: intakeRunGoals(input.text), key: `intake:${input.pmThreadId}:${input.requestId}`,
           runtime: { ctx, services, pmThreadId: input.pmThreadId, projectId: input.projectId, runId: input.runId }, link: { projectId: input.projectId, runId: input.runId } });
         started.done.catch((cause: unknown) => ctx.log(`intake: ${workflow.id} ${started.runId} stopped: ${cause instanceof Error ? cause.message : String(cause)}`));
         return started.runId;

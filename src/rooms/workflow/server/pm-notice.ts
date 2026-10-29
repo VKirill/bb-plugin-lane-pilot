@@ -8,7 +8,7 @@ import { startedBySchedule } from "./workflow-runtime";
 /** The machine's own upkeep graphs: they tell no PM chat and post nothing to the owner's list (a failed one is the wall's and the next run's to settle). */
 const UPKEEP_WORKFLOWS = new Set<string>([AFTER_ACCEPT, DOCS_NIGHT, DOCS_MAINTENANCE, SELF_REPAIR, ROUTE_WORKFLOW]);
 
-export const WORKFLOW_NOTICE_STATUSES = ["succeeded", "failed", "blocked", "interrupted", "canceled"] as const;
+export const WORKFLOW_NOTICE_STATUSES = ["succeeded", "failed", "blocked", "interrupted", "canceled", "not_verified"] as const;
 export type WorkflowNoticeStatus = (typeof WORKFLOW_NOTICE_STATUSES)[number];
 
 export type WorkflowNoticeKv = {

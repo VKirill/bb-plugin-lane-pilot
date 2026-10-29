@@ -59,6 +59,7 @@
     "effect": "всегда quick: без критики плана и кода; только песочная проверка контракта",
     "fixed": "quick"
   },
+  "goal_audit": "required",
   "requires": {
     "plugins": [
       "lane-pilot"

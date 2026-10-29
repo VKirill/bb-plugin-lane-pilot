@@ -42,6 +42,12 @@ describe("a scheduled chain that ended on a branch that did not do the job", () 
     expect(await world(undefined, done({ total: 3 })).workflow.poll(input())).toMatchObject({ status: "succeeded" });
   });
 
+  it("F-004: a correct escalation stays a schedule success, and a blocked emit stays a failure", async () => {
+    expect(await world({}, done({ status: "proposed" })).workflow.poll(input())).toMatchObject({ status: "succeeded", reason: "ended_escalated" });
+    expect(await world({}, done({ status: "partial" })).workflow.poll(input())).toMatchObject({ status: "succeeded", reason: "ended_incomplete" });
+    expect(await world({}, done({ status: "blocked" })).workflow.poll(input())).toMatchObject({ status: "failed", reason: "ended_blocked" });
+  });
+
   it("reads the rule out of the pinned definition", () => {
     expect(finalRuleOf(JSON.stringify(rule))).toEqual({ output: "status", in: ["sent"] });
     expect(finalRuleOf("not json")).toBeNull();

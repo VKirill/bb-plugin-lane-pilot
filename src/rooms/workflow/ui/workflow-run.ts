@@ -35,7 +35,7 @@ export function runView(snapshot: RunSnapshot, prefix = ""): { runs: Map<string,
     const steps = byNode.get(node.id) ?? [];
     if (node.kind === "start") { runs.set(key(node.id), { status: "done", visits: 0, steps }); continue; }
     if (node.kind === "end") {
-      const finished = ["succeeded"].includes(snapshot.run.status), stopped = ["failed", "blocked", "interrupted", "canceled"].includes(snapshot.run.status);
+      const finished = ["succeeded"].includes(snapshot.run.status), stopped = ["failed", "blocked", "interrupted", "canceled", "not_verified"].includes(snapshot.run.status);
       runs.set(key(node.id), { status: finished ? "done" : stopped ? "failed" : "pending", visits: 0, steps }); continue;
     }
     runs.set(key(node.id), { status: steps.length ? combine(steps) : "pending", visits: steps.length, steps });

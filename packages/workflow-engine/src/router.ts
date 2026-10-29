@@ -477,8 +477,11 @@ function goalsFor(workflow: Workflow, intent: string): RouteGoal[] {
   return goals;
 }
 
-/** How a workflow has run so far (real runs only): the router's tiebreaker. */
-export type RunRecord = { succeeded: number; failed: number; lastRunAt: number | null };
+/**
+ * How a workflow has run so far (real top-level runs only): the router's tiebreaker.
+ * `succeeded` is completed work. A correct refusal counts as not completed. An escalation is recorded apart and moves neither side.
+ */
+export type RunRecord = { succeeded: number; failed: number; lastRunAt: number | null; executed: number; workDone: number; refused: number; escalated: number };
 export type RouteInput = { intent: string; context?: string; workflows: ReadonlyArray<Workflow>; state?: RouterState; model?: RouterModel | null;
   /** Run statistics by workflow id: between candidates the text search scores (nearly) alike, the one that has run well and lately comes first. Never lets a worse text match win. */
   stats?: ReadonlyMap<string, RunRecord>; now?: number };
@@ -486,7 +489,7 @@ export type RouteInput = { intent: string; context?: string; workflows: Readonly
 /** How much the run record can move a score: less than the gap between two different text matches, enough to order two that are alike. */
 export const STAT_WEIGHT = 0.02;
 const RECENT_MS = 30 * 24 * 3_600_000;
-/** 0 to 1: the share of finished runs that succeeded (smoothed, so one lucky run is not a record), and how recent the last run is; a workflow that never ran sits in the middle. */
+/** 0 to 1: the share of finished runs that completed the work (smoothed, so one lucky run is not a record), and how recent the last run is; a workflow that never ran sits in the middle. */
 export function trackRecord(record: RunRecord | undefined, now: number): number {
   const finished = (record?.succeeded ?? 0) + (record?.failed ?? 0);
   const reliability = (((record?.succeeded ?? 0) + 1) / (finished + 2));

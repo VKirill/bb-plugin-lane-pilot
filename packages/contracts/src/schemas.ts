@@ -308,7 +308,15 @@ export const modelCatalogSchema = z.object({
 }).strict();
 export const workflowStatsSchema = z.object({
   runs: z.number().int(), succeeded: z.number().int(), failed: z.number().int(), active: z.number().int(),
-  /** Succeeded over finished runs; null before any run has finished. */
+  /** The graph executed (engine status succeeded). */
+  executed: z.number().int(),
+  /** The output was completed work, not a refusal, an escalation or an unfinished run. */
+  workDone: z.number().int(),
+  /** The graph executed and the output was a correct refusal (`blocked`). */
+  refused: z.number().int(),
+  /** The graph executed and handed the job on (`proposed`). Not completed work and not a failure. */
+  escalated: z.number().int(),
+  /** Completed work over executed runs plus engine failures; null before any of those exist. */
   successRate: z.number().nullable(), lastRunAt: z.number().int().nullable(), lastStatus: z.string().nullable(), lastRunId: z.string().nullable(),
 }).strict();
 export const workflowSummarySchema = z.object({
@@ -353,7 +361,7 @@ export const workflowRunSnapshotSchema = z.object({
   children: z.array(z.object({ runId: z.string(), stepKey: z.string(), workflowId: z.string(), status: z.string() }).strict()),
   /** K7: what the run is for, the last audit against it, and how the goals changed (oldest first, the first entry is the start). */
   goals: z.array(z.object({ id: z.string(), done_when: z.string(), evidence: z.string(), guess: z.boolean().optional() }).strict()),
-  goalAudit: z.object({ verdict: z.enum(["pass", "gaps", "unavailable"]), met: z.array(z.string()), unmet: z.array(z.object({ id: z.string(), why: z.string() }).strict()), notes: z.string().optional(), error: z.string().optional(), at: z.number().int() }).strict().nullable(),
+  goalAudit: z.object({ verdict: z.enum(["pass", "gaps", "unavailable", "not_verified"]), met: z.array(z.string()), unmet: z.array(z.object({ id: z.string(), why: z.string() }).strict()), notes: z.string().optional(), error: z.string().optional(), at: z.number().int() }).strict().nullable(),
   goalChanges: z.array(z.object({ at: z.number().int(), by: z.string(), reason: z.string(), goals: z.number().int() }).strict()),
   events: z.array(z.object({ seq: z.number().int(), stepKey: z.string().nullable(), kind: z.string(), from: z.string().nullable(), to: z.string().nullable(), detail: z.string().nullable(), at: z.number().int() }).strict()),
 }).strict();

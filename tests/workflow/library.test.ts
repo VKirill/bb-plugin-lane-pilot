@@ -119,9 +119,9 @@ describe("workflow library", () => {
       .run(id, "review-fix", 1, "x", def, project, status, at, at);
     insert("r1", "succeeded", "proj_1", 10); insert("r2", "failed", "proj_1", 20); insert("r3", "succeeded", "proj_2", 30); insert("r4", "running", "proj_1", 40); insert("r5", "canceled", "proj_1", 50);
     const scoped = (await lib.list({ projectId: "proj_1" })).workflows.find((row) => row.id === "review-fix")!.stats;
-    expect(scoped).toEqual({ runs: 4, succeeded: 1, failed: 1, active: 1, successRate: 0.5, lastRunAt: 50, lastStatus: "canceled", lastRunId: "r5" });
+    expect(scoped).toEqual({ runs: 4, succeeded: 1, failed: 1, active: 1, successRate: 0.5, lastRunAt: 50, lastStatus: "canceled", lastRunId: "r5", executed: 1, workDone: 1, refused: 0, escalated: 0 });
     const everywhere = (await lib.list({})).workflows.find((row) => row.id === "review-fix")!.stats;
-    expect(everywhere).toMatchObject({ runs: 5, succeeded: 2, failed: 1, successRate: 2 / 3 });
+    expect(everywhere).toMatchObject({ runs: 5, succeeded: 2, failed: 1, successRate: 2 / 3, executed: 2, workDone: 2, refused: 0, escalated: 0 });
     expect((await lib.list({})).project).toBe("not_requested");
   });
 

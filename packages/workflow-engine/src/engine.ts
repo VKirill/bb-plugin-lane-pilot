@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 
 import { MissingValueError, evalCondition, evalSpec, parseExpr, refOf, renderValue, toExpr, valueSpecOf } from "./expr";
 import type { EvalEnv, Expr, Ref } from "./expr";
-import { END, MAX_SUBWORKFLOW_DEPTH, QUALITY_MODES, START } from "./schema";
+import { resolveTaskQualityMode } from "./quality-mode";
+import { END, MAX_SUBWORKFLOW_DEPTH, START } from "./schema";
 import type { Field, GraphNode as WorkflowNode, PassMode, QualityMode, Workflow, WorkflowEdge } from "./schema";
 import { createJournal, sha256, stableId, TERMINAL_RUN } from "./journal";
 import type { EffectRow, Journal, RunRow, RunStatus, StepRow } from "./journal";
@@ -280,11 +281,12 @@ export class WorkflowEngine {
     const inputs = checkOutput(workflow.inputs, withDefaults);
     const depth = input.depth ?? 0;
     if (depth > Math.min(workflow.guards.maxSubworkflowDepth, MAX_SUBWORKFLOW_DEPTH)) throw new MissingValueError("subworkflow_depth", `subworkflows go ${depth} deep; the limit is ${MAX_SUBWORKFLOW_DEPTH}`);
-    // The mode the caller asked for: the input as given, else the mode passed along (a subworkflow inherits its parent's), else the default.
+    // Contract and an explicit input beat the workflow; `fixed` still wins over an inherited `$mode`. full inside fixed quick is a conflict.
     const given = (input.inputs ?? {}).quality_mode;
-    const asked: QualityMode = (QUALITY_MODES as readonly unknown[]).includes(given) ? given as QualityMode : input.mode ?? workflow.quality_mode?.default ?? "standard";
-    const floor = workflow.quality_mode?.min;
-    const mode: QualityMode = workflow.quality_mode?.fixed ?? (floor && QUALITY_MODES.indexOf(asked) < QUALITY_MODES.indexOf(floor) ? floor : asked);
+    const explicitAsk = (["quick", "standard", "full"] as readonly unknown[]).includes(given);
+    const picked = resolveTaskQualityMode({ asked: explicitAsk ? given : input.mode, explicitAsk, workflow: workflow.quality_mode ?? null });
+    if (!picked.ok) throw new WorkflowError([{ level: "error", code: picked.code, message: picked.detail }]);
+    const mode = picked.mode;
     const goals = goalsSchema.parse(input.goals ?? []);
     const runId = `wfrun_${randomUUID().replaceAll("-", "")}`;
     const j = this.journal, at = this.now();
@@ -406,15 +408,25 @@ export class WorkflowEngine {
   /**
    * K7: a run that has goals is judged against them before it closes. All met: it closes. Some not: it is `blocked` with the
    * unmet goal ids as the reason, the verdict is in the journal, and the PM either fixes the work (re-run a node: the run reaches
-   * its exit and is audited again) or amends the goals with a reason (which audits again). An audit that could not be made closes
-   * the run and says so in its reason: a broken auditor must not hold every run.
+   * its exit and is audited again) or amends the goals with a reason (which audits again). A user workflow (`goal_audit: required`)
+   * with no goals, and any run whose audit could not be made, closes `not_verified`: that is not a verified success. A service
+   * graph with no goals closes without calling the auditor.
    */
   private async closeAfterAudit(run: RunRow): Promise<"closed" | "blocked" | "stop"> {
     const j = this.journal;
     const close = (reason: string | null) => { j.setRunStatus(run.id, ["running", "waiting"], "succeeded", reason); return "closed" as const; };
+    const unverified = (reason: string, detail: Record<string, unknown>) => {
+      j.event(run.id, null, "goal_audit", null, "not_verified", JSON.stringify({ verdict: "not_verified", ...detail }));
+      j.setRunStatus(run.id, ["running", "waiting"], "not_verified", reason);
+      return "closed" as const;
+    };
     // A child run carries the goals so its helpers are reminded of them; it is the parent run, which owns the whole outcome, that is audited.
     const goals = parseGoals(run.goals_json), audit = this.options.auditGoals;
-    if (!goals.length || !audit || run.parent_run_id) return close(null);
+    if (run.parent_run_id) return close(null);
+    let required = false;
+    try { required = (JSON.parse(run.definition_json) as { goal_audit?: string }).goal_audit === "required"; } catch { required = false; }
+    if (!goals.length) return required ? unverified("not_verified: a user workflow closed with no goals", { error: "no goals" }) : close(null);
+    if (!audit) return close(null);
     const sha = goalsSha(goals);
     // A pass is a verdict on this output: a re-run node that changed the result is audited again (2026-10-29 audit A-001).
     const outputSha = sha256(run.output_json ?? "");
@@ -428,8 +440,7 @@ export class WorkflowEngine {
       if (isEngineBug(cause)) throw cause;
       if (this.stopped()) return "stop";
       const message = cause instanceof Error ? cause.message : String(cause);
-      j.event(run.id, null, "goal_audit", null, "unavailable", JSON.stringify({ sha, outputSha, verdict: "unavailable", error: message.slice(0, 500) }));
-      return close(`goal_audit_unavailable: ${message.slice(0, 300)}`);
+      return unverified(`not_verified: goal_audit_unavailable: ${message.slice(0, 260)}`, { sha, outputSha, error: message.slice(0, 500) });
     }
     const unmet = result.unmet.filter((entry) => goals.some((goal) => goal.id === entry.id));
     // A goal the auditor did not mention at all is not met: silence is not evidence.
@@ -447,7 +458,7 @@ export class WorkflowEngine {
   }
 
   /** The last goal audit of a run, as the journal has it. */
-  lastAudit(runId: string): { sha: string; outputSha?: string; verdict: "pass" | "gaps" | "unavailable"; met: string[]; unmet: Array<{ id: string; why: string }>; notes?: string; error?: string; at: number } | null {
+  lastAudit(runId: string): { sha: string; outputSha?: string; verdict: "pass" | "gaps" | "unavailable" | "not_verified"; met: string[]; unmet: Array<{ id: string; why: string }>; notes?: string; error?: string; at: number } | null {
     const row = this.journal.db.prepare("SELECT detail, at FROM lane_pilot_wf_event WHERE run_id=? AND kind='goal_audit' ORDER BY seq DESC LIMIT 1").get(runId) as { detail: string | null; at: number } | undefined;
     if (!row?.detail) return null;
     try { const detail = JSON.parse(row.detail) as Record<string, unknown>; return { sha: String(detail.sha ?? ""), ...(typeof detail.outputSha === "string" ? { outputSha: detail.outputSha } : {}), verdict: detail.verdict as "pass", met: (detail.met as string[] | undefined) ?? [], unmet: (detail.unmet as Array<{ id: string; why: string }> | undefined) ?? [], ...(typeof detail.notes === "string" ? { notes: detail.notes } : {}), ...(typeof detail.error === "string" ? { error: detail.error } : {}), at: row.at }; } catch { return null; }

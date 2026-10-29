@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { HEAVY_WITHOUT_JEV, intakeByRules, isMachineMessage } from "../src/rooms/phase/intake";
+import { HEAVY_WITHOUT_JEV, intakeByRules, intakeRunGoals, isMachineMessage } from "../src/rooms/phase/intake";
 import { createPhaseIntake, type IntakePhases, type IntakeTrain } from "../src/rooms/phase/server/intake";
 import type { Phase } from "../src/rooms/phase/logic";
 import { createRun, openDatabase } from "../src/rooms/storage";
@@ -46,6 +46,13 @@ describe("phase intake rules", () => {
     expect(intakeByRules("почему не грузится каталог?")).toEqual({ kind: "question", confident: true });
     expect(intakeByRules("x".repeat(HEAVY_WITHOUT_JEV + 1))).toEqual({ kind: "heavy", confident: false });
     expect(intakeByRules(`a\n${"b".repeat(200)}`)).toEqual({ kind: "small", confident: false });
+  });
+  it("F-006: a user intake names one goal from the request", () => {
+    expect(intakeRunGoals("поправь кнопку в шапке")).toEqual([{
+      id: "request", done_when: "The owner's request is done: поправь кнопку в шапке",
+      evidence: "the workflow output status is closed and its comment says what changed", guess: true,
+    }]);
+    expect(intakeRunGoals("   ")).toEqual([expect.objectContaining({ id: "request", done_when: "The owner's request is done: Owner's request" })]);
   });
   it("knows Lane Pilot's own notices", () => {
     expect(isMachineMessage("Lane Pilot: results of your tasks")).toBe(true);

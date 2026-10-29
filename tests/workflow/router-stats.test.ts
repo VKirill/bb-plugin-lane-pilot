@@ -13,7 +13,9 @@ const twin = (id: string) => wf({
 });
 const INTENT = "make the weekly sales report";
 const NOW = Date.UTC(2026, 9, 7);
-const record = (succeeded: number, failed: number, daysAgo: number | null): RunRecord => ({ succeeded, failed, lastRunAt: daysAgo === null ? null : NOW - daysAgo * 86_400_000 });
+const record = (succeeded: number, failed: number, daysAgo: number | null): RunRecord => ({
+  succeeded, failed, lastRunAt: daysAgo === null ? null : NOW - daysAgo * 86_400_000, executed: succeeded, workDone: succeeded, refused: 0, escalated: 0,
+});
 
 describe("the run record as a tiebreaker", () => {
   it("scores a reliable, recent workflow above a failing, old or unknown one, within 0 and 1", () => {
@@ -56,7 +58,7 @@ describe("the run record as a tiebreaker", () => {
     const insert = (id: string, workflowId: string, status: string, parent: string | null, at: number) => db.prepare("INSERT INTO lane_pilot_wf_run(id,workflow_id,workflow_version,workflow_sha256,definition_json,parent_run_id,parent_step_key,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
       .run(id, workflowId, 1, "x", def, parent, parent ? `s${id}` : null, status, at, at);
     insert("a", "demo", "succeeded", null, 10); insert("b", "demo", "failed", null, 20); insert("c", "demo", "running", null, 30); insert("d", "demo", "succeeded", "a", 40); insert("e", "other", "blocked", null, 5);
-    expect(runRecords(db).get("demo")).toEqual({ succeeded: 1, failed: 1, lastRunAt: 30 });
-    expect(runRecords(db).get("other")).toEqual({ succeeded: 0, failed: 1, lastRunAt: 5 });
+    expect(runRecords(db).get("demo")).toEqual({ succeeded: 1, failed: 1, lastRunAt: 30, executed: 1, workDone: 1, refused: 0, escalated: 0 });
+    expect(runRecords(db).get("other")).toEqual({ succeeded: 0, failed: 1, lastRunAt: 5, executed: 0, workDone: 0, refused: 0, escalated: 0 });
   });
 });
