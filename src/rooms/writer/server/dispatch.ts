@@ -1,16 +1,13 @@
 import { isTaskSatisfied, loadBlockedBy } from "../../runs/server";
 import { setRunHalted } from "../../runs/server";
 import { isLiveDecision } from "../live-folder";
-import { buildCliInvocation } from "../argv-builder";
-import { requiredCliFlags } from "../cli-flags";
-import { classifyCliOutcome } from "../cli-outcome";
-import { cliReceiptAttemptKey, cliReceiptRunKey, DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING } from "../../runs";
+import { DISPATCH_IDEMPOTENT_WINDOW_MS, DISPATCH_STAGES_PENDING } from "../../runs";
 import { taskV2Schema } from "../../contracts";
 import type { TaskV2 } from "../../contracts";
 import { QUALITY_MODE_SETTING, browserQaRequired, resolveQualityMode, taskQaPlan } from "../../critique";
 import type { CodeCriticDefault } from "../../critique";
 import { saveCriticCodeDefault } from "./critic-override";
-import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskGitBase, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, recordFinishedAttempt, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, saveTaskPlan, setRunState, transitionAttempt } from "../../storage";
+import { getRunObjective, setRunObjective, createAttempt, createTask, freeTaskId, getAttempt, getReasoningTrace, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskGitBase, getTaskPlan, latestTaskAttemptState, listAttemptsForTask, listOpenAttempts, listRunsWithAttempts, listStageReceipts, listTaskKinds, listTaskTerminalStates, loadProjectSettings, saveTaskPlan, setRunState, transitionAttempt } from "../../storage";
 import { sha256 , spendReserve, type BirthKind } from "../../tasks";
 import { liveFolderLockNote, nextStep, taskFamily } from "../../runs";
 import { commonTaskFolder, isMainfixTask, isTaskBase, parseRepoTop, planWithOutsideReads, repoTopCommand, rerootTask } from "../../tasks";
@@ -48,7 +45,7 @@ function canonicalJson(value:unknown): string {
 }
 
 export function createWriterDispatch(ctx: ServerCore, services: Services) {
-  const { acceptedTaskWorkspace, bb, cliSettingsFor, configForRun, db, ensureRunScopes, getThreadBounded, host, refreshRun } = ctx;
+  const { acceptedTaskWorkspace, bb, configForRun, db, ensureRunScopes, getThreadBounded, host, refreshRun } = ctx;
   /** Attempts whose pm-read / plan critique this instance is running now: start-up recovery leaves them alone. */
   const liveDispatches = new Set<string>();
 
@@ -448,112 +445,6 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     };
   }
 
-  async function dispatchCli(args:{
-    threadId:string; projectId:string; binary?:"run-controller"|"lane-ctl"; subcommand?:string;
-    taskFile?:string; taskId?:string; runDir?:string;
-  }): Promise<Record<string,unknown>> {
-    const metadata = await bb.sdk.threads.getPluginMetadata({ threadId:args.threadId });
-    if (valueAt(metadata, "role") !== "pm") throw new Error("caller is not a Lane Pilot PM thread");
-    const runId = stringAt(metadata, "lanePilotRunId");
-    if (!runId) throw new Error("PM thread has no lanePilotRunId");
-    const config = loadPrototypeConfig(db, args.projectId);
-    if (!config) throw new Error(`Lane Pilot prototype is not configured for ${args.projectId}`);
-    if (listTaskKinds(db, runId).includes("bb")) {
-      throw new Error("V1: CLI writer cannot join a BB writer run");
-    }
-    const binary = args.binary ?? "run-controller";
-    const subcommand = args.subcommand ?? "run";
-    const settings = await cliSettingsFor(args.projectId, config);
-    const runDir = args.runDir
-      ?? (typeof settings["ops.run_dir"] === "string" ? settings["ops.run_dir"] : undefined)
-      ?? `${config.writerWorkspacePath}/.agents/runs/lane-pilot-${runId}`;
-    const invocation = buildCliInvocation({
-      binary,
-      subcommand,
-      settings,
-      required: requiredCliFlags({
-        binary,
-        subcommand,
-        runDir,
-        projectCwd: String(settings["ops.project_cwd"] ?? config.writerWorkspacePath),
-        taskFile: args.taskFile ?? (typeof settings["ops.task_file"] === "string" ? settings["ops.task_file"] : undefined),
-        taskId: args.taskId ?? (typeof settings["ops.task_id"] === "string" ? settings["ops.task_id"] : undefined),
-      }),
-    });
-    const invalidSetting = invocation.unapplied.find((row) => row.reason.startsWith("invalid value;"));
-    if (invalidSetting) {
-      return {
-        status:"blocked",
-        reason:`invalid setting ${invalidSetting.key}: ${invalidSetting.reason}`,
-        applied:invocation.applied,
-        unapplied:invocation.unapplied,
-        argv:invocation.argv,
-        env:invocation.env,
-      };
-    }
-    const executed = await host.call("runCli", {
-      requestedHostId: config.hostId,
-      binary,
-      argv: invocation.argv,
-      env: invocation.env,
-      cwd: config.writerWorkspacePath,
-    }, { hostId:config.hostId, timeoutMs:180_000 });
-    const outcome = classifyCliOutcome({
-      subcommand,
-      exitCode:executed.exitCode,
-      stdout:executed.stdout,
-    });
-    const receiptPath = `${runDir}/cli-receipt.json`;
-    const receipt = {
-      schemaVersion:1,
-      kind:"cli",
-      status: outcome.status,
-      taskAccepted: outcome.taskAccepted,
-      upstreamAccepted: outcome.upstreamAccepted,
-      upstreamStatus: outcome.upstreamStatus,
-      reason: outcome.reason,
-      lanePilotRunId:runId,
-      pmThreadId:args.threadId,
-      binary,
-      argv: executed.argv,
-      env: executed.env,
-      exitCode: executed.exitCode,
-      stdout: executed.stdout,
-      stderr: executed.stderr,
-      applied: invocation.applied,
-      unapplied: invocation.unapplied,
-      receiptPath,
-    };
-    await bb.sdk.files.write({
-      hostId: config.hostId,
-      rootPath: config.writerWorkspacePath,
-      path: receiptPath,
-      content: `${JSON.stringify(receipt, null, 2)}\n`,
-      contentEncoding: "utf8",
-      createParents: true,
-      expectedSha256: null,
-    });
-    const mutating = subcommand === "start" || subcommand === "run";
-    let attemptId: string | null = null;
-    if (mutating) {
-      const existing = db.prepare("SELECT id FROM lane_pilot_task WHERE run_id=? AND kind='cli'")
-        .get(runId) as { id: string } | undefined;
-      const taskId = existing?.id ?? id("lptask");
-      if (!existing) {
-        createTask(db, { id: taskId, runId, kind:"cli", contract:{ binary, subcommand, argv:executed.argv, receiptPath } });
-      }
-      attemptId = id("lpattempt");
-      createAttempt(db, { id: attemptId, runId, taskId });
-      recordFinishedAttempt(db, attemptId, outcome.status, outcome.reason);
-    }
-    saveProjectSetting(db, args.projectId, cliReceiptRunKey(runId), JSON.stringify(receipt));
-    if (attemptId) {
-      saveProjectSetting(db, args.projectId, cliReceiptAttemptKey(attemptId), JSON.stringify(receipt));
-    }
-    setRunState(db, runId, outcome.status);
-    return receipt;
-  }
-
   /**
    * Starts again the stages of a dispatch a reload interrupted, for the same task and attempt. A Lane Pilot deploy reloads
    * the plugin, and the dispatch pipeline lives in memory: a reload during pm-read (minutes of a helper turn) ended the
@@ -602,5 +493,5 @@ export function createWriterDispatch(ctx: ServerCore, services: Services) {
     return { resumed:true };
   }
 
-  return { readWriterWorkspaceFile, dispatchWriter, waitWriter, dispatchCli, resumeDispatch };
+  return { readWriterWorkspaceFile, dispatchWriter, waitWriter, resumeDispatch };
 }

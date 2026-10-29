@@ -345,27 +345,7 @@ export const hostContract = defineRpcContract({
     input: hostBaseInput,
     output: installReceiptSchema,
   },
-  runCli: {
-    input: z.object({
-      requestedHostId: z.string().min(1),
-      binary: z.enum(["run-controller", "lane-ctl"]),
-      argv: z.array(z.string()),
-      env: z.record(z.string(), z.string()),
-      cwd: z.string().startsWith("/"),
-      timeoutMs: z.number().int().min(1000).max(1_800_000).optional(),
-    }).strict(),
-    output: z.object({
-      hostId: z.string(),
-      binaryPath: z.string(),
-      argv: z.array(z.string()),
-      env: z.record(z.string(), z.string()),
-      cwd: z.string(),
-      exitCode: z.number().int(),
-      stdout: z.string(),
-      stderr: z.string(),
-    }).strict(),
-  },
-  // The integration gate runs on the project's host (a project on another machine has no path on the hub): both are job kinds.
+  // (2026-10-29) runCli (lane-ctl / run-controller) is gone. The integration gate runs on the project's host.
   gateRun: {
     input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), command:z.string().min(1).max(32_000), timeoutSec:z.number().int().min(1).max(7200) }).strict(),
     output: z.object({ hostId:z.string(), exitCode:z.number().int(), stdout:z.string(), stderr:z.string(), head:z.string().nullable() }).strict(),

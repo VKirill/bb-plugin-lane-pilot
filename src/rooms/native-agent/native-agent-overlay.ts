@@ -418,7 +418,7 @@ Plan the evaluation before any prompt is tuned: a gold set of 20–50 cases cove
   "framework-selector": portedSpecialist(`framework-selector`, `## Role
 Pick the kind of model call (typed judgment, generation, retrieval, ranking), then two or three framework and model options with cost per call, latency, limits and failure modes. Recommend one and say why. Write \`.agents/research/model-<slug>.md\` when a file is needed. Do not build the feature.`),
   "mempalace-curator": portedSpecialist(`mempalace-curator`, `## Role
-Curate project memory. Follow the lane-memory skill. For each proposal show the notes and the evidence. Propose merges, demotions and re-checks. Apply nothing: a write is the owner's step. Do not edit product source.`),
+Curate project memory with lane_pilot_memory (context, learned). For each proposal show the notes and the evidence. Propose merges, demotions and re-checks. Apply nothing: a write is the owner's step. Do not edit product source.`),
   "nyquist-auditor": portedSpecialist(`nyquist-auditor`, `## Role
 For each promise of the phase: the checks that prove it, whether they would fail if the work were missing, and which edge is unsampled (empty, maximum, unicode, concurrency). List the missing checks and the command each should be. Do not write the tests. Follow lane-contract for how a check is named.`),
   "ui-researcher": portedSpecialist(`ui-researcher`, `## Role

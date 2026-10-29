@@ -10,7 +10,7 @@ const ROOMS: Record<string, string> = {
   runs: `acceptance-stats aggregation constants failure-class state-machine jev/failure-class-model jev/judgments/failure-class
     server/blocked-by server/cancel server/child-snapshots server/rpc/runs server/run-finish server/run-routing server/runs-halt server/stage-brief server/stage-records
     server/task-reconcile server/tasks-mirror ui/acceptance-stats ui/run-card ui/run-parts ui/runs-service ui/runs-window ui/stage-result`,
-  writer: `argv-builder check-timing cli-flags cli-outcome cli-run live-folder retry-budget spawn-seam stage-writer-selection stream-retry writer-brief writer-fallbacks writer-reuse-stats
+  writer: `agent-trash argv-builder check-timing cli-outcome cli-run live-folder retry-budget spawn-seam stage-writer-selection stream-retry writer-brief writer-fallbacks writer-reuse-stats
     server/checkout-guests server/concurrency-limit server/writer-host server/writer-silence server/writer-task
     server/writer/answer server/writer/dispatch server/writer/dispatch-workflow server/writer/finish server/writer/live-folder server/writer/spawn server/writer/start
     server/writer/state server/writer/sticky server/writer/update-task server/writer/verify ui/writer-reuse`,
@@ -27,7 +27,7 @@ const ROOMS: Record<string, string> = {
   night: `server/stages/night stages/emergency-writer stages/night stages/night-fix`,
   qa: `qa-host server/errands server/stages/children server/stages/qa server/stages/qa-thread stages/browser-qa`,
   "project-life": `server/stages/onboarding server/stages/project-life stages/onboarding stages/project-life`,
-  memory: `server/memory-mix server/memory-sync server/session-memory server/stages/memory stages/memory ui/memory-records`,
+  memory: `server/memory-mix server/session-memory server/stages/memory stages/memory ui/memory-records`,
   relay: `owner-ask owner-ask-shared server/handoff server/owner-ask server/relay server/service-message ui/owner-ask`,
   council: `server/council ui/council-page`,
   stability: `reconcile server/canary server/deploy-drain server/health server/hook-timeouts server/probes server/provider-retry server/reconcile server/stability stages/opencode-telemetry`,

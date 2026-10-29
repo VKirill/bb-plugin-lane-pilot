@@ -12,8 +12,8 @@ const tokens = { note: "lpprobeab12cd34n", core: "lpprobeab12cd34c", rule: "lppr
 const row = (path: string, patch: Record<string, unknown> = {}) => ({ path, found: true, negativeOk: true, latencyMs: 3, detail: "all found", ...patch });
 const report = (results: unknown[]) => ({ ok: true, token: "ab12cd34", lpVersion: "0.1.265", tokens, problems: [], results, skipped: [], unanswered: { ownerRepeats: 0 } });
 
-/** Runs scenario_memory_paths against a fake `bb`, `ssh` and `lane-memory`; `writerHas` is what the writer thread's log holds. */
-function runScenario(probe: unknown, opts: { pmHas?: string; writerHas?: string; terminal?: boolean }) {
+/** Runs scenario_memory_paths against a fake `bb` and `ssh`; `writerHas` is what the writer thread's log holds. */
+function runScenario(probe: unknown, opts: { pmHas?: string; writerHas?: string }) {
   const dir = mkdtempSync(join(tmpdir(), "lp-drill-memory-"));
   const script = (name: string, body: string) => { writeFileSync(join(dir, name), `#!/bin/sh\n${body}\n`); chmodSync(join(dir, name), 0o755); };
   script("bb", `case "$1 $2" in
@@ -27,7 +27,6 @@ JSON
   *) echo "unexpected: $*" >&2; exit 5 ;;
 esac`);
   script("ssh", `echo '[{"id":"att1","task_id":"t","state":"running","reason":null,"thread_id":"thr_w","workspace_path":null,"environment_id":null,"holder_thread_id":null,"created_at":1}]'`);
-  script("lane-memory", `case "$1" in search) echo "found ${opts.terminal === false ? "nothing" : tokens.note}" ;; core) echo "core ${opts.terminal === false ? "nothing" : tokens.core}" ;; esac`);
   const code = `
 import importlib.util, json, types
 from pathlib import Path
@@ -41,16 +40,16 @@ ctx.memory_probe = m.plant_memory_probe()
 print(json.dumps(m.scenario_memory_paths(ctx)))
 `;
   const res = spawnSync("python3", ["-I", "-c", code], { encoding: "utf8", timeout: 60_000,
-    env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, BB_CLI: join(dir, "bb"), LP_DRILL_LANE_MEMORY: join(dir, "lane-memory") } });
+    env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, BB_CLI: join(dir, "bb") } });
   const line = res.stdout.trim().split("\n").pop() ?? "";
   return { res, verdict: line.startsWith("{") ? JSON.parse(line) as { result: string; problems: string[] } : null };
 }
 
 const allTokens = `prompt ${tokens.note} ${tokens.core} ${tokens.rule}`;
-const green = [row("writer.brief"), row("pm.start"), row("terminal.search")];
+const green = [row("writer.brief"), row("pm.start"), row("critic.code")];
 
 describe("the drill's memory_paths scenario", () => {
-  it("passes when every path delivers and the real PM prompt, writer brief and terminal carry the tokens", () => {
+  it("passes when every path delivers and the real PM prompt and writer brief carry the tokens", () => {
     const { verdict, res } = runScenario(report(green), { pmHas: tokens.rule, writerHas: allTokens });
     expect(verdict, res.stderr).not.toBeNull();
     expect(verdict!.problems).toEqual([]);
@@ -64,8 +63,8 @@ describe("the drill's memory_paths scenario", () => {
   });
 
   it("fails a path that pulled our records for an unrelated query", () => {
-    const { verdict } = runScenario(report([row("terminal.search", { negativeOk: false, detail: "negative case pulled 2 record(s)" })]), { pmHas: tokens.rule, writerHas: allTokens });
-    expect(verdict!.problems.join("\n")).toMatch(/terminal\.search pulled our records for an unrelated query/);
+    const { verdict } = runScenario(report([row("critic.code", { negativeOk: false, detail: "negative case pulled 2 record(s)" })]), { pmHas: tokens.rule, writerHas: allTokens });
+    expect(verdict!.problems.join("\n")).toMatch(/critic\.code pulled our records for an unrelated query/);
   });
 
   it("fails when the real writer brief or the real PM prompt lacks what the table said it delivers", () => {
@@ -74,12 +73,6 @@ describe("the drill's memory_paths scenario", () => {
     expect(verdict!.problems.join("\n")).toMatch(/PM first prompt does not carry the probe rule/);
     expect(verdict!.problems.join("\n")).toMatch(/real writer's first prompt does not carry the probe core/);
     expect(verdict!.problems.join("\n")).toMatch(/real writer's first prompt does not carry the probe rule/);
-  });
-
-  it("fails when a terminal's lane-memory does not return the planted records", () => {
-    const { verdict } = runScenario(report(green), { pmHas: tokens.rule, writerHas: allTokens, terminal: false });
-    expect(verdict!.problems.join("\n")).toMatch(/lane-memory search.*terminal\.search live/);
-    expect(verdict!.problems.join("\n")).toMatch(/lane-memory core.*terminal\.core live/);
   });
 
   it("fails, not passes, when the plugin has no memory-probe yet (no report)", () => {

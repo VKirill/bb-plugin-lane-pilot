@@ -24,7 +24,7 @@ import type { Services } from "../../../core/server";
 const SCREEN_RUNS_LIMIT = 10;
 
 export function settingsRpc(ctx: ServerCore, services: Services) {
-  const { bb, cliSettingsFor, db, host, listProjectSections, screenWriterBinding, sectionChain, serializedKv, settingsAbove, writerBindingKey } = ctx;
+  const { bb, db, host, listProjectSections, screenWriterBinding, sectionChain, serializedKv, settingsAbove, writerBindingKey } = ctx;
   // Runs as the screen shows them: a stage count only; `list_run_stages` lists the rows and `get_stage_result` loads one body.
   const runViews = async (runs: RunHistoryRow[], values: Record<string, unknown>) => {
     const listed = runs.map((run) => ({
@@ -175,7 +175,7 @@ export function settingsRpc(ctx: ServerCore, services: Services) {
       const invocation = buildCliInvocation({
         binary: "run-controller",
         subcommand: "run",
-        settings: config ? await cliSettingsFor(projectId, config) : settings,
+        settings,
       });
       const unapplied = invocation.unapplied.map((item) => ({ key: item.key, reason: item.reason }));
       const runsWindow = runsLimit ?? SCREEN_RUNS_LIMIT;

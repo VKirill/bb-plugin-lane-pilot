@@ -3,7 +3,6 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { SETTING_CATALOG, CONSUMER_KEYS, specFor, UNAPPLIED_REASON, type SettingSpec } from "@lane-pilot/settings-catalog";
 import { UI_CATALOG, WRITER_EFFORT_CHOICES_BY_PROVIDER, type CatalogRow } from "@lane-pilot/settings-catalog";
 import { buildCliInvocation, isFlagOff, isFlagOn } from "../src/rooms/writer/argv-builder";
-import { requiredCliFlags } from "../src/rooms/writer/cli-flags";
 import { installEnv } from "../src/rooms/native-install/install-runner";
 import plugin from "../server";
 import { NO_UPSTREAM } from "./upstream-fixture";
@@ -91,18 +90,7 @@ function assertChannelValue(spec: SettingSpec, value: unknown): void {
 }
 
 function requiredFor(spec: SettingSpec): { binary: "run-controller" | "lane-ctl"; subcommand: string; required: Record<string, string> } {
-  const binary = spec.binaries?.[0] ?? "run-controller";
-  const subcommand = spec.subcommands?.[0] ?? "run";
-  const required = requiredCliFlags({
-    binary,
-    subcommand,
-    runDir: "/tmp/run",
-    projectCwd: "/tmp/proj",
-    taskFile: "/tmp/run/tasks/001.yaml",
-    taskId: "001",
-  });
-  if (spec.flag) delete required[spec.flag];
-  return { binary, subcommand, required };
+  return { binary: spec.binaries?.[0] ?? "run-controller", subcommand: spec.subcommands?.[0] ?? "run", required: {} };
 }
 
 describe("UI storage keys feed runtime channels", () => {
@@ -129,7 +117,7 @@ describe("UI storage keys feed runtime channels", () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
     await plugin(bb);
     const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
-    expect(editable).toHaveLength(260); // 0.1.236: tasks.mirror is gone with the Tasks plugin; 0.1.341: the three workflow.agent.* rows are gone with the role→model table
+    expect(editable).toHaveLength(238); // 0.1.236: tasks.mirror is gone; 0.1.341: workflow.agent.* gone; 2026-10-29: CLI-only ops rows are readonly
     const atomicPickerKeys = new Set([
       "memory.provider", "memory.model", "memory.reasoning_effort", "memory.service_tier",
       "night_review.provider", "night_review.model", "night_review.reasoning_effort", "night_review.service_tier",
@@ -175,7 +163,7 @@ describe("UI storage keys feed runtime channels", () => {
     const booleanFlags = SETTING_CATALOG.filter((spec) => spec.booleanFlag);
     expect(booleanFlags.map((spec) => spec.key)).toEqual([]);
     const editable = UI_CATALOG.filter((row) => row.uiStatus === "editable");
-    expect(editable).toHaveLength(260); // 0.1.236: tasks.mirror is gone with the Tasks plugin; 0.1.341: the three workflow.agent.* rows are gone with the role→model table
+    expect(editable).toHaveLength(238); // 0.1.236: tasks.mirror is gone; 0.1.341: workflow.agent.* gone; 2026-10-29: CLI-only ops rows are readonly
     expect(new Set(editable.map((row) => row.storageKey)).size).toBeLessThan(editable.length);
     for (const row of editable) {
       if (row.storageKey === "ui.language") {
@@ -222,8 +210,8 @@ describe("UI storage keys feed runtime channels", () => {
           settings: { "writer.provider": provider, "writer.reasoning_effort": effort },
         });
         if (allowed) {
-          expect(built.applied).toContain("writer.reasoning_effort");
-          expect(built.unapplied.some((item) => item.key === "writer.reasoning_effort")).toBe(false);
+          expect(built.applied).not.toContain("writer.reasoning_effort");
+          expect(built.unapplied.find((item) => item.key === "writer.reasoning_effort")?.reason).toMatch(/native Lane Pilot/i);
         } else {
           expect(built.applied).not.toContain("writer.reasoning_effort");
           expect(built.argv).not.toContain(effort);
@@ -245,14 +233,15 @@ describe("UI storage keys feed runtime channels", () => {
       subcommand: "run",
       settings: { "writer.fast_mode": false },
     });
-    expect(built.argv).toEqual(["run", "--service-tier", "standard"]);
-    expect(built.applied).toEqual(["writer.service_tier"]);
-    expect(built.unapplied).toEqual([{
+    expect(built.argv).toEqual(["run"]);
+    expect(built.applied).toEqual([]);
+    expect(built.unapplied).toContainEqual({
       key: "writer.fast_mode",
       value: false,
       channel: "NONE",
       reason: UNAPPLIED_REASON.legacyFastModeMigrated,
-    }]);
+    });
+    expect(built.unapplied).toContainEqual(expect.objectContaining({ key: "writer.service_tier" }));
   });
 
   it("AG-215: an invalid provider is unapplied and never enters argv", () => {
@@ -277,10 +266,10 @@ describe("UI storage keys feed runtime channels", () => {
       subcommand: "run",
       settings: { "adoc.005": true, "writer.provider": "codex" },
     });
-    expect(built.argv).toEqual(["run", "--provider", "codex"]);
-    expect(built.applied).toEqual(["writer.provider"]);
-    expect(built.unapplied.map((row) => row.key)).toEqual(["adoc.005"]);
-    expect(built.unapplied[0]?.reason).toMatch(/no runtime consumer/);
+    expect(built.argv).toEqual(["run"]);
+    expect(built.applied).toEqual([]);
+    expect(built.unapplied.map((row) => row.key).sort()).toEqual(["adoc.005", "writer.provider"]);
+    expect(built.unapplied.find((row) => row.key === "adoc.005")?.reason).toMatch(/no runtime consumer/);
   });
 
   it("saves writer.provider and jev keys that get_screen returns", async () => {

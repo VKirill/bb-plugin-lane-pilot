@@ -44,8 +44,6 @@ export const TOOL_PRESENTATION: Record<string, Entry> = {
   lane_pilot_lesson: row("Saving a lesson", "Saved a lesson", "Сохраняю урок", "Урок сохранён"),
   lane_pilot_learned: row("Reading what was learned from the owner", "Read what was learned from the owner", "Смотрю, чему научился на сообщениях владельца", "Посмотрел, чему научился"),
   lane_pilot_memory_golden: row("Checking golden memory", "Checked golden memory", "Проверяю эталонную память", "Эталонная память проверена"),
-  lane_pilot_memory_import: row("Importing memory", "Imported memory", "Импортирую память", "Память импортирована"),
-  lane_pilot_memory_export: row("Exporting memory", "Exported memory", "Экспортирую память", "Память экспортирована"),
   lane_pilot_ask: row("Asking another chat", "Asked another chat", "Спрашиваю другой чат", "Вопрос другому чату отправлен"),
   lane_pilot_reply: row("Answering another chat", "Answered another chat", "Отвечаю другому чату", "Ответ другому чату отправлен"),
   lane_pilot_relay_list: row("Listing relay items", "Listed relay items", "Смотрю вопросы и напоминания", "Вопросы и напоминания получены", true),

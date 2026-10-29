@@ -124,7 +124,6 @@ export interface Services {
   runBudgets: WriterStateApi["runBudgets"];
   runBudgetFor: WriterStateApi["runBudgetFor"];
   assertComposerEnvironment: ActivationApi["assertComposerEnvironment"];
-  dispatchCli: WriterDispatchApi["dispatchCli"];
   dispatchWriter: WriterDispatchApi["dispatchWriter"];
   resumeDispatch: WriterDispatchApi["resumeDispatch"];
   registerDocsGraphs: DocsNightlyApi["registerDocsGraphs"];

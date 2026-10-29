@@ -388,7 +388,7 @@ print(json.dumps({"files": files, "restored": restored, "failed": failed}))
 
 /** Takes the files a writer created inside owns_paths out of the folder: agent-trash when the host has it, else into the backup dir. Never rm. */
 export const LIVE_TRASH_SCRIPT = BACKUP_PRELUDE + String.raw`import subprocess
-trash = os.path.join(os.path.expanduser("~"), ".agents", "bin", "agent-trash")
+trash = os.path.join(os.path.expanduser("~"), ".agents", "lane-pilot", "bin", "agent-trash")
 removed = []
 for rel in PAYLOAD["created"]:
     safe(rel)
