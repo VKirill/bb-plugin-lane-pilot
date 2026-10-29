@@ -8,6 +8,7 @@ import type { Field, GraphNode as WorkflowNode, PassMode, QualityMode, Workflow,
 import { createJournal, sha256, stableId, TERMINAL_RUN } from "./journal";
 import type { EffectRow, Journal, RunRow, RunStatus, StepRow } from "./journal";
 import { executorKey, lowerWorkflow, outputFields } from "./lower";
+import type { ResolveWorkflow } from "./lower";
 import { definitionSha256 } from "./store";
 import { WorkflowError, validateWorkflow } from "./validate";
 import { checkOutput, slugOf, valueAtPath } from "./values";
@@ -32,6 +33,27 @@ const UNKNOWN_USAGE_MAX_STEPS = 40;
 const UNKNOWN_USAGE_MAX_WALL_SECONDS = 2 * 3600;
 /** What a step spent. `unknown`: the provider reports no usage, so the numbers are a floor, not zero; the run records it per step and holds a token or money budget to a time and step limit. */
 export type Usage = { tokens?: number; costUsd?: number; unknown?: boolean };
+
+/** How many finished runs keep their compiled graph and runtime in memory. */
+const RETAINED_RUNS = 64;
+
+/** The child definitions a run was started with, by workflow id (and `@version` when the node names one). */
+type Pins = Record<string, Workflow>;
+const pinKey = (id: string, version?: number) => (version === undefined ? id : `${id}@${version}`);
+
+/** Every child a workflow reaches, resolved once: a running chain keeps them although the catalog changes (2026-10-29 audit A-011). */
+function collectPins(workflow: Workflow, resolve: ResolveWorkflow, out: Pins = {}, depth = 0): Pins {
+  for (const node of workflow.nodes) {
+    if (node.type !== "subworkflow") continue;
+    const key = pinKey(node.workflow, node.version);
+    if (out[key]) continue;
+    const child = resolve(node.workflow, node.version);
+    if (!child) continue;
+    out[key] = child;
+    if (depth < MAX_SUBWORKFLOW_DEPTH) collectPins(child, resolve, out, depth + 1);
+  }
+  return out;
+}
 
 /** Two spends as one: tokens and cost add up, and one unknown part makes the whole unknown. */
 function addSpend(a: Usage | undefined, b: Usage | undefined): Usage | undefined {
@@ -166,6 +188,8 @@ export class WorkflowEngine {
   private readonly aborts = new Map<string, AbortController>();
   /** Children whose spend a failed step already added to the parent. */
   private readonly compiledRuns = new Map<string, Compiled>();
+  /** Finished runs whose compiled graph and runtime are still held, oldest first: a re-run of one of them needs no rebuild. */
+  private readonly retired: string[] = [];
   private readonly beats = new Map<string, ReturnType<typeof setInterval>>();
   private readonly stoppedRuns = new Set<string>();
   private disposed = false;
@@ -216,9 +240,9 @@ export class WorkflowEngine {
   }
 
   /** Why a workflow cannot run here: invalid, or an executor not registered. */
-  preflight(workflow: Workflow): string[] {
-    const problems = validateWorkflow(workflow, { resolve: this.options.resolveWorkflow, ...(this.options.specialistKnown ? { specialistKnown: this.options.specialistKnown } : {}) }).filter((problem) => problem.level === "error").map((problem) => problem.message);
-    const lowered = lowerWorkflow(workflow, this.options.resolveWorkflow);
+  preflight(workflow: Workflow, resolve: ResolveWorkflow | undefined = this.options.resolveWorkflow): string[] {
+    const problems = validateWorkflow(workflow, { resolve, ...(this.options.specialistKnown ? { specialistKnown: this.options.specialistKnown } : {}) }).filter((problem) => problem.level === "error").map((problem) => problem.message);
+    const lowered = lowerWorkflow(workflow, resolve);
     for (const node of lowered.nodes) {
       if (node.type === "note") continue;
       const key = executorKey(node);
@@ -237,6 +261,10 @@ export class WorkflowEngine {
     parent?: { runId: string; stepKey: string }; depth?: number;
     /** K7: what the run is for; checked against its output before it closes. */
     goals?: RunGoal[];
+    /** Where its children are found when they are not the engine's: a project's own library (2026-10-29 audit A-012). */
+    resolve?: ResolveWorkflow;
+    /** The children the parent chain was started with; a child run is given its parent's. */
+    pins?: Pins;
   }): { runId: string; created: boolean; done: Promise<RunSummary> } {
     const { workflow } = input;
     const existing = input.key ? this.options.db.prepare("SELECT id FROM lane_pilot_wf_run WHERE idem_key=?").get(input.key) as { id: string } | undefined : undefined;
@@ -244,7 +272,8 @@ export class WorkflowEngine {
       if (input.runtime !== undefined) this.runtimes.set(existing.id, input.runtime);
       return { runId: existing.id, created: false, done: this.drive(existing.id) };
     }
-    const problems = this.preflight(workflow);
+    const resolveChild: ResolveWorkflow = (id, version) => input.pins?.[pinKey(id, version)] ?? input.resolve?.(id, version) ?? this.options.resolveWorkflow?.(id, version) ?? null;
+    const problems = this.preflight(workflow, resolveChild);
     if (problems.length) throw new WorkflowError(problems.map((message) => ({ level: "error" as const, code: "preflight", message })));
     const withDefaults = { ...(input.inputs ?? {}) };
     for (const field of workflow.inputs) if (withDefaults[field.name] === undefined && field.default !== undefined) withDefaults[field.name] = field.default;
@@ -259,7 +288,8 @@ export class WorkflowEngine {
     const goals = goalsSchema.parse(input.goals ?? []);
     const runId = `wfrun_${randomUUID().replaceAll("-", "")}`;
     const j = this.journal, at = this.now();
-    const lowered = lowerWorkflow(workflow, this.options.resolveWorkflow);
+    const pins = collectPins(workflow, resolveChild);
+    const lowered: Workflow & { pinned?: Pins } = { ...lowerWorkflow(workflow, resolveChild), ...(Object.keys(pins).length ? { pinned: pins } : {}) };
     const c = this.compile(lowered);
     const entry = c.out.get(START)![0]!;
     j.db.transaction(() => {
@@ -284,7 +314,7 @@ export class WorkflowEngine {
   private drive(runId: string): Promise<RunSummary> {
     const running = this.drives.get(runId);
     if (running) return running;
-    const promise = this.driveLoop(runId).finally(() => { this.drives.delete(runId); });
+    const promise = this.driveLoop(runId).finally(() => { this.drives.delete(runId); this.retire(runId); });
     this.drives.set(runId, promise);
     return promise;
   }
@@ -297,6 +327,23 @@ export class WorkflowEngine {
     const result = this.options.db.prepare(`UPDATE lane_pilot_wf_run SET owner_id=?, lease_until=? WHERE id=? AND status IN ('running','waiting') AND (owner_id IS NULL OR owner_id=? OR lease_until<?)`)
       .run(this.instanceId, at + this.leaseMs, runId, this.instanceId, at);
     return result.changes > 0;
+  }
+
+  /**
+   * A finished run lets go of its abort controller, and of its compiled graph and runtime once RETAINED_RUNS newer ones finished:
+   * a long-lived engine held all three for every run it ever drove (2026-10-29 audit A-010). A re-run rebuilds what is gone.
+   */
+  private retire(runId: string): void {
+    const run = this.journal.getRun(runId);
+    if (!run || !TERMINAL_RUN.includes(run.status) || this.drives.has(runId)) return;
+    this.aborts.delete(runId);
+    if (!this.retired.includes(runId)) this.retired.push(runId);
+    while (this.retired.length > RETAINED_RUNS) {
+      const old = this.retired.shift()!;
+      const row = this.journal.getRun(old);
+      if (row && !TERMINAL_RUN.includes(row.status)) continue;
+      this.compiledRuns.delete(old); this.runtimes.delete(old);
+    }
   }
 
   private release(runId: string): void {
@@ -1188,12 +1235,14 @@ export class WorkflowEngine {
         const run = this.journal.getRun(ctx.runId)!;
         const depth = run.depth + 1;
         if (depth > Math.min(ctx.workflow.guards.maxSubworkflowDepth, MAX_SUBWORKFLOW_DEPTH)) throw new MissingValueError("subworkflow_depth", `subworkflows go ${depth} deep; the limit is ${MAX_SUBWORKFLOW_DEPTH}`);
-        const child = this.options.resolveWorkflow?.(node.workflow, node.version);
+        // The child the chain was started with; a run from before pins resolves it now.
+        const pins = (ctx.workflow as Workflow & { pinned?: Pins }).pinned;
+        const child = pins?.[pinKey(node.workflow, node.version)] ?? this.options.resolveWorkflow?.(node.workflow, node.version);
         if (!child) throw new Error(`workflow "${node.workflow}" was not found`);
         const mapped = Object.fromEntries(Object.entries(node.inputs).map(([name, ref]) => [name, ctx.resolve(ref)]).filter(([, value]) => value !== undefined));
         const inputs = { ...mapped, ...ctx.input.with };
         const known = new Set(child.inputs.map((field) => field.name));
-        const started = this.start({ workflow: child, inputs: Object.fromEntries(Object.entries(inputs).filter(([name]) => known.has(name))), key: `child:${ctx.runId}:${ctx.stepKey}`, mode: ctx.mode, goals: ctx.goals,
+        const started = this.start({ workflow: child, inputs: Object.fromEntries(Object.entries(inputs).filter(([name]) => known.has(name))), key: `child:${ctx.runId}:${ctx.stepKey}`, mode: ctx.mode, goals: ctx.goals, ...(pins ? { pins } : {}),
           parent: { runId: ctx.runId, stepKey: ctx.stepKey }, depth, link: { projectId: run.project_id ?? undefined, runId: run.link_run_id ?? undefined, taskId: run.link_task_id ?? undefined } });
         return this.childOutcome(await started.done, node);
       },

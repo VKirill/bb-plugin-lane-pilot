@@ -151,7 +151,8 @@ export function createWorkflowTriggers(ctx: ServerCore, services: Pick<Services,
     const key = input.key ? `${prefix}${input.projectId}:${workflow.id}:${input.key}` : `${prefix}${randomUUID()}`;
     const runtime: ChainRuntime = { ctx, services: services as Services, pmThreadId: pm?.pmThreadId ?? null, projectId: input.projectId, runId: pm?.runId ?? null, ...(fromSchedule ? { origin: "schedule" as const } : {}) };
     try {
-      const started = services.workflowEngine.start({ workflow, inputs: given, key, runtime, link: { projectId: input.projectId, ...(pm ? { runId: pm.runId } : {}) } });
+      // The project's library finds its own children too; the run pins them, so a reload does not need the library again.
+      const started = services.workflowEngine.start({ workflow, inputs: given, key, runtime, resolve: (id, version) => store.resolve(id, version), link: { projectId: input.projectId, ...(pm ? { runId: pm.runId } : {}) } });
       started.done.catch((cause: unknown) => ctx.log(`Lane Pilot workflow run ${started.runId} (${workflow.id}) stopped with an error: ${cause instanceof Error ? cause.message : String(cause)}`));
       return { ok: true, runId: started.runId, created: started.created, status: services.workflowEngine.get(started.runId)?.status ?? "running", notChecked };
     } catch (cause) {

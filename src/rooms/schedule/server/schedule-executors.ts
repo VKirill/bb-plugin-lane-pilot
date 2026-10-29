@@ -40,7 +40,7 @@ export function createScheduleExecutors(ctx: ServerCore, services: Services): Re
           const output = summary.output ? clip(JSON.stringify(summary.output, null, 2), 16_000) : "";
           return finish.ok ? { state: "done", status: "succeeded", output } : { state: "done", status: "failed", output, error: finish.detail, reason: `ended_${finish.status}` };
         }
-        case "failed": case "blocked": case "canceled":
+        case "failed": case "blocked": case "canceled": case "interrupted":
           return { state: "done", status: "failed", error: summary.error ?? summary.reason ?? summary.status, reason: summary.failedNode ? `failed at ${summary.failedNode}` : summary.status };
         case "waiting": return { state: "waiting", note: summary.waiting[0]?.nodeId ?? "waiting" };
         default: return { state: "running" };
