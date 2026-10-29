@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+**Nightly docs skips workspaces its host RPCs do not support.** The BB-service project includes the Windows source `C:\Users\vechkasov\bb-perf`. The hourly pass sent it to `gitDocsScope`, whose contract accepts only absolute POSIX paths, and failed input validation every hour (2026-10-28). It now returns `skipped: unsupported_workspace_path` before any docs host call, for project sources and section copies alike; the project's macOS and Linux copies are still inspected. Windows docs execution remains unsupported.
+
 ## 0.1.364
 
 **A role can share its work between several models.** The table «role -> model» gave each role one model, so every docs pass, review or memory note of every project went to one provider. Each row now takes a pool: «Also takes» under the model, «+» to add a table model, «×» to take one out (stored with the row, `role_model.<role>` = `{ model, reasoning_effort, pool: [{ model, reasoning_effort? }] }`). Every run of the role goes to the model of the pool whose provider is least loaded: a spent provider last, then the less spent usage window (in steps of ten percent), then the fewer helper starts in the last half hour, then the owner's order (`rankPool`). The cross-family rule for judges, ZCode's free hours and the move off a spent provider apply on top, as for a single model. A row without a pool runs as before. No Jev call: the pick is instant and free.
