@@ -1,11 +1,11 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../src/rooms/core/server/services";
 import { createPhaseDriver } from "../src/rooms/phase/server/driver";
 import { phaseToolParams } from "../src/rooms/phase/server/tool";
 import { contextSignature, acceptanceLines } from "../src/rooms/phase/logic";
-import { savePhase } from "../src/rooms/phase/store";
+import { listParts, savePhase } from "../src/rooms/phase/store";
 import { createRun, openDatabase } from "../src/rooms/storage";
 
 function driver(status = "idle") {
@@ -45,6 +45,21 @@ describe("the driver's poke", () => {
     await idle.tick();
     await idle.tick();
     expect(idle.sent.filter((text) => text.startsWith("[Lane Pilot phase]"))).toHaveLength(1);
+  });
+  it("does not wake the PM again for a phase that has stalled: the aging goes to the book only", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const phases = driver("idle");
+      const phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Stats", goal: "stats module", rails: true });
+      await phases.tick();
+      vi.setSystemTime(Date.now() + 4 * 86_400_000);
+      await phases.tick();
+      vi.setSystemTime(Date.now() + 2 * 86_400_000);
+      await phases.tick();
+      expect(phases.sent.filter((text) => text.startsWith("[Lane Pilot phase]"))).toHaveLength(1);
+      expect(phases.sent.some((text) => text.includes("has not moved"))).toBe(false);
+      expect(listParts(phases.db, phase.id).filter((part) => part.kind === "aging").length).toBeGreaterThanOrEqual(1);
+    } finally { vi.useRealTimers(); }
   });
 });
 

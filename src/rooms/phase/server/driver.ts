@@ -732,13 +732,14 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     const wordTurn = action.key.match(/:word:([a-z]+)(?::(\d+))?$/);
     if (wordTurn) postOwnerItem(db as never, { key: `phase-word:${phase.id}:${wordTurn[1]}${wordTurn[2] ? `:${wordTurn[2]}` : ""}`, source: "phase", kind: "word", projectId: phase.projectId,
       what: `Phase «${phase.title}»: your word at ${wordTurn[1]}${wordTurn[2] ? ` (wave ${wordTurn[2]})` : ""}`, why: action.text.slice(0, 600) });
-    // Aging said once a day; a stalled phase named: no part for three days (or twelve hours at execution with pieces at work).
+    // Aging said once a day; a stalled phase named in the book only: no part for three days (or twelve hours at execution with pieces at work). The PM is not
+    // woken with it: it already got the step once (pokedKey), and a daily repeat to an idle chat rewrote its whole context for nothing
+    // (live ph_26f65b142d, 2026-10-27..29: three wake-ups for a step the PM had declined).
     const lastPart = listParts(db, phase.id).at(-1)?.at ?? phase.createdAt;
     const quiet = now() - lastPart;
     const stalled = phase.stage === "execution" ? quiet > 12 * 3_600_000 : quiet > 72 * 3_600_000;
     if (stalled && phase.state !== "closed" && now() - (phase.record.agingSaidAt ?? 0) > 86_400_000) {
       const days = Math.round(quiet / 86_400_000 * 10) / 10;
-      await bb.sdk.threads.send({ threadId: phase.pmThreadId, mode: "queue-if-active", input: [{ type: "text", mentions: [], text: `[Lane Pilot phase] Phase ${phase.id} «${phase.title}» has not moved for ${days} day(s) at ${phase.stage} (${phase.state}). ${action.text}` }] } as never).catch(() => undefined);
       book(phase, "decisions", "aging", `no movement for ${days} day(s) at ${phase.stage}`);
       savePhase(db, phase.id, { record: { ...mustGet(phase.id).record, agingSaidAt: now() }, at: now() });
     }
