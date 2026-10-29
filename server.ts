@@ -19,7 +19,7 @@ import { mountNightGraphs } from "./src/rooms/night-graphs/server";
 import { createHarness } from "./src/rooms/harness/server";
 import { createDeferrals, sdkOwnerMessagePort } from "./src/rooms/deferral/server";
 import { createRollback } from "./src/rooms/rollback/server";
-import { createPluginBench, mountBenchWeekly } from "./src/rooms/bench/server";
+import { createPluginBench, mountBenchSweep, mountBenchWeekly } from "./src/rooms/bench/server";
 import { createBaselineRoom, mountRegress } from "./src/rooms/baseline/server";
 import { createRunGoal, mountRunGoal } from "./src/rooms/run-goal/server";
 import { createPhaseDriver, mountPhaseDriver, mountPhaseIntake, registerPhaseTool } from "./src/rooms/phase/server";
@@ -182,6 +182,8 @@ export default async function plugin(bb: BbPluginApi) {
   mountFront(ctx, services.front);
   // Every Sunday 02:00 UTC the newest bench set runs as this week's arm and is compared with last week's (bench.weekly).
   mountBenchWeekly(ctx, () => services.bench);
+  // A series left running past its hour cap is closed on startup and twice an hour.
+  mountBenchSweep(ctx, () => services.bench);
   registerTools(ctx, services);
   registerCli(ctx, services);
   // The pixel world's GLB files (council office people and cars) over HTTP, not inside app.js.

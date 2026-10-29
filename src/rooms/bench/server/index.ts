@@ -8,4 +8,4 @@ export { loadCandidates } from "../candidates";
 export { findSolutionCommit } from "../warmup";
 export type { Candidate } from "../types";
 export type { HostPort } from "../ports";
-export { mountBenchWeekly, weekArm } from "./weekly";
+export { mountBenchSweep, mountBenchWeekly, weekArm } from "./weekly";

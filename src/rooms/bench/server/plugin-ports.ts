@@ -3,7 +3,7 @@ import { waitThreadIdle } from "@lane-pilot/thread-observe";
 import { taskV2Schema } from "../../contracts";
 import { fullAccessSpawn, stringAt, type ServerCore, type Services } from "../../core/server";
 import { cancelAttemptById, finishRunSafely } from "../../runs/server";
-import { getActivation, getRun, listOpenAttempts, loadPrototypeConfig, saveProjectSetting, savePrototypeConfig } from "../../storage";
+import { getActivation, getRun, listOpenAttempts, loadProjectSettings, loadPrototypeConfig, saveProjectSetting, savePrototypeConfig } from "../../storage";
 import { isSandboxProjectName } from "../../stability/server";
 import { attemptMetrics, syncTokenUsage } from "../../usage/server";
 import { DEFAULT_BENCH_WRITER } from "../runner";
@@ -59,8 +59,12 @@ export function createPluginBench(ctx: ServerCore, services: Services): BenchApi
     },
 
     async startRun(project) {
+      // The runner reconfigures writer.provider / writer.model before a retry. Spawn that pair, not the default the previous arm left behind.
+      const settings = loadProjectSettings(db, project.projectId);
+      const providerId = typeof settings["writer.provider"] === "string" && settings["writer.provider"] ? settings["writer.provider"] : DEFAULT_BENCH_WRITER.providerId;
+      const model = typeof settings["writer.model"] === "string" && settings["writer.model"] ? settings["writer.model"] : DEFAULT_BENCH_WRITER.model;
       const spawned = await fullAccessSpawn(bb, {
-        projectId: project.projectId, providerId: DEFAULT_BENCH_WRITER.providerId, model: DEFAULT_BENCH_WRITER.model, prompt: "Reply with OK only.",
+        projectId: project.projectId, providerId, model, prompt: "Reply with OK only.",
         environment: { type: "host", hostId: project.hostId, workspace: { type: "unmanaged", path: project.path } },
         visibility: "visible", pluginMetadata: { role: "bench-source" },
       } as never);

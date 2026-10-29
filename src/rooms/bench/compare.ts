@@ -166,6 +166,32 @@ export function compareArms(a: ArmSummary, b: ArmSummary, noise?: NoiseRecord | 
   };
 }
 
+export type PassReport = { tasks: number; repeats: number; passAt1: number; passPow: number };
+
+/**
+ * The same set run N times. pass@1 is the share accepted at least once; pass^k is the share accepted on every repeat.
+ * A task missing a judged row on any repeat is left out.
+ */
+export function passReport(byRepeat: readonly (readonly BenchResult[])[]): PassReport {
+  const judged = (row: BenchResult) => row.state === "accepted" || row.state === "not_accepted";
+  const ids = [...new Set(byRepeat.flatMap((rows) => rows.map((row) => row.taskId)))];
+  let once = 0, every = 0, counted = 0;
+  for (const id of ids) {
+    const rows = byRepeat.map((results) => results.find((row) => row.taskId === id)).filter((row): row is BenchResult => !!row && judged(row));
+    if (rows.length !== byRepeat.length) continue;
+    counted++;
+    if (rows.some((row) => row.accepted)) once++;
+    if (rows.every((row) => row.accepted)) every++;
+  }
+  return { tasks: counted, repeats: byRepeat.length, passAt1: counted ? once / counted : 0, passPow: counted ? every / counted : 0 };
+}
+
+/** Noise of one arm against itself: the first repeat and the last. Null when there is only one. */
+export function noiseOfRepeats(arm: string, byRepeat: readonly (readonly BenchResult[])[]): NoiseRecord["noise"] | null {
+  if (byRepeat.length < 2) return null;
+  return computeNoise(summarizeArm(`${arm}#1`, [byRepeat[0]!]), summarizeArm(`${arm}#${byRepeat.length}`, [byRepeat[byRepeat.length - 1]!]));
+}
+
 export function renderComparison(c: Comparison): string {
   const lines = [
     `Bench comparison ${c.armA} (A, baseline) vs ${c.armB} (B): ${c.pairedTasks} paired tasks${c.onlyA.length || c.onlyB.length ? `, ${c.onlyA.length} only on A, ${c.onlyB.length} only on B (not compared)` : ""}.`,

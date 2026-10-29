@@ -13,6 +13,7 @@ import type { DrillOutcome } from "../../stability/server";
 import { threadUsage } from "../../usage/server";
 import { id as newId } from "../../core/server";
 import { saveVerdict } from "../../bench";
+import { benchArmStatus } from "../../bench/reliability";
 import { wallLogLines } from "../logs";
 import { revertMerge, type RevertHost } from "../revert";
 import { builtinWorkflow } from "../../workflow";
@@ -195,8 +196,8 @@ export function createPluginWall(ctx: ServerCore, services: Services): WallApi {
         if (!version) return "unavailable";
         const set = services.bench.status(version)[0];
         const runs = set?.runs.filter((row) => row.arm === arm) ?? [];
-        if (runs.some((row) => row.state === "running")) return "running";
-        if (runs.length) return runs.every((row) => row.state === "done" || row.state === "stopped_budget") ? "done" : "unavailable";
+        const status = benchArmStatus(runs);
+        if (status === "running" || status === "done" || status === "unavailable") return status;
         const cfg = await wallRef.current.config();
         await services.bench.run({ version, arm, limit: cfg.benchSubset, wait: false });
         return "running";

@@ -91,7 +91,7 @@ model or another edit; three numbers: how many stages passed, what it cost, how 
 
 1. Verify the immutable set, start or resume the run row, then prepare each repository checkout at each task's base commit (`src/rooms/bench/runner.ts:124-149`, `src/rooms/bench/runner.ts:184-194`).
 2. Configure the sandbox arm, dispatch tasks, wait for terminal outcomes, gather attempt metrics, and persist results (`src/rooms/bench/runner.ts:160-220`).
-3. Stop before another task when projected token/time budget or disk guard is reached; record remaining tasks as skipped and mark the run state (`src/rooms/bench/runner.ts:173-182`, `:233-239`).
+3. Stop before another task when the projected token or time budget is reached; record the remaining tasks as skipped and mark the run `stopped_budget`. A host under the free-space floor defers the series (no `stopped_budget` row when nothing was judged) so the next tick can try again (`src/rooms/bench/runner.ts`, `src/rooms/bench/reliability.ts`).
 
 | Series mode or failure | Result |
 |---|---|
