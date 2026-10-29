@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { dirname, join } from "node:path";
 import { lstat, mkdir, readFile, readdir, rm } from "node:fs/promises";
@@ -12,76 +12,16 @@ async function which(name: string, env: NodeJS.ProcessEnv): Promise<boolean> {
 }
 
 
-export async function codexRpc(command: string, env: NodeJS.ProcessEnv, method: string, params: unknown, signal?: AbortSignal): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, ["app-server"], { env, stdio: ["pipe", "pipe", "pipe"] });
-    let buffer = "", done = false;
-    const finish = (error: Error | null, value?: unknown) => {
-      if (done) return; done = true; clearTimeout(timer); signal?.removeEventListener("abort", abort);
-      child.stdin.end(); child.kill(); error ? reject(error) : resolve(value);
-    };
-    const abort = () => finish(new Error("Native installation cancelled"));
-    const timer = setTimeout(() => finish(new Error(`Codex ${method} timed out`)), 120_000);
-    signal?.addEventListener("abort", abort, { once: true });
-    if (signal?.aborted) { abort(); return; }
-    child.on("error", (error) => finish(error));
-    child.on("exit", (code) => { if (!done) finish(new Error(`Codex app-server exited: ${code}`)); });
-    child.stderr.resume();
-    child.stdout.on("data", (chunk: Buffer) => {
-      buffer += chunk.toString();
-      if (buffer.length > 8 * 1024 * 1024) { finish(new Error("Codex response exceeds limit")); return; }
-      let newline: number;
-      while ((newline = buffer.indexOf("\n")) >= 0) {
-        const line = buffer.slice(0, newline); buffer = buffer.slice(newline + 1);
-        let message: { id?: number; result?: unknown; error?: { message?: string } };
-        try { message = JSON.parse(line); } catch { continue; }
-        if (message.id !== 1 && message.id !== 2) continue;
-        if (message.error) { finish(new Error(message.error.message ?? "Codex RPC failed")); return; }
-        if (message.id === 1) {
-          child.stdin.write(JSON.stringify({ method: "initialized", params: {} }) + "\n");
-          child.stdin.write(JSON.stringify({ id: 2, method, params }) + "\n");
-        } else finish(null, message.result);
-      }
-    });
-    child.stdin.write(JSON.stringify({ id: 1, method: "initialize", params: { clientInfo: { name: "lane-pilot-installer", version: "1" }, capabilities: { experimentalApi: true } } }) + "\n");
-  });
-}
-
 export type LaneReconcileReport = { claudePlugin: "fresh" | "refreshed"; codexHooks: "absent" | "trusted" | "newly-trusted"; openCode: "absent" | "registered" | "newly-registered" };
 
 /**
- * Trusts Codex Lane hooks and writes Lane Pilot's slim OpenCode plugin.
- * `source` is the Claude Lane checkout callers still pass; OpenCode files come from the bundle, not from it.
- * The lane-stack Claude plugin is not installed or refreshed.
+ * Writes Lane Pilot's slim OpenCode plugin from the bundle.
+ * Does not clone a checkout, run install.sh, or touch Codex plugin trust. (2026-10-29)
  */
-export async function reconcileClaudeLane(input: { home: string; source: string; env: NodeJS.ProcessEnv; signal?: AbortSignal }): Promise<LaneReconcileReport> {
-  const { home, source, env, signal } = input;
-  void source;
+export async function reconcileClaudeLane(input: { home: string; source?: string; env: NodeJS.ProcessEnv; signal?: AbortSignal }): Promise<LaneReconcileReport> {
+  const { home, env, signal } = input;
+  void signal;
   const report: LaneReconcileReport = { claudePlugin: "fresh", codexHooks: "absent", openCode: "absent" };
-
-  if (await which("codex", env) && await exists(join(home, ".codex/config.toml"))) {
-    const inventory = await codexRpc("codex", env, "hooks/list", { cwds: [home] }, signal) as { data: Array<{ hooks: Array<{ pluginId: string; key: string; currentHash: string; trustStatus?: string }> }> };
-    const hooks = inventory.data.flatMap((row) => row.hooks).filter((hook) => hook.pluginId === "codex-lane@claude-lane-stack");
-    if (hooks.length) {
-      const untrusted = hooks.filter((hook) => hook.trustStatus !== "trusted");
-      report.codexHooks = untrusted.length ? "newly-trusted" : "trusted";
-      if (untrusted.length) {
-        const path = join(home, ".codex/config.toml");
-        let text = await readFile(path, "utf8");
-        for (const hook of untrusted) {
-          const header = `[hooks.state.${JSON.stringify(hook.key)}]`;
-          const block = `${header}\ntrusted_hash = ${JSON.stringify(hook.currentHash)}\n`;
-          const at = text.indexOf(header);
-          if (at < 0) text = `${text}${text.endsWith("\n") ? "" : "\n"}\n${block}`;
-          else {
-            const next = text.indexOf("\n[", at + header.length);
-            text = text.slice(0, at) + block + (next < 0 ? "" : text.slice(next + 1));
-          }
-        }
-        await atomicText(path, text);
-      }
-    }
-  }
 
   const openCodeDir = join(home, ".config/opencode");
   const config = await exists(join(openCodeDir, "opencode.jsonc")) ? join(openCodeDir, "opencode.jsonc")

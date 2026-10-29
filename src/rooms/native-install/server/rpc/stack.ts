@@ -6,6 +6,9 @@ import type { ServerCore } from "../../../core/server";
 export function stackRpc(ctx: ServerCore) {
   const { coexistenceInventory, coexistenceOperation, db, host, nativeInstaller } = ctx;
   return {
+    remove_claude_lane_leftovers: async ({ hostId, apply }) => {
+      return host.call("removeClaudeLaneLeftovers", { requestedHostId: hostId, apply: apply === true }, { hostId, timeoutMs: 120_000 });
+    },
     stack_detect: async ({ projectId }) => {
       const config = loadPrototypeConfig(db, projectId);
       if (!config) throw new Error("Lane Pilot prototype is not configured for this project");
@@ -97,5 +100,5 @@ export function stackRpc(ctx: ServerCore) {
       saveProjectSetting(db, projectId, "install.lastReceipt", JSON.stringify(receipt));
       return receipt;
     },
-  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "stack_detect" | "stack_install" | "stack_connect" | "stack_rollback">;
+  } satisfies Pick<PluginRpcHandlers<typeof rpcContract>, "remove_claude_lane_leftovers" | "stack_detect" | "stack_install" | "stack_connect" | "stack_rollback">;
 }

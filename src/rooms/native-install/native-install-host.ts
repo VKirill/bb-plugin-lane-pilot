@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { z } from "zod";
 import type { hostContract } from "../contracts";
-import { claudeLaneEnv, detectClaudeLane, installClaudeLane, upgradeClaudeLane } from "./native-install-bootstrap";
+import { detectOwnInstall, lanePilotEnv, materializeOwnTools, placeLanePilotGuard } from "./native-install-bootstrap";
+import { removeClaudeLaneLeftovers, type LeftoverReport } from "./claude-lane-leftovers";
 import { reconcileClaudeLane } from "../native-agent";
 import { transitionOwned } from "./native-install-owned";
 
@@ -36,22 +37,14 @@ export async function nativeInstallOperation(input: { root: string; home: string
     if (manifest && manifest.home !== home) throw new Error("Native installation belongs to a different home");
     signal?.throwIfAborted();
     if (action === "install" || action === "enable") {
-      const lane = await detectClaudeLane(home);
-      if (lane?.sourceRepo) {
-        await upgradeClaudeLane({ home, source: lane.sourceRepo, signal });
-        await reconcileClaudeLane({ home, source: lane.sourceRepo, env: claudeLaneEnv(home), signal });
-      }
+      await placeLanePilotGuard(home);
+      await reconcileClaudeLane({ home, env: lanePilotEnv(home), signal });
+      await materializeOwnTools(home);
     }
     if (!manifest) {
-      // Claude Lane is the user's own install: use it when present, install it the standard way otherwise,
-      // and never take it away with Lane Pilot.
-      let lane = await detectClaudeLane(home);
-      if (!lane && (action === "install" || action === "enable")) {
-        lane = await installClaudeLane({ home, signal });
-        if (lane.sourceRepo) await reconcileClaudeLane({ home, source: lane.sourceRepo, env: claudeLaneEnv(home), signal });
-      }
-      const kept = lane && action !== "disable" && action !== "remove";
-      return { status: kept ? "enabled" as const : "absent" as const, sourceSha: lane?.sourceSha ?? null, ownedFiles: 0, preservedFiles: 0 };
+      const pieces = await detectOwnInstall(home);
+      const kept = Boolean(pieces) && action !== "disable" && action !== "remove";
+      return { status: kept ? "enabled" as const : "absent" as const, sourceSha: null, ownedFiles: 0, preservedFiles: 0 };
     }
     if (action !== "status") {
       await transitionOwned(root, manifest, action === "install" ? "enable" : action, signal);
@@ -64,4 +57,9 @@ export async function nativeInstallOperation(input: { root: string; home: string
 export const nativeInstallHost: ExperimentalHostRpcHandlers<typeof hostContract>["nativeInstall"] = async (input, context) => {
   if (process.env.BB_HOST_ID && process.env.BB_HOST_ID !== input.requestedHostId) throw new Error("Native installation host mismatch");
   return nativeInstallOperation({ root: join(context.experimental_paths.dataDir, "native-install"), home: homedir(), action: input.action, signal: context.signal });
+};
+
+export const removeClaudeLaneLeftoversHost: ExperimentalHostRpcHandlers<typeof hostContract>["removeClaudeLaneLeftovers"] = async (input): Promise<LeftoverReport> => {
+  if (process.env.BB_HOST_ID && process.env.BB_HOST_ID !== input.requestedHostId) throw new Error("Native installation host mismatch");
+  return removeClaudeLaneLeftovers({ home: homedir(), apply: input.apply === true });
 };
