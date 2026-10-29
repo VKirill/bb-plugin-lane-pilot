@@ -179,6 +179,18 @@ describe("the regression pass over accepted tasks (D1-2)", () => {
     await w.dispose();
   });
 
+  it("F-001: cheap watch skips a slow check; full mode keeps it", async () => {
+    const w = await world({ settings: { "regress.check_cap_sec": 60 } });
+    for (let index = 0; index < 3; index += 1) recordCheckDuration(w.db, { projectId: "projA", command: "sleep 100", cwd: w.base, root: w.base, durationMs: 100_000, exitCode: 0 });
+    await w.acceptedTask("S", async (dir) => { await writeFile(join(dir, "s.txt"), "s\n"); }, ["sleep 100", "test -f s.txt"]);
+    const cheap = await w.services.regression.run({ projectId: "projA", plan: true });
+    expect(cheap.projects[0]!.tasks[0]!.checks.find((check) => check.command === "sleep 100")!.state).toBe("skipped");
+    const full = await w.services.regression.run({ projectId: "projA", plan: true, mode: "full" });
+    expect(full.projects[0]!.tasks[0]!.checks.find((check) => check.command === "sleep 100")!.state).toBe("planned");
+    expect(full.projects[0]!.tasks[0]!.checks.find((check) => check.command === "test -f s.txt")!.state).toBe("planned");
+    await w.dispose();
+  });
+
   it("skips the bisect, and says why, when the range is longer than regress.bisect_steps allows", async () => {
     const w = await world({ settings: { "regress.bisect_steps": 1 } });
     await history(w);

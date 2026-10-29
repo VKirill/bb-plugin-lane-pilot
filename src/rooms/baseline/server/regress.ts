@@ -16,8 +16,9 @@ import {
  * The regression pass after acceptance (SMA atlas delta D1-2: «regression of earlier phases», «seven-day rollback watch»).
  *
  * A task accepted with green checks can go red later, when other work lands on top of it. The pass takes the last N accepted tasks of a
- * project (within the last K days), puts the project's current main in ONE throwaway worktree and runs their verification[] there, cheap
- * checks only: a check over the cap, or with secrets, is left out and said so; a command shared by several tasks runs once; a main that
+ * project (within the last K days), puts the project's current main in ONE throwaway worktree and runs their verification[] there. Mode
+ * `cheap` (the default, the nightly watch) leaves out a check over the cap; mode `full` (the run-goal check) does not. A check with
+ * secrets is left out either way; a command shared by several tasks runs once; a main that
  * did not move since the last pass is not run again. A check that was green at acceptance and is red now is confirmed green at its own merge
  * commit, then `git bisect` between that commit and main, in a scratch worktree, names the first bad commit and the task it belongs to.
  * The finding is a row (`lane_pilot_regression`) the morning list reads. Nothing is ever reverted or merged by the pass.
@@ -37,6 +38,8 @@ export type RegressOptions = {
   runId?: string | undefined;
   /** Only the tasks whose base checkout is one of these (a phase candidate's trees, src/rooms/phase/server/candidate.ts). */
   basePaths?: readonly string[] | undefined;
+  /** cheap: drop a check over regress.check_cap_sec. full: run it. Secrets stay out of both. Default cheap. */
+  mode?: "cheap" | "full" | undefined;
   signal?: AbortSignal | undefined;
   now?: number | undefined;
 };
@@ -121,7 +124,7 @@ export function createRegression(ctx: ServerCore, services: Services) {
     return new Set(items.map((item) => item.command));
   }
 
-  async function candidatesOf(projectId: string, settings: RegressSettings, now: number, tasks: TaskReport[], runId?: string): Promise<Candidate[]> {
+  async function candidatesOf(projectId: string, settings: RegressSettings, now: number, tasks: TaskReport[], runId: string | undefined, mode: "cheap" | "full"): Promise<Candidate[]> {
     const rows = (runId
       ? db.prepare(`SELECT a.id AS attempt_id, a.task_id AS task_id FROM lane_pilot_attempt a JOIN lane_pilot_run r ON r.id=a.run_id
           WHERE r.project_id=? AND a.run_id=? AND a.state='accepted' ORDER BY a.updated_at DESC, a.rowid DESC`).all(projectId, runId)
@@ -150,14 +153,14 @@ export function createRegression(ctx: ServerCore, services: Services) {
       const green = greenAtAcceptance(target.runId, row.task_id, target.task.verification);
       const plan = planChecks(target.task.verification,
         (item) => estimateSec(listCheckDurations(db, projectId, { command: item.command, cwd: item.cwd, root: target.task.project_cwd }), item.timeout_sec ?? 120),
-        { totalCapSec: Number.MAX_SAFE_INTEGER, perCheckCapSec: settings.checkCapSec });
+        { totalCapSec: Number.MAX_SAFE_INTEGER, perCheckCapSec: mode === "full" ? Number.MAX_SAFE_INTEGER : settings.checkCapSec });
       const eligible: VerificationItem[] = [];
       for (const entry of plan) {
         if (entry.skip) report.checks.push({ command: entry.item.command, state: "skipped", note: entry.skip });
         else if (!green.has(entry.item.command)) report.checks.push({ command: entry.item.command, state: "skipped", note: "it was not green when the task was accepted" });
         else { eligible.push(entry.item); report.checks.push({ command: entry.item.command, state: "planned" }); }
       }
-      if (!eligible.length) { report.skipped = "no cheap check that was green at acceptance"; continue; }
+      if (!eligible.length) { report.skipped = mode === "full" ? "no check that was green at acceptance" : "no cheap check that was green at acceptance"; continue; }
       out.push({ target, attemptId: row.attempt_id, mergeCommit: change.mergeCommit, eligible, report });
     }
     return out;
@@ -242,7 +245,8 @@ export function createRegression(ctx: ServerCore, services: Services) {
     const report: ProjectPass = { projectId, head: null, settings, tasks: [], findings: [], closed: [], commandsRun: 0, durationMs: 0 };
     const finish = (): ProjectPass => { report.durationMs = Date.now() - started; return report; };
 
-    const candidates = (await candidatesOf(projectId, settings, now, report.tasks, options.runId))
+    const mode = options.mode === "full" ? "full" : "cheap";
+    const candidates = (await candidatesOf(projectId, settings, now, report.tasks, options.runId, mode))
       .filter((c) => !options.basePaths || options.basePaths.includes(c.target.basePath));
     // An open finding for a task that was reverted since is settled by that revert.
     if (!dry && !options.plan) {
@@ -251,7 +255,7 @@ export function createRegression(ctx: ServerCore, services: Services) {
       }
     }
     if (options.plan) return finish();
-    if (!candidates.length) { report.skipped = "no accepted task with a cheap check in the window"; return finish(); }
+    if (!candidates.length) { report.skipped = mode === "full" ? "no accepted task had a check to run" : "no accepted task with a cheap check in the window"; return finish(); }
 
     const groups = new Map<string, Candidate[]>();
     for (const c of candidates) groups.set(`${c.target.hostId}\u0000${c.target.basePath}`, [...(groups.get(`${c.target.hostId}\u0000${c.target.basePath}`) ?? []), c]);
@@ -275,7 +279,7 @@ export function createRegression(ctx: ServerCore, services: Services) {
           if (Date.now() > deadline || Date.now() - started > settings.budgetSec * 1000) { c.report.skipped = `over the time budget of the pass (${settings.budgetSec}s, regress.budget_sec)`; continue; }
           const fresh = c.eligible.filter((item) => !cache.has(keyOf(item, c.target.task.project_cwd)));
           if (fresh.length) {
-            const ran = await kit().runChecks(c.target, made.path, fresh.map((item) => ({ ...item, timeout_sec: Math.min(item.timeout_sec ?? 120, settings.checkCapSec) }))).catch((cause: unknown) => { c.report.skipped = `the checks could not start: ${cause instanceof Error ? cause.message : String(cause)}`; return [] as RollbackItem[]; });
+            const ran = await kit().runChecks(c.target, made.path, fresh.map((item) => ({ ...item, timeout_sec: mode === "full" ? (item.timeout_sec ?? 120) : Math.min(item.timeout_sec ?? 120, settings.checkCapSec) }))).catch((cause: unknown) => { c.report.skipped = `the checks could not start: ${cause instanceof Error ? cause.message : String(cause)}`; return [] as RollbackItem[]; });
             ran.forEach((row, index) => { cache.set(keyOf(fresh[index]!, c.target.task.project_cwd), row); report.commandsRun += 1; });
           }
           for (const item of c.eligible) {

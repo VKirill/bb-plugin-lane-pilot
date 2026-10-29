@@ -1113,7 +1113,7 @@ describe("stage → native writer → receipt", () => {
     expect(provisioner?.environment).toMatchObject({type:"host",workspace:{type:"managed-worktree"}});
     expect(writer?.environment).toEqual({type:"reuse",environmentId:"attempt-env"});
     expect(getAttempt(db,String(result.attemptId))).toMatchObject({workspace_path:"/tmp/lane-pilot-managed-attempt",environment_id:"attempt-env",
-      workspace_decision:{strategy:"provision_attempt_worktree",reason:"risk_threshold",score:8}});
+      workspace_decision:{strategy:"provision_attempt_worktree",reason:"own_worktree",score:8}});
     expect(listStageReceipts(db,"stage-run",highRiskTask.id).find(row=>row.stageId==="writer-agent")?.result)
       .toMatchObject({workspace:{environmentId:"attempt-env",decision:{strategy:"provision_attempt_worktree"}}});
     await harness.lifecycle.dispose();

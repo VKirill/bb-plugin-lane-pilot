@@ -77,7 +77,7 @@ export const policySchema = z.object({
   frozen_hash: z.string().regex(/^[0-9a-f]{64}$/),
   exam: z.object({
     file: z.string(), min_accuracy: z.number().min(0).max(1),
-    /** The split the gate reads: owner decisions newer than frozen_at, appended at night. At least min_items of them must exist. */
+    /** The unseen split the exam measures: owner decisions newer than frozen_at, appended at night. At least min_items of them must exist before the measurement can pass. It does not change authorize. */
     live_file: z.string(), min_items: z.number().int().positive(),
   }).passthrough(),
   design_items: z.array(designItemSchema).min(1),

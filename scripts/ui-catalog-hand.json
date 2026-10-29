@@ -30,8 +30,26 @@
   "s040": {
    "values": "worktree,auto"
   },
+  "s041": {
+   "section": "excluded",
+   "channel": "N/A",
+   "uiStatus": "excluded",
+   "rationale": "A saved value still loads and does not choose a worktree: every git attempt gets its own"
+  },
+  "s042": {
+   "section": "excluded",
+   "channel": "N/A",
+   "uiStatus": "excluded",
+   "rationale": "A saved value still loads and does not choose a worktree: every git attempt gets its own"
+  },
   "s054": {
    "values": "worktree|auto"
+  },
+  "s055": {
+   "section": "excluded",
+   "channel": "N/A",
+   "uiStatus": "excluded",
+   "rationale": "A saved value still loads and does not choose a worktree: every git attempt gets its own"
   },
   "s093": {
    "options": []

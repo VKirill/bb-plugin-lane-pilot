@@ -14,11 +14,11 @@ tags: [policy, night, exam, owner]
 # Night policy
 
 SMA block 5 («a clone of the owner's judgment, examined before it may decide») and Maslov's #31448 («graph changes only through your yes»).
-The night loop (P1-1) asks one question of every change it wants to make: may I do this alone? This room answers it from a file, and the
-answer counts only while the policy version has passed an exam over owner decisions made AFTER that version was frozen.
+The night loop (P1-1) asks one question of every change it wants to make: may I do this alone? This room answers it from a file. The exam
+measures how close that file is to the owner's later decisions; it does not decide whether the answer counts.
 
 Version 2 (frozen 2026-10-22T11:26:00Z) adds standing prohibitions, moves rules to proposals, and replaces the one-off exam with a growing one.
-Today it has no unseen decisions, so **the night decides nothing alone**.
+Today it has no unseen decisions, so the measurement cannot pass yet. That does not turn night_decides into night_proposes.
 
 ## Files
 
@@ -128,7 +128,7 @@ decided), weak (silence).
 ### Exam v1 (history)
 
 32 items (`policy/exam.json`, ids `x`): 21 rule-proposal decisions from 2026-10-15, 11 from memory files the version-1 policy was not written
-from. Version 1 scored **14/32 = 0.438** against the bar 0.8, so night_decides degraded to night_proposes. 18 answers were softer than the
+from. Version 1 scored **14/32 = 0.438** against the bar 0.8. That version treated the miss as a gate and degraded night_decides to night_proposes; the gate was removed on 2026-10-22, and a failed exam no longer changes the tier. 18 answers were softer than the
 owner's decision. The misses: the policy let the night put rules on trial while the owner rejected 13 and took back 2 of the 21 rule decisions,
 and three standing prohibitions it had no concept for. The policy was not tuned on those items. The exam stays immutable; the growth test
 enforces it. Every later version has seen it: running version 2 on it gives 23/32 = 0.719 (in-sample, printed by `policy-exam` as a regression
@@ -156,14 +156,11 @@ messages need a reader: nothing in the hub classifies a free message into a chan
 `bb lane-pilot policy-exam` prints the result (`passed` only with enough items AND accuracy at the bar), the one-line verdict, and the v1
 in-sample figure. Exit code 0 passed, 1 failed, 2 not enough unseen decisions yet.
 
-`authorize(change, {exam})` (`exam.ts`): the classification is final except for night_decides, which stands only when `runLiveExam` passes:
-at least `exam.min_items` (20) unseen items and `exam.min_accuracy` (0.8) on them. Otherwise it is `night_proposes` with the reason (`NOT
-ENOUGH UNSEEN DECISIONS YET: n of 20 …` or `FAILED: …`). It recomputes on every call. The night loop must pass the merged split
-(`loadLiveExam(kv)`); with no `exam` option it reads only the committed file. `policy classify` does the former.
+`authorize(change)` (`exam.ts`): the classification is final. `runLiveExam` is a measurement (`passed` only with at least `exam.min_items` (20) unseen items and `exam.min_accuracy` (0.8) on them). A failed or short exam does not turn night_decides into night_proposes. The stored result is for the morning list and `bb lane-pilot policy`; authorize does not read it. `policy classify` classifies the change the same way.
 
 ### Current state, 2026-10-22
 
-Version 2 frozen at 2026-10-22T11:26:00Z. Exam v2 holds 0 items. Not enough unseen decisions yet; night decides nothing alone. The first
+Version 2 frozen at 2026-10-22T11:26:00Z. Exam v2 holds 0 items, so the measurement is not enough to score the policy yet. A short exam does not block night_decides. The first
 decisions will come from rule proposals the owner accepts or rejects, labels set with `bb lane-pilot learning review` / `label <id> ok|wrong`, and
 `exam-add`. 20 are needed. If the policy is edited before then, it is a new version with a new freeze and the decisions already collected become
 seen.
@@ -187,5 +184,5 @@ daily Telegram report (the hub copy of `daily.sh` is installed by hand, so `lp-m
 ## Not wired yet
 
 No night loop exists, so nothing calls `authorize`, `collectAndAppend` or `shouldStopCycle` yet. The P1-1 loop must: tag each change with the
-descriptor vocabulary, call `authorize(change, {exam: await loadLiveExam(kv)})` before acting, put `night_proposes` into the morning list, run
+descriptor vocabulary, call `authorize(change)` before acting (the exam is not an argument and does not block the tier), put `night_proposes` into the morning list, run
 `collectAndAppend` once a night, and call `shouldStopCycle` after each cycle.
