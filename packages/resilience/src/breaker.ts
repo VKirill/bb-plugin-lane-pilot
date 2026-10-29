@@ -12,13 +12,14 @@ export type ProviderBreakerOptions = {
 };
 
 export type BreakerDecision =
-  | { allow: true; state: "closed" | "half_open" }
+  | { allow: true; state: "closed" }
+  | { allow: true; state: "half_open"; trialToken: number }
   | { allow: false; state: "open"; retryAt: number; reason: string };
 
 export type BreakerSnapshot = { key: string; state: BreakerState; failures: number; openedAt: number | null; lastOutcome: BreakerOutcome | null };
 
 /** `holdUntil` is the provider's reset time when a limit named one: the pair stays open until then instead of the cooldown. */
-type Entry = { failures: number[]; openedAt: number | null; holdUntil: number | null; trialInFlight: boolean; lastOutcome: BreakerOutcome | null };
+type Entry = { failures: number[]; openedAt: number | null; holdUntil: number | null; trialInFlight: boolean; trialToken: number | null; trialSerial: number; lastOutcome: BreakerOutcome | null };
 
 const DEFAULTS: Required<ProviderBreakerOptions> = { failureThreshold: 3, windowMs: 10 * 60_000, cooldownMs: 5 * 60_000 };
 
@@ -52,7 +53,7 @@ export function createProviderBreaker(options: ProviderBreakerOptions = {}) {
   function entry(key: string): Entry {
     let found = entries.get(key);
     if (!found) {
-      found = { failures: [], openedAt: null, holdUntil: null, trialInFlight: false, lastOutcome: null };
+      found = { failures: [], openedAt: null, holdUntil: null, trialInFlight: false, trialToken: null, trialSerial: 0, lastOutcome: null };
       entries.set(key, found);
     }
     return found;
@@ -86,6 +87,7 @@ export function createProviderBreaker(options: ProviderBreakerOptions = {}) {
       item.openedAt = null;
       item.holdUntil = null;
       item.trialInFlight = false;
+      item.trialToken = null;
     } else if (outcome !== "product") {
       item.failures.push(now);
       prune(item, now);
@@ -94,6 +96,7 @@ export function createProviderBreaker(options: ProviderBreakerOptions = {}) {
         item.openedAt = now;
         item.holdUntil = holdFor(item, outcome, now, until);
         item.trialInFlight = false;
+        item.trialToken = null;
       }
     }
     return snapshotOf(key, item, now);
@@ -106,8 +109,10 @@ export function createProviderBreaker(options: ProviderBreakerOptions = {}) {
     if (state === "closed") return { allow: true, state };
     if (state === "half_open") {
       if (item.trialInFlight) return { allow: false, state: "open", retryAt: now + config.cooldownMs, reason: `${key}: trial call already in flight` };
+      item.trialSerial += 1;
+      item.trialToken = item.trialSerial;
       item.trialInFlight = true;
-      return { allow: true, state };
+      return { allow: true, state, trialToken: item.trialSerial };
     }
     const retryAt = reopenAt(item);
     return { allow: false, state, retryAt, reason: `${key}: ${item.failures.length} provider failures in ${Math.round(config.windowMs / 60_000)} min; retry after ${new Date(retryAt).toISOString()}` };
@@ -121,7 +126,15 @@ export function createProviderBreaker(options: ProviderBreakerOptions = {}) {
     return [...entries.entries()].map(([key, item]) => snapshotOf(key, item, now));
   }
 
-  return { record, decide, snapshot };
+  /** Drops the half-open trial `token` from `decide`, and only that one. A closed allow took no trial; a newer trial has a newer token (2026-10-29 audit A-034). */
+  function releaseTrial(key: string, token: number): void {
+    const item = entries.get(key);
+    if (!item || item.trialToken !== token) return;
+    item.trialInFlight = false;
+    item.trialToken = null;
+  }
+
+  return { record, decide, releaseTrial, snapshot };
 }
 
 export type ProviderBreaker = ReturnType<typeof createProviderBreaker>;
