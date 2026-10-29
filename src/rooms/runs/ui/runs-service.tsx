@@ -133,14 +133,6 @@ export function ServiceSegment({ page }: { page: LpPage }) {
               </div> : <p className="text-xs text-muted-foreground">{t("noDiagnosticData")}</p>}
               </SurfaceBody>
             </Surface>
-            <Surface testId="cli-preview">
-              <SurfaceHeader><h2 className="text-sm font-medium">{t("cliPreview")}</h2></SurfaceHeader>
-              <SurfaceBody>
-              {data?.cliPreview ? <pre className="max-h-80 max-w-full overflow-auto rounded-xl border border-[var(--lp-hairline)] bg-[var(--lp-well)] p-3 text-xs text-foreground"><code>{JSON.stringify(data.cliPreview, null, 2)}</code></pre>
-                : <p className="text-xs text-muted-foreground">{t("noDiagnosticData")}</p>}
-              </SurfaceBody>
-            </Surface>
-
             <Disclosure testId="restore-previous-install" summary={t("restorePreviousInstall")}>
               <p className="max-w-xl text-xs text-muted-foreground">{t("snapshotBackupHelp")}</p>
               <Label htmlFor="snapshot-path">{t("snapshotBackupFolder")}</Label>
@@ -186,10 +178,18 @@ export function ServiceSegment({ page }: { page: LpPage }) {
                 })}
               </SurfaceBody>
             </Surface>;
-              // The flags of the Lane Stack CLI (run operations, install paths) act only on CLI runs; native writers never read them.
-              const cliOnly = diagnosticsGrouped.filter(({ section }) => section === "ops" || section === "setup");
+              // (2026-10-29) retired CLI flags stay in the disclosure. Native pool sizes share the ops section and stay editable.
+              const live = (rows: (typeof diagnosticsGrouped)[number]["rows"]) => rows.filter((row) => row.channel === "OWN");
+              const retired = (rows: (typeof diagnosticsGrouped)[number]["rows"]) => rows.filter((row) => row.channel !== "OWN");
+              const main = diagnosticsGrouped.flatMap((entry) => entry.section === "setup" ? [] : entry.section === "ops" ? (live(entry.rows).length ? [{ ...entry, rows: live(entry.rows) }] : []) : [entry]);
+              const cliOnly = diagnosticsGrouped.flatMap((entry) => {
+                if (entry.section === "setup") return [entry];
+                if (entry.section !== "ops") return [];
+                const rows = retired(entry.rows);
+                return rows.length ? [{ ...entry, rows }] : [];
+              });
               return <>
-                {diagnosticsGrouped.filter(({ section }) => section !== "ops" && section !== "setup").map(group)}
+                {main.map(group)}
                 {cliOnly.length ? <Disclosure testId="cli-only-settings" summary={t("cliOnlyTitle")}>
                   <p className="text-xs text-muted-foreground">{t("cliOnlyHelp")}</p>
                   <div className="space-y-5 pt-2">{cliOnly.map(group)}</div>
@@ -207,26 +207,6 @@ export function ServiceSegment({ page }: { page: LpPage }) {
                 ))}
               </ul>
             </Disclosure>
-
-            <Surface testId="cli-receipt">
-              <SurfaceHeader><h2 className="text-sm font-medium">{t("cliReceipt")}</h2></SurfaceHeader>
-              <SurfaceBody className="space-y-3">
-              {data?.runs.flatMap((run) => {
-                const seen = new Set<string>();
-                const items: Array<{ id:string; json:string }> = [];
-                for (const attempt of run.attempts) if (attempt.cliReceiptJson && !seen.has(attempt.cliReceiptJson)) {
-                  seen.add(attempt.cliReceiptJson); items.push({ id:attempt.id, json:attempt.cliReceiptJson });
-                }
-                if (run.cliReceiptJson && !seen.has(run.cliReceiptJson)) items.push({ id:run.id, json:run.cliReceiptJson });
-                return items.map((item) => <div key={item.id} data-testid={`cli-receipt-${item.id}`}>
-                  <h3 className="mb-2 text-xs font-medium">{t("cliReceipt")} {item.id}</h3>
-                  <SourceCode content={item.json} path={`cli-receipt-${item.id}.json`} overflow="scroll" />
-                </div>);
-              })}
-              {data?.cliReceiptJson && !data.runs.some((run) => run.cliReceiptJson || run.attempts.some((attempt) => attempt.cliReceiptJson))
-                ? <SourceCode content={data.cliReceiptJson} path="cli-receipt.json" overflow="scroll" /> : null}
-              </SurfaceBody>
-            </Surface>
 
             {(resultPatch || resultSource) ? <Surface testId="writer-result">
               <SurfaceHeader><h2 className="text-sm font-medium">{t("result")}</h2></SurfaceHeader>

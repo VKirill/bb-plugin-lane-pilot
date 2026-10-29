@@ -648,64 +648,6 @@ describe("BB writer validation on the server path", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("blocks CLI dispatch with a corrupt provider setting before calling the host", async () => {
-    let hostCalls = 0;
-    const { bb, harness } = createFakePluginHost({
-      pluginId: "lane-pilot",
-      sdk: { threads: { getPluginMetadata: async () => ({ role: "pm", lanePilotRunId: "run-invalid-provider" }) } },
-      experimental_callHostRpc: () => {
-        hostCalls += 1;
-        throw new Error("invalid provider reached host");
-      },
-    });
-    const db = openDatabase(bb);
-    saveLegacyWriterConfig(db);
-    saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
-    saveProjectSetting(db, projectId, "writer.provider", "not-a-provider");
-    createRun(db, "run-invalid-provider", projectId, "cli");
-    setRunThread(db, "run-invalid-provider", pmThreadId);
-    await plugin(bb);
-    // The dispatch is a CLI command now (`bb lane-pilot dispatch-cli`): the PM tool is gone.
-    const result = JSON.parse((await harness.behavior.runCli(["dispatch-cli", projectId, pmThreadId, "run-controller", "run"])).stdout);
-    expect(result.status).toBe("blocked");
-    expect(result.applied).not.toContain("writer.provider");
-    expect(result.argv).not.toContain("--provider");
-    expect(result.unapplied).toContainEqual(expect.objectContaining({
-      key: "writer.provider",
-      reason: expect.stringMatching(/invalid value; allowed:/),
-    }));
-    expect(hostCalls).toBe(0);
-    await harness.lifecycle.dispose();
-  });
-
-  it("blocks an incompatible stored provider-effort pair before calling the host", async () => {
-    let hostCalls = 0;
-    const { bb, harness } = createFakePluginHost({
-      pluginId: "lane-pilot",
-      sdk: { threads: { getPluginMetadata: async () => ({ role: "pm", lanePilotRunId: "run-invalid-pair" }) } },
-      experimental_callHostRpc: () => { hostCalls += 1; throw new Error("invalid pair reached host"); },
-    });
-    const db = openDatabase(bb);
-    saveLegacyWriterConfig(db);
-    saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
-    saveProjectSetting(db, projectId, "writer.provider", "qwen");
-    saveProjectSetting(db, projectId, "writer.reasoning_effort", "max");
-    createRun(db, "run-invalid-pair", projectId, "cli");
-    setRunThread(db, "run-invalid-pair", pmThreadId);
-    await plugin(bb);
-    // The dispatch is a CLI command now (`bb lane-pilot dispatch-cli`): the PM tool is gone.
-    const result = JSON.parse((await harness.behavior.runCli(["dispatch-cli", projectId, pmThreadId, "run-controller", "run"])).stdout);
-    expect(result.status).toBe("blocked");
-    expect(result.argv).not.toContain("--reasoning-effort");
-    expect(result.applied).not.toContain("writer.reasoning_effort");
-    expect(result.unapplied).toContainEqual(expect.objectContaining({
-      key: "writer.reasoning_effort",
-      reason: expect.stringContaining("writer.provider=qwen"),
-    }));
-    expect(hostCalls).toBe(0);
-    await harness.lifecycle.dispose();
-  });
-
   it("writes upstream acceptance-v2 under the run/task artifact directory", async () => {
     const written = new Map<string, string>();
     let snapshots = 0;
@@ -1119,51 +1061,6 @@ describe("BB writer validation on the server path", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("classifies a failed lane-ctl status as blocked even when the process exits 0", async () => {
-    let receiptStatus = "";
-    const { bb, harness } = createFakePluginHost({
-      pluginId:"lane-pilot",
-      sdk:{
-        threads:{
-          getPluginMetadata: async () => ({ role:"pm", lanePilotRunId:"run-cli" }),
-        },
-        files:{
-          write: async ({ content }) => {
-            const parsed = JSON.parse(String(content)) as { status?:string };
-            receiptStatus = parsed.status ?? "";
-            return { ok:true };
-          },
-        },
-      },
-      experimental_callHostRpc: (call) => {
-        if (call.method !== "runCli") throw new Error(`unexpected ${call.method}`);
-        return {
-          hostId:"host-test",
-          binaryPath:"/usr/bin/lane-ctl",
-          argv:["status", "--run-dir", "/tmp/writer/.agents/runs/lane-pilot-run-cli", "--task-id", "001"],
-          env:{},
-          cwd:"/tmp/writer",
-          exitCode:0,
-          stdout: JSON.stringify({ status:"failed", accepted:false, exit_code:71 }),
-          stderr:"",
-        };
-      },
-    });
-    const db = openDatabase(bb);
-    saveLegacyWriterConfig(db);
-    saveProjectSetting(db, projectId, "jev.LANE_JEV_EFFORT", false);
-    createRun(db, "run-cli", projectId, "cli");
-    setRunThread(db, "run-cli", pmThreadId);
-    await plugin(bb);
-    const result = JSON.parse((await harness.behavior.runCli(["dispatch-cli", projectId, pmThreadId, "lane-ctl", "status", "", "001"])).stdout);
-    expect(result.status).toBe("blocked");
-    expect(result.taskAccepted).toBe(false);
-    expect(result.upstreamStatus).toBe("failed");
-    expect(receiptStatus).toBe("blocked");
-    expect(getRun(db, "run-cli")?.state).toBe("blocked");
-    await harness.lifecycle.dispose();
-  });
-
   it("does not spawn when the dirt snapshot fails", async () => {
     let spawnCalled = 0;
     const { bb, harness } = createFakePluginHost({
@@ -1321,56 +1218,3 @@ describe("BB writer validation on the server path", () => {
   });
 });
 
-describe("CLI receipts per run", () => {
-  it("keeps both dispatch-cli receipts on get_screen", async () => {
-    const metadata: Record<string, { role: string; lanePilotRunId: string }> = {
-      "pm-a": { role: "pm", lanePilotRunId: "run-a" },
-      "pm-b": { role: "pm", lanePilotRunId: "run-b" },
-    };
-    const { bb, harness } = createFakePluginHost({
-      pluginId: "lane-pilot",
-      sdk: {
-        threads: {
-          getPluginMetadata: async ({ threadId }) => metadata[threadId] ?? {},
-        },
-        files: { write: async () => ({ ok: true }) },
-      },
-      experimental_callHostRpc: (call) => {
-        if (call.method !== "runCli") throw new Error(`unexpected ${call.method}`);
-        return {
-          hostId: "host-test",
-          binaryPath: "/usr/bin/run-controller",
-          argv: ["run"],
-          env: {},
-          cwd: "/tmp/writer",
-          exitCode: 0,
-          stdout: JSON.stringify({ status: "accepted" }),
-          stderr: "",
-        };
-      },
-    });
-    const db = openDatabase(bb);
-    saveLegacyWriterConfig(db);
-    createRun(db, "run-a", projectId, "cli");
-    setRunThread(db, "run-a", "pm-a");
-    createRun(db, "run-b", projectId, "cli");
-    setRunThread(db, "run-b", "pm-b");
-    await plugin(bb);
-    await harness.behavior.runCli(["dispatch-cli", projectId, "pm-a", "run-controller", "run"]);
-    await harness.behavior.runCli(["dispatch-cli", projectId, "pm-b", "run-controller", "run"]);
-    const screen = await harness.behavior.callRpc("get_screen", { projectId }) as {
-      runs: Array<{
-        id: string;
-        cliReceiptJson: string | null;
-        attempts: Array<{ cliReceiptJson: string | null }>;
-      }>;
-    };
-    const first = screen.runs.find((run) => run.id === "run-a");
-    const second = screen.runs.find((run) => run.id === "run-b");
-    expect(first?.cliReceiptJson).toContain("run-a");
-    expect(second?.cliReceiptJson).toContain("run-b");
-    expect(first?.attempts[0]?.cliReceiptJson).toContain("run-a");
-    expect(second?.attempts[0]?.cliReceiptJson).toContain("run-b");
-    await harness.lifecycle.dispose();
-  });
-});

@@ -84,9 +84,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
     "bb lane-pilot host-rollback <host-id> <snapshot-path>",
     "bb lane-pilot host-connect-opencode <host-id>",
     "bb lane-pilot host-import-config <host-id> <project-id> [workspace-path]",
-    "bb lane-pilot host-run-cli <host-id> <cwd> <binary> <subcommand> [args...]",
     "bb lane-pilot resume [project-id]",
-    "bb lane-pilot dispatch-cli <project-id> <pm-thread-id> [binary] [subcommand] [task-file] [task-id] [run-dir]",
     "bb lane-pilot dispatch-bb <project-id> <pm-thread-id> [task-json] [base-ref] [critic-code-default: off|medium|high]",
     "bb lane-pilot events-list <thread-id>",
     "bb lane-pilot wait-thread <thread-id>",
@@ -134,7 +132,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"start-cancel-probe", summary:"Spawn a long-running writer for a live stop observation", usage:"bb lane-pilot start-cancel-probe <project-id> <pm-thread-id>" },
       { name:"start-provider-error-probe", summary:"Observe a live provider error and persist provider_error", usage:"bb lane-pilot start-provider-error-probe <project-id> <pm-thread-id>" },
       { name:"helper-probe", summary:"Start one cheap helper (pm-read path) on a provider and check it answered", usage:"bb lane-pilot helper-probe <project-id> <run-id> <provider-id> <model>" },
-      { name:"memory-probe", summary:"Plant a token through the memory write door and check that every delivery path (writer brief, PM, critics, terminal) hands it to its agent; sandbox project only unless --force", usage:"bb lane-pilot memory-probe <project-id> [--paths a,b] [--keep] [--clean] [--report] [--force]" },
+      { name:"memory-probe", summary:"Plant a token through the memory write door and check that every delivery path (writer brief, PM, critics) hands it to its agent; sandbox project only unless --force", usage:"bb lane-pilot memory-probe <project-id> [--paths a,b] [--keep] [--clean] [--report] [--force]" },
       { name:"memory-eval", summary:"Score memory retrieval at 30, 300 and 3000 notes on real accepted tasks (right answer, nothing relevant, off-topic) against a plain path-and-keyword baseline; reads the hub data, writes nothing", usage:MEMORY_EVAL_USAGE },
       { name:"memory-conflicts", summary:"Memory notes that disagree: held out of every brief until a person settles them; --detect looks for new ones", usage:"bb lane-pilot memory-conflicts [--project P] [--state held|settled] [--detect]" },
       { name:"memory-conflict-settle", summary:"Settle a held memory conflict: keep one note, both, or neither, with the evidence", usage:"bb lane-pilot memory-conflict-settle <mc_id> --keep a|b|both|none --evidence <text>" },
@@ -146,9 +144,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"host-rollback", summary:"Rollback a snapshot", usage:"bb lane-pilot host-rollback <host-id> <snapshot-path>" },
       { name:"host-connect-opencode", summary:"S5 JSONC plugin patch", usage:"bb lane-pilot host-connect-opencode <host-id>" },
       { name:"host-import-config", summary:"S7 one-shot YAML read", usage:"bb lane-pilot host-import-config <host-id> <project-id> [workspace-path]" },
-      { name:"host-run-cli", summary:"Run run-controller/lane-ctl on the project host", usage:"bb lane-pilot host-run-cli <host-id> <cwd> <binary> <subcommand> [args...]" },
       { name:"resume", summary:"Reconcile orphaned writer attempts without spawning duplicates", usage:"bb lane-pilot resume [project-id]" },
-      { name:"dispatch-cli", summary:"Dispatch a CLI writer run for a PM thread", usage:"bb lane-pilot dispatch-cli <project-id> <pm-thread-id> [binary] [subcommand]" },
       { name:"dispatch-bb", summary:"Dispatch a BB writer task, optional task-v2 JSON", usage:"bb lane-pilot dispatch-bb <project-id> <pm-thread-id> [task-json] [base-ref] [critic-code-default: off|medium|high]" },
       { name:"events-list", summary:"Read-only SDK events.list probe", usage:"bb lane-pilot events-list <thread-id>" },
       { name:"wait-thread", summary:"Read-only waitThreadIdle probe", usage:"bb lane-pilot wait-thread <thread-id>" },
@@ -205,7 +201,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
         const [command, ...args] = argv;
         // The same door as the tools: a PM's shell does not start work (a schedule, a dispatch, a workflow, a council) for a request
         // the machine took. Automations and drills call the CLI without a thread and are not touched.
-        const launches = command === "schedule" ? ["create", "update", "run-now"].includes(args[0] ?? "") : ["dispatch-cli", "dispatch-bb", "workflow-trigger", "council"].includes(command ?? "");
+        const launches = command === "schedule" ? ["create", "update", "run-now"].includes(args[0] ?? "") : ["dispatch-bb", "workflow-trigger", "council"].includes(command ?? "");
         const refusal = invocation?.threadId && launches ? await services.phaseIntake.launchRefusal(invocation.threadId) : null;
         if (refusal) return { exitCode:1, stdout:JSON.stringify({ ok:false, error:refusal }) };
         if (command === "reverify" || command === "revert" || command === "changes") {
@@ -588,30 +584,8 @@ export function registerCli(ctx: ServerCore, services: Services) {
             requestedHostId:args[0]!,
           }, { hostId:args[0]!, timeoutMs:30_000 }), null, 2) };
         }
-        if (command === "host-run-cli" && args.length >= 4) {
-          const config = loadPrototypeConfig(db, "unused") ;
-          void config;
-          return { exitCode:0, stdout:JSON.stringify(await host.call("runCli", {
-            requestedHostId:args[0]!,
-            cwd:args[1]!,
-            binary:args[2] as "run-controller"|"lane-ctl",
-            argv:args.slice(3),
-            env:{},
-          }, { hostId:args[0]!, timeoutMs:180_000 }), null, 2) };
-        }
         if (command === "resume") {
           return { exitCode:0, stdout:JSON.stringify(await services.resumeOrphans(args[0]), null, 2) };
-        }
-        if (command === "dispatch-cli" && args.length >= 2) {
-          return { exitCode:0, stdout:JSON.stringify(await services.dispatchCli({
-            projectId:args[0]!,
-            threadId:args[1]!,
-            binary:args[2] as "run-controller"|"lane-ctl"|undefined,
-            subcommand:args[3],
-            taskFile:args[4] || undefined,
-            taskId:args[5] || undefined,
-            runDir:args[6] || undefined,
-          }), null, 2) };
         }
         if (command === "dispatch-bb" && args.length >= 2) {
           const task = args[2] ? taskV2Schema.parse(JSON.parse(args[2])) : undefined;

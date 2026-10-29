@@ -16,10 +16,9 @@ Scenarios (each writes its verdict into the receipt, .agents/runs/drills/<date>.
                  that cannot be planted fails the drill. The scenario also blinds the ownership checker on purpose and requires the drill to go
                  red: a drill that cannot fail proves nothing. It runs the checkout's code (bundled with esbuild), no hub, no model  [--quick]
   memory_paths   the memory delivery paths (SMA block 4, `bb lane-pilot memory-probe`): a token planted through the memory write door must
-                 reach what each registered path hands its agent (writer brief, writer turn, PM, critics, council, terminal) -- the
-                 probe's own table -- and the real thing: the first prompt of the drill's PM (planted before it started), the brief of a
-                 real writer spawned for a probe task (cancelled once its thread exists) and a Lane Stack terminal (`lane-memory`,
-                 when this host has it). Any path that does not deliver, or an unrelated query that pulls our records, fails the
+                 reach what each registered path hands its agent (writer brief, writer turn, PM, critics, council) -- the
+                 probe's own table -- and the real thing: the first prompt of the drill's PM (planted before it started) and the brief of a
+                 real writer spawned for a probe task (cancelled once its thread exists). Any path that does not deliver, or an unrelated query that pulls our records, fails the
                  drill (and so blocks the deploy). Records live a day at most and are removed at the end              [--quick]
   helper_providers one helper per provider in use (claude-code, codex, opencode2, and acp-cursor when a setting names it), each
                  started the way the pm-read stage starts its helper (`bb lane-pilot helper-probe`) with a prompt that asks for
@@ -612,7 +611,6 @@ def scenario_helper_providers(ctx: Context) -> dict:
 
 
 MEMORY_ANCHOR = "lp-probe/memory"
-LANE_MEMORY = os.environ.get("LP_DRILL_LANE_MEMORY", str(Path.home() / ".agents/bin/lane-memory"))
 
 
 def task_memory(cwd: str) -> dict:
@@ -643,8 +641,8 @@ def thread_text(thread: str) -> str:
     return out if rc == 0 else ""
 
 
-def memory_problems(report: dict, pm_text: str, writer_text: str | None, terminal: dict | None) -> list[str]:
-    """What is wrong with the memory delivery: the probe's rows, then the real PM prompt, the real writer brief and the terminal."""
+def memory_problems(report: dict, pm_text: str, writer_text: str | None) -> list[str]:
+    """What is wrong with the memory delivery: the probe's rows, then the real PM prompt and the real writer brief. (2026-10-29) no terminal lane-memory."""
     problems: list[str] = []
     results = report.get("results") or []
     tokens = report.get("tokens") or {}
@@ -664,23 +662,7 @@ def memory_problems(report: dict, pm_text: str, writer_text: str | None, termina
         for kind in ("note", "core", "rule"):
             if tokens.get(kind) not in writer_text:
                 problems.append(f"the real writer's first prompt does not carry the probe {kind} (writer.brief live)")
-    if terminal is not None:
-        if tokens.get("note") not in terminal.get("search", ""):
-            problems.append("`lane-memory search` in the sandbox folder did not find the probe note (terminal.search live)")
-        if tokens.get("core") not in terminal.get("core", ""):
-            problems.append("`lane-memory core` in the sandbox folder did not list the probe core convention (terminal.core live)")
     return problems
-
-
-def terminal_memory(cwd: str, report: dict) -> dict | None:
-    """What a Lane Stack terminal session in the sandbox folder gets from the hub; None when this host has no lane-memory."""
-    if not Path(LANE_MEMORY).is_file():
-        log(f"memory_paths: no {LANE_MEMORY} on this host, the terminal is not read live")
-        return None
-    query = "memory delivery check lp-probe"
-    _, search, _ = run([LANE_MEMORY, "search", query, cwd], timeout=120)
-    _, core, _ = run([LANE_MEMORY, "core", cwd], timeout=120)
-    return {"search": search, "core": core}
 
 
 def scenario_memory_paths(ctx: Context) -> dict:
@@ -710,7 +692,7 @@ def scenario_memory_paths(ctx: Context) -> dict:
                 break
             time.sleep(5)
         ctx.quiet()
-        problems = memory_problems(report, thread_text(ctx.pm), writer_text, terminal_memory(ctx.cwd, report))
+        problems = memory_problems(report, thread_text(ctx.pm), writer_text)
     except RuntimeError as cause:
         problems = [str(cause)]
     finally:

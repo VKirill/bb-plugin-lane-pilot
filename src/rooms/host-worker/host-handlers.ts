@@ -25,7 +25,7 @@ import { cancelHostJob, hostJobStatus, startHostJob } from "./jobs";
 import { scanCritiqueCoverage } from "../critique";
 import { prepareSandboxedCommandLine, releaseSandboxedCommandLine, runSandboxedCommandOnHost } from "../verification";
 import { gitOwnershipChangedPaths, resolveGitOwnershipBase, undoCheckWrites } from "../verification";
-import { runCliOnHost, runCommandOnHost, writePmSettingsOnHost } from "../writer";
+import { runCommandOnHost, writePmSettingsOnHost } from "../writer";
 import { runScriptOnHost } from "./script-run";
 import { probeOpenCodeLimit } from "./opencode-limit";
 import { execFile } from "node:child_process";
@@ -652,10 +652,6 @@ export const importConfig: ExperimentalHostRpcHandlers<typeof hostContract>["imp
 
 export const connectOpencode: ExperimentalHostRpcHandlers<typeof hostContract>["connectOpencode"] = async (input) => (
   connectOpencodeStack(ctx(input))
-);
-
-export const runCli: ExperimentalHostRpcHandlers<typeof hostContract>["runCli"] = async (input) => (
-  runCliOnHost(input)
 );
 
 export const runScript: ExperimentalHostRpcHandlers<typeof hostContract>["runScript"] = async (input) => (

@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { openDatabase, saveProjectSetting } from "../../src/rooms/storage/database";
+import { openDatabase } from "../../src/rooms/storage/database";
 import { searchMemoryRecords, storeMemoryRecords } from "../../packages/memory-core/src/store";
 import { OBSERVED_QUARANTINE_MS } from "../../packages/memory-core/src/lifecycle";
-import { importFileMemory } from "../../src/rooms/memory/server/memory-sync";
 import { sessionMemoryRpc } from "../../src/rooms/memory/server/session-memory";
 import type { ServerCore } from "../../src/rooms/core/server/core";
 import type { Services } from "../../src/rooms/core/server/services";
@@ -49,65 +48,6 @@ describe("K8 defect 1: a full memory budget no longer stops memory silently", ()
     expect(storeMemoryRecords(db, { projectId: "P", ...limits, ...budgets, coreBudget: 2, entries: [note("a small note")] }).insertedIds).toHaveLength(1);
   });
 
-  it("a file import into a full corpus stores what fits instead of skipping with `budget reached`", async () => {
-    const files: Record<string, string> = {};
-    for (const n of [1, 2, 3, 4]) files[`f${n}.md`] = `---\nid: f${n}\nstatus: active\nclaim: "File note number ${n} about the checkout flow"\n---\n`;
-    const { ctx, db } = importSetup(files);
-    saveProjectSetting(db, "P", "memory.note_budget", "30");
-    const result = await importFileMemory(ctx, { projectId: "P", runId: "r" });
-    expect(result.imported).toBe(4);
-    expect(result.skipped.filter((row) => row.reason === "memory budget reached")).toEqual([]);
-    expect((db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_memory WHERE status='active'").get() as { n: number }).n).toBeLessThan(5);
-  });
-});
-
-function importSetup(files: Record<string, string>) {
-  const dir = "/w/.agents/memory";
-  const { bb } = createFakePluginHost({ pluginId: "lane-pilot", sdk: { files: {
-    listPaths: async () => ({ paths: Object.keys(files).map((name) => ({ kind: "file", name, path: name })) }),
-    read: async ({ path }: { path: string }) => ({ content: files[path.slice(dir.length + 1)] }),
-  } } as never });
-  const db = openDatabase(bb);
-  saveProjectSetting(db, "P", "memory.enabled", "true");
-  const ctx = { bb, db, configForRun: async () => ({ hostId: "h", writerWorkspacePath: "/w" }) } as unknown as ServerCore;
-  return { ctx, db, files };
-}
-
-describe("K8 defect 2: an imported record follows its file", () => {
-  const file = (id: string, claim: string, extra = "") => `---\nid: ${id}\nstatus: active\nclaim: "${claim}"\n${extra}---\n`;
-  const activeClaims = (db: Db) => (db.prepare("SELECT content FROM lane_pilot_memory WHERE status='active' ORDER BY content").all() as Array<{ content: string }>).map((row) => row.content);
-
-  it("a file that is no longer active hides the record it imported", async () => {
-    const { ctx, db, files } = importSetup({ "x.md": file("x", "Deploys go through the PM chat only") });
-    await importFileMemory(ctx, { projectId: "P", runId: "r" });
-    expect(activeClaims(db)).toEqual(["Deploys go through the PM chat only"]);
-    files["x.md"] = file("x", "Deploys go through the PM chat only").replace("status: active", "status: superseded");
-    const second = await importFileMemory(ctx, { projectId: "P", runId: "r" });
-    expect(activeClaims(db)).toEqual([]);
-    expect(second.hidden).toBe(1);
-    expect(db.prepare("SELECT status FROM lane_pilot_memory").get()).toEqual({ status: "superseded" });
-  });
-
-  it("a file whose valid_until passed hides its record", async () => {
-    const { ctx, db, files } = importSetup({ "y.md": file("y", "Use the old billing endpoint", "valid_until: 2999-01-01\n") });
-    await importFileMemory(ctx, { projectId: "P", runId: "r" });
-    expect(activeClaims(db)).toEqual(["Use the old billing endpoint"]);
-    files["y.md"] = file("y", "Use the old billing endpoint", "valid_until: 2020-01-01\n");
-    await importFileMemory(ctx, { projectId: "P", runId: "r" });
-    expect(activeClaims(db)).toEqual([]);
-    expect(db.prepare("SELECT status FROM lane_pilot_memory").get()).toEqual({ status: "expired" });
-  });
-
-  it("an edited claim replaces the record the old wording made", async () => {
-    const { ctx, db, files } = importSetup({ "z.md": file("z", "Port is 8080") });
-    await importFileMemory(ctx, { projectId: "P", runId: "r" });
-    files["z.md"] = file("z", "Port is 9090");
-    await importFileMemory(ctx, { projectId: "P", runId: "r" });
-    expect(activeClaims(db)).toEqual(["Port is 9090"]);
-    const old = db.prepare("SELECT status,superseded_by FROM lane_pilot_memory WHERE content='Port is 8080'").get() as { status: string; superseded_by: string | null };
-    expect(old.status).toBe("superseded");
-    expect(old.superseded_by).toBeTruthy();
-  });
 });
 
 describe("K8 defect 3: a note from a CLI session does not reach writers at once", () => {

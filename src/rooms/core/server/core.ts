@@ -11,7 +11,6 @@ import { TARGET_SHA } from "../../runs";
 import { hostContract } from "../../contracts";
 import type { PrototypeConfig, TaskV2 } from "../../contracts";
 import { getAttempt, getRun, getRunSettingsScopes, getRunWriterHost, getTask, getTaskPlan, listAttemptsForTask, listStageReceipts, listTaskTerminalStates, loadProjectSettings, loadPrototypeConfig, sectionBindingId, setIllegalTransitionLog, setRunSettingsScopes, setRunState, transitionAttempt } from "../../storage";
-import { writerServiceTier } from "@lane-pilot/models";
 import { GLOBAL_SETTINGS_PROJECT_ID, LP_AGENT_OVERRIDES_KEY, LP_DEFAULTS_KEY, inheritProjectValues, parseLanePilotDefaults } from "@lane-pilot/settings-catalog";
 import { createNativeInstaller } from "../../native-install";
 import type { WriterBindingResolution } from "../../native-agent";
@@ -284,34 +283,6 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
       && !key.startsWith("cli.last");
   }
 
-  async function cliSettingsFor(projectId: string, config: PrototypeConfig): Promise<Record<string, unknown>> {
-    const stored = (await effectiveProjectSettings(projectId)).values;
-    const settings: Record<string, unknown> = {
-      "writer.provider": stored["writer.provider"] ?? config.writerProviderId,
-      "writer.model": stored["writer.model"] ?? config.writerModel,
-      "writer.reasoning_effort": stored["writer.reasoning_effort"] ?? "medium",
-      "writer.service_tier": writerServiceTier(stored),
-      "writer.fast_mode": stored["writer.fast_mode"],
-      "jev.LANE_JEV_EFFORT": stored["jev.LANE_JEV_EFFORT"] ?? true,
-      "jev.LANE_OPENCODE_JEV": stored["jev.LANE_OPENCODE_JEV"] ?? true,
-      "ops.max_tasks": stored["ops.max_tasks"],
-      "ops.poll_interval": stored["ops.poll_interval"],
-      "ops.heartbeat_interval": stored["ops.heartbeat_interval"],
-      "ops.retry_backoff": stored["ops.retry_backoff"],
-      "ops.run_dir": stored["ops.run_dir"],
-      "ops.project_cwd": stored["ops.project_cwd"] ?? config.writerWorkspacePath,
-      "plan_critique.enabled": stored["plan_critique.enabled"] ?? true,
-      "plan_critique.mode": stored["plan_critique.mode"] ?? "gate",
-      "plan_critique.provider": stored["plan_critique.provider"],
-      "night_review.model": stored["night_review.model"],
-    };
-    for (const [key, value] of Object.entries(stored)) {
-      if (!isRuntimeSettingKey(key)) continue;
-      if (!(key in settings) || settings[key] === undefined) settings[key] = value;
-    }
-    return settings;
-  }
-
   function runPolicyFor(runId:string) {
     const run=getRun(db,runId);
     if(!run)throw new Error(`run does not exist: ${runId}`);
@@ -398,7 +369,7 @@ export function createCore(bb: BbPluginApi, db: LanePilotDatabase) {
   // J-11: a second look (Jev, shadow by default) at what a helper or writer produced, before it is stored or shown.
   const outputGuard = createOutputGuard({ jev, settings: async (projectId) => (await effectiveProjectSettings(projectId)).values, kv: bb.storage.kv, log: (message) => bb.log.warn(message) });
 
-  return { bb, db, state, realtime, ownerAsk, secrets, catalogKey, forgetCatalogKey, outputGuard, isDisposed: () => state.disposed, log: (message: string) => bb.log.warn(message), host, deployDrain, nativeInstaller, nativeHost, serializedKv, ownedAgents, saveOwnedAgents, knownCustomAgentIds: () => customAgentIds, effectiveProjectSettings, screenWriterBinding, coexistenceInventory, coexistenceOperation, getThreadBounded, acceptedTaskWorkspace, workspaceExecutionEnvironment, refreshRun, markCanceledWriterStages, cancelQueuedAttempt, isRuntimeSettingKey, cliSettingsFor, runPolicyFor, nativeRunConfig, sectionRowSchema, listProjectSections, sectionChain, settingsAbove, scopesForWorkspace, ensureRunScopes, configForRun, writerBindingKey };
+  return { bb, db, state, realtime, ownerAsk, secrets, catalogKey, forgetCatalogKey, outputGuard, isDisposed: () => state.disposed, log: (message: string) => bb.log.warn(message), host, deployDrain, nativeInstaller, nativeHost, serializedKv, ownedAgents, saveOwnedAgents, knownCustomAgentIds: () => customAgentIds, effectiveProjectSettings, screenWriterBinding, coexistenceInventory, coexistenceOperation, getThreadBounded, acceptedTaskWorkspace, workspaceExecutionEnvironment, refreshRun, markCanceledWriterStages, cancelQueuedAttempt, isRuntimeSettingKey, runPolicyFor, nativeRunConfig, sectionRowSchema, listProjectSections, sectionChain, settingsAbove, scopesForWorkspace, ensureRunScopes, configForRun, writerBindingKey };
 }
 
 export type ServerCore = ReturnType<typeof createCore>;

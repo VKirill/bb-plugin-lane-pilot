@@ -63,10 +63,7 @@ describe("Lane Pilot UI", () => {
     openTab(slot, "monitor");
     expect(slot.queryByTestId("writer-result")).toBeNull();
     openTab(slot, "service");
-    const preview = await slot.findByTestId("cli-preview");
-    const previewJson = JSON.parse(preview.querySelector("code")!.textContent!) as { argv:string[] };
-    expect(previewJson.argv.filter((arg) => arg === "--provider")).toHaveLength(1);
-    expect(previewJson.argv).toContain("fast");
+    expect(slot.queryByTestId("cli-preview")).toBeNull();
     const writer = await slot.findByTestId("writer-result");
     expect(writer.textContent).toContain("hello from writer");
     expect(slot.getByTestId("diagnostics-panel").textContent).toContain("\"action\":\"install\"");
@@ -106,7 +103,7 @@ describe("Lane Pilot UI", () => {
     slot.lifecycle.unmount();
   });
 
-  it("opens each CLI receipt only in Diagnostics", async () => {
+  it("does not show a CLI receipt in Diagnostics", async () => {
     const base = screenFixture();
     const slot = await mountPage({
       get_screen: () => ({
@@ -152,8 +149,8 @@ describe("Lane Pilot UI", () => {
     openTab(slot, "monitor");
     expect(slot.queryByTestId("cli-receipt-lpattempt_a")).toBeNull();
     openTab(slot, "service");
-    expect((await slot.findByTestId("cli-receipt-lpattempt_a")).textContent).toContain("first");
-    expect((await slot.findByTestId("cli-receipt-lpattempt_b")).textContent).toContain("second");
+    expect(slot.queryByTestId("cli-receipt-lpattempt_a")).toBeNull();
+    expect(slot.queryByTestId("cli-receipt-lpattempt_b")).toBeNull();
     slot.lifecycle.unmount();
   });
 

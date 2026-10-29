@@ -3,7 +3,8 @@
 export { buildCliInvocation } from "./argv-builder";
 export { attemptProduced, parseDirtSnapshots } from "./cli-outcome";
 export type { DirtSnapshot } from "./cli-outcome";
-export { runCliOnHost, runCommandOnHost, writePmSettingsOnHost } from "./cli-run";
+export { runCommandOnHost, writePmSettingsOnHost } from "./cli-run";
+export { materializeAgentTrash, ownedAgentTrashPath, AGENT_TRASH_RELATIVE } from "./agent-trash";
 export { resolveStageWriterSelection } from "./stage-writer-selection";
 export { attachStreamRetry, droppedStreamDetail } from "./stream-retry";
 export { memoryLine, pathAnchors, reviewerMemoryPicks, writerBriefStats, writerMemory, writerMemoryPicks } from "./writer-brief";

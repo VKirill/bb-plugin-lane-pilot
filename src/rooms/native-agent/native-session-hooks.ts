@@ -34,8 +34,6 @@ export const NATIVE_LP_BRIDGE_TOOLS = [
   "lane_pilot_learned",
   "lane_pilot_memory_golden",
   "lane_pilot_run_health",
-  "lane_pilot_memory_import",
-  "lane_pilot_memory_export",
   "lane_pilot_council_start",
   "lane_pilot_council_status",
   "lane_pilot_council_say",

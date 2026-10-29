@@ -71,7 +71,7 @@ describe("native writer settings against the registered SQLite backend", () => {
     openTab(slot, "service");
     expect(slot.getByTestId("diagnostics-disclosure").hasAttribute("open")).toBe(false);
     expect(slot.getByTestId("field-s024").textContent).toContain(en.legacyFastModeExplanation);
-    expect(slot.getByTestId("cli-preview")).toBeTruthy();
+    expect(slot.queryByTestId("cli-preview")).toBeNull();
     await finish(harness, slot);
   });
 

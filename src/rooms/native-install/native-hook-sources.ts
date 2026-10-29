@@ -901,7 +901,7 @@ export const NATIVE_HOOK_SOURCES: Record<string, string> = {
     "}",
     "_DISPOSABLE_ROOTS = (\"/tmp/\", \"/private/tmp/\", \"/var/tmp/\", \"/var/folders/\", \"/dev/null\")",
     "_TRASH_HINT = (",
-    "    \"move it to the Trash instead: ~/.agents/bin/agent-trash <path>... (takes rm's -r/-f; on servers the Trash \"",
+    "    \"move it to the Trash instead: ~/.agents/lane-pilot/bin/agent-trash <path>... (takes rm's -r/-f; on servers the Trash \"",
     "    \"keeps it 7 days). Build output, node_modules, caches and /tmp can still be removed with rm.\"",
     ")",
     "",

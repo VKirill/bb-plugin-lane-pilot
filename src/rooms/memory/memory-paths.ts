@@ -9,7 +9,7 @@
  *  - `bb lane-pilot memory-probe` (src/rooms/memory-probe/server/memory-probe.ts) writes a note, a core note and a rule that carry
  *    a unique token through the one write door and asks every `probed` path for what its agent would receive;
  *  - the drill scenario `memory_paths` (scripts/lp-drill.py) runs the probe and then checks the real writer brief and the real PM
- *    prompt in their thread logs, and a Lane Stack terminal through `lane-memory`.
+ *    prompt in their thread logs. (2026-10-29) the Lane Stack terminal (`lane-memory`) is not a consumer.
  * A path that cannot be probed is `exempt` with the reason; the reason is the entry's point.
  */
 
@@ -30,7 +30,7 @@ export type MemoryPath = {
   status: "probed" | "exempt";
   reason?: string;
   /** How the drill checks the real thing besides the probe. */
-  live?: "writer-brief" | "pm-prompt" | "terminal";
+  live?: "writer-brief" | "pm-prompt";
 };
 
 /** The functions that put memory, rules or owner facts in front of an agent (or fetch them for one). The scan in the test counts their calls. */
@@ -93,13 +93,13 @@ export const MEMORY_PATHS: readonly MemoryPath[] = [
       { file: "src/rooms/council/server/council.ts", primitive: "searchMemoryRecords", count: 1 },
       { file: "src/rooms/council/server/council.ts", primitive: "memoryContext", count: 1 },
     ] },
-  { id: "terminal.search", consumer: "a Lane Stack terminal session: lane-memory search / context (session_memory_search)", carries: ["note", "core"], alwaysOn: [], status: "probed", live: "terminal",
+  { id: "hub.session_rpc", consumer: "the hub session_memory RPCs, not a Lane Pilot agent prompt", carries: [], alwaysOn: [], status: "exempt",
+    reason: "Claude Lane's terminal client is gone (2026-10-29). The RPCs stay for the hub; they do not deliver into an agent prompt.",
     sites: [
       { file: "src/rooms/memory/server/session-memory.ts", primitive: "session_memory_search", count: 1 },
+      { file: "src/rooms/memory/server/session-memory.ts", primitive: "session_memory_core", count: 1 },
       { file: "src/rooms/memory/server/session-memory.ts", primitive: "searchMemoryRecords", count: 1 },
     ] },
-  { id: "terminal.core", consumer: "a Lane Stack terminal session: CORE block of CLAUDE.md/AGENTS.md (inject_core via session_memory_core)", carries: ["core"], alwaysOn: ["core"], status: "probed", live: "terminal",
-    sites: [{ file: "src/rooms/memory/server/session-memory.ts", primitive: "session_memory_core", count: 1 }] },
   { id: "maintainer.existing", consumer: "the memory maintainer's list of EXISTING NOTES", carries: [], alwaysOn: [], status: "exempt",
     reason: "A dedupe aid for the stage that writes notes, not a delivery to a worker; the notes are data it compares against and acts on only by `supersedes`.",
     sites: [{ file: "src/rooms/memory/server/memory.ts", primitive: "searchMemoryRecords", count: 1 }] },
