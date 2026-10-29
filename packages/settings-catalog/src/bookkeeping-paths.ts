@@ -9,6 +9,9 @@ export const BOOKKEEPING_PATHS = [
   ".agents/PROGRESS.md",
   ".agents/CHANGELOG.md",
   ".agents/memory/episodes/**",
+  // Lane Stack's session ledger hook writes the handoff log into every session's folder, the base checkout and each worktree alike
+  // (deploy drill 2026-10-29: three finished tasks waited for an untracked INDEX.md the PM's session had left in the base).
+  ".agents/session-log/**",
   ".agents/runs/**",
   ".agents/reports/**",
   ".bb/chats/**",
