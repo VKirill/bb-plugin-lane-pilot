@@ -1,15 +1,10 @@
-import { existsSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
 import { SMA_CARDS, SMA_CONTRACT_TESTS, SMA_LINKS, SMA_NODES, brokenProof, isDone, runSmaMapCli, smaHoles, smaRows } from "../src/rooms/sma-map";
 
-const roots = {
-  lanePilot: process.cwd(),
-  ...([join(process.cwd(), "..", "claude-lane-stack"), join(homedir(), "tools", "claude-lane-stack")].filter((path) => existsSync(path)).slice(0, 1).map((laneStack) => ({ laneStack }))[0] ?? {}),
-  ...(existsSync(join(homedir(), ".local", "share", "bb-source-vk")) ? { core: join(homedir(), ".local", "share", "bb-source-vk") } : {}),
-};
+// Only this repository's links: a link into Lane Stack or the core is navigation, and a rename there must not fail Lane Pilot's
+// suite (2026-10-29 Grok audit F-004). What a card promises is checked by its [sma:<id>] contract test, not by its link.
+const roots = { lanePilot: process.cwd() };
 
 describe("the SMA map registry", () => {
   it("is the whole site map: every node, link and card, with one entry each and none left out", () => {

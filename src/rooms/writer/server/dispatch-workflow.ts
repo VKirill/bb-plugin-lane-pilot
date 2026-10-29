@@ -93,20 +93,6 @@ export function registerDispatchExecutors(engine: WorkflowEngine, bb?: BbPluginA
     return { state: pmRead.state, summary: pmRead.summary, ...(pmRead.reason !== undefined ? { reason: pmRead.reason } : {}), handoff: handoffOf("pm-read", pmRead.state, pmRead.reason) };
   }, {}, "pm-read");
 
-  exec("lp.block-pm-read", async (r, ctx) => {
-    const ended = endedReply(r);
-    if (ended) return { reply: ended };
-    const reason = `pm_read_failed:${text(ctx.input.with.reason) ?? "unknown"}`;
-    const { db } = r.ctx;
-    recordStage(db, { runId: r.runId, taskId: r.taskId, stageId: "plan-critique", state: "skipped", input: r.plan, reason: "PM read stage failed" });
-    recordStage(db, { runId: r.runId, taskId: r.taskId, stageId: "specialist-review", state: "skipped", input: r.plan, reason: "PM read stage failed" });
-    skipWriterStages(r, "PM read stage failed");
-    transitionAttempt(db, r.attemptId, "blocked", { reason });
-    setRunState(db, r.runId, "blocked");
-    r.ctx.refreshRun(r.runId);
-    return { reply: blockedReply(r, reason) };
-  });
-
   exec("lp.quality-mode", async (r) => {
     const settings = loadProjectSettings(r.ctx.db, r.projectId, getRunSettingsScopes(r.ctx.db, r.runId));
     return { mode: resolveQualityMode(r.task, settings[QUALITY_MODE_SETTING]) };

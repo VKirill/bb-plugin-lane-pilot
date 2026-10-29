@@ -98,19 +98,6 @@
       ]
     },
     {
-      "id": "block-pm-read",
-      "type": "action",
-      "label": "Block: PM read failed",
-      "uses": "lp.block-pm-read",
-      "proof": {"kind": "receipt", "check": "the failed pm-read receipt is stored with its reason and the reply to the PM is built from it"},
-      "output": [
-        {
-          "name": "reply",
-          "type": "json"
-        }
-      ]
-    },
-    {
       "id": "quality-mode",
       "type": "decision",
       "label": "Quality mode",
@@ -135,7 +122,7 @@
       "label": "Plan critique",
       "role": "plan-critic",
       "uses": "lp.plan-critique",
-      "proof": {"kind": "advisory", "reason": "a model's verdict on the plan", "form": "parseCritique: verdict schema; a critical or high finding counts only with a file, a line and quoted evidence, and a file the critic's input names"},
+      "proof": {"kind": "advisory", "reason": "a model's verdict on the plan: it never accepts a task, and in plan_critique.mode gate (the default, SMA p2_checker) its refusal stops the attempt before the writer", "form": "parseCritique: verdict schema; a critical or high finding counts only with a file, a line and quoted evidence, and a file the critic's input names"},
       "output": [
         {
           "name": "allowed",
@@ -155,7 +142,7 @@
       "label": "Plan critique (quick: skipped by its own receipt)",
       "role": "plan-critic",
       "uses": "lp.plan-critique",
-      "proof": {"kind": "advisory", "reason": "a model's verdict on the plan", "form": "parseCritique: verdict schema; a critical or high finding counts only with a file, a line and quoted evidence, and a file the critic's input names"},
+      "proof": {"kind": "advisory", "reason": "a model's verdict on the plan: it never accepts a task, and in plan_critique.mode gate (the default, SMA p2_checker) its refusal stops the attempt before the writer", "form": "parseCritique: verdict schema; a critical or high finding counts only with a file, a line and quoted evidence, and a file the critic's input names"},
       "output": [
         {
           "name": "allowed",
@@ -341,21 +328,8 @@
     },
     {
       "from": "pm-read",
-      "to": "block-pm-read",
-      "label": "failed",
-      "when": {
-        "field": "state",
-        "op": "eq",
-        "value": "failed"
-      },
-      "with": {
-        "reason": "pm-read.reason"
-      }
-    },
-    {
-      "from": "pm-read",
       "to": "quality-mode",
-      "label": "passed or skipped"
+      "label": "passed, skipped or failed (the summary decides nothing)"
     },
     {
       "from": "quality-mode",
@@ -490,13 +464,6 @@
       "with": {
         "reply": "writer.reply",
         "browser_qa": "browser-qa.reply"
-      }
-    },
-    {
-      "from": "block-pm-read",
-      "to": "end",
-      "with": {
-        "reply": "block-pm-read.reply"
       }
     },
     {

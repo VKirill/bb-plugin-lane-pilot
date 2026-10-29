@@ -4,6 +4,12 @@
 
 ## 0.1.379
 
+**A failed PM-read summary no longer blocks the task** (2026-10-29 Grok audit F-003). The stage proof says the summary «only hands context to the critics and decides nothing», yet an unreadable or timed-out summary sent the attempt and the run to `blocked` (SelfyStudio lost two tasks that way on 2026-10-15/16). The `block-pm-read` node is gone from `lp-task-pipeline`: the failed receipt is kept with its reason and the task goes on to the plan critic without a summary. Regressions: `tests/workflow/equivalence.test.ts` and `tests/stages/server-stage/suite.ts`.
+
+**The plan critic's proof says what it does.** `advisory` names who decides a stage (a model) and that it never accepts a task alone; the plan critic is SMA's plan checker, and in `plan_critique.mode` `gate` (the default) its refusal stops the attempt before the writer. `STAGE_PROOF`, the graph nodes and `docs/overview.md` now say so (F-002 read «advisory» as «cannot block»).
+
+**The SMA map test checks only this repository's links.** A rename in Lane Stack or the core no longer fails Lane Pilot's suite; what a card promises is checked by its `[sma:<id>]` contract test (F-004).
+
 **A relay sweep stopped by reload is not reported as a failure.** The service stops immediately on abort, but an in-flight sweep can reject later through the retired BB API handle. Its detached catch used to log `relay sweep failed: … stale API handle` after a successful reload (hub, 2026-10-29), triggering self-repair. The catch now reports failures only while that service and plugin instance are active; the same error during active work is still reported. Regression: `tests/server/relay-lifecycle.test.ts`, using the captured reload/error lines in `tests/fixtures/relay-reload-2026-10-29.json`.
 
 **PM activation does not start a phase for its own instructions.** BB records the prompt that Lane Pilot uses to start a PM as `source: spawn`, `initiator: user`. The phase intake mistook the long fixture/guard instruction for a heavy owner goal and started `lp.analyze`; three drill runs on 2026-10-29 left unwanted analysis helpers that ended `workflow_gather:canceled:turn_interrupted`. The machine-message filter now recognizes both PM bootstrap headers together with their run-id line, including native and managed-workspace activation. Real owner goals, including a native chat's first spawned message, still enter the intake. Regression: `tests/phase-intake.test.ts`, replaying the three original request events in `tests/fixtures/phase-intake-pm-bootstrap-2026-10-29.json`.
@@ -33,8 +39,6 @@
 **The table «role -> model» takes any provider's model, in BB's own window.** A role's model was one of ten table models in a plain list. Each row now opens BB's own provider/model window (the composer's: provider tabs, search, reasoning), so any provider the machines have can work a role: Grok on Cursor, GLM on the Z.AI coding plan, Composer. The «+» of the pool opens the same window. A pick names its provider (`role_model.<role>` = `{ provider, model, reasoning_effort?, pool: [{ provider, model, reasoning_effort? }] }`); a table model named alone keeps working, a table model on the other native provider (Claude Opus on `codex`) is refused. A model outside the table has its family read off the name, `other` when the name says nothing, so the cross-family rule for judges treats it as another family.
 
 ## Unreleased
-
-## 0.1.379
 
 **Nightly docs skips workspaces its host RPCs do not support.** The BB-service project includes the Windows source `C:\Users\vechkasov\bb-perf`. The hourly pass sent it to `gitDocsScope`, whose contract accepts only absolute POSIX paths, and failed input validation every hour (2026-10-28). It now returns `skipped: unsupported_workspace_path` before any docs host call, for project sources and section copies alike; the project's macOS and Linux copies are still inspected. Windows docs execution remains unsupported.
 
@@ -193,8 +197,6 @@ The third review round (Astra's and Fable's RECHECK-341) and the full drill agai
 **The composer button says its state** in `data-lp-agent` (off, lane-pilot, specialist), so a theme does not read the label (the Pokecut theme lit the icon for «Lane Pilot / агент», which is off; fixed in the theme 0.5.40).
 
 ## Unreleased
-
-## 0.1.379
 
 **A full disk is the machine's: one wait, one line, and a canceled writer stops waiting.** On 2026-10-27 the Mac mini had 5–11 GB free, below the 15 GB disk hold, so the drill writers waited (correctly). The hold's line «writer … waits: only N GB free on host_…» was logged again every time the free space moved by a GB (61 lines for one drill writer); writers the drill had canceled went on waiting and logging for half an hour; and the hold's reason lacked `disk_low`, the token the failure classes, the night journal and the metrics take for the machine's fault, so the night filed it as Lane Pilot's own and sent repair rounds for a full disk. The disk hold now says `disk_low: only N GB free on host_…`, a writer logs a wait once per kind of hold (a new number only refreshes the stage reason), and a writer whose attempt is canceled while it waits for room stops and closes its stages.
 
@@ -1306,8 +1308,6 @@ From a self-repair of «merge_failed: git merge failed: fatal: stash failed (ind
 
 - **The route-first rule is enforced, not only written.** Live in the sandbox, 0.1.204's PM still answered «find discussed posts on vibe coding» with three web searches. The PM guard now refuses WebSearch, WebFetch and a tavily specialist until `lane_pilot_route` has been called after the owner's last message, and says to call the router; once it answers that no workflow fits, the search goes through in the same turn. Other roles, other specialists and an unreadable transcript are untouched (`tests/guard-route-first.test.ts`). Installed into `~/.agents/hooks` on the Mac mini, MacBook and OVH and into claude-lane-stack.
 ## Unreleased
-
-## 0.1.379
 
 - **A folder without git near the 50 000-file cap snapshots again instead of blocking every attempt.** From a self-repair of «attempt_workspace_snapshot_failed:cannot snapshot the folder (no git): host output for runCommand exceeds 8388608 bytes» (hub, 2026-10-10 01:18–02:20 UTC, run `lprun_3669a8b5…`, 8 attempts of four `jev-openlux-*` tasks, 0.1.222 and 0.1.223). The run's folder `/Users/vechkasov/Documents/BB-сервис` has 48 494 files, under the cap, but the snapshot printed them as plain JSON at ~184 bytes a file: 8.9 MB, and BB's host worker refuses a host call answer above 8 MiB, so no attempt could take its baseline. The snapshot now prints the rows zlib-compressed in base64 (`z:` prefix, ~65 bytes a file: 3.1 MB for that folder, ~3.3 MB at the cap), and an answer above a 6 MiB budget is refused on the host with «folder too large for no-git mode: N files make a X MB snapshot; put it under git» instead of BB's transport error. The parser still reads a plain JSON answer.
 

@@ -180,7 +180,8 @@ const scenarios: Scenario[] = [
   { name: "quality_mode quick: the critique receipt is skipped by its own rule", settings: { quality_mode: "quick" }, finish: true, expect: { state: "queued" } },
   { name: "quality_mode full on a task of its own", task: { quality_mode: "full" }, finish: true, expect: { state: "queued" } },
   { name: "plan critique asks for changes: blocked before any writer", critique: '{"decision":"changes_requested","summary":"Needs work","findings":[{"severity":"blocking","finding":"vague criterion","path":"plan"}]}', expect: { state: "blocked", reason: /critique/ } },
-  { name: "PM read returns malformed output: blocked", settings: { "pm_read.enabled": true, "pm_read.min_lines": 50, "pm_read.reasoning_effort": "medium" }, task: { read_first: ["README.md"] }, pmRead: "not json at all", expect: { state: "blocked", reason: /pm_read_failed/ } },
+  // A summary decides nothing (STAGE_PROOF pm-read): an unreadable one is a failed receipt, and the task goes on without it (2026-10-29 Grok audit F-003).
+  { name: "PM read returns malformed output: the task goes on without a summary", settings: { "pm_read.enabled": true, "pm_read.min_lines": 50, "pm_read.reasoning_effort": "medium" }, task: { read_first: ["README.md"] }, pmRead: "not json at all", finish: true, expect: { state: "queued" } },
   { name: "a cancel during a failing PM read keeps the task canceled and the run open", settings: { "pm_read.enabled": true, "pm_read.min_lines": 50, "pm_read.reasoning_effort": "medium" }, task: { read_first: ["README.md"] },
     pmRead: "not json at all", cancelDuringPmRead: true, expect: { state: "canceled" } },
   { name: "a cancel during a passing PM read starts no plan critique", settings: { "pm_read.enabled": true, "pm_read.min_lines": 50, "pm_read.reasoning_effort": "medium" }, task: { read_first: ["README.md"] },
@@ -203,7 +204,7 @@ const STAGES: Record<string, string[]> = {
   "quality_mode quick: the critique receipt is skipped by its own rule": ["acceptance-receipt:passed", "memory-maintenance:skipped", "plan-critique:skipped", "plan-fact:skipped", "pm-read:skipped", "project-life:skipped", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
   "quality_mode full on a task of its own": ["acceptance-receipt:passed", "code-critique:passed", "memory-maintenance:skipped", "plan-critique:passed", "plan-fact:skipped", "pm-read:skipped", "project-life:skipped", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
   "plan critique asks for changes: blocked before any writer": ["acceptance-receipt:skipped", "plan-critique:failed", "pm-read:skipped", "specialist-review:skipped", "verification:skipped", "writer-agent:skipped"],
-  "PM read returns malformed output: blocked": ["acceptance-receipt:skipped", "plan-critique:skipped", "pm-read:failed", "specialist-review:skipped", "verification:skipped", "writer-agent:skipped"],
+  "PM read returns malformed output: the task goes on without a summary": ["acceptance-receipt:passed", "memory-maintenance:skipped", "plan-critique:passed", "plan-fact:skipped", "pm-read:failed", "project-life:skipped", "specialist-review:skipped", "verification:passed", "writer-agent:passed"],
   "a cancel during a failing PM read keeps the task canceled and the run open": ["acceptance-receipt:canceled", "pm-read:canceled", "verification:canceled", "writer-agent:canceled"],
   "a cancel during a passing PM read starts no plan critique": ["acceptance-receipt:canceled", "pm-read:canceled", "verification:canceled", "writer-agent:canceled"],
   "specialist blocks a high-risk task": ["acceptance-receipt:skipped", "plan-critique:passed", "pm-read:skipped", "specialist-review:blocked", "verification:skipped", "writer-agent:skipped"],

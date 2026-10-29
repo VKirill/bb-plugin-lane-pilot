@@ -41,7 +41,7 @@ describe("built-in workflows", () => {
     const quick = workflow.edges.find((edge) => edge.from === "quality-mode" && edge.to === "plan-critique-quick");
     expect(quick?.when).toEqual({ field: "mode", op: "eq", value: "quick" });
     // Every blocking branch ends at the exit with a reply, and the writer owns the stages that stay inside it.
-    for (const block of ["block-pm-read", "block-plan-critique", "block-specialist", "block-ownership"]) expect(next(block)).toEqual([END]);
+    for (const block of ["block-plan-critique", "block-specialist", "block-ownership"]) expect(next(block)).toEqual([END]);
     // After the code task a gate decides whether the task's own graph runs the browser check: only a task with qa_cases and qa_url does, the others go straight to the exit.
     expect(next("writer")).toEqual(["qa-gate"]);
     expect(workflow.edges.find((edge) => edge.from === "qa-gate" && edge.to === END)?.when).toEqual({ field: "run", op: "eq", value: false });

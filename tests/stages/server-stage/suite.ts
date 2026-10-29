@@ -1279,17 +1279,18 @@ describe("stage → native writer → receipt", () => {
     expect(spawned.some(row=>(row.pluginMetadata as Record<string,unknown>).role==="writer")).toBe(false);
     await harness.lifecycle.dispose();
   });
-  it("fails closed when an enabled PM-read stage returns malformed output",async()=>{
-    const {db,harness,spawned}=await setup('should not run',undefined,{
+  // A summary decides nothing (STAGE_PROOF pm-read): SelfyStudio lost two tasks to a stray key and a timeout of it (CHANGELOG 2026-10-15/16).
+  it("goes on without a summary when an enabled PM-read stage returns malformed output",async()=>{
+    const {db,harness,spawned}=await setup('{"decision":"approve","summary":"Checked","findings":[]}',undefined,{
       "pm_read.enabled":true,"pm_read.min_lines":50,"pm_read.provider":"critic","pm_read.model":"critic-model","pm_read.reasoning_effort":"medium",
     },undefined,undefined,undefined,undefined,undefined,undefined,false,0,undefined,"not JSON");
     const longReadTask={...task,id:"stage-task-pm-read-invalid",read_first:["README.md L1-L80"]};
     const result=JSON.parse(String(await harness.behavior.callAgentTool("lane_pilot_dispatch_writer",{
       confirm:true,objective:"Проверка диспетча",plan:"Write from a bounded project brief",task:longReadTask,
     },{threadId:pmThreadId,projectId})));
-    expect(result.state).toBe("blocked");
-    expect(result.reason).toContain("pm_read_failed");
-    expect(spawned.map((row)=>((row.pluginMetadata as Record<string,unknown>).stageId))).toEqual(["pm-read"]);
+    expect(result.state).not.toBe("blocked");
+    expect(String(result.reason ?? "")).not.toContain("pm_read_failed");
+    expect(spawned.map((row)=>((row.pluginMetadata as Record<string,unknown>).stageId)).slice(0,2)).toEqual(["pm-read","plan-critique"]);
     const receipt=listStageReceipts(db,"stage-run",longReadTask.id).find((row)=>row.stageId==="pm-read");
     expect(receipt?.state).toBe("failed");
     expect(receipt?.reason).toMatch(/JSON/i);
