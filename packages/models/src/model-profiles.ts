@@ -28,6 +28,11 @@ export const WRITER_PROFILES: readonly WriterProfile[] = [
     sources: ["https://www.datacamp.com/blog/composer-2-5", "https://chatforest.com/reviews/cursor-composer-2-5-coding-model-review/", "https://www.techtimes.com/articles/316917/20260520/cursor-composer-25-matches-claude-opus-47-coding-benchmarks-one-tenth-cost.htm"],
   },
   {
+    key: "grok", providerId: "acp-cursor", model: "grok-4.6", reasoning: "medium", label: "Grok 4.6 (Cursor)", tier: "standard", available: true,
+    summary: "xAI's coding model through the Cursor subscription: on our hub it was accepted on 90% of its tasks (Composer 91%, GPT-6 Luna 63%, 2026-10-13..27), and practitioners use it to implement a written plan, noting it does not degrade on long tasks. Fits routine features and fixes that follow a clear plan, multi-file changes in mainstream stacks, and long well-specified implementation runs; it spends a provider other than Claude and Codex. Not for open-ended design, architecture or review; Grok 4.7 doubled the output tokens and tested worse, so the pick stays on 4.6.",
+    sources: ["https://t.me/ai_chat_cutcode/26401", "https://t.me/ai_chat_cutcode/26985", "https://daily.dev/posts/grok-4-7-fully-tested-this-is-actually-sad-worst-than-glm-5-3-flash--zu0g0lmcu"],
+  },
+  {
     key: "gemini-flash", providerId: "opencode2", model: "router9/ag/gemini-3.8-flash-high", reasoning: "medium", label: "Gemini 3.8 Flash high (9router)", tier: "standard", available: true,
     summary: "Google's fast, cheap model: DeepSWE about 74% (level with Claude Opus 5), SWE-Bench Pro 61.6%; Gemini Flash models are close to Opus on Roblox Luau code generation (OpenGameEval) and are recommended there for fast prototyping. Fits quick, well-described tasks, Roblox Luau scripts, UI tweaks and prototypes where speed matters. Its quality depends strongly on the harness; weaker on the hardest long-horizon agent tasks and dense extraction.",
     sources: ["https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/guides/gemini-3-8-flash", "https://www.mindstudio.ai/blog/gemini-3-8-flash-harness-demos", "https://bloxbot.ai/guide/best-ai-models-roblox-development"],

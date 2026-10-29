@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.367
+
+**Jev can pick Grok 4.6 to write a task.** Grok was not among the writers' profiles, so the pick could never choose it, though on the hub it was accepted on 90% of its tasks (Composer 91%, Luna 63%). The profile `grok` (Cursor, `acp-cursor/grok-4.6`, medium) is for routine features and long runs that follow a clear plan, and it spends a provider other than Claude and Codex. Grok 4.7 stays out: twice the output tokens and worse in tests.
+
 ## 0.1.366
 
 **A specialist's or the workflow architect's pool keeps only Claude models.** Both run as a Claude Code agent profile, which another provider refuses (HTTP 409 «native profile needs Claude Code»); a pool entry of another provider could have been picked as the least loaded and failed the spawn. Their pool is now read for `claude-code` entries only. The global role table now spreads every other role over Claude, Codex, Gemini (9router) and GLM (Z.AI coding plan).
