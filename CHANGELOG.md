@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.370
+
+**The roster's model column is BB's own window.** The roles whose model comes from the table «role -> model» now show BB's provider/model window in the roster too, not plain text: a choice is saved into the role's row of the table with its pool kept, and the roster and the table read each other's saves. Ships 0.1.368 and 0.1.369, whose deploy was rolled back by a drill the plan critique blocked: the OVH drill sandbox now keeps plan and code critique off, as the Mac sandbox and the bench projects do, so a drill tests the pipeline, not the critic.
+
 ## 0.1.369
 
 **Observation survives boundary cases.** Run cards include tasks beyond the first 200 and choose the latest attempt by its sequence, even when creation timestamps tie. The Tasks board reports failed reads and stale data, recovers on its next successful poll, and exposes cards beyond the 120th in a column. State pagination uses a timestamp + run ID cursor so same-millisecond runs are not skipped; large attempt reasons are read in bounded chunks with `--reason-offset` and a continuation command. Six regression scenarios cover the original failures, CLI continuation, and UI recovery.
