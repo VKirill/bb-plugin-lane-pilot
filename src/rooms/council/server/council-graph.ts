@@ -10,7 +10,7 @@ import {
   setCouncilAgenda, setCouncilRun, setCouncilState, verdictWritten,
   type CouncilMessage, type CouncilMessageKind, type CouncilSeat, type CouncilSession, type Impulse, type Moderator,
 } from "@lane-pilot/council";
-import { getRun } from "../../storage";
+import { getRun, getRunSettingsScopes } from "../../storage";
 import { builtinWorkflow } from "../../workflow";
 import type { ChainRuntime } from "../../workflow/server";
 import { withUsage } from "../../usage/server";
@@ -160,7 +160,7 @@ export function mountCouncilGraph(ctx: ServerCore, services: Services, council: 
       const body = await readBounded(place, path, MATERIAL_CHARS);
       parts.push(body ? `## Material: ${path}\n${body}` : `## Material: ${path}\n(unreadable)`);
     }
-    const memory = councilMemoryBlock(db, session.projectId, session.question);
+    const memory = councilMemoryBlock(db, session.projectId, session.question, getRunSettingsScopes(db, session.runId));
     if (memory) parts.push(memory);
     const pack = parts.length ? parts.join("\n\n") : "(no project files or materials could be read; say so and reason from the question alone)";
     evidenceCache.set(session.id, pack);

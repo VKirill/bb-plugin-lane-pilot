@@ -32,6 +32,14 @@ const toRecord = (row: Row): MemoryRecord => ({ id: row.id, projectId: row.proje
 const estimate = (text: string) => Math.ceil(Buffer.byteLength(text, "utf8") / 4);
 const isRule = (row: Pick<Row, "concepts_json">) => row.concepts_json.includes('"rule"');
 
+function parseScopeJson(json: string | null | undefined): string[] {
+  try {
+    const value = JSON.parse(json ?? "[]") as unknown;
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  } catch { return []; }
+}
+const scopeKey = (scope: readonly string[]) => JSON.stringify([...scope]);
+
 const trigramState = new WeakMap<object, boolean>();
 
 /**
@@ -97,14 +105,16 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
     // The one door every write passes: rules and imports reach the corpus without the maintainer's parser.
     for (const entry of input.entries) { const issue = memoryContentIssue(entry.content); if (issue) throw new Error(issue); }
     const expiredIds = expireMemory(db, input.projectId, personalBot, now, (projectId, id) => dropMemoryIndexes(db, projectId, id));
-    const rows = db.prepare(`SELECT ${cols()} FROM lane_pilot_memory WHERE project_id=? AND personal_bot=?`).all(input.projectId, personalBot) as Row[];
-    const known = new Map(rows.map((row) => [memoryRecordId(input.projectId, row.kind, row.content, personalBot), row]));
+    const rows = db.prepare(`SELECT ${cols()}, scope_json FROM lane_pilot_memory WHERE project_id=? AND personal_bot=?`).all(input.projectId, personalBot) as Array<Row & { scope_json: string | null }>;
+    const scope = input.scope ?? [];
+    const identity = (row: { kind: MemoryKind; content: string; audience: string; scope_json?: string | null }) => memoryRecordId(input.projectId, row.kind, row.content, personalBot, row.audience, parseScopeJson(row.scope_json));
+    const known = new Map(rows.map((row) => [identity(row), row]));
     const pending: Array<{ entry: MemoryCandidate; id: string }> = [];
     const revive: Array<{ entry: MemoryCandidate; id: string }> = [];
     const corroborate: string[] = [];
     const seen = new Set<string>();
     for (const entry of input.entries) {
-      const id = memoryRecordId(input.projectId, entry.kind, entry.content, personalBot);
+      const id = memoryRecordId(input.projectId, entry.kind, entry.content, personalBot, input.audience, scope);
       if (seen.has(id)) continue;
       seen.add(id);
       const hit = known.get(id);
@@ -121,10 +131,12 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
     const replace = (oldId: string, by: string) => { if (hideRecord(db, input.projectId, oldId, "superseded", by, unindex)) { gone.add(oldId); supersededIds.push(oldId); } };
     for (const { entry, id } of adds) {
       // An edited file record: what the file said before is replaced by what it says now.
-      if (entry.sourceFileId) for (const row of rows) if (row.status === "active" && row.source_file_id === entry.sourceFileId && row.id !== id) replace(row.id, id);
+      const sameNamespace = (row: { audience: string; scope_json?: string | null }) => row.audience === input.audience && scopeKey(parseScopeJson(row.scope_json)) === scopeKey(scope);
+      if (entry.sourceFileId) for (const row of rows) if (row.status === "active" && row.source_file_id === entry.sourceFileId && row.id !== id && sameNamespace(row)) replace(row.id, id);
       // One session's word does not retire what the maintainer or a file established.
       if (trust !== "confirmed") continue;
-      const replaceable = rows.filter((row) => row.status === "active" && !gone.has(row.id) && row.id !== id && row.audience === input.audience && !isRule(row));
+      // Replacement stays inside project + section + audience + bot. A fact already stored is not given a wider scope.
+      const replaceable = rows.filter((row) => row.status === "active" && !gone.has(row.id) && row.id !== id && sameNamespace(row) && !isRule(row));
       for (const prefix of entry.supersedes ?? []) {
         const named = replaceable.filter((row) => row.id.startsWith(prefix));
         if (named.length === 1) replace(named[0]!.id, id);
@@ -149,7 +161,7 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
       const picked: Row[] = [];
       for (const victim of victims) { if (!over(left)) break; left -= estimate(victim.content); picked.push(victim); }
       if (over(left)) throw new Error(left > input.noteBudget ? `memory note budget exceeded: ${left}/${input.noteBudget} tokens` : `memory index budget exceeded: ${core + left}/${input.indexBudget} tokens`);
-      evictedIds = picked.filter((row) => hideRecord(db, input.projectId, row.id, "expired", null, unindex)).map((row) => row.id);
+      evictedIds = picked.filter((row) => hideRecord(db, input.projectId, row.id, "expired", null, unindex, "budget")).map((row) => row.id);
     }
     const insert = db.prepare(`INSERT INTO lane_pilot_memory(id,project_id,personal_bot,kind,audience,content,concepts_json,source_sha256,created_at,trust,origin,valid_until,source_file_id)
       VALUES(@id,@projectId,@personalBot,@kind,@audience,@content,@conceptsJson,@sourceSha256,@createdAt,@trust,@origin,@validUntil,@sourceFileId)
@@ -169,7 +181,7 @@ export function storeMemoryRecords(db: MemoryDatabase, input: StoreMemoryInput):
       insertedIds.push(id);
     }
     for (const id of corroborate) db.prepare("UPDATE lane_pilot_memory SET trust='confirmed' WHERE project_id=? AND id=?").run(input.projectId, id);
-    const mine = new Set(input.entries.map((entry) => memoryRecordId(input.projectId, entry.kind, entry.content, personalBot)));
+    const mine = new Set(input.entries.map((entry) => memoryRecordId(input.projectId, entry.kind, entry.content, personalBot, input.audience, scope)));
     const records = (db.prepare(`SELECT ${cols()} FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? ORDER BY created_at DESC`).all(input.projectId, personalBot) as Row[])
       .filter((row) => row.status === "active" || mine.has(row.id)).map(toRecord);
     return { records, insertedIds, evictedIds, supersededIds, expiredIds, corroboratedIds: corroborate };
@@ -184,8 +196,12 @@ export function hideRecordsOfFile(db: MemoryDatabase, projectId: string, persona
 
 /** Who may read a record: active and in date; a record only one session or import vouches for waits for a second source or the quarantine. */
 export type SearchOptions = { now?: number; includeObserved?: boolean;
-  /** The reader's sections, outermost first: only records of the whole project and of these sections (a prefix of the chain). */
-  chain?: readonly string[] };
+  /**
+   * The reader's sections, outermost first. Omitted means the project root only (`[]`): a working reader that forgot
+   * its chain does not see every section. `allSections` is the named admin search.
+   */
+  chain?: readonly string[];
+  allSections?: boolean };
 
 /** The scope values a reader with this chain sees: the whole project and every prefix of its chain. */
 export function scopeValuesFor(chain: readonly string[]): string[] {
@@ -198,7 +214,17 @@ function visibility(db: MemoryDatabase, alias: string, options: SearchOptions): 
   // A note of a held conflict (two notes that disagree, waiting for a person) is read by nobody: `conflict-store.ts`.
   return `${alias}.status='active' AND (${alias}.valid_until IS NULL OR ${alias}.valid_until>${now}) AND NOT (${idleSql(alias, now)})`
     + (options.includeObserved ? "" : ` AND (${alias}.trust='confirmed' OR ${alias}.created_at<=${now - OBSERVED_QUARANTINE_MS})`) + heldClause(db, alias)
-    + (options.chain ? ` AND ${alias}.scope_json IN (${scopeValuesFor(options.chain).map(sqlString).join(",")})` : "");
+    + (options.allSections ? "" : ` AND ${alias}.scope_json IN (${scopeValuesFor(options.chain ?? []).map(sqlString).join(",")})`);
+}
+
+/** The visibility clause working readers share. A missing chain is the project root, not every section. */
+export function memoryVisibilitySql(db: MemoryDatabase, alias: string, options: SearchOptions = {}): string {
+  return visibility(db, alias, options);
+}
+
+/** Admin search: every section of the project. Working readers use `searchMemoryRecords` and pass their chain. */
+export function searchMemoryAllSections(db: MemoryDatabase, projectId: string, query: string, limit: number, engine: MemorySearchEngine, audience: MemoryAudience = "subagent", personalBot = "", options: Omit<SearchOptions, "allSections" | "chain"> = {}): MemoryRecord[] {
+  return searchMemoryRecords(db, projectId, query, limit, engine, audience, personalBot, { ...options, allSections: true });
 }
 
 export function searchMemoryRecords(db: MemoryDatabase, projectId: string, query: string, limit: number, engine: MemorySearchEngine, audience: MemoryAudience = "subagent", personalBot = "", options: SearchOptions = {}): MemoryRecord[] {

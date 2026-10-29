@@ -6,18 +6,20 @@ export const OBSERVED_QUARANTINE_MS = 24 * 3_600_000;
 /** A note nobody was given for this long stops being mixed; a note is not eternal just because nobody deleted it. Core, rules and file imports (their file decides) are exempt. */
 export const NOTE_IDLE_MS = 90 * 24 * 3_600_000;
 
-/** Hides a record (it stays in the table, leaves every index) with the status that says why. */
-export function hideRecord(db: MemoryDatabase, projectId: string, id: string, status: "superseded" | "expired", supersededBy: string | null, unindex: (projectId: string, id: string) => void): boolean {
-  const changed = db.prepare("UPDATE lane_pilot_memory SET status=?, superseded_by=COALESCE(?,superseded_by) WHERE project_id=? AND id=? AND status='active'").run(status, supersededBy, projectId, id).changes === 1;
+export type ExpiredReason = "budget" | "idle" | "dated";
+
+/** Hides a record (it stays in the table, leaves every index) with the status that says why. An expiry records budget eviction, idleness, or a passed date; a replacement clears that reason. */
+export function hideRecord(db: MemoryDatabase, projectId: string, id: string, status: "superseded" | "expired", supersededBy: string | null, unindex: (projectId: string, id: string) => void, expiredReason?: ExpiredReason | null): boolean {
+  const changed = db.prepare("UPDATE lane_pilot_memory SET status=?, superseded_by=COALESCE(?,superseded_by), expired_reason=CASE WHEN ?='expired' THEN ? ELSE NULL END WHERE project_id=? AND id=? AND status='active'").run(status, supersededBy, status, status === "expired" ? expiredReason ?? null : null, projectId, id).changes === 1;
   if (changed) unindex(projectId, id);
   return changed;
 }
 
-/** Marks every active record of the scope whose date passed, and every note nobody was given for 90 days, expired. */
+/** Marks every active record of the scope whose date passed, and every note nobody was given for 90 days, expired. The reason is stored apart from the status. */
 export function expireMemory(db: MemoryDatabase, projectId: string, personalBot: string, now: number, unindex: (projectId: string, id: string) => void): string[] {
-  const due = db.prepare(`SELECT id FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? AND status='active'
-    AND ((valid_until IS NOT NULL AND valid_until<=?) OR (${idleSql("lane_pilot_memory", now)}))`).all(projectId, personalBot, now) as Array<{ id: string }>;
-  return due.map((row) => row.id).filter((id) => hideRecord(db, projectId, id, "expired", null, unindex));
+  const due = db.prepare(`SELECT id, CASE WHEN valid_until IS NOT NULL AND valid_until<=? THEN 'dated' ELSE 'idle' END AS reason FROM lane_pilot_memory WHERE project_id=? AND personal_bot=? AND status='active'
+    AND ((valid_until IS NOT NULL AND valid_until<=?) OR (${idleSql("lane_pilot_memory", now)}))`).all(now, projectId, personalBot, now) as Array<{ id: string; reason: ExpiredReason }>;
+  return due.filter((row) => hideRecord(db, projectId, row.id, "expired", null, unindex, row.reason)).map((row) => row.id);
 }
 
 /** SQL for "a note nobody was given in 90 days" (rules are core, so they never match; imports follow their file). */

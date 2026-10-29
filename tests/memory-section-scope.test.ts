@@ -31,7 +31,7 @@ describe("memory of a section", () => {
     expect(read(VAMPIRE)).toEqual(["Decision: characters are built procedurally from references", "Decision: deploy images through the CDN", "Decision: the vampire clock starts at 18:00"]);
     expect(read(FEEDGEN)).toEqual(["Decision: deploy images through the CDN", "Decision: product photos are cached for a week"]);
     expect(read([])).toEqual(["Decision: deploy images through the CDN"]);
-    expect(read()).toHaveLength(4);
+    expect(read()).toEqual(["Decision: deploy images through the CDN"]);
     expect(listMemory(db, "P", { kind: "note" }, 20, "subagent", "", { chain: FEEDGEN }).map((row) => row.content)).not.toContain("Decision: the vampire clock starts at 18:00");
     expect(scopeValuesFor(VAMPIRE)).toEqual(["[]", '["section:roblox"]', '["section:roblox","section:vampirism"]']);
   });

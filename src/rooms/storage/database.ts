@@ -417,6 +417,8 @@ export const migrations = [
   ...scheduleAgentMigrations,
   // The council is a graph (workflows/council.json): the run that drives a session (src/rooms/council). Append only.
   ...councilRunMigrations,
+  // Why an active note left the corpus. Cold reads return candidates; they do not promote, so the reason stays the one the write door recorded.
+  `ALTER TABLE lane_pilot_memory ADD COLUMN expired_reason TEXT`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

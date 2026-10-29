@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import type { PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { getRuleProposal, upsertLessonProposal } from "@lane-pilot/run-insights";
-import { heldClause, parseMemoryCandidates, searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
+import { memoryVisibilitySql, parseMemoryCandidates, searchMemoryRecords, storeMemoryRecords } from "@lane-pilot/memory-core";
 import type { rpcContract } from "../../contracts";
 import { adoptRuleProposal, memorySettingsFor } from "../../self-repair/server";
 import type { ServerCore } from "../../core/server";
@@ -28,7 +28,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       }
       return best ? { projectId: best.projectId, scopes: best.scopes } : { projectId: null, scopes: [] };
     },
-    session_memory_write: async ({ projectId, kind, content, concepts, source }) => {
+    session_memory_write: async ({ projectId, kind, content, concepts, source, chain }) => {
       const settings = memorySettingsFor(db, projectId);
       if (!settings.enabled) return { stored: false, id: null, reason: "memory_disabled" };
       let entries;
@@ -36,7 +36,7 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
       catch (cause) { return { stored: false, id: null, reason: cause instanceof Error ? cause.message : String(cause) }; }
       try {
         const result = storeMemoryRecords(db, { projectId, personalBot: settings.personalBot, audience: "subagent",
-          sourceSha256: sha256Hex(`session:${source ?? ""}`), entries,
+          sourceSha256: sha256Hex(`session:${source ?? ""}`), entries, scope: chain ?? [],
           // One CLI session is one voice: its note reaches writers once a second source states it or a day has passed.
           trust: "observed", origin: "session",
           coreBudget: settings.coreBudget, noteBudget: settings.noteBudget, indexBudget: settings.indexBudget });
@@ -47,15 +47,17 @@ export function sessionMemoryRpc(ctx: ServerCore, services: Services) {
         return { stored: false, id: null, reason: cause instanceof Error ? cause.message : String(cause) };
       }
     },
-    session_memory_search: async ({ projectId, query, limit }) => {
+    session_memory_search: async ({ projectId, query, limit, chain }) => {
       const settings = memorySettingsFor(db, projectId);
-      return { records: searchMemoryRecords(db, projectId, query, limit ?? 8, settings.searchEngine, "subagent", settings.personalBot, { includeObserved: true })
+      // The session sees its own fresh notes. A missing chain is the project root, not every section.
+      return { records: searchMemoryRecords(db, projectId, query, limit ?? 8, settings.searchEngine, "subagent", settings.personalBot, { includeObserved: true, chain: chain ?? [] })
         .map((record) => ({ id: record.id, kind: record.kind, content: record.content, concepts: record.concepts })) };
     },
-    // Proven facts first (accepted, then used, then newest). (2026-10-29) no terminal client trims this list.
-    session_memory_core: async ({ projectId }) => {
-      const rows = db.prepare(`SELECT id, content FROM lane_pilot_memory WHERE project_id=? AND kind='core' AND audience='subagent' AND status='active' AND (valid_until IS NULL OR valid_until>?)${heldClause(db, "lane_pilot_memory")} ORDER BY accepted_count DESC, use_count DESC, created_at DESC`)
-        .all(projectId, Date.now()) as Array<{ id: string; content: string }>;
+    // Proven facts first (accepted, then used, then newest). A missing chain is the project root. Observed notes still in quarantine stay out.
+    session_memory_core: async ({ projectId, chain }) => {
+      const settings = memorySettingsFor(db, projectId);
+      const rows = db.prepare(`SELECT id, content FROM lane_pilot_memory m WHERE m.project_id=? AND m.kind='core' AND m.audience='subagent' AND m.personal_bot=? AND ${memoryVisibilitySql(db, "m", { chain: chain ?? [] })} ORDER BY m.accepted_count DESC, m.use_count DESC, m.created_at DESC`)
+        .all(projectId, settings.personalBot) as Array<{ id: string; content: string }>;
       return { records: rows };
     },
     // A lesson is a rule proposal: a repeat of a live rule counts towards it, a new one goes on trial within the cap.

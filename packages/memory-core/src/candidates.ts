@@ -17,8 +17,18 @@ export function memoryContentIssue(content:string):string|null {
 
 export function estimateTokens(text:string):number { return Math.ceil(Buffer.byteLength(text,"utf8")/4); }
 
-export function memoryRecordId(projectId:string,kind:MemoryKind,content:string,personalBot=""):string {
-  return createHash("sha256").update(`${projectId}\0${personalBot ? `bot:${personalBot}\0` : ""}${kind}\0${content.trim().replace(/\s+/g," ").toLowerCase()}`).digest("hex");
+/**
+ * Identity of one fact. The historical hash (project, bot, kind, text) stays for a shared subagent fact at the project
+ * root, so a restated root fact still finds the row the hub already stores. Audience or a section chain is part of the
+ * hash: the same words in another section or for another audience are a different fact, and a later write cannot widen
+ * the row that already exists.
+ */
+export function memoryRecordId(projectId:string,kind:MemoryKind,content:string,personalBot="",audience="",scope:readonly string[]=[]):string {
+  const normalized=content.trim().replace(/\s+/g," ").toLowerCase();
+  const base=`${projectId}\0${personalBot ? `bot:${personalBot}\0` : ""}${kind}\0${normalized}`;
+  const namespaced=scope.length>0||(audience!==""&&audience!=="subagent");
+  const body=namespaced?`${base}\0aud:${audience}\0scope:${JSON.stringify([...scope])}`:base;
+  return createHash("sha256").update(body).digest("hex");
 }
 
 /** The array in a maintainer's text: the whole text, a fenced block (last first), or the outermost brackets after a preamble. */

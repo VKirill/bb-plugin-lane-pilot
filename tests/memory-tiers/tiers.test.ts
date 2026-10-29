@@ -28,17 +28,19 @@ describe("memory tiers around the PM's query", () => {
     expect(queryWords("How do the greeting cards share? share")).toEqual(["greeting", "cards", "share"]);
   });
 
-  it("brings a cold note back when active notes are few, adds past tasks like this one, and records nothing as a miss", () => {
+  it("returns a cold candidate without reactivating it, adds past tasks like this one, and records nothing as a miss", () => {
     const db = world();
-    expect(db.prepare("SELECT status FROM lane_pilot_memory WHERE content LIKE 'Greeting%'").get()).toEqual({ status: "expired" });
+    expect(db.prepare("SELECT status, expired_reason FROM lane_pilot_memory WHERE content LIKE 'Greeting%'").get()).toEqual({ status: "expired", expired_reason: "idle" });
     const result = enrichMemoryContext(db, { projectId: "P", query: "greeting cards share button", activeCount: 0, now: NOW });
     expect(result.promoted).toHaveLength(1);
-    expect(result.text).toContain("brought back from the cold tier");
+    expect(result.text).toContain("cold tier");
+    expect(result.text).toContain("Greeting cards render their share button");
     expect(result.text).toContain("cards-share «Share button on greeting cards»");
     expect(result.text).toContain("validation_failed — verification failed (npm test): share link missing");
     expect(result.miss).toBe(false);
-    expect(searchMemoryRecords(db, "P", "greeting cards share", 5, "auto", "subagent", "").map((row) => row.content)).toContain("Greeting cards render their share button through components/cards/share.ts");
-    expect(tierReport(db, "P", NOW)).toMatchObject({ cold: 0, promoted: 1, neededAgainShare: 1, misses: [] });
+    expect(db.prepare("SELECT status FROM lane_pilot_memory WHERE content LIKE 'Greeting%'").get()).toEqual({ status: "expired" });
+    expect(searchMemoryRecords(db, "P", "greeting cards share", 5, "auto", "subagent", "").map((row) => row.content)).not.toContain("Greeting cards render their share button through components/cards/share.ts");
+    expect(tierReport(db, "P", NOW)).toMatchObject({ cold: 1, promoted: 0, misses: [] });
   });
 
   it("does not search the cold tier when enough active notes answer, and a query that finds nothing anywhere is a miss", () => {
