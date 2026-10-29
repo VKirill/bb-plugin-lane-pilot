@@ -48,7 +48,7 @@ describe("native launcher hooks come from Lane Pilot's bundle", () => {
     for (const name of HOOKS) {
       expect(await readFile(join(launcher, "hooks", name), "utf8"), name).toBe(NATIVE_HOOK_SOURCES[name]);
     }
-    expect((await readdir(join(launcher, "hooks"))).sort()).toEqual([...HOOKS].sort());
+    expect((await readdir(join(launcher, "hooks"))).sort()).toEqual([...HOOKS, "session-hook.mjs"].sort());
   });
 
   it("the rewritten launcher guard refuses a writer's thread control and lets the Lane Pilot PM stop a thread", async () => {

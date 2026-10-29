@@ -1,10 +1,12 @@
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { materializeNativeHookSession } from "../../src/rooms/native-agent/native-session-hooks";
+import { SESSION_HOOK_SOURCE } from "../../src/rooms/native-install/session-hook-source";
 import {
   STREAMS,
   buildCapsule,
@@ -136,14 +138,92 @@ describe("session hooks that match the SMA card", () => {
     expect(reflexAdvice(["WHEN lockfile → do not edit it"], "edit readme")).toBeNull();
   });
 
-  it("a native session keeps the guard first and registers the session hook", async () => {
-    const dest = join(mkdtempSync(join(tmpdir(), "lp-session-hooks-")), "session");
-    const result = await materializeNativeHookSession({ destDir: dest });
+  it("a native session keeps the guard first and registers a bundled hook that exists", async () => {
+    const root = mkdtempSync(join(tmpdir(), "lp-session-hooks-"));
+    const dest = join(root, "native-launchers", "id");
+    const result = await materializeNativeHookSession({
+      destDir: dest,
+      moduleUrl: pathToFileURL(join(root, "dist", "host.js")).href,
+    });
     const settings = JSON.parse(await readFile(result.settingsPath, "utf8")) as {
-      hooks: { PreToolUse: Array<{ hooks: Array<{ command: string }> }>; SessionStart: Array<{ hooks: Array<{ command: string }> }>; PreCompact: Array<{ hooks: Array<{ command: string }> }> };
+      hooks: {
+        PreToolUse: Array<{ matcher: string; hooks: Array<{ command: string }> }>;
+        SessionStart: Array<{ hooks: Array<{ command: string }> }>;
+        PostToolUse: Array<{ hooks: Array<{ command: string }> }>;
+        Stop?: Array<{ hooks: Array<{ command: string }> }>;
+      };
     };
     expect(settings.hooks.PreToolUse[0]!.hooks[0]!.command).toContain("guard_shell.py");
-    expect(settings.hooks.SessionStart[0]!.hooks[0]!.command).toContain("session-hooks/cli.ts");
-    expect(settings.hooks.PreCompact[0]!.hooks[0]!.command).toContain("session-hooks/cli.ts");
+    expect(settings.hooks.PreToolUse.find((group) => group.matcher === "*")!.hooks.map((hook) => hook.command).join()).not.toContain("session-hook.mjs");
+    const command = settings.hooks.SessionStart[0]!.hooks[0]!.command;
+    expect(command).toMatch(/^node '/);
+    expect(command).not.toContain("experimental-strip-types");
+    expect(command).not.toContain("session-hooks/cli.ts");
+    const hookPath = command.slice(6, -1);
+    expect(hookPath.startsWith(dest)).toBe(true);
+    expect(existsSync(hookPath)).toBe(true);
+    expect(await readFile(hookPath, "utf8")).toBe(SESSION_HOOK_SOURCE);
+    expect(settings.hooks.PostToolUse[0]!.hooks[0]!.command).toBe(command);
+    expect(settings.hooks.Stop).toBeUndefined();
+    const run = spawnSync(process.execPath, [hookPath], { input: "not-json", encoding: "utf8" });
+    expect(run.status).toBe(0);
+  });
+
+  it("keeps a project Stop hook and appends the session hook to a project SessionStart", async () => {
+    const root = mkdtempSync(join(tmpdir(), "lp-session-hooks-"));
+    const cwd = join(root, "project");
+    mkdirSync(join(cwd, ".claude"), { recursive: true });
+    writeFileSync(join(cwd, ".claude/settings.json"), JSON.stringify({
+      hooks: {
+        Stop: [{ matcher: "*", hooks: [{ type: "command", command: "echo project-stop" }] }],
+        SessionStart: [{ matcher: "startup", hooks: [{ type: "command", command: "echo project-start" }] }],
+      },
+    }));
+    writeFileSync(join(cwd, ".claude/settings.local.json"), JSON.stringify({
+      hooks: { Stop: [{ matcher: "end", hooks: [{ type: "command", command: "echo overlay-stop" }] }] },
+    }));
+    const result = await materializeNativeHookSession({ cwd, destDir: join(root, "session") });
+    const settings = JSON.parse(await readFile(result.settingsPath, "utf8")) as {
+      hooks: { Stop: Array<{ hooks: Array<{ command: string }> }>; SessionStart: Array<{ hooks: Array<{ command: string }> }> };
+    };
+    expect(settings.hooks.Stop.map((group) => group.hooks[0]!.command)).toEqual(["echo project-stop", "echo overlay-stop"]);
+    expect(settings.hooks.SessionStart[0]!.hooks[0]!.command).toBe("echo project-start");
+    expect(settings.hooks.SessionStart.at(-1)!.hooks[0]!.command).toContain("session-hook.mjs");
+  });
+
+  it("the string the plugin writes is an esbuild of the session cli", () => {
+    const esbuild = join(process.cwd(), "node_modules/esbuild/bin/esbuild");
+    const built = spawnSync(esbuild, [
+      join(process.cwd(), "src/rooms/session-hooks/cli.ts"),
+      "--bundle", "--platform=node", "--format=esm",
+    ], { encoding: "utf8" });
+    expect(built.status).toBe(0);
+    expect(SESSION_HOOK_SOURCE).toBe(built.stdout);
+  });
+
+  it("a bundled host module with no checkout registers a session hook that exists", async () => {
+    const root = mkdtempSync(join(tmpdir(), "lp-session-built-"));
+    const outfile = join(root, "dist", "host.mjs");
+    mkdirSync(join(root, "dist"), { recursive: true });
+    const esbuild = join(process.cwd(), "node_modules/esbuild/bin/esbuild");
+    const built = spawnSync(esbuild, [
+      join(process.cwd(), "src/rooms/native-agent/native-session-hooks.ts"),
+      "--bundle", "--platform=node", "--format=esm",
+      `--outfile=${outfile}`,
+      "--external:@lane-pilot/kit",
+    ], { encoding: "utf8" });
+    expect(built.status, built.stderr).toBe(0);
+    symlinkSync(join(process.cwd(), "node_modules"), join(root, "node_modules"));
+    const host = await import(pathToFileURL(outfile).href) as typeof import("../../src/rooms/native-agent/native-session-hooks");
+    const dest = join(root, "native-launchers", "id");
+    const result = await host.materializeNativeHookSession({ destDir: dest, moduleUrl: pathToFileURL(outfile).href });
+    const settings = JSON.parse(await readFile(result.settingsPath, "utf8")) as { hooks: { SessionStart: Array<{ hooks: Array<{ command: string }> }> } };
+    const command = settings.hooks.SessionStart[0]!.hooks[0]!.command;
+    const hookPath = command.match(/^node '([^']+)'$/)?.[1];
+    expect(hookPath && existsSync(hookPath)).toBe(true);
+    expect(hookPath!.startsWith(join(root, "dist"))).toBe(false);
+    const run = spawnSync(process.execPath, [hookPath!], { input: "{\"hook_event_name\":\"PreCompact\",\"session_id\":\"built\",\"asks\":[\"keep\"]}", encoding: "utf8", env: { ...process.env, HOME: root } });
+    expect(run.status).toBe(0);
+    expect(await readFile(join(root, ".lane-pilot/session-hooks/built/capsule.json"), "utf8")).toContain("keep");
   });
 });

@@ -1,6 +1,6 @@
 /**
  * Session behaviour Claude Lane ran from sma_hooks.py and stall_check.py on every lane session.
- * Native Claude sessions Lane Pilot launches call it through cli.ts. A sticky writer calls the capsule
+ * Native Claude sessions Lane Pilot launches call the bundled session-hook.mjs. A sticky writer calls the capsule
  * helpers before BB compacts the thread. A hook never wedges a session: callers catch and continue.
  */
 

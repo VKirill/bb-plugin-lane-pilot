@@ -1,10 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
 import { cp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { parse } from "jsonc-parser/lib/esm/main.js";
 import { NATIVE_HOOK_SOURCES } from "../native-install";
+import { SESSION_HOOK_SOURCE } from "../native-install/session-hook-source";
 import { hookCommandIdentity } from "@lane-pilot/kit";
 
 function shellQuote(s: string) {
@@ -225,6 +224,35 @@ async function writeBundledHook(name: keyof typeof NATIVE_HOOK_SOURCES, destDir:
   return dest;
 }
 
+async function writeTextHook(dest: string, source: string): Promise<string> {
+  const temp = `${dest}.${randomUUID()}`;
+  try {
+    await writeFile(temp, source, { mode: 0o644 });
+    await rename(temp, dest);
+  } finally {
+    await rm(temp, { force: true });
+  }
+  return dest;
+}
+
+function hookGroups(settings: unknown, event: string): unknown[] {
+  const list = asObject(asObject(settings)?.hooks)?.[event];
+  return Array.isArray(list) ? list : [];
+}
+
+function uniqueGroups(groups: unknown[]): unknown[] {
+  const seen = new Set<string>();
+  return groups.filter((group) => {
+    const key = JSON.stringify(group);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** Session events the ported behaviour actually uses. Not Stop or SessionEnd, and not every PreToolUse. */
+const SESSION_EVENTS = ["SessionStart", "UserPromptSubmit", "PreCompact", "SubagentStop", "PostToolUse"];
+
 export async function materializeNativeHookSession(input: {
   cwd?: string | null;
   destDir: string;
@@ -275,25 +303,36 @@ export async function materializeNativeHookSession(input: {
     wrapped.push(line);
     groups.set("*", [...(groups.get("*") ?? []), { type: "command", command: line }]);
   }
-  // Session behaviour (capsule, stall, subagent check). Missing file: do not register. Guard stays the first PreToolUse hook.
-  const sessionCli = fileURLToPath(new URL("../session-hooks/cli.ts", import.meta.url));
-  const sessionLine = existsSync(sessionCli) ? `node --experimental-strip-types ${shellQuote(sessionCli)}` : "";
-  if (sessionLine) {
-    groups.set("*", [...(groups.get("*") ?? []), { type: "command", command: sessionLine }]);
-    wrapped.push(sessionLine);
-  }
-  const sessionEvents = ["SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "SubagentStop", "PreCompact", "SessionEnd"];
+  // Written from the bundle, like the guard: the host's dist has no cli.ts beside this module.
+  // Task only: the pack inject. Stall is PostToolUse. Neither is a second process on every PreToolUse.
+  const sessionHook = await writeTextHook(join(hooksDir, "session-hook.mjs"), SESSION_HOOK_SOURCE);
+  const sessionLine = `node ${shellQuote(sessionHook)}`;
+  groups.set("Task", [...(groups.get("Task") ?? []), { type: "command", command: sessionLine }]);
+  wrapped.push(sessionLine);
 
   const base = asObject(project) ?? {};
   const overlay = asObject(local) ?? {};
+  const hooks: Record<string, unknown> = {
+    ...(asObject(base.hooks) ?? {}),
+    ...(asObject(overlay.hooks) ?? {}),
+  };
+  const seen = new Set<string>(["PreToolUse"]);
+  for (const event of [...Object.keys(hooks), ...SESSION_EVENTS]) {
+    if (seen.has(event)) continue;
+    seen.add(event);
+    if (!SESSION_EVENTS.includes(event) && !Array.isArray(hooks[event])) continue;
+    const existing = [...hookGroups(project, event), ...hookGroups(local, event)];
+    const ours = SESSION_EVENTS.includes(event)
+      ? [{ matcher: "*", hooks: [{ type: "command", command: sessionLine }] }]
+      : [];
+    hooks[event] = uniqueGroups([...existing, ...ours]);
+  }
   const settings = {
     ...base,
     ...overlay,
     hooks: {
-      ...(asObject(base.hooks) ?? {}),
-      ...(asObject(overlay.hooks) ?? {}),
-      ...(sessionLine ? Object.fromEntries(sessionEvents.map((event) => [event, [{ matcher: "*", hooks: [{ type: "command", command: sessionLine }] }]])) : {}),
-      PreToolUse: [...groups].map(([matcher, hooks]) => ({ matcher, hooks })),
+      ...hooks,
+      PreToolUse: [...groups].map(([matcher, hookList]) => ({ matcher, hooks: hookList })),
     },
   };
   const settingsPath = join(input.destDir, "settings.json");
