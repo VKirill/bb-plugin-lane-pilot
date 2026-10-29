@@ -27,7 +27,6 @@ describe("lane-absent gaps", () => {
   it.todo("[sma:k_lib_airbag] there is no airbag that restores the tree when a step throws"); // deferral:dfr_seed_skip_sma_gaps
   it.todo("[sma:k_lib_spendadapter] parseOpenCodeToolTelemetry reads OpenCode events, not a Claude Code transcript's cache and cost"); // deferral:dfr_seed_skip_sma_gaps
   it.todo("[sma:k_lib_breaker] a rule loop is not soft-disabled at three repeats and re-armed only by a person"); // deferral:dfr_seed_skip_sma_gaps
-  it.todo("[sma:k_lib_stall] there is no stall rule that turns repeated no-progress into a block"); // deferral:dfr_seed_skip_sma_gaps
   it.todo("[sma:k_lib_reflex] lessons are not filed as reflexes that change the next step"); // deferral:dfr_seed_skip_sma_gaps
   it.todo("[sma:k_lib_gates] there is no hard-rule warning on the stream and no convention gate"); // deferral:dfr_seed_skip_sma_gaps
   it.todo("[sma:k_lib_depsguard] an install through a symlink into the dependency store is not refused"); // deferral:dfr_seed_skip_sma_gaps
