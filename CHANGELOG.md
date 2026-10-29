@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+**PM activation does not start a phase for its own instructions.** BB records the prompt that Lane Pilot uses to start a PM as `source: spawn`, `initiator: user`. The phase intake mistook the long fixture/guard instruction for a heavy owner goal and started `lp.analyze`; three drill runs on 2026-10-29 left unwanted analysis helpers that ended `workflow_gather:canceled:turn_interrupted`. The machine-message filter now recognizes both PM bootstrap headers together with their run-id line, including native and managed-workspace activation. Real owner goals, including a native chat's first spawned message, still enter the intake. Regression: `tests/phase-intake.test.ts`, replaying the three original request events in `tests/fixtures/phase-intake-pm-bootstrap-2026-10-29.json`.
+
 ## 0.1.370
 
 **The roster's model column is BB's own window.** The roles whose model comes from the table «role -> model» now show BB's provider/model window in the roster too, not plain text: a choice is saved into the role's row of the table with its pool kept, and the roster and the table read each other's saves. Ships 0.1.368 and 0.1.369, whose deploy was rolled back by a drill the plan critique blocked: the OVH drill sandbox now keeps plan and code critique off, as the Mac sandbox and the bench projects do, so a drill tests the pipeline, not the critic.
