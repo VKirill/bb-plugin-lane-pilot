@@ -4,6 +4,7 @@ import { delimiter, dirname, join } from "node:path";
 import { cp, lstat, mkdir } from "node:fs/promises";
 import { defaultGuardSource } from "@lane-pilot/kit";
 import { ownedPmGuardPath } from "./guard-apply";
+import { materializeAgentTrash } from "../writer";
 
 const execute = promisify(execFile);
 
@@ -21,12 +22,9 @@ export function lanePilotEnv(home: string, base: NodeJS.ProcessEnv = process.env
   return { ...base, HOME: home, PATH: [...bins, base.PATH ?? "/usr/bin:/bin"].join(delimiter) };
 }
 
-/**
- * TODO(agent-trash-materialize): call the tools worker's materialize export here.
- * It is not in this tree yet. Do not clone a checkout and do not run install.sh. (2026-10-29)
- */
-export async function materializeOwnTools(_home: string): Promise<void> {
-  return;
+/** Lane Pilot's own tools in ~/.agents/lane-pilot/bin (agent-trash). No Claude Lane checkout and no install.sh. (2026-10-30) */
+export async function materializeOwnTools(home: string): Promise<void> {
+  await materializeAgentTrash({ homeDir: home, moduleUrl: import.meta.url });
 }
 
 /** Copies Lane Pilot's guard into its own directory. Does not register a machine-wide hook. */

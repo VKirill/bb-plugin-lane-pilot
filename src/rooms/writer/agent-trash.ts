@@ -1,4 +1,4 @@
-import { chmod, cp, lstat, mkdir } from "node:fs/promises";
+import { chmod, cp, lstat, mkdir, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { hashPath, lanePilotRoot, pluginRootFromModule } from "@lane-pilot/kit";
 
@@ -35,11 +35,19 @@ export async function materializeAgentTrash(input: { homeDir: string; moduleUrl:
   const existing = await hashOrNull(destination);
   if (existing !== null) {
     const destinationInfo = await lstat(destination);
-    if (!destinationInfo.isFile() || destinationInfo.isSymbolicLink() || existing !== sourceHash) {
-      throw new Error(`Lane Pilot-owned agent-trash has diverged and was preserved: ${destination}`);
+    if (!destinationInfo.isFile() || destinationInfo.isSymbolicLink()) {
+      throw new Error(`Lane Pilot-owned agent-trash is not a regular file and was preserved: ${destination}`);
     }
-    await chmod(destination, 0o755);
-    return { path: destination, changed: false };
+    if (existing === sourceHash) {
+      await chmod(destination, 0o755);
+      return { path: destination, changed: false };
+    }
+    // Lane Pilot owns this file: a newer bundled version replaces it, else an upgrade would fail every install (2026-10-30).
+    const next = `${destination}.next`;
+    await cp(source, next, { force: true });
+    await chmod(next, 0o755);
+    await rename(next, destination);
+    return { path: destination, changed: true };
   }
   await mkdir(dirname(destination), { recursive: true });
   await cp(source, destination, { errorOnExist: true, force: false });
