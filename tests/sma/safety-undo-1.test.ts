@@ -78,4 +78,31 @@ describe("undo", () => {
       expect(checked.summary).toContain("was reverted");
     } finally { await w.dispose(); }
   });
+
+  it("[sma:k_v_reverify] re-runs the task's checks on the accepted commit, not on whatever main is now", async () => {
+    const w = await world();
+    try {
+      const task = {
+        schema_version: 2, id: "t1", title: "title of t1", risk: "low", lane: "server", project_cwd: w.base, read_first: [], interfaces: [], invariants: [], out_of_scope: [],
+        expected_outputs: ["x"], owns_paths: ["**"], never_touch: [], depends_on: [], objective: "t1", acceptance: ["done"], verify: "tests",
+        verification: [{ command: "grep -qx rewritten server.ts", cwd: w.base }],
+      };
+      createTask(w.db, { id: "t1", runId: "run1", kind: "bb", contract: task });
+      createAttempt(w.db, { id: "att_t1", runId: "run1", taskId: "t1" });
+      const made = await createWorktree({ basePath: w.base, name: "att_t1", targetPath: join(w.base, "..", "wt", "att_t1", "project") });
+      w.rollback.noteBase("att_t1", made.baseSha);
+      await writeFile(join(made.path!, "server.ts"), "rewritten\n");
+      const merged = await integrateWorktree({ basePath: w.base, worktreePath: made.path!, message: "t1: title of t1\n\nLane-Pilot-Attempt: att_t1", removeWorktree: true });
+      expect(merged.status).toBe("merged");
+      w.rollback.noteMerge("att_t1", merged);
+      w.db.prepare("UPDATE lane_pilot_attempt SET state='accepted' WHERE id='att_t1'").run();
+      await writeFile(join(w.base, "server.ts"), "later\n");
+      git(w.base, "add", "-A");
+      git(w.base, "commit", "-qm", "later");
+      const checked = await w.rollback.reverify("t1");
+      expect(checked).toMatchObject({ ok: true, state: "passed" });
+      expect(checked.summary).toContain("1/1");
+      expect(await readFile(join(w.base, "server.ts"), "utf8")).toBe("later\n");
+    } finally { await w.dispose(); }
+  });
 });
