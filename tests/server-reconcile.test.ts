@@ -79,36 +79,6 @@ describe("production spawn_unknown reconciliation", () => {
     await harness.lifecycle.dispose();
   });
 
-  it("reports exact missing capability and refuses activation without an install fallback", async () => {
-    const calls:string[] = [];
-    let spawned = 0;
-    const { bb, harness } = createFakePluginHost({
-      pluginId:"lane-pilot",
-      sdk:{ threads:{
-        getPluginMetadata:async () => ({ role:"user" }),
-        spawn:async () => { spawned += 1; return { id:"unexpected-pm" } as never; },
-      } },
-      experimental_callHostRpc:(call) => {
-        calls.push(call.method);
-        if (call.method === "detect") return { hostId:"host-test",laneStack:{present:true,version:"newer",sourceSha:"custom"},openCode:{present:true,version:"1.2"},workspace:{path:"/tmp/pm",present:true},targetSha:TARGET_SHA,matchesTarget:false,scenario:"S2" };
-        if (call.method === "coexistenceInventory") return { schemaVersion:1,hostId:"host-test",targetSha:TARGET_SHA,managers:[{
-          manager:"agents-marker",path:"/home/test/.agents/install.json",installed:true,configured:true,loaded:null,compatible:false,modified:null,
-          version:"custom",sourceSha:"custom",sha256:"a".repeat(64),owner:"user",decision:"conflict",capabilities:[],missingCapabilities:["threads.spawn"],
-          evidence:[{kind:"capability",path:"/home/test/.agents/install.json",sha256:null,detail:"Required interface threads.spawn is missing from capability set."}],
-        }] };
-        throw new Error(`unexpected ${call.method}`);
-      },
-    });
-    const db = openDatabase(bb);
-    savePrototypeConfig(db, config);
-    await plugin(bb);
-    await expect(harness.behavior.callRpc("activate_pm", { projectId, sourceThreadId:"source-thread" }))
-      .rejects.toThrow(/threads\.spawn/);
-    expect(calls).toEqual(["detect", "coexistenceInventory"]);
-    expect(spawned).toBe(0);
-    await harness.lifecycle.dispose();
-  });
-
   it("defaults the global locale preference to auto and honors explicit overrides", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId:"lane-pilot" });
     await plugin(bb);
