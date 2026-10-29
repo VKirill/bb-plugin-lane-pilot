@@ -362,8 +362,10 @@ export class WorkflowEngine {
     const goals = parseGoals(run.goals_json), audit = this.options.auditGoals;
     if (!goals.length || !audit || run.parent_run_id) return close(null);
     const sha = goalsSha(goals);
+    // A pass is a verdict on this output: a re-run node that changed the result is audited again (2026-10-29 audit A-001).
+    const outputSha = sha256(run.output_json ?? "");
     const last = this.lastAudit(run.id);
-    if (last?.sha === sha && last.verdict === "pass") return close(null);
+    if (last?.sha === sha && last.outputSha === outputSha && last.verdict === "pass") return close(null);
     const abort = this.aborts.get(run.id) ?? new AbortController();
     this.aborts.set(run.id, abort);
     let result: GoalAudit;
@@ -372,14 +374,14 @@ export class WorkflowEngine {
       if (isEngineBug(cause)) throw cause;
       if (this.stopped()) return "stop";
       const message = cause instanceof Error ? cause.message : String(cause);
-      j.event(run.id, null, "goal_audit", null, "unavailable", JSON.stringify({ sha, verdict: "unavailable", error: message.slice(0, 500) }));
+      j.event(run.id, null, "goal_audit", null, "unavailable", JSON.stringify({ sha, outputSha, verdict: "unavailable", error: message.slice(0, 500) }));
       return close(`goal_audit_unavailable: ${message.slice(0, 300)}`);
     }
     const unmet = result.unmet.filter((entry) => goals.some((goal) => goal.id === entry.id));
     // A goal the auditor did not mention at all is not met: silence is not evidence.
     for (const goal of goals) if (!result.met.includes(goal.id) && !unmet.some((entry) => entry.id === goal.id)) unmet.push({ id: goal.id, why: "the audit gave no verdict on this goal" });
     const verdict = unmet.length ? "gaps" : "pass";
-    j.event(run.id, null, "goal_audit", null, verdict, JSON.stringify({ sha, verdict, met: result.met.filter((id) => goals.some((goal) => goal.id === id) && !unmet.some((entry) => entry.id === id)), unmet, ...(result.notes ? { notes: result.notes.slice(0, 1000) } : {}) }));
+    j.event(run.id, null, "goal_audit", null, verdict, JSON.stringify({ sha, outputSha, verdict, met: result.met.filter((id) => goals.some((goal) => goal.id === id) && !unmet.some((entry) => entry.id === id)), unmet, ...(result.notes ? { notes: result.notes.slice(0, 1000) } : {}) }));
     if (!unmet.length) return close(null);
     j.setRunStatus(run.id, ["running", "waiting"], "blocked", `goal_audit: not met: ${unmet.map((entry) => entry.id).join(", ")}`);
     return "blocked";
@@ -391,10 +393,10 @@ export class WorkflowEngine {
   }
 
   /** The last goal audit of a run, as the journal has it. */
-  lastAudit(runId: string): { sha: string; verdict: "pass" | "gaps" | "unavailable"; met: string[]; unmet: Array<{ id: string; why: string }>; notes?: string; error?: string; at: number } | null {
+  lastAudit(runId: string): { sha: string; outputSha?: string; verdict: "pass" | "gaps" | "unavailable"; met: string[]; unmet: Array<{ id: string; why: string }>; notes?: string; error?: string; at: number } | null {
     const row = this.journal.db.prepare("SELECT detail, at FROM lane_pilot_wf_event WHERE run_id=? AND kind='goal_audit' ORDER BY seq DESC LIMIT 1").get(runId) as { detail: string | null; at: number } | undefined;
     if (!row?.detail) return null;
-    try { const detail = JSON.parse(row.detail) as Record<string, unknown>; return { sha: String(detail.sha ?? ""), verdict: detail.verdict as "pass", met: (detail.met as string[] | undefined) ?? [], unmet: (detail.unmet as Array<{ id: string; why: string }> | undefined) ?? [], ...(typeof detail.notes === "string" ? { notes: detail.notes } : {}), ...(typeof detail.error === "string" ? { error: detail.error } : {}), at: row.at }; } catch { return null; }
+    try { const detail = JSON.parse(row.detail) as Record<string, unknown>; return { sha: String(detail.sha ?? ""), ...(typeof detail.outputSha === "string" ? { outputSha: detail.outputSha } : {}), verdict: detail.verdict as "pass", met: (detail.met as string[] | undefined) ?? [], unmet: (detail.unmet as Array<{ id: string; why: string }> | undefined) ?? [], ...(typeof detail.notes === "string" ? { notes: detail.notes } : {}), ...(typeof detail.error === "string" ? { error: detail.error } : {}), at: row.at }; } catch { return null; }
   }
 
   /** Every state the goals of a run have been in, oldest first: what changed, why and who said so. */
@@ -1329,7 +1331,11 @@ export class WorkflowEngine {
 
   cancel(runId: string, reason = "canceled"): boolean {
     const ok = this.journal.setRunStatus(runId, ["running", "waiting"], "canceled", reason);
-    if (ok) { this.aborts.get(runId)?.abort(); this.cancelOpenSteps(runId); }
+    if (ok) {
+      this.aborts.get(runId)?.abort(); this.cancelOpenSteps(runId);
+      // A child run has its own status and controller: a stop from above ends it too, or it goes on to its next effect (2026-10-29 audit A-002).
+      for (const child of this.journal.db.prepare("SELECT id FROM lane_pilot_wf_run WHERE parent_run_id=?").all(runId) as Array<{ id: string }>) this.cancel(child.id, reason);
+    }
     return ok;
   }
 
