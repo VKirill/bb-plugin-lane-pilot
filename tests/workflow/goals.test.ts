@@ -116,6 +116,14 @@ describe("the goals of a run", () => {
     expect(await quiet.engine.start({ workflow: wf({ goal_audit: "required" }), inputs: INPUTS, goals: GOALS }).done).toMatchObject({ status: "succeeded" });
   });
 
+  it("F-006: a required user workflow started without goals (PM tool, trigger, schedule) is audited against its request", async () => {
+    const { engine, seen } = setup(async ({ goals }) => all(goals.map((goal) => goal.id)));
+    const asked = wf({ goal_audit: "required", inputs: [{ name: "query", type: "string" }, { name: "title", type: "string", required: false }] });
+    const started = engine.start({ workflow: asked, inputs: { query: "q", title: "Typo in button label" } });
+    expect(await started.done).toMatchObject({ status: "succeeded" });
+    expect(seen.map((item) => item.goals)).toEqual([[expect.objectContaining({ id: "request", done_when: "The owner's request is done: Typo in button label", guess: true })]]);
+  });
+
   it("pass to a child run for its helpers, but only the parent run is audited against them", async () => {
     const { engine, seen } = setup(async ({ goals }) => all(goals.map((goal) => goal.id)));
     const inner = wf({ id: "inner" });

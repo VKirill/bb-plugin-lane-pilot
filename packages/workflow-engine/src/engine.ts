@@ -149,6 +149,13 @@ export type EngineOptions = {
   fault?: (point: string) => void;
 };
 
+/** The one goal of a request given as `title` or `text`: the same goal the PM intake names. No request in the inputs, no goal. */
+export function requestGoals(inputs: Record<string, unknown>): RunGoal[] {
+  const pick = (value: unknown) => typeof value === "string" ? value.trim().split("\n").find((line) => line.trim())?.trim() ?? "" : "";
+  const title = (pick(inputs.title) || pick(inputs.text)).slice(0, 120);
+  return title ? [{ id: "request", done_when: `The owner's request is done: ${title}`.slice(0, 600), evidence: "the workflow output status is closed and its comment says what changed", guess: true }] : [];
+}
+
 /** Thrown by the test hook; never treated as a step failure. */
 export class CrashError extends Error {}
 export { MissingValueError };
@@ -287,7 +294,9 @@ export class WorkflowEngine {
     const picked = resolveTaskQualityMode({ asked: explicitAsk ? given : input.mode, explicitAsk, workflow: workflow.quality_mode ?? null });
     if (!picked.ok) throw new WorkflowError([{ level: "error", code: picked.code, message: picked.detail }]);
     const mode = picked.mode;
-    const goals = goalsSchema.parse(input.goals ?? []);
+    // A user workflow judged by its goals and started without them (the PM's tool, a trigger, a schedule) is for the request in its inputs.
+    const required = (workflow as { goal_audit?: string }).goal_audit === "required" && !input.parent;
+    const goals = goalsSchema.parse(input.goals?.length ? input.goals : required ? requestGoals(inputs) : []);
     const runId = `wfrun_${randomUUID().replaceAll("-", "")}`;
     const j = this.journal, at = this.now();
     const pins = collectPins(workflow, resolveChild);

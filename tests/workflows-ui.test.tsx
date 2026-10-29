@@ -100,7 +100,7 @@ describe("Workflows library", () => {
     expect(slot.getByTestId("wf-scope-review-fix").textContent).toBe("Global");
     expect(slot.getByTestId("wf-scope-analyze-plan-execute").textContent).toBe("Built-in");
     expect(slot.getByTestId("wf-stats-review-fix").textContent).toContain("1 run");
-    expect(slot.getByTestId("wf-stats-review-fix").textContent).toContain("100% succeeded");
+    expect(slot.getByTestId("wf-stats-review-fix").textContent).toContain("100% work done");
     expect(slot.getByTestId("wf-stats-x-digest").textContent).toContain("No runs yet");
 
     const search = slot.getByTestId("wf-search") as HTMLInputElement;
