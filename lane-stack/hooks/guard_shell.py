@@ -2059,6 +2059,13 @@ def main() -> None:
             emit_deny(client, f"[agent-guard] shell command cannot be safely parsed: {exc}")
         push_scans = (stripped,)
 
+    # A writer is not granted push or merge: Lane Pilot merges accepted work itself (SMA f_inv_push, 2026-10-29).
+    if key in LANE_PILOT_WRITER_ROLES:
+        granted = [args for scan in push_scans for args in _git_args(scan, {"push", "merge"})]
+        if granted:
+            emit_deny(client, "[lane-pilot-guard] A writer is not granted git push or git merge. "
+                      "Lane Pilot critiques, accepts and merges the work into main itself.")
+
     # A Lane Pilot BB chat (its launcher sets LANE_PILOT_AGENT_TYPE) runs writers as BB threads,
     # and Lane Pilot itself critiques, accepts and merges them into main.
     if lane_pilot_chat and re.search(
