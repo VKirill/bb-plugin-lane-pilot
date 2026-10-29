@@ -2,7 +2,7 @@
 title: Tasks board and work graph
 type: component
 created: 2026-10-13
-updated: 2026-10-13
+updated: 2026-10-29
 status: active
 confidence: medium
 tags: [tasks, runs, ui, task-graph]
@@ -30,7 +30,7 @@ The app's Tasks navigation scope renders `TaskBoard`; it reads the board and tas
 ## How it works
 
 1. The `tasks` navigation scope mounts `TaskBoard` with visible projects and the selected project (`src/rooms/ui-shell/ui/page.tsx:45-56`).
-2. The screen calls `task_board` immediately and every eight seconds, sending the selected project when scoped and a completion window; a failed refresh is ignored and the last result remains visible (`src/rooms/runs/ui/task-board.tsx:25`, `:134-141`).
+2. The screen calls `task_board` immediately and every eight seconds, sending the selected project when scoped and a completion window; a failed refresh marks the board offline — a first failure replaces the loading line with «Could not load tasks», and a failure while items are shown says they are the last known states (`src/rooms/runs/ui/task-board.tsx:26`, `:134-146`, `:215`).
 3. The server selects each task's latest attempt, includes live work and recent terminal work, removes superseded task-family attempts, derives column/phase from attempt and stage receipts, and adds top-level workflow runs (`src/rooms/runs/server/task-board.ts:63-78`, `:81-144`).
 4. The UI filters by task/workflow kind, project, search text, and service-project visibility, then renders fixed columns or a list grouped by goal, chat, area, project, or no group (`src/rooms/runs/ui/task-board.tsx:121-148`, `:169-209`).
 5. Opening an item calls `task_card`. The server reads its contract, plan, ordered stages, attempts and worker threads; thread roots include writer attempts and helper stages, with each root's child sub-agent threads (`src/rooms/runs/ui/task-board.tsx:328-329`, `src/rooms/runs/server/task-board.ts:160-209`, `src/rooms/runs/server/rpc/runs.ts:182-201`). The task page also loads the acceptance card with `task_acceptance_card`: contract, plan against fact, stage receipts with their proof kind, gate events, what did not run, risk, base commit and cost (see [Plan against fact and the acceptance card](plan-fact.md)).
@@ -48,10 +48,10 @@ The app's Tasks navigation scope renders `TaskBoard`; it reads the board and tas
 
 ### Failures
 
-- A failed board refresh is swallowed by the UI; the previous board stays on screen (`src/rooms/runs/ui/task-board.tsx:134-141`).
+- A failed board refresh shows an offline notice: the loading line becomes «Could not load tasks. Retrying…», and when earlier items are on screen the notice says they are the last known states (`src/rooms/runs/ui/task-board.tsx:134-146`, `:215`).
 - A missing task or run makes `readTaskCard` return `null`; the UI also displays its gone state when the card call rejects (`src/rooms/runs/server/task-board.ts:161-179`, `src/rooms/runs/ui/task-board.tsx:328-329`).
 - Thread metadata read failures produce a thread entry with null title/status; child-list failures produce an empty child list (`src/rooms/runs/server/rpc/runs.ts:189-198`).
-- Database read failures are not converted to an empty board or card by the RPC handlers; board refresh failures leave prior results visible, while a rejected card request enters the UI's gone state (`src/rooms/runs/server/rpc/runs.ts:171-184`, `src/rooms/runs/ui/task-board.tsx:134-141`, `:328-329`).
+- Database read failures are not converted to an empty board or card by the RPC handlers; a board refresh failure leaves prior results visible under the offline notice, while a rejected card request enters the UI's gone state (`src/rooms/runs/server/rpc/runs.ts:174-184`, `src/rooms/runs/ui/task-board.tsx:134-146`, `:215`, `:328-329`).
 - The helper graph is omitted when there is no open run, and no graph edges are created for self-dependencies or blockers that are not shown and are not blocked tasks (`src/rooms/runs/server/rpc/runs.ts:165-169`, `src/rooms/runs/server/task-graph.ts:39-42`).
 
 ## Business rules

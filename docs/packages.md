@@ -2,7 +2,7 @@
 title: Shared packages
 type: component
 created: 2026-10-10
-updated: 2026-10-28
+updated: 2026-10-29
 status: active
 confidence: low
 tags: [packages, api, monorepo]
@@ -63,6 +63,10 @@ sources:
   - package.json
   - src/rooms/contracts/rpc-shell.ts
   - packages/memory-core/src/store.ts
+  - packages/models/src/role-models.ts
+  - packages/models/src/agent-model.ts
+  - packages/models/src/zcode.ts
+  - src/rooms/core/server/spawn-model.ts
 ---
 
 # Shared packages
@@ -78,11 +82,11 @@ TL;DR: Small workspaces hold reusable contracts and services shared by Lane Pilo
 | `@lane-pilot/handoff` | Handoff card contracts, state transitions, storage, message formatting, receipt parsing and capability registry (`packages/handoff/src/index.ts:1-2`). See ordered `handoffMessage` steps, output branches and failures under [Package operation details](package-operations.md#handoffmessage). | Relay and task handoff services. |
 | `@lane-pilot/harness-core` | Writer-harness tree validation, fingerprinting and diff summaries; writer-event trajectory rendering; editor prompt construction; and parsing/rendering of edit verdicts and transferable experience (`packages/harness-core/src/index.ts:1-14`). | Harness server uses it to validate candidate trees, render attempt evidence and parse editor/reflection replies; writer attempts receive its materialized tree through the harness room (`src/rooms/harness/server/harness.ts:1-8`, `:211-250`, `:281-313`). See [writer harness](harness.md) for the end-to-end capability. |
 | `@lane-pilot/host-calls` | Host job client plus `runOnHost`, a typed `runCommand` wrapper. See timeout selection, forwarded fields and rejection behavior under [Package operation details](package-operations.md#runonhost). | Writer, verification, scheduling and host-worker rooms. |
-| `@lane-pilot/i18n` | Locale selection, `t()`, and typed English and Russian dictionaries, including Harness model and role labels (`packages/i18n/src/i18n.ts:325-339`, `:1391-1405`, `:2147-2152`) and Tasks board strings (`packages/i18n/src/i18n-board.ts:1-4`). | Room UI and plugin app. |
+| `@lane-pilot/i18n` | Locale selection, `t()`, and typed English and Russian dictionaries, including Harness model and role labels (`packages/i18n/src/i18n.ts:101-105`, `:1199-1203`), dictionary assembly (`:2216-2217`) and `t()` (`:2286-2288`), plus Tasks board strings (`packages/i18n/src/i18n-board.ts:2`, `:175`). | Room UI and plugin app. |
 | `@lane-pilot/jev` | The package-root `jev()` accessor returns the installed runner or `null`; see its installation, disposal and no-instance branches under [Package operation details](package-operations.md#jev-runtime). Judgment execution, modes and fallback behavior are covered in [createJev](package-operations.md#createjev). Judgment definitions register themselves through `defineJudgment` when their modules evaluate (`packages/jev/src/registry.ts:41-48`, `packages/jev/src/judgments/output-guard.ts:22-28`, `packages/jev/src/index.ts:1-9`). | Core and judgment-owning rooms. See [Jev adapter](jev-adapter.md). |
 | `@lane-pilot/kit` | Node helpers for hashing, redaction, process spawning, bounded reads and JSONC patching, with a browser-safe `owns-paths` subpath (`packages/kit/src/index.ts:1-9`, `packages/kit/package.json:1-15`). | Server rooms and selected UI modules. |
 | `@lane-pilot/memory-core` | Project memory records, audiences, retrieval, budgets, file import/export and SQLite helpers; its candidate parser and overflow-aware write helper are exported at the package root (`packages/memory-core/src/index.ts:1-23`, `packages/memory-core/src/store.ts:194-204`). | Memory, writer context and run-insights. |
-| `@lane-pilot/models` | Provider/model catalog normalization, reasoning compatibility, presets and model pricing (`packages/models/src/index.ts:1-5`). | Native-agent, settings, Jev selection and usage rooms. |
+| `@lane-pilot/models` | Provider/model catalog normalization, reasoning compatibility, presets, model pricing, and the role table that gives every agent step its model — the owner's row, an optional pool of other models with least-loaded-provider ordering, and the ZCode free option (`packages/models/src/index.ts:1-10`, `packages/models/src/role-models.ts:1-13`). See [who works a role](role-models.md). | Native-agent, settings, team roster, writer and usage rooms. |
 | `@lane-pilot/pixel-world` | Three.js scene primitives, assets, people, vehicles, navigation and static mesh batching. See ordered `batchStatic` and [createNavGrid](package-operations.md#createnavgrid) steps, branch outcomes and failures under [Package operation details](package-operations.md). | World UI. |
 | `@lane-pilot/resilience` | Provider/model circuit breaker and per-run token, time and attempt budgets (`packages/resilience/src/index.ts:1-25`). | Writer dispatch and stability. |
 | `@lane-pilot/run-insights` | Acceptance statistics, failure triage, rule proposals with writer/PM audience and always-on options, typed lesson forms, lesson sourcing and golden memory cases (`packages/run-insights/src/index.ts:1-2`, `:11-42`). | Runs, learning, memory and self-repair rooms. |
