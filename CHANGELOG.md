@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.384
+
+- **Code critic answer.** A finding without `evidence` (or `file`) is read instead of refusing the whole answer; it cannot count as critical or high. The missing key blocked a selfystudio task with `code_critique_failed` right after 0.1.383.
+- **Guard in every Lane Pilot Claude thread.** PM, helpers, specialists, errands and reviewers started by Lane Pilot get its bundled guard through the claude-code launcher env, not through the machine-wide `~/.agents/hooks/guard_shell.py` entry; an owner thread gets nothing.
+- **Owner presence from BB.** A message the owner sends in a thread Lane Pilot did not start is the presence signal; Claude Lane hook file `~/.agents/state/owner-presence.json` is no longer read.
+- **SMA map.** 192 cards now have a behaviour test (61 of them with a known gap); a card whose test found its behaviour missing (`it.todo`) is partial on the map.
+
 ## 0.1.383
 
 - **Code critic packet.** The critic gets each file's change as BB's own unified diff (`environments.diffPatch`, uncommitted, in the attempt's environment) and the whole file only when it is small; the packet holds 96 KB. A 30-line edit in a large file used to cut the file to its first 8 KB and the gated critic blocked the task with `code_critique_evidence_unknown:packet_truncated` (13 of 14 code critiques on the hub that week, selfystudio). A long check output is cut to its head and tail with the cut said, and no longer blocks.

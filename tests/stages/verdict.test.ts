@@ -1,3 +1,4 @@
+import { parseCodeCritique } from "../../src/rooms/critique/code-critique";
 import { describe, expect, it } from "vitest";
 import { VERDICT_BLOCK_PREFIX, blockReason, isHardCritical, isVerdictBlockReason, legacyDecisionToStatus, legacySeverityToVerdict, proseOnly, settleVerdict, verdictSchema, verdictSeverityToLegacy } from "@lane-pilot/workflow-engine";
 import type { Verdict } from "@lane-pilot/workflow-engine";
@@ -126,5 +127,12 @@ describe("the block message for the PM", () => {
   it("the type exported for stage results carries the unified shape", () => {
     const sample: Verdict = { status: "pass", findings: [], evidence: "e" };
     expect(sample.status).toBe("pass");
+  });
+
+  it("reads a code critic finding that has no evidence or file and never lets it count as high (selfystudio 2026-10-30)", () => {
+    const parsed = parseCodeCritique(JSON.stringify({ status: "rework", summary: "s", evidence: "read the diff",
+      findings: [{ line: 3, severity: "high", finding: "missing check" }, { file: "src/a.ts", line: 4, severity: "medium" }] }));
+    expect(parsed.verdict?.findings).toHaveLength(2);
+    expect(parsed.verdict?.findings.some((row) => row.severity === "high" || row.severity === "critical")).toBe(false);
   });
 });

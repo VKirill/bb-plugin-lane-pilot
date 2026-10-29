@@ -14,11 +14,12 @@ export type VerdictSeverity = (typeof VERDICT_SEVERITIES)[number];
 
 export const verdictFindingSchema = z.object({
   /** The repository file the finding is about; `TASK` or `PLAN` for the contract or the plan; empty when it is not located. */
-  file: z.string().max(500),
+  file: z.preprocess((value) => value ?? "", z.string().max(500)),
   line: z.number().int().positive().nullable().optional(),
   severity: z.enum(VERDICT_SEVERITIES),
-  /** What was observed: the quoted code, the output line, the element that was (not) found. */
-  evidence: clipped(2000),
+  /** What was observed: the quoted code, the output line, the element that was (not) found. A finding without it is read, not
+   *  refused: it cannot count as critical or high (counts below). A missing key blocked a selfystudio task on 2026-10-30. */
+  evidence: z.preprocess((value) => value ?? "", clipped(2000, 0)),
   id: clipped(80).optional(),
   finding: clipped(1000).optional(),
   criterion: clipped(500).optional(),
