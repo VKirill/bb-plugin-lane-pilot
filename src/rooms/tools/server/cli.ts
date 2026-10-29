@@ -42,7 +42,7 @@ import { PHASE_USAGE, runPhaseCli } from "../../phase/server";
 import { unknownReasons } from "../../runs";
 import { manifest, passport, preship, prPassport, receiptChain, verifyChain } from "../../receipts";
 import { EXCAVATE_LOG_ARGS, approvalSuggestions, costPerVerified, excavate, htmlReport, missCurriculum } from "../../self-improve";
-import { smaCounts, smaDonePercent, smaRows } from "../../sma-map";
+import { smaCheckedPercent, smaCounts, smaDonePercent, smaRows } from "../../sma-map";
 import { loadLiveExam } from "../../policy";
 import { RULES_USAGE, runRulesCli } from "../../rule-forms";
 import { retireAdoptedRule } from "../../self-repair/server";
@@ -172,7 +172,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"unknown-codes", summary:"Failure reasons no class or rule names yet (the unknown code register), most frequent first, over the last 14 days", usage:"bb lane-pilot unknown-codes [--days 14]" },
       { name:"phase", summary:"Phases on rails: list, show (with the phase book), drive now, return to an earlier stage with a note, pause, resume, close in words", usage:PHASE_USAGE },
       { name:"design-metrics", summary:"The designer's training: the four ratios from the design measurement journal, the four conditions of «trained» and the readiness words", usage:"bb lane-pilot design-metrics [--project <id>] [--json]" },
-      { name:"sma-map", summary:"The SMA product map node by node: what Lane Pilot has for each of its 1768 nodes, the proof in the code, what is missing, and the share done", usage:SMA_MAP_USAGE },
+      { name:"sma-map", summary:"The SMA product map node by node: what Lane Pilot has for each of its 1798 nodes, the card text, the proof link, the contract tests that check it, and the shares mapped and checked", usage:SMA_MAP_USAGE },
       { name:"rules", summary:"The rules by form (always | skill | check | hook | memory) and the mechanism that enforces each; classify them, generate mechanism tasks for the recurring check rules, retire the text a mechanism now holds", usage:RULES_USAGE },
       { name:"workflow-trigger", summary:"Start a workflow in a project as its schedule trigger does (the automation of a schedule calls this); exit 1 with the reason when it cannot start", usage:"bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]" },
       { name:"workflow-answer", summary:"Answer the question a workflow run in a project without a PM chat put on the owner's list (the option, or words that name one, or a free answer)", usage:"bb lane-pilot workflow-answer <run-id> <step-key> <option or words>" },
@@ -260,9 +260,9 @@ export function registerCli(ctx: ServerCore, services: Services) {
         }
         if (command === "report") {
           const rows = smaRows();
-          const regions = [...new Set(rows.map((row) => row.region))].map((region) => { const part = rows.filter((row) => row.region === region); return { region, done: `${smaDonePercent(part)}%`, ...smaCounts(part) }; });
+          const regions = [...new Set(rows.map((row) => row.region))].map((region) => { const part = rows.filter((row) => row.region === region); return { region, checked: `${smaCheckedPercent(part)}%`, mapped: `${smaDonePercent(part)}%`, ...smaCounts(part) }; });
           return { exitCode:0, stdout:htmlReport({ title:`Lane Pilot report ${new Date().toISOString().slice(0, 10)}`, sections:[
-            { heading:`SMA map: ${smaDonePercent(rows)}% done`, rows:regions },
+            { heading:`SMA map: checked by contract tests ${smaCheckedPercent(rows)}%, mapped by proof links ${smaDonePercent(rows)}%`, rows:regions },
             { heading:"Money", rows:[services.money.status() as never] },
             { heading:"Cost per verified result (30 days)", rows:costPerVerified(db) as never },
           ] }) };

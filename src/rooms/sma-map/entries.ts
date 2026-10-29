@@ -2,7 +2,9 @@
 // [status, what we have or why not, proof]. `have` and `partial` name our counterpart; `skip` names the owner's decision or
 // the device we do not have; `proof` is "path" or "path#symbol" in this repository, or "lane-stack:path#symbol" / "core:path#symbol"
 // in the sibling repositories, and the test checks that it exists. Roadmap: artifacts/sma-graph/roadmap.md (2026-10-24).
-export type SmaStatus = "have" | "partial" | "missing" | "skip";
+// `upstream`: the SMA card itself says the node is declared but not wired there (SMA_CARDS unsure); a 1-in-1 copy holds the same
+// state and builds nothing for it. A proof link is navigation, not a check of behaviour: that is a contract test (contracts.ts).
+export type SmaStatus = "have" | "partial" | "missing" | "skip" | "upstream";
 export type SmaEntry = readonly [status: SmaStatus, ours: string, proof?: string];
 export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n0: ["have", "водитель открывает фазу и будит PM на обсуждение", "src/rooms/phase/server/driver.ts#async function open("],
@@ -1773,4 +1775,35 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n1765: ["have", "добавка к роли одной датированной строкой", "src/rooms/design-eval/training.ts#export function roleLine("],
   n1766: ["have", "четыре условия «обучен»", "src/rooms/design-eval/training.ts#export function trainedConditions("],
   n1767: ["have", "метрики дизайнера", "src/rooms/tools/server/cli.ts#design-metrics"],
+  // The 30 nodes SMA marks unsure (2026-10-29 import of the full site map).
+  n1768: ["have", "оценка рисунка по рубрике хранится отдельно", "src/rooms/design-eval/logic.ts#export function designScore("],
+  n1769: ["have", "прерывание со сверкой: каждый такт водитель перечитывает факты кусков", "src/rooms/phase/server/driver.ts#Reconciling after force"],
+  n1770: ["upstream", "у SMA состояние объявлено, но не ставится; у нас его тоже нет (проверки идут внутри running)"],
+  n1771: ["upstream", "у SMA состояние объявлено, но не ставится; вопрос писателя у нас — needs-human выход, не состояние попытки"],
+  n1772: ["have", "попытка accepted ставится нашим автоматом (у SMA объявлено, но не ставится)", "src/rooms/runs/state-machine.ts#\"accepted\""],
+  n1773: ["upstream", "у SMA состояние объявлено, но не ставится; у нас отказ — validation_failed"],
+  n1774: ["upstream", "у SMA состояние объявлено, но не ставится"],
+  n1775: ["upstream", "у SMA панель действий графа не смонтирована; у нас действия фазы на экране работы", "src/rooms/cockpit/ui/screens-work.tsx#ckStopPhase"],
+  n1776: ["upstream", "у SMA запись эпизодов никто не вызывает"],
+  n1777: ["upstream", "у SMA граф связей зовут только тесты"],
+  n1778: ["upstream", "у SMA имя из справки без файла"],
+  n1779: ["upstream", "у SMA имя из справки без файла"],
+  n1780: ["upstream", "у SMA имя из справки без файла"],
+  n1781: ["upstream", "у SMA имя из справки без файла"],
+  n1782: ["upstream", "у SMA имена из справки без файлов"],
+  n1783: ["upstream", "у SMA справка обещает живые команды, а ставится шестнадцать"],
+  n1784: ["upstream", "у SMA менеджер не читает анализ зависимостей фаз"],
+  n1785: ["upstream", "у SMA discovery без навыка и строки справки"],
+  n1786: ["upstream", "у SMA роль intel-updater никто не порождает"],
+  n1787: ["upstream", "у SMA глагол ждёт Notification-хук, которого установщик не ставит"],
+  n1788: ["upstream", "у SMA старый update не ставится навыком"],
+  n1789: ["upstream", "у SMA повторное наложение правок не ставится навыком"],
+  n1790: ["upstream", "у SMA миграции старого установщика не запускаются"],
+  n1791: ["upstream", "у SMA нормализатор имён без папки, которую он правит"],
+  n1792: ["upstream", "у SMA профили контекстов никто не читает"],
+  n1793: ["upstream", "у SMA семь справок никто не называет"],
+  n1794: ["upstream", "у SMA шаблоны промптов подагентов"],
+  n1795: ["upstream", "у SMA шаблоны предсказаний никто не читает"],
+  n1796: ["upstream", "у SMA допуск аниматора никто не вызывает"],
+  n1797: ["upstream", "у SMA словарь длительностей импортируют только тесты"],
 };

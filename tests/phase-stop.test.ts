@@ -35,7 +35,7 @@ async function fixture() {
 }
 
 describe("stopping a phase", () => {
-  it("stops the running writer and the stage workflow before the phase turns stopped", async () => {
+  it("[sma:px_stop] stops the running writer and the stage workflow before the phase turns stopped", async () => {
     const f = await fixture();
     expect(rpcContract.phase_control.input.safeParse({ phaseId: f.id, action: "stop", note: "wrong goal" }).success).toBe(true);
     await phaseRpc(f.phases).phase_control({ phaseId: f.id, action: "stop", note: "wrong goal" } as never);

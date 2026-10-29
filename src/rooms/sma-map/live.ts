@@ -100,6 +100,7 @@ export const SMA_LIVE: Readonly<Record<string, LiveSource>> = {
   "Slash commands and workflows | Settings and profile": t("lane_pilot_project_settings", "updated_at"),
   "Slash commands and workflows | Before the plan: discussion and contracts": wf("ai-integration-phase", "grill-plan", "impeccable-build", "lp.brainstorm"),
   "Slash commands and workflows | Shipping and milestones": wf("cleanup", "code-review", "deploy", "milestone-close", "new-milestone", "pr-branch", "ship"),
+  "Slash commands and workflows | Help names without a file": outside("SMA help names these commands with no file behind them; nothing runs them in SMA either"),
   "Slash commands and workflows | Project start and workspaces": wf("analyze-code", "new-milestone", "project-start"),
   "Agent roles (subagents) | Roles for AI phases": outside("Lane Stack subagent spawns (sma_hooks spawn log on each machine)"),
   "Agent roles (subagents) | Execution and repair roles": stage("writer-agent", "code-critique"),
