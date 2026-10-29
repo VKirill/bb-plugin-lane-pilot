@@ -35,9 +35,15 @@ describe("the SMA map registry", () => {
     expect(broken).toEqual([]);
   });
 
-  it("is mapped: every node has a proof link, or SMA itself leaves it unwired", () => {
-    const notDone = smaRows().filter((row) => !isDone(row)).map((row) => `${row.id} ${row.status} ${row.label}`);
+  it("is mapped: every node has a proof link, or SMA itself leaves it unwired, or a test names the gap", () => {
+    const notDone = smaRows().filter((row) => !isDone(row) && !row.gaps.length).map((row) => `${row.id} ${row.status} ${row.label}`);
     expect(notDone).toEqual([]);
+  });
+
+  it("counts a card whose behaviour test found a gap (it.todo) as partial, not have", () => {
+    const gapped = smaRows().filter((row) => row.gaps.length);
+    expect(gapped.length).toBeGreaterThan(0);
+    for (const row of gapped) expect(row.status).not.toBe("have");
   });
 
   it("prints the share done and the regions", () => {

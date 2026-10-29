@@ -1,12 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { SMA_CONTRACT_TESTS } from "./contracts";
+import { SMA_CONTRACT_GAPS, SMA_CONTRACT_TESTS } from "./contracts";
 import { SMA_ENTRIES, type SmaStatus } from "./entries";
 import { SMA_CARDS, SMA_NODES, SMA_REGIONS, type SmaKind } from "./graph";
 
 /** One node of the SMA map with what we have for it: the card's own words, our counterpart, its proof link and the contract tests. */
 export type SmaRow = { id: string; smaId: string; region: string; group: string; kind: SmaKind; label: string; detail: string; unsure: boolean;
-  status: SmaStatus; ours: string; proof?: string; contracts: readonly string[] };
+  status: SmaStatus; ours: string; proof?: string; contracts: readonly string[]; gaps: readonly string[] };
 /** proven: a proof link (navigation); contract: a test checks the card's behaviour; upstream: SMA itself left the node unwired. */
 export type SmaCounts = { total: number; have: number; partial: number; missing: number; skip: number; upstream: number; proven: number; contract: number };
 
@@ -17,8 +17,11 @@ export function smaRows(): SmaRow[] {
   return SMA_NODES.map(([id, region, group, kind, label]) => {
     const entry = SMA_ENTRIES[id];
     const card = SMA_CARDS[id];
+    const gaps = SMA_CONTRACT_GAPS[card?.[0] ?? id] ?? [];
+    // A behaviour test that found the card's behaviour missing (it.todo) outranks the claim of the map (2026-10-29 SMA zone tests).
+    const status: SmaStatus = gaps.length && entry?.[0] === "have" ? "partial" : entry?.[0] ?? "missing";
     return { id, smaId: card?.[0] ?? id, region: SMA_REGIONS[region] ?? String(region), group, kind, label, detail: card?.[1] ?? "", unsure: card?.[3] ?? false,
-      status: entry?.[0] ?? "missing", ours: entry?.[1] ?? "", ...(entry?.[2] ? { proof: entry[2] } : {}), contracts: SMA_CONTRACT_TESTS[card?.[0] ?? id] ?? [] };
+      status, ours: entry?.[1] ?? "", ...(entry?.[2] ? { proof: entry[2] } : {}), contracts: SMA_CONTRACT_TESTS[card?.[0] ?? id] ?? [], gaps };
   });
 }
 
