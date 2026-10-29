@@ -356,6 +356,29 @@ export async function candidatePatches(bb:{ sdk:{ environments:{ list:(args:{ ho
   }
 }
 
+/**
+ * Reads the code critic's answer; one that cannot be read is sent back once to the same critic with the parse error, instead of
+ * blocking a finished task (selfystudio 2026-10-30: an unescaped quote broke the JSON of a «pass»). A second unreadable answer fails.
+ */
+export async function readCodeCritique(bb:BbPluginApi, threadId:string|null|undefined, raw:string, cites:Parameters<typeof parseCodeCritique>[1]) {
+  try {
+    return parseCodeCritique(raw, cites);
+  } catch (first) {
+    if (!threadId) throw first;
+    const why = (first instanceof Error ? first.message : String(first)).replace(/\s+/g, " ").slice(0, 600);
+    const askedAt = Date.now();
+    try {
+      await bb.sdk.threads.send({ threadId, mode:"queue-if-active", input:[{ type:"text", mentions:[], text:`Lane Pilot: your answer could not be read (${why}). Send the same verdict again as one valid JSON object with the keys status, summary, findings and evidence, and nothing else; escape every quote inside a string.` }] } as never);
+      await waitThreadIdle(bb, threadId, "critique_thread_timeout", undefined, askedAt);
+    } catch {
+      throw first;
+    }
+    const again = (await bb.sdk.threads.output({ threadId })).output;
+    if (typeof again !== "string" || !again.trim()) throw first;
+    return parseCodeCritique(again, cites);
+  }
+}
+
 export function attemptEnvironment(db:ReturnType<typeof openDatabase>, runId:string, taskId:string, path:string):{ type:"reuse"; environmentId:string } | null {
   const row = db.prepare(`SELECT environment_id AS environmentId FROM lane_pilot_attempt
     WHERE run_id=? AND task_id=? AND workspace_path=? AND environment_id IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(runId, taskId, path) as { environmentId:string } | undefined;
@@ -407,7 +430,7 @@ export async function runCodeCritique(input:{
         await waitThreadIdle(input.bb,existing.threadId,"critique_thread_timeout");
         const raw = (await input.bb.sdk.threads.output({ threadId:existing.threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-        const critique = parseCodeCritique(raw, cites);
+        const critique = await readCodeCritique(input.bb, existing.threadId, raw, cites);
         const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
         const result = { ...ledgerCarry, ...critique, ...hashFields, mode:parsed.mode, rawOutput:raw.slice(0, 12_000), policy:frozen ?? critiquePolicyFromResult(existing.result) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId:existing.providerId, model:existing.model,
@@ -433,7 +456,7 @@ export async function runCodeCritique(input:{
           await waitThreadIdle(input.bb,recovered.threadId,"critique_thread_timeout");
           const raw = (await input.bb.sdk.threads.output({ threadId:recovered.threadId })).output;
           if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-          const critique = parseCodeCritique(raw, cites);
+          const critique = await readCodeCritique(input.bb, recovered.threadId, raw, cites);
           const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
           const result = { ...ledgerCarry, ...critique, ...hashFields, mode:parsed.mode, rawOutput:raw.slice(0, 12_000), policy:frozen ?? critiquePolicyFromResult(existing.result) };
           recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId:existing.providerId, model:existing.model,
@@ -463,7 +486,11 @@ export async function runCodeCritique(input:{
     }
   }
   if (!(existing && existing.inputSha256 === sha256(source) && existing.state === "running")) {
-    recordStage(input.db, { ...base, state:"pending", replaceOnNewInput:true, result:{ ...ledgerCarry, ...hashFields, truncated:input.evidence.truncated } });
+    // A critic still running on an older revision of the candidate is stopped and its receipt starts over: running -> pending was
+    // refused and parked a finished task as internal_error (selfystudio 2026-10-30, after a reload recaptured the evidence).
+    const superseded = existing?.state === "running" && existing.inputSha256 !== sha256(source);
+    if (superseded && existing.threadId) await input.bb.sdk.threads.stop({ threadId:existing.threadId }).catch(() => undefined);
+    recordStage(input.db, { ...base, state:"pending", replaceOnNewInput:true, supersede:superseded, result:{ ...ledgerCarry, ...hashFields, truncated:input.evidence.truncated } });
   }
   // The role table's code-critic (packages/models/src/role-models.ts), else what the stage ran on before it (its selection, else the writer's).
   const stageSelection = resolveStageWriterSelection({
@@ -530,7 +557,7 @@ export async function runCodeCritique(input:{
         await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
         const raw = (await input.bb.sdk.threads.output({ threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-        const critique = parseCodeCritique(raw, cites);
+        const critique = await readCodeCritique(input.bb, threadId, raw, cites);
         const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
         const result = { ...snapshot, ...critique, policy, reviewer:{ providerId, model:modelId, reasoningEffort:configuredEffort, serviceTier: writerServiceTier(settings) === "fast" ? "fast" : "standard", mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix }, rawOutput:raw.slice(0, 12_000) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
@@ -549,7 +576,7 @@ export async function runCodeCritique(input:{
         await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
         const raw = (await input.bb.sdk.threads.output({ threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-        const critique = parseCodeCritique(raw, cites);
+        const critique = await readCodeCritique(input.bb, threadId, raw, cites);
         const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
         const result = { ...snapshot, ...critique, policy, rawOutput:raw.slice(0, 12_000) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
@@ -606,7 +633,7 @@ export async function runCodeCritique(input:{
     await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
     const raw = (await input.bb.sdk.threads.output({ threadId })).output;
     if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-    const critique = parseCodeCritique(raw, cites);
+    const critique = await readCodeCritique(input.bb, threadId, raw, cites);
     const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
     const result = { ...snapshot, ...critique, policy, reviewer:{ providerId, model:modelId, reasoningEffort:configuredEffort, serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix }, rawOutput:raw.slice(0, 12_000) };
     recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,

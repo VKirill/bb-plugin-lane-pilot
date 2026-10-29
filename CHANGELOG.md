@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.386
+
+- **Code critic answer, unreadable.** An answer that cannot be read (an unescaped quote broke the JSON of a «pass») is sent back once to the same critic with the parse error; only a second unreadable answer fails the stage. It blocked a finished selfystudio task on 2026-10-30.
+- **Critic on an older candidate.** A code critic still running on an older revision is stopped and its receipt starts over, instead of `illegal stage transition code-critique: running -> pending` parking the task as internal_error.
+
 ## 0.1.385
 
 - **Code critic answer.** Unknown keys (a critic's `status_note`, `summary_note`) are dropped instead of refusing the answer, and an empty optional text (`verificationExpectation: ""`) reads as absent; the keys the host reads stay typed. Four selfystudio tasks with finished work were blocked by `code_critique_failed` on 2026-10-30.

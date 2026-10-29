@@ -8,7 +8,9 @@ export function recordStage(db:ReturnType<typeof openDatabase>, input:{runId:str
   /** Starts a stage over from blocked or skipped; only for a stage whose work never ran, so no verdict is lost. */
   restart?:boolean;
   /** Opens a writer stage that ended failed again, for a parked task restarting after a Lane Pilot or machine fault. */
-  reopen?:boolean}): void {
+  reopen?:boolean;
+  /** A stage still running on an older input whose worker the caller stopped starts over as pending. */
+  supersede?:boolean}): void {
   const previous = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === input.stageId);
   // A cancel is final and wins over a stage that was still working: the result it hands in late is dropped. It used to
   // throw, and the dispatch of a task the PM had canceled ended «dispatch_failed:illegal stage transition writer-agent:
@@ -16,7 +18,7 @@ export function recordStage(db:ReturnType<typeof openDatabase>, input:{runId:str
   if (previous?.state === "canceled" && input.state !== "canceled") return;
   const nextInputSha = sha256(input.input);
   const replace = Boolean(input.replaceOnNewInput && previous && previous.inputSha256 !== nextInputSha
-    && ["passed", "failed", "blocked", "skipped"].includes(previous.state) && input.state === "pending");
+    && (["passed", "failed", "blocked", "skipped"].includes(previous.state) || (input.supersede && previous.state === "running")) && input.state === "pending");
   const restart = Boolean(previous && input.state === "pending" && ((input.restart && ["blocked", "skipped"].includes(previous.state))
     || (input.reopen && ["failed", "blocked", "skipped"].includes(previous.state))));
   if (previous && !replace && !restart && !stageTransition(previous.state, input.state)) {
