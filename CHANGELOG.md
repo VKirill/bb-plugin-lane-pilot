@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.1.382
+
+- **Guard.** A quoted heredoc body inside a `bash -c` script is data again (a regression of the A-023 rewrite, caught by Claude Lane's own guard test); a real `git push --force` after a newline in the script is still refused.
+- **One guard copy.** Claude Lane carries Lane Pilot's guard (6acbe4a, pinned): an install or repair through Lane Pilot no longer puts an older guard into ~/.agents/hooks (it did on the Mac mini on 2026-10-29).
+
 ## 0.1.381
 
 Lane Pilot no longer needs the Claude Lane Claude-Code plugin (owner decision 2026-10-29), and the full-code audit A-004 recheck, A-023…A-036 is fixed (Grok 4.7 writers, each probe kept as a regression):

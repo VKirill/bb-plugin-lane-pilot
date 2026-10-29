@@ -333,6 +333,8 @@ def _git_args(command: str, subcommands: set[str], _depth: int = 4) -> list[list
 
     Global options (-C, -c, --git-dir, --work-tree, --namespace, --no-pager, --bare, -P, --exec-path, ...) sit between
     `git` and the subcommand (2026-10-29 audit A-023)."""
+    # A quoted heredoc body is data, also inside a `bash -c` script: newlines split commands only outside it.
+    command = _without_data_heredocs(command)
     try:
         lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()\n")
         lexer.whitespace = " \t\r"  # a newline separates commands; it is not a space

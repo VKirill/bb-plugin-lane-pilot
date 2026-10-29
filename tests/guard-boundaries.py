@@ -2,6 +2,8 @@
 """A-023 / A-017 / A-024 from the 2026-10-29 audit probe (evidence/claude-guard-boundaries.py)."""
 from __future__ import annotations
 
+import shlex
+
 import hashlib
 import json
 import os
@@ -115,6 +117,13 @@ class GuardBoundaries(unittest.TestCase):
         self.assertEqual(guard._git_args("echo git push --force origin main", {"push"}), [])
         self.assertEqual(guard._git_args("command echo git push --force origin main", {"push"}), [])
         self.assertEqual(guard._git_args("grep git push --force file", {"push"}), [])
+        # A heredoc body inside `bash -c` is data, not a command (regression of the A-023 rewrite, caught by Claude Lane's test).
+        script = "bash -c " + shlex.quote("cat <<'EOF'\ngit push --force origin main\nEOF")
+        code, message = verdict(script)
+        self.assertEqual(code, 0, message)
+        self.assertEqual(guard._git_args(script, {"push"}), [])
+        code, _ = verdict("bash -c " + shlex.quote("echo ready\ngit push --force origin main"))
+        self.assertEqual(code, 2)
 
     def test_A024_permit_is_bound_to_reviewed_working_directory(self) -> None:
         with tempfile.TemporaryDirectory(prefix="audit-permit-") as td, patch.object(
