@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { cp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse } from "jsonc-parser/lib/esm/main.js";
 import { NATIVE_HOOK_SOURCES } from "../native-install";
 import { hookCommandIdentity } from "@lane-pilot/kit";
@@ -273,6 +275,14 @@ export async function materializeNativeHookSession(input: {
     wrapped.push(line);
     groups.set("*", [...(groups.get("*") ?? []), { type: "command", command: line }]);
   }
+  // Session behaviour (capsule, stall, subagent check). Missing file: do not register. Guard stays the first PreToolUse hook.
+  const sessionCli = fileURLToPath(new URL("../session-hooks/cli.ts", import.meta.url));
+  const sessionLine = existsSync(sessionCli) ? `node --experimental-strip-types ${shellQuote(sessionCli)}` : "";
+  if (sessionLine) {
+    groups.set("*", [...(groups.get("*") ?? []), { type: "command", command: sessionLine }]);
+    wrapped.push(sessionLine);
+  }
+  const sessionEvents = ["SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "SubagentStop", "PreCompact", "SessionEnd"];
 
   const base = asObject(project) ?? {};
   const overlay = asObject(local) ?? {};
@@ -282,6 +292,7 @@ export async function materializeNativeHookSession(input: {
     hooks: {
       ...(asObject(base.hooks) ?? {}),
       ...(asObject(overlay.hooks) ?? {}),
+      ...(sessionLine ? Object.fromEntries(sessionEvents.map((event) => [event, [{ matcher: "*", hooks: [{ type: "command", command: sessionLine }] }]])) : {}),
       PreToolUse: [...groups].map(([matcher, hooks]) => ({ matcher, hooks })),
     },
   };
