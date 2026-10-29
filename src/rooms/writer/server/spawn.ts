@@ -139,6 +139,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       // was dropped here (Vampirism Fire 2026-10-25/26: picks gemini-flash, sonnet, sonnet, haiku all ran as composer-2.5).
       const settings = { ...(await effectiveProjectSettings(input.projectId,getRunSettingsScopes(db,input.runId))).values, ...(input.writerSettings ?? {}) };
       const workspaceMode = parseWorkspaceMode(settings["adoc.040"]);
+      // Old saved adoc.041 / adoc.042 still load. They do not choose the worktree (resolveAttemptWorkspace).
       const minScoreValue = settings["adoc.041"];
       const minScore = minScoreValue === undefined || minScoreValue === null || minScoreValue === "" ? 4 : Number(minScoreValue);
       const multiWriteEnabled = settings["adoc.042"] === undefined ? true : settings["adoc.042"] === true || settings["adoc.042"] === 1 || settings["adoc.042"] === "true";

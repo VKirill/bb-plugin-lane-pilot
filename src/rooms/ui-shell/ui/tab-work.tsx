@@ -37,7 +37,7 @@ export function WorkTab({ page }: { page: LpPage }) {
       <SettingsGroup testId="settings-execution" title={t("workGroupExecution")}>
         <section className="space-y-2" data-testid="settings-group-workspace">
           <CatalogField page={page} keyName="adoc.040" />
-          <AdvancedRows show={advanced}><CatalogFields page={page} keys={["adoc.041", "adoc.042", "workspace.provider"]} /></AdvancedRows>
+          <AdvancedRows show={advanced}><CatalogFields page={page} keys={["workspace.provider"]} /></AdvancedRows>
         </section>
         <section className="space-y-2" data-testid="settings-group-quality">
           <CatalogField page={page} keyName="quality_mode" />

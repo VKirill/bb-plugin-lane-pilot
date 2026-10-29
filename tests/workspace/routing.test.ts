@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { UI_CATALOG } from "@lane-pilot/settings-catalog";
 import { classifyManagedWorkspace, parseWorkspaceMode, requireManagedWorktreeProvider, resolveAttemptWorkspace, resolveManagedWorkspace, usesManagedWorktree, waitManagedWorktreeReady } from "../../src/rooms/verification/routing";
 import plugin from "../../server";
 import { getRun, openDatabase, saveProjectSetting, savePrototypeConfig } from "../../src/rooms/storage/database";
@@ -77,20 +78,26 @@ describe("workspace routing", () => {
     expect(() => requireManagedWorktreeProvider(undefined)).toThrow(/listProviders/);
   });
 
-  it("routes auto work by validated risk score and multi-write policy, preserving explicit worktree mode", () => {
+  it("routes every auto attempt onto its own worktree and keeps an explicit worktree for the whole run", () => {
     expect(resolveAttemptWorkspace({mode:"auto",risk:"high",expectedOutputCount:1,minScore:4,multiWriteEnabled:true}))
-      .toMatchObject({score:8,strategy:"provision_attempt_worktree",reason:"risk_threshold"});
+      .toMatchObject({score:8,strategy:"provision_attempt_worktree",reason:"own_worktree"});
     expect(resolveAttemptWorkspace({mode:"auto",risk:"low",expectedOutputCount:2,minScore:4,multiWriteEnabled:true}))
-      .toMatchObject({score:2,multiWrite:true,strategy:"provision_attempt_worktree",reason:"multi_write"});
-    // Below every threshold the attempt still gets its own worktree: no writer shares the project folder.
-    expect(resolveAttemptWorkspace({mode:"auto",risk:"low",expectedOutputCount:2,minScore:4,multiWriteEnabled:false}))
-      .toMatchObject({strategy:"provision_attempt_worktree",reason:"own_worktree"});
-    expect(resolveAttemptWorkspace({mode:"auto",risk:"low",expectedOutputCount:1,minScore:10,multiWriteEnabled:false}))
-      .toMatchObject({strategy:"provision_attempt_worktree",reason:"own_worktree"});
+      .toMatchObject({score:2,multiWrite:true,strategy:"provision_attempt_worktree",reason:"own_worktree"});
     expect(resolveAttemptWorkspace({mode:"worktree",risk:"low",expectedOutputCount:1,minScore:9,multiWriteEnabled:false}))
       .toMatchObject({strategy:"inherit_run",reason:"explicit_worktree"});
     expect(()=>resolveAttemptWorkspace({mode:"auto",risk:"unknown",expectedOutputCount:1,minScore:4,multiWriteEnabled:true})).toThrow(/unsupported task risk/);
-    expect(()=>resolveAttemptWorkspace({mode:"auto",risk:"low",expectedOutputCount:1,minScore:11,multiWriteEnabled:true})).toThrow(/0 to 10/);
+    expect(resolveAttemptWorkspace({mode:"auto",risk:"low",expectedOutputCount:1,minScore:11,multiWriteEnabled:true}).minScore).toBe(4);
+  });
+
+  it("F-005: the score and the multi-write switch do not choose a worktree", () => {
+    const decisions = [0, 10].flatMap((minScore) => [false, true].map((multiWriteEnabled) =>
+      resolveAttemptWorkspace({ mode: "auto", risk: "low", expectedOutputCount: 2, minScore, multiWriteEnabled })));
+    expect(new Set(decisions.map((row) => row.reason)).size).toBe(1);
+    expect(decisions.every((row) => row.strategy === "provision_attempt_worktree" && row.reason === "own_worktree")).toBe(true);
+    expect(() => resolveAttemptWorkspace({ mode: "auto", risk: "low", expectedOutputCount: 1, minScore: 11, multiWriteEnabled: true })).not.toThrow();
+    expect(resolveAttemptWorkspace({ mode: "auto", risk: "low", expectedOutputCount: 1, minScore: Number.NaN, multiWriteEnabled: true }).minScore).toBe(4);
+    const offered = UI_CATALOG.filter((row) => (row.storageKey === "adoc.041" || row.storageKey === "adoc.042") && row.uiStatus !== "excluded");
+    expect(offered.map((row) => row.id)).toEqual([]);
   });
 
   it("activates auto PM on configured workspace and provisions only explicit worktree mode", async () => {

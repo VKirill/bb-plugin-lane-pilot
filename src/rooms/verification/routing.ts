@@ -30,19 +30,17 @@ export function usesManagedWorktree(mode: WorkspaceMode): boolean {
  * Every writer attempt of a git project gets its own worktree, whatever the task kind and risk (decision 2026-10-06;
  * live sandbox 2026-10-07: three low-risk tasks sharing the folder rejected each other's files). «worktree» mode
  * isolates the whole run in one instead; a folder without git is the live-folder case, which the caller decides.
- * The risk score and the multi-write switch now only name the reason.
+ * A saved min score or multi-write switch is recorded and ignored. A score outside 0–10 becomes 4 so an old value cannot throw.
  */
 export function resolveAttemptWorkspace(input:{mode:WorkspaceMode;risk:unknown;expectedOutputCount:number;minScore:number;multiWriteEnabled:boolean}):AttemptWorkspaceDecision {
-  if (!Number.isInteger(input.minScore)||input.minScore<0||input.minScore>10) throw new Error("workspace.worktree_min_score must be an integer from 0 to 10");
   if (!Number.isInteger(input.expectedOutputCount)||input.expectedOutputCount<0) throw new Error("expected output count must be a non-negative integer");
   const risk=typeof input.risk==="string"?input.risk:"";
   const score=({low:2,medium:5,high:8,critical:10} as Record<string,number>)[risk];
   if(score===undefined) throw new Error(`unsupported task risk for workspace routing: ${risk||"missing"}`);
+  const minScore=Number.isInteger(input.minScore)&&input.minScore>=0&&input.minScore<=10?input.minScore:4;
   const multiWrite=input.expectedOutputCount>1;
-  const common={schemaVersion:1 as const,mode:input.mode,taskRisk:risk,score,minScore:input.minScore,multiWrite,multiWriteEnabled:input.multiWriteEnabled};
+  const common={schemaVersion:1 as const,mode:input.mode,taskRisk:risk,score,minScore,multiWrite,multiWriteEnabled:input.multiWriteEnabled};
   if(input.mode==="worktree") return {...common,strategy:"inherit_run",reason:"explicit_worktree"};
-  if(score>=input.minScore) return {...common,strategy:"provision_attempt_worktree",reason:"risk_threshold"};
-  if(multiWrite&&input.multiWriteEnabled) return {...common,strategy:"provision_attempt_worktree",reason:"multi_write"};
   return {...common,strategy:"provision_attempt_worktree",reason:"own_worktree"};
 }
 

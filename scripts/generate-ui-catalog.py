@@ -1410,6 +1410,9 @@ def main() -> None:
     for row in hand["rows"]:
         assert row["index"] == len(catalog), f"hand row {row['id']} is not next in line (expected index {len(catalog)})"
         catalog.append({("default" if key == "defaultValue" else key): value for key, value in row.items()} | {"hand": True})
+    # Overrides can change uiStatus after the first tally. Count the finished catalog.
+    counts = {"editable": 0, "readonly": 0, "gap": 0, "excluded": 0}
+    for row in catalog:
         counts[row["uiStatus"]] += 1
 
     # Write TypeScript catalog

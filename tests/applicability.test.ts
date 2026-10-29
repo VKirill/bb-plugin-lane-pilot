@@ -68,10 +68,10 @@ describe("adoc applicability catalog", () => {
 
   it("exposes native task-level workspace risk and multi-output controls",()=>{
     expect(UI_CATALOG.find(row=>row.id==="s041")).toMatchObject({
-      storageKey:"adoc.041",uiStatus:"editable",control:"slider",min:0,max:10,defaultValue:"4",
+      storageKey:"adoc.041",uiStatus:"excluded",control:"slider",min:0,max:10,defaultValue:"4",
     });
     expect(UI_CATALOG.find(row=>row.id==="s042")).toMatchObject({
-      storageKey:"adoc.042",uiStatus:"editable",control:"switch",defaultValue:"true",
+      storageKey:"adoc.042",uiStatus:"excluded",control:"switch",defaultValue:"true",
     });
   });
 
@@ -145,7 +145,7 @@ describe("adoc applicability catalog", () => {
   });
 
   it("maps workspace threshold and session task cap to their native runtime consumers",()=>{
-    expect(UI_CATALOG.find((row)=>row.id==="s055")).toMatchObject({storageKey:"adoc.041",uiStatus:"editable",channel:"OWN"});
+    expect(UI_CATALOG.find((row)=>row.id==="s055")).toMatchObject({storageKey:"adoc.041",uiStatus:"excluded",channel:"N/A"});
     expect(UI_CATALOG.find((row)=>row.id==="s056")).toMatchObject({storageKey:"ops.max_tasks",uiStatus:"readonly",channel:"NONE"});
   });
 
@@ -188,7 +188,7 @@ describe("adoc applicability catalog", () => {
   });
 
   it("keeps all former UI-visible fields on screen", () => {
-    expect(VISIBLE_CATALOG).toHaveLength(351);
+    expect(VISIBLE_CATALOG).toHaveLength(348);
     expect(VISIBLE_CATALOG.every((row) => row.uiStatus !== "excluded")).toBe(true);
     expect(UI_CATALOG.filter((row) => row.id >= "s355" && row.setting.startsWith("docs.")).every((row) => row.uiStatus === "editable" && row.channel === "OWN")).toBe(true);
     expect(UI_CATALOG.filter((row)=>["night_review.enabled","night_review.provider","night_review.model","night_review.agent"].includes(row.storageKey)&&row.id!=="s290").every((row)=>row.uiStatus==="editable"&&row.channel==="OWN")).toBe(true);
