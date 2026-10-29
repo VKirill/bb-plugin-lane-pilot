@@ -4,6 +4,7 @@ export { parseExecutionLineWindows } from "./capabilities";
 export type { PathWindows } from "./capabilities";
 export { inventoryCoexistence, runCoexistenceOperation } from "./coexistence";
 export { NATIVE_HOOK_SOURCES } from "./native-hook-sources";
+export { NATIVE_OPENCODE_SOURCES } from "./native-opencode-sources";
 export { createNativeInstaller, experimental_vkLifecycle } from "./native-install-lifecycle";
 export { atomicText } from "./native-install-owned";
 export { connectOpencodeStack, detectStack, importConfigStack, installStack, rollbackStack, snapshotStack } from "./stack-ops";

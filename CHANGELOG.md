@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.1.381
+
+Lane Pilot no longer needs the Claude Lane Claude-Code plugin (owner decision 2026-10-29), and the full-code audit A-004 recheck, A-023…A-036 is fixed (Grok 4.7 writers, each probe kept as a regression):
+
+- **Without the lane-stack plugin.** Every Lane Pilot Claude agent, stock or edited, starts from Lane Pilot's own compiled profile through `--agents`; installs and repairs never install or require `lane-stack@claude-lane-stack`. OpenCode writers get Lane Pilot's own slim plugin (guard, hub guard, same-path repeat stopper, the `lane-pilot` agent; 2820 → 598 lines), bundled like the hooks; v1, winnow, Jev routing, skill hints and the plain-session parts are gone. Claude Lane pin 951e9af (its A-013…A-022 fixes) for the `~/.agents/bin` tools.
+- **Composer agents.** Eleven standalone Claude Lane roles are Lane Pilot agents: advisor, AI researcher, animator, doc classifier, domain researcher, eval auditor, eval planner, model selector, memory curator, check auditor, UI researcher.
+- **Guard.** Git global options (`-C`, `-c`, `--git-dir`, `--work-tree`) no longer hide a force-push (A-023); every `&&`/`;`/`||`/`|` segment and a `bash -c` script are read (A-033); `echo git push …` is data. A permit is bound to the real path of the directory it was granted in (A-024).
+- **Permits and installs.** Two writers asking the same command get two requests and each answer reaches its own writer; a failed PM send is retried (A-025). File compare-and-swap is serialised per file with a lock (A-026); a shim whose ledger write failed is rolled back (A-029); one inventory hashes each path once, OpenCode connects once (J-003, J-004).
+- **Native launcher.** Launcher folders are per project (A-027); a bad project hook no longer rejects the session (A-028).
+- **Jev.** Each host call carries its own key and endpoint (A-030); a Jev state always fits its limit (A-031); concurrent output-guard blocks are all kept (A-032).
+- **Resilience.** An owner-present refusal frees the provider trial it reserved (A-034); a budget check names every exhausted limit (A-035); a gate that times out fails even when its command exits 0 on TERM (A-036).
+- **Stops.** A failed worktree read is no record; recovery records a canceled writer it finds idle (A-004 recheck).
+
 ## 0.1.380
 
 From the full-code audit of 2026-10-29 (Аудит GPT, A-001…A-012), each probe kept as a regression that was red before its fix:

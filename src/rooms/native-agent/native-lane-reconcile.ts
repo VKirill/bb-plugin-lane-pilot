@@ -3,8 +3,7 @@ import { promisify } from "node:util";
 import { dirname, join } from "node:path";
 import { lstat, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { applyEdits, modify, parse, type ParseError } from "jsonc-parser/lib/esm/main.js";
-import { atomicText } from "../native-install";
-import { NATIVE_OPENCODE_SOURCES } from "../native-install/native-opencode-sources";
+import { NATIVE_OPENCODE_SOURCES, atomicText } from "../native-install";
 
 const execute = promisify(execFile);
 const exists = (path: string) => lstat(path).then(() => true, () => false);

@@ -6,6 +6,10 @@ import LongestFirstSequencer from "./tests/sequencer";
 const mocking = [
   // Not mocks, but module-level state that must start empty: the bound drain; the Jev key a server test provided.
   "tests/deploy-drain.test.ts",
+  "tests/install-metadata.test.ts",
+  "tests/install-cas.test.ts",
+  "tests/native-project-isolation.test.ts",
+  "tests/writer-follow-up-budget.test.ts",
   "tests/verification/docs-jev.test.ts",
   "tests/jev-plan.test.ts",
   "tests/spawn-service-tier.test.ts",
