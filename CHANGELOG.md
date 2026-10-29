@@ -6,7 +6,7 @@
 
 ## 0.1.369
 
-**Observation survives boundary cases.** Run cards include tasks beyond the first 200 and choose the latest attempt by its sequence, even when creation timestamps tie. The Tasks board reports failed reads and stale data, recovers on its next successful poll, and exposes cards beyond the 120th in a column. State pagination uses a timestamp + run ID cursor so same-millisecond runs are not skipped; large attempt reasons are read in bounded chunks with `--reason-offset` and a continuation command. Six regression scenarios cover the original failures, CLI continuation, and UI recovery.
+**Observation survives boundary cases.** Run cards include tasks beyond the first 200 and choose the latest attempt by its sequence, even when creation timestamps tie. The Tasks board reports failed reads and stale data, recovers on its next successful poll, and exposes cards beyond the 120th in a column. State pagination uses a timestamp + run ID cursor so same-millisecond runs are not skipped; large attempt reasons are read in bounded chunks with `--reason-offset` and a continuation command. Six regression scenarios cover the original failures, CLI continuation, and UI recovery. The workflow dependency test now holds a branch on an explicit completion signal instead of comparing 1 ms/25 ms timers, which falsely blocked deployment under CI load.
 
 ## 0.1.368
 

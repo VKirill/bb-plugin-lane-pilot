@@ -151,7 +151,19 @@ describe("order depends_on and on_child_fail", () => {
   it("starts an item only after the items it depends on have finished; the others run together", async () => {
     order.length = 0;
     const items = [{ id: "c", depends_on: ["b"] }, { id: "slow" }, { id: "b", depends_on: ["a", "slow"] }, { id: "a" }, { id: "free" }];
-    const { started } = run(fan({ order: "depends_on" }), { work: work() }, items);
+    // Keep the slow branch open until an independent one finishes. Comparing 25 ms and 1 ms timers instead
+    // measured host/SQLite scheduling under CI load, not whether branches could run together.
+    let releaseSlow!: () => void;
+    const slow = new Promise<void>((resolve) => { releaseSlow = resolve; });
+    const concurrentWork = ok(async (ctx: StepContext) => {
+      const id = String((ctx.input.item as Row).id);
+      order.push(`start:${id}`);
+      if (id === "slow") await slow;
+      order.push(`end:${id}`);
+      if (id === "free") releaseSlow();
+      return { ok: true, label: id };
+    });
+    const { started } = run(fan({ order: "depends_on" }), { work: concurrentWork }, items);
     const summary = await started.done;
     expect(summary.status).toBe("succeeded");
     expect(output(summary)).toEqual({ summary: ["c", "slow", "b", "a", "free"] });
@@ -159,7 +171,7 @@ describe("order depends_on and on_child_fail", () => {
     expect(order.indexOf("start:b")).toBeGreaterThan(order.indexOf("end:a"));
     expect(order.indexOf("start:c")).toBeGreaterThan(order.indexOf("end:b"));
     // Independent items did not wait for the slow one.
-    expect(order.indexOf("end:free")).toBeLessThan(order.indexOf("end:slow"));
+    expect(order.indexOf("end:free"), JSON.stringify(order)).toBeLessThan(order.indexOf("end:slow"));
   });
 
   it("an id outside the list counts as done; a cycle fails the run before anything starts", async () => {
