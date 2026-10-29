@@ -168,7 +168,7 @@ describe("validating the table and the settings of the removed levels", () => {
       expect(validateSettingValue(roleModelKey(role), row("router9/ag/gemini-3.8-flash-high", "medium"))).toBeNull();
       expect(validateSettingValue(roleModelKey(role), null)).toBeNull();
     }
-    for (const bad of [row("gemini-3.8-flash-high"), row("router9/ag/gemini-3.8-flash-low"), row("zai/glm-5.3-flash"), row("claude-opus-5"), { model: "gpt-6.1-sol", reasoning_effort: "ultra" }, { model: "gpt-6.1-sol", provider: "codex" }, "gpt-6.1-sol", {}, []]) {
+    for (const bad of [row("gemini-3.8-flash-high"), row("router9/ag/gemini-3.8-flash-low"), row("zai/glm-5.3-flash"), row("claude-opus-5"), { model: "gpt-6.1-sol", reasoning_effort: "ultra" }, { model: "gpt-6.1-sol", provider: "claude-code" }, "gpt-6.1-sol", {}, []]) {
       expect(validateSettingValue(roleModelKey("analyst"), bad), JSON.stringify(bad)).toMatchObject({ code: "invalid_choice", key: roleModelKey("analyst") });
     }
     expect(validateSettingValue("role_model.nobody", row("gpt-6.1-sol"))).toMatchObject({ code: "invalid_choice" });

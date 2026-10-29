@@ -76,7 +76,9 @@ describe("the table «role -> model»", () => {
     expect(roleModelProblem(roleModelKey("code-critic"), { model: "gemini-3.8-flash-high" })).toContain("model: one of");
     expect(roleModelProblem(roleModelKey("analyst"), { model: "claude-opus-5" })).toContain("model: one of");
     expect(roleModelProblem(roleModelKey("analyst"), { model: "claude-opus-5-5", reasoning_effort: "ultra" })).toContain("reasoning_effort");
-    expect(roleModelProblem(roleModelKey("analyst"), { model: "claude-opus-5-5", provider: "codex" })).toContain("{model");
+    // A table model on the other native provider is not a pair that can run; any provider of BB's window is (a model of its own).
+    expect(roleModelProblem(roleModelKey("analyst"), { model: "claude-opus-5-5", provider: "codex" })).toMatch(/^model:/);
+    expect(roleModelProblem(roleModelKey("analyst"), { model: "grok-4.6", provider: "acp-cursor" })).toBeNull();
     expect(roleModelProblem("role_model.nobody", { model: "claude-opus-5-5" })).toContain("role: one of");
   });
 });

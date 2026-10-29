@@ -14,7 +14,8 @@
 import { belowTier, modelTier, type ModelTier } from "./model-tiers";
 import { offeredOnHost, type ModelCatalog } from "./model-catalog";
 
-export type ModelFamily = "claude" | "gpt" | "google" | "glm";
+/** «other»: a model of any other provider the owner picked in BB's own window (Grok, Composer, GLM on a coding plan…). */
+export type ModelFamily = "claude" | "gpt" | "google" | "glm" | "other";
 export type RoleModelOption = {
   id: string; providerId: string; label: string; family: ModelFamily; tier: ModelTier;
   /** The effort the model runs on when the owner picks it for a row without naming one (the model's own catalog default; the row's effort may not exist for it). */
@@ -150,14 +151,30 @@ export type RoleModel = {
 const text = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value.trim() : null);
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** The owner's row for a role when it is a valid pick of the table (a model of the six, an effort of the list, or none); else null. */
+/**
+ * The option a stored pick stands for. A table model named alone (or with its own provider) is that option; a pick with a `provider` is any
+ * model of any provider, as BB's own provider/model window offers it (`{ provider, model }`): it gets an option of its own, its family read
+ * off the name (`other` when the name says nothing) and its tier likewise. A model alone that is not in the table is not a pick.
+ */
+export function rowOption(provider: string | null, model: string | null): RoleModelOption | undefined {
+  if (!model) return undefined;
+  const table = roleModelOption(model);
+  if (table && (!provider || provider === table.providerId)) return table;
+  // The two native providers serve only their own family: `codex` + Claude Opus is not a pair that can run.
+  if (!provider || (table && (provider === "claude-code" || provider === "codex"))) return undefined;
+  return { id: model, providerId: provider, label: model, family: modelFamily(model) ?? "other", tier: modelTier(model) ?? "standard" };
+}
+const effortOf = (raw: Record<string, unknown>, option: RoleModelOption): string | null => {
+  const effort = text(raw.reasoning_effort);
+  return effort && (ROLE_MODEL_EFFORTS as readonly string[]).includes(effort) && (!option.efforts || option.efforts.includes(effort)) ? effort : null;
+};
+
+/** The owner's row for a role when it is a valid pick (a table model, or any provider's model with its provider), with its effort or none; else null. */
 export function tableRowAt(settings: Record<string, unknown>, rowId: string): { option: RoleModelOption; effort: string | null } | null {
   const raw = settings[roleModelKey(rowId)];
   if (!isRecord(raw)) return null;
-  const option = roleModelOption(text(raw.model) ?? "");
-  if (!option) return null;
-  const effort = text(raw.reasoning_effort);
-  return { option, effort: effort && (ROLE_MODEL_EFFORTS as readonly string[]).includes(effort) && (!option.efforts || option.efforts.includes(effort)) ? effort : null };
+  const option = rowOption(text(raw.provider), text(raw.model));
+  return option ? { option, effort: effortOf(raw, option) } : null;
 }
 
 /**
@@ -167,14 +184,14 @@ export function tableRowAt(settings: Record<string, unknown>, rowId: string): { 
 export function tablePoolAt(settings: Record<string, unknown>, rowId: string): Array<{ option: RoleModelOption; effort: string | null }> {
   const raw = settings[roleModelKey(rowId)];
   if (!isRecord(raw) || !Array.isArray(raw.pool)) return [];
-  const main = text(raw.model);
+  const main = rowOption(text(raw.provider), text(raw.model));
+  const same = (a: RoleModelOption, b: RoleModelOption | undefined) => Boolean(b) && a.id === b!.id && a.providerId === b!.providerId;
   const out: Array<{ option: RoleModelOption; effort: string | null }> = [];
   for (const entry of raw.pool) {
     if (!isRecord(entry)) continue;
-    const option = roleModelOption(text(entry.model) ?? "");
-    if (!option || option.id === main || out.some((row) => row.option.id === option.id)) continue;
-    const effort = text(entry.reasoning_effort);
-    out.push({ option, effort: effort && (ROLE_MODEL_EFFORTS as readonly string[]).includes(effort) && (!option.efforts || option.efforts.includes(effort)) ? effort : null });
+    const option = rowOption(text(entry.provider), text(entry.model));
+    if (!option || same(option, main) || out.some((row) => same(option, row.option))) continue;
+    out.push({ option, effort: effortOf(entry, option) });
   }
   return out;
 }
@@ -184,18 +201,21 @@ export function roleModelProblem(key: string, value: unknown): string | null {
   const row = key.slice(ROLE_MODEL_KEY_PREFIX.length);
   if (!ROLE_IDS.includes(row)) return `role: one of ${ROLE_IDS.join(", ")}`;
   if (value === undefined || value === null || value === "") return null;
-  if (!isRecord(value)) return "{model, reasoning_effort?}";
+  if (!isRecord(value)) return "{provider?, model, reasoning_effort?}";
   const effort = value.reasoning_effort;
-  const option = roleModelOption(text(value.model) ?? "");
-  if (!option) return `model: one of ${ROLE_MODEL_OPTIONS.map((row) => row.id).join(", ")}`;
+  if (value.provider !== undefined && !(typeof value.provider === "string" && value.provider.trim() && value.provider.length <= 100)) return "provider: a provider id";
+  if (typeof value.model === "string" && value.model.length > 200) return "model: at most 200 characters";
+  const option = rowOption(text(value.provider), text(value.model));
+  if (!option) return `model: one of ${ROLE_MODEL_OPTIONS.map((row) => row.id).join(", ")}, or any model with its provider`;
   if (typeof effort === "string" && option.efforts && !option.efforts.includes(effort)) return `reasoning_effort for ${option.id}: one of ${option.efforts.join(", ")}`;
   if (effort !== undefined && !(typeof effort === "string" && (ROLE_MODEL_EFFORTS as readonly string[]).includes(effort))) return `reasoning_effort: one of ${ROLE_MODEL_EFFORTS.join(", ")}`;
-  if (!Object.keys(value).every((name) => name === "model" || name === "reasoning_effort" || name === "pool")) return "{model, reasoning_effort?, pool?}";
+  if (!Object.keys(value).every((name) => name === "provider" || name === "model" || name === "reasoning_effort" || name === "pool")) return "{provider?, model, reasoning_effort?, pool?}";
   if (value.pool !== undefined) {
-    if (!Array.isArray(value.pool)) return "pool: [{model, reasoning_effort?}]";
+    if (!Array.isArray(value.pool)) return "pool: [{provider?, model, reasoning_effort?}]";
     for (const entry of value.pool) {
-      const problem = roleModelProblem(key, isRecord(entry) ? { model: entry.model, ...(entry.reasoning_effort !== undefined ? { reasoning_effort: entry.reasoning_effort } : {}) } : entry);
-      if (problem || !isRecord(entry) || !Object.keys(entry).every((name) => name === "model" || name === "reasoning_effort")) return `pool: ${problem ?? "[{model, reasoning_effort?}]"}`;
+      if (!isRecord(entry) || !Object.keys(entry).every((name) => name === "provider" || name === "model" || name === "reasoning_effort")) return "pool: [{provider?, model, reasoning_effort?}]";
+      const problem = roleModelProblem(key, entry);
+      if (problem) return `pool: ${problem}`;
     }
   }
   return null;

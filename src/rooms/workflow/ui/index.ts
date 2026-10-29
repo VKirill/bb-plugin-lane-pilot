@@ -5,3 +5,4 @@ export { executorLine, modelShort, providerShort, sourceText, useModelCatalog } 
 export type { StepExecutor } from "./workflow-models";
 export { NativeModelPicker } from "./workflow-native-picker";
 export type { PickerSeed } from "./workflow-native-picker";
+export type { ModelChoice } from "./workflow-model-ops";

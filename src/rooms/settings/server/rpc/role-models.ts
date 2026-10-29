@@ -31,7 +31,7 @@ export function roleModelsRpc(ctx: ServerCore) {
           return {
             role: row.id, providerId: chosen.providerId, model: chosen.model, effort: chosen.effort, source: chosen.source, sourceKey: chosen.sourceKey,
             own: own.has(key), version: versions[key] ?? 0, defaultModel: builtin.model, defaultEffort: builtin.effort, offered: offered(chosen.providerId, chosen.model),
-            pool: chosen.source === "table" ? tablePoolAt(settings, row.id).map(({ option }) => option.id) : [],
+            pool: chosen.source === "table" ? tablePoolAt(settings, row.id).map(({ option, effort }) => ({ providerId: option.providerId, model: option.id, effort })) : [],
           };
         }),
         options: ROLE_MODEL_OPTIONS.map((option) => ({

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.365
+
+**The table «role -> model» takes any provider's model, in BB's own window.** A role's model was one of ten table models in a plain list. Each row now opens BB's own provider/model window (the composer's: provider tabs, search, reasoning), so any provider the machines have can work a role: Grok on Cursor, GLM on the Z.AI coding plan, Composer. The «+» of the pool opens the same window. A pick names its provider (`role_model.<role>` = `{ provider, model, reasoning_effort?, pool: [{ provider, model, reasoning_effort? }] }`); a table model named alone keeps working, a table model on the other native provider (Claude Opus on `codex`) is refused. A model outside the table has its family read off the name, `other` when the name says nothing, so the cross-family rule for judges treats it as another family.
+
 ## Unreleased
 
 **Nightly docs skips workspaces its host RPCs do not support.** The BB-service project includes the Windows source `C:\Users\vechkasov\bb-perf`. The hourly pass sent it to `gitDocsScope`, whose contract accepts only absolute POSIX paths, and failed input validation every hour (2026-10-28). It now returns `skipped: unsupported_workspace_path` before any docs host call, for project sources and section copies alike; the project's macOS and Linux copies are still inspected. Windows docs execution remains unsupported.

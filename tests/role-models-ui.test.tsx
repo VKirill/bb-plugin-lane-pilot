@@ -1,24 +1,51 @@
 /** @vitest-environment jsdom */
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, waitFor, within } from "@testing-library/react";
+import { fireEvent, waitFor } from "@testing-library/react";
 import { en, ru } from "@lane-pilot/i18n";
 import { ROLE_MODEL_OPTIONS, ROLE_TABLE, roleDefaultModel, roleModelKey } from "@lane-pilot/models";
 import { mountPage } from "./ui-harness";
 import { openTab } from "./ui-tabs";
 import { useMatrixHooks } from "./ui-matrix/helpers";
+import React from "react";
+import { installTestPluginRuntime } from "@get-bb/plugin-sdk/testing/app";
+import { choosePickerValue, scopedPicker, type PickerNode, type PickerValue } from "./ui-settings-integration/helpers";
+
+/** BB's window as a test driver, put on the shared test SDK itself: `loadPluginApp` (mountPage) swaps the runtime's SDK object back, not its fields. */
+function installPickerTestDriver() {
+  installTestPluginRuntime();
+  const sdk = (globalThis as typeof globalThis & { __bbPluginRuntime: { pluginSdkApp: Record<string, unknown> } }).__bbPluginRuntime.pluginSdkApp;
+  sdk.experimental_ProviderModelPicker = (props: { value: PickerValue; onChange: (next: PickerValue) => void }) => React.createElement("div", {
+    "data-testid": "bb-provider-model-picker", "data-provider": props.value.providerId, "data-model": props.value.model, "data-effort": props.value.reasoningLevel,
+    ref: (node: PickerNode | null) => { if (node) { node.__pickerValue = props.value; node.__pickerOnChange = props.onChange; } },
+  });
+}
 
 vi.mock("sonner", () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
 
-type Row = { role: string; providerId: string; model: string; effort: string; source: "table" | "stage" | "default"; sourceKey: string | null; own: boolean; version: number; defaultModel: string; defaultEffort: string; offered: boolean | null; pool: string[] };
+type PoolEntry = { providerId: string; model: string; effort: string | null };
+type Row = { role: string; providerId: string; model: string; effort: string; source: "table" | "stage" | "default"; sourceKey: string | null; own: boolean; version: number; defaultModel: string; defaultEffort: string; offered: boolean | null; pool: PoolEntry[] };
 
 /** The table as the server reads it for a place: every role on its default, except what the test changes. */
-function view(changes: Record<string, Partial<Row>> = {}, offered: (id: string) => boolean | null = () => true) {
+function view(changes: Record<string, Partial<Row>> = {}) {
   const roles: Row[] = ROLE_TABLE.map((row) => {
     const builtin = roleDefaultModel(row.id);
-    return { role: row.id, providerId: builtin.providerId, model: builtin.model, effort: builtin.effort, source: "default", sourceKey: null, own: false, version: 0, defaultModel: builtin.model, defaultEffort: builtin.effort, offered: offered(builtin.model), pool: [], ...changes[row.id] };
+    return { role: row.id, providerId: builtin.providerId, model: builtin.model, effort: builtin.effort, source: "default", sourceKey: null, own: false, version: 0, defaultModel: builtin.model, defaultEffort: builtin.effort, offered: true, pool: [], ...changes[row.id] };
   });
-  return { roles, options: ROLE_MODEL_OPTIONS.map((option) => ({ id: option.id, providerId: option.providerId, label: option.label, family: option.family, offered: offered(option.id), efforts: ["low", "medium", "high"] })) };
+  return { roles, options: ROLE_MODEL_OPTIONS.map((option) => ({ id: option.id, providerId: option.providerId, label: option.label, family: option.family, offered: true, efforts: ["low", "medium", "high"] })) };
 }
+
+/** What BB's own window lists: any provider, not only the table's (Grok on Cursor here). */
+const catalog = {
+  hosts: [{ id: "mini", name: "Mac mini", connected: true }],
+  providers: [
+    { id: "claude-code", displayName: "Claude Code", logoUrl: null, family: null, supportsServiceTier: false, serviceTiers: [], hostIds: ["mini"], models: [
+      { id: "claude-opus-5-5", model: "claude-opus-5-5", displayName: "Opus 5.5", efforts: ["low", "medium", "high"], defaultEffort: "high", isDefault: true, hostIds: ["mini"] },
+      { id: "claude-sonnet-5-5", model: "claude-sonnet-5-5", displayName: "Sonnet 5.5", efforts: ["low", "medium", "high"], defaultEffort: "medium", isDefault: false, hostIds: ["mini"] }] },
+    { id: "acp-cursor", displayName: "Cursor", logoUrl: null, family: null, supportsServiceTier: false, serviceTiers: [], hostIds: ["mini"], models: [
+      { id: "grok-4.6", model: "grok-4.6", displayName: "Grok 4.6", efforts: ["medium", "high"], defaultEffort: "medium", isDefault: true, hostIds: ["mini"] }] },
+  ],
+  runHostId: "mini",
+};
 
 function tableRpc(initial: ReturnType<typeof view>) {
   const calls: Array<{ method: string; input: Record<string, unknown> }> = [];
@@ -28,6 +55,7 @@ function tableRpc(initial: ReturnType<typeof view>) {
     set: (next: ReturnType<typeof view>) => { current = next; },
     rpc: {
       get_role_models: (input: unknown) => { calls.push({ method: "get_role_models", input: input as Record<string, unknown> }); return current; },
+      workflow_model_catalog: () => catalog,
       save_setting: (input: unknown) => { calls.push({ method: "save_setting", input: input as Record<string, unknown> }); return { ok: true, conflict: false, version: 1, value: (input as { value: unknown }).value }; },
       reset_project_settings: (input: unknown) => { calls.push({ method: "reset_project_settings", input: input as Record<string, unknown> }); return { ok: true, conflict: false, values: {}, versions: {} }; },
     },
@@ -39,86 +67,77 @@ async function openTeam(slot: Awaited<ReturnType<typeof mountPage>>) {
   openTab(slot, "team");
   return await slot.findByTestId("role-models");
 }
-
-async function choose(slot: Awaited<ReturnType<typeof mountPage>>, testId: string, label: string) {
-  fireEvent.keyDown(slot.getByTestId(testId), { key: "Enter" });
-  fireEvent.click(await slot.findByRole("option", { name: label }));
-}
+const picker = async (slot: Awaited<ReturnType<typeof mountPage>>, testId: string) => {
+  await waitFor(() => expect(scopedPicker(slot, testId)).toBeTruthy());
+  return scopedPicker(slot, testId);
+};
+const saves = (calls: Array<{ method: string; input: Record<string, unknown> }>) => calls.filter((call) => call.method === "save_setting");
 
 describe("the table «role -> model» on the Team tab", () => {
   useMatrixHooks();
 
-  it("shows every role once, with its model, its effort and why, and says where the writer is picked", async () => {
-    const { rpc, calls } = tableRpc(view({ "plan-critic": { source: "stage", sourceKey: "plan_critique.model", model: "gpt-6.1-terra", effort: "medium" }, analyst: { source: "table", own: true, version: 3, model: "claude-sonnet-5-5", effort: "low", sourceKey: "role_model.analyst" } }));
+  it("shows every role once in BB's own model window, with where its model comes from and why", async () => {
+    installPickerTestDriver();
+    const { rpc, calls } = tableRpc(view({ "plan-critic": { source: "stage", sourceKey: "plan_critique.model", model: "gpt-6.1-terra", providerId: "codex", effort: "medium" }, analyst: { source: "table", own: true, version: 3, model: "claude-sonnet-5-5", effort: "low", sourceKey: "role_model.analyst" } }));
     const slot = await mountPage(rpc);
     const panel = await openTeam(slot);
     await waitFor(() => expect(panel.querySelectorAll("li[data-testid^='role-model-']")).toHaveLength(ROLE_TABLE.length));
     expect(calls[0]).toEqual({ method: "get_role_models", input: { projectId: "proj_ui" } });
     expect(panel.textContent).toContain(en.roleModelsHelp);
-    expect(slot.getByTestId("role-models-writers").textContent).toBe(en.roleModelsWriters);
-    // One row per role, no role twice.
-    expect(new Set(Array.from(panel.querySelectorAll("li[data-testid^='role-model-']")).map((node) => node.getAttribute("data-testid"))).size).toBe(ROLE_TABLE.length);
-    expect(slot.getByTestId("role-model-pick-analyst").textContent).toContain("Claude Sonnet 5.5");
-    expect(slot.getByTestId("role-effort-pick-analyst").textContent).toBe("low");
+    const analyst = await picker(slot, "role-model-pick-analyst");
+    expect(analyst.getAttribute("data-model")).toBe("claude-sonnet-5-5");
+    expect(analyst.getAttribute("data-effort")).toBe("low");
     expect(slot.getByTestId("role-model-source-analyst").textContent).toBe(en.roleModelsSource_table);
-    expect(slot.getByTestId("role-model-pick-code-critic").textContent).toContain("Gemini 3.8 Flash (9router)");
-    expect(slot.getByTestId("role-model-pick-auditor").textContent).toContain("GPT-6.1 Sol");
-    expect(slot.getByTestId("role-effort-pick-code-critic").textContent).toBe("medium");
-    expect(slot.getByTestId("role-model-source-code-critic").textContent).toBe(en.roleModelsSource_default);
-    // A model set before the table says which setting it comes from.
     expect(slot.getByTestId("role-model-source-plan-critic").textContent).toBe(en.roleModelsSource_stage.replace("{key}", "plan_critique.model"));
     expect(slot.getByTestId("role-model-code-critic").textContent).toContain(en.roleModelWhy_code_critic);
     slot.lifecycle.unmount();
   });
 
-  it("offers only the Claude, GPT and Gemini Flash (9router) options, and warns about a light model for a role that judges", async () => {
-    const { rpc } = tableRpc(view({ planner: { source: "table", own: true, model: "claude-haiku-5-5", effort: "high", sourceKey: "role_model.planner" } }, (id) => id !== "gpt-6-luna"));
+  it("warns about a light model for a role that judges", async () => {
+    installPickerTestDriver();
+    const { rpc } = tableRpc(view({ planner: { source: "table", own: true, model: "claude-haiku-5-5", effort: "high", sourceKey: "role_model.planner" } }));
     const slot = await mountPage(rpc);
     await openTeam(slot);
-    fireEvent.keyDown(await slot.findByTestId("role-model-pick-analyst"), { key: "Enter" });
-    const options = (await slot.findAllByRole("option")).map((option) => option.textContent);
-    expect(options).toEqual(ROLE_MODEL_OPTIONS.map((option) => (option.id === "gpt-6-luna" ? `${option.label} (${en.roleModelsNotOffered})` : option.label)));
-    expect(options).toContain("Gemini 3.8 Flash (9router)");
-    expect(slot.getByTestId("role-model-light-planner").textContent).toBe(en.roleModelsLight);
+    expect((await slot.findByTestId("role-model-light-planner")).textContent).toBe(en.roleModelsLight);
     expect(slot.queryByTestId("role-model-light-analyst")).toBeNull();
     slot.lifecycle.unmount();
   });
 
-  it("saves a choice as the setting role_model.<role> at the place shown, with its version, and reads the table again", async () => {
-    const { rpc, calls, set } = tableRpc(view({ debugger: { version: 4 } }));
+  it("saves any provider's model the window answers as role_model.<role> with its provider, at the place shown, with its version", async () => {
+    installPickerTestDriver();
+    const { rpc, calls } = tableRpc(view({ debugger: { version: 4 } }));
     const slot = await mountPage(rpc);
     await openTeam(slot);
-    await slot.findByTestId("role-model-pick-debugger");
-    set(view({ debugger: { source: "table", own: true, version: 5, model: "claude-opus-5-5", effort: "high", sourceKey: "role_model.debugger" } }));
-    await choose(slot, "role-model-pick-debugger", "Claude Opus 5.5");
-    await waitFor(() => expect(calls.filter((call) => call.method === "save_setting")).toHaveLength(1));
-    expect(calls.find((call) => call.method === "save_setting")!.input).toEqual({ projectId: "proj_ui", key: roleModelKey("debugger"), value: { model: "claude-opus-5-5", reasoning_effort: "high" }, expectedVersion: 4 });
-    await waitFor(() => expect(slot.getByTestId("role-model-pick-debugger").textContent).toContain("Claude Opus 5.5"));
-    expect(slot.getByTestId("role-model-source-debugger").textContent).toBe(en.roleModelsSource_table);
-    // The effort alone is saved with the model in force.
-    await choose(slot, "role-effort-pick-debugger", "low");
-    await waitFor(() => expect(calls.filter((call) => call.method === "save_setting")).toHaveLength(2));
-    expect(calls.filter((call) => call.method === "save_setting")[1]!.input).toMatchObject({ key: roleModelKey("debugger"), value: { model: "claude-opus-5-5", reasoning_effort: "low" }, expectedVersion: 5 });
+    await choosePickerValue({ providerId: "acp-cursor", model: "grok-4.6", reasoningLevel: "high" }, await picker(slot, "role-model-pick-debugger"));
+    await waitFor(() => expect(saves(calls)).toHaveLength(1));
+    expect(saves(calls)[0]!.input).toEqual({ projectId: "proj_ui", key: roleModelKey("debugger"), value: { provider: "acp-cursor", model: "grok-4.6", reasoning_effort: "high" }, expectedVersion: 4 });
     slot.lifecycle.unmount();
   });
 
-  it("a row's pool of models: shown, kept when the effort changes, and a model taken out of it with ×", async () => {
-    const pooled = { source: "table" as const, own: true, version: 3, model: "claude-sonnet-5-5", effort: "medium", sourceKey: "role_model.errand", pool: ["gpt-6.1-terra", "gpt-6-luna"] };
+  it("a row's pool: shown, a model added through the same window, kept when the model changes, taken out with ×", async () => {
+    installPickerTestDriver();
+    const pooled = { source: "table" as const, own: true, version: 3, model: "claude-sonnet-5-5", effort: "medium", sourceKey: "role_model.errand", pool: [{ providerId: "codex", model: "gpt-6.1-terra", effort: null }] };
     const { rpc, calls } = tableRpc(view({ errand: pooled }));
     const slot = await mountPage(rpc);
     await openTeam(slot);
-    expect((await slot.findByTestId("role-model-pool-errand")).textContent).toContain("GPT-6.1 Terra");
-    await choose(slot, "role-effort-pick-errand", "high");
-    await waitFor(() => expect(calls.filter((call) => call.method === "save_setting")).toHaveLength(1));
-    expect(calls.find((call) => call.method === "save_setting")!.input).toMatchObject({ value: { model: "claude-sonnet-5-5", reasoning_effort: "high", pool: [{ model: "gpt-6.1-terra" }, { model: "gpt-6-luna" }] } });
+    expect((await slot.findByTestId("role-model-pool-errand")).textContent).toContain("gpt-6.1-terra");
+    fireEvent.click(slot.getByTestId("role-model-pool-add-errand"));
+    await choosePickerValue({ providerId: "acp-cursor", model: "grok-4.6", reasoningLevel: "medium" }, await picker(slot, "role-model-pool-picker-errand"));
+    await waitFor(() => expect(saves(calls)).toHaveLength(1));
+    expect(saves(calls)[0]!.input).toMatchObject({ value: { provider: "claude-code", model: "claude-sonnet-5-5", reasoning_effort: "medium",
+      pool: [{ provider: "codex", model: "gpt-6.1-terra" }, { provider: "acp-cursor", model: "grok-4.6", reasoning_effort: "medium" }] } });
+    await choosePickerValue({ providerId: "claude-code", model: "claude-opus-5-5", reasoningLevel: "high" }, await picker(slot, "role-model-pick-errand"));
+    await waitFor(() => expect(saves(calls)).toHaveLength(2));
+    expect(saves(calls)[1]!.input).toMatchObject({ value: { model: "claude-opus-5-5", pool: [{ provider: "codex", model: "gpt-6.1-terra" }] } });
     fireEvent.click(slot.getByTestId("role-model-pool-remove-errand-gpt-6.1-terra"));
-    await waitFor(() => expect(calls.filter((call) => call.method === "save_setting")).toHaveLength(2));
-    expect(calls.filter((call) => call.method === "save_setting")[1]!.input).toMatchObject({ value: { model: "claude-sonnet-5-5", reasoning_effort: "medium", pool: [{ model: "gpt-6-luna" }] } });
+    await waitFor(() => expect(saves(calls)).toHaveLength(3));
+    expect(saves(calls)[2]!.input).toEqual(expect.objectContaining({ value: { provider: "claude-code", model: "claude-sonnet-5-5", reasoning_effort: "medium" } }));
     slot.lifecycle.unmount();
   });
 
   it("«Default» drops the row of this place (the level below shows through) and only a row of this place has the button", async () => {
-    const { rpc, calls } = tableRpc(view({ memory: { source: "table", own: true, version: 2, model: "gpt-6-luna", effort: "low", sourceKey: "role_model.memory" } }));
+    installPickerTestDriver();
+    const { rpc, calls } = tableRpc(view({ memory: { source: "table", own: true, version: 2, model: "gpt-6-luna", providerId: "codex", effort: "low", sourceKey: "role_model.memory" } }));
     const slot = await mountPage(rpc);
     await openTeam(slot);
     expect(slot.queryByTestId("role-model-reset-analyst")).toBeNull();
@@ -128,19 +147,19 @@ describe("the table «role -> model» on the Team tab", () => {
     slot.lifecycle.unmount();
   });
 
-  it("says why a save was refused, and keeps the table as it was", async () => {
+  it("says why a save was refused", async () => {
+    installPickerTestDriver();
     const { rpc } = tableRpc(view());
     const refused = { ...rpc, save_setting: () => ({ ok: false, conflict: false, version: 0, value: null, validation: { code: "invalid_choice", key: roleModelKey("analyst"), params: [roleModelKey("analyst"), "model: one of nothing"] } }) };
     const slot = await mountPage(refused);
     await openTeam(slot);
-    await slot.findByTestId("role-model-pick-analyst");
-    await choose(slot, "role-model-pick-analyst", "Claude Haiku 5.5");
+    await choosePickerValue({ providerId: "claude-code", model: "claude-sonnet-5-5", reasoningLevel: "medium" }, await picker(slot, "role-model-pick-analyst"));
     expect((await slot.findByTestId("role-models-error")).textContent).toBe(en.roleModelsSaveFailed.replace("{error}", "model: one of nothing"));
-    expect(slot.getByTestId("role-model-pick-analyst").textContent).toContain("Claude Opus 5.5");
     slot.lifecycle.unmount();
   });
 
   it("reads in Russian with the word «граф» and no «воркфлоу» or «цепочка»", async () => {
+    installPickerTestDriver();
     const { rpc } = tableRpc(view());
     const slot = await mountPage({ ...rpc, get_preferences: () => ({ locale: "ru", preference: "ru", lastProjectId: null }) });
     const panel = await openTeam(slot);

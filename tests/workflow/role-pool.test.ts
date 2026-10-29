@@ -36,4 +36,15 @@ describe("a role with a pool of models", () => {
     expect(resolveAgentModel({ role: "errand", settings: { "role_model.errand": { model: "claude-sonnet-5-5" } }, pm: null, load: busy }).model).toBe("claude-sonnet-5-5");
     expect(resolveAgentModel({ role: "errand", settings: {}, pm: null, load: busy }).model).toBe("claude-sonnet-5-5");
   });
+
+  it("takes any provider's model from BB's own window: the row and its pool name the provider", () => {
+    const any = { provider: "acp-cursor", model: "grok-4.6", reasoning_effort: "high", pool: [{ provider: "opencode2", model: "zai-coding-plan/glm-5.3-flash" }] };
+    expect(roleModelProblem("role_model.errand", any)).toBeNull();
+    // A model that is not in the table needs its provider; a provider that is not a string is refused.
+    expect(roleModelProblem("role_model.errand", { model: "grok-4.6" })).toMatch(/^model:/);
+    expect(roleModelProblem("role_model.errand", { provider: 7, model: "grok-4.6" })).toMatch(/^provider/);
+    const picked = resolveAgentModel({ role: "errand", settings: { "role_model.errand": any }, pm: null, load: load({ "acp-cursor": { percent: 80, recent: 0 }, opencode2: { percent: 10, recent: 0 } }) });
+    expect(picked).toMatchObject({ providerId: "opencode2", model: "zai-coding-plan/glm-5.3-flash", source: "table" });
+    expect(resolveAgentModel({ role: "errand", settings: { "role_model.errand": any }, pm: null })).toMatchObject({ providerId: "acp-cursor", model: "grok-4.6", reasoningEffort: "high" });
+  });
 });
