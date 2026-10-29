@@ -219,6 +219,15 @@ it("is a unified BB PM instruction, not a CLI orchestrator patch", () => {
   expect(LANE_PILOT_PM_SESSION).not.toContain("stages.onboard");
 });
 
+it("F-003: standard with the critic unset is not a mandatory code critic; full still is", () => {
+  expect(LANE_PILOT_PM_SESSION).not.toContain("runs plan critique, code critique and acceptance");
+  expect(LANE_PILOT_PM_SESSION).not.toContain("Every task is critiqued before it lands");
+  expect(LANE_PILOT_PM_SESSION).toContain("unset is standard");
+  expect(LANE_PILOT_PM_SESSION).toContain("quick runs no plan critique and no code critique");
+  expect(LANE_PILOT_PM_SESSION).toContain("there is no code critic unless code_critique.enabled is on");
+  expect(LANE_PILOT_PM_SESSION).toContain("full runs plan critique and code critique on every task");
+});
+
 it("stock plugin compile is a BB session, not a CLI dump", () => {
   const stock = bundledAgents["dev-orchestrator"].prompt;
   expect(compileMainAgentProfile("dev-orchestrator").prompt).toBe(lanePmOverlayPrompt("dev-orchestrator"));
