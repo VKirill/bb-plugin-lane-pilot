@@ -1,4 +1,37 @@
 # Session log (agent handoff index)
 
+- [2026-10-29 055008](2026-10-29/055008-agent-d9d07f21.md) — agent/unknown — files:0 shell:0
+- [2026-10-29 051954](2026-10-29/051954-agent-d9d07f21.md) — agent/unknown — files:0 shell:9
+- [2026-10-29 050647](2026-10-29/050647-agent-d9d07f21.md) — agent/unknown — files:0 shell:0
+- [2026-10-29 050438](2026-10-29/050438-agent-d9d07f21.md) — agent/unknown — files:0 shell:1
+- [2026-10-29 045430](2026-10-29/045430-agent-d9d07f21.md) — agent/unknown — files:0 shell:17
+- [2026-10-29 044330](2026-10-29/044330-agent-d9d07f21.md) — agent/unknown — files:0 shell:18
+- [2026-10-29 043705](2026-10-29/043705-agent-d9d07f21.md) — agent/unknown — files:0 shell:6
+- [2026-10-29 043444](2026-10-29/043444-agent-d9d07f21.md) — agent/unknown — files:0 shell:1
+- [2026-10-29 043300](2026-10-29/043300-agent-d9d07f21.md) — agent/unknown — files:0 shell:5
+- [2026-10-29 043145](2026-10-29/043145-agent-d9d07f21.md) — agent/unknown — files:0 shell:4
+- [2026-10-29 043004](2026-10-29/043004-agent-d9d07f21.md) — agent/unknown — files:0 shell:1
+- [2026-10-29 042939](2026-10-29/042939-agent-d9d07f21.md) — agent/unknown — files:0 shell:2
+- [2026-10-29 042810](2026-10-29/042810-agent-d9d07f21.md) — agent/unknown — files:0 shell:2
+- [2026-10-29 042351](2026-10-29/042351-agent-d9d07f21.md) — agent/unknown — files:1 shell:2
+- [2026-10-29 042142](2026-10-29/042142-agent-d9d07f21.md) — agent/general-purpose — files:0 shell:12
+- [2026-10-29 042018](2026-10-29/042018-agent-d9d07f21.md) — agent/general-purpose — files:0 shell:32
+- [2026-10-29 041758](2026-10-29/041758-agent-d9d07f21.md) — agent/general-purpose — files:0 shell:22
+- [2026-10-29 035052](2026-10-29/035052-agent-d9d07f21.md) — agent/unknown — files:0 shell:1
+- [2026-10-29 034536](2026-10-29/034536-agent-d9d07f21.md) — agent/unknown — files:0 shell:1
+- [2026-10-29 034231](2026-10-29/034231-agent-d9d07f21.md) — agent/unknown — files:0 shell:36
+- [2026-10-29 023509](2026-10-29/023509-agent-d9d07f21.md) — agent/unknown — files:0 shell:0
+- [2026-10-29 020252](2026-10-29/020252-agent-d9d07f21.md) — agent/unknown — files:0 shell:1
+- [2026-10-29 015255](2026-10-29/015255-agent-d9d07f21.md) — agent/unknown — files:0 shell:20
+- [2026-10-29 014011](2026-10-29/014011-agent-d9d07f21.md) — agent/unknown — files:0 shell:4
+- [2026-10-29 013809](2026-10-29/013809-agent-d9d07f21.md) — agent/unknown — files:0 shell:1
+- [2026-10-29 013003](2026-10-29/013003-agent-d9d07f21.md) — agent/unknown — files:0 shell:22
+- [2026-10-29 012320](2026-10-29/012320-agent-d9d07f21.md) — agent/unknown — files:0 shell:15
+- [2026-10-29 011745](2026-10-29/011745-agent-d9d07f21.md) — agent/unknown — files:0 shell:40
+- [2026-10-29 010841](2026-10-29/010841-agent-d9d07f21.md) — agent/unknown — files:0 shell:0
+- [2026-10-29 010827](2026-10-29/010827-agent-d9d07f21.md) — agent/unknown — files:0 shell:1
+- [2026-10-29 010724](2026-10-29/010724-agent-d9d07f21.md) — agent/unknown — files:0 shell:8
+- [2026-10-29 005909](2026-10-29/005909-agent-d9d07f21.md) — agent/unknown — files:0 shell:7
+- [2026-10-29 005515](2026-10-29/005515-agent-d9d07f21.md) — agent/unknown — files:0 shell:40
 - [2026-10-29 001548](2026-10-29/001548-agent-d9d07f21.md) — agent/unknown — files:0 shell:0
 - [2026-10-29 000848](2026-10-29/000848-agent-d9d07f21.md) — agent/unknown — files:0 shell:40

@@ -19,8 +19,8 @@ function scan(): Map<string, number> {
   const found = new Map<string, number>();
   for (const file of sourceFiles(join(ROOT, "src"))) {
     const rel = relative(ROOT, file);
-    // The contract only names the RPC methods; the probe and the retrieval evaluation are verifiers, not paths (they call the helpers to look at what they return).
-    if (rel.startsWith("src/rooms/contracts/") || rel === "src/rooms/memory-probe/server/memory-probe.ts" || rel.startsWith("src/rooms/memory-eval/")) continue;
+    // The contract only names the RPC methods; the SMA map only quotes them in proof links; the probe and the retrieval evaluation are verifiers, not paths (they call the helpers to look at what they return).
+    if (rel.startsWith("src/rooms/contracts/") || rel.startsWith("src/rooms/sma-map/") || rel === "src/rooms/memory-probe/server/memory-probe.ts" || rel.startsWith("src/rooms/memory-eval/")) continue;
     for (const line of readFileSync(file, "utf8").split("\n")) {
       const text = line.trim();
       if (!text || text.startsWith("//") || text.startsWith("*") || text.startsWith("/*") || text.startsWith("import ") || text.startsWith("export {") || text.startsWith("export type")) continue;
