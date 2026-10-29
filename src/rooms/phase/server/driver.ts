@@ -21,6 +21,7 @@ import { createAutoStages, recoverStopped } from "./auto-stages";
 import { checkProofs, hostGit, phaseProofRecords, renderProofCurrency } from "./proof-currency";
 import { builtinWorkflow } from "../../workflow";
 import { architectStarter } from "../../workflow/server";
+import { recheckPlanFact } from "../../writer/server";
 import { critiqueProblems, roleLine, type DesignJournalLine, type DrawingCritique } from "../../design-eval";
 
 export const DESIGN_JOURNAL = "lp.design.journal";
@@ -447,7 +448,10 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     if (input.state === "close" && !input.words?.trim()) throw new PhaseRefusal("closing in words carries the words: why the phase ends here");
     // The machine chose the road (SMA: the machinist cannot drive where there are no rails): a phase the rails opened ends by its gates
     // or by the owner's word, not because the PM finds the request small (live ph_9ed0f7f04b, 2026-10-24, closed at discussion).
-    if (input.state === "close" && phase.record.rails && (input.by ?? "pm") === "pm" && !["acceptance", "lessons", "closed"].includes(phase.stage))
+    // Work that is all in is not that: every planned piece accepted, the PM closes with its words (live ph_26f65b142d: the work shipped, the
+    // phase stood on a stale verdict, and the PM told the owner only his word could end it).
+    const allIn = (phase.record.plan?.items ?? []).length > 0 && executionGate(phase.record.plan!.items, phase.record.execution?.issued ?? {}, facts(phase)).ok;
+    if (input.state === "close" && phase.record.rails && (input.by ?? "pm") === "pm" && !allIn && !["acceptance", "lessons", "closed"].includes(phase.stage))
       throw new PhaseRefusal(`phase ${phase.id} was opened by the rails for the owner's heavy request: it ends by its gates or by the owner's word, not by the PM. If the work is in fact small, plan it as one or two pieces — the stages pass quickly then.`);
     const record: PhaseRecord = input.state === "close" ? { ...phase.record, closing: { by: input.by ?? "pm", words: input.words!, at: now() } } : phase.record;
     book(phase, "decisions", input.state, `${input.by ?? "pm"}${input.words ? `: ${input.words}` : ""}`);
@@ -571,6 +575,21 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     return mustGet(phase.id);
   }
 
+  /**
+   * An accepted piece whose plan-fact failed under older rules of the check is weighed again by the current ones, once (recheckPlanFact):
+   * a passing receipt changes the wave's package, and the wave is weighed again on the same pass.
+   */
+  async function recheckStale(phase: Phase): Promise<void> {
+    const hostId = phase.runId ? getRunWriterHost(db, phase.runId) : null;
+    if (!phase.runId || !hostId) return;
+    for (const [pieceId, fact] of facts(phase)) {
+      if (fact.state !== "accepted" || fact.planFact !== "failed" || !fact.taskId) continue;
+      const state = await recheckPlanFact(ctx, { projectId: phase.projectId, runId: phase.runId, taskId: fact.taskId, hostId })
+        .catch((cause: unknown) => { ctx.log(`phase ${phase.id}: plan-fact of ${fact.taskId} not weighed again: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
+      if (state) book(phase, "execution", "plan_fact_recheck", `${pieceId} (task ${fact.taskId}): plan-fact weighed again by the current rules of the check: ${state}`);
+    }
+  }
+
   /** One step of a phase. Reconciling after force: every tick reads the pieces' facts afresh, so a phase paused, stopped or edited by hand
    * continues from what the attempts and receipts say now, not from what it last believed. */
   async function drive(phase: Phase): Promise<Phase> {
@@ -579,6 +598,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     let current = phase;
     if (current.stage === "execution") {
       current = await issue(current);
+      await recheckStale(current);
       const items = current.record.plan?.items ?? [];
       // Plan result onto the phase: each newly accepted piece is one part of the book.
       const f = facts(current);

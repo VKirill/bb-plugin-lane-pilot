@@ -10,6 +10,7 @@ export { createWriterFinish } from "./finish";
 export { OPENCODE_WRITER_PROVIDER } from "./skill-materialize";
 export { createWriterSpawn } from "./spawn";
 export { createWriterStart } from "./start";
+export { recheckPlanFact } from "./plan-fact";
 export { createWriterState } from "./state";
 export { loadFollowUp, markFollowUpCancelled } from "./sticky";
 export { createWriterQuestionTimeout } from "./question-timeout";

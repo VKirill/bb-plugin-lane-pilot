@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import { blindPlanFact, diffHunksCommand, hunksFromCommandOutput, parseDiffHunks, parsePlanFact, planFactOutcome, PLAN_FACT_BRIEF_LINE } from "../src/rooms/tasks/plan-fact";
 import type { PlanFactFacts } from "../src/rooms/tasks/plan-fact";
 import { writerBriefSegments, stickyTurnPrompt, previousAttemptBrief } from "../src/rooms/writer/server/writer-task";
-import { runPlanFactStage, planFactMode, tableFromAnswers } from "../src/rooms/writer/server/plan-fact";
+import { recheckPlanFact, runPlanFactStage, planFactMode, tableFromAnswers } from "../src/rooms/writer/server/plan-fact";
+import { recordStage } from "../src/rooms/runs/server";
+import { getStageReceiptResult } from "../src/rooms/storage";
 import { buildAcceptanceCard } from "../src/rooms/acceptance/card";
 import { applyCodeCriticDefault, resolveCodeCriticDefault } from "../src/rooms/critique/quality-mode";
 import { createAttempt, createRun, createTask, openDatabase, saveTaskGitBase } from "../src/rooms/storage/database";
@@ -293,6 +295,36 @@ describe("the plan-fact stage and the acceptance card on a database", () => {
     expect(w.commands[0]).toContain(`${BASE} -- 'src/a.ts' 'tests/bar_spec.luau'`);
     expect(result.check.items[1]).toMatchObject({ verdict: "proven" });
     expect(result.check.items[1]!.evidence[0]!.code).not.toBe("file_not_in_diff");
+  });
+
+  it("weighs a failed receipt of older rules again, once, from the stored table and checks (live ph_26f65b142d)", async () => {
+    const w = world();
+    w.db.prepare("UPDATE lane_pilot_attempt SET state='accepted' WHERE id='att1'").run();
+    upsertAttemptChange(w.db, { attemptId: "att1", runId: "run", taskId: "t1" }, { outcome: "merged", changed: [{ path: "tests/bar_spec.luau", status: "M" }] as never });
+    createTask(w.db, { id: "t1.2", runId: "run", kind: "bb", contract: { ...w.task, id: "t1.2" } });
+    createAttempt(w.db, { id: "att2", runId: "run", taskId: "t1.2" });
+    recordStage(w.db, { runId: "run", taskId: "t1.2", stageId: "verification", state: "passed", attempt: 1, input: "v",
+      result: { produced: ["src/a.ts"], verification: [{ command: "npm test", exitCode: 0, stdout: "ok" }] } });
+    // The receipt the check wrote before the redo's family files counted: no rules recorded, item 2 «not among the changed files».
+    recordStage(w.db, { runId: "run", taskId: "t1.2", stageId: "plan-fact", state: "failed", attempt: 1, input: "p", reason: "plan_fact_unproven: acceptance item 2 has no evidence that holds in the diff",
+      result: { table: "ok", tableReason: null, mode: "record", base: BASE, extraRows: [], blocking: [2], notChecked: [], items: [
+        { item: 1, acceptance: "the form saves", claimed: "done", verdict: "proven", severity: "ok", why: null, evidence: [{ evidence: "src/a.ts:4-5", kind: "file", ok: true, code: "lines_changed", note: "" }] },
+        { item: 2, acceptance: "errors are shown", claimed: "done", verdict: "unproven", severity: "blocking", why: null, evidence: [{ evidence: "tests/bar_spec.luau", kind: "file", ok: false, code: "file_not_in_diff", note: "" }] },
+      ] } });
+    const input = { projectId: "proj", runId: "run", taskId: "t1.2", hostId: "h" };
+    expect(await recheckPlanFact(w.ctx as never, input)).toBe("passed");
+    const now = getStageReceiptResult(w.db, "run", "t1.2", "plan-fact").result as { rules: number; items: Array<{ verdict: string }> };
+    expect(now.rules).toBeGreaterThanOrEqual(2);
+    expect(now.items.map((row) => row.verdict)).toEqual(["proven", "proven"]);
+    // The new receipt carries the current rules: nothing is weighed again.
+    expect(await recheckPlanFact(w.ctx as never, input)).toBeNull();
+  });
+
+  it("does not weigh again a failed receipt the current rules wrote", async () => {
+    const w = world();
+    await run(w, [fence([{ item: 1, status: "done", evidence: ["src/a.ts:300"] }, { item: 2, status: "done", evidence: ["cmd:npm test"] }])]);
+    expect(buildAcceptanceCard(w.db, { runId: "run", taskId: "t1" })!.planFact).toMatchObject({ state: "failed" });
+    expect(await recheckPlanFact(w.ctx as never, { projectId: "proj", runId: "run", taskId: "t1", hostId: "h" })).toBeNull();
   });
 
   it("reads plan_fact.mode as record unless it says gate", () => {

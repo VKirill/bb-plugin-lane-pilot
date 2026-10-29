@@ -4,9 +4,10 @@ import { createCore } from "../src/rooms/core/server/core";
 import type { Services } from "../src/rooms/core/server/services";
 import { createPhaseDriver } from "../src/rooms/phase/server/driver";
 import { phaseToolParams } from "../src/rooms/phase/server/tool";
-import { contextSignature, acceptanceLines } from "../src/rooms/phase/logic";
+import { contextSignature, acceptanceLines, planSignature, type PlanItem } from "../src/rooms/phase/logic";
+import { recordStage } from "../src/rooms/runs/server";
 import { listParts, savePhase } from "../src/rooms/phase/store";
-import { createRun, openDatabase } from "../src/rooms/storage";
+import { createAttempt, createRun, createTask, openDatabase } from "../src/rooms/storage";
 
 function driver(status = "idle") {
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
@@ -16,7 +17,7 @@ function driver(status = "idle") {
   harness.sdk.stub("threads.list", async () => []);
   const db = openDatabase(bb);
   createRun(db, "run1", "projA");
-  return Object.assign(createPhaseDriver(createCore(bb, db), {} as Services).phases, { sent, db });
+  return Object.assign(createPhaseDriver(createCore(bb, db), { runBudgets: { get: () => undefined } } as unknown as Services).phases, { sent, db });
 }
 
 describe("a phase the rails opened", () => {
@@ -31,6 +32,43 @@ describe("a phase the rails opened", () => {
     const phases = driver();
     const phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Stats", goal: "stats module" });
     expect(phases.setState({ phaseId: phase.id, state: "close", words: "dropped", by: "pm" }).state).toBe("closed");
+  });
+});
+
+/** A rails phase at execution with one piece «hud» in wave 1, its task accepted (or not), its plan-fact receipt failed under older rules. */
+async function executing(accepted: boolean) {
+  const phases = driver();
+  const piece: PlanItem = { id: "hud", title: "Hud", wave: 1, promise: { given: "g", when: "w", then: "t" },
+    task: { id: "hud", project_cwd: "/repo", owns_paths: ["src/**"], verification: [{ command: "npm test" }], acceptance: ["the bar stays centred as now"] } };
+  createTask(phases.db, { id: "hud", runId: "run1", kind: "bb", contract: piece.task });
+  createAttempt(phases.db, { id: "att1", runId: "run1", taskId: "hud" });
+  if (accepted) phases.db.prepare("UPDATE lane_pilot_attempt SET state='accepted' WHERE id='att1'").run();
+  phases.db.prepare("UPDATE lane_pilot_run SET writer_host_id='h' WHERE id='run1'").run();
+  recordStage(phases.db, { runId: "run1", taskId: "hud", stageId: "verification", state: "passed", attempt: 1, input: "v", result: { produced: ["src/hud.ts"], verification: [{ command: "npm test", exitCode: 0 }] } });
+  recordStage(phases.db, { runId: "run1", taskId: "hud", stageId: "plan-fact", state: "failed", attempt: 1, input: "p", reason: "plan_fact_unproven",
+    result: { table: "ok", tableReason: null, mode: "record", base: null, extraRows: [], blocking: [1], notChecked: [], items: [
+      { item: 1, acceptance: "the bar stays centred as now", claimed: "done", verdict: "unproven", severity: "blocking", why: null, evidence: [{ evidence: "tests/bar_spec.ts", kind: "file", ok: false, code: "file_not_in_diff", note: "" }] }] } });
+  const phase = await phases.open({ projectId: "projA", pmThreadId: "thr_pm", title: "Hud", goal: "hud", rails: true });
+  const items = [piece];
+  const sha = planSignature(items, "ctx");
+  savePhase(phases.db, phase.id, { stage: "execution", runId: "run1", record: { ...phase.record, plan: { items, contextSha: "ctx", sha, admittedSha: sha, critique: { decision: "approve", by: "critic" } },
+    execution: { issued: { hud: "hud" }, startedAt: 1 } } as never, at: 2 });
+  return { phases, id: phase.id };
+}
+
+describe("a rails phase whose pieces are all in", () => {
+  it("is closed by the PM with its words once every piece is accepted, not before", async () => {
+    const open = await executing(false);
+    expect(() => open.phases.setState({ phaseId: open.id, state: "close", words: "shipped", by: "pm" })).toThrow(/opened by the rails/);
+    const done = await executing(true);
+    expect(done.phases.setState({ phaseId: done.id, state: "close", words: "the work shipped as version 22", by: "pm" }).state).toBe("closed");
+  });
+  it("weighs a plan-fact verdict of older rules again, and the wave goes green without the PM (live ph_26f65b142d)", async () => {
+    const { phases, id } = await executing(true);
+    await phases.drive(phases.list({ live: true })[0]!);
+    expect(listParts(phases.db, id).find((part) => part.kind === "plan_fact_recheck")?.text).toContain("passed");
+    const wave = phases.list({ live: true }).find((row) => row.id === id)?.record.execution?.waves?.["1"];
+    expect(wave?.lines.every((line) => line.ok)).toBe(true);
   });
 });
 
