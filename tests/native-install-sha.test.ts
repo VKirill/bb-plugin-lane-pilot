@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { NATIVE_STACK_SHA, claudeLaneEnv } from "../src/rooms/native-install/native-install-bootstrap";
+import { lanePilotEnv } from "../src/rooms/native-install/native-install-bootstrap";
+import { nativeInstallOperation } from "../src/rooms/native-install/native-install-host";
 import { NATIVE_OPENCODE_SOURCES } from "../src/rooms/native-install/native-opencode-sources";
 import { reconcileClaudeLane } from "../src/rooms/native-agent/native-lane-reconcile";
 
@@ -20,14 +21,17 @@ async function openCodeHost(guard: string) {
   await mkdir(join(home, ".config/opencode"), { recursive: true });
   await writeFile(join(home, ".config/opencode/opencode.jsonc"), '{\n  "plugin": []\n}\n');
   await mkdir(join(home, "bin")); await writeFile(join(home, "bin/opencode2"), "#!/bin/sh\n", { mode: 0o755 });
-  const env = { ...claudeLaneEnv(home), PATH: `${join(home, "bin")}:/usr/bin:/bin` };
+  const env = { ...lanePilotEnv(home), PATH: `${join(home, "bin")}:/usr/bin:/bin` };
   return { home, source, profile, env };
 }
 
-describe("native install pinned Lane Stack revision", () => {
-  it("pins Lane Stack 1.66.0 (8cfe994), the first whose OpenCode plugin loads in OpenCode v2", () => {
-    expect(NATIVE_STACK_SHA).toBe("6acbe4a3030750e5d10bfe71233653dc1c99a333");
-    expect(NATIVE_STACK_SHA).not.toBe("b9dd6473bbbe772d39a317486979b075635e63b5");
+describe("native install uses Lane Pilot's own pieces", () => {
+  it("does not clone a checkout when it installs", async () => {
+    const root = await mkdtemp(join(tmpdir(), "lp-sha-install-")); roots.push(root);
+    const home = join(root, "home");
+    await mkdir(home, { recursive: true });
+    expect(await nativeInstallOperation({ root: join(root, "managed"), home, action: "install" })).toMatchObject({ status: "enabled", sourceSha: null });
+    await expect(readFile(join(home, ".local/share/claude-lane-stack-installed"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("writes the bundled OpenCode plugin and ignores a mutated checkout", async () => {

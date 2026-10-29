@@ -81,6 +81,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
     "bb lane-pilot host-snapshot <host-id> <absolute-path>...",
     "bb lane-pilot host-snapshot-manifest <host-id> [thread-storage]",
     "bb lane-pilot host-install <host-id> [thread-storage] [pm-workspace]",
+    "bb lane-pilot remove-claude-lane-leftovers <host-id> [--apply]",
     "bb lane-pilot host-rollback <host-id> <snapshot-path>",
     "bb lane-pilot host-connect-opencode <host-id>",
     "bb lane-pilot host-import-config <host-id> <project-id> [workspace-path]",
@@ -141,6 +142,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"host-snapshot", summary:"Call read-only snapshotDryRun", usage:"bb lane-pilot host-snapshot <host-id> <absolute-path>..." },
       { name:"host-snapshot-manifest", summary:"Full §11.1 snapshot", usage:"bb lane-pilot host-snapshot-manifest <host-id> [thread-storage]" },
       { name:"host-install", summary:"Install target SHA without external ops", usage:"bb lane-pilot host-install <host-id> [thread-storage] [pm-workspace]" },
+      { name:"remove-claude-lane-leftovers", summary:"Move Claude Lane leftovers on one machine into a dated backup. Dry-run unless --apply", usage:"bb lane-pilot remove-claude-lane-leftovers <host-id> [--apply]" },
       { name:"host-rollback", summary:"Rollback a snapshot", usage:"bb lane-pilot host-rollback <host-id> <snapshot-path>" },
       { name:"host-connect-opencode", summary:"S5 JSONC plugin patch", usage:"bb lane-pilot host-connect-opencode <host-id>" },
       { name:"host-import-config", summary:"S7 one-shot YAML read", usage:"bb lane-pilot host-import-config <host-id> <project-id> [workspace-path]" },
@@ -564,6 +566,14 @@ export function registerCli(ctx: ServerCore, services: Services) {
             requestedHostId:args[0]!,
             threadStoragePath:args[1],
           }, { hostId:args[0]!, timeoutMs:120_000 }), null, 2) };
+        }
+        if (command === "remove-claude-lane-leftovers" && args.length >= 1) {
+          const hostId = args.find((arg) => !arg.startsWith("--"));
+          if (!hostId) return { exitCode: 1, stderr: "bb lane-pilot remove-claude-lane-leftovers <host-id> [--apply]" };
+          return { exitCode: 0, stdout: JSON.stringify(await host.call("removeClaudeLaneLeftovers", {
+            requestedHostId: hostId,
+            apply: args.includes("--apply"),
+          }, { hostId, timeoutMs: 120_000 }), null, 2) };
         }
         if (command === "host-install" && args.length >= 1) {
           return { exitCode:0, stdout:JSON.stringify(await host.call("install", {

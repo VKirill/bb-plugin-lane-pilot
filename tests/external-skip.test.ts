@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { NO_UPSTREAM, upstreamPath } from "./upstream-fixture";
-import { instrumentInstallSh, isolatedNpmPrefix, writeSkipWrappers } from "../src/rooms/native-install/install-runner";
+import { isolatedNpmPrefix, writeSkipWrappers } from "../src/rooms/native-install/install-runner";
 import { isolatedTestPath, linkSafeTools, snapshotGlobalOpenCursor } from "./npm-isolation";
 
 const INSTALL_SH = NO_UPSTREAM ? "" : readFileSync(upstreamPath("install.sh"), "utf8");
@@ -55,17 +55,5 @@ describe.skipIf(NO_UPSTREAM)("D1 skip wrappers block install.sh npm/open-cursor"
     // open-cursor installed there on purpose is machine state, not something this test owns.
     expect(after).toEqual(before);
     rmSync(root, { recursive: true, force: true });
-  });
-
-  it("instruments all five production install.sh checkpoints", async () => {
-    const dest = join(mkdtempSync(join(tmpdir(), "lane-pilot-anchors-")), "install.sh");
-    await instrumentInstallSh(
-      upstreamPath(),
-      dest,
-    );
-    const text = readFileSync(dest, "utf8");
-    for (const phase of ["npm", "mkdir", "rsync", "settings", "install_json"]) {
-      expect(text).toContain(`lane-pilot checkpoint ${phase}`);
-    }
   });
 });

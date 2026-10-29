@@ -63,6 +63,10 @@ async function acquireLock(lockPath: string): Promise<void> {
 }
 
 /** In-process queue plus an exclusive lock file, so two host workers cannot both pass the hash check. (2026-10-29 audit A-026) */
+export function withCasLock<T>(path: string, body: () => Promise<T>): Promise<T> {
+  return withTargetLock(path, body);
+}
+
 function withTargetLock<T>(path: string, body: () => Promise<T>): Promise<T> {
   const key = resolve(path);
   const previous = tails.get(key) ?? Promise.resolve();
@@ -87,7 +91,7 @@ export async function compareAndSwapText(
   if (expectedSha256 === undefined) {
     return { status: "conflict", beforeSha256: null, afterSha256: null, changed: false, reason: "expectedSha256 is required for a file mutation." };
   }
-  try { return await withTargetLock(path, () => swapText(path, expectedSha256, nextText)); }
+  try { return await withCasLock(path, () => swapText(path, expectedSha256, nextText)); }
   catch (error) {
     return { status: "failed", beforeSha256: null, afterSha256: null, changed: false, reason: error instanceof Error ? error.message : String(error) };
   }
