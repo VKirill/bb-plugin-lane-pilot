@@ -126,7 +126,7 @@ it("binds unique tokens per tab and never uses project pending", async () => {
   }) as { token: string };
   expect(first.agentId).toBe("dev-orchestrator");
   expect(first.label).toBe("Development coordinator");
-  expect(first.profileMode).toBe("installed");
+  expect(first.profileMode).toBe("session-override");
   expect(first.token).not.toBe(second.token);
   const hook = fake.harness.registrations.hooks["message.dispatch"]!;
   expect(await hook(context("thr_a", nativeSelectionMarker(first.token)))).toEqual({ action: "proceed" });

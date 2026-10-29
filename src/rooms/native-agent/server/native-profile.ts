@@ -16,12 +16,12 @@ export async function storeNativeSelection(ctx: Pick<ServerCore, "bb" | "ownedAg
   let compiled = null;
   try { compiled = compileEffectiveMainAgent(shortId, stored); } catch { compiled = null; }
   const stock = (MAIN_AGENT_PROFILE_IDS as readonly string[]).includes(shortId) ? compileMainAgentProfile(shortId) : null;
-  const edited = compiled && stock ? compiled.sourceHash !== stock.sourceHash : Boolean(compiled && !stock);
   if (!compiled && !stock) throw new Error(`Unknown Lane Pilot profile ${shortId}.`);
   const record = await prepareNativeSessionRecord({
     projectId: input.projectId,
     agentId: shortId,
-    profileMode: edited ? "session-override" : "installed",
+    // Stock and edited profiles both start from this compiled JSON. An installed Claude plugin agent is not required.
+    profileMode: "session-override",
     agentsJson: sessionOverrideAgentsJson({
       agentId: shortId,
       edited: true,

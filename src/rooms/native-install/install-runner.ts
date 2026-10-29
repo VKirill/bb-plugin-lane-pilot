@@ -25,7 +25,7 @@ function checkpoint(phase: InstallPhase): string {
   return `
 # lane-pilot checkpoint ${phase}
 printf '%s\\n' '${phase}' > "$HOME/.lane-pilot-phase"
-if [[ "\${LANE_INSTALL_CLAUDE_PLUGIN:-1}" == "0" && "${phase}" == "npm" ]]; then
+if [[ -n "\${LANE_PILOT_SKIP_OPEN_CURSOR:-}" && "${phase}" == "npm" ]]; then
   printf '%s\\n' 'не применимо без подтверждения' > "$HOME/.lane-pilot-npm-skipped"
 fi
 if [[ -n "\${LANE_PILOT_SNAPSHOT_MANIFEST:-}" ]]; then
@@ -164,7 +164,7 @@ function asEnvText(value: unknown): string | null {
 export function applyInstallSettings(
   env: NodeJS.ProcessEnv,
   settings: Record<string, unknown> | undefined,
-  confirmExternalOps: boolean,
+  _confirmExternalOps: boolean,
 ): string[] {
   const applied: string[] = [];
   if (!settings) return applied;
@@ -172,7 +172,7 @@ export function applyInstallSettings(
     if (!(key in settings)) continue;
     const text = asEnvText(settings[key]);
     if (text === null) continue;
-    if (name === "LANE_INSTALL_CLAUDE_PLUGIN" && !confirmExternalOps) continue;
+    if (name === "LANE_INSTALL_CLAUDE_PLUGIN") continue;
     env[name] = text;
     applied.push(key);
   }
@@ -193,7 +193,7 @@ export function installEnv(input: {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     HOME: input.homeDir,
-    LANE_INSTALL_CLAUDE_PLUGIN: input.confirmExternalOps ? "1" : "0",
+    LANE_INSTALL_CLAUDE_PLUGIN: "0",
   };
   delete env.npm_config_prefix;
   delete env.NPM_CONFIG_PREFIX;

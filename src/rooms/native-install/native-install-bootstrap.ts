@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import { lstat, readFile } from "node:fs/promises";
 
-/** Lane Stack 1.66.2: its opencode-lane plugin is an OpenCode v2 definition with the lane-pilot agent (earlier ones load only in v1). */
+/** Checkout whose install.sh copies ~/.agents/bin tools, hooks and skills. The lane-stack Claude plugin is not part of that install. */
 export const NATIVE_STACK_SHA = "84a4a9fafea5eda168bd2d49423e41688e5f42d3";
 export const CLAUDE_LANE_REPO = "https://github.com/VKirill/claude-lane-stack";
 /** Where Claude Lane's own install keeps its checkout; installing here makes Lane Pilot's install the user's install. */
@@ -31,16 +31,22 @@ export function claudeLaneEnv(home: string, base: NodeJS.ProcessEnv = process.en
   return { ...base, HOME: home, PATH: [...bins, base.PATH ?? "/usr/bin:/bin"].join(delimiter) };
 }
 
-/** Claude Lane counts as installed when its host install and the Claude plugin are both present. */
+const LANE_BINS = ["lane-memory", "agent-trash", "run-controller", "lane-ctl"] as const;
+
+function claudeLaneInstallEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return { ...env, LANE_INSTALL_CLAUDE_PLUGIN: "0" };
+}
+
+/** Installed when the guard and the bin tools Lane Pilot calls are on disk. The Claude plugin is not required. */
 export async function detectClaudeLane(home: string): Promise<{ sourceSha: string | null; sourceRepo: string | null } | null> {
-  const json = async (path: string) => JSON.parse(await readFile(join(home, path), "utf8").catch(() => "null")) as Record<string, unknown> | null;
-  const install = await json(".agents/install.json");
-  const plugins = (await json(".claude/plugins/installed_plugins.json"))?.plugins as Record<string, unknown> | undefined;
-  const plugin = plugins?.["lane-stack@claude-lane-stack"];
-  if (!install || !Array.isArray(plugin) || plugin.length === 0) return null;
+  if (!await lstat(join(home, ".agents/hooks/guard_shell.py")).catch(() => null)) return null;
+  for (const name of LANE_BINS) {
+    if (!await lstat(join(home, ".agents/bin", name)).catch(() => null)) return null;
+  }
+  const install = JSON.parse(await readFile(join(home, ".agents/install.json"), "utf8").catch(() => "null")) as Record<string, unknown> | null;
   return {
-    sourceSha: typeof install.source_sha === "string" ? install.source_sha : null,
-    sourceRepo: typeof install.source_repo === "string" ? install.source_repo : null,
+    sourceSha: typeof install?.source_sha === "string" ? install.source_sha : null,
+    sourceRepo: typeof install?.source_repo === "string" ? install.source_repo : null,
   };
 }
 
@@ -72,9 +78,9 @@ export async function installClaudeLane(input: { home?: string; signal?: AbortSi
     await run("git", ["-C", source, "fetch", "--quiet", "origin"], env, signal);
   }
   await run("git", ["-C", source, "checkout", "--quiet", "--detach", NATIVE_STACK_SHA], env, signal);
-  await run("bash", [join(source, "install.sh")], env, signal, source);
+  await run("bash", [join(source, "install.sh")], claudeLaneInstallEnv(env), signal, source);
   const installed = await detectClaudeLane(home);
-  if (!installed) throw new Error("Claude Lane install finished without the lane-stack Claude plugin.");
+  if (!installed) throw new Error("Claude Lane install finished without its guard and bin tools.");
   return installed;
 }
 
@@ -93,6 +99,6 @@ export async function upgradeClaudeLane(input: { home: string; source: string; s
   if (!await git("merge-base", "--is-ancestor", "HEAD", NATIVE_STACK_SHA).then(() => true, () => false)) return false;
   await ensurePrerequisites(env, signal);
   await git("checkout", "--quiet", "--detach", NATIVE_STACK_SHA);
-  await run("bash", [join(source, "install.sh")], env, signal, source);
+  await run("bash", [join(source, "install.sh")], claudeLaneInstallEnv(env), signal, source);
   return true;
 }

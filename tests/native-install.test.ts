@@ -116,10 +116,16 @@ describe("Claude Lane on the host", () => {
   async function laneHome(installed: boolean) {
     const root = await mkdtemp(join(tmpdir(), "lp-lane-")); roots.push(root);
     const home = join(root, "home");
-    await mkdir(join(home, ".agents"), { recursive: true }); await mkdir(join(home, ".claude/plugins"), { recursive: true });
+    await mkdir(join(home, ".agents/hooks"), { recursive: true });
+    await mkdir(join(home, ".agents/bin"), { recursive: true });
+    await mkdir(join(home, ".claude/plugins"), { recursive: true });
     if (installed) {
+      await writeFile(join(home, ".agents/hooks/guard_shell.py"), "# guard\n");
+      for (const name of ["lane-memory", "agent-trash", "run-controller", "lane-ctl"]) {
+        await writeFile(join(home, ".agents/bin", name), "#!/bin/sh\n");
+      }
       await writeFile(join(home, ".agents/install.json"), JSON.stringify({ source_sha: "b".repeat(40) }));
-      await writeFile(join(home, ".claude/plugins/installed_plugins.json"), JSON.stringify({ plugins: { "lane-stack@claude-lane-stack": [{ scope: "user" }] } }));
+      await writeFile(join(home, ".claude/plugins/installed_plugins.json"), JSON.stringify({ plugins: { "lane-stack@claude-lane-stack": [{ scope: "user", gitCommitSha: "old" }] } }));
     }
     return { root: join(root, "managed"), home };
   }
@@ -129,22 +135,32 @@ describe("Claude Lane on the host", () => {
     expect(await nativeInstallOperation({ root, home, action: "install" })).toMatchObject({ status: "enabled", sourceSha: "b".repeat(40), ownedFiles: 0 });
     expect(await nativeInstallOperation({ root, home, action: "remove" })).toMatchObject({ status: "absent" });
     expect(await detectClaudeLane(home)).not.toBeNull();
+    expect(await readFile(join(home, ".claude/plugins/installed_plugins.json"), "utf8")).toContain("lane-stack@claude-lane-stack");
   });
-  it("registers the OpenCode Lane plugin in a commented opencode.jsonc once", async () => {
+  it("does not treat a Claude plugin without the guard and bins as installed", async () => {
+    const { home } = await laneHome(false);
+    await writeFile(join(home, ".claude/plugins/installed_plugins.json"), JSON.stringify({ plugins: { "lane-stack@claude-lane-stack": [{ scope: "user" }] } }));
+    expect(await detectClaudeLane(home)).toBeNull();
+  });
+  it("registers the bundled OpenCode plugin and does not install the Claude plugin", async () => {
     const { home } = await laneHome(true);
-    const source = join(home, "src"), profile = join(source, "profiles/opencode");
-    await mkdir(join(profile, "opencode-lane"), { recursive: true }); await mkdir(join(profile, "commands"), { recursive: true }); await mkdir(join(profile, "agents"), { recursive: true });
-    await writeFile(join(profile, "opencode-lane.ts"), "x"); await writeFile(join(profile, "opencode-lane/a.ts"), "a");
-    await writeFile(join(profile, "commands/opencode-lane.md"), "c"); await writeFile(join(profile, "agents/lane-writer.md"), "w");
+    const source = join(home, "src");
+    await mkdir(join(source, "profiles/opencode/opencode-lane"), { recursive: true });
+    await writeFile(join(source, "profiles/opencode/opencode-lane/guard.ts"), "from-checkout");
     await mkdir(join(home, ".config/opencode"), { recursive: true });
     await writeFile(join(home, ".config/opencode/opencode.jsonc"), '{\n  // mine\n  "plugin": ["./plugins/other.ts"]\n}\n');
+    await mkdir(join(home, "bin"));
+    await writeFile(join(home, "bin/opencode2"), "#!/bin/sh\n", { mode: 0o755 });
+    await writeFile(join(home, "bin/claude"), "#!/bin/sh\necho called >> \"$HOME/claude-called\"\nexit 99\n", { mode: 0o755 });
     const env = { ...claudeLaneEnv(home), PATH: `${join(home, "bin")}:/usr/bin:/bin` };
-    await mkdir(join(home, "bin")); await writeFile(join(home, "bin/opencode2"), "#!/bin/sh\n", { mode: 0o755 });
     expect((await reconcileClaudeLane({ home, source, env })).openCode).toBe("newly-registered");
     const text = await readFile(join(home, ".config/opencode/opencode.jsonc"), "utf8");
     expect(text).toContain("// mine"); expect(text).toContain("./plugins/other.ts"); expect(text).toContain("./plugins/opencode-lane.ts");
-    expect(await readFile(join(home, ".config/opencode/agents/lane-writer.md"), "utf8")).toBe("w");
+    expect(await readFile(join(home, ".config/opencode/opencode-lane/guard.ts"), "utf8")).toContain("gitVerbs");
+    expect(await readFile(join(home, ".config/opencode/opencode-lane/guard.ts"), "utf8")).not.toContain("from-checkout");
+    await expect(readFile(join(home, "claude-called"))).rejects.toMatchObject({ code: "ENOENT" });
     expect((await reconcileClaudeLane({ home, source, env })).openCode).toBe("registered");
+    expect((await reconcileClaudeLane({ home, source, env })).claudePlugin).toBe("fresh");
   });
   it("leaves a user's own Claude Lane checkout alone", async () => {
     const { home } = await laneHome(true);
