@@ -10,6 +10,7 @@ export { prepareBbShim } from "./bb-shim";
 export { ACCESS_GROUPS, ACCESS_SWITCHES, CORE_PROVIDER_GROUPS, HELPER_ROLES, MANDATORY_BB_PLUGINS, MANDATORY_MCP_SERVERS, ROLE_PROFILES, detectRequiredSessionPolicyCapability, effectiveGroup, effectiveSwitch, parseHelperContextSettings, parseRoleAccess, roleAccessKey } from "./helper-context";
 export type { ExtraAccess, HelperPolicySnapshot, HelperRole } from "./helper-context";
 export { discoverClaudeAgents, prepareNativeClaude } from "./native-claude-host";
+export { prepareClaudeGuard } from "./claude-guard-launch";
 export { handleNativeDispatch, mentionContext, nativeContributedEnv } from "./native-dispatch";
 export { reconcileClaudeLane } from "./native-lane-reconcile";
 export { finalizeNativeLaneBinding, nativeRunReady, ownedNativePmRun, writerWorkspaceForPmInstructions } from "./native-run";

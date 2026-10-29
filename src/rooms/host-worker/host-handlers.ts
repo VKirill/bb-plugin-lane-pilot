@@ -30,6 +30,7 @@ import { runScriptOnHost } from "./script-run";
 import { probeOpenCodeLimit } from "./opencode-limit";
 import { execFile } from "node:child_process";
 import { discoverClaudeAgents, prepareNativeClaude } from "../native-agent";
+import { prepareClaudeGuard } from "../native-agent/claude-guard-launch";
 import { prepareBbShim } from "../native-agent";
 import {
   connectOpencodeStack,
@@ -849,6 +850,14 @@ export const prepareNativeClaudeHost: ExperimentalHostRpcHandlers<typeof hostCon
     agentsJson: input.agentsJson,
     dataDir: context.experimental_paths.dataDir,
     signal: context.signal,
+  })
+);
+
+export const prepareClaudeGuardHost: ExperimentalHostRpcHandlers<typeof hostContract>["prepareClaudeGuard"] = async (input, context) => (
+  prepareClaudeGuard({
+    role: input.role,
+    cwd: input.cwd,
+    dataDir: context.experimental_paths.dataDir,
   })
 );
 

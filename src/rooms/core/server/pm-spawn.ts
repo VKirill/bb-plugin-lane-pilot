@@ -7,7 +7,7 @@ import { stringAt } from "./values";
 import { noteZcodeThread, reserveZcodeSlot } from "./zcode-slot";
 
 /**
- * The PM agents the machine's guard (~/.agents/hooks/guard_shell.py: PM_AGENTS, lane-pilot-pm) reads the rules of: it keys
+ * The PM agents the bundled guard (lane-pilot-pm, plus the older orchestrator names) reads the rules of: it keys
  * on the agent_type of the session, so a PM started with no such agent has no guard and a write it tries goes through.
  */
 const GUARDED_PM_AGENTS = new Set(["dev-orchestrator", "frontend-orchestrator", "marketing-orchestrator", "lane-pilot-pm"]);

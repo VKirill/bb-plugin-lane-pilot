@@ -583,4 +583,14 @@ export const hostContract = defineRpcContract({
       sessionAgents: z.boolean(),
     }).strict(),
   },
+  /** Bundled claude guard launcher for a Lane Pilot thread that is not a native session. (2026-10-29 claude-guard) */
+  prepareClaudeGuard: {
+    input: z.object({
+      role: z.string().min(1).max(80),
+      cwd: z.string().startsWith("/").optional(),
+    }).strict(),
+    output: z.object({
+      env: z.array(z.object({ name: z.string(), value: z.string(), reason: z.string() }).strict()),
+    }).strict(),
+  },
 });
