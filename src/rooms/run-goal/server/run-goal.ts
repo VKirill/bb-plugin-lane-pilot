@@ -6,7 +6,7 @@ import { getRunGoal, saveRunGoal, type RunGoalRecord } from "../store";
 /**
  * The run-goal service (SMA atlas D2-3). A sweep every 20 minutes finds the runs of the last week that are done (every task accepted or
  * canceled, two accepted at least) and have no verdict yet, and checks each once: the regression pass runs every accepted task's checks
- * together on the project's current main (one throwaway worktree, a bisect for what went red). A failed goal is a message to the PM with
+ * together on the project's current main (mode full: a slow check is not dropped). A failed goal is a message to the PM with
  * the red checks and the commit bisect named; a red check broken by work outside the run, or rewritten on purpose by a later task of the
  * run, is set aside (logic.ts goalVerdict) and stays in the regression list; the verdict is kept per run.
  */
@@ -24,10 +24,10 @@ export function createRunGoal(ctx: ServerCore, services: Services) {
     const run = getRun(db, runId);
     if (!run) throw new Error(`no run ${runId}`);
     const tasks = taskStates(runId);
-    const result = await services.regression.run({ projectId: run.project_id, runId, force: true });
+    const result = await services.regression.run({ projectId: run.project_id, runId, force: true, mode: "full" });
     const pass = result.projects[0] ?? { skipped: "the regression pass returned nothing", tasks: [], findings: [], head: null };
     const verdict = goalVerdict(pass, tasks.map((task) => task.taskId));
-    const record: RunGoalRecord = { runId, projectId: run.project_id, state: verdict.state, tasks: tasks.filter((task) => task.state === "accepted").length, headSha: pass.head ?? null, red: verdict.red, detail: verdict.detail, at: Date.now() };
+    const record: RunGoalRecord = { runId, projectId: run.project_id, state: verdict.state, tasks: tasks.filter((task) => task.state === "accepted").length, headSha: pass.head ?? null, red: verdict.red, detail: verdict.detail, at: Date.now(), coverage: verdict.coverage };
     saveRunGoal(db, record);
     if (verdict.state === "failed" && run.pm_thread_id) {
       await bb.sdk.threads.send({ threadId: run.pm_thread_id, mode: "queue-if-active", input: [{ type: "text", text: pmGoalMessage(runId, verdict.red), mentions: [] }] } as never).catch(() => undefined);
@@ -46,7 +46,7 @@ export function createRunGoal(ctx: ServerCore, services: Services) {
       if (!runReady(taskStates(id))) continue;
       out.push(await check(id).catch((cause: unknown) => {
         ctx.log(`run-goal: ${id} not checked: ${cause instanceof Error ? cause.message : String(cause)}`);
-        const record: RunGoalRecord = { runId: id, projectId: getRun(db, id)?.project_id ?? "", state: "skipped", tasks: 0, headSha: null, red: [], detail: `the check failed: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 500), at: Date.now() };
+        const record: RunGoalRecord = { runId: id, projectId: getRun(db, id)?.project_id ?? "", state: "skipped", tasks: 0, headSha: null, red: [], detail: `the check failed: ${cause instanceof Error ? cause.message : String(cause)}`.slice(0, 500), at: Date.now(), coverage: { planned: 0, ran: 0, skipped: 0 } };
         saveRunGoal(db, record);
         return record;
       }));

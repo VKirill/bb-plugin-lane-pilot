@@ -10,7 +10,15 @@ export type RedCheck = { taskId: string; command: string; culpritCommit: string 
  * red at its own merge commit as well (the regression pass's «unstable»: the pass's worktree or a flaky check, not anything merged later).
  */
 export type AsideCheck = RedCheck & { why: "outside" | "rewritten" | "unstable" };
-export type GoalVerdict = { state: "passed" | "failed" | "skipped"; red: RedCheck[]; detail: string | null; aside?: AsideCheck[] };
+/** How much of the required set the pass actually ran. `passed` needs `ran === planned` and `skipped === 0`. */
+export type GoalCoverage = { planned: number; ran: number; skipped: number };
+export type GoalVerdict = {
+  state: "passed" | "failed" | "skipped" | "partial" | "inconclusive";
+  red: RedCheck[];
+  detail: string | null;
+  aside?: AsideCheck[];
+  coverage: GoalCoverage;
+};
 
 /** Terminal states a task can end a run in: accepted or given up. Any other latest state means the run is not done. */
 const DONE = new Set(["accepted", "canceled"]);
@@ -49,11 +57,34 @@ function names(command: string, path: string): boolean {
   return false;
 }
 
+/** Counts every check the pass listed. Green and red ran; skipped and unknown did not; `planned` was chosen and not started. */
+export function goalCoverage(pass: { tasks: ReadonlyArray<{ checks: ReadonlyArray<{ state: string }> }> }): GoalCoverage {
+  const coverage: GoalCoverage = { planned: 0, ran: 0, skipped: 0 };
+  for (const task of pass.tasks) {
+    for (const check of task.checks) {
+      coverage.planned += 1;
+      if (check.state === "green" || check.state === "red") coverage.ran += 1;
+      else if (check.state === "skipped" || check.state === "unknown") coverage.skipped += 1;
+    }
+  }
+  return coverage;
+}
+
+const incompleteDetail = (coverage: GoalCoverage): string => {
+  const pending = coverage.planned - coverage.ran - coverage.skipped;
+  return [`${coverage.ran} of ${coverage.planned} checks ran`, coverage.skipped ? `${coverage.skipped} skipped` : null, pending > 0 ? `${pending} not run` : null]
+    .filter(Boolean).join(", ") + ": not a pass of the whole run";
+};
+
 /** The verdict from what the regression pass reported for the run's tasks; `runTasks` (the run's task ids) sets aside reds that are not its composition. */
 export function goalVerdict(pass: { skipped?: string | undefined; tasks: ReadonlyArray<{ taskId: string; checks: ReadonlyArray<{ command: string; state: string }>; skipped?: string | undefined }>;
   findings: ReadonlyArray<{ taskId: string; command: string; culpritCommit: string | null; culpritTask: string | null; sharedFiles?: readonly string[] | undefined; kind?: string | undefined }> }, runTasks?: readonly string[]): GoalVerdict {
-  const ran = pass.tasks.filter((task) => !task.skipped && task.checks.some((check) => check.state === "green" || check.state === "red"));
-  if (pass.skipped || !ran.length) return { state: "skipped", red: [], detail: pass.skipped ?? "no task of the run had a check to run on main" };
+  const coverage = goalCoverage(pass);
+  // The pass itself did not run (no git, nothing cheap in the window). Listed rows are not a result.
+  if (pass.skipped) return { state: "skipped", red: [], detail: pass.skipped, coverage };
+  const ran = pass.tasks.filter((task) => task.checks.some((check) => check.state === "green" || check.state === "red"));
+  if (!coverage.planned) return { state: "skipped", red: [], detail: "no task of the run had a check to run on main", coverage };
+  if (!ran.length) return { state: "inconclusive", red: [], detail: incompleteDetail(coverage).slice(0, 500), coverage };
   const ids = runTasks ? new Set(runTasks) : null;
   const red: RedCheck[] = [];
   const aside: AsideCheck[] = [];
@@ -65,16 +96,25 @@ export function goalVerdict(pass: { skipped?: string | undefined; tasks: Readonl
       if (why) aside.push({ ...row, why }); else red.push(row);
     }
   }
-  if (!aside.length) return { state: red.length ? "failed" : "passed", red, detail: null };
-  const outside = aside.filter((row) => row.why === "outside");
-  const rewritten = aside.filter((row) => row.why === "rewritten");
-  const unstable = aside.filter((row) => row.why === "unstable");
-  const detail = [
-    outside.length ? `${outside.length} red by work outside the run (${outside.slice(0, 4).map((row) => `${row.taskId} by ${row.culpritCommit!.slice(0, 10)}`).join(", ")}${outside.length > 4 ? ", ..." : ""})` : null,
-    rewritten.length ? `${rewritten.length} rewritten on purpose by a later task of the run (${rewritten.slice(0, 4).map((row) => `${row.taskId} by ${row.culpritTask}`).join(", ")}${rewritten.length > 4 ? ", ..." : ""})` : null,
-    unstable.length ? `${unstable.length} red at their own merge commit as well, the pass's worktree or a flaky check (${unstable.slice(0, 4).map((row) => row.taskId).join(", ")}${unstable.length > 4 ? ", ..." : ""})` : null,
-  ].filter(Boolean).join("; ") + ": open in bb lane-pilot regress";
-  return { state: red.length ? "failed" : "passed", red, detail: detail.slice(0, 500), aside };
+  const asideDetail = () => {
+    const outside = aside.filter((row) => row.why === "outside");
+    const rewritten = aside.filter((row) => row.why === "rewritten");
+    const unstable = aside.filter((row) => row.why === "unstable");
+    return [
+      outside.length ? `${outside.length} red by work outside the run (${outside.slice(0, 4).map((row) => `${row.taskId} by ${row.culpritCommit!.slice(0, 10)}`).join(", ")}${outside.length > 4 ? ", ..." : ""})` : null,
+      rewritten.length ? `${rewritten.length} rewritten on purpose by a later task of the run (${rewritten.slice(0, 4).map((row) => `${row.taskId} by ${row.culpritTask}`).join(", ")}${rewritten.length > 4 ? ", ..." : ""})` : null,
+      unstable.length ? `${unstable.length} red at their own merge commit as well, the pass's worktree or a flaky check (${unstable.slice(0, 4).map((row) => row.taskId).join(", ")}${unstable.length > 4 ? ", ..." : ""})` : null,
+    ].filter(Boolean).join("; ") + ": open in bb lane-pilot regress";
+  };
+  if (red.length) return { state: "failed", red, detail: aside.length ? asideDetail().slice(0, 500) : null, ...(aside.length ? { aside } : {}), coverage };
+  // A green sample plus a check the pass left out is not the whole run. The cheap watch is a separate mode of the regression pass.
+  const complete = coverage.ran === coverage.planned && coverage.skipped === 0;
+  if (!complete) {
+    const state = coverage.ran > 0 ? "partial" as const : "inconclusive" as const;
+    return { state, red: [], detail: incompleteDetail(coverage).slice(0, 500), ...(aside.length ? { aside } : {}), coverage };
+  }
+  if (!aside.length) return { state: "passed", red, detail: null, coverage };
+  return { state: "passed", red, detail: asideDetail().slice(0, 500), aside, coverage };
 }
 
 /** The PM's message for a failed run goal: which checks went red together and which commit bisect named. */

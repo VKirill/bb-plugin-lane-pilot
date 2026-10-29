@@ -1,5 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
+import { blindVerdict } from "../../src/rooms/phase/logic";
 import { goalVerdict, pmGoalMessage, runReady } from "../../src/rooms/run-goal";
 import { createRunGoal } from "../../src/rooms/run-goal/server";
 import { createAttempt, createRun, createTask, openDatabase, setRunThread, transitionAttempt } from "../../src/rooms/storage/database";
@@ -15,12 +16,39 @@ describe("when a run is done and what its checks together mean", () => {
 
   it("passes with every check green, fails with the red ones and bisect's culprit, skips when nothing ran", () => {
     const tasks = [{ taskId: "a", checks: [{ command: "npm test -- a", state: "green" }] }, { taskId: "b", checks: [{ command: "npm test -- b", state: "red" }] }];
-    expect(goalVerdict({ tasks: [tasks[0]!], findings: [] })).toEqual({ state: "passed", red: [], detail: null });
+    expect(goalVerdict({ tasks: [tasks[0]!], findings: [] })).toEqual({ state: "passed", red: [], detail: null, coverage: { planned: 1, ran: 1, skipped: 0 } });
     expect(goalVerdict({ tasks, findings: [{ taskId: "b", command: "npm test -- b", culpritCommit: "abcdef1234567", culpritTask: "a" }] }))
-      .toEqual({ state: "failed", red: [{ taskId: "b", command: "npm test -- b", culpritCommit: "abcdef1234567", culpritTask: "a" }], detail: null });
+      .toEqual({ state: "failed", red: [{ taskId: "b", command: "npm test -- b", culpritCommit: "abcdef1234567", culpritTask: "a" }], detail: null, coverage: { planned: 2, ran: 2, skipped: 0 } });
     expect(goalVerdict({ skipped: "the project folder is not a git checkout", tasks, findings: [] })).toMatchObject({ state: "skipped", detail: "the project folder is not a git checkout" });
     expect(goalVerdict({ tasks: [{ taskId: "a", checks: [], skipped: "the contract names no verification[]" }], findings: [] })).toMatchObject({ state: "skipped" });
     expect(pmGoalMessage("run1", [{ taskId: "b", command: "npm test -- b", culpritCommit: "abcdef1234567", culpritTask: "a" }])).toContain("- b: npm test -- b (сломал abcdef1234, задача a)");
+  });
+
+  it("F-001: a green fast check and a skipped long check are not a passed run", () => {
+    const oneTask = goalVerdict({
+      tasks: [{ taskId: "t", checks: [
+        { command: "npx vitest run fast.test.ts", state: "green" },
+        { command: "npx vitest run slow.test.ts", state: "skipped" },
+      ] }],
+      findings: [],
+    });
+    expect(oneTask.state).not.toBe("passed");
+    expect(oneTask.state).toBe("partial");
+    expect(oneTask.coverage).toEqual({ planned: 2, ran: 1, skipped: 1 });
+    const twoTasks = goalVerdict({
+      tasks: [
+        { taskId: "cheap", checks: [{ command: "cheap", state: "green" }] },
+        { taskId: "expensive", skipped: "over cap", checks: [{ command: "slow", state: "skipped" }] },
+      ],
+      findings: [],
+    }, ["cheap", "expensive"]);
+    expect(twoTasks.state).toBe("partial");
+    expect(twoTasks.coverage).toEqual({ planned: 2, ran: 1, skipped: 1 });
+    expect(goalVerdict({
+      tasks: [{ taskId: "expensive", checks: [{ command: "slow", state: "skipped" }] }],
+      findings: [],
+    }).state).toBe("inconclusive");
+    expect(blindVerdict([], new Map(), { state: "partial", detail: twoTasks.detail }, 1).state).not.toBe("passed");
   });
 });
 
@@ -121,7 +149,7 @@ describe("the sweep", () => {
     const { api, sent, calls } = world(true);
     const first = await api.sweep();
     expect(first.map((row) => [row.runId, row.state, row.tasks])).toEqual([["run1", "failed", 2]]);
-    expect(calls).toEqual([expect.objectContaining({ projectId: "P", runId: "run1", force: true })]);
+    expect(calls).toEqual([expect.objectContaining({ projectId: "P", runId: "run1", force: true, mode: "full" })]);
     expect(sent[0]).toContain("задачи запуска run1 приняты каждая по отдельности");
     expect(await api.sweep()).toEqual([]);
     expect(api.status("run1")).toMatchObject({ state: "failed", red: [{ taskId: "t2", culpritTask: "t1" }] });

@@ -412,6 +412,7 @@ export function blindVerdict(items: readonly PlanItem[], facts: ReadonlyMap<stri
   const waiting = runGoalPending(runGoal);
   if (!runGoal) problems.push("the run's goal check has not run yet");
   else if (runGoal.state === "failed") problems.push(`the run's goal check failed${runGoal.detail ? `: ${runGoal.detail}` : ""}`);
+  else if (runGoal.state === "partial" || runGoal.state === "inconclusive") problems.push(`the run's goal check is ${runGoal.state}, not a full pass${runGoal.detail ? `: ${runGoal.detail}` : ""}`);
   const inputSha = sha256(canonical({ items: items.map((item) => item.id), facts: items.map((item) => facts.get(item.id) ?? null), runGoal }));
   const state = problems.length ? "failed" : waiting ? "pending" : "passed";
   return { state, detail: problems.join("; ") || (waiting ? "the run's goal check is still running" : "every piece accepted and proved; the composition passes on main"), mainSha: runGoal?.headSha ?? null, at: now, inputSha } as FrozenVerdict | PendingVerdict;

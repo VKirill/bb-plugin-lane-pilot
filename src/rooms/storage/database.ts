@@ -28,7 +28,7 @@ import { benchMigrations } from "../bench";
 import { ownerWaitingMigrations } from "../owner-waiting";
 import { baselineMigrations } from "../baseline";
 import { stageReturnMigrations } from "../stage-return";
-import { runGoalMigrations } from "../run-goal";
+import { runGoalCoverageMigrations, runGoalMigrations } from "../run-goal";
 import { phaseMigrations } from "../phase";
 import { capabilityMigrations } from "../capability";
 import { outageMigrations } from "../outage";
@@ -417,6 +417,8 @@ export const migrations = [
   ...scheduleAgentMigrations,
   // The council is a graph (workflows/council.json): the run that drives a session (src/rooms/council). Append only.
   ...councilRunMigrations,
+  // Run-goal coverage: passed only when every required check ran (src/rooms/run-goal). Append only; rebuilds the CHECK.
+  ...runGoalCoverageMigrations,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

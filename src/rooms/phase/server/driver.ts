@@ -699,7 +699,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     const candidate = phase.record.candidate!;
     if (!phase.runId) return null;
     const trees = Object.values(candidate.trees);
-    const result = await services.regression.run({ projectId: phase.projectId, runId: phase.runId, force: true, basePaths: trees.map((tree) => tree.path) }).catch(() => null);
+    const result = await services.regression.run({ projectId: phase.projectId, runId: phase.runId, force: true, mode: "full", basePaths: trees.map((tree) => tree.path) }).catch(() => null);
     const pass = result?.projects[0];
     if (!pass) return null;
     const ids = Object.values(phase.record.execution?.issued ?? {});
