@@ -5,7 +5,7 @@ import { delimiter, join } from "node:path";
 import { lstat, readFile } from "node:fs/promises";
 
 /** Checkout whose install.sh copies ~/.agents/bin tools, hooks and skills. The lane-stack Claude plugin is not part of that install. */
-export const NATIVE_STACK_SHA = "84a4a9fafea5eda168bd2d49423e41688e5f42d3";
+export const NATIVE_STACK_SHA = "951e9afdc36f2d0f4af559551efb1ded97919458";
 export const CLAUDE_LANE_REPO = "https://github.com/VKirill/claude-lane-stack";
 /** Where Claude Lane's own install keeps its checkout; installing here makes Lane Pilot's install the user's install. */
 export const CLAUDE_LANE_SOURCE = ".local/share/claude-lane-stack-installed";
