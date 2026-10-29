@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.1.380
+
+From the full-code audit of 2026-10-29 (Аудит GPT, A-001…A-012), each probe kept as a regression that was red before its fix:
+
+- **Workflow engine.** A goals pass is a verdict on one output: a re-run node that changed the result is audited again (A-001). Canceling a run cancels its waiting child and grandchild runs (A-002). Failed attempts keep what they spent, and votes keep an unknown spend unknown (A-003). Finished runs let go of their caches; the newest 64 stay for a re-run (A-010). A run pins the child definitions it starts with, and a project workflow finds its project-only children (A-011, A-012).
+- **Stops.** A stop whose worktree could not be put on record says so instead of «complete»; the writer stays stopped (A-004). A host call aborted before it starts sends no job (A-005). A cancel a reload cut off is finished by recovery (A-006).
+- **Schedules.** A run canceled during its start stops the job it got (A-007); an interrupted workflow ends the scheduled run (A-008); `run_once` catches up once after an absence longer than the counted backlog (A-009).
+
 ## 0.1.379
 
 **A failed PM-read summary no longer blocks the task** (2026-10-29 Grok audit F-003). The stage proof says the summary «only hands context to the critics and decides nothing», yet an unreadable or timed-out summary sent the attempt and the run to `blocked` (SelfyStudio lost two tasks that way on 2026-10-15/16). The `block-pm-read` node is gone from `lp-task-pipeline`: the failed receipt is kept with its reason and the task goes on to the plan critic without a summary. Regressions: `tests/workflow/equivalence.test.ts` and `tests/stages/server-stage/suite.ts`.
