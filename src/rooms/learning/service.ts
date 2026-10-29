@@ -2,6 +2,7 @@ import { z } from "zod";
 import { anamnesisFor } from "../anamnesis";
 import { TURN_REQUESTED, type EventLike, type OwnerMessage } from "../anamnesis";
 import { getRunSettingsScopes, loadProjectSettings } from "../storage";
+import { ownerWordsOn } from "../tasks";
 import { jev } from "@lane-pilot/jev";
 import { relayFor } from "../relay/server";
 import { scheduleIsolated } from "../core/server";
@@ -147,7 +148,7 @@ export function createLearning(ctx: ServerCore, services: Services) {
   const sendToPm = async (threadId: string, text: string) => { await bb.sdk.threads.send({ threadId, mode: "queue-if-active", input: [{ type: "text", text, mentions: [] }] } as never); };
   const autonomy = createAutonomy({
     db, kv, config: () => config, status: () => ops.status(), configure: (words) => ops.configure(words), runModel, decisions, pmThread, sendToPm, log,
-    ownerWords: (projectId) => String(loadProjectSettings(db, projectId)["owner.words"] ?? "off") === "on",
+    ownerWords: (projectId) => ownerWordsOn(loadProjectSettings(db, projectId)),
   });
 
   const signalDeps = {

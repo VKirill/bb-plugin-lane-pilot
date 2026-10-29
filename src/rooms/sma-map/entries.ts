@@ -115,7 +115,7 @@ export const SMA_ENTRIES: Readonly<Record<string, SmaEntry>> = {
   n105: ["have", "фаза посажена", "src/rooms/phase/server/driver.ts#every acceptance line holds"],
   n106: ["have", "книга фазы закрыта", "src/rooms/phase/server/driver.ts#\"closed\""],
   n107: ["have", "экран полной приёмки фазы", "src/rooms/cockpit/ui/screens-work.tsx#Full phase acceptance"],
-  n108: ["have", "решение по ключу: слово владельца на приёмке", "src/rooms/phase/logic.ts#\"owner_word\""],
+  n108: ["have", "решение по ключу: два решения владельца под ключом показанного пакета", "src/rooms/phase/logic.ts#export const acceptanceKey"],
   n109: ["have", "main сдвинулся — новая проверка", "src/rooms/phase/server/driver.ts#Main moved — a new word"],
   n110: ["have", "посадка фазы", "src/rooms/phase/logic.ts#every piece is merged into main"],
   n111: ["have", "закрытие по полноте", "src/rooms/phase/server/driver.ts#const accepted = lines.every((line) => line.ok);"],

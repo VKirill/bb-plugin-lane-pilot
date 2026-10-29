@@ -104,8 +104,8 @@ describe("the driver's poke", () => {
 describe("the phase tool takes JSON text for its lists and objects", () => {
   it("parses a context report sent as text, as a live PM sent it", () => {
     const parsed = phaseToolParams.parse({ action: "context", phaseId: "ph_1", docs: "[\".agents/phases/ph_1/CONTEXT.md\"]",
-      risks: "{\"technical\":\"t\",\"product\":\"p\",\"operations\":\"o\",\"security\":\"s\"}", decisions: "[\"D1\"]" });
-    expect(parsed).toMatchObject({ docs: [".agents/phases/ph_1/CONTEXT.md"], risks: { technical: "t" }, decisions: ["D1"] });
+      risks: "{\"value\":\"v\",\"usability\":\"u\",\"feasibility\":\"f\",\"viability\":\"b\"}", appetite: "one day", noGos: "[\"no new screens\"]", decisions: "[\"D1\"]" });
+    expect(parsed).toMatchObject({ docs: [".agents/phases/ph_1/CONTEXT.md"], risks: { value: "v" }, noGos: ["no new screens"], decisions: ["D1"] });
   });
   it("still refuses text that is not JSON of the field's type, and takes a rubric by phaseId", () => {
     expect(phaseToolParams.safeParse({ action: "context", phaseId: "ph_1", docs: "CONTEXT.md", risks: {} }).success).toBe(false);

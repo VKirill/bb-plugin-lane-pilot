@@ -30,7 +30,7 @@ describe("what the machine makes of a workflow's output", () => {
       risks: [{ kind: "security", text: "no secrets in notes" }, "the temp file is left on a crash"], open_questions: ["Which tag syntax?"], scope_verdict: "medium" });
     expect(doc.decisions).toEqual(["D1", "D2"]);
     expect(doc.risks.security).toMatch(/no secrets/);
-    expect(doc.risks.technical).toMatch(/temp file/);
+    expect(doc.risks.feasibility).toMatch(/temp file/);
     expect(doc.questions).toEqual(["Which tag syntax?"]);
     expect(doc.content).toMatch(/## Decisions[\s\S]*D1[\s\S]*## Risks[\s\S]*## Open questions/);
   });
@@ -66,7 +66,7 @@ describe("the machine's pass", () => {
       book: (_phase, _section, kind, text) => { calls.push(`book ${kind}`); booked.push(String(text)); },
       writeDocs: async (_phase, files) => ({ written: files.map((file) => file.path) }),
       runtime: () => ({}),
-      bookHead: () => "h".repeat(64),
+     
       pmIdle: async () => true,
       now: () => 1,
       runStopped: async () => stopped,
@@ -297,7 +297,7 @@ describe("a replan merges into the pieces that were", () => {
       api: { context: async () => phase, plan: (input) => { planned = input.items as never; return phase; }, planCheck: async () => phase, question: () => phase, waveReview: () => phase,
         goalAudit: () => phase, lessons: () => phase, drawing: async () => phase, returnTo: () => phase },
       get: () => phase, save: (_id, record) => { phase = { ...phase, record }; }, book: () => undefined, writeDocs: async () => ({ written: [] }),
-      runtime: () => ({}), bookHead: () => "h".repeat(64), pmIdle: async () => true, now: () => 1,
+      runtime: () => ({}), pmIdle: async () => true, now: () => 1,
     });
     await auto.step(phase);
     runs.set("wfrun_1", { status: "succeeded", output: { status: "ok", tasks: [{ id: "b", title: "b again", covers: ["D2"] }, { id: "c", title: "c", covers: ["D3"] }], waves: [["b"], ["c"]] } });
@@ -316,7 +316,7 @@ describe("the machine's return after a failed verdict", () => {
       api: { context: async () => phase, plan: () => phase, planCheck: async () => phase, question: () => phase, waveReview: () => phase, goalAudit: () => phase, lessons: () => phase, drawing: async () => phase,
         returnTo: (input) => { returns.push(`${input.to}: ${input.note}`); phase = { ...phase, stage: input.to } as Phase; return phase; } },
       get: () => phase, save: (_id, record) => { phase = { ...phase, record }; }, book: () => undefined, writeDocs: async () => ({ written: [] }),
-      runtime: () => ({}), bookHead: () => "h".repeat(64), pmIdle: async () => true, now: () => 1,
+      runtime: () => ({}), pmIdle: async () => true, now: () => 1,
     });
     expect(await auto.step(phase)).toBe(true);
     expect(returns).toEqual(["planning: the verification failed (1 of 2 machine returns): goal audit: unmet: [p1]"]);
@@ -327,7 +327,7 @@ describe("the machine's return after a failed verdict", () => {
 describe("signing again after a return", () => {
   it("signs the documents the return left, once the PM is idle", async () => {
     const { createAutoStages: create } = await import("../src/rooms/phase/server/auto-stages");
-    let phase = phaseAt("discussion", { signedBefore: { docs: ["CONTEXT.md"], risks: { technical: "t" } } });
+    let phase = phaseAt("discussion", { signedBefore: { docs: ["CONTEXT.md"], risks: { feasibility: "t" } } });
     const signed: string[][] = [];
     let idle = false;
     const auto = create({ log: () => undefined }, { workflowEngine: {} as never }, {
@@ -335,7 +335,7 @@ describe("signing again after a return", () => {
       api: { context: async (input) => { signed.push(input.docs); phase = phaseAt("planning", { ...phase.record, context: { docs: [], sha: "c", signedAt: 1 } }); return phase; },
         plan: () => phase, planCheck: async () => phase, question: () => phase, waveReview: () => phase, goalAudit: () => phase, lessons: () => phase, drawing: async () => phase, returnTo: () => phase },
       get: () => phase, save: (_id, record) => { phase = { ...phase, record }; }, book: () => undefined, writeDocs: async () => ({ written: [] }),
-      runtime: () => ({}), bookHead: () => "h".repeat(64), pmIdle: async () => idle, now: () => 1,
+      runtime: () => ({}), pmIdle: async () => idle, now: () => 1,
     });
     expect(await auto.step(phase)).toBe(true);
     expect(signed).toEqual([]);

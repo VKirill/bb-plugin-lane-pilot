@@ -40,7 +40,8 @@ describe("scripts/lp-drill.sh (E3)", () => {
   });
 
   it("--quick is the guard hash check, the register of deferrals, the checker drill, the memory paths, the helper per provider and the three-task scenario, and an unknown scenario is refused", () => {
-    const quick = spawnSync("bash", [script, "--quick", "--dry-run"], { encoding: "utf8", timeout: 30_000, env: { ...ownEnv, BB_CLI: "/nonexistent/bb" } });
+    // LP_DRILL_SELECT=0: the whole --quick set, not the selection by what changed since the hub last saw each scenario pass.
+    const quick = spawnSync("bash", [script, "--quick", "--dry-run"], { encoding: "utf8", timeout: 30_000, env: { ...ownEnv, BB_CLI: "/nonexistent/bb", LP_DRILL_SELECT: "0" } });
     expect(quick.status).toBe(0);
     expect(quick.stdout).toContain("scenarios: guard_hash, deferrals, checkers, memory_paths, helper_providers, parallel3");
     expect(quick.stdout).not.toContain("scenario conflict");

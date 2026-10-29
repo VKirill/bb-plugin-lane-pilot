@@ -46,7 +46,7 @@ function world(start: Phase, over: { runs?: Map<string, Run>; refusal?: Error; w
     get: () => phase, save: (_id, record) => { phase = { ...phase, record }; },
     book: (_phase, _section, kind) => { calls.push(`book ${kind}`); },
     writeDocs: async (_phase, files) => { for (const file of files) written.push(file.path); return { written: over.writes === false ? [] : files.map((file) => file.path) }; },
-    runtime: () => ({}), bookHead: () => "h", pmIdle: async () => true, now: () => 1, version: "0.1.341",
+    runtime: () => ({}), pmIdle: async () => true, now: () => 1, version: "0.1.341",
   });
   return { auto, calls, written, runs, get: () => phase };
 }

@@ -31,17 +31,23 @@ export type PendingVerdict = Omit<FrozenVerdict, "state"> & { state: "pending" }
 export type AcceptanceLine = { id: AcceptanceLineId; ok: boolean; detail: string };
 export type ModelVerdict = { state: "met" | "unmet"; by: string; summary: string; at: number };
 
-/** The four kinds of risk a discussion names before any solution (SMA: Four risk kinds); «none» is an answer, silence is not. */
-export const RISK_KINDS = ["technical", "product", "operations", "security"] as const;
+/** The four kinds of risk a discussion names before any solution (SMA p1_risks: value, usability, feasibility, viability); «none» is an answer, silence is not. */
+export const RISK_KINDS = ["value", "usability", "feasibility", "viability"] as const;
 export type RiskKind = (typeof RISK_KINDS)[number];
+/** A security risk is named beside the four when there is one: it asks for a threat model before the plan (SMA k_wp_threat). */
+export type RiskKey = RiskKind | "security";
 
 /** A question a stage parks instead of guessing (SMA: Plan question parked, Answer a stage question); a blocking one holds the gate. */
 export type StageQuestion = { id: string; stage: PhaseStage; text: string; blocking: boolean; askedAt: number; answer?: string; answeredBy?: string; answeredAt?: number };
 
-/** The owner's word at a turn, when the project asks for it (setting owner.words = on; SMA: Plan row awaits a word, Drawing confirmation, Keyed decision, UAT line). */
-export const WORD_TURNS = ["planning", "design", "issue", "wave", "acceptance", "uat"] as const;
+/**
+ * The owner's word at a turn, when the project asks for it (owner.words, on by default; SMA: Context signature, Plan row awaits a word,
+ * Drawing confirmation, Issue gate, Person accepts the wave, UAT line, Keyed decision on the phase, Draft awaits a person).
+ */
+export const WORD_TURNS = ["context", "planning", "design", "issue", "wave", "acceptance", "uat", "lesson"] as const;
 export type WordTurn = (typeof WORD_TURNS)[number];
-export type OwnerWord = { turn: WordTurn; decision: "yes" | "no"; by: string; text: string; at: number; wave?: number };
+/** At acceptance the word is two decisions (SMA p6_l_useful, p6_l_limits) under the key of the package the person was shown (p6_decide). */
+export type OwnerWord = { turn: WordTurn; decision: "yes" | "no"; by: string; text: string; at: number; wave?: number; useful?: boolean; limits?: boolean; key?: string };
 
 /** A wave of the plan once its pieces are in (SMA: Wave package with hash, Wave acceptance lines, Wave verified by another model, Wave written to the book). */
 export type WaveRecord = { packageSha: string; lines: Array<{ id: string; ok: boolean; detail: string }>; review?: { state: "passed" | "failed"; by: string; summary: string; at: number }; at: number };
@@ -55,7 +61,7 @@ export type PhaseRecord = {
   /** The stage workflow the machine runs now (src/rooms/phase/server/auto-stages.ts). */
   auto?: { kind: "analyze" | "plan" | "draw" | "review" | "close" | "lessons"; wfRunId: string; startedAt: number; wave?: number };
   /** The context signed before a return to discussion: the machine signs these documents again instead of analysing anew. */
-  signedBefore?: { docs: string[]; risks?: Partial<Record<RiskKind, string>>; decisions?: string[] };
+  signedBefore?: { docs: string[]; risks?: Partial<Record<RiskKey, string>>; decisions?: string[]; appetite?: string; noGos?: string[] };
   /** Runs of a stage's workflow that did not finish; at two the loop is spent and the machine ends it (scope cut, hunters, backlog). */
   autoFailures?: Partial<Record<"analyze" | "plan" | "draw" | "review" | "close" | "lessons", number>>;
   /** Failed runs of each stage's workflow over the phase's whole life, across versions (a new version forgets autoFailures, not this). */
@@ -66,7 +72,8 @@ export type PhaseRecord = {
   replan?: { gaps?: string; count: number };
   /** The Lane Pilot version the failures were counted under: a new version tries the stages again. */
   autoFailuresVersion?: string;
-  context?: { docs: ContextDoc[]; sha: string; signedAt: number; risks?: Partial<Record<RiskKind, string>>; legacy?: boolean; /** REQUIREMENTS ids this phase delivers. */ requirements?: string[]; /** Locked decision ids of CONTEXT.md. */ decisions?: string[] };
+  context?: { docs: ContextDoc[]; sha: string; signedAt: number; risks?: Partial<Record<RiskKey, string>>; legacy?: boolean; /** REQUIREMENTS ids this phase delivers. */ requirements?: string[]; /** Locked decision ids of CONTEXT.md. */ decisions?: string[];
+    /** How much the phase may take, decided before the solution (SMA p1_appetite), and what it will not do (no-gos). */ appetite?: string; noGos?: string[] };
   questions?: StageQuestion[];
   /** The project asked for the owner's word at the turns (owner.words = on when the phase opened). */
   ownerWords?: boolean;
@@ -101,7 +108,9 @@ export type PhaseRecord = {
   agingSaidAt?: number;
   verification?: { verdict?: FrozenVerdict; model?: ModelVerdict };
   acceptance?: { lines: AcceptanceLine[]; at: number; accepted: boolean };
-  lessons?: { needed: boolean; why: string; analysis?: string; author?: string; reviewer?: string; reviewedHash?: string; at?: number };
+  lessons?: { needed: boolean; why: string; analysis?: string; author?: string; reviewer?: string; reviewedHash?: string; at?: number;
+    /** The lesson as a draft (SMA p7_staged): it waits for the owner's word «lesson»; applied, it goes into memory (m_apply). A write that did not land is finished on a later pass from the same text (p7_recover). */
+    draft?: { text: string; stagedAt: number; state: "staged" | "applied" | "declined"; at?: number; error?: string } };
   /** The book written to the project (.agents/phases/<id>/BOOK.md) up to this part. */
   bookWritten?: { seq: number; sha256: string; at: number };
   closing?: { by: string; words: string; at: number };
@@ -142,6 +151,11 @@ export function discussionGate(record: PhaseRecord): GateResult {
   const risks = record.context?.risks ?? {};
   const unnamed = RISK_KINDS.filter((kind) => !risks[kind]?.trim());
   if (unnamed.length) why.push(`risks not named: ${unnamed.join(", ")} (name each, «none» is an answer)`);
+  // SMA p1_confirm: explicit decisions on appetite and no-gos (a legacy phase has neither, its plan existed before it).
+  if (!record.context?.legacy) {
+    if (!record.context?.appetite?.trim()) why.push("no appetite: say how much this phase may take before any solution (time or size)");
+    if (!record.context?.noGos?.some((line) => line.trim())) why.push("no-gos not named: what this phase will not do («none» is an answer)");
+  }
   return gate(why);
 }
 
@@ -372,7 +386,10 @@ export function alreadyMetVerdict(alreadyMet: { evidence: string }, now: number)
   return { state: "passed", detail: `already met, nothing to build: ${alreadyMet.evidence}`.slice(0, 1000), mainSha: null, at: now, inputSha: sha256(canonical({ alreadyMet })) };
 }
 
-export const ACCEPTANCE_LINES = ["contract_current", "promises_proved", "checks_passed", "independent_check", "landed", "composition_verified", "main_unmoved", "qa_read", "goal_met", "limits_acknowledged", "owner_word"] as const;
+export const ACCEPTANCE_LINES = ["contract_current", "promises_proved", "checks_passed", "independent_check", "landed", "composition_verified", "main_unmoved", "qa_read", "goal_met", "limits_acknowledged", "result_useful"] as const;
+
+/** The key of the package a person decides on (SMA p6_decide): the plan, the verdict's input and the tree it saw. A new verdict or tree is a new key. */
+export const acceptanceKey = (record: PhaseRecord) => sha256(canonical({ plan: record.plan?.sha ?? null, verdict: record.verification?.verdict?.inputSha ?? null, tree: record.verification?.verdict?.mainSha ?? null })).slice(0, 16);
 export type AcceptanceLineId = (typeof ACCEPTANCE_LINES)[number];
 
 /** The phase acceptance calculation: each line decided by code; the phase is accepted only when every line holds. */
@@ -391,7 +408,13 @@ export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFac
   const critiqued = failed((fact) => fact?.codeCritique === "passed").length;
   const qaPassed = failed((fact) => fact?.browserQa === "passed").length;
   const model = phase.record.verification?.model;
-  const word = wordOf(phase.record, "acceptance");
+  // The person's two decisions count only under the key of the package now shown (a word on an older candidate is not this one's).
+  const latest = wordOf(phase.record, "acceptance");
+  const word = latest && latest.key === acceptanceKey(phase.record) ? latest : undefined;
+  const asked = !!phase.record.ownerWords;
+  const decided = (pick: "useful" | "limits") => !asked || (word?.decision === "yes" && word[pick] === true);
+  const wordDetail = (what: string) => !asked ? "the project does not ask for the owner's word (owner.words off)"
+    : word ? `${word.by}: ${word.decision}${word.decision === "yes" ? ` — ${what}` : ""} — ${word.text}` : latest ? `the owner's word was given on another package (${latest.key ?? "no key"}): it is asked again` : "awaits the owner's keyed decision";
   return [
     line("contract_current", !!phase.record.plan?.admittedSha && phase.record.plan.admittedSha === phase.record.plan.sha, phase.record.plan?.admittedSha === phase.record.plan?.sha ? "the plan is the admitted one" : "the plan changed after its admission"),
     line("promises_proved", notProved.length === 0, notProved.length ? `not proved by plan-fact: ${notProved.join(", ")}` : `${items.length} promises proved`),
@@ -405,9 +428,11 @@ export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFac
       : qaPassed ? `no browser check failed; ${qaPassed} of ${items.length} piece(s) passed one, the rest had none` : "no browser check failed; none ran for these pieces"),
     line("goal_met", model?.state === "met", model ? `${model.by}: ${model.summary}` : "no goal audit yet"),
     // A put-off check with no term from the owner is unproven work of this project: it holds the acceptance until an agent closes it with evidence.
-    line("limits_acknowledged", !now.noTerm?.length, now.noTerm?.length ? `${now.noTerm.length} deferred check(s) of this project are open with no term from the owner, so they count as unproven: ${now.noTerm.slice(0, 5).map((row) => row.id).join(", ")} — close each with evidence (bb lane-pilot defer-close <id> --evidence …)`
-      : now.openDeferrals ? `${now.openDeferrals} deferred item(s) of this project stay open, named in the book` : "nothing deferred"),
-    line("owner_word", !phase.record.ownerWords || word?.decision === "yes", !phase.record.ownerWords ? "the project does not ask for the owner's word (owner.words off)" : word ? `${word.by}: ${word.decision} — ${word.text}` : "awaits the owner's keyed decision"),
+    // Limits acknowledged (SMA p6_l_limits): a person's decision on what stays open and how to recover, after every put-off check has its term.
+    line("limits_acknowledged", !now.noTerm?.length && decided("limits"), now.noTerm?.length ? `${now.noTerm.length} deferred check(s) of this project are open with no term from the owner, so they count as unproven: ${now.noTerm.slice(0, 5).map((row) => row.id).join(", ")} — close each with evidence (bb lane-pilot defer-close <id> --evidence …)`
+      : `${now.openDeferrals ? `${now.openDeferrals} deferred item(s) of this project stay open, named in the book` : "nothing deferred"}; ${wordDetail("the limits are acknowledged")}`),
+    // Result clear and useful (SMA p6_l_useful): a person's decision.
+    line("result_useful", decided("useful"), wordDetail("the result is clear and useful")),
   ];
 }
 
@@ -441,18 +466,22 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
   const questions = (r.questions ?? []).filter((question) => !question.answer && question.stage === phase.stage);
   if (questions.length) return { key: key(`questions:${questions.map((question) => question.id).join(",")}`), stage: phase.stage, waitsForPm: true,
     text: `${head} — open question(s) at ${phase.stage}: ${questions.map((question) => `${question.id}${question.blocking ? " (blocking)" : ""}: ${question.text}`).join("; ")}. Answer with ${tool("answer", `, phaseId:"${id}", questionId, answer`)}; ask the owner first (lane_pilot_ask_owner) if only he knows.` };
-  const turn: WordTurn | null = !r.ownerWords ? null : phase.stage === "planning" && r.plan?.critique?.decision === "approve" && wordOf(r, "planning")?.decision !== "yes" ? "planning"
+  const turn: WordTurn | null = !r.ownerWords ? null : phase.stage === "discussion" && r.context && discussionGate(r).ok && wordOf(r, "context")?.decision !== "yes" ? "context"
+    : phase.stage === "planning" && r.plan?.critique?.decision === "approve" && wordOf(r, "planning")?.decision !== "yes" ? "planning"
     : phase.stage === "design" && r.design?.drawing?.reviewer && wordOf(r, "design")?.decision !== "yes" ? "design"
     : phase.stage === "acceptance" && r.uat && wordOf(r, "uat")?.decision !== "yes" ? "uat"
-    : phase.stage === "acceptance" && wordOf(r, "acceptance")?.decision !== "yes" ? "acceptance" : null;
+    : phase.stage === "acceptance" && (r.acceptance?.lines ?? []).filter((line) => !line.ok).every((line) => line.id === "result_useful" || line.id === "limits_acknowledged")
+      && (wordOf(r, "acceptance")?.decision !== "yes" || wordOf(r, "acceptance")?.key !== acceptanceKey(r)) ? "acceptance" : null;
+  if (turn === "acceptance") return { key: key(`word:acceptance:${acceptanceKey(r)}`), stage: phase.stage, waitsForPm: true,
+    text: `${head} is prepared and awaits the owner's keyed decision on package ${acceptanceKey(r)} (owner.words is on): two decisions — is the result clear and useful, and are the remaining limits and the recovery acknowledged. He decides in the phase card, or ask him with lane_pilot_ask_owner and record it with ${tool("word", `, phaseId:"${id}", turn:"acceptance", decision:"yes"|"no", useful:true|false, limits:true|false, text`)}.` };
   if (turn) return { key: key(`word:${turn}`), stage: phase.stage, waitsForPm: true,
-    text: `${head} awaits the owner's word at ${turn} (owner.words is on). Ask him with lane_pilot_ask_owner, then record it with ${tool("word", `, phaseId:"${id}", turn:"${turn}", decision:"yes"|"no", text`)}.` };
+    text: `${head} awaits the owner's word at ${turn} (owner.words is on). He gives it in the phase card, or ask him with lane_pilot_ask_owner and record it with ${tool("word", `, phaseId:"${id}", turn:"${turn}", decision:"yes"|"no", text`)}.` };
   if (phase.state === "paused" || phase.state === "pause_requested") return { key: key("paused"), stage: phase.stage, text: `${head} is paused; ${tool("resume", `, phaseId:"${id}"`)} moves it on.`, waitsForPm: false };
   switch (phase.stage) {
     case "discussion": {
       const check = discussionGate(r);
       return { key: key(r.context?.sha ?? "none"), stage: phase.stage, waitsForPm: true,
-        text: `${head} — stage 1, discussion. Goal: ${phase.goal}\nWrite the discussion to files in the project (decisions locked/free/deferred, FAQ, ADR — workflow lp.brainstorm or lp.analyze writes them), name the four risks (${RISK_KINDS.join(", ")}), then ${tool("context", `, phaseId:"${id}", docs:["<path>", ...], risks:{technical, product, operations, security}`)}: Lane Pilot reads and signs them; pass requirements:[ids] and decisions:[locked ids] when the phase has them — the plan must cover each.\nRead first: ${stageInit(phase).join(", ")}. ${rubricLine("discussion")}${check.ok ? "" : `\nOpen: ${check.why.join("; ")}`}` };
+        text: `${head} — stage 1, discussion. Goal: ${phase.goal}\nWrite the discussion to files in the project (problem, appetite, solution, rabbit holes, no-gos, decisions locked/free/deferred, FAQ, ADR — workflow lp.brainstorm or lp.analyze writes them), name the four risks (${RISK_KINDS.join(", ")}; a security risk beside them when there is one), then ${tool("context", `, phaseId:"${id}", docs:["<path>", ...], risks:{value, usability, feasibility, viability, security?}, appetite, noGos:[...]`)}: Lane Pilot reads and signs them${r.ownerWords ? ", and the owner signs the context with his word" : ""}; pass requirements:[ids] and decisions:[locked ids] when the phase has them — the plan must cover each.\nRead first: ${stageInit(phase).join(", ")}. ${rubricLine("discussion")}${check.ok ? "" : `\nOpen: ${check.why.join("; ")}`}` };
     }
     case "planning": {
       const check = planGate(r);
@@ -512,7 +541,7 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
     }
     case "lessons":
       return { key: key(r.lessons?.analysis ? "written" : "analysis"), stage: phase.stage, waitsForPm: !r.lessons?.analysis,
-        text: `${head} — stage 7, lessons (${r.lessons?.why ?? ""}). Run the retrospective (workflow retrospective) on the phase book and report it with ${tool("lessons", `, phaseId:"${id}", analysis, author, reviewer, reviewedHash`)}: the reviewer is a role other than the author, and reviewedHash is the book's last part hash the reviewer read (status shows it).` };
+        text: `${head} — stage 7, lessons (${r.lessons?.why ?? ""}). Run the retrospective (workflow retrospective) on the phase book and report it with ${tool("lessons", `, phaseId:"${id}", analysis, author, reviewer, reviewedHash`)}: the reviewer is a role other than the author, and reviewedHash is the sha256 of exactly the analysis text the reviewer read.${r.ownerWords ? " The lesson then waits as a draft for the owner's word «lesson»." : ""}` };
     case "closed":
       return { key: key("closed"), stage: phase.stage, waitsForPm: false, text: `${head} is closed.` };
   }
@@ -523,13 +552,14 @@ export function staleAfterReturn(to: PhaseStage, record: PhaseRecord): PhaseReco
   const next: PhaseRecord = { ...record };
   const order = PHASE_STAGES.indexOf(to);
   // The signed documents are kept aside: back at discussion they are the PM's or the owner's correction to sign again, not a reason to analyse anew.
-  if (order <= PHASE_STAGES.indexOf("discussion")) { if (next.context) next.signedBefore = { docs: next.context.docs.map((doc) => doc.path), risks: next.context.risks, decisions: next.context.decisions }; delete next.context; }
+  if (order <= PHASE_STAGES.indexOf("discussion")) { if (next.context) next.signedBefore = { docs: next.context.docs.map((doc) => doc.path), risks: next.context.risks, decisions: next.context.decisions, appetite: next.context.appetite, noGos: next.context.noGos }; delete next.context; }
   if (order <= PHASE_STAGES.indexOf("planning") && next.plan) next.plan = { ...next.plan, critique: undefined, admittedSha: undefined, admittedAt: undefined };
   if (order <= PHASE_STAGES.indexOf("design")) delete next.design;
   if (order <= PHASE_STAGES.indexOf("execution")) { delete next.verification; delete next.acceptance; }
   delete next.lessons;
   const later = (stage: string) => PHASE_STAGES.indexOf(stage as PhaseStage) >= order;
-  if (next.words) next.words = next.words.filter((word) => !later(word.turn === "uat" ? "acceptance" : word.turn));
+  const stageOfTurn = (turn: WordTurn) => turn === "context" ? "discussion" : turn === "uat" ? "acceptance" : turn === "lesson" ? "lessons" : turn;
+  if (next.words) next.words = next.words.filter((word) => !later(stageOfTurn(word.turn)));
   return next;
 }
 

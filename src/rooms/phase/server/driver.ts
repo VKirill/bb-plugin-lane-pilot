@@ -5,13 +5,13 @@ import { noTermDeferralsOf } from "../../deferral/server";
 import { getRunGoal } from "../../run-goal";
 import { getRun, getRunSettingsScopes, getRunWriterHost, getTask, listOpenAttempts, storeMemoryRecords } from "../../storage";
 import { postOwnerItem, closeOwnerItem } from "../../owner-waiting";
-import { isWholeConsent, spendReserve } from "../../tasks";
+import { isWholeConsent, ownerWordsOn, spendReserve } from "../../tasks";
 import { hostContract } from "../../contracts";
 import { scheduleIsolated, type ServerCore, type Services } from "../../core/server";
 import {
-  PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceLines, alreadyMetVerdict, blindVerdict, canonical, pieceSha, contextSignature, openQuestions, phaseFolder, planGate as planGateOf, piecesOfWave, waveCleared, waveLines, wavePackage, wavesOf, wordOf, designDecision, designGate, discussionGate,
+  PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceKey, acceptanceLines, alreadyMetVerdict, blindVerdict, canonical, pieceSha, contextSignature, openQuestions, phaseFolder, planGate as planGateOf, piecesOfWave, waveCleared, waveLines, wavePackage, wavesOf, wordOf, designDecision, designGate, discussionGate,
   executionGate, issuable, lessonsNeeded, nextAction, planGate, planSignature, provenPieces, renderBook, sha256, staleAfterReturn,
-  type ContextDoc, type Phase, type PhaseRecord, type PhaseStage, type PlanItem, type RiskKind, type TaskFact, type WordTurn,
+  type ContextDoc, type Phase, type PhaseRecord, type PhaseStage, type PlanItem, type RiskKey, type TaskFact, type WordTurn,
 } from "../logic";
 import { appendPart, getPhase, insertPhase, listParts, listPhases, notePoked, savePhase } from "../store";
 import { archiveDrawing, binaryFileCommand, binaryFileFingerprint, conclusionText, markRoadmap, nextRoadmapRow, stateText, uatState, uatText, waveTable } from "../stages";
@@ -152,7 +152,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     const runId = (db.prepare("SELECT id FROM lane_pilot_run WHERE pm_thread_id=? ORDER BY created_at DESC LIMIT 1").get(input.pmThreadId) as { id: string } | undefined)?.id ?? null;
     insertPhase(db, { id, projectId: input.projectId, pmThreadId: input.pmThreadId, runId, title: input.title.slice(0, 200), goal: input.goal.slice(0, 4000), at: now() });
     const settings = await ctx.effectiveProjectSettings(input.projectId).then((result) => result.values as Record<string, unknown>, () => ({} as Record<string, unknown>));
-    const ownerWords = String(settings["owner.words"] ?? "off") === "on";
+    const ownerWords = ownerWordsOn(settings);
     const waveReview = String(settings["phase.wave_review"] ?? "on") !== "off";
     const capSetting = Number(settings["phase.issue_cap"] ?? 8);
     const issueCap = Number.isInteger(capSetting) && capSetting >= 1 && capSetting <= 50 ? capSetting : 8;
@@ -171,7 +171,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     return phase;
   }
 
-  async function context(input: Reported & { docs: string[]; risks?: Partial<Record<RiskKind, string>>; requirements?: string[]; decisions?: string[] }): Promise<Phase> {
+  async function context(input: Reported & { docs: string[]; risks?: Partial<Record<RiskKey, string>>; requirements?: string[]; decisions?: string[]; appetite?: string; noGos?: string[] }): Promise<Phase> {
     const phase = mustGet(input.phaseId);
     if (phase.stage !== "discussion") throw new PhaseRefusal(`phase ${phase.id} is at ${phase.stage}: return it to discussion first to change its context`);
     const docs: ContextDoc[] = [];
@@ -179,12 +179,20 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       const file = await readFile(phase, path);
       docs.push({ path, sha256: file.sha256, bytes: file.sizeBytes });
     }
-    const risks = Object.fromEntries(RISK_KINDS.map((kind) => [kind, input.risks?.[kind]?.trim() ?? ""]).filter(([, text]) => text)) as Partial<Record<RiskKind, string>>;
+    const risks = Object.fromEntries([...RISK_KINDS, "security" as const].map((kind) => [kind, input.risks?.[kind]?.trim() ?? ""]).filter(([, text]) => text)) as Partial<Record<RiskKey, string>>;
+    const noGos = (input.noGos ?? []).map((line) => line.trim()).filter(Boolean).slice(0, 30);
     const record: PhaseRecord = { ...phase.record, context: { docs, sha: contextSignature(docs), signedAt: now(), risks,
+      ...(input.appetite?.trim() ? { appetite: input.appetite.trim().slice(0, 600) } : {}), ...(noGos.length ? { noGos } : {}),
       ...(input.requirements?.length ? { requirements: [...new Set(input.requirements)] } : {}), ...(input.decisions?.length ? { decisions: [...new Set(input.decisions)] } : {}) } };
     const check = discussionGate(record);
     if (!check.ok) { savePhase(db, phase.id, { record, at: now() }); throw new PhaseRefusal("the discussion is not complete", check.why); }
-    book(phase, "discussion", "signed", `context signed ${record.context!.sha.slice(0, 12)}: ${docs.map((doc) => `${doc.path} (${doc.bytes} B)`).join(", ")}; risks — ${RISK_KINDS.map((kind) => `${kind}: ${risks[kind]}`).join("; ")}`);
+    book(phase, "discussion", "signed", `context signed ${record.context!.sha.slice(0, 12)}: ${docs.map((doc) => `${doc.path} (${doc.bytes} B)`).join(", ")}; appetite — ${record.context!.appetite ?? "—"}; no-gos — ${noGos.join("; ") || "—"}; risks — ${[...RISK_KINDS, "security" as const].filter((kind) => risks[kind]).map((kind) => `${kind}: ${risks[kind]}`).join("; ")}`);
+    // Context signature (SMA p1_confirm): the author is a person. With owner.words on the machine's signature waits for his word «context».
+    if (record.ownerWords) {
+      savePhase(db, phase.id, { record, at: now() });
+      book(phase, "discussion", "awaits_signature", "the context is complete and awaits the owner's signature (his word «context»)");
+      return mustGet(phase.id);
+    }
     move(phase, "planning", record, "the context documents exist, none is empty, and they are signed");
     return mustGet(phase.id);
   }
@@ -283,22 +291,47 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     const phase = mustGet(input.phaseId);
     if (phase.stage !== "lessons") throw new PhaseRefusal(`phase ${phase.id} is at ${phase.stage}, not lessons`);
     if (!input.reviewer.trim() || input.reviewer.trim() === input.author.trim()) throw new PhaseRefusal("the lessons need a reviewer other than their author");
-    // Reviewer saw these bytes: the review names the hash of the book's last part it read; a book that grew since is read again.
-    const head = listParts(db, phase.id).at(-1)?.hash ?? "";
-    if (input.reviewedHash !== head) throw new PhaseRefusal(`the reviewer read another book: its last part is ${head.slice(0, 12)}, the review names ${input.reviewedHash.slice(0, 12)}`);
-    const record: PhaseRecord = { ...phase.record, lessons: { ...(phase.record.lessons ?? { needed: true, why: "" }), analysis: input.analysis.slice(0, 4000), author: input.author, reviewer: input.reviewer, reviewedHash: head, at: now() } };
-    book(phase, "lessons", "analysis", `${input.analysis} (by ${input.author}, reviewed by ${input.reviewer})`);
-    // Lesson written by the pipeline: the analysis goes through the memory door as a note of the project (refused text stays only in the book).
-    try {
-      storeMemoryRecords(db, { projectId: phase.projectId, audience: "subagent", sourceSha256: sha256(`${phase.id}:${head}`), origin: "phase-lessons",
-        scope: phase.runId ? getRunSettingsScopes(db, phase.runId) : [], coreBudget: 3072, noteBudget: 200_000, indexBudget: 65536,
-        entries: [{ kind: "note", content: `Phase «${phase.title}» lessons: ${input.analysis}`.slice(0, 2000), concepts: ["phase", "lessons"] }] });
-    } catch (cause) {
-      book(phase, "lessons", "memory_refused", `the memory door refused the lesson: ${cause instanceof Error ? cause.message : String(cause)}`);
-    }
+    // Reviewer saw these bytes (SMA p7_saw_bytes): the review names the sha256 of exactly the analysis it read, not of the book around it
+    // (2026-10-29 audit: a new analysis with the book's hash was accepted with no read of its own bytes).
+    const analysis = input.analysis.slice(0, 4000);
+    if (input.reviewedHash !== sha256(analysis)) throw new PhaseRefusal(`the reviewer read other bytes: the analysis hashes to ${sha256(analysis).slice(0, 12)}, the review names ${input.reviewedHash.slice(0, 12)}`);
+    const text = `Phase «${phase.title}» lessons: ${analysis}`.slice(0, 2000);
+    const record: PhaseRecord = { ...phase.record, lessons: { ...(phase.record.lessons ?? { needed: true, why: "" }), analysis, author: input.author, reviewer: input.reviewer, reviewedHash: input.reviewedHash, at: now(),
+      ...(phase.record.ownerWords ? { draft: { text, stagedAt: now(), state: "staged" as const } } : {}) } };
+    book(phase, "lessons", "analysis", `${analysis} (by ${input.author}, reviewed by ${input.reviewer}, bytes ${input.reviewedHash.slice(0, 12)})`);
+    if (phase.record.ownerWords) {
+      // Lesson is a draft (SMA p7_staged): it waits for the person's word in drafts; the phase does not wait for it.
+      book(phase, "lessons", "staged", "the lesson waits as a draft for the owner's word «lesson»");
+      postOwnerItem(db as never, { key: `phase-word:${phase.id}:lesson`, source: "phase", kind: "word", projectId: phase.projectId,
+        what: `Phase «${phase.title}»: the lesson draft — apply it to memory?`, why: text.slice(0, 600) });
+    } else writeLesson(phase, text);
     move(phase, "closed", record, "the lessons are written and reviewed");
     savePhase(db, phase.id, { state: "closed", at: now() });
     return mustGet(phase.id);
+  }
+
+  /** Lesson written by the pipeline: the analysis goes through the memory door as a note of the project (refused text stays only in the book). */
+  function writeLesson(phase: Phase, text: string): string | null {
+    try {
+      storeMemoryRecords(db, { projectId: phase.projectId, audience: "subagent", sourceSha256: sha256(`${phase.id}:${text}`), origin: "phase-lessons",
+        scope: phase.runId ? getRunSettingsScopes(db, phase.runId) : [], coreBudget: 3072, noteBudget: 200_000, indexBudget: 65536,
+        entries: [{ kind: "note", content: text, concepts: ["phase", "lessons"] }] });
+      return null;
+    } catch (cause) {
+      const why = cause instanceof Error ? cause.message : String(cause);
+      book(phase, "lessons", "memory_refused", `the memory door refused the lesson: ${why}`);
+      return why;
+    }
+  }
+
+  /** The owner's word on the lesson draft: yes applies it to memory (SMA m_apply), no declines it; a write that did not land is tried again on a later pass. */
+  function settleLesson(phase: Phase, decision: "yes" | "no"): void {
+    const draft = phase.record.lessons?.draft;
+    if (!draft || draft.state !== "staged") throw new PhaseRefusal(`phase ${phase.id} has no lesson draft waiting`);
+    const error = decision === "yes" ? writeLesson(phase, draft.text) : null;
+    const next = decision === "no" ? { ...draft, state: "declined" as const, at: now() } : error ? { ...draft, error, at: now() } : { ...draft, state: "applied" as const, at: now(), error: undefined };
+    if (!error) book(phase, "lessons", decision === "yes" ? "lesson_applied" : "lesson_declined", decision === "yes" ? "the owner applied the lesson draft: it is in memory" : "the owner declined the lesson draft");
+    savePhase(db, phase.id, { record: { ...phase.record, lessons: { ...phase.record.lessons!, draft: next } }, at: now() });
   }
 
   function question(input: Reported & { text: string; blocking: boolean }): Phase {
@@ -321,8 +354,11 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   }
 
   /** The owner's word at a turn (owner.words on). «no» sends the phase back: from planning or design to planning, from acceptance to execution. */
-  async function word(input: Reported & { turn: WordTurn; decision: "yes" | "no"; text: string; wave?: number }): Promise<Phase> {
+  async function word(input: Reported & { turn: WordTurn; decision: "yes" | "no"; text: string; wave?: number; useful?: boolean; limits?: boolean }): Promise<Phase> {
     const phase = mustGet(input.phaseId);
+    // Keyed decision on the phase (SMA p6_decide): two decisions under the key of the shown package.
+    if (input.turn === "acceptance" && input.decision === "yes" && !(input.useful === true && input.limits === true))
+      throw new PhaseRefusal("the acceptance is two decisions: the result is clear and useful (useful:true) and the remaining limits and recovery are acknowledged (limits:true); a «no» to either is decision no with the words why");
     // Consent is the whole message: «да» alone is consent; «да, но …» is a new word that goes back as words, not as yes.
     if (input.decision === "yes" && !isWholeConsent(input.text) && !/^owner via (screen|cli)$/.test(input.by ?? "")) throw new PhaseRefusal("the owner's message is not a whole consent: «да, но …» is a new word — record it as decision no with his words, or ask again");
     if (input.turn === "uat" && input.decision === "yes") {
@@ -332,11 +368,20 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       const state = text ? uatState(text) : null;
       if (!state || !state.lines || state.open.length || state.failed.length) throw new PhaseRefusal(`UAT is not complete: ${!state ? "no UAT.md" : `${state.open.length} open, ${state.failed.length} failed of ${state.lines}`} — the owner marks each line in ${path ?? "UAT.md"} first`);
     }
-    const record: PhaseRecord = { ...phase.record, words: [...(phase.record.words ?? []), { turn: input.turn, decision: input.decision, by: input.by ?? "owner", text: input.text.slice(0, 2000), at: now(), ...(input.wave !== undefined ? { wave: input.wave } : {}) }] };
+    const record: PhaseRecord = { ...phase.record, words: [...(phase.record.words ?? []), { turn: input.turn, decision: input.decision, by: input.by ?? "owner", text: input.text.slice(0, 2000), at: now(), ...(input.wave !== undefined ? { wave: input.wave } : {}),
+      ...(input.turn === "acceptance" ? { useful: input.useful === true, limits: input.limits === true, key: acceptanceKey(phase.record) } : {}) }] };
     closeOwnerItem(db as never, `phase-word:${phase.id}:${input.turn}${input.wave !== undefined ? `:${input.wave}` : ""}`, input.by ?? "owner");
     book(phase, "decisions", `word_${input.turn}`, `${input.by ?? "owner"}: ${input.decision} — ${input.text}`);
     if (input.turn === "design") await noteDesignWord(phase.id, input.decision);
     savePhase(db, phase.id, { record, at: now() });
+    if (input.turn === "lesson") { settleLesson(mustGet(phase.id), input.decision); return mustGet(phase.id); }
+    if (input.turn === "context") {
+      if (phase.stage !== "discussion" || !record.context) return mustGet(phase.id);
+      // The owner signs the context, or says no: then it is unsigned and the discussion goes on with his words in the book.
+      if (input.decision === "no") { savePhase(db, phase.id, { record: { ...record, context: undefined }, at: now() }); return mustGet(phase.id); }
+      if (discussionGate(record).ok) move(phase, "planning", record, "the owner signed the context");
+      return mustGet(phase.id);
+    }
     if (input.decision === "no") {
       const to: PhaseStage = input.turn === "acceptance" || input.turn === "uat" ? "execution" : "planning";
       if (PHASE_STAGES.indexOf(to) < PHASE_STAGES.indexOf(phase.stage)) return returnTo({ phaseId: phase.id, to, note: `the owner said no at ${input.turn}: ${input.text}`, by: input.by ?? "owner" });
@@ -775,7 +820,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   async function poke(phase: Phase & { pokedKey?: string | null }): Promise<void> {
     const action = nextAction(phase, facts(phase));
     // Call about a waiting decision: a turn that needs the owner's word is also a row on «Ждут владельца» (and its Telegram digest).
-    const wordTurn = action.key.match(/:word:([a-z]+)(?::(\d+))?$/);
+    const wordTurn = action.key.match(/:word:([a-z]+)(?::(\d+))?(?::[0-9a-f]+)?$/);
     if (wordTurn) postOwnerItem(db as never, { key: `phase-word:${phase.id}:${wordTurn[1]}${wordTurn[2] ? `:${wordTurn[2]}` : ""}`, source: "phase", kind: "word", projectId: phase.projectId,
       what: `Phase «${phase.title}»: your word at ${wordTurn[1]}${wordTurn[2] ? ` (wave ${wordTurn[2]})` : ""}`, why: action.text.slice(0, 600) });
     // Aging said once a day; a stalled phase named in the book only: no part for three days (or twelve hours at execution with pieces at work). The PM is not
@@ -795,10 +840,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     // discussion's step arrived after the phase was closed). The next pass, two minutes on, pokes it once it is idle.
     const thread = await bb.sdk.threads.get({ threadId: phase.pmThreadId }).catch(() => null) as { status?: unknown } | null;
     if (thread?.status !== "idle") return;
-    // The lessons' reviewer names the book it read by its last part's hash: the step carries it.
-    const head = action.stage === "lessons" ? listParts(db, phase.id).at(-1)?.hash : undefined;
-    const text = head ? `${action.text} The book's last part hash now (reviewedHash): ${head}.` : action.text;
-    await bb.sdk.threads.send({ threadId: phase.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text: `[Lane Pilot phase] ${text}`, mentions: [] }] } as never).catch(() => undefined);
+    await bb.sdk.threads.send({ threadId: phase.pmThreadId, mode: "queue-if-active", input: [{ type: "text", text: `[Lane Pilot phase] ${action.text}`, mentions: [] }] } as never).catch(() => undefined);
     notePoked(db, phase.id, action.key, now());
   }
 
@@ -812,6 +854,9 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       book(row, "decisions", "resume_after_fix", back.note);
       moved += 1;
     }
+    // Finish an accepted analysis (SMA p7_recover): a lesson the owner applied whose memory write did not land is written again, no new worker.
+    for (const row of listPhases(db, { limit: 200 }).filter((candidate) => candidate.record.lessons?.draft?.state === "staged" && candidate.record.lessons.draft.error
+      && wordOf(candidate.record, "lesson")?.decision === "yes")) settleLesson(row, "yes");
     // Closed phases that have not finished their paperwork yet are driven once more.
     const unfinished = listPhases(db, { limit: 200 }).filter((row) => row.stage === "closed" && !row.record.closedDocs && Date.now() - row.updatedAt < 7 * 86_400_000);
     for (const phase of [...listPhases(db, { live: true, limit: 100 }), ...unfinished]) {
@@ -832,7 +877,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   function status(phaseId: string) {
     const phase = mustGet(phaseId);
     const parts = listParts(db, phase.id);
-    return { phase, next: nextAction(phase, facts(phase)), gates: { discussion: discussionGate(phase.record), plan: planGate(phase.record), design: designGate(phase.record) }, book: renderBook(phase, parts), bookHead: parts.at(-1)?.hash ?? null, openQuestions: openQuestions(phase.record, phase.stage), ownerWord: { asked: !!phase.record.ownerWords, planning: wordOf(phase.record, "planning") ?? null, design: wordOf(phase.record, "design") ?? null, acceptance: wordOf(phase.record, "acceptance") ?? null }, facts: Object.fromEntries(facts(phase)) };
+    return { phase, next: nextAction(phase, facts(phase)), gates: { discussion: discussionGate(phase.record), plan: planGate(phase.record), design: designGate(phase.record) }, book: renderBook(phase, parts), bookHead: parts.at(-1)?.hash ?? null, openQuestions: openQuestions(phase.record, phase.stage), ownerWord: { asked: !!phase.record.ownerWords, context: wordOf(phase.record, "context") ?? null, planning: wordOf(phase.record, "planning") ?? null, design: wordOf(phase.record, "design") ?? null, acceptance: wordOf(phase.record, "acceptance") ?? null, acceptanceKey: acceptanceKey(phase.record) }, facts: Object.fromEntries(facts(phase)) };
   }
 
   /** Did the plan stay the admitted one (Plan unchanged since checking). */
@@ -874,11 +919,12 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       }
     }
     const verdict = phase.record.verification?.model?.state === "unmet" ? `the goal audit: ${phase.record.verification.model.summary}` : phase.record.verification?.verdict?.state === "failed" ? `the verification: ${phase.record.verification.verdict.detail}` : "";
-    // The obligations the acceptance does not hold: the same lines the normal path reads (the owner's word is not a machine obligation).
+    // The obligations the acceptance does not hold: the same lines the normal path reads (the owner's decisions are not a machine obligation).
     const lastGoal = phase.runId ? getRunGoal(db, phase.runId) : null;
     const openDeferrals = (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_deferral WHERE project_id=? AND closed_at IS NULL").get(phase.projectId) as { n: number } | undefined)?.n ?? 0;
-    const unmet = acceptanceLines(phase, f, { mainSha: lastGoal?.headSha ?? null, openDeferrals, noTerm: noTermDeferralsOf(db, phase.projectId) })
-      .filter((line) => !line.ok && line.id !== "owner_word").map((line) => `${line.id}: ${line.detail}`.slice(0, 300));
+    const noTerm = noTermDeferralsOf(db, phase.projectId);
+    const unmet = acceptanceLines(phase, f, { mainSha: lastGoal?.headSha ?? null, openDeferrals, noTerm })
+      .filter((line) => !line.ok && line.id !== "result_useful" && (line.id !== "limits_acknowledged" || noTerm.length > 0)).map((line) => `${line.id}: ${line.detail}`.slice(0, 300));
     const cut = unproven.length ? `${unproven.map(({ item }) => item.id).join(", ")} withdrawn (${unproven.map(({ why }) => why).join(" | ").slice(0, 600)})` : "no piece to withdraw";
     const outcome = proven.length ? `the phase stops, partial: its ${proven.length} proved piece(s) stay accepted (${proven.map((item) => item.id).join(", ")}), the goal is not met` : "no piece is proved, so the phase stops (empty scope)";
     const done = `${input.stage} ran out of tries (${input.why.slice(0, 300)}). Scope cut: ${cut}${canceled.length ? `; canceled: ${canceled.join(", ")}` : ""}${verdict ? `; not proved: ${verdict.slice(0, 500)}` : ""}${unmet.length ? `; unmet: ${unmet.join(" | ").slice(0, 700)}` : ""}; ${outcome}.`;
@@ -905,7 +951,6 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     book: (phase, section, kind, text) => book(phase, section as never, kind, text),
     writeDocs,
     runtime: (phase) => (phase.runId ? { ctx, services, pmThreadId: phase.pmThreadId, projectId: phase.projectId, runId: phase.runId } : null),
-    bookHead: (phase) => listParts(db, phase.id).at(-1)?.hash ?? "",
     pmIdle: async (phase) => ((await bb.sdk.threads.get({ threadId: phase.pmThreadId }).catch(() => null)) as { status?: unknown } | null)?.status === "idle",
     now,
     runStopped: async (phase) => !!phase.runId && (await isRunHalted(bb.storage.kv as never, phase.runId) || await isRunPaused(bb.storage.kv as never, phase.runId)),

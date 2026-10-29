@@ -199,7 +199,7 @@ describe("modes and typed skips", () => {
     const agent: NodeExecutor = { reentrant: true, run: async (ctx) => {
       ran.push(ctx.nodeId);
       if (ctx.nodeId === "gather") return { output: { anchors: [], modules: [], conventions: [], summary: "s", ...h } };
-      if (ctx.nodeId === "assess") return { output: { decisions: [], risks: [], scores_min: 90, scope_verdict: "small", recommendation: "go", confidence: 90, stalled: false, pressure_pass: true, open_questions: [], residual_risks: [], ...h } };
+      if (ctx.nodeId === "assess") return { output: { decisions: [], risks: [], scores_min: 90, scope_verdict: "small", recommendation: "go", confidence: 90, stalled: false, pressure_pass: true, open_questions: [], residual_risks: [], appetite: "one day", no_gos: ["none"], ...h } };
       return { output: { consensus: [], conflicts: [], unique: [], consensus_level: 80, ...h } };
     } };
     const engine = engineOn(journalDb(), { agent }, { resolveWorkflow: store.resolve });

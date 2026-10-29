@@ -927,12 +927,13 @@ def restore_owner_words(ctx: "Context", original: object, version: int) -> list[
 
 
 def clear_stale_owner_words(ctx: "Context") -> list[str]:
-    """Before the scenarios: a leftover owner.words «on» (an earlier drill that could not put it back) makes every task wait for the owner."""
+    """Before the scenarios: the sandbox project runs the machine path without the owner, so its owner.words is «off» in so many words.
+    Unset means on since 2026-10-29 (src/rooms/tasks/words.ts), and a leftover «on» of an earlier drill made every task wait for the owner."""
     saved = hubsql(f"select value, version from lane_pilot_project_settings where project_id='{ctx.project}' and binding_id='' and key='owner.words';")
-    if not saved or json.loads(saved[0]["value"]) != "on":
+    if saved and json.loads(saved[0]["value"]) == "off":
         return []
-    log("owner.words was left on by an earlier drill: putting it back to off")
-    return restore_owner_words(ctx, "off", int(saved[0]["version"]))
+    log("owner.words of the sandbox project is not off: setting it to off")
+    return restore_owner_words(ctx, "off", int(saved[0]["version"]) if saved else 0)
 
 
 def scenario_live_word(ctx: "Context") -> dict:

@@ -272,7 +272,8 @@ export const rpcOps = {
   },
   phase_control: {
     input: z.object({ phaseId: z.string().min(1).max(40), action: z.enum(["pause", "resume", "return", "stop_wave", "stop", "close", "word"]), to: z.enum(["discussion", "planning", "design", "execution"]).optional(),
-      note: z.string().max(2000).optional(), turn: z.enum(["planning", "design", "issue", "wave", "acceptance", "uat"]).optional(), decision: z.enum(["yes", "no"]).optional(),
+      note: z.string().max(2000).optional(), turn: z.enum(["context", "planning", "design", "issue", "wave", "acceptance", "uat", "lesson"]).optional(), decision: z.enum(["yes", "no"]).optional(),
+      useful: z.boolean().optional(), limits: z.boolean().optional(),
       wave: z.number().int().min(1).max(100).optional() }).strict(),
     output: z.unknown(),
   },

@@ -6,8 +6,9 @@ import { Field, Loaded, Panel, RefreshButton, fill, useLoad, type Rpc } from "./
 
 type PhaseRow = { id: string; title: string; goal: string; stage: string; state: string; next?: { text: string; waitsForPm: boolean } };
 type PhaseStatus = {
-  phase: PhaseRow & { record: { plan?: { items: Array<{ id: string; title: string; wave: number; promise: { then: string } }> }; questions?: Array<{ id: string; text: string; blocking: boolean; answer?: string }>; acceptance?: { lines: Array<{ id: string; ok: boolean; detail: string }> }; uat?: { path: string }; ownerWords?: boolean; execution?: { issued: Record<string, string> } } };
-  next: { text: string }; gates: Record<string, { ok: boolean; why?: string[] }>; book: string; facts: Record<string, { taskId: string; state: string | null }>;
+  phase: PhaseRow & { record: { plan?: { items: Array<{ id: string; title: string; wave: number; promise: { then: string } }> }; questions?: Array<{ id: string; text: string; blocking: boolean; answer?: string }>; acceptance?: { lines: Array<{ id: string; ok: boolean; detail: string }> }; uat?: { path: string }; ownerWords?: boolean; execution?: { issued: Record<string, string> };
+    lessons?: { draft?: { text: string; state: string } } } };
+  next: { text: string; key?: string }; gates: Record<string, { ok: boolean; why?: string[] }>; book: string; facts: Record<string, { taskId: string; state: string | null }>;
 };
 
 /** Phases: the list, and one phase as its card — next step, gates, plan lines, questions, acceptance lines, folder and book, the owner's word and the controls. */
@@ -36,6 +37,8 @@ export function PhasesScreen({ rpc, projectId }: { rpc: Rpc; projectId: string }
 function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId: string; phaseId: string; onChanged: () => void }) {
   const status = useLoad(() => rpc.call("phase_get", { phaseId }) as Promise<PhaseStatus>, [phaseId]);
   const [words, setWords] = useState("");
+  const [useful, setUseful] = useState(false);
+  const [limits, setLimits] = useState(false);
   const [note, setNote] = useState("");
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const control = (action: "pause" | "resume" | "stop_wave" | "stop" | "close" | "word" | "return", extra: Record<string, unknown> = {}) =>
@@ -45,7 +48,11 @@ function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId
   return (
     <Loaded state={status}>{(s) => {
       const r = s.phase.record;
-      const turn = s.phase.stage === "acceptance" ? (r.uat ? "uat" : "acceptance") : s.phase.stage === "design" ? "design" : "planning";
+      // The turn the phase waits on is the one its next step names (word:<turn>[:wave]); a closed phase waits only on its lesson draft.
+      const asked = s.next.key?.match(/:word:([a-z]+)(?::(\d+))?/);
+      const turn = r.lessons?.draft?.state === "staged" ? "lesson" : asked?.[1] ?? null;
+      const wave = turn === "wave" && asked?.[2] ? Number(asked[2]) : undefined;
+      const decisions = turn === "acceptance" ? { useful, limits } : {};
       return (
         <div className="mt-2 space-y-3 text-sm" data-testid="ck-phase-card">
           <p><span className="font-medium">{t("ckPhaseNext")}:</span> {s.next.text}</p>
@@ -81,12 +88,20 @@ function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId
             <p className="text-xs text-muted-foreground">.agents/phases/{phaseId}/ — BOOK.md{r.uat ? `, ${r.uat.path.split("/").pop()}` : ""}</p>
             <div className="max-h-80 overflow-auto text-xs"><Markdown content={s.book.slice(0, 20_000)} /></div>
           </Disclosure>
-          {r.ownerWords ? (
+          {r.ownerWords && turn ? (
             <div className="space-y-1" data-testid="ck-word">
               {/* The owner's word at a stage gate (and the UAT line at acceptance): yes, or no with the words why. */}
+              {turn === "lesson" ? <p className="text-xs text-muted-foreground" data-testid="ck-lesson-draft">{t("ckLessonDraft")}: {r.lessons?.draft?.text}</p> : null}
+              {/* Keyed decision on the phase (SMA p6_decide): two decisions, both said for a yes. */}
+              {turn === "acceptance" ? (
+                <div className="space-y-1">
+                  <label className="flex items-center gap-2"><input type="checkbox" checked={useful} onChange={(e) => setUseful(e.target.checked)} data-testid="ck-useful" /> {t("ckUseful")}</label>
+                  <label className="flex items-center gap-2"><input type="checkbox" checked={limits} onChange={(e) => setLimits(e.target.checked)} data-testid="ck-limits" /> {t("ckLimits")}</label>
+                </div>
+              ) : null}
               <Field label={`${t("ckPhaseWord")} · ${turn === "uat" ? t("ckUatLine") : turn}`} value={words} onChange={setWords} />
-              <div className="flex gap-2"><Button size="sm" onClick={() => control("word", { turn, decision: "yes", note: words || "да" })}>{t("ckYes")}</Button>
-                <Button size="sm" variant="outline" disabled={!words.trim()} onClick={() => control("word", { turn, decision: "no", note: words })}>{t("ckNo")}</Button></div>
+              <div className="flex gap-2"><Button size="sm" disabled={turn === "acceptance" && !(useful && limits)} onClick={() => control("word", { turn, wave, decision: "yes", note: words || "да", ...decisions })}>{t("ckYes")}</Button>
+                <Button size="sm" variant="outline" disabled={!words.trim()} onClick={() => control("word", { turn, wave, decision: "no", note: words, ...decisions })}>{t("ckNo")}</Button></div>
             </div>
           ) : null}
           <div className="space-y-1">

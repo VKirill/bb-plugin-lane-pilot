@@ -20,7 +20,7 @@ import { stringAt } from "../../core/server";
 import { wasAnsweredByDefault } from "./question-default";
 import { needsHumanQuestion, outputText, providerLimitNotice, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines } from "./writer-task";
 import { isLiveDecision } from "../live-folder";
-import { TASK_WORDS_KEY, acceptanceProofGap, isMainfixTask, landingWordGap, questionsFromFile, referenceTestEdits, taskWordKey, writerMarkers } from "../../tasks";
+import { TASK_WORDS_KEY, acceptanceProofGap, isMainfixTask, landingWordGap, ownerWordsOn, questionsFromFile, referenceTestEdits, taskWordKey, writerMarkers } from "../../tasks";
 import type { TaskWord } from "../../tasks";
 import type { StageId } from "../../tasks";
 import { readCheckRun } from "../../tasks/server";
@@ -718,7 +718,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       }
       // The owner's word before landing (SMA: Approving, Authorized by a person): with owner.words on, a verified task waits here,
       // in place and with its worktree, for the owner's yes the PM records (lane_pilot_queue word); a no or six silent hours block it.
-      const ownerWords = String(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId))["owner.words"] ?? "off") === "on";
+      const ownerWords = ownerWordsOn(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)));
       const wordsOf = async () => ((await bb.storage.kv.get(TASK_WORDS_KEY).catch(() => null)) as Record<string, TaskWord[]> | null)?.[taskWordKey(input.runId, taskFamily(input.taskId))];
       let wordGap = landingWordGap(ownerWords, await wordsOf());
       if (wordGap && !wordGap.includes("said no")) {
