@@ -149,6 +149,20 @@ describe("execution and verification", () => {
     expect(moved.find((line) => line.id === "main_unmoved")?.ok).toBe(false);
   });
 
+  it("says what read the pieces: a piece no critic and no browser check saw is not reported as read clean (2026-10-29 audit)", () => {
+    const record = planned(items);
+    record.plan!.admittedSha = record.plan!.sha;
+    record.verification = { verdict: blindVerdict(items, facts([["a", {}], ["b", {}], ["c", {}]]), { state: "passed", headSha: "h1" }, 1) as never, model: { state: "met", by: "lp.close", summary: "ok", at: 2 } };
+    const phase = phaseWith({ ...record, execution: { issued: { a: "a", b: "b", c: "c" } } }, "acceptance");
+    const detail = (rows: Array<[string, Partial<TaskFact>]>, id: string) => acceptanceLines(phase, facts(rows), { mainSha: "h1", openDeferrals: 0 }).find((line) => line.id === id)!.detail;
+    const none: Array<[string, Partial<TaskFact>]> = [["a", { codeCritique: null, browserQa: null }], ["b", { codeCritique: null, browserQa: null }], ["c", { codeCritique: null, browserQa: null }]];
+    expect(detail(none, "independent_check")).toMatch(/passed 0 of 3 piece\(s\).*blind verdict and the goal audit/);
+    expect(detail(none, "qa_read")).toBe("no browser check failed; none ran for these pieces");
+    const read: Array<[string, Partial<TaskFact>]> = [["a", { codeCritique: "passed", browserQa: "passed" }], ["b", { codeCritique: "passed" }], ["c", { codeCritique: "passed" }]];
+    expect(detail(read, "independent_check")).toBe("the code critic passed all 3 piece(s)");
+    expect(detail(read, "qa_read")).toBe("no browser check failed; 1 of 3 piece(s) passed one, the rest had none");
+  });
+
   it("holds the acceptance while a deferred check of the project is open with no term from the owner (Fable's recheck E8)", () => {
     const record = planned(items);
     record.plan!.admittedSha = record.plan!.sha;

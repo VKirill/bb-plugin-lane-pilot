@@ -53,6 +53,22 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
   const parsedSettings=parsePmReadSettings(Object.fromEntries([
     "pm_read.enabled","pm_read.min_lines","pm_read.provider","pm_read.model","pm_read.reasoning_effort","pm_read.service_tier",
   ].map((key)=>[key,configuredSetting(settings,key)])));
+  // The input is what was read and how, not which model read it: the model pick asks the provider catalog, and a summary of the
+  // same read_first stays good. A receipt of other read_first (lane_pilot_update_task) is read again (2026-10-29 audit: it
+  // returned the old summary without reading the new files).
+  const source=JSON.stringify({taskId:input.taskId,readFirst:input.task.read_first,settings:parsedSettings});
+  const base={runId:input.runId,taskId:input.taskId,stageId:"pm-read" as const,input:source,attempt:Math.min(countAttempts(input.db,input.runId,input.taskId),MAIN_ATTEMPT_LIMIT)};
+  const existing=listStageReceipts(input.db,input.runId,input.taskId).find((row)=>row.stageId==="pm-read");
+  if(existing&&existing.inputSha256===sha256(source)) {
+    const summary=stringAt(existing.result,"summary")??"";
+    return {state:existing.state==="passed"?"passed":existing.state==="skipped"?"skipped":"failed",summary,...(existing.reason?{reason:existing.reason}:{})};
+  }
+  // A disabled stage is decided before the catalog is asked for a model it would not use.
+  if(!parsedSettings.enabled) {
+    recordStage(input.db,{...base,state:"pending",replaceOnNewInput:true,restart:true});
+    recordStage(input.db,{...base,state:"skipped",reason:"disabled_by_project_setting"});
+    return {state:"skipped",summary:""};
+  }
   const fallback=resolveStageWriterSelection({settings,config:input.config});
   // One role table (packages/models/src/role-models.ts): the owner's row, else the pm_read selection, else the default; the old pick stands when the host lacks it.
   const picked=await roleSelection({zcodeBusy:zcodeBusyPeek(input.bb),catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:"pm-reader",fallback:{providerId:parsedSettings.provider??fallback.providerId,model:parsedSettings.model??fallback.model},spent:await limitProbe(input.bb,input.config.hostId,settings)});
@@ -60,18 +76,7 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
   const providerId=picked.providerId;
   const modelId=picked.model;
   parsedSettings.effort=picked.effort??parsedSettings.effort;
-  const source=JSON.stringify({taskId:input.taskId,readFirst:input.task.read_first,settings:parsedSettings,providerId,modelId});
-  const base={runId:input.runId,taskId:input.taskId,stageId:"pm-read" as const,input:source,attempt:Math.min(countAttempts(input.db,input.runId,input.taskId),MAIN_ATTEMPT_LIMIT)};
-  const existing=listStageReceipts(input.db,input.runId,input.taskId).find((row)=>row.stageId==="pm-read");
-  if(existing) {
-    const summary=stringAt(existing.result,"summary")??"";
-    return {state:existing.state==="passed"?"passed":existing.state==="skipped"?"skipped":"failed",summary,...(existing.reason?{reason:existing.reason}:{})};
-  }
-  recordStage(input.db,{...base,state:"pending",providerId,model:modelId});
-  if(!parsedSettings.enabled) {
-    recordStage(input.db,{...base,state:"skipped",providerId,model:modelId,reason:"disabled_by_project_setting"});
-    return {state:"skipped",summary:""};
-  }
+  recordStage(input.db,{...base,state:"pending",providerId,model:modelId,replaceOnNewInput:true,restart:true});
   let threadId:string|null=null;
   // Pending until the excerpts clear the size threshold: a small read_first is skipped, and skipped
   // is not reachable from running.
@@ -171,13 +176,24 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   // quality_mode (task, else project, else standard) decides whether this task goes through the plan critique at all.
   const qualityMode = resolveQualityMode(input.task,projectSettings[QUALITY_MODE_SETTING]);
   const settings = applyQualityMode(projectSettings,qualityMode);
+  const agent = boundedAgentName(settings["plan_critique.agent"],"plan-critic");
+  // quick and a disabled critique are decided first: the model pick asks the provider catalog and the coverage scan takes up
+  // to 30 s, both for a critic that will not run (2026-10-29 audit).
+  const enabled = settings["plan_critique.enabled"];
+  const disabled = enabled === false || enabled === 0
+    || (typeof enabled === "string" && ["0", "off", "false", "no"].includes(enabled.trim().toLowerCase()));
+  if (qualityMode === "quick" || disabled) {
+    const skip = { runId:input.runId, taskId:input.taskId, stageId:"plan-critique" as const, input:`${input.plan}\n\n${JSON.stringify(input.task)}\n\nagent=${agent}\n\npm_read=${input.pmReadContext ?? ""}` };
+    recordStage(input.db, { ...skip, state:"pending", replaceOnNewInput:true, restart:true });
+    recordStage(input.db, qualityMode === "quick" ? { ...skip, state:"skipped", reason:"quality_mode_quick", result:{ qualityMode } } : { ...skip, state:"skipped", reason:"disabled_by_project_setting" });
+    return { allowed:true };
+  }
   const legacy=resolveStageWriterSelection({settings,config:input.config,stageProviderKey:"plan_critique.provider",stageModelKey:"plan_critique.model"});
   const selection=await roleSelection({zcodeBusy:zcodeBusyPeek(input.bb),catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:"plan-critic",fallback:{providerId:legacy.providerId,model:legacy.model},spent:await limitProbe(input.bb,input.config.hostId,settings)});
   logLimitMove(input.bb,`plan critic for ${input.taskId}`,selection.issues);
   const providerId=selection.providerId;
   const modelId=selection.model;
   const mode = settings["plan_critique.mode"] === "advisory" ? "advisory" : "gate";
-  const agent = boundedAgentName(settings["plan_critique.agent"],"plan-critic");
   const runTasks = listLiveTasksForRun(input.db,input.runId).map((row) => ({id:row.id,...row.contract as {lane?:string;owns_paths?:string[];verify?:TaskV2["verify"];verification?:TaskV2["verification"]}}));
   let coverageStatus:"complete"|"truncated"|"unavailable"="unavailable";
   let coveragePathCount=0;
@@ -210,19 +226,11 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   if(coverageStatus==="unavailable") structuralFindings.push({code:"coverage_scan_truncated",path:".",severity:"warning",finding:"Workspace path listing is unavailable; only plan/TaskV2 data was reviewed"});
   const source = `${input.plan}\n\n${JSON.stringify(input.task)}\n\nagent=${agent}\n\npm_read=${input.pmReadContext ?? ""}\n\nstructural_coverage=${coverageStatus}\n\nstructural_findings=${JSON.stringify(structuralFindings)}`;
   const base = { runId:input.runId, taskId:input.taskId, stageId:"plan-critique" as const, input:source };
+  // A resumed dispatch keeps a critique that passed on this very input (resetHelperStages): it is not bought twice.
+  const kept = listStageReceipts(input.db,input.runId,input.taskId).find((row) => row.stageId === "plan-critique");
+  if (kept?.state === "passed" && kept.inputSha256 === sha256(source)) return { allowed:true, critique:kept.result };
   // An updated task runs its critique again over the receipt of the earlier contract (lane_pilot_update_task).
   recordStage(input.db, { ...base, state:"pending", replaceOnNewInput:true, restart:true });
-  if (qualityMode === "quick") {
-    recordStage(input.db, { ...base, state:"skipped", reason:"quality_mode_quick", result:{ qualityMode } });
-    return { allowed:true };
-  }
-  const enabled = settings["plan_critique.enabled"];
-  const disabled = enabled === false || enabled === 0
-    || (typeof enabled === "string" && ["0", "off", "false", "no"].includes(enabled.trim().toLowerCase()));
-  if (disabled) {
-    recordStage(input.db, { ...base, state:"skipped", reason:"disabled_by_project_setting" });
-    return { allowed:true };
-  }
   const structuralBlock=mode==="gate"&&structuralFindings.some((finding)=>finding.severity==="error");
   if(structuralBlock) {
     recordStage(input.db,{...base,state:"blocked",reason:"structural_plan_critique_blocked",result:{decision:"changes_requested",mode,
@@ -595,6 +603,8 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
   const agent=boundedAgentName(settings["specialist.agent"],"specialist-reviewer");
   const source = `${input.plan}\n\n${JSON.stringify(input.task)}\n\nagent=${agent}`;
   const base = {runId:input.runId,taskId:input.taskId,stageId:"specialist-review" as const,input:source};
+  const kept = listStageReceipts(input.db,input.runId,input.taskId).find((row) => row.stageId === "specialist-review");
+  if (kept?.state === "passed" && kept.inputSha256 === sha256(source)) return {allowed:true,review:kept.result};
   // An updated task goes through its review again over the receipt of the earlier contract (lane_pilot_update_task).
   recordStage(input.db,{...base,state:"pending",replaceOnNewInput:true,restart:true});
   if (!policy.run) {

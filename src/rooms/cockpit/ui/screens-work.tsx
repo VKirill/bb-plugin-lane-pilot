@@ -38,7 +38,7 @@ function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId
   const [words, setWords] = useState("");
   const [note, setNote] = useState("");
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const control = (action: "pause" | "resume" | "stop_wave" | "close" | "word" | "return", extra: Record<string, unknown> = {}) =>
+  const control = (action: "pause" | "resume" | "stop_wave" | "stop" | "close" | "word" | "return", extra: Record<string, unknown> = {}) =>
     void rpc.call("phase_control", { phaseId, action, ...extra } as never).then(() => { status.reload(); onChanged(); });
   const act = (action: "correct" | "answer", payload: Record<string, unknown>) =>
     void rpc.call("phase_act", { action, projectId, pmThreadId: "screen", phaseId, payload }).then(() => status.reload());
@@ -96,6 +96,8 @@ function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId
               <Button size="sm" variant="outline" onClick={() => control(s.phase.state === "paused" ? "resume" : "pause")}>{s.phase.state === "paused" ? t("ckResume") : t("ckPause")}</Button>
               {/* Hold or release a wave: the queued pieces of the wave are held back. */}
               <Button size="sm" variant="outline" onClick={() => control("stop_wave")}>{t("ckStopWave")}</Button>
+              {/* Stop the phase: its writers at work are stopped first, then the phase (SMA px_stop); the note says why. */}
+              <Button size="sm" variant="outline" disabled={!note.trim()} onClick={() => control("stop", { note })}>{t("ckStopPhase")}</Button>
               <Button size="sm" variant="outline" disabled={!note.trim()} onClick={() => control("close", { note })}>{t("ckClose")}</Button>
             </div>
           </div>

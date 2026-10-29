@@ -459,6 +459,32 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     return mustGet(phase.id);
   }
 
+  /**
+   * Stop (SMA px_stop): the phase's work is stopped first, then the phase. Every open attempt of its pieces is canceled (the writer
+   * stopped and its stop observed, cancelAttemptById) and its stage workflow ended; a writer whose stop was not observed is named in
+   * the book and in the answer, never counted as stopped. Before 2026-10-29 the stop only wrote the state: a running piece went on.
+   */
+  async function stop(input: Reported & { words?: string }): Promise<{ phase: Phase; canceled: string[]; unconfirmed: string[] }> {
+    const phase = mustGet(input.phaseId);
+    const families = new Set(Object.values(phase.record.execution?.issued ?? {}).map(taskFamily));
+    const canceled: string[] = [];
+    const unconfirmed: string[] = [];
+    for (const attempt of listOpenAttempts(db).filter((row) => row.run_id === phase.runId && families.has(taskFamily(row.task_id)))) {
+      const result = await cancelAttemptById(ctx, attempt.id, services.rollback)
+        .catch((cause: unknown) => ({ ok: false, state: "error", reason: cause instanceof Error ? cause.message : String(cause) }));
+      if (result.ok) canceled.push(attempt.task_id);
+      else unconfirmed.push(`${attempt.task_id} (${result.reason ?? result.state})`);
+    }
+    const auto = phase.record.auto;
+    if (auto) {
+      try { services.workflowEngine.cancel(auto.wfRunId, `phase ${phase.id} stopped`); } catch { /* a finished or unknown run: nothing to end */ }
+      savePhase(db, phase.id, { record: { ...phase.record, auto: undefined }, at: now() });
+    }
+    book(phase, "execution", "work_stopped", [canceled.length ? `canceled: ${canceled.join(", ")}` : "no piece at work",
+      ...(auto ? [`stage workflow ${auto.wfRunId} ended`] : []), ...(unconfirmed.length ? [`stop not observed yet: ${unconfirmed.join(", ")}`] : [])].join("; "));
+    return { phase: setState({ ...input, state: "stop" }), canceled, unconfirmed };
+  }
+
   /** Stops the current wave: the pieces issued but not started are canceled; running writers finish their current stage. */
   async function stopWave(input: Reported): Promise<{ phase: Phase; canceled: string[] }> {
     const phase = mustGet(input.phaseId);
@@ -885,7 +911,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     runStopped: async (phase) => !!phase.runId && (await isRunHalted(bb.storage.kv as never, phase.runId) || await isRunPaused(bb.storage.kv as never, phase.runId)),
     proofCurrency,
   });
-  const phases = { open, context, plan, planCheck, drawing, goalAudit, lessons, question, answer, word, waveReview, withdraw, revise, correct, returnTo, setState, stopWave, compensate, tick, drive, status, facts, planUnchanged, writeBook,
+  const phases = { open, context, plan, planCheck, drawing, goalAudit, lessons, question, answer, word, waveReview, withdraw, revise, correct, returnTo, setState, stop, stopWave, compensate, tick, drive, status, facts, planUnchanged, writeBook,
     list: (filter: Parameters<typeof listPhases>[1]) => listPhases(db, filter) };
   const architect = architectStarter(ctx, services);
   // The small-task graph for a small job or a batch of fixes: started by the machine, not chosen by the PM.

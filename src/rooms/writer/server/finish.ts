@@ -927,18 +927,22 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     const ownGreen = new Set(input.greenInWorktree ?? []);
     const redBefore = (services.baseline?.redBefore?.({ runId:input.runId, taskId:input.task.id, checks:checks ?? [] }) ?? []).filter((command) => !ownGreen.has(command));
     const candidates = red.filter((check) => !redBefore.includes(check.command));
+    // A red that already failed its own re-run (runWithFlakyRerun: `reran`) is reproduced; running it again only repeated the
+    // same command twice more (2026-10-29 audit: four runs of one stable failure before the repair task).
+    const reproduced = candidates.filter((check) => (check as { reran?:true }).reran && readCheckRun(check, { command: check.command }).verdict === "product_fail");
+    const toRerun = candidates.filter((check) => !reproduced.includes(check));
     let confirmed = candidates;
     let flaky:string[] = [];
-    if (candidates.length) {
-      const names = new Set(candidates.map((check) => check.command));
+    if (toRerun.length) {
+      const names = new Set(toRerun.map((check) => check.command));
       const again = await services.runVerification(input.config, { ...onMain, verification:onMain.verification.filter((command) => names.has(command.command)) }, input.runId, undefined,
         { background:true, jobKey:`post-merge:${input.attemptId ?? input.task.id}:${input.mergeCommit ?? ""}:rerun` }).catch(() => null);
       // Only a re-run that is a product red again reproduces the defect (readCheckRun, the reading replay and the gate share). One the
       // machine or the host broke, that threw, or that ran no test says nothing: the first red stays recorded, no writer is sent.
       const readings = new Map((again ?? []).map((check) => [check.command, readCheckRun(check, { command: check.command })] as const));
-      flaky = candidates.filter((check) => readings.get(check.command)?.verdict === "pass").map((check) => check.command);
-      confirmed = candidates.filter((check) => readings.get(check.command)?.verdict === "product_fail");
-      const unsettled = candidates.filter((check) => !flaky.includes(check.command) && !confirmed.includes(check));
+      flaky = toRerun.filter((check) => readings.get(check.command)?.verdict === "pass").map((check) => check.command);
+      confirmed = [...reproduced, ...toRerun.filter((check) => readings.get(check.command)?.verdict === "product_fail")];
+      const unsettled = toRerun.filter((check) => !flaky.includes(check.command) && !confirmed.includes(check));
       if (unsettled.length) ctx.log(`post-merge check of ${input.task.id}: red on main once, the re-run did not reproduce it (${unsettled.map((check) => `${check.command}: ${readings.get(check.command)?.verdict ?? "no result"}`).join(", ")}); no repair task, the red stays recorded`);
     }
     if (flaky.length || redBefore.length) {

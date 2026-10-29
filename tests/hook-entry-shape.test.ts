@@ -111,3 +111,19 @@ it("runs a hook listed in both project and local settings once in the native ses
   const result = await materializeNativeHookSession({ cwd, destDir: join(root, "session") });
   expect(result.commands.filter((command) => command.includes("orig-"))).toHaveLength(1);
 });
+
+it("keeps a project hook's matcher and timeout in the native session and adds the guard as its own group", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lp-hook-shape-matcher-"));
+  roots.push(root);
+  const cwd = join(root, "project");
+  await mkdir(join(cwd, ".claude"), { recursive: true });
+  await writeFile(join(cwd, ".claude/settings.json"), JSON.stringify({ hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "echo audit-hook", timeout: 3 }] }] } }));
+  const result = await materializeNativeHookSession({ cwd, destDir: join(root, "session") });
+  const settings = JSON.parse(await readFile(result.settingsPath, "utf8")) as { hooks: { PreToolUse: Array<{ matcher: string; hooks: Array<{ command: string; timeout?: number }> }> } };
+  const groups = settings.hooks.PreToolUse;
+  expect(groups.map((group) => group.matcher)).toEqual(["Bash", "*"]);
+  expect(groups[0]!.hooks).toHaveLength(1);
+  expect(groups[0]!.hooks[0]!.timeout).toBe(3);
+  expect(groups[0]!.hooks[0]!.command).toContain("echo audit-hook");
+  expect(groups[1]!.hooks.map((hook) => hook.command).join()).toContain("guard_shell.py");
+});

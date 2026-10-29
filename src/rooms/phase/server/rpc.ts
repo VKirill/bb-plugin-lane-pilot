@@ -32,6 +32,7 @@ export function phaseRpc(api: PhaseApi) {
         return api.status(api.returnTo({ phaseId, to, note, by: "owner" }).id);
       }
       if (action === "stop_wave") return { ...(await api.stopWave({ phaseId, by: "owner" })), status: api.status(phaseId) };
+      if (action === "stop") return api.status((await api.stop({ phaseId, words: note, by: "owner" })).phase.id);
       if (action === "close" && !note?.trim()) throw new Error("closing in words carries the words");
       return api.status(api.setState({ phaseId, state: action, words: note, by: "owner" }).id);
     },

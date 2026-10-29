@@ -93,14 +93,16 @@ export async function closeHelperStages(db:ReturnType<typeof openDatabase>, stop
 /**
  * Clears the helper stages of a dispatch that starts again after a reload, so they run as for a new dispatch: a helper
  * thread still running works for a dead dispatch and is stopped, and every helper receipt goes. A pm-read that passed or
- * was skipped stays, and runPmRead takes its summary instead of reading again. Plan critique and specialist review run
- * again in any case: a receipt of either that already passed cannot go back to pending. The stage events keep the history.
+ * was skipped stays, and runPmRead takes its summary instead of reading again. A plan critique or specialist review that
+ * passed stays too: each reuses it when its input is unchanged and replaces it when the task changed (2026-10-29 audit: a
+ * reload bought both reviews again). The stage events keep the history.
  */
 export async function resetHelperStages(db:ReturnType<typeof openDatabase>, stop:(threadId:string) => Promise<unknown>,
   input:{runId:string;taskId:string}): Promise<void> {
   for (const row of listStageReceipts(db, input.runId, input.taskId)) {
     if (!(HELPER_STAGES as readonly string[]).includes(row.stageId)) continue;
     if (row.stageId === "pm-read" && (row.state === "passed" || row.state === "skipped")) continue;
+    if ((row.stageId === "plan-critique" || row.stageId === "specialist-review") && row.state === "passed") continue;
     if (row.threadId && (row.state === "pending" || row.state === "running")) {
       try { await stop(row.threadId); } catch { /* an idle or missing helper thread: nothing to stop */ }
     }

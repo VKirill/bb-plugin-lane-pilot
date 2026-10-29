@@ -157,20 +157,24 @@ function asObject(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function hookCommands(settings: unknown): string[] {
+/** A PreToolUse hook as written: its group's matcher and every field of the handler (timeout ...), not only the command line. */
+type HookEntry = { matcher: string; command: string; fields: Record<string, unknown> };
+
+function hookEntries(settings: unknown): HookEntry[] {
   const hooks = asObject(asObject(settings)?.hooks);
   const entries = hooks?.PreToolUse;
   if (!Array.isArray(entries)) return [];
-  const commands: string[] = [];
+  const out: HookEntry[] = [];
   for (const entry of entries) {
     const group = asObject(entry) as HookGroup | null;
     if (!Array.isArray(group?.hooks)) continue;
+    const matcher = typeof group.matcher === "string" && group.matcher ? group.matcher : "*";
     for (const item of group.hooks) {
       const row = asObject(item) as HookCommand | null;
-      if (typeof row?.command === "string" && row.command.trim()) commands.push(row.command.trim());
+      if (typeof row?.command === "string" && row.command.trim()) out.push({ matcher, command: row.command.trim(), fields: row as Record<string, unknown> });
     }
   }
-  return commands;
+  return out;
 }
 
 async function readSettingsFile(path: string): Promise<unknown> {
@@ -226,17 +230,19 @@ export async function materializeNativeHookSession(input: {
   const cwd = input.cwd?.trim() && input.cwd.startsWith("/") ? input.cwd : null;
   const project = cwd ? await readSettingsFile(join(cwd, ".claude/settings.json")) : null;
   const local = cwd ? await readSettingsFile(join(cwd, ".claude/settings.local.json")) : null;
-  // The same hook listed in both project and local settings (any quoting) must run once, not twice.
+  // The same hook listed in both project and local settings (any quoting) under the same matcher must run once, not twice.
   const seenHooks = new Set<string>();
-  const originals = [...hookCommands(project), ...hookCommands(local)].filter((command) => {
-    const identity = hookCommandIdentity(command);
+  const originals = [...hookEntries(project), ...hookEntries(local)].filter((entry) => {
+    const identity = `${entry.matcher}\n${hookCommandIdentity(entry.command)}`;
     if (seenHooks.has(identity)) return false;
     seenHooks.add(identity);
     return true;
   });
+  // Each hook keeps its matcher and timeout: a Bash-only check stays Bash-only (2026-10-29 audit: all of them ran on every tool).
+  const groups = new Map<string, Array<Record<string, unknown>>>();
   const wrapped: string[] = [];
   let index = 0;
-  for (const command of originals) {
+  for (const { matcher, command, fields } of originals) {
     let next = command;
     for (const path of pythonPaths(command)) {
       try {
@@ -247,10 +253,15 @@ export async function materializeNativeHookSession(input: {
         throw new Error(`native hook module could not be copied: ${path}`);
       }
     }
-    wrapped.push(`python3 ${shellQuote(inject)} -- ${next}`);
+    const line = `python3 ${shellQuote(inject)} -- ${next}`;
+    wrapped.push(line);
+    groups.set(matcher, [...(groups.get(matcher) ?? []), { ...fields, type: "command", command: line }]);
   }
-  if (!originals.some((command) => command.includes("guard_shell.py"))) {
-    wrapped.push(`python3 ${shellQuote(inject)} -- python3 ${shellQuote(guard)}`);
+  // The guard watches every tool: a project guard hooked only under a narrower matcher does not stand in for it.
+  if (!originals.some((entry) => entry.matcher === "*" && entry.command.includes("guard_shell.py"))) {
+    const line = `python3 ${shellQuote(inject)} -- python3 ${shellQuote(guard)}`;
+    wrapped.push(line);
+    groups.set("*", [...(groups.get("*") ?? []), { type: "command", command: line }]);
   }
 
   const base = asObject(project) ?? {};
@@ -261,7 +272,7 @@ export async function materializeNativeHookSession(input: {
     hooks: {
       ...(asObject(base.hooks) ?? {}),
       ...(asObject(overlay.hooks) ?? {}),
-      PreToolUse: [{ matcher: "*", hooks: wrapped.map((command) => ({ type: "command", command })) }],
+      PreToolUse: [...groups].map(([matcher, hooks]) => ({ matcher, hooks })),
     },
   };
   const settingsPath = join(input.destDir, "settings.json");

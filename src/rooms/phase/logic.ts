@@ -386,17 +386,23 @@ export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFac
   const blockedByCritic = failed((fact) => fact?.codeCritique === "blocked");
   const notLanded = failed((fact) => fact?.state !== "accepted");
   const qaRed = failed((fact) => fact?.browserQa === "failed");
+  // What did read the pieces, said as it is: no receipt is no reading (2026-10-29 audit: «no independent checker blocks» and «the
+  // browser checks read clean» were printed for pieces no critic and no browser check had seen; the code critic is off by default).
+  const critiqued = failed((fact) => fact?.codeCritique === "passed").length;
+  const qaPassed = failed((fact) => fact?.browserQa === "passed").length;
   const model = phase.record.verification?.model;
   const word = wordOf(phase.record, "acceptance");
   return [
     line("contract_current", !!phase.record.plan?.admittedSha && phase.record.plan.admittedSha === phase.record.plan.sha, phase.record.plan?.admittedSha === phase.record.plan?.sha ? "the plan is the admitted one" : "the plan changed after its admission"),
     line("promises_proved", notProved.length === 0, notProved.length ? `not proved by plan-fact: ${notProved.join(", ")}` : `${items.length} promises proved`),
     line("checks_passed", notChecked.length === 0, notChecked.length ? `checks failed: ${notChecked.join(", ")}` : "every piece's checks passed"),
-    line("independent_check", blockedByCritic.length === 0, blockedByCritic.length ? `the code critic blocks: ${blockedByCritic.join(", ")}` : "no independent checker blocks"),
+    line("independent_check", blockedByCritic.length === 0, blockedByCritic.length ? `the code critic blocks: ${blockedByCritic.join(", ")}`
+      : critiqued === items.length ? `the code critic passed all ${items.length} piece(s)` : `nothing blocks; the code critic passed ${critiqued} of ${items.length} piece(s), the rest had no code critic — the blind verdict and the goal audit are their independent check`),
     line("landed", notLanded.length === 0, notLanded.length ? `not merged: ${notLanded.join(", ")}` : "every piece is merged into main"),
     line("composition_verified", verdict?.state === "passed", verdict ? verdict.detail : "no blind verdict yet"),
     line("main_unmoved", !verdict?.mainSha || !now.mainSha || verdict.mainSha === now.mainSha, verdict?.mainSha && now.mainSha && verdict.mainSha !== now.mainSha ? `main moved from ${verdict.mainSha.slice(0, 12)} to ${now.mainSha.slice(0, 12)} since the verdict — verify again` : "main is where the verdict saw it"),
-    line("qa_read", qaRed.length === 0, qaRed.length ? `the browser check failed: ${qaRed.join(", ")}` : "the window, the blind verdict and the browser checks read clean"),
+    line("qa_read", qaRed.length === 0, qaRed.length ? `the browser check failed: ${qaRed.join(", ")}`
+      : qaPassed ? `no browser check failed; ${qaPassed} of ${items.length} piece(s) passed one, the rest had none` : "no browser check failed; none ran for these pieces"),
     line("goal_met", model?.state === "met", model ? `${model.by}: ${model.summary}` : "no goal audit yet"),
     // A put-off check with no term from the owner is unproven work of this project: it holds the acceptance until an agent closes it with evidence.
     line("limits_acknowledged", !now.noTerm?.length, now.noTerm?.length ? `${now.noTerm.length} deferred check(s) of this project are open with no term from the owner, so they count as unproven: ${now.noTerm.slice(0, 5).map((row) => row.id).join(", ")} — close each with evidence (bb lane-pilot defer-close <id> --evidence …)`

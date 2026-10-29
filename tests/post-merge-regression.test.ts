@@ -50,6 +50,13 @@ it("dispatches the repair task for a red that turned red and reproduces", async 
   expect(sent.some((text) => text.includes("passed on the base before this task") && text.includes("site-fix-mainfix is on its way"))).toBe(true);
 });
 
+// 2026-10-29 audit: the first post-merge run re-runs a red itself (runWithFlakyRerun); asking for one more confirming run made four runs of one stable failure.
+it("a red that already failed its own re-run is repaired without a third run", async () => {
+  const { dispatchWriter, runVerification } = await mergeThenCheck([[{ ...red("npm run build"), reran: true } as Row]], { turned: ["npm run build"] });
+  expect(runVerification).toHaveBeenCalledTimes(1);
+  expect(dispatchWriter).toHaveBeenCalledTimes(1);
+});
+
 it("a red that was already red on the base is not this task's regression: one message, no re-run, no repair task", async () => {
   const { sent, dispatchWriter, runVerification } = await mergeThenCheck([[red("npx vitest run")]], { turned: [], redBefore: ["npx vitest run"] });
   expect(dispatchWriter).not.toHaveBeenCalled();
