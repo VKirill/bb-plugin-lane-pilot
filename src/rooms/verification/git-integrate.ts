@@ -9,6 +9,9 @@ import { matchOwnsPath } from "@lane-pilot/kit";
 import { ENVIRONMENT_REASON, REPLAY_CHECK_FAILED } from "../runs";
 import { isAllowedProjectLifePath } from "../project-life";
 
+/** The reason a baseInHead merge refused: main moved after the candidate took it in. */
+export const BASE_MOVED = "base moved since the candidate took it in";
+
 export type GitIntegration = {
   status:"merged"|"up-to-date"|"conflict"|"failed"|"busy";
   commit:string|null;
@@ -299,6 +302,9 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
   bookkeeping?:string[];
   /** The task's owns_paths: a bookkeeping file the task owns is its work, so the merge keeps the attempt's version of it. */
   ownsPaths?:string[];
+  /** Merge only when main, read under the base lock, is already an ancestor of the worktree's head (a phase candidate that took main in
+   *  and was verified): main that moved in between is not merged into the verified package; it says `moved` (BASE_MOVED). */
+  baseInHead?:boolean;
   /** Run once the attempt was replayed on a moved main, before the merge (a semantic clash shows only there). */
   replayCheck?:()=>Promise<ReplayCheckOutcome>;
   /** How long a merge stopped by another git's fresh index.lock in the base waits for that lock to go before it gives up. */
@@ -329,6 +335,7 @@ export async function integrateWorktree(input:{basePath:string;worktreePath:stri
       await abortStaleMerge(input.basePath);
       await settleStagedBookkeeping(input.basePath,input.bookkeeping??[],input.stagedWaitMs);
       const before=(await git(input.basePath,["rev-parse","HEAD"])).stdout.trim();
+      if(input.baseInHead&&before&&!(await git(input.worktreePath,["merge-base","--is-ancestor",before,sha])).ok) return fail(`${BASE_MOVED}: main is at ${before.slice(0,12)}, not in ${sha.slice(0,12)}`);
       // Main moved while the writer worked: replay the attempt on the current main first. Clean, it merges without
       // another writer turn; a real conflict is left as it was and the merge below reports it for the free redo.
       // The attempt's own branch only: Lane Pilot's lane/<attempt> and the BB-managed bb/<attempt> worktree (one per attempt too).

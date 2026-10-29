@@ -8,7 +8,7 @@ type PhaseRow = { id: string; title: string; goal: string; stage: string; state:
 type PhaseStatus = {
   phase: PhaseRow & { record: { plan?: { items: Array<{ id: string; title: string; wave: number; promise: { then: string } }> }; questions?: Array<{ id: string; text: string; blocking: boolean; answer?: string }>; acceptance?: { lines: Array<{ id: string; ok: boolean; detail: string }> }; uat?: { path: string }; ownerWords?: boolean; execution?: { issued: Record<string, string> };
     lessons?: { draft?: { text: string; state: string } } } };
-  next: { text: string; key?: string }; gates: Record<string, { ok: boolean; why?: string[] }>; book: string; facts: Record<string, { taskId: string; state: string | null }>;
+  next: { text: string; key?: string }; ownerWord?: { acceptanceKey?: string }; gates: Record<string, { ok: boolean; why?: string[] }>; book: string; facts: Record<string, { taskId: string; state: string | null }>;
 };
 
 /** Phases: the list, and one phase as its card — next step, gates, plan lines, questions, acceptance lines, folder and book, the owner's word and the controls. */
@@ -52,7 +52,8 @@ function PhaseCard({ rpc, projectId, phaseId, onChanged }: { rpc: Rpc; projectId
       const asked = s.next.key?.match(/:word:([a-z]+)(?::(\d+))?/);
       const turn = r.lessons?.draft?.state === "staged" ? "lesson" : asked?.[1] ?? null;
       const wave = turn === "wave" && asked?.[2] ? Number(asked[2]) : undefined;
-      const decisions = turn === "acceptance" ? { useful, limits } : {};
+      // The yes signs the package on the screen: its key goes with it, and a package that changed meanwhile is refused.
+      const decisions = turn === "acceptance" ? { useful, limits, key: s.ownerWord?.acceptanceKey } : {};
       return (
         <div className="mt-2 space-y-3 text-sm" data-testid="ck-phase-card">
           <p><span className="font-medium">{t("ckPhaseNext")}:</span> {s.next.text}</p>

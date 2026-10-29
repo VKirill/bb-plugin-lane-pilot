@@ -10,10 +10,11 @@ import { rpcContract } from "../src/rooms/contracts";
 
 // SMA px_stop (2026-10-29 conformance audit, C-02): a stop ends the phase's work at hand before the phase. The phase used to turn
 // «stopped» while its piece's writer went on running, and the screen had no stop of the phase at all, only «hold the wave».
-async function fixture() {
+async function fixture(failStop = false) {
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
   const calls: string[] = [];
-  harness.sdk.stub("threads.stop" as never, async () => { calls.push("threads.stop"); return {}; });
+  let stopFails = failStop;
+  harness.sdk.stub("threads.stop" as never, async () => { calls.push("threads.stop"); if (stopFails) throw new Error("host unreachable"); return {}; });
   harness.sdk.stub("threads.send" as never, async () => ({}));
   harness.sdk.stub("threads.get" as never, async () => ({ status: "idle" }));
   harness.sdk.stub("threads.list" as never, async () => []);
@@ -31,7 +32,7 @@ async function fixture() {
   const sha = planSignature([item] as never, "ctx");
   savePhase(db, phase.id, { stage: "execution", runId: "run1", record: { ...phase.record, plan: { items: [item], sha, admittedSha: sha, contextSha: "ctx" }, execution: { issued: { piece: "piece" }, startedAt: 1 },
     auto: { kind: "plan", wfRunId: "wf-live", startedAt: 1 } } as never, at: 2 });
-  return { db, phases, id: phase.id, calls };
+  return { db, phases, id: phase.id, calls, heal: () => { stopFails = false; } };
 }
 
 describe("stopping a phase", () => {
@@ -54,4 +55,19 @@ describe("stopping a phase", () => {
     expect(again).toMatchObject({ canceled: [], unconfirmed: [] });
     expect(again.phase.state).toBe("stopped");
   });
+
+  // SMA audit N-01: a writer whose stop failed was left running under a phase already marked stopped, and the next pass skipped it.
+  it("[sma:px_stop] a stop not observed keeps the phase open and asks again until the writer is stopped", async () => {
+    const f = await fixture(true);
+    const first = await f.phases.stop({ phaseId: f.id, by: "owner", words: "wrong goal" });
+    expect(first.unconfirmed).toHaveLength(1);
+    expect(first.phase.state).toBe("active");
+    expect(first.phase.record.stopping).toMatchObject({ by: "owner", words: "wrong goal" });
+    f.heal();
+    const after = await f.phases.drive(f.phases.status(f.id).phase);
+    expect(after.state).toBe("stopped");
+    expect(after.record.stopping).toBeUndefined();
+    expect((f.db.prepare("SELECT state FROM lane_pilot_attempt WHERE id='att1'").get() as { state: string }).state).toBe("canceled");
+  });
 });
+

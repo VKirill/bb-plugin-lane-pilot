@@ -2,6 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it, vi } from "vitest";
 import { taskV2Schema } from "../src/rooms/contracts";
 import { createWriterFinish } from "../src/rooms/writer/server/finish";
+import { runWithFlakyRerun } from "../src/rooms/writer/server/verify";
 
 const task = taskV2Schema.parse({
   schema_version: 2, id: "site-fix", title: "Fix the site", risk: "medium", lane: "writer", project_cwd: "/work/wt",
@@ -52,9 +53,20 @@ it("dispatches the repair task for a red that turned red and reproduces", async 
 
 // 2026-10-29 audit: the first post-merge run re-runs a red itself (runWithFlakyRerun); asking for one more confirming run made four runs of one stable failure.
 it("a red that already failed its own re-run is repaired without a third run", async () => {
-  const { dispatchWriter, runVerification } = await mergeThenCheck([[{ ...red("npm run build"), reran: true } as Row]], { turned: ["npm run build"] });
+  const runs = [red("npm run build"), red("npm run build")];
+  const reading = await runWithFlakyRerun("npm run build", async () => runs.shift()!, () => {});
+  const { dispatchWriter, runVerification } = await mergeThenCheck([[reading as Row]], { turned: ["npm run build"] });
   expect(runVerification).toHaveBeenCalledTimes(1);
   expect(dispatchWriter).toHaveBeenCalledTimes(1);
+});
+
+// SMA audit N-05: a product red whose own re-run timed out reproduced nothing; it was taken for a reproduced red and a mainfix went out.
+it("a red whose own re-run timed out is run again before any repair task", async () => {
+  const runs = [red("npm run build"), { command: "npm run build", exitCode: 124, stdout: "", stderr: "TIMEOUT" }];
+  const reading = await runWithFlakyRerun("npm run build", async () => runs.shift()!, () => {});
+  const { dispatchWriter, runVerification } = await mergeThenCheck([[reading as Row], [green("npm run build")]], { turned: ["npm run build"] });
+  expect(runVerification).toHaveBeenCalledTimes(2);
+  expect(dispatchWriter).not.toHaveBeenCalled();
 });
 
 it("a red that was already red on the base is not this task's regression: one message, no re-run, no repair task", async () => {

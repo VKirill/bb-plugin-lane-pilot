@@ -85,6 +85,8 @@ export const hostContract = defineRpcContract({
       committedOnly:z.boolean().optional(), bookkeeping:z.array(z.string().max(300)).max(100).optional(),
       // The task's owns_paths: a bookkeeping file it owns keeps the attempt's version in the merge (additive; an older host ignores it).
       ownsPaths:z.array(z.string().max(300)).max(200).optional(),
+      // A phase candidate lands only when main, under the base lock, is already in it: the merge is then the verified tree (additive).
+      baseInHead:z.boolean().optional(),
       // The task's checks, run in the attempt's worktree when it was replayed on a moved main, before the merge (additive).
       replayChecks:z.object({ workspacePath:z.string().startsWith("/"), backend:z.enum(["auto","macos-seatbelt","linux-bubblewrap"]).optional(),
         commands:z.array(z.object({ command:z.string().min(1).max(32_000), cwd:z.string().startsWith("/"), timeoutSec:z.number().int().min(1).max(7200).optional() }).strict()).min(1).max(20) }).strict().optional() }).strict(),

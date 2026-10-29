@@ -114,10 +114,13 @@ describe("the phase tool takes JSON text for its lists and objects", () => {
 });
 
 /** A finished lp.plan run in the journal: [node, role, thread, started, ended] per agent step. */
-function seedPlanRun(db: ReturnType<typeof openDatabase>, id: string, steps: Array<[string, string, string, number, number]>) {
+function seedPlanRun(db: ReturnType<typeof openDatabase>, id: string, steps: Array<[string, string, string, number, number]>,
+  run: { projectId?: string; output?: Record<string, unknown>; createdAt?: number } = {}) {
   const nodes = steps.map(([node, role]) => ({ id: node, type: "agent", role }));
-  db.prepare("INSERT INTO lane_pilot_wf_run(id,workflow_id,workflow_version,workflow_sha256,definition_json,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)")
-    .run(id, "lp.plan", 1, "sha", JSON.stringify({ id: "lp.plan", nodes }), "succeeded", 1, 1);
+  // The run is the phase project's, made after the plan was submitted, and its critic's own output passed the plan (unless a test says otherwise).
+  const createdAt = run.createdAt ?? Date.now() + 60_000;
+  db.prepare("INSERT INTO lane_pilot_wf_run(id,workflow_id,workflow_version,workflow_sha256,definition_json,project_id,status,output_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
+    .run(id, "lp.plan", 1, "sha", JSON.stringify({ id: "lp.plan", nodes }), run.projectId ?? "projA", "succeeded", JSON.stringify(run.output ?? { status: "ok", plan_verdict: "pass" }), createdAt, createdAt);
   steps.forEach(([node, , thread, started, ended], index) => db.prepare("INSERT INTO lane_pilot_wf_step(run_id,step_key,origin,node_id,visit,state,receipt_json,started_at,ended_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
     .run(id, `${node}#${index + 1}`, `${node}#${index + 1}`, node, index + 1, "succeeded", JSON.stringify({ threadId: thread }), started, ended, ended));
 }
@@ -151,6 +154,19 @@ describe("the plan checker is proven independent by the run journal, never by a 
     const { phases, phase } = await planned();
     seedPlanRun(phases.db, "wfrun_early", [["plan", "planner", "thr_planner", 10, 50], ["plan_critic", "plan-critic", "thr_critic", 30, 60]]);
     await expect(phases.planCheck({ phaseId: phase.id, decision: "approve", by: "critic", wfRunId: "wfrun_early" })).rejects.toMatchObject({ why: [expect.stringMatching(/started before the plan was done/)] });
+  });
+
+  // SMA audit N-03: any journal with a finished critic admitted the plan — another project's old run, and one whose critic asked for changes.
+  it("refuses a run of another project, one made before the plan, and an approval its critic's own output does not give [sma:p2_checker]", async () => {
+    const { phases, phase } = await planned();
+    const steps: Array<[string, string, string, number, number]> = [["plan", "planner", "thr_planner", 10, 20], ["plan_critic", "plan-critic", "thr_critic", 30, 40]];
+    seedPlanRun(phases.db, "wfrun_other", steps, { projectId: "OTHER" });
+    await expect(phases.planCheck({ phaseId: phase.id, decision: "approve", by: "critic", wfRunId: "wfrun_other" })).rejects.toMatchObject({ why: [expect.stringMatching(/belongs to project OTHER/)] });
+    seedPlanRun(phases.db, "wfrun_old", steps, { createdAt: 1 });
+    await expect(phases.planCheck({ phaseId: phase.id, decision: "approve", by: "critic", wfRunId: "wfrun_old" })).rejects.toMatchObject({ why: [expect.stringMatching(/did not check this plan/)] });
+    seedPlanRun(phases.db, "wfrun_no", steps, { output: { status: "fail", plan_verdict: "changes_requested" } });
+    await expect(phases.planCheck({ phaseId: phase.id, decision: "approve", by: "critic", wfRunId: "wfrun_no" })).rejects.toMatchObject({ why: [expect.stringMatching(/did not approve: its output says changes_requested/)] });
+    expect(phases.status(phase.id).phase.stage).toBe("planning");
   });
 
   it("refuses a plan the planner rewrote after the check, and admits the one the critic had the last word on [sma:p2_session_end]", async () => {

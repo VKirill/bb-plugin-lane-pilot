@@ -23,6 +23,13 @@ export type Promise3 = { given: string; when: string; then: string };
 export type PlanItem = { id: string; title: string; wave: number; promise: Promise3; task: Record<string, unknown>; /** Requirement ids and locked decision ids this piece carries out (coverage gates). */ covers?: string[] };
 
 export type ContextDoc = { path: string; sha256: string; bytes: number };
+export type CandidateTree = { path: string; startSha: string };
+export type PhaseCandidate = { branch: string; trees: Record<string, CandidateTree>; off?: string;
+  /** Each tree's head when the blind verdict froze: the package the acceptance decides on. */ verified?: Record<string, string>;
+  /** The goal check of the candidate's own trees (the run's goal check reads main). */ goal?: { state: string; headSha: string | null; red: unknown[]; detail: string | null; at: number; tasks: number; runId: string; projectId: string };
+  landed?: Record<string, string | null>; landedAt?: number };
+/** A candidate in use: made, and not switched off. */
+export const candidateOn = (record: PhaseRecord): boolean => !!record.candidate && !record.candidate.off && Object.keys(record.candidate.trees).length > 0;
 /** What the run journal says about the plan checker (SMA p2_checker, p2_order, p2_session_end): a session of its own, started after the
  *  plan was done, with the last word. `ok` false names why; the gate admits an approval only with `ok`. */
 export type CheckerIndependence = { ok: boolean; why: string; wfRunId?: string; checker?: string; planners?: string[]; checkerStartedAt?: number; plannedUntil?: number };
@@ -102,7 +109,7 @@ export type PhaseRecord = {
   words?: OwnerWord[];
   /** Goal revisions and withdrawn pieces, each one a decision in the book. */
   scope?: { revisions: number; withdrawn: string[] };
-  plan?: { items: PlanItem[]; sha: string; contextSha: string; critique?: PlanCritique; admittedSha?: string; admittedAt?: number; /** When the plan was submitted. */ submittedAt?: number; /** Rounds of the independent check that asked for changes. */ rounds?: number;
+  plan?: { items: PlanItem[]; sha: string; contextSha: string; critique?: PlanCritique; admittedSha?: string; admittedAt?: number; /** When the plan was submitted. */ submittedAt?: number; /** The workflow run whose planner made this plan (the auto plan stage); its critic reviewed this very plan. */ fromRun?: string; /** Rounds of the independent check that asked for changes. */ rounds?: number;
     /** The planner checked that the repository already does what the goal asks: no pieces, no execution; the goal audit checks the claim. */ alreadyMet?: { evidence: string } };
   design?: { decision: "needed" | "not_needed"; why: string; drawing?: Drawing; confirmedAt?: number; mode?: "screens" | "system" | "mixed"; motion?: string[]; archived?: Drawing[] };
   /** The roadmap row this phase is (lane-plan ROADMAP.md), marked done when the phase closes. */
@@ -113,6 +120,9 @@ export type PhaseRecord = {
   subagents?: boolean;
   /** A marker branch phase/<id> at the accepted main (setting phase.branch = phase). */
   branch?: "none" | "phase";
+  /** The phase candidate (SMA p6_prepared → p6_merge): the pieces merge into branch phase/<id>, one worktree per base checkout, and the
+   *  branch lands on main only after the acceptance. `off` says why a phase merges its pieces into main as before. */
+  candidate?: PhaseCandidate;
   /** UAT.md written for the owner at acceptance (owner.words on). */
   uat?: { path: string; sha256: string; at: number };
   /** The conclusion and the roadmap/STATE marks written when the phase closed. */
@@ -124,13 +134,15 @@ export type PhaseRecord = {
     unchanged?: { inputSha: string; detail: string } };
   /** Each finished wave is verified by another model before the next one is issued (setting phase.wave_review, on by default). */
   waveReview?: boolean;
+  /** A stop asked for while a writer's stop is not observed yet (SMA px_stop): the phase stays open, issues nothing and asks again each pass. */
+  stopping?: { by: string; words?: string; at: number; unconfirmed: string[] };
   /** The most pieces the driver issues in one pass (Batch issue capacity; setting phase.issue_cap, 8 by default). */
   issueCap?: number;
   /** When the driver last said the phase is aging or stalled (once a day). */
   agingSaidAt?: number;
   verification?: { verdict?: FrozenVerdict; model?: ModelVerdict };
   acceptance?: { lines: AcceptanceLine[]; at: number; accepted: boolean };
-  lessons?: { needed: boolean; why: string; analysis?: string; author?: string; reviewer?: string; reviewedHash?: string; at?: number;
+  lessons?: { needed: boolean; why: string; analysis?: string; author?: string; reviewer?: string; reviewedHash?: string; /** The workflow run whose reviewer step read the analysis (its journal is the proof). */ reviewRun?: string; at?: number;
     /** The lesson as a draft (SMA p7_staged): it waits for the owner's word «lesson»; applied, it goes into memory (m_apply). A write that did not land is finished on a later pass from the same text (p7_recover). */
     draft?: { text: string; stagedAt: number; state: "staged" | "applied" | "declined"; at?: number; error?: string } };
   /** The book written to the project (.agents/phases/<id>/BOOK.md) up to this part. */
@@ -449,7 +461,7 @@ export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFac
     line("checks_passed", notChecked.length === 0, notChecked.length ? `checks failed: ${notChecked.join(", ")}` : "every piece's checks passed"),
     line("independent_check", blockedByCritic.length === 0 && uncritiqued.length === 0, blockedByCritic.length ? `the code critic blocks: ${blockedByCritic.join(", ")}`
       : uncritiqued.length ? `the code critic has not passed: ${uncritiqued.join(", ")} (no critic receipt is no reading)` : `the code critic passed all ${items.length} piece(s)`),
-    line("landed", notLanded.length === 0, notLanded.length ? `not merged: ${notLanded.join(", ")}` : "every piece is merged into main"),
+    line("landed", notLanded.length === 0, notLanded.length ? `not merged: ${notLanded.join(", ")}` : candidateOn(phase.record) ? `every piece is merged into the phase candidate ${phase.record.candidate!.branch}` : "every piece is merged into main"),
     line("composition_verified", verdict?.state === "passed", verdict ? verdict.detail : "no blind verdict yet"),
     line("main_unmoved", !verdict?.mainSha || !now.mainSha || verdict.mainSha === now.mainSha, verdict?.mainSha && now.mainSha && verdict.mainSha !== now.mainSha ? `main moved from ${verdict.mainSha.slice(0, 12)} to ${now.mainSha.slice(0, 12)} since the verdict — verify again` : "main is where the verdict saw it"),
     line("qa_read", qaRed.length === 0 && qaOwed.length === 0, qaRed.length ? `the browser check failed: ${qaRed.join(", ")}`
@@ -570,7 +582,7 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
     }
     case "lessons":
       return { key: key(r.lessons?.analysis ? "written" : "analysis"), stage: phase.stage, waitsForPm: !r.lessons?.analysis,
-        text: `${head} — stage 7, lessons (${r.lessons?.why ?? ""}). Run the retrospective (workflow retrospective) on the phase book and report it with ${tool("lessons", `, phaseId:"${id}", analysis, author, reviewer, reviewedHash`)}: the reviewer is a role other than the author, and reviewedHash is the sha256 of exactly the analysis text the reviewer read.${r.ownerWords ? " The lesson then waits as a draft for the owner's word «lesson»." : ""}` };
+        text: `${head} — stage 7, lessons (${r.lessons?.why ?? ""}). Run the retrospective (workflow retrospective) on the phase book and report it with ${tool("lessons", `, phaseId:"${id}", analysis, reviewRun`)}: reviewRun is that run; Lane Pilot reads from its journal that its «stage» step, a session other than the author's, was handed exactly this analysis.${r.ownerWords ? " The lesson then waits as a draft for the owner's word «lesson»." : ""}` };
     case "closed":
       return { key: key("closed"), stage: phase.stage, waitsForPm: false, text: `${head} is closed.` };
   }

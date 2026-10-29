@@ -60,6 +60,18 @@ describe("helper stages decide before they prepare, and reuse only a receipt of 
     expect(again).toEqual({ allowed:true, critique:{ decision:"approve" } });
   });
 
+  // SMA audit N-06: an advisory «changes requested» is stored as passed; the reuse handed it back as allowed after the project switched to gate.
+  it("a kept advisory «changes requested» blocks once the project gates", async () => {
+    const w = world();
+    saveProjectSetting(w.db, "P", "plan_critique.mode", "advisory");
+    await runPlanCritique({ ...w, projectId:"P", runId:"r", taskId:"t1", config, task, plan:"write note" });
+    w.db.prepare("UPDATE lane_pilot_stage_receipt SET state='passed', result_json=? WHERE run_id='r' AND task_id='t1' AND stage_id='plan-critique'").run(JSON.stringify({ decision:"changes_requested", mode:"advisory", summary:"fix the boundary" }));
+    saveProjectSetting(w.db, "P", "plan_critique.mode", "gate");
+    const again = await runPlanCritique({ ...w, projectId:"P", runId:"r", taskId:"t1", config, task, plan:"write note" });
+    expect(again.allowed).toBe(false);
+    expect(again.reason).toBeTruthy();
+  });
+
   it("resetHelperStages keeps a passed plan critique and specialist review and drops the rest", async () => {
     const w = world();
     for (const stageId of ["plan-critique", "specialist-review", "pm-read"] as const) {

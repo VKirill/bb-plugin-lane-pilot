@@ -76,7 +76,7 @@ export const gitPrepareWorktree: ExperimentalHostRpcHandlers<typeof hostContract
 export const gitIntegrate: ExperimentalHostRpcHandlers<typeof hostContract>["gitIntegrate"] = async (input) => ({
   hostId:process.env.BB_HOST_ID??input.requestedHostId,
   ...await integrateWorktree({basePath:input.basePath,worktreePath:input.worktreePath,message:input.message,removeWorktree:input.removeWorktree,committedOnly:input.committedOnly,bookkeeping:input.bookkeeping,
-    ownsPaths:input.ownsPaths,
+    ownsPaths:input.ownsPaths,baseInHead:input.baseInHead,
     replayCheck:input.replayChecks?()=>runReplayChecks(input.requestedHostId,input.replayChecks!):undefined}),
 });
 

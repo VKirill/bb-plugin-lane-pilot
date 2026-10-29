@@ -19,13 +19,13 @@ export function phaseRpc(api: PhaseApi) {
         // Context note: the owner's note goes to the writers of the pieces at work; an answer settles a stage question.
         : action === "correct" ? (await api.correct({ phaseId: need(), note: p.note, pieces: p.pieces, by: "owner" })).phase
         : action === "answer" ? api.answer({ phaseId: need(), questionId: p.questionId, answer: p.answer, by: "owner via screen" })
-        : api.lessons({ phaseId: need(), analysis: p.analysis, author: p.author, reviewer: p.reviewer, reviewedHash: p.reviewedHash });
+        : api.lessons({ phaseId: need(), analysis: p.analysis, reviewRun: p.reviewRun, reviewerNode: p.reviewerNode });
       return api.status(done.id);
     },
-    phase_control: async ({ phaseId, action, to, note, turn, decision, wave, useful, limits }) => {
+    phase_control: async ({ phaseId, action, to, note, turn, decision, wave, useful, limits, key }) => {
       if (action === "word") {
         if (!turn || !decision) throw new Error("the owner's word names the turn and the decision");
-        return api.status((await api.word({ phaseId, turn, decision, text: note?.trim() || decision, wave, useful, limits, by: "owner via screen" })).id);
+        return api.status((await api.word({ phaseId, turn, decision, text: note?.trim() || decision, wave, useful, limits, key, by: "owner via screen" })).id);
       }
       if (action === "return") {
         if (!to || !note?.trim()) throw new Error("a return names the stage and carries a note");

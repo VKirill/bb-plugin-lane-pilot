@@ -3,7 +3,7 @@ import { cancelAttemptById, isRunHalted, isRunPaused } from "../../runs/server";
 import { taskFamily } from "../../runs";
 import { noTermDeferralsOf } from "../../deferral/server";
 import { getRunGoal } from "../../run-goal";
-import { getRun, getRunSettingsScopes, getRunWriterHost, getTask, listOpenAttempts, storeMemoryRecords } from "../../storage";
+import { getRun, getRunSettingsScopes, getRunWriterHost, getTask, listOpenAttempts, loadProjectSettings, storeMemoryRecords } from "../../storage";
 import { postOwnerItem, closeOwnerItem } from "../../owner-waiting";
 import { isWholeConsent, ownerWordsOn, spendReserve } from "../../tasks";
 import { hostContract } from "../../contracts";
@@ -12,8 +12,11 @@ import {
   PHASE_STAGES, RETURN_STAGES, RISK_KINDS, acceptanceKey, acceptanceLines, alreadyMetVerdict, blindVerdict, canonical, pieceSha, contextSignature, openQuestions, phaseFolder, planGate as planGateOf, piecesOfWave, waveCleared, waveLines, wavePackage, wavesOf, wordOf, designDecision, designGate, discussionGate,
   executionGate, issuable, lessonsNeeded, nextAction, planGate, planSignature, provenPieces, renderBook, sha256, staleAfterReturn,
   type ContextDoc, type Phase, type PhaseRecord, type PhaseStage, type PlanItem, type RiskKey, type TaskFact, type WordTurn,
-  checkerIndependence, type JournalStep,
+  checkerIndependence, candidateOn, type JournalStep, type PhaseCandidate, type CandidateTree,
 } from "../logic";
+import { candidateBranch, createCandidates } from "./candidate";
+import { goalVerdict } from "../../run-goal";
+import { bookkeepingSetting } from "@lane-pilot/settings-catalog";
 import { appendPart, getPhase, insertPhase, listParts, listPhases, notePoked, savePhase } from "../store";
 import { archiveDrawing, binaryFileCommand, binaryFileFingerprint, conclusionText, markRoadmap, nextRoadmapRow, stateText, uatState, uatText, waveTable } from "../stages";
 import { runOnHost } from "@lane-pilot/host-calls";
@@ -200,7 +203,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     return mustGet(phase.id);
   }
 
-  function plan(input: Reported & { items: PlanItem[]; design?: boolean; alreadyMet?: string }): Phase {
+  function plan(input: Reported & { items: PlanItem[]; design?: boolean; alreadyMet?: string; fromRun?: string }): Phase {
     const phase = mustGet(input.phaseId);
     // No replanning of a closed phase: its book is final; a new goal is a new phase.
     if (phase.stage === "closed" || phase.state === "closed") throw new PhaseRefusal(`phase ${phase.id} is closed: open a new phase for new work`);
@@ -209,7 +212,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     const items = input.items.map((item) => ({ ...item, task: { ...item.task, id: item.id } }));
     const contextSha = phase.record.context.sha;
     // `alreadyMet`: the planner found the repository already doing what the goal asks, a plan with no pieces that the plan gate admits as such.
-    const record: PhaseRecord = { ...phase.record, plan: { items, contextSha, sha: planSignature(items, contextSha), rounds: phase.record.plan?.rounds ?? 0, submittedAt: now(), ...(input.alreadyMet ? { alreadyMet: { evidence: input.alreadyMet.slice(0, 1000) } } : {}) } };
+    const record: PhaseRecord = { ...phase.record, plan: { items, contextSha, sha: planSignature(items, contextSha), rounds: phase.record.plan?.rounds ?? 0, submittedAt: now(), ...(input.fromRun ? { fromRun: input.fromRun } : {}), ...(input.alreadyMet ? { alreadyMet: { evidence: input.alreadyMet.slice(0, 1000) } } : {}) } };
     if (input.design) record.design = { decision: "needed", why: "the PM asked for a drawing" };
     savePhase(db, phase.id, { record, at: now() });
     if (input.alreadyMet) book(phase, "plan", "already_met", `the planner found the goal already met, no pieces to build: ${input.alreadyMet.slice(0, 1000)}`);
@@ -231,6 +234,27 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     });
   }
 
+  /**
+   * Is this journal the check of this plan (SMA audit N-03): a run of the phase's own project and run, made for this plan — the run
+   * whose planner made it (plan.fromRun), or for a plan the PM submitted, a run started after it — and an approval its critic's own
+   * output gives (plan_verdict pass), not one the caller says over a «changes requested». The reason it is not; null when it is.
+   */
+  function checkerRunBinding(phase: Phase, wfRunId: string, decision: "approve" | "changes_requested"): string | null {
+    const run = db.prepare("SELECT project_id, link_run_id, created_at, output_json FROM lane_pilot_wf_run WHERE id=?").get(wfRunId) as
+      { project_id: string | null; link_run_id: string | null; created_at: number; output_json: string | null } | undefined;
+    if (!run) return `workflow run ${wfRunId} is not in the journal`;
+    if (run.project_id !== phase.projectId) return `workflow run ${wfRunId} belongs to project ${run.project_id ?? "none"}, not to this phase's ${phase.projectId}`;
+    if (run.link_run_id && run.link_run_id !== phase.runId) return `workflow run ${wfRunId} belongs to run ${run.link_run_id}, not to this phase's ${phase.runId ?? "(none yet)"}`;
+    const plan = phase.record.plan!;
+    if (plan.fromRun ? plan.fromRun !== wfRunId : run.created_at < (plan.submittedAt ?? 0)) return `workflow run ${wfRunId} did not check this plan (${plan.fromRun ? `the plan came from ${plan.fromRun}` : "it started before the plan was submitted"})`;
+    if (decision === "approve") {
+      let output: { status?: unknown; plan_verdict?: unknown } = {};
+      try { output = JSON.parse(run.output_json ?? "{}") ?? {}; } catch { /* no output: no approval in it */ }
+      if (output.plan_verdict !== "pass" || (output.status !== undefined && output.status !== "ok")) return `the critic of ${wfRunId} did not approve: its output says ${String(output.plan_verdict ?? output.status ?? "nothing").slice(0, 120)}`;
+    }
+    return null;
+  }
+
   async function planCheck(input: Reported & { decision: "approve" | "changes_requested"; by: string; summary?: string; wfRunId?: string }): Promise<Phase> {
     const phase = mustGet(input.phaseId);
     if (phase.stage !== "planning" || !phase.record.plan) throw new PhaseRefusal("no plan at planning to check");
@@ -244,8 +268,10 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     }
     const rounds = (phase.record.plan.rounds ?? 0) + (input.decision === "changes_requested" ? 1 : 0);
     const steps = input.wfRunId ? journalSteps(input.wfRunId) : null;
-    const independence = !input.wfRunId ? undefined : steps ? checkerIndependence(input.wfRunId, steps, { pmThread: phase.pmThreadId, submittedAt: phase.record.plan.submittedAt })
-      : { ok: false, wfRunId: input.wfRunId, why: `workflow run ${input.wfRunId} is not in the journal` };
+    const bound = input.wfRunId ? checkerRunBinding(phase, input.wfRunId, input.decision) : null;
+    const independence = !input.wfRunId ? undefined : !steps ? { ok: false, wfRunId: input.wfRunId, why: `workflow run ${input.wfRunId} is not in the journal` }
+      : bound ? { ok: false, wfRunId: input.wfRunId, why: bound }
+      : checkerIndependence(input.wfRunId, steps, { pmThread: phase.pmThreadId, submittedAt: phase.record.plan.submittedAt });
     const record: PhaseRecord = { ...phase.record, plan: { ...phase.record.plan, rounds, critique: { decision: input.decision, by: input.by, ...(input.summary ? { summary: input.summary } : {}), ...(independence ? { independence } : {}) } } };
     book(phase, "plan", "checked", `${input.by}: ${input.decision}${input.summary ? ` — ${input.summary}` : ""}`);
     savePhase(db, phase.id, { record, at: now() });
@@ -307,18 +333,39 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     return mustGet(phase.id);
   }
 
-  function lessons(input: Reported & { analysis: string; author: string; reviewer: string; reviewedHash: string }): Phase {
+  /**
+   * Reviewer saw these bytes (SMA p7_saw_bytes), read from the run journal, never from the caller: the reviewer step of `reviewRun` (a session
+   * of its own, not the author's) received the analysis in its input, and the engine's receipt measured that input (inputSha256 of input_json).
+   * Before (SMA audit N-04) a caller's own hash and a reviewer's name were enough, with no run at all.
+   */
+  function reviewerRead(phase: Phase, runId: string, node: string, analysis: string): { author: string; reviewer: string; inputSha: string } | { why: string } {
+    const run = db.prepare("SELECT project_id FROM lane_pilot_wf_run WHERE id=?").get(runId) as { project_id: string | null } | undefined;
+    if (!run) return { why: `workflow run ${runId} is not in the journal: the lessons name the run whose reviewer read them` };
+    if (run.project_id !== phase.projectId) return { why: `workflow run ${runId} belongs to project ${run.project_id ?? "none"}, not to this phase's ${phase.projectId}` };
+    const step = db.prepare("SELECT input_json, receipt_json FROM lane_pilot_wf_step WHERE run_id=? AND node_id=? AND state='succeeded' ORDER BY rowid DESC LIMIT 1").get(runId, node) as { input_json: string; receipt_json: string | null } | undefined;
+    if (!step) return { why: `no finished reviewer step «${node}» in workflow run ${runId}` };
+    let receipt: { inputSha256?: string; threadId?: string | null } = {};
+    let input: { with?: unknown; via?: { fromThreadId?: string; handoff?: string } } = {};
+    try { receipt = JSON.parse(step.receipt_json ?? "{}") ?? {}; input = JSON.parse(step.input_json) ?? {}; } catch { /* unreadable: no proof */ }
+    if (!receipt.threadId) return { why: `the reviewer step «${node}» of ${runId} ran in no session of its own` };
+    if (receipt.inputSha256 !== sha256(step.input_json)) return { why: `the journal's measurement of the reviewer's input does not match its bytes in ${runId}` };
+    const author = input.via?.fromThreadId ?? null;
+    if (!author || author === receipt.threadId) return { why: `the reviewer of ${runId} is not a session other than the analysis's author` };
+    const carried = `${input.via?.handoff ?? ""}\n${JSON.stringify(input.with ?? {})}`;
+    if (!carried.includes(analysis)) return { why: `the reviewer step «${node}» of ${runId} did not receive these bytes: the analysis is not in its input` };
+    return { author, reviewer: receipt.threadId, inputSha: receipt.inputSha256 };
+  }
+
+  function lessons(input: Reported & { analysis: string; reviewRun: string; reviewerNode?: string }): Phase {
     const phase = mustGet(input.phaseId);
     if (phase.stage !== "lessons") throw new PhaseRefusal(`phase ${phase.id} is at ${phase.stage}, not lessons`);
-    if (!input.reviewer.trim() || input.reviewer.trim() === input.author.trim()) throw new PhaseRefusal("the lessons need a reviewer other than their author");
-    // Reviewer saw these bytes (SMA p7_saw_bytes): the review names the sha256 of exactly the analysis it read, not of the book around it
-    // (2026-10-29 audit: a new analysis with the book's hash was accepted with no read of its own bytes).
     const analysis = input.analysis.slice(0, 4000);
-    if (input.reviewedHash !== sha256(analysis)) throw new PhaseRefusal(`the reviewer read other bytes: the analysis hashes to ${sha256(analysis).slice(0, 12)}, the review names ${input.reviewedHash.slice(0, 12)}`);
+    const read = reviewerRead(phase, input.reviewRun, input.reviewerNode ?? "stage", analysis);
+    if ("why" in read) throw new PhaseRefusal("the lessons are not proven read by their reviewer", [read.why]);
     const text = `Phase «${phase.title}» lessons: ${analysis}`.slice(0, 2000);
-    const record: PhaseRecord = { ...phase.record, lessons: { ...(phase.record.lessons ?? { needed: true, why: "" }), analysis, author: input.author, reviewer: input.reviewer, reviewedHash: input.reviewedHash, at: now(),
+    const record: PhaseRecord = { ...phase.record, lessons: { ...(phase.record.lessons ?? { needed: true, why: "" }), analysis, author: read.author, reviewer: read.reviewer, reviewedHash: read.inputSha, reviewRun: input.reviewRun, at: now(),
       ...(phase.record.ownerWords ? { draft: { text, stagedAt: now(), state: "staged" as const } } : {}) } };
-    book(phase, "lessons", "analysis", `${analysis} (by ${input.author}, reviewed by ${input.reviewer}, bytes ${input.reviewedHash.slice(0, 12)})`);
+    book(phase, "lessons", "analysis", `${analysis} (by ${read.author}, read by ${read.reviewer} in ${input.reviewRun}, input ${read.inputSha.slice(0, 12)})`);
     if (phase.record.ownerWords) {
       // Lesson is a draft (SMA p7_staged): it waits for the person's word in drafts; the phase does not wait for it.
       book(phase, "lessons", "staged", "the lesson waits as a draft for the owner's word «lesson»");
@@ -374,11 +421,16 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   }
 
   /** The owner's word at a turn (owner.words on). «no» sends the phase back: from planning or design to planning, from acceptance to execution. */
-  async function word(input: Reported & { turn: WordTurn; decision: "yes" | "no"; text: string; wave?: number; useful?: boolean; limits?: boolean }): Promise<Phase> {
+  async function word(input: Reported & { turn: WordTurn; decision: "yes" | "no"; text: string; wave?: number; useful?: boolean; limits?: boolean; key?: string }): Promise<Phase> {
     const phase = mustGet(input.phaseId);
     // Keyed decision on the phase (SMA p6_decide): two decisions under the key of the shown package.
     if (input.turn === "acceptance" && input.decision === "yes" && !(input.useful === true && input.limits === true))
       throw new PhaseRefusal("the acceptance is two decisions: the result is clear and useful (useful:true) and the remaining limits and recovery are acknowledged (limits:true); a «no» to either is decision no with the words why");
+    // The yes is for the package that was shown (SMA p6_decide, p6_stale): the caller names its key, and a package that changed since
+    // is not signed by it (SMA audit N-02: the key was taken at write time, so a click on package A signed package B).
+    const shownKey = acceptanceKey(phase.record);
+    if (input.turn === "acceptance" && input.decision === "yes" && !input.key) throw new PhaseRefusal(`the acceptance yes names the key of the package the owner was shown (status ownerWord.acceptanceKey, now ${shownKey})`);
+    if (input.turn === "acceptance" && input.decision === "yes" && input.key !== shownKey) throw new PhaseRefusal(`the package changed since it was shown (shown ${input.key}, now ${shownKey}): show the acceptance again and ask anew`);
     // Consent is the whole message: «да» alone is consent; «да, но …» is a new word that goes back as words, not as yes.
     if (input.decision === "yes" && !isWholeConsent(input.text) && !/^owner via (screen|cli)$/.test(input.by ?? "")) throw new PhaseRefusal("the owner's message is not a whole consent: «да, но …» is a new word — record it as decision no with his words, or ask again");
     if (input.turn === "uat" && input.decision === "yes") {
@@ -389,7 +441,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       if (!state || !state.lines || state.open.length || state.failed.length) throw new PhaseRefusal(`UAT is not complete: ${!state ? "no UAT.md" : `${state.open.length} open, ${state.failed.length} failed of ${state.lines}`} — the owner marks each line in ${path ?? "UAT.md"} first`);
     }
     const record: PhaseRecord = { ...phase.record, words: [...(phase.record.words ?? []), { turn: input.turn, decision: input.decision, by: input.by ?? "owner", text: input.text.slice(0, 2000), at: now(), ...(input.wave !== undefined ? { wave: input.wave } : {}),
-      ...(input.turn === "acceptance" ? { useful: input.useful === true, limits: input.limits === true, key: acceptanceKey(phase.record) } : {}) }] };
+      ...(input.turn === "acceptance" ? { useful: input.useful === true, limits: input.limits === true, key: shownKey } : {}) }] };
     closeOwnerItem(db as never, `phase-word:${phase.id}:${input.turn}${input.wave !== undefined ? `:${input.wave}` : ""}`, input.by ?? "owner");
     book(phase, "decisions", `word_${input.turn}`, `${input.by ?? "owner"}: ${input.decision} — ${input.text}`);
     if (input.turn === "design") await noteDesignWord(phase.id, input.decision);
@@ -528,6 +580,8 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
    * Stop (SMA px_stop): the phase's work is stopped first, then the phase. Every open attempt of its pieces is canceled (the writer
    * stopped and its stop observed, cancelAttemptById) and its stage workflow ended; a writer whose stop was not observed is named in
    * the book and in the answer, never counted as stopped. Before 2026-10-29 the stop only wrote the state: a running piece went on.
+   * The phase turns stopped only once every stop is observed (SMA audit N-01: a failed stop published a stopped phase over a live
+   * writer); until then it keeps `stopping`, issues nothing, and each pass asks for the open stops again.
    */
   async function stop(input: Reported & { words?: string }): Promise<{ phase: Phase; canceled: string[]; unconfirmed: string[] }> {
     const phase = mustGet(input.phaseId);
@@ -545,9 +599,18 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       try { services.workflowEngine.cancel(auto.wfRunId, `phase ${phase.id} stopped`); } catch { /* a finished or unknown run: nothing to end */ }
       savePhase(db, phase.id, { record: { ...phase.record, auto: undefined }, at: now() });
     }
-    book(phase, "execution", "work_stopped", [canceled.length ? `canceled: ${canceled.join(", ")}` : "no piece at work",
-      ...(auto ? [`stage workflow ${auto.wfRunId} ended`] : []), ...(unconfirmed.length ? [`stop not observed yet: ${unconfirmed.join(", ")}`] : [])].join("; "));
-    return { phase: setState({ ...input, state: "stop" }), canceled, unconfirmed };
+    const asked = phase.record.stopping;
+    const line = [canceled.length ? `canceled: ${canceled.join(", ")}` : "no piece at work",
+      ...(auto ? [`stage workflow ${auto.wfRunId} ended`] : []), ...(unconfirmed.length ? [`stop not observed yet: ${unconfirmed.join(", ")}`] : [])].join("; ");
+    if (!asked || canceled.length || line !== listParts(db, phase.id).filter((part) => part.kind === "work_stopped").at(-1)?.text) book(phase, "execution", "work_stopped", line);
+    const by = asked?.by ?? input.by ?? "pm";
+    const words = asked?.words ?? input.words;
+    if (unconfirmed.length) {
+      savePhase(db, phase.id, { record: { ...mustGet(phase.id).record, stopping: { by, ...(words ? { words } : {}), at: asked?.at ?? now(), unconfirmed } }, at: now() });
+      return { phase: mustGet(phase.id), canceled, unconfirmed };
+    }
+    if (asked) savePhase(db, phase.id, { record: { ...mustGet(phase.id).record, stopping: undefined }, at: now() });
+    return { phase: setState({ ...input, by, ...(words ? { words } : {}), state: "stop" }), canceled, unconfirmed };
   }
 
   /** Stops the current wave: the pieces issued but not started are canceled; running writers finish their current stage. */
@@ -596,6 +659,84 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     return typeof env?.path === "string" && env.path ? env.path : null;
   }
 
+  function candidates(phase: Phase) {
+    const hostId = phase.runId ? getRunWriterHost(db, phase.runId) : null;
+    return hostId ? createCandidates(bb.hosts.experimental_client({ contract: hostContract }) as never, hostId) : null;
+  }
+
+  /** The candidate tree of a piece's base checkout, made on first need; null (and `off` with the reason, booked once) when it cannot be. */
+  async function candidateTree(phase: Phase, candidate: PhaseCandidate, base: string): Promise<CandidateTree | null | { wait: string }> {
+    if (candidate.off) return null;
+    if (candidate.trees[base]) return candidate.trees[base]!;
+    const made = await candidates(phase)?.ensure(base, phase.id) ?? { off: "the phase's run has no writer host", permanent: false };
+    // A passing failure holds the piece: issued into main instead, it would land before the phase's acceptance (SMA p6_merge).
+    if ("off" in made && !made.permanent) return { wait: `the phase branch could not be made in ${base}: ${made.off}` };
+    if ("off" in made) {
+      candidate.off = `no phase branch in ${base}: ${made.off}`;
+      book(phase, "execution", "candidate_off", `${candidate.off}; the pieces merge into main one by one`);
+      return null;
+    }
+    candidate.trees[base] = made;
+    book(phase, "execution", "candidate", `the phase's pieces merge into ${candidate.branch} (worktree ${made.path}, from ${made.startSha.slice(0, 12)}); main gets the branch after the acceptance`);
+    return made;
+  }
+
+  /** The candidate's own goal check: the accepted pieces' checks on its trees' heads (the run's goal check reads main). */
+  async function candidateGoal(phase: Phase): Promise<PhaseCandidate["goal"] | null> {
+    const candidate = phase.record.candidate!;
+    if (!phase.runId) return null;
+    const trees = Object.values(candidate.trees);
+    const result = await services.regression.run({ projectId: phase.projectId, runId: phase.runId, force: true, basePaths: trees.map((tree) => tree.path) }).catch(() => null);
+    const pass = result?.projects[0];
+    if (!pass) return null;
+    const ids = Object.values(phase.record.execution?.issued ?? {});
+    const verdict = goalVerdict(pass, ids);
+    const headSha = await candidates(phase)?.head(trees[0]!.path) ?? null;
+    return { runId: phase.runId, projectId: phase.projectId, state: verdict.state, tasks: ids.length, headSha, red: verdict.red, detail: verdict.detail, at: now() };
+  }
+
+  async function candidateHeads(phase: Phase): Promise<Record<string, string>> {
+    const out: Record<string, string> = {};
+    const kit = candidates(phase);
+    for (const [base, tree] of Object.entries(phase.record.candidate?.trees ?? {})) { const sha = await kit?.head(tree.path); if (sha) out[base] = sha; }
+    return out;
+  }
+
+  /**
+   * SMA p6_merge: the accepted package lands, each tree at the commit the verdict saw. A tree that moved is not that package (verified
+   * again, p6_stale); one that does not merge with main fails the verdict with its files, so the machine plans the fix.
+   */
+  async function landCandidate(phase: Phase): Promise<"landed" | "held"> {
+    const candidate: PhaseCandidate = { ...phase.record.candidate!, landed: { ...(phase.record.candidate!.landed ?? {}) } };
+    const kit = candidates(phase);
+    if (!kit) return "held";
+    const settings = phase.runId ? loadProjectSettings(db, phase.projectId, getRunSettingsScopes(db, phase.runId)) : {};
+    for (const [base, tree] of Object.entries(candidate.trees)) {
+      if (base in candidate.landed!) continue;
+      const verified = candidate.verified?.[base];
+      const out = verified ? await kit.land(base, tree, verified, `phase ${phase.id}: land ${candidate.branch} «${phase.title}» (accepted ${verified.slice(0, 12)})`, bookkeepingSetting(settings))
+        : { state: "moved" as const, why: "the verdict recorded no head for this tree" };
+      if (out.state === "landed") {
+        candidate.landed![base] = out.commit;
+        book(phase, "acceptance", "landed", `${candidate.branch} at ${verified!.slice(0, 12)} landed on main in ${base}${out.commit ? ` (merge ${out.commit.slice(0, 12)})` : ""}`);
+        savePhase(db, phase.id, { record: { ...mustGet(phase.id).record, candidate }, at: now() });
+        continue;
+      }
+      if (out.state === "wait") {
+        if (!listParts(db, phase.id).some((part) => part.kind === "landing_wait" && part.text === out.why)) book(phase, "acceptance", "landing_wait", out.why);
+        return "held";
+      }
+      const record: PhaseRecord = { ...mustGet(phase.id).record, candidate: { ...candidate, verified: undefined, goal: undefined }, acceptance: undefined,
+        verification: out.state === "conflict" ? { verdict: { state: "failed", detail: `the candidate ${candidate.branch} does not merge with main: ${out.why}`, mainSha: verified ?? null, at: now(), inputSha: sha256(out.why) } } : undefined };
+      if (out.state === "conflict") book(phase, "verification", "blind_verdict", `failed: ${out.why} (input ${sha256(out.why).slice(0, 12)})`);
+      move(mustGet(phase.id), "verification", record, out.state === "conflict" ? `the landing found a conflict: ${out.why}` : `not the verified package: ${out.why}`);
+      return "held";
+    }
+    for (const [base, tree] of Object.entries(candidate.trees)) await kit.drop(base, tree);
+    savePhase(db, phase.id, { record: { ...mustGet(phase.id).record, candidate: { ...candidate, landedAt: now() } }, at: now() });
+    return "landed";
+  }
+
   async function issue(phase: Phase): Promise<Phase> {
     const items = phase.record.plan?.items ?? [];
     // A planner's piece may leave out what the machine knows itself: the folder (the PM's checkout) and the objective (the piece's own
@@ -629,7 +770,18 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       const reserve = spendReserve({ budgetTokens: budget.limits.maxTokens, spentTokens: budget.tokens, openAppetites: [], appetite: waveTokens });
       if (!reserve.ok) { execution.issueErrors.budget = `wave budget question: ${reserve.why}`; savePhase(db, phase.id, { record: { ...phase.record, execution }, at: now() }); return mustGet(phase.id); }
     }
+    // The phase candidate is made at the first issue; a phase that issued pieces into main under an older version goes on that way.
+    const candidate: PhaseCandidate = phase.record.candidate ? { ...phase.record.candidate, trees: { ...phase.record.candidate.trees } }
+      : Object.keys(execution.issued).length ? { branch: candidateBranch(phase.id), trees: {}, off: "the phase issued pieces into main before the phase branch existed" }
+      : { branch: candidateBranch(phase.id), trees: {} };
     for (const item of next.slice(0, seats)) {
+      const base = typeof item.task.project_cwd === "string" && item.task.project_cwd ? item.task.project_cwd : (checkout ??= await pmCheckoutPath(phase));
+      const made = base ? await candidateTree(phase, candidate, base) : null;
+      if (made && "wait" in made) { execution.issueErrors[item.id] = made.wait.slice(0, 300); continue; }
+      const tree = made;
+      // A check named by an absolute folder in the base runs in the same folder of the tree.
+      const verification = tree && Array.isArray(item.task.verification) ? (item.task.verification as Array<Record<string, unknown>>).map((check) =>
+        typeof check.cwd === "string" && (check.cwd === base || check.cwd.startsWith(`${base}/`)) ? { ...check, cwd: `${tree.path}${check.cwd.slice(base!.length)}` } : check) : undefined;
       // A piece issued before with another contract goes again as a redo of its family (id.N), so its facts follow the new work.
       const redoOf = execution.issued[item.id];
       const taskIdForIssue = redoOf ? redoId(item.id, runId) : item.id;
@@ -637,7 +789,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
         // Stage above ordinary work: a phase's pieces start before the run's ordinary tasks when writers are scarce.
         // quality_mode full: the piece goes through every review stage, so its acceptance lines read verdicts, not their absence (SMA p6_l_verdict).
         task: { ...item.task, id: taskIdForIssue, quality_mode: "full", priority: (item.task.priority as string | undefined) ?? "high", ...(phase.record.design?.drawing ? { drawing: phase.record.design.drawing.paths } : {}),
-          ...(typeof item.task.project_cwd === "string" && item.task.project_cwd ? {} : { project_cwd: (checkout ??= await pmCheckoutPath(phase)) ?? undefined }),
+          ...(tree ? { project_cwd: tree.path, ...(verification ? { verification } : {}) } : typeof item.task.project_cwd === "string" && item.task.project_cwd ? {} : { project_cwd: base ?? undefined }),
           ...(typeof item.task.objective === "string" && item.task.objective.trim() ? {} : { objective: `${item.title}: given ${item.promise.given}, when ${item.promise.when}, then ${item.promise.then}` }) } as never,
         plan: `Phase ${phase.id} «${phase.title}», wave ${item.wave}, piece ${item.id}. Promise — given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}.${phase.record.design?.drawing ? ` The phase drawing: ${phase.record.design.drawing.paths.join(", ")} — the screens follow it.` : ""}`,
         objective: phase.goal }).catch((cause: unknown) => ({ ok: false, reason: cause instanceof Error ? cause.message : String(cause) }));
@@ -662,7 +814,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     const firstTask = Object.values(execution.issued)[0];
     const baseSha = phase.record.execution?.baseSha ?? (firstTask ? (db.prepare("SELECT base_sha FROM lane_pilot_task_git_base WHERE task_id=? LIMIT 1").get(firstTask) as { base_sha?: string } | undefined)?.base_sha ?? null : null);
     // The waves' records stay (they were dropped here before), and a new issue clears the «nothing changed» stop.
-    savePhase(db, phase.id, { record: { ...phase.record, execution: { ...execution, baseSha, acceptedNoted: phase.record.execution?.acceptedNoted ?? [], ...(phase.record.execution?.waves ? { waves: phase.record.execution.waves } : {}),
+    savePhase(db, phase.id, { record: { ...phase.record, candidate, execution: { ...execution, baseSha, acceptedNoted: phase.record.execution?.acceptedNoted ?? [], ...(phase.record.execution?.waves ? { waves: phase.record.execution.waves } : {}),
       ...(phase.record.execution?.unchanged && !next.some((item) => execution.issued[item.id])) ? { unchanged: phase.record.execution.unchanged } : {} } }, runId, at: now() });
     return mustGet(phase.id);
   }
@@ -685,6 +837,8 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
   /** One step of a phase. Reconciling after force: every tick reads the pieces' facts afresh, so a phase paused, stopped or edited by hand
    * continues from what the attempts and receipts say now, not from what it last believed. */
   async function drive(phase: Phase): Promise<Phase> {
+    // A stop whose writers' stops were not all observed: ask again; the phase does nothing else until it is stopped.
+    if (phase.record.stopping && phase.state !== "stopped" && phase.state !== "closed") return (await stop({ phaseId: phase.id })).phase;
     if (phase.state === "pause_requested") { savePhase(db, phase.id, { state: "paused", at: now() }); return mustGet(phase.id); }
     if (phase.state !== "active") return phase;
     let current = phase;
@@ -721,8 +875,8 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       if (executionGate(items, current.record.execution?.issued ?? {}, facts(current)).ok && !unreviewed.length) {
         // Nothing changed since a verdict failed on these very facts: verifying again would fail the same way, and its poke is the
         // one the PM was already given — the phase stalled silently (live ph_ae0a8de9db). It waits for new work instead.
-        const goal = current.runId ? getRunGoal(db, current.runId) : null;
-        const would = blindVerdict(items, facts(current), goal, now());
+        const goal = candidateOn(current.record) ? current.record.candidate!.goal ?? null : current.runId ? getRunGoal(db, current.runId) : null;
+        const would = blindVerdict(items, facts(current), goal as never, now());
         const lastFailed = listParts(db, current.id).filter((part) => part.kind === "blind_verdict" && part.text.startsWith("failed")).at(-1);
         if (would.state === "failed" && lastFailed?.text.includes(`(input ${would.inputSha.slice(0, 12)})`)) {
           if (current.record.execution?.unchanged?.inputSha !== would.inputSha) {
@@ -741,13 +895,21 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       current = mustGet(current.id);
     }
     if (current.stage === "verification" && !current.record.verification?.verdict && current.runId) {
-      const goal = getRunGoal(db, current.runId) ?? await services.runGoal.check(current.runId).catch(() => null);
+      // With a candidate the verdict reads its trees (p6_prepared): their goal check and their heads, the package the acceptance decides on.
+      const onCandidate = candidateOn(current.record);
+      if (onCandidate && !current.record.candidate!.goal) {
+        const goal = await candidateGoal(current);
+        if (goal) { savePhase(db, current.id, { record: { ...current.record, candidate: { ...current.record.candidate!, goal } }, at: now() }); current = mustGet(current.id); }
+      }
+      const runId = current.runId!;
+      const goal = onCandidate ? current.record.candidate!.goal ?? null : getRunGoal(db, runId) ?? await services.runGoal.check(runId).catch(() => null);
       if (goal) {
-        const verdict = blindVerdict(current.record.plan?.items ?? [], facts(current), goal, now());
+        const verdict = blindVerdict(current.record.plan?.items ?? [], facts(current), goal as never, now());
         // The goal check is still running: nothing is frozen, the next pass asks again.
         if (verdict.state === "pending") return current;
         book(current, "verification", "blind_verdict", `${verdict.state}: ${verdict.detail} (input ${verdict.inputSha.slice(0, 12)})`);
-        savePhase(db, current.id, { record: { ...current.record, verification: { ...current.record.verification, verdict } }, at: now() });
+        const verified = onCandidate ? await candidateHeads(current) : undefined;
+        savePhase(db, current.id, { record: { ...current.record, ...(verified ? { candidate: { ...current.record.candidate!, verified } } : {}), verification: { ...current.record.verification, verdict } }, at: now() });
         current = mustGet(current.id);
       }
     }
@@ -771,12 +933,17 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       }
     }
     if (current.stage === "acceptance") {
+      const onCandidate = candidateOn(current.record);
       const lastGoal = current.runId ? getRunGoal(db, current.runId) : null;
+      const firstTree = onCandidate ? Object.values(current.record.candidate!.trees)[0]! : null;
+      const headNow = firstTree ? await candidates(current)?.head(firstTree.path) ?? null : lastGoal?.headSha ?? null;
       const openDeferrals = (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_deferral WHERE project_id=? AND closed_at IS NULL").get(current.projectId) as { n: number } | undefined)?.n ?? 0;
-      const lines = acceptanceLines(current, facts(current), { mainSha: lastGoal?.headSha ?? null, openDeferrals, noTerm: noTermDeferralsOf(db, current.projectId) });
+      const lines = acceptanceLines(current, facts(current), { mainSha: headNow, openDeferrals, noTerm: noTermDeferralsOf(db, current.projectId) });
       // Main moved — a new word: the verdict saw another main; verify again on the main that is there now.
       if (lines.find((line) => line.id === "main_unmoved")?.ok === false) {
-        const record: PhaseRecord = { ...current.record, verification: undefined, acceptance: undefined };
+        // A candidate's goal check and heads belong to that verdict: the new one checks the trees again (SMA audit of C-03).
+        const record: PhaseRecord = { ...current.record, verification: undefined, acceptance: undefined,
+          ...(current.record.candidate ? { candidate: { ...current.record.candidate, goal: undefined, verified: undefined } } : {}) };
         move(current, "verification", record, "main moved since the verdict: verified again");
         return mustGet(current.id);
       }
@@ -784,6 +951,12 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
       const before = JSON.stringify(current.record.acceptance?.lines ?? []);
       const record: PhaseRecord = { ...current.record, acceptance: { lines, at: now(), accepted } };
       if (JSON.stringify(lines) !== before) book(current, "acceptance", accepted ? "accepted" : "held", lines.map((line) => `${line.ok ? "✓" : "✗"} ${line.id}: ${line.detail}`).join("; "));
+      // p6_authorized → p6_merge: the accepted package lands on main first; a landing that holds keeps the phase at acceptance.
+      if (accepted && onCandidate && !current.record.candidate!.landedAt) {
+        savePhase(db, current.id, { record, at: now() });
+        if (await landCandidate(mustGet(current.id)) !== "landed") return mustGet(current.id);
+        Object.assign(record, { candidate: mustGet(current.id).record.candidate });
+      }
       if (accepted) {
         const returns = listParts(db, current.id).filter((part) => part.kind === "return").length;
         const failedAttempts = current.runId ? ((db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_attempt WHERE run_id=? AND state IN ('validation_failed','blocked','provider_error','timeout','empty_output')").get(current.runId) as { n: number }).n) : 0;
@@ -913,7 +1086,8 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     const records = phaseProofRecords(db, phase, getRunGoal(db, phase.runId));
     if (!records.length) return null;
     const host = bb.hosts.experimental_client({ contract: hostContract });
-    const git = hostGit((command) => runOnHost(host, { hostId, cwd: run.writer_workspace_path!, command, timeoutSec: 60 }));
+    const tree = candidateOn(phase.record) && !phase.record.candidate!.landedAt ? Object.values(phase.record.candidate!.trees)[0]!.path : run.writer_workspace_path!;
+    const git = hostGit((command) => runOnHost(host, { hostId, cwd: tree, command, timeoutSec: 60 }));
     return renderProofCurrency(await checkProofs(records, git)) || null;
   }
 
@@ -947,7 +1121,7 @@ export function createPhaseDriver(ctx: ServerCore, services: Services) {
     const unmet = acceptanceLines(phase, f, { mainSha: lastGoal?.headSha ?? null, openDeferrals, noTerm })
       .filter((line) => !line.ok && line.id !== "result_useful" && (line.id !== "limits_acknowledged" || noTerm.length > 0)).map((line) => `${line.id}: ${line.detail}`.slice(0, 300));
     const cut = unproven.length ? `${unproven.map(({ item }) => item.id).join(", ")} withdrawn (${unproven.map(({ why }) => why).join(" | ").slice(0, 600)})` : "no piece to withdraw";
-    const outcome = proven.length ? `the phase stops, partial: its ${proven.length} proved piece(s) stay accepted (${proven.map((item) => item.id).join(", ")}), the goal is not met` : "no piece is proved, so the phase stops (empty scope)";
+    const outcome = proven.length ? `the phase stops, partial: ${candidateOn(phase.record) && !phase.record.candidate!.landedAt ? `nothing lands on main (a stopped phase is not accepted); ` : ""}its ${proven.length} proved piece(s) stay accepted${candidateOn(phase.record) && !phase.record.candidate!.landedAt ? ` on branch ${phase.record.candidate!.branch}` : ""} (${proven.map((item) => item.id).join(", ")}), the goal is not met` : "no piece is proved, so the phase stops (empty scope)";
     const done = `${input.stage} ran out of tries (${input.why.slice(0, 300)}). Scope cut: ${cut}${canceled.length ? `; canceled: ${canceled.join(", ")}` : ""}${verdict ? `; not proved: ${verdict.slice(0, 500)}` : ""}${unmet.length ? `; unmet: ${unmet.join(" | ").slice(0, 700)}` : ""}; ${outcome}.`;
     book(phase, "decisions", "scope_withdrawn", `${unproven.length ? unproven.map(({ item }) => item.id).join(", ") : "nothing"} withdrawn by Lane Pilot (loop exhausted at ${input.stage}): ${done}`.slice(0, 1800));
     const scope = { revisions: phase.record.scope?.revisions ?? 0, withdrawn: [...(phase.record.scope?.withdrawn ?? []), ...unproven.map(({ item }) => item.id)] };

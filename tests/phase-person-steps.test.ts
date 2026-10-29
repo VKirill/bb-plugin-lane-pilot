@@ -84,6 +84,20 @@ describe("the keyed decision on the phase", () => {
     expect(lines({ ...moved })).toMatchObject({ result_useful: false });
   });
 
+  // SMA audit N-02: the key was taken when the click was handled, so a click on package A signed package B that replaced it meanwhile.
+  it("[sma:p6_stale] refuses a click whose shown package is no longer the one at acceptance, and one that names no package", async () => {
+    const { phases, id, db } = await fixture(true);
+    const record = { ...phases.status(id).phase.record, verification: { verdict: { state: "passed", detail: "A", mainSha: "aaa", inputSha: "a", at: 1 } } };
+    savePhase(db, id, { stage: "acceptance", record: record as never, at: 3 });
+    const shown = phases.status(id).ownerWord.acceptanceKey;
+    savePhase(db, id, { record: { ...record, verification: { verdict: { state: "passed", detail: "B", mainSha: "bbb", inputSha: "b", at: 2 } } } as never, at: 4 });
+    await expect(phases.word({ phaseId: id, turn: "acceptance", decision: "yes", text: "да", useful: true, limits: true, key: shown, by: "owner via screen" })).rejects.toThrow(/changed since it was shown/);
+    await expect(phases.word({ phaseId: id, turn: "acceptance", decision: "yes", text: "да", useful: true, limits: true, by: "owner via screen" })).rejects.toThrow(/names the key/);
+    const now = phases.status(id).ownerWord.acceptanceKey;
+    const signed = await phases.word({ phaseId: id, turn: "acceptance", decision: "yes", text: "да", useful: true, limits: true, key: now, by: "owner via screen" });
+    expect(signed.record.words?.at(-1)?.key).toBe(now);
+  });
+
   it("[sma:p6_l_useful] refuses a yes that does not say both decisions", async () => {
     const { phases, id } = await fixture(true);
     await expect(phases.word({ phaseId: id, turn: "acceptance", decision: "yes", text: "да", useful: true, by: "owner via screen" })).rejects.toThrow(/two decisions/);
@@ -99,16 +113,36 @@ describe("the lessons", () => {
   }
   const analysis = "The plan missed the empty-cell case; a check per promise would have caught it.";
 
-  it("[sma:p7_saw_bytes] takes the review only for the hash of exactly the analysis it read, not the book's", async () => {
+  /** A finished retrospective in the journal: «stage» (the reviewer) was handed `handoff` by «retro» (the author) in sessions of their own. */
+  function seedRetro(db: Parameters<typeof savePhase>[0], runId: string, opts: { handoff?: string; author?: string; reviewer?: string; project?: string; badHash?: boolean } = {}) {
+    db.prepare("INSERT INTO lane_pilot_wf_run(id,workflow_id,workflow_version,workflow_sha256,definition_json,project_id,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)")
+      .run(runId, "retrospective", 1, "sha", "{}", opts.project ?? "projA", "succeeded", 1, 1);
+    const input = JSON.stringify({ with: {}, via: { mode: "artifact", fromStep: "retro#1", fromThreadId: opts.author ?? "thr_retro", handoff: opts.handoff ?? analysis } });
+    const receipt = JSON.stringify({ executor: "agent", inputSha256: opts.badHash ? sha256("other") : sha256(input), threadId: opts.reviewer ?? "thr_stage" });
+    db.prepare("INSERT INTO lane_pilot_wf_step(run_id,step_key,origin,node_id,visit,state,input_json,receipt_json,started_at,ended_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+      .run(runId, "stage#1", "stage#1", "stage", 1, "succeeded", input, receipt, 1, 2, 2);
+    return sha256(input);
+  }
+
+  // SMA audit N-04: a caller's own hash and an invented reviewer's name closed the phase with no reviewer run at all.
+  it("[sma:p7_saw_bytes] takes the lessons only from a run whose reviewer, a session of its own, was handed exactly these bytes", async () => {
     const { db, phases, id } = await atLessons(false);
-    const head = listParts(db, id).at(-1)!.hash;
-    expect(() => phases.lessons({ phaseId: id, analysis, author: "retro", reviewer: "stage", reviewedHash: head })).toThrow(/other bytes/);
-    expect(phases.lessons({ phaseId: id, analysis, author: "retro", reviewer: "stage", reviewedHash: sha256(analysis) }).stage).toBe("closed");
+    expect(() => phases.lessons({ phaseId: id, analysis, reviewRun: "wf_none" })).toThrow(/not proven read/);
+    seedRetro(db, "wf_other", { project: "OTHER" });
+    seedRetro(db, "wf_elsewhere", { handoff: "Another analysis the reviewer read." });
+    seedRetro(db, "wf_self", { reviewer: "thr_retro" });
+    seedRetro(db, "wf_forged", { badHash: true });
+    for (const run of ["wf_other", "wf_elsewhere", "wf_self", "wf_forged"]) expect(() => phases.lessons({ phaseId: id, analysis, reviewRun: run }), run).toThrow(/not proven read/);
+    const measured = seedRetro(db, "wf_read");
+    const closed = phases.lessons({ phaseId: id, analysis, reviewRun: "wf_read" });
+    expect(closed.stage).toBe("closed");
+    expect(closed.record.lessons).toMatchObject({ author: "thr_retro", reviewer: "thr_stage", reviewedHash: measured, reviewRun: "wf_read" });
   });
 
   it("[sma:p7_staged] keeps the lesson a draft for the person's word with owner.words on; his yes writes it to memory", async () => {
     const { db, phases, id } = await atLessons(true);
-    const closed = phases.lessons({ phaseId: id, analysis, author: "retro", reviewer: "stage", reviewedHash: sha256(analysis) });
+    seedRetro(db, "wf_read");
+    const closed = phases.lessons({ phaseId: id, analysis, reviewRun: "wf_read" });
     expect(closed.stage).toBe("closed");
     expect(closed.record.lessons?.draft?.state).toBe("staged");
     const count = () => (db.prepare("SELECT COUNT(*) AS n FROM lane_pilot_memory_fts WHERE project_id='projA'").get() as { n: number }).n;

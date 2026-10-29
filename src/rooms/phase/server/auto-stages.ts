@@ -1,7 +1,7 @@
 import { builtinWorkflow } from "../../workflow";
 import type { ServerCore, Services } from "../../core/server";
 import { threatGap } from "../stages";
-import { PLAN_WORD_GAP, INDEPENDENCE_GAP, phaseFolder, planGate, sha256, type Phase, type PhaseRecord, type PlanItem, type RiskKey } from "../logic";
+import { PLAN_WORD_GAP, INDEPENDENCE_GAP, phaseFolder, planGate, sha256, type Phase, type PhaseRecord, type PlanItem, type RiskKey, candidateOn } from "../logic";
 import packageJson from "../../../../package.json";
 
 /**
@@ -112,12 +112,20 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number })
     }
     case "review": {
       const items = (r.plan?.items ?? []).filter((item) => item.wave === due.wave);
-      return { range: r.execution?.baseSha ? `${r.execution.baseSha}..HEAD` : "HEAD~1..HEAD", dimensions: ["correctness", "tests", "contract"],
-        criteria: items.map((item) => `${item.id}: given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}`) };
+      // With a candidate the wave's work is on phase/<id>, not on main: the range and the files to read are the branch's.
+      const tree = candidateOn(r) ? Object.values(r.candidate!.trees)[0] : undefined;
+      const head = tree ? r.candidate!.branch : "HEAD";
+      return { range: r.execution?.baseSha ? `${r.execution.baseSha}..${head}` : `${head}~1..${head}`, dimensions: ["correctness", "tests", "contract"],
+        criteria: [...(tree ? [`the code under review is on branch ${r.candidate!.branch}, checked out at ${tree.path}: read the files there, not in the main checkout`] : []),
+          ...items.map((item) => `${item.id}: given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}`)] };
     }
     case "draw": return { goal: phase.goal, folder: phaseFolder(phase.id),
       pieces: (r.plan?.items ?? []).map((item) => `${item.id} — ${item.title}: given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}`).join("\n").slice(0, 8000) };
-    case "close": return { goal: phase.goal, summary: r.verification?.verdict?.detail ?? "" };
+    case "close": {
+      // The goal audit reads the package that is to land: before the landing that is the candidate's tree.
+      const tree = candidateOn(r) && !r.candidate!.landedAt ? Object.values(r.candidate!.trees)[0] : undefined;
+      return { goal: phase.goal, summary: `${tree ? `The phase's work is on branch ${r.candidate!.branch}, checked out at ${tree.path}, and lands on main only after the acceptance: read and run the evidence there. ` : ""}${r.verification?.verdict?.detail ?? ""}` };
+    }
     case "lessons": return { run_id: phase.runId ?? "" };
   }
 }
@@ -196,12 +204,12 @@ export function planItems(phase: Phase, output: Record<string, unknown>): PlanIt
 
 export type AutoApi = {
   context(input: { phaseId: string; docs: string[]; risks: Partial<Record<RiskKey, string>>; decisions?: string[]; appetite?: string; noGos?: string[]; by: string }): Promise<Phase>;
-  plan(input: { phaseId: string; items: PlanItem[]; design?: boolean; alreadyMet?: string; by: string }): Phase;
+  plan(input: { phaseId: string; items: PlanItem[]; design?: boolean; alreadyMet?: string; fromRun?: string; by: string }): Phase;
   planCheck(input: { phaseId: string; decision: "approve" | "changes_requested"; by: string; summary?: string; wfRunId?: string }): Promise<Phase>;
   question(input: { phaseId: string; text: string; blocking: boolean; by: string }): Phase;
   waveReview(input: { phaseId: string; wave: number; state: "passed" | "failed"; by: string; summary: string }): Phase;
   goalAudit(input: { phaseId: string; state: "met" | "unmet"; by: string; summary: string }): Phase;
-  lessons(input: { phaseId: string; analysis: string; author: string; reviewer: string; reviewedHash: string; by: string }): Phase;
+  lessons(input: { phaseId: string; analysis: string; reviewRun: string; reviewerNode?: string; by: string }): Phase;
   drawing(input: { phaseId: string; paths: string[]; designer: string; feasible: boolean; contradiction?: string; reviewer?: string; by: string }): Promise<Phase>;
   returnTo(input: { phaseId: string; to: "planning" | "discussion"; note: string; by: string }): Phase;
 };
@@ -278,7 +286,7 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       const old = phase.record.replan?.gaps ? phase.record.plan?.items ?? [] : [];
       const lastWave = Math.max(0, ...old.map((item) => item.wave));
       const items = old.length ? [...old.filter((item) => !fresh.some((next) => next.id === item.id)), ...fresh.map((item) => ({ ...item, wave: lastWave + item.wave }))] : fresh;
-      const planned = deps.api.plan({ phaseId: phase.id, items, design: output.has_ui === true, ...(met ? { alreadyMet: `the planner checked the repository: ${text(output.objective, 600) || phase.goal}` } : {}), by });
+      const planned = deps.api.plan({ phaseId: phase.id, items, design: output.has_ui === true, fromRun: auto.wfRunId, ...(met ? { alreadyMet: `the planner checked the repository: ${text(output.objective, 600) || phase.goal}` } : {}), by });
       // lp.plan has the whole plan critiqued by its own critic role in a session of its own; the gate reads that from the run's journal.
       const approved = output.status === "ok" && text(output.plan_verdict, 200) === "pass";
       await deps.api.planCheck({ phaseId: planned.id, decision: approved ? "approve" : "changes_requested", by: `${by}, plan critic`, summary: text(output.plan_verdict, 2000), wfRunId: auto.wfRunId });
@@ -297,12 +305,13 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
         summary: text(`${output.status}; critical ${text(output.critical_count, 6)}, high ${text(output.high_count, 6)}; ${JSON.stringify(output.findings ?? []).slice(0, 1500)}`, 2000) });
     } else if (auto.kind === "lessons") {
       if (phase.stage !== "lessons" || phase.record.lessons?.analysis) return;
-      const insights = Array.isArray(output.insights) ? output.insights as unknown[] : [];
-      const analysis = [`Retrospective of the run (${text(output.status, 20)}; ${text(output.candidates_staged, 6) || 0} rule or note candidate(s) staged${output.retro_path ? `, ${text(output.retro_path, 200)}` : ""}).`,
-        ...insights.slice(0, 12).map((insight) => `- ${text((insight as { text?: unknown; title?: unknown })?.text ?? (insight as { title?: unknown })?.title ?? insight, 280)}`)].join("\n");
-      // The retrospective's two roles: «retro» writes the insights, «stage» weighs and stages them — the author and its reviewer.
-      // The «stage» role read exactly these bytes: the workflow handed it the «retro» output, so its hash is what the review saw (SMA p7_saw_bytes).
-      deps.api.lessons({ phaseId: phase.id, analysis, author: "retrospective: retro", reviewer: "retrospective: stage", reviewedHash: sha256(analysis.slice(0, 4000)), by });
+      // The retrospective's two roles: «retro» writes, «stage» reads and weighs in a session of its own. The analysis is what «stage» was
+      // handed (its journal input), so the read is the engine's own measurement, not a hash this code computes (SMA p7_saw_bytes, audit N-04).
+      const step = services.workflowEngine.snapshot?.(auto.wfRunId)?.steps.filter((row) => row.node_id === "stage" && row.state === "succeeded").at(-1);
+      let handoff = "";
+      try { handoff = text((JSON.parse(step?.input_json ?? "{}") as { via?: { handoff?: unknown } }).via?.handoff, 4000); } catch { /* no input: refused below */ }
+      if (!handoff) throw new Error("output_invalid: the retrospective's «stage» step received no analysis to read");
+      deps.api.lessons({ phaseId: phase.id, analysis: handoff, reviewRun: auto.wfRunId, by });
     } else {
       const met = output.status === "closed";
       // The replan reads this summary as its gaps: each unmet goal with what it lacks, and the drift. Ids alone left the planner

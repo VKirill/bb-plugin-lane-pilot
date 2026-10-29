@@ -927,9 +927,12 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     const ownGreen = new Set(input.greenInWorktree ?? []);
     const redBefore = (services.baseline?.redBefore?.({ runId:input.runId, taskId:input.task.id, checks:checks ?? [] }) ?? []).filter((command) => !ownGreen.has(command));
     const candidates = red.filter((check) => !redBefore.includes(check.command));
-    // A red that already failed its own re-run (runWithFlakyRerun: `reran`) is reproduced; running it again only repeated the
-    // same command twice more (2026-10-29 audit: four runs of one stable failure before the repair task).
-    const reproduced = candidates.filter((check) => (check as { reran?:true }).reran && readCheckRun(check, { command: check.command }).verdict === "product_fail");
+    // A red that already failed its own re-run (runWithFlakyRerun: `reran`) as a product red both times is reproduced; running it again
+    // only repeated the same command twice more (2026-10-29 audit). A re-run that timed out or broke reproduced nothing (audit N-05).
+    const reproduced = candidates.filter((check) => {
+      const rerun = (check as { rerun?:{ exitCode:number; stdout?:string; stderr?:string } }).rerun;
+      return !!rerun && rerun.exitCode !== 124 && readCheckRun(check, { command: check.command }).verdict === "product_fail" && readCheckRun({ ...check, ...rerun }, { command: check.command }).verdict === "product_fail";
+    });
     const toRerun = candidates.filter((check) => !reproduced.includes(check));
     let confirmed = candidates;
     let flaky:string[] = [];
