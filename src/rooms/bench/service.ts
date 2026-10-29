@@ -1,11 +1,12 @@
 import { hubFields, writeHubFields } from "../improvement";
 import { baselineMetrics } from "./baseline";
 import { buildSet, type BuildReport } from "./build";
-import { compareArms, computeNoise, renderComparison, summarizeArm, type ArmSummary, type Comparison } from "./compare";
+import { compareArms, computeNoise, noiseOfRepeats, passReport, renderComparison, summarizeArm, type ArmSummary, type Comparison } from "./compare";
 import type { HostPort, PipelinePort } from "./ports";
-import { DEFAULT_BUDGET_HOURS, DEFAULT_BUDGET_TOKENS, defaultProjectName, runSeries, type SeriesInput, type SeriesReport } from "./runner";
+import { sweepStuckRuns } from "./reliability";
+import { DEFAULT_BUDGET_HOURS, DEFAULT_BUDGET_TOKENS, defaultProjectName, runSeries, type BenchWriter, type SeriesInput, type SeriesReport } from "./runner";
 import {
-  getSet, latestNoise, listResults, listRuns, listSets, saveNoise, saveVerdict, type BenchDb, type NoiseRecord,
+  getSet, latestNoise, listResults, listRuns, listSets, saveNoise, saveVerdict, type BenchDb, type BenchRun, type NoiseRecord,
 } from "./store";
 
 type Kv = { get(key: string): Promise<unknown>; set(key: string, value: never): Promise<unknown> };
@@ -24,7 +25,16 @@ export type BenchDeps = {
 };
 
 export type BenchSettings = { budgetTokens: number; budgetHours: number };
+/** Where a series runs, and the optional same-set repeats. Stored next to the old budget record; empty host means the project's own machine. */
+export type BenchPlacement = { hostId: string | null; noiseRepeats: number };
 const CONFIG_KEY = "bench:config";
+
+function writerOf(run: BenchRun): BenchWriter | null {
+  const writer = run.config.writer;
+  if (!writer || typeof writer !== "object") return null;
+  const row = writer as { providerId?: unknown; model?: unknown };
+  return typeof row.providerId === "string" && typeof row.model === "string" ? { providerId: row.providerId, model: row.model } : null;
+}
 const BUILD_KEY = (version: string) => `bench:build:${version}`;
 
 /** One long job at a time per kind and set/arm: a second `bench run` of the same arm waits for the first to end (it would resume the same rows). */
@@ -38,12 +48,34 @@ export function createBench(deps: BenchDeps) {
     const own = hubFields(deps.db, "bench") as Partial<BenchSettings>;
     return { budgetTokens: own.budgetTokens ?? stored?.budgetTokens ?? DEFAULT_BUDGET_TOKENS, budgetHours: own.budgetHours ?? stored?.budgetHours ?? DEFAULT_BUDGET_HOURS };
   }
-  async function configure(patch: Partial<BenchSettings>): Promise<BenchSettings> {
-    for (const [key, value] of Object.entries(patch)) if (value !== undefined && !(Number.isFinite(value) && value > 0)) throw new Error(`${key} must be a positive number`);
-    const next = { ...(await settings()), ...patch };
-    // Whole numbers are what the setting holds; the old record kept any positive number.
-    writeHubFields(deps.db, "bench", Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined).map(([key, value]) => [key, Math.max(1, Math.round(value as number))])));
-    return { ...next, ...(await settings()) };
+  async function placement(): Promise<BenchPlacement> {
+    const stored = await deps.kv.get(CONFIG_KEY).catch(() => null) as Partial<BenchPlacement> | null;
+    const hostId = typeof stored?.hostId === "string" && stored.hostId.trim() ? stored.hostId.trim() : null;
+    const noise = stored?.noiseRepeats;
+    const noiseRepeats = Number.isInteger(noise) && (noise as number) >= 0 && (noise as number) <= 10 ? noise as number : 0;
+    return { hostId, noiseRepeats };
+  }
+  async function writePlacement(patch: Partial<BenchPlacement>): Promise<void> {
+    const prev = await deps.kv.get(CONFIG_KEY).catch(() => null) as Record<string, unknown> | null;
+    await deps.kv.set(CONFIG_KEY, { ...(prev ?? {}), ...patch } as never);
+  }
+  async function configure(patch: Partial<BenchSettings> & Partial<BenchPlacement>): Promise<BenchSettings> {
+    const budgets: Partial<BenchSettings> = {};
+    if (patch.budgetTokens !== undefined) budgets.budgetTokens = patch.budgetTokens;
+    if (patch.budgetHours !== undefined) budgets.budgetHours = patch.budgetHours;
+    for (const [key, value] of Object.entries(budgets)) if (!(Number.isFinite(value) && (value as number) > 0)) throw new Error(`${key} must be a positive number`);
+    if (Object.keys(budgets).length) {
+      // Whole numbers are what the setting holds; the old record kept any positive number.
+      writeHubFields(deps.db, "bench", Object.fromEntries(Object.entries(budgets).map(([key, value]) => [key, Math.max(1, Math.round(value as number))])));
+    }
+    const place: Partial<BenchPlacement> = {};
+    if ("hostId" in patch) place.hostId = typeof patch.hostId === "string" && patch.hostId.trim() ? patch.hostId.trim() : null;
+    if (patch.noiseRepeats !== undefined) {
+      if (!Number.isInteger(patch.noiseRepeats) || patch.noiseRepeats < 0 || patch.noiseRepeats > 10) throw new Error("noiseRepeats must be an integer from 0 to 10");
+      place.noiseRepeats = patch.noiseRepeats;
+    }
+    if (Object.keys(place).length) await writePlacement(place);
+    return settings();
   }
 
   function job<T>(key: string, wait: boolean, work: () => Promise<T>): Promise<T | { started: true; job: string }> {
@@ -71,15 +103,33 @@ export function createBench(deps: BenchDeps) {
     return await deps.kv.get(BUILD_KEY(version)).catch(() => null) as BuildReport | null;
   }
 
-  async function run(input: Omit<SeriesInput, "budgetTokens" | "budgetHours"> & { repeat?: number; budgetTokens?: number; budgetHours?: number; wait?: boolean }) {
+  function sweep() {
+    return sweepStuckRuns(deps.db, Date.now(), { defaultHours: DEFAULT_BUDGET_HOURS });
+  }
+
+  async function run(input: Omit<SeriesInput, "budgetTokens" | "budgetHours"> & { repeat?: number; budgetTokens?: number; budgetHours?: number; wait?: boolean; noise?: boolean }) {
     const caps = await settings();
-    const repeats = Math.max(1, input.repeat ?? 1);
+    const place = await placement();
+    const repeats = Math.max(1, input.repeat ?? (input.noise && place.noiseRepeats >= 2 ? place.noiseRepeats : 1));
+    const hostId = input.hostId ?? place.hostId ?? undefined;
     return await job(`run:${input.version}:${input.arm}`, input.wait ?? false, async () => {
+      const closed = sweepStuckRuns(deps.db, Date.now(), { defaultHours: caps.budgetHours, exceptArm: input.arm });
+      for (const row of closed) deps.log(`bench-sweep: ${row.id} ${row.arm} ${row.stopReason}`);
       const reports: SeriesReport[] = [];
       for (let repeat = 1; repeat <= repeats; repeat++) {
-        const report = await runSeries({ db: deps.db, host: deps.host, pipeline: deps.pipeline, log: deps.log, ...(deps.projectNameFor ? { projectNameFor: deps.projectNameFor } : {}) }, { ...input, repeat, budgetTokens: input.budgetTokens ?? caps.budgetTokens, budgetHours: input.budgetHours ?? caps.budgetHours });
+        const report = await runSeries({ db: deps.db, host: deps.host, pipeline: deps.pipeline, log: deps.log, ...(deps.projectNameFor ? { projectNameFor: deps.projectNameFor } : {}) }, { ...input, repeat, ...(hostId ? { hostId } : {}), budgetTokens: input.budgetTokens ?? caps.budgetTokens, budgetHours: input.budgetHours ?? caps.budgetHours });
         reports.push(report);
-        if (report.state === "stopped_budget" || report.state === "failed") break;
+        if (report.state === "stopped_budget" || report.state === "failed" || report.state === "deferred" || report.state === "unavailable") break;
+      }
+      if (input.noise && reports.length >= 2 && reports.every((row) => row.state === "done")) {
+        const set = getSet(deps.db, input.version);
+        const rows = set ? listRuns(deps.db, set.id).filter((row) => row.arm === input.arm).sort((a, b) => a.repeat - b.repeat) : [];
+        const byRepeat = rows.map((row) => listResults(deps.db, row.id));
+        const pass = passReport(byRepeat);
+        const noise = set ? noiseOfRepeats(input.arm, byRepeat) : null;
+        if (set && noise) saveNoise(deps.db, { setId: set.id, armA: `${input.arm}#1`, armB: `${input.arm}#${rows.length}`, noise });
+        deps.log(`bench noise ${input.arm}: pass@1 ${(pass.passAt1 * 100).toFixed(0)}% pass^${pass.repeats} ${(pass.passPow * 100).toFixed(0)}% over ${pass.tasks} tasks`);
+        for (const report of reports) { report.passAt1 = pass.passAt1; report.passPow = pass.passPow; }
       }
       return reports;
     });
@@ -93,7 +143,14 @@ export function createBench(deps: BenchDeps) {
     if (!runs.length) throw new Error(`no series for arm ${arm} on set ${version}; ran: ${[...new Set(listRuns(deps.db, set.id).map((row) => row.arm))].join(", ") || "none"}`);
     // A series that is still running or failed is not a finished measurement, whatever its rows say (a `done` state used to cover errored tasks).
     const unfinished = runs.filter((row) => row.state === "running" || row.state === "failed").map((row) => `repeat ${row.repeat} is ${row.state}${row.stopReason ? ` (${row.stopReason.slice(0, 160)})` : ""}`);
-    return summarizeArm(arm, runs.map((row) => listResults(deps.db, row.id)), unfinished);
+    const summary = summarizeArm(arm, runs.map((row) => listResults(deps.db, row.id)), unfinished);
+    const writers = runs.map((row) => writerOf(row));
+    const named = writers.filter((row): row is BenchWriter => row !== null);
+    const first = named[0];
+    const mixed = named.length > 0 && (writers.some((row) => row === null) || named.some((row) => row.providerId !== first!.providerId || row.model !== first!.model));
+    if (mixed) summary.incomplete.push("repeats did not share one writer");
+    summary.writer = mixed || !first ? null : first;
+    return summary;
   }
 
   /** Two identical arms: the tasks that flipped between them and how far apart cost and time were. The threshold of `compare` is calibrated on the newest one. */
@@ -154,7 +211,7 @@ export function createBench(deps: BenchDeps) {
   /** The three model-free numbers of the baseline metric bench (SMA k_lib_bench), over the accepted attempts of the last `days`. */
   const baseline = (opts: { days?: number; projectId?: string } = {}) => baselineMetrics(deps.db, deps.host, opts);
 
-  return { settings, configure, build, lastBuild, run, noise, compare, status, show, prepare, armSummary, baseline };
+  return { settings, placement, configure, build, lastBuild, run, noise, compare, status, show, prepare, armSummary, baseline, sweep };
 }
 
 export type BenchApi = ReturnType<typeof createBench>;

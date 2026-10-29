@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { nightArm } from "../../src/rooms/bench/runner";
 import { shouldStopCycle } from "../../src/rooms/policy";
 import { createWall, type WallPorts } from "../../src/rooms/wall/service";
 import { cycleScoresOf } from "../../src/rooms/wall/select";
@@ -38,7 +39,7 @@ function world(patch: { changed?: unknown; seed?: boolean; releaseFiles?: string
       available: async () => state.benchAvailable,
       ensureArm: async (arm) => { state.ensured.push(arm); return "done"; },
       compare: async (base, arm) => { state.compared.push([base, arm]); return state.compare; },
-      score: async (arm) => (arm.endsWith("0.1.268") ? 0.5 : 0.67),
+      score: async (arm) => (arm.includes("0.1.268") ? 0.5 : 0.67),
     },
     restart: async () => ({ ok: true, note: "" }),
     deferrals: { open: () => undefined, close: () => undefined },
@@ -95,7 +96,7 @@ describe("one comparison is one cycle (review section 5)", () => {
     await deployed(w);
     w.state.canary = { version: "0.1.269", tripped: false, windowOpen: false };
     await w.wall.advance(NOW + 2 * HOUR);
-    expect(listRepairs(w.h.db)[0]!.acceptance).toMatchObject({ benchCompare: { base: "night-0.1.268", arm: "night-0.1.269" }, benchScore: 0.67, baselineScore: 0.5 });
+    expect(listRepairs(w.h.db)[0]!.acceptance).toMatchObject({ benchCompare: { base: nightArm("0.1.268"), arm: nightArm("0.1.269") }, benchScore: 0.67, baselineScore: 0.5 });
   });
 });
 
@@ -121,7 +122,7 @@ describe("a repair is judged by the release that carried it (review section 4)",
     await deployed(w, "0.1.307");
     w.state.canary = { version: "0.1.307", tripped: false, windowOpen: false };
     await w.wall.advance(NOW + 3 * HOUR);
-    expect(w.state.compared).toEqual([["night-0.1.268", "night-0.1.307"]]);
+    expect(w.state.compared).toEqual([[nightArm("0.1.268"), nightArm("0.1.307")]]);
     expect(listRepairs(w.h.db)[0]).toMatchObject({ state: "accepted" });
   });
 });
@@ -228,7 +229,7 @@ describe("a later release voids a repair's evidence only when it touched the rep
     release341(w);
     await w.wall.advance(NOW + 3 * HOUR);
     expect(w.state.asked).toEqual([["0.1.340", "0.1.341"]]);
-    expect(w.state.compared).toEqual([["night-0.1.268", "night-0.1.341"]]);
+    expect(w.state.compared).toEqual([[nightArm("0.1.268"), nightArm("0.1.341")]]);
     expect(listRepairs(w.h.db)[0]).toMatchObject({ state: "accepted", shippedVersion: "0.1.340" });
   });
 

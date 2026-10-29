@@ -28,10 +28,26 @@ export function mountBenchWeekly(ctx: ServerCore, bench: () => BenchApi): void {
     if (!newest) return;
     const now = Date.now();
     const arm = weekArm(now), previous = weekArm(now - 7 * 86_400_000);
-    await bench().run({ version: newest.version, arm, wait: true });
+    // noise: the same set again when bench config noise_repeats is 2 or more. 0 keeps one run.
+    await bench().run({ version: newest.version, arm, wait: true, noise: true });
     if (newest.runs.some((row) => row.arm === previous)) {
-      const result = bench().compare({ version: newest.version, armA: previous, armB: arm });
-      ctx.log(`bench-weekly: ${newest.version} ${previous} → ${arm}: ${result.comparison.verdict}; ${result.text.split("\n")[0]}`);
+      try {
+        const result = bench().compare({ version: newest.version, armA: previous, armB: arm });
+        ctx.log(`bench-weekly: ${newest.version} ${previous} → ${arm}: ${result.comparison.verdict}; ${result.text.split("\n")[0]}`);
+      } catch (cause) {
+        ctx.log(`bench-weekly: compare skipped: ${cause instanceof Error ? cause.message : String(cause)}`);
+      }
     }
   }, { timeoutMs: 6 * 3_600_000 });
+}
+
+/** Closes a series left `running` past its hour cap. Once at startup, then twice an hour. */
+export function mountBenchSweep(ctx: ServerCore, bench: () => BenchApi): void {
+  const sweep = async () => {
+    if (ctx.isDisposed()) return;
+    const closed = bench().sweep();
+    for (const row of closed) ctx.log(`bench-sweep: ${row.id} ${row.arm} ${row.stopReason}`);
+  };
+  void sweep();
+  scheduleIsolated(ctx.bb, "bench-sweep", "17,47 * * * *", sweep, { timeoutMs: 60_000 });
 }

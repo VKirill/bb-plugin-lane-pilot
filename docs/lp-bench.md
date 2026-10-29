@@ -91,7 +91,7 @@ model or another edit; three numbers: how many stages passed, what it cost, how 
 
 1. Verify the immutable set, start or resume the run row, then prepare each repository checkout at each task's base commit (`src/rooms/bench/runner.ts:124-149`, `src/rooms/bench/runner.ts:184-194`).
 2. Configure the sandbox arm, dispatch tasks, wait for terminal outcomes, gather attempt metrics, and persist results (`src/rooms/bench/runner.ts:160-220`).
-3. Stop before another task when projected token/time budget or disk guard is reached; record remaining tasks as skipped and mark the run state (`src/rooms/bench/runner.ts:173-182`, `:233-239`).
+3. Stop before another task when the projected token or time budget is reached; record the remaining tasks as skipped and mark the run `stopped_budget`. A host under the free-space floor defers the series (no `stopped_budget` row when nothing was judged) so the next tick can try again (`src/rooms/bench/runner.ts`, `src/rooms/bench/reliability.ts`).
 
 | Series mode or failure | Result |
 |---|---|
@@ -105,7 +105,7 @@ model or another edit; three numbers: how many stages passed, what it cost, how 
 1. The sandbox project «LP bench <project>» (`defaultProjectName`, `src/rooms/bench/runner.ts:59`; the plugin cannot create a BB project, `bench prepare` prints the
    `bb project create` command) holds a clone; before each task it is reset to that task's `initial_head_sha` (`prepareCheckoutCommand`, `src/rooms/bench/runner.ts:112`).
 2. The same contract is dispatched through the normal pipeline (`dispatchWriter`) with `project_cwd` and the checks' folders moved to the clone
-   (`benchContract`, `src/rooms/bench/runner.ts:66`). The arm names the writer (`--writer provider/model`, default codex/gpt-6-luna), the harness tree
+   (`benchContract`, `src/rooms/bench/runner.ts:66`). The arm names the writer (`--writer provider/model`, default claude-code/claude-haiku-5-5; the bench PM's compiled main agent accepts only claude-code), the harness tree
    (`--harness none|tree|<tree id>`), its own settings (`--setting key=value`) and, to prove the bench can go red, a fault (`--fault owns|read_first`).
 3. **Memory and rules are frozen**: the project is new (no memory, no rules of its own), `memory.enabled|inject|maintain` and the critics are off, and every
    task gets an area of its own (`<area>~b<position><arm>r<n>`), so no area history crosses from one arm to another. The harness tree is the one the arm

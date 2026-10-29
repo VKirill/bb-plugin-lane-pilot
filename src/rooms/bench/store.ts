@@ -92,6 +92,12 @@ export function finishRunRow(db: BenchDb, runId: string, state: BenchRun["state"
   db.prepare("UPDATE lane_pilot_bench_run SET state=?, stop_reason=?, finished_at=? WHERE id=?").run(state, stopReason, now, runId);
 }
 
+/** Drops a series that never judged a task (a disk deferral). Results go first: the result table points at the run. */
+export function deleteRunRow(db: BenchDb, runId: string): void {
+  db.prepare("DELETE FROM lane_pilot_bench_result WHERE run_id=?").run(runId);
+  db.prepare("DELETE FROM lane_pilot_bench_run WHERE id=?").run(runId);
+}
+
 export function addSpent(db: BenchDb, runId: string, tokens: number): void {
   db.prepare("UPDATE lane_pilot_bench_run SET spent_tokens=spent_tokens+? WHERE id=?").run(Math.max(0, Math.round(tokens)), runId);
 }

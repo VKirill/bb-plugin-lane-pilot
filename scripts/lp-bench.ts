@@ -128,8 +128,11 @@ async function configureProject(project: BenchProjectRef, input: { settings: Rec
     if (!saved.ok) throw new Error(`could not set ${key}: ${JSON.stringify(saved).slice(0, 200)}`);
   }
   writeFileSync(writtenKeys(project.projectId), JSON.stringify(Object.keys(input.settings)));
-
+  const provider = input.settings["writer.provider"], model = input.settings["writer.model"];
+  if (typeof provider === "string" && typeof model === "string") spawnWriter.set(project.projectId, { providerId: provider, model });
 }
+
+const spawnWriter = new Map<string, { providerId: string; model: string }>();
 
 const pipeline: PipelinePort = {
   async findProject(name) {
@@ -149,7 +152,8 @@ const pipeline: PipelinePort = {
 
   async startRun(project) {
     // The clone is the project's folder: the thread works in it as an unmanaged workspace, on the project's machine.
-    const spawned = await bb("thread", "spawn", "--project", project.projectId, "--environment", project.path, "--machine", project.hostId, "--provider", DEFAULT_BENCH_WRITER.providerId, "--model", DEFAULT_BENCH_WRITER.model, "--prompt", "Reply with OK only.", "--json");
+    const writer = spawnWriter.get(project.projectId) ?? DEFAULT_BENCH_WRITER;
+    const spawned = await bb("thread", "spawn", "--project", project.projectId, "--environment", project.path, "--machine", project.hostId, "--provider", writer.providerId, "--model", writer.model, "--prompt", "Reply with OK only.", "--json");
     const source = spawned.exitCode === 0 ? field(spawned.stdout, "id") : "";
     if (!source) throw new Error(`source thread did not start: ${(spawned.stderr || spawned.stdout).slice(0, 300)}`);
     for (let i = 0; i < 36; i++) {

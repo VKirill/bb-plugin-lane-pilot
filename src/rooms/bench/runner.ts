@@ -2,8 +2,9 @@ import { TASK_KINDS } from "../contracts";
 import { mapVerificationCwd } from "../tasks";
 import type { AttemptMetrics } from "../usage/server";
 import { q, realClock, type BenchProjectRef, type Clock, type HostPort, type PipelinePort } from "./ports";
+import { diskDeferral, isDiskDeferral } from "./reliability";
 import {
-  addSpent, finishRunRow, getRun, getSet, listResults, listRuns, saveResult, startRunRow, verifySet, type BenchDb, type BenchResult, type BenchRun,
+  addSpent, deleteRunRow, finishRunRow, getRun, getSet, listResults, listRuns, saveResult, startRunRow, verifySet, type BenchDb, type BenchResult, type BenchRun,
 } from "./store";
 import { BENCH_PROJECT_PREFIX, BENCH_PROJECTS, benchProjectName, type ManifestTask, type VerificationItem } from "./types";
 import { MIN_FREE_GB, freeGb, linkDependenciesCommand } from "./warmup";
@@ -35,6 +36,8 @@ export type SeriesInput = {
   taskTimeoutMin?: number;
   pollMs?: number;
   minFreeGb?: number;
+  /** Machine the series runs on. Absent: each bench project's own machine. */
+  hostId?: string;
 };
 
 export type RunnerDeps = {
@@ -50,8 +53,26 @@ export type RunnerDeps = {
 export const DEFAULT_BUDGET_TOKENS = 120_000_000;
 export const DEFAULT_BUDGET_HOURS = 6;
 export const DEFAULT_TASK_TIMEOUT_MIN = 40;
-/** The first runs go to a cheap writer (owner decision 2026-10-22); an arm that names no writer gets this one, not what the previous arm left in the project. */
-export const DEFAULT_BENCH_WRITER = { providerId: "codex", model: "gpt-6-luna" } as const;
+/**
+ * The bench PM and the bench writer are this one pair. The PM is spawned with the compiled main agent
+ * (`activation.ts`, from the global `main.agent`; on the hub that is `dev-orchestrator`). The core accepts that
+ * agent only on claude-code (`vk_compiled_main_agent_unsupported_provider`, bb-core threads.ts). Codex/gpt-6-luna
+ * was the cheap writer of 2026-10-22; the 2026-10-29 night died on it before a task ran. Haiku is the cheap
+ * claude-code model. An arm that names no writer gets this one, not whatever the previous arm left in the project.
+ */
+export const DEFAULT_BENCH_WRITER = { providerId: "claude-code", model: "claude-haiku-5-5" } as const;
+
+export type BenchWriter = { providerId: string; model: string };
+
+export function isProviderError(text: string): boolean {
+  return /unsupported_provider/.test(text);
+}
+
+/** Night arm for one plugin version. The model is in the name so a haiku night is not compared with a luna night. */
+export function nightArm(version: string, writer: Pick<BenchWriter, "model"> = DEFAULT_BENCH_WRITER): string {
+  const model = writer.model.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "writer";
+  return `night-${version}-${model}`;
+}
 
 const slug = (text: string, max: number): string => text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, max) || "arm";
 
@@ -104,8 +125,10 @@ async function existingFiles(host: HostPort, project: BenchProjectRef, task: Man
 }
 
 export type SeriesReport = {
-  version: string; arm: string; repeat: number; state: BenchRun["state"]; stopReason: string | null;
+  version: string; arm: string; repeat: number; state: BenchRun["state"] | "deferred" | "unavailable"; stopReason: string | null;
   tasks: number; ran: number; accepted: number; skipped: number; spentTokens: number; seconds: number;
+  /** Set when this series was one repeat of a noise run. */
+  passAt1?: number; passPow?: number;
 };
 
 /** Resets the clone to the task's base commit: the only checkout the pipeline works from for this series. */
@@ -133,7 +156,27 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
   if (!tasks.length) throw new Error("no task selected");
 
   const budgetTokens = input.budgetTokens ?? DEFAULT_BUDGET_TOKENS, budgetHours = input.budgetHours ?? DEFAULT_BUDGET_HOURS;
-  const config = { writer: input.writer ?? DEFAULT_BENCH_WRITER, harness: input.harness ?? "none", settings: input.settings ?? {}, fault: input.fault ?? null };
+  const writer = input.writer ?? DEFAULT_BENCH_WRITER;
+  const config = { writer, harness: input.harness ?? "none", settings: input.settings ?? {}, fault: input.fault ?? null };
+  const free = async (hostId: string): Promise<number | null> => freeGb(deps.host, hostId);
+  const groups = new Map<string, ManifestTask[]>();
+  for (const task of tasks) groups.set(task.repoPath, [...(groups.get(task.repoPath) ?? []), task]);
+  const nameOf = deps.projectNameFor ?? defaultProjectName;
+  // Every located host is under the floor: do not open a run. A stopped_budget row would look like a finished night.
+  const lows: string[] = [];
+  let projects = 0;
+  for (const list of groups.values()) {
+    const project = await deps.pipeline.findProject(nameOf(list[0]!));
+    if (!project) continue;
+    projects++;
+    const hostId = input.hostId ?? project.hostId;
+    const reason = diskDeferral(await free(hostId), input.minFreeGb ?? MIN_FREE_GB, hostId);
+    if (reason) lows.push(reason);
+  }
+  if (projects > 0 && lows.length === projects) {
+    return { version: set.version, arm: input.arm, repeat, state: "deferred", stopReason: lows[0]!, tasks: tasks.length, ran: 0, accepted: 0, skipped: 0, spentTokens: 0, seconds: 0 };
+  }
+
   const run = startRunRow(deps.db, { setId: set.id, arm: input.arm, repeat, config, budgetTokens, budgetHours });
   const done = new Set(listResults(deps.db, run.id).filter((row) => row.state !== "skipped_budget" && row.state !== "error").map((row) => row.taskId));
 
@@ -142,30 +185,28 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
   const armResults = () => armRuns.flatMap((row) => listResults(deps.db, row.id)).filter((row) => row.state !== "skipped_budget");
   let stopReason: string | null = null;
 
-  const free = async (hostId: string): Promise<number | null> => freeGb(deps.host, hostId);
-  const groups = new Map<string, ManifestTask[]>();
-  for (const task of tasks) groups.set(task.repoPath, [...(groups.get(task.repoPath) ?? []), task]);
-
   const runGroup = async (repo: string, list: ManifestTask[]): Promise<void> => {
     const name = (deps.projectNameFor ?? defaultProjectName)(list[0]!);
     const project: BenchProjectRef | null = await deps.pipeline.findProject(name);
     if (!project) {
-      const reason = `no BB project named «${name}»: create it with bb project create --name ${q(name)} --root <folder on ${list[0]!.hostId}> --machine ${list[0]!.hostId}`;
+      const hostId = input.hostId ?? list[0]!.hostId;
+      const reason = `no BB project named «${name}»: create it with bb project create --name ${q(name)} --root <folder on ${hostId}> --machine ${hostId}`;
       for (const task of list) if (!done.has(task.taskId)) saveResult(deps.db, { runId: run.id, taskId: task.taskId, position: task.position, state: "error", accepted: false, benchTaskId: null, lpRunId: null, attempts: 0, stagesPassed: 0, stagesFailed: 0, tokens: null, costUsd: null, costState: "not_measured", seconds: null, reason, recordedAt: clock.now() });
       stopReason = stopReason ?? reason;
       return;
     }
     // «LP sandbox …» is accepted too: a plugin older than the bench only knows that prefix as sandbox traffic (see scripts/lp-bench.ts).
     if (!project.name.startsWith(BENCH_PROJECT_PREFIX) && !project.name.startsWith("LP sandbox")) throw new Error(`refusing to run in «${project.name}»: a bench project's name starts with «${BENCH_PROJECT_PREFIX}»`);
+    const placed: BenchProjectRef = { ...project, hostId: input.hostId ?? project.hostId };
     const settings: Record<string, unknown> = {
-      "writer.rotation_share": 0, "writer.provider": (input.writer ?? DEFAULT_BENCH_WRITER).providerId, "writer.model": (input.writer ?? DEFAULT_BENCH_WRITER).model,
+      "writer.rotation_share": 0, "writer.provider": writer.providerId, "writer.model": writer.model,
       "memory.enabled": false, "memory.inject": false, "memory.maintain": false,
       "plan_critique.enabled": false, "code_critique.enabled": false, "browser_qa.enabled": false,
       ...(input.settings ?? {}),
     };
     // A project that sets code_critique.enabled itself keeps its choice, so the `false` above would make an arm's critic.code.default_for_risk dead letter (quality-mode.ts): leave it unset for such an arm.
     if (input.settings && "critic.code.default_for_risk" in input.settings && !("code_critique.enabled" in input.settings)) delete settings["code_critique.enabled"];
-    await deps.pipeline.configure(project, { settings, harness: input.harness ?? "none", sourceProjectId: list[0]!.projectId });
+    await deps.pipeline.configure(placed, { settings, harness: input.harness ?? "none", sourceProjectId: list[0]!.projectId });
     let lp: { pmThreadId: string; runId: string } | null = null;
     try {
       for (const task of list) {
@@ -177,24 +218,23 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
         const avgSeconds = finished.filter((row) => row.seconds !== null).length ? spentSeconds / finished.filter((row) => row.seconds !== null).length : 0;
         if (spentTokens + avgTokens > budgetTokens) { stopReason = `token budget: ${Math.round(spentTokens)} used of ${budgetTokens}, the next task is expected to take ${Math.round(avgTokens)}`; break; }
         if ((spentSeconds + avgSeconds) / 3600 > budgetHours) { stopReason = `time budget: ${(spentSeconds / 3600).toFixed(2)} h used of ${budgetHours}, the next task is expected to take ${(avgSeconds / 3600).toFixed(2)} h`; break; }
-        const minFree = input.minFreeGb ?? MIN_FREE_GB;
-        const space = await free(project.hostId);
-        if (space !== null && space < minFree) { stopReason = `host ${project.hostId} has ${space} GB free, below ${minFree}`; break; }
+        const low = diskDeferral(await free(placed.hostId), input.minFreeGb ?? MIN_FREE_GB, placed.hostId);
+        if (low) { stopReason = low; break; }
 
-        const prepared = await deps.host.run(project.hostId, "/", prepareCheckoutCommand(task.repoPath, project.path, task.initialHeadSha), 900);
+        const prepared = await deps.host.run(placed.hostId, "/", prepareCheckoutCommand(task.repoPath, placed.path, task.initialHeadSha), 900);
         if (prepared.exitCode !== 0) {
           saveResult(deps.db, { runId: run.id, taskId: task.taskId, position: task.position, state: "error", accepted: false, benchTaskId: null, lpRunId: null, attempts: 0, stagesPassed: 0, stagesFailed: 0, tokens: null, costUsd: null, costState: "not_measured", seconds: null, reason: `checkout failed: ${(prepared.stderr || prepared.stdout).trim().slice(-300)}`, recordedAt: clock.now() });
           continue;
         }
-        if (!lp) lp = await deps.pipeline.startRun(project);
+        if (!lp) lp = await deps.pipeline.startRun(placed);
         // A file the live checkout had untracked (a plan, a spec) is not in the clone at the base commit: the lint would refuse the task, so it is left out of read_first, on every arm alike.
         const wanted = Array.isArray(task.contract.read_first) ? (task.contract.read_first as unknown[]).filter((item): item is string => typeof item === "string") : [];
-        const present = wanted.length ? await existingFiles(deps.host, project, task, wanted) : [];
+        const present = wanted.length ? await existingFiles(deps.host, placed, task, wanted) : [];
         if (present.length < wanted.length) log(`bench ${input.arm} r${repeat}: ${task.taskId}: read_first without ${wanted.filter((item) => !present.includes(item)).join(", ")} (not in the base commit)`);
-        const contract = benchContract(task, { version: set.version, arm: input.arm, repeat, root: project.path, fault: input.fault, readFirst: present });
+        const contract = benchContract(task, { version: set.version, arm: input.arm, repeat, root: placed.path, fault: input.fault, readFirst: present });
         let benchTaskId = String(contract.id);
         log(`bench ${input.arm} r${repeat}: dispatching ${benchTaskId} (${task.taskId}, ${task.stratum}, ${task.risk}${task.hard ? ", hard" : ""})`);
-        const sent = await deps.pipeline.dispatch(project, lp.pmThreadId, contract);
+        const sent = await deps.pipeline.dispatch(placed, lp.pmThreadId, contract);
         if (sent.taskId) benchTaskId = sent.taskId;
         let outcome = { latestState: null as string | null, attempts: 0 };
         let reason: string | null = null;
@@ -211,7 +251,7 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
           }
           if (settled < 2) { reason = `no end after ${input.taskTimeoutMin ?? DEFAULT_TASK_TIMEOUT_MIN} min; cancelled`; await deps.pipeline.cancel(lp.runId, benchTaskId).catch(() => undefined); }
         }
-        const attempts = sent.ok ? await deps.pipeline.metrics(project, lp.runId, benchTaskId).catch(() => [] as AttemptMetrics[]) : [];
+        const attempts = sent.ok ? await deps.pipeline.metrics(placed, lp.runId, benchTaskId).catch(() => [] as AttemptMetrics[]) : [];
         const accepted = outcome.latestState === "accepted";
         const sums = aggregateAttempts(attempts);
         saveResult(deps.db, {
@@ -222,7 +262,7 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
         log(`bench ${input.arm} r${repeat}: ${benchTaskId} ${accepted ? "accepted" : "not accepted"}, ${sums.attempts} attempts, stages ${sums.stagesPassed}, cost ${sums.costUsd === null ? "not measured" : `$${sums.costUsd.toFixed(3)}`}, ${sums.seconds ?? "?"}s`);
       }
     } finally {
-      if (lp) await deps.pipeline.finishRun(project, lp.runId).catch((cause: unknown) => log(`bench: could not finish run ${lp?.runId}: ${cause instanceof Error ? cause.message : String(cause)}`));
+      if (lp) await deps.pipeline.finishRun(placed, lp.runId).catch((cause: unknown) => log(`bench: could not finish run ${lp?.runId}: ${cause instanceof Error ? cause.message : String(cause)}`));
     }
   };
 
@@ -234,15 +274,34 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
   const have = new Set(results.map((row) => row.taskId));
   for (const task of tasks) if (!have.has(task.taskId)) saveResult(deps.db, { runId: run.id, taskId: task.taskId, position: task.position, state: "skipped_budget", accepted: false, benchTaskId: null, lpRunId: null, attempts: 0, stagesPassed: 0, stagesFailed: 0, tokens: null, costUsd: null, costState: "not_measured", seconds: null, reason: stopReason ?? "not run", recordedAt: clock.now() });
   const final = listResults(deps.db, run.id);
+  const judged = final.some((row) => row.state === "accepted" || row.state === "not_accepted");
+  const counts = {
+    ran: final.filter((row) => row.state === "accepted" || row.state === "not_accepted").length, accepted: final.filter((row) => row.accepted).length,
+    skipped: final.filter((row) => row.state === "skipped_budget").length, seconds: final.reduce((sum, row) => sum + (row.seconds ?? 0), 0),
+  };
+  // The core refused this writer. The row stays `failed` (the column CHECK has no `unavailable`); the night reads the reason as unavailable. No other model is tried.
+  const providerFailure = failures.find((text) => isProviderError(text));
+  if (providerFailure && !judged) {
+    const reason = `unavailable: ${providerFailure} (compiled main agent on the bench PM accepts only claude-code; this run stayed on ${writer.providerId}/${writer.model})`;
+    finishRunRow(deps.db, run.id, "failed", reason, clock.now());
+    return { version: set.version, arm: input.arm, repeat, state: "unavailable", stopReason: reason, tasks: tasks.length, ...counts, spentTokens: getRun(deps.db, set.id, input.arm, repeat)?.spentTokens ?? 0 };
+  }
+  // A full disk is not a measurement. Nothing judged: drop the row so the night sees an absent arm and tries again. Some judged: keep the rows, mark the stop, and say deferred.
+  if (stopReason && isDiskDeferral(stopReason) && !final.some((row) => row.state === "error") && !failures.length) {
+    if (!judged) {
+      deleteRunRow(deps.db, run.id);
+      return { version: set.version, arm: input.arm, repeat, state: "deferred", stopReason, tasks: tasks.length, ran: 0, accepted: 0, skipped: 0, spentTokens: 0, seconds: 0 };
+    }
+    finishRunRow(deps.db, run.id, "stopped_budget", stopReason, clock.now());
+    return { version: set.version, arm: input.arm, repeat, state: "deferred", stopReason, tasks: tasks.length, ...counts, spentTokens: getRun(deps.db, set.id, input.arm, repeat)!.spentTokens };
+  }
   // `done` is a series in which every selected task was judged. A task that errored (no project, checkout failed, dispatch refused) was not: the
   // series is `failed`, so a comparison and the night's `ensureArm` do not take it for a finished measurement (the CHECK of the column has no other word).
-  const state: BenchRun["state"] = (failures.length && !final.some((row) => row.state === "accepted" || row.state === "not_accepted")) || final.some((row) => row.state === "error") ? "failed"
+  const state: BenchRun["state"] = (failures.length && !judged) || final.some((row) => row.state === "error") ? "failed"
     : stopReason && final.some((row) => row.state === "skipped_budget") ? "stopped_budget" : "done";
   finishRunRow(deps.db, run.id, state, failures[0] ?? stopReason, clock.now());
   const saved = getRun(deps.db, set.id, input.arm, repeat)!;
   return {
-    version: set.version, arm: input.arm, repeat, state, stopReason: failures[0] ?? stopReason, tasks: tasks.length,
-    ran: final.filter((row) => row.state === "accepted" || row.state === "not_accepted").length, accepted: final.filter((row) => row.accepted).length,
-    skipped: final.filter((row) => row.state === "skipped_budget").length, spentTokens: saved.spentTokens, seconds: final.reduce((sum, row) => sum + (row.seconds ?? 0), 0),
+    version: set.version, arm: input.arm, repeat, state, stopReason: failures[0] ?? stopReason, tasks: tasks.length, ...counts, spentTokens: saved.spentTokens,
   };
 }

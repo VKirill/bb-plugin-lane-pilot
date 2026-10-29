@@ -6,12 +6,15 @@ export const BENCH_USAGE = [
   "bb lane-pilot bench build [--set vN] [--seed S] [--only stratum,..] [--tries 4] [--plan | --dry-run] [--wait]   (select, warm up and freeze a set of past tasks; default: the next free version)",
   "bb lane-pilot bench show [--set vN]                    (without --set: the newest set; the tasks of a set and the funnel of its build)",
   "bb lane-pilot bench prepare [--set vN]                 (the «LP bench …» projects the set needs, and the command that creates each)",
-  "bb lane-pilot bench run --arm NAME [--set vN] [--writer provider/model] [--harness none|tree|<tree id>] [--repeat k] [--tasks N] [--only id,id]",
+  "bb lane-pilot bench run --arm NAME [--set vN] [--writer provider/model] [--harness none|tree|<tree id>] [--repeat k] [--noise N] [--tasks N] [--only id,id]",
   "                       [--setting key=value]... [--fault owns|read_first] [--budget-tokens N] [--budget-hours H] [--wait]",
+  "                       (--noise N: the same set N times, then pass@1 and pass^N; N is 2 to 10. The frozen set is not changed.)",
   "bb lane-pilot bench noise <armA> <armB> [--set vN]      (two identical arms: calibrates the threshold of compare)",
   "bb lane-pilot bench compare <armA> <armB> [--set vN] [--noise X,Y] [--harness-id <tree id>] [--json]   (A is the baseline; --harness-id records the verdict harness.adopt_by=bench waits for)",
+  "bb lane-pilot bench sweep                                 (close a series still running past its hour cap)",
   "bb lane-pilot bench status [--set vN]                  (without --set: every set)",
-  "bb lane-pilot bench config [budget_tokens=N] [budget_hours=H]   (bench.budget_tokens / bench.budget_hours: the cap of one arm)",
+  "bb lane-pilot bench config [budget_tokens=N] [budget_hours=H] [host=MACHINE] [noise_repeats=N]",
+  "                       (host empty: each project's own machine. noise_repeats 0: the weekly run is once. A refused provider is not retried on another model.)",
   "bb lane-pilot bench baseline [--days 14] [--project ID] [--json]   (no model: false-done rate, phantom writes, git loss recoverability of the accepted attempts)",
 ].join("\n");
 
@@ -80,19 +83,26 @@ export async function runBenchCli(bench: BenchApi, argv: string[]): Promise<Resu
       return out(await bench.prepare(flags.set ?? defaultVersion(bench, "newest")));
     }
     if (sub === "run") {
-      const { flags, lists } = parseBenchArgs(rest, ["set", "arm", "writer", "harness", "repeat", "tasks", "only", "setting", "fault", "budget-tokens", "budget-hours", "wait", "task-timeout"]);
+      const { flags, lists } = parseBenchArgs(rest, ["set", "arm", "writer", "harness", "repeat", "noise", "tasks", "only", "setting", "fault", "budget-tokens", "budget-hours", "wait", "task-timeout"]);
       if (!flags.arm) throw new Error(`bench run needs --arm NAME\n${BENCH_USAGE}`);
       let writer: { providerId: string; model: string } | undefined;
       if (flags.writer) {
         const at = flags.writer.indexOf("/");
-        if (at <= 0 || at === flags.writer.length - 1) throw new Error("--writer wants provider/model, e.g. codex/gpt-6-luna");
+        if (at <= 0 || at === flags.writer.length - 1) throw new Error("--writer wants provider/model, e.g. claude-code/claude-haiku-5-5");
         writer = { providerId: flags.writer.slice(0, at), model: flags.writer.slice(at + 1) };
       }
       if (flags.fault && flags.fault !== "owns" && flags.fault !== "read_first") throw new Error("--fault is owns or read_first");
+      let noiseRepeats: number | undefined;
+      if (flags.noise !== undefined) {
+        const value = Number(flags.noise);
+        if (!Number.isInteger(value) || value < 2 || value > 10) throw new Error("--noise wants an integer from 2 to 10");
+        noiseRepeats = value;
+      }
       const settings = Object.fromEntries((lists.setting ?? []).map(settingPair));
       return out(await bench.run({
         version: flags.set ?? defaultVersion(bench, "newest"), arm: flags.arm, ...(writer ? { writer } : {}), ...(flags.harness ? { harness: flags.harness } : {}),
-        ...(flags.repeat ? { repeat: positive("repeat", flags.repeat)! } : {}), ...(flags.tasks ? { limit: positive("tasks", flags.tasks)! } : {}),
+        ...(flags.repeat ? { repeat: positive("repeat", flags.repeat)! } : {}), ...(noiseRepeats ? { repeat: noiseRepeats, noise: true } : {}),
+        ...(flags.tasks ? { limit: positive("tasks", flags.tasks)! } : {}),
         ...(flags.only ? { only: flags.only.split(",") } : {}), settings, ...(flags.fault ? { fault: flags.fault as Fault } : {}),
         ...(flags["budget-tokens"] ? { budgetTokens: positive("budget-tokens", flags["budget-tokens"])! } : {}), ...(flags["budget-hours"] ? { budgetHours: positive("budget-hours", flags["budget-hours"])! } : {}),
         ...(flags["task-timeout"] ? { taskTimeoutMin: positive("task-timeout", flags["task-timeout"])! } : {}), wait: flags.wait === "true",
@@ -121,14 +131,29 @@ export async function runBenchCli(bench: BenchApi, argv: string[]): Promise<Resu
       const metrics = await bench.baseline({ days: positive("days", flags.days), ...(flags.project ? { projectId: flags.project } : {}) });
       return out(flags.json ? metrics : renderBaseline(metrics));
     }
+    if (sub === "sweep") {
+      parseBenchArgs(rest, []);
+      return out(bench.sweep());
+    }
     if (sub === "config") {
-      const patch: Record<string, number> = {};
+      const patch: { budgetTokens?: number; budgetHours?: number; hostId?: string | null; noiseRepeats?: number } = {};
       for (const word of rest) {
-        const [key, value] = word.split("=");
-        if ((key !== "budget_tokens" && key !== "budget_hours") || !value) throw new Error("config takes budget_tokens=N and budget_hours=H");
-        patch[key === "budget_tokens" ? "budgetTokens" : "budgetHours"] = Number(value);
+        const at = word.indexOf("=");
+        if (at <= 0) throw new Error("config takes budget_tokens=N, budget_hours=H, host=MACHINE, noise_repeats=N");
+        const key = word.slice(0, at), value = word.slice(at + 1);
+        if (key === "budget_tokens" || key === "budget_hours") {
+          const number = Number(value);
+          if (!value || !Number.isFinite(number)) throw new Error(`${key} must be a positive number`);
+          patch[key === "budget_tokens" ? "budgetTokens" : "budgetHours"] = number;
+        } else if (key === "host") patch.hostId = value.trim() || null;
+        else if (key === "noise_repeats") {
+          const number = Number(value);
+          if (!Number.isInteger(number) || number < 0 || number > 10) throw new Error("noise_repeats must be an integer from 0 to 10");
+          patch.noiseRepeats = number;
+        } else throw new Error("config takes budget_tokens=N, budget_hours=H, host=MACHINE, noise_repeats=N");
       }
-      return out(Object.keys(patch).length ? await bench.configure(patch) : await bench.settings());
+      if (Object.keys(patch).length) await bench.configure(patch);
+      return out({ ...(await bench.settings()), ...(await bench.placement()) });
     }
     return { exitCode: 1, stderr: BENCH_USAGE };
   } catch (cause) {
