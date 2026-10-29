@@ -12,18 +12,18 @@ describe("a batch label", () => {
     expect(decided.decision?.kind).toBe("batch");
   });
 
-  it.todo("[sma:m_ce_batch] a batch label does not become pieces in a named lane");
+  it.todo("[sma:m_ce_batch] a batch label does not become pieces in a named lane"); // deferral:dfr_seed_skip_sma_gaps
 });
 
 describe("conversation assembly the proofs name and the code does not do", () => {
-  it.todo("[sma:m_cd_assemble] window and Telegram do not share one assembly of project, board, voice account and phase discussion");
-  it.todo("[sma:m_cf_dispatch] a free turn is not booked with no seat, copy or receipt under its own spend id");
-  it.todo("[sma:m_cf_voice] there is no orchestrator account and no daytime owner among workers");
-  it.todo("[sma:m_cf_ensure] an impostor is not lifted out of the worker list into a role block");
-  it.todo("[sma:m_cf_prompt] the PM profile does not carry voice, board, task snapshot, memory and the discussion rubric");
-  it.todo("[sma:m_cf_observe] the task board is not exactly one observation of a git action or of this door");
-  it.todo("[sma:m_cf_seed] the orchestrator profile is not laid into the session before launch");
-  it.todo("[sma:m_sg_clarify] nothing reads a task tree, proposes clarification items, and writes nothing");
-  it.todo("[sma:m_sg_breakdown] a phrase is not compared with backlog lines, and no question is asked from that");
-  it.todo("[sma:m_sg_batch_draft] plan() stores the items it is given; a phrase is not split into pieces, links and a lane");
+  it.todo("[sma:m_cd_assemble] window and Telegram do not share one assembly of project, board, voice account and phase discussion"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_cf_dispatch] a free turn is not booked with no seat, copy or receipt under its own spend id"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_cf_voice] there is no orchestrator account and no daytime owner among workers"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_cf_ensure] an impostor is not lifted out of the worker list into a role block"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_cf_prompt] the PM profile does not carry voice, board, task snapshot, memory and the discussion rubric"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_cf_observe] the task board is not exactly one observation of a git action or of this door"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_cf_seed] the orchestrator profile is not laid into the session before launch"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_sg_clarify] nothing reads a task tree, proposes clarification items, and writes nothing"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_sg_breakdown] a phrase is not compared with backlog lines, and no question is asked from that"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_sg_batch_draft] plan() stores the items it is given; a phrase is not split into pieces, links and a lane"); // deferral:dfr_seed_skip_sma_gaps
 });

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.385
+
+- **Code critic answer.** Unknown keys (a critic's `status_note`, `summary_note`) are dropped instead of refusing the answer, and an empty optional text (`verificationExpectation: ""`) reads as absent; the keys the host reads stay typed. Four selfystudio tasks with finished work were blocked by `code_critique_failed` on 2026-10-30.
+- **Guard check without Claude Lane.** The drill's `guard_hash` compares and repairs Lane Pilot's own guard in `~/.agents/lane-pilot/pm`, not Claude Lane's `~/.agents/hooks`, which the leftovers cleanup moves aside.
+- **SMA map.** 323 cards have a behaviour test; 261 of them name a gap and count as partial.
+
 ## 0.1.384
 
 - **Code critic answer.** A finding without `evidence` (or `file`) is read instead of refusing the whole answer; it cannot count as critical or high. The missing key blocked a selfystudio task with `code_critique_failed` right after 0.1.383.

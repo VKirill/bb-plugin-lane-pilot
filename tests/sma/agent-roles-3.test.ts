@@ -12,7 +12,7 @@ describe("role methods the brief actually gets", () => {
     expect(roleMethod("writer")).toEqual([]);
   });
 
-  it.todo("[sma:k_ag_debugger] hypotheses are not written to a session file");
+  it.todo("[sma:k_ag_debugger] hypotheses are not written to a session file"); // deferral:dfr_seed_skip_sma_gaps
 
   it("[sma:k_ag_uiqa] a browser check that was not run is not a pass, and a write needs a control that reaches it", () => {
     const method = roleMethod("browser-qa").join("\n");
@@ -20,14 +20,14 @@ describe("role methods the brief actually gets", () => {
     expect(method).toContain("write with no reachable control");
   });
 
-  it.todo("[sma:k_ag_uiqa] no code presses the app's controls or writes UI-QA.md");
-  it.todo("[sma:k_ag_uiauditor] no code scores six pillars or writes UI-REVIEW.md");
-  it.todo("[sma:k_ag_security] no code checks a plan threat model against the code or writes SECURITY.md");
-  it.todo("[sma:k_ag_integration] createBaseline records which checks were red on the base; it does not check that phases connect or that a user flow completes");
-  it.todo("[sma:k_ag_docverifier] a citation is judged by Jev, and with Jev off nothing is checked against the code");
-  it.todo("[sma:k_ag_lane_tools] an ordinary worker keeps the Agent tool; it is not removed");
-  it.todo("[sma:k_ag_doc_tools] plan, design and lessons are not given the Agent tool for exactly their roles");
-  it.todo("[sma:k_ag_foreground] a headless session does not kill a subagent at the end of the turn");
+  it.todo("[sma:k_ag_uiqa] no code presses the app's controls or writes UI-QA.md"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:k_ag_uiauditor] no code scores six pillars or writes UI-REVIEW.md"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:k_ag_security] no code checks a plan threat model against the code or writes SECURITY.md"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:k_ag_integration] createBaseline records which checks were red on the base; it does not check that phases connect or that a user flow completes"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:k_ag_docverifier] a citation is judged by Jev, and with Jev off nothing is checked against the code"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:k_ag_lane_tools] an ordinary worker keeps the Agent tool; it is not removed"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:k_ag_doc_tools] plan, design and lessons are not given the Agent tool for exactly their roles"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:k_ag_foreground] a headless session does not kill a subagent at the end of the turn"); // deferral:dfr_seed_skip_sma_gaps
 });
 
 describe("stopping an attempt", () => {
@@ -46,5 +46,5 @@ describe("stopping an attempt", () => {
     await expect(cancelAttemptById({ bb, db, cancelQueuedAttempt: () => { throw new Error("no attempt"); } } as never, "missing")).resolves.toMatchObject({ ok: false, state: "missing" });
   });
 
-  it.todo("[sma:m_cd_stop] a turn named before it starts is not remembered, and a running check is not ended");
+  it.todo("[sma:m_cd_stop] a turn named before it starts is not remembered, and a running check is not ended"); // deferral:dfr_seed_skip_sma_gaps
 });

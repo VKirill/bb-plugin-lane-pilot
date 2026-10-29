@@ -64,7 +64,7 @@ describe("daemon tick", () => {
     } finally { vi.useFakeTimers(); }
   });
 
-  it.todo("[sma:dt_aging] agingSaidAt is stored, so the signal is not derived and kept nowhere");
+  it.todo("[sma:dt_aging] agingSaidAt is stored, so the signal is not derived and kept nowhere"); // deferral:dfr_seed_skip_sma_gaps
 
   it("[sma:dt_call_waiting] a turn that needs the owner's word is a row, not only a PM message", async () => {
     const { phases, db, sent } = driver();

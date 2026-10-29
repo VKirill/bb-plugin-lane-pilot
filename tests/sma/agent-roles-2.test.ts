@@ -15,7 +15,7 @@ describe("animator and the portrait", () => {
     expect(nextAction(design([]), facts).text).not.toContain("150–300 ms");
   });
 
-  it.todo("[sma:k_ag_animator] frequent actions are not kept unanimated, and a confirmed contract is not required to carry the motion table");
+  it.todo("[sma:k_ag_animator] frequent actions are not kept unanimated, and a confirmed contract is not required to carry the motion table"); // deferral:dfr_seed_skip_sma_gaps
 
   it("[sma:k_ag_profiler] the portrait is eight sections, each line names confidence and evidence, and a sensitive record stays out", () => {
     expect(PORTRAIT_SECTIONS).toHaveLength(8);

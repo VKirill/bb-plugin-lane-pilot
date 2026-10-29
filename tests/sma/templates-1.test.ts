@@ -17,7 +17,7 @@ describe("forecast, stage proof, and memory notes", () => {
     expect(score.minutesRatio).toBe(1.2);
   });
 
-  it.todo("[sma:k_d_tpl_predictions] no plan block renders checkable predictions next to a risk table");
+  it.todo("[sma:k_d_tpl_predictions] no plan block renders checkable predictions next to a risk table"); // deferral:dfr_seed_skip_sma_gaps
 
   it("[sma:k_d_ref_gates_inv] an opinion stage cannot accept the work; a command stage can", () => {
     expect(STAGE_PROOF["code-critique"].kind).toBe("advisory");
@@ -26,7 +26,7 @@ describe("forecast, stage proof, and memory notes", () => {
     expect(acceptanceProofGap(["verification"])).toBeNull();
   });
 
-  it.todo("[sma:k_d_ref_gates_inv] the stage list has no matcher text and no kill switch beyond the advisory acceptance refusal");
+  it.todo("[sma:k_d_ref_gates_inv] the stage list has no matcher text and no kill switch beyond the advisory acceptance refusal"); // deferral:dfr_seed_skip_sma_gaps
 
   it("[sma:k_d_ref_safety] an existing note is labeled data to compare with, and its text is not an instruction", () => {
     const prompt = memoryMaintenancePrompt({

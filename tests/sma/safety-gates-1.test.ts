@@ -42,13 +42,13 @@ describe("daemon tick gates", () => {
     expect(await isHeld(kv as never, "run1")).toBe(false);
   });
 
-  it.todo("[sma:dt_switch] an empty store leaves the conveyor on; off is not the factory default");
+  it.todo("[sma:dt_switch] an empty store leaves the conveyor on; off is not the factory default"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:dt_all_busy] waitForAdmission does not skip a claim when every worker is already busy");
+  it.todo("[sma:dt_all_busy] waitForAdmission does not skip a claim when every worker is already busy"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:dt_lease] releaseActivation does not heartbeat a lease for an attempt that has no process");
+  it.todo("[sma:dt_lease] releaseActivation does not heartbeat a lease for an attempt that has no process"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:dt_finally] abortable frees the schedule waiter; it does not release the writer seat or stop a lease");
+  it.todo("[sma:dt_finally] abortable frees the schedule waiter; it does not release the writer seat or stop a lease"); // deferral:dfr_seed_skip_sma_gaps
 });
 
 describe("money and an overspent batch", () => {
@@ -153,7 +153,7 @@ describe("guard tools", () => {
     expect(parityGaps(["Read", "Bash"], ["Bash", "Read"])).toEqual({ onlySession: [], onlyTerminal: [] });
   });
 
-  it.todo("[sma:m_tl_rebrand] leaks() matches secret shapes, not the old brand, colours, or internal ids");
+  it.todo("[sma:m_tl_rebrand] leaks() matches secret shapes, not the old brand, colours, or internal ids"); // deferral:dfr_seed_skip_sma_gaps
 
   it("[sma:k_lib_actionclient] a writer command is refused until the controller grants it, and the grant is used once", () => {
     const dir = mkdtempSync(join(tmpdir(), "sma-permit-"));
@@ -188,8 +188,8 @@ print("ok")
 });
 
 describe("guards the pointed code does not keep", () => {
-  it.todo("[sma:k_lib_stpa] a lane session is refused writes to protections; a disabled protection is not re-armed");
-  it.todo("[sma:k_v_gates] gateTriagePrompt has no full-gate marker, firing report, or false-alarm ack");
-  it.todo("[sma:k_v_breaker] a failed answers probe is not a list of tripped rules you re-arm after review");
-  it.todo("[sma:k_v_evidence] [sma:k_lib_evidence] recordStage does not store a reason and checks before a force push or a foreign-claim clear");
+  it.todo("[sma:k_lib_stpa] a lane session is refused writes to protections; a disabled protection is not re-armed"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:k_v_gates] gateTriagePrompt has no full-gate marker, firing report, or false-alarm ack"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:k_v_breaker] a failed answers probe is not a list of tripped rules you re-arm after review"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:k_v_evidence] [sma:k_lib_evidence] recordStage does not store a reason and checks before a force push or a foreign-claim clear"); // deferral:dfr_seed_skip_sma_gaps
 });

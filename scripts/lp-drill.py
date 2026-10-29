@@ -2,7 +2,7 @@
 """Sandbox drill (E3): the live regression check run before every Lane Pilot deploy. Entry point: scripts/lp-drill.sh.
 
 Scenarios (each writes its verdict into the receipt, .agents/runs/drills/<date>.json):
-  guard_hash     the installed shell guard (~/.agents/hooks/guard_shell.py and lib_payload.py) on the Mac mini, the MacBook and OVH
+  guard_hash     the installed shell guard (~/.agents/lane-pilot/pm/guard_shell.py and lib_payload.py) on the Mac mini, the MacBook and OVH
                  is byte for byte the repository's copy (lane-stack/hooks). A drifted or missing copy fails the drill and the
                  receipt lists the install command per machine; --repair-guard (or LP_DRILL_REPAIR_GUARD=1) installs the
                  repository copy and checks it again. A machine that cannot be reached is noted, not failed          [--quick]
@@ -1099,6 +1099,7 @@ def scenario_skills(ctx: "Context") -> dict:
 
 GUARD_FILES = ("guard_shell.py", "lib_payload.py")
 GUARD_REPO = ROOT / "lane-stack" / "hooks"
+# Lane Pilot's own guard (guard-apply.ts GUARD_RELATIVE_PATH); ~/.agents/hooks was Claude Lane's and is moved aside (2026-10-30).
 
 
 def guard_machines() -> list[dict]:
@@ -1126,13 +1127,13 @@ def guard_read(machine: dict, name: str) -> tuple[bytes | None, str | None]:
     kind = machine["kind"]
     if kind == "local":
         try:
-            return (Path(machine["home"]) / ".agents/hooks" / name).read_bytes(), None
+            return (Path(machine["home"]) / ".agents/lane-pilot/pm" / name).read_bytes(), None
         except FileNotFoundError:
             return None, "missing"
         except OSError as cause:
             return None, str(cause)
     if kind == "bb":
-        rc, out, err = bb("file", "read", "--host", machine["host"], f"{machine['home']}/.agents/hooks/{name}", "--json", timeout=60)
+        rc, out, err = bb("file", "read", "--host", machine["host"], f"{machine['home']}/.agents/lane-pilot/pm/{name}", "--json", timeout=60)
         if rc == 0:
             try:
                 return str(json.loads(out)["content"]).encode(), None
@@ -1140,7 +1141,7 @@ def guard_read(machine: dict, name: str) -> tuple[bytes | None, str | None]:
                 return None, f"unreadable answer: {out[:120]}"
         text = (err + out).lower()
         return None, "missing" if any(word in text for word in GONE) else (err or out).strip()[:200] or f"exit {rc}"
-    rc, out, err = run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", machine["host"], f"cat ~/.agents/hooks/{name}"], timeout=60)
+    rc, out, err = run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", machine["host"], f"cat ~/.agents/lane-pilot/pm/{name}"], timeout=60)
     if rc == 0:
         return out.encode(), None
     if rc != 255 and any(word in err.lower() for word in GONE):
@@ -1151,18 +1152,18 @@ def guard_read(machine: dict, name: str) -> tuple[bytes | None, str | None]:
 def guard_install_command(machine: dict, name: str) -> str:
     src = GUARD_REPO / name
     if machine["kind"] == "local":
-        dest = f"{machine['home']}/.agents/hooks/{name}"
+        dest = f"{machine['home']}/.agents/lane-pilot/pm/{name}"
         return f"cp -p {dest} {dest}.bak-{DATE}; install -m 755 {src} {dest}"
     if machine["kind"] == "bb":
-        return f"bb file write --host {machine['host']} --stdin --create-parents {machine['home']}/.agents/hooks/{name} < {src}"
-    return f"scp {src} {machine['host']}:.agents/hooks/{name} && ssh {machine['host']} chmod 755 .agents/hooks/{name}"
+        return f"bb file write --host {machine['host']} --stdin --create-parents {machine['home']}/.agents/lane-pilot/pm/{name} < {src}"
+    return f"scp {src} {machine['host']}:.agents/lane-pilot/pm/{name} && ssh {machine['host']} chmod 755 .agents/lane-pilot/pm/{name}"
 
 
 def guard_install(machine: dict, name: str) -> str | None:
     """Puts the repository's file on the machine (the old one is kept as .bak-<date>); None when done, the reason when not."""
     data = (GUARD_REPO / name).read_bytes()
     if machine["kind"] == "local":
-        dest = Path(machine["home"]) / ".agents/hooks" / name
+        dest = Path(machine["home"]) / ".agents/lane-pilot/pm" / name
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
             if dest.exists():
@@ -1175,11 +1176,11 @@ def guard_install(machine: dict, name: str) -> str | None:
             return str(cause)
         return None
     if machine["kind"] == "bb":
-        path = f"{machine['home']}/.agents/hooks/{name}"
+        path = f"{machine['home']}/.agents/lane-pilot/pm/{name}"
         done = subprocess.run([BB, "file", "write", "--host", machine["host"], "--stdin", "--create-parents", path, "--json"], input=data.decode(), capture_output=True, text=True, timeout=90)
         return None if done.returncode == 0 else (done.stderr or done.stdout).strip()[:200]
     host = machine["host"]
-    done = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", host, f"cd ~/.agents/hooks && [ ! -e {name} ] || cp -p {name} {name}.bak-{DATE}; cat > .{name}.tmp && chmod 755 .{name}.tmp && mv .{name}.tmp {name}"],
+    done = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", host, f"mkdir -p ~/.agents/lane-pilot/pm && cd ~/.agents/lane-pilot/pm && [ ! -e {name} ] || cp -p {name} {name}.bak-{DATE}; cat > .{name}.tmp && chmod 755 .{name}.tmp && mv .{name}.tmp {name}"],
                           input=data.decode(), capture_output=True, text=True, timeout=90)
     return None if done.returncode == 0 else done.stderr.strip()[:200]
 

@@ -13,11 +13,11 @@ describe("unified verdict schema", () => {
     expect(parsed.findings[0]).toMatchObject({ file: "src/a.ts", line: 12, severity: "high" });
   });
 
-  it("rejects an unknown status, an unknown severity, a missing evidence and any other key", () => {
+  it("rejects an unknown status, an unknown severity and a missing verdict evidence; drops any other key", () => {
     expect(() => verdictSchema.parse({ status: "approve", findings: [], evidence: "x" })).toThrow();
     expect(() => verdictSchema.parse({ status: "pass", findings: [finding({ severity: "blocking" })], evidence: "x" })).toThrow();
     expect(() => verdictSchema.parse({ status: "pass", findings: [] })).toThrow();
-    expect(() => verdictSchema.parse({ status: "pass", findings: [], evidence: "x", extra: 1 })).toThrow();
+    expect(verdictSchema.parse({ status: "pass", findings: [], evidence: "x", extra: 1 })).not.toHaveProperty("extra");
   });
 
   it("clips an overlong text instead of failing the answer", () => {
@@ -134,5 +134,13 @@ describe("the block message for the PM", () => {
       findings: [{ line: 3, severity: "high", finding: "missing check" }, { file: "src/a.ts", line: 4, severity: "medium" }] }));
     expect(parsed.verdict?.findings).toHaveLength(2);
     expect(parsed.verdict?.findings.some((row) => row.severity === "high" || row.severity === "critical")).toBe(false);
+  });
+
+  it("drops unknown top-level and finding keys and reads an empty optional text as absent (selfystudio 2026-10-30)", () => {
+    const parsed = parseCodeCritique(JSON.stringify({ status: "pass", summary: "s", summary_note: "x", status_note: "y", evidence: "read the diff",
+      findings: [{ file: "src/a.ts", line: 4, severity: "info", evidence: "const a = 1;", verificationExpectation: "", extra: 1 }] }));
+    expect(parsed.decision).toBe("approve");
+    expect(parsed.verdict?.findings[0]).not.toHaveProperty("extra");
+    expect(parsed.verdict?.findings[0]?.verificationExpectation).toBeUndefined();
   });
 });

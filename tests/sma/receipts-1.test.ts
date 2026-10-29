@@ -38,11 +38,11 @@ describe("receipts", () => {
     expect(kept.items.map((item) => item.disposition)).toEqual(["keep with its term"]);
   });
 
-  it.todo("[sma:k_v_receipthash] receiptChain hashes stage rows, not a command and the hash of its expected output");
+  it.todo("[sma:k_v_receipthash] receiptChain hashes stage rows, not a command and the hash of its expected output"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:k_lib_consequences] MECHANISMS does not stop shipping on a class A miss or a pass-then-fail");
+  it.todo("[sma:k_lib_consequences] MECHANISMS does not stop shipping on a class A miss or a pass-then-fail"); // deferral:dfr_seed_skip_sma_gaps
 
-  it.todo("[sma:k_lib_footprint] scoreForecast does not check lines and dependencies in the plan header against the tree");
+  it.todo("[sma:k_lib_footprint] scoreForecast does not check lines and dependencies in the plan header against the tree"); // deferral:dfr_seed_skip_sma_gaps
 });
 
 describe("forecasts", () => {

@@ -93,18 +93,18 @@ describe("closing one backlog line", () => {
     }
   });
 
-  it.todo("[sma:m_in_close_line] closing a line does not require the piece to be an accepted batch piece");
+  it.todo("[sma:m_in_close_line] closing a line does not require the piece to be an accepted batch piece"); // deferral:dfr_seed_skip_sma_gaps
 });
 
 describe("conversation book the proofs name but the code does not keep", () => {
-  it.todo("[sma:m_cb_list] releaseActivation does not list up to 50 conversations or mark which are live");
-  it.todo("[sma:m_cb_rename] no name of at most 60 characters is stored apart from a transcript");
-  it.todo("[sma:m_cd_reply] thread-live returns a task board, not a frame of turn id and status without the conversation words");
-  it.todo("[sma:m_cf_settings] no default of 12 turns, and no window change applied from the next turn");
-  it.todo("[sma:m_ce_boundary] the line under the input (queues on your word, acceptance is yours) is not in Lane Pilot");
-  it.todo("[sma:m_cf_context] past turns are not packed into the model budget; the cited fast path is lane-stack lane-mods");
-  it.todo("[sma:m_cf_spawn] a free branch does not launch the process itself; the cited allow-list is lane-stack guard_shell");
-  it.todo("[sma:m_cf_timeout] a turn is not cut at four minutes with the empty answer, the turn limit and a vendor refusal named");
+  it.todo("[sma:m_cb_list] releaseActivation does not list up to 50 conversations or mark which are live"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_cb_rename] no name of at most 60 characters is stored apart from a transcript"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_cd_reply] thread-live returns a task board, not a frame of turn id and status without the conversation words"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_cf_settings] no default of 12 turns, and no window change applied from the next turn"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_ce_boundary] the line under the input (queues on your word, acceptance is yours) is not in Lane Pilot"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_cf_context] past turns are not packed into the model budget; the cited fast path is lane-stack lane-mods"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_cf_spawn] a free branch does not launch the process itself; the cited allow-list is lane-stack guard_shell"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:m_cf_timeout] a turn is not cut at four minutes with the empty answer, the turn limit and a vendor refusal named"); // deferral:dfr_seed_skip_sma_gaps
 });
 
 function writeMeta(dir: string, file: string, text: string): void {

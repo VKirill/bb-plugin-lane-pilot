@@ -42,7 +42,7 @@ export async function writePmSettingsOnHost(input: {
   homeDir?: string;
 }): Promise<{ hostId:string; settingsPath:string; guardPath:string }> {
   const { mkdir, writeFile } = await import("node:fs/promises");
-  const guardPath = expandHomePath("~/.agents/hooks/guard_shell.py", input.homeDir);
+  const guardPath = expandHomePath("~/.agents/lane-pilot/pm/guard_shell.py", input.homeDir);
   const settingsPath = join(input.pmWorkspacePath, ".claude/settings.json");
   await mkdir(join(input.pmWorkspacePath, ".claude"), { recursive: true });
   const settings = {
