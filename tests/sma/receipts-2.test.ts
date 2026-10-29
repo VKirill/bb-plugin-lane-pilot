@@ -56,15 +56,15 @@ describe("passport and the PR pack", () => {
     expect(line).toBe(calibrationLine(enough.byArea[0]));
   });
 
-  it.todo("[sma:k_v_manifest] the manifest carries predictions, receipts and the blind check"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:k_v_manifest] manifest() is version and table count, not predictions, receipts, and a blind check");
 
-  it.todo("[sma:k_v_passport] the passport badge changes when the model changes"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:k_v_passport] passport() has no badge and does not change when the model changes");
 
-  it.todo("[sma:k_lib_modelver] old priors stay hidden until forecasts exist for the new model"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:k_lib_modelver] there is no model-change guard; the calibration line hides only under three tasks");
 
-  it.todo("[sma:k_lib_goodhart] a skeptic countersigns, receipts are sampled, and near misses stay outside the score"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:k_lib_goodhart] referenceTestEdits is not a skeptic countersign, a receipt sample, or a near-miss channel");
 
-  it.todo("[sma:k_lib_rollbackmark] a git revert by itself does not record why an accepted work was rolled back"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:k_lib_rollbackmark] messageOwner does not record why an accepted work was rolled back");
 
-  it.todo("[sma:k_lib_grill] an unresolved challenge stays closed until a refutation with evidence or a change"); // deferral:dfr_seed_skip_sma_gaps
+  it.todo("[sma:k_lib_grill] challenge_gate waits for a critic pass, not a refutation with evidence or a change");
 });
