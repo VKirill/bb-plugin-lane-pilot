@@ -13,15 +13,30 @@ export function memoryMaintenancePrompt(input:{task:unknown;acceptedResult:unkno
     "TASK:",JSON.stringify(input.task),"ACCEPTED RESULT (the writer's own report is a claim, not proof; each check shows its exit code and the last lines of its output, a failed check's full log is at checkLogPath):",JSON.stringify(input.acceptedResult)].join("\n\n");
 }
 
-export function memoryContext(records:MemoryRecord[],taskText:string,budget:number):{text:string;records:MemoryRecord[];estimatedTokens:number} {
+export function memoryContext(records:MemoryRecord[],taskText:string,budget:number):{text:string;records:MemoryRecord[];estimatedTokens:number;cut:MemoryRecord[]} {
   const terms=new Set(tokens(taskText));
   // Relevance first; a note that served accepted attempts counts for more than one that did not (neutral 1.0, range 0.5 to 1.5).
   const ranked=records.map((record)=>({record,score:tokens(`${record.content} ${record.concepts.join(" ")}`).reduce((sum,token)=>sum+(terms.has(token)?1:0),0)*(0.5+memoryUsefulness(record))}))
     .filter((item)=>item.score>0).sort((a,b)=>b.score-a.score||b.record.createdAt-a.record.createdAt||a.record.id.localeCompare(b.record.id));
-  const selected:MemoryRecord[]=[];let used=0;
-  for(const item of ranked){const size=estimateTokens(item.record.content);if(used+size>budget)continue;selected.push(item.record);used+=size;}
+  const selected:MemoryRecord[]=[];const cut:MemoryRecord[]=[];let used=0;
+  for(const item of ranked){const size=estimateTokens(item.record.content);if(used+size>budget){cut.push(item.record);continue;}selected.push(item.record);used+=size;}
   const text=selected.map((item)=>`- [${item.kind}; concepts=${item.concepts.join(", ")}] ${item.content}`).join("\n");
-  return {text,records:selected,estimatedTokens:estimateTokens(text)};
+  return {text,records:selected,estimatedTokens:estimateTokens(text),cut};
+}
+
+/**
+ * Why each retrieved note is in the pack or not. A note the query did not share a word with is out; a note that matched
+ * and did not fit `budget` is cut. Core is not forced in: a session that wants every convention reads `session_memory_core`.
+ */
+export function explainMemory(records:MemoryRecord[],taskText:string,budget:number):string[] {
+  const packed=memoryContext(records,taskText,budget);
+  const kept=new Set(packed.records.map((record)=>record.id));
+  const dropped=new Set(packed.cut.map((record)=>record.id));
+  return records.map((record)=>{
+    if(kept.has(record.id))return `deliver ${record.id} — matched the query`;
+    if(dropped.has(record.id))return `reject ${record.id} — matched, cut by the context budget`;
+    return `reject ${record.id} — no token overlap`;
+  });
 }
 
 /** Stems, so `ошибки` in the task finds `ошибка` in a note. */
