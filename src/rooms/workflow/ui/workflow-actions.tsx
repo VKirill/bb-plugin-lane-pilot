@@ -16,8 +16,8 @@ export type TrialCase = NonNullable<Output<"workflow_dry_run">["result"]>;
 type RunRow = Output<"workflow_runs">["runs"][number];
 
 const when = (at: number) => new Date(at).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
-const pillOf = (status: string) => status === "succeeded" ? "lp-pill-success" : status === "running" || status === "waiting" ? "lp-pill-info" : status === "canceled" ? "lp-pill-muted" : "lp-pill-danger";
-const STATUS_KEY = (status: string): I18nKey => (["running", "waiting", "succeeded", "failed", "blocked", "interrupted", "canceled"].includes(status) ? `wfRunStatus_${status}` : "wfRunStatus_failed") as I18nKey;
+const pillOf = (status: string) => status === "succeeded" ? "lp-pill-success" : status === "running" || status === "waiting" ? "lp-pill-info" : status === "canceled" || status === "not_verified" ? "lp-pill-muted" : "lp-pill-danger";
+const STATUS_KEY = (status: string): I18nKey => (["running", "waiting", "succeeded", "failed", "blocked", "interrupted", "canceled", "not_verified"].includes(status) ? `wfRunStatus_${status}` : "wfRunStatus_failed") as I18nKey;
 const errorText = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
 /** The inputs of a workflow as typed in a form → the value the engine takes; a message when a field cannot be read. */
@@ -310,7 +310,7 @@ export function GoalsPanel({ snapshot }: { snapshot: Snapshot }) {
         {goalAudit ? <span className="text-xs text-muted-foreground">{t("wfGoalAuditAt").replace("{time}", when(goalAudit.at))}</span> : null}
       </SurfaceHeader>
       <SurfaceBody>
-        {goalAudit?.verdict === "unavailable" ? <p className="break-words text-xs text-muted-foreground" data-testid="wf-goal-unavailable">{t("wfGoalAuditUnavailable").replace("{error}", goalAudit.error ?? "")}</p> : null}
+        {goalAudit?.verdict === "unavailable" || goalAudit?.verdict === "not_verified" ? <p className="break-words text-xs text-muted-foreground" data-testid="wf-goal-unavailable">{t("wfGoalAuditUnavailable").replace("{error}", goalAudit.error ?? "")}</p> : null}
         <ul className="space-y-2">
           {goals.map((goal) => {
             const verdict = state(goal.id);

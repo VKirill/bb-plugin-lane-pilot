@@ -104,9 +104,10 @@ export const workflowMigrations: string[] = [
   `CREATE TRIGGER lane_pilot_wf_event_no_delete BEFORE DELETE ON lane_pilot_wf_event BEGIN SELECT RAISE(ABORT, 'workflow events are append-only'); END`,
 ];
 
-export const RUN_STATUSES = ["running", "waiting", "succeeded", "failed", "blocked", "interrupted", "canceled"] as const;
+/** `not_verified` is added by a later migration: the CREATE above is already applied and must not change. */
+export const RUN_STATUSES = ["running", "waiting", "succeeded", "failed", "blocked", "interrupted", "canceled", "not_verified"] as const;
 export type RunStatus = (typeof RUN_STATUSES)[number];
-export const TERMINAL_RUN: readonly RunStatus[] = ["succeeded", "failed", "blocked", "interrupted", "canceled"];
+export const TERMINAL_RUN: readonly RunStatus[] = ["succeeded", "failed", "blocked", "interrupted", "canceled", "not_verified"];
 
 export const STEP_STATES = ["pending", "running", "waiting", "succeeded", "failed", "skipped", "interrupted", "canceled"] as const;
 export type StepState = (typeof STEP_STATES)[number];

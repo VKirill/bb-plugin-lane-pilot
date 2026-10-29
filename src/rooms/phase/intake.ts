@@ -71,6 +71,12 @@ export const intakeJudgment = defineJudgment<{ text: string; previous?: string |
   describe: (decision) => decision.kind,
 });
 
+/** The one goal a user intake run is for: the owner's request, guessed from the message. A user workflow will not close verified without it. */
+export function intakeRunGoals(text: string): Array<{ id: "request"; done_when: string; evidence: string; guess: true }> {
+  const title = text.trim().split("\n").find((line) => line.trim())?.trim().slice(0, 120) || "Owner's request";
+  return [{ id: "request", done_when: `The owner's request is done: ${title}`.slice(0, 600), evidence: "the workflow output status is closed and its comment says what changed", guess: true }];
+}
+
 /** A phase title from the owner's words: the first line, at most 80 characters. */
 export function intakeTitle(text: string): string {
   const first = text.trim().split("\n").find((line) => line.trim())?.trim() ?? "Цель владельца";

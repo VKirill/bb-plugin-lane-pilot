@@ -101,11 +101,19 @@ describe("the goals of a run", () => {
     expect(engine.amendGoals(other.runId, GOALS, "after the cancel")).toEqual({ ok: false, reason: "run_canceled" });
   });
 
-  it("do not stop a run whose audit could not be made: it closes and says so", async () => {
+  it("F-006: a failed audit is not_verified, not a verified success", async () => {
     const { engine } = setup(async () => { throw new Error("no PM chat to audit in"); });
     const started = engine.start({ workflow: wf(), inputs: INPUTS, goals: GOALS });
-    expect(await started.done).toMatchObject({ status: "succeeded", reason: "goal_audit_unavailable: no PM chat to audit in" });
-    expect(engine.lastAudit(started.runId)).toMatchObject({ verdict: "unavailable", error: "no PM chat to audit in" });
+    expect(await started.done).toMatchObject({ status: "not_verified", reason: "not_verified: goal_audit_unavailable: no PM chat to audit in" });
+    expect(engine.lastAudit(started.runId)).toMatchObject({ verdict: "not_verified", error: "no PM chat to audit in" });
+  });
+
+  it("F-006: a required user workflow with empty goals closes not_verified and does not call the auditor", async () => {
+    const called = setup(async () => { throw new Error("must not be called"); });
+    expect(await called.engine.start({ workflow: wf({ goal_audit: "required" }), inputs: INPUTS }).done).toMatchObject({ status: "not_verified", reason: expect.stringContaining("not_verified:") });
+    expect(called.seen).toEqual([]);
+    const quiet = setup();
+    expect(await quiet.engine.start({ workflow: wf({ goal_audit: "required" }), inputs: INPUTS, goals: GOALS }).done).toMatchObject({ status: "succeeded" });
   });
 
   it("pass to a child run for its helpers, but only the parent run is audited against them", async () => {

@@ -32,12 +32,12 @@ type Field = Detail["inputs"][number];
 
 export const RUN_STATUS_KEY: Record<string, I18nKey> = {
   running: "wfRunStatus_running", waiting: "wfRunStatus_waiting", succeeded: "wfRunStatus_succeeded", failed: "wfRunStatus_failed",
-  blocked: "wfRunStatus_blocked", interrupted: "wfRunStatus_interrupted", canceled: "wfRunStatus_canceled",
+  blocked: "wfRunStatus_blocked", interrupted: "wfRunStatus_interrupted", canceled: "wfRunStatus_canceled", not_verified: "wfRunStatus_not_verified",
 };
-export const runPill = (status: string) => status === "succeeded" ? "lp-pill-success" : status === "running" || status === "waiting" ? "lp-pill-info" : status === "canceled" ? "lp-pill-muted" : "lp-pill-danger";
+export const runPill = (status: string) => status === "succeeded" ? "lp-pill-success" : status === "running" || status === "waiting" ? "lp-pill-info" : status === "canceled" || status === "not_verified" ? "lp-pill-muted" : "lp-pill-danger";
 
 const DEFINITION = "__definition__";
-const dotClass = (status: string) => status === "succeeded" ? "bg-[var(--lp-success)]" : status === "running" || status === "waiting" ? "bg-[var(--lp-info)]" : status === "canceled" ? "bg-[var(--muted-foreground)]" : "bg-[var(--destructive)]";
+const dotClass = (status: string) => status === "succeeded" ? "bg-[var(--lp-success)]" : status === "running" || status === "waiting" ? "bg-[var(--lp-info)]" : status === "canceled" || status === "not_verified" ? "bg-[var(--muted-foreground)]" : "bg-[var(--destructive)]";
 const StatusDot = ({ status }: { status: string }) => <span className={`${dotClass(status)} ${isActive(status) ? "lp-wf-pulse" : ""} inline-block size-2 shrink-0 rounded-full`} data-status={status} aria-hidden />;
 
 const when = (at: number | null) => (at ? new Date(at).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }) : "");

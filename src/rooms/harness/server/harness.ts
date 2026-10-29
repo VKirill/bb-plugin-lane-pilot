@@ -543,7 +543,7 @@ export function createHarness(ctx: ServerCore, services: Services) {
     return { status: "trial", detail: inventory(candidate.tree), candidateId: candidate.id };
   }
 
-  const TERMINAL_RUN = ["succeeded", "failed", "blocked", "interrupted", "canceled"];
+  const TERMINAL_RUN = ["succeeded", "failed", "blocked", "interrupted", "canceled", "not_verified"];
 
   /**
    * One improvement round for a key, as a run of the graph `lp.harness-edit` (prepare, edit, validate). The key's lock, the switch and the open-trial

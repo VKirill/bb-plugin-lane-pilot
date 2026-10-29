@@ -466,7 +466,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
     if (running.has(projectId)) return { started: false, scan: await scanState(projectId) };
     const key = `rules-scan:${projectId}:${options.night ?? Date.now()}`;
     const prior = db.prepare("SELECT status FROM lane_pilot_wf_run WHERE idem_key=?").get(key) as { status: string } | undefined;
-    if (prior && ["succeeded", "failed", "blocked", "interrupted", "canceled"].includes(prior.status)) return { started: false, scan: await scanState(projectId) };
+    if (prior && ["succeeded", "failed", "blocked", "interrupted", "canceled", "not_verified"].includes(prior.status)) return { started: false, scan: await scanState(projectId) };
     const workflow = builtinWorkflow(RULES_SCAN_WORKFLOW);
     if (!workflow) throw new Error(`built-in workflow ${RULES_SCAN_WORKFLOW} is not loaded`);
     running.add(projectId);
@@ -477,7 +477,7 @@ export function createRuleScan(ctx: ServerCore, services: Services) {
       const started = services.workflowEngine.start({ workflow, key, runtime, link: { projectId }, inputs: { project_id: projectId, locale } });
       void started.done.then(async (summary) => {
         // A run that ended without its apply step saying so (a step failed, a budget stopped it) leaves the scan failed with the run's own reason.
-        if (["failed", "blocked", "interrupted", "canceled"].includes(summary.status)) await failScan(projectId, summary.error ?? summary.reason ?? summary.status);
+        if (["failed", "blocked", "interrupted", "canceled", "not_verified"].includes(summary.status)) await failScan(projectId, summary.error ?? summary.reason ?? summary.status);
       }).catch((cause: unknown) => failScan(projectId, cause instanceof Error ? cause.message : String(cause)))
         .finally(() => { running.delete(projectId); });
       return { started: true, scan };

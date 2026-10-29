@@ -37,6 +37,44 @@ export const workflowOpsMigrations: string[] = [
   // Stats per real workflow: until 0.1.187 the per-task pipeline (one run per dispatched task, keyed `lp-task:<attempt>`) was called
   // analyze-plan-execute, the id the outer chain of the chains spec has now. Those runs are attributed to the pipeline they were.
   PIPELINE_RUNS_ATTRIBUTION,
+  // A user run whose goals were empty or whose audit could not be made is `not_verified`, not `succeeded`. SQLite cannot widen a CHECK, so the table is rebuilt.
+  `CREATE TABLE lane_pilot_wf_run_nv (
+    id TEXT PRIMARY KEY,
+    idem_key TEXT UNIQUE,
+    workflow_id TEXT NOT NULL,
+    workflow_version INTEGER NOT NULL,
+    workflow_sha256 TEXT NOT NULL,
+    definition_json TEXT NOT NULL,
+    project_id TEXT,
+    link_run_id TEXT,
+    link_task_id TEXT,
+    link_attempt_id TEXT,
+    parent_run_id TEXT,
+    parent_step_key TEXT,
+    depth INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL CHECK(status IN ('running','waiting','succeeded','failed','blocked','interrupted','canceled','not_verified')),
+    reason TEXT,
+    mode TEXT,
+    inputs_json TEXT NOT NULL DEFAULT '{}',
+    output_json TEXT,
+    harness_version TEXT,
+    steps_used INTEGER NOT NULL DEFAULT 0,
+    tokens_used INTEGER NOT NULL DEFAULT 0,
+    cost_micro_usd INTEGER NOT NULL DEFAULT 0,
+    wait_ms INTEGER NOT NULL DEFAULT 0,
+    owner_id TEXT,
+    lease_until INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    goals_json TEXT
+  );
+  INSERT INTO lane_pilot_wf_run_nv(id,idem_key,workflow_id,workflow_version,workflow_sha256,definition_json,project_id,link_run_id,link_task_id,link_attempt_id,parent_run_id,parent_step_key,depth,status,reason,mode,inputs_json,output_json,harness_version,steps_used,tokens_used,cost_micro_usd,wait_ms,owner_id,lease_until,created_at,updated_at,goals_json)
+    SELECT id,idem_key,workflow_id,workflow_version,workflow_sha256,definition_json,project_id,link_run_id,link_task_id,link_attempt_id,parent_run_id,parent_step_key,depth,status,reason,mode,inputs_json,output_json,harness_version,steps_used,tokens_used,cost_micro_usd,wait_ms,owner_id,lease_until,created_at,updated_at,goals_json FROM lane_pilot_wf_run;
+  DROP TABLE lane_pilot_wf_run;
+  ALTER TABLE lane_pilot_wf_run_nv RENAME TO lane_pilot_wf_run;
+  CREATE UNIQUE INDEX lane_pilot_wf_run_child ON lane_pilot_wf_run(parent_run_id, parent_step_key) WHERE parent_run_id IS NOT NULL;
+  CREATE INDEX lane_pilot_wf_run_status ON lane_pilot_wf_run(status);
+  CREATE INDEX lane_pilot_wf_run_link ON lane_pilot_wf_run(link_run_id, link_task_id)`,
 ];
 
 export type StatusVerdict = { status: Workflow["status"]; notes: WorkflowProblem[] };

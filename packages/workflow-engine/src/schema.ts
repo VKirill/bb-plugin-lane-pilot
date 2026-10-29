@@ -309,6 +309,11 @@ export const workflowSchema = z.object({
    * explicit input of `full` inside `fixed: quick` is a conflict, not a silent quick (quality-mode.ts).
    */
   quality_mode: z.object({ default: z.enum(QUALITY_MODES).default("standard"), effect: z.string().max(600).optional(), min: z.enum(QUALITY_MODES).optional(), fixed: z.enum(QUALITY_MODES).optional() }).strict().optional(),
+  /**
+   * `required`: a user workflow (issue-quick, issue-batch). Empty goals or an audit that could not be made close the run
+   * `not_verified`, which is not a verified success. `exempt` or absent: a service graph, which closes without an auditor call when it has no goals.
+   */
+  goal_audit: z.enum(["required", "exempt"]).optional(),
   triggers: z.array(trigger).max(10).default([]),
   scope: z.object({
     level: z.enum(["builtin", "global", "project", "section"]).default("global"),

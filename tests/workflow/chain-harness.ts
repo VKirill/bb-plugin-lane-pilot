@@ -114,7 +114,9 @@ export async function runSim(workflowId: string, sim: Sim) {
     return real.run(ctx);
   } });
 
-  const started = engine.start({ workflow, inputs: sim.input, mode: sim.mode, ...(sim.goals ? { goals: sim.goals } : {}) });
+  // A user workflow (goal_audit required) with no goals closes not_verified. A sim that does not name goals still has the request.
+  const simGoals = sim.goals ?? (workflow.goal_audit === "required" ? [{ id: "request", done_when: "The sim request is done", evidence: "the sim output", guess: true }] : undefined);
+  const started = engine.start({ workflow, inputs: sim.input, mode: sim.mode, ...(simGoals ? { goals: simGoals } : {}) });
   const summary = await started.done;
   const steps = rows<{ node_id: string; state: string; step_key: string }>(db, "SELECT node_id, state, step_key FROM lane_pilot_wf_step WHERE run_id=? ORDER BY rowid", summary.runId);
   const path = steps.filter((step) => step.state === "succeeded" || step.state === "skipped").map((step) => step.node_id).filter((id) => !id.endsWith(":fan") && !id.endsWith(":child"));
