@@ -6,7 +6,7 @@ const note = (id: string, content: string): MemoryRecord => ({
 });
 
 describe("memory pack explain", () => {
-  it("a matched note that does not fit the budget is cut, and a note with no shared word is out", () => {
+  it("[sma:k_lib_explain_mem] [sma:k_v_mem_explain] a matched note that does not fit the budget is cut, and a note with no shared word is out", () => {
     const records = [
       note("keep", "deploy staging checklist for the hub"),
       note("cut", "deploy staging checklist extra words ".repeat(40)),
