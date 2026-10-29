@@ -53,6 +53,22 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
   const parsedSettings=parsePmReadSettings(Object.fromEntries([
     "pm_read.enabled","pm_read.min_lines","pm_read.provider","pm_read.model","pm_read.reasoning_effort","pm_read.service_tier",
   ].map((key)=>[key,configuredSetting(settings,key)])));
+  // The input is what was read and how, not which model read it: the model pick asks the provider catalog, and a summary of the
+  // same read_first stays good. A receipt of other read_first (lane_pilot_update_task) is read again (2026-10-29 audit: it
+  // returned the old summary without reading the new files).
+  const source=JSON.stringify({taskId:input.taskId,readFirst:input.task.read_first,settings:parsedSettings});
+  const base={runId:input.runId,taskId:input.taskId,stageId:"pm-read" as const,input:source,attempt:Math.min(countAttempts(input.db,input.runId,input.taskId),MAIN_ATTEMPT_LIMIT)};
+  const existing=listStageReceipts(input.db,input.runId,input.taskId).find((row)=>row.stageId==="pm-read");
+  if(existing&&existing.inputSha256===sha256(source)) {
+    const summary=stringAt(existing.result,"summary")??"";
+    return {state:existing.state==="passed"?"passed":existing.state==="skipped"?"skipped":"failed",summary,...(existing.reason?{reason:existing.reason}:{})};
+  }
+  // A disabled stage is decided before the catalog is asked for a model it would not use.
+  if(!parsedSettings.enabled) {
+    recordStage(input.db,{...base,state:"pending",replaceOnNewInput:true,restart:true});
+    recordStage(input.db,{...base,state:"skipped",reason:"disabled_by_project_setting"});
+    return {state:"skipped",summary:""};
+  }
   const fallback=resolveStageWriterSelection({settings,config:input.config});
   // One role table (packages/models/src/role-models.ts): the owner's row, else the pm_read selection, else the default; the old pick stands when the host lacks it.
   const picked=await roleSelection({zcodeBusy:zcodeBusyPeek(input.bb),catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:"pm-reader",fallback:{providerId:parsedSettings.provider??fallback.providerId,model:parsedSettings.model??fallback.model},spent:await limitProbe(input.bb,input.config.hostId,settings)});
@@ -60,18 +76,7 @@ export async function runPmRead(input:{bb:BbPluginApi;db:ReturnType<typeof openD
   const providerId=picked.providerId;
   const modelId=picked.model;
   parsedSettings.effort=picked.effort??parsedSettings.effort;
-  const source=JSON.stringify({taskId:input.taskId,readFirst:input.task.read_first,settings:parsedSettings,providerId,modelId});
-  const base={runId:input.runId,taskId:input.taskId,stageId:"pm-read" as const,input:source,attempt:Math.min(countAttempts(input.db,input.runId,input.taskId),MAIN_ATTEMPT_LIMIT)};
-  const existing=listStageReceipts(input.db,input.runId,input.taskId).find((row)=>row.stageId==="pm-read");
-  if(existing) {
-    const summary=stringAt(existing.result,"summary")??"";
-    return {state:existing.state==="passed"?"passed":existing.state==="skipped"?"skipped":"failed",summary,...(existing.reason?{reason:existing.reason}:{})};
-  }
-  recordStage(input.db,{...base,state:"pending",providerId,model:modelId});
-  if(!parsedSettings.enabled) {
-    recordStage(input.db,{...base,state:"skipped",providerId,model:modelId,reason:"disabled_by_project_setting"});
-    return {state:"skipped",summary:""};
-  }
+  recordStage(input.db,{...base,state:"pending",providerId,model:modelId,replaceOnNewInput:true,restart:true});
   let threadId:string|null=null;
   // Pending until the excerpts clear the size threshold: a small read_first is skipped, and skipped
   // is not reachable from running.
@@ -171,13 +176,24 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   // quality_mode (task, else project, else standard) decides whether this task goes through the plan critique at all.
   const qualityMode = resolveQualityMode(input.task,projectSettings[QUALITY_MODE_SETTING]);
   const settings = applyQualityMode(projectSettings,qualityMode);
+  const agent = boundedAgentName(settings["plan_critique.agent"],"plan-critic");
+  // quick and a disabled critique are decided first: the model pick asks the provider catalog and the coverage scan takes up
+  // to 30 s, both for a critic that will not run (2026-10-29 audit).
+  const enabled = settings["plan_critique.enabled"];
+  const disabled = enabled === false || enabled === 0
+    || (typeof enabled === "string" && ["0", "off", "false", "no"].includes(enabled.trim().toLowerCase()));
+  if (qualityMode === "quick" || disabled) {
+    const skip = { runId:input.runId, taskId:input.taskId, stageId:"plan-critique" as const, input:`${input.plan}\n\n${JSON.stringify(input.task)}\n\nagent=${agent}\n\npm_read=${input.pmReadContext ?? ""}` };
+    recordStage(input.db, { ...skip, state:"pending", replaceOnNewInput:true, restart:true });
+    recordStage(input.db, qualityMode === "quick" ? { ...skip, state:"skipped", reason:"quality_mode_quick", result:{ qualityMode } } : { ...skip, state:"skipped", reason:"disabled_by_project_setting" });
+    return { allowed:true };
+  }
   const legacy=resolveStageWriterSelection({settings,config:input.config,stageProviderKey:"plan_critique.provider",stageModelKey:"plan_critique.model"});
   const selection=await roleSelection({zcodeBusy:zcodeBusyPeek(input.bb),catalog:sdkCriticCatalog(input.bb,input.config.hostId),settings,role:"plan-critic",fallback:{providerId:legacy.providerId,model:legacy.model},spent:await limitProbe(input.bb,input.config.hostId,settings)});
   logLimitMove(input.bb,`plan critic for ${input.taskId}`,selection.issues);
   const providerId=selection.providerId;
   const modelId=selection.model;
   const mode = settings["plan_critique.mode"] === "advisory" ? "advisory" : "gate";
-  const agent = boundedAgentName(settings["plan_critique.agent"],"plan-critic");
   const runTasks = listLiveTasksForRun(input.db,input.runId).map((row) => ({id:row.id,...row.contract as {lane?:string;owns_paths?:string[];verify?:TaskV2["verify"];verification?:TaskV2["verification"]}}));
   let coverageStatus:"complete"|"truncated"|"unavailable"="unavailable";
   let coveragePathCount=0;
@@ -210,20 +226,23 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
   if(coverageStatus==="unavailable") structuralFindings.push({code:"coverage_scan_truncated",path:".",severity:"warning",finding:"Workspace path listing is unavailable; only plan/TaskV2 data was reviewed"});
   const source = `${input.plan}\n\n${JSON.stringify(input.task)}\n\nagent=${agent}\n\npm_read=${input.pmReadContext ?? ""}\n\nstructural_coverage=${coverageStatus}\n\nstructural_findings=${JSON.stringify(structuralFindings)}`;
   const base = { runId:input.runId, taskId:input.taskId, stageId:"plan-critique" as const, input:source };
+  // A resumed dispatch keeps a critique that passed on this very input (resetHelperStages): it is not bought twice.
+  const kept = listStageReceipts(input.db,input.runId,input.taskId).find((row) => row.stageId === "plan-critique");
+  const structuralBlock=mode==="gate"&&structuralFindings.some((finding)=>finding.severity==="error");
+  if (kept?.state === "passed" && kept.inputSha256 === sha256(source)) {
+    // A structural error blocks under a gate whatever was kept: the same input without the receipt blocks too (SMA audit R-06).
+    if (structuralBlock) return { allowed:false, reason:"structural_plan_critique_blocked", critique:{ structuralFindings } };
+    // An advisory «changes requested» is kept as passed; read under a gate it blocks as a fresh one would (SMA audit N-06). The
+    // receipt stays: passed cannot turn back, and the same input blocks the same way until the task changes.
+    const keptResult = kept.result as { decision?: string } | null;
+    if (mode === "gate" && keptResult?.decision === "changes_requested") {
+      const why = verdictReasons(keptResult as never, "plan-critique");
+      return { allowed:false, reason:why.returned, critique:kept.result };
+    }
+    return { allowed:true, critique:kept.result };
+  }
   // An updated task runs its critique again over the receipt of the earlier contract (lane_pilot_update_task).
   recordStage(input.db, { ...base, state:"pending", replaceOnNewInput:true, restart:true });
-  if (qualityMode === "quick") {
-    recordStage(input.db, { ...base, state:"skipped", reason:"quality_mode_quick", result:{ qualityMode } });
-    return { allowed:true };
-  }
-  const enabled = settings["plan_critique.enabled"];
-  const disabled = enabled === false || enabled === 0
-    || (typeof enabled === "string" && ["0", "off", "false", "no"].includes(enabled.trim().toLowerCase()));
-  if (disabled) {
-    recordStage(input.db, { ...base, state:"skipped", reason:"disabled_by_project_setting" });
-    return { allowed:true };
-  }
-  const structuralBlock=mode==="gate"&&structuralFindings.some((finding)=>finding.severity==="error");
   if(structuralBlock) {
     recordStage(input.db,{...base,state:"blocked",reason:"structural_plan_critique_blocked",result:{decision:"changes_requested",mode,
       structuralCoverage:{status:coverageStatus,pathCount:coveragePathCount},structuralFindings}});
@@ -317,6 +336,49 @@ export async function runPlanCritique(input:{bb:BbPluginApi;db:ReturnType<typeof
  * The BB environment the task's attempt works in. BB refuses a thread at a path inside an environment's directory
  * (HTTP 409 «reuse that environment instead»), so a critic of a worktree attempt runs in that environment.
  */
+/**
+ * The change of each produced file as BB's own unified diff (environments.diffPatch, uncommitted) in the attempt's environment, else
+ * in the BB environment at the task folder. A path BB cut or could not diff is left out: the packet then shows its file.
+ */
+export async function candidatePatches(bb:{ sdk:{ environments:{ list:(args:{ hostId:string; path:string }) => Promise<Array<{ id:string }>>; diffPatch:(args:{ environmentId:string; paths:string[]; target:{ type:"uncommitted" } }) => Promise<unknown> } } },
+  db:ReturnType<typeof openDatabase>, input:{ runId:string; taskId:string; hostId:string; cwd:string; paths:string[] }):Promise<Record<string,string>> {
+  if (!input.paths.length) return {};
+  try {
+    const environmentId = attemptEnvironment(db, input.runId, input.taskId, input.cwd)?.environmentId
+      ?? (await bb.sdk.environments.list({ hostId:input.hostId, path:input.cwd }))[0]?.id;
+    if (!environmentId) return {};
+    const result = await bb.sdk.environments.diffPatch({ environmentId, paths:input.paths, target:{ type:"uncommitted" } }) as { outcome?:string; patches?:Array<{ path:string; patch:string; truncated:boolean }> };
+    if (result.outcome !== "available") return {};
+    const wanted = new Set(input.paths);
+    return Object.fromEntries((result.patches ?? []).filter((row) => wanted.has(row.path) && !row.truncated && row.patch).map((row) => [row.path, row.patch]));
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Reads the code critic's answer; one that cannot be read is sent back once to the same critic with the parse error, instead of
+ * blocking a finished task (selfystudio 2026-10-30: an unescaped quote broke the JSON of a «pass»). A second unreadable answer fails.
+ */
+export async function readCodeCritique(bb:BbPluginApi, threadId:string|null|undefined, raw:string, cites:Parameters<typeof parseCodeCritique>[1]) {
+  try {
+    return parseCodeCritique(raw, cites);
+  } catch (first) {
+    if (!threadId) throw first;
+    const why = (first instanceof Error ? first.message : String(first)).replace(/\s+/g, " ").slice(0, 600);
+    const askedAt = Date.now();
+    try {
+      await bb.sdk.threads.send({ threadId, mode:"queue-if-active", input:[{ type:"text", mentions:[], text:`Lane Pilot: your answer could not be read (${why}). Send the same verdict again as one valid JSON object with the keys status, summary, findings and evidence, and nothing else; escape every quote inside a string.` }] } as never);
+      await waitThreadIdle(bb, threadId, "critique_thread_timeout", undefined, askedAt);
+    } catch {
+      throw first;
+    }
+    const again = (await bb.sdk.threads.output({ threadId })).output;
+    if (typeof again !== "string" || !again.trim()) throw first;
+    return parseCodeCritique(again, cites);
+  }
+}
+
 export function attemptEnvironment(db:ReturnType<typeof openDatabase>, runId:string, taskId:string, path:string):{ type:"reuse"; environmentId:string } | null {
   const row = db.prepare(`SELECT environment_id AS environmentId FROM lane_pilot_attempt
     WHERE run_id=? AND task_id=? AND workspace_path=? AND environment_id IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(runId, taskId, path) as { environmentId:string } | undefined;
@@ -368,7 +430,7 @@ export async function runCodeCritique(input:{
         await waitThreadIdle(input.bb,existing.threadId,"critique_thread_timeout");
         const raw = (await input.bb.sdk.threads.output({ threadId:existing.threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-        const critique = parseCodeCritique(raw, cites);
+        const critique = await readCodeCritique(input.bb, existing.threadId, raw, cites);
         const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
         const result = { ...ledgerCarry, ...critique, ...hashFields, mode:parsed.mode, rawOutput:raw.slice(0, 12_000), policy:frozen ?? critiquePolicyFromResult(existing.result) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId:existing.providerId, model:existing.model,
@@ -394,7 +456,7 @@ export async function runCodeCritique(input:{
           await waitThreadIdle(input.bb,recovered.threadId,"critique_thread_timeout");
           const raw = (await input.bb.sdk.threads.output({ threadId:recovered.threadId })).output;
           if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-          const critique = parseCodeCritique(raw, cites);
+          const critique = await readCodeCritique(input.bb, recovered.threadId, raw, cites);
           const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
           const result = { ...ledgerCarry, ...critique, ...hashFields, mode:parsed.mode, rawOutput:raw.slice(0, 12_000), policy:frozen ?? critiquePolicyFromResult(existing.result) };
           recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId:existing.providerId, model:existing.model,
@@ -424,7 +486,11 @@ export async function runCodeCritique(input:{
     }
   }
   if (!(existing && existing.inputSha256 === sha256(source) && existing.state === "running")) {
-    recordStage(input.db, { ...base, state:"pending", replaceOnNewInput:true, result:{ ...ledgerCarry, ...hashFields, truncated:input.evidence.truncated } });
+    // A critic still running on an older revision of the candidate is stopped and its receipt starts over: running -> pending was
+    // refused and parked a finished task as internal_error (selfystudio 2026-10-30, after a reload recaptured the evidence).
+    const superseded = existing?.state === "running" && existing.inputSha256 !== sha256(source);
+    if (superseded && existing.threadId) await input.bb.sdk.threads.stop({ threadId:existing.threadId }).catch(() => undefined);
+    recordStage(input.db, { ...base, state:"pending", replaceOnNewInput:true, supersede:superseded, result:{ ...ledgerCarry, ...hashFields, truncated:input.evidence.truncated } });
   }
   // The role table's code-critic (packages/models/src/role-models.ts), else what the stage ran on before it (its selection, else the writer's).
   const stageSelection = resolveStageWriterSelection({
@@ -491,7 +557,7 @@ export async function runCodeCritique(input:{
         await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
         const raw = (await input.bb.sdk.threads.output({ threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-        const critique = parseCodeCritique(raw, cites);
+        const critique = await readCodeCritique(input.bb, threadId, raw, cites);
         const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
         const result = { ...snapshot, ...critique, policy, reviewer:{ providerId, model:modelId, reasoningEffort:configuredEffort, serviceTier: writerServiceTier(settings) === "fast" ? "fast" : "standard", mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix }, rawOutput:raw.slice(0, 12_000) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
@@ -510,7 +576,7 @@ export async function runCodeCritique(input:{
         await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
         const raw = (await input.bb.sdk.threads.output({ threadId })).output;
         if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-        const critique = parseCodeCritique(raw, cites);
+        const critique = await readCodeCritique(input.bb, threadId, raw, cites);
         const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
         const result = { ...snapshot, ...critique, policy, rawOutput:raw.slice(0, 12_000) };
         recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
@@ -567,7 +633,7 @@ export async function runCodeCritique(input:{
     await waitThreadIdle(input.bb,threadId,"critique_thread_timeout");
     const raw = (await input.bb.sdk.threads.output({ threadId })).output;
     if (typeof raw !== "string" || !raw.trim()) throw new Error("critique_output_empty");
-    const critique = parseCodeCritique(raw, cites);
+    const critique = await readCodeCritique(input.bb, threadId, raw, cites);
     const blocked = critique.decision === "changes_requested" && parsed.mode === "gate";
     const result = { ...snapshot, ...critique, policy, reviewer:{ providerId, model:modelId, reasoningEffort:configuredEffort, serviceTier:tier, mode:parsed.mode, maxRounds:parsed.maxRounds, autoFix:parsed.autoFix }, rawOutput:raw.slice(0, 12_000) };
     recordStage(input.db, { ...base, state:blocked ? "blocked" : "passed", providerId, model:modelId,
@@ -595,6 +661,8 @@ export async function runSpecialistReview(input:{bb:BbPluginApi;db:ReturnType<ty
   const agent=boundedAgentName(settings["specialist.agent"],"specialist-reviewer");
   const source = `${input.plan}\n\n${JSON.stringify(input.task)}\n\nagent=${agent}`;
   const base = {runId:input.runId,taskId:input.taskId,stageId:"specialist-review" as const,input:source};
+  const kept = listStageReceipts(input.db,input.runId,input.taskId).find((row) => row.stageId === "specialist-review");
+  if (kept?.state === "passed" && kept.inputSha256 === sha256(source)) return {allowed:true,review:kept.result};
   // An updated task goes through its review again over the receipt of the earlier contract (lane_pilot_update_task).
   recordStage(input.db,{...base,state:"pending",replaceOnNewInput:true,restart:true});
   if (!policy.run) {

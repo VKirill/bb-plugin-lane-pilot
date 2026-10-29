@@ -1,4 +1,5 @@
 import type { PluginKvStorage, PluginRpcContract } from "@get-bb/plugin-sdk";
+import { t } from "@lane-pilot/i18n";
 import { hostContract } from "../contracts";
 import { drainForLifecycle } from "../stability/server";
 
@@ -26,7 +27,7 @@ export async function experimental_vkLifecycle(ctx: LifecycleContext): Promise<v
       await ctx.callHost({ contract: hostContract, method: "nativeInstall", input: { requestedHostId: row.hostId, action: ctx.action }, hostId: row.hostId, signal: ctx.signal, timeoutMs: 600_000 });
       await ctx.kv.delete(`${ERROR_PREFIX}${row.hostId}`);
     } catch (error) {
-      // Enable and disable repair Claude Lane on every registered machine. One machine that is offline or has a
+      // Enable and disable repair Lane Pilot's own pieces on every registered machine. One machine that is offline or has a
       // broken CLI (2026-10-01: Codex on the MacBook) must not take the plugin down everywhere; the error is kept
       // for that host and the next transition retries. Removal stays strict so files are never left orphaned.
       if (ctx.action === "remove") throw error;
@@ -73,7 +74,7 @@ export function createNativeInstaller(input: {
       await input.kv.delete(`${PREFIX}${hostId}`);
       await input.kv.delete(`${ERROR_PREFIX}${hostId}`);
     },
-    /** Installs or repairs Claude Lane ahead of the first send, e.g. when Lane Pilot is enabled in the composer. */
+    /** Installs or repairs Lane Pilot's own pieces ahead of the first send, e.g. when Lane Pilot is enabled in the composer. */
     async start(hostId: string) {
       if (!pending.has(hostId)) void start(hostId);
     },
@@ -92,7 +93,7 @@ export function createNativeInstaller(input: {
       const previous = errors.get(hostId);
       if (await settled(start(hostId)) && (await input.call(hostId, "status")).status === "enabled") return;
       const failed = errors.get(hostId);
-      if (failed && failed !== previous) throw new Error(`Установка Claude Lane не удалась: ${failed}`);
+      if (failed && failed !== previous) throw new Error(t("nativeInstallFailed").replace("{error}", failed));
       throw new Error(previous ? `Повторная установка Lane Pilot начата. Предыдущая ошибка: ${previous}` : "Начата установка CLI-компонентов Lane Pilot. Повторите отправку после завершения установки.");
     },
   };

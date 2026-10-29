@@ -1,68 +1,10 @@
-import { access } from "node:fs/promises";
 import { join } from "node:path";
-import { assertSafeArgv } from "./argv-builder";
-import { agentsDir, expandHomePath, resolveHome } from "@lane-pilot/kit";
+import { expandHomePath } from "@lane-pilot/kit";
 import { spawnAsync } from "@lane-pilot/kit";
 
 const FORBIDDEN = /(?:^|\s)(--apply(?:[= ]|$)|(?:^|\s)setup(?:\s|$))/;
 
-export async function resolveLaneBinary(
-  binary: "run-controller" | "lane-ctl",
-  homeDir?: string,
-): Promise<string> {
-  const home = resolveHome(homeDir);
-  const candidates = [
-    join(agentsDir(home), "bin", binary),
-    join(home, ".local/bin", binary),
-    binary,
-  ];
-  for (const path of candidates) {
-    try {
-      await access(path);
-      return path;
-    } catch {
-      /* try next */
-    }
-  }
-  return binary;
-}
-
-export async function runCliOnHost(input: {
-  requestedHostId: string;
-  binary: "run-controller" | "lane-ctl";
-  argv: string[];
-  env: Record<string, string>;
-  cwd: string;
-  timeoutMs?: number;
-  homeDir?: string;
-}): Promise<{
-  hostId: string;
-  binaryPath: string;
-  argv: string[];
-  env: Record<string, string>;
-  cwd: string;
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-}> {
-  assertSafeArgv(input.argv);
-  const binaryPath = await resolveLaneBinary(input.binary, input.homeDir);
-  const result = await spawnAsync(binaryPath, input.argv, {
-    cwd: input.cwd,
-    env: { ...process.env, ...input.env },
-    timeout: input.timeoutMs ?? 120_000,
-  });
-  return {
-    hostId: process.env.BB_HOST_ID ?? input.requestedHostId,
-    binaryPath,
-    argv: input.argv,
-    env: input.env,
-    cwd: input.cwd,
-    exitCode: result.status ?? 1,
-    stdout: result.stdout ?? "",
-    stderr: result.stderr ?? (result.error ? result.error.message : ""),
-  };
-}
+// (2026-10-29) run-controller and lane-ctl are not called. This file stays for the host command path.
 
 export async function runCommandOnHost(input: {
   requestedHostId: string;
@@ -100,7 +42,7 @@ export async function writePmSettingsOnHost(input: {
   homeDir?: string;
 }): Promise<{ hostId:string; settingsPath:string; guardPath:string }> {
   const { mkdir, writeFile } = await import("node:fs/promises");
-  const guardPath = expandHomePath("~/.agents/hooks/guard_shell.py", input.homeDir);
+  const guardPath = expandHomePath("~/.agents/lane-pilot/pm/guard_shell.py", input.homeDir);
   const settingsPath = join(input.pmWorkspacePath, ".claude/settings.json");
   await mkdir(join(input.pmWorkspacePath, ".claude"), { recursive: true });
   const settings = {

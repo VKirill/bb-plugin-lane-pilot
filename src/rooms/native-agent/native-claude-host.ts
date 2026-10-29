@@ -267,8 +267,9 @@ export async function prepareNativeClaude(input: {
     }
   }
   const command = await installedClaudeExecutable();
+  // (2026-10-29 audit A-027) cwd is part of the launcher id: two projects with the same agent must not share settings.
   const digest = sha256Hex(JSON.stringify({
-    agentId, command, agentsJson: sessionAgentsJson, settingId, sourceStamp, version: 7,
+    agentId, command, agentsJson: sessionAgentsJson, settingId, sourceStamp, cwd, version: 8,
   })).slice(0, 24);
   const dir = join(input.dataDir, "native-launchers", digest);
   await mkdir(dir, { recursive: true, mode: 0o700 });

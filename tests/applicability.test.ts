@@ -146,7 +146,7 @@ describe("adoc applicability catalog", () => {
 
   it("maps workspace threshold and session task cap to their native runtime consumers",()=>{
     expect(UI_CATALOG.find((row)=>row.id==="s055")).toMatchObject({storageKey:"adoc.041",uiStatus:"editable",channel:"OWN"});
-    expect(UI_CATALOG.find((row)=>row.id==="s056")).toMatchObject({storageKey:"ops.max_tasks",uiStatus:"editable",channel:"OPS-DIRECT"});
+    expect(UI_CATALOG.find((row)=>row.id==="s056")).toMatchObject({storageKey:"ops.max_tasks",uiStatus:"readonly",channel:"NONE"});
   });
 
   it("exposes the three active plan-critique policy controls and keeps the hidden TUI aggregate read-only",()=>{
@@ -183,7 +183,7 @@ describe("adoc applicability catalog", () => {
     expect(UI_CATALOG.find((row) => row.id === "s142")).toMatchObject({
       storageKey: "writer.service_tier",
       uiStatus: "editable",
-      channel: "W-DIRECT",
+      channel: "OWN",
     });
   });
 

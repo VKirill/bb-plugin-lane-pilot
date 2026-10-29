@@ -10,7 +10,6 @@ import { readGateReport } from "../../tasks/gate-report";
 import { mountHandoff } from "../../relay/server";
 import { mountInsights } from "../../self-repair/server";
 import { mountHealth } from "../../stability/server";
-import { mountMemorySync } from "../../memory/server";
 import { mountCouncilTools } from "../../council/server";
 import { mountSpecialists } from "../../critique/server";
 import { mountRelay, ownerLocale } from "../../relay/server";
@@ -310,7 +309,6 @@ export function registerTools(ctx: ServerCore, services: Services) {
   mountHandoff(ctx);
   mountInsights(ctx);
   mountHealth(ctx, services);
-  mountMemorySync(ctx);
   mountCouncilTools(ctx, services.council, (threadId) => services.phaseIntake.launchRefusal(threadId));
   mountSpecialists(ctx, services);
   services.errands = mountErrands(ctx, services);

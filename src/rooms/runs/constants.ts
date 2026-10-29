@@ -1,5 +1,5 @@
 /** The managed Lane Stack engine: 1.66.2, the OpenCode v2 opencode-lane plugin with the lane-pilot agent and the SMA rule mechanisms (1.65 and older are v1-only). */
-export const TARGET_SHA = "84a4a9fafea5eda168bd2d49423e41688e5f42d3";
+export const TARGET_SHA = "6acbe4a3030750e5d10bfe71233653dc1c99a333";
 export const UPSTREAM_REPO = "https://github.com/VKirill/claude-lane-stack";
 export const OPENCODE_PLUGIN = "./plugins/opencode-lane.ts";
 export const OPENCODE_OLD_PLUGIN = "./plugins/lane-context.ts";
@@ -13,9 +13,6 @@ export const S8_RELATIVE_PATHS = [
 export const EXTERNAL_OPS = [
   "npm install -g @rama_nigg/open-cursor",
   "open-cursor install",
-  "claude plugin marketplace add/update",
-  "claude plugin install lane-stack@claude-lane-stack",
-  "claude plugin uninstall fast-jev-compaction@*",
 ] as const;
 
 export const EXTERNAL_OPS_BY_ACTION = {
@@ -36,7 +33,7 @@ export function cliReceiptAttemptKey(attemptId: string): string {
 }
 
 export const PLUGIN_ID = "lane-pilot";
-export const INSTALLED_GUARD = "~/.agents/hooks/guard_shell.py";
+export const INSTALLED_GUARD = "~/.agents/lane-pilot/pm/guard_shell.py";
 export const MAIN_ATTEMPT_LIMIT = 2;
 
 /** Reason of a queued attempt whose dispatch still waits for pm-read and plan critique; a reload ends such an attempt. */

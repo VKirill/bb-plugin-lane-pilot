@@ -166,7 +166,7 @@ export default async function plugin(bb: BbPluginApi) {
   mountCapabilities(ctx, services.capabilities);
   // Every hour: ready todos with an estimate go to the project's PM in queue order (one a project a day, three a day in all).
   mountBacklog(ctx, services.backlog);
-  // Every two minutes: where the owner typed in his own session lately; writers keep off that provider meanwhile.
+  // Where the owner typed in a BB thread Lane Pilot did not start; writers keep off that provider for ten minutes.
   mountOwnerPresence(ctx, services.ownerPresence);
   // The seeded hypotheses (SMA P2-11 contracts between roles) are on the register from the first start.
   try { services.hypotheses.seed(); } catch (cause) { bb.log.warn(`Lane Pilot: hypotheses seed skipped: ${cause instanceof Error ? cause.message : String(cause)}`); }

@@ -1,6 +1,6 @@
 import { hostContract, rpcContract } from "../contracts";
 import type { ServerCore, Services } from "../core/server";
-import { getRun, getRunWriterHost } from "../storage";
+import { getRun } from "../storage";
 import { listReceipts } from "../capability";
 import { readinessWords, trainedConditions, trainingRatios, type DesignJournalLine } from "../design-eval";
 import { runOnHost } from "@lane-pilot/host-calls";
@@ -47,16 +47,18 @@ export function cockpitRpc(ctx: ServerCore, services: Services) {
       }
       return [...byWorker.values()].sort((a, b) => b.tokens - a.tokens).map((worker) => ({ ...worker, capabilities: cells.filter((cell) => cell.providerId === worker.providerId).map((cell) => ({ capability: cell.capability, state: cell.state, version: cell.version })) }));
     },
-    /** The memory corpus on the run's machine: lint, rebuild the index, the tag cloud, the corpus review. */
+    /** Hub memory for this run's project. (2026-10-29) the terminal lane-memory tool is not called. */
     cockpit_memory: async ({ runId, action }: { runId: string; action: "lint" | "index" | "tags" | "consolidate" }) => {
       const run = getRun(db, runId);
-      const hostId = getRunWriterHost(db, runId);
-      if (!run?.writer_workspace_path || !hostId) throw new Error(`run ${runId} has no checkout`);
-      const command = action === "tags" ? "cat .agents/memory/TAGS.md 2>/dev/null || lane-memory index ." : `lane-memory ${action} .`;
-      const ran = await runOnHost(host(), { hostId, cwd: run.writer_workspace_path, command, timeoutSec: 60 });
-      const text = ran.stdout || ran.stderr;
-      const tags = action === "tags" ? [...text.matchAll(/^[-*]\s*`?([A-Za-z0-9:_./-]+)`?(?:\s*\((\d+)\))?/gm)].map((m) => ({ tag: m[1]!, count: Number(m[2] ?? 1) })) : undefined;
-      return { exitCode: ran.exitCode, output: text.slice(0, 20_000), ...(tags ? { tags } : {}) };
+      if (!run) throw new Error(`run ${runId} has no checkout`);
+      const rows = db.prepare("SELECT kind, content, concepts_json FROM lane_pilot_memory WHERE project_id=? AND status='active' ORDER BY accepted_count DESC, created_at DESC LIMIT 80").all(run.project_id) as Array<{ kind: string; content: string; concepts_json: string }>;
+      if (action === "tags") {
+        const counts = new Map<string, number>();
+        for (const row of rows) for (const tag of JSON.parse(row.concepts_json || "[]") as string[]) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+        const tags = [...counts].map(([tag, count]) => ({ tag, count }));
+        return { exitCode: 0, output: tags.map((item) => `${item.tag} (${item.count})`).join("\n").slice(0, 20_000), tags };
+      }
+      return { exitCode: 0, output: rows.map((row) => `[${row.kind}] ${row.content}`).join("\n").slice(0, 20_000) };
     },
     /** Order from the forge: the person's order goes to the project's PM, who runs lane_pilot_forge draft with it. */
     cockpit_forge_order: async ({ projectId, kind, name, brief }: { projectId: string; kind: "skill" | "role" | "workflow"; name: string; brief: string }) => {

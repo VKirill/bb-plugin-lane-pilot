@@ -3,10 +3,10 @@ import { runOnHost } from "@lane-pilot/host-calls";
 import { readWires, wiresCommand } from "../../wires";
 import type { TaskV2 } from "../../contracts";
 import type { ServerCore } from "../../core/server";
-import { deleteStageReceipt, getRunSettingsScopes, getTaskGitBase, loadProjectSettings } from "../../storage";
+import { deleteStageReceipt, getRunSettingsScopes, getStageReceiptResult, getTask, getTaskGitBase, loadProjectSettings } from "../../storage";
 import { recordStage } from "../../runs/server";
-import { NO_CODE_KINDS, blindPlanFact, diffHunksCommand, existsCommand, existsFromCommandOutput, hunksFromCommandOutput, parsePlanFact, planFactOutcome, sha256, untouchedCitations } from "../../tasks";
-import type { PlanFactCheck, PlanFactFacts, PlanFactTable } from "../../tasks";
+import { NO_CODE_KINDS, PLAN_FACT_RULES, blindPlanFact, diffHunksCommand, existsCommand, existsFromCommandOutput, hunksFromCommandOutput, parsePlanFact, planFactOutcome, sha256, untouchedCitations } from "../../tasks";
+import type { ItemVerdict, PlanFactCheck, PlanFactFacts, PlanFactTable } from "../../tasks";
 
 export const PLAN_FACT_MODE_SETTING = "plan_fact.mode";
 export type PlanFactMode = "record" | "gate";
@@ -61,7 +61,7 @@ function familyPaths(db: ServerCore["db"], runId: string, taskId: string): strin
 export async function runPlanFactStage(ctx: ServerCore, input: {
   projectId: string; runId: string; taskId: string; attempt: number; hostId: string; task: TaskV2;
   answers: readonly string[]; produced: readonly string[]; verification: ReadonlyArray<{ command: string; exitCode: number }>;
-}): Promise<{ refusal: string | null; check: PlanFactCheck }> {
+}): Promise<{ refusal: string | null; check: PlanFactCheck; state: "passed" | "failed" | "skipped" }> {
   const { db, host, bb } = ctx;
   const table = tableFromAnswers(input.answers);
   const gitBaseFamily = familyBase(db, input.runId, input.taskId);
@@ -110,7 +110,33 @@ export async function runPlanFactStage(ctx: ServerCore, input: {
   recordStage(db, {
     runId: input.runId, taskId: input.taskId, stageId: "plan-fact", state: outcome.state, attempt: input.attempt,
     input: JSON.stringify({ answerSha256: sha256(input.answers[0] ?? ""), acceptance: input.task.acceptance, produced, base }),
-    result: { ...check, mode, base }, reason: outcome.reason,
+    result: { ...check, mode, base, rules: PLAN_FACT_RULES }, reason: outcome.reason,
   });
-  return { refusal: mode === "gate" && outcome.state === "failed" ? outcome.reason : null, check };
+  return { refusal: mode === "gate" && outcome.state === "failed" ? outcome.reason : null, check, state: outcome.state };
+}
+
+/** The writer's table as the check read it, from a receipt's items: a recheck weighs the same evidence, not a new answer. */
+export function tableFromItems(items: ReadonlyArray<Pick<ItemVerdict, "item" | "claimed" | "evidence" | "why">>): string {
+  const rows = items.filter((item) => item.claimed !== "none").map((item) => item.claimed === "not_done"
+    ? { item: item.item, status: "not_done", why: item.why ?? "not done" }
+    : { item: item.item, status: "done", evidence: item.evidence.map((entry) => entry.evidence), ...(item.why ? { why: item.why } : {}) });
+  return "```plan-fact\n" + JSON.stringify(rows) + "\n```";
+}
+
+/**
+ * A failed plan-fact receipt written by older rules of the check (PLAN_FACT_RULES), weighed again by the current ones without the
+ * writer: the same table, the files and the check results of the task's verification receipt, the diff read again. Once per receipt:
+ * the new one carries the current rules. Null when there is nothing to weigh again.
+ */
+export async function recheckPlanFact(ctx: ServerCore, input: { projectId: string; runId: string; taskId: string; hostId: string }): Promise<"passed" | "failed" | "skipped" | null> {
+  const row = ctx.db.prepare("SELECT state, attempt FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND stage_id='plan-fact'").get(input.runId, input.taskId) as { state: string; attempt: number } | undefined;
+  if (row?.state !== "failed") return null;
+  const old = getStageReceiptResult(ctx.db, input.runId, input.taskId, "plan-fact").result as { rules?: number; table?: string; items?: ItemVerdict[] } | null;
+  if (!old || (old.rules ?? 1) >= PLAN_FACT_RULES || old.table !== "ok" || !old.items?.length) return null;
+  const task = getTask(ctx.db, input.taskId)?.contract as TaskV2 | undefined;
+  if (!task?.acceptance?.length || !task.project_cwd) return null;
+  const checked = getStageReceiptResult(ctx.db, input.runId, input.taskId, "verification").result as { produced?: string[]; verification?: Array<{ command: string; exitCode: number }> } | null;
+  const { state } = await runPlanFactStage(ctx, { projectId: input.projectId, runId: input.runId, taskId: input.taskId, attempt: row.attempt, hostId: input.hostId, task,
+    answers: [tableFromItems(old.items)], produced: checked?.produced ?? [], verification: (checked?.verification ?? []).map(({ command, exitCode }) => ({ command, exitCode })) });
+  return state;
 }

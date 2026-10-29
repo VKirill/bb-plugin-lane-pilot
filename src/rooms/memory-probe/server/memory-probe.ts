@@ -4,7 +4,7 @@ import { storeMemoryRecords, type MemoryKind, type MemorySettings } from "@lane-
 import { sha256Hex } from "@lane-pilot/kit";
 import { taskV2Schema, type TaskV2 } from "../../contracts";
 import { MEMORY_PATHS, pathById, type MemoryPath, type ProbeKind } from "../../memory";
-import { pmMemoryContext, reviewerMemoryFor, sessionMemoryRpc, taskMemoryContext } from "../../memory/server";
+import { pmMemoryContext, reviewerMemoryFor, taskMemoryContext } from "../../memory/server";
 import { stickyTurnPromptWithRules, writerBriefSegments, writerContextBlocks, writerKnowledge } from "../../writer/server";
 import { memoryUnanswered, pmResumeInstructions, pmRulesOf, pmRulesPromptBlock, ruleBudget, type MemoryUnanswered } from "../../learning";
 import { codeCritiquePrompt, codeRepairPrompt } from "../../critique";
@@ -26,8 +26,8 @@ import type { Services } from "../../core/server";
  * `carries` is found. The negative case runs a task or a query that has nothing to do with the probe: a kind the path does not hand
  * to every task by design (`alwaysOn`) must not appear, and a query of gibberish must pull no record at all.
  *
- * The probe never starts a model. The real thing — the first prompt of a real writer and of a real PM in their thread logs, a real
- * `lane-memory` in a terminal — is read by the drill scenario `memory_paths` (scripts/lp-drill.py) after `--keep`.
+ * The probe never starts a model. The real thing — the first prompt of a real writer and of a real PM in their thread logs —
+ * is read by the drill scenario `memory_paths` (scripts/lp-drill.py) after `--keep`. (2026-10-29) no terminal lane-memory check.
  */
 export const PROBE_ANCHOR = "lp-probe/memory";
 const PROBE_TTL_MS = 24 * 3_600_000;
@@ -114,13 +114,6 @@ const PROBES: Record<string, (c: Context) => Promise<Probe> | Probe> = {
     const none = councilMemoryBlock(c.db, c.projectId, GIBBERISH);
     return { delivered: councilMemoryBlock(c.db, c.projectId, c.query), negative: none, pulled: none ? 1 : 0 };
   },
-  "terminal.search": async (c) => {
-    const rpc = sessionMemoryRpc(c.ctx, c.services);
-    const found = await rpc.session_memory_search({ projectId: c.projectId, query: c.query });
-    const none = await rpc.session_memory_search({ projectId: c.projectId, query: GIBBERISH });
-    return { delivered: lines(found.records.map((row) => row.content)), negative: lines(none.records.map((row) => row.content)), pulled: none.records.length };
-  },
-  "terminal.core": async (c) => ({ delivered: lines((await sessionMemoryRpc(c.ctx, c.services).session_memory_core({ projectId: c.projectId })).records.map((row) => row.content)), negative: null }),
 };
 
 export function createMemoryProbe(ctx: ServerCore, services: Services) {

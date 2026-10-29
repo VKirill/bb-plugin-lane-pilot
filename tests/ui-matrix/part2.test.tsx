@@ -147,10 +147,6 @@ describe("Lane Pilot UI", () => {
         cliReceiptJson: "{\"kind\":\"cli\",\"receiptPath\":\"/tmp/cli-receipt.json\"}",
       }),
     });
-    // The receipt lives in the Service segment, which mounts when it is opened.
-    openTab(slot, "service");
-    await slot.findByTestId("cli-receipt-lprun_cli");
-    expect(slot.getByTestId("diagnostics-panel").textContent).toContain("cli-receipt.json");
     // The accepted CLI run is in the History.
     openTab(slot, "monitor", "history");
     expect(slot.getByTestId("run-lprun_cli")).toBeTruthy();

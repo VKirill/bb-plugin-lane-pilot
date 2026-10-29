@@ -68,6 +68,14 @@ out = m.restore_owner_words(ctx, original, version)`);
     expect((rows["owner.words"] as unknown[])[0]).toBe("off");
   });
 
+  it("sets an unset key off before the scenarios start: unset means on since 2026-10-29", () => {
+    const { rows, out } = withFakeHub(`
+rows.pop("owner.words", None)
+out = m.clear_stale_owner_words(ctx)`);
+    expect(out).toEqual([]);
+    expect((rows["owner.words"] as unknown[])[0]).toBe("off");
+  });
+
   it("clears a leftover on before the scenarios start, and does nothing when it is off", () => {
     const left = withFakeHub(`
 rows["owner.words"] = ["on", 3]

@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { hashBytes, planJson, transitionOwned, type NativeInstallManifest } from "../src/rooms/native-install/native-install-owned";
 import { nativeInstallOperation } from "../src/rooms/native-install/native-install-host";
-import { CLAUDE_LANE_SOURCE, claudeLaneEnv, detectClaudeLane, upgradeClaudeLane } from "../src/rooms/native-install/native-install-bootstrap";
-import { execFileSync } from "node:child_process";
+import { detectOwnInstall, lanePilotEnv } from "../src/rooms/native-install/native-install-bootstrap";
+import { setLocaleOverride } from "@lane-pilot/i18n";
 import { reconcileClaudeLane } from "../src/rooms/native-agent/native-lane-reconcile";
 import { createNativeInstaller, experimental_vkLifecycle, registerNativeInstallHost } from "../src/rooms/native-install/native-install-lifecycle";
 const roots: string[] = [];
@@ -93,7 +93,9 @@ describe("BB lifecycle", () => {
     await expect(slow.ensure("mini")).rejects.toThrow("Начата установка");
     await expect(slow.ensure("mini")).rejects.toThrow("устанавливаются");
     const broken = createNativeInstaller({ supported: true, kv: kvFixture(), waitMs: 50, call: async (_, action) => { if (action === "install") throw new Error("flock missing"); return { status: "absent" }; }, log: () => {} });
-    await expect(broken.ensure("mini")).rejects.toThrow("Установка Claude Lane не удалась: flock missing");
+    setLocaleOverride("en");
+    await expect(broken.ensure("mini")).rejects.toThrow("Lane Pilot install failed: flock missing");
+    setLocaleOverride(null);
   });
   it("reports a machine as installing, installed, offline, with the last failure", async () => {
     const kv = kvFixture();
@@ -112,51 +114,50 @@ describe("BB lifecycle", () => {
     await expect(installer.status("macbook")).resolves.toEqual({ status: "enabled", error: "codex CLI broken" });
   });
 });
-describe("Claude Lane on the host", () => {
-  async function laneHome(installed: boolean) {
+describe("Lane Pilot pieces on the host", () => {
+  async function laneHome() {
     const root = await mkdtemp(join(tmpdir(), "lp-lane-")); roots.push(root);
     const home = join(root, "home");
-    await mkdir(join(home, ".agents"), { recursive: true }); await mkdir(join(home, ".claude/plugins"), { recursive: true });
-    if (installed) {
-      await writeFile(join(home, ".agents/install.json"), JSON.stringify({ source_sha: "b".repeat(40) }));
-      await writeFile(join(home, ".claude/plugins/installed_plugins.json"), JSON.stringify({ plugins: { "lane-stack@claude-lane-stack": [{ scope: "user" }] } }));
-    }
+    await mkdir(home, { recursive: true });
     return { root: join(root, "managed"), home };
   }
-  it("uses the user's own Claude Lane install and never removes it", async () => {
-    const { root, home } = await laneHome(true);
-    expect(await detectClaudeLane(home)).toEqual({ sourceSha: "b".repeat(40), sourceRepo: null });
-    expect(await nativeInstallOperation({ root, home, action: "install" })).toMatchObject({ status: "enabled", sourceSha: "b".repeat(40), ownedFiles: 0 });
+  it("installs the guard and does not clone a checkout", async () => {
+    const { root, home } = await laneHome();
+    expect(await detectOwnInstall(home)).toBeNull();
+    expect(await nativeInstallOperation({ root, home, action: "install" })).toMatchObject({ status: "enabled", sourceSha: null, ownedFiles: 0 });
+    expect((await readFile(join(home, ".agents/lane-pilot/pm/guard_shell.py"), "utf8")).length).toBeGreaterThan(20);
+    await expect(readFile(join(home, ".local/share/claude-lane-stack-installed"))).rejects.toMatchObject({ code: "ENOENT" });
     expect(await nativeInstallOperation({ root, home, action: "remove" })).toMatchObject({ status: "absent" });
-    expect(await detectClaudeLane(home)).not.toBeNull();
+    expect(await detectOwnInstall(home)).not.toBeNull();
   });
-  it("registers the OpenCode Lane plugin in a commented opencode.jsonc once", async () => {
-    const { home } = await laneHome(true);
-    const source = join(home, "src"), profile = join(source, "profiles/opencode");
-    await mkdir(join(profile, "opencode-lane"), { recursive: true }); await mkdir(join(profile, "commands"), { recursive: true }); await mkdir(join(profile, "agents"), { recursive: true });
-    await writeFile(join(profile, "opencode-lane.ts"), "x"); await writeFile(join(profile, "opencode-lane/a.ts"), "a");
-    await writeFile(join(profile, "commands/opencode-lane.md"), "c"); await writeFile(join(profile, "agents/lane-writer.md"), "w");
+  it("does not treat a plugin list without the guard as installed", async () => {
+    const { home } = await laneHome();
+    await mkdir(join(home, ".claude/plugins"), { recursive: true });
+    await writeFile(join(home, ".claude/plugins/installed_plugins.json"), JSON.stringify({ plugins: { "lane-stack@claude-lane-stack": [{ scope: "user" }] } }));
+    expect(await detectOwnInstall(home)).toBeNull();
+  });
+  it("registers the bundled OpenCode plugin and does not install a Claude plugin", async () => {
+    const { home } = await laneHome();
+    const source = join(home, "src");
+    await mkdir(join(source, "profiles/opencode/opencode-lane"), { recursive: true });
+    await writeFile(join(source, "profiles/opencode/opencode-lane/guard.ts"), "from-checkout");
     await mkdir(join(home, ".config/opencode"), { recursive: true });
     await writeFile(join(home, ".config/opencode/opencode.jsonc"), '{\n  // mine\n  "plugin": ["./plugins/other.ts"]\n}\n');
-    const env = { ...claudeLaneEnv(home), PATH: `${join(home, "bin")}:/usr/bin:/bin` };
-    await mkdir(join(home, "bin")); await writeFile(join(home, "bin/opencode2"), "#!/bin/sh\n", { mode: 0o755 });
+    await mkdir(join(home, "bin"));
+    await writeFile(join(home, "bin/opencode2"), "#!/bin/sh\n", { mode: 0o755 });
+    await writeFile(join(home, "bin/claude"), "#!/bin/sh\necho called >> \"$HOME/claude-called\"\nexit 99\n", { mode: 0o755 });
+    const env = { ...lanePilotEnv(home), PATH: `${join(home, "bin")}:/usr/bin:/bin` };
     expect((await reconcileClaudeLane({ home, source, env })).openCode).toBe("newly-registered");
     const text = await readFile(join(home, ".config/opencode/opencode.jsonc"), "utf8");
     expect(text).toContain("// mine"); expect(text).toContain("./plugins/other.ts"); expect(text).toContain("./plugins/opencode-lane.ts");
-    expect(await readFile(join(home, ".config/opencode/agents/lane-writer.md"), "utf8")).toBe("w");
+    expect(await readFile(join(home, ".config/opencode/opencode-lane/guard.ts"), "utf8")).toContain("gitVerbs");
+    expect(await readFile(join(home, ".config/opencode/opencode-lane/guard.ts"), "utf8")).not.toContain("from-checkout");
+    await expect(readFile(join(home, "claude-called"))).rejects.toMatchObject({ code: "ENOENT" });
     expect((await reconcileClaudeLane({ home, source, env })).openCode).toBe("registered");
+    expect((await reconcileClaudeLane({ home, source, env })).claudePlugin).toBe("fresh");
   });
-  it("leaves a user's own Claude Lane checkout alone", async () => {
-    const { home } = await laneHome(true);
-    expect(await upgradeClaudeLane({ home, source: join(home, "tools/claude-lane-stack") })).toBe(false);
-    const standard = join(home, CLAUDE_LANE_SOURCE);
-    await mkdir(standard, { recursive: true });
-    execFileSync("git", ["init", "-q", "-b", "main", standard]);
-    execFileSync("git", ["-C", standard, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "x"]);
-    expect(await upgradeClaudeLane({ home, source: standard })).toBe(false);
-  });
-  it("reports a machine without Claude Lane as absent", async () => {
-    const { root, home } = await laneHome(false);
+  it("reports a machine without Lane Pilot's guard as absent", async () => {
+    const { root, home } = await laneHome();
     expect(await nativeInstallOperation({ root, home, action: "status" })).toMatchObject({ status: "absent" });
   });
 });

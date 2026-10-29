@@ -107,7 +107,10 @@ export function createScheduler(deps: SchedulerDeps) {
         const reason = `missed: ${toSkip.length} tick(s) came while Lane Pilot was not running${schedule.missed_policy === "skip" ? " (policy: skip)" : ""}`;
         if (store.addRun({ scheduleId: schedule.id, runKey: `${schedule.id}:${time}`, scheduledAt: time, trigger: "tick", status: "skipped", reason }).created) skipped += 1;
       }
-      const newest = due[due.length - 1]!;
+      // The backlog was cut at BACKLOG_CHUNKS × BACKLOG_CHUNK ticks: the rest of the absence is passed over, not caught up on the
+      // next pass again (2026-10-29 audit A-009: run_once made a second catch-up for the same 30 days of a minutely schedule).
+      const cut = whenOf(schedule).type !== "once" && due.length >= BACKLOG_CHUNK * BACKLOG_CHUNKS;
+      const newest = cut ? Math.max(at, due[due.length - 1]!) : due[due.length - 1]!;
       db.prepare("UPDATE lane_pilot_schedule SET cursor_at=MAX(cursor_at,?),state=CASE WHEN trigger_type='once' THEN 'done' ELSE state END,updated_at=? WHERE id=?").run(newest, at, schedule.id);
     })();
     return { created, skipped };
@@ -162,6 +165,13 @@ export function createScheduler(deps: SchedulerDeps) {
       const ref = await deps.executors[input.schedule.kind].start(input);
       db.prepare("UPDATE lane_pilot_schedule_run SET ref_kind=?,ref_id=?,host_id=COALESCE(?,host_id) WHERE id=?").run(ref.refKind, ref.refId, ref.hostId ?? null, run.id);
       changed(input.schedule);
+      // Canceled while the start was awaited: the row closed before the job had a reference, so the job is stopped now that it has
+      // one, or nothing would watch it (2026-10-29 audit A-007).
+      const after = store.getRun(run.id);
+      if (after?.status === "canceled") {
+        await deps.executors[input.schedule.kind].cancel({ ...input, run: after }).catch((cause: unknown) => log(`schedule run ${run.id} canceled during its start: its job ${ref.refId} could not be stopped: ${cause instanceof Error ? cause.message : String(cause)}`));
+        return false;
+      }
       return true;
     } catch (cause) {
       end(run, "failed", { error: `could not start: ${cause instanceof Error ? cause.message : String(cause)}`, reason: "start_failed" });

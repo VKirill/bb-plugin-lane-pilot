@@ -106,7 +106,11 @@ export function createStability(ctx:ServerCore, services:Services) {
     await bb.storage.kv.set(REDRIVES_KEY, memo);
   }
 
-  /** Tells each PM once a minute at most, in one message, which of its tasks were parked or restarted. */
+  /**
+   * Tells each PM once a minute at most, in one message, which of its parked tasks need it (a secret, a dirty checkout, retries spent).
+   * A park that clears itself and a restart are not told: the message woke an idle PM chat for nothing, and dispatch already refuses
+   * to send a parked task again (runningFamilyMember).
+   */
   function notePm(pmThreadId:string, line:string) {
     if (!pmThreadId) return;
     pendingNotes.set(pmThreadId, [...(pendingNotes.get(pmThreadId) ?? []), line]);
@@ -115,7 +119,7 @@ export function createStability(ctx:ServerCore, services:Services) {
       if (ctx.isDisposed()) return;
       for (const [threadId, lines] of pendingNotes) {
         pendingNotes.delete(threadId);
-        const text = `Lane Pilot (no action needed, do not redispatch these):\n${lines.map((line) => `- ${line}`).join("\n")}`;
+        const text = `Lane Pilot (parked tasks that need you):\n${lines.map((line) => `- ${line}`).join("\n")}`;
         void bb.sdk.threads.send({ threadId, mode:"queue-if-active", input:[{ type:"text", text, mentions:[] }] } as never)
           .catch((cause) => ctx.log(`Lane Pilot could not tell ${threadId} about parked tasks: ${cause instanceof Error ? cause.message : String(cause)}`));
       }
@@ -161,7 +165,7 @@ export function createStability(ctx:ServerCore, services:Services) {
     await saveParked([...list.filter((row) => row !== previous), entry]);
     bb.log.info(`Lane Pilot parked ${input.taskId} (${klass}: ${fingerprint})`);
     if (waitingSecret) notePm(input.pmThreadId, `${input.taskId} waits for a secret its checks need (${input.reason.slice(0, 160)}); call env_request for it, or ask the owner to allow it in secrets.allow. It restarts by itself once the access is in place, no attempt is spent.`);
-    else notePm(input.pmThreadId, `${input.taskId} hit ${klass === "harness" ? "a Lane Pilot fault" : klass === "dirty_base" ? "a dirty base checkout (uncommitted changes there that its merge would overwrite: commit or discard them)" : "a machine fault"} (${input.reason.slice(0, 160)}); it is parked and restarts by itself ${klass === "harness" ? "once the fix ships" : "after a short wait"}.`);
+    else if (klass === "dirty_base") notePm(input.pmThreadId, `${input.taskId} hit a dirty base checkout (uncommitted changes there that its merge would overwrite: commit or discard them) (${input.reason.slice(0, 160)}); it is parked and restarts by itself after a short wait.`);
     return true;
   }
 
@@ -246,7 +250,6 @@ export function createStability(ctx:ServerCore, services:Services) {
       await rememberRedrive(row, waiting ? row.redrives : row.redrives + 1, now);
       perProject.set(row.projectId, count + 1);
       started.push(row.taskId);
-      notePm(row.pmThreadId, `${row.taskId} restarted from its writer stage (${waiting ? "its secret is in place" : row.klass === "harness" ? `Lane Pilot ${VERSION} fixed «${row.fingerprint}»` : "machine fault retry"}).`);
     }
     await saveParked(keep);
     if (started.length) bb.log.info(`Lane Pilot restarted ${started.length} parked task(s): ${started.join(", ")}`);

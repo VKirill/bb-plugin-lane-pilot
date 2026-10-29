@@ -112,6 +112,17 @@ export const rpcNative = {
     input: z.object({ hostId: z.string().min(1) }).strict(),
     output: z.object({ status: z.string(), error: z.string().nullable() }).strict(),
   },
+  remove_claude_lane_leftovers: {
+    input: z.object({ hostId: z.string().min(1), apply: z.boolean().optional() }).strict(),
+    output: z.object({
+      apply: z.boolean(),
+      changed: z.boolean(),
+      settings: z.array(z.string()),
+      codex: z.array(z.string()),
+      moved: z.array(z.string()),
+      backupDir: z.string().nullable(),
+    }).strict(),
+  },
   prepare_native_session: {
     input: z.object({
       projectId: z.string().min(1),

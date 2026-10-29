@@ -6,6 +6,7 @@ import { QUALITY_MODE_SETTING, parseSandboxUnsafePatterns, resolveQualityMode } 
 import { isTaskSatisfied } from "../../runs/server";
 import { lintContract, lintProbePaths, siblingTestFolders } from "./contract-lint";
 import { checkProgram } from "../rails";
+import { ownerWordsOn } from "../words";
 import { allowedSecretNames } from "../../secrets/server";
 import { gateResolverFor } from "../../verification/server";
 import { parseIntegrationGateSettings } from "../../verification/server";
@@ -71,7 +72,7 @@ export function createTaskLinter(ctx: ServerCore, services: Services) {
         programs = new Map(Object.entries(answer.found));
       } catch { programs = null; }
     }
-    const ownerWords = String(settings["owner.words"] ?? "off") === "on";
+    const ownerWords = ownerWordsOn(settings);
     // What the project recorded of each check: its green durations (the store checkTimeoutSec reads) and the limits it timed out at.
     const checkHistory = (check:{ command:string; cwd:string }) => { const ref = { command:check.command, cwd:check.cwd, root:task.project_cwd }; return { greenMs:listCheckDurations(db, projectId, ref), timedOutSec:listCheckTimeouts(db, projectId, ref) }; };
     const qualityMode = resolveQualityMode(task, settings[QUALITY_MODE_SETTING]);

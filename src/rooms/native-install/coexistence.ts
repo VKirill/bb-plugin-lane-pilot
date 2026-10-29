@@ -64,9 +64,10 @@ async function parseJsonc(path: string): Promise<Record<string, unknown> | null>
 async function addEngineEvidence(
   state: CoexistenceManagerState,
   root: string | null,
+  hash: (path: string) => Promise<string | null> = pathHash,
 ): Promise<void> {
   if (!root) return;
-  const rootSha256 = await pathHash(root);
+  const rootSha256 = await hash(root);
   state.evidence.push({ kind: "engine-root", path: root, sha256: rootSha256, detail: "Read-only source root used for capability inspection." });
   const detailed = await inspectEngineCapabilitiesDetailed(root);
   const assessment = assessEngineCapabilities(detailed.capabilities);
@@ -154,6 +155,13 @@ function pluginEntries(parsed: Record<string, unknown> | null): string[] {
 
 async function inventoryForHome(input: CoexistenceInventoryInput, home: string): Promise<CoexistenceInventory> {
   const targetSha = input.targetSha ?? TARGET_SHA;
+  // One inventory call hashes each path once. (2026-10-29 audit J-003)
+  const hashed = new Map<string, Promise<string | null>>();
+  const hash = (path: string) => {
+    let pending = hashed.get(path);
+    if (!pending) { pending = pathHash(path); hashed.set(path, pending); }
+    return pending;
+  };
   const markerPath = join(agentsDir(home), "install.json");
   const marker = await readMarker(home);
   const engineRoot = await findEngineRoot(home, marker, targetSha);
@@ -162,13 +170,13 @@ async function inventoryForHome(input: CoexistenceInventoryInput, home: string):
   markerState.configured = Boolean(marker.source_sha || marker.source_repo);
   markerState.version = marker.version ?? null;
   markerState.sourceSha = marker.source_sha ?? null;
-  markerState.sha256 = await pathHash(markerPath);
+  markerState.sha256 = await hash(markerPath);
   markerState.path = markerPath;
   markerState.decision = marker.source_repo && await exists(marker.source_repo)
     ? "reuse"
     : markerState.installed ? "skip" : "skip";
   if (marker.source_repo && await exists(marker.source_repo)) {
-    await addEngineEvidence(markerState, marker.source_repo);
+    await addEngineEvidence(markerState, marker.source_repo, hash);
     markerState.decision = markerState.compatible ? "reuse" : "conflict";
   }
   else if (marker.source_sha) markerState.evidence.push({ kind: "provenance", path: markerPath, sha256: markerState.sha256, detail: `Recorded source SHA ${marker.source_sha}; compatibility could not be proven because no engine interface root was found.` });
@@ -178,11 +186,11 @@ async function inventoryForHome(input: CoexistenceInventoryInput, home: string):
   for (const managedPath of managedPaths) {
     const managed = emptyState("managed-checkout", managedPath, "lane-pilot");
     managed.installed = await exists(managedPath);
-    managed.sha256 = await pathHash(managedPath);
+    managed.sha256 = await hash(managedPath);
     managed.sourceSha = await gitValue(managedPath, ["rev-parse", "HEAD"]);
     managed.version = (await readPackageVersion(managedPath)) ?? (managed.sourceSha ? managed.sourceSha.slice(0, 12) : null);
     managed.modified = (await gitValue(managedPath, ["status", "--porcelain"]))?.length ? true : managed.sourceSha ? false : null;
-    if (managed.installed) await addEngineEvidence(managed, managedPath);
+    if (managed.installed) await addEngineEvidence(managed, managedPath, hash);
     managed.decision = managed.compatible ? "reuse" : managed.installed ? "conflict" : "install";
     if (managed.installed && !managed.compatible && managed.missingCapabilities.length === 0) {
       managed.evidence.push({ kind: "capability", path: managedPath, sha256: managed.sha256, detail: "Engine source does not expose the required OpenCode module interface." });
@@ -194,11 +202,11 @@ async function inventoryForHome(input: CoexistenceInventoryInput, home: string):
   for (const cachePath of await cacheCandidates(home)) {
     const cache = emptyState("claude-cache", cachePath, "upstream");
     cache.installed = true;
-    cache.sha256 = await pathHash(cachePath);
+    cache.sha256 = await hash(cachePath);
     cache.sourceSha = await gitValue(cachePath, ["rev-parse", "HEAD"]);
     cache.version = (await readPackageVersion(cachePath)) ?? cachePath.split(/[\\/]/).at(-1) ?? null;
     cache.modified = (await gitValue(cachePath, ["status", "--porcelain"]))?.length ? true : cache.sourceSha ? false : null;
-    await addEngineEvidence(cache, cachePath);
+    await addEngineEvidence(cache, cachePath, hash);
     cache.decision = cache.compatible ? "reuse" : "conflict";
     cacheStates.push(cache);
   }
@@ -206,7 +214,7 @@ async function inventoryForHome(input: CoexistenceInventoryInput, home: string):
   const claudeSettingsPath = join(home, ".claude/settings.json");
   const claudeSettings = emptyState("claude-settings", claudeSettingsPath, "user");
   claudeSettings.installed = await exists(claudeSettingsPath);
-  claudeSettings.sha256 = await pathHash(claudeSettingsPath);
+  claudeSettings.sha256 = await hash(claudeSettingsPath);
   const claudeConfig = await readJsonFile(claudeSettingsPath);
   claudeSettings.configured = Boolean(claudeConfig && JSON.stringify(claudeConfig).includes("claude-lane-stack"));
   claudeSettings.decision = "skip";
@@ -215,7 +223,7 @@ async function inventoryForHome(input: CoexistenceInventoryInput, home: string):
   const opencodeConfigPath = await preferredOpenCodeConfig(home);
   const opencodeConfig = emptyState("opencode-config", opencodeConfigPath, "user");
   opencodeConfig.installed = await exists(opencodeConfigPath);
-  opencodeConfig.sha256 = await pathHash(opencodeConfigPath);
+  opencodeConfig.sha256 = await hash(opencodeConfigPath);
   const parsedConfig = await parseJsonc(opencodeConfigPath);
   const entries = pluginEntries(parsedConfig);
   const configuredRef = entries.find((entry) => entry.endsWith("opencode-lane.ts")) ?? null;
@@ -230,10 +238,10 @@ async function inventoryForHome(input: CoexistenceInventoryInput, home: string):
   const opencodePlugin = emptyState("opencode-plugin", resolvedPluginPath, await exists(resolvedPluginPath) ? "lane-pilot" : "unknown");
   opencodePlugin.installed = await exists(resolvedPluginPath);
   opencodePlugin.configured = Boolean(configuredRef);
-  opencodePlugin.sha256 = await pathHash(resolvedPluginPath);
+  opencodePlugin.sha256 = await hash(resolvedPluginPath);
   opencodePlugin.sourceSha = engineRoot ? await gitValue(engineRoot, ["rev-parse", "HEAD"]) : null;
   opencodePlugin.version = engineRoot ? await readPackageVersion(engineRoot) : null;
-  if (engineRoot) await addEngineEvidence(opencodePlugin, engineRoot);
+  if (engineRoot) await addEngineEvidence(opencodePlugin, engineRoot, hash);
   opencodePlugin.decision = opencodePlugin.installed && opencodePlugin.compatible ? "reuse" : opencodePlugin.installed ? "conflict" : engineRoot ? "install" : "conflict";
   opencodePlugin.evidence.push({ kind: "load", path: resolvedPluginPath, sha256: opencodePlugin.sha256, detail: opencodePlugin.installed ? "Plugin file exists; loaded remains unproven until OpenCode runtime receipt." : "Configured OpenCode plugin path does not exist; runtime load/action has not occurred." });
 
@@ -379,6 +387,16 @@ async function currentOperationRow(
 ): Promise<CoexistenceManagerState | null> {
   const inventory = await inventoryForHome({ projectId: input.projectId, hostId: input.hostId, targetSha: input.targetSha ?? undefined }, home);
   return inventory.managers.find((item) => item.manager === input.manager && item.path === input.path) ?? null;
+}
+
+/** Keep the unreadable bytes beside the ledger so a retry can create a fresh one. */
+async function quarantineInvalidLedger(home: string): Promise<void> {
+  const path = ownershipLedgerPath(home);
+  const state = await readTextState(path);
+  if (!state.text) return;
+  try { JSON.parse(state.text); return; }
+  catch { /* not JSON */ }
+  await rename(path, join(dirname(path), `.ownership-invalid-${randomUUID()}.json`)).catch(() => undefined);
 }
 
 async function snapshotOfWrite(input: {
@@ -680,7 +698,15 @@ export async function runCoexistenceOperationAtHome(
     const write = await compareAndSwapText(input.path, null, shim);
     if (write.status !== "ok" || !write.afterSha256) return resultOf(input, { status: write.status, owner: row.owner, beforeSha256: write.beforeSha256, afterSha256: write.afterSha256, reason: write.reason });
     const sourceSha = await sourceShaOf(selected.root);
-    const snapshotId = await snapshotOfWrite({ home, manager: input.manager, path: input.path, operation: "install", beforeSha256: null, afterSha256: write.afterSha256, ownedValue: null, sourceSha });
+    let snapshotId: string;
+    try {
+      snapshotId = await snapshotOfWrite({ home, manager: input.manager, path: input.path, operation: "install", beforeSha256: null, afterSha256: write.afterSha256, ownedValue: null, sourceSha });
+    } catch (error) {
+      // The shim is owned only together with its ledger row. An invalid ledger is moved aside, not overwritten, so a retry can record a fresh one. (2026-10-29 audit A-029)
+      await removeCreatedManagedPath(input.path, write.afterSha256);
+      if (error instanceof Error && error.message.includes("ownership ledger is invalid JSON")) await quarantineInvalidLedger(home);
+      throw error;
+    }
     return resultOf(input, { status: "ok", owner: "lane-pilot", beforeSha256: null, afterSha256: write.afterSha256, snapshotId, evidence: [{ kind: "installed", path: input.path, sha256: write.afterSha256, detail: `Managed shim imports the inspected compatible module at ${moduleSource}; source SHA ${sourceSha ?? "unavailable"} is provenance only.` }], reason: null });
   }
 

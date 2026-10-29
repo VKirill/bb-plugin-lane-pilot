@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, posix } from "node:path";
 import { promisify } from "node:util";
-import { CODE_FILE, TEST_PATH, jevApiKey, jevAsk, jevPool, jevStatus, scanDeclarations, type JevStatus } from "./docs-jev";
+import { CODE_FILE, TEST_PATH, jevAsk, jevCallFor, jevPool, jevStatus, scanDeclarations, type JevCallSource, type JevStatus } from "./docs-jev";
 import { extractRoutes, type RouteRef } from "./docs-routes";
 
 /**
@@ -114,7 +114,7 @@ function head(text:string, lines:number):string {
   return text.split("\n").slice(0, lines).join("\n").slice(0, 4000);
 }
 
-export async function buildDocsFlows(input:{ projectCwd:string; workspaces:FlowWorkspace[]; keep?:string[] }):Promise<{ briefPath:string; jev:JevStatus;
+export async function buildDocsFlows(input:{ projectCwd:string; workspaces:FlowWorkspace[]; keep?:string[] } & JevCallSource):Promise<{ briefPath:string; jev:JevStatus;
   flows:Array<{ name:string; slug:string; entries:number; modules:string[]; briefPath:string; files:string[];
     calls:Array<{ name:string; file:string; line:number; endLine:number }> }>; routes:number }> {
   const listed = (await run("git", ["-c", "core.quotePath=false", "-C", input.projectCwd, "ls-files"], { maxBuffer:64 << 20 })).stdout.split("\n");
@@ -176,16 +176,16 @@ export async function buildDocsFlows(input:{ projectCwd:string; workspaces:FlowW
   // A module nearly every entry reaches is plumbing, whatever its name.
   const common = [...candidates.values()].filter((candidate) => candidate.entries.size > 0 && candidate.entries.size <= Math.max(3, entries.length * 0.6));
 
-  const key = await jevApiKey();
+  const auth = await jevCallFor(input);
   let asked = 0, answered = 0;
   const judged = await jevPool(common, async (candidate) => {
-    if (!key) return { candidate, business:1, importance:candidate.entries.size };
+    if (!auth) return { candidate, business:1, importance:candidate.entries.size };
     asked++;
     const sample = candidate.files.slice(0, 3).map((file) => ({ file, code:head(files.get(file) ?? "", 60) }));
-    const answers = await jevAsk(key, { process:candidate.name, modules:candidate.modules, files:candidate.files.slice(0, 40), sample }, {
+    const answers = await jevAsk(auth.key, { process:candidate.name, modules:candidate.modules, files:candidate.files.slice(0, 40), sample }, {
       business:{ type:"noul", instructions:"Is `process` a business process that users or operators of the product go through - such as paying, generating content, signing in or moderating - rather than shared plumbing, configuration or a technical utility?" },
       importance:{ type:"score", instructions:"How central is `process` to what the product does for its users?", criteria:["A minor or supporting process", "A regular product process", "A core process the product exists for"] },
-    });
+    }, 20_000, auth.provider);
     if (answers) answered++;
     return { candidate, business:answers?.business?.noul ?? 0.5, importance:answers?.importance?.score ?? 1 };
   });
@@ -220,12 +220,12 @@ export async function buildDocsFlows(input:{ projectCwd:string; workspaces:FlowW
       for (const list of byApp.values()) if (list[round] && ranked.length < MAX_ENTRIES_JUDGED) ranked.push(list[round]!);
     }
     const kept = await jevPool(ranked, async ([entry, chain]) => {
-      if (!key) return { entry, chain, drives:1 };
+      if (!auth) return { entry, chain, drives:1 };
       asked++;
-      const answers = await jevAsk(key, { process:candidate.name, processModules:candidate.modules, entry, routes:(routeFiles.get(entry) ?? []).map((route) => `${route.method} ${route.path}`),
+      const answers = await jevAsk(auth.key, { process:candidate.name, processModules:candidate.modules, entry, routes:(routeFiles.get(entry) ?? []).map((route) => `${route.method} ${route.path}`),
         code:head(files.get(entry) ?? "", 50), importChain:describe(chain), calls:uses(candidate, chain).map((item) => item.name) }, {
         drives:{ type:"noul", instructions:"Does `entry` start or drive the `process` for a user or operator (it handles a request, command, job or page that runs this process), rather than only importing a shared helper or type from it?" },
-      });
+      }, 20_000, auth.provider);
       if (answers) answered++;
       return { entry, chain, drives:answers?.drives?.noul ?? 0.5 };
     });
@@ -233,7 +233,7 @@ export async function buildDocsFlows(input:{ projectCwd:string; workspaces:FlowW
   }));
   const documented = flows.filter((flow) => flow.entries.length);
 
-  const header = [`Built by Lane Pilot from the import graph; Jev judgments: ${key ? jevStatus(asked, answered) : "disabled"}.`,
+  const header = [`Built by Lane Pilot from the import graph; Jev judgments: ${auth ? jevStatus(asked, answered) : "disabled"}.`,
     "The flow is a business process found in the shared modules, with the entry points in the apps that drive it, one import chain",
     "from each entry into the process and what the entry calls there. Confirm every step in the code before you describe it; an entry listed here is a candidate, not a fact.", ""];
   const sections = documented.map((flow) => {
@@ -273,5 +273,5 @@ export async function buildDocsFlows(input:{ projectCwd:string; workspaces:FlowW
     flowsOut.push({ name:section.flow.candidate.name, slug:name, entries:section.flow.entries.length, modules:section.flow.candidate.modules,
       briefPath:path, files:section.files.slice(0, 2000), calls:section.calls.slice(0, 200) });
   }
-  return { briefPath, jev:key ? jevStatus(asked, answered) : "disabled", routes:routes.length, flows:flowsOut };
+  return { briefPath, jev:auth ? jevStatus(asked, answered) : "disabled", routes:routes.length, flows:flowsOut };
 }

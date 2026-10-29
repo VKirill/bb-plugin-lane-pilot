@@ -1,5 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { failureClass, failureFingerprint } from "../src/rooms/runs/failure-class";
 import { countAttempts, countChargedAttempts, createAttempt, createRun, openDatabase, setRunState, transitionAttempt } from "../src/rooms/storage/database";
 import { createStability } from "../src/rooms/stability/server/stability";
@@ -89,6 +89,24 @@ describe("parked tasks", () => {
     expect(await stability.sweep(60_000)).toEqual([]);
     expect(await stability.sweep(11 * 60_000)).toEqual(["T3"]);
     expect(resumed).toEqual(["T3"]);
+  });
+});
+
+describe("what the PM is told about parked tasks", () => {
+  it("wakes nobody for a fault that clears itself or a restart, and tells the PM of a dirty checkout it must clean", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      const { bb, stability, sent } = setup();
+      await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T1", pmThreadId:"pm", state:"blocked", reason:"reconcile_page_cap" }, 1000);
+      await bb.storage.kv.set("stability:parked", (await stability.loadParked()).map((row) => ({ ...row, version:"0.0.1" })));
+      expect(await stability.sweep(3000)).toEqual(["T1"]);
+      vi.advanceTimersByTime(61_000);
+      expect(sent).toEqual([]);
+      await stability.onTaskFailed({ projectId:"proj", runId:"run", taskId:"T5", pmThreadId:"pm", state:"validation_failed",
+        reason:"merge_failed: git merge failed: error: Your local changes to the following files would be overwritten by merge:\n  .agents/PROGRESS.md" }, 4000);
+      vi.advanceTimersByTime(61_000);
+      expect(sent).toEqual(["pm"]);
+    } finally { vi.useRealTimers(); }
   });
 });
 

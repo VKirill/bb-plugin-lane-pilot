@@ -16,6 +16,7 @@ const PLAN = ".agents/plans/2026-10-05-harness-engineering-gaps.md";
 const decision = (slug: string, what: string): SeedEntry => ({ id: `dfr_seed_plan_${slug}`, kind: "plan_decision", area: "harness", what: `${what} (${PLAN}, waiting for the owner's decision)` });
 
 export const SEED_ENTRIES: readonly SeedEntry[] = [
+  skip("sma_gaps", "sma/*.test.ts", "the SMA card's behaviour is missing in Lane Pilot (it.todo names the gap; the map counts the card as partial)"),
   skip("pipeline", "pipeline.test.ts", "the upstream agency binary is absent (NO_UPSTREAM): argv and 18-field schema checks"),
   skip("acceptance_v2", "acceptance-v2.test.ts", "the upstream agency checkout is absent (NO_UPSTREAM)"),
   skip("fault_injection", "fault-injection.test.ts", "the upstream fixture is absent (UPSTREAM_FIXTURE)"),

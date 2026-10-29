@@ -257,8 +257,8 @@ describe("backup and rollback", () => {
 
   it("hands a created file to agent-trash when the host has it", async () => {
     const { live, folder, task, home } = await prepared();
-    mkdirSync(join(home, ".agents", "bin"), { recursive: true });
-    const trash = join(home, ".agents", "bin", "agent-trash");
+    mkdirSync(join(home, ".agents", "lane-pilot", "bin"), { recursive: true });
+    const trash = join(home, ".agents", "lane-pilot", "bin", "agent-trash");
     writeFileSync(trash, `#!/bin/sh\necho "$@" >> "${join(home, "trashed.log")}"\nshift 2\nmv "$1" "${join(home, "trash-can")}"\n`);
     chmodSync(trash, 0o755);
     mkdirSync(join(home, "trash-can"));

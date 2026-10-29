@@ -35,6 +35,7 @@ sources:
   - src/rooms/learning/unanswered.ts
   - scripts/lp-drill.py
   - src/rooms/learning/housekeeping.ts
+  - src/rooms/stability/server/canary.ts
 ---
 
 # Project memory
@@ -43,7 +44,7 @@ TL;DR: Project memory stores scoped records in plugin SQLite, exposes search and
 
 ## Purpose
 
-Keep project facts and rules available to PM, writer, and terminal sessions through a shared hub-side memory store (`src/rooms/memory/server/session-memory.ts:11-15`, `src/rooms/storage/database.ts:174-183`).
+Keep project facts and rules available to PM, writer, and terminal sessions through a shared hub-side memory store (`src/rooms/memory/server/session-memory.ts:11-15`, `src/rooms/storage/database.ts:157-168`).
 
 ## How it works
 
@@ -99,9 +100,9 @@ A defect found by writing the registry: `stickyTurnPrompt` had a `rulesText` par
 
 ### The probe
 
-`bb lane-pilot memory-probe <project-id> [--paths a,b] [--keep] [--clean] [--report] [--force]` (CLI `src/rooms/tools/server/cli.ts:286`; RPC `memory_probe`, `src/rooms/contracts/rpc-ops.ts:91`, `src/rooms/core/server/rpc-memory-probe.ts`) runs `createMemoryProbe().run` (`src/rooms/memory-probe/server/memory-probe.ts:126`):
+`bb lane-pilot memory-probe <project-id> [--paths a,b] [--keep] [--clean] [--report] [--force]` (CLI `src/rooms/tools/server/cli.ts:286`; RPC `memory_probe`, `src/rooms/contracts/rpc-ops.ts:91`, `src/rooms/core/server/rpc-memory-probe.ts`) runs `createMemoryProbe().run` (`src/rooms/memory-probe/server/memory-probe.ts:136`):
 
-1. Refuses a project that is not a drill sandbox (`DRILL_SANDBOX_PROJECT_IDS` — the Mac mini's `proj_3tb652jpsi` and OVH's `proj_ibu6v9g64j` — plus `LP_MEMORY_PROBE_PROJECTS`, `:36-37`) unless `--force`.
+1. Refuses a project that is not a drill sandbox (`DRILL_SANDBOX_PROJECT_IDS`: the Mac mini's `proj_3tb652jpsi` and OVH's `proj_ibu6v9g64j`, `src/rooms/stability/server/canary.ts:40-41`, plus `LP_MEMORY_PROBE_PROJECTS`, `:36`) unless `--force`.
 2. Removes what an earlier run left, then plants through the write door (`storeMemoryRecords`, the function the maintainer and the session RPC use; `:153`) a note that names the folder `lp-probe/memory`, a core convention, and through the lesson door (`upsertLessonProposal` + `adoptRuleProposal`) an always-on rule for both audiences. Every record carries a unique token (`lpprobe<8 hex><n|c|r>`), `trust: confirmed`, `origin: probe` and `valid_until` one day ahead (`:33`).
 3. For every probed path builds what the agent receives and looks for the tokens (`PROBES`, `:68`): the brief text from `writerKnowledge` + `writerBriefSegments` (writer.brief), the next-task turn (writer.turn), `codeRepairPrompt` with the dispatch context (writer.repair), `pmRulesPromptBlock` (pm.start), `pmResumeInstructions` (pm.resume), `pmRulesOf` (pm.rules_tool), `pmMemoryContext` (pm.memory_tool), `codeCritiquePrompt` and `nightReviewPrompt` over `reviewerMemoryFor` (critic.code, night.review), `councilMemoryBlock` (council.evidence), the `session_memory_search` and `session_memory_core` handlers (terminal.*). A path passes when every kind it carries is in the text (`judge`, `:206`).
 4. Negative case: the same path for a task in an unrelated folder, and for a gibberish query. A kind the path does not hand to every task (`alwaysOn`) must not show up, and the gibberish query must pull no record.

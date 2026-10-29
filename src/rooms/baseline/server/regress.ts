@@ -35,6 +35,8 @@ export type RegressOptions = {
   force?: boolean | undefined;
   /** Only the tasks of this run, all of them (the run-goal check, src/rooms/run-goal); implies force. */
   runId?: string | undefined;
+  /** Only the tasks whose base checkout is one of these (a phase candidate's trees, src/rooms/phase/server/candidate.ts). */
+  basePaths?: readonly string[] | undefined;
   signal?: AbortSignal | undefined;
   now?: number | undefined;
 };
@@ -240,7 +242,8 @@ export function createRegression(ctx: ServerCore, services: Services) {
     const report: ProjectPass = { projectId, head: null, settings, tasks: [], findings: [], closed: [], commandsRun: 0, durationMs: 0 };
     const finish = (): ProjectPass => { report.durationMs = Date.now() - started; return report; };
 
-    const candidates = await candidatesOf(projectId, settings, now, report.tasks, options.runId);
+    const candidates = (await candidatesOf(projectId, settings, now, report.tasks, options.runId))
+      .filter((c) => !options.basePaths || options.basePaths.includes(c.target.basePath));
     // An open finding for a task that was reverted since is settled by that revert.
     if (!dry && !options.plan) {
       for (const open of listRegressions(db, { projectId })) {

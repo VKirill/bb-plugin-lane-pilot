@@ -1,7 +1,7 @@
 import { builtinWorkflow } from "../../workflow";
 import type { ServerCore, Services } from "../../core/server";
 import { threatGap } from "../stages";
-import { PLAN_WORD_GAP, phaseFolder, planGate, type Phase, type PhaseRecord, type PlanItem, type RiskKind } from "../logic";
+import { PLAN_WORD_GAP, INDEPENDENCE_GAP, phaseFolder, planGate, sha256, type Phase, type PhaseRecord, type PlanItem, type RiskKey, candidateOn } from "../logic";
 import packageJson from "../../../../package.json";
 
 /**
@@ -68,8 +68,10 @@ export function recoverStopped(phase: Phase, version: string = packageJson.versi
   const r = phase.record;
   if (phase.state !== "stopped" || phase.stage !== "planning" || r.closing?.by !== LOOP_STOP || !r.plan || r.plan.critique?.decision !== "approve" || r.autoFailuresVersion === version) return null;
   const threat = threatGap(r);
+  // An approval from before the independence proof (0.1.375) is no gap here: the phase plans anew once its context is signed with the threat model.
   const gate = planGate(r);
-  if (!threat || gate.ok || gate.why.length !== 1 || gate.why[0] !== threat) return null;
+  const why = gate.ok ? [] : gate.why.filter((reason) => !reason.startsWith(INDEPENDENCE_GAP));
+  if (!threat || why.length !== 1 || why[0] !== threat) return null;
   const restored = new Set(r.partial?.unproven.map((piece) => piece.id) ?? (r.scope?.revisions ? [] : r.scope?.withdrawn ?? []));
   const { closing: _closing, partial: _partial, lessons: _lessons, ...rest } = r;
   return { record: { ...rest, scope: { revisions: r.scope?.revisions ?? 0, withdrawn: (r.scope?.withdrawn ?? []).filter((id) => !restored.has(id)) }, auto: undefined, autoFailures: undefined, autoFailuresTotal: undefined, autoFailuresVersion: undefined },
@@ -87,7 +89,11 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number })
   const r = phase.record;
   const contextText = (r.context?.docs ?? []).map((doc) => doc.path).join(", ");
   switch (due.kind) {
-    case "analyze": return { goal: phase.goal, depth: "standard" };
+    // The owner's «no» to a context he was asked to sign rides the next analysis as part of the goal it reads.
+    case "analyze": {
+      const said = (r.words ?? []).filter((word) => word.turn === "context" && word.decision === "no").map((word) => word.text).slice(-3);
+      return { goal: said.length ? `${phase.goal}\n\nThe owner said no to the last context: ${said.join(" / ")}` : phase.goal, depth: "standard" };
+    }
     case "plan": {
       const gateGaps = r.plan ? planGaps(r) : [];
       const gaps = [...(r.replan?.gaps ? [`the verification failed: ${r.replan.gaps}`] : []),
@@ -106,18 +112,29 @@ export function autoInputs(phase: Phase, due: { kind: AutoKind; wave?: number })
     }
     case "review": {
       const items = (r.plan?.items ?? []).filter((item) => item.wave === due.wave);
-      return { range: r.execution?.baseSha ? `${r.execution.baseSha}..HEAD` : "HEAD~1..HEAD", dimensions: ["correctness", "tests", "contract"],
-        criteria: items.map((item) => `${item.id}: given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}`) };
+      // With a candidate the wave's work is on phase/<id>, not on main: the range and the files to read are the branch's.
+      const tree = candidateOn(r) ? Object.values(r.candidate!.trees)[0] : undefined;
+      const head = tree ? r.candidate!.branch : "HEAD";
+      return { range: r.execution?.baseSha ? `${r.execution.baseSha}..${head}` : `${head}~1..${head}`, dimensions: ["correctness", "tests", "contract"],
+        criteria: [...(tree ? [`the code under review is on branch ${r.candidate!.branch}, checked out at ${tree.path}: read the files there, not in the main checkout`] : []),
+          ...items.map((item) => `${item.id}: given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}`)] };
     }
     case "draw": return { goal: phase.goal, folder: phaseFolder(phase.id),
       pieces: (r.plan?.items ?? []).map((item) => `${item.id} — ${item.title}: given ${item.promise.given}; when ${item.promise.when}; then ${item.promise.then}`).join("\n").slice(0, 8000) };
-    case "close": return { goal: phase.goal, summary: r.verification?.verdict?.detail ?? "" };
+    case "close": {
+      // The goal audit reads the package that is to land: before the landing that is the candidate's tree.
+      const tree = candidateOn(r) && !r.candidate!.landedAt ? Object.values(r.candidate!.trees)[0] : undefined;
+      return { goal: phase.goal, summary: `${tree ? `The phase's work is on branch ${r.candidate!.branch}, checked out at ${tree.path}, and lands on main only after the acceptance: read and run the evidence there. ` : ""}${r.verification?.verdict?.detail ?? ""}` };
+    }
     case "lessons": return { run_id: phase.runId ?? "" };
   }
 }
 
 const text = (value: unknown, max: number) => String(typeof value === "string" ? value : value === undefined || value === null ? "" : JSON.stringify(value)).trim().slice(0, max);
-const RISK_WORDS: Array<[RiskKind, RegExp]> = [["security", /secur|secret|auth|token|permission|безопас|секрет/i], ["operations", /deploy|ops|operat|backup|monitor|выкат|эксплуат/i], ["product", /user|product|ux|owner|пользоват|продукт/i]];
+/** SMA p1_risks: value, usability, feasibility, viability; a security risk is named beside them (it asks for the threat model). */
+const RISK_KEYS = ["value", "usability", "feasibility", "viability", "security"] as const satisfies readonly RiskKey[];
+const RISK_WORDS: Array<[RiskKey, RegExp]> = [["security", /secur|secret|auth|token|permission|безопас|секрет/i], ["viability", /cost|money|budget|price|business|deploy|operat|backup|monitor|стоим|деньг|бюджет|бизнес|выкат|эксплуат/i],
+  ["usability", /usab|\bux\b|\bui\b|screen|confus|удобн|экран|понятн/i], ["value", /value|worth|need|goal|ценн|нужн|польз/i]];
 
 /** SECURITY.md: the threat model the plan gate (threatGap) asks for when the analysis names a security risk. */
 export function securityDoc(phase: Pick<Phase, "title" | "goal">, risks: readonly string[]): string {
@@ -130,14 +147,14 @@ export function securityDoc(phase: Pick<Phase, "title" | "goal">, risks: readonl
 }
 
 /** CONTEXT.md of the discussion, written by the machine from the analysis. */
-export function contextDoc(phase: Phase, output: Record<string, unknown>): { content: string; risks: Record<RiskKind, string>; decisions: string[]; questions: string[]; security: string | null } {
+export function contextDoc(phase: Phase, output: Record<string, unknown>): { content: string; risks: Record<RiskKey, string>; decisions: string[]; questions: string[]; security: string | null; appetite: string; noGos: string[] } {
   const decisions = Array.isArray(output.decisions) ? output.decisions as unknown[] : [];
   const risks = Array.isArray(output.risks) ? output.risks as unknown[] : [];
-  const byKind: Record<RiskKind, string[]> = { technical: [], product: [], operations: [], security: [] };
+  const byKind: Record<RiskKey, string[]> = { value: [], usability: [], feasibility: [], viability: [], security: [] };
   for (const risk of risks) {
     const line = text((risk as { text?: unknown; risk?: unknown; description?: unknown })?.text ?? (risk as { risk?: unknown })?.risk ?? (risk as { description?: unknown })?.description ?? risk, 300);
-    const kind = (risk as { kind?: string })?.kind && ["technical", "product", "operations", "security"].includes(String((risk as { kind?: string }).kind)) ? (risk as { kind: RiskKind }).kind
-      : RISK_WORDS.find(([, words]) => words.test(line))?.[0] ?? "technical";
+    const kind = (risk as { kind?: string })?.kind && (RISK_KEYS as readonly string[]).includes(String((risk as { kind?: string }).kind)) ? (risk as { kind: RiskKey }).kind
+      : RISK_WORDS.find(([, words]) => words.test(line))?.[0] ?? "feasibility";
     byKind[kind].push(line);
   }
   const ids: string[] = [];
@@ -148,19 +165,24 @@ export function contextDoc(phase: Phase, output: Record<string, unknown>): { con
     return `- **${id}** (${text(d?.status ?? d?.kind, 20) || "locked"}): ${text(d?.text ?? d?.decision ?? decision, 500)}`;
   });
   const questions = (Array.isArray(output.open_questions) ? output.open_questions as unknown[] : []).map((question) => text(question, 1000)).filter(Boolean);
+  // Appetite before solution and the no-gos (SMA p1_card, p1_appetite): the analysis decides them; «none» is an answer for the no-gos.
+  const appetite = text(output.appetite, 600) || `scope ${text(output.scope_verdict, 40) || "unknown"}: no more than the analysis found for the goal`;
+  const noGos = (Array.isArray(output.no_gos) ? output.no_gos as unknown[] : []).map((line) => text(line, 300)).filter(Boolean).slice(0, 30);
   const content = [
     `# Context — ${phase.title}`, "", `Goal: ${phase.goal}`, "",
+    `## Appetite`, appetite, "",
     `Scope: ${text(output.scope_verdict, 40) || "unknown"}; recommendation: ${text(output.recommendation, 40) || "—"}; confidence: ${text(output.confidence, 10) || "—"}.`, "",
     "## Decisions", ...(decisionLines.length ? decisionLines : ["- none recorded"]), "",
-    "## Risks", ...(["technical", "product", "operations", "security"] as RiskKind[]).map((kind) => `- ${kind}: ${byKind[kind].join("; ") || "none seen"}`), "",
+    "## No-gos", ...(noGos.length ? noGos.map((line) => `- ${line}`) : ["- none"]), "",
+    "## Risks", ...RISK_KEYS.filter((kind) => kind !== "security" || byKind.security.length).map((kind) => `- ${kind}: ${byKind[kind].join("; ") || "none seen"}`), "",
     "## Open questions", ...(questions.length ? questions.map((question) => `- ${question}`) : ["- none"]), "",
     "Written by Lane Pilot from the analysis (lp.analyze); the plan stands on this file.",
   ].join("\n");
-  const risksText = Object.fromEntries((["technical", "product", "operations", "security"] as RiskKind[]).map((kind) => [kind, (byKind[kind].join("; ") || "none seen").slice(0, 600)])) as Record<RiskKind, string>;
+  const risksText = Object.fromEntries(RISK_KEYS.filter((kind) => kind !== "security" || byKind.security.length).map((kind) => [kind, (byKind[kind].join("; ") || "none seen").slice(0, 600)])) as Record<RiskKey, string>;
   // A security risk needs a signed threat model before the plan is admitted (threatGap), and no machine stage wrote one: the plan failed
   // its gate every time and the loop ended the phase (live drill ph_5cd09d1c7a, Fable 2026-10-27). The analysis writes it with the context.
   const security = byKind.security.length ? securityDoc(phase, byKind.security) : null;
-  return { content, risks: risksText, decisions: ids, questions, security };
+  return { content, risks: risksText, decisions: ids, questions, security, appetite, noGos: noGos.length ? noGos : ["none"] };
 }
 
 /** Plan pieces from lp.plan: each task-v2 contract with its wave and a promise drawn from the contract. */
@@ -181,13 +203,13 @@ export function planItems(phase: Phase, output: Record<string, unknown>): PlanIt
 }
 
 export type AutoApi = {
-  context(input: { phaseId: string; docs: string[]; risks: Partial<Record<RiskKind, string>>; decisions?: string[]; by: string }): Promise<Phase>;
-  plan(input: { phaseId: string; items: PlanItem[]; design?: boolean; alreadyMet?: string; by: string }): Phase;
-  planCheck(input: { phaseId: string; decision: "approve" | "changes_requested"; by: string; summary?: string }): Promise<Phase>;
+  context(input: { phaseId: string; docs: string[]; risks: Partial<Record<RiskKey, string>>; decisions?: string[]; appetite?: string; noGos?: string[]; by: string }): Promise<Phase>;
+  plan(input: { phaseId: string; items: PlanItem[]; design?: boolean; alreadyMet?: string; fromRun?: string; by: string }): Phase;
+  planCheck(input: { phaseId: string; decision: "approve" | "changes_requested"; by: string; summary?: string; wfRunId?: string }): Promise<Phase>;
   question(input: { phaseId: string; text: string; blocking: boolean; by: string }): Phase;
   waveReview(input: { phaseId: string; wave: number; state: "passed" | "failed"; by: string; summary: string }): Phase;
   goalAudit(input: { phaseId: string; state: "met" | "unmet"; by: string; summary: string }): Phase;
-  lessons(input: { phaseId: string; analysis: string; author: string; reviewer: string; reviewedHash: string; by: string }): Phase;
+  lessons(input: { phaseId: string; analysis: string; reviewRun: string; reviewerNode?: string; by: string }): Phase;
   drawing(input: { phaseId: string; paths: string[]; designer: string; feasible: boolean; contradiction?: string; reviewer?: string; by: string }): Promise<Phase>;
   returnTo(input: { phaseId: string; to: "planning" | "discussion"; note: string; by: string }): Phase;
 };
@@ -200,8 +222,6 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
   save(phaseId: string, record: PhaseRecord): void;
   book(phase: Phase, section: string, kind: string, text: string): void;
   writeDocs(phase: Phase, files: Array<{ path: string; content: string }>, message: string): Promise<{ written: string[] }>;
-  /** The hash of the phase book's last part: what the machine read when it reports the lessons. */
-  bookHead(phase: Phase): string;
   runtime(phase: Phase): unknown | null;
   /** Whether the PM chat is idle (no turn running). */
   pmIdle(phase: Phase): Promise<boolean>;
@@ -253,7 +273,7 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       if (!written.written.includes(path)) throw new Error("CONTEXT.md was not written");
       if (doc.security && !written.written.includes(securityPath)) throw new Error("SECURITY.md was not written");
       for (const question of doc.questions.slice(0, 5)) deps.api.question({ phaseId: phase.id, text: question, blocking: false, by });
-      await deps.api.context({ phaseId: phase.id, docs: [path, ...(doc.security ? [securityPath] : [])], risks: doc.risks, decisions: doc.decisions, by });
+      await deps.api.context({ phaseId: phase.id, docs: [path, ...(doc.security ? [securityPath] : [])], risks: doc.risks, decisions: doc.decisions, appetite: doc.appetite, noGos: doc.noGos, by });
     } else if (auto.kind === "plan") {
       if (phase.stage !== "planning" || phase.record.plan?.admittedSha) return;
       const fresh = planItems(phase, output);
@@ -266,10 +286,10 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       const old = phase.record.replan?.gaps ? phase.record.plan?.items ?? [] : [];
       const lastWave = Math.max(0, ...old.map((item) => item.wave));
       const items = old.length ? [...old.filter((item) => !fresh.some((next) => next.id === item.id)), ...fresh.map((item) => ({ ...item, wave: lastWave + item.wave }))] : fresh;
-      const planned = deps.api.plan({ phaseId: phase.id, items, design: output.has_ui === true, ...(met ? { alreadyMet: `the planner checked the repository: ${text(output.objective, 600) || phase.goal}` } : {}), by });
-      // lp.plan has the whole plan critiqued by its own critic role: that is the independent check of this plan.
-      const approved = output.status === "ok" && !/reject|changes|rework|fail/i.test(text(output.plan_verdict, 200));
-      await deps.api.planCheck({ phaseId: planned.id, decision: approved ? "approve" : "changes_requested", by: `${by}, plan critic`, summary: text(output.plan_verdict, 2000) });
+      const planned = deps.api.plan({ phaseId: phase.id, items, design: output.has_ui === true, fromRun: auto.wfRunId, ...(met ? { alreadyMet: `the planner checked the repository: ${text(output.objective, 600) || phase.goal}` } : {}), by });
+      // lp.plan has the whole plan critiqued by its own critic role in a session of its own; the gate reads that from the run's journal.
+      const approved = output.status === "ok" && text(output.plan_verdict, 200) === "pass";
+      await deps.api.planCheck({ phaseId: planned.id, decision: approved ? "approve" : "changes_requested", by: `${by}, plan critic`, summary: text(output.plan_verdict, 2000), wfRunId: auto.wfRunId });
       // The replan's gaps hold until the plan is admitted: a second round still merges into the pieces that were.
       const checked = deps.get(planned.id);
       if (checked.record.replan?.gaps && checked.record.plan?.admittedSha) deps.save(checked.id, { ...checked.record, replan: { count: checked.record.replan.count } });
@@ -285,11 +305,13 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
         summary: text(`${output.status}; critical ${text(output.critical_count, 6)}, high ${text(output.high_count, 6)}; ${JSON.stringify(output.findings ?? []).slice(0, 1500)}`, 2000) });
     } else if (auto.kind === "lessons") {
       if (phase.stage !== "lessons" || phase.record.lessons?.analysis) return;
-      const insights = Array.isArray(output.insights) ? output.insights as unknown[] : [];
-      const analysis = [`Retrospective of the run (${text(output.status, 20)}; ${text(output.candidates_staged, 6) || 0} rule or note candidate(s) staged${output.retro_path ? `, ${text(output.retro_path, 200)}` : ""}).`,
-        ...insights.slice(0, 12).map((insight) => `- ${text((insight as { text?: unknown; title?: unknown })?.text ?? (insight as { title?: unknown })?.title ?? insight, 280)}`)].join("\n");
-      // The retrospective's two roles: «retro» writes the insights, «stage» weighs and stages them — the author and its reviewer.
-      deps.api.lessons({ phaseId: phase.id, analysis, author: "retrospective: retro", reviewer: "retrospective: stage", reviewedHash: deps.bookHead(phase), by });
+      // The retrospective's two roles: «retro» writes, «stage» reads and weighs in a session of its own. The analysis is what «stage» was
+      // handed (its journal input), so the read is the engine's own measurement, not a hash this code computes (SMA p7_saw_bytes, audit N-04).
+      const step = services.workflowEngine.snapshot?.(auto.wfRunId)?.steps.filter((row) => row.node_id === "stage" && row.state === "succeeded").at(-1);
+      let handoff = "";
+      try { handoff = text((JSON.parse(step?.input_json ?? "{}") as { via?: { handoff?: unknown } }).via?.handoff, 4000); } catch { /* no input: refused below */ }
+      if (!handoff) throw new Error("output_invalid: the retrospective's «stage» step received no analysis to read");
+      deps.api.lessons({ phaseId: phase.id, analysis: handoff, reviewRun: auto.wfRunId, by });
     } else {
       const met = output.status === "closed";
       // The replan reads this summary as its gaps: each unmet goal with what it lacks, and the drift. Ids alone left the planner
@@ -394,7 +416,7 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
       if (!(await deps.pmIdle(phase))) return true;
       const before = phase.record.signedBefore!;
       try {
-        await deps.api.context({ phaseId: phase.id, docs: before.docs, risks: before.risks ?? {}, ...(before.decisions ? { decisions: before.decisions } : {}), by: "Lane Pilot (signed again after the return)" });
+        await deps.api.context({ phaseId: phase.id, docs: before.docs, risks: before.risks ?? {}, ...(before.decisions ? { decisions: before.decisions } : {}), appetite: before.appetite, noGos: before.noGos, by: "Lane Pilot (signed again after the return)" });
         const after = deps.get(phase.id);
         deps.save(after.id, { ...after.record, signedBefore: undefined });
       } catch (cause) {
@@ -413,7 +435,9 @@ export function createAutoStages(ctx: Pick<ServerCore, "log">, services: Pick<Se
     try {
       // The goal audit is told from git which recorded proofs are stale, so it does not work currency out by hand; a failed lookup only leaves the facts out.
       const currency = due.kind === "close" && deps.proofCurrency ? await deps.proofCurrency(phase).catch(() => null) : null;
+      // The plan runs in full mode: lp.plan's critic otherwise skips a plan below three tasks, and SMA checks every plan (p2_checker).
       const started = services.workflowEngine.start({ workflow, inputs: { ...autoInputs(phase, due), ...(currency ? { proof_currency: currency } : {}) }, key: `phase:${phase.id}:${due.kind}:${phase.edition}:${deps.now()}`, runtime,
+        ...(due.kind === "plan" ? { mode: "full" as const } : {}),
         link: { projectId: phase.projectId, ...(phase.runId ? { runId: phase.runId } : {}) } });
       started.done.catch((cause: unknown) => ctx.log(`phase ${phase.id}: ${AUTO_WORKFLOWS[due.kind]} stopped: ${cause instanceof Error ? cause.message : String(cause)}`));
       deps.save(phase.id, { ...phase.record, auto: { kind: due.kind, wfRunId: started.runId, startedAt: deps.now(), ...(due.wave ? { wave: due.wave } : {}) } });

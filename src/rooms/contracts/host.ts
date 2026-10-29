@@ -10,6 +10,17 @@ export const hostContract = defineRpcContract({
     input: z.object({ requestedHostId: z.string().min(1), action: z.enum(["install", "enable", "disable", "remove", "status"]) }).strict(),
     output: z.object({ status: z.enum(["absent", "prepared", "enabled", "disabled"]), sourceSha: z.string().nullable(), ownedFiles: z.number(), preservedFiles: z.number() }).strict(),
   },
+  removeClaudeLaneLeftovers: {
+    input: z.object({ requestedHostId: z.string().min(1), apply: z.boolean().optional() }).strict(),
+    output: z.object({
+      apply: z.boolean(),
+      changed: z.boolean(),
+      settings: z.array(z.string()),
+      codex: z.array(z.string()),
+      moved: z.array(z.string()),
+      backupDir: z.string().nullable(),
+    }).strict(),
+  },
   gitOwnershipBase: {
     input: z.object({ requestedHostId:z.string().min(1), projectCwd:z.string().startsWith("/"), baseRef:z.string().min(1).max(240).optional() }).strict(),
     output: z.object({ hostId:z.string(), status:z.enum(["ready","not-git","invalid-ref","failed"]), branch:z.string().nullable(), headSha:z.string().nullable(), baseRef:z.string().nullable(), baseSha:z.string().nullable(), compareCommitted:z.boolean(), reason:z.string().nullable() }).strict(),
@@ -85,6 +96,10 @@ export const hostContract = defineRpcContract({
       committedOnly:z.boolean().optional(), bookkeeping:z.array(z.string().max(300)).max(100).optional(),
       // The task's owns_paths: a bookkeeping file it owns keeps the attempt's version in the merge (additive; an older host ignores it).
       ownsPaths:z.array(z.string().max(300)).max(200).optional(),
+      // A phase candidate lands only when main, under the base lock, is already in it: the merge is then the verified tree (additive).
+      baseInHead:z.boolean().optional(),
+      // The worktree head the merge must find under the base lock (the verified candidate commit); another head refuses (additive).
+      expectedHead:z.string().regex(/^[a-f0-9]{40,64}$/).optional(),
       // The task's checks, run in the attempt's worktree when it was replayed on a moved main, before the merge (additive).
       replayChecks:z.object({ workspacePath:z.string().startsWith("/"), backend:z.enum(["auto","macos-seatbelt","linux-bubblewrap"]).optional(),
         commands:z.array(z.object({ command:z.string().min(1).max(32_000), cwd:z.string().startsWith("/"), timeoutSec:z.number().int().min(1).max(7200).optional() }).strict()).min(1).max(20) }).strict().optional() }).strict(),
@@ -341,27 +356,7 @@ export const hostContract = defineRpcContract({
     input: hostBaseInput,
     output: installReceiptSchema,
   },
-  runCli: {
-    input: z.object({
-      requestedHostId: z.string().min(1),
-      binary: z.enum(["run-controller", "lane-ctl"]),
-      argv: z.array(z.string()),
-      env: z.record(z.string(), z.string()),
-      cwd: z.string().startsWith("/"),
-      timeoutMs: z.number().int().min(1000).max(1_800_000).optional(),
-    }).strict(),
-    output: z.object({
-      hostId: z.string(),
-      binaryPath: z.string(),
-      argv: z.array(z.string()),
-      env: z.record(z.string(), z.string()),
-      cwd: z.string(),
-      exitCode: z.number().int(),
-      stdout: z.string(),
-      stderr: z.string(),
-    }).strict(),
-  },
-  // The integration gate runs on the project's host (a project on another machine has no path on the hub): both are job kinds.
+  // (2026-10-29) runCli (lane-ctl / run-controller) is gone. The integration gate runs on the project's host.
   gateRun: {
     input: z.object({ requestedHostId:z.string().min(1), basePath:z.string().startsWith("/"), command:z.string().min(1).max(32_000), timeoutSec:z.number().int().min(1).max(7200) }).strict(),
     output: z.object({ hostId:z.string(), exitCode:z.number().int(), stdout:z.string(), stderr:z.string(), head:z.string().nullable() }).strict(),
@@ -577,6 +572,16 @@ export const hostContract = defineRpcContract({
       agentId: z.string(),
       claudePath: z.string(),
       sessionAgents: z.boolean(),
+    }).strict(),
+  },
+  /** Bundled claude guard launcher for a Lane Pilot thread that is not a native session. (2026-10-29 claude-guard) */
+  prepareClaudeGuard: {
+    input: z.object({
+      role: z.string().min(1).max(80),
+      cwd: z.string().startsWith("/").optional(),
+    }).strict(),
+    output: z.object({
+      env: z.array(z.object({ name: z.string(), value: z.string(), reason: z.string() }).strict()),
     }).strict(),
   },
 });

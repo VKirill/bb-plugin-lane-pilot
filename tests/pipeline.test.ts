@@ -4,10 +4,8 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
 import { NO_UPSTREAM, upstreamPath } from "./upstream-fixture";
 import { aggregateRun } from "../src/rooms/runs/aggregation";
-import { spawnSync } from "node:child_process";
 import { buildCliInvocation } from "../src/rooms/writer/argv-builder";
-import { requiredCliFlags } from "../src/rooms/writer/cli-flags";
-import { attemptProduced, classifyCliOutcome } from "../src/rooms/writer/cli-outcome";
+import { attemptProduced } from "../src/rooms/writer/cli-outcome";
 import { classifyWriterOutput, parseGitChangedPaths } from "../src/rooms/tasks/validate-output";
 import {
   claimActivation,
@@ -103,33 +101,22 @@ describe("§3.5 aggregation", () => {
 });
 
 describe("argv-builder channels", () => {
-  it("maps W-DIRECT and ENV-PASSTHROUGH and lists E1 unapplied settings", () => {
+  it("keeps writer and pool settings off the dead CLI argv", () => {
     const built = buildCliInvocation({
       binary:"run-controller",
       subcommand:"run",
       settings:{
         "writer.provider":"opencode",
-        "writer.model":"kimi",
-        "writer.reasoning_effort":"medium",
-        "writer.service_tier":"standard",
-        "writer.fast_mode":true,
-        "jev.LANE_JEV_EFFORT":true,
-        "jev.LANE_OPENCODE_JEV":false,
-        "ops.poll_interval":2,
+        "ops.pool_size":4,
+        "ops.max_tasks":3,
         "plan_critique.mode":"advisory",
-        "plan_critique.provider":"codex",
       },
-      required:{ "--run-dir":"/tmp/run", "--project-cwd":"/tmp/proj" },
     });
-    expect(built.argv).toEqual([
-      "run", "--run-dir", "/tmp/run", "--project-cwd", "/tmp/proj",
-      "--provider", "opencode", "--model", "kimi", "--reasoning-effort", "medium",
-      "--service-tier", "standard", "--poll-interval", "2",
-    ]);
-    expect(built.argv.filter((token) => token === "--provider")).toHaveLength(1);
-    expect(built.env).toEqual({ LANE_JEV_EFFORT:"1", LANE_OPENCODE_JEV:"0" });
-    expect(built.unapplied.map((row) => row.key).sort()).toEqual(["plan_critique.mode","plan_critique.provider","writer.fast_mode"]);
-    expect(built.unapplied.find((item) => item.key === "plan_critique.mode")?.reason).toMatch(/no --mode/);
+    expect(built.argv).toEqual(["run"]);
+    expect(built.applied).toEqual([]);
+    expect(built.unapplied.map((row) => row.key).sort()).toEqual(["ops.max_tasks","ops.pool_size","plan_critique.mode","writer.provider"]);
+    expect(built.unapplied.find((item) => item.key === "writer.provider")?.reason).toMatch(/native Lane Pilot/i);
+    expect(built.unapplied.find((item) => item.key === "ops.pool_size")?.reason).toMatch(/native Lane Pilot/i);
   });
   it("emits one unapplied row for a duplicated catalog key", () => {
     const built = buildCliInvocation({
@@ -141,111 +128,6 @@ describe("argv-builder channels", () => {
     expect(night).toHaveLength(1);
     expect(night[0]?.reason).toMatch(/native Lane Pilot stage/i);
     expect(new Set(built.unapplied.map((row) => row.key)).size).toBe(built.unapplied.length);
-  });
-  it.each([[false, "standard"], [true, "fast"]] as const)("migrates legacy fast_mode=%s through one service-tier flag", (legacy, expectedTier) => {
-    const built = buildCliInvocation({
-      binary:"run-controller", subcommand:"run", settings:{ "writer.fast_mode":legacy },
-    });
-    expect(built.argv).toEqual(["run", "--service-tier", expectedTier]);
-    expect(built.argv.filter((token) => token === "--service-tier")).toHaveLength(1);
-    expect(built.argv).not.toContain("--fast-mode");
-    expect(built.unapplied).toContainEqual(expect.objectContaining({ key:"writer.fast_mode" }));
-  });
-  it("does not put --max-tasks on run-controller unless that key is controller-scoped", () => {
-    const built = buildCliInvocation({
-      binary:"run-controller",
-      subcommand:"run",
-      settings:{ "ops.max_tasks":3 },
-      required:{ "--run-dir":"/tmp/run" },
-    });
-    expect(built.argv).not.toContain("--max-tasks");
-  });
-  it("applies the configured session task cap to lane-ctl start only",()=>{
-    const built=buildCliInvocation({
-      binary:"lane-ctl",subcommand:"start",settings:{"ops.max_tasks":3},
-      required:requiredCliFlags({binary:"lane-ctl",subcommand:"start",runDir:"/tmp/run",projectCwd:"/tmp/proj",taskFile:"/tmp/run/tasks/001.yaml"}),
-    });
-    expect(built.argv).toEqual(["start","--run-dir","/tmp/run","--project-cwd","/tmp/proj","--task-file","/tmp/run/tasks/001.yaml","--max-tasks","3"]);
-    expect(built.applied).toContain("ops.max_tasks");
-    expect(built.unapplied).toEqual([]);
-  });
-  it("emits a writer provider flag only once when it is already required", () => {
-    const built = buildCliInvocation({
-      binary:"run-controller",
-      subcommand:"run",
-      settings:{ "writer.provider":"codex" },
-      required:{ "--run-dir":"/tmp/run", "--project-cwd":"/tmp/proj", "--provider":"codex" },
-    });
-    expect(built.argv.filter((arg) => arg === "--provider")).toHaveLength(1);
-    expect(built.argv.filter((arg) => arg === "codex")).toHaveLength(1);
-  });
-  it("does not put W-DIRECT or OPS poll flags on run-controller status", () => {
-    const built = buildCliInvocation({
-      binary:"run-controller",
-      subcommand:"status",
-      settings:{
-        "writer.provider":"opencode",
-        "ops.poll_interval":1,
-        "plan_critique.mode":"advisory",
-      },
-      required: requiredCliFlags({ binary:"run-controller", subcommand:"status", runDir:"/tmp/run", projectCwd:"/tmp/proj" }),
-    });
-    expect(built.argv).toEqual(["status", "--run-dir", "/tmp/run", "--json"]);
-    expect(built.unapplied.map((row) => row.key).sort()).toEqual([
-      "ops.poll_interval",
-      "plan_critique.mode",
-      "writer.provider",
-    ]);
-  });
-  it("lane-ctl status requires --task-id and rejects --project-cwd", () => {
-    const built = buildCliInvocation({
-      binary:"lane-ctl",
-      subcommand:"status",
-      settings:{ "writer.provider":"cursor", "ops.project_cwd":"/tmp/proj" },
-      required: requiredCliFlags({ binary:"lane-ctl", subcommand:"status", runDir:"/tmp/run", projectCwd:"/tmp/proj", taskId:"001" }),
-    });
-    expect(built.argv).toEqual(["status", "--run-dir", "/tmp/run", "--json", "--task-id", "001"]);
-    expect(built.argv).not.toContain("--project-cwd");
-  });
-  it("lane-ctl start requires --task-file and --project-cwd", () => {
-    expect(() => requiredCliFlags({ binary:"lane-ctl", subcommand:"start", runDir:"/tmp/run", projectCwd:"/tmp/proj" }))
-      .toThrow(/task-file/);
-    const built = buildCliInvocation({
-      binary:"lane-ctl",
-      subcommand:"start",
-      settings:{ "writer.provider":"cursor" },
-      required: requiredCliFlags({
-        binary:"lane-ctl", subcommand:"start", runDir:"/tmp/run", projectCwd:"/tmp/proj", taskFile:"/tmp/run/tasks/001.yaml",
-      }),
-    });
-    expect(built.argv).toEqual([
-      "start", "--run-dir", "/tmp/run", "--project-cwd", "/tmp/proj",
-      "--task-file", "/tmp/run/tasks/001.yaml", "--provider", "cursor",
-    ]);
-  });
-  // Spawns the real upstream binaries; without the pinned upstream they are not on PATH, so skip.
-  // deferral:dfr_seed_skip_pipeline
-  it.skipIf(NO_UPSTREAM)("built argv is a subset of real binary --help", () => {
-    const cases: Array<{ binary:"run-controller"|"lane-ctl"; subcommand:string; required:Record<string,string> }> = [
-      { binary:"run-controller", subcommand:"status", required: requiredCliFlags({ binary:"run-controller", subcommand:"status", runDir:"/tmp/r" }) },
-      { binary:"run-controller", subcommand:"run", required: requiredCliFlags({ binary:"run-controller", subcommand:"run", runDir:"/tmp/r", projectCwd:"/tmp/p" }) },
-      { binary:"lane-ctl", subcommand:"status", required: requiredCliFlags({ binary:"lane-ctl", subcommand:"status", runDir:"/tmp/r", taskId:"001" }) },
-      { binary:"lane-ctl", subcommand:"start", required: requiredCliFlags({ binary:"lane-ctl", subcommand:"start", runDir:"/tmp/r", projectCwd:"/tmp/p", taskFile:"/tmp/t.yaml" }) },
-    ];
-    for (const row of cases) {
-      const help = spawnSync(row.binary, [row.subcommand, "--help"], { encoding:"utf8" });
-      const text = `${help.stdout}\n${help.stderr}`;
-      const allowed = new Set([...text.matchAll(/--[a-z0-9-]+/g)].map((match) => match[0]));
-      const built = buildCliInvocation({
-        binary:row.binary,
-        subcommand:row.subcommand,
-        settings:{ "writer.provider":"cursor", "ops.poll_interval":2, "plan_critique.mode":"advisory" },
-        required:row.required,
-      });
-      for (const token of built.argv.filter((item) => item.startsWith("--"))) {
-        expect(allowed.has(token), `${row.binary} ${row.subcommand} unexpected ${token}`).toBe(true);
-      }
-    }
   });
   it("rejects --apply / setup", () => {
     expect(() => buildCliInvocation({
@@ -479,51 +361,6 @@ describe("writer output validation", () => {
       state:"validation_failed",
       reason:"owns_paths rejected src/production.ts",
     });
-  });
-});
-
-describe("CLI run outcome", () => {
-  it("rejects a nonzero host exit even when stdout claims accepted", () => {
-    const outcome = classifyCliOutcome({
-      subcommand:"status",
-      exitCode:73,
-      stdout: JSON.stringify({ accepted:true, status:"accepted", exit_code:0 }),
-    });
-    expect(outcome.status).toBe("blocked");
-    expect(outcome.taskAccepted).toBe(false);
-    expect(outcome.reason).toBe("control exit 73");
-  });
-  it("does not accept lane-ctl status exit 0 when the task failed", () => {
-    const outcome = classifyCliOutcome({
-      subcommand:"status",
-      exitCode:0,
-      stdout: JSON.stringify({ status:"failed", accepted:false, exit_code:71 }),
-    });
-    expect(outcome.status).toBe("blocked");
-    expect(outcome.taskAccepted).toBe(false);
-  });
-  it("keeps start/run at running until upstream accepted", () => {
-    expect(classifyCliOutcome({
-      subcommand:"start",
-      exitCode:0,
-      stdout: JSON.stringify({ status:"started", accepted:false }),
-    }).status).toBe("running");
-    expect(classifyCliOutcome({
-      subcommand:"status",
-      exitCode:0,
-      stdout: JSON.stringify({ status:"accepted", accepted:true }),
-    }).status).toBe("accepted");
-  });
-  it("blocks a conflicting failed receipt even when accepted is true", () => {
-    const outcome = classifyCliOutcome({
-      subcommand:"status",
-      exitCode:0,
-      stdout: JSON.stringify({ status:"failed", accepted:true, exit_code:71 }),
-    });
-    expect(outcome.status).toBe("blocked");
-    expect(outcome.taskAccepted).toBe(false);
-    expect(outcome.upstreamStatus).toBe("failed");
-    expect(outcome.reason).toMatch(/conflict/);
   });
 });
 

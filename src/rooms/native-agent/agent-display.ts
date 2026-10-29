@@ -9,6 +9,17 @@ export const STOCK_AGENT_SEED_DESCRIPTIONS: Readonly<Record<string, string>> = {
   tavily: "Lane Pilot Tavily research agent",
   "workflow-architect": "Lane Pilot workflow architect",
   "video-lead": "Lane Pilot video lead",
+  "advisor-researcher": "Lane Pilot advisor researcher",
+  "ai-researcher": "Lane Pilot AI researcher",
+  "animator": "Lane Pilot animator",
+  "doc-classifier": "Lane Pilot doc classifier",
+  "domain-researcher": "Lane Pilot domain researcher",
+  "eval-auditor": "Lane Pilot eval auditor",
+  "eval-planner": "Lane Pilot eval planner",
+  "framework-selector": "Lane Pilot model selector",
+  "mempalace-curator": "Lane Pilot memory curator",
+  "nyquist-auditor": "Lane Pilot check auditor",
+  "ui-researcher": "Lane Pilot UI researcher",
 };
 
 const BUNDLED_DISPLAY_NAMES: Readonly<Record<string, string>> = {
@@ -20,6 +31,17 @@ const BUNDLED_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   tavily: "Researcher",
   "workflow-architect": "Workflow architect",
   "video-lead": "Video",
+  "advisor-researcher": "Advisor",
+  "ai-researcher": "AI researcher",
+  "animator": "Animator",
+  "doc-classifier": "Doc classifier",
+  "domain-researcher": "Domain researcher",
+  "eval-auditor": "Eval auditor",
+  "eval-planner": "Eval planner",
+  "framework-selector": "Model selector",
+  "mempalace-curator": "Memory curator",
+  "nyquist-auditor": "Check auditor",
+  "ui-researcher": "UI researcher",
 };
 
 const STOCK_LABEL_KEYS: Readonly<Record<string, I18nKey>> = {
@@ -31,6 +53,18 @@ const STOCK_LABEL_KEYS: Readonly<Record<string, I18nKey>> = {
   tavily: "agentDisplayTavily",
   "workflow-architect": "agentDisplayWorkflowArchitect",
   "video-lead": "agentDisplayVideoLead",
+  // (2026-10-29 lane-stack port) The exported I18nKey union is too large to accept keys added after it. These are real keys in i18n-agent-labels.ts.
+  "advisor-researcher": "agentDisplayAdvisorResearcher" as unknown as I18nKey,
+  "ai-researcher": "agentDisplayAiResearcher" as unknown as I18nKey,
+  "animator": "agentDisplayAnimator" as unknown as I18nKey,
+  "doc-classifier": "agentDisplayDocClassifier" as unknown as I18nKey,
+  "domain-researcher": "agentDisplayDomainResearcher" as unknown as I18nKey,
+  "eval-auditor": "agentDisplayEvalAuditor" as unknown as I18nKey,
+  "eval-planner": "agentDisplayEvalPlanner" as unknown as I18nKey,
+  "framework-selector": "agentDisplayFrameworkSelector" as unknown as I18nKey,
+  "mempalace-curator": "agentDisplayMempalaceCurator" as unknown as I18nKey,
+  "nyquist-auditor": "agentDisplayNyquistAuditor" as unknown as I18nKey,
+  "ui-researcher": "agentDisplayUiResearcher" as unknown as I18nKey,
 };
 
 function stockDescriptions(id: string): string[] {
@@ -59,6 +93,17 @@ const STOCK_CHART: Readonly<Record<string, 1 | 2 | 3 | 4 | 5>> = {
   tavily: 3,
   "workflow-architect": 5,
   "video-lead": 4,
+  "advisor-researcher": 2,
+  "ai-researcher": 3,
+  "animator": 4,
+  "doc-classifier": 5,
+  "domain-researcher": 1,
+  "eval-auditor": 2,
+  "eval-planner": 3,
+  "framework-selector": 5,
+  "mempalace-curator": 1,
+  "nyquist-auditor": 2,
+  "ui-researcher": 4,
 };
 
 export function agentBadgeChart(id: string): 1 | 2 | 3 | 4 | 5 {

@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { NATIVE_STACK_SHA, claudeLaneEnv } from "../src/rooms/native-install/native-install-bootstrap";
+import { lanePilotEnv } from "../src/rooms/native-install/native-install-bootstrap";
+import { nativeInstallOperation } from "../src/rooms/native-install/native-install-host";
+import { NATIVE_OPENCODE_SOURCES } from "../src/rooms/native-install/native-opencode-sources";
 import { reconcileClaudeLane } from "../src/rooms/native-agent/native-lane-reconcile";
 
 const roots: string[] = [];
@@ -19,41 +21,41 @@ async function openCodeHost(guard: string) {
   await mkdir(join(home, ".config/opencode"), { recursive: true });
   await writeFile(join(home, ".config/opencode/opencode.jsonc"), '{\n  "plugin": []\n}\n');
   await mkdir(join(home, "bin")); await writeFile(join(home, "bin/opencode2"), "#!/bin/sh\n", { mode: 0o755 });
-  const env = { ...claudeLaneEnv(home), PATH: `${join(home, "bin")}:/usr/bin:/bin` };
+  const env = { ...lanePilotEnv(home), PATH: `${join(home, "bin")}:/usr/bin:/bin` };
   return { home, source, profile, env };
 }
 
-describe("native install pinned Lane Stack revision", () => {
-  it("pins Lane Stack 1.66.0 (8cfe994), the first whose OpenCode plugin loads in OpenCode v2", () => {
-    expect(NATIVE_STACK_SHA).toBe("84a4a9fafea5eda168bd2d49423e41688e5f42d3");
-    expect(NATIVE_STACK_SHA).not.toBe("b9dd6473bbbe772d39a317486979b075635e63b5");
+describe("native install uses Lane Pilot's own pieces", () => {
+  it("does not clone a checkout when it installs", async () => {
+    const root = await mkdtemp(join(tmpdir(), "lp-sha-install-")); roots.push(root);
+    const home = join(root, "home");
+    await mkdir(home, { recursive: true });
+    expect(await nativeInstallOperation({ root: join(root, "managed"), home, action: "install" })).toMatchObject({ status: "enabled", sourceSha: null });
+    await expect(readFile(join(home, ".local/share/claude-lane-stack-installed"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("re-copies the OpenCode guard from the checkout on reconcile, replacing a stale copy", async () => {
-    const stale = 'export const allowed = ["ui-ux-pro-max"];';
-    const fresh = 'export const allowed = ["ui-ux-pro-max", "writer-practices", "karpathy-guidelines"];';
-    const { home, source, profile, env } = await openCodeHost(stale);
+  it("writes the bundled OpenCode plugin and ignores a mutated checkout", async () => {
+    const { home, source, profile, env } = await openCodeHost("from-checkout");
     expect((await reconcileClaudeLane({ home, source, env })).openCode).toBe("newly-registered");
     const installed = join(home, ".config/opencode/opencode-lane/guard.ts");
-    expect(await readFile(installed, "utf8")).toBe(stale);
-
-    // The bumped checkout carries the fixed guard; the next reconcile must copy it over the old one.
-    await writeFile(join(profile, "opencode-lane/guard.ts"), fresh);
+    expect(await readFile(installed, "utf8")).toBe(NATIVE_OPENCODE_SOURCES["opencode-lane/guard.ts"]);
+    await writeFile(join(profile, "opencode-lane/guard.ts"), "mutated");
     expect((await reconcileClaudeLane({ home, source, env })).openCode).toBe("registered");
-    expect(await readFile(installed, "utf8")).toBe(fresh);
-    expect(await readFile(join(home, ".config/opencode/agents/lane-writer.md"), "utf8")).toBe("writer");
+    expect(await readFile(installed, "utf8")).toBe(NATIVE_OPENCODE_SOURCES["opencode-lane/guard.ts"]);
+    expect(await readFile(join(home, ".config/opencode/agents/lane-pilot.md"), "utf8")).toBe(NATIVE_OPENCODE_SOURCES["agents/lane-pilot.md"]);
   });
 
   it("lays the plugin out for OpenCode v2: modules beside plugins/, the entry pointing one level up, no v1 folder", async () => {
-    const { home, source, profile, env } = await openCodeHost("guard");
-    await writeFile(join(profile, "opencode-lane.ts"), 'export { default } from "./opencode-lane/index.ts"\n');
+    const { home, source, env } = await openCodeHost("guard");
     await mkdir(join(home, ".config/opencode/plugins/opencode-lane"), { recursive: true });
     await writeFile(join(home, ".config/opencode/plugins/opencode-lane/old.ts"), "v1");
     await mkdir(join(home, ".config/opencode/opencode-lane"), { recursive: true });
     await writeFile(join(home, ".config/opencode/opencode-lane/removed.ts"), "gone upstream");
     await reconcileClaudeLane({ home, source, env });
-    expect(await readFile(join(home, ".config/opencode/plugins/opencode-lane.ts"), "utf8")).toBe('export { default } from "../opencode-lane/index.ts"\n');
-    expect(await readFile(join(home, ".config/opencode/opencode-lane/guard.ts"), "utf8")).toBe("guard");
+    expect(await readFile(join(home, ".config/opencode/plugins/opencode-lane.ts"), "utf8")).toBe(
+      NATIVE_OPENCODE_SOURCES["opencode-lane.ts"]!.replaceAll('"./opencode-lane/', '"../opencode-lane/'),
+    );
+    expect(await readFile(join(home, ".config/opencode/opencode-lane/guard.ts"), "utf8")).toBe(NATIVE_OPENCODE_SOURCES["opencode-lane/guard.ts"]);
     await expect(readFile(join(home, ".config/opencode/opencode-lane/removed.ts"))).rejects.toThrow();
     await expect(readFile(join(home, ".config/opencode/plugins/opencode-lane/old.ts"))).rejects.toThrow();
   });

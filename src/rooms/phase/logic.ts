@@ -23,7 +23,36 @@ export type Promise3 = { given: string; when: string; then: string };
 export type PlanItem = { id: string; title: string; wave: number; promise: Promise3; task: Record<string, unknown>; /** Requirement ids and locked decision ids this piece carries out (coverage gates). */ covers?: string[] };
 
 export type ContextDoc = { path: string; sha256: string; bytes: number };
-export type PlanCritique = { decision: "approve" | "changes_requested"; by: string; summary?: string };
+export type CandidateTree = { path: string; startSha: string };
+export type PhaseCandidate = { branch: string; trees: Record<string, CandidateTree>; off?: string;
+  /** Each tree's head when the blind verdict froze: the package the acceptance decides on. */ verified?: Record<string, string>;
+  /** The goal check of the candidate's own trees (the run's goal check reads main). */ goal?: { state: string; headSha: string | null; red: unknown[]; detail: string | null; at: number; tasks: number; runId: string; projectId: string };
+  landed?: Record<string, string | null>; landedAt?: number };
+/** A candidate in use: made, and not switched off. */
+export const candidateOn = (record: PhaseRecord): boolean => !!record.candidate && !record.candidate.off && Object.keys(record.candidate.trees).length > 0;
+/** What the run journal says about the plan checker (SMA p2_checker, p2_order, p2_session_end): a session of its own, started after the
+ *  plan was done, with the last word. `ok` false names why; the gate admits an approval only with `ok`. */
+export type CheckerIndependence = { ok: boolean; why: string; wfRunId?: string; checker?: string; planners?: string[]; checkerStartedAt?: number; plannedUntil?: number };
+export type PlanCritique = { decision: "approve" | "changes_requested"; by: string; summary?: string; independence?: CheckerIndependence };
+export type JournalStep = { nodeId: string; role: string | null; state: string; threadId: string | null; startedAt: number | null; endedAt: number | null };
+
+/** Is the plan checker of this workflow run independent of the planner: judged by the journal's sessions and times, never by a name.
+ *  `pmThread` and `submittedAt` stand for the planner when the run itself has no planner step (the PM wrote the plan). */
+export function checkerIndependence(wfRunId: string, steps: readonly JournalStep[], opts: { pmThread: string; submittedAt?: number }): CheckerIndependence {
+  const critics = steps.filter((step) => step.role === "plan-critic" && step.state === "succeeded" && step.threadId && step.startedAt != null)
+    .sort((a, b) => a.startedAt! - b.startedAt!);
+  const critic = critics.at(-1);
+  if (!critic) return { ok: false, wfRunId, why: `no plan-critic session finished in workflow run ${wfRunId} (a skipped or missing critic is no check)` };
+  const planners = steps.filter((step) => step.role === "planner" && step.threadId);
+  const plannerThreads = [...new Set([...planners.map((step) => step.threadId!), opts.pmThread])];
+  const plannedUntil = planners.length ? Math.max(...planners.map((step) => step.endedAt ?? step.startedAt ?? 0)) : opts.submittedAt ?? 0;
+  const base = { wfRunId, checker: critic.threadId!, planners: plannerThreads, checkerStartedAt: critic.startedAt!, plannedUntil };
+  if (plannerThreads.includes(critic.threadId!)) return { ...base, ok: false, why: `the plan checker went on in the planner's session ${critic.threadId}: continuing by message is no independent check` };
+  const after = planners.filter((step) => (step.startedAt ?? 0) > (critic.endedAt ?? critic.startedAt!));
+  if (after.length) return { ...base, ok: false, why: "the planner wrote again after the check: the checker must have the last word" };
+  if (critic.startedAt! < plannedUntil) return { ...base, ok: false, why: "the plan checker started before the plan was done: the check must come after the planner" };
+  return { ...base, ok: true, why: `checker ${critic.threadId} started after the planner (${plannerThreads.join(", ")}) and had the last word` };
+}
 export type Drawing = { paths: string[]; sha256: string; designer: string; reviewer?: string; feasible?: boolean; contradiction?: string };
 export type FrozenVerdict = { state: "passed" | "failed"; detail: string; mainSha: string | null; at: number; inputSha: string };
 /** What blindVerdict returns while the run's goal check is still running; it is never stored. */
@@ -31,17 +60,23 @@ export type PendingVerdict = Omit<FrozenVerdict, "state"> & { state: "pending" }
 export type AcceptanceLine = { id: AcceptanceLineId; ok: boolean; detail: string };
 export type ModelVerdict = { state: "met" | "unmet"; by: string; summary: string; at: number };
 
-/** The four kinds of risk a discussion names before any solution (SMA: Four risk kinds); «none» is an answer, silence is not. */
-export const RISK_KINDS = ["technical", "product", "operations", "security"] as const;
+/** The four kinds of risk a discussion names before any solution (SMA p1_risks: value, usability, feasibility, viability); «none» is an answer, silence is not. */
+export const RISK_KINDS = ["value", "usability", "feasibility", "viability"] as const;
 export type RiskKind = (typeof RISK_KINDS)[number];
+/** A security risk is named beside the four when there is one: it asks for a threat model before the plan (SMA k_wp_threat). */
+export type RiskKey = RiskKind | "security";
 
 /** A question a stage parks instead of guessing (SMA: Plan question parked, Answer a stage question); a blocking one holds the gate. */
 export type StageQuestion = { id: string; stage: PhaseStage; text: string; blocking: boolean; askedAt: number; answer?: string; answeredBy?: string; answeredAt?: number };
 
-/** The owner's word at a turn, when the project asks for it (setting owner.words = on; SMA: Plan row awaits a word, Drawing confirmation, Keyed decision, UAT line). */
-export const WORD_TURNS = ["planning", "design", "issue", "wave", "acceptance", "uat"] as const;
+/**
+ * The owner's word at a turn, when the project asks for it (owner.words, on by default; SMA: Context signature, Plan row awaits a word,
+ * Drawing confirmation, Issue gate, Person accepts the wave, UAT line, Keyed decision on the phase, Draft awaits a person).
+ */
+export const WORD_TURNS = ["context", "planning", "design", "issue", "wave", "acceptance", "uat", "lesson"] as const;
 export type WordTurn = (typeof WORD_TURNS)[number];
-export type OwnerWord = { turn: WordTurn; decision: "yes" | "no"; by: string; text: string; at: number; wave?: number };
+/** At acceptance the word is two decisions (SMA p6_l_useful, p6_l_limits) under the key of the package the person was shown (p6_decide). */
+export type OwnerWord = { turn: WordTurn; decision: "yes" | "no"; by: string; text: string; at: number; wave?: number; useful?: boolean; limits?: boolean; key?: string };
 
 /** A wave of the plan once its pieces are in (SMA: Wave package with hash, Wave acceptance lines, Wave verified by another model, Wave written to the book). */
 export type WaveRecord = { packageSha: string; lines: Array<{ id: string; ok: boolean; detail: string }>; review?: { state: "passed" | "failed"; by: string; summary: string; at: number }; at: number };
@@ -55,7 +90,7 @@ export type PhaseRecord = {
   /** The stage workflow the machine runs now (src/rooms/phase/server/auto-stages.ts). */
   auto?: { kind: "analyze" | "plan" | "draw" | "review" | "close" | "lessons"; wfRunId: string; startedAt: number; wave?: number };
   /** The context signed before a return to discussion: the machine signs these documents again instead of analysing anew. */
-  signedBefore?: { docs: string[]; risks?: Partial<Record<RiskKind, string>>; decisions?: string[] };
+  signedBefore?: { docs: string[]; risks?: Partial<Record<RiskKey, string>>; decisions?: string[]; appetite?: string; noGos?: string[] };
   /** Runs of a stage's workflow that did not finish; at two the loop is spent and the machine ends it (scope cut, hunters, backlog). */
   autoFailures?: Partial<Record<"analyze" | "plan" | "draw" | "review" | "close" | "lessons", number>>;
   /** Failed runs of each stage's workflow over the phase's whole life, across versions (a new version forgets autoFailures, not this). */
@@ -66,14 +101,15 @@ export type PhaseRecord = {
   replan?: { gaps?: string; count: number };
   /** The Lane Pilot version the failures were counted under: a new version tries the stages again. */
   autoFailuresVersion?: string;
-  context?: { docs: ContextDoc[]; sha: string; signedAt: number; risks?: Partial<Record<RiskKind, string>>; legacy?: boolean; /** REQUIREMENTS ids this phase delivers. */ requirements?: string[]; /** Locked decision ids of CONTEXT.md. */ decisions?: string[] };
+  context?: { docs: ContextDoc[]; sha: string; signedAt: number; risks?: Partial<Record<RiskKey, string>>; legacy?: boolean; /** REQUIREMENTS ids this phase delivers. */ requirements?: string[]; /** Locked decision ids of CONTEXT.md. */ decisions?: string[];
+    /** How much the phase may take, decided before the solution (SMA p1_appetite), and what it will not do (no-gos). */ appetite?: string; noGos?: string[] };
   questions?: StageQuestion[];
   /** The project asked for the owner's word at the turns (owner.words = on when the phase opened). */
   ownerWords?: boolean;
   words?: OwnerWord[];
   /** Goal revisions and withdrawn pieces, each one a decision in the book. */
   scope?: { revisions: number; withdrawn: string[] };
-  plan?: { items: PlanItem[]; sha: string; contextSha: string; critique?: PlanCritique; admittedSha?: string; admittedAt?: number; /** Rounds of the independent check that asked for changes. */ rounds?: number;
+  plan?: { items: PlanItem[]; sha: string; contextSha: string; critique?: PlanCritique; admittedSha?: string; admittedAt?: number; /** When the plan was submitted. */ submittedAt?: number; /** The workflow run whose planner made this plan (the auto plan stage); its critic reviewed this very plan. */ fromRun?: string; /** Rounds of the independent check that asked for changes. */ rounds?: number;
     /** The planner checked that the repository already does what the goal asks: no pieces, no execution; the goal audit checks the claim. */ alreadyMet?: { evidence: string } };
   design?: { decision: "needed" | "not_needed"; why: string; drawing?: Drawing; confirmedAt?: number; mode?: "screens" | "system" | "mixed"; motion?: string[]; archived?: Drawing[] };
   /** The roadmap row this phase is (lane-plan ROADMAP.md), marked done when the phase closes. */
@@ -84,6 +120,9 @@ export type PhaseRecord = {
   subagents?: boolean;
   /** A marker branch phase/<id> at the accepted main (setting phase.branch = phase). */
   branch?: "none" | "phase";
+  /** The phase candidate (SMA p6_prepared → p6_merge): the pieces merge into branch phase/<id>, one worktree per base checkout, and the
+   *  branch lands on main only after the acceptance. `off` says why a phase merges its pieces into main as before. */
+  candidate?: PhaseCandidate;
   /** UAT.md written for the owner at acceptance (owner.words on). */
   uat?: { path: string; sha256: string; at: number };
   /** The conclusion and the roadmap/STATE marks written when the phase closed. */
@@ -95,13 +134,17 @@ export type PhaseRecord = {
     unchanged?: { inputSha: string; detail: string } };
   /** Each finished wave is verified by another model before the next one is issued (setting phase.wave_review, on by default). */
   waveReview?: boolean;
+  /** A stop asked for while a writer's stop is not observed yet (SMA px_stop): the phase stays open, issues nothing and asks again each pass. */
+  stopping?: { by: string; words?: string; at: number; unconfirmed: string[] };
   /** The most pieces the driver issues in one pass (Batch issue capacity; setting phase.issue_cap, 8 by default). */
   issueCap?: number;
   /** When the driver last said the phase is aging or stalled (once a day). */
   agingSaidAt?: number;
   verification?: { verdict?: FrozenVerdict; model?: ModelVerdict };
   acceptance?: { lines: AcceptanceLine[]; at: number; accepted: boolean };
-  lessons?: { needed: boolean; why: string; analysis?: string; author?: string; reviewer?: string; reviewedHash?: string; at?: number };
+  lessons?: { needed: boolean; why: string; analysis?: string; author?: string; reviewer?: string; reviewedHash?: string; /** The workflow run whose reviewer step read the analysis (its journal is the proof). */ reviewRun?: string; at?: number;
+    /** The lesson as a draft (SMA p7_staged): it waits for the owner's word «lesson»; applied, it goes into memory (m_apply). A write that did not land is finished on a later pass from the same text (p7_recover). */
+    draft?: { text: string; stagedAt: number; state: "staged" | "applied" | "declined"; at?: number; error?: string } };
   /** The book written to the project (.agents/phases/<id>/BOOK.md) up to this part. */
   bookWritten?: { seq: number; sha256: string; at: number };
   closing?: { by: string; words: string; at: number };
@@ -142,6 +185,11 @@ export function discussionGate(record: PhaseRecord): GateResult {
   const risks = record.context?.risks ?? {};
   const unnamed = RISK_KINDS.filter((kind) => !risks[kind]?.trim());
   if (unnamed.length) why.push(`risks not named: ${unnamed.join(", ")} (name each, «none» is an answer)`);
+  // SMA p1_confirm: explicit decisions on appetite and no-gos (a legacy phase has neither, its plan existed before it).
+  if (!record.context?.legacy) {
+    if (!record.context?.appetite?.trim()) why.push("no appetite: say how much this phase may take before any solution (time or size)");
+    if (!record.context?.noGos?.some((line) => line.trim())) why.push("no-gos not named: what this phase will not do («none» is an answer)");
+  }
   return gate(why);
 }
 
@@ -192,6 +240,7 @@ export function acceptanceCommands(line: string): string[] {
 
 /** The plan gate's last refusal when the project asks for the owner's word: it is the owner's to give, not a gap of the plan the machine could plan away. */
 export const PLAN_WORD_GAP = "the plan awaits the owner's word (owner.words is on)";
+export const INDEPENDENCE_GAP = "the plan check is not proven independent";
 
 /** Planning → admission: every piece becomes a work, waves are computable, the plan was built on the signed context, and an independent checker approved it. */
 export function planGate(record: PhaseRecord): GateResult {
@@ -207,8 +256,9 @@ export function planGate(record: PhaseRecord): GateResult {
   const threat = threatGap(record);
   if (threat) why.push(threat);
   if ((plan.rounds ?? 0) >= PLAN_ROUNDS_MAX && plan.critique?.decision !== "approve") why.push(`${plan.rounds} rounds of the plan check asked for changes: stop revising — return the phase to discussion with what the checker keeps finding, or close it`);
-  if (!plan.critique) why.push("no independent plan check: run the plan critic (workflow lp.plan or grill-plan) and report its decision");
+  if (!plan.critique) why.push("no independent plan check: run the plan critic (workflow lp.plan) and report its decision with the run's wfRunId");
   else if (plan.critique.decision !== "approve") why.push(`the plan checker asked for changes${plan.critique.summary ? `: ${plan.critique.summary}` : ""}`);
+  else if (!plan.critique.independence?.ok) why.push(`${INDEPENDENCE_GAP}: ${plan.critique.independence?.why ?? "it names no workflow run: report the wfRunId of the lp.plan run whose plan critic approved"}`);
   why.push(...openQuestions(record, "planning").map((question) => `open question ${question.id}: ${question.text}`));
   if (record.ownerWords && wordOf(record, "planning")?.decision !== "yes") why.push(PLAN_WORD_GAP);
   return gate(why);
@@ -253,7 +303,7 @@ export function designGate(record: PhaseRecord): GateResult {
   return gate(why);
 }
 
-export type TaskFact = { taskId: string; state: string | null; planFact: "passed" | "failed" | "skipped" | null; verification: "passed" | "failed" | "skipped" | null; codeCritique: "passed" | "blocked" | "skipped" | "failed" | null; browserQa?: "passed" | "failed" | "skipped" | null };
+export type TaskFact = { taskId: string; state: string | null; planFact: "passed" | "failed" | "skipped" | null; verification: "passed" | "failed" | "skipped" | null; codeCritique: "passed" | "blocked" | "skipped" | "failed" | null; browserQa?: "passed" | "failed" | "skipped" | null; qaPlanned?: boolean };
 
 /** The pieces that may be issued now: wave by wave, the next wave only once every piece of the earlier waves is accepted. */
 /** What a piece's work is: its contract and its promise. A changed one after a return to planning is new work. */
@@ -372,7 +422,10 @@ export function alreadyMetVerdict(alreadyMet: { evidence: string }, now: number)
   return { state: "passed", detail: `already met, nothing to build: ${alreadyMet.evidence}`.slice(0, 1000), mainSha: null, at: now, inputSha: sha256(canonical({ alreadyMet })) };
 }
 
-export const ACCEPTANCE_LINES = ["contract_current", "promises_proved", "checks_passed", "independent_check", "landed", "composition_verified", "main_unmoved", "qa_read", "goal_met", "limits_acknowledged", "owner_word"] as const;
+export const ACCEPTANCE_LINES = ["contract_current", "promises_proved", "checks_passed", "independent_check", "landed", "composition_verified", "main_unmoved", "qa_read", "goal_met", "limits_acknowledged", "result_useful"] as const;
+
+/** The key of the package a person decides on (SMA p6_decide): the plan, the verdict's input and the tree it saw. A new verdict or tree is a new key. */
+export const acceptanceKey = (record: PhaseRecord) => sha256(canonical({ plan: record.plan?.sha ?? null, verdict: record.verification?.verdict?.inputSha ?? null, tree: record.verification?.verdict?.mainSha ?? null })).slice(0, 16);
 export type AcceptanceLineId = (typeof ACCEPTANCE_LINES)[number];
 
 /** The phase acceptance calculation: each line decided by code; the phase is accepted only when every line holds. */
@@ -386,22 +439,41 @@ export function acceptanceLines(phase: Phase, facts: ReadonlyMap<string, TaskFac
   const blockedByCritic = failed((fact) => fact?.codeCritique === "blocked");
   const notLanded = failed((fact) => fact?.state !== "accepted");
   const qaRed = failed((fact) => fact?.browserQa === "failed");
+  // What did read the pieces, said as it is: no receipt is no reading (2026-10-29 audit: «no independent checker blocks» and «the
+  // browser checks read clean» were printed for pieces no critic and no browser check had seen; the code critic is off by default).
+  // SMA p6_l_verdict / p6_evidence: a line is green on a positive verdict only. A piece with no critic receipt is unread, and a piece
+  // whose contract plans a browser check (qa_cases) is unread until that check passed; a piece without qa_cases says it has none.
+  const uncritiqued = failed((fact) => fact?.codeCritique !== "passed");
+  const qaOwed = failed((fact) => !!fact?.qaPlanned && fact.browserQa !== "passed");
+  const qaPassed = failed((fact) => fact?.browserQa === "passed").length;
+  const qaNone = failed((fact) => !fact?.qaPlanned).length;
   const model = phase.record.verification?.model;
-  const word = wordOf(phase.record, "acceptance");
+  // The person's two decisions count only under the key of the package now shown (a word on an older candidate is not this one's).
+  const latest = wordOf(phase.record, "acceptance");
+  const word = latest && latest.key === acceptanceKey(phase.record) ? latest : undefined;
+  const asked = !!phase.record.ownerWords;
+  const decided = (pick: "useful" | "limits") => !asked || (word?.decision === "yes" && word[pick] === true);
+  const wordDetail = (what: string) => !asked ? "the project does not ask for the owner's word (owner.words off)"
+    : word ? `${word.by}: ${word.decision}${word.decision === "yes" ? ` — ${what}` : ""} — ${word.text}` : latest ? `the owner's word was given on another package (${latest.key ?? "no key"}): it is asked again` : "awaits the owner's keyed decision";
   return [
     line("contract_current", !!phase.record.plan?.admittedSha && phase.record.plan.admittedSha === phase.record.plan.sha, phase.record.plan?.admittedSha === phase.record.plan?.sha ? "the plan is the admitted one" : "the plan changed after its admission"),
     line("promises_proved", notProved.length === 0, notProved.length ? `not proved by plan-fact: ${notProved.join(", ")}` : `${items.length} promises proved`),
     line("checks_passed", notChecked.length === 0, notChecked.length ? `checks failed: ${notChecked.join(", ")}` : "every piece's checks passed"),
-    line("independent_check", blockedByCritic.length === 0, blockedByCritic.length ? `the code critic blocks: ${blockedByCritic.join(", ")}` : "no independent checker blocks"),
-    line("landed", notLanded.length === 0, notLanded.length ? `not merged: ${notLanded.join(", ")}` : "every piece is merged into main"),
+    line("independent_check", blockedByCritic.length === 0 && uncritiqued.length === 0, blockedByCritic.length ? `the code critic blocks: ${blockedByCritic.join(", ")}`
+      : uncritiqued.length ? `the code critic has not passed: ${uncritiqued.join(", ")} (no critic receipt is no reading)` : `the code critic passed all ${items.length} piece(s)`),
+    line("landed", notLanded.length === 0, notLanded.length ? `not merged: ${notLanded.join(", ")}` : candidateOn(phase.record) ? `every piece is merged into the phase candidate ${phase.record.candidate!.branch}` : "every piece is merged into main"),
     line("composition_verified", verdict?.state === "passed", verdict ? verdict.detail : "no blind verdict yet"),
     line("main_unmoved", !verdict?.mainSha || !now.mainSha || verdict.mainSha === now.mainSha, verdict?.mainSha && now.mainSha && verdict.mainSha !== now.mainSha ? `main moved from ${verdict.mainSha.slice(0, 12)} to ${now.mainSha.slice(0, 12)} since the verdict — verify again` : "main is where the verdict saw it"),
-    line("qa_read", qaRed.length === 0, qaRed.length ? `the browser check failed: ${qaRed.join(", ")}` : "the window, the blind verdict and the browser checks read clean"),
+    line("qa_read", qaRed.length === 0 && qaOwed.length === 0, qaRed.length ? `the browser check failed: ${qaRed.join(", ")}`
+      : qaOwed.length ? `the planned browser check has not passed: ${qaOwed.join(", ")}`
+      : `${qaPassed} piece(s) passed their browser check${qaNone ? `; ${qaNone} piece(s) plan none (no qa_cases)` : ""}`),
     line("goal_met", model?.state === "met", model ? `${model.by}: ${model.summary}` : "no goal audit yet"),
     // A put-off check with no term from the owner is unproven work of this project: it holds the acceptance until an agent closes it with evidence.
-    line("limits_acknowledged", !now.noTerm?.length, now.noTerm?.length ? `${now.noTerm.length} deferred check(s) of this project are open with no term from the owner, so they count as unproven: ${now.noTerm.slice(0, 5).map((row) => row.id).join(", ")} — close each with evidence (bb lane-pilot defer-close <id> --evidence …)`
-      : now.openDeferrals ? `${now.openDeferrals} deferred item(s) of this project stay open, named in the book` : "nothing deferred"),
-    line("owner_word", !phase.record.ownerWords || word?.decision === "yes", !phase.record.ownerWords ? "the project does not ask for the owner's word (owner.words off)" : word ? `${word.by}: ${word.decision} — ${word.text}` : "awaits the owner's keyed decision"),
+    // Limits acknowledged (SMA p6_l_limits): a person's decision on what stays open and how to recover, after every put-off check has its term.
+    line("limits_acknowledged", !now.noTerm?.length && decided("limits"), now.noTerm?.length ? `${now.noTerm.length} deferred check(s) of this project are open with no term from the owner, so they count as unproven: ${now.noTerm.slice(0, 5).map((row) => row.id).join(", ")} — close each with evidence (bb lane-pilot defer-close <id> --evidence …)`
+      : `${now.openDeferrals ? `${now.openDeferrals} deferred item(s) of this project stay open, named in the book` : "nothing deferred"}; ${wordDetail("the limits are acknowledged")}`),
+    // Result clear and useful (SMA p6_l_useful): a person's decision.
+    line("result_useful", decided("useful"), wordDetail("the result is clear and useful")),
   ];
 }
 
@@ -435,23 +507,27 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
   const questions = (r.questions ?? []).filter((question) => !question.answer && question.stage === phase.stage);
   if (questions.length) return { key: key(`questions:${questions.map((question) => question.id).join(",")}`), stage: phase.stage, waitsForPm: true,
     text: `${head} — open question(s) at ${phase.stage}: ${questions.map((question) => `${question.id}${question.blocking ? " (blocking)" : ""}: ${question.text}`).join("; ")}. Answer with ${tool("answer", `, phaseId:"${id}", questionId, answer`)}; ask the owner first (lane_pilot_ask_owner) if only he knows.` };
-  const turn: WordTurn | null = !r.ownerWords ? null : phase.stage === "planning" && r.plan?.critique?.decision === "approve" && wordOf(r, "planning")?.decision !== "yes" ? "planning"
+  const turn: WordTurn | null = !r.ownerWords ? null : phase.stage === "discussion" && r.context && discussionGate(r).ok && wordOf(r, "context")?.decision !== "yes" ? "context"
+    : phase.stage === "planning" && r.plan?.critique?.decision === "approve" && wordOf(r, "planning")?.decision !== "yes" ? "planning"
     : phase.stage === "design" && r.design?.drawing?.reviewer && wordOf(r, "design")?.decision !== "yes" ? "design"
     : phase.stage === "acceptance" && r.uat && wordOf(r, "uat")?.decision !== "yes" ? "uat"
-    : phase.stage === "acceptance" && wordOf(r, "acceptance")?.decision !== "yes" ? "acceptance" : null;
+    : phase.stage === "acceptance" && (r.acceptance?.lines ?? []).filter((line) => !line.ok).every((line) => line.id === "result_useful" || line.id === "limits_acknowledged")
+      && (wordOf(r, "acceptance")?.decision !== "yes" || wordOf(r, "acceptance")?.key !== acceptanceKey(r)) ? "acceptance" : null;
+  if (turn === "acceptance") return { key: key(`word:acceptance:${acceptanceKey(r)}`), stage: phase.stage, waitsForPm: true,
+    text: `${head} is prepared and awaits the owner's keyed decision on package ${acceptanceKey(r)} (owner.words is on): two decisions — is the result clear and useful, and are the remaining limits and the recovery acknowledged. He decides in the phase card, or ask him with lane_pilot_ask_owner and record it with ${tool("word", `, phaseId:"${id}", turn:"acceptance", decision:"yes"|"no", useful:true|false, limits:true|false, text`)}.` };
   if (turn) return { key: key(`word:${turn}`), stage: phase.stage, waitsForPm: true,
-    text: `${head} awaits the owner's word at ${turn} (owner.words is on). Ask him with lane_pilot_ask_owner, then record it with ${tool("word", `, phaseId:"${id}", turn:"${turn}", decision:"yes"|"no", text`)}.` };
+    text: `${head} awaits the owner's word at ${turn} (owner.words is on). He gives it in the phase card, or ask him with lane_pilot_ask_owner and record it with ${tool("word", `, phaseId:"${id}", turn:"${turn}", decision:"yes"|"no", text`)}.` };
   if (phase.state === "paused" || phase.state === "pause_requested") return { key: key("paused"), stage: phase.stage, text: `${head} is paused; ${tool("resume", `, phaseId:"${id}"`)} moves it on.`, waitsForPm: false };
   switch (phase.stage) {
     case "discussion": {
       const check = discussionGate(r);
       return { key: key(r.context?.sha ?? "none"), stage: phase.stage, waitsForPm: true,
-        text: `${head} — stage 1, discussion. Goal: ${phase.goal}\nWrite the discussion to files in the project (decisions locked/free/deferred, FAQ, ADR — workflow lp.brainstorm or lp.analyze writes them), name the four risks (${RISK_KINDS.join(", ")}), then ${tool("context", `, phaseId:"${id}", docs:["<path>", ...], risks:{technical, product, operations, security}`)}: Lane Pilot reads and signs them; pass requirements:[ids] and decisions:[locked ids] when the phase has them — the plan must cover each.\nRead first: ${stageInit(phase).join(", ")}. ${rubricLine("discussion")}${check.ok ? "" : `\nOpen: ${check.why.join("; ")}`}` };
+        text: `${head} — stage 1, discussion. Goal: ${phase.goal}\nWrite the discussion to files in the project (problem, appetite, solution, rabbit holes, no-gos, decisions locked/free/deferred, FAQ, ADR — workflow lp.brainstorm or lp.analyze writes them), name the four risks (${RISK_KINDS.join(", ")}; a security risk beside them when there is one), then ${tool("context", `, phaseId:"${id}", docs:["<path>", ...], risks:{value, usability, feasibility, viability, security?}, appetite, noGos:[...]`)}: Lane Pilot reads and signs them${r.ownerWords ? ", and the owner signs the context with his word" : ""}; pass requirements:[ids] and decisions:[locked ids] when the phase has them — the plan must cover each.\nRead first: ${stageInit(phase).join(", ")}. ${rubricLine("discussion")}${check.ok ? "" : `\nOpen: ${check.why.join("; ")}`}` };
     }
     case "planning": {
       const check = planGate(r);
       return { key: key(`${r.plan?.sha ?? "none"}:${r.plan?.critique?.decision ?? "-"}`), stage: phase.stage, waitsForPm: true,
-        text: `${head} — stage 2, planning, on context ${r.context?.sha.slice(0, 12) ?? "?"}.\nSubmit the plan with ${tool("plan", `, phaseId:"${id}", items:[{id, title, wave, promise:{given, when, then}, task:<task-v2>}]`)}; then run the independent plan checker (workflow lp.plan's critic or grill-plan) and report it with ${tool("plan_check", `, phaseId:"${id}", decision:"approve"|"changes_requested", by, summary`)} (round ${(r.plan?.rounds ?? 0) + 1} of ${PLAN_ROUNDS_MAX}; a checker of another model than the planner).\nRead first: ${stageInit(phase).join(", ")}. ${rubricLine("planning")}${check.ok ? "" : `\nOpen: ${check.why.slice(0, 8).join("; ")}`}` };
+        text: `${head} — stage 2, planning, on context ${r.context?.sha.slice(0, 12) ?? "?"}.\nSubmit the plan with ${tool("plan", `, phaseId:"${id}", items:[{id, title, wave, promise:{given, when, then}, task:<task-v2>}]`)}; then run the independent plan checker (workflow lp.plan, whose plan critic is a session of its own) with the input plan_sha:"${r.plan?.sha ?? "<the plan's sha after you submit it>"}" and report it with ${tool("plan_check", `, phaseId:"${id}", decision:"approve"|"changes_requested", by, summary, wfRunId`)} (round ${(r.plan?.rounds ?? 0) + 1} of ${PLAN_ROUNDS_MAX}; the approval counts only with the wfRunId of the run that was handed this plan_sha, of this project, whose plan critic started after the plan, had the last word and passed it in its own output).\nRead first: ${stageInit(phase).join(", ")}. ${rubricLine("planning")}${check.ok ? "" : `\nOpen: ${check.why.slice(0, 8).join("; ")}`}` };
     }
     case "design": {
       const check = designGate(r);
@@ -506,7 +582,7 @@ export function nextAction(phase: Phase, facts: ReadonlyMap<string, TaskFact>): 
     }
     case "lessons":
       return { key: key(r.lessons?.analysis ? "written" : "analysis"), stage: phase.stage, waitsForPm: !r.lessons?.analysis,
-        text: `${head} — stage 7, lessons (${r.lessons?.why ?? ""}). Run the retrospective (workflow retrospective) on the phase book and report it with ${tool("lessons", `, phaseId:"${id}", analysis, author, reviewer, reviewedHash`)}: the reviewer is a role other than the author, and reviewedHash is the book's last part hash the reviewer read (status shows it).` };
+        text: `${head} — stage 7, lessons (${r.lessons?.why ?? ""}). Run the retrospective (workflow retrospective) on the phase book and report it with ${tool("lessons", `, phaseId:"${id}", analysis, reviewRun`)}: reviewRun is that run; Lane Pilot reads from its journal that its «stage» step, a session other than the author's, was handed exactly this analysis.${r.ownerWords ? " The lesson then waits as a draft for the owner's word «lesson»." : ""}` };
     case "closed":
       return { key: key("closed"), stage: phase.stage, waitsForPm: false, text: `${head} is closed.` };
   }
@@ -517,13 +593,14 @@ export function staleAfterReturn(to: PhaseStage, record: PhaseRecord): PhaseReco
   const next: PhaseRecord = { ...record };
   const order = PHASE_STAGES.indexOf(to);
   // The signed documents are kept aside: back at discussion they are the PM's or the owner's correction to sign again, not a reason to analyse anew.
-  if (order <= PHASE_STAGES.indexOf("discussion")) { if (next.context) next.signedBefore = { docs: next.context.docs.map((doc) => doc.path), risks: next.context.risks, decisions: next.context.decisions }; delete next.context; }
+  if (order <= PHASE_STAGES.indexOf("discussion")) { if (next.context) next.signedBefore = { docs: next.context.docs.map((doc) => doc.path), risks: next.context.risks, decisions: next.context.decisions, appetite: next.context.appetite, noGos: next.context.noGos }; delete next.context; }
   if (order <= PHASE_STAGES.indexOf("planning") && next.plan) next.plan = { ...next.plan, critique: undefined, admittedSha: undefined, admittedAt: undefined };
   if (order <= PHASE_STAGES.indexOf("design")) delete next.design;
   if (order <= PHASE_STAGES.indexOf("execution")) { delete next.verification; delete next.acceptance; }
   delete next.lessons;
   const later = (stage: string) => PHASE_STAGES.indexOf(stage as PhaseStage) >= order;
-  if (next.words) next.words = next.words.filter((word) => !later(word.turn === "uat" ? "acceptance" : word.turn));
+  const stageOfTurn = (turn: WordTurn) => turn === "context" ? "discussion" : turn === "uat" ? "acceptance" : turn === "lesson" ? "lessons" : turn;
+  if (next.words) next.words = next.words.filter((word) => !later(stageOfTurn(word.turn)));
   return next;
 }
 

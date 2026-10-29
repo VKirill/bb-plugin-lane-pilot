@@ -65,7 +65,7 @@ describe("memory probe", () => {
     const tokens = { note: "tn", core: "tc", rule: "tr" };
     expect(judge(entry, { delivered: "has tc and tr", negative: "" }, tokens, 3)).toMatchObject({ found: false, detail: expect.stringContaining("MISSING note") });
     expect(judge(entry, { delivered: "tn tc tr", negative: "tn here, an unrelated task got the note" }, tokens, 3)).toMatchObject({ found: true, negativeOk: false });
-    const search = MEMORY_PATHS.find((item) => item.id === "terminal.search")!;
+    const search = MEMORY_PATHS.find((item) => item.id === "critic.code")!;
     expect(judge(search, { delivered: "tn tc", negative: "", pulled: 2 }, tokens, 1)).toMatchObject({ negativeOk: false });
   });
 
@@ -88,8 +88,8 @@ describe("memory probe", () => {
   it("the RPC runs, reports and cleans the same way", async () => {
     const { probe } = setup();
     const rpc = memoryProbeRpc({ memoryProbe: probe } as never);
-    expect(await rpc.memory_probe({ projectId: SANDBOX_PROJECT_ID, paths: ["terminal.core"], action: "run" })).toMatchObject({ ok: true });
-    expect(await rpc.memory_probe({ projectId: SANDBOX_PROJECT_ID, action: "report" })).toMatchObject({ results: [{ path: "terminal.core", found: true }] });
+    expect(await rpc.memory_probe({ projectId: SANDBOX_PROJECT_ID, paths: ["pm.start"], action: "run" })).toMatchObject({ ok: true });
+    expect(await rpc.memory_probe({ projectId: SANDBOX_PROJECT_ID, action: "report" })).toMatchObject({ results: [{ path: "pm.start", found: true }] });
     expect(await rpc.memory_probe({ projectId: SANDBOX_PROJECT_ID, action: "clean" })).toEqual({ removed: 0 });
   });
 });

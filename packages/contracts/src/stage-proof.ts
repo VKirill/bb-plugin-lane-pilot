@@ -24,7 +24,7 @@ export const isAdvisoryProof = (proof: StageProof): boolean => proof.kind === "a
 export const STAGE_PROOF: Record<StageId, StageProof> = {
   "pm-read": { kind: "advisory", reason: "a model's summary of the read_first excerpts; it only hands context to the critics and decides nothing",
     form: "parsePmReadResult: one JSON object with a non-blank summary (a blank or unreadable answer fails the stage)" },
-  "plan-critique": { kind: "advisory", reason: "a model's verdict on the plan",
+  "plan-critique": { kind: "advisory", reason: "a model's verdict on the plan: it never accepts a task, and in plan_critique.mode gate (the default, SMA p2_checker) its refusal stops the attempt before the writer",
     form: "parseCritique: verdict schema; a critical or high finding counts only with a file, a line and quoted evidence, and a file the critic's input names" },
   "run-gate": { kind: "receipt", check: "the run gate decision and the ownership base preflight are stored in the run-gate receipt; the repository must report a readable base commit" },
   "specialist-review": { kind: "advisory", reason: "a model's risk opinion on the plan",

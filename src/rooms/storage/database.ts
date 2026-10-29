@@ -709,10 +709,11 @@ export function saveStageReceipt(db: LanePilotDatabase, row:StageReceiptRow): vo
   db.transaction(() => {
     const previous = db.prepare("SELECT state,input_sha256,output_sha256,attempt FROM lane_pilot_stage_receipt WHERE run_id=? AND task_id=? AND stage_id=?")
       .get(row.runId,row.taskId,row.stageId) as {state:StageState;input_sha256:string;output_sha256:string|null;attempt:number}|undefined;
+    // input_sha256 follows the latest record: a stage replaced on a new input is compared with that input, not with its first one.
     db.prepare(`INSERT INTO lane_pilot_stage_receipt
     (run_id,task_id,stage_id,contract_version,state,input_sha256,output_sha256,attempt,provider_id,model,thread_id,result_json,reason,updated_at)
     VALUES (@runId,@taskId,@stageId,@contractVersion,@state,@inputSha256,@outputSha256,@attempt,@providerId,@model,@threadId,@resultJson,@reason,@updatedAt)
-    ON CONFLICT(run_id,task_id,stage_id) DO UPDATE SET state=excluded.state,
+    ON CONFLICT(run_id,task_id,stage_id) DO UPDATE SET state=excluded.state,input_sha256=excluded.input_sha256,
       output_sha256=excluded.output_sha256,attempt=excluded.attempt,provider_id=excluded.provider_id,
       model=excluded.model,thread_id=excluded.thread_id,result_json=excluded.result_json,
       reason=excluded.reason,updated_at=excluded.updated_at`).run({

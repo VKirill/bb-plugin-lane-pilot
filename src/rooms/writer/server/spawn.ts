@@ -131,6 +131,9 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
     let selectedModel:string|null=null;
     let lastExecution:{reasoningLevel:string;serviceTier:"default"|"fast"|null;selectionSource:{providerId:string;model:string;reasoningLevel:string;serviceTier:"default"|"fast"|null;reasoningLevelSource:"explicit"|"client-preference"}}|null=null;
     transitionAttempt(db, input.attemptId, "spawn_requested");
+    // A half-open trial this attempt reserved and has not handed to a running writer (2026-10-29 audit A-034).
+    let unusedTrial: { key: string; token: number } | null = null;
+    let writerHoldsTrial = false;
     try {
       // The stored settings with the start's writer choice on top: before this every Jev pick that differed from the project's writer
       // was dropped here (Vampirism Fire 2026-10-25/26: picks gemini-flash, sonnet, sonnet, haiku all ran as composer-2.5).
@@ -164,11 +167,13 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       selectedProviderId=writerProviderId;
       selectedModel=writerModel;
       if (!input.emergency) {
-        const gate = services.providerBreaker.decide(breakerKey(writerProviderId, writerModel));
+        const trialKey = breakerKey(writerProviderId, writerModel);
+        const gate = services.providerBreaker.decide(trialKey);
         if (!gate.allow) {
           const reason = `writer_provider_unavailable:breaker_open:${gate.reason}`;
           return { ok:false, status:endSpawnFailure(db, input.attemptId, reason), reason, attemptId:input.attemptId };
         }
+        if (gate.state === "half_open") unusedTrial = { key: trialKey, token: gate.trialToken };
         // The owner is at the keyboard on this provider (src/rooms/owner-presence): the writer chain takes the next one.
         const present = services.ownerPresence?.holds(writerProviderId) ?? null;
         if (present) {
@@ -530,6 +535,7 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
           bb.log.warn(`Lane Pilot launch profile mismatch for ${input.attemptId}: asked ${selectedProviderId}/${selectedModel}, the thread runs ${got.providerId}/${got.model}`);
         }
       }, () => undefined);
+      writerHoldsTrial = true;
       return { ok:true, threadId:writerThreadId, providerId:selectedProviderId, model:selectedModel,
         reasoningLevel:lastExecution?.reasoningLevel, serviceTier:lastExecution?.serviceTier, selectionSource:lastExecution?.selectionSource,
         dirtBefore, workspacePath, executionPacketSha256 };
@@ -558,8 +564,11 @@ export function createWriterSpawn(ctx: ServerCore, services: Services) {
       bb.log.warn(`Lane Pilot writer spawn for ${input.attemptId} failed: ${cause instanceof Error ? cause.message : String(cause)}`);
       const attempt = getAttempt(db, input.attemptId);
       if (!attempt) throw new Error(`persisted attempt disappeared after spawn_unknown: ${input.attemptId}`);
+      writerHoldsTrial = true;
       return { ok:true, threadId: await services.reconcileAttemptThread(input.projectId, attempt), providerId:selectedProviderId, model:selectedModel, dirtBefore:attempt.dirt_before,
         workspacePath:attempt.workspace_path ?? input.task.project_cwd };
+    } finally {
+      if (!writerHoldsTrial && unusedTrial) services.providerBreaker.releaseTrial(unusedTrial.key, unusedTrial.token);
     }
   }
 

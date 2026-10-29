@@ -97,6 +97,13 @@ export type PlanFactCheck = {
   wires?: WireResult[];
 };
 
+/**
+ * The version of the rules the blind check weighs evidence by: raise it with every change to them. A failed receipt written by older
+ * rules is weighed once more by the current ones (recheckPlanFact): a fix of the check otherwise never reached a verdict already
+ * written, and a phase stood on it (live ph_26f65b142d: failed at 17:24 on 2026-10-26, fixed by 0.1.332 at 17:53, stuck three days).
+ */
+export const PLAN_FACT_RULES = 2;
+
 /** Kinds of task that cite no changed code (a note, a finding, a check run): a missing plan-fact table is not a hole in their proof. */
 export const NO_CODE_KINDS: ReadonlySet<string> = new Set(["docs", "research", "check"]);
 

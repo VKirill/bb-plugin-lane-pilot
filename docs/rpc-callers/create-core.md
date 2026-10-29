@@ -4,7 +4,7 @@ type: component
 created: 2026-10-16
 updated: 2026-10-29
 status: active
-confidence: low
+confidence: medium
 tags: [server, core, host-calls]
 sources:
   - src/rooms/core/server/core.ts
@@ -22,7 +22,7 @@ TL;DR: `createCore` builds the shared server context, host client wrappers, sett
 
 ## Purpose
 
-`createCore(bb, db)` is the common dependency object for server modules. `server.ts` opens storage, calls it once, then composes room services and registers their tools and RPCs (`server.ts:54-60`; `src/rooms/core/server/core.ts:30-31`). The exported `ServerCore` type is inferred from the function's returned object (`src/rooms/core/server/core.ts:401-402`).
+`createCore(bb, db)` is the common dependency object for server modules. `server.ts` opens storage, calls it once, then composes room services and registers their tools and RPCs (`server.ts:54-60`; `src/rooms/core/server/core.ts:30-31`). The exported `ServerCore` type is inferred from the function's returned object (`src/rooms/core/server/core.ts:381-384`).
 
 ## How it works
 
@@ -62,7 +62,7 @@ The core host wrapper attaches the current schedule abort signal only if the cal
 
 ## Public API or commands
 
-The returned object is the inferred `ServerCore` API. It groups BB and DB access; runtime state and disposal; realtime, owner asks, logging and secrets; host, native installer, deploy drain and Jev helpers; KV/settings helpers; writer binding and workspace/run helpers (`src/rooms/core/server/core.ts:401-402`). Handler registration consumes this object together with the separately composed `Services` interface, which includes the `HarnessApi` (`src/rooms/core/server/rpc.ts:28-51`, `src/rooms/core/server/services.ts:50-80`).
+The returned object is the inferred `ServerCore` API. It groups BB and DB access; runtime state and disposal; realtime, owner asks, logging and secrets; host, native installer, deploy drain and Jev helpers; KV/settings helpers; writer binding and workspace/run helpers (`src/rooms/core/server/core.ts:382-389`). Handler registration consumes this object together with the separately composed `Services` interface, which includes the `HarnessApi` (`src/rooms/core/server/rpc.ts:28-51`, `src/rooms/core/server/services.ts:50-80`).
 
 ## Gotchas
 

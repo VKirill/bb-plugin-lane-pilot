@@ -443,15 +443,13 @@ type ImportedPayload = Awaited<ReturnType<typeof readImportConfig>>;
 
 export async function connectOpencodeStack(ctx: HostContext): Promise<InstallReceipt> {
   const home = resolveHome(ctx.homeDir);
-  const first = await connectOpencode(home);
-  const second = first.skipped ? first : await connectOpencode(home);
-  const idempotent = !first.skipped && second.files.every((file, index) => (
-    file.sha256After === first.files[index]?.sha256After && !file.changed
-  ));
+  // One connect. A later call is the idempotence check. (2026-10-29 audit J-004)
+  const connected = await connectOpencode(home);
+  const unchanged = connected.files.length > 0 && connected.files.every((file) => !file.changed);
   return writeReceipt({
     action: "connectOpencode",
-    scenario: first.skipped ? "S6" : "S5",
-    filesChanged: first.files.map((file) => ({
+    scenario: connected.skipped ? "S6" : "S5",
+    filesChanged: connected.files.map((file) => ({
       path: file.path,
       sha256Before: file.sha256Before,
       sha256After: file.sha256After,
@@ -459,13 +457,13 @@ export async function connectOpencodeStack(ctx: HostContext): Promise<InstallRec
     externalOpsBefore: {},
     externalOpsAfter: {},
     ...skippedOpsReceipt([]),
-    exitCode: first.conflict || (first.skipped && first.reason?.startsWith("opencode2 --version")) ? 1 : 0,
+    exitCode: connected.conflict || (connected.skipped && connected.reason?.startsWith("opencode2 --version")) ? 1 : 0,
     snapshotPath: null,
     sourceSha: (await readInstallJson(home)).sourceSha,
     notes: [
-      first.reason ?? `opencode2 ${first.version}`,
-      first.files[0]?.limitation ? `§12 ${first.files[0].limitation}` : "",
-      idempotent ? "second pass no-op" : "second pass not identical",
+      connected.reason ?? `opencode2 ${connected.version}`,
+      connected.files[0]?.limitation ? `§12 ${connected.files[0].limitation}` : "",
+      unchanged ? "no-op" : "",
     ].filter(Boolean),
   }, await receiptDirOf(ctx));
 }

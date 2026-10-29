@@ -16,6 +16,7 @@ import { cockpitEn, cockpitRu } from "./i18n-cockpit";
 import { ownedEn, ownedRu } from "./i18n-owned";
 import { jevEn, jevRu } from "./i18n-jev";
 import { improvementEn, improvementRu } from "./i18n-improvement";
+import { agentLabelEn, agentLabelRu } from "./i18n-agent-labels";
 
 const chromeEn = {
   panelTitle: "Lane Pilot",
@@ -142,6 +143,7 @@ const chromeEn = {
   nativeAbsent: "Not installed yet. It installs itself the first time you enable Lane Pilot in a new chat.",
   nativeOffline: "The machine is offline. Check that it is on and connected to BB.",
   nativeError: "The last install failed: {error}",
+  nativeInstallFailed: "Lane Pilot install failed: {error}",
   nativeInstallNow: "Install now",
   nativeRetry: "Try again",
   nativeNoMachine: "The project has no machine and folder yet; see Overview.",
@@ -528,7 +530,6 @@ const chromeEn = {
   diagnosticsIntro: "Technical settings, command previews, receipts, versions, and source paths are shown here.",
   diagnosticSettings: "Setting inventory",
   importDetails: "Import details",
-  cliPreview: "CLI preview",
   writerTrace: "Writer reasoning trace",
   noDiagnosticData: "No technical details are available yet.",
   legacyFastMode: "Legacy fast-mode value",
@@ -582,7 +583,7 @@ const chromeEn = {
   opNpm: "npm install -g @rama_nigg/open-cursor",
   opOpenCursor: "open-cursor install",
   opMarketplace: "claude plugin marketplace add/update",
-  opPluginInstall: "claude plugin install lane-stack@claude-lane-stack",
+  opPluginInstall: "Lane Pilot uses its own compiled Claude profile.",
   opPluginUninstall: "claude plugin uninstall fast-jev-compaction@*",
   toastOk: "Done",
   toastError: "Operation failed",
@@ -622,7 +623,6 @@ const chromeEn = {
   unappliedBooleanOff: "upstream argparse is store_true; false has no off flag (bin/run-controller:1703-1707, bin/lane-ctl:3196-3200)",
   channelOffLimitation: "Off is not applied: run-controller/lane-ctl accept only --fast-mode (store_true). Saved false is listed as unapplied.",
   openReceipt: "Open CLI receipt",
-  cliReceipt: "CLI receipt",
   targetMatchInformational: "informational only; compatibility is capability based",
   coexInventory: "Host coexistence inventory",
   coexUnknownManager: "Unknown manager",
@@ -812,7 +812,8 @@ const chromeEn = {
   settingOpsEventsLimit: "Event list limit",
   settingOpsVerifyPool: "Verification pool size",
   settingOpsCommandTimeout: "Command timeout",
-  settingOpsCliHelp: "Legacy run-controller flag. Kept for stored values. Ordinary runs use the sections above.",
+  settingOpsCliHelp: "Retired Lane Stack CLI flag. Native Lane Pilot does not apply it. The stored value is kept.",
+  settingOpsPoolHelp: "Native Lane Pilot run policy: how many writers or checks run at once.",
   settingRunGate: "Run gate",
   settingRunGateHelp: "Whether the run pauses before automated work.",
   specialistReview: "Specialist review",
@@ -1240,6 +1241,7 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   nativeAbsent: "Ещё не установлен. Установится сам, когда вы впервые включите Lane Pilot в новом чате.",
   nativeOffline: "Машина недоступна. Проверьте, что она включена и подключена к BB.",
   nativeError: "Последняя установка не удалась: {error}",
+  nativeInstallFailed: "Установка Lane Pilot не удалась: {error}",
   nativeInstallNow: "Установить сейчас",
   nativeRetry: "Повторить установку",
   nativeNoMachine: "У проекта пока нет машины и папки — см. «Обзор».",
@@ -1626,7 +1628,6 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   diagnosticsIntro: "Здесь собраны технические настройки, предпросмотр команд, квитанции, версии и исходные пути.",
   diagnosticSettings: "Инвентаризация настроек",
   importDetails: "Данные импорта",
-  cliPreview: "Предпросмотр CLI",
   writerTrace: "Трассировка рассуждений писателя",
   noDiagnosticData: "Технические данные пока отсутствуют.",
   legacyFastMode: "Старое значение fast mode",
@@ -1680,7 +1681,7 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   opNpm: "npm install -g @rama_nigg/open-cursor",
   opOpenCursor: "open-cursor install",
   opMarketplace: "claude plugin marketplace add/update",
-  opPluginInstall: "claude plugin install lane-stack@claude-lane-stack",
+  opPluginInstall: "Lane Pilot использует свой собранный профиль Claude.",
   opPluginUninstall: "claude plugin uninstall fast-jev-compaction@*",
   toastOk: "Готово",
   toastError: "Операция не удалась",
@@ -1720,7 +1721,6 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   unappliedBooleanOff: "у argparse только store_true; флага выключения нет (bin/run-controller:1703-1707, bin/lane-ctl:3196-3200)",
   channelOffLimitation: "Выключение не применяется: run-controller/lane-ctl принимают только --fast-mode (store_true). Сохранённое false попадает в неприменённые.",
   openReceipt: "Открыть квитанцию CLI",
-  cliReceipt: "Квитанция CLI",
   targetMatchInformational: "только справочно; совместимость определяется интерфейсами",
   coexInventory: "Инвентаризация совместимости хоста",
   coexUnknownManager: "Неизвестный менеджер",
@@ -1910,7 +1910,8 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   settingOpsEventsLimit: "Лимит списка событий",
   settingOpsVerifyPool: "Размер пула проверки",
   settingOpsCommandTimeout: "Таймаут команды",
-  settingOpsCliHelp: "Старый флаг run-controller. Хранится для совместимости. Обычные запуски идут секциями выше.",
+  settingOpsCliHelp: "Снятый флаг Lane Stack CLI. Нативный Lane Pilot его не применяет. Сохранённое значение остаётся.",
+  settingOpsPoolHelp: "Политика запуска Lane Pilot: сколько писателей или проверок идёт сразу.",
   settingRunGate: "Пауза запуска",
   settingRunGateHelp: "Нужно ли останавливать запуск перед автоматической работой.",
   specialistReview: "Специальная проверка",
@@ -2213,10 +2214,11 @@ const chromeRu: { [K in keyof typeof chromeEn]: string } = {
   accessPurpose_specialist_video_lead: "Планирует и делает видео: ролики-объяснения, рилсы, ролики запуска, процедурные фильмы.",
 };
 
-export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...boardEn, ...ownerEn, ...anamnesisEn, ...tabsEn, ...ownedEn, ...jevEn, ...improvementEn, ...graphEn, ...cockpitEn, ...roleModelsEn };
-export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...editorRu, ...opsRu, ...modelsRu, ...canvasRu, ...scheduleRu, ...boardRu, ...ownerRu, ...anamnesisRu, ...tabsRu, ...ownedRu, ...jevRu, ...improvementRu, ...graphRu, ...cockpitRu, ...roleModelsRu };
+export const en = { ...chromeEn, ...fieldEn, ...workflowEn, ...editorEn, ...opsEn, ...modelsEn, ...canvasEn, ...scheduleEn, ...boardEn, ...ownerEn, ...anamnesisEn, ...tabsEn, ...ownedEn, ...jevEn, ...improvementEn, ...graphEn, ...cockpitEn, ...roleModelsEn, ...agentLabelEn };
+export const ru: { [K in keyof typeof en]: string } = { ...chromeRu, ...fieldRu, ...workflowRu, ...editorRu, ...opsRu, ...modelsRu, ...canvasRu, ...scheduleRu, ...boardRu, ...ownerRu, ...anamnesisRu, ...tabsRu, ...ownedRu, ...jevRu, ...improvementRu, ...graphRu, ...cockpitRu, ...roleModelsRu, ...agentLabelRu };
 
-export type I18nKey = keyof typeof en;
+// keyof typeof en drops keys once the spread is large enough to export (2026-10-29 lane-stack port). The small module stays intact.
+export type I18nKey = keyof typeof en | keyof typeof agentLabelEn;
 export type Locale = "en" | "ru";
 export type LocalePreference = "auto" | Locale;
 

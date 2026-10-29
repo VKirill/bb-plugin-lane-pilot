@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ToolError, registerObservedTool, type ServerCore, type Services } from "../../core/server";
 import { hostContract } from "../../contracts";
 import { getRun, getRunWriterHost, loadProjectSettings } from "../../storage";
-import { isWholeConsent } from "../../tasks";
+import { isWholeConsent, ownerWordsOn } from "../../tasks";
 import { FORGE_KINDS, NAME, creatorBrief, draftFile, draftFolder, enabledPath, lintDraft, sha256, type ForgeKind, type ForgeReceipt } from "../logic";
 
 const RECEIPTS = "lp.forge.receipts";
@@ -80,7 +80,7 @@ export function mountForge(ctx: ServerCore, services: Services): void {
         return JSON.stringify({ requested: true, next: "step confirm puts it in place" });
       }
       if (!receipt.requestedAt) throw refuse("enabling is two steps: request first, then confirm", "no_request");
-      const ownerWords = String(loadProjectSettings(db, context.projectId)["owner.words"] ?? "off") === "on";
+      const ownerWords = ownerWordsOn(loadProjectSettings(db, context.projectId));
       if (ownerWords && !(input.ownerSaid && isWholeConsent(input.ownerSaid))) throw refuse("owner.words is on: ask the owner (lane_pilot_ask_owner) and pass his whole «да» as ownerSaid", "owner_word");
       const target = enabledPath(input.kind, input.name);
       if (input.kind === "workflow") {

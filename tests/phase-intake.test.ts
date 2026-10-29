@@ -4,12 +4,15 @@ import { HEAVY_WITHOUT_JEV, intakeByRules, isMachineMessage } from "../src/rooms
 import { createPhaseIntake, type IntakePhases, type IntakeTrain } from "../src/rooms/phase/server/intake";
 import type { Phase } from "../src/rooms/phase/logic";
 import { createRun, openDatabase } from "../src/rooms/storage";
+import { pmPrompt } from "../src/rooms/core/server/pm-spawn";
+import type { PrototypeConfig } from "../src/rooms/contracts";
+import bootstrapEvents from "./fixtures/phase-intake-pm-bootstrap-2026-10-29.json";
 
 const PM = "thr_pm";
 const goal = `Нужно сделать раздел блога заново: авторы, категории, поиск, SEO-разметка каждой страницы, перенос старых статей и редиректы. ${"Подробности и требования к каждому экрану. ".repeat(20)}`;
 
-function world(options: { settings?: Record<string, unknown>; role?: string; train?: IntakeTrain } = {}) {
-  let request = { requestId: "creq_1", initiator: "user", input: [{ type: "text", text: goal }] } as Record<string, unknown>;
+function world(options: { settings?: Record<string, unknown>; role?: string; train?: IntakeTrain; request?: Record<string, unknown> } = {}) {
+  let request = options.request ?? { requestId: "creq_1", initiator: "user", input: [{ type: "text", text: goal }] } as Record<string, unknown>;
   const { bb, harness } = createFakePluginHost({ pluginId: "lane-pilot" });
   harness.sdk.stub("threads.getPluginMetadata", async () => ({ role: options.role ?? "pm", lanePilotRunId: "run1" }));
   harness.sdk.stub("threads.send", async () => ({}));
@@ -56,6 +59,28 @@ describe("phase intake rules", () => {
 });
 
 describe("rails by default", () => {
+  it.each(bootstrapEvents)("does not analyze the live PM bootstrap $threadId as an owner's goal", async (event) => {
+    const started: string[] = [];
+    const { intake, opened, say } = world({ request: event.data,
+      train: { start: (input) => { started.push(input.text); return "wfrun_unwanted"; }, status: () => "running" } });
+    expect(await intake.take(PM)).toBeNull();
+    expect(opened).toHaveLength(0);
+    expect(started).toHaveLength(0);
+    expect(await intake.dispatchRefusal(PM)).toBeNull();
+    say(goal, "creq_real_owner");
+    expect(await intake.take(PM)).toMatchObject({ kind: "heavy", phaseId: "ph_1" });
+  });
+  it.each([[false, false, false], [false, false, true], [true, false, true], [false, true, true]])(
+    "leaves the PM activation instruction alone (managed=%s, native=%s, guarded=%s)", async (managed, native, guarded) => {
+      const text = pmPrompt("lprun_bootstrap", { writerWorkspacePath: "/home/ubuntu/lp-drill-sandbox" } as PrototypeConfig, managed, native, guarded);
+      const { intake, opened } = world({ request: { source: "spawn", requestId: "creq_bootstrap", initiator: "user", input: [{ type: "text", text }] } });
+      expect(await intake.take(PM)).toBeNull();
+      expect(opened).toHaveLength(0);
+    });
+  it("still reads a real owner's goal in the spawn of a native PM chat", async () => {
+    const { intake } = world({ request: { source: "spawn", requestId: "creq_native", initiator: "user", input: [{ type: "text", text: goal }] } });
+    expect(await intake.take(PM)).toMatchObject({ kind: "heavy", phaseId: "ph_1" });
+  });
   it("a heavy owner goal opens a phase once, and the PM may not dispatch its work by hand", async () => {
     const { intake, opened } = world();
     const record = await intake.take(PM);

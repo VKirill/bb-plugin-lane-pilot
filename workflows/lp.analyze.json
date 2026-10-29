@@ -33,7 +33,9 @@
     "confidence": "int",
     "open_questions": "string[]",
     "residual_risks": "string[]",
-    "anchors": "Anchor[]"
+    "anchors": "Anchor[]",
+    "appetite": "string",
+    "no_gos": "string[]"
   },
   "entry": "gather",
   "budget": {
@@ -100,7 +102,7 @@
         "ru": "Оценка и решения"
       },
       "src": "maestro-flow:workflows/analyze.md",
-      "prompt": "Score feasibility, impact, risk, complexity, dependencies 1-5, each citing evidence from `gather` (a manual guess does not count).\nClassify every decision as locked (binding for the plan), free (planner's choice) or deferred (excluded). Do a pressure pass: state the strongest argument against the goal, then answer it.\nscope_verdict large = 3+ independent subsystems or hard sequential dependencies. confidence 0-100 from depth of findings, strength of evidence, breadth of coverage.\nIf confidence rose by less than 5 points over two rounds set stalled=true and stop; put what is still unknown into residual_risks.\n",
+      "prompt": "Score feasibility, impact, risk, complexity, dependencies 1-5, each citing evidence from `gather` (a manual guess does not count).\nClassify every decision as locked (binding for the plan), free (planner's choice) or deferred (excluded). Do a pressure pass: state the strongest argument against the goal, then answer it.\nscope_verdict large = 3+ independent subsystems or hard sequential dependencies. confidence 0-100 from depth of findings, strength of evidence, breadth of coverage.\nIf confidence rose by less than 5 points over two rounds set stalled=true and stop; put what is still unknown into residual_risks.\nBefore any solution, state the appetite: how much this phase may take (time or size), and the no-gos: what it will not do («none» is an answer).\nName each risk with its kind: value, usability, feasibility or viability, and security beside them when there is one.\n",
       "out": {
         "decisions": "Decision[]",
         "risks": "Risk[]",
@@ -111,7 +113,9 @@
         "stalled": "bool",
         "pressure_pass": "bool",
         "open_questions": "string[]",
-        "residual_risks": "string[]"
+        "residual_risks": "string[]",
+        "appetite": "string",
+        "no_gos": "string[]"
       },
       "guards": {
         "maxVisits": 3,
@@ -172,7 +176,9 @@
         "confidence": "assess.confidence",
         "open_questions": "assess.open_questions",
         "residual_risks": "assess.residual_risks",
-        "anchors": "gather.anchors"
+        "anchors": "gather.anchors",
+        "appetite": "assess.appetite",
+        "no_gos": "assess.no_gos"
       }
     }
   ],

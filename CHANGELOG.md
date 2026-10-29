@@ -1,5 +1,69 @@
 # Changelog
 
+## Unreleased
+
+## 0.1.386
+
+- **Code critic answer, unreadable.** An answer that cannot be read (an unescaped quote broke the JSON of a «pass») is sent back once to the same critic with the parse error; only a second unreadable answer fails the stage. It blocked a finished selfystudio task on 2026-10-30.
+- **Critic on an older candidate.** A code critic still running on an older revision is stopped and its receipt starts over, instead of `illegal stage transition code-critique: running -> pending` parking the task as internal_error.
+
+## 0.1.385
+
+- **Code critic answer.** Unknown keys (a critic's `status_note`, `summary_note`) are dropped instead of refusing the answer, and an empty optional text (`verificationExpectation: ""`) reads as absent; the keys the host reads stay typed. Four selfystudio tasks with finished work were blocked by `code_critique_failed` on 2026-10-30.
+- **Guard check without Claude Lane.** The drill's `guard_hash` compares and repairs Lane Pilot's own guard in `~/.agents/lane-pilot/pm`, not Claude Lane's `~/.agents/hooks`, which the leftovers cleanup moves aside.
+- **SMA map.** 323 cards have a behaviour test; 261 of them name a gap and count as partial.
+
+## 0.1.384
+
+- **Code critic answer.** A finding without `evidence` (or `file`) is read instead of refusing the whole answer; it cannot count as critical or high. The missing key blocked a selfystudio task with `code_critique_failed` right after 0.1.383.
+- **Claude Lane is no longer needed on a machine** (owner decision 2026-10-29). Install and enable place only Lane Pilot's own pieces: its guard, its OpenCode plugin and its own `agent-trash` in `~/.agents/lane-pilot/bin`; no Claude Lane checkout, no `install.sh`. `bb lane-pilot remove-claude-lane-leftovers <host>` (dry run, `--apply`) takes Claude Lane's hook entries out of `~/.claude/settings.json`, `codex-lane` out of `~/.codex/config.toml`, and moves `~/.agents/hooks` and the lane bins into a dated backup; the owner's own hooks and `~/.agents/skills` stay.
+- **Guard in every Lane Pilot Claude thread.** PM, helpers, specialists, errands and reviewers started by Lane Pilot get its bundled guard through the claude-code launcher env, not through the machine-wide hook entry; an owner thread gets nothing. A writer's `git push` and `git merge` are refused (they passed before; found by the SMA task-graph tests).
+- **Owner presence from BB.** A message the owner sends in a thread Lane Pilot did not start is the presence signal; Claude Lane's hook file is no longer read.
+- **Dead CLI conveyor removed.** `lane-ctl`/`run-controller` dispatch (no receipt on the hub ever), its host handler and settings; the CLI memory file sync is gone, the hub memory stays.
+- **SMA map.** 296 cards now have a behaviour test; 140 of them name a gap (`it.todo`) and count as partial on the map, not have.
+
+## 0.1.383
+
+- **Code critic packet.** The critic gets each file's change as BB's own unified diff (`environments.diffPatch`, uncommitted, in the attempt's environment) and the whole file only when it is small; the packet holds 96 KB. A 30-line edit in a large file used to cut the file to its first 8 KB and the gated critic blocked the task with `code_critique_evidence_unknown:packet_truncated` (13 of 14 code critiques on the hub that week, selfystudio). A long check output is cut to its head and tail with the cut said, and no longer blocks.
+
+## 0.1.382
+
+- **Guard.** A quoted heredoc body inside a `bash -c` script is data again (a regression of the A-023 rewrite, caught by Claude Lane's own guard test); a real `git push --force` after a newline in the script is still refused.
+- **One guard copy.** Claude Lane carries Lane Pilot's guard (6acbe4a, pinned): an install or repair through Lane Pilot no longer puts an older guard into ~/.agents/hooks (it did on the Mac mini on 2026-10-29).
+
+## 0.1.381
+
+Lane Pilot no longer needs the Claude Lane Claude-Code plugin (owner decision 2026-10-29), and the full-code audit A-004 recheck, A-023…A-036 is fixed (Grok 4.7 writers, each probe kept as a regression):
+
+- **Without the lane-stack plugin.** Every Lane Pilot Claude agent, stock or edited, starts from Lane Pilot's own compiled profile through `--agents`; installs and repairs never install or require `lane-stack@claude-lane-stack`. OpenCode writers get Lane Pilot's own slim plugin (guard, hub guard, same-path repeat stopper, the `lane-pilot` agent; 2820 → 598 lines), bundled like the hooks; v1, winnow, Jev routing, skill hints and the plain-session parts are gone. Claude Lane pin 951e9af (its A-013…A-022 fixes) for the `~/.agents/bin` tools.
+- **Composer agents.** Eleven standalone Claude Lane roles are Lane Pilot agents: advisor, AI researcher, animator, doc classifier, domain researcher, eval auditor, eval planner, model selector, memory curator, check auditor, UI researcher.
+- **Guard.** Git global options (`-C`, `-c`, `--git-dir`, `--work-tree`) no longer hide a force-push (A-023); every `&&`/`;`/`||`/`|` segment and a `bash -c` script are read (A-033); `echo git push …` is data. A permit is bound to the real path of the directory it was granted in (A-024).
+- **Permits and installs.** Two writers asking the same command get two requests and each answer reaches its own writer; a failed PM send is retried (A-025). File compare-and-swap is serialised per file with a lock (A-026); a shim whose ledger write failed is rolled back (A-029); one inventory hashes each path once, OpenCode connects once (J-003, J-004).
+- **Native launcher.** Launcher folders are per project (A-027); a bad project hook no longer rejects the session (A-028).
+- **Jev.** Each host call carries its own key and endpoint (A-030); a Jev state always fits its limit (A-031); concurrent output-guard blocks are all kept (A-032).
+- **Resilience.** An owner-present refusal frees the provider trial it reserved (A-034); a budget check names every exhausted limit (A-035); a gate that times out fails even when its command exits 0 on TERM (A-036).
+- **Stops.** A failed worktree read is no record; recovery records a canceled writer it finds idle (A-004 recheck).
+
+## 0.1.380
+
+From the full-code audit of 2026-10-29 (Аудит GPT, A-001…A-012), each probe kept as a regression that was red before its fix:
+
+- **Workflow engine.** A goals pass is a verdict on one output: a re-run node that changed the result is audited again (A-001). Canceling a run cancels its waiting child and grandchild runs (A-002). Failed attempts keep what they spent, and votes keep an unknown spend unknown (A-003). Finished runs let go of their caches; the newest 64 stay for a re-run (A-010). A run pins the child definitions it starts with, and a project workflow finds its project-only children (A-011, A-012).
+- **Stops.** A stop whose worktree could not be put on record says so instead of «complete»; the writer stays stopped (A-004). A host call aborted before it starts sends no job (A-005). A cancel a reload cut off is finished by recovery (A-006).
+- **Schedules.** A run canceled during its start stops the job it got (A-007); an interrupted workflow ends the scheduled run (A-008); `run_once` catches up once after an absence longer than the counted backlog (A-009).
+
+## 0.1.379
+
+**A failed PM-read summary no longer blocks the task** (2026-10-29 Grok audit F-003). The stage proof says the summary «only hands context to the critics and decides nothing», yet an unreadable or timed-out summary sent the attempt and the run to `blocked` (SelfyStudio lost two tasks that way on 2026-10-15/16). The `block-pm-read` node is gone from `lp-task-pipeline`: the failed receipt is kept with its reason and the task goes on to the plan critic without a summary. Regressions: `tests/workflow/equivalence.test.ts` and `tests/stages/server-stage/suite.ts`.
+
+**The plan critic's proof says what it does.** `advisory` names who decides a stage (a model) and that it never accepts a task alone; the plan critic is SMA's plan checker, and in `plan_critique.mode` `gate` (the default) its refusal stops the attempt before the writer. `STAGE_PROOF`, the graph nodes and `docs/overview.md` now say so (F-002 read «advisory» as «cannot block»).
+
+**The SMA map test checks only this repository's links.** A rename in Lane Stack or the core no longer fails Lane Pilot's suite; what a card promises is checked by its `[sma:<id>]` contract test (F-004).
+
+**A relay sweep stopped by reload is not reported as a failure.** The service stops immediately on abort, but an in-flight sweep can reject later through the retired BB API handle. Its detached catch used to log `relay sweep failed: … stale API handle` after a successful reload (hub, 2026-10-29), triggering self-repair. The catch now reports failures only while that service and plugin instance are active; the same error during active work is still reported. Regression: `tests/server/relay-lifecycle.test.ts`, using the captured reload/error lines in `tests/fixtures/relay-reload-2026-10-29.json`.
+
+**PM activation does not start a phase for its own instructions.** BB records the prompt that Lane Pilot uses to start a PM as `source: spawn`, `initiator: user`. The phase intake mistook the long fixture/guard instruction for a heavy owner goal and started `lp.analyze`; three drill runs on 2026-10-29 left unwanted analysis helpers that ended `workflow_gather:canceled:turn_interrupted`. The machine-message filter now recognizes both PM bootstrap headers together with their run-id line, including native and managed-workspace activation. Real owner goals, including a native chat's first spawned message, still enter the intake. Regression: `tests/phase-intake.test.ts`, replaying the three original request events in `tests/fixtures/phase-intake-pm-bootstrap-2026-10-29.json`.
+
 ## 0.1.370
 
 **The roster's model column is BB's own window.** The roles whose model comes from the table «role -> model» now show BB's provider/model window in the roster too, not plain text: a choice is saved into the role's row of the table with its pool kept, and the roster and the table read each other's saves. Ships 0.1.368 and 0.1.369, whose deploy was rolled back by a drill the plan critique blocked: the OVH drill sandbox now keeps plan and code critique off, as the Mac sandbox and the bench projects do, so a drill tests the pipeline, not the critic.

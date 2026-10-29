@@ -4,6 +4,7 @@ import { taskV2Schema } from "../../contracts";
 import { PhaseRefusal } from "./driver";
 import { autoDue } from "./auto-stages";
 import { STAGE_RUBRICS } from "../stages";
+import { WORD_TURNS } from "../logic";
 
 /**
  * A PM often sends a list, an object, a number or a yes/no as JSON text ("[\"a.md\"]"), mostly when the tool's schema came
@@ -28,17 +29,21 @@ export const phaseToolParams = z.discriminatedUnion("action", [
   z.object({ action: z.literal("next"), phaseId }).strict(),
   z.object({ action: z.literal("rubric"), stage: z.enum(["discussion", "planning", "design", "execution", "verification", "acceptance", "lessons"]).optional(), phaseId: phaseId.optional() }).strict(),
   z.object({ action: z.literal("context"), phaseId, docs: asJson(z.array(z.string().trim().min(1).max(1024)).min(1).max(20)),
-    risks: asJson(z.object({ technical: z.string().max(600), product: z.string().max(600), operations: z.string().max(600), security: z.string().max(600) }).strict()),
+    risks: asJson(z.object({ value: z.string().max(600), usability: z.string().max(600), feasibility: z.string().max(600), viability: z.string().max(600), security: z.string().max(600).optional() }).strict()),
+    appetite: z.string().trim().min(1).max(600), noGos: asJson(z.array(z.string().trim().min(1).max(300)).min(1).max(30)),
     requirements: asJson(z.array(z.string().trim().min(1).max(40)).max(100)).optional(), decisions: asJson(z.array(z.string().trim().min(1).max(40)).max(100)).optional() }).strict(),
   z.object({ action: z.literal("plan"), phaseId, items: asJson(z.array(item).min(1).max(60)), design: asJson(z.boolean()).optional() }).strict(),
-  z.object({ action: z.literal("plan_check"), phaseId, decision: z.enum(["approve", "changes_requested"]), by: z.string().trim().min(1).max(120), summary: z.string().max(2000).optional() }).strict(),
+  z.object({ action: z.literal("plan_check"), phaseId, decision: z.enum(["approve", "changes_requested"]), by: z.string().trim().min(1).max(120), summary: z.string().max(2000).optional(), wfRunId: z.string().trim().min(1).max(80).optional() }).strict(),
   z.object({ action: z.literal("drawing"), phaseId, paths: asJson(z.array(z.string().trim().min(1).max(1024)).min(1).max(30)), designer: z.string().trim().min(1).max(120), feasible: asJson(z.boolean()), contradiction: z.string().max(2000).optional(), reviewer: z.string().trim().min(1).max(120).optional(),
     critique: asJson(z.object({ scores: z.record(z.string(), z.number().int().min(0).max(3)), verdict: z.enum(["pass", "rework"]), notes: z.string().max(2000) }).strict()).optional(), lesson: z.string().trim().min(5).max(300).optional() }).strict(),
   z.object({ action: z.literal("goal_audit"), phaseId, state: z.enum(["met", "unmet"]), by: z.string().trim().min(1).max(120), summary: z.string().trim().min(1).max(2000) }).strict(),
-  z.object({ action: z.literal("lessons"), phaseId, analysis: z.string().trim().min(1).max(4000), author: z.string().trim().min(1).max(120), reviewer: z.string().trim().min(1).max(120), reviewedHash: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
+  // The lessons name the workflow run whose reviewer step read them; author, reviewer and the read are taken from its journal (SMA p7_saw_bytes).
+  z.object({ action: z.literal("lessons"), phaseId, analysis: z.string().trim().min(1).max(4000), reviewRun: z.string().trim().min(1).max(120), reviewerNode: z.string().trim().min(1).max(80).optional() }).strict(),
   z.object({ action: z.literal("question"), phaseId, text: z.string().trim().min(1).max(1000), blocking: asJson(z.boolean()).default(true) }).strict(),
   z.object({ action: z.literal("answer"), phaseId, questionId: z.string().trim().min(1).max(20), answer: z.string().trim().min(1).max(2000) }).strict(),
-  z.object({ action: z.literal("word"), phaseId, turn: z.enum(["planning", "design", "issue", "wave", "acceptance", "uat"]), decision: z.enum(["yes", "no"]), text: z.string().trim().min(1).max(2000), wave: z.number().int().min(1).max(20).optional() }).strict(),
+  z.object({ action: z.literal("word"), phaseId, turn: z.enum(WORD_TURNS), decision: z.enum(["yes", "no"]), text: z.string().trim().min(1).max(2000), wave: z.number().int().min(1).max(20).optional(),
+    useful: asJson(z.boolean()).optional(), limits: asJson(z.boolean()).optional(),
+    /** The acceptance package the owner was shown (status ownerWord.acceptanceKey): a yes counts only for that package. */ key: z.string().trim().max(64).optional() }).strict(),
   z.object({ action: z.literal("wave_review"), phaseId, wave: asJson(z.number().int().min(1).max(20)), state: z.enum(["passed", "failed"]), by: z.string().trim().min(1).max(120), summary: z.string().trim().min(1).max(2000) }).strict(),
   z.object({ action: z.literal("withdraw"), phaseId, pieces: asJson(z.array(z.string().trim().min(1).max(80)).min(1).max(60)), note: z.string().trim().min(1).max(2000) }).strict(),
   z.object({ action: z.literal("revise"), phaseId, goal: z.string().trim().min(1).max(4000), note: z.string().trim().min(1).max(2000) }).strict(),
@@ -85,7 +90,7 @@ export function registerPhaseTool(ctx: ServerCore, services: Services): void {
           case "status": {
             if (!input.phaseId) return json({ phases: api.list({ pmThreadId: context.threadId, live: true }).map((phase) => ({ id: phase.id, title: phase.title, stage: phase.stage, state: phase.state })) });
             const status = api.status(input.phaseId);
-            // bookHead: the last part's hash, the reviewedHash the lessons gate asks for (a PM could not read it anywhere, live ph_ae0a8de9db).
+            // bookHead: the last part's hash, which names the book this status was read from.
             return json({ phaseId: status.phase.id, stage: status.phase.stage, state: status.phase.state, next: status.next.text, bookHead: status.bookHead, gates: status.gates, book: status.book.slice(0, 6000) });
           }
           case "next": { const status = api.status(input.phaseId); return json({ phaseId: input.phaseId, stage: status.phase.stage, next: status.next.text, waitsForYou: status.next.waitsForPm, bookHead: status.bookHead }); }
@@ -95,15 +100,15 @@ export function registerPhaseTool(ctx: ServerCore, services: Services): void {
             if (!stage || !(stage in STAGE_RUBRICS)) throw new PhaseRefusal("rubric names a stage (discussion … lessons), or a phaseId whose phase is at one");
             return json({ stage, ...STAGE_RUBRICS[stage as keyof typeof STAGE_RUBRICS] });
           }
-          case "context": return json(summary(await api.context({ phaseId: input.phaseId, docs: input.docs, risks: input.risks, requirements: input.requirements, decisions: input.decisions, by: context.threadId })));
+          case "context": return json(summary(await api.context({ phaseId: input.phaseId, docs: input.docs, risks: input.risks, appetite: input.appetite, noGos: input.noGos, requirements: input.requirements, decisions: input.decisions, by: context.threadId })));
           case "plan": return json(summary(api.plan({ phaseId: input.phaseId, items: input.items as never, design: input.design })));
-          case "plan_check": return json(summary(await api.planCheck({ phaseId: input.phaseId, decision: input.decision, by: input.by, summary: input.summary })));
+          case "plan_check": return json(summary(await api.planCheck({ phaseId: input.phaseId, decision: input.decision, by: input.by, summary: input.summary, wfRunId: input.wfRunId })));
           case "drawing": return json(summary(await api.drawing({ phaseId: input.phaseId, paths: input.paths, designer: input.designer, feasible: input.feasible, contradiction: input.contradiction, reviewer: input.reviewer, critique: input.critique as never, lesson: input.lesson })));
           case "goal_audit": return json(summary(api.goalAudit({ phaseId: input.phaseId, state: input.state, by: input.by, summary: input.summary })));
-          case "lessons": return json(summary(api.lessons({ phaseId: input.phaseId, analysis: input.analysis, author: input.author, reviewer: input.reviewer, reviewedHash: input.reviewedHash })));
+          case "lessons": return json(summary(api.lessons({ phaseId: input.phaseId, analysis: input.analysis, reviewRun: input.reviewRun, reviewerNode: input.reviewerNode })));
           case "question": return json(summary(api.question({ phaseId: input.phaseId, text: input.text, blocking: input.blocking })));
           case "answer": return json(summary(api.answer({ phaseId: input.phaseId, questionId: input.questionId, answer: input.answer, by: "pm" })));
-          case "word": return json(summary(await api.word({ phaseId: input.phaseId, turn: input.turn, decision: input.decision, text: input.text, wave: input.wave, by: "owner via pm" })));
+          case "word": return json(summary(await api.word({ phaseId: input.phaseId, turn: input.turn, decision: input.decision, text: input.text, wave: input.wave, useful: input.useful, limits: input.limits, key: input.key, by: "owner via pm" })));
           case "wave_review": return json(summary(api.waveReview({ phaseId: input.phaseId, wave: input.wave, state: input.state, by: input.by, summary: input.summary })));
           case "withdraw": return json(summary(api.withdraw({ phaseId: input.phaseId, pieces: input.pieces, note: input.note, by: "pm" })));
           case "revise": return json(summary(api.revise({ phaseId: input.phaseId, goal: input.goal, note: input.note, by: "pm" })));

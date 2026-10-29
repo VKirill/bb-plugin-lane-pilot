@@ -1,0 +1,30 @@
+{
+  "source": "bb plugin logs lane-pilot -n 10000; hub plugin log, read-only CLI",
+  "logs": [
+    {
+      "ts": 1793272996775,
+      "level": "info",
+      "message": "Lane Pilot drained for reload: no checkout write or check in flight"
+    },
+    {
+      "ts": 1793272996919,
+      "level": "info",
+      "message": "Lane Pilot startup recovery: reload, after a clean drain"
+    },
+    {
+      "ts": 1793272996925,
+      "level": "info",
+      "message": "Lane Pilot drain before this start: reload, nothing in flight"
+    },
+    {
+      "ts": 1793272997181,
+      "level": "info",
+      "message": "Lane Pilot startup recovery: run, worktree and parked-task scans left to their schedules after a clean drain"
+    },
+    {
+      "ts": 1793272997826,
+      "level": "warn",
+      "message": "relay sweep failed: plugin \"lane-pilot\" used a stale API handle — it was reloaded or disabled; re-entry happens via a fresh factory call"
+    }
+  ]
+}

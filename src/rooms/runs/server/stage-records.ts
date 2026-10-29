@@ -8,7 +8,9 @@ export function recordStage(db:ReturnType<typeof openDatabase>, input:{runId:str
   /** Starts a stage over from blocked or skipped; only for a stage whose work never ran, so no verdict is lost. */
   restart?:boolean;
   /** Opens a writer stage that ended failed again, for a parked task restarting after a Lane Pilot or machine fault. */
-  reopen?:boolean}): void {
+  reopen?:boolean;
+  /** A stage still running on an older input whose worker the caller stopped starts over as pending. */
+  supersede?:boolean}): void {
   const previous = listStageReceipts(db, input.runId, input.taskId).find((row) => row.stageId === input.stageId);
   // A cancel is final and wins over a stage that was still working: the result it hands in late is dropped. It used to
   // throw, and the dispatch of a task the PM had canceled ended «dispatch_failed:illegal stage transition writer-agent:
@@ -16,7 +18,7 @@ export function recordStage(db:ReturnType<typeof openDatabase>, input:{runId:str
   if (previous?.state === "canceled" && input.state !== "canceled") return;
   const nextInputSha = sha256(input.input);
   const replace = Boolean(input.replaceOnNewInput && previous && previous.inputSha256 !== nextInputSha
-    && ["passed", "failed", "blocked", "skipped"].includes(previous.state) && input.state === "pending");
+    && (["passed", "failed", "blocked", "skipped"].includes(previous.state) || (input.supersede && previous.state === "running")) && input.state === "pending");
   const restart = Boolean(previous && input.state === "pending" && ((input.restart && ["blocked", "skipped"].includes(previous.state))
     || (input.reopen && ["failed", "blocked", "skipped"].includes(previous.state))));
   if (previous && !replace && !restart && !stageTransition(previous.state, input.state)) {
@@ -93,14 +95,16 @@ export async function closeHelperStages(db:ReturnType<typeof openDatabase>, stop
 /**
  * Clears the helper stages of a dispatch that starts again after a reload, so they run as for a new dispatch: a helper
  * thread still running works for a dead dispatch and is stopped, and every helper receipt goes. A pm-read that passed or
- * was skipped stays, and runPmRead takes its summary instead of reading again. Plan critique and specialist review run
- * again in any case: a receipt of either that already passed cannot go back to pending. The stage events keep the history.
+ * was skipped stays, and runPmRead takes its summary instead of reading again. A plan critique or specialist review that
+ * passed stays too: each reuses it when its input is unchanged and replaces it when the task changed (2026-10-29 audit: a
+ * reload bought both reviews again). The stage events keep the history.
  */
 export async function resetHelperStages(db:ReturnType<typeof openDatabase>, stop:(threadId:string) => Promise<unknown>,
   input:{runId:string;taskId:string}): Promise<void> {
   for (const row of listStageReceipts(db, input.runId, input.taskId)) {
     if (!(HELPER_STAGES as readonly string[]).includes(row.stageId)) continue;
     if (row.stageId === "pm-read" && (row.state === "passed" || row.state === "skipped")) continue;
+    if ((row.stageId === "plan-critique" || row.stageId === "specialist-review") && row.state === "passed") continue;
     if (row.threadId && (row.state === "pending" || row.state === "running")) {
       try { await stop(row.threadId); } catch { /* an idle or missing helper thread: nothing to stop */ }
     }

@@ -2,7 +2,6 @@ import { compiledMainAgentSpawnBinding, detectCompiledMainAgentCapability, resol
 import type { CompiledMainAgent } from "../agent-profile";
 import { readyComposerSnapshot, spawnEnvironmentFromSelection } from "../composer-selection";
 import type { ComposerSelectionSnapshot } from "../composer-selection";
-import { TARGET_SHA } from "../../runs";
 import { claimActivation, createRun, freezeRunBinding, getActivation, getRunSettingsScopes, importSettingsOnce, loadPrototypeConfig, releaseActivation, setRunState, setRunThread, setRunWorkspace } from "../../storage";
 import { ownerCardBlock } from "../../anamnesis";
 import { anamnesisFor } from "../../anamnesis";
@@ -79,17 +78,8 @@ export function createActivation(ctx: ServerCore, services: Services) {
       if (!detected.workspace.present) {
         throw new Error(`Lane Pilot PM workspace is missing: ${detected.workspace.path}`);
       }
-      const inventory = await host.call("coexistenceInventory", {
-        requestedHostId:config.hostId, projectId, targetSha:TARGET_SHA,
-      }, { hostId:config.hostId, timeoutMs:30_000 });
-      const compatibleEngine = inventory.managers.find((manager) =>
-        ["agents-marker", "managed-checkout", "claude-cache"].includes(manager.manager) && manager.compatible === true,
-      );
-      if (!compatibleEngine) {
-        const missing = [...new Set(inventory.managers.flatMap((manager) => manager.missingCapabilities))];
-        const detail = missing.length ? `Missing required interfaces: ${missing.join(", ")}.` : "No installed engine exposed a probeable set of required interfaces.";
-        throw new Error(`Lane Pilot PM cannot activate: no compatible engine was found. ${detail} Reference version ${TARGET_SHA} is provenance only; SHA/version mismatch does not decide compatibility.`);
-      }
+      // No Claude Lane engine is required any more: Lane Pilot starts its agents and guard itself (2026-10-29), and the cleanup moved
+      // the engine aside. The gate stopped every activation outside the composer (drill parallel3, 2026-10-30).
       const imported = await host.call("importConfig", {
         requestedHostId: config.hostId,
         workspacePath: config.pmWorkspacePath,

@@ -9,7 +9,7 @@ export type BudgetKind = keyof RunBudgetLimits;
 
 export type BudgetCheck =
   | { ok: true }
-  | { ok: false; exceeded: BudgetKind; used: number; limit: number; reason: string };
+  | { ok: false; exceeded: BudgetKind; used: number; limit: number; reason: string; exhausted?: BudgetKind[] };
 
 export type RunBudgetSnapshot = { attempts: number; children: number; tokens: number; elapsedMs: number; limits: RunBudgetLimits };
 
@@ -20,11 +20,13 @@ export function budgetStopReason(kind: BudgetKind): string {
   return `run_budget_exceeded:${LABEL[kind]}`;
 }
 
-/** Wall-clock and token overruns stop a running writer; child/attempt overruns refuse the next spawn instead. */
+/** Wall-clock and token overruns stop a running writer; child/attempt overruns refuse the next spawn instead.
+ *  `exceeded` is the first limit. `exhausted` is every limit, so an attempt overrun does not hide a wall or token stop (2026-10-29 audit A-035). */
 export function runningWriterBudgetStop(check: BudgetCheck): string | null {
   if (check.ok) return null;
-  if (check.exceeded === "maxWallMs" || check.exceeded === "maxTokens") return budgetStopReason(check.exceeded);
-  return null;
+  const kinds = check.exhausted ?? [check.exceeded];
+  const stop = kinds.find((kind) => kind === "maxWallMs" || kind === "maxTokens");
+  return stop ? budgetStopReason(stop) : null;
 }
 
 export class RunBudgetExceeded extends Error {
@@ -67,13 +69,15 @@ export function createRunBudget(limits: RunBudgetLimits, startedAt = Date.now())
 
   function check(now = Date.now()): BudgetCheck {
     const used: Record<BudgetKind, number> = { maxAttempts: attempts, maxWallMs: now - startedAt, maxTokens: tokens(), maxChildren: children };
-    for (const kind of ["maxAttempts", "maxWallMs", "maxTokens", "maxChildren"] as const) {
+    const order = ["maxAttempts", "maxWallMs", "maxTokens", "maxChildren"] as const;
+    const exhausted = order.filter((kind) => {
       const limit = limits[kind];
-      if (limit !== undefined && used[kind] > limit) {
-        return { ok: false, exceeded: kind, used: used[kind], limit, reason: `run budget exceeded: ${used[kind]} ${LABEL[kind]} > ${limit}` };
-      }
-    }
-    return { ok: true };
+      return limit !== undefined && used[kind] > limit;
+    });
+    const kind = exhausted[0];
+    if (!kind) return { ok: true };
+    const limit = limits[kind]!;
+    return { ok: false, exceeded: kind, used: used[kind], limit, reason: `run budget exceeded: ${used[kind]} ${LABEL[kind]} > ${limit}`, exhausted: [...exhausted] };
   }
 
   function snapshot(now = Date.now()): RunBudgetSnapshot {

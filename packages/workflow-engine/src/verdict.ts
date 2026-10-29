@@ -12,29 +12,35 @@ export type VerdictStatus = (typeof VERDICT_STATUSES)[number];
 export const VERDICT_SEVERITIES = ["critical", "high", "medium", "low", "info"] as const;
 export type VerdictSeverity = (typeof VERDICT_SEVERITIES)[number];
 
+/** An optional text: an empty string or null reads as absent (a critic wrote `verificationExpectation: ""` on an info finding). */
+const optionalText = (max: number) => z.preprocess((value) => value === "" || value === null ? undefined : value, clipped(max).optional());
+
+// Unknown keys are dropped, not refused: a critic's `status_note` or `summary_note` blocked selfystudio tasks whose work was done
+// (2026-10-30). The keys the host reads are still typed and checked.
 export const verdictFindingSchema = z.object({
   /** The repository file the finding is about; `TASK` or `PLAN` for the contract or the plan; empty when it is not located. */
-  file: z.string().max(500),
+  file: z.preprocess((value) => value ?? "", z.string().max(500)),
   line: z.number().int().positive().nullable().optional(),
   severity: z.enum(VERDICT_SEVERITIES),
-  /** What was observed: the quoted code, the output line, the element that was (not) found. */
-  evidence: clipped(2000),
-  id: clipped(80).optional(),
-  finding: clipped(1000).optional(),
-  criterion: clipped(500).optional(),
-  dimension: clipped(80).optional(),
-  impact: clipped(500).optional(),
-  trigger: clipped(500).optional(),
-  verificationExpectation: clipped(500).optional(),
-}).strict();
+  /** What was observed: the quoted code, the output line, the element that was (not) found. A finding without it is read, not
+   *  refused: it cannot count as critical or high (counts below). A missing key blocked a selfystudio task on 2026-10-30. */
+  evidence: z.preprocess((value) => value ?? "", clipped(2000, 0)),
+  id: optionalText(80),
+  finding: optionalText(1000),
+  criterion: optionalText(500),
+  dimension: optionalText(80),
+  impact: optionalText(500),
+  trigger: optionalText(500),
+  verificationExpectation: optionalText(500),
+});
 
 export const verdictSchema = z.object({
   status: z.enum(VERDICT_STATUSES),
-  summary: clipped(2000).optional(),
+  summary: optionalText(2000),
   findings: z.array(verdictFindingSchema).max(30),
   /** What was examined and how, so the verdict can be checked. */
   evidence: clipped(4000),
-}).strict();
+});
 
 export type VerdictFinding = z.infer<typeof verdictFindingSchema>;
 export type Verdict = z.infer<typeof verdictSchema>;

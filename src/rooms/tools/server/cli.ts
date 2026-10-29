@@ -42,7 +42,7 @@ import { PHASE_USAGE, runPhaseCli } from "../../phase/server";
 import { unknownReasons } from "../../runs";
 import { manifest, passport, preship, prPassport, receiptChain, verifyChain } from "../../receipts";
 import { EXCAVATE_LOG_ARGS, approvalSuggestions, costPerVerified, excavate, htmlReport, missCurriculum } from "../../self-improve";
-import { smaCounts, smaDonePercent, smaRows } from "../../sma-map";
+import { smaCheckedPercent, smaCounts, smaDonePercent, smaRows } from "../../sma-map";
 import { loadLiveExam } from "../../policy";
 import { RULES_USAGE, runRulesCli } from "../../rule-forms";
 import { retireAdoptedRule } from "../../self-repair/server";
@@ -81,12 +81,11 @@ export function registerCli(ctx: ServerCore, services: Services) {
     "bb lane-pilot host-snapshot <host-id> <absolute-path>...",
     "bb lane-pilot host-snapshot-manifest <host-id> [thread-storage]",
     "bb lane-pilot host-install <host-id> [thread-storage] [pm-workspace]",
+    "bb lane-pilot remove-claude-lane-leftovers <host-id> [--apply]",
     "bb lane-pilot host-rollback <host-id> <snapshot-path>",
     "bb lane-pilot host-connect-opencode <host-id>",
     "bb lane-pilot host-import-config <host-id> <project-id> [workspace-path]",
-    "bb lane-pilot host-run-cli <host-id> <cwd> <binary> <subcommand> [args...]",
     "bb lane-pilot resume [project-id]",
-    "bb lane-pilot dispatch-cli <project-id> <pm-thread-id> [binary] [subcommand] [task-file] [task-id] [run-dir]",
     "bb lane-pilot dispatch-bb <project-id> <pm-thread-id> [task-json] [base-ref] [critic-code-default: off|medium|high]",
     "bb lane-pilot events-list <thread-id>",
     "bb lane-pilot wait-thread <thread-id>",
@@ -134,7 +133,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"start-cancel-probe", summary:"Spawn a long-running writer for a live stop observation", usage:"bb lane-pilot start-cancel-probe <project-id> <pm-thread-id>" },
       { name:"start-provider-error-probe", summary:"Observe a live provider error and persist provider_error", usage:"bb lane-pilot start-provider-error-probe <project-id> <pm-thread-id>" },
       { name:"helper-probe", summary:"Start one cheap helper (pm-read path) on a provider and check it answered", usage:"bb lane-pilot helper-probe <project-id> <run-id> <provider-id> <model>" },
-      { name:"memory-probe", summary:"Plant a token through the memory write door and check that every delivery path (writer brief, PM, critics, terminal) hands it to its agent; sandbox project only unless --force", usage:"bb lane-pilot memory-probe <project-id> [--paths a,b] [--keep] [--clean] [--report] [--force]" },
+      { name:"memory-probe", summary:"Plant a token through the memory write door and check that every delivery path (writer brief, PM, critics) hands it to its agent; sandbox project only unless --force", usage:"bb lane-pilot memory-probe <project-id> [--paths a,b] [--keep] [--clean] [--report] [--force]" },
       { name:"memory-eval", summary:"Score memory retrieval at 30, 300 and 3000 notes on real accepted tasks (right answer, nothing relevant, off-topic) against a plain path-and-keyword baseline; reads the hub data, writes nothing", usage:MEMORY_EVAL_USAGE },
       { name:"memory-conflicts", summary:"Memory notes that disagree: held out of every brief until a person settles them; --detect looks for new ones", usage:"bb lane-pilot memory-conflicts [--project P] [--state held|settled] [--detect]" },
       { name:"memory-conflict-settle", summary:"Settle a held memory conflict: keep one note, both, or neither, with the evidence", usage:"bb lane-pilot memory-conflict-settle <mc_id> --keep a|b|both|none --evidence <text>" },
@@ -143,12 +142,11 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"host-snapshot", summary:"Call read-only snapshotDryRun", usage:"bb lane-pilot host-snapshot <host-id> <absolute-path>..." },
       { name:"host-snapshot-manifest", summary:"Full §11.1 snapshot", usage:"bb lane-pilot host-snapshot-manifest <host-id> [thread-storage]" },
       { name:"host-install", summary:"Install target SHA without external ops", usage:"bb lane-pilot host-install <host-id> [thread-storage] [pm-workspace]" },
+      { name:"remove-claude-lane-leftovers", summary:"Move Claude Lane leftovers on one machine into a dated backup. Dry-run unless --apply", usage:"bb lane-pilot remove-claude-lane-leftovers <host-id> [--apply]" },
       { name:"host-rollback", summary:"Rollback a snapshot", usage:"bb lane-pilot host-rollback <host-id> <snapshot-path>" },
       { name:"host-connect-opencode", summary:"S5 JSONC plugin patch", usage:"bb lane-pilot host-connect-opencode <host-id>" },
       { name:"host-import-config", summary:"S7 one-shot YAML read", usage:"bb lane-pilot host-import-config <host-id> <project-id> [workspace-path]" },
-      { name:"host-run-cli", summary:"Run run-controller/lane-ctl on the project host", usage:"bb lane-pilot host-run-cli <host-id> <cwd> <binary> <subcommand> [args...]" },
       { name:"resume", summary:"Reconcile orphaned writer attempts without spawning duplicates", usage:"bb lane-pilot resume [project-id]" },
-      { name:"dispatch-cli", summary:"Dispatch a CLI writer run for a PM thread", usage:"bb lane-pilot dispatch-cli <project-id> <pm-thread-id> [binary] [subcommand]" },
       { name:"dispatch-bb", summary:"Dispatch a BB writer task, optional task-v2 JSON", usage:"bb lane-pilot dispatch-bb <project-id> <pm-thread-id> [task-json] [base-ref] [critic-code-default: off|medium|high]" },
       { name:"events-list", summary:"Read-only SDK events.list probe", usage:"bb lane-pilot events-list <thread-id>" },
       { name:"wait-thread", summary:"Read-only waitThreadIdle probe", usage:"bb lane-pilot wait-thread <thread-id>" },
@@ -172,7 +170,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
       { name:"unknown-codes", summary:"Failure reasons no class or rule names yet (the unknown code register), most frequent first, over the last 14 days", usage:"bb lane-pilot unknown-codes [--days 14]" },
       { name:"phase", summary:"Phases on rails: list, show (with the phase book), drive now, return to an earlier stage with a note, pause, resume, close in words", usage:PHASE_USAGE },
       { name:"design-metrics", summary:"The designer's training: the four ratios from the design measurement journal, the four conditions of «trained» and the readiness words", usage:"bb lane-pilot design-metrics [--project <id>] [--json]" },
-      { name:"sma-map", summary:"The SMA product map node by node: what Lane Pilot has for each of its 1768 nodes, the proof in the code, what is missing, and the share done", usage:SMA_MAP_USAGE },
+      { name:"sma-map", summary:"The SMA product map node by node: what Lane Pilot has for each of its 1798 nodes, the card text, the proof link, the contract tests that check it, and the shares mapped and checked", usage:SMA_MAP_USAGE },
       { name:"rules", summary:"The rules by form (always | skill | check | hook | memory) and the mechanism that enforces each; classify them, generate mechanism tasks for the recurring check rules, retire the text a mechanism now holds", usage:RULES_USAGE },
       { name:"workflow-trigger", summary:"Start a workflow in a project as its schedule trigger does (the automation of a schedule calls this); exit 1 with the reason when it cannot start", usage:"bb lane-pilot workflow-trigger <project-id> <workflow-id> [inputs-json] [key]" },
       { name:"workflow-answer", summary:"Answer the question a workflow run in a project without a PM chat put on the owner's list (the option, or words that name one, or a free answer)", usage:"bb lane-pilot workflow-answer <run-id> <step-key> <option or words>" },
@@ -205,7 +203,7 @@ export function registerCli(ctx: ServerCore, services: Services) {
         const [command, ...args] = argv;
         // The same door as the tools: a PM's shell does not start work (a schedule, a dispatch, a workflow, a council) for a request
         // the machine took. Automations and drills call the CLI without a thread and are not touched.
-        const launches = command === "schedule" ? ["create", "update", "run-now"].includes(args[0] ?? "") : ["dispatch-cli", "dispatch-bb", "workflow-trigger", "council"].includes(command ?? "");
+        const launches = command === "schedule" ? ["create", "update", "run-now"].includes(args[0] ?? "") : ["dispatch-bb", "workflow-trigger", "council"].includes(command ?? "");
         const refusal = invocation?.threadId && launches ? await services.phaseIntake.launchRefusal(invocation.threadId) : null;
         if (refusal) return { exitCode:1, stdout:JSON.stringify({ ok:false, error:refusal }) };
         if (command === "reverify" || command === "revert" || command === "changes") {
@@ -260,9 +258,9 @@ export function registerCli(ctx: ServerCore, services: Services) {
         }
         if (command === "report") {
           const rows = smaRows();
-          const regions = [...new Set(rows.map((row) => row.region))].map((region) => { const part = rows.filter((row) => row.region === region); return { region, done: `${smaDonePercent(part)}%`, ...smaCounts(part) }; });
+          const regions = [...new Set(rows.map((row) => row.region))].map((region) => { const part = rows.filter((row) => row.region === region); return { region, checked: `${smaCheckedPercent(part)}%`, mapped: `${smaDonePercent(part)}%`, ...smaCounts(part) }; });
           return { exitCode:0, stdout:htmlReport({ title:`Lane Pilot report ${new Date().toISOString().slice(0, 10)}`, sections:[
-            { heading:`SMA map: ${smaDonePercent(rows)}% done`, rows:regions },
+            { heading:`SMA map: checked by contract tests ${smaCheckedPercent(rows)}%, mapped by proof links ${smaDonePercent(rows)}%`, rows:regions },
             { heading:"Money", rows:[services.money.status() as never] },
             { heading:"Cost per verified result (30 days)", rows:costPerVerified(db) as never },
           ] }) };
@@ -569,6 +567,14 @@ export function registerCli(ctx: ServerCore, services: Services) {
             threadStoragePath:args[1],
           }, { hostId:args[0]!, timeoutMs:120_000 }), null, 2) };
         }
+        if (command === "remove-claude-lane-leftovers" && args.length >= 1) {
+          const hostId = args.find((arg) => !arg.startsWith("--"));
+          if (!hostId) return { exitCode: 1, stderr: "bb lane-pilot remove-claude-lane-leftovers <host-id> [--apply]" };
+          return { exitCode: 0, stdout: JSON.stringify(await host.call("removeClaudeLaneLeftovers", {
+            requestedHostId: hostId,
+            apply: args.includes("--apply"),
+          }, { hostId, timeoutMs: 120_000 }), null, 2) };
+        }
         if (command === "host-install" && args.length >= 1) {
           return { exitCode:0, stdout:JSON.stringify(await host.call("install", {
             requestedHostId:args[0]!,
@@ -588,30 +594,8 @@ export function registerCli(ctx: ServerCore, services: Services) {
             requestedHostId:args[0]!,
           }, { hostId:args[0]!, timeoutMs:30_000 }), null, 2) };
         }
-        if (command === "host-run-cli" && args.length >= 4) {
-          const config = loadPrototypeConfig(db, "unused") ;
-          void config;
-          return { exitCode:0, stdout:JSON.stringify(await host.call("runCli", {
-            requestedHostId:args[0]!,
-            cwd:args[1]!,
-            binary:args[2] as "run-controller"|"lane-ctl",
-            argv:args.slice(3),
-            env:{},
-          }, { hostId:args[0]!, timeoutMs:180_000 }), null, 2) };
-        }
         if (command === "resume") {
           return { exitCode:0, stdout:JSON.stringify(await services.resumeOrphans(args[0]), null, 2) };
-        }
-        if (command === "dispatch-cli" && args.length >= 2) {
-          return { exitCode:0, stdout:JSON.stringify(await services.dispatchCli({
-            projectId:args[0]!,
-            threadId:args[1]!,
-            binary:args[2] as "run-controller"|"lane-ctl"|undefined,
-            subcommand:args[3],
-            taskFile:args[4] || undefined,
-            taskId:args[5] || undefined,
-            runDir:args[6] || undefined,
-          }), null, 2) };
         }
         if (command === "dispatch-bb" && args.length >= 2) {
           const task = args[2] ? taskV2Schema.parse(JSON.parse(args[2])) : undefined;

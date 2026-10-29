@@ -6,6 +6,15 @@
 export type TaskWord = { turn: "land"; decision: "yes" | "no"; text: string; at: number };
 
 export const TASK_WORDS_KEY = "lp.task.words";
+
+/**
+ * Is the owner's word asked (setting owner.words): on unless the project turns it off. SMA waits for a person at these turns (map
+ * 481d75c2: Authorized by a person, Two human decisions, Issue gate, Person accepts the wave, Plan row awaits a word, Draft awaits a
+ * person); the owner asked for Lane Pilot one in one with it, its person steps included (2026-10-29). Before, it was off by default.
+ * LANE_PILOT_OWNER_WORDS_DEFAULT changes the default where no setting says (the test suite runs the machine path with it off).
+ */
+export const ownerWordsOn = (settings: Readonly<Record<string, unknown>>) =>
+  String(settings["owner.words"] ?? process.env.LANE_PILOT_OWNER_WORDS_DEFAULT ?? "on") !== "off";
 export const taskWordKey = (runId: string, family: string) => `${runId}:${family}`;
 
 /** Why the landing waits, or null: the owner's latest word on the task family decides. */

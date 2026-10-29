@@ -12,20 +12,20 @@ const piece = (id: string, wave: number, extra: Record<string, unknown> = {}): P
 
 const signed = (): PhaseRecord => {
   const docs = [{ path: "docs/CONTEXT.md", sha256: "a".repeat(64), bytes: 120 }];
-  return { context: { docs, sha: contextSignature(docs), signedAt: 1, risks: { technical: "none", product: "users miss totals", operations: "none", security: "none" } } };
+  return { context: { docs, sha: contextSignature(docs), signedAt: 1, risks: { value: "users miss totals", usability: "none", feasibility: "none", viability: "none" }, appetite: "one day", noGos: ["none"] } };
 };
 
 const planned = (items: PlanItem[], decision: "approve" | "changes_requested" = "approve"): PhaseRecord => {
   const record = signed();
   const contextSha = record.context!.sha;
-  return { ...record, plan: { items, contextSha, sha: planSignature(items, contextSha), critique: { decision, by: "plan-critic" } } };
+  return { ...record, plan: { items, contextSha, sha: planSignature(items, contextSha), critique: { decision, by: "plan-critic", ...(decision === "approve" ? { independence: { ok: true, why: "checker thr_c started after planner thr_p and had the last word" } } : {}) } } };
 };
 
 const phaseWith = (record: PhaseRecord, stage: Phase["stage"] = "planning"): Phase => ({
   id: "ph_1", projectId: "p", pmThreadId: "t", runId: "r", title: "Sum skips empty cells", goal: "sums are right", stage, state: "active", record, edition: 1, createdAt: 0, updatedAt: 0,
 });
 
-const facts = (rows: Array<[string, Partial<TaskFact>]>) => new Map(rows.map(([id, fact]) => [id, { taskId: id, state: "accepted", planFact: "passed", verification: "passed", codeCritique: "skipped", ...fact } as TaskFact]));
+const facts = (rows: Array<[string, Partial<TaskFact>]>) => new Map(rows.map(([id, fact]) => [id, { taskId: id, state: "accepted", planFact: "passed", verification: "passed", codeCritique: "passed", ...fact } as TaskFact]));
 
 describe("phase gates", () => {
   it("discussion needs signed, non-empty documents", () => {
@@ -147,6 +147,28 @@ describe("execution and verification", () => {
     expect(ok.every((line) => line.ok)).toBe(true);
     const moved = acceptanceLines(phase, facts([["a", {}], ["b", {}], ["c", {}]]), { mainSha: "h2", openDeferrals: 0 });
     expect(moved.find((line) => line.id === "main_unmoved")?.ok).toBe(false);
+  });
+
+  // 2026-10-29 audit C-04: «nothing blocks» and «nothing failed» were green lines for pieces no critic and no browser check had read.
+  it("is green on a positive critic verdict only: no receipt is no reading [sma:p6_l_verdict]", () => {
+    const record = planned(items);
+    record.plan!.admittedSha = record.plan!.sha;
+    record.verification = { verdict: blindVerdict(items, facts([["a", {}], ["b", {}], ["c", {}]]), { state: "passed", headSha: "h1" }, 1) as never, model: { state: "met", by: "lp.close", summary: "ok", at: 2 } };
+    const phase = phaseWith({ ...record, execution: { issued: { a: "a", b: "b", c: "c" } } }, "acceptance");
+    const line = (rows: Array<[string, Partial<TaskFact>]>) => acceptanceLines(phase, facts(rows), { mainSha: "h1", openDeferrals: 0 }).find((row) => row.id === "independent_check")!;
+    expect(line([["a", { codeCritique: null }], ["b", { codeCritique: "skipped" }], ["c", {}]])).toEqual({ id: "independent_check", ok: false, detail: "the code critic has not passed: a, b (no critic receipt is no reading)" });
+    expect(line([["a", {}], ["b", {}], ["c", {}]])).toEqual({ id: "independent_check", ok: true, detail: "the code critic passed all 3 piece(s)" });
+  });
+
+  it("holds a planned browser check until it passed and names the pieces that plan none [sma:p6_evidence]", () => {
+    const record = planned(items);
+    record.plan!.admittedSha = record.plan!.sha;
+    record.verification = { verdict: blindVerdict(items, facts([["a", {}], ["b", {}], ["c", {}]]), { state: "passed", headSha: "h1" }, 1) as never, model: { state: "met", by: "lp.close", summary: "ok", at: 2 } };
+    const phase = phaseWith({ ...record, execution: { issued: { a: "a", b: "b", c: "c" } } }, "acceptance");
+    const line = (rows: Array<[string, Partial<TaskFact>]>) => acceptanceLines(phase, facts(rows), { mainSha: "h1", openDeferrals: 0 }).find((row) => row.id === "qa_read")!;
+    expect(line([["a", { qaPlanned: true, browserQa: null }], ["b", {}], ["c", {}]])).toMatchObject({ ok: false, detail: "the planned browser check has not passed: a" });
+    expect(line([["a", { qaPlanned: true, browserQa: "failed" }], ["b", {}], ["c", {}]])).toMatchObject({ ok: false, detail: "the browser check failed: a" });
+    expect(line([["a", { qaPlanned: true, browserQa: "passed" }], ["b", {}], ["c", {}]])).toEqual({ id: "qa_read", ok: true, detail: "1 piece(s) passed their browser check; 2 piece(s) plan none (no qa_cases)" });
   });
 
   it("holds the acceptance while a deferred check of the project is open with no term from the owner (Fable's recheck E8)", () => {

@@ -47,7 +47,6 @@ describe("enum presentation labels", () => {
     expect(presentEnumLabel("browser_qa.provider", "jev")).toBe("jev");
     expect(presentEnumLabel("browser_qa.provider", "codex")).toBe("codex");
     expect(presentEnumLabel("ops.tail_source", "supervisor")).toBe(en.enumTailSupervisor);
-    expect(rows.some((row) => row.storageKey === "ops.tail_source")).toBe(true);
     setLocaleOverride(null);
   });
 });

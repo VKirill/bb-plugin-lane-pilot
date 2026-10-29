@@ -2,6 +2,7 @@ import { scheduleIsolated, type ServerCore } from "../../core/server";
 import { loadProjectSettings } from "../../storage";
 import { GLOBAL_SETTINGS_PROJECT_ID } from "@lane-pilot/settings-catalog";
 import type { BenchApi } from "../service";
+import { renderBaseline } from "../baseline";
 
 /**
  * The comparison arena on a clock (SMA map: Comparison arena, Baseline metric bench). Every Sunday at 02:00 UTC the newest bench set runs
@@ -19,6 +20,9 @@ export function mountBenchWeekly(ctx: ServerCore, bench: () => BenchApi): void {
   scheduleIsolated(ctx.bb, "bench-weekly", "0 2 * * 0", async (signal) => {
     if (ctx.isDisposed() || signal?.aborted) return;
     if (String(loadProjectSettings(ctx.db, GLOBAL_SETTINGS_PROJECT_ID)["bench.weekly"] ?? "on") === "off") return;
+    // The baseline metric bench needs no model and no set: its three numbers are measured every week (SMA k_lib_bench).
+    const base = await bench().baseline({ days: 7 }).catch((cause: unknown) => { ctx.log(`bench-weekly: baseline failed: ${cause instanceof Error ? cause.message : String(cause)}`); return null; });
+    if (base) ctx.log(`bench-weekly: ${renderBaseline(base).replace(/\n/g, "; ")}`);
     const sets = bench().status();
     const newest = sets.sort((a, b) => b.createdAt - a.createdAt)[0];
     if (!newest) return;

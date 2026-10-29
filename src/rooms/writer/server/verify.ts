@@ -37,15 +37,19 @@ import type { Services } from "../../core/server";
  * The pass used to replace the failure, and «load» was a guess nobody measured. Now the result keeps the first failure
  * (exit code, output tail) and a machine reading taken just before each attempt (`sample`, on the host the check runs
  * on), with a verdict that names its basis: `machine_pressure` only when a reading crossed a limit, else `unexplained`.
+ * A failure that failed its re-run too says `reran` and keeps that re-run (`rerun`): the post-merge check reads both and runs it no third
+ * time only when both are product reds (a re-run that timed out reproduced nothing; SMA audit N-05).
  */
 export async function runWithFlakyRerun<T extends {exitCode:number;stdout?:string;stderr?:string}>(command:string,run:()=>Promise<T>,log:(line:string)=>void,
-  sample?:()=>Promise<MachineReading|null>):Promise<T&{flaky?:true;flakyEvidence?:FlakyEvidence}> {
+  sample?:()=>Promise<MachineReading|null>):Promise<T&{flaky?:true;flakyEvidence?:FlakyEvidence;reran?:true;rerun?:{exitCode:number;stdout?:string;stderr?:string;hostError?:boolean;threw?:boolean}}> {
   const beforeFirst=await sample?.();
   const first=await run();
   if(first.exitCode===0||first.exitCode===124) return first;
   const beforeRerun=await sample?.();
   const again=await run();
-  if(again.exitCode!==0) return first;
+  // A re-run the host never ran (hostError, a call that threw) keeps saying so: it reproduced nothing (SMA audit R-05).
+  const broke=again as {hostError?:boolean;threw?:boolean};
+  if(again.exitCode!==0) return {...first,reran:true,rerun:{exitCode:again.exitCode,stdout:again.stdout,stderr:again.stderr,...(broke.hostError?{hostError:true}:{}),...(broke.threw?{threw:true}:{})}};
   const hollow=hollowRerun(first,again);
   if(hollow) {
     log(`verification command exited 0 on re-run but did not run (${hollow}): ${command} — the first failure (exit ${first.exitCode}) stands`);
@@ -128,7 +132,7 @@ export function createWriterVerify(ctx: ServerCore, services: Services) {
   }
 
   async function runVerification(config: PrototypeConfig, task: TaskV2, runId?:string, writerThreadId?:string, options?:{ background?:boolean; jobKey?:string }): Promise<Array<VerifyResult & {
-    sandboxBackend:string|null; policySha256:string|null; workspacePath:string; flaky?:true; flakyEvidence?:FlakyEvidence;
+    sandboxBackend:string|null; policySha256:string|null; workspacePath:string; flaky?:true; flakyEvidence?:FlakyEvidence; reran?:true;
     /** The host call itself failed (worker killed, host offline): the command's own verdict is unknown. */
     hostError?:true;
   }>> {

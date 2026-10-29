@@ -49,7 +49,7 @@ describe("the workflow executor", () => {
     expect(calls.workflowStart[0]).toMatchObject({ projectId: "p1", workflowId: "weekly-digest", inputs: { query: "cats" }, source: "manual", key: "sch_1:1790000000000", origin: "schedule" });
     const polled = (summary: Record<string, any> | null) => { if (summary) summaries.set("wfrun_1", summary); else summaries.delete("wfrun_1"); return executors.workflow.poll(input(task, { ref_id: "wfrun_1" })); };
     expect(await polled({ status: "running", waiting: [] })).toEqual({ state: "running" });
-    expect(await polled({ status: "interrupted", waiting: [] })).toEqual({ state: "running" });
+    expect(await polled({ status: "interrupted", waiting: [] })).toMatchObject({ state: "done", status: "failed" });
     expect(await polled({ status: "waiting", waiting: [{ nodeId: "approve" }] })).toEqual({ state: "waiting", note: "approve" });
     expect(await polled({ status: "succeeded", output: { sent: true }, waiting: [] })).toMatchObject({ state: "done", status: "succeeded", output: expect.stringContaining('"sent": true') });
     expect(await polled({ status: "failed", error: "send failed", failedNode: "send", waiting: [] })).toMatchObject({ state: "done", status: "failed", error: "send failed", reason: "failed at send" });
@@ -130,7 +130,7 @@ describe("the errand executor", () => {
     const { executors, summaries } = world();
     const polled = (summary: Record<string, any> | null) => { if (summary) summaries.set("wfrun_errand", summary); else summaries.delete("wfrun_errand"); return executors.errand.poll(input(task, { ref_id: "wfrun_errand" })); };
     expect(await polled({ status: "running", waiting: [] })).toEqual({ state: "running" });
-    expect(await polled({ status: "interrupted", waiting: [] })).toEqual({ state: "running" });
+    expect(await polled({ status: "interrupted", waiting: [] })).toMatchObject({ state: "done", status: "failed" });
     expect(await polled({ status: "succeeded", output: { state: "done", reason: "", output: "Checked.\nERRAND: done" }, waiting: [] })).toEqual({ state: "done", status: "succeeded", output: "Checked.\nERRAND: done" });
     // A helper that ended blocked, or edited the repository, fails the scheduled run with its reason.
     expect(await polled({ status: "succeeded", output: { state: "blocked", reason: "page asks for a password", output: "ERRAND: blocked: page asks for a password" }, waiting: [] }))

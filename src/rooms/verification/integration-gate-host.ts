@@ -17,8 +17,12 @@ export async function runGateOnHost(input:{basePath:string;command:string;timeou
   const ran=await spawnAsync("/bin/bash",["-lc",input.command],{cwd:input.basePath,timeout:input.timeoutSec*1000,maxBuffer:64*1024*1024});
   const head=await spawnAsync("git",["rev-parse","HEAD"],{cwd:input.basePath,timeout:30_000});
   const killed=[ran.error?.message,ran.signal?`killed by ${ran.signal}`:null].filter(Boolean).join("; ");
+  // A command that traps TERM and exits 0 is still a timeout: the process status is not the verdict
+  // (2026-10-29 audit A-036). 124 is the conventional timeout status. gateRun's output schema is strict,
+  // so the spawn error stays in stderr and the exit code carries the failure.
+  const transportStop=ran.error?.code==="ETIMEDOUT"||ran.error?.code==="ENOBUFS";
   return {
-    exitCode:ran.status??1,
+    exitCode:transportStop?124:(ran.status??1),
     stdout:(ran.stdout??"").slice(-GATE_OUTPUT_LIMIT),
     stderr:[ran.stderr??"",killed].filter(Boolean).join("\n").slice(-GATE_OUTPUT_LIMIT),
     head:head.status===0&&head.stdout.trim()?head.stdout.trim():null,

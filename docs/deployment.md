@@ -40,9 +40,11 @@ sources:
   - src/rooms/native-install/native-install-lifecycle.ts
   - src/rooms/storage/database.ts
   - src/rooms/writer/server/start.ts
+  - packages/models/src/zcode.ts
+  - packages/models/src/role-models.ts
   - tests/global-setup.ts
   - tests/setup-jsdom.ts
-  - packages/models/src/zcode.ts
+  - packages/models/src/agent-model.ts
 ---
 
 # Build and deploy Lane Pilot
@@ -53,7 +55,7 @@ TL;DR: Lane Pilot's root package manifest declares its server, host, and app ent
 
 The package manifest maps BB's server, host-worker, and app bundles to `server.ts`, `host.ts`, and `app.tsx` (`package.json:10-18`). The npm workspace pattern is `packages/*` (`package.json:96-98`). `npm run build` invokes `bb plugin build` (`package.json:86-91`). The aggregate `check` script runs `npm test`, typecheck, plugin build, and layout tests in sequence (`package.json:86-95`). These root commands live in the root manifest. The contracts, workflow-engine, and world-sim manifests declare package entry points and no `scripts` key; world-sim also exports its protocol subpath (`packages/contracts/package.json:8-12`, `packages/workflow-engine/package.json:8-13`, `packages/world-sim/package.json:8-14`).
 
-The server opens plugin SQLite and applies the migration list as part of plugin startup (`src/rooms/storage/database.ts:47`). The plugin uses Node 22.19+, 24, or 26 and BB version `>=0.43.3`; the SDK engine requirement is `>=0.4.104` (`package.json:3-7`).
+The server opens plugin SQLite and applies the migration list as part of plugin startup (`src/rooms/storage/database.ts:336-340`). The plugin uses Node 22.19+, 24, or 26 and BB version `>=0.43.3`; the SDK engine requirement is `>=0.4.104` (`package.json:3-7`).
 
 ## Configuration and runtime
 
@@ -68,7 +70,7 @@ Package scripts define local commands: `npm test`, `npm run test:changed`, `npm 
 - A BB server and connected host workers provide thread, provider, storage, RPC and host-call APIs (`package.json:3-18`, `server.ts:55-60`).
 - Writer checks and workspace operations execute on the selected project host through host calls (`src/rooms/writer/server/start.ts:1-30`, `src/rooms/contracts/host.ts:11-25`).
 - OpenCode writers run through BB's `opencode2` provider on each host's shared OpenCode v2 service; the host worker reads a silent writer's provider limit from that service's API (`src/rooms/host-worker/opencode-limit.ts:92-114`).
-- ZCode (BB provider `zcode`, plugin bb-plugin-zcode) is a writer candidate (`zcode-flash`, the «· Free» model `glm-5.3-flash-free`) and an option of the role table, never a default of a row. It exists on the Mac mini only, runs at most three tasks at once on the whole machine, and costs nothing in the free hours, 15:00 to 01:00 UTC: the «· Free» model is refused by the bridge with `promo_unavailable` rather than bill the plan, so outside the hours the next writer takes the task (`packages/models/src/zcode.ts:11-13`, `:82-95`); `zcode.window` = `always` lifts the hours limit for the option. Lane Pilot offers it only where `zcodeBlock` finds the provider on the task's machine, the free hours and a free slot (`packages/models/src/zcode.ts:66-75`); the background rows `docs-maintainer`, `rules-analyzer`, `memory` and `project-life` try it first in its hours unless the owner picked their model or set `zcode.background` = false. A held pick falls to the next writer of the chain or the role's built-in default; the app's own refusals (`ZCode is busy`, `text-not-visible`, `foreground_required`, `session_expired`) are a free `limit` failure.
+- ZCode (BB provider `zcode`, plugin bb-plugin-zcode) runs GLM-5.3-Flash on the Start Plan's free tokens: the model id is `glm-5.3-flash-free` (`packages/models/src/zcode.ts:71-72`), and the bridge refuses it with `promo_unavailable` rather than bill the plan. It is a writer candidate (`zcode-flash`) and an option of the role table (`glm-5.3-flash-free`, never a default; a background row the owner left on its default tries it first in its hours, `packages/models/src/agent-model.ts:141-145`). It exists on the Mac mini only, runs at most three tasks at once (`packages/models/src/zcode.ts:10`) and is free from 15:00 to 01:00 UTC; Lane Pilot offers it only where `zcodeBlock` (`packages/models/src/zcode.ts:55-62`) finds the provider on the task's machine, the free hours (the setting `zcode.window`: `promo`, the default, or `always`) and a free slot. A held pick falls to the next writer of the chain or the role's built-in default; the app's own refusals (`ZCode is busy`, `text-not-visible`, `foreground_required`, `session_expired`, `promo_unavailable`) are a free `limit` failure (`packages/models/src/zcode.ts:69`).
 - The host entry binds Git integration, writer-check and shim-preparation handlers (`host.ts:1-30`, `host.ts:78-86`).
 
 ## Deployment boundary

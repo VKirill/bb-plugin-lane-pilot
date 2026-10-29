@@ -12,7 +12,7 @@ import type { WriterIdentity } from "../../critique";
 import { CODE_CRITIC_DEFAULT_SETTING, QUALITY_MODE_SETTING, applyCodeCriticDefault, applyQualityMode, resolveCodeCriticDefault, resolveQualityMode } from "../../critique";
 import { loadCriticCodeDefault } from "./critic-override";
 import { runPlanFactStage } from "./plan-fact";
-import { runCodeCritique } from "../../critique/server";
+import { candidatePatches, runCodeCritique } from "../../critique/server";
 import { fullAccessSpawn } from "../../core/server";
 import { helperChildPlacement, requireHelperSpawn, requiredPolicyField } from "../../runs/server";
 import { closeWriterStages, recordGateEvaluation, recordStage } from "../../runs/server";
@@ -20,7 +20,7 @@ import { stringAt } from "../../core/server";
 import { wasAnsweredByDefault } from "./question-default";
 import { needsHumanQuestion, outputText, providerLimitNotice, providerStreamError, WRITER_STREAM_ERROR, writerContextBlocks, writerSetupLines } from "./writer-task";
 import { isLiveDecision } from "../live-folder";
-import { TASK_WORDS_KEY, acceptanceProofGap, isMainfixTask, landingWordGap, questionsFromFile, referenceTestEdits, taskWordKey, writerMarkers } from "../../tasks";
+import { TASK_WORDS_KEY, acceptanceProofGap, isMainfixTask, landingWordGap, ownerWordsOn, questionsFromFile, referenceTestEdits, taskWordKey, writerMarkers } from "../../tasks";
 import type { TaskWord } from "../../tasks";
 import type { StageId } from "../../tasks";
 import { readCheckRun } from "../../tasks/server";
@@ -338,6 +338,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
           hashes,
           baselineHashes,
           files,
+          patches:await candidatePatches(bb, db, { runId:input.runId, taskId:input.taskId, hostId:input.config.hostId, cwd:input.task.project_cwd, paths:candidate.produced ?? [] }),
           verification:(candidate.verification ?? []).map((row) => ({
             command:row.command, exitCode:row.exitCode,
             stdout:row.stdout, stderr:row.stderr,
@@ -718,7 +719,7 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
       }
       // The owner's word before landing (SMA: Approving, Authorized by a person): with owner.words on, a verified task waits here,
       // in place and with its worktree, for the owner's yes the PM records (lane_pilot_queue word); a no or six silent hours block it.
-      const ownerWords = String(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId))["owner.words"] ?? "off") === "on";
+      const ownerWords = ownerWordsOn(loadProjectSettings(db, input.projectId, getRunSettingsScopes(db, input.runId)));
       const wordsOf = async () => ((await bb.storage.kv.get(TASK_WORDS_KEY).catch(() => null)) as Record<string, TaskWord[]> | null)?.[taskWordKey(input.runId, taskFamily(input.taskId))];
       let wordGap = landingWordGap(ownerWords, await wordsOf());
       if (wordGap && !wordGap.includes("said no")) {
@@ -927,18 +928,25 @@ export function createWriterFinish(ctx: ServerCore, services: Services) {
     const ownGreen = new Set(input.greenInWorktree ?? []);
     const redBefore = (services.baseline?.redBefore?.({ runId:input.runId, taskId:input.task.id, checks:checks ?? [] }) ?? []).filter((command) => !ownGreen.has(command));
     const candidates = red.filter((check) => !redBefore.includes(check.command));
+    // A red that already failed its own re-run (runWithFlakyRerun: `reran`) as a product red both times is reproduced; running it again
+    // only repeated the same command twice more (2026-10-29 audit). A re-run that timed out or broke reproduced nothing (audit N-05).
+    const reproduced = candidates.filter((check) => {
+      const rerun = (check as { rerun?:{ exitCode:number; stdout?:string; stderr?:string; hostError?:boolean; threw?:boolean } }).rerun;
+      return !!rerun && rerun.exitCode !== 124 && readCheckRun(check, { command: check.command }).verdict === "product_fail" && readCheckRun({ ...check, hostError:false, threw:false, ...rerun }, { command: check.command }).verdict === "product_fail";
+    });
+    const toRerun = candidates.filter((check) => !reproduced.includes(check));
     let confirmed = candidates;
     let flaky:string[] = [];
-    if (candidates.length) {
-      const names = new Set(candidates.map((check) => check.command));
+    if (toRerun.length) {
+      const names = new Set(toRerun.map((check) => check.command));
       const again = await services.runVerification(input.config, { ...onMain, verification:onMain.verification.filter((command) => names.has(command.command)) }, input.runId, undefined,
         { background:true, jobKey:`post-merge:${input.attemptId ?? input.task.id}:${input.mergeCommit ?? ""}:rerun` }).catch(() => null);
       // Only a re-run that is a product red again reproduces the defect (readCheckRun, the reading replay and the gate share). One the
       // machine or the host broke, that threw, or that ran no test says nothing: the first red stays recorded, no writer is sent.
       const readings = new Map((again ?? []).map((check) => [check.command, readCheckRun(check, { command: check.command })] as const));
-      flaky = candidates.filter((check) => readings.get(check.command)?.verdict === "pass").map((check) => check.command);
-      confirmed = candidates.filter((check) => readings.get(check.command)?.verdict === "product_fail");
-      const unsettled = candidates.filter((check) => !flaky.includes(check.command) && !confirmed.includes(check));
+      flaky = toRerun.filter((check) => readings.get(check.command)?.verdict === "pass").map((check) => check.command);
+      confirmed = [...reproduced, ...toRerun.filter((check) => readings.get(check.command)?.verdict === "product_fail")];
+      const unsettled = toRerun.filter((check) => !flaky.includes(check.command) && !confirmed.includes(check));
       if (unsettled.length) ctx.log(`post-merge check of ${input.task.id}: red on main once, the re-run did not reproduce it (${unsettled.map((check) => `${check.command}: ${readings.get(check.command)?.verdict ?? "no result"}`).join(", ")}); no repair task, the red stays recorded`);
     }
     if (flaky.length || redBefore.length) {

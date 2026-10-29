@@ -33,7 +33,7 @@ TL;DR: before a task's first writer starts, its `verification[]` runs once on th
 
 ## How it works
 
-1. Before the first writer, preflight reads baseline settings and task checks, skips inapplicable attempts, and reserves the project's baseline slot (`src/rooms/writer/server/start.ts:560-565`, `src/rooms/baseline/server/baseline.ts:62-85`).
+1. Before the first writer, preflight reads baseline settings and task checks, skips inapplicable attempts, and reserves the project's baseline slot (`src/rooms/writer/server/start.ts:584-589`, `src/rooms/baseline/server/baseline.ts:62-85`).
 2. It builds a throwaway worktree at the task's base, runs uncached eligible checks, then stores the check outcomes and verdict (`src/rooms/baseline/server/baseline.ts:82-92`, `:95-149`, `src/rooms/baseline/store.ts:1-80`).
 3. After merge, the finish path sends verification results to `afterMerge`, which records checks that turned red on main (`src/rooms/writer/server/finish.ts:882-910`, `src/rooms/baseline/server/baseline.ts:181-192`).
 4. The regression pass selects recent accepted tasks, runs eligible checks on current main, confirms a red check on the task's merge commit, then bisects within its configured bound and stores a finding (`src/rooms/baseline/server/regress.ts:95-132`, `:183-202`).
@@ -51,7 +51,7 @@ TL;DR: before a task's first writer starts, its `verification[]` runs once on th
 
 ### How it works
 
-1. Writer start invokes preflight before reusing an area writer or spawning a fresh writer only when there is no writer thread, the turn was not already sent, the workspace is not a live folder, and the task is not a mainfix (`src/rooms/writer/server/start.ts:600-605`).
+1. Writer start invokes preflight before reusing an area writer or spawning a fresh writer only when there is no writer thread, the turn was not already sent, the workspace is not a live folder, and the task is not a mainfix (`src/rooms/writer/server/start.ts:624-629`).
 2. Preflight estimates check duration, filters checks that exceed the cap or need secrets, runs eligible checks on a throwaway base worktree, and stores the result (`src/rooms/baseline/server/baseline.ts:82-110`, `:132-149`).
 3. The already-built and red-on-base policies decide whether the writer proceeds or the attempt blocks; preflight errors are logged and do not throw (`src/rooms/baseline/server/baseline.ts:132-152`, `src/rooms/baseline/logic.ts:1-100`).
 
@@ -62,7 +62,7 @@ TL;DR: before a task's first writer starts, its `verification[]` runs once on th
 | All required checks green for a gated task | Blocks under the red-on-base policy (`src/rooms/baseline/logic.ts:1-100`). |
 | Error or timeout | Records an unknown/partial result and lets writer start continue (`src/rooms/baseline/server/baseline.ts:113-129`, `:150-152`). |
 
-`services.baseline.preflight` is called in `startWriterTask` after admission waits and before the area's hot writer or fresh writer is selected. It is skipped when a writer thread already exists, `turnSent` is true, the workspace is a live folder, or the task is a mainfix. Mainfix checks have their own current-main preflight; baseline preflight errors are logged and do not throw (`src/rooms/writer/server/start.ts:600-615`, `src/rooms/baseline/server/baseline.ts:132-152`).
+`services.baseline.preflight` is called in `startWriterTask` after admission waits and before the area's hot writer or fresh writer is selected. It is skipped when a writer thread already exists, `turnSent` is true, the workspace is a live folder, or the task is a mainfix. Mainfix checks have their own current-main preflight; baseline preflight errors are logged and do not throw (`src/rooms/writer/server/start.ts:624-639`, `src/rooms/baseline/server/baseline.ts:132-152`).
 
 ### `createBaseline`
 

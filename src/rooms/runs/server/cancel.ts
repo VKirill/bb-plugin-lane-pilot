@@ -14,7 +14,7 @@ async function cancelStageHelpers(ctx: Pick<ServerCore, "bb" | "db">, attempt: N
 }
 
 /** Cancels one attempt: a queued one at once, a running one once its writer's stop is observed. */
-export async function cancelAttemptById(ctx: Pick<ServerCore, "bb" | "db" | "cancelQueuedAttempt">, attemptId: string, rollback?: { noteStopped(attemptId: string): Promise<void> }): Promise<{ ok:boolean; state:string; reason:string | null }> {
+export async function cancelAttemptById(ctx: Pick<ServerCore, "bb" | "db" | "cancelQueuedAttempt">, attemptId: string, rollback?: { noteStopped(attemptId: string): Promise<{ recorded: boolean; error?: string } | void> }): Promise<{ ok:boolean; state:string; reason:string | null }> {
   const { bb, db } = ctx;
   const attempt = getAttempt(db, attemptId);
   if (!attempt) return { ok: false, state: "missing", reason: "attempt does not exist" };
@@ -30,8 +30,11 @@ export async function cancelAttemptById(ctx: Pick<ServerCore, "bb" | "db" | "can
   // Condition one of a stop: the writer is confirmed gone, waiting a bounded time for it (writer-stop.ts).
   const confirmed = await confirmWriterStopped(bb, attempt.thread_id);
   if (!confirmed.stopped) return { ok: false, state: "cancel_requested", reason: `writer stop was not independently observed (status=${confirmed.status ?? "unknown"}, waited ${Math.round(confirmed.waitedMs / 1000)}s)` };
-  // Condition two: its work is back before anything is cleaned up, i.e. what its worktree holds is on record.
-  await rollback?.noteStopped(attempt.id).catch(() => undefined);
+  // Condition two: its work is back before anything is cleaned up, i.e. what its worktree holds is on record. A failed read is tried
+  // once more; the writer is gone either way and is not started again, but the stop is not reported complete (2026-10-29 audit A-004).
+  const record = async () => ((await rollback?.noteStopped(attempt.id).catch((cause: unknown) => ({ recorded: false, error: cause instanceof Error ? cause.message : String(cause) }))) as { recorded: boolean; error?: string } | undefined) ?? { recorded: true };
+  let noted = await record();
+  if (!noted.recorded) noted = await record();
   transitionAttempt(db, attempt.id, "canceled", { threadId: attempt.thread_id });
   const task = getTask(db, attempt.task_id);
   const plan = getTaskPlan(db, attempt.task_id) ?? (task?.kind === "bb" ? valueAt(task.contract, "objective") : "") as string;
@@ -43,5 +46,6 @@ export async function cancelAttemptById(ctx: Pick<ServerCore, "bb" | "db" | "can
     }
   }
   await cancelStageHelpers(ctx, attempt);
+  if (!noted.recorded) return { ok: false, state: "canceled", reason: `writer stopped, but what its worktree holds is not on record: ${noted.error ?? "unknown"}` };
   return { ok: true, state: "canceled", reason: null };
 }

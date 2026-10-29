@@ -2,9 +2,10 @@
 export { SMA_MAP_USAGE, defaultProofRoots, renderSmaMap, runSmaLiveCli, runSmaMapCli } from "./cli";
 export { SMA_LIVE, readSmaLive, renderSmaLive, smaGroups } from "./live";
 export type { LiveRow, LiveSource } from "./live";
-export { brokenProof, isDone, smaCounts, smaDonePercent, smaHoles, smaRows } from "./model";
+export { brokenProof, isChecked, isDone, smaCheckedPercent, smaCounts, smaDonePercent, smaHoles, smaRows, unjudgedProof } from "./model";
 export type { ProofRoots, SmaCounts, SmaRow } from "./model";
-export { SMA_LINKS, SMA_NODES, SMA_REGIONS } from "./graph";
-export type { SmaKind, SmaLinkKind, SmaNode } from "./graph";
+export { SMA_CARDS, SMA_LINKS, SMA_MAP_SHA, SMA_NODES, SMA_REGIONS } from "./graph";
+export type { SmaCard, SmaKind, SmaLinkKind, SmaNode } from "./graph";
+export { SMA_CONTRACT_TESTS } from "./contracts";
 export { SMA_ENTRIES } from "./entries";
 export type { SmaEntry, SmaStatus } from "./entries";

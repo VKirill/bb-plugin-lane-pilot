@@ -12,8 +12,8 @@ const temp = () => mkdtempSync(join(tmpdir(), "lp-drill-guard-"));
 
 function machine(files: Record<string, string | null>) {
   const home = temp();
-  mkdirSync(join(home, ".agents/hooks"), { recursive: true });
-  for (const [name, text] of Object.entries(files)) if (text !== null) writeFileSync(join(home, ".agents/hooks", name), text);
+  mkdirSync(join(home, ".agents/lane-pilot/pm"), { recursive: true });
+  for (const [name, text] of Object.entries(files)) if (text !== null) writeFileSync(join(home, ".agents/lane-pilot/pm", name), text);
   return home;
 }
 const same = () => ({ "guard_shell.py": readFileSync(join(repoHooks, "guard_shell.py"), "utf8"), "lib_payload.py": readFileSync(join(repoHooks, "lib_payload.py"), "utf8") });
@@ -47,9 +47,9 @@ describe("the drill's guard hash check", () => {
     const problems = receipt!.problems.join("\n");
     expect(problems).toMatch(/book: guard_shell\.py differs from the repository/);
     expect(problems).toMatch(/ovh: guard_shell\.py is missing/);
-    expect(problems).toContain(`install -m 755 ${join(repoHooks, "guard_shell.py")} ${join(drifted, ".agents/hooks/guard_shell.py")}`);
+    expect(problems).toContain(`install -m 755 ${join(repoHooks, "guard_shell.py")} ${join(drifted, ".agents/lane-pilot/pm/guard_shell.py")}`);
     expect(problems).not.toMatch(/mini:/);
-    expect(readFileSync(join(drifted, ".agents/hooks/guard_shell.py"), "utf8")).toBe("# an older guard\n");
+    expect(readFileSync(join(drifted, ".agents/lane-pilot/pm/guard_shell.py"), "utf8")).toBe("# an older guard\n");
   });
 
   it("checks the other files the guard imports too", () => {
@@ -63,20 +63,20 @@ describe("the drill's guard hash check", () => {
     const { res, receipt } = runDrill([{ name: "book", kind: "local", home: drifted }, { name: "ovh", kind: "local", home: missing }], ["--repair-guard"]);
     expect(res.status).toBe(0);
     expect(receipt!.result).toBe("pass");
-    for (const home of [drifted, missing]) expect(readFileSync(join(home, ".agents/hooks/guard_shell.py"), "utf8")).toBe(same()["guard_shell.py"]);
-    expect(readdirSync(join(drifted, ".agents/hooks")).some((name) => name.startsWith("guard_shell.py.bak-"))).toBe(true);
+    for (const home of [drifted, missing]) expect(readFileSync(join(home, ".agents/lane-pilot/pm/guard_shell.py"), "utf8")).toBe(same()["guard_shell.py"]);
+    expect(readdirSync(join(drifted, ".agents/lane-pilot/pm")).some((name) => name.startsWith("guard_shell.py.bak-"))).toBe(true);
     expect(receipt!.scenarios[0]!.machines.map((m) => m.files["guard_shell.py"]!.state)).toEqual(["repaired", "repaired"]);
   });
 
   it("fails a repair that cannot write, and says why", () => {
     const locked = machine({ ...same(), "guard_shell.py": "# an older guard\n" });
-    chmodSync(join(locked, ".agents/hooks"), 0o500);
+    chmodSync(join(locked, ".agents/lane-pilot/pm"), 0o500);
     try {
       const { res, receipt } = runDrill([{ name: "book", kind: "local", home: locked }], ["--repair-guard"]);
       if (process.getuid?.() === 0) return; // root writes anywhere
       expect(res.status).toBe(1);
       expect(receipt!.scenarios[0]!.machines[0]!.files["guard_shell.py"]!.state).toMatch(/repair failed/);
-    } finally { chmodSync(join(locked, ".agents/hooks"), 0o700); }
+    } finally { chmodSync(join(locked, ".agents/lane-pilot/pm"), 0o700); }
   });
 
   it("notes a machine that cannot be reached and does not fail on it", () => {
