@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { buildSet } from "../../src/rooms/bench/build";
-import { noiseOfRepeats, passReport } from "../../src/rooms/bench/compare";
+import { compareArms, noiseOfRepeats, passReport, summarizeArm } from "../../src/rooms/bench/compare";
 import { runBenchCli } from "../../src/rooms/bench/cli";
 import type { BenchProjectRef, Clock, ExecResult, HostPort, PipelinePort } from "../../src/rooms/bench/ports";
 import { benchArmStatus, sweepStuckRuns } from "../../src/rooms/bench/reliability";
-import { DEFAULT_BUDGET_HOURS, DEFAULT_BUDGET_TOKENS, runSeries } from "../../src/rooms/bench/runner";
+import { DEFAULT_BUDGET_HOURS, DEFAULT_BUDGET_TOKENS, nightArm, runSeries } from "../../src/rooms/bench/runner";
 import { createBench } from "../../src/rooms/bench/service";
 import { getRun, getSet, latestNoise, listResults, startRunRow, verifySet } from "../../src/rooms/bench/store";
 import type { BenchResult } from "../../src/rooms/bench/store";
@@ -92,21 +92,26 @@ describe("S1 bench reliability", () => {
     expect(young.id).not.toBe(stuck.id);
   });
 
-  it("S1 provider: an unsupported provider is retried on the next writer", async () => {
+  it("S1 provider: an unsupported provider is unavailable and is not retried", async () => {
     const w = await builtSet();
     const project: BenchProjectRef = { projectId: "proj_bench", name: "LP bench provider", hostId: "local", path: w.projectPath };
     const { host } = hostReporting(100);
     let starts = 0;
     const { pipeline, configure } = pipelineFor(project, async () => {
       starts++;
-      if (starts === 1) throw new Error("HTTP 400: vk_compiled_main_agent_unsupported_provider");
-      return { pmThreadId: "pm", runId: "lprun" };
+      throw new Error("HTTP 400: vk_compiled_main_agent_unsupported_provider");
     });
-    const report = await runSeries({ db: w.db as never, host, pipeline, clock: clock(), projectNameFor: () => project.name }, { version: "v1", arm: "night-provider", writer: { providerId: "codex", model: "gpt-6-luna" }, pollMs: 1 });
-    expect(report.state).toBe("done");
-    expect(starts).toBe(2);
-    expect(configure).toHaveLength(2);
-    expect(configure[1]).toMatchObject({ settings: { "writer.provider": "claude-code", "writer.model": "claude-haiku-5-5" } });
+    const writer = { providerId: "codex", model: "gpt-6-luna" };
+    const report = await runSeries({ db: w.db as never, host, pipeline, clock: clock(), projectNameFor: () => project.name }, { version: "v1", arm: "night-provider", writer, pollMs: 1 });
+    expect(report.state).toBe("unavailable");
+    expect(report.stopReason).toMatch(/unavailable: HTTP 400: vk_compiled_main_agent_unsupported_provider/);
+    expect(report.stopReason).toMatch(/stayed on codex\/gpt-6-luna/);
+    expect(starts).toBe(1);
+    expect(configure).toHaveLength(1);
+    expect(configure[0]).toMatchObject({ settings: { "writer.provider": "codex", "writer.model": "gpt-6-luna" } });
+    const saved = getRun(w.db as never, getSet(w.db as never, "v1")!.id, "night-provider", 1)!;
+    expect(saved.state).toBe("failed");
+    expect(saved.config.writer).toEqual(writer);
   });
 
   it("S1 provider: a non-provider error is not retried", async () => {
@@ -114,10 +119,29 @@ describe("S1 bench reliability", () => {
     const project: BenchProjectRef = { projectId: "proj_bench", name: "LP bench other", hostId: "local", path: w.projectPath };
     const { host } = hostReporting(100);
     let starts = 0;
-    const { pipeline } = pipelineFor(project, async () => { starts++; throw new Error("the bench source thread did not start"); });
+    const { pipeline, configure } = pipelineFor(project, async () => { starts++; throw new Error("the bench source thread did not start"); });
     const report = await runSeries({ db: w.db as never, host, pipeline, clock: clock(), projectNameFor: () => project.name }, { version: "v1", arm: "night-other", pollMs: 1 });
     expect(report.state).toBe("failed");
     expect(starts).toBe(1);
+    expect(configure[0]).toMatchObject({ settings: { "writer.provider": "claude-code", "writer.model": "claude-haiku-5-5" } });
+    expect(getRun(w.db as never, getSet(w.db as never, "v1")!.id, "night-other", 1)!.config.writer).toEqual({ providerId: "claude-code", model: "claude-haiku-5-5" });
+  });
+
+  it("S1 writer: a night arm names the model, and compareArms refuses a different writer", () => {
+    expect(nightArm("0.1.400")).toBe("night-0.1.400-claude-haiku-5-5");
+    expect(nightArm("0.1.400", { model: "gpt-6-luna" })).toBe("night-0.1.400-gpt-6-luna");
+    const tasks = ["t1", "t2", "t3", "t4"].map((id) => row(id, true));
+    const luna = summarizeArm("night-0.1.328-gpt-6-luna", [tasks]);
+    const haiku = summarizeArm("night-0.1.400-claude-haiku-5-5", [tasks]);
+    luna.writer = { providerId: "codex", model: "gpt-6-luna" };
+    haiku.writer = { providerId: "claude-code", model: "claude-haiku-5-5" };
+    const mixed = compareArms(luna, haiku);
+    expect(mixed.verdict).toBe("inconclusive");
+    expect(mixed.checks.find((check) => check.name === "writer")?.detail).toMatch(/codex\/gpt-6-luna.*claude-code\/claude-haiku-5-5/);
+    haiku.writer = { providerId: "codex", model: "gpt-6-luna" };
+    const same = compareArms(luna, haiku);
+    expect(same.verdict).toBe("pass");
+    expect(same.checks.some((check) => check.name === "writer")).toBe(false);
   });
 
   it("S1 host: bench.host is the machine the series runs on", async () => {
@@ -135,7 +159,7 @@ describe("S1 bench reliability", () => {
       projectNames: async () => new Map(), isSandboxName: () => false, log: () => undefined });
     expect((await bench.placement()).hostId).toBeNull();
     await bench.configure({ hostId: "host_ovh", noiseRepeats: 3 });
-    expect(await bench.placement()).toMatchObject({ hostId: "host_ovh", noiseRepeats: 3, writerRetries: [] });
+    expect(await bench.placement()).toMatchObject({ hostId: "host_ovh", noiseRepeats: 3 });
     expect(await bench.settings()).toEqual({ budgetTokens: DEFAULT_BUDGET_TOKENS, budgetHours: DEFAULT_BUDGET_HOURS });
   });
 
@@ -180,7 +204,7 @@ describe("S1 bench reliability", () => {
       run: async (input: unknown) => { seen.push(input); return []; },
       configure: async (input: unknown) => { seen.push(input); return { budgetTokens: 1, budgetHours: 1 }; },
       settings: async () => ({ budgetTokens: DEFAULT_BUDGET_TOKENS, budgetHours: DEFAULT_BUDGET_HOURS }),
-      placement: async () => ({ hostId: "host_ovh", noiseRepeats: 3, writerRetries: [] }),
+      placement: async () => ({ hostId: "host_ovh", noiseRepeats: 3 }),
       status: () => [{ version: "v1", createdAt: 1, runs: [] }],
       sweep: () => [{ id: "benchrun_0fe9e412b8af", arm: "night-0.1.352", stopReason: "stuck: running past its 6 h cap since 2026-10-28T03:01:10.000Z" }],
     } as never;
@@ -192,5 +216,6 @@ describe("S1 bench reliability", () => {
     expect(swept.exitCode).toBe(0);
     expect(swept.stdout).toMatch(/benchrun_0fe9e412b8af/);
     expect((await runBenchCli(bench, ["run", "--arm", "week", "--noise", "1"])).stderr).toMatch(/2 to 10/);
+    expect((await runBenchCli(bench, ["config", "writers=claude-code/claude-haiku-5-5"])).stderr).toMatch(/noise_repeats/);
   });
 });

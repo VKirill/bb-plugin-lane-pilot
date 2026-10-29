@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { nightArm } from "../../src/rooms/bench/runner";
 import { createWall, askSha, type RepairView, type WallPorts } from "../../src/rooms/wall/service";
 import type { RepairFile } from "../../src/rooms/wall/acceptance";
 import { listRepairs, listWalls } from "../../src/rooms/wall/store";
@@ -102,7 +103,7 @@ describe("the real night and the life of one repair", () => {
     const summary = await wall.runNight({ now: NOW });
     expect(summary.picked).toHaveLength(1);
     expect(summary.spendTokens).toBe(4_000_000);
-    expect(state.benchArms.has("night-0.1.268")).toBe(true);        // the baseline arm for "not worse than the previous version"
+    expect(state.benchArms.has(nightArm("0.1.268"))).toBe(true);        // the night arm names the writer model, so it is not a luna night
     const queued = listRepairs(h.db);
     expect(queued).toHaveLength(1);
     const assignment = wall.nextAssignment()!;
@@ -156,9 +157,9 @@ describe("the real night and the life of one repair", () => {
     expect(listRepairs(h.db)[0]!.state).toBe("deployed");
     state.drill = { version: "0.1.269", at: NOW + 4 * HOUR + 10, ok: true };
     state.canary = { version: "0.1.269", tripped: false, windowOpen: false };
-    state.benchArms.set("night-0.1.268", "done");
-    state.benchArms.set("night-0.1.269", "done");
-    state.scores.set("night-0.1.268", 0.5); state.scores.set("night-0.1.269", 0.67);
+    state.benchArms.set(nightArm("0.1.268"), "done");
+    state.benchArms.set(nightArm("0.1.269"), "done");
+    state.scores.set(nightArm("0.1.268"), 0.5); state.scores.set(nightArm("0.1.269"), 0.67);
     for (let i = 0; i < 12; i++) h.attempt("accepted", null, NOW + 5 * HOUR + i, { version: "0.1.269" });
     const notes = await wall.advance(NOW + 6 * HOUR);
     expect(notes.join("|")).toMatch(/accepted \(all checks green\); 6 re-run\(s\) planned/);

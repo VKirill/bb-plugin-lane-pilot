@@ -4,6 +4,7 @@ import { extractModelJson } from "../critique";
 import type { ChangeDescriptor } from "../policy";
 import { EVIDENCE_WAIT_MS, decideAcceptance, gateRepair, laterReleaseTouches, repairChange, type Acceptance, type AcceptanceEvidence, type GateDecision, type RepairFile } from "./acceptance";
 import { analysisPrompt, hunterPrompt, parseNightReport, repairBrief, taskWallMessage } from "./brief";
+import { nightArm } from "../bench/runner";
 import { hubFields, writeHubFields } from "../improvement";
 import { postOwnerItem } from "../owner-waiting";
 import { WALL_CONFIG_KEY, parseWallConfig, type WallConfig } from "./config";
@@ -443,7 +444,7 @@ export function createWall(deps: WallDeps) {
     const selection = select(classes);
     summary.stoppedBy = selection.stoppedBy;
     summary.morning = selection.morning;
-    if (benchOk && selection.picked.length) await ports.bench.ensureArm(`night-${ports.version}`).catch(() => undefined);
+    if (benchOk && selection.picked.length) await ports.bench.ensureArm(nightArm(ports.version)).catch(() => undefined);
     for (const pick of selection.picked) {
       const cls = getClass(db, pick.classKey)!;
       const pack = buildClassPack(db, cls.classKey);
@@ -642,7 +643,7 @@ export function createWall(deps: WallDeps) {
     let benchScore: number | undefined, baselineScore: number | undefined;
     let benchCompare: { base: string; arm: string } | undefined;
     if (benchOk && canary && canary.version === evidence && !canary.windowOpen) {
-      const base = `night-${mergedAt}`, arm = `night-${evidence}`;
+      const base = nightArm(mergedAt), arm = nightArm(evidence);
       const state = await ports.bench.ensureArm(arm).catch(() => "unavailable" as const);
       bench = state === "done" ? await ports.bench.compare(base, arm).catch(() => "unavailable" as const) : state === "running" ? "pending" : "unavailable";
       if (bench === "pass" || bench === "fail") {

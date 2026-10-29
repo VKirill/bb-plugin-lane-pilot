@@ -13,8 +13,8 @@ export const BENCH_USAGE = [
   "bb lane-pilot bench compare <armA> <armB> [--set vN] [--noise X,Y] [--harness-id <tree id>] [--json]   (A is the baseline; --harness-id records the verdict harness.adopt_by=bench waits for)",
   "bb lane-pilot bench sweep                                 (close a series still running past its hour cap)",
   "bb lane-pilot bench status [--set vN]                  (without --set: every set)",
-  "bb lane-pilot bench config [budget_tokens=N] [budget_hours=H] [host=MACHINE] [noise_repeats=N] [writers=provider/model,...]",
-  "                       (host empty: each project's own machine. noise_repeats 0: the weekly run is once. writers: the retry tail after a refused provider.)",
+  "bb lane-pilot bench config [budget_tokens=N] [budget_hours=H] [host=MACHINE] [noise_repeats=N]",
+  "                       (host empty: each project's own machine. noise_repeats 0: the weekly run is once. A refused provider is not retried on another model.)",
   "bb lane-pilot bench baseline [--days 14] [--project ID] [--json]   (no model: false-done rate, phantom writes, git loss recoverability of the accepted attempts)",
 ].join("\n");
 
@@ -88,7 +88,7 @@ export async function runBenchCli(bench: BenchApi, argv: string[]): Promise<Resu
       let writer: { providerId: string; model: string } | undefined;
       if (flags.writer) {
         const at = flags.writer.indexOf("/");
-        if (at <= 0 || at === flags.writer.length - 1) throw new Error("--writer wants provider/model, e.g. codex/gpt-6-luna");
+        if (at <= 0 || at === flags.writer.length - 1) throw new Error("--writer wants provider/model, e.g. claude-code/claude-haiku-5-5");
         writer = { providerId: flags.writer.slice(0, at), model: flags.writer.slice(at + 1) };
       }
       if (flags.fault && flags.fault !== "owns" && flags.fault !== "read_first") throw new Error("--fault is owns or read_first");
@@ -136,10 +136,10 @@ export async function runBenchCli(bench: BenchApi, argv: string[]): Promise<Resu
       return out(bench.sweep());
     }
     if (sub === "config") {
-      const patch: { budgetTokens?: number; budgetHours?: number; hostId?: string | null; noiseRepeats?: number; writerRetries?: Array<{ providerId: string; model: string }> } = {};
+      const patch: { budgetTokens?: number; budgetHours?: number; hostId?: string | null; noiseRepeats?: number } = {};
       for (const word of rest) {
         const at = word.indexOf("=");
-        if (at <= 0) throw new Error("config takes budget_tokens=N, budget_hours=H, host=MACHINE, noise_repeats=N, writers=provider/model,...");
+        if (at <= 0) throw new Error("config takes budget_tokens=N, budget_hours=H, host=MACHINE, noise_repeats=N");
         const key = word.slice(0, at), value = word.slice(at + 1);
         if (key === "budget_tokens" || key === "budget_hours") {
           const number = Number(value);
@@ -150,15 +150,7 @@ export async function runBenchCli(bench: BenchApi, argv: string[]): Promise<Resu
           const number = Number(value);
           if (!Number.isInteger(number) || number < 0 || number > 10) throw new Error("noise_repeats must be an integer from 0 to 10");
           patch.noiseRepeats = number;
-        } else if (key === "writers") {
-          const rows = value.split(",").map((item) => item.trim()).filter(Boolean);
-          if (!rows.length) throw new Error("writers wants provider/model,provider/model");
-          patch.writerRetries = rows.map((row) => {
-            const slash = row.indexOf("/");
-            if (slash <= 0 || slash === row.length - 1) throw new Error("writers wants provider/model,provider/model");
-            return { providerId: row.slice(0, slash), model: row.slice(slash + 1) };
-          });
-        } else throw new Error("config takes budget_tokens=N, budget_hours=H, host=MACHINE, noise_repeats=N, writers=provider/model,...");
+        } else throw new Error("config takes budget_tokens=N, budget_hours=H, host=MACHINE, noise_repeats=N");
       }
       if (Object.keys(patch).length) await bench.configure(patch);
       return out({ ...(await bench.settings()), ...(await bench.placement()) });

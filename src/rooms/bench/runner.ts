@@ -38,8 +38,6 @@ export type SeriesInput = {
   minFreeGb?: number;
   /** Machine the series runs on. Absent: each bench project's own machine. */
   hostId?: string;
-  /** Writers tried after the arm's own when the core refuses that provider. Absent: one claude-code retry. */
-  writerRetries?: readonly { providerId: string; model: string }[];
 };
 
 export type RunnerDeps = {
@@ -55,13 +53,14 @@ export type RunnerDeps = {
 export const DEFAULT_BUDGET_TOKENS = 120_000_000;
 export const DEFAULT_BUDGET_HOURS = 6;
 export const DEFAULT_TASK_TIMEOUT_MIN = 40;
-/** The first runs go to a cheap writer (owner decision 2026-10-22); an arm that names no writer gets this one, not what the previous arm left in the project. */
-export const DEFAULT_BENCH_WRITER = { providerId: "codex", model: "gpt-6-luna" } as const;
 /**
- * Second try when the core refuses the arm's provider (`vk_compiled_main_agent_unsupported_provider`: a compiled main agent accepts only claude-code).
- * ponytail: one fallback. `bench config writers=provider/model,...` replaces this tail.
+ * The bench PM and the bench writer are this one pair. The PM is spawned with the compiled main agent
+ * (`activation.ts`, from the global `main.agent`; on the hub that is `dev-orchestrator`). The core accepts that
+ * agent only on claude-code (`vk_compiled_main_agent_unsupported_provider`, bb-core threads.ts). Codex/gpt-6-luna
+ * was the cheap writer of 2026-10-22; the 2026-10-29 night died on it before a task ran. Haiku is the cheap
+ * claude-code model. An arm that names no writer gets this one, not whatever the previous arm left in the project.
  */
-export const PROVIDER_RETRY_WRITER = { providerId: "claude-code", model: "claude-haiku-5-5" } as const;
+export const DEFAULT_BENCH_WRITER = { providerId: "claude-code", model: "claude-haiku-5-5" } as const;
 
 export type BenchWriter = { providerId: string; model: string };
 
@@ -69,12 +68,10 @@ export function isProviderError(text: string): boolean {
   return /unsupported_provider/.test(text);
 }
 
-/** The arm's writer, then the retries, without repeating the same pair. */
-export function writerChain(primary: BenchWriter | undefined, retries: readonly BenchWriter[] | undefined): BenchWriter[] {
-  const first = primary ?? { providerId: DEFAULT_BENCH_WRITER.providerId, model: DEFAULT_BENCH_WRITER.model };
-  const tail = (retries && retries.length ? [...retries] : [{ providerId: PROVIDER_RETRY_WRITER.providerId, model: PROVIDER_RETRY_WRITER.model }])
-    .filter((writer) => writer.providerId !== first.providerId || writer.model !== first.model);
-  return [first, ...tail];
+/** Night arm for one plugin version. The model is in the name so a haiku night is not compared with a luna night. */
+export function nightArm(version: string, writer: Pick<BenchWriter, "model"> = DEFAULT_BENCH_WRITER): string {
+  const model = writer.model.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "writer";
+  return `night-${version}-${model}`;
 }
 
 const slug = (text: string, max: number): string => text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, max) || "arm";
@@ -128,7 +125,7 @@ async function existingFiles(host: HostPort, project: BenchProjectRef, task: Man
 }
 
 export type SeriesReport = {
-  version: string; arm: string; repeat: number; state: BenchRun["state"] | "deferred"; stopReason: string | null;
+  version: string; arm: string; repeat: number; state: BenchRun["state"] | "deferred" | "unavailable"; stopReason: string | null;
   tasks: number; ran: number; accepted: number; skipped: number; spentTokens: number; seconds: number;
   /** Set when this series was one repeat of a noise run. */
   passAt1?: number; passPow?: number;
@@ -159,8 +156,8 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
   if (!tasks.length) throw new Error("no task selected");
 
   const budgetTokens = input.budgetTokens ?? DEFAULT_BUDGET_TOKENS, budgetHours = input.budgetHours ?? DEFAULT_BUDGET_HOURS;
-  const config = { writer: input.writer ?? DEFAULT_BENCH_WRITER, harness: input.harness ?? "none", settings: input.settings ?? {}, fault: input.fault ?? null };
-  const writers = writerChain(input.writer, input.writerRetries);
+  const writer = input.writer ?? DEFAULT_BENCH_WRITER;
+  const config = { writer, harness: input.harness ?? "none", settings: input.settings ?? {}, fault: input.fault ?? null };
   const free = async (hostId: string): Promise<number | null> => freeGb(deps.host, hostId);
   const groups = new Map<string, ManifestTask[]>();
   for (const task of tasks) groups.set(task.repoPath, [...(groups.get(task.repoPath) ?? []), task]);
@@ -201,37 +198,16 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
     // «LP sandbox …» is accepted too: a plugin older than the bench only knows that prefix as sandbox traffic (see scripts/lp-bench.ts).
     if (!project.name.startsWith(BENCH_PROJECT_PREFIX) && !project.name.startsWith("LP sandbox")) throw new Error(`refusing to run in «${project.name}»: a bench project's name starts with «${BENCH_PROJECT_PREFIX}»`);
     const placed: BenchProjectRef = { ...project, hostId: input.hostId ?? project.hostId };
-    const armSettings = (writer: BenchWriter): Record<string, unknown> => {
-      const settings: Record<string, unknown> = {
-        "writer.rotation_share": 0, "writer.provider": writer.providerId, "writer.model": writer.model,
-        "memory.enabled": false, "memory.inject": false, "memory.maintain": false,
-        "plan_critique.enabled": false, "code_critique.enabled": false, "browser_qa.enabled": false,
-        ...(input.settings ?? {}),
-      };
-      // A project that sets code_critique.enabled itself keeps its choice, so the `false` above would make an arm's critic.code.default_for_risk dead letter (quality-mode.ts): leave it unset for such an arm.
-      if (input.settings && "critic.code.default_for_risk" in input.settings && !("code_critique.enabled" in input.settings)) delete settings["code_critique.enabled"];
-      return settings;
+    const settings: Record<string, unknown> = {
+      "writer.rotation_share": 0, "writer.provider": writer.providerId, "writer.model": writer.model,
+      "memory.enabled": false, "memory.inject": false, "memory.maintain": false,
+      "plan_critique.enabled": false, "code_critique.enabled": false, "browser_qa.enabled": false,
+      ...(input.settings ?? {}),
     };
-    let writerAt = 0;
-    await deps.pipeline.configure(placed, { settings: armSettings(writers[0]!), harness: input.harness ?? "none", sourceProjectId: list[0]!.projectId });
+    // A project that sets code_critique.enabled itself keeps its choice, so the `false` above would make an arm's critic.code.default_for_risk dead letter (quality-mode.ts): leave it unset for such an arm.
+    if (input.settings && "critic.code.default_for_risk" in input.settings && !("code_critique.enabled" in input.settings)) delete settings["code_critique.enabled"];
+    await deps.pipeline.configure(placed, { settings, harness: input.harness ?? "none", sourceProjectId: list[0]!.projectId });
     let lp: { pmThreadId: string; runId: string } | null = null;
-    const openRun = async (): Promise<{ pmThreadId: string; runId: string }> => {
-      let last: unknown;
-      for (let i = writerAt; i < writers.length; i++) {
-        writerAt = i;
-        if (i > 0) {
-          await deps.pipeline.configure(placed, { settings: armSettings(writers[i]!), harness: input.harness ?? "none", sourceProjectId: list[0]!.projectId });
-          log(`bench: provider refused; retry ${writers[i]!.providerId}/${writers[i]!.model}`);
-        }
-        try { return await deps.pipeline.startRun(placed); }
-        catch (cause) {
-          last = cause;
-          const text = cause instanceof Error ? cause.message : String(cause);
-          if (!isProviderError(text) || i === writers.length - 1) throw cause;
-        }
-      }
-      throw last;
-    };
     try {
       for (const task of list) {
         if (done.has(task.taskId) || stopReason) continue;
@@ -250,7 +226,7 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
           saveResult(deps.db, { runId: run.id, taskId: task.taskId, position: task.position, state: "error", accepted: false, benchTaskId: null, lpRunId: null, attempts: 0, stagesPassed: 0, stagesFailed: 0, tokens: null, costUsd: null, costState: "not_measured", seconds: null, reason: `checkout failed: ${(prepared.stderr || prepared.stdout).trim().slice(-300)}`, recordedAt: clock.now() });
           continue;
         }
-        if (!lp) lp = await openRun();
+        if (!lp) lp = await deps.pipeline.startRun(placed);
         // A file the live checkout had untracked (a plan, a spec) is not in the clone at the base commit: the lint would refuse the task, so it is left out of read_first, on every arm alike.
         const wanted = Array.isArray(task.contract.read_first) ? (task.contract.read_first as unknown[]).filter((item): item is string => typeof item === "string") : [];
         const present = wanted.length ? await existingFiles(deps.host, placed, task, wanted) : [];
@@ -303,6 +279,13 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
     ran: final.filter((row) => row.state === "accepted" || row.state === "not_accepted").length, accepted: final.filter((row) => row.accepted).length,
     skipped: final.filter((row) => row.state === "skipped_budget").length, seconds: final.reduce((sum, row) => sum + (row.seconds ?? 0), 0),
   };
+  // The core refused this writer. The row stays `failed` (the column CHECK has no `unavailable`); the night reads the reason as unavailable. No other model is tried.
+  const providerFailure = failures.find((text) => isProviderError(text));
+  if (providerFailure && !judged) {
+    const reason = `unavailable: ${providerFailure} (compiled main agent on the bench PM accepts only claude-code; this run stayed on ${writer.providerId}/${writer.model})`;
+    finishRunRow(deps.db, run.id, "failed", reason, clock.now());
+    return { version: set.version, arm: input.arm, repeat, state: "unavailable", stopReason: reason, tasks: tasks.length, ...counts, spentTokens: getRun(deps.db, set.id, input.arm, repeat)?.spentTokens ?? 0 };
+  }
   // A full disk is not a measurement. Nothing judged: drop the row so the night sees an absent arm and tries again. Some judged: keep the rows, mark the stop, and say deferred.
   if (stopReason && isDiskDeferral(stopReason) && !final.some((row) => row.state === "error") && !failures.length) {
     if (!judged) {

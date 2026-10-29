@@ -6,7 +6,7 @@ import type { HostPort, PipelinePort } from "./ports";
 import { sweepStuckRuns } from "./reliability";
 import { DEFAULT_BUDGET_HOURS, DEFAULT_BUDGET_TOKENS, defaultProjectName, runSeries, type BenchWriter, type SeriesInput, type SeriesReport } from "./runner";
 import {
-  getSet, latestNoise, listResults, listRuns, listSets, saveNoise, saveVerdict, type BenchDb, type NoiseRecord,
+  getSet, latestNoise, listResults, listRuns, listSets, saveNoise, saveVerdict, type BenchDb, type BenchRun, type NoiseRecord,
 } from "./store";
 
 type Kv = { get(key: string): Promise<unknown>; set(key: string, value: never): Promise<unknown> };
@@ -26,8 +26,15 @@ export type BenchDeps = {
 
 export type BenchSettings = { budgetTokens: number; budgetHours: number };
 /** Where a series runs, and the optional same-set repeats. Stored next to the old budget record; empty host means the project's own machine. */
-export type BenchPlacement = { hostId: string | null; noiseRepeats: number; writerRetries: BenchWriter[] };
+export type BenchPlacement = { hostId: string | null; noiseRepeats: number };
 const CONFIG_KEY = "bench:config";
+
+function writerOf(run: BenchRun): BenchWriter | null {
+  const writer = run.config.writer;
+  if (!writer || typeof writer !== "object") return null;
+  const row = writer as { providerId?: unknown; model?: unknown };
+  return typeof row.providerId === "string" && typeof row.model === "string" ? { providerId: row.providerId, model: row.model } : null;
+}
 const BUILD_KEY = (version: string) => `bench:build:${version}`;
 
 /** One long job at a time per kind and set/arm: a second `bench run` of the same arm waits for the first to end (it would resume the same rows). */
@@ -46,10 +53,7 @@ export function createBench(deps: BenchDeps) {
     const hostId = typeof stored?.hostId === "string" && stored.hostId.trim() ? stored.hostId.trim() : null;
     const noise = stored?.noiseRepeats;
     const noiseRepeats = Number.isInteger(noise) && (noise as number) >= 0 && (noise as number) <= 10 ? noise as number : 0;
-    const writerRetries = Array.isArray(stored?.writerRetries)
-      ? stored.writerRetries.filter((row): row is BenchWriter => !!row && typeof row.providerId === "string" && typeof row.model === "string")
-      : [];
-    return { hostId, noiseRepeats, writerRetries };
+    return { hostId, noiseRepeats };
   }
   async function writePlacement(patch: Partial<BenchPlacement>): Promise<void> {
     const prev = await deps.kv.get(CONFIG_KEY).catch(() => null) as Record<string, unknown> | null;
@@ -70,7 +74,6 @@ export function createBench(deps: BenchDeps) {
       if (!Number.isInteger(patch.noiseRepeats) || patch.noiseRepeats < 0 || patch.noiseRepeats > 10) throw new Error("noiseRepeats must be an integer from 0 to 10");
       place.noiseRepeats = patch.noiseRepeats;
     }
-    if (patch.writerRetries !== undefined) place.writerRetries = [...patch.writerRetries];
     if (Object.keys(place).length) await writePlacement(place);
     return settings();
   }
@@ -109,15 +112,14 @@ export function createBench(deps: BenchDeps) {
     const place = await placement();
     const repeats = Math.max(1, input.repeat ?? (input.noise && place.noiseRepeats >= 2 ? place.noiseRepeats : 1));
     const hostId = input.hostId ?? place.hostId ?? undefined;
-    const writerRetries = (input.writerRetries ?? place.writerRetries).length ? (input.writerRetries ?? place.writerRetries) : undefined;
     return await job(`run:${input.version}:${input.arm}`, input.wait ?? false, async () => {
       const closed = sweepStuckRuns(deps.db, Date.now(), { defaultHours: caps.budgetHours, exceptArm: input.arm });
       for (const row of closed) deps.log(`bench-sweep: ${row.id} ${row.arm} ${row.stopReason}`);
       const reports: SeriesReport[] = [];
       for (let repeat = 1; repeat <= repeats; repeat++) {
-        const report = await runSeries({ db: deps.db, host: deps.host, pipeline: deps.pipeline, log: deps.log, ...(deps.projectNameFor ? { projectNameFor: deps.projectNameFor } : {}) }, { ...input, repeat, ...(hostId ? { hostId } : {}), ...(writerRetries ? { writerRetries } : {}), budgetTokens: input.budgetTokens ?? caps.budgetTokens, budgetHours: input.budgetHours ?? caps.budgetHours });
+        const report = await runSeries({ db: deps.db, host: deps.host, pipeline: deps.pipeline, log: deps.log, ...(deps.projectNameFor ? { projectNameFor: deps.projectNameFor } : {}) }, { ...input, repeat, ...(hostId ? { hostId } : {}), budgetTokens: input.budgetTokens ?? caps.budgetTokens, budgetHours: input.budgetHours ?? caps.budgetHours });
         reports.push(report);
-        if (report.state === "stopped_budget" || report.state === "failed" || report.state === "deferred") break;
+        if (report.state === "stopped_budget" || report.state === "failed" || report.state === "deferred" || report.state === "unavailable") break;
       }
       if (input.noise && reports.length >= 2 && reports.every((row) => row.state === "done")) {
         const set = getSet(deps.db, input.version);
@@ -141,7 +143,14 @@ export function createBench(deps: BenchDeps) {
     if (!runs.length) throw new Error(`no series for arm ${arm} on set ${version}; ran: ${[...new Set(listRuns(deps.db, set.id).map((row) => row.arm))].join(", ") || "none"}`);
     // A series that is still running or failed is not a finished measurement, whatever its rows say (a `done` state used to cover errored tasks).
     const unfinished = runs.filter((row) => row.state === "running" || row.state === "failed").map((row) => `repeat ${row.repeat} is ${row.state}${row.stopReason ? ` (${row.stopReason.slice(0, 160)})` : ""}`);
-    return summarizeArm(arm, runs.map((row) => listResults(deps.db, row.id)), unfinished);
+    const summary = summarizeArm(arm, runs.map((row) => listResults(deps.db, row.id)), unfinished);
+    const writers = runs.map((row) => writerOf(row));
+    const named = writers.filter((row): row is BenchWriter => row !== null);
+    const first = named[0];
+    const mixed = named.length > 0 && (writers.some((row) => row === null) || named.some((row) => row.providerId !== first!.providerId || row.model !== first!.model));
+    if (mixed) summary.incomplete.push("repeats did not share one writer");
+    summary.writer = mixed || !first ? null : first;
+    return summary;
   }
 
   /** Two identical arms: the tasks that flipped between them and how far apart cost and time were. The threshold of `compare` is calibrated on the newest one. */

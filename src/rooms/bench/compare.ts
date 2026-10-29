@@ -34,7 +34,9 @@ export type TaskStat = {
  * could be judged (no project, checkout failed, dispatch refused): the arm did not complete, and they are not read as failures of the change.
  * `incomplete`: why the series is not a finished measurement (still running, failed, stopped by its budget).
  */
-export type ArmSummary = { arm: string; repeats: number; tasks: Map<string, TaskStat>; selected: number; errored: string[]; incomplete: string[] };
+/** The writer the arm's runs actually used. Absent: the row did not record one. */
+export type ArmWriter = { providerId: string; model: string };
+export type ArmSummary = { arm: string; repeats: number; tasks: Map<string, TaskStat>; selected: number; errored: string[]; incomplete: string[]; writer?: ArmWriter | null };
 
 const mean = (values: number[]): number => values.reduce((sum, value) => sum + value, 0) / values.length;
 export const median = (values: number[]): number | null => {
@@ -153,9 +155,13 @@ export function compareArms(a: ArmSummary, b: ArmSummary, noise?: NoiseRecord | 
       : { name: "time", ok: secondsB <= secondsA * (1 + timeTol) + 1e-9, detail: `median ${Math.round(secondsB)}s vs ${Math.round(secondsA)}s over ${timed.length} tasks; tolerance ${pct(timeTol)}` },
     { name: "no_regression", ok: regressions.length === 0, detail: regressions.length ? `passed on A and not on B: ${regressions.map((flip) => flip.taskId).join(", ")}` : `no task that passed on A fails on B${flips.some((flip) => flip.unstable) ? " (unstable tasks excluded)" : ""}` },
   ];
+  // Two nights are one comparison only when they used the same writer. A silent swap (luna then haiku) is not "better" or "worse".
+  const named = (arm: ArmSummary) => arm.writer ? `${arm.writer.providerId}/${arm.writer.model}` : null;
+  const writerMismatch = (a.writer != null || b.writer != null) && (a.writer?.providerId !== b.writer?.providerId || a.writer?.model !== b.writer?.model);
+  if (writerMismatch) checks.unshift({ name: "writer", ok: null, detail: `different writers: A ${named(a) ?? "unrecorded"}, B ${named(b) ?? "unrecorded"}; not compared` });
   // Without the coverage nothing below it is evidence, even a regression: it stands on a few tasks. A real regression with enough coverage fails
-  // whatever else is unmeasured; a check that could not be made keeps the rest from passing.
-  const verdict: Comparison["verdict"] = !enough ? "inconclusive" : checks.some((check) => check.ok === false) ? "fail" : checks.some((check) => check.ok === null) ? "inconclusive" : "pass";
+  // whatever else is unmeasured; a check that could not be made keeps the rest from passing. Different writers are never a pass or a fail of the change.
+  const verdict: Comparison["verdict"] = writerMismatch || !enough ? "inconclusive" : checks.some((check) => check.ok === false) ? "fail" : checks.some((check) => check.ok === null) ? "inconclusive" : "pass";
   return {
     armA: a.arm, armB: b.arm, pairedTasks: paired.length, onlyA: idsA.filter((id) => !b.tasks.has(id)), onlyB: idsB.filter((id) => !a.tasks.has(id)),
     passed: { a: paired.filter((id) => a.tasks.get(id)!.passed).length, b: paired.filter((id) => b.tasks.get(id)!.passed).length },
@@ -200,7 +206,7 @@ export function renderComparison(c: Comparison): string {
     c.cost.notMeasured.length ? `Cost not measured on at least one arm for: ${c.cost.notMeasured.join(", ")}.` : "",
     `Flips: ${c.flips.length ? c.flips.map((flip) => `${flip.taskId} ${flip.from}->${flip.to} (${flip.a} vs ${flip.b})${flip.unstable ? " [unstable in noise]" : ""}`).join("; ") : "none"}.`,
     ...c.checks.map((check) => `${check.ok === null ? "n/a " : check.ok ? "ok  " : "FAIL"} ${check.name}: ${check.detail}`),
-    `Verdict: ${c.verdict.toUpperCase()}${c.verdict === "inconclusive" ? " (too little was measured to call it better or worse)"
+    `Verdict: ${c.verdict.toUpperCase()}${c.checks.some((check) => check.name === "writer" && check.ok === null) ? " (different writers; not a measurement of the change)" : c.verdict === "inconclusive" ? " (too little was measured to call it better or worse)"
       : c.verdict === "pass" ? (c.improvements.length ? ` (not worse on every criterion, and better on ${c.improvements.join(", ")})` : " (not worse on every criterion measured; no improvement shown, equality is not an improvement)") : ""}.`,
   ];
   return lines.filter(Boolean).join("\n");
