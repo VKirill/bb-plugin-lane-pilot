@@ -42,7 +42,9 @@ describe("install gates", () => {
     expect(applied.apply).toBe(true);
     expect(applied.changed).toBe(true);
     expect(applied.backupDir).toContain(".lane-pilot/claude-lane-leftovers/");
-    await expect(readFile(join(home, ".agents/hooks/guard_shell.py"))).rejects.toMatchObject({ code: "ENOENT" });
+    // The original goes to the backup; the old path holds the shim for sessions started before the cleanup.
+    expect(await readFile(join(applied.backupDir!, ".agents__hooks/guard_shell.py"), "utf8")).toBe(before);
+    expect(await readFile(join(home, ".agents/hooks/guard_shell.py"), "utf8")).toContain(".agents/lane-pilot/pm/guard_shell.py");
     const again = await removeClaudeLaneLeftovers({ home, apply: true });
     expect(again.changed).toBe(false);
     expect(again.moved).toEqual([]);
