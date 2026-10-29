@@ -2,7 +2,7 @@
 title: Build and deploy Lane Pilot
 type: deployment
 created: 2026-10-10
-updated: 2026-10-19
+updated: 2026-10-29
 status: active
 confidence: medium
 tags: [deployment, build, configuration]
@@ -40,8 +40,11 @@ sources:
   - src/rooms/native-install/native-install-lifecycle.ts
   - src/rooms/storage/database.ts
   - src/rooms/writer/server/start.ts
+  - packages/models/src/zcode.ts
+  - packages/models/src/role-models.ts
   - tests/global-setup.ts
   - tests/setup-jsdom.ts
+  - packages/models/src/agent-model.ts
 ---
 
 # Build and deploy Lane Pilot
@@ -67,7 +70,7 @@ Package scripts define local commands: `npm test`, `npm run test:changed`, `npm 
 - A BB server and connected host workers provide thread, provider, storage, RPC and host-call APIs (`package.json:3-18`, `server.ts:55-60`).
 - Writer checks and workspace operations execute on the selected project host through host calls (`src/rooms/writer/server/start.ts:1-30`, `src/rooms/contracts/host.ts:11-25`).
 - OpenCode writers run through BB's `opencode2` provider on each host's shared OpenCode v2 service; the host worker reads a silent writer's provider limit from that service's API (`src/rooms/host-worker/opencode-limit.ts:92-114`).
-- ZCode (BB provider `zcode`, plugin bb-plugin-zcode, GLM-5.3-Flash) is a writer candidate (`zcode-flash`) and an option of the role table (`glm-5.3-flash`, never a default). It exists on the Mac mini only, takes one task at a time and is free from 15:00 to 01:00 UTC; Lane Pilot offers it only where `zcodeBlock` (`packages/models/src/zcode.ts`) finds the provider on the task's machine, the free hours (the setting `zcode.window`: `promo`, the default, or `always`) and no Lane Pilot thread working on it. A held pick falls to the next writer of the chain or the role's built-in default; the app's own refusals (`ZCode is busy`, `text-not-visible`, `foreground_required`, `session_expired`) are a free `limit` failure.
+- ZCode (BB provider `zcode`, plugin bb-plugin-zcode) runs GLM-5.3-Flash on the Start Plan's free tokens: the model id is `glm-5.3-flash-free` (`packages/models/src/zcode.ts:71-72`), and the bridge refuses it with `promo_unavailable` rather than bill the plan. It is a writer candidate (`zcode-flash`) and an option of the role table (`glm-5.3-flash-free`, never a default; a background row the owner left on its default tries it first in its hours, `packages/models/src/agent-model.ts:141-145`). It exists on the Mac mini only, runs at most three tasks at once (`packages/models/src/zcode.ts:10`) and is free from 15:00 to 01:00 UTC; Lane Pilot offers it only where `zcodeBlock` (`packages/models/src/zcode.ts:55-62`) finds the provider on the task's machine, the free hours (the setting `zcode.window`: `promo`, the default, or `always`) and a free slot. A held pick falls to the next writer of the chain or the role's built-in default; the app's own refusals (`ZCode is busy`, `text-not-visible`, `foreground_required`, `session_expired`, `promo_unavailable`) are a free `limit` failure (`packages/models/src/zcode.ts:69`).
 - The host entry binds Git integration, writer-check and shim-preparation handlers (`host.ts:1-30`, `host.ts:78-86`).
 
 ## Deployment boundary

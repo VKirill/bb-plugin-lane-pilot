@@ -2,7 +2,7 @@
 title: Lane Pilot overview
 type: overview
 created: 2026-10-10
-updated: 2026-10-28
+updated: 2026-10-29
 status: active
 confidence: low
 tags: [overview, bb-plugin, orchestration]
@@ -68,10 +68,10 @@ When enabled, the writer harness assigns an adopted tree or the empty base to an
 
 The cockpit is the app's screen shell: it loads project and run context, remembers the selected project locally, signals silent-hub and signed-out states, and dispatches the selected screen (`src/rooms/cockpit/ui/cockpit-page.tsx:21-70`). Its RPC handler supplies screen state and event subscription methods (`src/rooms/cockpit/server.ts:17-76`); screen-specific behavior lives in the Today, Forge and Phases views (`src/rooms/cockpit/ui/screens-day.tsx:10-38`, `src/rooms/cockpit/ui/screens-ops.tsx:10-49`, `src/rooms/cockpit/ui/screens-work.tsx:14-35`).
 
-When reload recovery finds the writer's prior thread idle or errored, the attempt loop resumes in that thread if its persisted run and contract context are valid; a canceled attempt is closed as canceled (`src/rooms/stability/server/reconcile.ts:111-145`). Eligible new attempts and fallbacks receive the prior task-owned validation failure; provider failures do not replace that context (`src/rooms/writer/server/start.ts:56-83`, `:645`, `:896`).
+When reload recovery finds the writer's prior thread idle or errored, the attempt loop resumes in that thread if its persisted run and contract context are valid; a canceled attempt is closed as canceled (`src/rooms/stability/server/reconcile.ts:111-145`). Eligible new attempts and fallbacks receive the prior task-owned validation failure; provider failures do not replace that context (`src/rooms/writer/server/start.ts:56-83`, `:669`, `:920`).
 
 - **Project orchestration:** runs, tasks, attempts, stage receipts, checks, and merge coordination are stored in plugin SQLite (`src/rooms/storage/database.ts:30-70`, `:128-156`). See [architecture](architecture.md) and [data model](data-model.md).
-- **Tasks screen:** the app shows task attempts and top-level workflow runs in a board or grouped list, with a detail page for contract, stage, attempt, and worker-thread data (`src/rooms/runs/ui/task-board.tsx:121-150`, `src/rooms/runs/server/task-board.ts:63-78`, `:147-209`). See [Tasks board](task-board.md).
+- **Tasks screen:** the app shows task attempts and top-level workflow runs in a board or grouped list, with a detail page for contract, stage, attempt, and worker-thread data (`src/rooms/runs/ui/task-board.tsx:121-153`, `src/rooms/runs/server/task-board.ts:63-78`, `:147-209`). See [Tasks board](task-board.md).
 - **Settings and integrations:** typed RPC endpoints expose project settings, provider selection, workflows, schedules, council, memory, and knowledge to the UI (`src/rooms/core/server/rpc.ts:27-51`). The surface is declared in [RPC contracts](rpc-callers.md).
 - **Project knowledge:** memory RPCs create and retrieve project-scoped agent records; the UI displays the records and their lifecycle (`src/rooms/memory/server/memory.ts:19-78`, `src/rooms/memory/ui/memory-records.tsx:13-64`).
 - **Owner profile:** Anamnesis collects enabled sources, masks detected personal data, stores evidence-backed records, and can render an annual review (`src/rooms/anamnesis/collect.ts:29-63`, `src/rooms/anamnesis/pii.ts:41-72`, `src/rooms/anamnesis/year-review.ts:13-72`).
