@@ -3,7 +3,7 @@ export {
   alwaysOnText, checkNames, diffSummary, estimateTokens, fingerprint, inventory, isAllowed, isBase, normalizeRel, readTree, skillNames, validate, writeTree,
   type DiffSummary, type SurfaceSpec, type Tree, type TreeCensus,
 } from "./tree";
-export { renderThreadEvents, trajectoryStats, type RenderOptions, type ThreadEventLike } from "./trajectory";
+export { ATTEMPT_DIGEST_MAX, renderThreadEvents, summarizeThreadEvents, trajectoryStats, type RenderOptions, type ThreadEventLike } from "./trajectory";
 export {
   EDIT_VERDICTS, KEEP_BASE, NO_ENTRY, experienceIsSupported, parseEdits, parseExperience, parseNotes, renderExperienceMarkdown,
   type EditRow, type EditVerdict, type Experience,
