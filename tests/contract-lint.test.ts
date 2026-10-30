@@ -405,6 +405,13 @@ describe("contract lint rules", () => {
     });
   });
 
+  it("a syntax-check step is not a second runner; a real double run still is", () => {
+    expect(lintContract({ task:{ ...baseTask, verification:[{ command:"bash -n scripts/x.sh && bash scripts/x.sh --run", cwd:root },{ command:"test -f out", cwd:root }] },
+      workspacePath:root, hostId:"h", kinds:null, sandboxUnsafe:[], openTasks:[], deadDependencies:[], gate:{ command:"npm test" } }).errors.map((e)=>e.code)).not.toContain("repeated_runner_chain");
+    expect(lintContract({ task:{ ...baseTask, verification:[{ command:"npx vitest run a.test.ts && npx vitest run b.test.ts", cwd:root }] },
+      workspacePath:root, hostId:"h", kinds:null, sandboxUnsafe:[], openTasks:[], deadDependencies:[], gate:{ command:"npm test" } }).errors.map((e)=>e.code)).toContain("repeated_runner_chain");
+  });
+
   describe("red before green for a fix", () => {
     it("warns a low-risk fix whose checks all name files the base already has, as it does for medium risk", () => {
       const kinds = { "src/a.ts":"file" as const, "src/b.ts":"file" as const };

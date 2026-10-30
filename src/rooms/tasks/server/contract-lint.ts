@@ -65,8 +65,10 @@ export function runsGateCommand(command:string, gateCommand:string):boolean {
 const TEST_BIN = /(?:^|\/)(vitest|jest|pytest|py\.test)$/;
 const SCRIPT_RUNNER = /(?:^|\/)([\w.-]+\.(?:py|js|mjs|cjs|ts|sh))$/;
 
-/** Which test runner one `&&` / `;` step starts, or null. A `cd` or a typecheck is not a runner. */
+/** Which test runner one `&&` / `;` step starts, or null. A `cd`, a typecheck or a syntax check (`bash -n`, `node --check`, `php -l`) is not a runner. */
 function runnerOf(segment:string):string | null {
+  // A step that only checks syntax is not a run of the suite; without this `bash -n x.sh && bash x.sh` read as two runs.
+  if (/^\s*(?:cd\s+\S+\s*&&\s*)?(?:sudo\s+-n\s+)?(?:bash|sh|node|python3?|php|ruby)\s+(?:-[a-zA-Z]*n|--check|--syntax-check|-l|-m\s+py_compile)\s+['"]?\S+['"]?\s*$/.test(segment)) return null;
   const tokens = segment.trim().split(/\s+/).map((token) => token.replace(/^['"]|['"]$/g, ""));
   const bin = tokens.find((token) => TEST_BIN.test(token));
   if (bin) return bin.replace(/^.*\//, "");
