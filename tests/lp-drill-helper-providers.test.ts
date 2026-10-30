@@ -65,6 +65,28 @@ describe("the drill's helper per provider", () => {
     expect(verdict!.problems[0]).toMatch(/codex \(g\): a helper did not start: boom/);
   });
 
+  it("probes once more when only the host's thread start broke, and still fails a provider that breaks twice (0.1.406 deploy, 2026-10-31)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "lp-drill-retry-"));
+    const fake = join(dir, "bb");
+    const broke = JSON.stringify({ ok: false, started: true, answered: false, threadId: "thr_9", output: null, reason: "helper_probe_timeout:error:thread_status_error:system_error:thread_command_failed:Command thread.start failed", ms: 20000 });
+    // The first probe of each provider breaks; the second of «flaky» answers, «broken» breaks again.
+    writeFileSync(fake, `#!/bin/sh
+if [ -f "${dir}/$5" ] && [ "$5" = flaky ]; then echo '${ok("flaky")}'; exit 0; fi
+touch "${dir}/$5"; echo '${broke}'; exit 1
+`);
+    chmodSync(fake, 0o755);
+    const code = `
+import importlib.util, json, types
+spec = importlib.util.spec_from_file_location("drill", ${JSON.stringify(drill)})
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+print(json.dumps(m.scenario_helper_providers(types.SimpleNamespace(project="p", run_id="r"))))
+`;
+    const res = spawnSync("python3", ["-I", "-c", code], { encoding: "utf8", timeout: 60_000, env: { ...process.env, BB_CLI: fake, LP_DRILL_PROVIDERS: "flaky=m,broken=m" } });
+    const verdict = JSON.parse(res.stdout.trim().split("\n").pop()!) as { result: string; problems: string[] };
+    expect(verdict.result).toBe("fail");
+    expect(verdict.problems).toEqual([expect.stringMatching(/^broken \(m\): a helper started but did not answer: .*thread_command_failed/)]);
+  });
+
   it("is part of --quick, after the guard check and the memory delivery check, before the three-task scenario", () => {
     const quick = spawnSync("bash", [script, "--quick", "--dry-run"], { encoding: "utf8", timeout: 30_000, env: { ...process.env, BB_CLI: "/nonexistent/bb", LP_DRILL_SELECT: "0" } });
     expect(quick.stdout).toContain("scenarios: guard_hash, deferrals, checkers, memory_paths, helper_providers, parallel3");

@@ -584,6 +584,9 @@ def providers_in_use(project: str) -> dict[str, str]:
     return found
 
 
+HOST_START_FAILURE = re.compile(r"thread_command_failed|exited unexpectedly")
+
+
 def scenario_helper_providers(ctx: Context) -> dict:
     """A helper on each provider in use starts and answers (audit 2026-10-08 round 3, P0-7)."""
     pairs = providers_in_use(ctx.project)
@@ -599,8 +602,17 @@ def scenario_helper_providers(ctx: Context) -> dict:
             answer = {"ok": False, "started": False, "answered": False, "reason": (err or out).strip()[:300] or f"exit {rc}"}
         return {"provider": provider, "model": model, **{k: answer.get(k) for k in ("ok", "started", "answered", "threadId", "output", "reason", "ms")}}
 
+    def probe_twice(item: tuple[str, str]) -> dict:
+        # One more probe when only the host's thread start broke: a provider process killed once (SIGTERM on the hub, 2026-10-31,
+        # deploy of 0.1.406) is not a broken provider; a broken one fails the second probe too.
+        first = probe(item)
+        if first["ok"] or not HOST_START_FAILURE.search(first["reason"] or ""):
+            return first
+        log(f"helper on {item[0]} ({item[1]}): the host's thread start failed ({first['reason']}), probing once more")
+        return {**probe(item), "firstReason": first["reason"]}
+
     with ThreadPoolExecutor(max(1, len(pairs))) as pool:
-        results = list(pool.map(probe, pairs.items()))
+        results = list(pool.map(probe_twice, pairs.items()))
     problems = []
     for item in results:
         log(f"helper on {item['provider']} ({item['model']}): started={item['started']} answered={item['answered']} {item['reason'] or ''}")

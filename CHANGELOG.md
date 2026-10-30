@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **The drill probes a helper once more when only the host's thread start broke.** The 0.1.406 deploy went red because the hub's opencode2 process got one SIGTERM during its probe (`thread_command_failed`); a provider that fails the second probe too still fails the drill. Test: `tests/lp-drill-helper-providers.test.ts`.
+
 - **A plan the critic passed on the last step is kept.** magicseo's lp.plan (2026-10-30) spent its 14 steps on two lint rejections and a rework, the critic passed on step 14, and the step budget then refused the `ok` emit: the passed plan was lost and planning ran again. An end `builtin:emit` now runs through a spent step budget; lp.plan's `max_steps` is 16 (its loop guards allow 15). Test: `tests/workflow/engine.test.ts`.
 - **Lane Pilot's own stage failures no longer spend the work's tries.** A machine failure (budget stop, provider error, repo_edited…) counted in the same `autoFailures` as a real refusal, so one of each ended the magicseo plan loop and cut the phase's scope. Machine failures now count in `autoMachineFailures`: at two the stage waits for a release, the scope is never cut. Test: `tests/phase-auto-stages.test.ts`.
 
