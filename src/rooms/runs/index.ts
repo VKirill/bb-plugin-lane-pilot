@@ -10,3 +10,4 @@ export type { FailureClass, FailureSide } from "./failure-class";
 export { IllegalTransitionError, MAIN_ATTEMPT_LIMIT, RETRY_ELIGIBLE, TRANSITION_TABLE, isLegalMove } from "./state-machine";
 export type { AttemptState } from "./state-machine";
 export { isKnownReason, unknownReasons } from "./unknown-codes";
+export { failureClassJudgment } from "./failure-class-judgment";

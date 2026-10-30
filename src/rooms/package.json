@@ -17,6 +17,13 @@
     "./learning/rule-diff.ts",
     "./verification/test-hint.ts",
     "./writer/log-trim.ts",
-    "./writer/session-digest.ts"
+    "./writer/session-digest.ts",
+    "./jev/judgments.ts",
+    "./anamnesis/index.ts",
+    "./learning/index.ts",
+    "./phase/index.ts",
+    "./runs/index.ts",
+    "./workflow/index.ts",
+    "./writer/index.ts"
   ]
 }

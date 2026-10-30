@@ -10,6 +10,8 @@ import { DEFAULT_BENCH_WRITER } from "../runner";
 import { setBenchProject } from "../store";
 import type { BenchProjectRef, HostPort, PipelinePort } from "../ports";
 import { createBench, type BenchApi } from "../service";
+import { judgeTrace } from "../jevals";
+import { jev } from "@lane-pilot/jev";
 
 /** The bench inside the plugin: the machines through `runCommand`, the pipeline through the plugin's own services. */
 export function createPluginBench(ctx: ServerCore, services: Services): BenchApi {
@@ -118,6 +120,10 @@ export function createPluginBench(ctx: ServerCore, services: Services): BenchApi
     db: db as never, kv: bb.storage.kv as never, host: hostPort, pipeline,
     projectNames: async () => new Map((await listProjects()).map((row) => [row.id, row.name])),
     isSandboxName: isSandboxProjectName, log: ctx.log,
+    jevals: async (input) => {
+      const settings = input.task.projectId ? await ctx.effectiveProjectSettings(input.task.projectId).then((r) => r.values as Record<string, unknown>).catch(() => ({})) : {};
+      return await judgeTrace({ jev, settings, projectId: input.task.projectId, runId: null }, input);
+    },
   });
 }
 

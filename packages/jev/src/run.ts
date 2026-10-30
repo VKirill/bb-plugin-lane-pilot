@@ -17,6 +17,10 @@ import type { AnswerSummary, JevBudget, JevCallResult, JevFailure, JevQuestion }
  * hands the case to its stronger judge), or `fallback` (off, shadow, no key, a failure: the caller keeps the deterministic
  * behaviour). In `shadow` the judgment is asked and recorded but the verdict is always `fallback`, with `shadow` saying what
  * Jev would have done.
+ *
+ * Answers are cached by the hash of model + state + questions (JevRouter's CachedJevProvider): a repeated state does not call
+ * the API again within `ttlMs`. The cache lives in process memory only, capped at `maxEntries` oldest-first; a hit writes no
+ * receipt, so receipts count the misses — the calls that actually happened.
  */
 export type JudgeContext = {
   projectId?: string | null;
@@ -41,6 +45,11 @@ export type Jev = {
   enabled(settings?: JevSettings): boolean;
 };
 
+/** The in-process answer cache of one `createJev` instance: TTL and size bounds, `false` switches it off. */
+export type JevCacheOptions = { ttlMs: number; maxEntries: number };
+export const JEV_CACHE_TTL_MS = 5 * 60_000;
+export const JEV_CACHE_MAX_ENTRIES = 500;
+
 type Entry = { judgment: Judgment<any, any>; input: unknown; mode: JudgmentMode; thresholds: Thresholds; state: unknown; stateText: string; questions: Record<string, JevQuestion> };
 
 const sha256 = (text: string): string => sha256Hex(text);
@@ -53,8 +62,28 @@ function summarize(answers: Answers): Record<string, AnswerSummary> {
   }));
 }
 
-export function createJev(deps: { client: JevClient; db?: Database.Database | null; log?: (message: string) => void }): Jev {
+export function createJev(deps: { client: JevClient; db?: Database.Database | null; log?: (message: string) => void;
+  cache?: Partial<JevCacheOptions> | false; now?: () => number }): Jev {
   const { client } = deps;
+  const now = deps.now ?? Date.now;
+  const cache: JevCacheOptions | null = deps.cache === false ? null : { ttlMs: deps.cache?.ttlMs ?? JEV_CACHE_TTL_MS, maxEntries: deps.cache?.maxEntries ?? JEV_CACHE_MAX_ENTRIES };
+  const cacheHits = new Map<string, { call: JevCallResult & { ok: true }; expires: number }>();
+  const cacheGet = (key: string): (JevCallResult & { ok: true }) | undefined => {
+    const hit = cacheHits.get(key);
+    if (!hit) return undefined;
+    if (hit.expires <= now()) { cacheHits.delete(key); return undefined; }
+    return hit.call;
+  };
+  const cachePut = (key: string, call: JevCallResult): void => {
+    if (!cache || !call.ok) return;
+    if (cacheHits.size >= cache.maxEntries) {
+      const oldest = cacheHits.keys().next().value;
+      if (oldest !== undefined) cacheHits.delete(oldest);
+    }
+    cacheHits.set(key, { call, expires: now() + cache.ttlMs });
+  };
+  const cacheKey = (model: string | undefined, stateText: string, questions: Record<string, JevQuestion>): string =>
+    sha256(`${model ?? ""}\n${stateText}\n${JSON.stringify(questions)}`);
 
   const prepare = (judgment: Judgment<any, any>, input: unknown, ctx: JudgeContext): Entry => {
     const state = redactKnownDeep(judgment.stateBuilder(input));
@@ -63,8 +92,9 @@ export function createJev(deps: { client: JevClient; db?: Database.Database | nu
     return { judgment, input, mode: resolveMode(judgment, ctx.settings), thresholds: resolveThresholds(judgment, ctx.settings), state, stateText: JSON.stringify(state) ?? "null", questions };
   };
 
-  function receipt(entry: Entry, ctx: JudgeContext, call: JevCallResult, batchSize: number, decidedBy: "jev" | "fallback" | "escalated", decision: string | null, escalatedTo: string | null, answers?: Answers): number | null {
-    if (!deps.db || entry.mode === "off") return null;
+  function receipt(entry: Entry, ctx: JudgeContext, call: JevCallResult, batchSize: number, decidedBy: "jev" | "fallback" | "escalated", decision: string | null, escalatedTo: string | null, answers?: Answers, cached = false): number | null {
+    // A cache hit was no call: receipts count the misses.
+    if (cached || !deps.db || entry.mode === "off") return null;
     try {
       return insertReceipt(deps.db, {
         judgment: entry.judgment.id, version: entry.judgment.version, model: call.ok ? call.model : entry.judgment.model ?? null, mode: entry.mode,
@@ -79,21 +109,21 @@ export function createJev(deps: { client: JevClient; db?: Database.Database | nu
     }
   }
 
-  function verdictFor(entry: Entry, ctx: JudgeContext, call: JevCallResult, batchSize: number, answers: Answers | null): Verdict<any> {
+  function verdictFor(entry: Entry, ctx: JudgeContext, call: JevCallResult, batchSize: number, answers: Answers | null, cached = false): Verdict<any> {
     const fallbackDecision = () => entry.judgment.fallback(entry.input);
     if (!call.ok || !answers) {
       const status = call.ok ? "invalid" as const : call.status;
-      return { by: "fallback", decision: fallbackDecision(), status, receiptId: receipt(entry, ctx, call, batchSize, "fallback", null, null) };
+      return { by: "fallback", decision: fallbackDecision(), status, receiptId: receipt(entry, ctx, call, batchSize, "fallback", null, null, undefined, cached) };
     }
     let decided: Decided<unknown>;
     try { decided = entry.judgment.decide(answers, entry.thresholds, entry.input); } catch (cause) {
       deps.log?.(`jev ${entry.judgment.id}: decide failed: ${cause instanceof Error ? cause.message : String(cause)}`);
-      return { by: "fallback", decision: fallbackDecision(), status: "invalid", receiptId: receipt(entry, ctx, { ok: false, status: "invalid", error: "decide failed", latencyMs: call.latencyMs, attempts: call.attempts }, batchSize, "fallback", null, null, answers) };
+      return { by: "fallback", decision: fallbackDecision(), status: "invalid", receiptId: receipt(entry, ctx, { ok: false, status: "invalid", error: "decide failed", latencyMs: call.latencyMs, attempts: call.attempts }, batchSize, "fallback", null, null, answers, cached) };
     }
     const text = decided.escalate !== undefined ? `escalate:${decided.escalate}` : entry.judgment.describe(decided.decision);
-    if (entry.mode === "shadow") return { by: "fallback", decision: fallbackDecision(), status: "shadow", shadow: decided, answers, receiptId: receipt(entry, ctx, call, batchSize, "fallback", text, null, answers) };
-    if (decided.escalate !== undefined) return { by: "escalate", to: decided.escalate, answers, receiptId: receipt(entry, ctx, call, batchSize, "escalated", text, decided.escalate, answers) };
-    return { by: "jev", decision: decided.decision, answers, receiptId: receipt(entry, ctx, call, batchSize, "jev", text, null, answers) };
+    if (entry.mode === "shadow") return { by: "fallback", decision: fallbackDecision(), status: "shadow", shadow: decided, answers, receiptId: receipt(entry, ctx, call, batchSize, "fallback", text, null, answers, cached) };
+    if (decided.escalate !== undefined) return { by: "escalate", to: decided.escalate, answers, receiptId: receipt(entry, ctx, call, batchSize, "escalated", text, decided.escalate, answers, cached) };
+    return { by: "jev", decision: decided.decision, answers, receiptId: receipt(entry, ctx, call, batchSize, "jev", text, null, answers, cached) };
   }
 
   async function run(entries: Entry[], ctx: JudgeContext): Promise<Array<Verdict<any>>> {
@@ -119,11 +149,17 @@ export function createJev(deps: { client: JevClient; db?: Database.Database | nu
       const first = entries[members[0]!]!;
       const questions: Record<string, JevQuestion> = {};
       for (const index of members) for (const [id, question] of Object.entries(entries[index]!.questions)) questions[`${index}::${id}`] = question;
-      const call = await client.call({ state: first.state, questions, ...(first.judgment.model ? { model: first.judgment.model } : {}) },
-        { timeoutMs: Math.max(...members.map((index) => entries[index]!.judgment.timeoutMs)), budget: ctx.budget, signal: ctx.signal });
+      const key = cache ? cacheKey(first.judgment.model, first.stateText, questions) : "";
+      let call: JevCallResult | undefined = key ? cacheGet(key) : undefined;
+      const cached = call !== undefined;
+      if (!call) {
+        call = await client.call({ state: first.state, questions, ...(first.judgment.model ? { model: first.judgment.model } : {}) },
+          { timeoutMs: Math.max(...members.map((index) => entries[index]!.judgment.timeoutMs)), budget: ctx.budget, signal: ctx.signal });
+        if (key) cachePut(key, call);
+      }
       for (const index of members) {
         const own: Answers | null = call.ok ? Object.fromEntries(Object.keys(entries[index]!.questions).map((id) => [id, call.answers[`${index}::${id}`]!])) : null;
-        verdicts[index] = verdictFor(entries[index]!, ctx, call, members.length, own);
+        verdicts[index] = verdictFor(entries[index]!, ctx, call, members.length, own, cached);
       }
     }));
     return verdicts;

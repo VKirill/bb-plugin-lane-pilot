@@ -12,3 +12,4 @@ export { writerFallbackChain, writerFallbackKeys, writerFallbacks } from "./writ
 export { BEST_OF_COUNT, BEST_OF_SETTING, BEST_OF_SLOT_CAP_SETTING, BEST_OF_TOKEN_BUDGET_SETTING, BEST_OF_VALUES, bestOfBudgetAllows, bestOfPicks, pickBestAttempt, reserveAppetite, resolveBestOf } from "./best-of";
 export type { BestOfCandidate, BestOfPlan, WriterPair } from "./best-of";
 export { writerReuseStats } from "./writer-reuse-stats";
+export { writerModelJudgment } from "./writer-model-pick";

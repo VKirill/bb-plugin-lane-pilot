@@ -1,3 +1,4 @@
+import { calibratedThresholds } from "./calibrate";
 import type { Judgment, JudgmentMode, Thresholds } from "./registry";
 
 /**
@@ -6,6 +7,8 @@ import type { Judgment, JudgmentMode, Thresholds } from "./registry";
  *    judgment's range is clamped, an unknown key is ignored (and reported by `thresholdsProblem` when saved).
  *  - `jev.modes`: `judgment=off|shadow|active` pairs; a judgment not listed runs in its default mode.
  *  - `jev.enabled`: false turns every judgment off for the project.
+ *  - `jev.calibrated_thresholds`: JSON written by `bb lane-pilot jev calibrate --save`; a judgment's certified values apply
+ *    only while its fingerprint matches — a reworded judgment without a recalibration falls back to the defaults.
  */
 export const JEV_ENABLED_KEY = "jev.enabled";
 export const JEV_THRESHOLDS_KEY = "jev.thresholds";
@@ -28,9 +31,9 @@ export function jevEnabled(settings: JevSettings | undefined): boolean {
   return !(value === false || value === "false" || value === "0" || value === "off");
 }
 
-/** The thresholds of one judgment: the registry defaults, then the project's values clamped to the allowed range. */
-export function resolveThresholds(judgment: Pick<Judgment<unknown, unknown>, "id" | "thresholds">, settings: JevSettings | undefined): Thresholds {
-  const out: Thresholds = Object.fromEntries(Object.entries(judgment.thresholds).map(([name, spec]) => [name, spec.default]));
+/** The thresholds of one judgment: the registry defaults, then the certified calibration, then the project's values clamped to the allowed range. */
+export function resolveThresholds(judgment: Pick<Judgment<unknown, unknown>, "id" | "version" | "questions" | "decide" | "thresholds">, settings: JevSettings | undefined): Thresholds {
+  const out: Thresholds = calibratedThresholds(judgment, settings) ?? Object.fromEntries(Object.entries(judgment.thresholds).map(([name, spec]) => [name, spec.default]));
   for (const [key, raw] of pairs(settings?.[JEV_THRESHOLDS_KEY])) {
     if (!key.startsWith(`${judgment.id}.`)) continue;
     const name = key.slice(judgment.id.length + 1), spec = judgment.thresholds[name], value = Number(raw);

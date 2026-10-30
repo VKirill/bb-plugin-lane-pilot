@@ -18,12 +18,16 @@ export type RouteWorkflowDecision = RouterModelOutput;
 
 const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
-/** The card as text for one option: name and description in both languages, a few example requests, what it is not for. */
+/**
+ * The card as text for one option: name and description, a few example requests, what it is not for. English only: a
+ * non-English state drops the judgment's accuracy (TypeSafe docs), so the Russian name, description and examples stay out —
+ * the owner's request travels untranslated as the `request` quote field.
+ */
 export function cardText(card: RouterCard): string {
-  const examples = [...card.examples.en.slice(0, 2), ...card.examples.ru.slice(0, 2)].map((text) => `"${clip(text, 140)}"`).join("; ");
+  const examples = card.examples.en.slice(0, 4).map((text) => `"${clip(text, 140)}"`).join("; ");
   return [
-    `${card.name.en} / ${card.name.ru}.`,
-    clip(card.description.en, 400), clip(card.description.ru, 400),
+    `${card.name.en}.`,
+    clip(card.description.en, 400),
     examples ? `Example requests: ${examples}.` : "",
     card.not_for.length ? `Not for: ${card.not_for.slice(0, 4).join("; ")}.` : "",
   ].filter(Boolean).join(" ");
@@ -89,7 +93,8 @@ function statedInputs(answers: Answers, input: RouteWorkflowInput, index: number
 
 export const routeWorkflow = defineJudgment<RouteWorkflowInput, RouteWorkflowDecision>({
   id: ROUTE_WORKFLOW_ID,
-  version: 1,
+  // v2: the candidate options are English-only (the owner's request stays an untranslated quote field).
+  version: 2,
   // Active from the start: the live run (66 phrases) is in RESULTS.md, and the PM shows the owner the chosen workflow before anything starts.
   defaultMode: "active",
   timeoutMs: 4_000,
