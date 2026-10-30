@@ -1,3 +1,5 @@
+import { pathClassByRules } from "@lane-pilot/workflow-engine";
+import { ISSUE_QUICK_SHORT_PATH } from "../workflow";
 import { sha256, type Candidate, type Risk } from "./types";
 
 /** One slice of the set. `quota` is how many tasks the set takes from it; `minHardShare` of them must be «hard» (accepted after a retry). */
@@ -24,6 +26,43 @@ export const FRESH_QUOTA = 8;
 /** Live projects only: `loadCandidates` has already dropped sandboxes, drills and folders the owner did not allow. */
 export function freshStratum(now: number, windowMs = FRESH_WINDOW_MS, quota = FRESH_QUOTA): Stratum {
   return { key: "fresh", quota, match: (candidate) => (candidate.acceptedAt ?? 0) >= now - windowMs };
+}
+
+/** A button, a label, a hint, a short line. Large work and a high risk stay out. Quota is the set v4 takes. */
+export const SMALL_QUOTA = 8;
+
+export function smallTaskText(contract: Record<string, unknown>): string {
+  return `${typeof contract.title === "string" ? contract.title : ""}\n${typeof contract.objective === "string" ? contract.objective : ""}`.trim();
+}
+
+export function isSmallCandidate(candidate: Candidate): boolean {
+  const text = smallTaskText(candidate.contract);
+  if (!text || text.length > 220) return false;
+  const klass = pathClassByRules(text);
+  return klass.size !== "large" && klass.risk !== "high" && (klass.size === "tiny" || klass.size === "small");
+}
+
+/** Arm A is the short path (the setting stays unset). Arm B turns it off and runs the previous issue-quick graph. */
+export function smallPathSettings(arm: "short" | "legacy"): Record<string, unknown> {
+  return arm === "legacy" ? { [ISSUE_QUICK_SHORT_PATH]: "off" } : {};
+}
+
+export function smallStratum(quota = SMALL_QUOTA): Stratum {
+  return { key: "small", quota, match: isSmallCandidate };
+}
+
+/** Errand, research, docs and a social post. Not a code change. Quota is the set v5 takes. */
+export const NONCODE_QUOTA = 6;
+const NONCODE_KIND = new Set(["docs", "research"]);
+
+export function isNoncodeCandidate(candidate: Candidate): boolean {
+  const kind = candidate.contract.kind;
+  if (typeof kind === "string" && NONCODE_KIND.has(kind)) return true;
+  return /^(errand|research|text|social|post):/.test(candidate.area);
+}
+
+export function noncodeStratum(quota = NONCODE_QUOTA): Stratum {
+  return { key: "noncode", quota, match: isNoncodeCandidate };
 }
 
 export function cohortOf(stratum: string): "fixed" | "fresh" {

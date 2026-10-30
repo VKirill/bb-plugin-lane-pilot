@@ -13,4 +13,5 @@ export { mountBenchNightly, mountBenchSweep, mountBenchWeekly, weekArm } from ".
 export { benchArmStatus } from "../reliability";
 export { nightArm, prepareCheckoutCommand } from "../runner";
 export { isLiveProject, liveStability, renderLiveStability } from "../live-rate";
+export { DEFAULT_VALIDATOR, judgeValidator } from "../validator";
 export type { LiveAttempt, LiveStability } from "../live-rate";

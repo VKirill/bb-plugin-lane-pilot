@@ -433,6 +433,8 @@ export const migrations = [
   `ALTER TABLE lane_pilot_memory ADD COLUMN origin_task_id TEXT`,
   // Verifier signals on the row: each source that vouched for the fact (arXiv #21 MemGuard). Append only.
   `ALTER TABLE lane_pilot_memory ADD COLUMN verification_json TEXT`,
+  // Bench task validator (src/rooms/bench/validator.ts). Null on a code task. `artifact` checks that the result exists and is not empty.
+  `ALTER TABLE lane_pilot_bench_task ADD COLUMN validator TEXT`,
 ];
 
 export function openDatabase(bb: BbPluginApi): LanePilotDatabase {

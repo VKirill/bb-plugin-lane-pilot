@@ -149,6 +149,7 @@
     },
     {
       "id": "write",
+      "produces": [{ "kind": "task-result", "version": 1 }],
       "type": "lp-task",
       "quality_mode": "quick",
       "contract": "{{plan.task}}",
@@ -161,6 +162,7 @@
     },
     {
       "id": "write-medium",
+      "produces": [{ "kind": "task-result", "version": 1 }],
       "type": "lp-task",
       "quality_mode": "standard",
       "contract": "{{plan.task}}",
