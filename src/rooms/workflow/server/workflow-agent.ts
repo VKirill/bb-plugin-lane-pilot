@@ -545,9 +545,16 @@ export async function withResolvedModel(request: HelperRequest, options: { avoid
   const hostId = rt.pmThreadId ? await pmHostOf(rt.ctx.bb, rt.pmThreadId).catch(() => null) : (await projectFolder(rt.ctx.bb, rt.projectId).catch(() => null))?.hostId ?? null;
   // The folder the thread starts in: a provider that cannot work there (opencode2 under ~/Documents on macOS: its
   // /api/mcp 500s EPERM) is out of the offer like a failed one (`providerBlockedForFolder` in spawn-model).
-  const envPath = rt.pmThreadId
-    ? await rt.ctx.bb.sdk.threads.get({ threadId: rt.pmThreadId }).then((pm) => stringAt(pm, "environmentId")).then((id) => id ? rt.ctx.bb.sdk.environments.get({ environmentId: id }).then((env) => stringAt(env, "path")).catch(() => null) : null).catch(() => null)
-    : (await projectFolder(rt.ctx.bb, rt.projectId).catch(() => null))?.path ?? null;
+  const pmEnvPath = rt.pmThreadId
+    ? await Promise.resolve().then(async () => {
+        const pm = await rt.ctx.bb.sdk.threads.get({ threadId: rt.pmThreadId! });
+        const environmentId = stringAt(pm, "environmentId");
+        return environmentId ? stringAt(await rt.ctx.bb.sdk.environments.get({ environmentId }), "path") : null;
+      }).catch(() => null)
+    : null;
+  // Reading the PM thread's folder must never break the pick: when it is unavailable the project folder answers,
+  // as in a run without a PM chat.
+  const envPath = pmEnvPath ?? (await projectFolder(rt.ctx.bb, rt.projectId).catch(() => null))?.path ?? null;
   const read = (() => { try { return modelCatalogOf(rt.ctx).peek(); } catch { return null; } })();
   // An agent the owner created may name its own model and effort: they pin the run unless the schedule named one.
   const specialist = request.role.startsWith("specialist:") ? request.role.slice("specialist:".length) : "";
