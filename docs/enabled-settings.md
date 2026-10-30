@@ -14,7 +14,7 @@ sources:
   - docs/enabled-settings.snapshot.json
 ---
 
-<!-- enabled-settings:structure 978967adc7eae2f0 -->
+<!-- enabled-settings:structure b0946fe00ec9d271 -->
 
 # Enabled settings (generated)
 
@@ -51,7 +51,7 @@ switches: `quick` disables both critiques, `full` enables them (`src/rooms/criti
 | `code_critique.auto_fix` | `true` | — | returns actionable findings to the original writer for a bounded repair round |
 | `code_critique.enabled` | `false` | — | post-writer code critique |
 | `code_critique.max_rounds` | `1` | — | maximum automatic writer repair rounds after code critique, capped at 3 |
-| `code_critique.mode` | `gate` | — | advisory records findings |
+| `code_critique.mode` | `advisory` | — | advisory records findings |
 | `code_critique.model` | `inherit writer selection` | — | independent code-critique reviewer model |
 | `code_critique.provider` | `inherit writer selection` | — | independent code-critique reviewer provider |
 | `code_critique.reasoning_effort` | `medium` | — | independent code-critique reviewer effort |

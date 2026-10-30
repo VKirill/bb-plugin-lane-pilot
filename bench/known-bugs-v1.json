@@ -1,0 +1,225 @@
+{
+  "version": "known-bugs-v1",
+  "tasks": [
+    {
+      "taskId": "pr-001",
+      "title": "off-by-one paginating results",
+      "diff": "# src/api/list.ts\ndiff --git a/src/api/list.ts b/src/api/list.ts\n+  for (let i = 0; i <= items.length; i++) page.push(items[i]);",
+      "expected_findings": [
+        {
+          "file": "src/api/list.ts",
+          "keyword": "<= items.length should be < items.length: reads past the end"
+        }
+      ]
+    },
+    {
+      "taskId": "pr-002",
+      "title": "swapped min/max clamp arguments",
+      "diff": "# src/math/clamp.ts\ndiff --git a/src/math/clamp.ts b/src/math/clamp.ts\n+  return Math.min(min, Math.max(max, value));",
+      "expected_findings": [
+        {
+          "file": "src/math/clamp.ts",
+          "keyword": "clamp bounds swapped: min used as max and max as min"
+        }
+      ]
+    },
+    {
+      "taskId": "pr-003",
+      "title": "missing null check on optional config",
+      "diff": "# src/config.ts\ndiff --git a/src/config.ts b/src/config.ts\n+  return cfg.retries.count;",
+      "expected_findings": [
+        {
+          "file": "src/config.ts",
+          "keyword": "cfg.retries may be undefined: property access on possibly null object"
+        }
+      ]
+    },
+    {
+      "taskId": "pr-004",
+      "title": "promise returned without await",
+      "diff": "# src/fetch.ts\ndiff --git a/src/fetch.ts b/src/fetch.ts\n+  return load(url);",
+      "expected_findings": [
+        {
+          "file": "src/fetch.ts",
+          "keyword": "missing await: caller gets a pending promise not the value"
+        }
+      ]
+    },
+    {
+      "taskId": "pr-005",
+      "title": "wrong comparison direction in rate limit",
+      "diff": "# src/limit.ts\ndiff --git a/src/limit.ts b/src/limit.ts\n+  if (used < cap) throw new Error('over limit');",
+      "expected_findings": [
+        {
+          "file": "src/limit.ts",
+          "keyword": "inverted comparison: throws when under the cap"
+        }
+      ]
+    },
+    {
+      "taskId": "pr-006",
+      "title": "cache key ignores user id",
+      "diff": "# src/cache.ts\ndiff --git a/src/cache.ts b/src/cache.ts\n+  const key = `profile:${lang}`;",
+      "expected_findings": [
+        {
+          "file": "src/cache.ts",
+          "keyword": "cache key missing user id: profiles leak across users"
+        }
+      ]
+    },
+    {
+      "taskId": "pr-007",
+      "title": "mutation of shared default options",
+      "diff": "# src/opts.ts\ndiff --git a/src/opts.ts b/src/opts.ts\n+  DEFAULTS.timeout = user.timeout;",
+      "expected_findings": [
+        {
+          "file": "src/opts.ts",
+          "keyword": "mutates module-level DEFAULTS: one caller changes the defaults for all"
+        }
+      ]
+    },
+    {
+      "taskId": "pr-008",
+      "title": "regex without global flag replaces once",
+      "diff": "# src/text.ts\ndiff --git a/src/text.ts b/src/text.ts\n+  return s.replace(/;/g?no:replaces first only)",
+      "expected_findings": [
+        {
+          "file": "src/text.ts",
+          "keyword": "replace without /g: only the first occurrence is replaced"
+        }
+      ]
+    },
+    {
+      "taskId": "pr-009",
+      "title": "integer division drops fractional cost",
+      "diff": "# src/cost.ts\ndiff --git a/src/cost.ts b/src/cost.ts\n+  const price = Math.trunc(total / count);",
+      "expected_findings": [
+        {
+          "file": "src/cost.ts",
+          "keyword": "Math.trunc drops cents: totals undercharge"
+        }
+      ]
+    },
+    {
+      "taskId": "pr-010",
+      "title": "event listener never removed",
+      "diff": "# src/ui/view.ts\ndiff --git a/src/ui/view.ts b/src/ui/view.ts\n+  window.addEventListener('resize', onResize);",
+      "expected_findings": [
+        {
+          "file": "src/ui/view.ts",
+          "keyword": "addEventListener has no matching removeEventListener: leak on unmount"
+        }
+      ]
+    },
+    {
+      "taskId": "pr-011",
+      "title": "password compared with == not timing-safe",
+      "diff": "# src/auth.ts\ndiff --git a/src/auth.ts b/src/auth.ts\n+  return input == stored;",
+      "expected_findings": [
+        {
+          "file": "src/auth.ts",
+          "keyword": "secret compared with ==: timing attack and loose coercion"
+        }
+      ]
+    },
+    {
+      "taskId": "pr-012",
+      "title": "sql string built by concatenation",
+      "diff": "# src/db/query.ts\ndiff --git a/src/db/query.ts b/src/db/query.ts\n+  db.exec('SELECT * FROM t WHERE id=' + id);",
+      "expected_findings": [
+        {
+          "file": "src/db/query.ts",
+          "keyword": "sql injection: id concatenated into the query"
+        }
+      ]
+    },
+    {
+      "taskId": "pr-013",
+      "title": "catch swallows the error silently",
+      "diff": "# src/job.ts\ndiff --git a/src/job.ts b/src/job.ts\n+  } catch { }",
+      "expected_findings": [
+        {
+          "file": "src/job.ts",
+          "keyword": "empty catch: failures invisible"
+        }
+      ]
+    },
+    {
+      "taskId": "pr-014",
+      "title": "array index out of bounds on empty list",
+      "diff": "# src/first.ts\ndiff --git a/src/first.ts b/src/first.ts\n+  return items[0].name;",
+      "expected_findings": [
+        {
+          "file": "src/first.ts",
+          "keyword": "items[0] on possibly empty array: undefined access"
+        }
+      ]
+    },
+    {
+      "taskId": "pr-015",
+      "title": "retry loop never decrements attempts",
+      "diff": "# src/retry.ts\ndiff --git a/src/retry.ts b/src/retry.ts\n+  while (attempts > 0) { await tryOnce(); }",
+      "expected_findings": [
+        {
+          "file": "src/retry.ts",
+          "keyword": "attempts never decremented: infinite loop"
+        }
+      ]
+    },
+    {
+      "taskId": "pr-016",
+      "title": "date parsed without timezone fix",
+      "diff": "# src/time.ts\ndiff --git a/src/time.ts b/src/time.ts\n+  const d = new Date(str);",
+      "expected_findings": [
+        {
+          "file": "src/time.ts",
+          "keyword": "timezone-naive parse: midnight shifts a day back"
+        }
+      ]
+    },
+    {
+      "taskId": "pr-017",
+      "title": "float money compared with ===",
+      "diff": "# src/money.ts\ndiff --git a/src/money.ts b/src/money.ts\n+  if (sum === 19.99) ok();",
+      "expected_findings": [
+        {
+          "file": "src/money.ts",
+          "keyword": "float equality on money: rounding makes it false"
+        }
+      ]
+    },
+    {
+      "taskId": "pr-018",
+      "title": "sort comparator returns boolean not number",
+      "diff": "# src/sort.ts\ndiff --git a/src/sort.ts b/src/sort.ts\n+  list.sort((a, b) => a > b);",
+      "expected_findings": [
+        {
+          "file": "src/sort.ts",
+          "keyword": "comparator returns boolean: unstable/incorrect sort"
+        }
+      ]
+    },
+    {
+      "taskId": "pr-019",
+      "title": "json parsed without try or validation",
+      "diff": "# src/parse.ts\ndiff --git a/src/parse.ts b/src/parse.ts\n+  const cfg = JSON.parse(raw);",
+      "expected_findings": [
+        {
+          "file": "src/parse.ts",
+          "keyword": "JSON.parse can throw: unhandled crash on bad input"
+        }
+      ]
+    },
+    {
+      "taskId": "pr-020",
+      "title": "object spread loses prototype methods",
+      "diff": "# src/obj.ts\ndiff --git a/src/obj.ts b/src/obj.ts\n+  const copy = { ...instance };",
+      "expected_findings": [
+        {
+          "file": "src/obj.ts",
+          "keyword": "spread of class instance drops methods and prototype"
+        }
+      ]
+    }
+  ]
+}

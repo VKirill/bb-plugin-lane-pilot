@@ -98,7 +98,7 @@ export function mountBenchNightly(ctx: ServerCore, bench: () => BenchApi): void 
       }
       const reports = await bench().run({ ...input, repeat, budgetTokens: share });
       const rows = Array.isArray(reports) ? reports : [reports];
-      for (const line of bench().armStrata(version, arm)) ctx.log(`bench-nightly ${version}: ${line}`);
+      for (const line of await bench().armStrata(version, arm)) ctx.log(`bench-nightly ${version}: ${line}`);
       // arXiv #18: one memory-on repeat of the same set (a bounded probe at a quarter of the set's budget), the acceptance
       // delta priced per 1k injected tokens in the night's summary lines — the data that decides whether injection earns.
       const memArm = `${arm}-mem`;

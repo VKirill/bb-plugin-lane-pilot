@@ -59,6 +59,8 @@ export type RunnerDeps = {
   jevCtx?: (task: ManifestTask) => Promise<import("../validators").ValidatorDeps["jevCtx"]>;
   /** Layer-3 page review (the specialist helper), bound per task. Absent: pages keep the DOM+Jev verdict. */
   pageReview?: (task: ManifestTask, request: Parameters<import("../validators").PageReview>[0]) => ReturnType<import("../validators").PageReview>;
+  /** The critic-eval stratum: one real code-critique call on the task's patch (known-bugs set, wave 3). */
+  criticRun?: (task: ManifestTask, runId: string) => Promise<{ ok: boolean; reason: string; model?: string; costUsd?: number | null; tokens?: number | null }>;
 };
 
 export const DEFAULT_BUDGET_TOKENS = 120_000_000;
@@ -222,12 +224,21 @@ export async function runSeries(deps: RunnerDeps, input: SeriesInput): Promise<S
     try {
       for (const task of list) {
         if (done.has(task.taskId) || stopReason) continue;
+        if (task.stratum === "critique") {
+          const verdict = deps.criticRun
+            ? await deps.criticRun(task, lp?.runId ?? run.id).catch((cause) => ({ ok: false, reason: `critic_run_error: ${cause instanceof Error ? cause.message : String(cause)}`, tokens: null, costUsd: null }))
+            : { ok: false, reason: "critic runner not wired" };
+          saveResult(deps.db, { runId: run.id, taskId: task.taskId, position: task.position, state: verdict.ok ? "accepted" : "not_accepted", accepted: verdict.ok, benchTaskId: null, lpRunId: lp?.runId ?? null, attempts: 0, stagesPassed: 0, stagesFailed: 0, tokens: verdict.tokens ?? null, costUsd: verdict.costUsd ?? null, costState: "not_measured", seconds: 0, reason: verdict.reason, recordedAt: clock.now() });
+          log(`bench ${input.arm} r${repeat}: ${task.taskId} critique ${verdict.ok ? "found all bugs" : verdict.reason}`);
+          continue;
+        }
         if (task.stratum === "noncode") {
           const source = resolveRepoPath(task.repoPath, input.reposRoot);
           const probe = await deps.host.run(placed.hostId, "/", `[ -e ${q(source)} ] && { [ -s ${q(source)} ] || [ -n "$(find ${q(source)} -mindepth 1 -print -quit)" ]; }`, 30).catch(() => null);
           const verdict = await runValidator(task.validator, probe && probe.exitCode === 0 ? source : null, {
             host: deps.host, hostId: placed.hostId,
             brief: (task as { brief?: Record<string, unknown> }).brief,
+            expectedFindings: (task.contract as { expected_findings?: import("./critique-set").ExpectedFinding[] }).expected_findings,
             ...(deps.jevCtx ? { jevCtx: await deps.jevCtx(task) } : {}),
             ...(deps.pageReview ? { review: (req: Parameters<import("../validators").PageReview>[0]) => deps.pageReview!(task, req) } : {}),
           });

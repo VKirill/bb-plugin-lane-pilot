@@ -24,3 +24,13 @@ it("flags a test that was weakened instead of the code", () => {
   expect(testFitFindings([{ path: "tests/new.test.ts", before: null, after: before }])).toEqual([]);
   expect(classifyFailure("validation_failed", "test_fit: tests/money.test.ts: removed an assertion")).toEqual({ cls: "task", confident: true });
 });
+
+it("a deleted test file is every assertion removed, not an edit out of scope", () => {
+  const before = `it("adds", () => {
+  expect(add(1, 2)).toBe(3);
+  expect(add(0, 0)).toBe(0);
+});
+`;
+  const hits = testFitFindings([{ path: "tests/money.test.ts", before, after: null }]);
+  expect(hits.map((hit) => hit.kind)).toEqual(["assertion_removed"]);
+});

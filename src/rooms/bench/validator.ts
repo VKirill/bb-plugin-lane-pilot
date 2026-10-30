@@ -10,8 +10,17 @@ export function judgeValidator(validator: string | null | undefined, artifact: s
 }
 
 /** The async registry call: named validators run through validateDeliverable on the artifact's machine. */
-export async function runValidator(validator: string | null | undefined, artifact: string | null | undefined, deps: import("../validators").ValidatorDeps): Promise<{ ok: boolean; reason: string }> {
+export async function runValidator(validator: string | null | undefined, artifact: string | null | undefined, deps: import("../validators").ValidatorDeps & { expectedFindings?: import("./critique-set").ExpectedFinding[] }): Promise<{ ok: boolean; reason: string }> {
   const name = validator?.trim() || DEFAULT_VALIDATOR;
+  if (name === "critique_finds") {
+    // The critic-eval stratum: the artifact is the critic's parsed findings JSON; ok when every known bug is covered.
+    const { judgeCriticFindings } = await import("./critique-set");
+    let findings: import("./critique-set").ExpectedFinding[] | { findings?: unknown } = [];
+    try { findings = JSON.parse(artifact ?? "[]") as { findings?: unknown }; } catch { return { ok: false, reason: "critic findings unreadable" }; }
+    const list = Array.isArray(findings) ? findings : (findings.findings as unknown[]) ?? [];
+    const judge = judgeCriticFindings(list as never, deps.expectedFindings ?? []);
+    return { ok: judge.found === judge.total, reason: `critic found ${judge.found}/${judge.total} known bugs${judge.missing.length ? `, missed ${judge.missing.slice(0, 2).join(", ")}` : ""}` };
+  }
   if (name === DEFAULT_VALIDATOR) return judgeValidator(validator, artifact);
   if (!artifact || !artifact.trim()) return { ok: false, reason: "artifact missing or empty" };
   const { validateDeliverable } = await import("../validators");
