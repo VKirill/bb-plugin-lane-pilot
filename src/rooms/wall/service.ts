@@ -5,6 +5,8 @@ import type { ChangeDescriptor } from "../policy";
 import { EVIDENCE_WAIT_MS, closeExpiredRepair, decideAcceptance, gateRepair, laterReleaseTouches, repairChange, type Acceptance, type AcceptanceEvidence, type GateDecision, type RepairFile } from "./acceptance";
 import { analysisPrompt, hunterPrompt, parseNightReport, repairBrief, taskWallMessage } from "./brief";
 import { nightArm } from "../bench/server";
+import { statsEpochMs, statsEpochLine, STATS_EPOCH_SETTING } from "../storage";
+import { loadProjectSettings } from "../storage";
 import { hubFields, writeHubFields } from "../improvement";
 import { postOwnerItem } from "../owner-waiting";
 import { WALL_CONFIG_KEY, parseWallConfig, type WallConfig } from "./config";
@@ -28,6 +30,10 @@ const QUEUED_STALE_MS = 12 * 3_600_000;
 const ROLLBACK_RETRY_MS = 10 * 60_000;
 export const ROLLBACK_TRIES = 6;
 type Rollback = { attempts: number; lastError: string; lastAt: number; reason: string; gaveUp?: boolean };
+
+/** stats.epoch: walls, reruns and repairs count only records after it (default 2026-10-31); older rows stay but are not counted. */
+const statsEpoch = (db: WallDb): number =>
+  statsEpochMs((db.prepare("SELECT value FROM lane_pilot_project_settings WHERE project_id=? AND key=?").get("*", STATS_EPOCH_SETTING) as { value:string } | undefined)?.value);
 
 export type Scope = { isReal(projectId: string, taskId: string): boolean; scopeOf(projectId: string): RerunScope };
 export type ThreadRun = { text: string | null; tokens: number };
@@ -815,7 +821,7 @@ export function createWall(deps: WallDeps) {
       repairs: listRepairs(db, { since: ports.now() - 14 * DAY }),
       walls: listWalls(db, { states: ["stopped", "hunting", "hunted", "backlog"] }).map((row) => ({ key: row.key, kind: row.kind, subject: row.subject, state: row.state, hunt: row.hunt, deferralId: row.deferralId })),
       nights: recentNights(db),
-      morning: composeWallMorning(db, ports.now()),
+      morning: [`${statsEpochLine(statsEpoch(db))}.`, ...composeWallMorning(db, ports.now())],
     };
   }
   function show(key: string) {
@@ -835,7 +841,7 @@ export function createWall(deps: WallDeps) {
   }
 
   return { graph: graphSteps, config, setConfig, runNight, advance, mergeGate, settled, started, startFailed, nextAssignment, noteTaskStop, dispatchGuard, loopExhausted, loopTopics, rerun, status, show, close,
-    morning: (now?: number) => composeWallMorning(db, now ?? ports.now()), classes: () => listClasses(db) };
+    morning: (now?: number) => [`${statsEpochLine(statsEpoch(db))}.`, ...composeWallMorning(db, now ?? ports.now())], classes: () => listClasses(db) };
 }
 
 export type WallApi = ReturnType<typeof createWall>;

@@ -1,5 +1,5 @@
 import { birthFindings, blockingClass, checkProgram, ownerWordFindings } from "../rails";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { TASK_KINDS, type TaskV2 } from "../../contracts";
 import { fileAllowedByOwns, fileBlockedByNeverTouch, matchOwnsPath, ownsPathsOverlap } from "@lane-pilot/kit";
 import { findSandboxUnsafeMissingExcludes, runnerFilterArgs, runsWholeSuite } from "../../critique";
@@ -65,8 +65,10 @@ export function runsGateCommand(command:string, gateCommand:string):boolean {
 const TEST_BIN = /(?:^|\/)(vitest|jest|pytest|py\.test)$/;
 const SCRIPT_RUNNER = /(?:^|\/)([\w.-]+\.(?:py|js|mjs|cjs|ts|sh))$/;
 
-/** Which test runner one `&&` / `;` step starts, or null. A `cd` or a typecheck is not a runner. */
+/** Which test runner one `&&` / `;` step starts, or null. A `cd`, a typecheck or a syntax check (`bash -n`, `node --check`, `php -l`) is not a runner. */
 function runnerOf(segment:string):string | null {
+  // A step that only checks syntax is not a run of the suite; without this `bash -n x.sh && bash x.sh` read as two runs.
+  if (/^\s*(?:cd\s+\S+\s*&&\s*)?(?:sudo\s+-n\s+)?(?:bash|sh|node|python3?|php|ruby)\s+(?:-[a-zA-Z]*n|--check|--syntax-check|-l|-m\s+py_compile)\s+['"]?\S+['"]?\s*$/.test(segment)) return null;
   const tokens = segment.trim().split(/\s+/).map((token) => token.replace(/^['"]|['"]$/g, ""));
   const bin = tokens.find((token) => TEST_BIN.test(token));
   if (bin) return bin.replace(/^.*\//, "");
@@ -266,7 +268,11 @@ export function lintProbePaths(task:TaskV2, workspacePath:string):string[] {
   try { hints = parseReadFirstHints(task.read_first).map((hint) => resolve(workspacePath, hint.path)); } catch { /* reported by lintContract */ }
   const tests = siblingTestCandidates(task).map((candidate) => resolve(workspacePath, candidate.folder ?? candidate.test));
   const named = [...task.owns_paths, ...task.expected_outputs, ...(task.files ?? []).map((file) => file.path)]
-    .map(concreteFile).filter((path):path is string => !!path).map((path) => resolve(workspacePath, path));
+    .map(concreteFile).filter((path):path is string => !!path)
+    .flatMap((path) => {
+      const dir = dirname(path);
+      return dir === "." ? [resolve(workspacePath, path)] : [resolve(workspacePath, path), resolve(workspacePath, dir)];
+    });
   return [...new Set([...hints, ...folderFilters(task).map((filter) => filter.path), ...tests, ...checkNamedPaths(task), ...named])].slice(0, MAX_PROBES);
 }
 
@@ -294,11 +300,12 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
   const kindOf = (path:string) => kinds?.get(path);
 
   errors.push(...taskStandardFindings(task));
-  // Hub plan-fact receipts: 3.5% fail at 1-3 acceptance items, about a third at 4 or more (14 days to 2026-10-30, sandboxes included).
-  // Live projects since 2026-10-27: 0% at 1-2, 4.8% at 3, 15.8% at 4-6, 44% at 7+. Full mode may keep a longer list; a mainfix lists every red check.
+  // Owner 2026-10-31: Lane Pilot as it is now counts from stats.epoch (default 2026-10-31), so this is only a warning in the
+  // receipt and the PM answer — no refusal, no redo. Revisit once ~20 tasks with 4+ items land after the epoch: if plan-fact
+  // still fails about twice as often above 3, the refusal comes back. Full mode may keep a longer list; a mainfix lists every red check.
   const acceptanceMode = input.qualityMode ?? task.quality_mode;
   if (!isMainfixTask(task.id) && (acceptanceMode === "quick" || acceptanceMode === "standard") && task.acceptance.length > 3) {
-    errors.push({ code:"acceptance_too_many", message:`acceptance has ${task.acceptance.length} items; a ${acceptanceMode} task keeps at most 3, because plan-fact fails far more often above that (hub receipts: 3.5% at 1-3, about a third at 4 or more). Split the task so each one has at most 3 acceptance items` });
+    warnings.push({ code:"acceptance_too_many", message:`acceptance has ${task.acceptance.length} items; a ${acceptanceMode} task keeps at most 3 (plan-fact receipts since 2026-10-29 failed 28.9-32.7% at 4+ vs 15.8% at 3). Split the task or compress acceptance to 3 items` });
   }
   // quality_mode full: a task with qa_cases owes a browser check, and the task's own graph runs it from qa_url.
   if (input.qualityMode && browserQaRequired(input.qualityMode, task) && !task.qa_url) {
@@ -354,18 +361,32 @@ export function lintContract(input:LintInput):{ errors:LintFinding[]; warnings:L
   if (kinds) {
     let readFirst = new Set<string>();
     try { readFirst = new Set(parseReadFirstHints(task.read_first).map((hint) => hint.path)); } catch { /* reported above */ }
+    // A missing file in an existing folder reads as a create the author did not mark (owner 2026-10-30): a warning, never a
+    // refusal. The refusal holds only when the folder itself is not there — the path is a typo, not a create.
     for (const pattern of task.owns_paths) {
       const path = concreteFile(pattern);
       if (!path || readFirst.has(path) || taskCreatesFile(task, path) || kindOf(resolve(input.workspacePath, path)) !== "missing") continue;
-      errors.push({ code:"owns_missing", message:`owns_paths ${path} does not exist and the task does not create it (it is not in expected_outputs and no files[] action is create); fix the path, or add it to expected_outputs if the task creates the file` });
-      if (errors.filter((error) => error.code === "owns_missing").length >= 5) break;
+      const dirKind = dirname(path) === "." ? "directory" : kindOf(resolve(input.workspacePath, dirname(path)));
+      if (dirKind === "missing") {
+        errors.push({ code:"owns_missing", message:`owns_paths ${path} does not exist and neither does its folder ${dirname(path)}: the path is a wrong name, not a file the task will create; fix the path` });
+        if (errors.filter((error) => error.code === "owns_missing").length >= 5) break;
+      } else {
+        warnings.push({ code:"owns_unmarked_create", message:`owns_paths ${path} does not exist but its folder does; the lint reads it as a file the task creates — declare it in expected_outputs or a files[] create if so` });
+        if (warnings.filter((warning) => warning.code === "owns_unmarked_create").length >= 5) break;
+      }
     }
     for (const file of task.files ?? []) {
       if (file.action === "create") continue;
       const path = concreteFile(file.path);
       if (!path || taskCreatesFile(task, path) || kindOf(resolve(input.workspacePath, path)) !== "missing") continue;
-      errors.push({ code:"output_missing", message:`files[] ${file.action} ${path} does not exist and the task does not create it; fix the path, or set action create and add the file to expected_outputs if the task creates it` });
-      if (errors.filter((error) => error.code === "output_missing").length >= 5) break;
+      const dirKind = dirname(path) === "." ? "directory" : kindOf(resolve(input.workspacePath, dirname(path)));
+      if (dirKind === "missing") {
+        errors.push({ code:"output_missing", message:`files[] ${file.action} ${path} does not exist and neither does its folder ${dirname(path)}: fix the path, or set action create and add the file to expected_outputs if the task creates it` });
+        if (errors.filter((error) => error.code === "output_missing").length >= 5) break;
+      } else {
+        warnings.push({ code:"output_unmarked_create", message:`files[] ${file.action} ${path} does not exist but its folder does; the lint reads it as a create — set action create and add it to expected_outputs if so` });
+        if (warnings.filter((warning) => warning.code === "output_unmarked_create").length >= 5) break;
+      }
     }
   }
 
