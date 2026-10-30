@@ -2,7 +2,7 @@
 title: Workflow Execution Engine
 type: component
 created: 2026-10-10
-updated: 2026-10-28
+updated: 2026-10-30
 status: active
 confidence: medium
 tags: [workflow-engine, execution, journal]
@@ -11,6 +11,7 @@ sources:
   - packages/workflow-engine/src/db.ts
   - packages/workflow-engine/src/journal.ts
   - packages/workflow-engine/src/lower.ts
+  - packages/workflow-engine/src/quality-mode.ts
   - packages/workflow-engine/src/schema.ts
   - packages/workflow-engine/src/contract.ts
   - packages/workflow-engine/src/expr.ts
@@ -25,50 +26,56 @@ TL;DR: `WorkflowEngine` drives lowered workflow graphs by claiming journaled ste
 
 ## Purpose
 
-The engine runs a workflow against caller-provided node executors and persists run, step, join, and effect state in SQLite so the host can resume or inspect work after a process restart (`packages/workflow-engine/src/engine.ts:151-177`, `packages/workflow-engine/src/journal.ts:10-105`).
+The engine runs a workflow against caller-provided node executors and persists run, step, join, and effect state in SQLite so the host can resume or inspect work after a process restart (`packages/workflow-engine/src/engine.ts:190-217`, `packages/workflow-engine/src/journal.ts:10-105`).
 
 ## How it works
 
-1. The caller constructs `WorkflowEngine` with a database and `harnessVersion`; construction creates the journal and registers built-in executors (`packages/workflow-engine/src/engine.ts:94-118`, `packages/workflow-engine/src/engine.ts:168-174`).
-2. The host registers custom executors by key. An executor implements `run`, may declare itself reentrant, and may implement `poll` for waiting steps. Optional `specialistKnown` is passed into preflight validation to reject literal unknown `specialist:<id>` agent roles (`packages/workflow-engine/src/engine.ts:68-74`, `packages/workflow-engine/src/engine.ts:94-105`, `packages/workflow-engine/src/engine.ts:210-220`, `packages/workflow-engine/src/validate.ts:357-365`).
-3. At start, workflow nodes are lowered into executable nodes and `for_each`/parallel forms; the run stores its workflow identity, version, hash, definition, mode, inputs, and usage counters (`packages/workflow-engine/src/lower.ts:52-101`, `packages/workflow-engine/src/engine.ts:151-177`, `packages/workflow-engine/src/journal.ts:11-39`).
-4. The driver claims pending steps, resolves mapped inputs and references, then calls the selected executor with a `StepContext` containing run/step identity, attempt, goals, input, mode, and effect support (`packages/workflow-engine/src/engine.ts:18-66`).
-5. A done result passes declared output fields and node contracts; a wait result persists partial output and wait details; thrown step errors move the step and run to failure unless classified as an engine/process bug (`packages/workflow-engine/src/engine.ts:35-38`, `packages/workflow-engine/src/engine.ts:124-145`).
-6. Completed branches route through graph edges and joins; event rows accompany transitions. External side effects use `ctx.effect` to record intent and outcome for restart reconciliation (`packages/workflow-engine/src/journal.ts:155-187`, `packages/workflow-engine/src/engine.ts:64-65`).
+1. The caller constructs `WorkflowEngine` with a database and `harnessVersion`; construction creates the journal and registers built-in executors (`packages/workflow-engine/src/engine.ts:124-150`, `packages/workflow-engine/src/engine.ts:208-214`).
+2. The host registers custom executors by key. An executor implements `run`, may declare itself reentrant, and may implement `poll` for waiting steps. Optional `specialistKnown` is passed into preflight validation to reject literal unknown `specialist:<id>` agent roles (`packages/workflow-engine/src/engine.ts:98-104`, `packages/workflow-engine/src/engine.ts:124-150`, `packages/workflow-engine/src/engine.ts:251-261`, `packages/workflow-engine/src/validate.ts:357-365`).
+3. At start, workflow nodes are lowered into executable nodes and `for_each`/parallel forms; the run stores its workflow identity, version, hash, definition, mode, inputs, and usage counters (`packages/workflow-engine/src/lower.ts:52-101`, `packages/workflow-engine/src/engine.ts:266-321`, `packages/workflow-engine/src/journal.ts:11-39`). The children a run may call are resolved once at start — through the caller's pins, the caller's `resolve`, then the engine's `resolveWorkflow` — and pinned into the stored definition, so a running chain keeps its children although the catalog changes (`packages/workflow-engine/src/engine.ts:42-56`, `packages/workflow-engine/src/engine.ts:283`, `packages/workflow-engine/src/engine.ts:302-303`).
+4. The driver claims pending steps, resolves mapped inputs and references, then calls the selected executor with a `StepContext` containing run/step identity, attempt, goals, input, mode, and effect support (`packages/workflow-engine/src/engine.ts:21-96`).
+5. A done result passes declared output fields and node contracts; a wait result persists partial output and wait details; thrown step errors move the step and run to failure unless classified as an engine/process bug (`packages/workflow-engine/src/engine.ts:65-67`, `packages/workflow-engine/src/engine.ts:163-184`).
+6. Completed branches route through graph edges and joins; event rows accompany transitions. External side effects use `ctx.effect` to record intent and outcome for restart reconciliation (`packages/workflow-engine/src/journal.ts:156-188`, `packages/workflow-engine/src/engine.ts:94-95`).
 
 ## Modes and states
 
 | Branch | Inputs or condition | Result |
 |---|---|---|
-| Executor done | Executor returns `{output}` | Output is checked against declared fields and contracts, then persisted as succeeded (`packages/workflow-engine/src/engine.ts:35-38`, `packages/workflow-engine/src/engine.ts:140-145`). |
-| Executor wait | Executor returns `{wait, partial?}` | The step is persisted as waiting; optional `poll` can later settle it (`packages/workflow-engine/src/engine.ts:36-38`, `packages/workflow-engine/src/engine.ts:72-74`). |
-| Missing executor registration | Preflight finds no executor key or no registered implementation | Preflight returns a problem; the workflow cannot be started as runnable (`packages/workflow-engine/src/engine.ts:210-220`). |
-| Invalid output | A completed executor result fails declared-field checks or its artifact/gate contract | `checkOutput` throws `output_invalid` for a non-object, a missing required field other than `handoff`, or an invalid field type; a missing/empty `handoff` uses `handoff_missing`. Contract failures use `artifact_invalid` or `gate_failed`. After retries, a non-tolerated failure marks the run failed, cancels pending/waiting steps, and aborts sibling work; a tolerated parallel-child failure becomes a failed arrival (`packages/workflow-engine/src/values.ts:30-43`, `packages/workflow-engine/src/engine.ts:142-146`, `packages/workflow-engine/src/engine.ts:812-838`, `packages/workflow-engine/src/engine.ts:474-479`, `packages/workflow-engine/src/engine.ts:525-535`). |
-| Executor or routing error | Executor throws, a route has no matching edge, or an expression reference is missing | Step/run failure records a reason; route errors become `RouteFailure` reasons (`packages/workflow-engine/src/engine.ts:124-125`, `packages/workflow-engine/src/engine.ts:934-936`, `packages/workflow-engine/src/engine.ts:946-952`). |
-| Admission denied / disposed | `admit` returns false or engine is disposed | Driver stops at a step boundary and reports `stopped`, leaving work for the next engine instance (`packages/workflow-engine/src/engine.ts:81-84`, `packages/workflow-engine/src/engine.ts:104-106`). |
-| Reloaded run | Existing run row plus `resumePolicy` and compatibility stamp | Continue or interrupt according to policy; changed compatibility can prevent unsafe resume (`packages/workflow-engine/src/engine.ts:86-110`). |
-| Parallel join | Join policy `all`, `majority`, or `all_or_low_confidence` | Reducer evaluates branch arrivals and produces the join result (`packages/workflow-engine/src/schema.ts:63-64`, `packages/workflow-engine/src/reducers.ts:33-92`). |
-| Cost or token limit reached before built-in `emit` | `checkLimits` reports `budget_exceeded:cost` or `budget_exceeded:tokens`, and the node resolves to `builtin:emit` | The engine records one `budget_overrun` event for the run and runs the emit step so it can pass through mapped output already paid for (`packages/workflow-engine/src/engine.ts:730-735`, `packages/workflow-engine/src/engine.ts:1148-1150`). |
+| Executor done | Executor returns `{output}` | Output is checked against declared fields and contracts, then persisted as succeeded (`packages/workflow-engine/src/engine.ts:65-67`, `packages/workflow-engine/src/engine.ts:178-184`). |
+| Executor wait | Executor returns `{wait, partial?}` | The step is persisted as waiting; optional `poll` can later settle it (`packages/workflow-engine/src/engine.ts:66-67`, `packages/workflow-engine/src/engine.ts:102-103`). |
+| Missing executor registration | Preflight finds no executor key or no registered implementation | Preflight returns a problem; the workflow cannot be started as runnable (`packages/workflow-engine/src/engine.ts:251-261`). |
+| Invalid output | A completed executor result fails declared-field checks or its artifact/gate contract | `checkOutput` throws `output_invalid` for a non-object, a missing required field other than `handoff`, or an invalid field type; a missing/empty `handoff` uses `handoff_missing`. Contract failures use `artifact_invalid` or `gate_failed`. After retries, a non-tolerated failure marks the run failed, cancels pending/waiting steps, and aborts sibling work; a tolerated parallel-child failure becomes a failed arrival (`packages/workflow-engine/src/values.ts:30-43`, `packages/workflow-engine/src/engine.ts:178-184`, `packages/workflow-engine/src/engine.ts:908-919`, `packages/workflow-engine/src/engine.ts:550-556`, `packages/workflow-engine/src/engine.ts:601-606`). |
+| Executor or routing error | Executor throws, a route has no matching edge, or an expression reference is missing | Step/run failure records a reason; route errors become `RouteFailure` reasons (`packages/workflow-engine/src/engine.ts:163`, `packages/workflow-engine/src/engine.ts:1015`, `packages/workflow-engine/src/engine.ts:1033`). |
+| Admission denied / disposed | `admit` returns false or engine is disposed | Driver stops at a step boundary and reports `stopped`, leaving work for the next engine instance (`packages/workflow-engine/src/engine.ts:799-800`, `packages/workflow-engine/src/engine.ts:135-137`). |
+| Reloaded run | Existing run row plus `resumePolicy` and compatibility stamp | Continue or interrupt according to policy; changed compatibility can prevent unsafe resume (`packages/workflow-engine/src/engine.ts:141-142`, `packages/workflow-engine/src/engine.ts:1304-1331`). |
+| Parallel join | Join policy `all`, `majority`, or `all_or_low_confidence` | Reducer evaluates branch arrivals and produces the join result (`packages/workflow-engine/src/schema.ts:64`, `packages/workflow-engine/src/reducers.ts:33-92`). |
+| Cost or token limit reached before built-in `emit` | `checkLimits` reports `budget_exceeded:cost` or `budget_exceeded:tokens`, and the node resolves to `builtin:emit` | The engine records one `budget_overrun` event for the run and runs the emit step so it can pass through mapped output already paid for (`packages/workflow-engine/src/engine.ts:807-812`, `packages/workflow-engine/src/engine.ts:1229-1232`). |
 
 ## Business rules
 
-- Step output is filtered to declared fields and checked against `produces` and `gates`; a contract problem prevents the step from completing (`packages/workflow-engine/src/engine.ts:139-145`).
-- Journal step transitions are allow-listed and written conditionally; a competing writer that finds the step in another state gets a logged refusal (`packages/workflow-engine/src/journal.ts:114-121`, `packages/workflow-engine/src/journal.ts:162-178`).
-- `running -> pending` is allowed for reentrant step recovery; terminal step states have no outgoing transitions (`packages/workflow-engine/src/journal.ts:114-121`).
-- When usage is unknown for a token- or money-budgeted run, the engine uses a floor of 40 steps and two hours as bounds (`packages/workflow-engine/src/engine.ts:30-34`).
-- If a failed step error carries usage with numeric `tokens`, its token and cost values are added to run totals before the step fails. A failed child run's accumulated usage is added to its parent once, with a `child_usage_charged` event guarding the charge across reloads (`packages/workflow-engine/src/engine.ts:828-838`, `packages/workflow-engine/src/engine.ts:1196-1213`).
-- `rerunNode` accepts only terminal top-level runs and a previously-run, inactive node; it resets that node and downstream work, then accepts optional caller runtime that replaces the run's in-memory runtime (`packages/workflow-engine/src/engine.ts:1343-1355`, `packages/workflow-engine/src/engine.ts:1356-1400`).
-- A built-in `emit` step can run after a token or cost budget is exceeded; the engine records `budget_overrun` once per run. This exception does not bypass step, wall-time, or unknown-usage limits (`packages/workflow-engine/src/engine.ts:730-735`, `packages/workflow-engine/src/engine.ts:545-555`).
-- Compatibility is distinct from package release version; `ENGINE_COMPAT_VERSION` is the stamp compared when deciding whether an in-flight step can resume (`packages/workflow-engine/src/engine.ts:86-93`, `packages/workflow-engine/src/engine.ts:165-166`).
+- Step output is filtered to declared fields and checked against `produces` and `gates`; a contract problem prevents the step from completing (`packages/workflow-engine/src/engine.ts:178-184`).
+- Journal step transitions are allow-listed and written conditionally; a competing writer that finds the step in another state gets a logged refusal (`packages/workflow-engine/src/journal.ts:116-122`, `packages/workflow-engine/src/journal.ts:163-179`).
+- `running -> pending` is allowed for reentrant step recovery; terminal step states have no outgoing transitions (`packages/workflow-engine/src/journal.ts:116-122`).
+- When usage is unknown for a token- or money-budgeted run, the engine uses a floor of 40 steps and two hours as bounds (`packages/workflow-engine/src/engine.ts:33-34`).
+- Spend survives failed tries: every failed attempt of a step adds its usage to the next try, and the accumulated total is charged to the run once — after a succeeding attempt or when the step finally fails (`packages/workflow-engine/src/engine.ts:870-873`, `packages/workflow-engine/src/engine.ts:896-899`, `packages/workflow-engine/src/engine.ts:911-921`). Failed votes add their spend to the step's total, and a majority error carries it (`packages/workflow-engine/src/engine.ts:953-960`). A failed child run's accumulated usage is added to its parent once, with a `child_usage_charged` event guarding the charge across reloads (`packages/workflow-engine/src/engine.ts:1286-1297`).
+- Before a run closes, `closeAfterAudit` judges a run with goals against them: all met closes `succeeded`, unmet goals close `blocked` with the unmet ids. A pass verdict is reused only when both the goals hash and the output hash are unchanged, so re-running a node that changed the result audits again (`packages/workflow-engine/src/engine.ts:424-461`). A workflow whose definition declares `goal_audit: "required"` — a user workflow — closes `not_verified` instead of `succeeded` when it reaches its exit with no goals, or when the audit could not be made; a service graph without goals closes without calling the auditor (`packages/workflow-engine/src/engine.ts:433-438`, `packages/workflow-engine/src/engine.ts:427-431`; the `goal_audit` field at `packages/workflow-engine/src/schema.ts:309-316`; the status values in the [run journal data model](../data-model/run-journal.md)).
+- A `goal_audit: required` workflow started without goals — from the PM's tool, a trigger, or a schedule — gets one request goal built from the `title` or `text` input (`requestGoals`), so the audit judges the owner's request (`packages/workflow-engine/src/engine.ts:152-157`, `packages/workflow-engine/src/engine.ts:297-299`).
+- The run's quality mode is resolved once at start through the contract → node → workflow → project order; a contract or explicit `quality_mode: full` input on a workflow whose mode is `fixed: quick` is rejected with `quality_mode_conflict`, not run as quick (`packages/workflow-engine/src/engine.ts:291-296`; the resolution order on [Workflow Quality and Contracts](quality-contracts.md)).
+- `cancel` ends the run and then cancels each child run recursively, so a stop from above cannot leave a child running to its next effect (`packages/workflow-engine/src/engine.ts:1413-1419`).
+- A finished run releases its abort controller at once and keeps its compiled graph and runtime until 64 newer runs have finished; a re-run of an older run rebuilds what was dropped (`packages/workflow-engine/src/engine.ts:39`, `packages/workflow-engine/src/engine.ts:343-358`).
+- `rerunNode` accepts only terminal top-level runs and a previously-run, inactive node; it resets that node and downstream work, then accepts optional caller runtime that replaces the run's in-memory runtime (`packages/workflow-engine/src/engine.ts:1430-1441`, `packages/workflow-engine/src/engine.ts:1443-1489`).
+- A built-in `emit` step can run after a token or cost budget is exceeded; the engine records `budget_overrun` once per run. This exception does not bypass step, wall-time, or unknown-usage limits (`packages/workflow-engine/src/engine.ts:807-812`, `packages/workflow-engine/src/engine.ts:622-632`).
+- Compatibility is distinct from package release version; `ENGINE_COMPAT_VERSION` is the stamp compared when deciding whether an in-flight step can resume (`packages/workflow-engine/src/engine.ts:120-123`, `packages/workflow-engine/src/engine.ts:205`, `packages/workflow-engine/src/engine.ts:1325`).
 - Agent prompt coverage validation warns when produced-artifact schema enums are absent from both the prompt and generated output contract; it does not block preflight because it is a warning (`packages/workflow-engine/src/prompt-coverage.ts:17-31`, `packages/workflow-engine/src/validate.ts:366-372`).
 
 ## Public API
 
 | Import | Purpose |
 |---|---|
-| `WorkflowEngine`, `EngineOptions`, `StepContext`, `NodeExecutor`, `RunSummary` | Configure, register, start, stop, and inspect execution (`packages/workflow-engine/src/engine.ts:18-121`, `packages/workflow-engine/src/engine.ts:151-210`). |
-| `WorkflowEngine.rerunNode(runId, nodeId, runtime?)` | Restart a previously-run node and downstream steps in a terminal top-level run; optional runtime replaces the run runtime (`packages/workflow-engine/src/engine.ts:1337-1400`). |
-| `createJournal`, `workflowMigrations`, `STEP_TRANSITIONS` | Journal storage and migration definitions (`packages/workflow-engine/src/journal.ts:10-12`, `packages/workflow-engine/src/journal.ts:114-121`, `packages/workflow-engine/src/journal.ts:150-192`). |
+| `WorkflowEngine`, `EngineOptions`, `StepContext`, `NodeExecutor`, `RunSummary` | Configure, register, start, stop, and inspect execution (`packages/workflow-engine/src/engine.ts:21-150`, `packages/workflow-engine/src/engine.ts:190-261`). |
+| `WorkflowEngine.rerunNode(runId, nodeId, runtime?)` | Restart a previously-run node and downstream steps in a terminal top-level run; optional runtime replaces the run runtime (`packages/workflow-engine/src/engine.ts:1430-1489`). |
+| `requestGoals(inputs)` | The request goal a `goal_audit: required` workflow started without goals is judged by (`packages/workflow-engine/src/engine.ts:152-157`). |
+| `createJournal`, `workflowMigrations`, `STEP_TRANSITIONS` | Journal storage and migration definitions (`packages/workflow-engine/src/journal.ts:10-12`, `packages/workflow-engine/src/journal.ts:116-122`, `packages/workflow-engine/src/journal.ts:151-191`). |
 | `lowerWorkflow`, `registerPureActions`, `registerReducers` | Lower workflow syntax and register built-in deterministic execution (`packages/workflow-engine/src/lower.ts:52-101`, `packages/workflow-engine/src/actions.ts:183-198`, `packages/workflow-engine/src/reducers.ts:122-129`). |
 
 ## Package shape
@@ -77,18 +84,18 @@ Execution is implemented by `engine.ts`, with graph expansion in `lower.ts`, dur
 
 ## Internal model
 
-An executor is the boundary between graph scheduling and work owned by the host. The engine supplies mapped inputs and helpers through `StepContext`; it does not implement integrations such as agent execution itself (`packages/workflow-engine/src/engine.ts:42-74`).
+An executor is the boundary between graph scheduling and work owned by the host. The engine supplies mapped inputs and helpers through `StepContext`; it does not implement integrations such as agent execution itself (`packages/workflow-engine/src/engine.ts:72-104`).
 
 Run and step state are durable records. The engine serializes workflow definition and outputs into the journal; effect intent/result rows let integrations reconcile external work (`packages/workflow-engine/src/journal.ts:11-105`).
 
 ## Dependencies
 
-The engine consumes the workspace's schema, expression, validation, lowering, output, contracts, goals, and journal modules. `LanePilotDatabase` is a `better-sqlite3` handle (`packages/workflow-engine/src/engine.ts:1-16`, `packages/workflow-engine/src/db.ts:1-4`).
+The engine consumes the workspace's schema, expression, validation, lowering, output, contracts, goals, quality-mode, and journal modules. `LanePilotDatabase` is a `better-sqlite3` handle (`packages/workflow-engine/src/engine.ts:1-16`, `packages/workflow-engine/src/db.ts:1-4`).
 
 ## Gotchas
 
-- An executor that performs external writes outside `ctx.effect` cannot use the engine’s recorded intent/outcome path for restart reconciliation (`packages/workflow-engine/src/engine.ts:64-65`).
-- A `waiting` step needs a polling strategy or external settlement path to leave that state (`packages/workflow-engine/src/engine.ts:72-74`, `packages/workflow-engine/src/journal.ts:114-121`).
+- An executor that performs external writes outside `ctx.effect` cannot use the engine’s recorded intent/outcome path for restart reconciliation (`packages/workflow-engine/src/engine.ts:94-95`).
+- A `waiting` step needs a polling strategy or external settlement path to leave that state (`packages/workflow-engine/src/engine.ts:102-103`, `packages/workflow-engine/src/journal.ts:116-122`).
 
 ## Engine setup and registration details
 
@@ -97,17 +104,17 @@ The engine consumes the workspace's schema, expression, validation, lowering, ou
 Detailed construction, compilation, preflight, journal transitions, and pure action execution branches are in [Engine, Journal, and Pure Action Details](engine-journal-actions.md).
 Reducer branch outputs and the runtime internals of engine setup, journal writes, and pure action dispatch are expanded in [Workflow Execution Runtime Internals](execution-runtime-internals.md).
 
-Construction chooses the clock, creates a journal bound to the supplied database and event callback, assigns the caller's instance ID or a generated one, chooses the lease duration, and registers built-in executors (`packages/workflow-engine/src/engine.ts:151-174`). `register` replaces the executor stored under a key and returns the engine for chaining; `hasExecutor` checks that map (`packages/workflow-engine/src/engine.ts:176-177`).
+Construction chooses the clock, creates a journal bound to the supplied database and event callback, assigns the caller's instance ID or a generated one, chooses the lease duration, and registers built-in executors (`packages/workflow-engine/src/engine.ts:208-214`). `register` replaces the executor stored under a key and returns the engine for chaining; `hasExecutor` checks that map (`packages/workflow-engine/src/engine.ts:216-217`).
 
-Before execution, `preflight` validates the workflow, lowers it, skips note nodes, and checks that every remaining node resolves to an executor key that is registered. It returns a list of problems; it does not start a run (`packages/workflow-engine/src/engine.ts:210-220`).
+Before execution, `preflight` validates the workflow — with an optional resolver argument that defaults to the engine's — lowers it, skips note nodes, and checks that every remaining node resolves to an executor key that is registered. It returns a list of problems; it does not start a run (`packages/workflow-engine/src/engine.ts:251-261`).
 
-Constructor, executor registration, compilation, and preflight branches are detailed in [Execution engine internals](execution-engine-internals.md) (`packages/workflow-engine/src/engine.ts:169-221`).
+Constructor, executor registration, compilation, and preflight branches are detailed in [Execution engine internals](execution-engine-internals.md) (`packages/workflow-engine/src/engine.ts:190-261`).
 
-On first use of a run, `compiled` parses the journal's stored definition and caches a compiled graph. `compile` indexes non-note nodes, groups outgoing edges by source, parses non-start edge conditions and node `skip_when` expressions, and indexes join nodes by their parallel ID. Repeated reads reuse the cached form (`packages/workflow-engine/src/engine.ts:189-207`). Invalid definitions are rejected by preflight/load validation; expression evaluation can later fail on missing values or type errors, which the driver turns into a run failure (`packages/workflow-engine/src/engine.ts:210-220`, `packages/workflow-engine/src/engine.ts:934-936`).
+On first use of a run, `compiled` parses the journal's stored definition and caches a compiled graph. `compile` indexes non-note nodes, groups outgoing edges by source, parses non-start edge conditions and node `skip_when` expressions, and indexes join nodes by their parallel ID. Repeated reads reuse the cached form (`packages/workflow-engine/src/engine.ts:229-248`). Invalid definitions are rejected by preflight/load validation; expression evaluation can later fail on missing values or type errors, which the driver turns into a run failure (`packages/workflow-engine/src/engine.ts:251-261`, `packages/workflow-engine/src/engine.ts:1015`).
 
 `renderValue` resolves `{{ref}}` placeholders when the engine maps values. A string consisting of one placeholder keeps the referenced value's type; embedded placeholders produce text, converting objects and arrays to JSON and nullish values to empty text. It recurses through arrays and objects, omitting array entries whose reference resolves to `undefined`. An object containing only `by_mode` selects the current mode's entry or `default`; a missing mode throws `MissingValueError` (`packages/workflow-engine/src/expr.ts:340-362`).
 
-At runtime, executor results branch into completed output, external wait, or failure; outputs are checked against declared fields/contracts before a step succeeds. Failed runs cancel still-open pending/waiting steps, while engine bugs and process shutdown follow interruption/recovery paths (`packages/workflow-engine/src/engine.ts:35-38`, `packages/workflow-engine/src/engine.ts:139-145`, `packages/workflow-engine/src/engine.ts:529-538`).
+At runtime, executor results branch into completed output, external wait, or failure; outputs are checked against declared fields/contracts before a step succeeds. Failed runs cancel still-open pending/waiting steps, while engine bugs and process shutdown follow interruption/recovery paths (`packages/workflow-engine/src/engine.ts:65-67`, `packages/workflow-engine/src/engine.ts:178-184`, `packages/workflow-engine/src/engine.ts:608-613`, `packages/workflow-engine/src/engine.ts:1304-1331`).
 
 ### `pureActionExecutor`
 
@@ -115,7 +122,7 @@ At runtime, executor results branch into completed output, external wait, or fai
 
 The fixed action lookup, read-reference selection, output shape, and failure path are detailed in [Execution engine internals](execution-engine-internals.md) (`packages/workflow-engine/src/actions.ts:176-192`).
 
-An unrecognized key has no explicit guard: the non-null assertion is erased at runtime, so calling the returned executor attempts `action.run` on an absent map entry and throws. Registered keys are exported in `PURE_ACTION_KEYS`; `registerPureActions` registers one executor per key (`packages/workflow-engine/src/actions.ts:183-198`). Errors from the action implementation propagate through the attempt loop, are retried up to `maxAttempts`, then fail the step/run (`packages/workflow-engine/src/engine.ts:794-838`).
+An unrecognized key has no explicit guard: the non-null assertion is erased at runtime, so calling the returned executor attempts `action.run` on an absent map entry and throws. Registered keys are exported in `PURE_ACTION_KEYS`; `registerPureActions` registers one executor per key (`packages/workflow-engine/src/actions.ts:183-198`). Errors from the action implementation propagate through the attempt loop, are retried up to `maxAttempts`, then fail the step/run (`packages/workflow-engine/src/engine.ts:874-919`).
 
 ### `registerReducers`
 
@@ -142,21 +149,21 @@ Reducer input normalization, per-key branches, registration, and failure behavio
 
 ### `checkStepOutput`
 
-The engine passes the node, its declared output fields, and the returned output. When fields are known, `checkOutput` requires a non-array object, checks required values and field types, and returns only declared fields. When fields are `unknown`, this filter is skipped and the original output proceeds to contract checks (`packages/workflow-engine/src/engine.ts:140-145`, `packages/workflow-engine/src/values.ts:29-44`).
+The engine passes the node, its declared output fields, and the returned output. When fields are known, `checkOutput` requires a non-array object, checks required values and field types, and returns only declared fields. When fields are `unknown`, this filter is skipped and the original output proceeds to contract checks (`packages/workflow-engine/src/engine.ts:178-184`, `packages/workflow-engine/src/values.ts:29-44`).
 
-`contractProblems` checks declared artifacts and evaluates each gate against the current node's output; a false gate or an evaluation failure becomes a gate problem. If any contract problem exists, `checkStepOutput` throws `MissingValueError`: code `artifact_invalid` when the produces list has problems, otherwise `gate_failed`, with all problem descriptions joined into the message. With no problems it returns the kept output (`packages/workflow-engine/src/contract.ts:25-42`, `packages/workflow-engine/src/engine.ts:140-145`).
+`contractProblems` checks declared artifacts and evaluates each gate against the current node's output; a false gate or an evaluation failure becomes a gate problem. If any contract problem exists, `checkStepOutput` throws `MissingValueError`: code `artifact_invalid` when the produces list has problems, otherwise `gate_failed`, with all problem descriptions joined into the message. With no problems it returns the kept output (`packages/workflow-engine/src/contract.ts:25-42`, `packages/workflow-engine/src/engine.ts:178-184`).
 
-The executor path catches this error as an attempt failure and, after retries are exhausted, fails the step/run with the error code. Output returned by an external settlement is also checked; a check failure moves that waiting step to failed and fails the run (`packages/workflow-engine/src/engine.ts:811-831`, `packages/workflow-engine/src/engine.ts:1293-1299`).
+The executor path catches this error as an attempt failure and, after retries are exhausted, fails the step/run with the error code. Output returned by an external settlement is also checked; a check failure moves that waiting step to failed and fails the run (`packages/workflow-engine/src/engine.ts:874-906`, `packages/workflow-engine/src/engine.ts:1384-1397`).
 
 ## Journal construction and migration application
 
 ### `createJournal`
 
-The factory closes over the database and clock, then provides `getRun`, `getStep`, and `steps` reads. Its event writer inserts a timeline row before invoking `onEvent`; exceptions from the notification callback are swallowed so they do not undo a journal transition (`packages/workflow-engine/src/journal.ts:150-160`).
+The factory closes over the database and clock, then provides `getRun`, `getStep`, and `steps` reads. Its event writer inserts a timeline row before invoking `onEvent`; exceptions from the notification callback are swallowed so they do not undo a journal transition (`packages/workflow-engine/src/journal.ts:151-161`).
 
-`moveStep` first checks the requested transition against `STEP_TRANSITIONS`; an illegal transition throws. It then conditionally updates only step rows whose current state is in the caller's `from` set. A missing or stale step row returns `false` after recording a refusal event; a successful update records a step event and returns `true` (`packages/workflow-engine/src/journal.ts:162-179`). `setRunStatus` conditionally updates a run from expected statuses, records a run event on success, and returns false without an event if no run row changed (`packages/workflow-engine/src/journal.ts:181-187`). Database errors from writes propagate to the caller.
+`moveStep` first checks the requested transition against `STEP_TRANSITIONS`; an illegal transition throws. It then conditionally updates only step rows whose current state is in the caller's `from` set. A missing or stale step row returns `false` after recording a refusal event; a successful update records a step event and returns `true` (`packages/workflow-engine/src/journal.ts:163-180`). `setRunStatus` conditionally updates a run from expected statuses, records a run event on success, and returns false without an event if no run row changed (`packages/workflow-engine/src/journal.ts:182-188`). Database errors from writes propagate to the caller.
 
-Read methods, event callbacks, conditional state updates, and refusal/error outcomes are detailed in [Execution engine internals](execution-engine-internals.md) (`packages/workflow-engine/src/journal.ts:150-189`).
+Read methods, event callbacks, conditional state updates, and refusal/error outcomes are detailed in [Execution engine internals](execution-engine-internals.md) (`packages/workflow-engine/src/journal.ts:151-190`).
 
 ### `workflowMigrations`
 

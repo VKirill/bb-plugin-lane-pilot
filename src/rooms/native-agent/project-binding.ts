@@ -41,7 +41,8 @@ export function resolveWriterBinding(input: {
   const explicitPath = input.explicit?.path?.trim() || "";
   if (explicitHost && explicitPath.startsWith("/")) {
     const matched = sourceForPair(sources, explicitHost, explicitPath);
-    if (matched || (explicitHost && explicitPath)) {
+    // Prototype settings may outlive their scratch folder; current project sources own the binding.
+    if (matched || sources.length === 0) {
       return { status: "resolved", hostId: explicitHost, path: explicitPath, source: "explicit_override", bindingId: matched?.id };
     }
   }

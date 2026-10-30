@@ -2,7 +2,7 @@
 title: Workflow Definitions and Validation
 type: component
 created: 2026-10-10
-updated: 2026-10-28
+updated: 2026-10-30
 status: active
 confidence: medium
 tags: [workflow-engine, schema, validation]
@@ -46,6 +46,7 @@ This capability defines the JSONC workflow format, its typed nodes and edges, th
 - A workflow's entry and exit are represented internally by `$start` and `$end`; they are reserved unless the definition has corresponding ordinary node names under the documented normalization rules (`packages/workflow-engine/src/schema.ts:11-17`).
 - Field names begin with a letter or underscore and permit letters, digits, and underscores up to 48 characters. Enum fields require a `values` list, while non-enum fields reject it (`packages/workflow-engine/src/schema.ts:25-38`).
 - Workflow schema version is `1`; quality modes are `quick`, `standard`, and `full`; pass modes are `artifact`, `same-session`, `read-prior-session`, and `fork` (`packages/workflow-engine/src/schema.ts:10`, `packages/workflow-engine/src/schema.ts:59-64`).
+- A workflow may declare `goal_audit: "required"` — a user workflow judged by its goals, where empty goals or an audit that could not be made close the run `not_verified`, which is not a verified success. `exempt` or an absent field is a service graph, which closes without an auditor call when it has no goals (`packages/workflow-engine/src/schema.ts:309-316`).
 - Definitions that fail `loadWorkflow` checks without a merged resolver are omitted before origin precedence is applied. The highest-ranked remaining definition per ID is checked against the merged set for subworkflow references; if that check fails, the ID is omitted rather than falling back (`packages/workflow-engine/src/store.ts:71-90`).
 - When `specialistKnown` is supplied, an agent role of the form `specialist:<id>` is an error if its literal ID is not known; templated roles and an unknown availability result are not rejected by this check (`packages/workflow-engine/src/validate.ts:21-22`, `packages/workflow-engine/src/validate.ts:357-365`).
 - The model belongs to the agent's role. `provider`, `model`, `reasoning`, `service_tier`, and `model_preset` remain schema-compatible but do not select a model and produce a `model_ignored` warning when present (`packages/workflow-engine/src/schema.ts:117-118`, `packages/workflow-engine/src/schema.ts:123-131`, `packages/workflow-engine/src/validate.ts:353-356`).

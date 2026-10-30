@@ -2,14 +2,15 @@
 title: Workflow Draft and Operations Data
 type: data-model
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-30
 status: active
-confidence: medium
+confidence: high
 tags: [workflow-engine, data-model, drafts]
 sources:
   - packages/workflow-engine/src/draft-store.ts
   - packages/workflow-engine/src/ops-store.ts
   - packages/workflow-engine/src/store.ts
+  - packages/workflow-engine/src/business-outcome.ts
 ---
 # Workflow Draft and Operations Data
 TL;DR: Draft records hold editable workflow content and snapshots; operational rows bind exact workflow hashes to test receipts and schedule automation records.
@@ -23,7 +24,7 @@ erDiagram
   TRIGGER }o..|| WORKFLOW : schedules
 ```
 
-Workflow associations in operational tables use IDs and hashes, not declared foreign keys (`packages/workflow-engine/src/draft-store.ts:11-38`, `packages/workflow-engine/src/ops-store.ts:14-39`).
+Workflow associations in operational tables use IDs and hashes, not declared foreign keys (`packages/workflow-engine/src/draft-store.ts:11-38`, `packages/workflow-engine/src/ops-store.ts:15-41`).
 
 ## Tables
 
@@ -54,7 +55,7 @@ Status lifecycle:
 | `draft` | `tested` or `draft` | `recordTests` (`packages/workflow-engine/src/draft-store.ts:165-173`) | Current version has nonempty complete all-green results, else status remains draft. |
 | Matching current version | `published` | `markPublished` (`packages/workflow-engine/src/draft-store.ts:176-179`) | Caller records the published file metadata. |
 
-Invariants: scope/status are SQL-constrained; draft edits use version checks; project listing is ordered by update time (`packages/workflow-engine/src/draft-store.ts:11-28`, `packages/workflow-engine/src/draft-store.ts:112-117`). The resolver separately requires a green receipt for the exact current file hash before an owner-authored `tested` or `published` file counts as tested/published (`packages/workflow-engine/src/ops-store.ts:45-52`, `packages/workflow-engine/src/ops-store.ts:76-89`).
+Invariants: scope/status are SQL-constrained; draft edits use version checks; project listing is ordered by update time (`packages/workflow-engine/src/draft-store.ts:11-28`, `packages/workflow-engine/src/draft-store.ts:112-117`). The resolver separately requires a green receipt for the exact current file hash (current or legacy hash) before an owner-authored `tested` or `published` file counts as tested/published (`packages/workflow-engine/src/ops-store.ts:124-137`).
 
 Writers/readers: `createDraftStore` writes and reads draft rows; workflow editor/library code uses it. No draft cleanup or retention function is defined in this workspace (`packages/workflow-engine/src/draft-store.ts:81-190`).
 
@@ -74,7 +75,7 @@ Invariants: `(draft_id,version)` is primary key; restore creates a new version r
 
 ### `lane_pilot_wf_test`
 
-Purpose: Test receipt keyed by workflow ID and exact definition SHA-256 (`packages/workflow-engine/src/ops-store.ts:14-23`).
+Purpose: Test receipt keyed by workflow ID and exact definition SHA-256 (`packages/workflow-engine/src/ops-store.ts:17-24`).
 
 | Field | Meaning |
 |---|---|
@@ -83,11 +84,11 @@ Purpose: Test receipt keyed by workflow ID and exact definition SHA-256 (`packag
 | `results_json` | Serialized test results. |
 | `at` | Receipt timestamp in milliseconds. |
 
-No status lifecycle field. `recordTest` upserts receipts; `resolve` checks the exact hash (with legacy hash fallback), and `liveSuccess` reads successful top-level run rows to lift a `tested` workflow to `published` (`packages/workflow-engine/src/ops-store.ts:50-89`). No cleanup job is defined.
+No status lifecycle field. `recordTest` upserts receipts; `resolve` checks the exact hash (with legacy hash fallback), and `liveSuccess` lifts a `tested` workflow to `published` only on the newest live run of this version that proves the chain: the run's `workflow_sha256` must equal the current `definitionSha256` or the older hash that still included canvas positions, and its output must finish the job per the shared business-outcome reading with the chain's `live_success` rule (`packages/workflow-engine/src/ops-store.ts:97-114`, `packages/workflow-engine/src/ops-store.ts:135`; the outcome reading in [run journal data](run-journal.md), `packages/workflow-engine/src/business-outcome.ts:25-40`). A workflow edited after its proving run has a different definition hash, so that run no longer proves it and the workflow stays `tested`. No cleanup job is defined.
 
 ### `lane_pilot_wf_trigger`
 
-Purpose: Maps one workflow/project/schedule slot to a host automation and the signature used to create it (`packages/workflow-engine/src/ops-store.ts:24-34`).
+Purpose: Maps one workflow/project/schedule slot to a host automation and the signature used to create it (`packages/workflow-engine/src/ops-store.ts:26-35`).
 
 | Field | Meaning |
 |---|---|
@@ -96,9 +97,10 @@ Purpose: Maps one workflow/project/schedule slot to a host automation and the si
 | `signature` | Source configuration signature used for synchronization. |
 | `created_at`, `updated_at` | Millisecond timestamps. |
 
-No lifecycle status field. The workflow trigger integration writes and reads these associations; this workspace defines the table and migration only (`packages/workflow-engine/src/ops-store.ts:24-34`). No retention job is defined.
+No lifecycle status field. The workflow trigger integration writes and reads these associations; this workspace defines the table and migration only (`packages/workflow-engine/src/ops-store.ts:26-35`). No retention job is defined.
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by
 
 - [Workflow Engine Data Model](../data-model.md)
+- [Workflow Run Journal Data](run-journal.md)

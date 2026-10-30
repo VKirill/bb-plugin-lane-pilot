@@ -2,7 +2,7 @@
 title: Register of deferrals
 type: component
 created: 2026-10-22
-updated: 2026-10-22
+updated: 2026-10-30
 status: active
 confidence: medium
 tags: [deferral, sma, drill, owner]
@@ -35,9 +35,32 @@ TL;DR: A mandatory check that is put off is written in one table; only a date in
 
 SMA rule 5 (Maslov): a deferred mandatory check lives in one register and its term comes from a human; an agent never sets or extends it, and `it.todo` without a date is a silent hole. The scope is the mandatory checks and decisions (drill scenarios, skipped tests, gates, plan decisions), not agents' own notes. There is no owner login and no confirmation form: the code checks that the date was really said, which protects against a made-up date.
 
+## How it works
+
+1. An entry is born **open, no term**: an agent's `defer` without `--owner-msg` creates it `needs_owner_term` (`src/rooms/deferral/service.ts:112-128`), the code opens one idempotently under a fixed id (a held memory conflict) (`src/rooms/deferral/service.ts:130-139`), and the seed writes the first skipped-test and plan-decision entries (`src/rooms/deferral/seed.ts:18-52`). An agent that passes `--due` is refused: only an owner's message sets a term (`src/rooms/deferral/service.ts:114`).
+2. The owner's message sets the term: the reference is verified as a real owner message, the date is parsed from the text, and the entry becomes `open` — or `overdue` at once when the date already passed (`src/rooms/deferral/service.ts:81-103`). The verification steps are under Writing a term below.
+3. Every read sweeps first: an open entry whose `due_at` passed is stored `overdue` (`src/rooms/deferral/store.ts:47-49`, sweep before the list at `src/rooms/deferral/service.ts:152`).
+4. `defer-close` closes an entry; the evidence must say what closes it (`src/rooms/deferral/service.ts:141-149`).
+5. The overdue and term-less entries surface in four places — the deploy drill, the skipped-test scanner, the PM's task-result message and the daily Telegram line (see What turns red below).
+
+| State | Set when | Written by |
+|---|---|---|
+| `needs_owner_term` | Born without a term: an agent, the code, or the seed. | `byAgent` and `open` (`src/rooms/deferral/service.ts:121`, `:136`). |
+| `open` | An owner message verified and a date parsed from its text. | `defer` (`src/rooms/deferral/service.ts:101`). |
+| `overdue` | The term's day passed: at creation, or swept on every read. | `defer` (`src/rooms/deferral/service.ts:101`), `sweepOverdue` (`src/rooms/deferral/store.ts:47-49`). |
+| `closed` | `defer-close` with evidence of what closed it. | `close` (`src/rooms/deferral/service.ts:147`). |
+
+| Refusal | When |
+|---|---|
+| «an agent does not set a term» | `--due` without `--owner-msg` (`src/rooms/deferral/service.ts:114`). |
+| Moving a term refused | The message is not newer than the one that set the term (`src/rooms/deferral/service.ts:85-87`). |
+| No term given | The text names no recognised date and `--due` is absent or not in the text (`src/rooms/deferral/service.ts:88-89`). |
+| Closed entry | `defer` on a closed id, or a second close (`src/rooms/deferral/service.ts:75`, `:144`). |
+| Thin reason or evidence | Fewer than 8 characters (`src/rooms/deferral/service.ts:117`, `:146`). |
+
 ## Data
 
-`lane_pilot_deferral` has the id, `project_id` (null for a global entry), `what`, `kind` (`drill_scenario`, `skipped_test`, `gate`, `plan_decision`), `area`, `due_at`, `due_source`, `owner_ref`, `owner_quote`, `state`, the history of earlier terms, `closed_at` and `closed_by` (`src/rooms/deferral/migrations.ts:10-27`). The migrations are spread at the end of the list, after the OpenCode v2 settings update (`src/rooms/storage/database.ts:339-340`).
+`lane_pilot_deferral` has the id, `project_id` (null for a global entry), `what`, `kind` (`drill_scenario`, `skipped_test`, `gate`, `plan_decision`), `area`, `due_at`, `due_source`, `owner_ref`, `owner_quote`, `state`, the history of earlier terms, `closed_at` and `closed_by` (`src/rooms/deferral/migrations.ts:10-27`). The migrations are spread at the end of the list, after the OpenCode v2 settings update (`src/rooms/storage/database.ts:350-354`).
 
 `owner_ref` is JSON: thread id, event sequence, input index, SHA-256 of the checked text and the message's own time (`src/rooms/deferral/store.ts:12`). States: `open`, `overdue`, `closed`, and `needs_owner_term` for an entry nobody has given a term to yet (`src/rooms/deferral/store.ts:9`). Open entries whose `due_at` passed are stored as `overdue` on every read (`src/rooms/deferral/store.ts:47-49`).
 

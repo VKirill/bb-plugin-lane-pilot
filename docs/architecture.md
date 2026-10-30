@@ -2,7 +2,7 @@
 title: Lane Pilot architecture
 type: architecture
 created: 2026-09-30
-updated: 2026-10-19
+updated: 2026-10-30
 status: active
 confidence: medium
 tags: [architecture, runtime, monorepo]
@@ -41,6 +41,10 @@ sources:
   - packages/thread-observe/src/completion.ts
   - packages/handoff/src/messages.ts
   - src/rooms/host-worker/host-handlers.ts
+  - lane-stack/opencode/opencode-lane/v2.ts
+  - lane-stack/opencode/opencode-lane/guard.ts
+  - lane-stack/opencode/opencode-lane/hub-guard.ts
+  - lane-stack/opencode/opencode-lane/budget.ts
 ---
 
 # Lane Pilot architecture
@@ -65,7 +69,7 @@ C4Container
   Rel(server, db, "Reads and writes")
 ```
 
-The UI and server entries are declared by the package's BB manifest (`package.json:8-18`). The server uses BB's plugin storage database and runs migrations during startup (`src/rooms/storage/database.ts:336-340`). The UI receives methods from the assembled `rpcContract`, while host calls use `hostContract` (`src/rooms/contracts/index.ts:1-27`, `src/rooms/contracts/host.ts:6-15`). The host client wraps checkout-writing calls and acceptance checks with a drain gate (`src/rooms/core/server/core.ts:91-100`, `src/rooms/stability/server/deploy-drain.ts:1-6`).
+The UI and server entries are declared by the package's BB manifest (`package.json:8-18`). The server uses BB's plugin storage database and runs migrations during startup (`src/rooms/storage/database.ts:428-433`). The UI receives methods from the assembled `rpcContract`, while host calls use `hostContract` (`src/rooms/contracts/index.ts:1-27`, `src/rooms/contracts/host.ts:6-15`). The host client wraps checkout-writing calls and acceptance checks with a drain gate (`src/rooms/core/server/core.ts:91-100`, `src/rooms/stability/server/deploy-drain.ts:1-6`).
 
 ## Application and package dependencies
 
@@ -115,9 +119,17 @@ The test's deep-import baseline is recorded in `tests/architecture/deep-imports.
 
 Host methods include native install, Git ownership and worktree operations, long-running host jobs, stability drills, Anamnesis procedures, disk-space queries, OpenCode telemetry, docs/workflow file operations, and coexistence operations (`src/rooms/contracts/host.ts:6-90`, `:114-205`, `:207-260`, `:261-410`). `gitIntegrate` accepts ownership patterns and replay checks for an attempt rebased onto a moved base (`src/rooms/contracts/host.ts:61-71`, `src/rooms/host-worker/host-handlers.ts:75-101`). `runOnHost` is a typed convenience wrapper for `runCommand`; it passes the same host id in the call input and call options and defaults the transport wait to command timeout plus five seconds (`packages/host-calls/src/run-on-host.ts:8-31`).
 
+## Writer-side OpenCode guard plugin
+
+Writer sessions run on each host's shared OpenCode v2 service under agent ids prefixed `lane-`; the `opencode-lane` plugin in `lane-stack` guards only those sessions and leaves any other OpenCode session alone (`lane-stack/opencode/opencode-lane/v2.ts:1-3`, `lane-stack/opencode/opencode-lane/hub-guard.ts:7-10`). Its entry `laneSetup` installs three hooks and returns a no-op disposer (`lane-stack/opencode/opencode-lane/v2.ts:25-100`):
+
+1. `execute.before` checks every tool call of a lane agent. `guardTool` runs the tool guard against the session's working directory — its skills part accepts a skill only when `.opencode/skills/<name>/SKILL.md` exists in the folder or a parent — and `guardMcpV2` checks the call's MCP server against the service's server list; the MCP server list and the agent's permission rules are re-read at most every 30 seconds, and a returned message is thrown to block the call. The skills part is skipped for `lane-critic` and `lane-reviewer`, whose agent files name their own skills (`lane-stack/opencode/opencode-lane/v2.ts:38-53`, `:55-61`, `lane-stack/opencode/opencode-lane/guard.ts:171-186`).
+2. `execute.after` fingerprints each result and counts identical repeats per session, keeping a bounded recent-call window; only a successful result gets a note appended. A third identical result gets a reuse hint — read and grep reuse the earlier result, write and edit on the same path must edit instead of rewrite (`lane-stack/opencode/opencode-lane/v2.ts:63-74`, `lane-stack/opencode/opencode-lane/budget.ts:13-14`, `:96-131`, `:133-160`).
+3. `permission.evaluate` denies an action the agent's own permission rules deny, allows a `skill` action only when every named skill exists in the session's project folder, and denies shell commands matched by the hub shell denial rules (`lane-stack/opencode/opencode-lane/v2.ts:76-97`, `lane-stack/opencode/opencode-lane/guard.ts:171-183`).
+
 ## Data ownership
 
-The shared SQLite migration array includes stores exported by Jev, council, handoff, run-insights, workflow engine, schedule, learning, world, and the harness room (`src/rooms/storage/database.ts:1-22`, `:319-333`). The [data model overview](data-model.md) links to domain tables. Workspace-specific tables belong to their owning package documentation, including [workflow engine](../packages/workflow-engine/docs/overview.md).
+The shared SQLite migration array includes stores exported by Jev, council, handoff, run-insights, workflow engine, schedule, learning, world, and the harness room (`src/rooms/storage/database.ts:4-24`, `:47-426`). The [data model overview](data-model.md) links to domain tables and owns the append-only rule of that array. Workspace-specific tables belong to their owning package documentation, including [workflow engine](../packages/workflow-engine/docs/overview.md).
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by

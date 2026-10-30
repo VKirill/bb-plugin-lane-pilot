@@ -2,7 +2,7 @@
 title: LP-Bench, the fixed task set
 type: component
 created: 2026-10-22
-updated: 2026-10-26
+updated: 2026-10-30
 status: active
 confidence: medium
 tags: [bench, sma, harness, evaluation]
@@ -48,6 +48,24 @@ model or another edit; three numbers: how many stages passed, what it cost, how 
 | Warm-up rejection | Stores the candidate's rejection reason; after three consecutive host errors on a host, it stops that host's chain and writes no set (`src/rooms/bench/build.ts:98-112`, `:139-142`). |
 | Missing or changed set | Series fails before starting if the version is absent or its stored manifest hash differs (`src/rooms/bench/runner.ts:127-134`). |
 | Run budget reached | Remaining tasks are stored as `skipped_budget`; a later run resumes unfinished tasks (`src/rooms/bench/runner.ts:173-182`, `:233-239`, `src/rooms/bench/store.ts:76-83`). |
+
+## The service (`createBench`)
+
+### How it works
+
+1. `createBench(deps)` wires the database, KV, host and pipeline ports into one facade and returns `settings`, `placement`, `configure`, `build`, `lastBuild`, `run`, `noise`, `compare`, `status`, `show`, `prepare`, `armSummary`, `baseline`, `sweep` (`src/rooms/bench/service.ts:14-25`, `:214`).
+2. Budgets are read from the hub settings row `bench.*`, which wins over the old KV record, and fall to the built-in defaults (`src/rooms/bench/service.ts:44-50`, `src/rooms/bench/runner.ts:53-54`).
+3. Placement — a host id and 0–10 same-set repeats — is stored under the `bench:config` KV key; `configure` rounds budget values to whole positive numbers and validates the repeat bound (`src/rooms/bench/service.ts:28-30`, `:51-79`).
+4. Every long job runs under a per-key lock (`build:<version>`, `run:<version>:<arm>`): a second job with the same key is rejected, and a non-waiting call returns `{started:true}` while the job logs its own failure (`src/rooms/bench/service.ts:40-42`, `:81-88`).
+5. A series run first closes stuck runs, then repeats the arm up to the asked repeat count (or the placement's `noiseRepeats` for a noise run), stopping the loop when a repeat ends `stopped_budget`, `failed`, `deferred` or `unavailable`; a noise run with at least two complete repeats stores the noise record and stamps the pass rates on every report (`src/rooms/bench/service.ts:110-136`).
+6. `armSummary` refuses an unfinished measurement: a running or failed repeat is listed as incomplete, and repeats that did not share one writer clear the arm's writer (`src/rooms/bench/service.ts:139-154`).
+
+| Branch | Outcome |
+|---|---|
+| Same job key twice | The second call rejects with «<key> is already running» (`src/rooms/bench/service.ts:81-88`). |
+| Inconclusive comparison with a harness id | No verdict row is stored; an adopt-by-bench decision reads only recorded verdicts (`src/rooms/bench/service.ts:169-172`). |
+| Budget value not a positive number | `configure` throws; hub fields keep whole numbers (`src/rooms/bench/service.ts:62-70`). |
+| `noiseRepeats` outside 0–10 | `configure` throws (`src/rooms/bench/service.ts:73-76`). |
 
 ## The set
 
@@ -146,7 +164,7 @@ relative spread of cost and time widens the 10% tolerance. `compare` uses the ne
 ### How it works
 
 1. The configured `adoptBy` value determines whether bench verdicts can adopt harness trees; the default is bench (`src/rooms/harness/server/harness.ts:43`).
-2. A comparison with a harness id stores a passed or failed verdict; the harness trial decision reads it to adopt or retire the tested tree (`src/rooms/bench/service.ts:104-111`, `src/rooms/harness/server/harness.ts:499-523`, `src/rooms/harness/server/trial.ts:51-60`).
+2. A comparison with a harness id stores a passed or failed verdict; the harness trial decision reads it to adopt or retire the tested tree (`src/rooms/bench/service.ts:164-173`, `src/rooms/harness/server/harness.ts:499-523`, `src/rooms/harness/server/trial.ts:51-60`).
 
 | State or failure | Result |
 |---|---|

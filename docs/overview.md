@@ -2,7 +2,7 @@
 title: Lane Pilot overview
 type: overview
 created: 2026-10-10
-updated: 2026-10-29
+updated: 2026-10-30
 status: active
 confidence: low
 tags: [overview, bb-plugin, orchestration]
@@ -70,7 +70,7 @@ The cockpit is the app's screen shell: it loads project and run context, remembe
 
 When reload recovery finds the writer's prior thread idle or errored, the attempt loop resumes in that thread if its persisted run and contract context are valid; a canceled attempt is closed as canceled (`src/rooms/stability/server/reconcile.ts:111-145`). Eligible new attempts and fallbacks receive the prior task-owned validation failure; provider failures do not replace that context (`src/rooms/writer/server/start.ts:56-83`, `:669`, `:920`).
 
-- **Project orchestration:** runs, tasks, attempts, stage receipts, checks, and merge coordination are stored in plugin SQLite (`src/rooms/storage/database.ts:30-70`, `:128-156`). See [architecture](architecture.md) and [data model](data-model.md).
+- **Project orchestration:** runs, tasks, attempts, stage receipts, checks, and merge coordination are stored in plugin SQLite (`src/rooms/storage/database.ts:57-90`, `:145-173`). See [architecture](architecture.md) and [data model](data-model.md).
 - **Tasks screen:** the app shows task attempts and top-level workflow runs in a board or grouped list, with a detail page for contract, stage, attempt, and worker-thread data (`src/rooms/runs/ui/task-board.tsx:121-153`, `src/rooms/runs/server/task-board.ts:63-78`, `:147-209`). See [Tasks board](task-board.md).
 - **Settings and integrations:** typed RPC endpoints expose project settings, provider selection, workflows, schedules, council, memory, and knowledge to the UI (`src/rooms/core/server/rpc.ts:27-51`). The surface is declared in [RPC contracts](rpc-callers.md).
 - **Project knowledge:** memory RPCs create and retrieve project-scoped agent records; the UI displays the records and their lifecycle (`src/rooms/memory/server/memory.ts:19-78`, `src/rooms/memory/ui/memory-records.tsx:13-64`).

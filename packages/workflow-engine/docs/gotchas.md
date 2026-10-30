@@ -2,7 +2,7 @@
 title: Workflow Engine Gotchas
 type: gotchas
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-10-30
 status: active
 confidence: medium
 tags: [workflow-engine, gotchas]
@@ -22,11 +22,11 @@ TL;DR: The main sharp edges are executor side-effect recovery, what counts as a 
 
 ### External effects outside the effect API are not journaled
 
-**Problem:** `ctx.effect` records intent and outcome so the engine can reconcile external work after reload; a direct external call bypasses that record (`packages/workflow-engine/src/engine.ts:64-65`).
+**Problem:** `ctx.effect` records intent and outcome so the engine can reconcile external work after reload; a direct external call bypasses that record (`packages/workflow-engine/src/engine.ts:94-95`).
 
 **Risk:** A restarted or reentrant executor can repeat an external operation whose completion was not recorded.
 
-**Workaround:** Route retry-sensitive external operations through `ctx.effect` and provide `reconcile` when the external system can report whether the operation happened (`packages/workflow-engine/src/engine.ts:40-40`, `packages/workflow-engine/src/engine.ts:664-695`).
+**Workaround:** Route retry-sensitive external operations through `ctx.effect` and provide `reconcile` when the external system can report whether the operation happened (`packages/workflow-engine/src/engine.ts:70`, `packages/workflow-engine/src/engine.ts:741-770`).
 
 ## High
 
@@ -58,9 +58,9 @@ TL;DR: The main sharp edges are executor side-effect recovery, what counts as a 
 
 ### A database handle is required; the package does not initialize a database
 
-**Problem:** `WorkflowEngine` and the stores receive an existing `LanePilotDatabase`, which is a `better-sqlite3` handle (`packages/workflow-engine/src/db.ts:1-4`, `packages/workflow-engine/src/engine.ts:94-99`).
+**Problem:** `WorkflowEngine` and the stores receive an existing `LanePilotDatabase`, which is a `better-sqlite3` handle (`packages/workflow-engine/src/db.ts:1-4`, `packages/workflow-engine/src/engine.ts:124-127`).
 
-**Risk:** Constructing the engine before the host applies `workflowMigrations`, `draftMigrations`, and `workflowOpsMigrations` leaves required tables absent (`packages/workflow-engine/src/journal.ts:10-12`, `packages/workflow-engine/src/draft-store.ts:9-12`, `packages/workflow-engine/src/ops-store.ts:14-17`).
+**Risk:** Constructing the engine before the host applies `workflowMigrations`, `draftMigrations`, `workflowOpsMigrations`, and the appended `workflowNotVerifiedMigrations` leaves required tables absent or without the widened run-status CHECK (`packages/workflow-engine/src/journal.ts:10-12`, `packages/workflow-engine/src/draft-store.ts:10-13`, `packages/workflow-engine/src/ops-store.ts:15-18`, `packages/workflow-engine/src/ops-store.ts:43-48`).
 
 **Workaround:** Apply the workspace migrations through the host database migration sequence before creating these stores.
 

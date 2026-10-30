@@ -5,6 +5,9 @@ import { mountNightGraphs } from "../../src/rooms/night-graphs/server";
 import { builtinWorkflow } from "../../src/rooms/workflow/builtin";
 import { listRuleProposals } from "@lane-pilot/run-insights";
 import { nightWorld } from "./world";
+import { createWriterHost } from "../../src/rooms/writer/server/writer-host";
+import { savePrototypeConfig } from "../../src/rooms/storage/database";
+import incident from "../fixtures/learning-stale-binding-2026-10-30.json";
 
 const PROJECT = "proj-1";
 const RULE = JSON.stringify({ rules: [{ rule: "Run the spec next to the file before you answer.", why: "x", evidence: ["t1"], also_seen: [] }], not_writer: [] });
@@ -117,6 +120,28 @@ describe("the rules scan graph", () => {
     expect(w.runs("lp.rules-ask")).toEqual([expect.objectContaining({ status: "succeeded" })]);
     expect(w.state.spawned[0]!.pluginMetadata).toMatchObject({ role: "rules-analyzer", learning: true, lanePilotWorkflowNode: "ask" });
     expect(w.state.spawned[0]!.pluginMetadata).not.toHaveProperty("parentPmThreadId");
+  });
+
+  it("starts the learning analyzer in a current project folder despite the incident's stale prototype config", async () => {
+    const { w, scan } = setup(["{\"items\":[]}"]);
+    savePrototypeConfig(w.db, {
+      projectId: incident.projectId, hostId: incident.explicit.hostId,
+      pmWorkspacePath: incident.explicit.path, writerWorkspacePath: incident.explicit.path,
+      pmProviderId: "codex", pmModel: "gpt-6-luna", writerProviderId: "codex", writerModel: "gpt-6-luna",
+    });
+    const { resolveProjectWriterHost } = createWriterHost({
+      ...w.ctx,
+      bb: { ...w.bb, sdk: { ...w.bb.sdk, projects: { ...w.bb.sdk.projects, get: async () => ({ sources: incident.sources }) as never } } },
+    });
+    const place = await resolveProjectWriterHost({ projectId: incident.projectId });
+    expect(place.status).toBe("resolved");
+    if (place.status !== "resolved") throw new Error(`binding ${place.status}`);
+    const analyzer = (await scan.analyzerFor(incident.projectId))!;
+    expect(await scan.runAnalyzer(incident.projectId, "Learning from owner messages · 5 owner messages", "Extract", place, analyzer, { learning: true })).toBe("{\"items\":[]}");
+    expect(w.state.spawned[0]).toMatchObject({
+      environment: { type: "host", hostId: incident.sources[0]!.hostId, workspace: { type: "unmanaged", path: incident.sources[0]!.path } },
+    });
+    expect(w.runs("lp.rules-ask")[0]).toMatchObject({ status: "succeeded" });
   });
 
   it("the same question of the same day is the same run (a reload or a repeat asks nothing twice); another question is another run; a failed run is retried", async () => {
